@@ -17,8 +17,8 @@ module Storage::RecordingMetadata
 
   def local_key(reference, account_id:)
     value = reference.to_s
-    root = "#{Storage::RecordingPaths.root.expand_path}/"
-    value = value.delete_prefix(root)
+    prefix = Storage::RecordingPaths.root_aliases.map { |path| "#{path}/" }.find { |path| value.start_with?(path) }
+    value = value.delete_prefix(prefix) if prefix
     parts = value.split('/')
     return if parts.any? { |part| %w[. ..].include?(part) }
 
@@ -80,7 +80,7 @@ module Storage::RecordingMetadata
   # Only references that can be resolved within this tenant require a missing-size reconciliation.
   def reconcilable_reference_sql(account_id:)
     connection = ActiveRecord::Base.connection
-    root = Regexp.escape("#{Storage::RecordingPaths.root.expand_path}/")
+    root = Storage::RecordingPaths.root_aliases.map { |path| Regexp.escape("#{path}/") }.join('|')
     <<~SQL.squish
       ((recording_ref ~ #{connection.quote("^(#{root})?#{tenant_layout_pattern(account_id)}$")}
         AND recording_ref !~ '(^|/)[.]{1,2}(/|$)')
@@ -92,10 +92,13 @@ module Storage::RecordingMetadata
   # malformed legacy JSON must not abort a whole list, and foreign/remote references are never physical bytes.
   def primary_size_sql(account_id:)
     connection = ActiveRecord::Base.connection
-    root = Regexp.escape("#{Storage::RecordingPaths.root.expand_path}/")
+    root = Storage::RecordingPaths.root_aliases.map { |path| Regexp.escape("#{path}/") }.join('|')
     tenant_layout = tenant_layout_pattern(account_id)
     local_pattern = "^(#{root})?#{tenant_layout}$"
     sample_key = "metadata #>> '{storage_metrics,primary,key}'"
+    absolute_match = Storage::RecordingPaths.root_aliases.map do |path|
+      "recording_ref = #{connection.quote("#{path}/")} || (#{sample_key})"
+    end.join(' OR ')
     native = <<~SQL.squish
       CASE WHEN recording_ref ~ #{connection.quote(local_pattern)}
         AND recording_ref !~ '(^|/)[.]{1,2}(/|$)'
@@ -109,7 +112,7 @@ module Storage::RecordingMetadata
         AND #{sample_key} ~ #{connection.quote("^#{tenant_layout}$")}
         AND #{sample_key} !~ '(^|/)[.]{1,2}(/|$)'
         AND (recording_ref = #{sample_key}
-          OR recording_ref = #{connection.quote("#{Storage::RecordingPaths.root.expand_path}/")} || (#{sample_key})
+          OR #{absolute_match}
           OR (recording_ref !~ #{connection.quote('[/:\\\\]')} AND recording_ref NOT IN ('.', '..')
             AND recording_ref = regexp_replace(#{sample_key}, '^.*/', '')))
         AND (metadata #>> '{storage_metrics,primary,declared_size}')::text IS NOT DISTINCT FROM (#{native})::text

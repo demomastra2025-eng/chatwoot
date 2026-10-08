@@ -1,15 +1,43 @@
 # frozen_string_literal: true
 
-# Resolves local recordings only inside tenant-owned recording directories. Absolute paths,
-# traversal, symlinks and another account's tree are never accepted by storage actions.
+# Resolves local recordings only inside tenant-owned recording directories. The configured storage
+# location is deployment-owned and may be a symlink; traversal and symlinks below it are rejected.
 # The path module is cohesive: tenant layout resolution and symlink-safe filesystem boundaries share helpers.
 # rubocop:disable Metrics/ModuleLength
 module Storage::RecordingPaths
   module_function
 
   def root
-    Rails.root.join('storage')
+    configured = Rails.root.join('storage')
+    @configured_root == configured.expand_path.cleanpath && @canonical_root ? @canonical_root : configured
   end
+
+  # Resolve the deployment-owned root at boot, keeping HTTP reference checks entirely lexical.
+  # Existing absolute references to the shared target remain valid across immutable release directories.
+  def configure_root_aliases!
+    @configured_root = Rails.root.join('storage').expand_path.cleanpath
+    @canonical_root = nil
+    @root_aliases = [@configured_root].freeze
+    canonical = @configured_root.realpath
+    return unless canonical.directory?
+
+    @canonical_root = canonical
+    @root_aliases = [@configured_root, canonical].uniq.freeze
+  rescue SystemCallError
+    nil
+  end
+
+  def root_aliases
+    configured = root.expand_path.cleanpath
+    [@configured_root, @canonical_root].include?(configured) && @root_aliases ? @root_aliases : [configured]
+  end
+
+  def configured_path(path)
+    candidate = Pathname.new(path.to_s).expand_path.cleanpath
+    base = root_aliases.find { |alias_root| candidate == alias_root || candidate.to_s.start_with?("#{alias_root}#{File::SEPARATOR}") }
+    base ? root.expand_path.cleanpath.join(candidate.relative_path_from(base)).cleanpath : candidate
+  end
+  private_class_method :configured_path
 
   def trash_root
     root.join('trash')
@@ -89,11 +117,12 @@ module Storage::RecordingPaths
   def each_file_with_stat_for_account(account_id)
     return enum_for(__method__, account_id) unless block_given?
 
-    raise IOError, 'Unsafe recording storage root' if root.exist? && !safe_directory?(root)
+    exists = root.exist? || root_aliases.any?(&:symlink?)
+    raise IOError, 'Unsafe recording storage root' if exists && !safe_directory?(root)
 
     # An unreadable provider directory is a failed measurement, rather than a successful zero-byte total.
     voice_root = root.join('voice-recordings')
-    voice_root.children if voice_root.directory?
+    voice_root.children if safe_directory?(voice_root) && voice_root.directory?
     directories = account_roots(account_id)
     until directories.empty?
       directory = directories.pop
@@ -117,15 +146,16 @@ module Storage::RecordingPaths
   # Produce tenant-relative aliases for a real file so legacy basename references are checked
   # against the same physical recording as provider/account-qualified references.
   def reference_aliases(path, account_id:, allow_missing: false)
-    candidate = Pathname.new(path.to_s).expand_path.cleanpath
+    candidate = configured_path(path)
     tenant_root = account_roots(account_id, include_trash: true).find do |base|
       reference_path_inside_root?(candidate, base, account_id, allow_missing)
     end
     return [] unless tenant_root
 
+    key = candidate.relative_path_from(root.expand_path)
     [
-      candidate.to_s,
-      candidate.relative_path_from(root.expand_path).to_s,
+      *root_aliases.map { |alias_root| alias_root.join(key).to_s },
+      key.to_s,
       candidate.relative_path_from(tenant_root.expand_path).to_s,
       candidate.basename.to_s
     ].uniq.reject(&:blank?)
@@ -223,6 +253,7 @@ module Storage::RecordingPaths
     path = Pathname.new(ref.to_s)
     return unless path.absolute?
 
+    path = configured_path(path)
     trash_account_root = trash_root.join(Integer(account_id).to_s, 'recordings')
     path if contained?(path, trash_account_root)
   rescue ArgumentError, SystemCallError
@@ -233,8 +264,8 @@ module Storage::RecordingPaths
   # Lexical, realpath and every-ancestor checks are kept together at this filesystem security boundary.
   # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
   def contained?(path, base)
-    path = Pathname.new(path.to_s).expand_path.cleanpath
-    base = Pathname.new(base.to_s).expand_path.cleanpath
+    path = configured_path(path)
+    base = configured_path(base)
     return false unless safe_directory?(base) && safe_existing_path_under_root?(path) && path.file?
     return false unless path.to_s.start_with?("#{base}#{File::SEPARATOR}")
 
@@ -267,7 +298,7 @@ module Storage::RecordingPaths
     return false if raw_path.each_filename.any? { |part| part == '..' || part == '.' }
     return false if File.exist?(raw_path.to_s) || File.symlink?(raw_path.to_s)
 
-    candidate = raw_path.expand_path.cleanpath
+    candidate = configured_path(raw_path)
     account_roots(account_id, include_trash: include_trash).any? do |tenant_root|
       base = tenant_root.expand_path.cleanpath
       next false unless candidate.to_s.start_with?("#{base}#{File::SEPARATOR}")
@@ -303,7 +334,7 @@ module Storage::RecordingPaths
   # Reject missing ancestors and symlinks from the trusted storage root down to the candidate.
   # rubocop:disable Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
   def safe_existing_path_under_root?(path)
-    candidate = Pathname.new(path.to_s).expand_path.cleanpath
+    candidate = configured_path(path)
     trusted_root = root.expand_path.cleanpath
     return false unless safe_directory?(trusted_root)
     return false unless candidate.to_s.start_with?("#{trusted_root}#{File::SEPARATOR}")
@@ -342,6 +373,7 @@ module Storage::RecordingPaths
 
     relative = Pathname.new(ref.to_s)
     return if relative.each_filename.any? { |part| part == '..' || part == '.' }
+    relative = configured_path(relative) if relative.absolute?
     return relative if relative.absolute? && tenant_roots.any? { |base| contained?(relative, base) }
     return if relative.absolute?
 
@@ -370,7 +402,7 @@ module Storage::RecordingPaths
   private_class_method :unique_contained_file
 
   def lexical_path_under_account_root?(path, account_id)
-    candidate = Pathname.new(path.to_s).expand_path.cleanpath
+    candidate = configured_path(path)
     account_roots(account_id, include_trash: true).any? do |base|
       candidate.to_s.start_with?("#{base.expand_path.cleanpath}#{File::SEPARATOR}")
     end
@@ -391,7 +423,7 @@ module Storage::RecordingPaths
   # Validate every existing directory ancestor beneath the trusted storage root.
   # rubocop:disable Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
   def safe_directory?(path)
-    candidate = Pathname.new(path.to_s).expand_path.cleanpath
+    candidate = configured_path(path)
     trusted_root = root.expand_path.cleanpath
     return false unless candidate == trusted_root || candidate.to_s.start_with?("#{trusted_root}#{File::SEPARATOR}")
     return false unless safe_trusted_root?(trusted_root)
@@ -415,9 +447,8 @@ module Storage::RecordingPaths
 
   def safe_trusted_root?(trusted_root)
     return false unless trusted_root.directory?
-    return false if File.lstat(trusted_root.to_s).symlink?
 
-    trusted_root.realpath == trusted_root
+    trusted_root.realpath.directory?
   rescue SystemCallError
     false
   end

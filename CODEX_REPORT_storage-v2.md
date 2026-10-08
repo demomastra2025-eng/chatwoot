@@ -18,6 +18,7 @@
 - Data mutations advance a per-account generation. One atomic Redis publication checks both generation and worker lease before writing the overview, compatibility recording cache, physical reconciliation and seven-day last good total. There are no later process-local total writes that an obsolete worker could use to overwrite newer values. Quota reads prefer the shared snapshot and use the shared last good total when no snapshot can be read. Superseded calculations retain the last snapshot and schedule a successor.
 - The old one-hour pending marker is replaced by a v2 five-minute lease, renewed during long reconciliation work. An abandoned lease expires. A queued job that lost its lease skips work, and a former worker cannot release another worker's lease.
 - There is no transaction around the filesystem pass. All worker and heavy-list SQL uses a ten-second session `statement_timeout`, restored in `ensure`, including failure paths. Production's 30-second statement and 60-second idle-transaction defaults remain compatible.
+- Immutable DEV releases link `Rails.root/storage` to the shared source storage directory. Application prepare resolves that deployment-owned root once and keeps both configured/canonical aliases for lexical Ruby/SQL checks. Background reconciliation and new absolute action paths use the canonical shared directory, remaining stable across releases. Descendant provider, tenant, trash, directory and file symlinks remain rejected. A broken deployment link fails the calculation and preserves the last snapshot.
 
 ## Verification
 
@@ -36,6 +37,9 @@ bundle exec rspec \
   spec/services/accounts/storage_overview_service_spec.rb \
   spec/services/storage/recording_inventory_spec.rb \
   spec/services/storage/recording_metadata_spec.rb \
+  spec/services/storage/recording_paths_spec.rb \
+  spec/services/storage/recording_paths_files_for_account_spec.rb \
+  spec/services/storage/recording_paths_release_root_spec.rb \
   spec/services/storage/trash_service_spec.rb \
   spec/models/account_storage_breakdown_spec.rb \
   spec/services/account_limits/storage_usage_service_spec.rb \
@@ -47,6 +51,8 @@ bundle exec rspec \
 ```
 
 New Ruby risk checks cover filtering a recording below 205 larger rows, live links after compression, trash/restore/purge without waiting for snapshots, real `connection.open_transactions` observations at SQL/file-scan boundaries, timeout restoration, abandoned/lost leases, generation races, incomplete size metadata, stereo/retained/trash files, duplicate paths/hard links, tenant boundaries, shared reconciliation freshness and preservation of last physical totals on failure.
+
+`script/onelink/probe_storage_snapshot_redis.rb` is a service-free verification for the real `Redis::Namespace`/Lua path, without Rails/MockRedis. The release owner must supply the isolated fixture Redis URL as `STORAGE_SNAPSHOT_PROBE_REDIS_URL` and run `bundle exec ruby script/onelink/probe_storage_snapshot_redis.rb` through the authorized isolated harness. It uses a fresh random namespace, verifies generation/lease rejection, namespaced publication, one-day/seven-day expiry, persistent snapshots and late-worker fencing, then deletes only its own six keys. No Redis service was launched by this implementation.
 
 ## Delivery boundary
 

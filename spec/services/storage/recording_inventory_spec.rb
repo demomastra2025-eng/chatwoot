@@ -30,7 +30,7 @@ RSpec.describe Storage::RecordingInventory do
     inventory = described_class.new(account: account)
     usage = nil
     allow(described_class).to receive(:new).and_return(inventory)
-    allow(inventory).to receive(:calculate).and_wrap_original { |method| usage = method.call }
+    allow(inventory).to(receive(:calculate).and_wrap_original { |method| usage = method.call })
     Accounts::StorageOverviewService.new(account: account).refresh!
     usage
   ensure
