@@ -138,7 +138,9 @@ class Telephony::RecordingImportService # rubocop:disable Metrics/ClassLength
 
     Telephony::CompressRecordingsJob.perform_later(call_session_id: session.id)
   rescue StandardError => e
-    Rails.logger.warn("[RecordingImportService] Could not schedule compression for call session #{session&.id}: #{e.class.name}")
+    key_digest = Digest::SHA256.hexdigest(storage_key).first(12)
+    Rails.logger.warn("[RecordingImportService] Could not schedule compression account=#{session&.account_id} " \
+                      "session=#{session&.id} key_digest=#{key_digest} error=#{e.class.name}")
   end
 
   def mark_import_stored!(call_session, storage_key)

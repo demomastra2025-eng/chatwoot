@@ -3,6 +3,7 @@
 require 'open3'
 require 'fileutils'
 require 'securerandom'
+require 'digest'
 
 # Re-encodes a WAV call recording as a 64 kbps stereo MP3 and atomically updates references only
 # after the new file has been decoded and validated. The original remains available for 30 days.
@@ -35,8 +36,9 @@ class Telephony::RecordingCompressionService
   def perform
     perform!
   rescue StandardError => e
-    Rails.logger.warn("[RecordingCompressionService] Failed for #{@storage_key}: #{e.class.name}: #{e.message}")
-    { success: false, error: e.message }
+    Rails.logger.warn("[RecordingCompressionService] Failed account=#{call_session&.account_id} " \
+                      "session=#{call_session&.id} key_digest=#{key_digest} error=#{e.class.name}")
+    { success: false, error: e.class.name }
   end
 
   # Conversion requires a persisted session, a fresh reference check, tenant path validation and format gates.
@@ -46,6 +48,8 @@ class Telephony::RecordingCompressionService
 
     session = call_session || find_call_session
     raise CompressionError, 'A persisted call session is required to switch recording references' unless session
+
+    @call_session = session
 
     Storage::RecordingLock.synchronize(account_id: session.account_id, storage_keys: [storage_key]) do
       session.reload
@@ -64,6 +68,10 @@ class Telephony::RecordingCompressionService
   private
 
   attr_reader :storage_key, :call_session
+
+  def key_digest
+    Digest::SHA256.hexdigest(storage_key.to_s).first(12)
+  end
 
   # rubocop:disable Metrics/MethodLength
   def compress_file!(source_path)
@@ -228,7 +236,8 @@ class Telephony::RecordingCompressionService
   def refresh_storage_breakdown(session)
     session&.account&.storage_breakdown(force_refresh: true)
   rescue StandardError => e
-    Rails.logger.warn("[RecordingCompressionService] Storage breakdown refresh failed: #{e.message}")
+    Rails.logger.warn("[RecordingCompressionService] Storage breakdown refresh failed account=#{session&.account_id} " \
+                      "session=#{session&.id} key_digest=#{key_digest} error=#{e.class.name}")
   end
 
   def find_call_session

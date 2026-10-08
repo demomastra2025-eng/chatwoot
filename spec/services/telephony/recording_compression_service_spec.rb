@@ -11,6 +11,21 @@ RSpec.describe Telephony::RecordingCompressionService do
   let(:storage_dir) { Storage::RecordingPaths.root.join('voice-recordings/test_suite', account.id.to_s) }
 
   describe '#perform' do
+    it 'logs only identifiers, a key digest, and the exception class on failure' do
+      key = "voice-recordings/test_suite/#{account.id}/private-call-reference.wav"
+      session = create(:telephony_call_session, account: account, recording_ref: key)
+      service = described_class.new(call_session: session)
+      allow(service).to receive(:perform!).and_raise(described_class::CompressionError, "private ffmpeg stderr #{key}")
+      allow(Rails.logger).to receive(:warn)
+
+      expect(service.perform).to include(success: false, error: 'Telephony::RecordingCompressionService::CompressionError')
+      expect(Rails.logger).to have_received(:warn) do |warning|
+        expect(warning).to include("account=#{account.id}", "session=#{session.id}",
+                                   "key_digest=#{Digest::SHA256.hexdigest(key).first(12)}", 'CompressionError')
+        expect(warning).not_to include(key, 'private ffmpeg stderr')
+      end
+    end
+
     it 'skips compression when storage_key is blank' do
       result = described_class.compress(storage_key: '')
       expect(result[:skipped]).to be(true)

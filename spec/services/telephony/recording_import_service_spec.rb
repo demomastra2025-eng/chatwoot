@@ -81,6 +81,20 @@ RSpec.describe Telephony::RecordingImportService do
     FileUtils.rm_f(Rails.root.join('storage', storage_key)) if storage_key.present?
   end
 
+  it 'does not log the recording key or exception text when compression enqueue fails' do
+    call_session.update!(recording_ref: "voice-recordings/fonoster/#{account.id}/#{call_ref}/#{sha256}.wav")
+    allow(Telephony::CompressRecordingsJob).to receive(:perform_later).and_raise(StandardError, 'private command stderr')
+    allow(Rails.logger).to receive(:warn)
+
+    described_class.new(payload: payload).send(:enqueue_recording_compression, call_session)
+
+    expect(Rails.logger).to have_received(:warn) do |warning|
+      expect(warning).to include("account=#{account.id}", "session=#{call_session.id}",
+                                 "key_digest=#{Digest::SHA256.hexdigest(call_session.recording_ref).first(12)}", 'StandardError')
+      expect(warning).not_to include(call_session.recording_ref, call_ref, 'private command stderr')
+    end
+  end
+
   it 'downloads, verifies, stores, and attaches the recording to the exact voice_call source_id bubble', :aggregate_failures do
     result = described_class.new(payload: payload).perform
 
