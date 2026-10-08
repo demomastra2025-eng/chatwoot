@@ -112,7 +112,7 @@ const refreshStorage = async () => {
     isRefreshing.value = true;
     const response = await StorageAPI.refresh();
     storageData.value = response.data.storage;
-    useAlert(t('STORAGE.REFRESH_SUCCESS'));
+    useAlert(t('STORAGE.REFRESH_QUEUED'));
     await fetchHeavyFiles();
     await fetchTrash();
   } catch (error) {
@@ -466,7 +466,14 @@ const getFileTypeName = type => {
     </template>
 
     <template #body>
-      <div v-if="!isLoading && storageData" class="space-y-6">
+      <div
+        v-if="!isLoading && storageData?.calculating"
+        class="rounded-xl border border-slate-200 bg-white p-6 text-slate-700"
+        role="status"
+      >
+        {{ $t('STORAGE.CALCULATING') }}
+      </div>
+      <div v-else-if="!isLoading && storageData" class="space-y-6">
         <!-- Storage Threshold Alert Banner (80% / 95%) -->
         <div
           v-if="shouldShowStorageAlert"

@@ -62,7 +62,9 @@ const fetchUsage = async id => {
     if (generation !== requestGeneration) return;
     const data = response?.data?.storage;
     usage.value = data || null;
-    if (data) usageByAccount.set(cacheKey, { data, fetchedAt: Date.now() });
+    if (data && !data.calculating) {
+      usageByAccount.set(cacheKey, { data, fetchedAt: Date.now() });
+    }
   } catch {
     if (generation === requestGeneration && !cached) usage.value = null;
   }

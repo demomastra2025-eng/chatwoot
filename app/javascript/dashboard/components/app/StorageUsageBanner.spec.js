@@ -116,6 +116,25 @@ describe('StorageUsageBanner', () => {
     );
     wrapper.unmount();
   });
+
+  it('does not cache a calculating response as a completed usage reading', async () => {
+    mocks.getStorage.mockResolvedValueOnce({
+      data: { storage: { calculating: true } },
+    });
+    const wrapper = mountBanner();
+    await flushPromises();
+    expect(wrapper.findComponent(Banner).exists()).toBe(false);
+
+    accountId.value = '22';
+    await flushPromises();
+    accountId.value = '11';
+    await flushPromises();
+
+    expect(StorageAPI.getStorage).toHaveBeenCalledTimes(3);
+    expect(wrapper.findComponent(Banner).exists()).toBe(true);
+    wrapper.unmount();
+  });
+
   it('refreshes cached usage during a long-running admin session', async () => {
     vi.useFakeTimers();
     const wrapper = mountBanner();
