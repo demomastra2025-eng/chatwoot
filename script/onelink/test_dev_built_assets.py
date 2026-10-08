@@ -211,6 +211,41 @@ class DeploymentContractTest(unittest.TestCase):
             self.assertIn('RBENV_VERSION="${DEV_RUBY_VERSION}"', contract)
         self.assertEqual(contracts[0], contracts[1])
 
+    def test_deployment_lowers_cpu_and_io_priority_before_work_and_stops_on_error(self):
+        source = (ROOT / "script/onelink/deploy_dev_release.sh").read_text(encoding="utf-8")
+        start = source.index("# Lower this process")
+        end = source.index("\nALLOW_ROLLBACK=0", start)
+        block = source[start:end]
+        self.assertLess(start, source.index('git -C "${SOURCE_REPO}" fetch'))
+        self.assertLess(start, source.index("bundle check"))
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            events = root / "events.txt"
+            fixture = root / "priority.sh"
+            for name, variable in (("renice", "RENICE_RC"), ("ionice", "IONICE_RC")):
+                stub = root / name
+                stub.write_text('#!/bin/sh\nprintf "' + name + ' %s\\n" "$*" >> "$EVENTS"\nexit "${' + variable + ':-0}"\n',
+                                encoding="utf-8", newline="\n")
+                stub.chmod(0o755)
+                block = block.replace("/usr/bin/" + name, shlex.quote(stub.as_posix()))
+            fixture.write_text('set -euo pipefail\n' + block + '\nprintf "deploy-work\\n" >> "$EVENTS"\n',
+                               encoding="utf-8", newline="\n")
+            for cpu_rc, io_rc, expected, event_count in ((0, 0, 0, 3), (1, 0, 69, 1), (0, 1, 69, 2)):
+                with self.subTest(cpu_rc=cpu_rc, io_rc=io_rc):
+                    events.unlink(missing_ok=True)
+                    env = dict(os.environ, EVENTS=events.as_posix(), RENICE_RC=str(cpu_rc), IONICE_RC=str(io_rc))
+                    result = subprocess.run([self.bash(), str(fixture)], env=env, text=True, capture_output=True)
+                    self.assertEqual(result.returncode, expected, result.stderr)
+                    lines = events.read_text(encoding="utf-8").splitlines()
+                    self.assertEqual(len(lines), event_count)
+                    self.assertRegex(lines[0], r"^renice -n 10 -p [0-9]+$")
+                    if cpu_rc == 0:
+                        self.assertRegex(lines[1], r"^ionice -c 2 -n 7 -p [0-9]+$")
+                    if expected == 0:
+                        self.assertEqual(lines[-1], "deploy-work")
+                    else:
+                        self.assertNotIn("deploy-work", lines)
+
     def test_workflow_prepares_before_deploy_and_checks_installed_tools(self):
         workflow = (ROOT / ".github/workflows/onelink_release.yml").read_text(encoding="utf-8")
         prepare = workflow.index('"prepare-assets $GITHUB_SHA"')

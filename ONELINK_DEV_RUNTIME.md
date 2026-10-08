@@ -23,6 +23,9 @@ deploy script.
    `/opt/node-24/bin/node` (24.x), `/opt/node-24/bin/pnpm` (10.x), and Ruby 3.4.4
    through `/opt/rbenv` with `RBENV_VERSION` pinned. They fail before work if
    versions/paths differ; the system-wide default Node is not changed.
+   The reviewed deploy script sets its own CPU nice value to 10 and best-effort
+   I/O priority to 7 before work; failure stops deployment. Install the script
+   atomically while no deployment is running, preserving the existing SSH keys.
 2. Deploy this compatible code with both flags off and the existing Vite
    process running. A previous release without `BUILT_ASSETS_CONTRACT = 1`
    cannot support rollback after the runtime switches to built assets.

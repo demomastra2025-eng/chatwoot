@@ -8,6 +8,10 @@ usage() {
 
 [[ ${EUID} -eq 0 ]] || { echo "must run as root" >&2; exit 77; }
 
+# Lower this process and inherited dependency commands before any deploy work.
+/usr/bin/renice -n 10 -p "$$" >/dev/null || { echo 'cannot lower DEV deploy CPU priority' >&2; exit 69; }
+/usr/bin/ionice -c 2 -n 7 -p "$$" || { echo 'cannot lower DEV deploy I/O priority' >&2; exit 69; }
+
 ALLOW_ROLLBACK=0
 if [[ $# -eq 2 && "$1" == --allow-rollback ]]; then
   ALLOW_ROLLBACK=1

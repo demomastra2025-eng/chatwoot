@@ -94,7 +94,7 @@ paths already exist; DEV-specific eager boot still needs live verification.
 
 ## Checks and limits
 
-Review correction checks on 2026-10-09: 14 service-free Python artifact/endpoint
+Review correction checks on 2026-10-09: 15 service-free Python artifact/endpoint
 tests passed; shell syntax passed for deploy, preparation, forced-command and
 installer scripts. Ruby specs and four-mode eager boot are delegated to the
 isolated release harness; no server configuration, live deployment or provider
@@ -105,6 +105,11 @@ DEV preflight then identified system Node 18 as the default. The reviewed
 preparer and deployment now share a versioned Node 24/pnpm 10/Ruby 3.4.4 path
 and version guard. Their toolchain contract is covered by the local suite; the
 isolated build/boot matrix must use that exact source contract.
+
+The subsequent script-only correction applies CPU nice 10 and best-effort I/O
+priority 7 at deployment start. A service-free regression checks ordering and
+fail-stop when either priority command fails. Application/runtime flag code
+is unchanged from the matrix's a1261df10 candidate.
 
 - `ruby -c` on `Gemfile`, `lib/onelink/dev_runtime.rb`,
   `config/application.rb`, `config/environments/development.rb`,
