@@ -16,7 +16,9 @@ RSpec.describe Storage::RecordingPaths, 'immutable release storage' do
   before do
     account
     other_account
-    FileUtils.mkdir_p(release_root)
+    # Immutable releases contain the app config; keep real factory and quota configuration reads.
+    FileUtils.mkdir_p(release_root.join('config'))
+    FileUtils.cp(Rails.root.join('config', 'installation_config.yml'), release_root.join('config', 'installation_config.yml'))
     FileUtils.mkdir_p(shared_storage.join(key).dirname)
     File.write(shared_storage.join(key), 'r' * 64)
     File.symlink(shared_storage, configured_storage)

@@ -262,7 +262,7 @@ module Storage::RecordingPaths
 
   # Existing file containment is account-scoped and rejects symlinks in every path component.
   # Lexical, realpath and every-ancestor checks are kept together at this filesystem security boundary.
-  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
+  # rubocop:disable Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
   def contained?(path, base)
     path = configured_path(path)
     base = configured_path(base)
@@ -288,7 +288,7 @@ module Storage::RecordingPaths
 
   # Validate a not-yet-existing restore path against the account's known storage layouts.
   # Every existing ancestor is checked, including the tenant root, before callers create directories.
-  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
+  # rubocop:enable Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
 
   # Restore destinations must pass lexical, tenant-root and all-existing-ancestor checks before creation.
   # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
