@@ -15,12 +15,14 @@ RSpec.describe Accounts::StorageOverviewService do
     Redis::Alfred.delete("account:#{account.id}:storage_overview_v1")
     Redis::Alfred.delete("account:#{account.id}:storage_overview_refresh_v1")
     Redis::Alfred.delete("account:#{account.id}:storage_overview_pending_v1")
+    Redis::Alfred.delete("account:#{account.id}:storage_heavy_recordings_v1")
   end
 
   after do
     Redis::Alfred.delete("account:#{account.id}:storage_overview_v1")
     Redis::Alfred.delete("account:#{account.id}:storage_overview_refresh_v1")
     Redis::Alfred.delete("account:#{account.id}:storage_overview_pending_v1")
+    Redis::Alfred.delete("account:#{account.id}:storage_heavy_recordings_v1")
   end
 
   it 'queues one housekeeping refresh while the five-minute lease is active' do
@@ -72,6 +74,9 @@ RSpec.describe Accounts::StorageOverviewService do
     expect(snapshot[:breakdown].except(:last_updated_at)).to eq(expected_breakdown.except(:last_updated_at))
     expect(snapshot[:limits]).to eq(expected_limits)
     expect(snapshot[:breakdown][:recordings]).to eq(File.size(recording_path))
+    recording = Accounts::HeavyRecordingsSnapshot.new(account_id: account.id).snapshot[:recordings].sole
+    expect(recording).to include(byte_size: File.size(recording_path), inbox_id: inboxes.first.id)
+    expect(recording[:id]).to start_with('call_')
     expect(service.snapshot).to eq(snapshot)
   end
 
@@ -88,7 +93,8 @@ RSpec.describe Accounts::StorageOverviewService do
 
   it 'puts the previous timeout back when the calculation fails' do
     timeout_before = ActiveRecord::Base.connection.select_value('SHOW statement_timeout')
-    allow(account).to receive(:storage_breakdown).with(force_refresh: true).and_raise(ActiveRecord::StatementInvalid, 'statement timeout')
+    allow(account).to receive(:storage_breakdown).with(force_refresh: true, heavy_recordings: anything)
+                                                 .and_raise(ActiveRecord::StatementInvalid, 'statement timeout')
 
     expect { service.refresh! }.to raise_error(ActiveRecord::StatementInvalid)
     expect(ActiveRecord::Base.connection.select_value('SHOW statement_timeout')).to eq(timeout_before)
@@ -99,7 +105,7 @@ RSpec.describe Accounts::StorageOverviewService do
   it 'does not open a database transaction around the breakdown calculation' do
     baseline = ActiveRecord::Base.connection.open_transactions
     seen = nil
-    allow(account).to receive(:storage_breakdown).with(force_refresh: true) do
+    allow(account).to receive(:storage_breakdown).with(force_refresh: true, heavy_recordings: anything) do
       seen = ActiveRecord::Base.connection.open_transactions
       {}
     end
@@ -111,11 +117,13 @@ RSpec.describe Accounts::StorageOverviewService do
 
   it 'keeps the last good snapshot when an aggregate times out' do
     previous = service.refresh!
-    allow(account).to receive(:storage_breakdown).with(force_refresh: true)
+    previous_recordings = Accounts::HeavyRecordingsSnapshot.new(account_id: account.id).snapshot
+    allow(account).to receive(:storage_breakdown).with(force_refresh: true, heavy_recordings: anything)
                                                  .and_raise(ActiveRecord::StatementInvalid, 'statement timeout')
 
     expect { service.refresh! }.to raise_error(ActiveRecord::StatementInvalid)
     expect(service.snapshot).to eq(previous)
+    expect(Accounts::HeavyRecordingsSnapshot.new(account_id: account.id).snapshot).to eq(previous_recordings)
   end
 
   it 'handles a timed-out refresh job without replacing the last good snapshot' do

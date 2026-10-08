@@ -35,13 +35,15 @@ class Accounts::StorageOverviewService
   end
 
   def refresh!
+    heavy_recordings = Accounts::HeavyRecordingsSnapshot.new(account_id: account.id)
     data = with_statement_timeout do
       {
-        breakdown: account.storage_breakdown(force_refresh: true),
+        breakdown: account.storage_breakdown(force_refresh: true, heavy_recordings: heavy_recordings),
         limits: AccountLimits::StorageUsageService.new(account: account).summary,
         updated_at: Time.current.to_i
       }
     end
+    heavy_recordings.write!
     Redis::Alfred.set(snapshot_cache_key, JSON.generate(data))
     data
   end

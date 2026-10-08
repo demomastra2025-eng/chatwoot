@@ -2,6 +2,7 @@
 
 class Accounts::HeavyFilesService
   InvalidParams = Class.new(ArgumentError)
+  AttachmentTimeout = Class.new(StandardError)
 
   DEFAULT_LIMIT = 50
   MAX_LIMIT = 100
@@ -22,13 +23,12 @@ class Accounts::HeavyFilesService
   def initialize(account:, params: {})
     @account = account
     @file_type = params[:file_type].to_s.presence || 'all'
-    @inbox_id = params[:inbox_id].presence&.to_i
-    @conversation_id = params[:conversation_id].presence&.to_i
+    @inbox_id = integer_filter(params[:inbox_id])
+    @conversation_id = integer_filter(params[:conversation_id])
     @date_from = parse_date(params[:date_from], :date_from)
     @date_to = parse_date(params[:date_to], :date_to)
-    raise InvalidParams, I18n.t('storage_management.errors.invalid_date_range') if @date_from && @date_to && @date_from > @date_to
-
     @limit = (params[:limit] || DEFAULT_LIMIT).to_i.clamp(1, MAX_LIMIT)
+    validate_date_range!
   end
 
   def perform
@@ -39,9 +39,21 @@ class Accounts::HeavyFilesService
     items.sort_by { |item| -item[:byte_size] }.first(@limit)
   end
 
+  def recordings_pending?
+    @recordings_pending == true
+  end
+
   private
 
   attr_reader :account, :file_type, :inbox_id, :conversation_id, :date_from, :date_to, :limit
+
+  def integer_filter(value)
+    value.presence&.to_i
+  end
+
+  def validate_date_range!
+    raise InvalidParams, I18n.t('storage_management.errors.invalid_date_range') if date_from && date_to && date_from > date_to
+  end
 
   def fetch_attachments?
     file_type == 'all' || FILE_TYPE_MAPPINGS.key?(file_type)
@@ -61,50 +73,55 @@ class Accounts::HeavyFilesService
 
   # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
   def fetch_attachments
-    join_sql = 'INNER JOIN attachments ON attachments.id = active_storage_attachments.record_id ' \
-               "AND active_storage_attachments.record_type = 'Attachment'"
-    scope = ActiveStorage::Attachment.joins(:blob)
-                                     .joins(join_sql)
-                                     .joins('INNER JOIN messages ON messages.id = attachments.message_id')
-                                     .where(attachments: { account_id: account.id })
-                                     .where(messages: { account_id: account.id })
-                                     .where("(attachments.meta->'trash') IS NULL")
+    scope = filtered_attachment_scope
+    raw_data, inbox_names, blobs = with_statement_timeout do
+      rows = scope.order('active_storage_blobs.byte_size DESC')
+                  .limit(limit)
+                  .pluck(
+                    'attachments.id',
+                    'active_storage_blobs.filename',
+                    'active_storage_blobs.byte_size',
+                    'attachments.file_type',
+                    'attachments.created_at',
+                    'messages.inbox_id',
+                    'messages.conversation_id',
+                    'active_storage_attachments.blob_id'
+                  )
+      [rows, account.inboxes.pluck(:id, :name).to_h, ActiveStorage::Blob.where(id: rows.map(&:last)).index_by(&:id)]
+    end
 
+    raw_data.map { |row| format_attachment_row(row, inbox_names, blobs[row.last]) }
+  rescue StandardError => e
+    raise AttachmentTimeout, I18n.t('storage_management.errors.heavy_files_timeout') if query_timeout?(e)
+
+    Rails.logger.warn("[HeavyFilesService#fetch_attachments] Failed for account #{account.id}: #{e.class.name}")
+    []
+  end
+  # rubocop:enable Metrics/AbcSize, Metrics/MethodLength
+
+  def filtered_attachment_scope
+    scope = base_attachment_scope
     scope = scope.where(messages: { inbox_id: inbox_id }) if inbox_id.present?
     scope = scope.where(messages: { conversation_id: conversation_id }) if conversation_id.present?
     scope = scope.where('attachments.created_at >= ?', date_from.beginning_of_day) if date_from
     scope = scope.where('attachments.created_at <= ?', date_to.end_of_day) if date_to
 
-    if FILE_TYPE_MAPPINGS.key?(file_type)
-      target_type = FILE_TYPE_MAPPINGS[file_type]
-      enum_val = Attachment.file_types[target_type]
-      scope = scope.where(attachments: { file_type: enum_val }) if enum_val
-    end
+    return scope unless FILE_TYPE_MAPPINGS.key?(file_type)
 
-    raw_data = scope.order('active_storage_blobs.byte_size DESC')
-                    .limit(limit)
-                    .pluck(
-                      'attachments.id',
-                      'active_storage_blobs.filename',
-                      'active_storage_blobs.byte_size',
-                      'attachments.file_type',
-                      'attachments.created_at',
-                      'messages.inbox_id',
-                      'messages.conversation_id',
-                      'active_storage_attachments.blob_id'
-                    )
-
-    inbox_names = account.inboxes.pluck(:id, :name).to_h
-    blobs = ActiveStorage::Blob.where(id: raw_data.map(&:last)).index_by(&:id)
-
-    raw_data.map do |row|
-      format_attachment_row(row, inbox_names, blobs[row.last])
-    end
-  rescue StandardError => e
-    Rails.logger.warn("[HeavyFilesService#fetch_attachments] Failed: #{e.message}")
-    []
+    enum_val = Attachment.file_types[FILE_TYPE_MAPPINGS[file_type]]
+    enum_val ? scope.where(attachments: { file_type: enum_val }) : scope
   end
-  # rubocop:enable Metrics/AbcSize, Metrics/MethodLength
+
+  def base_attachment_scope
+    join_sql = 'INNER JOIN attachments ON attachments.id = active_storage_attachments.record_id ' \
+               "AND active_storage_attachments.record_type = 'Attachment'"
+    ActiveStorage::Attachment.joins(:blob)
+                             .joins(join_sql)
+                             .joins('INNER JOIN messages ON messages.id = attachments.message_id')
+                             .where(attachments: { account_id: account.id })
+                             .where(messages: { account_id: account.id })
+                             .where("(attachments.meta->'trash') IS NULL")
+  end
 
   def format_attachment_row(row, inbox_names, blob)
     att_id, _filename, byte_size, ft_int, created_at, in_id, conv_id, = row
@@ -130,58 +147,72 @@ class Accounts::HeavyFilesService
     Rails.application.routes.url_helpers.rails_blob_path(blob, only_path: true, disposition: 'attachment')
   end
 
-  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity, Metrics/MethodLength
   def fetch_recordings
-    return [] unless defined?(Telephony::CallSession) && Telephony::CallSession.table_exists?
-
-    scope = Telephony::CallSession.where(account_id: account.id)
-                                  .where.not(recording_ref: [nil, ''])
-
-    scope = scope.where(inbox_id: inbox_id) if inbox_id.present?
-    scope = scope.where(conversation_id: conversation_id) if conversation_id.present?
-    scope = scope.where('created_at >= ?', date_from.beginning_of_day) if date_from
-    scope = scope.where('created_at <= ?', date_to.end_of_day) if date_to
-
-    inbox_names = account.inboxes.pluck(:id, :name).to_h
-
-    recordings = []
-    scope.find_each do |session|
-      ref = session.recording_ref
-      next if ref.blank?
-
-      file_path = Storage::RecordingPaths.resolve(ref, account_id: account.id)
-      # Count physical files only. A provider URL or stale metadata byte_size is not local disk usage.
-      next unless file_path
-
-      file_size = File.size(file_path)
-      next if file_size.zero?
-
-      download_url = begin
-        Telephony::CallRecordingPlaybackUrl.path_for(session, storage_key: ref)
-      rescue StandardError
-        nil
-      end
-
-      label = I18n.t('storage_management.item_labels.audio_recording')
-
-      recordings << {
-        id: "call_#{session.id}",
-        name: label,
-        file_type: 'recording',
-        byte_size: file_size,
-        human_size: ActiveSupport::NumberHelper.number_to_human_size(file_size),
-        created_at: session.created_at&.iso8601,
-        inbox_id: session.inbox_id,
-        inbox_name: inbox_names[session.inbox_id] || I18n.t('storage_management.unknown_channel'),
-        conversation_id: session.conversation_id,
-        download_url: download_url
-      }
+    snapshot = Accounts::HeavyRecordingsSnapshot.new(account_id: account.id).snapshot
+    unless snapshot
+      @recordings_pending = true
+      return []
     end
 
-    recordings
+    rows = snapshot.fetch(:recordings).select { |row| recording_matches?(row) }
+    return [] if rows.empty?
+
+    inbox_names = account.inboxes.pluck(:id, :name).to_h
+    rows.map { |row| format_recording_row(row, inbox_names) }
   rescue StandardError => e
-    Rails.logger.warn("[HeavyFilesService#fetch_recordings] Failed: #{e.message}")
+    Rails.logger.warn("[HeavyFilesService#fetch_recordings] Failed for account #{account.id}: #{e.class.name}")
+    @recordings_pending = true
     []
   end
-  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity, Metrics/MethodLength
+
+  def recording_matches?(row)
+    return false unless (!inbox_id || row[:inbox_id] == inbox_id) && (!conversation_id || row[:conversation_id] == conversation_id)
+
+    recording_date_matches?(row[:created_at])
+  end
+
+  def recording_date_matches?(date)
+    return true unless date_from || date_to
+
+    created_at = Time.zone.parse(date.to_s)
+    created_at && after_start?(created_at) && before_end?(created_at)
+  end
+
+  def after_start?(created_at)
+    date_from.nil? || created_at >= date_from.beginning_of_day
+  end
+
+  def before_end?(created_at)
+    date_to.nil? || created_at <= date_to.end_of_day
+  end
+
+  def format_recording_row(row, inbox_names)
+    row.merge(
+      name: I18n.t('storage_management.item_labels.audio_recording'),
+      file_type: 'recording',
+      human_size: ActiveSupport::NumberHelper.number_to_human_size(row[:byte_size]),
+      inbox_name: inbox_names[row[:inbox_id]] || I18n.t('storage_management.unknown_channel')
+    )
+  end
+
+  def query_timeout?(error)
+    error.is_a?(ActiveRecord::QueryCanceled) || error.cause&.class&.name == 'PG::QueryCanceled'
+  end
+
+  def with_statement_timeout
+    connection = ActiveRecord::Base.connection
+    previous_timeout = connection.select_value('SHOW statement_timeout')
+    connection.execute("SET statement_timeout = '10s'")
+    yield
+  ensure
+    restore_statement_timeout(connection, previous_timeout)
+  end
+
+  def restore_statement_timeout(connection, previous_timeout)
+    return if connection.nil? || previous_timeout.nil?
+
+    connection.execute(ActiveRecord::Base.sanitize_sql_array(['SELECT set_config(?, ?, false)', 'statement_timeout', previous_timeout]))
+  rescue StandardError => e
+    Rails.logger.warn("[HeavyFilesService] Could not restore statement_timeout: #{e.class.name}")
+  end
 end

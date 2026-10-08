@@ -8,6 +8,7 @@ class Api::V1::Accounts::StorageController < Api::V1::Accounts::BaseController
 
   rescue_from Storage::TrashService::InvalidParams, with: :render_invalid_params
   rescue_from Accounts::HeavyFilesService::InvalidParams, with: :render_invalid_params
+  rescue_from Accounts::HeavyFilesService::AttachmentTimeout, with: :render_heavy_files_timeout
 
   def show
     snapshot = storage_overview.schedule_refresh
@@ -19,7 +20,8 @@ class Api::V1::Accounts::StorageController < Api::V1::Accounts::BaseController
       account: current_account,
       params: params.permit(:file_type, :inbox_id, :conversation_id, :date_from, :date_to, :limit)
     )
-    render json: { files: service.perform }
+    files = service.perform
+    render json: { files: files, recordings_pending: service.recordings_pending? }
   end
 
   def refresh
@@ -132,6 +134,10 @@ class Api::V1::Accounts::StorageController < Api::V1::Accounts::BaseController
 
   def render_invalid_params(error)
     render json: { message: error.message }, status: :unprocessable_entity
+  end
+
+  def render_heavy_files_timeout(error)
+    render json: { message: error.message }, status: :service_unavailable
   end
 
   def audit_storage_action!(action, changes)

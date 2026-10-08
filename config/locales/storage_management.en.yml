@@ -23,3 +23,4 @@ en:
       trash_item_required: A valid item type and item id are required.
       invalid_date: The %{field} date is invalid.
       invalid_date_range: The start date must be on or before the end date.
+      heavy_files_timeout: Could not load the file list. Try again later.

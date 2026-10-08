@@ -368,7 +368,7 @@ class Account < ApplicationRecord
     "account:#{id}:local_recordings_bytes_last_good"
   end
 
-  def storage_breakdown(force_refresh: false)
+  def storage_breakdown(force_refresh: false, heavy_recordings: nil)
     cache_key = "account:#{id}:storage_breakdown_v2"
     if force_refresh
       Rails.cache.delete(cache_key)
@@ -376,12 +376,12 @@ class Account < ApplicationRecord
     end
 
     Rails.cache.fetch(cache_key, expires_in: 1.hour) do
-      calculate_storage_breakdown
+      calculate_storage_breakdown(heavy_recordings: heavy_recordings)
     end
   end
 
   # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity, Metrics/MethodLength
-  def calculate_storage_breakdown
+  def calculate_storage_breakdown(heavy_recordings: nil)
     usage_by_type = owned_attachment_usage_rows.each_with_object(Hash.new(0)) do |(_blob_id, size, file_type), totals|
       type = Attachment.file_types.key(file_type)
       totals[type] += size.to_i if type
@@ -440,7 +440,7 @@ class Account < ApplicationRecord
       other: other_bytes,
       trash: trash_bytes,
       total: total_bytes,
-      by_inbox: calculate_inbox_storage_breakdown,
+      by_inbox: calculate_inbox_storage_breakdown(heavy_recordings: heavy_recordings),
       last_updated_at: Time.current.iso8601
     }
   end
@@ -467,7 +467,7 @@ class Account < ApplicationRecord
   end
 
   # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity, Metrics/MethodLength
-  def calculate_inbox_storage_breakdown
+  def calculate_inbox_storage_breakdown(heavy_recordings: nil)
     inbox_scope = active_attachment_scope.joins('INNER JOIN messages ON messages.id = attachments.message_id')
                                          .select(
                                            'DISTINCT ON (active_storage_blobs.id) active_storage_blobs.id, ' \
@@ -488,6 +488,7 @@ class Account < ApplicationRecord
       Telephony::CallSession.where(account_id: id).find_each do |session|
         metadata = session.metadata.is_a?(Hash) ? session.metadata : {}
         trash = metadata['trash']
+        primary_path = nil
         refs = if trash.present?
                  manifest = Array(trash['files'])
                  manifest.filter_map { |entry| Storage::RecordingPaths.resolve_trash(entry['trash_path'], account_id: id) }
@@ -495,11 +496,13 @@ class Account < ApplicationRecord
                          .presence || [Storage::RecordingPaths.resolve_trash(trash['trash_path'], account_id: id)].compact
                else
                  retained = metadata.dig('recording', 'retained_original') || {}
-                 [session.recording_ref, retained['storage_key']].filter_map { |ref| Storage::RecordingPaths.resolve(ref, account_id: id) }
+                 primary_path = Storage::RecordingPaths.resolve(session.recording_ref, account_id: id)
+                 [primary_path, Storage::RecordingPaths.resolve(retained['storage_key'], account_id: id)].compact
                end
 
-        refs.each do |path|
+        refs.each_with_index do |path, index|
           stat = File.stat(path)
+          heavy_recordings&.add(session: session, byte_size: stat.size) if index.zero? && path == primary_path
           identity = [stat.dev, stat.ino]
           next if seen_recordings[identity]
 

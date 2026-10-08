@@ -21,12 +21,14 @@ RSpec.describe 'Storage API', type: :request do
     Redis::Alfred.delete("account:#{account.id}:storage_overview_v1")
     Redis::Alfred.delete("account:#{account.id}:storage_overview_refresh_v1")
     Redis::Alfred.delete("account:#{account.id}:storage_overview_pending_v1")
+    Redis::Alfred.delete("account:#{account.id}:storage_heavy_recordings_v1")
   end
 
   after do
     Redis::Alfred.delete("account:#{account.id}:storage_overview_v1")
     Redis::Alfred.delete("account:#{account.id}:storage_overview_refresh_v1")
     Redis::Alfred.delete("account:#{account.id}:storage_overview_pending_v1")
+    Redis::Alfred.delete("account:#{account.id}:storage_heavy_recordings_v1")
   end
 
   describe 'GET /api/v1/accounts/{account.id}/storage' do
@@ -126,6 +128,7 @@ RSpec.describe 'Storage API', type: :request do
   describe 'GET /api/v1/accounts/{account.id}/storage/heavy_files' do
     context 'when administrator' do
       it 'returns list of heavy files' do
+        expect(Storage::RecordingPaths).not_to receive(:resolve)
         get "/api/v1/accounts/#{account.id}/storage/heavy_files",
             headers: admin.create_new_auth_token,
             as: :json
@@ -134,6 +137,36 @@ RSpec.describe 'Storage API', type: :request do
         json = response.parsed_body
         expect(json).to have_key('files')
         expect(json['files']).to be_an(Array)
+        expect(json['recordings_pending']).to be(true)
+      end
+
+      it 'returns attachment rows while the recording snapshot is pending' do
+        message = create(:message, account: account)
+        attachment = message.attachments.new(account_id: account.id, file_type: :file)
+        attachment.file.attach(io: StringIO.new('fixture'), filename: 'fixture.pdf', content_type: 'application/pdf')
+        attachment.save!
+
+        get "/api/v1/accounts/#{account.id}/storage/heavy_files",
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body['files'].pluck('id')).to include("attachment_#{attachment.id}")
+        expect(response.parsed_body['recordings_pending']).to be(true)
+      end
+
+      it 'returns a clean error when the attachment query times out' do
+        service = Accounts::HeavyFilesService.new(account: account, params: { file_type: 'documents' })
+        allow(Accounts::HeavyFilesService).to receive(:new).and_return(service)
+        allow(service).to receive(:with_statement_timeout).and_raise(ActiveRecord::QueryCanceled, 'statement timeout')
+
+        get "/api/v1/accounts/#{account.id}/storage/heavy_files",
+            params: { file_type: 'documents' },
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:service_unavailable)
+        expect(response.parsed_body).to eq('message' => I18n.t('storage_management.errors.heavy_files_timeout', locale: account.locale))
       end
     end
   end
