@@ -1643,6 +1643,7 @@
       "ALL_TYPES": "All types",
       "ALL_INBOXES": "All channels",
       "EMPTY": "No files found",
+      "RECORDINGS_PENDING": "Call recordings are still being counted. Reopen this tab in a few minutes.",
       "COLUMNS": {
         "NAME": "File",
         "TYPE": "Type",

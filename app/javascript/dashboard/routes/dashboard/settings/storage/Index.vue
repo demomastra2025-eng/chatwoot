@@ -17,6 +17,7 @@ const isRefreshing = ref(false);
 const storageData = ref(null);
 const heavyFiles = ref([]);
 const isLoadingFiles = ref(false);
+const recordingsPending = ref(false);
 
 const selectedFileType = ref('all');
 const selectedInboxId = ref('');
@@ -72,7 +73,9 @@ const fetchHeavyFiles = async () => {
     if (selectedDateTo.value) params.date_to = selectedDateTo.value;
     const response = await StorageAPI.getHeavyFiles(params);
     heavyFiles.value = response.data.files || [];
+    recordingsPending.value = response.data.recordings_pending === true;
   } catch (error) {
+    recordingsPending.value = false;
     useAlert(error?.response?.data?.message || t('STORAGE.HEAVY_FILES_ERROR'));
   } finally {
     isLoadingFiles.value = false;
@@ -113,7 +116,7 @@ const refreshStorage = async () => {
     const response = await StorageAPI.refresh();
     storageData.value = response.data.storage;
     useAlert(t('STORAGE.REFRESH_QUEUED'));
-    await fetchHeavyFiles();
+    if (activeTab.value === 'cleaner') await fetchHeavyFiles();
     await fetchTrash();
   } catch (error) {
     useAlert(error?.response?.data?.message || t('STORAGE.REFRESH_ERROR'));
@@ -123,12 +126,12 @@ const refreshStorage = async () => {
 };
 
 const onFilterChange = () => {
-  fetchHeavyFiles();
+  if (activeTab.value === 'cleaner') fetchHeavyFiles();
 };
 
 const onCleanerTabClick = async () => {
   activeTab.value = 'cleaner';
-  await fetchTrash();
+  await Promise.all([fetchHeavyFiles(), fetchTrash()]);
 };
 
 const runPreview = async () => {
@@ -309,7 +312,6 @@ onMounted(async () => {
     storageAlertClock.value = Date.now();
   }, 60 * 1000);
   await fetchStorageInfo();
-  await fetchHeavyFiles();
   await fetchTrash();
 });
 
@@ -706,203 +708,6 @@ const getFileTypeName = type => {
               </div>
             </div>
           </div>
-
-          <!-- Heavy Files Table -->
-          <div
-            class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden"
-          >
-            <div
-              class="p-4 sm:p-5 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4"
-            >
-              <div>
-                <h4 class="text-base font-bold text-slate-900">
-                  {{ $t('STORAGE.HEAVY_FILES.TITLE') }}
-                </h4>
-                <p class="text-xs text-slate-500 mt-0.5">
-                  {{ $t('STORAGE.HEAVY_FILES.SUBTITLE') }}
-                </p>
-              </div>
-
-              <!-- Filters -->
-              <div class="flex flex-wrap items-center gap-2.5">
-                <select
-                  v-model="selectedFileType"
-                  class="text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  @change="onFilterChange"
-                >
-                  <option value="all">
-                    {{ $t('STORAGE.HEAVY_FILES.ALL_TYPES') }}
-                  </option>
-                  <option value="recordings">
-                    {{ $t('STORAGE.TYPES.RECORDINGS') }}
-                  </option>
-                  <option value="audio">
-                    {{ $t('STORAGE.TYPES.AUDIO') }}
-                  </option>
-                  <option value="images">
-                    {{ $t('STORAGE.TYPES.IMAGES') }}
-                  </option>
-                  <option value="documents">
-                    {{ $t('STORAGE.TYPES.DOCUMENTS') }}
-                  </option>
-                  <option value="videos">
-                    {{ $t('STORAGE.TYPES.VIDEOS') }}
-                  </option>
-                </select>
-
-                <select
-                  v-if="inboxesList.length > 0"
-                  v-model="selectedInboxId"
-                  class="text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 max-w-[160px] truncate"
-                  @change="onFilterChange"
-                >
-                  <option value="">
-                    {{ $t('STORAGE.HEAVY_FILES.ALL_INBOXES') }}
-                  </option>
-                  <option
-                    v-for="inbox in inboxesList"
-                    :key="inbox.id"
-                    :value="inbox.id"
-                  >
-                    {{ inbox.name }}
-                  </option>
-                </select>
-                <input
-                  v-model="selectedConversationId"
-                  type="number"
-                  min="1"
-                  class="w-28 text-xs border border-slate-300 rounded-lg px-2.5 py-1.5"
-                  :aria-label="$t('STORAGE.HEAVY_FILES.CONVERSATION_ID')"
-                  :placeholder="$t('STORAGE.HEAVY_FILES.CONVERSATION_ID')"
-                  @change="onFilterChange"
-                />
-                <input
-                  v-model="selectedDateFrom"
-                  type="date"
-                  class="text-xs border border-slate-300 rounded-lg px-2.5 py-1.5"
-                  :aria-label="$t('STORAGE.HEAVY_FILES.DATE_FROM')"
-                  @change="onFilterChange"
-                />
-                <input
-                  v-model="selectedDateTo"
-                  type="date"
-                  class="text-xs border border-slate-300 rounded-lg px-2.5 py-1.5"
-                  :aria-label="$t('STORAGE.HEAVY_FILES.DATE_TO')"
-                  @change="onFilterChange"
-                />
-              </div>
-            </div>
-
-            <!-- Files list table -->
-            <div
-              v-if="isLoadingFiles"
-              class="p-8 text-center text-xs text-slate-400"
-            >
-              {{ $t('STORAGE.LOADING') }}
-            </div>
-            <div
-              v-else-if="heavyFiles.length === 0"
-              class="p-8 text-center text-xs text-slate-400"
-            >
-              {{ $t('STORAGE.HEAVY_FILES.EMPTY') }}
-            </div>
-            <div v-else class="overflow-x-auto">
-              <table class="w-full text-left text-xs">
-                <thead
-                  class="bg-slate-50 text-slate-500 uppercase font-semibold border-b border-slate-200"
-                >
-                  <tr>
-                    <th class="px-4 py-3">
-                      {{ $t('STORAGE.HEAVY_FILES.COLUMNS.NAME') }}
-                    </th>
-                    <th class="px-4 py-3">
-                      {{ $t('STORAGE.HEAVY_FILES.COLUMNS.TYPE') }}
-                    </th>
-                    <th class="px-4 py-3">
-                      {{ $t('STORAGE.HEAVY_FILES.COLUMNS.INBOX') }}
-                    </th>
-                    <th class="px-4 py-3">
-                      {{ $t('STORAGE.HEAVY_FILES.COLUMNS.SIZE') }}
-                    </th>
-                    <th class="px-4 py-3">
-                      {{ $t('STORAGE.HEAVY_FILES.COLUMNS.DATE') }}
-                    </th>
-                    <th class="px-4 py-3 text-right">
-                      {{ $t('STORAGE.HEAVY_FILES.COLUMNS.ACTIONS') }}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-100">
-                  <tr
-                    v-for="file in heavyFiles"
-                    :key="file.id"
-                    class="hover:bg-slate-50/80 transition"
-                  >
-                    <td class="px-4 py-3">
-                      <div
-                        class="flex items-center gap-2 max-w-[280px] sm:max-w-[360px]"
-                      >
-                        <span class="text-base flex-shrink-0">{{
-                          getFileTypeIcon(file.file_type)
-                        }}</span>
-                        <span
-                          class="font-medium text-slate-900 truncate"
-                          :title="file.name"
-                        >
-                          {{ file.name }}
-                        </span>
-                      </div>
-                    </td>
-                    <td class="px-4 py-3 whitespace-nowrap">
-                      <span
-                        class="px-2 py-0.5 text-[10px] font-semibold rounded bg-slate-100 text-slate-700"
-                      >
-                        {{ getFileTypeName(file.file_type) }}
-                      </span>
-                    </td>
-                    <td class="px-4 py-3 text-slate-600 whitespace-nowrap">
-                      {{ file.inbox_name }}
-                    </td>
-                    <td
-                      class="px-4 py-3 font-semibold text-slate-900 whitespace-nowrap"
-                    >
-                      {{ file.human_size }}
-                    </td>
-                    <td class="px-4 py-3 text-slate-500 whitespace-nowrap">
-                      {{ formatDate(file.created_at) }}
-                    </td>
-                    <td class="px-4 py-3 text-right whitespace-nowrap">
-                      <div class="inline-flex items-center gap-2">
-                        <router-link
-                          v-if="file.conversation_id"
-                          :to="{
-                            name: 'inbox_conversation',
-                            params: {
-                              conversation_id: file.conversation_id,
-                            },
-                          }"
-                          class="text-blue-600 hover:text-blue-800 font-medium hover:underline"
-                        >
-                          {{
-                            $t('STORAGE.HEAVY_FILES.ACTIONS.OPEN_CONVERSATION')
-                          }}
-                        </router-link>
-                        <a
-                          v-if="file.download_url"
-                          :href="file.download_url"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          class="text-slate-500 hover:text-slate-700 font-medium hover:underline"
-                        >
-                          {{ $t('STORAGE.HEAVY_FILES.ACTIONS.DOWNLOAD') }}
-                        </a>
-                      </div>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
         </div>
 
         <!-- TAB 2: CLEANER & TRASH -->
@@ -1100,6 +905,211 @@ const getFileTypeName = type => {
                   }}</span>
                 </button>
               </div>
+            </div>
+          </div>
+
+          <!-- Heavy Files Table -->
+          <div
+            class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden"
+          >
+            <div
+              class="p-4 sm:p-5 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4"
+            >
+              <div>
+                <h4 class="text-base font-bold text-slate-900">
+                  {{ $t('STORAGE.HEAVY_FILES.TITLE') }}
+                </h4>
+                <p class="text-xs text-slate-500 mt-0.5">
+                  {{ $t('STORAGE.HEAVY_FILES.SUBTITLE') }}
+                </p>
+              </div>
+
+              <!-- Filters -->
+              <div class="flex flex-wrap items-center gap-2.5">
+                <select
+                  v-model="selectedFileType"
+                  class="text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  @change="onFilterChange"
+                >
+                  <option value="all">
+                    {{ $t('STORAGE.HEAVY_FILES.ALL_TYPES') }}
+                  </option>
+                  <option value="recordings">
+                    {{ $t('STORAGE.TYPES.RECORDINGS') }}
+                  </option>
+                  <option value="audio">
+                    {{ $t('STORAGE.TYPES.AUDIO') }}
+                  </option>
+                  <option value="images">
+                    {{ $t('STORAGE.TYPES.IMAGES') }}
+                  </option>
+                  <option value="documents">
+                    {{ $t('STORAGE.TYPES.DOCUMENTS') }}
+                  </option>
+                  <option value="videos">
+                    {{ $t('STORAGE.TYPES.VIDEOS') }}
+                  </option>
+                </select>
+
+                <select
+                  v-if="inboxesList.length > 0"
+                  v-model="selectedInboxId"
+                  class="text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 max-w-[160px] truncate"
+                  @change="onFilterChange"
+                >
+                  <option value="">
+                    {{ $t('STORAGE.HEAVY_FILES.ALL_INBOXES') }}
+                  </option>
+                  <option
+                    v-for="inbox in inboxesList"
+                    :key="inbox.id"
+                    :value="inbox.id"
+                  >
+                    {{ inbox.name }}
+                  </option>
+                </select>
+                <input
+                  v-model="selectedConversationId"
+                  type="number"
+                  min="1"
+                  class="w-28 text-xs border border-slate-300 rounded-lg px-2.5 py-1.5"
+                  :aria-label="$t('STORAGE.HEAVY_FILES.CONVERSATION_ID')"
+                  :placeholder="$t('STORAGE.HEAVY_FILES.CONVERSATION_ID')"
+                  @change="onFilterChange"
+                />
+                <input
+                  v-model="selectedDateFrom"
+                  type="date"
+                  class="text-xs border border-slate-300 rounded-lg px-2.5 py-1.5"
+                  :aria-label="$t('STORAGE.HEAVY_FILES.DATE_FROM')"
+                  @change="onFilterChange"
+                />
+                <input
+                  v-model="selectedDateTo"
+                  type="date"
+                  class="text-xs border border-slate-300 rounded-lg px-2.5 py-1.5"
+                  :aria-label="$t('STORAGE.HEAVY_FILES.DATE_TO')"
+                  @change="onFilterChange"
+                />
+              </div>
+            </div>
+
+            <p
+              v-if="recordingsPending && !isLoadingFiles"
+              class="px-4 pt-4 text-xs text-slate-600"
+              role="status"
+            >
+              {{ $t('STORAGE.HEAVY_FILES.RECORDINGS_PENDING') }}
+            </p>
+
+            <!-- Files list table -->
+            <div
+              v-if="isLoadingFiles"
+              class="p-8 text-center text-xs text-slate-400"
+            >
+              {{ $t('STORAGE.LOADING') }}
+            </div>
+            <div
+              v-else-if="heavyFiles.length === 0"
+              class="p-8 text-center text-xs text-slate-400"
+            >
+              {{ $t('STORAGE.HEAVY_FILES.EMPTY') }}
+            </div>
+            <div v-else class="overflow-x-auto">
+              <table class="w-full text-left text-xs">
+                <thead
+                  class="bg-slate-50 text-slate-500 uppercase font-semibold border-b border-slate-200"
+                >
+                  <tr>
+                    <th class="px-4 py-3">
+                      {{ $t('STORAGE.HEAVY_FILES.COLUMNS.NAME') }}
+                    </th>
+                    <th class="px-4 py-3">
+                      {{ $t('STORAGE.HEAVY_FILES.COLUMNS.TYPE') }}
+                    </th>
+                    <th class="px-4 py-3">
+                      {{ $t('STORAGE.HEAVY_FILES.COLUMNS.INBOX') }}
+                    </th>
+                    <th class="px-4 py-3">
+                      {{ $t('STORAGE.HEAVY_FILES.COLUMNS.SIZE') }}
+                    </th>
+                    <th class="px-4 py-3">
+                      {{ $t('STORAGE.HEAVY_FILES.COLUMNS.DATE') }}
+                    </th>
+                    <th class="px-4 py-3 text-right">
+                      {{ $t('STORAGE.HEAVY_FILES.COLUMNS.ACTIONS') }}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                  <tr
+                    v-for="file in heavyFiles"
+                    :key="file.id"
+                    class="hover:bg-slate-50/80 transition"
+                  >
+                    <td class="px-4 py-3">
+                      <div
+                        class="flex items-center gap-2 max-w-[280px] sm:max-w-[360px]"
+                      >
+                        <span class="text-base flex-shrink-0">{{
+                          getFileTypeIcon(file.file_type)
+                        }}</span>
+                        <span
+                          class="font-medium text-slate-900 truncate"
+                          :title="file.name"
+                        >
+                          {{ file.name }}
+                        </span>
+                      </div>
+                    </td>
+                    <td class="px-4 py-3 whitespace-nowrap">
+                      <span
+                        class="px-2 py-0.5 text-[10px] font-semibold rounded bg-slate-100 text-slate-700"
+                      >
+                        {{ getFileTypeName(file.file_type) }}
+                      </span>
+                    </td>
+                    <td class="px-4 py-3 text-slate-600 whitespace-nowrap">
+                      {{ file.inbox_name }}
+                    </td>
+                    <td
+                      class="px-4 py-3 font-semibold text-slate-900 whitespace-nowrap"
+                    >
+                      {{ file.human_size }}
+                    </td>
+                    <td class="px-4 py-3 text-slate-500 whitespace-nowrap">
+                      {{ formatDate(file.created_at) }}
+                    </td>
+                    <td class="px-4 py-3 text-right whitespace-nowrap">
+                      <div class="inline-flex items-center gap-2">
+                        <router-link
+                          v-if="file.conversation_id"
+                          :to="{
+                            name: 'inbox_conversation',
+                            params: {
+                              conversation_id: file.conversation_id,
+                            },
+                          }"
+                          class="text-blue-600 hover:text-blue-800 font-medium hover:underline"
+                        >
+                          {{
+                            $t('STORAGE.HEAVY_FILES.ACTIONS.OPEN_CONVERSATION')
+                          }}
+                        </router-link>
+                        <a
+                          v-if="file.download_url"
+                          :href="file.download_url"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          class="text-slate-500 hover:text-slate-700 font-medium hover:underline"
+                        >
+                          {{ $t('STORAGE.HEAVY_FILES.ACTIONS.DOWNLOAD') }}
+                        </a>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
 
