@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class Accounts::StorageBreakdownRefreshJob < ApplicationJob
-  queue_as :low
+  queue_as :housekeeping
 
   def perform(account_id = nil)
     if account_id.present?
@@ -12,6 +12,8 @@ class Accounts::StorageBreakdownRefreshJob < ApplicationJob
         refresh(account)
       end
     end
+  ensure
+    Accounts::StorageOverviewService.release_refresh(account_id, job_id) if account_id.present?
   end
 
   private
