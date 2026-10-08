@@ -40,6 +40,40 @@ describe Whatsapp::EmbeddedSignupAttempt do
     expect(attempt.client_state[:status]).to eq('processing')
   end
 
+  it 'keeps an active same-account inbox id on an already-connected failure only' do
+    inbox = create(:inbox, account: account)
+    attempt.claim(signup_type: 'standard')
+
+    attempt.fail!('already_connected', inbox_id: inbox.id)
+
+    expect(attempt.client_state).to eq(
+      status: 'failed', signup_type: 'standard', error_code: 'already_connected', inbox_id: inbox.id
+    )
+  end
+
+  it 'does not return a deleting inbox id from an already-connected failure' do
+    inbox = create(:inbox, account: account)
+    attempt.claim(signup_type: 'standard')
+    attempt.fail!('already_connected', inbox_id: inbox.id)
+    inbox.update!(deleting_at: Time.current)
+
+    expect(attempt.client_state).to eq(status: 'failed', signup_type: 'standard', error_code: 'already_connected')
+  end
+
+  it 'does not return an inbox id while a deletion attempt or account deletion is active' do
+    inbox = create(:inbox, account: account)
+    attempt.claim(signup_type: 'standard')
+    attempt.fail!('already_connected', inbox_id: inbox.id)
+    inbox.update!(deletion_attempt_id: SecureRandom.uuid)
+
+    expect(attempt.client_state).to eq(status: 'failed', signup_type: 'standard', error_code: 'already_connected')
+
+    inbox.update!(deletion_attempt_id: nil)
+    account.update!(custom_attributes: account.custom_attributes.to_h.merge('marked_for_deletion_at' => Time.current.iso8601))
+
+    expect(attempt.client_state).to eq(status: 'failed', signup_type: 'standard', error_code: 'already_connected')
+  end
+
   it 'does not let a late registration overwrite a claimed attempt' do
     attempt.claim(signup_type: 'standard')
     attempt.register(signup_type: 'standard')

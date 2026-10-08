@@ -140,8 +140,9 @@ class Api::V1::Accounts::Whatsapp::AuthorizationsController < Api::V1::Accounts:
       error: client_authorization_error(error)
     }.merge(error_response_details(error))
 
-    fail_signup_attempt(response[:error_code])
-    render json: response, status: :unprocessable_content
+    fail_signup_attempt(response[:error_code], inbox_id: response[:inbox_id])
+    status = response[:error_code] == 'already_connected' ? :conflict : :unprocessable_content
+    render json: response, status: status
   end
 
   def error_response_details(error)
@@ -162,6 +163,13 @@ class Api::V1::Accounts::Whatsapp::AuthorizationsController < Api::V1::Accounts:
       { error_code: 'reauthorization_flow_mismatch' }
     when Whatsapp::EmbeddedSignupService::ReauthorizationFlowRequiredError
       { error_code: 'reauthorization_flow_required' }
+    when Whatsapp::ChannelCreationService::AlreadyConnectedError
+      existing_inbox = Current.account.inboxes.active.where(deletion_attempt_id: nil).find_by(id: error.inbox_id)
+      if existing_inbox && !existing_inbox.account_deletion_requested?
+        { error_code: 'already_connected', inbox_id: existing_inbox.id }
+      else
+        { error_code: 'authorization_failed' }
+      end
     else
       { error_code: 'authorization_failed' }
     end

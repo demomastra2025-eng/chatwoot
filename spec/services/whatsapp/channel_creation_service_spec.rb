@@ -121,6 +121,71 @@ describe Whatsapp::ChannelCreationService do
       end
     end
 
+    context 'when the same account already has the exact active Embedded Signup connection' do
+      let(:phone_info) { super().merge(phone_number: '+1234567890') }
+      let(:existing_provider_config) do
+        {
+          'api_key' => 'existing_access_token',
+          'business_account_id' => 'test_waba_id',
+          'business_id' => 'test_business_id',
+          'phone_number_id' => 'test_phone_id',
+          'source' => 'embedded_signup',
+          'embedded_signup_flow' => 'standard'
+        }
+      end
+      let(:existing_channel) do
+        create(:channel_whatsapp, account: account, phone_number: '+1234567890', provider: 'whatsapp_cloud',
+                                  provider_config: existing_provider_config, sync_templates: false,
+                                  validate_provider_config: false)
+      end
+      let!(:existing_inbox) { create(:inbox, account: account, channel: existing_channel) }
+
+      it 'returns the existing inbox id without creating or adopting a channel' do
+        expect do
+          service.perform
+        end.to raise_error(described_class::AlreadyConnectedError) { |error| expect(error.inbox_id).to eq(existing_inbox.id) }
+
+        expect(Channel::Whatsapp.count).to eq(1)
+        expect(existing_channel.reload.provider_config['api_key']).to eq('existing_access_token')
+      end
+
+      it 'does not classify an identity mismatch as an existing connection' do
+        existing_channel.update!(provider_config: existing_provider_config.merge('business_account_id' => 'another_waba'))
+
+        expect { service.perform }.to raise_error(
+          RuntimeError,
+          I18n.t('errors.whatsapp.phone_number_already_exists', phone_number: '+1234567890')
+        )
+      end
+
+      it 'does not expose a deleting inbox as a recovery target' do
+        existing_inbox.update!(deleting_at: Time.current)
+
+        expect { service.perform }.to raise_error(
+          RuntimeError,
+          I18n.t('errors.whatsapp.phone_number_already_exists', phone_number: '+1234567890')
+        )
+      end
+
+      it 'does not expose an inbox with a deletion attempt as a recovery target' do
+        existing_inbox.update!(deletion_attempt_id: SecureRandom.uuid)
+
+        expect { service.perform }.to raise_error(
+          RuntimeError,
+          I18n.t('errors.whatsapp.phone_number_already_exists', phone_number: '+1234567890')
+        )
+      end
+
+      it 'does not expose an inbox from an account marked for deletion' do
+        account.update!(custom_attributes: account.custom_attributes.to_h.merge('marked_for_deletion_at' => Time.current.iso8601))
+
+        expect { service.perform }.to raise_error(
+          RuntimeError,
+          I18n.t('errors.whatsapp.phone_number_already_exists', phone_number: '+1234567890')
+        )
+      end
+    end
+
     context 'when required parameters are missing' do
       it 'raises error when account is nil' do
         service = described_class.new(nil, waba_info, phone_info, access_token)

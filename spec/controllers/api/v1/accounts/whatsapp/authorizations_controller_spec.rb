@@ -257,6 +257,81 @@ RSpec.describe 'WhatsApp Authorization API', type: :request do
             .to eq('WhatsApp authorization failed. Please check the connection details and try again.')
           expect(response.parsed_body['error_code']).to eq('authorization_failed')
         end
+
+        it 'returns a conflict and the active same-account inbox for an already-connected number' do
+          existing_inbox = create(:inbox, account: account)
+          embedded_signup_service = instance_double(Whatsapp::EmbeddedSignupService)
+          allow(Whatsapp::EmbeddedSignupService).to receive(:new).and_return(embedded_signup_service)
+          allow(embedded_signup_service).to receive(:perform).and_raise(
+            Whatsapp::ChannelCreationService::AlreadyConnectedError.new(inbox_id: existing_inbox.id)
+          )
+
+          post "/api/v1/accounts/#{account.id}/whatsapp/authorization",
+               params: { code: 'test_code', business_id: 'business', waba_id: 'waba', phone_number_id: 'phone' },
+               headers: agent.create_new_auth_token,
+               as: :json
+
+          expect(response).to have_http_status(:conflict)
+          expect(response.parsed_body).to include('error_code' => 'already_connected', 'inbox_id' => existing_inbox.id)
+        end
+
+        it 'does not return an inbox id owned by another account' do
+          foreign_inbox = create(:inbox, account: create(:account))
+          embedded_signup_service = instance_double(Whatsapp::EmbeddedSignupService)
+          allow(Whatsapp::EmbeddedSignupService).to receive(:new).and_return(embedded_signup_service)
+          allow(embedded_signup_service).to receive(:perform).and_raise(
+            Whatsapp::ChannelCreationService::AlreadyConnectedError.new(inbox_id: foreign_inbox.id)
+          )
+
+          post "/api/v1/accounts/#{account.id}/whatsapp/authorization",
+               params: { code: 'test_code', business_id: 'business', waba_id: 'waba', phone_number_id: 'phone' },
+               headers: agent.create_new_auth_token,
+               as: :json
+
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(response.parsed_body).to include('error_code' => 'authorization_failed')
+          expect(response.parsed_body).not_to have_key('inbox_id')
+          expect(response.parsed_body['error']).to eq(
+            'WhatsApp authorization failed. Please check the connection details and try again.'
+          )
+        end
+
+        it 'does not return an inbox with an active deletion attempt' do
+          deleting_inbox = create(:inbox, account: account, deletion_attempt_id: SecureRandom.uuid)
+          embedded_signup_service = instance_double(Whatsapp::EmbeddedSignupService)
+          allow(Whatsapp::EmbeddedSignupService).to receive(:new).and_return(embedded_signup_service)
+          allow(embedded_signup_service).to receive(:perform).and_raise(
+            Whatsapp::ChannelCreationService::AlreadyConnectedError.new(inbox_id: deleting_inbox.id)
+          )
+
+          post "/api/v1/accounts/#{account.id}/whatsapp/authorization",
+               params: { code: 'test_code', business_id: 'business', waba_id: 'waba', phone_number_id: 'phone' },
+               headers: agent.create_new_auth_token,
+               as: :json
+
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(response.parsed_body).to include('error_code' => 'authorization_failed')
+          expect(response.parsed_body).not_to have_key('inbox_id')
+        end
+
+        it 'does not return an inbox when its account is marked for deletion' do
+          existing_inbox = create(:inbox, account: account)
+          account.update!(custom_attributes: account.custom_attributes.to_h.merge('marked_for_deletion_at' => Time.current.iso8601))
+          embedded_signup_service = instance_double(Whatsapp::EmbeddedSignupService)
+          allow(Whatsapp::EmbeddedSignupService).to receive(:new).and_return(embedded_signup_service)
+          allow(embedded_signup_service).to receive(:perform).and_raise(
+            Whatsapp::ChannelCreationService::AlreadyConnectedError.new(inbox_id: existing_inbox.id)
+          )
+
+          post "/api/v1/accounts/#{account.id}/whatsapp/authorization",
+               params: { code: 'test_code', business_id: 'business', waba_id: 'waba', phone_number_id: 'phone' },
+               headers: agent.create_new_auth_token,
+               as: :json
+
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(response.parsed_body).to include('error_code' => 'authorization_failed')
+          expect(response.parsed_body).not_to have_key('inbox_id')
+        end
       end
 
       context 'when user is not authorized for the account' do

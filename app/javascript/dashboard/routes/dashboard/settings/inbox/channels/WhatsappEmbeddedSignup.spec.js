@@ -490,6 +490,69 @@ describe('WhatsApp Embedded Signup', () => {
     wrapper.unmount();
   });
 
+  it('opens the existing inbox when completion returns a verified duplicate', async () => {
+    const apiError = Object.assign(new Error('Request failed'), {
+      response: {
+        status: 409,
+        data: { error_code: 'already_connected', inbox_id: 52 },
+      },
+    });
+    dispatchMock.mockImplementation(action =>
+      action === 'inboxes/createWhatsAppEmbeddedSignup'
+        ? Promise.reject(apiError)
+        : Promise.resolve()
+    );
+    const wrapper = await mountReady();
+
+    await clickStandard(wrapper);
+    postMetaMessage(FINISH_EVENT);
+    await flushPromises();
+
+    expect(dispatchMock).toHaveBeenCalledWith('inboxes/get');
+    expect(routerReplaceMock).toHaveBeenCalledWith({
+      name: 'inbox_show',
+      params: { accountId: '3', inboxId: 52 },
+    });
+    expect(useAlertMock).toHaveBeenCalledWith(
+      'INBOX_MGMT.ADD.WHATSAPP.EMBEDDED_SIGNUP.ALREADY_CONNECTED'
+    );
+    expect(whatsappChannelMock.getEmbeddedSignupAttemptStatus).not.toHaveBeenCalled();
+    expect(window.localStorage.getItem(PENDING_KEY)).toBeNull();
+    wrapper.unmount();
+  });
+
+  it('opens the existing inbox when a resumed attempt reports an already-connected failure', async () => {
+    window.localStorage.setItem(
+      PENDING_KEY,
+      JSON.stringify({
+        nonce: NONCE,
+        flow: 'standard',
+        startedAt: Date.now(),
+        codeSubmitted: true,
+      })
+    );
+    whatsappChannelMock.getEmbeddedSignupAttemptStatus.mockResolvedValue({
+      data: {
+        status: 'failed',
+        error_code: 'already_connected',
+        inbox_id: 73,
+      },
+    });
+
+    const wrapper = await mountReady();
+
+    expect(dispatchMock).toHaveBeenCalledWith('inboxes/get');
+    expect(routerReplaceMock).toHaveBeenCalledWith({
+      name: 'inbox_show',
+      params: { accountId: '3', inboxId: 73 },
+    });
+    expect(useAlertMock).toHaveBeenCalledWith(
+      'INBOX_MGMT.ADD.WHATSAPP.EMBEDDED_SIGNUP.ALREADY_CONNECTED'
+    );
+    expect(window.localStorage.getItem(PENDING_KEY)).toBeNull();
+    wrapper.unmount();
+  });
+
   it('shows a retry state with the reason when code-only completion fails', async () => {
     const apiError = Object.assign(new Error('Request failed'), {
       response: { status: 422, data: { error_code: 'waba_ambiguous' } },

@@ -332,7 +332,7 @@ RSpec.describe Whatsapp::HealthService do
     config = whatsapp_channel.reload.provider_config
     expect(config['verification_pin']).to be_nil
     expect(config.dig('phone_registration', 'status')).to eq('registered')
-    expect(config.dig('phone_registration', Whatsapp::PhoneRegistrationService::PENDING_PIN_CIPHERTEXT_KEY)).to be_nil
+    expect(config.dig('phone_registration', Whatsapp::PhoneRegistrationService::PENDING_PIN_CIPHERTEXT_KEY)).to be_present
     expect(result[:phone_registration]).to include('status' => 'registered', 'completed_at' => be_present)
     expect(result.to_json).not_to include('pending_pin_ciphertext')
   end

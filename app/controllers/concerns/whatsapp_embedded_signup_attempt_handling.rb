@@ -47,10 +47,10 @@ module WhatsappEmbeddedSignupAttemptHandling
     Rails.logger.error("[WHATSAPP AUTHORIZATION] Failed to record signup attempt completion: #{e.class}")
   end
 
-  def fail_signup_attempt(error_code)
+  def fail_signup_attempt(error_code, inbox_id: nil)
     return unless @signup_attempt_claimed
 
-    signup_attempt.fail!(error_code)
+    signup_attempt.fail!(error_code, inbox_id: inbox_id)
     log_signup_attempt('failed', error_code: error_code)
   rescue StandardError => e
     Rails.logger.error("[WHATSAPP AUTHORIZATION] Failed to record signup attempt failure: #{e.class}")

@@ -42,8 +42,6 @@ class Whatsapp::PhoneRegistrationService
   def perform(pin:)
     pin = pin.to_s
     validate_pin!(pin)
-    validate_registration_required!
-    enforce_cooldown!
     persist_attempt!(pin)
     register_with_provider(pin)
     persist_provider_success!(pin)
@@ -69,8 +67,8 @@ class Whatsapp::PhoneRegistrationService
     state = current_state
     return false unless AMBIGUOUS_STATUSES.include?(state['status'])
     return false unless health_probe_can_reconcile?(state, probe_started_at)
-    return reconcile_pending! if pending
-    return reconcile_active! if active
+    return reconcile_pending!(probe_started_at: probe_started_at) if pending
+    return reconcile_active!(probe_started_at: probe_started_at) if active
 
     false
   end
@@ -97,20 +95,19 @@ class Whatsapp::PhoneRegistrationService
     raise Error.new(error_code: 'invalid_pin')
   end
 
-  def validate_registration_required!
-    status = current_state['status']
+  def validate_registration_required!(state)
+    status = state['status']
     raise Error.new(error_code: 'registration_not_required') if status == 'registered'
     raise Error.new(error_code: 'outcome_unknown') if AMBIGUOUS_STATUSES.include?(status)
 
     true
   end
 
-  def enforce_cooldown!
-    state = current_state
+  def enforce_cooldown!(state, now:)
     retry_after_at = parse_time(state['retry_after_at'])
-    raise_rate_limited!(retry_after_at) if retry_after_at.present? && retry_after_at > Time.current
+    raise_rate_limited!(retry_after_at) if retry_after_at.present? && retry_after_at > now
 
-    attempts = recent_attempts(state)
+    attempts = recent_attempts(state, now: now)
     return if attempts.size < MAX_REGISTRATION_ATTEMPTS
 
     raise_rate_limited!(attempts.first + RATE_LIMIT_WINDOW)
@@ -134,6 +131,8 @@ class Whatsapp::PhoneRegistrationService
     now = Time.current
     mutate_provider_config! do |config|
       state = config[CONFIG_KEY].to_h
+      validate_registration_required!(state)
+      enforce_cooldown!(state, now: now)
       attempts = recent_attempts(state, now: now) << now
       config[CONFIG_KEY] = state.except('provider_error_code', 'failed_at', 'retry_after_at').merge(
         'status' => 'registering',
@@ -205,10 +204,11 @@ class Whatsapp::PhoneRegistrationService
     probe_started_at >= transition_at + HEALTH_RECONCILIATION_GRACE
   end
 
-  def reconcile_pending!
+  def reconcile_pending!(probe_started_at:)
     mutate_provider_config! do |config|
       registration = config[CONFIG_KEY].to_h
       next false unless AMBIGUOUS_STATUSES.include?(registration['status'])
+      next false unless health_probe_can_reconcile?(registration, probe_started_at)
 
       registration = registration.except(PENDING_PIN_CIPHERTEXT_KEY)
       config[CONFIG_KEY] = registration.merge('status' => 'registration_incomplete', 'detected_at' => Time.current.iso8601)
@@ -216,13 +216,16 @@ class Whatsapp::PhoneRegistrationService
     end
   end
 
-  def reconcile_active!
+  def reconcile_active!(probe_started_at:)
     mutate_provider_config! do |config|
       registration = config[CONFIG_KEY].to_h
       next false unless AMBIGUOUS_STATUSES.include?(registration['status'])
+      next false unless health_probe_can_reconcile?(registration, probe_started_at)
 
+      # Active Cloud health confirms registration, but it does not prove which PIN Meta accepted.
+      # Keep the encrypted candidate for recovery and never promote it to the verified PIN.
       config[CONFIG_KEY] = registration.except(
-        'provider_error_code', 'failed_at', 'retry_after_at', PENDING_PIN_CIPHERTEXT_KEY
+        'provider_error_code', 'failed_at', 'retry_after_at'
       ).merge('status' => 'registered', 'completed_at' => Time.current.iso8601)
       true
     end

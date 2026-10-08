@@ -209,6 +209,22 @@ const stopAttempt = () => {
   wasHiddenDuringAttempt = false;
 };
 
+const openExistingInbox = async inboxId => {
+  const safeInboxId = Number(inboxId);
+  if (!Number.isInteger(safeInboxId) || safeInboxId <= 0) return false;
+
+  stopAttempt();
+  forgetAttempt();
+  recoveryState.value = null;
+  await store.dispatch('inboxes/get').catch(() => {});
+  useAlert(t('INBOX_MGMT.ADD.WHATSAPP.EMBEDDED_SIGNUP.ALREADY_CONNECTED'));
+  router.replace({
+    name: getInboxFlowRouteName(route, 'show'),
+    params: { ...route.params, inboxId: safeInboxId },
+  });
+  return true;
+};
+
 // Error handling
 function handleSignupError(data) {
   stopAttempt();
@@ -302,6 +318,10 @@ async function pollAttemptStatus(attempt, attemptsLeft = STATUS_POLL_ATTEMPTS) {
   }
 
   if (status.status === 'failed') {
+    if (status.error_code === 'already_connected' && status.inbox_id) {
+      if (await openExistingInbox(status.inbox_id)) return;
+    }
+
     showRecovery(
       RECOVERY_REASON.FAILED,
       signupErrorMessageForCode(status.error_code)
@@ -363,6 +383,19 @@ const completeSignupFlow = async businessDataParam => {
     handleSignupSuccess(responseData);
   } catch (error) {
     const errorCode = error?.response?.data?.error_code;
+    const existingInboxId = error?.response?.data?.inbox_id;
+    if (errorCode === 'already_connected') {
+      const opened = existingInboxId
+        ? await openExistingInbox(existingInboxId)
+        : false;
+      if (!opened) {
+        handleSignupError({
+          error: t('INBOX_MGMT.ADD.WHATSAPP.API.ERROR_MESSAGE'),
+        });
+      }
+      return;
+    }
+
     // The request may have reached the server although this (mobile) tab lost
     // the response; the attempt status tells what actually happened.
     if (

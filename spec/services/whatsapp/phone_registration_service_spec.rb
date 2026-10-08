@@ -130,6 +130,38 @@ RSpec.describe Whatsapp::PhoneRegistrationService do
     expect(ciphertext).not_to include('654321')
   end
 
+  it 'keeps the encrypted PIN candidate after active health confirms registration' do
+    ciphertext = 'encrypted-pending-pin'
+    channel.persist_provider_config_state!(
+      channel.provider_config.merge(
+        described_class::CONFIG_KEY => {
+          'status' => 'outcome_unknown',
+          'failed_at' => 11.minutes.ago.iso8601,
+          described_class::PENDING_PIN_CIPHERTEXT_KEY => ciphertext
+        }
+      )
+    )
+
+    result = nil
+    expect do
+      result = service.reconcile_from_health!(pending: false, active: true, probe_started_at: Time.current)
+    end.not_to output.to_stdout
+
+    config = channel.reload.provider_config
+    expect(result).to be(true)
+    expect(config.dig(described_class::CONFIG_KEY, 'status')).to eq('registered')
+    expect(config.dig(described_class::CONFIG_KEY, described_class::PENDING_PIN_CIPHERTEXT_KEY)).to eq(ciphertext)
+    expect(config['verification_pin']).to eq('111111')
+
+    public_config = Whatsapp::ProviderConfigPresenter.new(channel).perform
+    expect(public_config.dig('phone_registration', described_class::PENDING_PIN_CIPHERTEXT_KEY)).to be_nil
+    expect(public_config.to_json).not_to include(ciphertext)
+
+    expect(api_client).not_to receive(:register_phone_number)
+    expect { service.perform(pin: '654321') }
+      .to raise_error(described_class::Error) { |error| expect(error.error_code).to eq('registration_not_required') }
+  end
+
   it 'blocks a manual retry while a provider outcome is unknown' do
     channel.persist_provider_config_state!(
       channel.provider_config.merge(described_class::CONFIG_KEY => { 'status' => 'outcome_unknown' })
@@ -182,6 +214,28 @@ RSpec.describe Whatsapp::PhoneRegistrationService do
     expect(channel.reload.provider_config.dig(described_class::CONFIG_KEY, 'status')).to eq('outcome_unknown')
   end
 
+  it 'rechecks the ten-minute health grace after acquiring the channel lock' do
+    channel.persist_provider_config_state!(
+      channel.provider_config.merge(
+        described_class::CONFIG_KEY => { 'status' => 'outcome_unknown', 'failed_at' => 11.minutes.ago.iso8601 }
+      )
+    )
+    probe_started_at = Time.current
+    allow(channel).to receive(:with_lock).and_wrap_original do |with_lock, *args, &block|
+      concurrent_config = channel.reload.provider_config.deep_dup
+      concurrent_config[described_class::CONFIG_KEY] = {
+        'status' => 'registering', 'attempted_at' => Time.current.iso8601(6)
+      }
+      channel.update_column(:provider_config, concurrent_config)
+      with_lock.call(*args, &block)
+    end
+
+    result = service.reconcile_from_health!(pending: false, active: true, probe_started_at: probe_started_at)
+
+    expect(result).to be(false)
+    expect(channel.reload.provider_config.dig(described_class::CONFIG_KEY, 'status')).to eq('registering')
+  end
+
   it 'rejects a malformed PIN before calling Meta' do
     expect(api_client).not_to receive(:register_phone_number)
 
@@ -213,6 +267,25 @@ RSpec.describe Whatsapp::PhoneRegistrationService do
 
     expect { service.perform(pin: '654321') }
       .to raise_error(described_class::Error) { |error| expect(error.error_code).to eq('registration_not_required') }
+  end
+
+  it 'does not overwrite another registration that starts before the locked attempt transition' do
+    channel.persist_provider_config_state!(
+      channel.provider_config.merge(described_class::CONFIG_KEY => { 'status' => 'registration_incomplete' })
+    )
+    allow(channel).to receive(:with_lock).and_wrap_original do |with_lock, *args, &block|
+      concurrent_config = channel.reload.provider_config.deep_dup
+      concurrent_config[described_class::CONFIG_KEY] = {
+        'status' => 'registering', 'attempted_at' => Time.current.iso8601
+      }
+      channel.update_column(:provider_config, concurrent_config)
+      with_lock.call(*args, &block)
+    end
+    expect(api_client).not_to receive(:register_phone_number)
+
+    expect { service.perform(pin: '654321') }
+      .to raise_error(described_class::Error) { |error| expect(error.error_code).to eq('outcome_unknown') }
+    expect(channel.reload.provider_config.dig(described_class::CONFIG_KEY, 'status')).to eq('registering')
   end
 
   it 'does not label a local pre-provider failure as an unknown Meta outcome' do

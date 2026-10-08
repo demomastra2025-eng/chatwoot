@@ -49,8 +49,12 @@ class Whatsapp::EmbeddedSignupAttempt
     write((state || {}).merge('status' => 'completed', 'inbox_id' => inbox_id.to_i, 'finished_at' => now))
   end
 
-  def fail!(error_code)
-    write((state || {}).merge('status' => 'failed', 'error_code' => error_code.to_s.first(64), 'finished_at' => now))
+  def fail!(error_code, inbox_id: nil)
+    payload = (state || {}).merge('status' => 'failed', 'error_code' => error_code.to_s.first(64), 'finished_at' => now)
+    payload.delete('inbox_id')
+    safe_inbox_id = active_inbox_id(inbox_id) if error_code.to_s == 'already_connected'
+    payload['inbox_id'] = safe_inbox_id if safe_inbox_id.present?
+    write(payload)
   end
 
   def state
@@ -67,7 +71,10 @@ class Whatsapp::EmbeddedSignupAttempt
     return { status: 'unknown' } if current.blank?
 
     payload = { status: current['status'], signup_type: current['signup_type'] }
-    payload[:error_code] = current['error_code'] if current['status'] == 'failed'
+    if current['status'] == 'failed'
+      payload[:error_code] = current['error_code']
+      payload[:inbox_id] = failed_inbox_id(current) if current['error_code'] == 'already_connected'
+    end
     payload[:inbox_id] = completed_inbox_id(current) if current['status'] == 'completed'
     payload.compact
   end
@@ -77,6 +84,20 @@ class Whatsapp::EmbeddedSignupAttempt
   def completed_inbox_id(current)
     inbox_id = current['inbox_id'].to_i
     @account.inboxes.exists?(id: inbox_id) ? inbox_id : nil
+  end
+
+  def failed_inbox_id(current)
+    return unless current['error_code'] == 'already_connected'
+
+    active_inbox_id(current['inbox_id'])
+  end
+
+  def active_inbox_id(inbox_id)
+    return if inbox_id.blank?
+
+    id = inbox_id.to_i
+    inbox = @account.inboxes.active.where(deletion_attempt_id: nil).find_by(id: id)
+    inbox.id if inbox && !inbox.account_deletion_requested?
   end
 
   def write(payload, only_if_absent: false)

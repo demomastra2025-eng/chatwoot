@@ -132,6 +132,38 @@ RSpec.describe 'WhatsApp Embedded Signup attempts API', type: :request do
       expect(attempt_for.client_state).to eq(status: 'failed', signup_type: 'standard', error_code: 'waba_ambiguous')
     end
 
+    it 'returns the authorized existing inbox when signup discovers the same connection' do
+      allow(Whatsapp::EmbeddedSignupService).to receive(:new).and_return(service)
+      allow(service).to receive(:perform)
+        .and_raise(Whatsapp::ChannelCreationService::AlreadyConnectedError.new(inbox_id: inbox.id))
+
+      post authorization_url, params: { code: 'mobile_code', signup_type: 'standard', signup_nonce: nonce },
+                              headers: administrator.create_new_auth_token, as: :json
+
+      expect(response).to have_http_status(:conflict)
+      expect(response.parsed_body).to include('error_code' => 'already_connected', 'inbox_id' => inbox.id)
+      expect(attempt_for.client_state).to eq(
+        status: 'failed', signup_type: 'standard', error_code: 'already_connected', inbox_id: inbox.id
+      )
+    end
+
+    it 'does not disclose an inbox id from another account' do
+      other_account_inbox = create(:inbox, account: create(:account))
+      allow(Whatsapp::EmbeddedSignupService).to receive(:new).and_return(service)
+      allow(service).to receive(:perform)
+        .and_raise(Whatsapp::ChannelCreationService::AlreadyConnectedError.new(inbox_id: other_account_inbox.id))
+
+      post authorization_url, params: { code: 'mobile_code', signup_type: 'standard', signup_nonce: nonce },
+                              headers: administrator.create_new_auth_token, as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body).to include('error_code' => 'authorization_failed')
+      expect(response.parsed_body).not_to have_key('inbox_id')
+      expect(attempt_for.client_state).to eq(
+        status: 'failed', signup_type: 'standard', error_code: 'authorization_failed'
+      )
+    end
+
     it 'rejects a malformed nonce before touching Meta' do
       expect(Whatsapp::EmbeddedSignupService).not_to receive(:new)
 
