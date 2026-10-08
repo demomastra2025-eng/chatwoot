@@ -38,7 +38,8 @@ const loadedSchedule = () => ({
   ],
 });
 
-const mountCard = schedule => mount(ProviderScheduleCard, { props: { schedule } });
+const mountCard = schedule =>
+  mount(ProviderScheduleCard, { props: { schedule } });
 const dayRows = wrapper =>
   wrapper.findAll('[data-testid="provider-schedule-day"]');
 
@@ -98,7 +99,10 @@ describe('ProviderScheduleCard', () => {
   });
 
   it('does not offer a toggle when the loaded schedule has no days', () => {
-    const wrapper = mountCard({ checkedAt: new Date().toISOString(), days: [] });
+    const wrapper = mountCard({
+      checkedAt: new Date().toISOString(),
+      days: [],
+    });
 
     expect(wrapper.find('button').exists()).toBe(false);
   });
