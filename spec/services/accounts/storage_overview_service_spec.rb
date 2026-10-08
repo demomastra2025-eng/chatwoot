@@ -14,11 +14,40 @@ RSpec.describe Accounts::StorageOverviewService do
     allow(Rails).to receive(:cache).and_return(storage_test_cache)
     Redis::Alfred.delete("account:#{account.id}:storage_overview_v1")
     Redis::Alfred.delete("account:#{account.id}:storage_overview_refresh_v1")
+    Redis::Alfred.delete("account:#{account.id}:storage_overview_pending_v1")
   end
 
   after do
     Redis::Alfred.delete("account:#{account.id}:storage_overview_v1")
     Redis::Alfred.delete("account:#{account.id}:storage_overview_refresh_v1")
+    Redis::Alfred.delete("account:#{account.id}:storage_overview_pending_v1")
+  end
+
+  it 'queues one housekeeping refresh while the five-minute lease is active' do
+    expect do
+      10.times { service.schedule_refresh(force: true) }
+    end.to have_enqueued_job(Accounts::StorageBreakdownRefreshJob).with(account.id).once
+
+    expect(Accounts::StorageBreakdownRefreshJob.new.queue_name).to eq('housekeeping')
+  end
+
+  it 'does not queue another refresh after the five-minute lease expires while the first job is pending' do
+    service.schedule_refresh(force: true)
+    Redis::Alfred.delete("account:#{account.id}:storage_overview_refresh_v1")
+
+    expect { service.schedule_refresh(force: true) }.not_to have_enqueued_job(Accounts::StorageBreakdownRefreshJob)
+  end
+
+  it 'releases the pending marker when the refresh job finishes' do
+    pending_key = "account:#{account.id}:storage_overview_pending_v1"
+    job = Accounts::StorageBreakdownRefreshJob.new(account.id)
+    Redis::Alfred.set(pending_key, job.job_id, ex: 1.hour.to_i)
+    allow(described_class).to receive(:new).and_return(service)
+    allow(service).to receive(:refresh!)
+
+    job.perform_now
+
+    expect(Redis::Alfred.get(pending_key)).to be_nil
   end
 
   it 'refreshes the same category, inbox, and quota numbers as the existing calculation' do

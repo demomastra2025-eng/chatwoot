@@ -12,11 +12,13 @@ RSpec.describe 'Storage API', type: :request do
     allow(Rails).to receive(:cache).and_return(storage_test_cache)
     Redis::Alfred.delete("account:#{account.id}:storage_overview_v1")
     Redis::Alfred.delete("account:#{account.id}:storage_overview_refresh_v1")
+    Redis::Alfred.delete("account:#{account.id}:storage_overview_pending_v1")
   end
 
   after do
     Redis::Alfred.delete("account:#{account.id}:storage_overview_v1")
     Redis::Alfred.delete("account:#{account.id}:storage_overview_refresh_v1")
+    Redis::Alfred.delete("account:#{account.id}:storage_overview_pending_v1")
   end
 
   describe 'GET /api/v1/accounts/{account.id}/storage' do
