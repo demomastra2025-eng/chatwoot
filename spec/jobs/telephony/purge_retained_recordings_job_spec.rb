@@ -68,6 +68,29 @@ RSpec.describe Telephony::PurgeRetainedRecordingsJob do
     expect(session.metadata['custom']).to eq('keep' => true)
   end
 
+  it 'requests one refresh for ten expired originals without calculating storage inline' do
+    refresh_key = "account:#{account.id}:storage_overview_refresh_v1"
+    pending_key = "account:#{account.id}:storage_overview_pending_v1"
+    Redis::Alfred.delete(refresh_key)
+    Redis::Alfred.delete(pending_key)
+    10.times do |index|
+      key = "voice-recordings/purge_spec/#{account.id}/original_#{index}.wav"
+      File.write(storage_dir.join("original_#{index}.wav"), 'original audio')
+      create(:telephony_call_session, account: account, recording_ref: current_key,
+                                      metadata: { 'recording' => { 'retained_original' => {
+                                        'storage_key' => key, 'expires_at' => 1.hour.ago.iso8601
+                                      } } })
+    end
+    expect_any_instance_of(Account).not_to receive(:calculate_storage_breakdown) # rubocop:disable RSpec/AnyInstance
+
+    expect do
+      expect(described_class.perform_now).to include(trashed: 10, failed: 0)
+    end.to have_enqueued_job(Accounts::StorageBreakdownRefreshJob).with(account.id).once
+  ensure
+    Redis::Alfred.delete(refresh_key) if refresh_key
+    Redis::Alfred.delete(pending_key) if pending_key
+  end
+
   it 'lets an administrator restore the trashed original, which is then kept' do
     session = create(
       :telephony_call_session,
@@ -120,8 +143,8 @@ RSpec.describe Telephony::PurgeRetainedRecordingsJob do
       )
     end
 
-    it 'keeps the trash manifest when only the storage breakdown refresh fails' do
-      allow_any_instance_of(Account).to receive(:storage_breakdown).and_raise(ActiveRecord::StatementInvalid, 'refresh failed') # rubocop:disable RSpec/AnyInstance
+    it 'keeps the trash manifest when the background refresh request fails' do
+      allow(Accounts::StorageBreakdownRefreshJob).to receive(:new).and_raise(StandardError, 'refresh failed')
 
       expect(described_class.perform_now).to include(trashed: 1, failed: 0)
 

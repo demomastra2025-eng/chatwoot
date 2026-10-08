@@ -223,6 +223,32 @@ RSpec.describe Telephony::RecordingCompressionService do
       end
     end
 
+    it 'requests one background refresh for ten successful compressions without calculating storage inline' do
+      refresh_key = "account:#{account.id}:storage_overview_refresh_v1"
+      pending_key = "account:#{account.id}:storage_overview_pending_v1"
+      Redis::Alfred.delete(refresh_key)
+      Redis::Alfred.delete(pending_key)
+      FileUtils.mkdir_p(storage_dir)
+      expect_any_instance_of(Account).not_to receive(:calculate_storage_breakdown) # rubocop:disable RSpec/AnyInstance
+
+      expect do
+        10.times do |index|
+          key = "voice-recordings/test_suite/#{account.id}/batch_#{index}.wav"
+          File.write(storage_dir.join("batch_#{index}.wav"), 'synthetic WAV bytes')
+          session = create(:telephony_call_session, account: account, recording_ref: key)
+          service = described_class.new(call_session: session)
+          allow(service).to receive(:probe_duration).and_return(2.0)
+          allow(service).to receive(:execute_ffmpeg!) { |_source, target| File.write(target, 'synthetic MP3 bytes') }
+          allow(service).to receive(:validate_readability!)
+
+          expect(service.perform!).to include(success: true)
+        end
+      end.to have_enqueued_job(Accounts::StorageBreakdownRefreshJob).with(account.id).once
+    ensure
+      Redis::Alfred.delete(refresh_key) if refresh_key
+      Redis::Alfred.delete(pending_key) if pending_key
+    end
+
     it 'never compresses a file outside of the storage folder' do
       outside = Rails.root.join('tmp', "outside_#{account.id}.wav")
       FileUtils.mkdir_p(outside.dirname)

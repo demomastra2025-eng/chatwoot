@@ -234,10 +234,10 @@ class Telephony::RecordingCompressionService
   end
 
   def refresh_storage_breakdown(session)
-    session&.account&.storage_breakdown(force_refresh: true)
+    Accounts::StorageOverviewService.new(account: session.account).schedule_refresh(force: true)
   rescue StandardError => e
-    Rails.logger.warn("[RecordingCompressionService] Storage breakdown refresh failed account=#{session&.account_id} " \
-                      "session=#{session&.id} key_digest=#{key_digest} error=#{e.class.name}")
+    Rails.logger.warn("[RecordingCompressionService] Storage refresh request failed account=#{session&.account_id} " \
+                      "error=#{e.class.name}")
   end
 
   def find_call_session

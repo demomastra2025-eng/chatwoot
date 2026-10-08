@@ -80,12 +80,11 @@ class Telephony::PurgeRetainedRecordingsJob < ApplicationJob
     raise
   end
 
-  # The breakdown is a cache that only follows the trash move. It runs after the commit, so a failing refresh can
-  # neither roll the manifest back nor leave the file moved without one.
+  # Request the cached overview after the commit so a failed request cannot roll the trash manifest back.
   def refresh_storage_breakdown(session)
-    session.account.storage_breakdown(force_refresh: true)
+    Accounts::StorageOverviewService.new(account: session.account).schedule_refresh(force: true)
   rescue StandardError => e
-    Rails.logger.warn("[PurgeRetainedRecordingsJob] Storage breakdown refresh failed: #{e.class.name}")
+    Rails.logger.warn("[PurgeRetainedRecordingsJob] Storage refresh request failed account=#{session.account_id}: #{e.class.name}")
   end
   # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
 

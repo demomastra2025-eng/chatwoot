@@ -2,7 +2,15 @@
 
 class Accounts::StorageOverviewService
   REFRESH_INTERVAL = 5.minutes
+  PENDING_REFRESH_TTL = 1.hour
+  PENDING_REFRESH_KEY = 'account:%<account_id>s:storage_overview_pending_v1'
   STATEMENT_TIMEOUT = '10s'
+
+  def self.release_refresh(account_id, job_id)
+    Redis::Alfred.delete_if_value(format(PENDING_REFRESH_KEY, account_id: account_id), job_id)
+  rescue StandardError => e
+    Rails.logger.warn("[StorageOverview] Could not release refresh for account #{account_id}: #{e.class.name}")
+  end
 
   def initialize(account:)
     @account = account
@@ -55,8 +63,13 @@ class Accounts::StorageOverviewService
     lock_token = SecureRandom.uuid
     return unless Redis::Alfred.set(refresh_cache_key, lock_token, nx: true, ex: REFRESH_INTERVAL.to_i)
 
-    Accounts::StorageBreakdownRefreshJob.perform_later(account.id)
+    job = Accounts::StorageBreakdownRefreshJob.new(account.id)
+    return unless Redis::Alfred.set(pending_refresh_key, job.job_id, nx: true, ex: PENDING_REFRESH_TTL.to_i)
+
+    job.enqueue
+    raise "Could not enqueue storage refresh for account #{account.id}" unless job.successfully_enqueued?
   rescue StandardError
+    Redis::Alfred.delete_if_value(pending_refresh_key, job.job_id) if job
     Redis::Alfred.delete_if_value(refresh_cache_key, lock_token) if lock_token
     raise
   end
@@ -67,5 +80,9 @@ class Accounts::StorageOverviewService
 
   def refresh_cache_key
     "account:#{account.id}:storage_overview_refresh_v1"
+  end
+
+  def pending_refresh_key
+    format(PENDING_REFRESH_KEY, account_id: account.id)
   end
 end

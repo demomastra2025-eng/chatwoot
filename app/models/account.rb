@@ -328,8 +328,8 @@ class Account < ApplicationRecord
     end
   end
 
-  # Walking the recordings folder is expensive, so the result is cached for a short while. Everything that
-  # changes the recordings on disk refreshes it through #storage_breakdown(force_refresh: true).
+  # Walking the recordings folder is expensive, so the result is cached for a short while. Recording changes
+  # request a background storage overview refresh, which invalidates this cached total before recalculating it.
   def local_recordings_bytes
     cached = Rails.cache.read(local_recordings_bytes_cache_key)
     return cached unless cached.nil?

@@ -41,7 +41,7 @@ class Storage::TrashService
     moved_recordings = move_recordings_to_trash(selection['recordings'], expires_at)
     moved_attachments = move_attachments_to_trash(selection['attachments'], expires_at)
     total_count = moved_recordings[:count] + moved_attachments[:count]
-    @account.storage_breakdown(force_refresh: true) if @account.respond_to?(:storage_breakdown)
+    request_storage_refresh
 
     {
       success: true,
@@ -134,7 +134,7 @@ class Storage::TrashService
       restored_bytes = res[:bytes]
     end
 
-    @account.storage_breakdown(force_refresh: true) if @account.respond_to?(:storage_breakdown)
+    request_storage_refresh
 
     {
       success: true,
@@ -165,7 +165,7 @@ class Storage::TrashService
       purged_bytes = res[:bytes]
     end
 
-    @account.storage_breakdown(force_refresh: true) if @account.respond_to?(:storage_breakdown)
+    request_storage_refresh
 
     {
       success: true,
@@ -233,6 +233,10 @@ class Storage::TrashService
   end
 
   private
+
+  def request_storage_refresh
+    Accounts::StorageOverviewService.new(account: @account).schedule_refresh(force: true)
+  end
 
   def write_retained_original_trash(session, original_path, trash_path, byte_size)
     now = Time.current

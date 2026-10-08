@@ -91,6 +91,30 @@ RSpec.describe Storage::TrashService, type: :service do
     end
   end
 
+  describe 'storage overview refreshes' do
+    it 'coalesces move, restore, and empty requests without calculating storage inline' do
+      refresh_key = "account:#{account.id}:storage_overview_refresh_v1"
+      pending_key = "account:#{account.id}:storage_overview_pending_v1"
+      Redis::Alfred.delete(refresh_key)
+      Redis::Alfred.delete(pending_key)
+      file = storage_dir.join('refresh_fixture.mp3')
+      File.write(file, 'recording bytes')
+      session = create(:telephony_call_session, account: account,
+                                                recording_ref: "voice-recordings/test_trash/#{account.id}/refresh_fixture.mp3",
+                                                created_at: 4.months.ago)
+      expect_any_instance_of(Account).not_to receive(:calculate_storage_breakdown) # rubocop:disable RSpec/AnyInstance
+
+      expect do
+        expect(approved_move_to_trash!(older_than_months: 3)).to include(moved_count: 1)
+        expect(service.restore!(item_type: 'recording', item_id: session.id)).to include(restored_count: 1)
+        8.times { service.empty_trash!(purge_all: true) }
+      end.to have_enqueued_job(Accounts::StorageBreakdownRefreshJob).with(account.id).once
+    ensure
+      Redis::Alfred.delete(refresh_key) if refresh_key
+      Redis::Alfred.delete(pending_key) if pending_key
+    end
+  end
+
   describe '#empty_trash!' do
     it 'permanently purges items from disk and marks session purged' do
       test_file = storage_dir.join('call_3.mp3')
