@@ -391,6 +391,7 @@
           "LOADING_SDK": "Loading Facebook SDK...",
           "CANCELLED": "WhatsApp Signup was cancelled",
           "SUCCESS_TITLE": "WhatsApp Business Account Connected!",
+          "ALREADY_CONNECTED": "Бұл нөмір әлдеқашан қосылған. Қолданыстағы арнаны ашып жатырмыз.",
           "WAITING_FOR_AUTH": "Waiting for authentication...",
           "INVALID_BUSINESS_DATA": "Invalid business data received from Facebook. Please try again.",
           "SIGNUP_ERROR": "Signup error occurred",
