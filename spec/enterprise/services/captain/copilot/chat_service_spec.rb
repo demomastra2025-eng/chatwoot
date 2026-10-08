@@ -485,6 +485,9 @@ RSpec.describe Captain::Copilot::ChatService do
       AccountUser.find_by!(account: account, user: user).update!(role: :agent)
       inaccessible_inbox = create(:inbox, account: account)
       inaccessible_conversation = create(:conversation, account: account, inbox: inaccessible_inbox)
+      inaccessible_inbox.remove_members([user.id])
+
+      expect(inaccessible_inbox.inbox_members.exists?(user_id: user.id)).to be(false)
 
       expect do
         described_class.new(assistant, { user_id: user.id, conversation_id: inaccessible_conversation.display_id })
