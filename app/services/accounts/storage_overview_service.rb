@@ -35,17 +35,12 @@ class Accounts::StorageOverviewService
   end
 
   def refresh!
-    data = ActiveRecord::Base.transaction(requires_new: true) do
-      connection = ActiveRecord::Base.connection
-      previous_timeout = connection.select_value('SHOW statement_timeout')
-      connection.execute("SET LOCAL statement_timeout = '#{STATEMENT_TIMEOUT}'")
-      result = {
+    data = with_statement_timeout do
+      {
         breakdown: account.storage_breakdown(force_refresh: true),
         limits: AccountLimits::StorageUsageService.new(account: account).summary,
         updated_at: Time.current.to_i
       }
-      connection.execute(ActiveRecord::Base.sanitize_sql_array(['SELECT set_config(?, ?, true)', 'statement_timeout', previous_timeout]))
-      result
     end
     Redis::Alfred.set(snapshot_cache_key, JSON.generate(data))
     data
@@ -54,6 +49,26 @@ class Accounts::StorageOverviewService
   private
 
   attr_reader :account
+
+  # A session-level timeout that is put back afterwards, and deliberately no transaction: the breakdown walks the
+  # recordings on disk for minutes, and a transaction left idle meanwhile is killed by the server's
+  # idle_in_transaction_session_timeout (one minute in production), which lost the refresh for the big accounts.
+  def with_statement_timeout
+    connection = ActiveRecord::Base.connection
+    previous_timeout = connection.select_value('SHOW statement_timeout')
+    connection.execute("SET statement_timeout = '#{STATEMENT_TIMEOUT}'")
+    yield
+  ensure
+    restore_statement_timeout(connection, previous_timeout)
+  end
+
+  def restore_statement_timeout(connection, previous_timeout)
+    return if connection.nil? || previous_timeout.nil?
+
+    connection.execute(ActiveRecord::Base.sanitize_sql_array(['SELECT set_config(?, ?, false)', 'statement_timeout', previous_timeout]))
+  rescue StandardError => e
+    Rails.logger.warn("[StorageOverview] Could not restore statement_timeout: #{e.class.name}")
+  end
 
   def fresh?(cached)
     cached && Time.current.to_i - cached[:updated_at] < REFRESH_INTERVAL.to_i

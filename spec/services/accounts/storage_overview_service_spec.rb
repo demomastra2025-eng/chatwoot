@@ -75,13 +75,38 @@ RSpec.describe Accounts::StorageOverviewService do
     expect(service.snapshot).to eq(snapshot)
   end
 
-  it 'sets a transaction-local timeout for the aggregate queries' do
+  it 'limits the aggregate queries with a session timeout and puts the previous one back' do
     statements = []
     subscriber = ->(*, payload) { statements << payload[:sql] }
+    timeout_before = ActiveRecord::Base.connection.select_value('SHOW statement_timeout')
 
     ActiveSupport::Notifications.subscribed(subscriber, 'sql.active_record') { service.refresh! }
 
-    expect(statements).to include("SET LOCAL statement_timeout = '10s'")
+    expect(statements).to include("SET statement_timeout = '10s'")
+    expect(ActiveRecord::Base.connection.select_value('SHOW statement_timeout')).to eq(timeout_before)
+  end
+
+  it 'puts the previous timeout back when the calculation fails' do
+    timeout_before = ActiveRecord::Base.connection.select_value('SHOW statement_timeout')
+    allow(account).to receive(:storage_breakdown).with(force_refresh: true).and_raise(ActiveRecord::StatementInvalid, 'statement timeout')
+
+    expect { service.refresh! }.to raise_error(ActiveRecord::StatementInvalid)
+    expect(ActiveRecord::Base.connection.select_value('SHOW statement_timeout')).to eq(timeout_before)
+  end
+
+  # The production server drops connections idle in a transaction after one minute; the calculation walks the
+  # recordings on disk for minutes, so it must not run inside a transaction of its own.
+  it 'does not open a database transaction around the breakdown calculation' do
+    baseline = ActiveRecord::Base.connection.open_transactions
+    seen = nil
+    allow(account).to receive(:storage_breakdown).with(force_refresh: true) do
+      seen = ActiveRecord::Base.connection.open_transactions
+      {}
+    end
+
+    service.refresh!
+
+    expect(seen).to eq(baseline)
   end
 
   it 'keeps the last good snapshot when an aggregate times out' do
