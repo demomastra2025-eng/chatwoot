@@ -72,6 +72,7 @@ RSpec.describe Accounts::HeavyFilesService do
 
     context 'with a refreshed recording snapshot' do
       let(:inbox) { create(:inbox, account: account) }
+      let(:number_binding) { create(:telephony_number_binding, account: account, inbox: inbox) }
 
       def recording(size:, created_at:)
         conversation = create(:conversation, account: account, inbox: inbox)
@@ -79,6 +80,7 @@ RSpec.describe Accounts::HeavyFilesService do
         FileUtils.mkdir_p(path.dirname)
         File.write(path, 'r' * size)
         session = create(:telephony_call_session, account: account, inbox: inbox, conversation: conversation,
+                                                  number_binding: number_binding,
                                                   recording_ref: path.relative_path_from(Storage::RecordingPaths.root).to_s,
                                                   created_at: created_at)
         [session, path]
