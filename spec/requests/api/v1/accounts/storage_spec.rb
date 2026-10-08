@@ -3,6 +3,8 @@
 require 'rails_helper'
 
 RSpec.describe 'Storage API', type: :request do
+  # Single-record attachment lookups (user avatars) are fine; scans over messages, blobs or whole attachment sets are not.
+  let(:scanning_query) { /active_storage_blobs|FROM "messages"|active_storage_attachments(?!.*"record_id" = \$)/m }
   let(:account) { create(:account) }
   let(:admin) { create(:user, account: account, role: :administrator) }
   let(:agent) { create(:user, account: account, role: :agent) }
@@ -69,7 +71,7 @@ RSpec.describe 'Storage API', type: :request do
         end.not_to have_enqueued_job(Accounts::StorageBreakdownRefreshJob)
 
         expect(response).to have_http_status(:success)
-        expect(statements.grep(/active_storage_blobs|active_storage_attachments|FROM "messages"/i)).to be_empty
+        expect(statements.grep(scanning_query)).to be_empty
         expect(response.parsed_body['storage']).to include(
           'calculating' => false,
           'consumed_bytes' => snapshot[:limits][:consumed],
@@ -89,7 +91,7 @@ RSpec.describe 'Storage API', type: :request do
         end
 
         expect(response).to have_http_status(:success)
-        expect(statements.grep(/active_storage_blobs|active_storage_attachments|FROM "messages"/i)).to be_empty
+        expect(statements.grep(scanning_query)).to be_empty
       end
 
       it 'returns the storage overview after the refresh job runs' do
