@@ -2,7 +2,7 @@ require 'rails_helper'
 
 RSpec.describe Captain::Tools::Copilot::AddInboxMembersService do
   let(:account) { create(:account) }
-  let(:user) { create(:user, :administrator, account: account) }
+  let!(:user) { create(:user, :administrator, account: account) }
   let(:assistant) { create(:captain_assistant, account: account) }
   let(:service) { described_class.new(assistant, user: user) }
 
@@ -14,33 +14,37 @@ RSpec.describe Captain::Tools::Copilot::AddInboxMembersService do
   it 'adds account users to an inbox' do
     inbox = create(:inbox, account: account)
     member = create(:user, account: account, name: 'Operator One')
+    inbox.remove_members([member.id])
 
     payload = JSON.parse(service.execute(inbox_id: inbox.id, user_ids: member.id.to_s))
 
     expect(payload['action']).to eq('add_inbox_members')
     expect(payload['added_user_ids']).to eq([member.id])
-    expect(inbox.reload.members).to include(member)
+    expect(inbox.reload.members).to contain_exactly(user, member)
   end
 
   it 'rejects users outside the assistant account' do
     inbox = create(:inbox, account: account)
     other_user = create(:user, account: create(:account))
+    existing_member_ids = inbox.inbox_members.ids
 
     result = service.execute(inbox_id: inbox.id, user_ids: other_user.id.to_s)
 
     expect(result).to start_with('ERROR: ActiveRecord::RecordNotFound')
-    expect(inbox.reload.members).to be_empty
+    expect(inbox.reload.inbox_members.ids).to match_array(existing_member_ids)
   end
 
   it 'does not mutate until the backend confirmation gate permits execution' do
     allow(Captain::Copilot::ToolConfirmationGate).to receive(:new).and_call_original
     inbox = create(:inbox, account: account)
     member = create(:user, account: account)
+    inbox.remove_members([member.id])
+    existing_member_ids = inbox.inbox_members.ids
 
     payload = JSON.parse(service.execute(inbox_id: inbox.id, user_ids: member.id.to_s))
 
     expect(payload['message']).to include('Operator confirmation is required')
-    expect(inbox.reload.members).to be_empty
+    expect(inbox.reload.inbox_members.ids).to match_array(existing_member_ids)
   end
 
   it 'enforces admin permission inside execute before mutating inbox members' do
@@ -48,11 +52,13 @@ RSpec.describe Captain::Tools::Copilot::AddInboxMembersService do
     non_admin_service = described_class.new(assistant, user: agent)
     inbox = create(:inbox, account: account)
     member = create(:user, account: account)
+    inbox.remove_members([member.id])
+    existing_member_ids = inbox.inbox_members.ids
 
     allow(non_admin_service).to receive(:active?).and_return(true)
     result = non_admin_service.execute(inbox_id: inbox.id, user_ids: member.id.to_s)
 
     expect(result).to start_with('ERROR: ArgumentError: Account administrator permission is required')
-    expect(inbox.reload.members).to be_empty
+    expect(inbox.reload.inbox_members.ids).to match_array(existing_member_ids)
   end
 end

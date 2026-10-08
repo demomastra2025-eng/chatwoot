@@ -11,8 +11,8 @@ RSpec.describe 'Assignable Agents API', type: :request do
     let(:inbox2) { create(:inbox, account: account) }
 
     before do
-      create(:inbox_member, user: agent1, inbox: inbox1)
-      create(:inbox_member, user: agent1, inbox: inbox2)
+      inbox1.inbox_members.find_by!(user: agent1)
+      inbox2.inbox_members.find_by!(user: agent1)
     end
 
     context 'when it is an unauthenticated user' do
@@ -24,6 +24,10 @@ RSpec.describe 'Assignable Agents API', type: :request do
     end
 
     context 'when the user is not part of an inbox' do
+      before do
+        [inbox1, inbox2].each { |inbox| inbox.remove_members([agent2.id, admin.id]) }
+      end
+
       context 'when the user is an admininstrator' do
         it 'returns all assignable inbox members along with administrators' do
           get "/api/v1/accounts/#{account.id}/assignable_agents",
@@ -59,7 +63,7 @@ RSpec.describe 'Assignable Agents API', type: :request do
 
         expect(response).to have_http_status(:success)
         response_data = JSON.parse(response.body, symbolize_names: true)[:payload]
-        expect(response_data.size).to eq(2)
+        expect(response_data.pluck(:id)).to contain_exactly(agent1.id, agent2.id, admin.id)
         expect(response_data.pluck(:role)).to include('agent', 'administrator')
       end
     end

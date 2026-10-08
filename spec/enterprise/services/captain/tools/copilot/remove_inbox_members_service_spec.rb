@@ -2,7 +2,7 @@ require 'rails_helper'
 
 RSpec.describe Captain::Tools::Copilot::RemoveInboxMembersService do
   let(:account) { create(:account) }
-  let(:user) { create(:user, :administrator, account: account) }
+  let!(:user) { create(:user, :administrator, account: account) }
   let(:assistant) { create(:captain_assistant, account: account) }
   let(:service) { described_class.new(assistant, user: user) }
 
@@ -22,7 +22,7 @@ RSpec.describe Captain::Tools::Copilot::RemoveInboxMembersService do
 
     expect(payload['action']).to eq('remove_inbox_members')
     expect(payload['removed_user_ids']).to eq([member.id])
-    expect(inbox.reload.members).to contain_exactly(other_member)
+    expect(inbox.reload.members).to contain_exactly(user, other_member)
   end
 
   it 'rejects users outside the assistant account' do
@@ -30,11 +30,12 @@ RSpec.describe Captain::Tools::Copilot::RemoveInboxMembersService do
     member = create(:user, account: account)
     other_user = create(:user, account: create(:account))
     create(:inbox_member, inbox: inbox, user: member)
+    existing_member_ids = inbox.inbox_members.ids
 
     result = service.execute(inbox_id: inbox.id, user_ids: other_user.id.to_s)
 
     expect(result).to start_with('ERROR: ActiveRecord::RecordNotFound')
-    expect(inbox.reload.members).to contain_exactly(member)
+    expect(inbox.reload.inbox_members.ids).to match_array(existing_member_ids)
   end
 
   it 'does not mutate until the backend confirmation gate permits execution' do
@@ -42,11 +43,12 @@ RSpec.describe Captain::Tools::Copilot::RemoveInboxMembersService do
     inbox = create(:inbox, account: account)
     member = create(:user, account: account)
     create(:inbox_member, inbox: inbox, user: member)
+    existing_member_ids = inbox.inbox_members.ids
 
     payload = JSON.parse(service.execute(inbox_id: inbox.id, user_ids: member.id.to_s))
 
     expect(payload['message']).to include('Operator confirmation is required')
-    expect(inbox.reload.members).to contain_exactly(member)
+    expect(inbox.reload.inbox_members.ids).to match_array(existing_member_ids)
   end
 
   it 'enforces admin permission inside execute before mutating inbox members' do
@@ -55,11 +57,12 @@ RSpec.describe Captain::Tools::Copilot::RemoveInboxMembersService do
     inbox = create(:inbox, account: account)
     member = create(:user, account: account)
     create(:inbox_member, inbox: inbox, user: member)
+    existing_member_ids = inbox.inbox_members.ids
 
     allow(non_admin_service).to receive(:active?).and_return(true)
     result = non_admin_service.execute(inbox_id: inbox.id, user_ids: member.id.to_s)
 
     expect(result).to start_with('ERROR: ArgumentError: Account administrator permission is required')
-    expect(inbox.reload.members).to contain_exactly(member)
+    expect(inbox.reload.inbox_members.ids).to match_array(existing_member_ids)
   end
 end
