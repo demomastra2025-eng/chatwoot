@@ -22,6 +22,7 @@ SOURCE_REPO="${ROOT}/onelink/chatwoot"
 RELEASES="${ROOT}/releases"
 CURRENT="${ROOT}/current"
 ENV_FILE="${ROOT}/.env.development"
+BUILT_ASSETS_FLAG="${ROOT}/runtime/built-assets.enabled"
 LOCK_FILE="${ROOT}/runtime/deploy.lock"
 SERVICE=onelink-chatwoot-dev.service
 VOICE_SERVICE=onelink-ai-voice-dev.service
@@ -154,6 +155,51 @@ load_dev_env() {
   [[ "${NODE_ENV:-development}" != production ]]
   [[ "${POSTGRES_DATABASE:-}" == chatwoot_dev ]]
 }
+
+BUILT_ASSETS_ENABLED=0
+[[ -f "${BUILT_ASSETS_FLAG}" ]] && BUILT_ASSETS_ENABLED=1
+(
+  load_dev_env
+  if [[ "${ONELINK_DEV_BUILT_ASSETS:-0}" != "${BUILT_ASSETS_ENABLED}" ]]; then
+    echo "DEV built-assets flag file and ONELINK_DEV_BUILT_ASSETS must match" >&2
+    exit 65
+  fi
+)
+
+if ((BUILT_ASSETS_ENABLED == 1)); then
+  log "building DEV Vite assets at low priority before cutover"
+  (
+    load_dev_env
+    cd "${RELEASE}"
+    if ! nice -n 10 env NODE_OPTIONS=--max-old-space-size=4096 bin/vite build --mode production --force; then
+      echo "DEV Vite production build failed; release was not activated" >&2
+      exit 1
+    fi
+    [[ -s public/vite/.vite/manifest.json ]] || {
+      echo "DEV Vite build produced no public/vite/.vite/manifest.json" >&2
+      exit 1
+    }
+  )
+  BUILT_DASHBOARD_ASSET="$(python3 - "${RELEASE}/public/vite/.vite/manifest.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+manifest_path = Path(sys.argv[1])
+with manifest_path.open(encoding="utf-8") as manifest_file:
+    dashboard = json.load(manifest_file).get("entrypoints/dashboard.js")
+if not dashboard or not dashboard.get("file"):
+    raise SystemExit("DEV Vite manifest has no dashboard entrypoint")
+asset = dashboard["file"]
+if not (manifest_path.parents[1] / asset).is_file():
+    raise SystemExit(f"DEV Vite dashboard asset is missing: {asset}")
+print("/vite/" + asset)
+PY
+)" || {
+    echo "DEV Vite manifest validation failed; release was not activated" >&2
+    exit 1
+  }
+fi
 
 log "running idempotent DEV database preparation"
 (
@@ -295,7 +341,12 @@ voice_cwd="$(readlink -f "/proc/${voice_pid}/cwd" 2>/dev/null || true)"
 [[ "${voice_cwd}" == "${RELEASE}/services/onelink-ai-voice" ]] || \
   rollback "AI voice runtime source mismatch: ${voice_cwd:-missing}"
 
-for asset in /vite-dev/@vite/client /vite-dev/entrypoints/dashboard.js; do
+if ((BUILT_ASSETS_ENABLED == 1)); then
+  assets=("${BUILT_DASHBOARD_ASSET}")
+else
+  assets=(/vite-dev/@vite/client /vite-dev/entrypoints/dashboard.js)
+fi
+for asset in "${assets[@]}"; do
   code="$(curl -sS -o /dev/null --max-time 10 -w '%{http_code}' "https://dev.one-link.kz${asset}" || true)"
   [[ "${code}" == 200 ]] || rollback "asset ${asset} returned HTTP ${code:-000}"
 done
