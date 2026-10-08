@@ -25,6 +25,19 @@ RSpec.describe Integrations::Medelement::Request do
   let(:base_url) { Integrations::Medelement::Client::BASE_URL }
 
   describe '#call' do
+    it 'does not retry a timetable rate limit when the caller opts out' do
+      provider_request = stub_request(:get, "#{base_url}/v1/timetable/get_timetable")
+                         .to_return(status: 429, body: '{}', headers: { 'Content-Type' => 'application/json' })
+
+      expect do
+        request.call(:get, '/v1/timetable/get_timetable', operation: 'timetable', retry_429: false)
+      end.to raise_error(Integrations::Medelement::Client::ApiError) { |error| expect(error.status).to eq(429) }
+
+      expect(provider_request).to have_been_requested.once
+      expect(rate_limiter).to have_received(:wait!).once
+      expect(sleeps).to be_empty
+    end
+
     it 'retries safe reads with exponential backoff and stops after the retry limit' do
       provider_request = stub_request(:get, "#{base_url}/doctor/v1/patient/patient-1")
                          .to_return(Array.new(8) do

@@ -12,7 +12,7 @@ class Integrations::Medelement::RequestRetryPolicy
     @clock = clock || -> { Time.current }
   end
 
-  def call(operation:, write: false, &request)
+  def call(operation:, write: false, retry_429: true, &request)
     retry_index = 0
 
     loop do
@@ -23,6 +23,7 @@ class Integrations::Medelement::RequestRetryPolicy
         wait_before_retry(operation, retry_index, error: attempt.error)
       else
         return attempt.response unless retryable_response?(attempt.response, write)
+        return attempt.response if !retry_429 && attempt.response.code.to_i == 429
         return attempt.response if retry_index >= READ_RETRY_LIMIT
 
         wait_before_retry(operation, retry_index, response: attempt.response)

@@ -108,12 +108,8 @@ RSpec.describe Integrations::Medelement::SchedulesSyncService do
     resource.update!(custom_attributes: resource.custom_attributes.merge('medelement_last_seen_at' => (now + 25.hours).iso8601))
     requested_dates.clear
     expect(Integrations::Medelement::ScheduleDay.find_by(resource: resource, date: date + 90)).to be_nil
-    expect(sync(at: now + 25.hours)).to include(request_count: 13, updated_count: 89, created_count: 1)
-    expect(requested_dates).to eq(
-      [[date + 85, date + 90], [date + 8, date + 14]] +
-      (15..78).step(7).map { |offset| [date + offset, date + offset + 6] } +
-      [[date + 1, date + 7]]
-    )
+    expect(sync(at: now + 25.hours)).to include(request_count: 14, updated_count: 89, created_count: 1)
+    expect(requested_dates.flat_map { |start_date, end_date| (start_date..end_date).to_a }.sort).to eq((date + 1..date + 90).to_a)
   end
 
   it 'caps HTTP windows and leaves unrefreshed days due for later runs' do
@@ -126,7 +122,60 @@ RSpec.describe Integrations::Medelement::SchedulesSyncService do
     expect(Integrations::Medelement::ScheduleDay.where(resource: resource).count).to eq(28)
   end
 
-  it 'prioritizes the oldest checked window across doctors when capped' do
+  it 'reads the total and first-fill window budgets from the environment' do
+    resource
+    stub_timetable { |starts_on:, ends_on:, **| answer(starts_on, ends_on) { |day| working_day(day) } }
+
+    with_modified_env(MEDELEMENT_SCHEDULE_REQUEST_CAP: '1', MEDELEMENT_SCHEDULE_FIRST_FILL_CAP: '2') do
+      expect(sync).to include(request_count: 1, created_count: 7)
+    end
+    with_modified_env(MEDELEMENT_SCHEDULE_REQUEST_CAP: '3', MEDELEMENT_SCHEDULE_FIRST_FILL_CAP: '1') do
+      expect(sync).to include(request_count: 1, created_count: 7)
+    end
+  end
+
+  it 'paces a 32-doctor first fill and continues on the next run without delaying near days' do
+    doctors = Array.new(32) { |index| specialist(account, "doctor-#{index}", now) }
+    requests = []
+    stub_timetable do |specialist_code:, starts_on:, ends_on:, **|
+      requests << [specialist_code, starts_on, ends_on]
+      answer(starts_on, ends_on) { |day| working_day(day) }
+    end
+
+    expect(sync).to include(request_count: 40, created_count: 280, skipped_count: 2600)
+    expect(requests.first(32).pluck(1, 2)).to all(eq([date, date + 6]))
+    expect(doctors.all? do |doctor|
+      Integrations::Medelement::ScheduleDay.exists?(resource: doctor, date: date + 1)
+    end).to be(true)
+
+    requests.clear
+    expect(sync).to include(request_count: 40, created_count: 280, skipped_count: 2320)
+    expect(requests.none? { |_code, starts_on, _ends_on| starts_on < date + 7 }).to be(true)
+
+    doctors.each do |doctor|
+      doctor.update!(custom_attributes: doctor.custom_attributes.merge('medelement_last_seen_at' => (now + 1.hour).iso8601))
+    end
+    requests.clear
+    sync(at: now + 1.hour)
+    expect(requests.first(32).pluck(1, 2)).to all(eq([date, date + 1]))
+  end
+
+  it 'stops this hook on a rate limit without attempting later windows' do
+    resource
+    requests = []
+    stub_timetable do |starts_on:, ends_on:, **|
+      requests << [starts_on, ends_on]
+      raise Integrations::Medelement::Client::ApiError.new('Rate limited', status: 429)
+    end
+
+    expect(sync).to include(request_count: 1, unverified_count: 7, skipped_count: 83)
+    expect(requests).to eq([[date, date + 6]])
+    expect(Integrations::Medelement::ScheduleDay.where(resource: resource).count).to eq(7)
+    expect(sync).to include(request_count: 1)
+    expect(requests.last).to eq([date + 7, date + 13])
+  end
+
+  it 'serves near windows before the oldest checked far window when capped' do
     other = specialist(account, 'doctor-2', now)
     resource
     requested = []
@@ -140,11 +189,12 @@ RSpec.describe Integrations::Medelement::SchedulesSyncService do
     [resource, other].each do |doctor|
       doctor.update!(custom_attributes: doctor.custom_attributes.merge('medelement_last_seen_at' => (now + 13.hours).iso8601))
     end
-    stub_const('Integrations::Medelement::SchedulesSyncService::REQUEST_CAP', 1)
+    stub_const('Integrations::Medelement::SchedulesSyncService::REQUEST_CAP', 3)
     requested.clear
 
-    expect(sync(at: now + 13.hours)).to include(request_count: 1, skipped_count: 28)
-    expect(requested).to eq([['doctor-2', date + 21, date + 27]])
+    expect(sync(at: now + 13.hours)).to include(request_count: 3, skipped_count: 14)
+    expect(requested.first(2).map { |_code, starts_on, _ends_on| starts_on }).to eq([date, date])
+    expect(requested.last).to eq(['doctor-2', date + 21, date + 27])
   end
 
   it 'requests only due dates when they have gaps' do
@@ -255,7 +305,7 @@ RSpec.describe Integrations::Medelement::SchedulesSyncService do
     expect(records.find_by!(date: date).reload).to have_attributes(status: 'empty_unconfirmed', consecutive_empty_count: 1)
     [date + 1, date + 2, date + 3].each do |day|
       saved = records.find_by!(date: day).reload
-      expect(saved).to have_attributes(status: 'unverified', consecutive_empty_count: 0,
+      expect(saved).to have_attributes(status: 'unverified', consecutive_empty_count: 1,
                                        windows: prior.fetch(day)[0], source_checked_at: prior.fetch(day)[1],
                                        raw_digest: prior.fetch(day)[2])
     end
@@ -276,9 +326,12 @@ RSpec.describe Integrations::Medelement::SchedulesSyncService do
                                              source_checked_at: original_checked_at)
 
     stub_timetable { [] }
-    expect(sync(at: now + 1.hour)).to include(unverified_count: 2, request_count: 1)
+    expect(sync(at: now + 1.hour)).to include(unverified_count: 0, request_count: 0)
     expect(stored.reload).to have_attributes(status: 'unverified', windows: original_windows,
                                              source_checked_at: original_checked_at)
+    expect(sync(at: now + 1.hour + 15.minutes)).to include(unverified_count: 2, request_count: 1)
+    expect(stored.reload).to have_attributes(consecutive_empty_count: 2)
+    expect(sync(at: now + 1.hour + 30.minutes)).to include(unverified_count: 0, request_count: 0)
   end
 
   it 'does not count a malformed working row as a day off' do
@@ -294,13 +347,13 @@ RSpec.describe Integrations::Medelement::SchedulesSyncService do
 
     sync(at: now + 1.hour)
 
-    expect(stored.reload).to have_attributes(status: 'unverified', consecutive_empty_count: 0, windows: old_windows)
+    expect(stored.reload).to have_attributes(status: 'unverified', consecutive_empty_count: 1, windows: old_windows)
 
     stub_timetable do |starts_on:, ends_on:, **|
       answer(starts_on, ends_on) { |day| working_day(day, [working_row(day, value: false)]) }
     end
     sync(at: now + 1.hour)
-    expect(stored.reload).to have_attributes(status: 'unverified', consecutive_empty_count: 0, windows: old_windows)
+    expect(stored.reload).to have_attributes(status: 'unverified', consecutive_empty_count: 1, windows: old_windows)
   end
 
   it 'keeps saved windows on a provider error and lets the existing job retry the phase' do

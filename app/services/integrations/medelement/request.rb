@@ -35,10 +35,12 @@ class Integrations::Medelement::Request
 
   # Public transport boundary mirrors the provider request options.
   # rubocop:disable Metrics/CyclomaticComplexity, Metrics/ParameterLists
-  def call(method, path, operation:, query: nil, body: nil, write: false, empty_not_found: false)
+  def call(method, path, operation:, query: nil, body: nil, write: false, empty_not_found: false, retry_429: true)
     url = "#{Integrations::Medelement::Client::BASE_URL}#{path}"
     url = "#{url}?#{query}" if query.is_a?(String)
-    response = retry_policy.call(operation: operation, write: write) do
+    retry_options = { operation: operation, write: write }
+    retry_options[:retry_429] = false unless retry_429
+    response = retry_policy.call(**retry_options) do
       HTTParty.public_send(method, url, request_options(query.is_a?(String) ? nil : query, body))
     end
     parsed_response = response.parsed_response

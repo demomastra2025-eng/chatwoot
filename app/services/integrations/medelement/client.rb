@@ -71,7 +71,7 @@ class Integrations::Medelement::Client
     raise CatalogUnavailableError.new('Medelement nomenclatures are unavailable', status: e.status)
   end
 
-  def timetable(specialist_code:, starts_on:, ends_on:, allow_partial: false)
+  def timetable(specialist_code:, starts_on:, ends_on:, allow_partial: false, retry_429: true)
     starts_on = starts_on.to_date
     ends_on = ends_on.to_date
     validate_timetable_range!(starts_on, ends_on)
@@ -80,6 +80,7 @@ class Integrations::Medelement::Client
       :get,
       '/v1/timetable/get_timetable',
       operation: 'timetable',
+      retry_429: retry_429,
       query: URI.encode_www_form([
                                    ['date[0]', provider_date(starts_on)],
                                    ['date[1]', provider_date(ends_on)],

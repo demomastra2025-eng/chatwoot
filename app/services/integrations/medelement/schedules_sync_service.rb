@@ -1,6 +1,11 @@
+# MEDELEMENT_SCHEDULE_REQUEST_CAP (default 600) limits all windows per hook and run.
+# MEDELEMENT_SCHEDULE_FIRST_FILL_CAP (default 40) separately limits windows with no shadow row.
 class Integrations::Medelement::SchedulesSyncService
   SCHEDULE_HORIZON_DAYS = 90
   REQUEST_CAP = 600
+  FIRST_FILL_CAP = 40
+  FAILURE_BACKOFF = 15.minutes
+  MAX_FAILURE_BACKOFF = 6.hours
   NEAR_REFRESH = 1.hour
   FAR_REFRESH = 12.hours
   LONG_REFRESH = 24.hours
@@ -19,15 +24,23 @@ class Integrations::Medelement::SchedulesSyncService
     @today = now.in_time_zone(configuration.time_zone).to_date
     @counters = { created_count: 0, updated_count: 0, unverified_count: 0, skipped_count: 0, request_count: 0 }
     due = due_days
-    selected = due_windows(due).first(REQUEST_CAP)
-    @counters[:skipped_count] = due.size - selected.sum(&:size)
+    selected = select_windows(due)
+    @counters[:skipped_count] = due.size
     first_error = nil
+    rate_limited = false
     selected.each do |days|
+      @counters[:skipped_count] -= days.size
       refresh(days)
     rescue Integrations::Medelement::Client::ApiError => e
+      if e.status == 429
+        rate_limited = true
+        break
+      end
+
       first_error ||= e
     end
     raise first_error if first_error
+    return @counters if rate_limited
 
     prune_old_days
     @counters
@@ -42,7 +55,7 @@ class Integrations::Medelement::SchedulesSyncService
     resources.find_in_batches(batch_size: 100) { |batch| candidates.concat(due_days_for_batch(batch)) }
     candidates.sort_by do |resource, date, stored|
       checked_at = stored&.status == 'unverified' ? stored.last_attempted_at : stored&.source_checked_at
-      [checked_at || Time.zone.at(0), date, resource.id]
+      [date < today + 2 ? 0 : 1, stored.nil? ? 1 : 0, checked_at || Time.zone.at(0), date, resource.id]
     end
   end
 
@@ -77,6 +90,8 @@ class Integrations::Medelement::SchedulesSyncService
   end
 
   def due?(stored, offset)
+    return false if retry_backoff?(stored)
+
     checked_at = stored&.source_checked_at
     refresh_interval = if offset < 2
                          NEAR_REFRESH
@@ -88,16 +103,47 @@ class Integrations::Medelement::SchedulesSyncService
     checked_at.nil? || checked_at <= now - refresh_interval
   end
 
+  def retry_backoff?(stored)
+    return false unless stored&.status == 'unverified' && stored.last_attempted_at
+
+    exponent = (stored.consecutive_empty_count - 1).clamp(0, 5)
+    delay = [FAILURE_BACKOFF * (2**exponent), MAX_FAILURE_BACKOFF].min
+    stored.last_attempted_at > now - delay
+  end
+
   def due_windows(due)
     priority = due.each_with_index.to_h { |(resource, date, _stored), index| [[resource.id, date], index] }
     windows = due.group_by { |resource, _date, _stored| resource.id }.values.flat_map { |days| windows_for_resource(days) }
     windows.sort_by { |days| days.map { |resource, date, _stored| priority.fetch([resource.id, date]) }.min }
   end
 
+  def select_windows(due)
+    total_cap = env_cap('MEDELEMENT_SCHEDULE_REQUEST_CAP', REQUEST_CAP)
+    fill_cap = env_cap('MEDELEMENT_SCHEDULE_FIRST_FILL_CAP', FIRST_FILL_CAP)
+    selected = []
+    fills = 0
+    due_windows(due).each do |window|
+      break if selected.size >= total_cap
+      next if window.first.last.nil? && fills >= fill_cap
+
+      selected << window
+      fills += 1 if window.first.last.nil?
+    end
+    selected
+  end
+
+  def env_cap(name, default)
+    value = Integer(ENV.fetch(name, default))
+    value.positive? ? value : default
+  rescue ArgumentError, TypeError
+    default
+  end
+
   def windows_for_resource(days)
     days.sort_by { |_resource, date, _stored| date }.each_with_object([]) do |day, windows|
       window = windows.last
-      if window && day[1] == window.last[1] + 1 &&
+      if window && day[2].nil? == window.last[2].nil? &&
+         day[1] == window.last[1] + 1 &&
          day[1] <= window.first[1] + Integrations::Medelement::Client::MAX_TIMETABLE_DAYS - 1
         window << day
       else
@@ -116,7 +162,7 @@ class Integrations::Medelement::SchedulesSyncService
     dates = days.map { |_resource, date, _stored| date }
     @counters[:request_count] += 1
     payload = client.timetable(specialist_code: resource.custom_attributes[SPECIALIST_CODE_KEY].to_s,
-                               starts_on: dates.min, ends_on: dates.max, allow_partial: true)
+                               starts_on: dates.min, ends_on: dates.max, allow_partial: true, retry_429: false)
     days.each do |_day_resource, date, stored|
       day = payload[date.strftime('%d.%m.%Y')] if payload.is_a?(Hash)
       kind, windows = classify_day(day, date)
@@ -188,7 +234,13 @@ class Integrations::Medelement::SchedulesSyncService
 
   def persist_day(resource, date, stored, windows, day)
     record = stored || new_day(resource, date)
-    empty_count = windows.empty? ? record.consecutive_empty_count + 1 : 0
+    empty_count = if windows.any?
+                    0
+                  elsif record.status == 'unverified'
+                    1
+                  else
+                    record.consecutive_empty_count + 1
+                  end
     status = day_status(windows, empty_count)
     record.assign_attributes(
       windows: status == 'empty_confirmed' || windows.any? ? windows : record.windows,
@@ -209,7 +261,8 @@ class Integrations::Medelement::SchedulesSyncService
 
   def mark_unverified(resource, date, stored)
     record = stored || new_day(resource, date)
-    record.update!(status: 'unverified', consecutive_empty_count: 0, last_attempted_at: now)
+    failures = record.status == 'unverified' ? record.consecutive_empty_count + 1 : 1
+    record.update!(status: 'unverified', consecutive_empty_count: failures, last_attempted_at: now)
     @counters[:unverified_count] += 1
     Rails.logger.warn(
       "[MEDELEMENT::SCHEDULES_SYNC] Unverified day account=#{hook.account_id} hook=#{hook.id} " \
