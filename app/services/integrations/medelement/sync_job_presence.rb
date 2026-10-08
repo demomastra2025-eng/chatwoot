@@ -38,7 +38,7 @@ class Integrations::Medelement::SyncJobPresence
     active_job = {} unless active_job.is_a?(Hash)
     return false unless [payload['class'], payload['wrapped'], active_job['job_class']].include?(JOB_CLASS)
 
-    arguments = active_job['arguments'] || payload['args']
+    arguments = payload['class'] == JOB_CLASS ? payload['args'] : active_job['arguments']
     # Unrecognizable sync payloads cannot prove that a candidate is orphaned.
     return true unless arguments.is_a?(Array) && arguments.first.present?
     return false unless arguments.first.to_s == run.hook_id.to_s
