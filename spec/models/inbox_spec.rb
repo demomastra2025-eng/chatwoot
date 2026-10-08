@@ -182,6 +182,27 @@ RSpec.describe Inbox do
       allow(Rails.configuration.dispatcher).to receive(:dispatch)
     end
 
+    it 'keeps automatic memberships when existing numeric and string IDs are submitted again' do
+      users = create_list(:user, 2, account: inbox.account)
+      existing_member_ids = inbox.inbox_members.ids
+
+      expect do
+        inbox.add_members([users.first.id.to_s, users.first.id, users.last.id.to_s])
+      end.not_to change(InboxMember, :count)
+
+      expect(inbox.reload.inbox_members.ids).to match_array(existing_member_ids)
+    end
+
+    it 'rolls back a partially valid member list when a submitted user does not exist' do
+      user = create(:user)
+
+      expect do
+        inbox.add_members([user.id, 'invalid'])
+      end.to raise_error(ActiveRecord::RecordInvalid)
+
+      expect(inbox.reload.members.ids).not_to include(user.id)
+    end
+
     it 'handles adds all members and resets cache keys' do
       users = FactoryBot.create_list(:user, 3)
       inbox.add_members(users.map(&:id))

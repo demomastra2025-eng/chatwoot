@@ -115,7 +115,9 @@ class Inbox < ApplicationRecord
   # @param user_ids [Array<Integer>] Array of user IDs to add as members
   # @return [void]
   def add_members(user_ids)
-    inbox_members.create!(user_ids.map { |user_id| { user_id: user_id } })
+    account.with_lock('FOR NO KEY UPDATE') do
+      user_ids.each { |user_id| inbox_members.find_or_create_by!(user_id: user_id) }
+    end
     update_account_cache
   end
 

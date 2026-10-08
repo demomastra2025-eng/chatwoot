@@ -52,6 +52,51 @@ RSpec.describe 'Default inbox membership concurrency', type: :model do
     cleanup_membership_records(account, user) if account
   end
 
+  it 'serializes an explicit member add with new employee defaults without duplicate inserts' do
+    account = create(:account)
+    user = create(:user)
+    inbox = create(:inbox, account: account)
+    entered = Queue.new
+    release = Queue.new
+    errors = Queue.new
+
+    allow_any_instance_of(Account).to receive(:with_lock).and_wrap_original do |with_lock, *args, &block|
+      entered << true
+      release.pop
+      with_lock.call(*args, &block)
+    end
+
+    add_worker = Thread.new do
+      ActiveRecord::Base.connection_pool.with_connection do
+        Inbox.find(inbox.id).add_members([user.id.to_s])
+      end
+    rescue StandardError => e
+      errors << e
+    end
+    member_worker = Thread.new do
+      ActiveRecord::Base.connection_pool.with_connection do
+        create(:account_user, account: Account.find(account.id), user: User.find(user.id))
+      end
+    rescue StandardError => e
+      errors << e
+    end
+
+    Timeout.timeout(5) { 2.times { entered.pop } }
+    2.times { release << true }
+    Timeout.timeout(10) { [add_worker, member_worker].each(&:join) }
+
+    expect(errors.size).to eq(0)
+    expect(inbox.reload.inbox_members.where(user: user).count).to eq(1)
+    expect(account.account_users.where(user: user).count).to eq(1)
+  ensure
+    2.times { release << true } if release
+    [add_worker, member_worker].compact.each do |worker|
+      worker.join(2)
+      worker.kill if worker.alive?
+    end
+    cleanup_membership_records(account, user) if account
+  end
+
   def cleanup_membership_records(account, user)
     # This non-transactional example removes only its own fixture graph.
     inbox_ids = Inbox.where(account_id: account.id).select(:id)

@@ -47,11 +47,21 @@ class Api::V1::Accounts::InboxMembersController < Api::V1::Accounts::BaseControl
   end
 
   def agents_to_be_added_ids
-    params[:user_ids] - @current_agents_ids
+    requested_agents_ids - @current_agents_ids
   end
 
   def agents_to_be_removed_ids
-    @current_agents_ids - params[:user_ids]
+    @current_agents_ids - requested_agents_ids
+  end
+
+  def requested_agents_ids
+    @requested_agents_ids ||= params[:user_ids].map do |user_id|
+      next user_id if user_id.is_a?(Integer)
+      next user_id.to_i if user_id.is_a?(String) && user_id.match?(/\A\d+\z/)
+
+      # Invalid IDs must fail native membership validation, not be cast from a numeric prefix.
+      nil
+    end.uniq
   end
 
   def current_agents_ids
