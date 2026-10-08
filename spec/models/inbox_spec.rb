@@ -137,14 +137,14 @@ RSpec.describe Inbox do
       expect(account.account_users.pluck(:role)).to contain_exactly('agent', 'administrator')
     end
 
-    it 'keeps a membership supplied during creation without inserting a duplicate' do
+    it 'keeps existing memberships when creation defaults are applied again' do
       agent = create(:user, account: account)
-      inbox = build(:inbox, account: account)
-      inbox.inbox_members.build(user: agent)
+      inbox = create(:inbox, account: account)
+      membership = inbox.inbox_members.find_by!(user: agent)
 
-      expect { inbox.save! }.to change(InboxMember, :count).by(1)
+      expect { inbox.run_callbacks(:create) { inbox } }.not_to change(InboxMember, :count)
 
-      expect(inbox.members.ids).to eq([agent.id])
+      expect(inbox.reload.inbox_members.where(user: agent).ids).to eq([membership.id])
     end
 
     it 'does not restore manually removed members when an existing inbox is updated' do
