@@ -516,7 +516,9 @@ describe('WhatsApp Embedded Signup', () => {
     expect(useAlertMock).toHaveBeenCalledWith(
       'INBOX_MGMT.ADD.WHATSAPP.EMBEDDED_SIGNUP.ALREADY_CONNECTED'
     );
-    expect(whatsappChannelMock.getEmbeddedSignupAttemptStatus).not.toHaveBeenCalled();
+    expect(
+      whatsappChannelMock.getEmbeddedSignupAttemptStatus
+    ).not.toHaveBeenCalled();
     expect(window.localStorage.getItem(PENDING_KEY)).toBeNull();
     wrapper.unmount();
   });
@@ -549,6 +551,52 @@ describe('WhatsApp Embedded Signup', () => {
     expect(useAlertMock).toHaveBeenCalledWith(
       'INBOX_MGMT.ADD.WHATSAPP.EMBEDDED_SIGNUP.ALREADY_CONNECTED'
     );
+    expect(window.localStorage.getItem(PENDING_KEY)).toBeNull();
+    wrapper.unmount();
+  });
+
+  it.each([undefined, 0, -1, 1.5, 'invalid'])(
+    'does not navigate when the verified duplicate has an invalid inbox id: %s',
+    async inboxId => {
+      dispatchMock.mockRejectedValue({
+        response: {
+          status: 409,
+          data: { error_code: 'already_connected', inbox_id: inboxId },
+        },
+      });
+      const wrapper = await mountReady();
+
+      await clickStandard(wrapper);
+      postMetaMessage(FINISH_EVENT);
+      await flushPromises();
+
+      expect(routerReplaceMock).not.toHaveBeenCalled();
+      expect(useAlertMock).toHaveBeenCalledWith(
+        'INBOX_MGMT.ADD.WHATSAPP.API.ERROR_MESSAGE'
+      );
+      expect(window.localStorage.getItem(PENDING_KEY)).toBeNull();
+      wrapper.unmount();
+    }
+  );
+
+  it('shows recovery when polling finds an already-connected failure without a safe inbox id', async () => {
+    window.localStorage.setItem(
+      PENDING_KEY,
+      JSON.stringify({
+        nonce: NONCE,
+        flow: 'standard',
+        startedAt: Date.now(),
+        codeSubmitted: true,
+      })
+    );
+    whatsappChannelMock.getEmbeddedSignupAttemptStatus.mockResolvedValue({
+      data: { status: 'failed', error_code: 'already_connected', inbox_id: -1 },
+    });
+
+    const wrapper = await mountReady();
+
+    expect(routerReplaceMock).not.toHaveBeenCalled();
+    expect(recoveryPanel(wrapper).text()).toContain('RECOVERY.FAILED_TITLE');
     expect(window.localStorage.getItem(PENDING_KEY)).toBeNull();
     wrapper.unmount();
   });

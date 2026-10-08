@@ -659,7 +659,7 @@ RSpec.describe 'WhatsApp Authorization API', type: :request do
       let(:agent) { create(:user, account: account, role: :agent) }
 
       before do
-        create(:inbox_member, inbox: whatsapp_inbox, user: agent)
+        whatsapp_inbox.inbox_members.find_or_create_by!(user: agent)
       end
 
       it 'forbids proactive reauthorization of an expiring channel' do

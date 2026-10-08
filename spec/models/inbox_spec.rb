@@ -122,6 +122,59 @@ RSpec.describe Inbox do
     it_behaves_like 'avatarable'
   end
 
+  describe 'default account membership' do
+    let(:account) { create(:account) }
+
+    it 'adds all workspace employees, including administrators, when an inbox is created' do
+      agent = create(:user, account: account, role: :agent)
+      administrator = create(:user, account: account, role: :administrator)
+      foreign_user = create(:user, account: create(:account))
+
+      inbox = create(:inbox, account: account)
+
+      expect(inbox.members.ids).to contain_exactly(agent.id, administrator.id)
+      expect(inbox.members.ids).not_to include(foreign_user.id)
+      expect(account.account_users.pluck(:role)).to contain_exactly('agent', 'administrator')
+    end
+
+    it 'keeps a membership supplied during creation without inserting a duplicate' do
+      agent = create(:user, account: account)
+      inbox = build(:inbox, account: account)
+      inbox.inbox_members.build(user: agent)
+
+      expect { inbox.save! }.to change(InboxMember, :count).by(1)
+
+      expect(inbox.members.ids).to eq([agent.id])
+    end
+
+    it 'does not restore manually removed members when an existing inbox is updated' do
+      agent = create(:user, account: account)
+      inbox = create(:inbox, account: account)
+      inbox.remove_members([agent.id])
+
+      inbox.update!(name: 'Renamed inbox')
+
+      expect(inbox.reload.members).to be_empty
+    end
+
+    it 'does not add defaults to an inbox created in a deletion state' do
+      create(:user, account: account)
+
+      deleting_inbox = create(:inbox, account: account, deleting_at: Time.current)
+      attempted_inbox = create(:inbox, account: account, deletion_attempt_id: SecureRandom.uuid)
+
+      expect(deleting_inbox.members).to be_empty
+      expect(attempted_inbox.members).to be_empty
+    end
+
+    it 'does not add defaults when the workspace is marked for deletion' do
+      create(:user, account: account)
+      account.update!(custom_attributes: { 'marked_for_deletion_at' => Time.current.iso8601 })
+
+      expect(create(:inbox, account: account).members).to be_empty
+    end
+  end
+
   describe '#add_members' do
     let(:inbox) { FactoryBot.create(:inbox) }
 

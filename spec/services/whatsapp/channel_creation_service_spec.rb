@@ -86,6 +86,17 @@ describe Whatsapp::ChannelCreationService do
         expect(inbox.account).to eq(account)
       end
 
+      it 'creates the WhatsApp inbox with all workspace employees before provider setup can be interrupted' do
+        agent = create(:user, account: account)
+        administrator = create(:user, account: account, role: :administrator)
+        foreign_user = create(:user, account: create(:account))
+
+        channel = service.perform
+
+        expect(channel.inbox.members.ids).to contain_exactly(agent.id, administrator.id)
+        expect(channel.inbox.members.ids).not_to include(foreign_user.id)
+      end
+
       it 'does not create a sibling while the WABA routing lock is held by another session' do
         ready = Queue.new
         release = Queue.new
@@ -134,11 +145,14 @@ describe Whatsapp::ChannelCreationService do
         }
       end
       let(:existing_channel) do
-        create(:channel_whatsapp, account: account, phone_number: '+1234567890', provider: 'whatsapp_cloud',
-                                  provider_config: existing_provider_config, sync_templates: false,
-                                  validate_provider_config: false)
+        channel = create(:channel_whatsapp, account: account, phone_number: '+1234567890', provider: 'whatsapp_cloud',
+                                           provider_config: existing_provider_config, sync_templates: false,
+                                           validate_provider_config: false)
+        # The factory overwrites Cloud IDs/token and creates its own inbox.
+        channel.persist_provider_config_state!(existing_provider_config)
+        channel
       end
-      let!(:existing_inbox) { create(:inbox, account: account, channel: existing_channel) }
+      let!(:existing_inbox) { existing_channel.inbox }
 
       it 'returns the existing inbox id without creating or adopting a channel' do
         expect do
@@ -149,13 +163,34 @@ describe Whatsapp::ChannelCreationService do
         expect(existing_channel.reload.provider_config['api_key']).to eq('existing_access_token')
       end
 
-      it 'does not classify an identity mismatch as an existing connection' do
-        existing_channel.update!(provider_config: existing_provider_config.merge('business_account_id' => 'another_waba'))
+      {
+        'business_account_id' => 'another_waba',
+        'phone_number_id' => 'another_phone',
+        'business_id' => 'another_business',
+        'source' => 'manual',
+        'embedded_signup_flow' => 'coexistence'
+      }.each do |key, mismatch|
+        it "does not classify a #{key} mismatch as an existing connection" do
+          existing_channel.persist_provider_config_state!(existing_provider_config.merge(key => mismatch))
 
-        expect { service.perform }.to raise_error(
-          RuntimeError,
-          I18n.t('errors.whatsapp.phone_number_already_exists', phone_number: '+1234567890')
-        )
+          expect { service.perform }.to raise_error(
+            RuntimeError,
+            I18n.t('errors.whatsapp.phone_number_already_exists', phone_number: '+1234567890')
+          )
+          expect(existing_channel.reload.provider_config['api_key']).to eq('existing_access_token')
+        end
+      end
+
+      context 'when the freshly verified mobile completion omitted business_id' do
+        let(:waba_info) { super().except(:business_id) }
+
+        it 'opens the exact WABA and phone connection without changing its credentials' do
+          expect { service.perform }.to raise_error(described_class::AlreadyConnectedError) do |error|
+            expect(error.inbox_id).to eq(existing_inbox.id)
+          end
+
+          expect(existing_channel.reload.provider_config).to eq(existing_provider_config)
+        end
       end
 
       it 'does not expose a deleting inbox as a recovery target' do

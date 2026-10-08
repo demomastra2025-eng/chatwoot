@@ -102,6 +102,7 @@ class Inbox < ApplicationRecord
   enum sender_name_type: { friendly: 0, professional: 1 }
 
   before_validation :apply_single_conversation_default, on: :create
+  after_create :add_account_members
   after_destroy :delete_round_robin_agents
 
   after_create_commit :dispatch_create_event
@@ -366,6 +367,15 @@ class Inbox < ApplicationRecord
   end
 
   private
+
+  def add_account_members
+    # Serialize both creation paths without conflicting with their account foreign-key locks.
+    account.with_lock('FOR NO KEY UPDATE') do
+      next if deleting? || self[:deletion_attempt_id].present? || account_deletion_requested?
+
+      account.users.ids.each { |user_id| inbox_members.find_or_create_by!(user_id: user_id) }
+    end
+  end
 
   def default_name_for_blank_name
     email? ? display_name_from_email : ''

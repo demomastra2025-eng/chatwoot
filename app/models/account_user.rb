@@ -36,7 +36,8 @@ class AccountUser < ApplicationRecord
 
   accepts_nested_attributes_for :account
 
-  after_create_commit :notify_creation, :create_notification_setting
+  after_create :join_account_inboxes
+  after_create_commit :notify_creation, :create_notification_setting, :update_inbox_membership_cache
   after_destroy :notify_deletion, :remove_user_from_account
   after_save :update_presence_in_redis, if: :saved_change_to_availability?
 
@@ -71,6 +72,20 @@ class AccountUser < ApplicationRecord
   end
 
   private
+
+  def join_account_inboxes
+    account.with_lock('FOR NO KEY UPDATE') do
+      next if account.custom_attributes.to_h['marked_for_deletion_at'].present?
+
+      account.inboxes.active.where(deletion_attempt_id: nil).find_each do |inbox|
+        inbox.inbox_members.find_or_create_by!(user_id: user_id)
+      end
+    end
+  end
+
+  def update_inbox_membership_cache
+    account.update_cache_key('inbox') unless Current.suppress_runtime_events
+  end
 
   def notify_creation
     Rails.configuration.dispatcher.dispatch(AGENT_ADDED, Time.zone.now, account: account)

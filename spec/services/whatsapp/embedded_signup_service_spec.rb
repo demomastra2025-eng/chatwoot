@@ -101,6 +101,36 @@ describe Whatsapp::EmbeddedSignupService do
       expect(result).to eq(channel)
     end
 
+    it 'verifies a duplicate without replacing credentials, registering, or tearing down the existing connection' do
+      existing_channel = create(:channel_whatsapp, account: account, phone_number: phone_info[:phone_number],
+                                                   provider: 'whatsapp_cloud', sync_templates: false, validate_provider_config: false)
+      existing_config = {
+        'api_key' => 'existing-access-token',
+        'business_account_id' => params[:waba_id],
+        'business_id' => params[:business_id],
+        'phone_number_id' => params[:phone_number_id],
+        'source' => 'embedded_signup',
+        'embedded_signup_flow' => 'standard',
+        'verification_pin' => '111111',
+        'phone_registration' => { 'status' => 'outcome_unknown', 'pending_pin_ciphertext' => 'encrypted-candidate' }
+      }
+      existing_channel.persist_provider_config_state!(existing_config)
+      allow(Whatsapp::ChannelCreationService).to receive(:new).and_call_original
+      expect(Whatsapp::WebhookSetupService).not_to receive(:new)
+      expect(Whatsapp::PhoneRegistrationService).not_to receive(:new)
+      expect(Whatsapp::WebhookTeardownService).not_to receive(:new)
+      expect(Whatsapp::HealthService).not_to receive(:new)
+
+      expect { service.perform }.to raise_error(Whatsapp::ChannelCreationService::AlreadyConnectedError) do |error|
+        expect(error.inbox_id).to eq(existing_channel.inbox.id)
+      end
+
+      expect(Whatsapp::PhoneInfoService).to have_received(:new)
+      expect(Whatsapp::TokenValidationService).to have_received(:new)
+      expect(existing_channel.reload.provider_config).to eq(existing_config)
+      expect(Channel::Whatsapp.where(account: account).count).to eq(1)
+    end
+
     context 'when non-expiring token enforcement is enabled' do
       let(:require_non_expiring_system_user_token) { true }
 

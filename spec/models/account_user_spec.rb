@@ -20,6 +20,68 @@ RSpec.describe AccountUser do
     end
   end
 
+  describe 'default inbox membership' do
+    it 'adds a new workspace employee to every active inbox in that workspace only' do
+      second_inbox = create(:inbox, account: account_user.account)
+      foreign_inbox = create(:inbox)
+      new_user = create(:user)
+
+      membership = create(:account_user, account: account_user.account, user: new_user, role: :agent)
+
+      expect(new_user.inboxes.ids).to contain_exactly(inbox.id, second_inbox.id)
+      expect(new_user.inboxes.ids).not_to include(foreign_inbox.id)
+      expect(membership.reload.role).to eq('agent')
+    end
+
+    it 'does not duplicate a membership that already exists' do
+      new_user = create(:user)
+      existing_member = create(:inbox_member, inbox: inbox, user: new_user)
+
+      expect do
+        create(:account_user, account: account_user.account, user: new_user)
+      end.not_to change(InboxMember, :count)
+
+      expect(inbox.inbox_members.where(user: new_user).ids).to eq([existing_member.id])
+    end
+
+    it 'does not join inboxes undergoing deletion' do
+      deleting_inbox = create(:inbox, account: account_user.account, deleting_at: Time.current)
+      attempted_inbox = create(:inbox, account: account_user.account, deletion_attempt_id: SecureRandom.uuid)
+      new_user = create(:user)
+
+      create(:account_user, account: account_user.account, user: new_user)
+
+      expect(new_user.inboxes.ids).to eq([inbox.id])
+      expect(deleting_inbox.members.ids).not_to include(new_user.id)
+      expect(attempted_inbox.members.ids).not_to include(new_user.id)
+    end
+
+    it 'does not join inboxes when the workspace is marked for deletion' do
+      account_user.account.update!(custom_attributes: { 'marked_for_deletion_at' => Time.current.iso8601 })
+      new_user = create(:user)
+
+      create(:account_user, account: account_user.account, user: new_user)
+
+      expect(new_user.inboxes).to be_empty
+    end
+
+    it 'does not restore manually removed memberships when the workspace member is updated' do
+      inbox.remove_members([account_user.user_id])
+
+      account_user.update!(availability: :busy)
+
+      expect(inbox.reload.members).to be_empty
+    end
+
+    it 'invalidates inbox data after adding the new workspace employee' do
+      allow(account_user.account).to receive(:update_cache_key).and_call_original
+
+      create(:account_user, account: account_user.account)
+
+      expect(account_user.account).to have_received(:update_cache_key).with('inbox')
+    end
+  end
+
   describe 'permissions' do
     it 'returns the right permissions' do
       expect(account_user.permissions).to eq(['agent'])
