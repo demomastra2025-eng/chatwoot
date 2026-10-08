@@ -19,6 +19,10 @@ deploy script.
    CI compares installed deploy, preparer and asset verifier SHA-256 values
    with the exact release sources. The existing `/root/work/e-heavy.sh` is
    required and is not changed by the installer.
+   Preparation and deployment both require the reviewed versioned toolchain:
+   `/opt/node-24/bin/node` (24.x), `/opt/node-24/bin/pnpm` (10.x), and Ruby 3.4.4
+   through `/opt/rbenv` with `RBENV_VERSION` pinned. They fail before work if
+   versions/paths differ; the system-wide default Node is not changed.
 2. Deploy this compatible code with both flags off and the existing Vite
    process running. A previous release without `BUILT_ASSETS_CONTRACT = 1`
    cannot support rollback after the runtime switches to built assets.

@@ -42,11 +42,20 @@ ASSET_TOOL=/usr/local/sbin/onelink-dev-built-assets
 ASSET_ARTIFACT="${ROOT}/runtime/built-assets/${SHA}"
 ASSET_RESPONSE="${ROOT}/runtime/asset-response.$$"
 readonly RBENV_ROOT=/opt/rbenv
-readonly DEV_TOOLCHAIN_PATH="${RBENV_ROOT}/bin:${RBENV_ROOT}/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+readonly DEV_NODE_ROOT=/opt/node-24
+readonly DEV_RUBY_VERSION=3.4.4
+readonly DEV_TOOLCHAIN_PATH="${DEV_NODE_ROOT}/bin:${RBENV_ROOT}/bin:${RBENV_ROOT}/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 configure_toolchain() {
-  export RBENV_ROOT
+  export RBENV_ROOT RBENV_VERSION="${DEV_RUBY_VERSION}"
   export PATH="${DEV_TOOLCHAIN_PATH}"
   hash -r
+  [[ "$(command -v node)" == "${DEV_NODE_ROOT}/bin/node" && "$(node --version)" == v24.* ]] || {
+    echo 'DEV requires the versioned Node 24 toolchain' >&2; exit 69;
+  }
+  [[ "$(command -v pnpm)" == "${DEV_NODE_ROOT}/bin/pnpm" && "$(pnpm --version)" == 10.* ]] || {
+    echo 'DEV requires the versioned pnpm 10 toolchain' >&2; exit 69;
+  }
+  ruby -e 'abort "DEV requires Ruby #{ARGV[0]}" unless RUBY_VERSION == ARGV[0]' "${DEV_RUBY_VERSION}"
 }
 configure_toolchain
 PREVIOUS="$(readlink -f "${CURRENT}" 2>/dev/null || true)"
@@ -150,7 +159,7 @@ load_dev_env() {
     value="${line#*=}"
     [[ "${key}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
     case "${key}" in
-      PATH | RBENV_ROOT | DEV_TOOLCHAIN_PATH | BASH_ENV | ENV) continue ;;
+      PATH | RBENV_ROOT | RBENV_VERSION | DEV_NODE_ROOT | DEV_RUBY_VERSION | DEV_TOOLCHAIN_PATH | BASH_ENV | ENV) continue ;;
     esac
     export "${key}=${value}"
   done < "${ENV_FILE}"

@@ -168,7 +168,7 @@ class DeploymentContractTest(unittest.TestCase):
             env_file = root / ".env.development"
             fixture = root / "parse.sh"
             fixture.write_text("set -euo pipefail\nROOT=" + shlex.quote(root.as_posix()) +
-                               "\nENV_FILE=\"${ROOT}/.env.development\"\nDEV_TOOLCHAIN_PATH=\"$PATH\"\n" + parser,
+                               "\nENV_FILE=\"${ROOT}/.env.development\"\nDEV_TOOLCHAIN_PATH=\"$PATH\"\nconfigure_toolchain() { :; }\n" + parser,
                                encoding="utf-8", newline="\n")
             env = dict(os.environ)
             for key in ("ONELINK_DEV_BUILT_ASSETS", "RAILS_ENV", "NODE_ENV", "POSTGRES_DATABASE"):
@@ -194,6 +194,22 @@ class DeploymentContractTest(unittest.TestCase):
                     self.assertEqual(result.returncode, expected, result.stderr)
                     if expected == 0:
                         self.assertIn("no build required", result.stdout)
+
+    def test_preparation_and_deployment_share_the_versioned_toolchain(self):
+        contracts = []
+        for name in ("prepare_dev_assets.sh", "deploy_dev_release.sh"):
+            source = (ROOT / "script/onelink" / name).read_text(encoding="utf-8")
+            start = source.index("readonly RBENV_ROOT=")
+            end = source.index("\nconfigure_toolchain\n", start)
+            contract = source[start:end]
+            contracts.append(contract)
+            self.assertIn("readonly DEV_NODE_ROOT=/opt/node-24", contract)
+            self.assertIn("readonly DEV_RUBY_VERSION=3.4.4", contract)
+            self.assertIn('${DEV_NODE_ROOT}/bin:${RBENV_ROOT}/bin:${RBENV_ROOT}/shims:', contract)
+            self.assertIn('"$(node --version)" == v24.*', contract)
+            self.assertIn('"$(pnpm --version)" == 10.*', contract)
+            self.assertIn('RBENV_VERSION="${DEV_RUBY_VERSION}"', contract)
+        self.assertEqual(contracts[0], contracts[1])
 
     def test_workflow_prepares_before_deploy_and_checks_installed_tools(self):
         workflow = (ROOT / ".github/workflows/onelink_release.yml").read_text(encoding="utf-8")
