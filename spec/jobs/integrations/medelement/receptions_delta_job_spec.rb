@@ -35,12 +35,18 @@ RSpec.describe Integrations::Medelement::ReceptionsDeltaJob do
   end
 
   it 'backs off on rate limiting and restores the interval after a successful poll' do
+    lower_bound = 10.minutes.ago
+    cursor = Integrations::Medelement::SyncCursor.create!(
+      hook: hook, name: 'receptions_delta', value: lower_bound
+    )
     allow(poller).to receive(:perform).and_raise(
       Integrations::Medelement::Client::ApiError.new('rate limited', status: 429)
     )
     described_class.perform_now(hook.id)
-    cursor = Integrations::Medelement::SyncCursor.find_by!(hook: hook)
+    cursor.reload
     expect(cursor.current_interval_seconds).to eq(120)
+    expect(cursor.value).to be_within(1.second).of(lower_bound)
+    expect(cursor.last_success_at).to be_nil
 
     cursor.update!(last_poll_at: 3.minutes.ago)
     allow(poller).to receive(:perform) do

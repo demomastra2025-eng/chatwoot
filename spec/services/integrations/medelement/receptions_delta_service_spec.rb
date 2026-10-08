@@ -41,7 +41,9 @@ RSpec.describe Integrations::Medelement::ReceptionsDeltaService do
     allow(importer).to receive(:import_reported_reception!).and_raise(StandardError, 'apply failed')
 
     expect { service.perform }.to raise_error(StandardError, 'apply failed')
-    expect(Integrations::Medelement::SyncCursor.find_by!(hook: hook, name: 'receptions_delta').value).to be_nil
+    cursor = Integrations::Medelement::SyncCursor.find_by!(hook: hook, name: 'receptions_delta')
+    expect(cursor.value).to be_present
+    expect(cursor.last_success_at).to be_nil
     expect(Integrations::Medelement::DeltaSeenReception.where(hook: hook)).to be_empty
   end
 
@@ -53,21 +55,70 @@ RSpec.describe Integrations::Medelement::ReceptionsDeltaService do
 
     expect(result).to include(applied: 0, skipped: 1)
     expect(importer).to have_received(:import_reported_reception!).once
+    expect(client).to have_received(:get_reception).twice
     expect(Integrations::Medelement::DeltaSeenReception.where(hook: hook).count).to eq(1)
   end
 
-  it 'carries codes beyond the cap into the next poll without moving the cursor early' do
+  it 'keeps the first lower bound across a slow capped poll and advances only after draining' do
     entries = (1..201).map { |number| { 'RECEPTION_CODE' => format('reception-%03d', number) } }
-    allow(client).to receive(:receptions_by_update_date).and_return(entries)
+    started_at = Time.current.change(sec: 0)
+    lower_bound = (started_at - 3.minutes).in_time_zone(
+      Integrations::Medelement::Configuration.new(hook: hook).time_zone
+    ).strftime('%d.%m.%Y %H:%M')
+    requests = []
+    allow(client).to receive(:receptions_by_update_date) do |update_date_from:|
+      requests << update_date_from
+      travel 4.minutes if requests.one?
+      update_date_from == lower_bound ? entries : []
+    end
 
-    first = service.perform
-    expect(first).to include(applied: 200, complete: false)
-    expect(Integrations::Medelement::SyncCursor.find_by!(hook: hook, name: 'receptions_delta').value).to be_nil
+    travel_to(started_at) do
+      first = service.perform
+      cursor = Integrations::Medelement::SyncCursor.find_by!(hook: hook, name: 'receptions_delta')
+      expect(first).to include(applied: 200, complete: false)
+      expect(cursor.value).to eq(started_at - 3.minutes)
+      expect(cursor.last_success_at).to be_nil
 
-    second = service.perform
-    expect(second).to include(applied: 1, skipped: 200, complete: true)
-    expect(Integrations::Medelement::SyncCursor.find_by!(hook: hook, name: 'receptions_delta').value).to be_present
-    expect(importer).to have_received(:import_reported_reception!).exactly(201).times
+      second = service.perform
+      expect(second).to include(applied: 1, skipped: 200, complete: true)
+      expect(cursor.reload.value).to eq(started_at + 4.minutes)
+      expect(requests).to eq([lower_bound, lower_bound])
+      expect(importer).to have_received(:import_reported_reception!).exactly(201).times
+    end
+  end
+
+  it 'skips details when the update list contains a complete marker already seen' do
+    entry = detail_for('reception-1')
+    (Integrations::Medelement::ReceptionChangeMarker::FIELDS - entry.keys).each { |field| entry[field] = nil }
+    allow(client).to receive(:receptions_by_update_date).and_return([entry])
+    allow(client).to receive(:get_reception).and_return(entry)
+
+    expect(service.perform).to include(applied: 1, complete: true)
+    expect(service.perform).to include(applied: 0, skipped: 1, complete: true)
+    expect(client).to have_received(:get_reception).once
+  end
+
+  it 'keeps the first lower bound after a rate-limited update list request' do
+    started_at = Time.current.change(sec: 0)
+    requests = []
+    allow(client).to receive(:receptions_by_update_date) do |update_date_from:|
+      requests << update_date_from
+      raise Integrations::Medelement::Client::ApiError.new('rate limited', status: 429) if requests.one?
+
+      []
+    end
+
+    travel_to(started_at) do
+      expect { service.perform }.to raise_error(Integrations::Medelement::Client::ApiError)
+      cursor = Integrations::Medelement::SyncCursor.find_by!(hook: hook, name: 'receptions_delta')
+      expect(cursor.value).to eq(started_at - 3.minutes)
+      expect(cursor.last_success_at).to be_nil
+
+      travel 6.minutes
+      expect(service.perform).to include(complete: true)
+      expect(requests.size).to eq(2)
+      expect(requests.uniq.size).to eq(1)
+    end
   end
 
   it 'marks an out-of-scope reception as observed without blocking other codes' do

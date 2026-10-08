@@ -15,13 +15,14 @@ class Integrations::Medelement::ReceptionsDeltaService
 
     started_at = Time.current
     cursor = find_cursor
-    codes = changed_codes(cursor, started_at)
-    counts = apply_codes(codes)
+    initialize_lower_bound!(cursor)
+    changes = changed_codes(cursor)
+    counts = apply_codes(changes)
     complete = counts[:complete]
     update_cursor!(cursor, started_at, complete)
     Integrations::Medelement::DeltaMissAudit.new(hook: hook).resolve_candidates!(poll_completed_at: Time.current) if complete
-    log_poll(cursor, codes, counts)
-    counts.merge(changed_codes: codes.size)
+    log_poll(cursor, changes, counts)
+    counts.merge(changed_codes: changes.size)
   end
 
   private
@@ -33,21 +34,25 @@ class Integrations::Medelement::ReceptionsDeltaService
       configuration.incremental_receptions_enabled?
   end
 
-  def changed_codes(cursor, started_at)
-    from = (cursor.value || started_at) - OVERLAP
+  def initialize_lower_bound!(cursor)
+    cursor.update!(value: cursor.created_at - OVERLAP) unless cursor.value
+  end
+
+  def changed_codes(cursor)
+    from = cursor.last_success_at ? cursor.value - OVERLAP : cursor.value
     entries = client.receptions_by_update_date(
       update_date_from: from.in_time_zone(configuration.time_zone).strftime('%d.%m.%Y %H:%M')
     )
-    entries.map { |entry| reception_code!(entry) }.uniq.sort
+    entries.group_by { |entry| reception_code!(entry) }.sort.to_h
   end
 
-  def apply_codes(codes)
+  def apply_codes(changes)
     applied = 0
     skipped = 0
     processed = 0
     complete = true
-    codes.each do |code|
-      outcome = process_code(code, processed)
+    changes.each do |code, entries|
+      outcome = process_code(code, entries, processed)
       if outcome == :seen
         skipped += 1
         next
@@ -64,15 +69,26 @@ class Integrations::Medelement::ReceptionsDeltaService
     { applied: applied, skipped: skipped, complete: complete }
   end
 
-  def process_code(code, processed)
+  def process_code(code, entries, processed)
     @renew_locks&.call
+    return :seen if entries.all? { |entry| (marker = update_marker(entry)) && seen?(code, marker) }
+    return :cap if processed >= MAX_CHANGED
+
     detail, marker = fetch_detail(code)
     return :seen if seen?(code, marker)
-    return :cap if processed >= MAX_CHANGED
 
     result = apply_detail!(detail)
     mark_seen!(code, marker)
     result
+  end
+
+  def update_marker(entry)
+    return 'removed' if entry['REMOVED'].to_i == 1
+    # Code-only and partial entries cannot prove that the current detail is unchanged.
+    return unless (Integrations::Medelement::ReceptionChangeMarker::FIELDS - entry.keys).empty?
+    return unless entry['PATIENT_CODE'].present? || entry['PROFILE_CODE'].present?
+
+    Integrations::Medelement::ReceptionChangeMarker.call(entry)
   end
 
   def update_cursor!(cursor, started_at, complete)
