@@ -73,6 +73,7 @@ RSpec.describe Captain::BaseTaskService do
     end
 
     it 'memoizes the conversation' do
+      conversation
       expect(account.conversations).to receive(:find_by).once.and_return(conversation)
       service.send(:conversation)
       service.send(:conversation)
