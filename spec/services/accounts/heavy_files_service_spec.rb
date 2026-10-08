@@ -188,6 +188,20 @@ RSpec.describe Accounts::HeavyFilesService do
         expect(service.recordings_pending?).to be(true)
       end
 
+      it 'accepts numeric date directories under this account while rejecting a numeric foreign account as provider' do
+        own = create(:telephony_call_session, account: account, inbox: inbox, number_binding: number_binding,
+                                              recording_ref: "voice-recordings/#{account.id}/2026/10/call.wav",
+                                              metadata: { 'recording' => { 'byte_size' => 36 } })
+        foreign_id = create(:account).id
+        create(:telephony_call_session, account: account, inbox: inbox, number_binding: number_binding,
+                                       recording_ref: "voice-recordings/#{foreign_id}/#{account.id}/foreign.wav",
+                                       metadata: { 'recording' => { 'byte_size' => 1000 } })
+
+        files = described_class.new(account: account, params: { file_type: 'recordings' }).perform
+
+        expect(files.map { |row| [row[:id], row[:byte_size]] }).to eq([["call_#{own.id}", 36]])
+      end
+
       it 'generates the current recording link immediately after compression rather than serving an old snapshot URL' do
         session, = recording(size: 30, created_at: Time.current)
         Accounts::StorageBreakdownRefreshJob.perform_now(account.id)

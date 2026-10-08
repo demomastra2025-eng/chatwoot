@@ -56,11 +56,10 @@ module Storage::RecordingMetadata
   def primary_size_sql(account_id:)
     connection = ActiveRecord::Base.connection
     root = Regexp.escape("#{Storage::RecordingPaths.root.expand_path}/")
-    local_pattern = "^(#{root})?voice-recordings/(#{Integer(account_id)}/.+|[^/]+/#{Integer(account_id)}/.+)$"
+    local_pattern = "^(#{root})?voice-recordings/(#{Integer(account_id)}/.+|[^/]*[^/0-9][^/]*/#{Integer(account_id)}/.+)$"
     native = <<~SQL.squish
       CASE WHEN recording_ref ~ #{connection.quote(local_pattern)}
         AND recording_ref !~ '(^|/)[.]{1,2}(/|$)'
-        AND recording_ref !~ 'voice-recordings/[0-9]+/[0-9]+/'
         AND (NULLIF(metadata #>> '{recording,storage_key}', '') IS NULL OR metadata #>> '{recording,storage_key}' = recording_ref)
         AND metadata #>> '{recording,byte_size}' ~ '^[0-9]{1,18}$'
       THEN (metadata #>> '{recording,byte_size}')::bigint END
