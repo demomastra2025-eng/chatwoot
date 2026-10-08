@@ -96,6 +96,7 @@ RSpec.describe AccountLimits::StorageUsageService do
       %w[storage_overview_v1 storage_heavy_recordings_v1 storage_overview_pending_v2 storage_generation_v1 recording_reconciliation_v1].each do |key|
         Redis::Alfred.delete("account:#{account.id}:#{key}")
       end
+      Redis::Alfred.delete(account.local_recordings_last_good_cache_key)
     end
 
     it 'leaves local recordings out of the quota by default' do
@@ -152,6 +153,7 @@ RSpec.describe AccountLimits::StorageUsageService do
         Redis::Alfred.delete("account:#{account.id}:storage_overview_v1")
         cache.delete(account.local_recordings_bytes_cache_key)
         cache.delete(account.local_recordings_last_good_cache_key)
+        Redis::Alfred.delete(account.local_recordings_last_good_cache_key)
         expect(Storage::RecordingPaths).not_to receive(:each_file_with_stat_for_account)
         expect(Storage::RecordingPaths).not_to receive(:files_for_account)
 
@@ -159,6 +161,21 @@ RSpec.describe AccountLimits::StorageUsageService do
           expect { expect(account.local_recordings_bytes).to eq(0) }
             .to have_enqueued_job(Accounts::StorageBreakdownRefreshJob).with(account.id)
           expect(cache.read(account.local_recordings_bytes_cache_key)).to be_nil
+        end
+      end
+
+      it 'preserves the shared last good recording total when the overview snapshot is missing' do
+        Redis::Alfred.delete("account:#{account.id}:storage_overview_v1")
+        cache.write(account.local_recordings_bytes_cache_key, 1)
+        cache.write(account.local_recordings_last_good_cache_key, 1)
+        expect(Redis::Alfred.get(account.local_recordings_last_good_cache_key)).to eq('4096')
+        expect(Storage::RecordingPaths).not_to receive(:each_file_with_stat_for_account)
+        expect(Storage::RecordingPaths).not_to receive(:files_for_account)
+
+        with_modified_env('STORAGE_QUOTA_INCLUDE_RECORDINGS' => 'true') do
+          expect { expect(account.local_recordings_bytes).to eq(4096) }
+            .to have_enqueued_job(Accounts::StorageBreakdownRefreshJob).with(account.id)
+          expect(Redis::Alfred.get(account.local_recordings_last_good_cache_key)).to eq('4096')
         end
       end
 

@@ -23,6 +23,8 @@
 
 Local frontend checks passed: 26 tests in `Index.spec.js`, `storageFormatters.spec.js`, `storage.routes.spec.js` and `StorageUsageBanner.spec.js`, with `TZ=UTC`, one worker. The settings tests cover response/error races, account changes, all five cleanup actions, recording label/icon, incomplete/error states, truthful refresh notification and automatic pending completion. The first formatter run without UTC failed on the unchanged expected timezone; the repository's UTC setting resolved it.
 
+The isolated gate on `6058604` passed schema validation, warning-level RuboCop, ESLint and 294 related frontend tests. Its sole Ruby failure was the signed-preview manifest disappearing in the test NullStore; the shared Redis manifest repair addresses the corresponding cross-worker runtime risk. The next isolated gate on `99bf42e` ran 298 Ruby examples with one cold-quota fixture failure: the test removed the old process-local key while retaining the new shared last-good 4096-byte measurement. The cold fixture now removes the shared key too; a separate missing-snapshot example requires preservation of that shared measured total and background scheduling without any filesystem walk. Final runtime verification remains pending.
+
 Focused ESLint checked the settings component and spec without errors. Existing localization-resource/dynamic-key warnings remain outside the error-level check. Local Ruby Prism parsing checks syntax only; it does not validate PostgreSQL execution or Ruby behavior.
 
 The following runtime specs are ready for the isolated PostgreSQL/Redis/pgvector harness:
