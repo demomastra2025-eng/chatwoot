@@ -28,7 +28,6 @@ class Integrations::Medelement::StaleSyncRunRecoveryJob < ApplicationJob
   end
 
   def recover_locked(candidate, lock_manager, lock_key)
-    launcher = nil
     presence = Integrations::Medelement::SyncJobPresence.new
     return unless recoverable?(candidate, presence)
 
@@ -36,19 +35,21 @@ class Integrations::Medelement::StaleSyncRunRecoveryJob < ApplicationJob
     return fail_unavailable!(candidate, presence, lock_manager, lock_key) unless hook&.enabled? && hook.app_id == 'medelement'
 
     phases = claim_recovery(candidate, hook, presence, lock_manager, lock_key)
-    if phases.present?
-      launcher = Integrations::Medelement::ScheduledSyncLauncher.new(
-        hook: hook,
-        phases: phases,
-        preserve_run_on_enqueue_error: true
-      )
-      launcher.perform
-    end
+    enqueue_continuation!(hook, phases) if phases.present?
+  rescue ActiveRecord::RecordNotFound
+    nil
+  end
+
+  def enqueue_continuation!(hook, phases)
+    launcher = Integrations::Medelement::ScheduledSyncLauncher.new(
+      hook: hook,
+      phases: phases,
+      preserve_run_on_enqueue_error: true
+    )
+    launcher.perform
   rescue ActiveJob::EnqueueError
     preserve_failed_enqueue_for_retry!(launcher&.run)
     raise
-  rescue ActiveRecord::RecordNotFound
-    nil
   end
 
   def preserve_failed_enqueue_for_retry!(run)

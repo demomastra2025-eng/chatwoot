@@ -63,12 +63,7 @@ class Integrations::Medelement::SyncJob < MutexApplicationJob
 
   def execute_sync(hook, sync_run, renew_lock: nil)
     hook.reload
-    worker = {
-      job_id: job_id,
-      provider_job_id: provider_job_id,
-      process_id: Thread.current[:sidekiq_capsule]&.identity,
-      token: SecureRandom.uuid
-    }.compact
+    worker = sync_worker_identity
     phases = Integrations::Medelement::HookRuntimeLock.with_hook(account_id: hook.account_id, hook_id: hook.id) do
       sync_run.reload
       next if sync_run.terminal?
@@ -84,6 +79,15 @@ class Integrations::Medelement::SyncJob < MutexApplicationJob
         phases: phases
       )
     end
+  end
+
+  def sync_worker_identity
+    {
+      job_id: job_id,
+      provider_job_id: provider_job_id,
+      process_id: Thread.current[:sidekiq_capsule]&.identity,
+      token: SecureRandom.uuid
+    }.compact
   end
 
   def enqueue_pending_sync(hook, sync_run)

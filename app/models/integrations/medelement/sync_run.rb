@@ -110,10 +110,7 @@ class Integrations::Medelement::SyncRun < ApplicationRecord
     end
   end
 
-  def worker_state
-    value = summary[WORKER_KEY]
-    value.is_a?(Hash) ? value : {}
-  end
+  def worker_state = summary[WORKER_KEY].is_a?(Hash) ? summary[WORKER_KEY] : {}
 
   def worker_heartbeat_at
     Time.iso8601(worker_state['heartbeat_at']) if worker_state['heartbeat_at'].present?
@@ -121,9 +118,7 @@ class Integrations::Medelement::SyncRun < ApplicationRecord
     nil
   end
 
-  def recovery_activity_at
-    worker_heartbeat_at || updated_at
-  end
+  def recovery_activity_at = worker_heartbeat_at || updated_at
 
   def complete_phase!(phase, result = {})
     write_phase_result!(phase, result.to_h.merge(status: 'succeeded', completed_at: Time.current.iso8601))
