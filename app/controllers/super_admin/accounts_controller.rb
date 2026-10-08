@@ -160,7 +160,8 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
         limit_gb = storage_bytes.present? ? (storage_bytes.to_f / 1.gigabyte).round(1) : I18n.t('super_admin.accounts.csv.unlimited')
         # The breakdown is cached and refreshed hourly for every account, so the export does not have to scan
         # the disk and run a dozen queries per account inside one web request.
-        used_mb = (acc.storage_breakdown[:total].to_f / 1.megabyte).round(2)
+        measured_bytes = acc.storage_breakdown[:total]
+        used_mb = measured_bytes.nil? ? nil : (measured_bytes.to_f / 1.megabyte).round(2)
 
         csv << [
           acc.id,

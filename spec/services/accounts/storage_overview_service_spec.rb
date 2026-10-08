@@ -14,18 +14,22 @@ RSpec.describe Accounts::StorageOverviewService do
     allow(Rails).to receive(:cache).and_return(storage_test_cache)
     Redis::Alfred.delete("account:#{account.id}:storage_overview_v1")
     Redis::Alfred.delete("account:#{account.id}:storage_overview_refresh_v1")
-    Redis::Alfred.delete("account:#{account.id}:storage_overview_pending_v1")
+    Redis::Alfred.delete("account:#{account.id}:storage_overview_pending_v2")
+    Redis::Alfred.delete("account:#{account.id}:storage_generation_v1")
+    Redis::Alfred.delete("account:#{account.id}:recording_reconciliation_v1")
     Redis::Alfred.delete("account:#{account.id}:storage_heavy_recordings_v1")
   end
 
   after do
     Redis::Alfred.delete("account:#{account.id}:storage_overview_v1")
     Redis::Alfred.delete("account:#{account.id}:storage_overview_refresh_v1")
-    Redis::Alfred.delete("account:#{account.id}:storage_overview_pending_v1")
+    Redis::Alfred.delete("account:#{account.id}:storage_overview_pending_v2")
+    Redis::Alfred.delete("account:#{account.id}:storage_generation_v1")
+    Redis::Alfred.delete("account:#{account.id}:recording_reconciliation_v1")
     Redis::Alfred.delete("account:#{account.id}:storage_heavy_recordings_v1")
   end
 
-  it 'queues one housekeeping refresh while the five-minute lease is active' do
+  it 'queues one housekeeping refresh while the renewable five-minute pending lease is active' do
     expect do
       10.times { service.schedule_refresh(force: true) }
     end.to have_enqueued_job(Accounts::StorageBreakdownRefreshJob).with(account.id).once
@@ -33,19 +37,21 @@ RSpec.describe Accounts::StorageOverviewService do
     expect(Accounts::StorageBreakdownRefreshJob.new.queue_name).to eq('housekeeping')
   end
 
-  it 'does not queue another refresh after the five-minute lease expires while the first job is pending' do
+  it 'recovers from an orphan pending marker after five minutes' do
     service.schedule_refresh(force: true)
-    Redis::Alfred.delete("account:#{account.id}:storage_overview_refresh_v1")
 
-    expect { service.schedule_refresh(force: true) }.not_to have_enqueued_job(Accounts::StorageBreakdownRefreshJob)
+    travel_to 6.minutes.from_now do
+      expect { service.schedule_refresh(force: true) }.to have_enqueued_job(Accounts::StorageBreakdownRefreshJob).with(account.id)
+    end
+    expect(described_class::PENDING_REFRESH_TTL).to eq(5.minutes)
   end
 
   it 'releases the pending marker when the refresh job finishes' do
-    pending_key = "account:#{account.id}:storage_overview_pending_v1"
+    pending_key = "account:#{account.id}:storage_overview_pending_v2"
     job = Accounts::StorageBreakdownRefreshJob.new(account.id)
     Redis::Alfred.set(pending_key, job.job_id, ex: 1.hour.to_i)
     allow(described_class).to receive(:new).and_return(service)
-    allow(service).to receive(:refresh!)
+    allow(service).to receive(:refresh!).and_return(generation: 0, updated_at: Time.current.to_i)
 
     job.perform_now
 
@@ -71,7 +77,8 @@ RSpec.describe Accounts::StorageOverviewService do
     Accounts::StorageBreakdownRefreshJob.perform_now(account.id)
     snapshot = service.snapshot
 
-    expect(snapshot[:breakdown].except(:last_updated_at)).to eq(expected_breakdown.except(:last_updated_at))
+    expect(snapshot[:breakdown].except(:last_updated_at, :recordings_reconciled_at))
+      .to eq(expected_breakdown.except(:last_updated_at, :recordings_reconciled_at))
     expect(snapshot[:limits]).to eq(expected_limits)
     expect(snapshot[:breakdown][:recordings]).to eq(File.size(recording_path))
     recording = Accounts::HeavyRecordingsSnapshot.new(account_id: account.id).snapshot[:recordings].sole
@@ -93,7 +100,7 @@ RSpec.describe Accounts::StorageOverviewService do
 
   it 'puts the previous timeout back when the calculation fails' do
     timeout_before = ActiveRecord::Base.connection.select_value('SHOW statement_timeout')
-    allow(account).to receive(:storage_breakdown).with(force_refresh: true, heavy_recordings: anything)
+    allow(account).to receive(:storage_breakdown).with(force_refresh: true, heavy_recordings: anything, recording_usage: anything)
                                                  .and_raise(ActiveRecord::StatementInvalid, 'statement timeout')
 
     expect { service.refresh! }.to raise_error(ActiveRecord::StatementInvalid)
@@ -105,7 +112,7 @@ RSpec.describe Accounts::StorageOverviewService do
   it 'does not open a database transaction around the breakdown calculation' do
     baseline = ActiveRecord::Base.connection.open_transactions
     seen = nil
-    allow(account).to receive(:storage_breakdown).with(force_refresh: true, heavy_recordings: anything) do
+    allow(account).to receive(:storage_breakdown).with(force_refresh: true, heavy_recordings: anything, recording_usage: anything) do
       seen = ActiveRecord::Base.connection.open_transactions
       {}
     end
@@ -118,7 +125,7 @@ RSpec.describe Accounts::StorageOverviewService do
   it 'keeps the last good snapshot when an aggregate times out' do
     previous = service.refresh!
     previous_recordings = Accounts::HeavyRecordingsSnapshot.new(account_id: account.id).snapshot
-    allow(account).to receive(:storage_breakdown).with(force_refresh: true, heavy_recordings: anything)
+    allow(account).to receive(:storage_breakdown).with(force_refresh: true, heavy_recordings: anything, recording_usage: anything)
                                                  .and_raise(ActiveRecord::StatementInvalid, 'statement timeout')
 
     expect { service.refresh! }.to raise_error(ActiveRecord::StatementInvalid)
@@ -133,5 +140,74 @@ RSpec.describe Accounts::StorageOverviewService do
 
     expect { Accounts::StorageBreakdownRefreshJob.perform_now(account.id) }.not_to raise_error
     expect(service.snapshot).to eq(previous)
+  end
+
+  it 'reports queued, already pending and failed enqueue states accurately' do
+    service.schedule_refresh(force: true)
+    expect(service.refresh_status).to eq('queued')
+    service.schedule_refresh(force: true)
+    expect(service.refresh_status).to eq('pending')
+    Redis::Alfred.delete("account:#{account.id}:storage_overview_pending_v2")
+    job = Accounts::StorageBreakdownRefreshJob.new(account.id)
+    allow(Accounts::StorageBreakdownRefreshJob).to receive(:new).and_return(job)
+    allow(job).to receive(:enqueue).and_raise(StandardError, 'queue unavailable')
+
+    service.schedule_refresh(force: true)
+
+    expect(service.refresh_status).to eq('failed')
+    expect(service.pending?).to be(false)
+  end
+
+  it 'cannot publish a pre-mutation calculation and schedules a successor when the claimed job finishes' do
+    previous = service.refresh!
+    allow(described_class).to receive(:new).and_return(service)
+    allow(account).to receive(:storage_breakdown).and_wrap_original do |method, **arguments|
+      service.invalidate!
+      method.call(**arguments)
+    end
+
+    expect { Accounts::StorageBreakdownRefreshJob.perform_now(account.id) }
+      .to have_enqueued_job(Accounts::StorageBreakdownRefreshJob).with(account.id).once
+
+    expect(service.snapshot).to eq(previous)
+    expect(service.stale?(service.snapshot)).to be(true)
+  end
+
+  it 'does not release another worker lease or publish after losing its own lease' do
+    previous = service.refresh!
+    pending_key = "account:#{account.id}:storage_overview_pending_v2"
+    Redis::Alfred.set(pending_key, 'new-worker', ex: 5.minutes.to_i)
+
+    expect(service.refresh!(job_id: 'expired-worker')).to be_nil
+    described_class.release_refresh(account.id, 'expired-worker')
+
+    expect(Redis::Alfred.get(pending_key)).to eq('new-worker')
+    expect(service.snapshot).to eq(previous)
+  end
+
+  it 'renews its lease during background reconciliation without a long database transaction' do
+    pending_key = "account:#{account.id}:storage_overview_pending_v2"
+    Redis::Alfred.set(pending_key, 'worker', ex: 5.minutes.to_i)
+    allow(Process).to receive(:clock_gettime).with(Process::CLOCK_MONOTONIC).and_return(0, 31)
+    heartbeat = service.send(:lease_heartbeat, 'worker')
+    expect(Redis::Alfred).to receive(:expire_if_value).with(pending_key, 'worker', 5.minutes.to_i).and_call_original
+
+    heartbeat.call
+
+    expect(Redis::Alfred.get(pending_key)).to eq('worker')
+  end
+
+  it 'keeps the last measured physical total when a background filesystem reconciliation fails' do
+    path = Storage::RecordingPaths.root.join('voice-recordings', 'fixture', account.id.to_s, 'unlinked.wav')
+    FileUtils.mkdir_p(path.dirname)
+    File.write(path, 'r' * 50)
+    previous = service.refresh!
+    Redis::Alfred.delete("account:#{account.id}:recording_reconciliation_v1")
+    allow(Storage::RecordingPaths).to receive(:each_file_with_stat_for_account).and_raise(Errno::EIO)
+
+    expect { service.refresh! }.to raise_error(Errno::EIO)
+
+    expect(service.snapshot).to eq(previous)
+    expect(account.local_recordings_bytes).to eq(50)
   end
 end

@@ -328,36 +328,15 @@ class Account < ApplicationRecord
     end
   end
 
-  # Walking the recordings folder is expensive, so the result is cached for a short while. Recording changes
-  # request a background storage overview refresh, which invalidates this cached total before recalculating it.
+  # Upload/quota reads use the last background measurement. A cold HTTP read must never traverse recording directories.
   def local_recordings_bytes
     cached = Rails.cache.read(local_recordings_bytes_cache_key)
     return cached unless cached.nil?
 
-    scanned = scan_local_recordings_bytes
-    # A failed scan is not "no recordings": it is never cached (the next call scans again) and the last good total
-    # stands in for it, so one bad scan cannot switch the opt-in quota off for ten minutes.
-    return Rails.cache.read(local_recordings_last_good_cache_key).to_i if scanned.nil?
-
-    Rails.cache.write(local_recordings_bytes_cache_key, scanned, expires_in: 10.minutes)
-    Rails.cache.write(local_recordings_last_good_cache_key, scanned, expires_in: 1.day)
-    scanned
-  end
-
-  # nil when the scan itself failed; a file that vanished while it ran (another worker purged it) is skipped.
-  def scan_local_recordings_bytes
-    return 0 unless defined?(Storage::RecordingPaths)
-
-    Storage::RecordingPaths.files_for_account(id).sum { |path| local_recording_size(path) }
-  rescue SystemCallError => e
-    Rails.logger.warn("[AccountStorage] Could not scan local recordings for account #{id}: #{e.class.name}")
-    nil
-  end
-
-  def local_recording_size(path)
-    File.size(path)
-  rescue Errno::ENOENT
-    0
+    overview = Accounts::StorageOverviewService.new(account: self)
+    overview.schedule_refresh
+    measured = overview.snapshot&.dig(:recording_total_bytes)
+    measured.nil? ? Rails.cache.read(local_recordings_last_good_cache_key).to_i : measured.to_i
   end
 
   def local_recordings_bytes_cache_key
@@ -368,7 +347,15 @@ class Account < ApplicationRecord
     "account:#{id}:local_recordings_bytes_last_good"
   end
 
-  def storage_breakdown(force_refresh: false, heavy_recordings: nil)
+  def storage_breakdown(force_refresh: false, heavy_recordings: nil, recording_usage: nil)
+    unless force_refresh || recording_usage
+      cached = Accounts::StorageOverviewService.new(account: self).schedule_refresh
+      return cached[:breakdown] if cached
+
+      return %i[recordings audio images videos documents captain other trash total last_updated_at]
+             .index_with { nil }.merge(calculating: true, by_inbox: [])
+    end
+
     cache_key = "account:#{id}:storage_breakdown_v2"
     if force_refresh
       Rails.cache.delete(cache_key)
@@ -376,12 +363,14 @@ class Account < ApplicationRecord
     end
 
     Rails.cache.fetch(cache_key, expires_in: 1.hour) do
-      calculate_storage_breakdown(heavy_recordings: heavy_recordings)
+      calculate_storage_breakdown(heavy_recordings: heavy_recordings, recording_usage: recording_usage)
     end
   end
 
   # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity, Metrics/MethodLength
-  def calculate_storage_breakdown(heavy_recordings: nil)
+  def calculate_storage_breakdown(heavy_recordings: nil, recording_usage: nil)
+    recording_usage ||= Storage::RecordingInventory.new(account: self).calculate
+    recording_usage[:primary_rows].each { |session, bytes| heavy_recordings&.add(session: session, byte_size: bytes) }
     usage_by_type = owned_attachment_usage_rows.each_with_object(Hash.new(0)) do |(_blob_id, size, file_type), totals|
       type = Attachment.file_types.key(file_type)
       totals[type] += size.to_i if type
@@ -420,9 +409,9 @@ class Account < ApplicationRecord
                                          .sum(:byte_size).to_i
 
     storage_service = AccountLimits::StorageUsageService.new(account: self)
-    rec_bytes = local_recordings_bytes
-    active_recordings_bytes = Storage::RecordingPaths.files_for_account(id, include_trash: false).sum { |path| local_recording_size(path) }
-    trashed_recordings_bytes = [rec_bytes - active_recordings_bytes, 0].max
+    rec_bytes = recording_usage[:total]
+    active_recordings_bytes = recording_usage[:active]
+    trashed_recordings_bytes = recording_usage[:trash]
     active_bytes = storage_service.active_storage_bytes
     total_bytes = active_bytes + rec_bytes
 
@@ -440,7 +429,8 @@ class Account < ApplicationRecord
       other: other_bytes,
       trash: trash_bytes,
       total: total_bytes,
-      by_inbox: calculate_inbox_storage_breakdown(heavy_recordings: heavy_recordings),
+      by_inbox: calculate_inbox_storage_breakdown(recording_usage: recording_usage, total_bytes: total_bytes),
+      recordings_reconciled_at: Time.zone.at(recording_usage[:reconciled_at]).iso8601,
       last_updated_at: Time.current.iso8601
     }
   end
@@ -467,7 +457,7 @@ class Account < ApplicationRecord
   end
 
   # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity, Metrics/MethodLength
-  def calculate_inbox_storage_breakdown(heavy_recordings: nil)
+  def calculate_inbox_storage_breakdown(recording_usage: nil, total_bytes: nil)
     inbox_scope = active_attachment_scope.joins('INNER JOIN messages ON messages.id = attachments.message_id')
                                          .select(
                                            'DISTINCT ON (active_storage_blobs.id) active_storage_blobs.id, ' \
@@ -482,42 +472,12 @@ class Account < ApplicationRecord
       inbox_usage[inbox_id][:count] += 1
     end
 
-    recording_usage = Hash.new { |usage, inbox_id| usage[inbox_id] = { bytes: 0, count: 0 } }
-    seen_recordings = {}
-    if defined?(Telephony::CallSession) && Telephony::CallSession.table_exists? && defined?(Storage::RecordingPaths)
-      Telephony::CallSession.where(account_id: id).find_each do |session|
-        metadata = session.metadata.is_a?(Hash) ? session.metadata : {}
-        trash = metadata['trash']
-        primary_path = nil
-        refs = if trash.present?
-                 manifest = Array(trash['files'])
-                 manifest.filter_map { |entry| Storage::RecordingPaths.resolve_trash(entry['trash_path'], account_id: id) }
-                         .compact
-                         .presence || [Storage::RecordingPaths.resolve_trash(trash['trash_path'], account_id: id)].compact
-               else
-                 retained = metadata.dig('recording', 'retained_original') || {}
-                 primary_path = Storage::RecordingPaths.resolve(session.recording_ref, account_id: id)
-                 [primary_path, Storage::RecordingPaths.resolve(retained['storage_key'], account_id: id)].compact
-               end
-
-        refs.each_with_index do |path, index|
-          stat = File.stat(path)
-          heavy_recordings&.add(session: session, byte_size: stat.size) if index.zero? && path == primary_path
-          identity = [stat.dev, stat.ino]
-          next if seen_recordings[identity]
-
-          seen_recordings[identity] = true
-          recording_usage[session.inbox_id][:bytes] += stat.size
-          recording_usage[session.inbox_id][:count] += 1
-        rescue SystemCallError
-          next
-        end
-      end
-    end
+    recording_usage ||= Storage::RecordingInventory.new(account: self).calculate
+    recordings_by_inbox = recording_usage[:by_inbox]
 
     rows = inboxes.select(:id, :name, :channel_type).map do |inbox|
       attachments = inbox_usage[inbox.id] || { bytes: 0, count: 0 }
-      recordings = recording_usage[inbox.id] || { bytes: 0, count: 0 }
+      recordings = recordings_by_inbox[inbox.id] || { bytes: 0, count: 0 }
       {
         id: inbox.id,
         name: inbox.name,
@@ -532,7 +492,8 @@ class Account < ApplicationRecord
     known_bytes = rows.sum { |row| row[:bytes] }
     usage = AccountLimits::StorageUsageService.new(account: self)
     # Same physical total as the breakdown: it does not depend on whether recordings count towards the quota.
-    unassigned_bytes = [usage.active_storage_bytes + local_recordings_bytes.to_i - known_bytes, 0].max
+    total_bytes ||= usage.active_storage_bytes + recording_usage[:total]
+    unassigned_bytes = [total_bytes - known_bytes, 0].max
     if unassigned_bytes.positive?
       rows << {
         id: nil,

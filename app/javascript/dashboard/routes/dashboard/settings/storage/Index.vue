@@ -18,6 +18,14 @@ const storageData = ref(null);
 const heavyFiles = ref([]);
 const isLoadingFiles = ref(false);
 const recordingsPending = ref(false);
+const recordingsRefreshStatus = ref('idle');
+const heavyFilesError = ref(false);
+let heavyFilesRequestId = 0;
+let storageRequestId = 0;
+let trashRequestId = 0;
+let previewRequestId = 0;
+let pageActive = true;
+let storagePollTimer;
 
 const selectedFileType = ref('all');
 const selectedInboxId = ref('');
@@ -36,7 +44,9 @@ const isPreviewing = ref(false);
 const previewData = ref(null);
 const isMovingToTrash = ref(false);
 watch([cleanerFileType, cleanerMonths, cleanerInboxId], () => {
+  previewRequestId += 1;
   previewData.value = null;
+  isPreviewing.value = false;
 });
 
 // Trash state
@@ -63,8 +73,16 @@ const formatBytes = (bytes, decimals = 2) =>
 const formatDate = dateStr => formatStorageDate(dateStr, locale.value);
 
 const fetchHeavyFiles = async () => {
+  heavyFilesRequestId += 1;
+  const requestId = heavyFilesRequestId;
+  const requestAccount = accountId.value;
+  const current = () =>
+    pageActive &&
+    requestId === heavyFilesRequestId &&
+    requestAccount === accountId.value;
   try {
     isLoadingFiles.value = true;
+    heavyFilesError.value = false;
     const params = { file_type: selectedFileType.value, limit: 50 };
     if (selectedInboxId.value) params.inbox_id = selectedInboxId.value;
     if (selectedConversationId.value)
@@ -72,58 +90,124 @@ const fetchHeavyFiles = async () => {
     if (selectedDateFrom.value) params.date_from = selectedDateFrom.value;
     if (selectedDateTo.value) params.date_to = selectedDateTo.value;
     const response = await StorageAPI.getHeavyFiles(params);
+    if (!current()) return;
     heavyFiles.value = response.data.files || [];
     recordingsPending.value = response.data.recordings_pending === true;
+    recordingsRefreshStatus.value =
+      response.data.recordings_refresh_status || 'pending';
   } catch (error) {
+    if (!current()) return;
+    heavyFiles.value = [];
+    heavyFilesError.value = true;
     recordingsPending.value = false;
     useAlert(error?.response?.data?.message || t('STORAGE.HEAVY_FILES_ERROR'));
   } finally {
-    isLoadingFiles.value = false;
+    if (current()) isLoadingFiles.value = false;
   }
 };
 
 const fetchStorageInfo = async () => {
+  storageRequestId += 1;
+  const requestId = storageRequestId;
+  const requestAccount = accountId.value;
+  const current = () =>
+    pageActive &&
+    requestId === storageRequestId &&
+    requestAccount === accountId.value;
   try {
-    isLoading.value = true;
+    isLoading.value = storageData.value === null;
     const response = await StorageAPI.getStorage();
+    if (!current()) return;
     storageData.value = response.data.storage;
   } catch (error) {
+    if (!current()) return;
     useAlert(error?.response?.data?.message || t('STORAGE.FETCH_ERROR'));
   } finally {
-    isLoading.value = false;
+    if (current()) isLoading.value = false;
   }
 };
 
 const fetchTrash = async () => {
+  trashRequestId += 1;
+  const requestId = trashRequestId;
+  const requestAccount = accountId.value;
+  const current = () =>
+    pageActive &&
+    requestId === trashRequestId &&
+    requestAccount === accountId.value;
   try {
     isLoadingTrash.value = true;
     const response = await StorageAPI.getTrash();
+    if (!current()) return;
     trashData.value = response.data || {
       total_count: 0,
       total_bytes: 0,
       items: [],
     };
   } catch (error) {
+    if (!current()) return;
     useAlert(error?.response?.data?.message || t('STORAGE.FETCH_ERROR'));
   } finally {
-    isLoadingTrash.value = false;
+    if (current()) isLoadingTrash.value = false;
   }
 };
 
 const refreshStorage = async () => {
+  storageRequestId += 1;
+  const requestId = storageRequestId;
+  const requestAccount = accountId.value;
+  const current = () =>
+    pageActive &&
+    requestId === storageRequestId &&
+    requestAccount === accountId.value;
   try {
     isRefreshing.value = true;
     const response = await StorageAPI.refresh();
+    if (!current()) return;
     storageData.value = response.data.storage;
-    useAlert(t('STORAGE.REFRESH_QUEUED'));
+    const status = response.data.refresh_status;
+    const alertKey = {
+      queued: 'STORAGE.REFRESH_QUEUED',
+      pending: 'STORAGE.REFRESH_PENDING',
+      idle: 'STORAGE.REFRESH_SUCCESS',
+    }[status];
+    useAlert(t(alertKey || 'STORAGE.REFRESH_ERROR'));
     if (activeTab.value === 'cleaner') await fetchHeavyFiles();
     await fetchTrash();
   } catch (error) {
+    if (!current()) return;
     useAlert(error?.response?.data?.message || t('STORAGE.REFRESH_ERROR'));
   } finally {
-    isRefreshing.value = false;
+    if (current()) isRefreshing.value = false;
   }
 };
+
+const reloadStorageAfterAction = async () => {
+  previewRequestId += 1;
+  previewData.value = null;
+  await Promise.all([
+    fetchStorageInfo(),
+    fetchTrash(),
+    ...(activeTab.value === 'cleaner' ? [fetchHeavyFiles()] : []),
+  ]);
+};
+
+watch(
+  () => accountId.value,
+  () => {
+    heavyFilesRequestId += 1;
+    storageRequestId += 1;
+    trashRequestId += 1;
+    previewRequestId += 1;
+    storageData.value = null;
+    heavyFiles.value = [];
+    trashData.value = { total_count: 0, total_bytes: 0, items: [] };
+    previewData.value = null;
+    recordingsPending.value = false;
+    isRefreshing.value = false;
+    reloadStorageAfterAction();
+  }
+);
 
 const onFilterChange = () => {
   if (activeTab.value === 'cleaner') fetchHeavyFiles();
@@ -135,6 +219,13 @@ const onCleanerTabClick = async () => {
 };
 
 const runPreview = async () => {
+  previewRequestId += 1;
+  const requestId = previewRequestId;
+  const requestAccount = accountId.value;
+  const current = () =>
+    pageActive &&
+    requestId === previewRequestId &&
+    requestAccount === accountId.value;
   try {
     isPreviewing.value = true;
     previewData.value = null;
@@ -146,11 +237,13 @@ const runPreview = async () => {
       params.inbox_id = cleanerInboxId.value;
     }
     const response = await StorageAPI.previewCleanup(params);
+    if (!current()) return;
     previewData.value = response.data;
   } catch (error) {
+    if (!current()) return;
     useAlert(error?.response?.data?.message || t('STORAGE.CLEANER.MOVE_ERROR'));
   } finally {
-    isPreviewing.value = false;
+    if (current()) isPreviewing.value = false;
   }
 };
 
@@ -182,9 +275,7 @@ const executeMoveToTrash = async () => {
         size: formatBytes(response.data.moved_bytes),
       })
     );
-    previewData.value = null;
-    await fetchStorageInfo();
-    await fetchTrash();
+    await reloadStorageAfterAction();
   } catch (error) {
     useAlert(error?.response?.data?.message || t('STORAGE.CLEANER.MOVE_ERROR'));
   } finally {
@@ -200,8 +291,7 @@ const restoreTrashItem = async item => {
       item_id: item.id,
     });
     useAlert(t('STORAGE.TRASH.RESTORE_SUCCESS'));
-    await fetchTrash();
-    await fetchStorageInfo();
+    await reloadStorageAfterAction();
   } catch (error) {
     useAlert(error?.response?.data?.message || t('STORAGE.FETCH_ERROR'));
   } finally {
@@ -217,8 +307,7 @@ const restoreAllTrash = async () => {
     isRestoring.value = true;
     await StorageAPI.restoreTrash({ restore_all: true });
     useAlert(t('STORAGE.TRASH.RESTORE_ALL_SUCCESS'));
-    await fetchTrash();
-    await fetchStorageInfo();
+    await reloadStorageAfterAction();
   } catch (error) {
     useAlert(error?.response?.data?.message || t('STORAGE.FETCH_ERROR'));
   } finally {
@@ -238,8 +327,7 @@ const purgeTrashItem = async item => {
       confirmed: true,
     });
     useAlert(t('STORAGE.TRASH.PURGE_SUCCESS'));
-    await fetchTrash();
-    await fetchStorageInfo();
+    await reloadStorageAfterAction();
   } catch (error) {
     useAlert(error?.response?.data?.message || t('STORAGE.FETCH_ERROR'));
   } finally {
@@ -255,8 +343,7 @@ const emptyAllTrash = async () => {
     isPurging.value = true;
     await StorageAPI.emptyTrash({ confirmed: true });
     useAlert(t('STORAGE.TRASH.EMPTY_SUCCESS'));
-    await fetchTrash();
-    await fetchStorageInfo();
+    await reloadStorageAfterAction();
   } catch (error) {
     useAlert(error?.response?.data?.message || t('STORAGE.FETCH_ERROR'));
   } finally {
@@ -313,9 +400,30 @@ onMounted(async () => {
   }, 60 * 1000);
   await fetchStorageInfo();
   await fetchTrash();
+  if (!pageActive) return;
+  storagePollTimer = window.setInterval(() => {
+    const storage = storageData.value;
+    if (
+      storage?.refresh_status !== 'failed' &&
+      (storage?.calculating || storage?.refresh_pending || storage?.stale)
+    ) {
+      if (!isLoading.value && !isRefreshing.value) fetchStorageInfo();
+    }
+    if (
+      activeTab.value === 'cleaner' &&
+      recordingsPending.value &&
+      recordingsRefreshStatus.value !== 'failed' &&
+      !isLoadingFiles.value
+    )
+      fetchHeavyFiles();
+  }, 10000);
 });
 
-onBeforeUnmount(() => window.clearInterval(storageAlertTimer));
+onBeforeUnmount(() => {
+  pageActive = false;
+  window.clearInterval(storageAlertTimer);
+  window.clearInterval(storagePollTimer);
+});
 
 const progressBarClass = computed(() => {
   if (isUnlimited.value) return 'bg-slate-400';
@@ -411,6 +519,10 @@ const typeCards = computed(() => {
 
 const getFileTypeIcon = type => {
   switch (type) {
+    case 'recording':
+    case 'recordings':
+    case 'original_recording':
+      return '📞';
     case 'audio':
       return '🎙️';
     case 'image':
@@ -418,6 +530,7 @@ const getFileTypeIcon = type => {
     case 'video':
       return '🎥';
     case 'file':
+    case 'document':
       return '📄';
     default:
       return '📎';
@@ -426,6 +539,10 @@ const getFileTypeIcon = type => {
 
 const getFileTypeName = type => {
   switch (type) {
+    case 'recording':
+    case 'recordings':
+    case 'original_recording':
+      return t('STORAGE.TYPES.RECORDINGS');
     case 'audio':
       return t('STORAGE.TYPES.AUDIO');
     case 'image':
@@ -433,6 +550,7 @@ const getFileTypeName = type => {
     case 'video':
       return t('STORAGE.TYPES.VIDEOS');
     case 'file':
+    case 'document':
       return t('STORAGE.TYPES.DOCUMENTS');
     default:
       return t('STORAGE.TYPES.OTHER');
@@ -473,9 +591,28 @@ const getFileTypeName = type => {
         class="rounded-xl border border-slate-200 bg-white p-6 text-slate-700"
         role="status"
       >
-        {{ $t('STORAGE.CALCULATING') }}
+        {{
+          $t(
+            storageData.refresh_status === 'failed'
+              ? 'STORAGE.REFRESH_ERROR'
+              : 'STORAGE.CALCULATING'
+          )
+        }}
       </div>
       <div v-else-if="!isLoading && storageData" class="space-y-6">
+        <p
+          v-if="storageData.refresh_pending || storageData.stale"
+          class="text-xs text-slate-600"
+          role="status"
+        >
+          {{
+            $t(
+              storageData.refresh_status === 'failed'
+                ? 'STORAGE.REFRESH_ERROR'
+                : 'STORAGE.REFRESH_PENDING'
+            )
+          }}
+        </p>
         <!-- Storage Threshold Alert Banner (80% / 95%) -->
         <div
           v-if="shouldShowStorageAlert"
@@ -999,7 +1136,13 @@ const getFileTypeName = type => {
               class="px-4 pt-4 text-xs text-slate-600"
               role="status"
             >
-              {{ $t('STORAGE.HEAVY_FILES.RECORDINGS_PENDING') }}
+              {{
+                $t(
+                  recordingsRefreshStatus === 'failed'
+                    ? 'STORAGE.HEAVY_FILES.RECORDINGS_UNAVAILABLE'
+                    : 'STORAGE.HEAVY_FILES.RECORDINGS_PENDING'
+                )
+              }}
             </p>
 
             <!-- Files list table -->
@@ -1010,12 +1153,18 @@ const getFileTypeName = type => {
               {{ $t('STORAGE.LOADING') }}
             </div>
             <div
-              v-else-if="heavyFiles.length === 0"
+              v-else-if="heavyFiles.length === 0 && !recordingsPending"
               class="p-8 text-center text-xs text-slate-400"
             >
-              {{ $t('STORAGE.HEAVY_FILES.EMPTY') }}
+              {{
+                $t(
+                  heavyFilesError
+                    ? 'STORAGE.HEAVY_FILES_ERROR'
+                    : 'STORAGE.HEAVY_FILES.EMPTY'
+                )
+              }}
             </div>
-            <div v-else class="overflow-x-auto">
+            <div v-else-if="heavyFiles.length > 0" class="overflow-x-auto">
               <table class="w-full text-left text-xs">
                 <thead
                   class="bg-slate-50 text-slate-500 uppercase font-semibold border-b border-slate-200"

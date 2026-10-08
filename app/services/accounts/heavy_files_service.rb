@@ -28,6 +28,7 @@ class Accounts::HeavyFilesService
     @date_from = parse_date(params[:date_from], :date_from)
     @date_to = parse_date(params[:date_to], :date_to)
     @limit = (params[:limit] || DEFAULT_LIMIT).to_i.clamp(1, MAX_LIMIT)
+    raise InvalidParams, I18n.t('storage_management.errors.invalid_file_type') unless ['all', 'recordings', *FILE_TYPE_MAPPINGS.keys].include?(@file_type)
     validate_date_range!
   end
 
@@ -43,12 +44,23 @@ class Accounts::HeavyFilesService
     @recordings_pending == true
   end
 
+  def recordings_refresh_status
+    @recordings_refresh_status || 'idle'
+  end
+
   private
 
   attr_reader :account, :file_type, :inbox_id, :conversation_id, :date_from, :date_to, :limit
 
   def integer_filter(value)
-    value.presence&.to_i
+    return if value.blank?
+
+    parsed = Integer(value.to_s, 10)
+    raise InvalidParams, I18n.t('storage_management.errors.invalid_filter') unless parsed.positive?
+
+    parsed
+  rescue ArgumentError
+    raise InvalidParams, I18n.t('storage_management.errors.invalid_filter')
   end
 
   def validate_date_range!
@@ -95,7 +107,7 @@ class Accounts::HeavyFilesService
     raise AttachmentTimeout, I18n.t('storage_management.errors.heavy_files_timeout') if query_timeout?(e)
 
     Rails.logger.warn("[HeavyFilesService#fetch_attachments] Failed for account #{account.id}: #{e.class.name}")
-    []
+    raise AttachmentTimeout, I18n.t('storage_management.errors.heavy_files_timeout')
   end
   # rubocop:enable Metrics/AbcSize, Metrics/MethodLength
 
@@ -148,42 +160,40 @@ class Accounts::HeavyFilesService
   end
 
   def fetch_recordings
-    snapshot = Accounts::HeavyRecordingsSnapshot.new(account_id: account.id).snapshot
-    unless snapshot
-      @recordings_pending = true
-      return []
+    with_statement_timeout do
+      size_sql = Storage::RecordingMetadata.primary_size_sql(account_id: account.id)
+      scope = filtered_recording_scope
+      @recordings_pending = scope.where("(#{size_sql}) IS NULL").exists?
+      if recordings_pending?
+        overview = Accounts::StorageOverviewService.new(account: account)
+        overview.schedule_refresh(force: true)
+        @recordings_refresh_status = overview.refresh_status
+      end
+      sessions = scope.where("(#{size_sql}) > 0").order(Arel.sql("(#{size_sql}) DESC, id DESC")).limit(limit)
+      inbox_names = account.inboxes.pluck(:id, :name).to_h
+      sessions.map do |session|
+        row = {
+          id: "call_#{session.id}", byte_size: Storage::RecordingMetadata.primary_size(session),
+          inbox_id: session.inbox_id, conversation_id: session.conversation_id, created_at: session.created_at&.iso8601,
+          download_url: Telephony::CallRecordingPlaybackUrl.path_for(session, storage_key: session.recording_ref)
+        }
+        format_recording_row(row, inbox_names)
+      end
     end
-
-    rows = snapshot.fetch(:recordings).select { |row| recording_matches?(row) }
-    return [] if rows.empty?
-
-    inbox_names = account.inboxes.pluck(:id, :name).to_h
-    rows.map { |row| format_recording_row(row, inbox_names) }
   rescue StandardError => e
     Rails.logger.warn("[HeavyFilesService#fetch_recordings] Failed for account #{account.id}: #{e.class.name}")
-    @recordings_pending = true
-    []
+    raise AttachmentTimeout, I18n.t('storage_management.errors.heavy_files_timeout')
   end
 
-  def recording_matches?(row)
-    return false unless (!inbox_id || row[:inbox_id] == inbox_id) && (!conversation_id || row[:conversation_id] == conversation_id)
-
-    recording_date_matches?(row[:created_at])
-  end
-
-  def recording_date_matches?(date)
-    return true unless date_from || date_to
-
-    created_at = Time.zone.parse(date.to_s)
-    created_at && after_start?(created_at) && before_end?(created_at)
-  end
-
-  def after_start?(created_at)
-    date_from.nil? || created_at >= date_from.beginning_of_day
-  end
-
-  def before_end?(created_at)
-    date_to.nil? || created_at <= date_to.end_of_day
+  def filtered_recording_scope
+    scope = Telephony::CallSession.where(account_id: account.id).where.not(recording_ref: [nil, ''])
+                                 .where("metadata->'trash' IS NULL")
+                                 .select(:id, :account_id, :external_call_ref, :inbox_id, :conversation_id, :created_at, :recording_ref, :metadata)
+    scope = scope.where(inbox_id: inbox_id) if inbox_id
+    scope = scope.where(conversation_id: conversation_id) if conversation_id
+    scope = scope.where('created_at >= ?', date_from.beginning_of_day) if date_from
+    scope = scope.where('created_at <= ?', date_to.end_of_day) if date_to
+    scope
   end
 
   def format_recording_row(row, inbox_names)

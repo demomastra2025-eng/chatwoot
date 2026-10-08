@@ -28,8 +28,9 @@ class AccountLimits::StorageUsageService
   # ActiveStorage owners that hold call recordings: they follow STORAGE_QUOTA_INCLUDE_RECORDINGS like the local files.
   RECORDING_RECORD_TYPES = %w[Call].freeze
 
-  def initialize(account:)
+  def initialize(account:, recordings_bytes: nil)
     @account = account
+    @recordings_bytes = recordings_bytes
   end
 
   # Physical ActiveStorage bytes of the tenant, call recordings included. The storage page breakdown uses this one.
@@ -51,7 +52,7 @@ class AccountLimits::StorageUsageService
   def recordings_bytes
     return 0 unless count_recordings? && account.respond_to?(:local_recordings_bytes)
 
-    account.local_recordings_bytes.to_i
+    @recordings_bytes.nil? ? account.local_recordings_bytes.to_i : @recordings_bytes.to_i
   end
 
   def usage_bytes

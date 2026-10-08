@@ -31,7 +31,11 @@ class Accounts::HeavyRecordingsSnapshot
   end
 
   def write!
-    Redis::Alfred.set(cache_key, JSON.generate(recordings: @rows, updated_at: Time.current.iso8601))
+    Redis::Alfred.set(cache_key, payload)
+  end
+
+  def payload
+    JSON.generate(recordings: @rows, updated_at: Time.current.iso8601)
   end
 
   def snapshot

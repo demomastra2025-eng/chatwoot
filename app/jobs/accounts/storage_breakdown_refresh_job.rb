@@ -12,17 +12,25 @@ class Accounts::StorageBreakdownRefreshJob < ApplicationJob
         refresh(account)
       end
     end
-  ensure
-    Accounts::StorageOverviewService.release_refresh(account_id, job_id) if account_id.present?
   end
 
   private
 
   def refresh(account)
-    Accounts::StorageOverviewService.new(account: account).refresh!
+    service = Accounts::StorageOverviewService.new(account: account)
+    return unless service.claim_refresh(job_id)
+
+    claimed = true
+    result = service.refresh!(job_id: job_id)
+    superseded = result.nil? || service.stale?(result)
   rescue ActiveRecord::StatementInvalid => e
     Rails.logger.warn("[StorageBreakdownRefreshJob] Query failed for account #{account.id}: #{e.class.name}")
   rescue StandardError => e
     Rails.logger.warn("[StorageBreakdownRefreshJob] Failed for account #{account.id}: #{e.class.name}")
+  ensure
+    if claimed
+      Accounts::StorageOverviewService.release_refresh(account.id, job_id)
+      service.schedule_refresh(force: true) if superseded
+    end
   end
 end

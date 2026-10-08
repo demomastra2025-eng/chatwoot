@@ -21,12 +21,16 @@ class Api::V1::Accounts::StorageController < Api::V1::Accounts::BaseController
       params: params.permit(:file_type, :inbox_id, :conversation_id, :date_from, :date_to, :limit)
     )
     files = service.perform
-    render json: { files: files, recordings_pending: service.recordings_pending? }
+    render json: {
+      files: files, recordings_pending: service.recordings_pending?, recordings_refresh_status: service.recordings_refresh_status
+    }
   end
 
   def refresh
     snapshot = storage_overview.schedule_refresh(force: true)
-    render json: { success: true, storage: storage_payload(snapshot) }
+    failed = storage_overview.refresh_status == 'failed'
+    render json: { success: !failed, refresh_status: storage_overview.refresh_status, storage: storage_payload(snapshot) },
+           status: failed ? :service_unavailable : :ok
   end
 
   def preview_cleanup
@@ -96,11 +100,15 @@ class Api::V1::Accounts::StorageController < Api::V1::Accounts::BaseController
   end
 
   def storage_payload(snapshot)
-    return { calculating: true, breakdown: nil, last_updated_at: nil } if snapshot.nil?
+    refresh = {
+      refresh_pending: storage_overview.pending?, refresh_status: storage_overview.refresh_status,
+      stale: storage_overview.stale?(snapshot)
+    }
+    return refresh.merge(calculating: true, breakdown: nil, last_updated_at: nil) if snapshot.nil?
 
     limits = snapshot[:limits]
     breakdown = snapshot[:breakdown]
-    {
+    refresh.merge(
       total_limit_bytes: limits[:total_count],
       consumed_bytes: limits[:consumed],
       available_bytes: limits[:current_available],
@@ -109,7 +117,7 @@ class Api::V1::Accounts::StorageController < Api::V1::Accounts::BaseController
       breakdown: breakdown,
       last_updated_at: breakdown[:last_updated_at],
       calculating: false
-    }
+    )
   end
 
   def storage_trash_service

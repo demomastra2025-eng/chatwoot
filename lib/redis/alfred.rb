@@ -29,6 +29,8 @@ module Redis::Alfred
 
     def set_if_newer(key, value, **) = Redis::SetIfNewer.call($alfred, key, value, **)
 
+    def publish_storage_snapshot(keys, values) = Redis::StorageSnapshotPublish.call($alfred, keys, values)
+
     def expire_if_value(key, value, seconds)
       Redis::CompareAndExpire.call($alfred, key, value, seconds)
     end

@@ -82,7 +82,7 @@ class Telephony::PurgeRetainedRecordingsJob < ApplicationJob
 
   # Request the cached overview after the commit so a failed request cannot roll the trash manifest back.
   def refresh_storage_breakdown(session)
-    Accounts::StorageOverviewService.new(account: session.account).schedule_refresh(force: true)
+    Accounts::StorageOverviewService.new(account: session.account).invalidate!
   rescue StandardError => e
     Rails.logger.warn("[PurgeRetainedRecordingsJob] Storage refresh request failed account=#{session.account_id}: #{e.class.name}")
   end

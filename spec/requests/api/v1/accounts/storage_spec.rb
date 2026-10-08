@@ -21,6 +21,8 @@ RSpec.describe 'Storage API', type: :request do
     Redis::Alfred.delete("account:#{account.id}:storage_overview_v1")
     Redis::Alfred.delete("account:#{account.id}:storage_overview_refresh_v1")
     Redis::Alfred.delete("account:#{account.id}:storage_overview_pending_v1")
+    Redis::Alfred.delete("account:#{account.id}:storage_overview_pending_v2")
+    Redis::Alfred.delete("account:#{account.id}:storage_generation_v1")
     Redis::Alfred.delete("account:#{account.id}:storage_heavy_recordings_v1")
   end
 
@@ -28,6 +30,8 @@ RSpec.describe 'Storage API', type: :request do
     Redis::Alfred.delete("account:#{account.id}:storage_overview_v1")
     Redis::Alfred.delete("account:#{account.id}:storage_overview_refresh_v1")
     Redis::Alfred.delete("account:#{account.id}:storage_overview_pending_v1")
+    Redis::Alfred.delete("account:#{account.id}:storage_overview_pending_v2")
+    Redis::Alfred.delete("account:#{account.id}:storage_generation_v1")
     Redis::Alfred.delete("account:#{account.id}:storage_heavy_recordings_v1")
   end
 
@@ -137,7 +141,7 @@ RSpec.describe 'Storage API', type: :request do
         json = response.parsed_body
         expect(json).to have_key('files')
         expect(json['files']).to be_an(Array)
-        expect(json['recordings_pending']).to be(true)
+        expect(json['recordings_pending']).to be(false)
       end
 
       it 'returns attachment rows while the recording snapshot is pending' do
@@ -145,6 +149,7 @@ RSpec.describe 'Storage API', type: :request do
         attachment = message.attachments.new(account_id: account.id, file_type: :file)
         attachment.file.attach(io: StringIO.new('fixture'), filename: 'fixture.pdf', content_type: 'application/pdf')
         attachment.save!
+        create(:telephony_call_session, account: account, recording_ref: 'legacy.wav')
 
         get "/api/v1/accounts/#{account.id}/storage/heavy_files",
             headers: admin.create_new_auth_token,
@@ -184,7 +189,32 @@ RSpec.describe 'Storage API', type: :request do
         expect(response).to have_http_status(:success)
         json = response.parsed_body
         expect(json['success']).to be(true)
+        expect(json['refresh_status']).to eq('queued')
         expect(json['storage']['breakdown']).to eq(snapshot[:breakdown].deep_stringify_keys)
+      end
+
+      it 'reports an existing pending refresh without claiming that another job was queued' do
+        headers = admin.create_new_auth_token
+        Accounts::StorageOverviewService.new(account: account).schedule_refresh(force: true)
+
+        expect do
+          post "/api/v1/accounts/#{account.id}/storage/refresh", headers: headers, as: :json
+        end.not_to have_enqueued_job(Accounts::StorageBreakdownRefreshJob)
+
+        expect(response.parsed_body).to include('success' => true, 'refresh_status' => 'pending')
+        expect(response.parsed_body['storage']).to include('refresh_pending' => true)
+      end
+
+      it 'returns an explicit unavailable response when a refresh cannot be queued' do
+        job = Accounts::StorageBreakdownRefreshJob.new(account.id)
+        allow(Accounts::StorageBreakdownRefreshJob).to receive(:new).and_return(job)
+        allow(job).to receive(:enqueue).and_raise(StandardError, 'queue unavailable')
+
+        post "/api/v1/accounts/#{account.id}/storage/refresh", headers: admin.create_new_auth_token, as: :json
+
+        expect(response).to have_http_status(:service_unavailable)
+        expect(response.parsed_body).to include('success' => false, 'refresh_status' => 'failed')
+        expect(response.parsed_body['storage']).to include('refresh_pending' => false)
       end
     end
   end

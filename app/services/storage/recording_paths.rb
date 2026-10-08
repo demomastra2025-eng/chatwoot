@@ -84,6 +84,36 @@ module Storage::RecordingPaths
     end
   end
 
+  # Streaming background reconciliation: stat each file once and renew the worker lease between files.
+  # Directory checks retain the existing tenant/symlink boundary; callers deduplicate hard links by inode.
+  def each_file_with_stat_for_account(account_id)
+    return enum_for(__method__, account_id) unless block_given?
+
+    raise IOError, 'Unsafe recording storage root' if root.exist? && !safe_directory?(root)
+
+    # An unreadable provider directory is a failed measurement, rather than a successful zero-byte total.
+    voice_root = root.join('voice-recordings')
+    voice_root.children if voice_root.directory?
+    directories = account_roots(account_id)
+    until directories.empty?
+      directory = directories.pop
+      next unless safe_directory?(directory) && directory.directory?
+
+      directory.each_child do |path|
+        stat = File.lstat(path)
+        next if stat.symlink?
+
+        if stat.directory?
+          directories << path
+        elsif stat.file? && safe_existing_path_under_root?(path)
+          yield path, stat
+        end
+      rescue Errno::ENOENT
+        next
+      end
+    end
+  end
+
   # Produce tenant-relative aliases for a real file so legacy basename references are checked
   # against the same physical recording as provider/account-qualified references.
   def reference_aliases(path, account_id:, allow_missing: false)

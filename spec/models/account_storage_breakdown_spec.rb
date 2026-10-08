@@ -8,6 +8,16 @@ RSpec.describe Account, type: :model do
 
   let(:account) { create(:account) }
 
+  it 'returns an explicit pending breakdown on a cold read without filesystem traversal' do
+    Redis::Alfred.delete("account:#{account.id}:storage_overview_v1")
+    expect(Storage::RecordingPaths).not_to receive(:each_file_with_stat_for_account)
+    expect(Storage::RecordingPaths).not_to receive(:files_for_account)
+
+    expect(account.storage_breakdown).to include(calculating: true, total: nil, recordings: nil)
+  ensure
+    Redis::Alfred.delete("account:#{account.id}:storage_overview_pending_v2")
+  end
+
   it 'deduplicates shared attachment blobs across categories and inboxes' do
     inboxes = create_list(:inbox, 2, account: account)
     blob = ActiveStorage::Blob.create_and_upload!(

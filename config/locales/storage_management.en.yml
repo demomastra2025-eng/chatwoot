@@ -1,5 +1,6 @@
 en:
   storage_management:
+    calculating: Storage usage is being calculated.
     unknown_channel: 'Unknown channel'
     no_channel: 'Unassigned storage'
     item_labels:
@@ -11,6 +12,7 @@ en:
       preview_expired: The preview expired. Review the current selection again.
       preview_changed: The selected files changed. Review the current preview again.
       invalid_file_type: Choose a supported file type.
+      invalid_filter: Enter a valid channel or conversation id.
       invalid_age_filter: Choose an age between 1 and 120 months.
       invalid_inbox: The selected channel does not belong to this account.
       trash_target_exists: A matching trash item already exists. Refresh the preview

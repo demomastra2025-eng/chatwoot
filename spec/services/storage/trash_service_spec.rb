@@ -94,7 +94,7 @@ RSpec.describe Storage::TrashService, type: :service do
   describe 'storage overview refreshes' do
     it 'coalesces move, restore, and empty requests without calculating storage inline' do
       refresh_key = "account:#{account.id}:storage_overview_refresh_v1"
-      pending_key = "account:#{account.id}:storage_overview_pending_v1"
+      pending_key = "account:#{account.id}:storage_overview_pending_v2"
       Redis::Alfred.delete(refresh_key)
       Redis::Alfred.delete(pending_key)
       file = storage_dir.join('refresh_fixture.mp3')

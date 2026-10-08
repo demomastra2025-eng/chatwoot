@@ -83,10 +83,19 @@ RSpec.describe AccountLimits::StorageUsageService do
 
   describe 'call recordings' do
     let(:recordings_dir) { Storage::RecordingPaths.root.join('voice-recordings', 'janus', account.id.to_s) }
+    let(:cache) { ActiveSupport::Cache::MemoryStore.new }
 
     before do
+      allow(Rails).to receive(:cache).and_return(cache)
       FileUtils.mkdir_p(recordings_dir)
       File.write(recordings_dir.join('call.wav'), 'x' * 4096)
+      Accounts::StorageOverviewService.new(account: account).refresh!
+    end
+
+    after do
+      %w[storage_overview_v1 storage_heavy_recordings_v1 storage_overview_pending_v2 storage_generation_v1 recording_reconciliation_v1].each do |key|
+        Redis::Alfred.delete("account:#{account.id}:#{key}")
+      end
     end
 
     it 'leaves local recordings out of the quota by default' do
@@ -121,42 +130,47 @@ RSpec.describe AccountLimits::StorageUsageService do
     end
 
     context 'when the scan meets trouble' do
-      let(:cache) { ActiveSupport::Cache::MemoryStore.new }
-
       before do
-        allow(Rails).to receive(:cache).and_return(cache)
         File.write(recordings_dir.join('second.wav'), 'y' * 1000)
       end
 
       it 'skips a file that vanished during the scan instead of dropping the whole total' do
-        allow(File).to receive(:size).and_wrap_original do |original, path, *rest|
+        Redis::Alfred.delete("account:#{account.id}:recording_reconciliation_v1")
+        allow(File).to receive(:lstat).and_wrap_original do |original, path, *rest|
           raise Errno::ENOENT, path.to_s if path.to_s.end_with?('second.wav')
 
           original.call(path, *rest)
         end
 
         with_modified_env('STORAGE_QUOTA_INCLUDE_RECORDINGS' => 'true') do
+          Accounts::StorageOverviewService.new(account: account).refresh!
           expect(described_class.new(account: account).usage_bytes).to eq(4096)
         end
       end
 
-      it 'does not cache a failed scan as zero usage' do
-        allow(Storage::RecordingPaths).to receive(:files_for_account).and_raise(Errno::EIO)
+      it 'does not scan recording directories during a cold quota read and schedules background calculation' do
+        Redis::Alfred.delete("account:#{account.id}:storage_overview_v1")
+        cache.delete(account.local_recordings_bytes_cache_key)
+        cache.delete(account.local_recordings_last_good_cache_key)
+        expect(Storage::RecordingPaths).not_to receive(:each_file_with_stat_for_account)
+        expect(Storage::RecordingPaths).not_to receive(:files_for_account)
 
         with_modified_env('STORAGE_QUOTA_INCLUDE_RECORDINGS' => 'true') do
-          expect(account.local_recordings_bytes).to eq(0)
+          expect { expect(account.local_recordings_bytes).to eq(0) }
+            .to have_enqueued_job(Accounts::StorageBreakdownRefreshJob).with(account.id)
           expect(cache.read(account.local_recordings_bytes_cache_key)).to be_nil
-
-          allow(Storage::RecordingPaths).to receive(:files_for_account).and_call_original
-          expect(account.local_recordings_bytes).to eq(5096)
         end
       end
 
       it 'falls back to the last good total while a scan keeps failing' do
         with_modified_env('STORAGE_QUOTA_INCLUDE_RECORDINGS' => 'true') do
+          Redis::Alfred.delete("account:#{account.id}:recording_reconciliation_v1")
+          Accounts::StorageOverviewService.new(account: account).refresh!
           expect(account.local_recordings_bytes).to eq(5096)
           cache.delete(account.local_recordings_bytes_cache_key)
-          allow(Storage::RecordingPaths).to receive(:files_for_account).and_raise(Errno::EIO)
+          Redis::Alfred.delete("account:#{account.id}:recording_reconciliation_v1")
+          allow(Storage::RecordingPaths).to receive(:each_file_with_stat_for_account).and_raise(Errno::EIO)
+          expect { Accounts::StorageOverviewService.new(account: account).refresh! }.to raise_error(Errno::EIO)
 
           expect(account.local_recordings_bytes).to eq(5096)
           expect(cache.read(account.local_recordings_bytes_cache_key)).to be_nil

@@ -37,8 +37,35 @@ RSpec.describe Accounts::HeavyFilesService do
       end
 
       expect(statements).to include("SET statement_timeout = '10s'")
-      expect(statements.grep(/\ABEGIN\b/)).to be_empty
       expect(connection.select_value('SHOW statement_timeout')).to eq(timeout_before)
+    end
+
+    it 'runs attachment queries with the existing transaction depth and never opens its own transaction' do
+      connection = ActiveRecord::Base.connection
+      baseline = connection.open_transactions
+      seen = []
+      subscriber = lambda do |*, payload|
+        seen << connection.open_transactions if payload[:sql].include?('active_storage_blobs')
+      end
+
+      ActiveSupport::Notifications.subscribed(subscriber, 'sql.active_record') do
+        described_class.new(account: account, params: { file_type: 'documents' }).perform
+      end
+
+      expect(seen).not_to be_empty
+      expect(seen.uniq).to eq([baseline])
+    end
+
+    it 'restores the session timeout when an attachment query fails' do
+      service = described_class.new(account: account, params: { file_type: 'documents' })
+      connection = ActiveRecord::Base.connection
+      previous = connection.select_value('SHOW statement_timeout')
+      scope = service.send(:filtered_attachment_scope)
+      allow(service).to receive(:filtered_attachment_scope).and_return(scope)
+      allow(scope).to receive(:order).and_raise(ActiveRecord::QueryCanceled, 'statement timeout')
+
+      expect { service.perform }.to raise_error(Accounts::HeavyFilesService::AttachmentTimeout)
+      expect(connection.select_value('SHOW statement_timeout')).to eq(previous)
     end
 
     context 'with attachments' do
@@ -97,6 +124,7 @@ RSpec.describe Accounts::HeavyFilesService do
         )
 
         expect(Storage::RecordingPaths).not_to receive(:resolve)
+        expect(Storage::RecordingPaths).not_to receive(:each_file_with_stat_for_account)
         params = {
           file_type: 'recordings', inbox_id: inbox.id, conversation_id: new_session.conversation_id,
           date_from: '2026-10-01', date_to: '2026-10-01', limit: 1
@@ -105,6 +133,97 @@ RSpec.describe Accounts::HeavyFilesService do
 
         expect(files.map { |row| [row[:id], row[:byte_size]] }).to eq([["call_#{new_session.id}", File.size(new_path)]])
         expect(files.first).to include(file_type: 'recording', inbox_id: inbox.id, conversation_id: new_session.conversation_id)
+      end
+
+      it 'filters the complete tenant recording set before limiting, including recordings below the global top 200' do
+        other_inbox = create(:inbox, account: account)
+        target = create(:telephony_call_session, account: account, inbox: inbox, number_binding: number_binding,
+                                                 recording_ref: "voice-recordings/fixture/#{account.id}/small.wav",
+                                                 created_at: Time.zone.local(2026, 10, 1),
+                                                 metadata: { 'recording' => { 'byte_size' => 1 } })
+        now = Time.current
+        rows = 205.times.map do |index|
+          {
+            account_id: account.id, inbox_id: other_inbox.id, external_call_ref: "large-#{index}", provider: 'fixture',
+            recording_ref: "voice-recordings/fixture/#{account.id}/large-#{index}.wav", status: 'completed', direction: 'inbound',
+            metadata: { 'recording' => { 'byte_size' => index + 100 } }, created_at: now, updated_at: now
+          }
+        end
+        Telephony::CallSession.insert_all!(rows)
+        expect(Storage::RecordingPaths).not_to receive(:resolve)
+        expect(Storage::RecordingPaths).not_to receive(:each_file_with_stat_for_account)
+        params = { file_type: 'recordings', inbox_id: inbox.id, conversation_id: target.conversation_id,
+                   date_from: '2026-10-01', date_to: '2026-10-01', limit: 1 }
+        service = described_class.new(account: account, params: params)
+
+        expect(service.perform.pluck(:id)).to eq(["call_#{target.id}"])
+        expect(service.recordings_pending?).to be(false)
+      end
+
+      it 'returns measured rows and marks a filtered list incomplete when legacy sizes are missing' do
+        known = create(:telephony_call_session, account: account, inbox: inbox, number_binding: number_binding,
+                                                recording_ref: "voice-recordings/fixture/#{account.id}/known.wav",
+                                                metadata: { 'recording' => { 'byte_size' => 20 } })
+        create(:telephony_call_session, account: account, inbox: inbox, number_binding: number_binding,
+                                       recording_ref: 'legacy.wav', metadata: { 'recording' => { 'byte_size' => 'broken' } })
+        service = described_class.new(account: account, params: { file_type: 'recordings', inbox_id: inbox.id })
+
+        expect { expect(service.perform.pluck(:id)).to eq(["call_#{known.id}"]) }
+          .to have_enqueued_job(Accounts::StorageBreakdownRefreshJob).with(account.id)
+        expect(service.recordings_pending?).to be(true)
+        expect(service.recordings_refresh_status).to eq('queued')
+      end
+
+      it 'never includes another account or a foreign tenant path in recording results' do
+        foreign = create(:account)
+        create(:telephony_call_session, account: foreign,
+                                       recording_ref: "voice-recordings/fixture/#{foreign.id}/foreign.wav",
+                                       metadata: { 'recording' => { 'byte_size' => 1000 } })
+        create(:telephony_call_session, account: account, inbox: inbox, number_binding: number_binding,
+                                       recording_ref: "voice-recordings/fixture/#{foreign.id}/foreign.wav",
+                                       metadata: { 'recording' => { 'byte_size' => 1000 } })
+        service = described_class.new(account: account, params: { file_type: 'recordings' })
+
+        expect(service.perform).to be_empty
+        expect(service.recordings_pending?).to be(true)
+      end
+
+      it 'generates the current recording link immediately after compression rather than serving an old snapshot URL' do
+        session, = recording(size: 30, created_at: Time.current)
+        Accounts::StorageBreakdownRefreshJob.perform_now(account.id)
+        old = described_class.new(account: account, params: { file_type: 'recordings' }).perform.sole
+        new_key = "voice-recordings/fixture/#{account.id}/compressed.mp3"
+        session.update!(recording_ref: new_key, metadata: { 'recording' => { 'storage_key' => new_key, 'byte_size' => 10 } })
+        Accounts::StorageOverviewService.new(account: account).invalidate!
+
+        current = described_class.new(account: account, params: { file_type: 'recordings' }).perform.sole
+
+        expect(current[:byte_size]).to eq(10)
+        expect(current[:download_url]).not_to eq(old[:download_url])
+        token = CGI.parse(URI.parse(current[:download_url]).query)['recording_token'].sole
+        expect(Telephony::CallRecordingPlaybackUrl.valid?(token: token, call_session: session, storage_key: new_key)).to be(true)
+      end
+
+      it 'reflects a committed trash, restore and purge without waiting for a snapshot refresh' do
+        session, = recording(size: 40, created_at: 4.months.ago)
+        overview = Accounts::StorageOverviewService.new(account: account)
+        overview.refresh!
+        trash = Storage::TrashService.new(account: account)
+        service = described_class.new(account: account, params: { file_type: 'recordings' })
+        move = lambda do
+          preview = trash.preview(file_type: 'recordings', older_than_months: 3)
+          trash.move_to_trash!(file_type: 'recordings', older_than_months: 3,
+                               preview_token: preview[:confirmation_token], confirmed: true)
+        end
+
+        move.call
+        expect(service.perform).to be_empty
+        expect(overview.stale?(overview.snapshot)).to be(true)
+        trash.restore!(item_type: 'recording', item_id: session.id)
+        expect(service.perform.pluck(:id)).to eq(["call_#{session.id}"])
+        move.call
+        trash.empty_trash!(item_type: 'recording', item_id: session.id)
+        expect(service.perform).to be_empty
       end
     end
   end

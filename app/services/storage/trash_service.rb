@@ -235,7 +235,7 @@ class Storage::TrashService
   private
 
   def request_storage_refresh
-    Accounts::StorageOverviewService.new(account: @account).schedule_refresh(force: true)
+    Accounts::StorageOverviewService.new(account: @account).invalidate!
   end
 
   def write_retained_original_trash(session, original_path, trash_path, byte_size)
