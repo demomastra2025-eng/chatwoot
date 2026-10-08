@@ -292,6 +292,8 @@
       "PROVIDER_DAY_OFF": "Нет рабочих часов",
       "PROVIDER_UNVERIFIED": "Данные пока не подтверждены",
       "PROVIDER_DIFFERS": "График отличается от местных правил расписания.",
+      "PROVIDER_SHOW_SCHEDULE": "Показать график",
+      "PROVIDER_HIDE_SCHEDULE": "Скрыть график",
       "ADD": "Add specialist",
       "BASIC": "Specialist details",
       "BASIC_DESCRIPTION": "Profile and scheduling defaults.",

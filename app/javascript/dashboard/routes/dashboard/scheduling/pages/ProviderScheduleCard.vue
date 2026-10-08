@@ -1,12 +1,15 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
+
+import Button from 'dashboard/components-next/button/Button.vue';
 
 const props = defineProps({
   schedule: { type: Object, required: true },
 });
 
 const { t } = useI18n();
+const isExpanded = ref(false);
 
 const checkedMinutesAgo = computed(() => {
   if (!props.schedule.checkedAt) return null;
@@ -30,6 +33,10 @@ const formattedDays = computed(() =>
       .join(', '),
   }))
 );
+
+const nextWorkingDay = computed(() =>
+  formattedDays.value.find(day => day.status === 'confirmed' && day.hours)
+);
 </script>
 
 <template>
@@ -51,22 +58,47 @@ const formattedDays = computed(() =>
         }}
       </p>
       <p
-        v-for="day in formattedDays"
-        :key="day.date"
+        v-if="!isExpanded && nextWorkingDay"
         class="mb-0 flex justify-between gap-2"
       >
-        <span>{{ day.label }}</span>
-        <span v-if="day.status === 'confirmed'">{{ day.hours }}</span>
-        <span v-else-if="day.status === 'empty_confirmed'">
-          {{ t('SCHEDULING.RESOURCES.PROVIDER_DAY_OFF') }}
-        </span>
-        <span v-else>
-          {{ t('SCHEDULING.RESOURCES.PROVIDER_UNVERIFIED') }}
-        </span>
+        <span>{{ nextWorkingDay.label }}</span>
+        <span>{{ nextWorkingDay.hours }}</span>
       </p>
+      <template v-if="isExpanded">
+        <p
+          v-for="day in formattedDays"
+          :key="day.date"
+          data-testid="provider-schedule-day"
+          class="mb-0 flex justify-between gap-2"
+        >
+          <span>{{ day.label }}</span>
+          <span v-if="day.status === 'confirmed'">{{ day.hours }}</span>
+          <span v-else-if="day.status === 'empty_confirmed'">
+            {{ t('SCHEDULING.RESOURCES.PROVIDER_DAY_OFF') }}
+          </span>
+          <span v-else>
+            {{ t('SCHEDULING.RESOURCES.PROVIDER_UNVERIFIED') }}
+          </span>
+        </p>
+      </template>
       <p v-if="schedule.differsFromTemplate" class="mb-0 mt-1 text-n-amber-11">
         {{ t('SCHEDULING.RESOURCES.PROVIDER_DIFFERS') }}
       </p>
+      <Button
+        v-if="formattedDays.length"
+        type="button"
+        size="xs"
+        variant="link"
+        color="slate"
+        class="mt-1"
+        :aria-expanded="isExpanded"
+        :label="
+          isExpanded
+            ? t('SCHEDULING.RESOURCES.PROVIDER_HIDE_SCHEDULE')
+            : t('SCHEDULING.RESOURCES.PROVIDER_SHOW_SCHEDULE')
+        "
+        @click="isExpanded = !isExpanded"
+      />
     </template>
   </section>
 </template>
