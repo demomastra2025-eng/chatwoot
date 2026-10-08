@@ -15,7 +15,10 @@ require_relative '../lib/onelink/dev_runtime'
 # We need these environment variables to load the specific APM agent
 Dotenv::Rails.load
 require 'tidewave' if Rails.env.development? && !Onelink::DevRuntime.new.fast?
-ViteRuby.env['VITE_RUBY_MODE'] = 'production' if Rails.env.development? && Onelink::DevRuntime.new.built_assets?
+if Rails.env.development? && Onelink::DevRuntime.new.built_assets?
+  # Pin serving to the prepared artifact, including when a hybrid config is selected.
+  ViteRuby.configure(**Onelink::DevRuntime.new.vite_options)
+end
 require 'datadog' if ENV.fetch('DD_TRACE_AGENT_URL', false).present?
 require 'elastic-apm' if ENV.fetch('ELASTIC_APM_SECRET_TOKEN', false).present?
 require 'scout_apm' if ENV.fetch('SCOUT_KEY', false).present?

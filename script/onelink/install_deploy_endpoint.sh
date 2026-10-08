@@ -27,6 +27,10 @@ case "${ENVIRONMENT}" in
     VERIFY_TARGET=/usr/local/sbin/onelink-dev-verify-release
     TREE_SOURCE="${SCRIPT_DIR}/verify_release_tree.py"
     TREE_TARGET=/usr/local/sbin/onelink-verify-release-tree
+    ASSET_PREPARER_SOURCE="${SCRIPT_DIR}/prepare_dev_assets.sh"
+    ASSET_PREPARER_TARGET=/usr/local/sbin/onelink-dev-prepare-assets
+    ASSET_TOOL_SOURCE="${SCRIPT_DIR}/dev_built_assets.py"
+    ASSET_TOOL_TARGET=/usr/local/sbin/onelink-dev-built-assets
     MANIFEST_SOURCE="${SCRIPT_DIR}/medelement_contract_manifest.json"
     MANIFEST_TARGET=/usr/local/share/onelink-dev-medelement-contract-manifest.json
     ORIGINAL_VERB=deploy
@@ -52,12 +56,15 @@ fi
 install -o root -g root -m 0755 "${FORCED_SOURCE}" "${FORCED_TARGET}"
 install -o root -g root -m 0755 "${ACTION_SOURCE}" "${ACTION_TARGET}"
 if [[ "${ENVIRONMENT}" == dev ]]; then
-  for file in "${GATE_SOURCE}" "${VERIFY_SOURCE}" "${TREE_SOURCE}" "${MANIFEST_SOURCE}"; do
+  for file in "${GATE_SOURCE}" "${VERIFY_SOURCE}" "${TREE_SOURCE}" "${MANIFEST_SOURCE}" "${ASSET_PREPARER_SOURCE}" "${ASSET_TOOL_SOURCE}"; do
     [[ -f "${file}" ]] || { echo "missing installer input: ${file}" >&2; exit 66; }
   done
   install -o root -g root -m 0755 "${GATE_SOURCE}" "${GATE_TARGET}"
   install -o root -g root -m 0755 "${VERIFY_SOURCE}" "${VERIFY_TARGET}"
   install -o root -g root -m 0755 "${TREE_SOURCE}" "${TREE_TARGET}"
+  [[ -x /root/work/e-heavy.sh ]] || { echo 'missing existing DEV heavy-work gate' >&2; exit 66; }
+  install -o root -g root -m 0755 "${ASSET_PREPARER_SOURCE}" "${ASSET_PREPARER_TARGET}"
+  install -o root -g root -m 0755 "${ASSET_TOOL_SOURCE}" "${ASSET_TOOL_TARGET}"
   install -d -o root -g root -m 0755 "$(dirname "${MANIFEST_TARGET}")"
   install -o root -g root -m 0644 "${MANIFEST_SOURCE}" "${MANIFEST_TARGET}"
 fi
@@ -78,6 +85,7 @@ SUDOERS="/etc/sudoers.d/${USER_NAME}"
 printf '%s ALL=(root) NOPASSWD: %s *\n' "${USER_NAME}" "${ACTION_TARGET}" > "${SUDOERS}"
 if [[ "${ENVIRONMENT}" == dev ]]; then
   printf '%s ALL=(root) NOPASSWD: %s *\n' "${USER_NAME}" "${VERIFY_TARGET}" >> "${SUDOERS}"
+  printf '%s ALL=(root) NOPASSWD: /root/work/e-heavy.sh %s *\n' "${USER_NAME}" "${ASSET_PREPARER_TARGET}" >> "${SUDOERS}"
 fi
 chmod 0440 "${SUDOERS}"
 visudo -cf "${SUDOERS}" >/dev/null

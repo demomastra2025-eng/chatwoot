@@ -101,6 +101,7 @@ jobs:
           python3 -m unittest script/onelink/test_dev_release_gate.py
           python3 -m unittest script/onelink/test_verify_release_tree.py
           python3 -m unittest script/onelink/test_workflow_native_deps.py
+          python3 -m unittest script/onelink/test_dev_built_assets.py
           python3 script/onelink/change_plan.py \
             --base "$BASE_SHA" --head "$HEAD_SHA" \
             --github-output "$GITHUB_OUTPUT" \
@@ -330,6 +331,32 @@ jobs:
             echo '::error::DEV deploy endpoint differs from this release; install reviewed endpoint before deploy.'
             exit 1
           }
+          expected="$(sha256sum script/onelink/prepare_dev_assets.sh script/onelink/dev_built_assets.py | cut -d' ' -f1)"
+          installed="$(ssh -i ~/.ssh/onelink-dev \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 \
+            "$DEPLOY_USER@$DEPLOY_HOST" 'asset-tools-sha256')"
+          [[ "$installed" == "$expected" ]] || {
+            echo '::error::DEV asset tools differ from this release; install reviewed endpoint before preparation.'
+            exit 1
+          }
+      - name: Prepare exact SHA assets through the DEV load gate before deploy
+        env:
+          DEPLOY_HOST: ${{ secrets.ONELINK_DEV_DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.ONELINK_DEV_DEPLOY_USER }}
+        run: |
+          for ((attempt = 1; attempt <= 40; attempt++)); do
+            if ssh -i ~/.ssh/onelink-dev \
+              -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 \
+              -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
+              "$DEPLOY_USER@$DEPLOY_HOST" "prepare-assets $GITHUB_SHA"; then
+              exit 0
+            else
+              status=$?
+            fi
+            if [[ "$status" -ne 75 || "$attempt" -eq 40 ]]; then exit "$status"; fi
+            echo "::notice::DEV preparation lock is busy; retrying in 30 seconds ($attempt/40)."
+            sleep 30
+          done
       - name: Atomically deploy exact SHA to DEV
         env:
           DEPLOY_HOST: ${{ secrets.ONELINK_DEV_DEPLOY_HOST }}

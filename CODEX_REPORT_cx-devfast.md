@@ -18,17 +18,16 @@
    meta_request, and optional Bullet were kept because the inspected code
    showed no equivalent reloading guard; their full runtime behavior still
    needs a DEV boot check.
-3. **Built assets:** `ONELINK_DEV_BUILT_ASSETS=1` selects Vite Ruby's
-   production mode in the development Rails process. That mode uses the
-   existing `config/vite.json` `all` settings and the gem's default
-   `public/vite` output with `autoBuild=false`, so no Vite configuration
-   change or per-request build is needed. The deploy requires the env flag
-   to match `/srv/onelink-dev/runtime/built-assets.enabled`; when on, it
-   runs `nice -n 10 env NODE_OPTIONS=--max-old-space-size=4096 bin/vite build
-   --mode production --force` before cutover, validates the manifest and
-   dashboard file, then checks its public URL after cutover. A failed build
-   stops deployment before activation. The normal `/vite-dev/` health check
-   remains when off.
+3. **Built assets (review correction, 2026-10-09):** The separate restricted
+   `prepare-assets <SHA>` verb invokes the existing `/root/work/e-heavy.sh`
+   before deployment. It builds an exact Git archive, app entrypoints and SDK,
+   and seals the full asset inventory for the requested SHA. Deployment only
+   verifies/consumes that artifact. It rejects inconsistent flags and an
+   incompatible rollback target before stopping workers. CI checks the
+   installed preparer/verifier hashes in addition to the deploy hash. Rails
+   pins production Vite options despite hybrid config. All app entrypoints
+   and SDK public responses are content-hash checked after cutover/rollback.
+   Normal `/vite-dev/` health checks remain when the flag is off.
 4. **Documentation:** Added `ONELINK_DEV_RUNTIME.md` at the repository root.
    The requested `docs/onelink-dev-runtime.md` could not be committed: `docs/`
    is an uninitialized Git submodule, its pinned object is absent locally,
@@ -46,11 +45,11 @@
   Foreman Procfile remove its `vite:` process. In Caddy replace the
   `/vite-dev/*` proxy to port 3037 with `/vite/*` routed to Rails on port
   3002, or let the existing catchall route serve `/vite/*` from Rails.
-  Install the reviewed deploy script at
-  `/usr/local/sbin/onelink-dev-deploy-release` before deployment, since the
-  release workflow compares its SHA-256 with the pushed file. Deploy a new
-  release. No external `VITE_RUBY_MODE` or `NODE_ENV=production` line is
-  needed; code and the Vite build command select production asset mode.
+  Follow the staged first activation in `ONELINK_DEV_RUNTIME.md`: install the
+  reviewed endpoint/tool set, deploy compatible code with flags off, prepare
+  the exact SHA through the load gate, then change the external runtime and
+  redeploy that SHA. No external `VITE_RUBY_MODE` or `NODE_ENV=production` line
+  is needed; code and the Vite subprocess select the asset mode.
 - Built assets off: remove the flag file and set
   `ONELINK_DEV_BUILT_ASSETS=0` or remove it, restore the `vite:` process,
   restore Caddy `/vite-dev/*` to port 3037, then deploy or restart. The env
@@ -94,6 +93,13 @@ These are code-based suspects, not measured timings. Eager-loading production
 paths already exist; DEV-specific eager boot still needs live verification.
 
 ## Checks and limits
+
+Review correction checks on 2026-10-09: 13 service-free Python artifact/endpoint
+tests passed; shell syntax passed for deploy, preparation, forced-command and
+installer scripts. Ruby specs and four-mode eager boot are delegated to the
+isolated release harness; no server configuration, live deployment or provider
+write was performed during the correction. The following checks describe the
+original three-commit preparation.
 
 - `ruby -c` on `Gemfile`, `lib/onelink/dev_runtime.rb`,
   `config/application.rb`, `config/environments/development.rb`,

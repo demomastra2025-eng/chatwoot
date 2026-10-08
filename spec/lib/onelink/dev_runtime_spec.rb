@@ -35,5 +35,22 @@ RSpec.describe Onelink::DevRuntime do
       expect(runtime.log_level).to eq(:info)
       expect(overridden.log_level).to eq(:error)
     end
+
+    [false, true].product([false, true]).each do |fast, built|
+      it "supports fast=#{fast} and built assets=#{built} independently" do
+        with_modified_env ONELINK_DEV_FAST: fast ? '1' : '0', ONELINK_DEV_BUILT_ASSETS: built ? '1' : '0' do
+          runtime = described_class.new
+
+          expect(runtime.fast?).to eq(fast)
+          expect(runtime.built_assets?).to eq(built)
+          if built
+            expect(runtime.vite_options).to include(mode: 'production', public_output_dir: 'vite',
+                                                    auto_build: false, skip_proxy: true, asset_host: nil, base: '/')
+          else
+            expect(runtime.vite_options).to be_empty
+          end
+        end
+      end
+    end
   end
 end

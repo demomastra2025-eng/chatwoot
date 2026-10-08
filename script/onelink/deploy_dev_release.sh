@@ -38,6 +38,9 @@ GATE_SCRIPT=/usr/local/sbin/onelink-dev-release-gate
 CONTRACT_MANIFEST=/usr/local/share/onelink-dev-medelement-contract-manifest.json
 VERIFY_SCRIPT=/usr/local/sbin/onelink-dev-verify-release
 TREE_VERIFIER=/usr/local/sbin/onelink-verify-release-tree
+ASSET_TOOL=/usr/local/sbin/onelink-dev-built-assets
+ASSET_ARTIFACT="${ROOT}/runtime/built-assets/${SHA}"
+ASSET_RESPONSE="${ROOT}/runtime/asset-response.$$"
 readonly RBENV_ROOT=/opt/rbenv
 readonly DEV_TOOLCHAIN_PATH="${RBENV_ROOT}/bin:${RBENV_ROOT}/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 configure_toolchain() {
@@ -55,6 +58,7 @@ log() { printf '[onelink-dev-deploy] %s\n' "$*"; }
 cleanup() {
   rm -rf "${TMP_RELEASE}"
   rm -f "${VOICE_START_BACKUP}"
+  rm -f "${ASSET_RESPONSE}"
   if ((RELEASE_CREATED == 1 && DEPLOY_SUCCEEDED == 0)) && [[ "$(readlink -f "${CURRENT}" 2>/dev/null || true)" != "${RELEASE}" ]]; then
     rm -rf "${RELEASE}"
   fi
@@ -151,7 +155,7 @@ load_dev_env() {
     export "${key}=${value}"
   done < "${ENV_FILE}"
   configure_toolchain
-  [[ "${RAILS_ENV:-development}" != production ]]
+  [[ "${RAILS_ENV:-development}" == development ]]
   [[ "${NODE_ENV:-development}" != production ]]
   [[ "${POSTGRES_DATABASE:-}" == chatwoot_dev ]]
 }
@@ -160,6 +164,10 @@ BUILT_ASSETS_ENABLED=0
 [[ -f "${BUILT_ASSETS_FLAG}" ]] && BUILT_ASSETS_ENABLED=1
 (
   load_dev_env
+  case "${ONELINK_DEV_BUILT_ASSETS:-0}" in
+    0 | 1) ;;
+    *) echo 'invalid ONELINK_DEV_BUILT_ASSETS value' >&2; exit 65 ;;
+  esac
   if [[ "${ONELINK_DEV_BUILT_ASSETS:-0}" != "${BUILT_ASSETS_ENABLED}" ]]; then
     echo "DEV built-assets flag file and ONELINK_DEV_BUILT_ASSETS must match" >&2
     exit 65
@@ -167,39 +175,34 @@ BUILT_ASSETS_ENABLED=0
 )
 
 if ((BUILT_ASSETS_ENABLED == 1)); then
-  log "building DEV Vite assets at low priority before cutover"
-  (
-    load_dev_env
-    cd "${RELEASE}"
-    if ! nice -n 10 env NODE_OPTIONS=--max-old-space-size=4096 bin/vite build --mode production --force; then
-      echo "DEV Vite production build failed; release was not activated" >&2
-      exit 1
-    fi
-    [[ -s public/vite/.vite/manifest.json ]] || {
-      echo "DEV Vite build produced no public/vite/.vite/manifest.json" >&2
-      exit 1
-    }
-  )
-  BUILT_DASHBOARD_ASSET="$(python3 - "${RELEASE}/public/vite/.vite/manifest.json" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-manifest_path = Path(sys.argv[1])
-with manifest_path.open(encoding="utf-8") as manifest_file:
-    dashboard = json.load(manifest_file).get("entrypoints/dashboard.js")
-if not dashboard or not dashboard.get("file"):
-    raise SystemExit("DEV Vite manifest has no dashboard entrypoint")
-asset = dashboard["file"]
-if not (manifest_path.parents[1] / asset).is_file():
-    raise SystemExit(f"DEV Vite dashboard asset is missing: {asset}")
-print("/vite/" + asset)
-PY
-)" || {
-    echo "DEV Vite manifest validation failed; release was not activated" >&2
-    exit 1
+  [[ -x "${ASSET_TOOL}" ]] || { echo 'missing DEV asset verifier' >&2; exit 66; }
+  log "consuming exact-SHA assets prepared through e-heavy before deployment"
+  "${ASSET_TOOL}" install "${ASSET_ARTIFACT}" "${SHA}" --release "${RELEASE}"
+  # Fail before stopping workers if automatic rollback would lose the UI.
+  [[ -n "${PREVIOUS}" && -d "${PREVIOUS}" ]] || {
+    echo 'built mode needs a compatible previous release; first deploy with flags off' >&2; exit 65;
   }
+  "${ASSET_TOOL}" compatible "${PREVIOUS}" "$(cat "${PREVIOUS}/.git_sha")"
+  "${ASSET_TOOL}" verify "${PREVIOUS}" "$(cat "${PREVIOUS}/.git_sha")"
 fi
+
+verify_asset_http() {
+  local release="$1" sha="$2" lines asset expected actual code
+  if ((BUILT_ASSETS_ENABLED == 1)); then
+    lines="$("${ASSET_TOOL}" urls "${release}" "${sha}")" || return 1
+    while read -r asset expected; do
+      curl --fail --silent --show-error --max-time 10 \
+        "https://dev.one-link.kz${asset}" -o "${ASSET_RESPONSE}" || return 1
+      actual="$(sha256sum "${ASSET_RESPONSE}" | cut -d' ' -f1)"
+      [[ "${actual}" == "${expected}" ]] || { echo "DEV asset content mismatch: ${asset}" >&2; return 1; }
+    done <<< "${lines}"
+  else
+    for asset in /vite-dev/@vite/client /vite-dev/entrypoints/dashboard.js; do
+      code="$(curl -sS -o /dev/null --max-time 10 -w '%{http_code}' "https://dev.one-link.kz${asset}" || true)"
+      [[ "${code}" == 200 ]] || return 1
+    done
+  fi
+}
 
 log "running idempotent DEV database preparation"
 (
@@ -258,6 +261,7 @@ rollback() {
     current_sha="$(cat "${CURRENT}/.git_sha" 2>/dev/null || true)"
     [[ "${previous_sha}" =~ ^[0-9a-f]{40}$ && "${current_sha}" == "${previous_sha}" ]] || \
       rollback_failed=true
+    verify_asset_http "${PREVIOUS}" "${previous_sha}" || rollback_failed=true
 
     if [[ "${rollback_failed}" == false ]]; then
       echo "rolled back and verified DEV runtime at ${PREVIOUS}" >&2
@@ -341,15 +345,7 @@ voice_cwd="$(readlink -f "/proc/${voice_pid}/cwd" 2>/dev/null || true)"
 [[ "${voice_cwd}" == "${RELEASE}/services/onelink-ai-voice" ]] || \
   rollback "AI voice runtime source mismatch: ${voice_cwd:-missing}"
 
-if ((BUILT_ASSETS_ENABLED == 1)); then
-  assets=("${BUILT_DASHBOARD_ASSET}")
-else
-  assets=(/vite-dev/@vite/client /vite-dev/entrypoints/dashboard.js)
-fi
-for asset in "${assets[@]}"; do
-  code="$(curl -sS -o /dev/null --max-time 10 -w '%{http_code}' "https://dev.one-link.kz${asset}" || true)"
-  [[ "${code}" == 200 ]] || rollback "asset ${asset} returned HTTP ${code:-000}"
-done
+verify_asset_http "${RELEASE}" "${SHA}" || rollback "public asset HTTP/content verification"
 
 RUNNING_SHA="$(cat "${CURRENT}/.git_sha")"
 [[ "${RUNNING_SHA}" == "${SHA}" ]] || rollback "runtime SHA mismatch"
