@@ -81,6 +81,20 @@ let isUnmounted = false;
 const accountId = () => route?.params?.accountId;
 const userId = () => store?.getters?.getCurrentUserID;
 
+const captureAttemptContext = (attempt = currentAttempt) => ({
+  accountId: accountId(),
+  sequence: attemptSequence,
+  nonce: attempt?.nonce,
+  routePath: route?.fullPath,
+});
+
+const isAttemptContextCurrent = context =>
+  !isUnmounted &&
+  context.accountId === accountId() &&
+  context.sequence === attemptSequence &&
+  context.routePath === route?.fullPath &&
+  (!currentAttempt || currentAttempt.nonce === context.nonce);
+
 const clearTimer = timer => {
   if (timer) window.clearTimeout(timer);
   return null;
@@ -209,19 +223,24 @@ const stopAttempt = () => {
   wasHiddenDuringAttempt = false;
 };
 
-const openExistingInbox = async inboxId => {
+const openExistingInbox = async (inboxId, context) => {
+  if (!isAttemptContextCurrent(context)) return false;
+
   const safeInboxId = Number(inboxId);
   if (!Number.isInteger(safeInboxId) || safeInboxId <= 0) return false;
+  const target = {
+    name: getInboxFlowRouteName(route, 'show'),
+    params: { ...route.params, inboxId: safeInboxId },
+  };
 
   stopAttempt();
   forgetAttempt();
   recoveryState.value = null;
   await store.dispatch('inboxes/get').catch(() => {});
+  if (!isAttemptContextCurrent(context)) return false;
+
   useAlert(t('INBOX_MGMT.ADD.WHATSAPP.EMBEDDED_SIGNUP.ALREADY_CONNECTED'));
-  router.replace({
-    name: getInboxFlowRouteName(route, 'show'),
-    params: { ...route.params, inboxId: safeInboxId },
-  });
+  router.replace(target);
   return true;
 };
 
@@ -290,6 +309,8 @@ const handleSignupSuccess = inboxData => {
 async function pollAttemptStatus(attempt, attemptsLeft = STATUS_POLL_ATTEMPTS) {
   statusPollTimeout = clearTimer(statusPollTimeout);
   if (isUnmounted || !attempt) return;
+  const context = captureAttemptContext(attempt);
+  if (!isAttemptContextCurrent(context)) return;
 
   isProcessing.value = true;
   recoveryState.value = null;
@@ -308,18 +329,22 @@ async function pollAttemptStatus(attempt, attemptsLeft = STATUS_POLL_ATTEMPTS) {
   } catch {
     status = { status: 'network_error' };
   }
-  if (isUnmounted || statusPollRequest !== request) return;
+  if (!isAttemptContextCurrent(context) || statusPollRequest !== request)
+    return;
   statusPollRequest = null;
 
   if (status.status === 'completed') {
     await store.dispatch('inboxes/get').catch(() => {});
-    handleSignupSuccess({ id: status.inbox_id });
+    if (isAttemptContextCurrent(context)) {
+      handleSignupSuccess({ id: status.inbox_id });
+    }
     return;
   }
 
   if (status.status === 'failed') {
     if (status.error_code === 'already_connected' && status.inbox_id) {
-      if (await openExistingInbox(status.inbox_id)) return;
+      const opened = await openExistingInbox(status.inbox_id, context);
+      if (!isAttemptContextCurrent(context) || opened) return;
     }
 
     showRecovery(
@@ -360,6 +385,7 @@ const completeSignupFlow = async businessDataParam => {
     'INBOX_MGMT.ADD.WHATSAPP.EMBEDDED_SIGNUP.PROCESSING'
   );
   const attempt = currentAttempt;
+  const context = captureAttemptContext(attempt);
   persistAttempt({ codeSubmitted: true });
 
   try {
@@ -379,15 +405,19 @@ const completeSignupFlow = async businessDataParam => {
       params
     );
 
+    if (!isAttemptContextCurrent(context)) return;
     authCode.value = null;
     handleSignupSuccess(responseData);
   } catch (error) {
+    if (!isAttemptContextCurrent(context)) return;
+
     const errorCode = error?.response?.data?.error_code;
     const existingInboxId = error?.response?.data?.inbox_id;
     if (errorCode === 'already_connected') {
       const opened = existingInboxId
-        ? await openExistingInbox(existingInboxId)
+        ? await openExistingInbox(existingInboxId, context)
         : false;
+      if (!isAttemptContextCurrent(context)) return;
       if (!opened) {
         handleSignupError({
           error: t('INBOX_MGMT.ADD.WHATSAPP.API.ERROR_MESSAGE'),

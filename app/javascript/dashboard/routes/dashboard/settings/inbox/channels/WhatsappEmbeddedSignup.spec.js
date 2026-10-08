@@ -8,6 +8,7 @@ const setupFacebookSdkMock = vi.hoisted(() => vi.fn());
 const initWhatsAppEmbeddedSignupMock = vi.hoisted(() => vi.fn());
 const dispatchMock = vi.hoisted(() => vi.fn());
 const routerReplaceMock = vi.hoisted(() => vi.fn());
+const routeMock = vi.hoisted(() => ({ params: { accountId: '3' } }));
 const useAlertMock = vi.hoisted(() => vi.fn());
 const whatsappChannelMock = vi.hoisted(() => ({
   logEmbeddedSignupSession: vi.fn(),
@@ -28,7 +29,7 @@ vi.mock('vuex', () => ({
 }));
 
 vi.mock('vue-router', () => ({
-  useRoute: () => ({ params: { accountId: '3' } }),
+  useRoute: () => routeMock,
   useRouter: () => ({ replace: routerReplaceMock }),
 }));
 
@@ -119,6 +120,7 @@ const createSignupCalls = () =>
 describe('WhatsApp Embedded Signup', () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    routeMock.params = { accountId: '3' };
     window.localStorage.clear();
     window.chatwootConfig = {
       whatsappAppId: 'app-id',
@@ -554,6 +556,105 @@ describe('WhatsApp Embedded Signup', () => {
     expect(window.localStorage.getItem(PENDING_KEY)).toBeNull();
     wrapper.unmount();
   });
+
+  describe.each(['completion', 'polling'])(
+    'existing inbox recovery from %s',
+    source => {
+      const duplicateError = {
+        response: {
+          status: 409,
+          data: { error_code: 'already_connected', inbox_id: 52 },
+        },
+      };
+      const duplicateStatus = {
+        data: {
+          status: 'failed',
+          error_code: 'already_connected',
+          inbox_id: 52,
+        },
+      };
+
+      const startRecovery = async () => {
+        if (source === 'polling') {
+          window.localStorage.setItem(
+            PENDING_KEY,
+            JSON.stringify({
+              nonce: NONCE,
+              flow: 'standard',
+              startedAt: Date.now(),
+              codeSubmitted: true,
+            })
+          );
+        }
+        const wrapper = await mountReady();
+        if (source === 'completion') {
+          await clickStandard(wrapper);
+          postMetaMessage(FINISH_EVENT);
+          await flushPromises();
+        }
+        return wrapper;
+      };
+
+      it.each(['unmount', 'account change', 'new attempt'])(
+        'ignores the old recovery after %s while the inbox refresh is pending',
+        async change => {
+          const refresh = deferred();
+          dispatchMock.mockImplementation(action =>
+            action === 'inboxes/get'
+              ? refresh.promise
+              : Promise.reject(duplicateError)
+          );
+          whatsappChannelMock.getEmbeddedSignupAttemptStatus.mockResolvedValue(
+            duplicateStatus
+          );
+          const wrapper = await startRecovery();
+          expect(dispatchMock).toHaveBeenCalledWith('inboxes/get');
+          expect(routerReplaceMock).not.toHaveBeenCalled();
+
+          if (change === 'unmount') wrapper.unmount();
+          if (change === 'account change') routeMock.params.accountId = '4';
+          if (change === 'new attempt') {
+            initWhatsAppEmbeddedSignupMock.mockReturnValue(deferred().promise);
+            await clickStandard(wrapper);
+            await flushPromises();
+          }
+          const pending = window.localStorage.getItem(PENDING_KEY);
+
+          refresh.resolve();
+          await flushPromises();
+
+          expect(routerReplaceMock).not.toHaveBeenCalled();
+          expect(useAlertMock).not.toHaveBeenCalled();
+          expect(window.localStorage.getItem(PENDING_KEY)).toBe(pending);
+          if (change !== 'unmount') wrapper.unmount();
+        }
+      );
+
+      it('ignores a duplicate response received after switching accounts', async () => {
+        const response = deferred();
+        dispatchMock.mockReturnValue(response.promise);
+        whatsappChannelMock.getEmbeddedSignupAttemptStatus.mockReturnValue(
+          response.promise
+        );
+        const wrapper = await startRecovery();
+        routeMock.params.accountId = '4';
+        const newAccountKey = 'onelink:whatsapp-embedded-signup:4:7';
+        window.localStorage.setItem(newAccountKey, 'another account attempt');
+
+        if (source === 'completion') response.reject(duplicateError);
+        else response.resolve(duplicateStatus);
+        await flushPromises();
+
+        expect(dispatchMock).not.toHaveBeenCalledWith('inboxes/get');
+        expect(routerReplaceMock).not.toHaveBeenCalled();
+        expect(useAlertMock).not.toHaveBeenCalled();
+        expect(window.localStorage.getItem(newAccountKey)).toBe(
+          'another account attempt'
+        );
+        wrapper.unmount();
+      });
+    }
+  );
 
   it.each([undefined, 0, -1, 1.5, 'invalid'])(
     'does not navigate when the verified duplicate has an invalid inbox id: %s',
