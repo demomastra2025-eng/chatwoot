@@ -2,10 +2,11 @@ class Integrations::Medelement::SyncRunHeartbeat
   INTERVAL = 5.minutes
   LockLeaseLostError = Class.new(StandardError)
 
-  def initialize(sync_run, interval: INTERVAL, renew_lock: nil)
+  def initialize(sync_run, interval: INTERVAL, renew_lock: nil, worker_token: nil)
     @sync_run = sync_run
     @interval = interval
     @renew_lock = renew_lock
+    @worker_token = worker_token
     @mutex = Mutex.new
     @condition = ConditionVariable.new
     @stopped = false
@@ -21,7 +22,7 @@ class Integrations::Medelement::SyncRunHeartbeat
 
   private
 
-  attr_reader :condition, :heartbeat_thread, :interval, :mutex, :owner_thread, :renew_lock, :sync_run
+  attr_reader :condition, :heartbeat_thread, :interval, :mutex, :owner_thread, :renew_lock, :sync_run, :worker_token
 
   def start
     @heartbeat_thread = Thread.new do
@@ -47,7 +48,9 @@ class Integrations::Medelement::SyncRunHeartbeat
       return
     end
 
-    Rails.application.executor.wrap { sync_run.heartbeat! }
+    Rails.application.executor.wrap do
+      worker_token ? sync_run.heartbeat!(worker_token: worker_token) : sync_run.heartbeat!
+    end
   rescue StandardError => e
     Rails.logger.warn("Medelement sync heartbeat failed: #{e.class}")
   end

@@ -70,11 +70,13 @@ class Integrations::Medelement::ScheduledSyncLauncher
       next false if run.terminal?
 
       if run.queued? || run.retrying?
-        run.update!(requested_phases: ordered_union(run.phases, phases))
+        run.assign_attributes(requested_phases: ordered_union(run.phases, phases))
       else
         pending = Array(run.summary[PENDING_PHASES_KEY])
-        run.update!(summary: run.summary.merge(PENDING_PHASES_KEY => ordered_union(pending, phases)))
+        run.assign_attributes(summary: run.summary.merge(PENDING_PHASES_KEY => ordered_union(pending, phases)))
       end
+      # A cron merge is demand for work, not evidence that the worker is alive.
+      run.save!(touch: false)
       true
     end
   end

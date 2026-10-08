@@ -45,6 +45,7 @@ class Integrations::Medelement::SyncRun < ApplicationRecord
   STATUSES = %w[queued running retrying succeeded partial failed].freeze
   TERMINAL_STATUSES = %w[succeeded partial failed].freeze
   TRIGGERS = %w[manual scheduled retry].freeze
+  WORKER_KEY = 'worker'.freeze
 
   belongs_to :account
   belongs_to :hook, class_name: 'Integrations::Hook', optional: true
@@ -76,14 +77,15 @@ class Integrations::Medelement::SyncRun < ApplicationRecord
     phases.reject { |phase| phase_results.dig(phase, 'status').in?(%w[succeeded skipped]) }
   end
 
-  def start!
+  def start!(worker: {})
     update!(
       status: 'running',
       current_phase: nil,
       started_at: started_at || Time.current,
       completed_at: nil,
       error_code: nil,
-      error_message: nil
+      error_message: nil,
+      summary: summary.merge(WORKER_KEY => worker.stringify_keys.merge('heartbeat_at' => Time.current.iso8601(6)))
     )
   end
 
@@ -97,14 +99,30 @@ class Integrations::Medelement::SyncRun < ApplicationRecord
     end
   end
 
-  def heartbeat!
+  def heartbeat!(worker_token: nil)
     with_lock do
       reload
       next false if terminal?
+      next false if worker_token && worker_state['token'] != worker_token
 
-      update!(updated_at: Time.current)
+      update!(summary: summary.merge(WORKER_KEY => worker_state.merge('heartbeat_at' => Time.current.iso8601(6))))
       true
     end
+  end
+
+  def worker_state
+    value = summary[WORKER_KEY]
+    value.is_a?(Hash) ? value : {}
+  end
+
+  def worker_heartbeat_at
+    Time.iso8601(worker_state['heartbeat_at']) if worker_state['heartbeat_at'].present?
+  rescue ArgumentError, TypeError
+    nil
+  end
+
+  def recovery_activity_at
+    worker_heartbeat_at || updated_at
   end
 
   def complete_phase!(phase, result = {})
@@ -158,7 +176,8 @@ class Integrations::Medelement::SyncRun < ApplicationRecord
         current_phase: nil,
         completed_at: nil,
         error_code: error_payload[:code],
-        error_message: error_payload[:message]
+        error_message: error_payload[:message],
+        summary: summary.merge(WORKER_KEY => worker_state.merge('heartbeat_at' => Time.current.iso8601(6)))
       )
     end
   end
@@ -193,7 +212,7 @@ class Integrations::Medelement::SyncRun < ApplicationRecord
       current_phase: current_phase,
       requested_phases: phases,
       phase_results: phase_results,
-      summary: summary,
+      summary: summary.except(WORKER_KEY),
       error_code: error_code,
       error_message: error_message,
       started_at: started_at&.iso8601,

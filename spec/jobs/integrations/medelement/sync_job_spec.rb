@@ -1,5 +1,6 @@
 require 'rails_helper'
 require 'erb'
+require 'sidekiq/capsule'
 
 RSpec.describe Integrations::Medelement::SyncJob, type: :job do
   let(:account) { create(:account) }
@@ -122,6 +123,21 @@ RSpec.describe Integrations::Medelement::SyncJob, type: :job do
 
     expect(run.reload).to be_queued
     expect(coordinator).not_to have_received(:perform)
+  end
+
+  it 'records the Sidekiq process and job identity for its protected execution' do
+    capsule = instance_double(Sidekiq::Capsule, identity: 'worker-process')
+    job.provider_job_id = 'sidekiq-jid'
+    allow(Thread.current).to receive(:[]).and_call_original
+    allow(Thread.current).to receive(:[]).with(:sidekiq_capsule).and_return(capsule)
+
+    job.perform(hook.id, run.id)
+
+    expect(run.reload.worker_state).to include(
+      'job_id' => job.job_id, 'provider_job_id' => 'sidekiq-jid', 'process_id' => 'worker-process'
+    )
+    expect(run.worker_state['token']).to be_present
+    expect(run.worker_heartbeat_at).to be > 1.minute.ago
   end
 
   it 'coalesces scheduled phases already covered by the active run' do

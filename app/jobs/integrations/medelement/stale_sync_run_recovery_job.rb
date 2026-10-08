@@ -2,12 +2,15 @@ class Integrations::Medelement::StaleSyncRunRecoveryJob < ApplicationJob
   queue_as :scheduled_jobs
 
   STALE_AFTER = 45.minutes
+  ORPHANED_AFTER = 10.minutes
   StaleRunError = Class.new(StandardError)
 
   retry_on ActiveJob::EnqueueError, wait: 30.seconds, attempts: 24
 
   def perform
-    Integrations::Medelement::SyncRun.active.where(updated_at: ...STALE_AFTER.ago).find_each do |candidate|
+    Integrations::Medelement::SyncRun.active
+                                      .where('created_at < :cutoff OR updated_at < :cutoff', cutoff: ORPHANED_AFTER.ago)
+                                      .find_each do |candidate|
       recover(candidate)
     end
   end
@@ -15,11 +18,24 @@ class Integrations::Medelement::StaleSyncRunRecoveryJob < ApplicationJob
   private
 
   def recover(candidate)
-    launcher = nil
-    hook = candidate.hook
-    return fail_unavailable!(candidate) unless hook&.enabled? && hook.app_id == 'medelement'
+    lock_key = format(Redis::Alfred::MEDELEMENT_SYNC_MUTEX, account_id: candidate.account_id)
+    lock_manager = Redis::LockManager.new
+    return unless lock_manager.lock(lock_key, Integrations::Medelement::SyncJob::LOCK_TIMEOUT)
 
-    phases = claim_recovery(candidate, hook)
+    recover_locked(candidate, lock_manager, lock_key)
+  ensure
+    lock_manager&.unlock(lock_key)
+  end
+
+  def recover_locked(candidate, lock_manager, lock_key)
+    launcher = nil
+    presence = Integrations::Medelement::SyncJobPresence.new
+    return unless recoverable?(candidate, presence)
+
+    hook = candidate.hook
+    return fail_unavailable!(candidate, presence, lock_manager, lock_key) unless hook&.enabled? && hook.app_id == 'medelement'
+
+    phases = claim_recovery(candidate, hook, presence, lock_manager, lock_key)
     if phases.present?
       launcher = Integrations::Medelement::ScheduledSyncLauncher.new(
         hook: hook,
@@ -44,10 +60,11 @@ class Integrations::Medelement::StaleSyncRunRecoveryJob < ApplicationJob
     # rubocop:enable Rails/SkipsModelValidations
   end
 
-  def claim_recovery(candidate, hook)
+  def claim_recovery(candidate, hook, presence, lock_manager, lock_key)
     Integrations::Medelement::HookRuntimeLock.with_hook(account_id: hook.account_id, hook_id: hook.id) do
       run = Integrations::Medelement::SyncRun.lock.find_by(id: candidate.id, hook_id: hook.id)
-      next unless stale_active_run?(run)
+      next unless recoverable?(run, presence)
+      next unless lock_manager.renew(lock_key, Integrations::Medelement::SyncJob::LOCK_TIMEOUT)
 
       pending = Array(run.summary[Integrations::Medelement::ScheduledSyncLauncher::PENDING_PHASES_KEY])
       phases = ordered_union(run.remaining_phases, pending)
@@ -57,14 +74,21 @@ class Integrations::Medelement::StaleSyncRunRecoveryJob < ApplicationJob
     end
   end
 
-  def stale_active_run?(run)
-    run&.status.in?(%w[queued running retrying]) && run.updated_at < STALE_AFTER.ago
+  def recoverable?(run, presence)
+    return false unless run&.status.in?(%w[queued running retrying])
+
+    threshold = presence.owner_known?(run) ? ORPHANED_AFTER : STALE_AFTER
+    return false unless run.recovery_activity_at < threshold.ago
+    return false if presence.owner_alive?(run)
+
+    !presence.present?(run)
   end
 
-  def fail_unavailable!(run)
+  def fail_unavailable!(run, presence, lock_manager, lock_key)
     run.with_lock do
       run.reload
-      next unless stale_active_run?(run)
+      next unless recoverable?(run, presence)
+      next unless lock_manager.renew(lock_key, Integrations::Medelement::SyncJob::LOCK_TIMEOUT)
 
       run.fail!(StaleRunError.new('Medelement sync hook is unavailable'))
     end

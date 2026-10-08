@@ -28,6 +28,17 @@ RSpec.describe Integrations::Medelement::SyncRunHeartbeat do
     expect(service.send(:heartbeat_thread)).not_to be_alive
   end
 
+  it 'renews only the protected worker execution token' do
+    heartbeat = Queue.new
+    allow(sync_run).to receive(:heartbeat!).with(worker_token: 'worker-token') { heartbeat << true }
+    service = described_class.new(sync_run, interval: 0.01, worker_token: 'worker-token')
+
+    service.around { Timeout.timeout(1) { heartbeat.pop } }
+
+    expect(sync_run).to have_received(:heartbeat!).with(worker_token: 'worker-token').at_least(:once)
+    expect(service.send(:heartbeat_thread)).not_to be_alive
+  end
+
   it 'interrupts protected work when the owner lock lease is lost' do
     renew_lock = instance_double(Proc, call: false)
     allow(sync_run).to receive(:heartbeat!)

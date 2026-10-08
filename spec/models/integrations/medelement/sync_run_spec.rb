@@ -26,6 +26,36 @@ RSpec.describe Integrations::Medelement::SyncRun, type: :model do
     expect(run.reload).to be_succeeded
   end
 
+  it 'persists worker activity separately from administrative row updates and hides it from the API summary' do
+    run = described_class.create!(account: account, hook: hook, trigger: 'scheduled')
+    run.start!(worker: { job_id: 'job-id', process_id: 'worker-process', token: 'worker-token' })
+    heartbeat_at = run.worker_heartbeat_at
+    run.update!(summary: run.summary.merge('pending_phases' => %w[contacts]))
+
+    expect(run.reload.recovery_activity_at).to eq(heartbeat_at)
+    expect(run.api_payload[:summary]).to eq('pending_phases' => %w[contacts])
+  end
+
+  it 'does not renew a successor execution with a delayed heartbeat from the previous worker' do
+    run = described_class.create!(account: account, hook: hook, trigger: 'scheduled')
+    run.start!(worker: { token: 'successor-token' })
+    heartbeat_at = run.worker_heartbeat_at
+    updated_at = run.updated_at
+
+    expect(run.heartbeat!(worker_token: 'previous-token')).to be(false)
+    expect(run.reload.worker_heartbeat_at).to eq(heartbeat_at)
+    expect(run.updated_at).to eq(updated_at)
+    expect(run.heartbeat!(worker_token: 'successor-token')).to be(true)
+  end
+
+  it 'uses the legacy timestamp when worker activity metadata is malformed' do
+    run = described_class.create!(account: account, hook: hook, trigger: 'scheduled', summary: { 'worker' => 'invalid' })
+
+    expect(run.recovery_activity_at).to eq(run.updated_at)
+    run.update!(summary: { 'worker' => { 'heartbeat_at' => 'invalid' } })
+    expect(run.recovery_activity_at).to eq(run.updated_at)
+  end
+
   it 'does not resurrect a terminal run with a late retry' do
     run = described_class.create!(account: account, hook: hook, trigger: 'scheduled', status: 'running')
     run.finish!

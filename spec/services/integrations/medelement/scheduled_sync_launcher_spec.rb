@@ -77,6 +77,23 @@ RSpec.describe Integrations::Medelement::ScheduledSyncLauncher do
     expect(Integrations::Medelement::SyncJob).not_to have_received(:perform_later)
   end
 
+  %w[queued running retrying].each do |status|
+    it "does not renew worker silence when scheduled phases merge into a #{status} run" do
+      run, = described_class.new(hook: hook, phases: %w[receptions]).perform
+      run.start!(worker: { job_id: 'job-id', process_id: 'worker-process', token: 'worker-token' })
+      heartbeat_at = run.worker_heartbeat_at
+      last_activity = 1.hour.ago
+      run.update!(status: status, updated_at: last_activity)
+
+      described_class.new(hook: hook, phases: %w[specialists schedules]).perform
+
+      expect(run.reload.updated_at).to be_within(0.001).of(last_activity)
+      expect(run.worker_heartbeat_at).to eq(heartbeat_at)
+      expected_phases = %w[specialists schedules]
+      expect(status == 'running' ? run.summary['pending_phases'] : run.requested_phases).to include(*expected_phases)
+    end
+  end
+
   it 'fails the durable run when the queue adapter rejects enqueue without raising' do
     allow(enqueued_job).to receive(:successfully_enqueued?).and_return(false)
 
