@@ -203,7 +203,7 @@ crm_stage_visit_reconciliation_job:
 accounts_storage_breakdown_refresh_job:
   cron: '0 * * * *'
   class: 'Accounts::StorageBreakdownRefreshJob'
-  queue: housekeeping
+  queue: low
 
 telephony_purge_retained_recordings_job:
   cron: '40 3 * * *'

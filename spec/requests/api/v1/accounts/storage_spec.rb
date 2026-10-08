@@ -10,6 +10,13 @@ RSpec.describe 'Storage API', type: :request do
 
   before do
     allow(Rails).to receive(:cache).and_return(storage_test_cache)
+    Redis::Alfred.delete("account:#{account.id}:storage_overview_v1")
+    Redis::Alfred.delete("account:#{account.id}:storage_overview_refresh_v1")
+  end
+
+  after do
+    Redis::Alfred.delete("account:#{account.id}:storage_overview_v1")
+    Redis::Alfred.delete("account:#{account.id}:storage_overview_refresh_v1")
   end
 
   describe 'GET /api/v1/accounts/{account.id}/storage' do
@@ -31,7 +38,62 @@ RSpec.describe 'Storage API', type: :request do
     end
 
     context 'when administrator' do
-      it 'returns storage overview and breakdown' do
+      it 'returns a calculating state on a cold cache and enqueues one refresh' do
+        expect do
+          get "/api/v1/accounts/#{account.id}/storage",
+              headers: admin.create_new_auth_token,
+              as: :json
+        end.to have_enqueued_job(Accounts::StorageBreakdownRefreshJob).with(account.id)
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body['storage']).to include('calculating' => true, 'breakdown' => nil)
+      end
+
+      it 'coalesces repeated cold requests into one refresh job' do
+        headers = admin.create_new_auth_token
+        expect do
+          2.times { get "/api/v1/accounts/#{account.id}/storage", headers: headers, as: :json }
+        end.to have_enqueued_job(Accounts::StorageBreakdownRefreshJob).with(account.id).once
+      end
+
+      it 'serves a warm snapshot without recalculating or enqueuing' do
+        snapshot = Accounts::StorageOverviewService.new(account: account).refresh!
+        statements = []
+        subscriber = ->(*, payload) { statements << payload[:sql] }
+        expect do
+          ActiveSupport::Notifications.subscribed(subscriber, 'sql.active_record') do
+            get "/api/v1/accounts/#{account.id}/storage",
+                headers: admin.create_new_auth_token,
+                as: :json
+          end
+        end.not_to have_enqueued_job(Accounts::StorageBreakdownRefreshJob)
+
+        expect(response).to have_http_status(:success)
+        expect(statements.grep(/active_storage_blobs|active_storage_attachments|FROM "messages"/i)).to be_empty
+        expect(response.parsed_body['storage']).to include(
+          'calculating' => false,
+          'consumed_bytes' => snapshot[:limits][:consumed],
+          'breakdown' => snapshot[:breakdown].deep_stringify_keys
+        )
+      end
+
+      it 'does not scan messages or blobs in the request for an account with many messages' do
+        create_list(:message, 50, account: account)
+        statements = []
+        subscriber = ->(*, payload) { statements << payload[:sql] }
+
+        ActiveSupport::Notifications.subscribed(subscriber, 'sql.active_record') do
+          get "/api/v1/accounts/#{account.id}/storage",
+              headers: admin.create_new_auth_token,
+              as: :json
+        end
+
+        expect(response).to have_http_status(:success)
+        expect(statements.grep(/active_storage_blobs|active_storage_attachments|FROM "messages"/i)).to be_empty
+      end
+
+      it 'returns the storage overview after the refresh job runs' do
+        Accounts::StorageBreakdownRefreshJob.perform_now(account.id)
         get "/api/v1/accounts/#{account.id}/storage",
             headers: admin.create_new_auth_token,
             as: :json
@@ -44,7 +106,8 @@ RSpec.describe 'Storage API', type: :request do
           'consumed_bytes',
           'available_bytes',
           'unlimited',
-          'breakdown'
+          'breakdown',
+          'last_updated_at'
         )
       end
     end
@@ -67,15 +130,18 @@ RSpec.describe 'Storage API', type: :request do
 
   describe 'POST /api/v1/accounts/{account.id}/storage/refresh' do
     context 'when administrator' do
-      it 'refreshes storage cache and returns fresh data' do
-        post "/api/v1/accounts/#{account.id}/storage/refresh",
-             headers: admin.create_new_auth_token,
-             as: :json
+      it 'queues a refresh and returns the last known snapshot' do
+        snapshot = Accounts::StorageOverviewService.new(account: account).refresh!
+        expect do
+          post "/api/v1/accounts/#{account.id}/storage/refresh",
+               headers: admin.create_new_auth_token,
+               as: :json
+        end.to have_enqueued_job(Accounts::StorageBreakdownRefreshJob).with(account.id)
 
         expect(response).to have_http_status(:success)
         json = response.parsed_body
         expect(json['success']).to be(true)
-        expect(json).to have_key('storage')
+        expect(json['storage']['breakdown']).to eq(snapshot[:breakdown].deep_stringify_keys)
       end
     end
   end

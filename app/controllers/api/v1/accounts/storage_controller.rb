@@ -10,20 +10,8 @@ class Api::V1::Accounts::StorageController < Api::V1::Accounts::BaseController
   rescue_from Accounts::HeavyFilesService::InvalidParams, with: :render_invalid_params
 
   def show
-    breakdown = current_account.storage_breakdown
-    limits = AccountLimits::StorageUsageService.new(account: current_account).summary
-
-    render json: {
-      storage: {
-        total_limit_bytes: limits[:total_count],
-        consumed_bytes: limits[:consumed],
-        available_bytes: limits[:current_available],
-        unlimited: limits[:unlimited],
-        usage_percent: calculate_percentage(limits[:consumed], limits[:total_count], limits[:unlimited]),
-        breakdown: breakdown,
-        last_updated_at: breakdown[:last_updated_at]
-      }
-    }
+    snapshot = storage_overview.schedule_refresh
+    render json: { storage: storage_payload(snapshot) }
   end
 
   def heavy_files
@@ -35,21 +23,8 @@ class Api::V1::Accounts::StorageController < Api::V1::Accounts::BaseController
   end
 
   def refresh
-    breakdown = current_account.storage_breakdown(force_refresh: true)
-    limits = AccountLimits::StorageUsageService.new(account: current_account).summary
-
-    render json: {
-      success: true,
-      storage: {
-        total_limit_bytes: limits[:total_count],
-        consumed_bytes: limits[:consumed],
-        available_bytes: limits[:current_available],
-        unlimited: limits[:unlimited],
-        usage_percent: calculate_percentage(limits[:consumed], limits[:total_count], limits[:unlimited]),
-        breakdown: breakdown,
-        last_updated_at: breakdown[:last_updated_at]
-      }
-    }
+    snapshot = storage_overview.schedule_refresh(force: true)
+    render json: { success: true, storage: storage_payload(snapshot) }
   end
 
   def preview_cleanup
@@ -113,6 +88,27 @@ class Api::V1::Accounts::StorageController < Api::V1::Accounts::BaseController
   end
 
   private
+
+  def storage_overview
+    @storage_overview ||= Accounts::StorageOverviewService.new(account: current_account)
+  end
+
+  def storage_payload(snapshot)
+    return { calculating: true, breakdown: nil, last_updated_at: nil } if snapshot.nil?
+
+    limits = snapshot[:limits]
+    breakdown = snapshot[:breakdown]
+    {
+      total_limit_bytes: limits[:total_count],
+      consumed_bytes: limits[:consumed],
+      available_bytes: limits[:current_available],
+      unlimited: limits[:unlimited],
+      usage_percent: calculate_percentage(limits[:consumed], limits[:total_count], limits[:unlimited]),
+      breakdown: breakdown,
+      last_updated_at: breakdown[:last_updated_at],
+      calculating: false
+    }
+  end
 
   def storage_trash_service
     Storage::TrashService.new(account: current_account, actor_id: current_user.id)
