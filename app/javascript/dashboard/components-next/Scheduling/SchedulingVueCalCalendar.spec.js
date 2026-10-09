@@ -484,32 +484,51 @@ describe('SchedulingVueCalCalendar', () => {
     const wrapper = mountCalendar({
       view: 'day',
       workspaceTimezone: 'Asia/Almaty',
-      resources: [{
-        ...baseProps.resources[0],
-        customAttributes: { medelement_specialist_code: 'doctor-1' },
-      }],
+      resources: [
+        {
+          ...baseProps.resources[0],
+          customAttributes: { medelement_specialist_code: 'doctor-1' },
+        },
+      ],
       holidays: [{ id: 5, date: '2026-03-09', title: 'Nauryz' }],
-      breakRules: [{
-        id: 6, active: true, resourceId: 12, weekday: 1,
-        startMinute: 600, endMinute: 660, title: 'Lunch',
-      }],
-      timeOffs: [{
-        resourceId: 12,
-        startsAt: '2026-03-09T05:00:00.000Z',
-        endsAt: '2026-03-09T06:00:00.000Z',
-      }],
-      slots: [{
-        resourceId: 12,
-        startsAt: '2026-03-09T05:00:00.000Z',
-        endsAt: '2026-03-09T05:30:00.000Z',
-      }],
+      breakRules: [
+        {
+          id: 6,
+          active: true,
+          resourceId: 12,
+          weekday: 1,
+          startMinute: 600,
+          endMinute: 660,
+          title: 'Lunch',
+        },
+      ],
+      timeOffs: [
+        {
+          resourceId: 12,
+          startsAt: '2026-03-09T05:00:00.000Z',
+          endsAt: '2026-03-09T06:00:00.000Z',
+        },
+      ],
+      slots: [
+        {
+          resourceId: 12,
+          startsAt: '2026-03-09T05:00:00.000Z',
+          endsAt: '2026-03-09T05:30:00.000Z',
+        },
+      ],
     });
     await nextTick();
 
     const backgrounds = wrapper.findComponent(VueCal).props('events');
-    expect(backgrounds.some(event => event.backgroundKind === 'holiday')).toBe(false);
-    expect(backgrounds.some(event => event.backgroundKind === 'break')).toBe(false);
-    expect(backgrounds.some(event => event.backgroundKind === 'time-off')).toBe(false);
+    expect(backgrounds.some(event => event.backgroundKind === 'holiday')).toBe(
+      false
+    );
+    expect(backgrounds.some(event => event.backgroundKind === 'break')).toBe(
+      false
+    );
+    expect(backgrounds.some(event => event.backgroundKind === 'time-off')).toBe(
+      false
+    );
 
     wrapper.findComponent(VueCal).vm.$emit('cellClick', {
       cell: { start: new Date(2026, 2, 9), schedule: 12 },
@@ -534,10 +553,12 @@ describe('SchedulingVueCalCalendar', () => {
   it('does not invent a month appointment for an integrated resource without slots', async () => {
     const wrapper = mountCalendar({
       view: 'month',
-      resources: [{
-        ...baseProps.resources[0],
-        customAttributes: { medelement_specialist_code: 'doctor-1' },
-      }],
+      resources: [
+        {
+          ...baseProps.resources[0],
+          customAttributes: { medelement_specialist_code: 'doctor-1' },
+        },
+      ],
     });
     await nextTick();
 

@@ -33,7 +33,9 @@ describe('useAutomationValues', () => {
   it('offers the Captain source in appointment automation conditions', () => {
     const { getConditionDropdownValues } = useAutomationValues();
 
-    expect(getConditionDropdownValues('source', 'appointment_created')).toContainEqual({
+    expect(
+      getConditionDropdownValues('source', 'appointment_created')
+    ).toContainEqual({
       id: 'captain',
       name: 'SCHEDULING.APPOINTMENT_SOURCE.captain',
     });

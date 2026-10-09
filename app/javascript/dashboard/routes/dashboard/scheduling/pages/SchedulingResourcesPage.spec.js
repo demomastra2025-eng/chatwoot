@@ -8,7 +8,9 @@ const mocks = vi.hoisted(() => ({ store: null, alert: vi.fn() }));
 
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: key => key }) }));
 vi.mock('dashboard/composables', () => ({ useAlert: mocks.alert }));
-vi.mock('dashboard/api/agents', () => ({ default: { get: vi.fn().mockResolvedValue({ data: [] }) } }));
+vi.mock('dashboard/api/agents', () => ({
+  default: { get: vi.fn().mockResolvedValue({ data: [] }) },
+}));
 vi.mock('dashboard/stores/scheduling/references', () => ({
   useSchedulingReferencesStore: () => mocks.store,
 }));
@@ -39,7 +41,9 @@ const stubs = {
   SchedulingDurationInput: true,
   SchedulingEmptyState: true,
   SchedulingErrorState: true,
-  SchedulingFormFieldGroup: { template: '<div><slot name="headerActions" /><slot /></div>' },
+  SchedulingFormFieldGroup: {
+    template: '<div><slot name="headerActions" /><slot /></div>',
+  },
   SchedulingPageHeader: { template: '<div><slot name="actions" /></div>' },
   SchedulingSelectField: true,
   Spinner: true,
@@ -52,13 +56,15 @@ describe('SchedulingResourcesPage', () => {
   beforeEach(() => {
     mocks.store = reactive({
       loadResources: vi.fn().mockResolvedValue([]),
-      resources: [{
-        active: true,
-        customAttributes: { medelement_specialist_code: 'doctor-1' },
-        id: 7,
-        name: 'Врач',
-        specialty: 'Терапевт',
-      }],
+      resources: [
+        {
+          active: true,
+          customAttributes: { medelement_specialist_code: 'doctor-1' },
+          id: 7,
+          name: 'Врач',
+          specialty: 'Терапевт',
+        },
+      ],
       saveResource: vi.fn().mockResolvedValue({}),
       ui: { error: null, isLoadingResources: false, isSaving: false },
     });
@@ -69,7 +75,9 @@ describe('SchedulingResourcesPage', () => {
       global: { mocks: { $t: key => key }, stubs },
     });
     await flushPromises();
-    expect(wrapper.find('[data-icon="i-lucide-calendar-days"]').exists()).toBe(false);
+    expect(wrapper.find('[data-icon="i-lucide-calendar-days"]').exists()).toBe(
+      false
+    );
     expect(wrapper.find('[data-icon="i-lucide-power"]').exists()).toBe(false);
     expect(wrapper.find('[data-icon="i-lucide-trash-2"]').exists()).toBe(false);
 
