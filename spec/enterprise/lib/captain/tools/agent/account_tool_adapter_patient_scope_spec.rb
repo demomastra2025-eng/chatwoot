@@ -150,7 +150,7 @@ RSpec.describe Captain::Tools::Agent::AccountToolAdapter do
       events << payload
     end
 
-    expect(call_tool('get_appointment', appointment_id: foreign.id)).to eq(neutral_failure)
+    expect(JSON.parse(call_tool('get_appointment', appointment_id: foreign.id))).to eq('success' => false, 'reason' => 'not_found')
 
     event = events.last
     expect(event).to include(
