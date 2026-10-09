@@ -124,7 +124,7 @@ RSpec.describe 'MedElement boundary for local appointment statuses' do
   end
 
   # The sync client is a strict double: any MedElement write method would raise because it is not stubbed.
-  def run_reception_sync(listed)
+  def run_reception_sync(listed, conflict_tracker: nil)
     sync_client = instance_double(Integrations::Medelement::Client)
     allow(sync_client).to receive(:get_receptions).and_return(listed)
     allow(sync_client).to receive(:get_reception) do |reception_code:, **|
@@ -136,9 +136,14 @@ RSpec.describe 'MedElement boundary for local appointment statuses' do
       sync_patients?: false, receptions_days_back: 3, receptions_days_forward: 70, reception_detail_budget: 50,
       reception_detail_refresh_interval: 6.hours, throttle_ms: 0, time_zone: 'Asia/Almaty', organization_id: 'company-1'
     )
+    conflict_tracker ||= instance_double(
+      Integrations::Medelement::ConflictTracker,
+      record!: true,
+      preserve_open_conflict!: true
+    )
     Integrations::Medelement::ReceptionsSyncService.new(
       account: account, client: sync_client, configuration: configuration,
-      conflict_tracker: instance_double(Integrations::Medelement::ConflictTracker, record!: true)
+      conflict_tracker: conflict_tracker
     ).perform
   end
 
@@ -526,9 +531,15 @@ RSpec.describe 'MedElement boundary for local appointment statuses' do
       prepare_paid_appointment!(appointment)
       adjustment_payment_id = appointment.payments.find_by!(payment_kind: 'adjustment').id
       cancel_locally(appointment)
+      conflict_tracker = instance_double(
+        Integrations::Medelement::ConflictTracker,
+        record!: true,
+        preserve_open_conflict!: true
+      )
 
       expect(appointment.reload.expense).to be_nil
-      run_reception_sync([listed_reception(active: 1, removed: 0, shift: 1.hour)])
+      reception = listed_reception(active: 1, removed: 0, shift: 1.hour)
+      run_reception_sync([reception], conflict_tracker: conflict_tracker)
 
       expect(appointment.reload).to have_attributes(status: 'scheduled', payment_status: 'paid')
       expect(appointment.expense).to have_attributes(status: 'unpaid', amount: 6_000)
@@ -536,9 +547,15 @@ RSpec.describe 'MedElement boundary for local appointment statuses' do
         id: adjustment_payment_id, recorded_by_id: actor.id
       )
 
-      run_reception_sync([listed_reception(active: 1, removed: 0, shift: 1.hour)])
+      run_reception_sync([reception], conflict_tracker: conflict_tracker)
       expect(appointment.reload.expense).to have_attributes(status: 'unpaid', amount: 6_000)
       expect(Scheduling::Expense.where(appointment: appointment).count).to eq(1)
+      expect(conflict_tracker).to have_received(:preserve_open_conflict!).with(
+        phase: 'receptions',
+        entity_type: 'reception',
+        conflict_type: 'invalid_reception',
+        entity_key: 'reception-1'
+      ).once
     end
 
     it 'restores payment state and expense when staff manually reopens a local cancellation' do
