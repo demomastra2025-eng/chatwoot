@@ -496,6 +496,11 @@ RSpec.describe Scheduling::Appointments::UpsertService do
 
   context 'when the selected resource belongs to Medelement' do
     let(:valid_phone) { ['+7', '700', '000', '0001'].join }
+    let(:appointment) do
+      starts_at = 2.days.from_now.in_time_zone(resource.timezone).change(hour: 10, min: 0, sec: 0)
+      create(:scheduling_appointment, account: account, resource: resource,
+                                      starts_at: starts_at, ends_at: starts_at + 30.minutes)
+    end
     let(:service) do
       create(
         :scheduling_service,
