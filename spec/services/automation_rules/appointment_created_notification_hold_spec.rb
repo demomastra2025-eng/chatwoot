@@ -68,6 +68,16 @@ RSpec.describe AutomationRules::AppointmentCreatedNotificationHold do
     expect(enqueued_jobs.count { |job| job[:job] == WebhookJob }).to eq(1)
   end
 
+  it 'keeps the bound create command while a non-notifying status action runs' do
+    command = command_for_appointment
+    event = Events::Base.new('appointment_created', Time.zone.now, appointment: appointment, performed_by: actor)
+
+    SchedulingAutomationRuleListener.instance.appointment_created(event)
+
+    expect(appointment.reload.status).to eq('confirmed')
+    expect(appointment.custom_attributes[Integrations::Medelement::AppointmentProviderStatus::COMMAND_ID_KEY]).to eq(command.id)
+  end
+
   it 'never releases held notifications for failed or unknown commands' do
     SchedulingAutomationRuleListener.instance.appointment_created(
       Events::Base.new('appointment_created', Time.zone.now, appointment: appointment, performed_by: actor)

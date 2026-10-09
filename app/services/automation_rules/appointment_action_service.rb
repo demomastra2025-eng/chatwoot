@@ -84,7 +84,7 @@ class AutomationRules::AppointmentActionService
       account: @account,
       params: params,
       appointment: @appointment,
-      actor: nil
+      actor: @rule
     ).perform
   end
 
