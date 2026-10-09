@@ -7,11 +7,16 @@ RSpec.describe AutomationRules::AppointmentCreatedNotificationHold do
   let(:resource) do
     create(:scheduling_resource, account: account, custom_attributes: { 'medelement_specialist_code' => 'specialist-1' })
   end
-  let(:contact) { create(:contact, account: account) }
+  let(:contact) do
+    create(:contact, account: account, name: 'Айжан', last_name: 'Касымова', phone_number: '+77000000001')
+  end
+  let(:service) do
+    create(:scheduling_service, account: account, custom_attributes: { 'medelement_nomenclature_code' => 'service-1' })
+  end
   let(:actor) { create(:user, account: account) }
   let(:conversation) { create(:conversation, account: account, contact: contact) }
   let!(:appointment) do
-    create(:scheduling_appointment, account: account, resource: resource, contact: contact, conversation: conversation,
+    create(:scheduling_appointment, account: account, resource: resource, service: service, contact: contact, conversation: conversation,
                                     custom_attributes: { Integrations::Medelement::AppointmentProviderStatus::ATTRIBUTE_KEY => 'pending' })
   end
   let(:rule) do
