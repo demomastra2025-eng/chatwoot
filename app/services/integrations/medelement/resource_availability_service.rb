@@ -72,7 +72,7 @@ class Integrations::Medelement::ResourceAvailabilityService
 
   def provider_working_windows
     starts_on = @from.in_time_zone(provider_time_zone).to_date
-    ends_on = @to.in_time_zone(provider_time_zone).to_date
+    ends_on = (@to - 1.second).in_time_zone(provider_time_zone).to_date
     method = if (ends_on - starts_on).to_i >= Integrations::Medelement::Client::MAX_TIMETABLE_DAYS
                :timetable_range
              else

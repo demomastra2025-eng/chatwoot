@@ -127,7 +127,7 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
     expect(payload[:slots].pluck(:starts_at)).to include(zone.local(2026, 7, 18, 10).iso8601)
     expect(payload[:slots].all? { |slot| Time.iso8601(slot[:starts_at]) < zone.local(2026, 7, 19) }).to be(true)
     expect(client).to have_received(:timetable).with(
-      specialist_code: 'specialist-1', starts_on: last_date, ends_on: Date.new(2026, 7, 19)
+      specialist_code: 'specialist-1', starts_on: last_date, ends_on: last_date
     )
   end
 

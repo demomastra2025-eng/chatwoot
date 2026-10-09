@@ -5,7 +5,7 @@ class Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService < Captai
     'get_scheduling_resource_availability'
   end
 
-  description 'Get free windows of one resource, checked against MedElement when the specialist is integrated'
+  description 'Get free windows of one resource, checked against MedElement when integrated. Returned slots can be offered; creation checks again'
   param :resource_id, type: :number, desc: 'Scheduling resource ID (specialist or diagnostic resource)', required: true
   param :from, type: :string, desc: 'Range start datetime', required: true
   param :to, type: :string, desc: 'Range end datetime', required: true
