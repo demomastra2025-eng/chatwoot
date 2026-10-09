@@ -228,8 +228,8 @@ RSpec.describe AutomationRules::ActionService do
         rule.save!(validate: false)
         exception_tracker = instance_spy(ChatwootExceptionTracker)
         expected_account = account
-        allow(ChatwootExceptionTracker).to receive(:new) do |error, account: tracked_account|
-          expect(tracked_account).to eq(expected_account)
+        allow(ChatwootExceptionTracker).to receive(:new) do |error, **options|
+          expect(options.fetch(:account)).to eq(expected_account)
           expect(error).to be_a(ActiveRecord::RecordInvalid)
           expect(error.record.errors.details[:base]).to include(error: Reminder::DUPLICATE_OPEN_TOUCH_ERROR)
           exception_tracker

@@ -26,14 +26,14 @@ class Integrations::Medelement::ConflictTracker
       entity_key_digests = entity_keys.map { |entity_key| Integrations::Medelement::ErrorSanitizer.digest(entity_key) }
       scope = scope.where(entity_key_digest: entity_key_digests)
     end
-    resolution_exclusions.each do |(excluded_phase, entity_type, conflict_type), entity_key_digests|
-      next unless excluded_phase == phase.to_s && entity_key_digests.any?
+    resolution_exclusions.each do |(excluded_phase, entity_type, conflict_type), excluded_key_digests|
+      next unless excluded_phase == phase.to_s && excluded_key_digests.any?
 
-      scope = scope.where.not(
-        entity_type: entity_type,
-        conflict_type: conflict_type,
-        entity_key_digest: entity_key_digests.uniq
-      )
+      conflicts = scope.klass.arel_table
+      exclusion = conflicts[:entity_type].eq(entity_type)
+      exclusion = exclusion.and(conflicts[:conflict_type].eq(conflict_type))
+      exclusion = exclusion.and(conflicts[:entity_key_digest].in(excluded_key_digests.uniq))
+      scope = scope.where(Arel::Nodes::Not.new(exclusion))
     end
     scope.find_each(&:resolve_automatically!)
   end
