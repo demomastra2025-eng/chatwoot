@@ -1814,6 +1814,24 @@ RSpec.describe 'Communication Threads API', type: :request do
     let(:administrator) { create(:user, account: account, role: :administrator) }
     let(:admin_headers) { administrator.create_new_auth_token }
 
+    it 'recovers the same UUID after the last selected conversation and thread have been deleted' do
+      conversation = create(:conversation, account: account)
+      thread = conversation.reload.communication_thread
+      key = SecureRandom.uuid
+      url = "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/conversations"
+      params = { conversation_ids: [conversation.display_id], request_key: key }
+      delete url, params: params, headers: admin_headers, as: :json
+      run_id = response.parsed_body.fetch('operation_id')
+      Conversations::DeletionJob.perform_now(run_id)
+      expect(Conversation.exists?(conversation.id)).to be(false)
+      expect(CommunicationThread.exists?(thread.id)).to be(false)
+      expect do
+        delete url, params: params, headers: admin_headers, as: :json
+      end.not_to have_enqueued_job(Conversations::DeletionJob)
+      expect(response).to have_http_status(:accepted)
+      expect(response.parsed_body['operation_id']).to eq(run_id)
+    end
+
     it 'queues deletion only for selected linked child conversations' do
       contact = create(:contact, :with_email, account: account)
       first_conversation = create(:conversation, account: account, contact: contact)
@@ -1821,7 +1839,7 @@ RSpec.describe 'Communication Threads API', type: :request do
       second_contact_inbox = create(:contact_inbox, contact: contact, inbox: second_inbox)
       second_conversation = create(:conversation, account: account, contact: contact, inbox: second_inbox, contact_inbox: second_contact_inbox)
       thread = first_conversation.reload.communication_thread
-      allow(DeleteObjectJob).to receive(:perform_later)
+      allow(Conversations::DeletionJob).to receive(:perform_later).and_return(instance_double(Conversations::DeletionJob))
 
       delete "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/conversations",
              params: { conversation_ids: [second_conversation.display_id] },
@@ -1829,9 +1847,13 @@ RSpec.describe 'Communication Threads API', type: :request do
              as: :json
 
       expect(response).to have_http_status(:accepted)
-      expect(response.parsed_body['deleted_conversation_ids']).to eq([second_conversation.display_id])
-      expect(DeleteObjectJob).to have_received(:perform_later).with(second_conversation, administrator, anything).once
-      expect(DeleteObjectJob).not_to have_received(:perform_later).with(first_conversation, anything, anything)
+      expect(response.parsed_body['accepted_conversation_ids']).to eq([second_conversation.display_id])
+      expect(response.parsed_body).not_to have_key('deleted_conversation_ids')
+      run = account.bulk_action_runs.find(response.parsed_body.fetch('operation_id'))
+      expect(run.metadata['targets'].map { |target| target['record_id'] }).to eq([second_conversation.id])
+      expect(Conversations::DeletionJob).to have_received(:perform_later).with(run.id, anything).once
+      expect(Conversation.exists?(first_conversation.id)).to be(true)
+      expect(Conversation.exists?(second_conversation.id)).to be(true)
     end
 
     it 'rejects a selected conversation id outside the communication thread' do

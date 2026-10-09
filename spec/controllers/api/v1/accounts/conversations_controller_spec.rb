@@ -1928,14 +1928,17 @@ RSpec.describe 'Conversations API', type: :request do
         create(:inbox_member, user: administrator, inbox: conversation.inbox)
       end
 
-      it 'successfully deletes the conversation' do
+      it 'accepts tracked deletion without claiming that the conversation is already gone' do
         expect do
           delete "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}",
                  headers: administrator.create_new_auth_token,
                  as: :json
-        end.to have_enqueued_job(DeleteObjectJob).with(conversation, administrator, anything)
+        end.to have_enqueued_job(Conversations::DeletionJob).with(kind_of(Integer), anything)
 
-        expect(response).to have_http_status(:ok)
+        expect(response).to have_http_status(:accepted)
+        expect(response.parsed_body['accepted_conversation_ids']).to eq([conversation.display_id])
+        expect(response.parsed_body).not_to have_key('deleted_conversation_ids')
+        expect(Conversation.exists?(conversation.id)).to be(true)
       end
 
       it 'can delete conversations from inboxes without direct access' do
@@ -1946,9 +1949,34 @@ RSpec.describe 'Conversations API', type: :request do
           delete "/api/v1/accounts/#{account.id}/conversations/#{other_conversation.display_id}",
                  headers: administrator.create_new_auth_token,
                  as: :json
-        end.to have_enqueued_job(DeleteObjectJob).with(other_conversation, administrator, anything)
+        end.to have_enqueued_job(Conversations::DeletionJob).with(kind_of(Integer), anything)
 
-        expect(response).to have_http_status(:ok)
+        expect(response).to have_http_status(:accepted)
+      end
+
+      it 'recovers an accepted UUID after the exact conversation has already been deleted' do
+        key = SecureRandom.uuid
+        url = "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}"
+        headers = administrator.create_new_auth_token
+        delete url, headers: headers, params: { request_key: key }, as: :json
+        run_id = response.parsed_body.fetch('operation_id')
+        Conversations::DeletionJob.perform_now(run_id)
+
+        expect do
+          delete url, headers: headers, params: { request_key: key }, as: :json
+        end.not_to have_enqueued_job(Conversations::DeletionJob)
+        expect(response).to have_http_status(:accepted)
+        expect(response.parsed_body['operation_id']).to eq(run_id)
+        expect(response.parsed_body.dig('payload', 'metadata', 'targets', 0, 'status')).to eq('deleted')
+      end
+
+      it 'makes enqueue failure visible and leaves the row intact' do
+        allow(Conversations::DeletionJob).to receive(:perform_later).and_return(false)
+        delete "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}",
+               headers: administrator.create_new_auth_token, params: { request_key: SecureRandom.uuid }, as: :json
+        expect(response).to have_http_status(:service_unavailable)
+        expect(response.parsed_body.dig('payload', 'metadata', 'targets', 0, 'error_code')).to eq('enqueue_failed')
+        expect(Conversation.exists?(conversation.id)).to be(true)
       end
     end
   end

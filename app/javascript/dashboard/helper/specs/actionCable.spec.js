@@ -112,6 +112,14 @@ describe('ActionCableConnector', () => {
       ([actionName]) => actionName === 'fetchRealtimeSidebarUnreadCounts'
     );
 
+  it('routes the native account deletion event to the typed recipient guard', () => {
+    const payload = { account_id: 1, id: 42 };
+    actionCable.onReceived({ event: 'conversation.deleted', data: { account_id: 2, id: 42 } });
+    expect(mockDispatch).not.toHaveBeenCalledWith('observeConversationDeletion', expect.anything());
+    actionCable.onReceived({ event: 'conversation.deleted', data: payload });
+    expect(mockDispatch).toHaveBeenCalledWith('observeConversationDeletion', payload);
+  });
+
   describe('shared read state', () => {
     it('applies shared unread fields from conversation updates', () => {
       actionCable.onConversationUpdated({

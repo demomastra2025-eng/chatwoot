@@ -319,40 +319,6 @@ describe('conversation actions', () => {
     });
   });
 
-  describe('#deleteCommunicationThreadConversations', () => {
-    it('uses the communication-thread endpoint and removes selected child channels locally', async () => {
-      const commit = vi.fn();
-      const dispatch = vi.fn();
-      vi.spyOn(CommunicationThreadApi, 'deleteConversations').mockResolvedValue(
-        {
-          data: { deleted_conversation_ids: [12] },
-        }
-      );
-
-      await actions.deleteCommunicationThreadConversations(
-        { commit, dispatch },
-        { threadId: 7, conversationIds: [12] }
-      );
-
-      expect(CommunicationThreadApi.deleteConversations).toHaveBeenCalledWith(
-        7,
-        [12]
-      );
-      expect(commit).toHaveBeenCalledWith(
-        types.DELETE_COMMUNICATION_THREAD_CONVERSATIONS,
-        {
-          threadId: 7,
-          conversationIds: [12],
-        }
-      );
-      expect(dispatch).toHaveBeenCalledWith(
-        'conversationStats/get',
-        { communicationThreadMode: true },
-        { root: true }
-      );
-    });
-  });
-
   describe('#fetchPreviousMessages', () => {
     it('asks the thread API to include an explicit search target', async () => {
       const commit = vi.fn();

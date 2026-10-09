@@ -25,9 +25,17 @@ class BulkActionsAPI extends ApiClient {
     return axios.post(`${baseUrl}/${this.resource}`, data);
   }
 
-  show(id, context = null) {
+  show(id, context = null, options = {}) {
     const baseUrl = context?.baseUrl || this.baseUrl();
-    return axios.get(`${baseUrl}/bulk_action_runs/${id}`);
+    const url = `${baseUrl}/bulk_action_runs/${id}`;
+    return Object.keys(options).length ? axios.get(url, options) : axios.get(url);
+  }
+
+  findDeletion(requestKey, context) {
+    return axios.get(`${context.baseUrl}/bulk_action_runs`, {
+      params: { request_key: requestKey },
+      timeout: 5000,
+    });
   }
 
   selectAll(type, filters) {
