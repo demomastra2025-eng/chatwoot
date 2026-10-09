@@ -238,17 +238,25 @@ WITH limits AS (
         AND w.end_minute >= EXTRACT(HOUR FROM (a.ends_at + shift.hours * interval '1 hour') AT TIME ZONE r.timezone) * 60 +
                             EXTRACT(MINUTE FROM (a.ends_at + shift.hours * interval '1 hour') AT TIME ZONE r.timezone)
     )
+), report_accounts AS (
+  SELECT account_id FROM ai
+  UNION
+  SELECT account_id FROM findings
+  WHERE rule = 'A5_CLAIM_WITHOUT_SUCCESS' AND (SELECT rules FROM limits) IS NULL
+  UNION
+  SELECT account_id FROM limits WHERE account_id IS NOT NULL
 ), totals AS (
-  SELECT a.account_id, count(*)::integer AS ai_appointments,
-         (SELECT jsonb_object_agg(status, n) FROM (
+  SELECT ids.account_id,
+         (SELECT count(*)::integer FROM ai a WHERE a.account_id = ids.account_id) AS ai_appointments,
+         (SELECT COALESCE(jsonb_object_agg(status, n), '{}'::jsonb) FROM (
            SELECT x.status, count(*)::integer AS n FROM ai x
-           WHERE x.account_id = a.account_id GROUP BY x.status
+           WHERE x.account_id = ids.account_id GROUP BY x.status
          ) statuses) AS appointments_by_status,
          (SELECT COALESCE(jsonb_object_agg(status, n), '{}'::jsonb) FROM (
            SELECT c.status, count(*)::integer AS n FROM commands c
-           WHERE c.account_id = a.account_id GROUP BY c.status
+           WHERE c.account_id = ids.account_id GROUP BY c.status
          ) statuses) AS commands_by_status
-  FROM ai a GROUP BY a.account_id
+  FROM report_accounts ids
 )
 SELECT 'total' AS record_type, t.account_id, NULL::bigint AS appointment_id,
        NULL::bigint AS command_id, NULL::bigint AS conversation_id,

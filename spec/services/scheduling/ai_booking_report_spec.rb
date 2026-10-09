@@ -155,7 +155,6 @@ RSpec.describe Scheduling::AiBookingReport do
   end
 
   it 'reports a false booking claim from a failed tool trace without emitting message text' do
-    appointment
     assistant = create(:captain_assistant, account: account)
     inbox = create(:inbox, account: account)
     conversation = create(:conversation, account: account, inbox: inbox, contact: contact)
@@ -165,8 +164,9 @@ RSpec.describe Scheduling::AiBookingReport do
                        { 'tool_name' => 'create_appointment', 'event' => 'failed' }
                      ] } })
 
-    result = described_class.new(account_id: account.id).call
+    result = described_class.new.call
     expect(result.map { |row| row['rule'] }).to include('A5_CLAIM_WITHOUT_SUCCESS')
+    expect(result.find { |row| row['record_type'] == 'total' && row['account_id'] == account.id }['ai_appointments']).to eq(0)
     expect(result.to_json).not_to include('Вы записаны', contact.name, contact.phone_number)
     expect(result.find { |row| row['rule'] == 'A5_CLAIM_WITHOUT_SUCCESS' }['appointment_id']).to be_nil
   end
