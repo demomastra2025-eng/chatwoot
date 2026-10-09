@@ -40,6 +40,8 @@ class Captain::Tools::Copilot::UpdateAppointmentService < Captain::Tools::Copilo
     formatted_payload(
       ::Scheduling::ToolPayloadBuilder.appointment_payload(action: 'update_appointment', appointment: appointment)
     )
+  rescue Scheduling::Error => e
+    Captain::ToolResult.failure_output(error: e.message, data: { code: e.code }, retryable: false)
   rescue StandardError => e
     patient_scope ? formatted_payload(Captain::Tools::Agent::AppointmentResult.failure(e)) : tool_failure(e)
   end

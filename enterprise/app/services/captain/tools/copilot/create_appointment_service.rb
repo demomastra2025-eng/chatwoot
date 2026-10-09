@@ -46,6 +46,8 @@ class Captain::Tools::Copilot::CreateAppointmentService < Captain::Tools::Copilo
     formatted_payload(
       ::Scheduling::ToolPayloadBuilder.appointment_payload(action: 'create_appointment', appointment: appointment)
     )
+  rescue Scheduling::Error => e
+    Captain::ToolResult.failure_output(error: e.message, data: { code: e.code }, retryable: false)
   rescue StandardError => e
     if patient_scope
       appointment ||= operation.persisted_creation if operation.respond_to?(:persisted_creation)
