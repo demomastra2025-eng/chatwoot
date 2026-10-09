@@ -368,9 +368,9 @@ captain_assistant_safety_settings:
   type: object
   description: Omitted safety fields retain saved overrides during a partial update; explicit null resets a safety field to inheritance from the workspace policy. Unspecified safety fields on a new assistant inherit workspace policy.
   properties:
-    moderation_enabled: { type: boolean, nullable: true, description: Enable or disable provider moderation for this assistant; null inherits the workspace value. }
-    prompt_injection_action: { type: string, nullable: true, enum: [disabled, flag, block], description: Runtime prompt-injection guardrail action; null inherits the workspace value. }
-    sensitive_info_action: { type: string, nullable: true, enum: [disabled, flag, block], description: Runtime sensitive-information guardrail action; null inherits the workspace value. }
+    moderation_enabled: { type: [boolean, 'null'], description: Enable or disable provider moderation for this assistant; null inherits the workspace value. }
+    prompt_injection_action: { type: [string, 'null'], enum: [disabled, flag, block, null], description: Runtime prompt-injection guardrail action; null inherits the workspace value. }
+    sensitive_info_action: { type: [string, 'null'], enum: [disabled, flag, block, null], description: Runtime sensitive-information guardrail action; null inherits the workspace value. }
   additionalProperties: false
 
 captain_assistant_playground_request:
@@ -397,8 +397,8 @@ captain_assistant_playground_response:
   required: [response]
   properties:
     response: { type: string }
-    agent_name: { type: string, nullable: true }
-    reasoning: { type: string, nullable: true }
+    agent_name: { type: [string, 'null'] }
+    reasoning: { type: [string, 'null'] }
     response_latency_ms: { type: integer, minimum: 0, description: Measured end-to-end response latency in milliseconds. }
     reported_reasoning_tokens: { type: integer, minimum: 1, description: Provider-reported reasoning tokens, included only when the provider supplies this usage metric. }
     tool_trace:

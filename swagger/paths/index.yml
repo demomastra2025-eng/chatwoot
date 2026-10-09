@@ -2891,7 +2891,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
                         unanswered_count: { type: integer }
                         inbound_count: { type: integer }
                         outbound_count: { type: integer }
-                        average_answered_duration_seconds: { type: number, nullable: true }
+                        average_answered_duration_seconds: { type: [number, 'null'] }
                     daily_breakdown:
                       type: array
                       items:
@@ -2912,9 +2912,9 @@ x-scheduling-expense-schema: &scheduling_expense_schema
                           direction: { type: string }
                           status: { type: string }
                           answered: { type: boolean }
-                          duration_seconds: { type: integer, nullable: true }
-                          provider: { type: string, nullable: true }
-                          inbox_name: { type: string, nullable: true }
+                          duration_seconds: { type: [integer, 'null'] }
+                          provider: { type: string }
+                          inbox_name: { type: [string, 'null'] }
                     coverage:
                       type: object
                       properties:
@@ -2978,7 +2978,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
                       properties:
                         submissions_processed_in_selected_period: { type: integer }
                         selected_submissions_with_processed_at: { type: integer }
-                        average_processing_seconds: { type: number, nullable: true }
+                        average_processing_seconds: { type: [number, 'null'] }
                 meta:
                   type: object
                   properties:
