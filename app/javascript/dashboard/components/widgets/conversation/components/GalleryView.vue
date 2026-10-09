@@ -51,8 +51,9 @@ const isDownloading = ref(false);
 const activeAttachment = ref({});
 const activeFileType = ref('');
 const activeAttachmentSource = computed(() => activeAttachment.value);
-const { isPurged, refreshAfterMediaFailure } =
-  useAttachmentAvailability(activeAttachmentSource);
+const { isPurged, refreshAfterMediaFailure } = useAttachmentAvailability(
+  activeAttachmentSource
+);
 // Position of an attachment in the list: by attachment id, else by message.
 const indexOfAttachment = (attachments, target) => {
   if (!target) return -1;

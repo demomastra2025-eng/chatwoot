@@ -22,6 +22,7 @@ describe('SnackbarContainer', () => {
             props: ['message', 'action'],
             template: '<div data-testid="toast">{{ message }}</div>',
           },
+          TransitionGroup: { template: '<div><slot /></div>' },
         },
       },
     });
