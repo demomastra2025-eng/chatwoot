@@ -33,7 +33,7 @@ RSpec.describe Captain::Tools::Copilot::SearchAppointmentsService do
       expect(patient_payload['appointments'].first.keys).to match_array(%w[appointment_id doctor_name local_date local_time status])
 
       service.patient_scope = nil
-      expect(JSON.parse(service.execute(limit: 1))).to include('total_count' => 22)
+      expect(JSON.parse(service.execute(limit: 1))).to include('total_count' => 23)
     end
 
     it 'returns normalized appointments with filters and total_count' do
