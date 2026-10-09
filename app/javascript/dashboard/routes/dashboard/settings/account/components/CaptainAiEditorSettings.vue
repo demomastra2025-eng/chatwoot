@@ -1,10 +1,20 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useCaptainFeatureSettings } from 'dashboard/composables/captain/useCaptainFeatureSettings';
+import {
+  TEXT_IMPROVEMENT_SETTING_KEY,
+  useCaptainFeatureSettings,
+} from 'dashboard/composables/captain/useCaptainFeatureSettings';
 import { useCaptainConfigStore } from 'dashboard/store/captain/preferences';
 import SectionLayout from './SectionLayout.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
+
+const props = defineProps({
+  disabled: {
+    type: Boolean,
+    default: false,
+  },
+});
 
 const { t } = useI18n();
 const captainConfigStore = useCaptainConfigStore();
@@ -14,31 +24,74 @@ const savingKey = ref('');
 const loadFailed = ref(false);
 const saveFailed = ref(false);
 const features = computed(() => captainConfigStore.features);
+const featureValues = ref({ textImprovement: false, labelSuggestion: false });
 
+const featureValuesFromStore = () => ({
+  // The preferences serializer exposes captain_features.text_improvement as editor.enabled.
+  textImprovement: features.value.editor?.enabled === true,
+  labelSuggestion: features.value.label_suggestion?.enabled === true,
+});
 const isTextImprovementEnabled = computed(
-  () => features.value.editor?.enabled !== false
+  () => featureValues.value.textImprovement
 );
 const isLabelSuggestionEnabled = computed(
-  () => features.value.label_suggestion?.enabled === true
+  () => featureValues.value.labelSuggestion
 );
 
+let saveQueue = Promise.resolve();
+let pendingSaveCount = 0;
+
 const saveFeature = async (key, enabled) => {
+  const requestedValues = { ...featureValues.value, [key]: enabled };
+  featureValues.value = requestedValues;
   savingKey.value = key;
   saveFailed.value = false;
+  pendingSaveCount += 1;
+  const request = saveQueue.then(() =>
+    saveCaptainFeatures({
+      [TEXT_IMPROVEMENT_SETTING_KEY]: requestedValues.textImprovement,
+      label_suggestion: requestedValues.labelSuggestion,
+    })
+  );
+  // Keep responses ordered so a slower previous request cannot replace a newer toggle state.
+  saveQueue = request.then(
+    () => undefined,
+    () => undefined
+  );
+
   try {
-    await saveCaptainFeatures({ [key]: enabled });
+    await request;
+    saveFailed.value = false;
   } catch (error) {
     saveFailed.value = true;
+    if (pendingSaveCount === 1) featureValues.value = featureValuesFromStore();
   } finally {
-    savingKey.value = '';
+    pendingSaveCount -= 1;
+    if (pendingSaveCount === 0) savingKey.value = '';
   }
 };
 
-onMounted(async () => {
-  await captainConfigStore.fetch({ clientMetadataOnly: true });
-  loadFailed.value = captainConfigStore.uiFlags.fetchError === true;
-  isLoading.value = false;
-});
+const loadSettings = async ({ force = false } = {}) => {
+  isLoading.value = true;
+  loadFailed.value = false;
+  try {
+    await captainConfigStore.fetch(
+      force
+        ? { clientMetadataOnly: true, force: true }
+        : { clientMetadataOnly: true }
+    );
+    loadFailed.value = captainConfigStore.uiFlags.fetchError === true;
+    if (!loadFailed.value && pendingSaveCount === 0) {
+      featureValues.value = featureValuesFromStore();
+    }
+  } catch (error) {
+    loadFailed.value = true;
+  } finally {
+    isLoading.value = false;
+  }
+};
+
+onMounted(loadSettings);
 </script>
 
 <template>
@@ -50,9 +103,18 @@ onMounted(async () => {
     <div v-if="isLoading" class="text-sm text-n-slate-11" role="status">
       {{ t('CAPTAIN_SETTINGS.LOADING') }}
     </div>
-    <p v-else-if="loadFailed" class="m-0 text-sm text-n-ruby-9" role="alert">
-      {{ t('CAPTAIN_SETTINGS.API.ERROR') }}
-    </p>
+    <div v-else-if="loadFailed" class="flex flex-wrap items-center gap-3">
+      <p class="m-0 text-sm text-n-ruby-9" role="alert">
+        {{ t('CAPTAIN_SETTINGS.API.ERROR') }}
+      </p>
+      <button
+        type="button"
+        class="text-sm font-medium text-n-brand hover:underline"
+        @click="loadSettings({ force: true })"
+      >
+        {{ t('DESIGN_SYSTEM.STATE.RETRY') }}
+      </button>
+    </div>
     <div v-else class="grid gap-4">
       <div
         class="flex items-center justify-between gap-4"
@@ -68,8 +130,8 @@ onMounted(async () => {
         </div>
         <Switch
           :model-value="isTextImprovementEnabled"
-          :disabled="savingKey === 'text_improvement'"
-          @change="enabled => saveFeature('text_improvement', enabled)"
+          :disabled="props.disabled || savingKey !== ''"
+          @change="enabled => saveFeature('textImprovement', enabled)"
         />
       </div>
       <div
@@ -86,8 +148,8 @@ onMounted(async () => {
         </div>
         <Switch
           :model-value="isLabelSuggestionEnabled"
-          :disabled="savingKey === 'label_suggestion'"
-          @change="enabled => saveFeature('label_suggestion', enabled)"
+          :disabled="props.disabled || savingKey !== ''"
+          @change="enabled => saveFeature('labelSuggestion', enabled)"
         />
       </div>
       <p v-if="saveFailed" class="m-0 text-sm text-n-ruby-9" role="alert">
