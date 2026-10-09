@@ -86,6 +86,7 @@ const appointments = ref([]);
 const appointmentForms = reactive({});
 const availabilityByForm = reactive({});
 let availabilityRequestId = 0;
+let sidebarDisposed = false;
 const openAppointmentKeys = ref([]);
 const scrollContainer = ref(null);
 const isCreating = ref(false);
@@ -487,17 +488,6 @@ const formFromAppointment = appointment => {
   };
 };
 
-const setAppointmentForms = () => {
-  Object.keys(appointmentForms).forEach(key => delete appointmentForms[key]);
-  appointments.value.forEach(appointment => {
-    appointmentForms[appointmentKey(appointment)] =
-      formFromAppointment(appointment);
-    if (!isAppointmentProviderOwned(appointment)) {
-      loadFormWindows(appointmentForms[appointmentKey(appointment)]);
-    }
-  });
-};
-
 const selectedServiceForForm = form =>
   activeServices.value.find(
     service => Number(service.id) === Number(form?.serviceId)
@@ -524,7 +514,8 @@ const resetSelectedWindow = form => {
 
 const loadFormWindows = async form => {
   const key = pickerKeyForForm(form);
-  const requestId = ++availabilityRequestId;
+  availabilityRequestId += 1;
+  const requestId = availabilityRequestId;
   availabilityByForm[key] = {
     state: 'loading',
     windows: [],
@@ -542,8 +533,7 @@ const loadFormWindows = async form => {
       ...(form.serviceId ? { service_id: form.serviceId } : {}),
       ...(!form.serviceId
         ? {
-            duration_min:
-              selectedResourceForForm(form)?.slotDurationMin || 30,
+            duration_min: selectedResourceForForm(form)?.slotDurationMin || 30,
           }
         : {}),
       date: form.availabilityDate,
@@ -575,6 +565,17 @@ const loadFormWindows = async form => {
       requestId,
     };
   }
+};
+
+const setAppointmentForms = () => {
+  Object.keys(appointmentForms).forEach(key => delete appointmentForms[key]);
+  appointments.value.forEach(appointment => {
+    appointmentForms[appointmentKey(appointment)] =
+      formFromAppointment(appointment);
+    if (!isAppointmentProviderOwned(appointment)) {
+      loadFormWindows(appointmentForms[appointmentKey(appointment)]);
+    }
+  });
 };
 
 const changePickerDate = (form, date) => {
@@ -852,7 +853,6 @@ const fetchAppointmentsByParams = async params => {
 };
 
 let loadRequestId = 0;
-let sidebarDisposed = false;
 const loadAppointments = async () => {
   if (sidebarDisposed) return false;
   loadRequestId += 1;
@@ -1022,11 +1022,12 @@ const handleSaveAvailabilityError = (error, form) => {
   if (code === 'MEDELEMENT_AVAILABILITY_UNVERIFIED') {
     useAlert(t('SCHEDULING.APPOINTMENT_FORM.AVAILABILITY.UNAVAILABLE'));
     resetSelectedWindow(form);
+    availabilityRequestId += 1;
     availabilityByForm[pickerKeyForForm(form)] = {
       state: 'provider_unavailable',
       windows: [],
       maxDate: availabilityForForm(form).maxDate,
-      requestId: ++availabilityRequestId,
+      requestId: availabilityRequestId,
     };
     return true;
   }
@@ -2262,13 +2263,41 @@ watch(
                   </div>
 
                   <SchedulingAvailabilityPicker
-                    :date="appointmentForms[appointmentKey(appointment)].availabilityDate"
-                    :max-date="availabilityForForm(appointmentForms[appointmentKey(appointment)]).maxDate"
-                    :state="availabilityForForm(appointmentForms[appointmentKey(appointment)]).state"
-                    :windows="availabilityForForm(appointmentForms[appointmentKey(appointment)]).windows"
-                    :selected-starts-at="appointmentForms[appointmentKey(appointment)].selectedWindowStartsAt"
-                    @update:date="changePickerDate(appointmentForms[appointmentKey(appointment)], $event)"
-                    @select="selectWindow(appointmentForms[appointmentKey(appointment)], $event)"
+                    :date="
+                      appointmentForms[appointmentKey(appointment)]
+                        .availabilityDate
+                    "
+                    :max-date="
+                      availabilityForForm(
+                        appointmentForms[appointmentKey(appointment)]
+                      ).maxDate
+                    "
+                    :state="
+                      availabilityForForm(
+                        appointmentForms[appointmentKey(appointment)]
+                      ).state
+                    "
+                    :windows="
+                      availabilityForForm(
+                        appointmentForms[appointmentKey(appointment)]
+                      ).windows
+                    "
+                    :selected-starts-at="
+                      appointmentForms[appointmentKey(appointment)]
+                        .selectedWindowStartsAt
+                    "
+                    @update:date="
+                      changePickerDate(
+                        appointmentForms[appointmentKey(appointment)],
+                        $event
+                      )
+                    "
+                    @select="
+                      selectWindow(
+                        appointmentForms[appointmentKey(appointment)],
+                        $event
+                      )
+                    "
                   />
 
                   <div class="scheduling-appointment-drawer-row">

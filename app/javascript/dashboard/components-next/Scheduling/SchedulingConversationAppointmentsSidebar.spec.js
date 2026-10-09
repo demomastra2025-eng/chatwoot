@@ -143,7 +143,9 @@ vi.mock('dashboard/api/scheduling/availability', () => ({
   default: {
     show: vi.fn(() =>
       Promise.resolve({
-        data: { payload: { state: 'ok', windows: [], last_bookable_date: null } },
+        data: {
+          payload: { state: 'ok', windows: [], last_bookable_date: null },
+        },
       })
     ),
   },
@@ -354,7 +356,9 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     const wrapper = mountComponent();
     await flushPromises();
     const pending = deferredRequest();
-    SchedulingAvailabilityAPI.show.mockImplementationOnce(() => pending.promise);
+    SchedulingAvailabilityAPI.show.mockImplementationOnce(
+      () => pending.promise
+    );
     wrapper.vm.changePickerDate(
       wrapper.vm.appointmentForms['appointment-501'],
       '2026-06-28'
@@ -410,9 +414,9 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     expect(SchedulingAvailabilityAPI.show.mock.calls.length).toBeGreaterThan(
       requestsBeforeSave
     );
-    expect(wrapper.vm.availabilityForForm(wrapper.vm.createForm).windows).toEqual(
-      []
-    );
+    expect(
+      wrapper.vm.availabilityForForm(wrapper.vm.createForm).windows
+    ).toEqual([]);
   });
 
   it('limits the date input and reports closed and unconfirmed days', async () => {

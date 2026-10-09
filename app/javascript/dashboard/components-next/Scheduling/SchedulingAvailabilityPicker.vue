@@ -24,17 +24,6 @@ const todayParts = Object.fromEntries(
 );
 const today = `${todayParts.year}-${todayParts.month}-${todayParts.day}`;
 
-const message = computed(() => {
-  if (props.state === 'loading') return t('SCHEDULING.APPOINTMENT_FORM.AVAILABILITY.LOADING');
-  if (props.state === 'schedule_not_confirmed') return t('SCHEDULING.APPOINTMENT_FORM.AVAILABILITY.NOT_CONFIRMED');
-  if (props.state === 'provider_unavailable') return t('SCHEDULING.APPOINTMENT_FORM.AVAILABILITY.UNAVAILABLE');
-  if (props.state === 'beyond_horizon') return t('SCHEDULING.APPOINTMENT_FORM.AVAILABILITY.HORIZON', { date: formatDate(props.maxDate) });
-  if (props.state === 'closed_day' || (props.state === 'ok' && !props.windows.length)) {
-    return t('SCHEDULING.APPOINTMENT_FORM.AVAILABILITY.EMPTY');
-  }
-  return '';
-});
-
 const formatDate = date => {
   if (!date) return '';
   const [year, month, day] = date.split('-');
@@ -46,6 +35,26 @@ const formatTime = value =>
     minute: '2-digit',
     timeZone: DEFAULT_WORKSPACE_TIMEZONE,
   }).format(new Date(value));
+
+const message = computed(() => {
+  if (props.state === 'loading')
+    return t('SCHEDULING.APPOINTMENT_FORM.AVAILABILITY.LOADING');
+  if (props.state === 'schedule_not_confirmed')
+    return t('SCHEDULING.APPOINTMENT_FORM.AVAILABILITY.NOT_CONFIRMED');
+  if (props.state === 'provider_unavailable')
+    return t('SCHEDULING.APPOINTMENT_FORM.AVAILABILITY.UNAVAILABLE');
+  if (props.state === 'beyond_horizon')
+    return t('SCHEDULING.APPOINTMENT_FORM.AVAILABILITY.HORIZON', {
+      date: formatDate(props.maxDate),
+    });
+  if (
+    props.state === 'closed_day' ||
+    (props.state === 'ok' && !props.windows.length)
+  ) {
+    return t('SCHEDULING.APPOINTMENT_FORM.AVAILABILITY.EMPTY');
+  }
+  return '';
+});
 </script>
 
 <template>
@@ -71,7 +80,11 @@ const formatTime = value =>
         type="button"
         :aria-pressed="selectedStartsAt === window.starts_at"
         class="rounded-md border border-n-weak px-2 py-1 text-sm text-n-slate-12"
-        :class="selectedStartsAt === window.starts_at ? 'border-n-brand bg-n-brand/10' : ''"
+        :class="
+          selectedStartsAt === window.starts_at
+            ? 'border-n-brand bg-n-brand/10'
+            : ''
+        "
         @click="emit('select', window)"
       >
         {{ formatTime(window.starts_at) }}–{{ formatTime(window.ends_at) }}
