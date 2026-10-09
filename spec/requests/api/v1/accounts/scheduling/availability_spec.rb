@@ -84,9 +84,12 @@ RSpec.describe 'Scheduling Availability API', type: :request do
     get path, params: { resource_id: resource.id, date: '2026-04-20' },
               headers: outsider.create_new_auth_token, as: :json
     expect(response).to have_http_status(:unauthorized)
+    expect(response.parsed_body).to eq('error' => 'You are not authorized to access this account')
 
     account.disable_features!('scheduling')
-    request_day
+    get path, params: { resource_id: resource.id, date: '2026-04-20' }, headers: headers, as: :json
     expect(response).to have_http_status(:forbidden)
+    expect(response.parsed_body).to include('code' => 'FEATURE_DISABLED')
+    expect(response.parsed_body).not_to have_key('payload')
   end
 end

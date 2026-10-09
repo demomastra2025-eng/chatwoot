@@ -151,7 +151,8 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
 
       payload = perform(service_id: service_record.id)
 
-      expect(payload[:slots].pluck(:resource_id)).to eq([first_specialist.id])
+      expect(payload[:slots].pluck(:resource_id).uniq).to eq([first_specialist.id])
+      expect(payload[:slots].pluck(:starts_at).uniq.size).to eq(payload[:slots].size)
       expect(payload[:availability][:status]).to eq('degraded')
       expect(payload[:availability][:resources].pluck(:resource_id, :status)).to contain_exactly(
         [first_specialist.id, 'fresh'], [second_specialist.id, 'schedule_not_confirmed']
