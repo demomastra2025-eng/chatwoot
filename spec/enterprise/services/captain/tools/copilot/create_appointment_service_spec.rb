@@ -51,6 +51,7 @@ RSpec.describe Captain::Tools::Copilot::CreateAppointmentService do
         'client_comment' => 'Needs a morning slot'
       )
       expect(appointment).to have_attributes(
+        source: 'manual',
         resource_id: resource.id,
         service_id: consultation.id,
         conversation_id: conversation.id,

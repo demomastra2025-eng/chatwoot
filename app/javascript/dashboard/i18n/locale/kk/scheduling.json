@@ -1,5 +1,10 @@
 {
   "SCHEDULING": {
+    "APPOINTMENT_SOURCE": {
+      "manual": "Қолмен",
+      "medelement": "MedElement",
+      "captain": "ЖИ агенті"
+    },
     "RESOURCES": {
       "PROVIDER_SCHEDULE_TITLE": "График из MedElement",
       "PROVIDER_NOT_LOADED": "График MedElement пока не загружен.",

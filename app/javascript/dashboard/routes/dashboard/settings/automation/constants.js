@@ -32,7 +32,7 @@ const APPOINTMENT_AUTOMATION_CONDITIONS = [
   {
     key: 'source',
     name: 'SOURCE',
-    inputType: 'plain_text',
+    inputType: 'search_select',
     filterOperators: OPERATOR_TYPES_7,
   },
   {

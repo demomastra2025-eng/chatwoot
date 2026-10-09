@@ -32,6 +32,19 @@ RSpec.describe AutomationRules::AppointmentConditionService do
     expect(described_class.new(rule, appointment).perform).to be(true)
   end
 
+  it 'matches the Captain source selected in an appointment automation rule' do
+    appointment.update!(source: 'captain')
+    rule = create(
+      :automation_rule,
+      account: account,
+      event_name: 'appointment_created',
+      conditions: [{ attribute_key: 'source', filter_operator: 'equal_to', values: ['captain'], query_operator: nil }],
+      actions: [{ action_name: 'send_webhook_event', action_params: ['https://example.com/hooks/appointments'] }]
+    )
+
+    expect(described_class.new(rule, appointment).perform).to be(true)
+  end
+
   it 'supports OR groups across appointment conditions' do
     rule = create(
       :automation_rule,

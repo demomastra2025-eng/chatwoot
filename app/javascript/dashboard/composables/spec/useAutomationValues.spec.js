@@ -30,6 +30,15 @@ describe('useAutomationValues', () => {
     }));
   });
 
+  it('offers the Captain source in appointment automation conditions', () => {
+    const { getConditionDropdownValues } = useAutomationValues();
+
+    expect(getConditionDropdownValues('source', 'appointment_created')).toContainEqual({
+      id: 'captain',
+      name: 'SCHEDULING.APPOINTMENT_SOURCE.captain',
+    });
+  });
+
   it('renders only active CRM stages from active pipelines in automation dropdowns', () => {
     const crmReferencesStore = useCrmReferencesStore();
     crmReferencesStore.pipelines = [

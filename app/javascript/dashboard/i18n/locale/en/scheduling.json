@@ -1,5 +1,10 @@
 {
   "SCHEDULING": {
+    "APPOINTMENT_SOURCE": {
+      "manual": "Manual",
+      "medelement": "MedElement",
+      "captain": "AI agent"
+    },
     "NAV": {
       "CALENDAR": "Calendar",
       "RESOURCES": "Specialists",

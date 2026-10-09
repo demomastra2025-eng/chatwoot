@@ -3,7 +3,7 @@ class Scheduling::Appointments::UpsertService
   CLIENT_NAME_PART_KEYS = %i[client_first_name client_last_name client_middle_name].freeze
   DERIVED_SYSTEM_CUSTOM_ATTRIBUTE_KEYS = %w[service_ids services].freeze
   INTAKE_SYSTEM_CUSTOM_ATTRIBUTE_KEYS = %w[medelement_cabinet_code].freeze
-  PRESERVED_SYSTEM_CUSTOM_ATTRIBUTE_KEYS = %w[source_mode].freeze
+  PRESERVED_SYSTEM_CUSTOM_ATTRIBUTE_KEYS = %w[source_mode appointment_created_notification_hold].freeze
   PRESERVED_SYSTEM_CUSTOM_ATTRIBUTE_PREFIXES = %w[medelement_].freeze
 
   def initialize(account:, params:, appointment: nil, actor: nil)
@@ -223,7 +223,7 @@ class Scheduling::Appointments::UpsertService
       client_birth_date: resolve_client_birth_date(contact),
       client_gender: resolve_client_gender(contact),
       client_comment: resolve_optional_text(:client_comment, current: appointment.client_comment),
-      source: appointment.source.presence || 'manual',
+      source: appointment_source,
       external_ref: resolve_optional_text(:external_ref, current: appointment.external_ref),
       idempotency_key: resolve_optional_text(:idempotency_key, current: appointment.idempotency_key),
       service_name_snapshot: service_snapshot[:service_name_snapshot],
@@ -253,6 +253,12 @@ class Scheduling::Appointments::UpsertService
     resolve_optional_text(:prepaid_payment_method, current: appointment.prepaid_payment_method) ||
       resolve_optional_text(:settlement_payment_method, current: appointment.settlement_payment_method) ||
       'cash'
+  end
+
+  def appointment_source
+    return 'captain' if appointment.new_record? && defined?(Captain::Assistant) && actor.is_a?(Captain::Assistant)
+
+    appointment.source.presence || 'manual'
   end
 
   def availability_service
