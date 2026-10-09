@@ -244,7 +244,7 @@ describe('useSchedulingAppointmentFormStore', () => {
     expect(calendarStore.syncAppointment).not.toHaveBeenCalled();
   });
 
-  it('preserves an unsaved edit made while the previous form snapshot is saving', async () => {
+  it('locks the submitted form fields until its save is acknowledged', async () => {
     const store = useSchedulingAppointmentFormStore();
     store.openEdit(localAppointment);
     const pending = deferred();
@@ -253,11 +253,46 @@ describe('useSchedulingAppointmentFormStore', () => {
     const request = store.submit(calendarStore);
     store.updateField('clientFirstName', 'Unsaved edit');
     pending.resolve({ data: { payload: localAppointment } });
-    expect(await request).toBeNull();
-    expect(store.isOpen).toBe(true);
-    expect(store.form.clientFirstName).toBe('Unsaved edit');
+    expect((await request).id).toBe(11);
+    expect(store.isOpen).toBe(false);
+    expect(store.form.clientFirstName).toBe('Patient');
     expect(store.ui.isSaving).toBe(false);
-    expect(calendarStore.syncAppointment).not.toHaveBeenCalled();
+    expect(calendarStore.syncAppointment).toHaveBeenCalledOnce();
+  });
+
+  it('keeps one pending local create intent and rejects duplicate submit or field/contact changes', async () => {
+    const store = useSchedulingAppointmentFormStore();
+    store.openCreate({
+      resourceId: 3,
+      startsAt: '2026-03-09T10:00:00Z',
+      endsAt: '2026-03-09T10:30:00Z',
+    });
+    store.applyContact({
+      id: 42,
+      firstName: 'Patient',
+      fullName: 'Patient',
+      phone: '+77001234567',
+    });
+    store.updateField('clientComment', 'Original');
+    const original = JSON.parse(JSON.stringify(store.form));
+    const pending = deferred();
+    SchedulingAppointmentsAPI.create.mockReturnValueOnce(pending.promise);
+    const calendarStore = { currentView: 'day', syncAppointment: vi.fn() };
+    const request = store.submit(calendarStore);
+    store.updateField('startsAt', '2026-03-10T12:00');
+    store.updateField('clientComment', 'Late change');
+    store.updateField('customAttributes', { late: 'change' });
+    store.applyContact({ id: 43, firstName: 'Other' });
+    store.applyPatientContact({ id: 85, firstName: 'Other' });
+    store.beginInlineContactEdit({ firstName: 'Other' });
+    expect(await store.submit(calendarStore)).toBeNull();
+    expect(store.form).toEqual(original);
+    pending.resolve({ data: { payload: { id: 501, contact_id: 42 } } });
+    expect((await request).id).toBe(501);
+    expect(store.isOpen).toBe(false);
+    expect(store.ui.isSaving).toBe(false);
+    expect(SchedulingAppointmentsAPI.create).toHaveBeenCalledOnce();
+    expect(calendarStore.syncAppointment).toHaveBeenCalledOnce();
   });
 
   it('checks the captured form again after the month calendar refresh', async () => {

@@ -148,18 +148,6 @@ const ui = reactive({
   error: null,
 });
 
-const headerButtons = computed(() =>
-  isCreating.value || !patientContextReady.value
-    ? []
-    : [
-        {
-          icon: 'i-lucide-plus',
-          key: 'new_appointment',
-          tooltip: t('SCHEDULING.CALENDAR.NEW_APPOINTMENT'),
-        },
-      ]
-);
-
 const appointmentStatusLabels = computed(() => ({
   cancelled: t('SCHEDULING.APPOINTMENT_STATUS.cancelled'),
   completed: t('SCHEDULING.DIALOGS.APPOINTMENT_STATUS_SHORT.completed'),
@@ -243,6 +231,17 @@ const patientContextReady = computed(
   () =>
     !props.patientContextEnabled ||
     (!props.patientContextLoading && Boolean(selectedPatientContextId.value))
+);
+const headerButtons = computed(() =>
+  isCreating.value || !patientContextReady.value
+    ? []
+    : [
+        {
+          icon: 'i-lucide-plus',
+          key: 'new_appointment',
+          tooltip: t('SCHEDULING.CALENDAR.NEW_APPOINTMENT'),
+        },
+      ]
 );
 const currentDraftKey = computed(() =>
   props.patientContextEnabled &&
@@ -2061,16 +2060,6 @@ const appointmentMeta = appointment => {
     .join(' · ');
 };
 
-const initializeSidebar = async () => {
-  const context = captureSidebarContext();
-  await loadReferences();
-  if (!isCurrentSidebarContext(context)) return;
-  const loaded = await loadAppointments();
-  if (loaded && !restorePatientDraft() && !appointments.value.length) {
-    await startCreateAppointment({ scroll: false });
-  }
-};
-
 const loadReferences = () => {
   if (!referencesReadyPromise) {
     referencesReadyPromise = Promise.all([
@@ -2081,6 +2070,16 @@ const loadReferences = () => {
     });
   }
   return referencesReadyPromise;
+};
+
+const initializeSidebar = async () => {
+  const context = captureSidebarContext();
+  await loadReferences();
+  if (!isCurrentSidebarContext(context)) return;
+  const loaded = await loadAppointments();
+  if (loaded && !restorePatientDraft() && !appointments.value.length) {
+    await startCreateAppointment({ scroll: false });
+  }
 };
 
 onMounted(() => {

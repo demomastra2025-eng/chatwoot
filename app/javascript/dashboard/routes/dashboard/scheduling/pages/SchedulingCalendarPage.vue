@@ -4,6 +4,7 @@ import {
   onBeforeUnmount,
   onMounted,
   reactive,
+  readonly,
   ref,
   watch,
 } from 'vue';
@@ -110,6 +111,7 @@ const calendarStore = useSchedulingCalendarStore();
 const crmReferencesStore = useCrmReferencesStore();
 const referencesStore = useSchedulingReferencesStore();
 const formStore = useSchedulingAppointmentFormStore();
+const appointmentFormControlValues = computed(() => readonly(formStore.form));
 const providerCommandsStore = useSchedulingProviderCommandsStore();
 const { currentAccount } = useAccount();
 const route = useRoute();
@@ -908,6 +910,7 @@ const inlineContactLastNameMessage = computed(() => {
 });
 const isInlineContactSaveDisabled = computed(
   () =>
+    formStore.ui.isSaving ||
     formStore.isProviderPatientIdentity ||
     !String(formStore.form.clientFirstName || '').trim() ||
     Boolean(inlineContactLastNameMessage.value) ||
@@ -1293,6 +1296,7 @@ const fillInlineContactForm = source => {
 };
 
 const openInlineContactCreate = () => {
+  if (formStore.ui.isSaving) return;
   contactEditorMode.value = 'create';
   if (inlineContactDraftInitialized.value) return;
 
@@ -1306,14 +1310,25 @@ const openInlineContactCreate = () => {
 };
 
 const handleAppointmentConversationAddContact = () => {
-  if (!canManageAppointmentConversation.value) return;
+  if (formStore.ui.isSaving || !canManageAppointmentConversation.value) return;
 
   appointmentConversationContactCreateRequested.value = true;
   showAppointmentConversationPanel.value = false;
   openInlineContactCreate();
 };
 
+const inlineContactEditPayload = () => ({
+  ...inlineContactForm,
+  firstName: formStore.form.clientFirstName,
+  fullName: appointmentClientName(),
+  lastName: formStore.form.clientLastName,
+  middleName: formStore.form.clientMiddleName,
+  phone: formStore.form.clientPhone,
+  resourceId: formStore.form.resourceId,
+});
+
 function openInlineContactEdit() {
+  if (formStore.ui.isSaving) return;
   if (!formStore.form.contactId || formStore.isProviderPatientIdentity) {
     contactEditorMode.value = null;
     formStore.inlineContactSnapshot = null;
@@ -1330,16 +1345,6 @@ function openInlineContactEdit() {
   formStore.beginInlineContactEdit(inlineContactEditPayload());
 }
 
-const inlineContactEditPayload = () => ({
-  ...inlineContactForm,
-  firstName: formStore.form.clientFirstName,
-  fullName: appointmentClientName(),
-  lastName: formStore.form.clientLastName,
-  middleName: formStore.form.clientMiddleName,
-  phone: formStore.form.clientPhone,
-  resourceId: formStore.form.resourceId,
-});
-
 const openEditAppointment = appointment => {
   formStore.openEdit(appointment);
   resetAppointmentConversationDraft();
@@ -1353,6 +1358,7 @@ const openEditAppointment = appointment => {
 };
 
 const handleInlineContactSave = async () => {
+  if (formStore.ui.isSaving) return;
   if (isInlineContactSaveDisabled.value) {
     useAlert(inlineContactIinMessage.value);
     return;
@@ -1397,6 +1403,7 @@ watch(
   definitions => {
     if (
       !formStore.isOpen ||
+      formStore.ui.isSaving ||
       formStore.mode !== 'create' ||
       !pendingCreateCustomFieldDefaultsHydration.value ||
       !definitions.length
@@ -1431,6 +1438,7 @@ watch(
 watch(
   () => inlineContactForm.iin,
   nextValue => {
+    if (formStore.ui.isSaving) return;
     const normalizedIin = normalizeIin(nextValue);
     if (normalizedIin !== nextValue) {
       inlineContactForm.iin = normalizedIin;
@@ -1454,7 +1462,7 @@ watch(
 );
 
 const handleContactSelect = contactId => {
-  if (formStore.form.patientContactId) return;
+  if (formStore.ui.isSaving || formStore.form.patientContactId) return;
   const previousContactId = Number(formStore.form.contactId);
   const nextContactId = Number(contactId);
   const contactChanged = previousContactId !== nextContactId;
@@ -1491,7 +1499,7 @@ const handleContactSelect = contactId => {
 };
 
 const handleContactDropdownOpen = async () => {
-  if (formStore.ui.isLoadingContacts) return;
+  if (formStore.ui.isSaving || formStore.ui.isLoadingContacts) return;
 
   try {
     await formStore.searchContacts('');
@@ -1500,7 +1508,16 @@ const handleContactDropdownOpen = async () => {
   }
 };
 
-const openContactSelector = () => contactSelectorFieldRef.value?.open();
+const openContactSelector = () => {
+  if (!formStore.ui.isSaving) contactSelectorFieldRef.value?.open();
+};
+const updateInlineContactField = (field, value) => {
+  if (!formStore.ui.isSaving) inlineContactForm[field] = value;
+};
+const searchAppointmentContacts = query => {
+  if (!formStore.ui.isSaving) return formStore.searchContacts(query);
+  return null;
+};
 
 const resetAppointmentFilters = async () => {
   calendarStore.resetFilters();
@@ -1631,12 +1648,13 @@ const stageProviderCommand = async ({
   params,
   closeDrawer = false,
 }) => {
+  providerActionGeneration += 1;
   const action = {
     appointment,
     closeDrawer,
     params,
     patientContext: calendarPatientContext(),
-    generation: ++providerActionGeneration,
+    generation: providerActionGeneration,
   };
   activeProviderAction = action;
   // Replacing a UI action only abandons its client result; an already sent
@@ -1692,6 +1710,7 @@ watch(
 );
 
 const stageCreateMedelementReception = appointment => {
+  if (formStore.ui.isSaving) return;
   const companyCabinetCode = formStore.form.medelementCabinetCode;
   if (!companyCabinetCode) {
     useAlert(t('SCHEDULING.MEDELEMENT.CABINET_REQUIRED'));
@@ -1810,7 +1829,12 @@ const selectProviderPatientCandidate = token => {
 };
 
 const handleAppointmentSubmit = async () => {
-  if (isSelectedAppointmentProviderOwned.value || formStore.ui.isSaving) return;
+  if (
+    isSelectedAppointmentProviderOwned.value ||
+    formStore.ui.isSaving ||
+    formStore.ui.isCreatingContact
+  )
+    return;
 
   if (isMedelementCabinetMissing.value) {
     useAlert(t('SCHEDULING.MEDELEMENT.CABINET_REQUIRED'));
@@ -1871,6 +1895,7 @@ const handleLocalOnlyCancelConfirm = async () => {
 };
 
 const handleAppointmentCancel = async () => {
+  if (formStore.ui.isSaving) return;
   if (isSelectedAppointmentCancelLocalOnly.value) {
     appointmentLocalCancelDialogRef.value?.open();
     return;
@@ -1892,7 +1917,7 @@ const handleAppointmentCancel = async () => {
 };
 
 const openAppointmentDeleteDialog = () => {
-  if (isSelectedAppointmentProviderOwned.value) return;
+  if (isSelectedAppointmentProviderOwned.value || formStore.ui.isSaving) return;
 
   appointmentDeleteDialogRef.value?.open();
 };
@@ -2222,6 +2247,7 @@ onMounted(async () => {
             >
               <input
                 id="scheduling-appointment-drawer-title"
+                :disabled="formStore.ui.isSaving"
                 class="reset-base min-w-0 flex-1 border-none bg-transparent text-base font-semibold text-n-slate-12 outline-none placeholder:text-n-slate-10"
                 :aria-label="
                   $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_FIRST_NAME')
@@ -2259,6 +2285,7 @@ onMounted(async () => {
                 :disabled="
                   formStore.isFormInvalid ||
                   formStore.ui.isSaving ||
+                  formStore.ui.isCreatingContact ||
                   isMedelementCabinetMissing ||
                   isMedelementContactMissing ||
                   isSelectedAppointmentProviderOwned
@@ -2276,7 +2303,12 @@ onMounted(async () => {
             </header>
 
             <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-              <div class="appointment-drawer-form">
+              <fieldset
+                class="appointment-drawer-form min-w-0 border-0 p-0"
+                :disabled="formStore.ui.isSaving"
+                :inert="formStore.ui.isSaving ? '' : undefined"
+                data-test="appointment-form-controls"
+              >
                 <div
                   v-if="formStore.ui.error"
                   class="px-4 py-3 text-sm rounded-xl bg-n-ruby-3/70 text-n-ruby-11"
@@ -2296,6 +2328,7 @@ onMounted(async () => {
                         variant="link"
                         color="blue"
                         :label="$t('SCHEDULING.CONTACT.SELECT_ACTION')"
+                        :disabled="formStore.ui.isSaving"
                         @click.stop="openContactSelector"
                       />
                       <SchedulingSelectField
@@ -2305,7 +2338,10 @@ onMounted(async () => {
                           formStore.form.patientContactId ||
                           formStore.form.contactId
                         "
-                        :disabled="Boolean(formStore.form.patientContactId)"
+                        :disabled="
+                          formStore.ui.isSaving ||
+                          Boolean(formStore.form.patientContactId)
+                        "
                         :options="contactOptions"
                         use-api-results
                         dropdown-align="end"
@@ -2319,7 +2355,7 @@ onMounted(async () => {
                           $t('SCHEDULING.APPOINTMENT_FORM.CONTACT_EMPTY')
                         "
                         @open="handleContactDropdownOpen"
-                        @search="formStore.searchContacts($event)"
+                        @search="searchAppointmentContacts"
                         @update:model-value="handleContactSelect"
                       />
                     </div>
@@ -2356,6 +2392,7 @@ onMounted(async () => {
                       <div class="grid min-w-0 flex-1 gap-2 md:grid-cols-3">
                         <Input
                           :model-value="formStore.form.clientFirstName"
+                          :disabled="formStore.ui.isSaving"
                           :label="
                             requiredContactLabel(
                               $t(
@@ -2386,6 +2423,7 @@ onMounted(async () => {
                         />
                         <Input
                           :model-value="formStore.form.clientLastName"
+                          :disabled="formStore.ui.isSaving"
                           :label="
                             isInlineContactMedelementContext
                               ? requiredContactLabel(
@@ -2407,6 +2445,7 @@ onMounted(async () => {
                         />
                         <Input
                           :model-value="formStore.form.clientMiddleName"
+                          :disabled="formStore.ui.isSaving"
                           :label="
                             $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_MIDDLE_NAME')
                           "
@@ -2421,7 +2460,8 @@ onMounted(async () => {
                       <div class="grid gap-4 md:grid-cols-2">
                         <div>
                           <PhoneNumberInput
-                            v-model="formStore.form.clientPhone"
+                            :model-value="formStore.form.clientPhone"
+                            :disabled="formStore.ui.isSaving"
                             class="appointment-drawer-phone-control"
                             default-country="KZ"
                             :show-country-flag="false"
@@ -2430,6 +2470,9 @@ onMounted(async () => {
                               $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_PHONE')
                             "
                             size="md"
+                            @update:model-value="
+                              formStore.updateField('clientPhone', $event)
+                            "
                           />
                           <p
                             v-if="formStore.validationErrors.clientPhone"
@@ -2443,7 +2486,8 @@ onMounted(async () => {
                           </p>
                         </div>
                         <Input
-                          v-model="inlineContactForm.iin"
+                          :model-value="inlineContactForm.iin"
+                          :disabled="formStore.ui.isSaving"
                           inputmode="numeric"
                           maxlength="12"
                           custom-input-class="tabular-nums"
@@ -2456,22 +2500,30 @@ onMounted(async () => {
                           :message-type="
                             inlineContactIinMessage ? 'error' : 'info'
                           "
+                          @update:model-value="
+                            updateInlineContactField('iin', $event)
+                          "
                         />
                       </div>
                       <div class="grid gap-4 md:grid-cols-2">
                         <SchedulingDateTimeField
-                          v-model="inlineContactForm.birthDate"
+                          :model-value="inlineContactForm.birthDate"
+                          :disabled="formStore.ui.isSaving"
                           type="date"
                           :label="$t('SCHEDULING.CONTACT.BIRTH_DATE')"
+                          @update:model-value="
+                            updateInlineContactField('birthDate', $event)
+                          "
                         />
                         <SchedulingSelectField
                           class="appointment-drawer-select-control"
                           :model-value="inlineContactForm.gender"
+                          :disabled="formStore.ui.isSaving"
                           :options="genderOptions"
                           :label="$t('SCHEDULING.CONTACT.GENDER_LABEL')"
                           :placeholder="$t('SCHEDULING.CONTACT.GENDER_LABEL')"
                           @update:model-value="
-                            inlineContactForm.gender = $event
+                            updateInlineContactField('gender', $event)
                           "
                         />
                       </div>
@@ -2503,6 +2555,7 @@ onMounted(async () => {
                     <SchedulingSelectField
                       class="appointment-drawer-select-control"
                       :model-value="formStore.form.resourceId"
+                      :disabled="formStore.ui.isSaving"
                       :options="resourceOptions"
                       :label="$t('SCHEDULING.APPOINTMENT_FORM.RESOURCE')"
                       :placeholder="$t('SCHEDULING.APPOINTMENT_FORM.RESOURCE')"
@@ -2522,6 +2575,7 @@ onMounted(async () => {
                       v-if="isSelectedFormResourceMedelement"
                       class="appointment-drawer-select-control"
                       :model-value="formStore.form.medelementCabinetCode"
+                      :disabled="formStore.ui.isSaving"
                       :options="medelementCabinetOptions"
                       :label="$t('SCHEDULING.MEDELEMENT.CABINET')"
                       :placeholder="$t('SCHEDULING.MEDELEMENT.CABINET')"
@@ -2542,7 +2596,8 @@ onMounted(async () => {
                       <TagMultiSelectComboBox
                         v-if="hasServiceOptions"
                         class="appointment-drawer-multi-control"
-                        :model-value="formStore.form.serviceIds"
+                        :model-value="appointmentFormControlValues.serviceIds"
+                        :disabled="formStore.ui.isSaving"
                         :options="serviceOptions"
                         wrap-labels
                         clamp-selected-labels
@@ -2561,6 +2616,7 @@ onMounted(async () => {
                       <Input
                         v-else-if="!isSelectedFormResourceMedelement"
                         :model-value="formStore.form.serviceNameSnapshot"
+                        :disabled="formStore.ui.isSaving"
                         :placeholder="$t('SCHEDULING.APPOINTMENT_FORM.SERVICE')"
                         @update:model-value="
                           value => {
@@ -2589,6 +2645,7 @@ onMounted(async () => {
                       <SchedulingSelectField
                         class="appointment-drawer-select-control"
                         :model-value="formStore.form.status"
+                        :disabled="formStore.ui.isSaving"
                         :options="appointmentStatusOptions"
                         :label="$t('SCHEDULING.APPOINTMENT_FORM.STATUS')"
                         :placeholder="$t('SCHEDULING.APPOINTMENT_FORM.STATUS')"
@@ -2597,11 +2654,15 @@ onMounted(async () => {
                         "
                       />
                       <SchedulingMoneyInput
-                        v-model="formStore.form.serviceAmount"
+                        :model-value="formStore.form.serviceAmount"
+                        :disabled="formStore.ui.isSaving"
                         class="appointment-drawer-money-control"
                         min="0"
                         :label="
                           $t('SCHEDULING.APPOINTMENT_FORM.SERVICE_AMOUNT')
+                        "
+                        @update:model-value="
+                          formStore.updateField('serviceAmount', $event)
                         "
                       />
                     </div>
@@ -2609,6 +2670,7 @@ onMounted(async () => {
                       <SchedulingDateTimeField
                         type="datetime"
                         :model-value="formStore.form.startsAt"
+                        :disabled="formStore.ui.isSaving"
                         :label="$t('SCHEDULING.APPOINTMENT_FORM.STARTS_AT')"
                         :message="
                           formStore.validationErrors.startsAt
@@ -2625,7 +2687,8 @@ onMounted(async () => {
                         "
                       />
                       <SchedulingDateTimeField
-                        v-model="formStore.form.endsAt"
+                        :model-value="formStore.form.endsAt"
+                        :disabled="formStore.ui.isSaving"
                         type="datetime"
                         :label="$t('SCHEDULING.APPOINTMENT_FORM.ENDS_AT')"
                         :message="
@@ -2638,24 +2701,32 @@ onMounted(async () => {
                         :message-type="
                           formStore.validationErrors.endsAt ? 'error' : 'info'
                         "
+                        @update:model-value="
+                          formStore.updateField('endsAt', $event)
+                        "
                       />
                     </div>
                   </div>
                 </SchedulingFormFieldGroup>
 
                 <CrmCustomFieldsSection
-                  v-model="formStore.form.customAttributes"
+                  :model-value="appointmentFormControlValues.customAttributes"
+                  :disabled="formStore.ui.isSaving"
                   :definitions="intakeAppointmentFieldDefinitions"
                   :title="$t('SCHEDULING.APPOINTMENT_FORM.INTAKE_FIELDS_TITLE')"
                   :description="
                     $t('SCHEDULING.APPOINTMENT_FORM.INTAKE_FIELDS_DESCRIPTION')
                   "
                   :framed="false"
+                  @update:model-value="
+                    formStore.updateField('customAttributes', $event)
+                  "
                 />
 
                 <SchedulingFormFieldGroup :framed="false">
                   <TextArea
-                    v-model="formStore.form.clientComment"
+                    :model-value="formStore.form.clientComment"
+                    :disabled="formStore.ui.isSaving"
                     auto-height
                     custom-text-area-wrapper-class="!rounded-md !border-n-weak !bg-n-alpha-black2 !px-2 !py-1"
                     :label="$t('SCHEDULING.APPOINTMENT_FORM.COMMENT')"
@@ -2663,17 +2734,24 @@ onMounted(async () => {
                       $t('SCHEDULING.APPOINTMENT_FORM.COMMENT_PLACEHOLDER')
                     "
                     min-height="3rem"
+                    @update:model-value="
+                      formStore.updateField('clientComment', $event)
+                    "
                   />
                 </SchedulingFormFieldGroup>
 
                 <CrmCustomFieldsSection
-                  v-model="formStore.form.customAttributes"
+                  :model-value="appointmentFormControlValues.customAttributes"
+                  :disabled="formStore.ui.isSaving"
                   :definitions="generalAppointmentFieldDefinitions"
                   :title="$t('SCHEDULING.APPOINTMENT_FORM.CUSTOM_FIELDS_TITLE')"
                   :description="
                     $t('SCHEDULING.APPOINTMENT_FORM.CUSTOM_FIELDS_DESCRIPTION')
                   "
                   :framed="false"
+                  @update:model-value="
+                    formStore.updateField('customAttributes', $event)
+                  "
                 />
 
                 <div
@@ -2740,7 +2818,7 @@ onMounted(async () => {
                     />
                   </div>
                 </div>
-              </div>
+              </fieldset>
             </div>
           </aside>
 

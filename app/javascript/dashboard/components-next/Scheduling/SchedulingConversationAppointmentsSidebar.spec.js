@@ -554,11 +554,10 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
       await wrapper.setProps({
         ...patientContextProps(85),
         patientContextKey:
-          changedScope === 'account'
-            ? '2:9:conversation:123'
-            : changedScope === 'chat'
-              ? '1:9:conversation:999'
-              : '1:9:conversation:123',
+          {
+            account: '2:9:conversation:123',
+            chat: '1:9:conversation:999',
+          }[changedScope] || '1:9:conversation:123',
         ...(changedScope === 'chat'
           ? { currentChat: { id: 999, meta: { sender: { id: 77 } } } }
           : {}),

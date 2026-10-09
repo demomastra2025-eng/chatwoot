@@ -410,6 +410,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
       },
 
       updateField(field, value) {
+        if (this.ui.isSaving) return;
         const durationMinutes = dateTimeInputDurationMinutes(
           this.form.startsAt,
           this.form.endsAt,
@@ -449,6 +450,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
       },
 
       applyContact(contact) {
+        if (this.ui.isSaving) return;
         const existingPhone = this.form.clientPhone || '';
         const previousContactPhone = this.selectedContact?.phone || '';
         const phoneCameFromPreviousContact =
@@ -477,6 +479,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
       },
 
       applyPatientContact(contact) {
+        if (this.ui.isSaving) return;
         const ownerId = this.form.contactId;
         this.applyContact({
           ...contact,
@@ -487,6 +490,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
       },
 
       beginInlineContactEdit(contact) {
+        if (this.ui.isSaving) return;
         this.inlineContactEditVersion += 1;
         this.inlineContactSnapshot = this.isProviderPatientIdentity
           ? null
@@ -494,6 +498,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
       },
 
       syncServicePricing(services) {
+        if (this.ui.isSaving) return;
         const activeServiceIds = normalizeIdArray(this.form.serviceIds);
         const serviceIdsForPricing = activeServiceIds.length
           ? activeServiceIds
@@ -612,7 +617,12 @@ export const useSchedulingAppointmentFormStore = defineStore(
         contact,
         isCurrentContext = () => true
       ) {
-        if (this.isProviderPatientIdentity || !isCurrentContext()) return null;
+        if (
+          this.ui.isSaving ||
+          this.isProviderPatientIdentity ||
+          !isCurrentContext()
+        )
+          return null;
         const recordId = this.recordId;
         const patientId = this.form.patientContactId;
         const ownerId = this.form.contactId;
@@ -841,9 +851,15 @@ export const useSchedulingAppointmentFormStore = defineStore(
         calendarStore,
         { isCurrent: isCurrentContext = () => true, closeOnSuccess = true } = {}
       ) {
-        if (!isCurrentContext()) return null;
+        if (
+          this.ui.isSaving ||
+          this.ui.isCreatingContact ||
+          !isCurrentContext()
+        )
+          return null;
         const context = appointmentFormMutationContext(this);
-        const operationId = ++this.ui.mutationOperationId;
+        this.ui.mutationOperationId += 1;
+        const operationId = this.ui.mutationOperationId;
         const isCurrent = () =>
           isCurrentContext() &&
           this.ui.mutationOperationId === operationId &&
@@ -879,9 +895,11 @@ export const useSchedulingAppointmentFormStore = defineStore(
         calendarStore,
         { isCurrent: isCurrentContext = () => true, closeOnSuccess = true } = {}
       ) {
-        if (!this.recordId || !isCurrentContext()) return null;
+        if (this.ui.isSaving || !this.recordId || !isCurrentContext())
+          return null;
         const context = appointmentFormMutationContext(this);
-        const operationId = ++this.ui.mutationOperationId;
+        this.ui.mutationOperationId += 1;
+        const operationId = this.ui.mutationOperationId;
         const isCurrent = () =>
           isCurrentContext() &&
           this.ui.mutationOperationId === operationId &&
@@ -920,10 +938,12 @@ export const useSchedulingAppointmentFormStore = defineStore(
         calendarStore,
         { isCurrent: isCurrentContext = () => true, closeOnSuccess = true } = {}
       ) {
-        if (!this.recordId || !isCurrentContext()) return null;
+        if (this.ui.isSaving || !this.recordId || !isCurrentContext())
+          return null;
         const deletedAppointmentId = this.recordId;
         const context = appointmentFormMutationContext(this);
-        const operationId = ++this.ui.mutationOperationId;
+        this.ui.mutationOperationId += 1;
+        const operationId = this.ui.mutationOperationId;
         const isCurrent = () =>
           isCurrentContext() &&
           this.ui.mutationOperationId === operationId &&

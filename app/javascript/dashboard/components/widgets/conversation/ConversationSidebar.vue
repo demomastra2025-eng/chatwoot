@@ -163,7 +163,6 @@ const refreshBoundPatient = async appointment => {
     return;
   patientStore.rememberSelection(key, patientId);
   await patientStore.load(key, owner, { force: true });
-  if (!isCurrent()) return;
 };
 
 const isSmallScreen = computed(
