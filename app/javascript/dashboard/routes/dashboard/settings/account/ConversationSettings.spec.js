@@ -1,13 +1,11 @@
-import { flushPromises, shallowMount } from '@vue/test-utils';
-import { createPinia, setActivePinia } from 'pinia';
+import { shallowMount } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { useCaptainConfigStore } from 'dashboard/store/captain/preferences';
 import ConversationSettings from './ConversationSettings.vue';
 
-const { storeDispatch, alertMock } = vi.hoisted(() => ({
+const { storeDispatch, accountState } = vi.hoisted(() => ({
   storeDispatch: vi.fn(() => Promise.resolve()),
-  alertMock: vi.fn(),
+  accountState: { current: { id: 1 } },
 }));
 let canManageWorkspace = true;
 
@@ -15,12 +13,12 @@ vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: key => key }),
 }));
 
-vi.mock('dashboard/composables', () => ({
-  useAlert: alertMock,
-}));
-
 vi.mock('dashboard/composables/store', () => ({
   useStore: () => ({ dispatch: storeDispatch }),
+}));
+
+vi.mock('dashboard/composables/useAccount', () => ({
+  useAccount: () => ({ currentAccount: { value: accountState.current } }),
 }));
 
 vi.mock('dashboard/composables/usePolicy', () => ({
@@ -37,34 +35,27 @@ const mountComponent = () =>
           template: '<main><slot name="header" /><slot name="body" /></main>',
         },
         BaseSettingsHeader: true,
+        WorkspaceAssignmentPolicySettings: {
+          template: '<div data-test="workspace-assignment-policy" />',
+        },
+        CaptainAiEditorSettings: {
+          props: ['disabled'],
+          template:
+            '<div data-test="captain-ai-editor-settings" :data-disabled="String(disabled)" />',
+        },
         MediaTranscription: {
           props: ['disabled'],
           template:
             '<div data-test="media-transcription" :data-disabled="String(disabled)" />',
-        },
-        Switch: {
-          name: 'Switch',
-          props: ['modelValue'],
-          emits: ['change'],
-          template:
-            '<button data-test="conversation-settings-text-improvement" :data-on="String(modelValue)" @click="$emit(\'change\', !modelValue)" />',
         },
       },
     },
   });
 
 describe('ConversationSettings', () => {
-  let configStore;
-
   beforeEach(() => {
-    setActivePinia(createPinia());
-    configStore = useCaptainConfigStore();
-    vi.spyOn(configStore, 'fetch').mockResolvedValue();
-    configStore.applyPayload({
-      features: { editor: { models: [], enabled: true } },
-    });
     storeDispatch.mockClear();
-    alertMock.mockClear();
+    accountState.current = { id: 1 };
     canManageWorkspace = true;
   });
 
@@ -72,10 +63,15 @@ describe('ConversationSettings', () => {
     canManageWorkspace = false;
     const wrapper = mountComponent();
 
-    expect(storeDispatch).toHaveBeenCalledWith('accounts/get');
+    expect(storeDispatch).not.toHaveBeenCalledWith('accounts/get');
     expect(
       wrapper
         .get('[data-test="media-transcription"]')
+        .attributes('data-disabled')
+    ).toBe('true');
+    expect(
+      wrapper
+        .get('[data-test="captain-ai-editor-settings"]')
         .attributes('data-disabled')
     ).toBe('true');
   });
@@ -88,46 +84,33 @@ describe('ConversationSettings', () => {
         .get('[data-test="media-transcription"]')
         .attributes('data-disabled')
     ).toBe('false');
+    expect(
+      wrapper
+        .get('[data-test="captain-ai-editor-settings"]')
+        .attributes('data-disabled')
+    ).toBe('false');
   });
 
-  it('saves text improvement under its own key and refreshes the account', async () => {
-    const updateSpy = vi
-      .spyOn(configStore, 'updatePreferences')
-      .mockResolvedValue({ data: {} });
+  it('renders the workspace policy and AI settings without blocking on a page-wide fetch', () => {
     const wrapper = mountComponent();
-    storeDispatch.mockClear();
-    const toggle = wrapper.get(
-      '[data-test="conversation-settings-text-improvement"]'
-    );
-    expect(toggle.attributes('data-on')).toBe('true');
 
-    await toggle.trigger('click');
-    await flushPromises();
+    expect(
+      wrapper.get('[data-test="workspace-assignment-policy"]')
+    ).toBeTruthy();
+    expect(
+      wrapper.get('[data-test="captain-ai-editor-settings"]')
+    ).toBeTruthy();
+    expect(
+      wrapper
+        .find('[data-test="conversation-settings-text-improvement"]')
+        .exists()
+    ).toBe(false);
+  });
 
-    expect(updateSpy).toHaveBeenCalledWith({
-      captain_features: { text_improvement: false },
-    });
+  it('fetches the account only when it is not already in the store', () => {
+    accountState.current = {};
+    mountComponent();
+
     expect(storeDispatch).toHaveBeenCalledWith('accounts/get');
-    expect(alertMock).toHaveBeenCalledWith(
-      'GENERAL_SETTINGS.CONVERSATIONS.UPDATE_SUCCESS'
-    );
-  });
-
-  it('reports a failed save without refreshing the account', async () => {
-    vi.spyOn(configStore, 'updatePreferences').mockRejectedValue(
-      new Error('boom')
-    );
-    const wrapper = mountComponent();
-    storeDispatch.mockClear();
-
-    await wrapper
-      .get('[data-test="conversation-settings-text-improvement"]')
-      .trigger('click');
-    await flushPromises();
-
-    expect(storeDispatch).not.toHaveBeenCalled();
-    expect(alertMock).toHaveBeenCalledWith(
-      'GENERAL_SETTINGS.CONVERSATIONS.UPDATE_ERROR'
-    );
   });
 });

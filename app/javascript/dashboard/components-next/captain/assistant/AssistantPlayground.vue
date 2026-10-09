@@ -1,9 +1,11 @@
 <script setup>
-import { ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import NextButton from 'dashboard/components-next/button/Button.vue';
+import Select from 'dashboard/components-next/select/Select.vue';
 import MessageList from './MessageList.vue';
 import CaptainAssistant from 'dashboard/api/captain/assistant';
+import { useCaptainConfigStore } from 'dashboard/store/captain/preferences';
 
 const props = defineProps({
   assistantId: {
@@ -13,9 +15,124 @@ const props = defineProps({
 });
 
 const { t } = useI18n();
+const captainConfigStore = useCaptainConfigStore();
 const messages = ref([]);
 const newMessage = ref('');
 const isLoading = ref(false);
+const isLoadingSettings = ref(true);
+const settingsFailed = ref(false);
+const assistant = ref(null);
+const selectedModel = ref('');
+const temperatureOverrideEnabled = ref(false);
+const testTemperature = ref(1);
+const thinkingEffort = ref('');
+let settingsRequestSequence = 0;
+let assistantSessionSequence = 0;
+let playgroundRequestSequence = 0;
+
+const availableModels = computed(() =>
+  captainConfigStore.getModelsForFeature('assistant')
+);
+const effectiveModel = computed(
+  () =>
+    selectedModel.value ||
+    assistant.value?.config?.model ||
+    captainConfigStore.getSelectedModelForFeature('assistant') ||
+    ''
+);
+const effectiveModelMetadata = computed(() =>
+  availableModels.value.find(model => model.id === effectiveModel.value)
+);
+const supportsTemperature = computed(
+  () => effectiveModelMetadata.value?.supports_temperature === true
+);
+const supportsReasoning = computed(() =>
+  effectiveModelMetadata.value?.capabilities?.includes('reasoning')
+);
+const modelOptions = computed(() => [
+  {
+    value: '',
+    label: t('CAPTAIN.PLAYGROUND.USE_ASSISTANT_MODEL'),
+  },
+  ...availableModels.value
+    .filter(
+      model =>
+        !model.current_only || model.id === assistant.value?.config?.model
+    )
+    .map(model => ({
+      value: model.id,
+      label: model.current_only
+        ? t('CAPTAIN.PLAYGROUND.CURRENT_MODEL', {
+            model: model.display_name || model.id,
+          })
+        : model.display_name || model.id,
+    })),
+]);
+const savedTemperature = computed(() => {
+  const value = Number(assistant.value?.config?.temperature);
+  return Number.isFinite(value) ? value : 1;
+});
+const formattedTemperature = computed(() =>
+  Number(testTemperature.value || 0).toFixed(1)
+);
+
+const reasoningEffortOptions = computed(() => [
+  { value: '', label: t('CAPTAIN.PLAYGROUND.USE_WORKSPACE_REASONING') },
+  { value: 'none', label: t('CAPTAIN.PLAYGROUND.REASONING_NONE') },
+  { value: 'low', label: t('CAPTAIN.PLAYGROUND.REASONING_LOW') },
+  { value: 'medium', label: t('CAPTAIN.PLAYGROUND.REASONING_MEDIUM') },
+  { value: 'high', label: t('CAPTAIN.PLAYGROUND.REASONING_HIGH') },
+]);
+
+const loadPlaygroundSettings = async (
+  assistantId = props.assistantId,
+  { force = false } = {}
+) => {
+  settingsRequestSequence += 1;
+  const requestSequence = settingsRequestSequence;
+  isLoadingSettings.value = true;
+  settingsFailed.value = false;
+  try {
+    const [, response] = await Promise.all([
+      captainConfigStore.fetch({
+        clientMetadataOnly: true,
+        ...(force ? { force: true } : {}),
+      }),
+      CaptainAssistant.show(assistantId),
+    ]);
+    if (
+      requestSequence !== settingsRequestSequence ||
+      assistantId !== props.assistantId
+    ) {
+      return;
+    }
+
+    assistant.value = response.data;
+    testTemperature.value = savedTemperature.value;
+    settingsFailed.value = captainConfigStore.uiFlags.fetchError === true;
+  } catch {
+    if (
+      requestSequence === settingsRequestSequence &&
+      assistantId === props.assistantId
+    ) {
+      settingsFailed.value = true;
+    }
+  } finally {
+    if (
+      requestSequence === settingsRequestSequence &&
+      assistantId === props.assistantId
+    ) {
+      isLoadingSettings.value = false;
+    }
+  }
+};
+
+watch(supportsTemperature, supported => {
+  if (!supported) temperatureOverrideEnabled.value = false;
+});
+watch(supportsReasoning, supported => {
+  if (!supported) thinkingEffort.value = '';
+});
 
 const formatMessagesForApi = () =>
   messages.value.map(message => ({
@@ -31,17 +148,40 @@ const resetConversation = () => {
   newMessage.value = '';
 };
 
+const resetAssistantSession = () => {
+  assistantSessionSequence += 1;
+  playgroundRequestSequence += 1;
+  resetConversation();
+  assistant.value = null;
+  selectedModel.value = '';
+  temperatureOverrideEnabled.value = false;
+  testTemperature.value = 1;
+  thinkingEffort.value = '';
+  isLoading.value = false;
+  isLoadingSettings.value = true;
+  settingsFailed.value = false;
+};
+
 watch(
   () => props.assistantId,
   (newId, oldId) => {
-    if (oldId && newId !== oldId) resetConversation();
-  }
+    if (newId === oldId) return;
+
+    settingsRequestSequence += 1;
+    resetAssistantSession();
+    loadPlaygroundSettings(newId);
+  },
+  { flush: 'sync' }
 );
 
 const sendMessage = async () => {
   if (!newMessage.value.trim() || isLoading.value) return;
 
   const currentMessage = newMessage.value;
+  const requestAssistantId = props.assistantId;
+  const sessionSequence = assistantSessionSequence;
+  playgroundRequestSequence += 1;
+  const requestSequence = playgroundRequestSequence;
   const messageHistory = formatMessagesForApi();
   messages.value.push({
     content: currentMessage,
@@ -53,20 +193,47 @@ const sendMessage = async () => {
   try {
     isLoading.value = true;
     const { data } = await CaptainAssistant.playground({
-      assistantId: props.assistantId,
+      assistantId: requestAssistantId,
       messageContent: currentMessage,
       messageHistory,
+      testOptions: {
+        ...(selectedModel.value ? { model: selectedModel.value } : {}),
+        ...(temperatureOverrideEnabled.value && supportsTemperature.value
+          ? { temperature: testTemperature.value }
+          : {}),
+        ...(thinkingEffort.value && supportsReasoning.value
+          ? { thinkingEffort: thinkingEffort.value }
+          : {}),
+      },
     });
+
+    if (
+      sessionSequence !== assistantSessionSequence ||
+      requestAssistantId !== props.assistantId ||
+      requestSequence !== playgroundRequestSequence
+    ) {
+      return;
+    }
 
     messages.value.push({
       content: data.response || t('CAPTAIN.COPILOT.EMPTY_MESSAGE'),
       sender: 'assistant',
       agentName: data.agent_name,
       reasoning: data.reasoning,
+      responseLatencyMs: data.response_latency_ms,
+      reportedReasoningTokens: data.reported_reasoning_tokens,
       toolTrace: data.tool_trace || [],
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
+    if (
+      sessionSequence !== assistantSessionSequence ||
+      requestAssistantId !== props.assistantId ||
+      requestSequence !== playgroundRequestSequence
+    ) {
+      return;
+    }
+
     // eslint-disable-next-line no-console
     console.error('Error getting assistant response:', error);
     messages.value.push({
@@ -75,7 +242,13 @@ const sendMessage = async () => {
       timestamp: new Date().toISOString(),
     });
   } finally {
-    isLoading.value = false;
+    if (
+      sessionSequence === assistantSessionSequence &&
+      requestAssistantId === props.assistantId &&
+      requestSequence === playgroundRequestSequence
+    ) {
+      isLoading.value = false;
+    }
   }
 };
 
@@ -84,6 +257,8 @@ const handleEnterKey = event => {
   event.preventDefault();
   sendMessage();
 };
+
+onMounted(loadPlaygroundSettings);
 </script>
 
 <template>
@@ -157,6 +332,26 @@ const handleEnterKey = event => {
           >
             {{ t('CAPTAIN.PLAYGROUND.TRACE_RESPONSE', { number: index + 1 }) }}
           </p>
+          <div v-if="message.responseLatencyMs != null" class="mt-2">
+            <p class="text-xs font-medium text-n-slate-12">
+              {{ t('CAPTAIN.PLAYGROUND.RESPONSE_LATENCY') }}
+            </p>
+            <p class="mt-1 text-xs text-n-slate-11">
+              {{
+                t('CAPTAIN.PLAYGROUND.RESPONSE_LATENCY_VALUE', {
+                  ms: message.responseLatencyMs,
+                })
+              }}
+            </p>
+          </div>
+          <div v-if="message.reportedReasoningTokens" class="mt-2">
+            <p class="text-xs font-medium text-n-slate-12">
+              {{ t('CAPTAIN.PLAYGROUND.REPORTED_REASONING_TOKENS') }}
+            </p>
+            <p class="mt-1 text-xs text-n-slate-11">
+              {{ message.reportedReasoningTokens }}
+            </p>
+          </div>
           <div v-if="message.reasoning" class="mt-2">
             <p class="text-xs font-medium text-n-slate-12">
               {{ t('CAPTAIN.PLAYGROUND.TRACE_REASONING') }}
@@ -188,6 +383,98 @@ const handleEnterKey = event => {
         </div>
       </aside>
     </div>
+
+    <section
+      v-if="assistant?.usage_mode !== 'internal_assistant'"
+      class="rounded-xl border border-n-weak bg-n-solid-1 p-4"
+      data-test="playground-test-settings"
+    >
+      <h4 class="text-sm font-medium text-n-slate-12">
+        {{ t('CAPTAIN.PLAYGROUND.TEST_SETTINGS') }}
+      </h4>
+      <p class="mt-1 text-xs text-n-slate-11">
+        {{ t('CAPTAIN.PLAYGROUND.TEST_SETTINGS_DESCRIPTION') }}
+      </p>
+      <p
+        v-if="isLoadingSettings"
+        class="mt-2 text-xs text-n-slate-11"
+        role="status"
+      >
+        {{ t('CAPTAIN_SETTINGS.LOADING') }}
+      </p>
+      <div v-if="settingsFailed" class="mt-2 flex flex-wrap items-center gap-3">
+        <p class="m-0 text-xs text-n-ruby-9" role="alert">
+          {{ t('CAPTAIN.PLAYGROUND.TEST_SETTINGS_ERROR') }}
+        </p>
+        <button
+          type="button"
+          class="text-xs font-medium text-n-brand hover:underline"
+          @click="loadPlaygroundSettings(props.assistantId, { force: true })"
+        >
+          {{ t('DESIGN_SYSTEM.STATE.RETRY') }}
+        </button>
+      </div>
+      <div class="mt-3 grid gap-4 md:grid-cols-3">
+        <label class="flex min-w-0 flex-col gap-1 text-xs text-n-slate-11">
+          {{ t('CAPTAIN.PLAYGROUND.TEST_MODEL') }}
+          <Select
+            v-model="selectedModel"
+            :options="modelOptions"
+            :disabled="isLoadingSettings || settingsFailed"
+            class="w-full"
+          />
+        </label>
+        <div class="flex min-w-0 flex-col gap-1">
+          <label
+            class="flex items-center justify-between gap-3 text-xs text-n-slate-11"
+          >
+            <span>{{ t('CAPTAIN.PLAYGROUND.TEST_TEMPERATURE') }}</span>
+            <input
+              v-model="temperatureOverrideEnabled"
+              type="checkbox"
+              :disabled="
+                isLoadingSettings || settingsFailed || !supportsTemperature
+              "
+            />
+          </label>
+          <div class="flex items-center gap-3">
+            <input
+              v-model.number="testTemperature"
+              type="range"
+              min="0"
+              max="1"
+              step="0.1"
+              class="min-w-0 flex-1 accent-n-brand disabled:cursor-not-allowed"
+              :disabled="!temperatureOverrideEnabled || !supportsTemperature"
+            />
+            <span class="w-10 text-right text-xs tabular-nums text-n-slate-11">
+              {{
+                temperatureOverrideEnabled
+                  ? formattedTemperature
+                  : savedTemperature.toFixed(1)
+              }}
+            </span>
+          </div>
+          <p v-if="!supportsTemperature" class="m-0 text-xs text-n-slate-10">
+            {{ t('CAPTAIN.PLAYGROUND.UNSUPPORTED_TEMPERATURE') }}
+          </p>
+        </div>
+        <label class="flex min-w-0 flex-col gap-1 text-xs text-n-slate-11">
+          {{ t('CAPTAIN.PLAYGROUND.TEST_REASONING_EFFORT') }}
+          <Select
+            v-model="thinkingEffort"
+            :options="reasoningEffortOptions"
+            :disabled="
+              isLoadingSettings || settingsFailed || !supportsReasoning
+            "
+            class="w-full"
+          />
+          <span v-if="!supportsReasoning" class="text-xs text-n-slate-10">
+            {{ t('CAPTAIN.PLAYGROUND.UNSUPPORTED_REASONING') }}
+          </span>
+        </label>
+      </div>
+    </section>
 
     <p class="text-center text-xs text-n-slate-11">
       {{ t('CAPTAIN.PLAYGROUND.CREDIT_NOTE') }}

@@ -83,6 +83,16 @@ RSpec.describe Concerns::Agentable do
 
       dummy_instance.agent
     end
+
+    it 'applies playground model and temperature overrides to the runtime agent only' do
+      expect(Captain::Runtime::Agent).to receive(:new).with(
+        hash_including(model: 'test/provider-model', temperature: 0.0)
+      ).and_return(mock_runtime_agent)
+
+      dummy_instance.agent(model_override: 'test/provider-model', temperature_override: 0)
+
+      expect(dummy_instance.temperature).to eq(0.8)
+    end
   end
 
   describe '#agent_instructions' do

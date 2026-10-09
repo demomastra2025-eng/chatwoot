@@ -58,11 +58,16 @@ class Api::V1::AccountsController < Api::BaseController
   end
 
   def update
-    @account.assign_attributes(account_params.slice(:name, :locale, :domain, :support_email, :logo))
-    @account.custom_attributes.merge!(custom_attributes_params)
-    @account.settings.merge!(settings_params)
-    @account.custom_attributes['onboarding_step'] = 'invite_team' if @account.custom_attributes['onboarding_step'] == 'account_update'
-    @account.save!
+    @account.with_lock('FOR NO KEY UPDATE') do
+      permitted_settings = settings_params
+      validate_conversation_assignment_policy!(permitted_settings)
+
+      @account.assign_attributes(account_params.slice(:name, :locale, :domain, :support_email, :logo))
+      @account.custom_attributes.merge!(custom_attributes_params)
+      @account.settings.merge!(permitted_settings)
+      @account.custom_attributes['onboarding_step'] = 'invite_team' if @account.custom_attributes['onboarding_step'] == 'account_update'
+      @account.save!
+    end
   end
 
   def logo
@@ -113,7 +118,21 @@ class Api::V1::AccountsController < Api::BaseController
   end
 
   def settings_params
-    params.permit(*permitted_settings_attributes)
+    permitted = params.permit(*permitted_settings_attributes)
+    return permitted unless permitted.key?(:conversation_assignment_policy_id)
+
+    value = permitted[:conversation_assignment_policy_id]
+    permitted[:conversation_assignment_policy_id] = value.present? ? Integer(value) : nil
+    permitted
+  rescue ArgumentError, TypeError
+    raise ActionController::BadRequest, 'Invalid conversation assignment policy'
+  end
+
+  def validate_conversation_assignment_policy!(permitted_settings)
+    policy_id = permitted_settings[:conversation_assignment_policy_id]
+    return if policy_id.blank?
+
+    @account.assignment_policies.where(enabled: true).find(policy_id)
   end
 
   def permitted_settings_attributes
@@ -126,6 +145,7 @@ class Api::V1::AccountsController < Api::BaseController
       :auto_resolve_label,
       :scheduling_contact_required,
       :scheduling_company_enabled,
+      :conversation_assignment_policy_id,
       *DASHBOARD_NAVIGATION_SETTINGS_PARAMS
     ]
   end

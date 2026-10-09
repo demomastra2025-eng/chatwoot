@@ -548,6 +548,7 @@ describe('conversation actions', () => {
         allConversations: [nativeConversation, communicationThread],
       };
       const commit = vi.fn((type, payload) => mutations[type](state, payload));
+      const dispatch = vi.fn();
       const conversationToggleSpy = vi
         .spyOn(ConversationApi, 'toggleStatus')
         .mockResolvedValue({
@@ -563,6 +564,12 @@ describe('conversation actions', () => {
       await actions.toggleStatus(
         {
           commit,
+          dispatch,
+          rootState: {
+            conversations: {
+              conversationFilters: { status: 'open', inboxId: 4 },
+            },
+          },
           state,
         },
         {
@@ -585,6 +592,11 @@ describe('conversation actions', () => {
         status: 'pending',
         snoozedUntil: null,
       });
+      expect(dispatch).toHaveBeenCalledWith(
+        'conversationStats/get',
+        { status: 'open', inboxId: 4, refreshPriority: 'realtime' },
+        { root: true }
+      );
       expect(nativeConversation.status).toBe('pending');
       expect(communicationThread.status).toBe('open');
       expect(communicationThread.channels[0].status).toBe('pending');

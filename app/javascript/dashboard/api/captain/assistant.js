@@ -23,10 +23,22 @@ class CaptainAssistant extends ApiClient {
     });
   }
 
-  playground({ assistantId, messageContent, messageHistory }) {
+  playground({
+    assistantId,
+    messageContent,
+    messageHistory,
+    testOptions = {},
+  }) {
     return axios.post(`${this.url}/${assistantId}/playground`, {
       message_content: messageContent,
       message_history: messageHistory,
+      ...(testOptions.model ? { test_model: testOptions.model } : {}),
+      ...(testOptions.temperature !== undefined
+        ? { test_temperature: testOptions.temperature }
+        : {}),
+      ...(testOptions.thinkingEffort
+        ? { test_thinking_effort: testOptions.thinkingEffort }
+        : {}),
     });
   }
 

@@ -58,12 +58,12 @@ const translatedViews = computed(() =>
     class="px-5 pb-2 pt-4"
     :class="props.transparent ? 'bg-transparent' : 'bg-n-surface-1'"
   >
-    <div class="flex flex-wrap items-center gap-3">
-      <div v-if="$slots.leading" class="flex items-center">
+    <div class="flex min-h-8 flex-wrap items-center gap-3">
+      <div v-if="$slots.leading" class="flex shrink-0 items-center">
         <slot name="leading" />
       </div>
 
-      <div v-if="showViewSwitcher" class="min-w-0">
+      <div v-if="showViewSwitcher" class="min-w-0 shrink-0">
         <SchedulingViewSwitcher
           :model-value="modelValue"
           :views="translatedViews"
@@ -71,7 +71,7 @@ const translatedViews = computed(() =>
         />
       </div>
 
-      <div class="flex flex-wrap items-center justify-start gap-2">
+      <div class="flex shrink-0 flex-wrap items-center justify-start gap-2">
         <Button
           size="sm"
           color="slate"
@@ -105,7 +105,7 @@ const translatedViews = computed(() =>
         />
       </div>
 
-      <div class="ml-auto flex flex-wrap items-center gap-2">
+      <div class="ml-auto flex min-h-8 flex-wrap items-center gap-2">
         <slot name="filters" />
         <slot name="actions" />
       </div>

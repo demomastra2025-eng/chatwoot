@@ -47,6 +47,16 @@ RSpec.describe AutoAssignment::AssignmentService do
         expect(conv.reload.assignee).to eq(agent)
       end
 
+      it 'pauses automatic assignment when the selected workspace policy is unavailable' do
+        account.update!(conversation_assignment_policy_id: assignment_policy.id)
+        assignment_policy.update!(enabled: false)
+        conv = create(:conversation, inbox: inbox, status: 'open', assignee: nil)
+
+        expect(service).not_to receive(:find_available_agent)
+        expect(service.perform_bulk_assignment(limit: 1)).to eq(0)
+        expect(conv.reload.assignee).to be_nil
+      end
+
       it 'assigns conversations when no assignment policy is linked' do
         InboxAssignmentPolicy.where(inbox: inbox).destroy_all
         conv = create(:conversation, inbox: inbox, status: 'open')

@@ -165,6 +165,7 @@ const activityTypeMeta = task =>
       <section
         v-for="column in boardColumns"
         :key="column.key"
+        :aria-label="column.label"
         class="crm-task-board-column flex min-h-full w-[18rem] shrink-0 self-stretch flex-col overflow-visible"
       >
         <header
@@ -235,8 +236,11 @@ const activityTypeMeta = task =>
                   class="inline-flex items-center gap-1 rounded-full border border-n-weak bg-n-surface-1 px-2 py-0.5 text-[10px] font-medium text-n-slate-11"
                 >
                   <span
-                    class="size-3"
-                    :class="activityTypeMeta(task).icon"
+                    class="size-3.5"
+                    :class="[
+                      activityTypeMeta(task).icon,
+                      activityTypeMeta(task).colorClass,
+                    ]"
                     aria-hidden="true"
                   />
                   {{ activityTypeMeta(task).label }}
@@ -261,15 +265,11 @@ const activityTypeMeta = task =>
           </template>
         </Draggable>
         <p
-          v-if="column.totalCount === 0"
+          v-if="column.totalCount === 0 && filtered"
           class="mx-3 mb-3 rounded-md border border-dashed border-n-weak px-3 py-4 text-center text-xs text-n-slate-10"
           data-test="empty-task-bucket"
         >
-          {{
-            filtered
-              ? $t('CRM.TASKS.LIST.EMPTY_FILTERED')
-              : $t('CRM.TASKS.BOARD.EMPTY_COLUMN')
-          }}
+          {{ $t('CRM.TASKS.LIST.EMPTY_FILTERED') }}
         </p>
         <button
           v-if="column.hasMore"

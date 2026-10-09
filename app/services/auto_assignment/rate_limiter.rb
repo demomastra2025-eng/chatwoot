@@ -26,7 +26,7 @@ class AutoAssignment::RateLimiter
   end
 
   def config
-    @config ||= inbox.assignment_policy
+    @config ||= inbox.effective_assignment_policy
   end
 
   def assignment_key_pattern

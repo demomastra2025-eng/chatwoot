@@ -38,7 +38,7 @@ class Captain::Tools::BaseTool < RubyLLM::Tool
   end
 
   def tool_safety_feature
-    :copilot
+    :assistant
   end
 
   def tool_safety_account
@@ -46,7 +46,7 @@ class Captain::Tools::BaseTool < RubyLLM::Tool
   end
 
   def tool_safety_preferences
-    tool_safety_account&.captain_preferences&.dig(:runtime)
+    Captain::AssistantSafetyPreferences.for(assistant: assistant, feature: tool_safety_feature)
   end
 
   def tool_safety_arguments(arguments)

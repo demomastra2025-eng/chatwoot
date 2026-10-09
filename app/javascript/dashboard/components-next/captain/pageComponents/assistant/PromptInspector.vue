@@ -337,7 +337,7 @@ onBeforeUnmount(() => {
               :style="promptPreviewStyle('assistant')"
             >
               <pre
-                class="min-h-0 flex-1 overflow-auto p-2.5 whitespace-pre-wrap break-words text-xs leading-5 text-n-slate-11"
+                class="min-h-0 min-w-0 max-w-full flex-1 overflow-auto p-2.5 whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-xs leading-5 text-n-slate-11"
               ><code>{{ normalizePromptPreviewText(assistantPreview.compiled_prompt) }}</code></pre>
               <div
                 class="group flex h-5 shrink-0 cursor-row-resize select-none items-center justify-center border-t border-n-weak text-n-slate-9 hover:bg-n-alpha-2"
@@ -473,7 +473,7 @@ onBeforeUnmount(() => {
                       :style="promptPreviewStyle(`scenario-${scenario.id}`)"
                     >
                       <pre
-                        class="min-h-0 flex-1 overflow-auto p-3 whitespace-pre-wrap break-words text-xs leading-5 text-n-slate-11"
+                        class="min-h-0 min-w-0 max-w-full flex-1 overflow-auto p-3 whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-xs leading-5 text-n-slate-11"
                       ><code>{{ normalizePromptPreviewText(scenario.compiled_prompt) }}</code></pre>
                       <div
                         class="group flex h-5 shrink-0 cursor-row-resize select-none items-center justify-center border-t border-n-weak text-n-slate-9 hover:bg-n-alpha-2"

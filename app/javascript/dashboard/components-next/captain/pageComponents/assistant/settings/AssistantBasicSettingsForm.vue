@@ -102,6 +102,11 @@ const initialState = {
   },
   contextAccess: {},
   toolAccess: buildDefaultAgentToolAccess(),
+  safetySettings: {
+    moderationEnabled: 'inherit',
+    promptInjectionAction: 'inherit',
+    sensitiveInfoAction: 'inherit',
+  },
   avatarFile: null,
   avatarUrl: '',
   removeAvatar: false,
@@ -158,6 +163,32 @@ const assistantModelOptions = computed(() => {
 const isWebProviderConfigured = computed(
   () => captainConfigStore.runtimeMetadata?.web_access?.configured === true
 );
+const safetyModerationOptions = computed(() => [
+  {
+    value: 'inherit',
+    label: t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.INHERIT'),
+  },
+  {
+    value: 'enabled',
+    label: t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.ENABLED'),
+  },
+  {
+    value: 'disabled',
+    label: t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.DISABLED'),
+  },
+]);
+const safetyActionOptions = computed(() => [
+  {
+    value: 'inherit',
+    label: t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.INHERIT'),
+  },
+  { value: 'block', label: t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.BLOCK') },
+  { value: 'flag', label: t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.FLAG') },
+  {
+    value: 'disabled',
+    label: t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.DISABLED'),
+  },
+]);
 const validationRules = {
   name: { required, minLength: minLength(1) },
   description: { required, minLength: minLength(1) },
@@ -313,7 +344,15 @@ const notesEnabled = computed({
 });
 
 const resolveInstructionText = assistant => {
-  return assistant?.description?.trim?.() || '';
+  return typeof assistant?.description === 'string'
+    ? assistant.description
+    : '';
+};
+
+const moderationSettingValue = value => {
+  if (value === true) return 'enabled';
+  if (value === false) return 'disabled';
+  return 'inherit';
 };
 
 const updateStateFromAssistant = assistant => {
@@ -327,6 +366,14 @@ const updateStateFromAssistant = assistant => {
     config.message_collapse_window_seconds || 0
   );
   state.historyMessageLimit = Number(config.history_message_limit || 0);
+  const safetySettings = config.safety_settings || {};
+  state.safetySettings = {
+    moderationEnabled: moderationSettingValue(
+      safetySettings.moderation_enabled
+    ),
+    promptInjectionAction: safetySettings.prompt_injection_action || 'inherit',
+    sensitiveInfoAction: safetySettings.sensitive_info_action || 'inherit',
+  };
   state.features = {
     conversationFaqs: config.feature_faq || false,
     memories: config.feature_memory || false,
@@ -402,6 +449,20 @@ const buildPayload = async () => {
       history_message_limit: normalizeNonNegativeInteger(
         state.historyMessageLimit
       ),
+      safety_settings: {
+        moderation_enabled:
+          state.safetySettings.moderationEnabled === 'inherit'
+            ? null
+            : state.safetySettings.moderationEnabled === 'enabled',
+        prompt_injection_action:
+          state.safetySettings.promptInjectionAction === 'inherit'
+            ? null
+            : state.safetySettings.promptInjectionAction,
+        sensitive_info_action:
+          state.safetySettings.sensitiveInfoAction === 'inherit'
+            ? null
+            : state.safetySettings.sensitiveInfoAction,
+      },
     };
   }
 
@@ -530,6 +591,43 @@ defineExpose({
           </div>
         </div>
 
+        <div class="rounded-xl border border-n-weak bg-n-solid-1 p-4">
+          <h4 class="text-sm font-medium text-n-slate-12">
+            {{ t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.LABEL') }}
+          </h4>
+          <p class="mt-1 text-xs text-n-slate-11">
+            {{ t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.DESCRIPTION') }}
+          </p>
+          <div class="mt-4 grid gap-4 md:grid-cols-3">
+            <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
+              {{ t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.MODERATION') }}
+              <Select
+                v-model="state.safetySettings.moderationEnabled"
+                :options="safetyModerationOptions"
+                class="w-full"
+              />
+            </label>
+            <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
+              {{
+                t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.PROMPT_INJECTION')
+              }}
+              <Select
+                v-model="state.safetySettings.promptInjectionAction"
+                :options="safetyActionOptions"
+                class="w-full"
+              />
+            </label>
+            <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
+              {{ t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.SENSITIVE_INFO') }}
+              <Select
+                v-model="state.safetySettings.sensitiveInfoAction"
+                :options="safetyActionOptions"
+                class="w-full"
+              />
+            </label>
+          </div>
+        </div>
+
         <div class="flex items-center justify-between gap-6">
           <div class="min-w-0">
             <label class="text-sm font-medium text-n-slate-12">
@@ -620,7 +718,7 @@ defineExpose({
           :min-height="descriptionMinHeight"
           :message="formErrors.description"
           :message-type="formErrors.description ? 'error' : 'info'"
-          class="z-0"
+          class="z-0 captain-prompt-editor"
           enable-captain-tools
           enable-captain-fields
           enable-captain-skills

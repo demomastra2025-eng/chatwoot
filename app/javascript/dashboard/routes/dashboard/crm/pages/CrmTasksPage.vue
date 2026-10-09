@@ -2987,8 +2987,11 @@ watch(
                   class="inline-flex items-center gap-1 rounded-md border border-n-weak bg-n-surface-1 px-1.5 py-0.5 text-[10px] font-medium text-n-slate-11"
                 >
                   <span
-                    class="size-3"
-                    :class="taskTypeResolver(row).icon"
+                    class="size-3.5"
+                    :class="[
+                      taskTypeResolver(row).icon,
+                      taskTypeResolver(row).colorClass,
+                    ]"
                     aria-hidden="true"
                   />
                   {{ taskTypeResolver(row).label }}

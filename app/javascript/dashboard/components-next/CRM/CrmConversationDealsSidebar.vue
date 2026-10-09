@@ -17,6 +17,10 @@ import CrmClosingReasonDialog from 'dashboard/components-next/CRM/CrmClosingReas
 import CrmConflictNotice from 'dashboard/components-next/CRM/CrmConflictNotice.vue';
 import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomFieldsSection.vue';
 import CrmDealTasksPanel from 'dashboard/components-next/CRM/CrmDealTasksPanel.vue';
+import {
+  defaultStageForManualDeal,
+  dealStageDisplayName,
+} from 'dashboard/components-next/CRM/dealStageSelection';
 import { DEFAULT_STAGE_COLOR } from 'dashboard/stores/crm/stageColors';
 import {
   formatDealAmount,
@@ -226,18 +230,8 @@ const headerButtons = computed(() =>
       ]
 );
 
-const defaultStageForPipeline = pipeline =>
-  (pipeline?.stages || []).find(stage => stage.default && stage.active) ||
-  (pipeline?.stages || []).find(
-    stage => stage.active && stage.outcome === 'open'
-  ) ||
-  (pipeline?.stages || []).find(stage => stage.active) ||
-  pipeline?.stages?.[0];
-
-const stageDisplayName = stage =>
-  stage?.code === 'new'
-    ? t('CRM.SETTINGS.STAGES.SYSTEM.UNSORTED')
-    : stage?.name;
+const defaultStageForPipeline = defaultStageForManualDeal;
+const stageDisplayName = stage => dealStageDisplayName(stage, t);
 
 const stageOptionsForForm = form =>
   (

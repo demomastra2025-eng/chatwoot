@@ -812,7 +812,7 @@ defineExpose({
           :message="formErrors.handoffMessage"
           :message-type="formErrors.handoffMessage ? 'error' : 'info'"
           :show-character-count="false"
-          class="z-0 compact-system-message-editor"
+          class="z-0 compact-system-message-editor captain-prompt-editor"
           enable-captain-fields
           :captain-context-assistant-id="assistant.id"
         />
@@ -854,7 +854,7 @@ defineExpose({
           :message="formErrors.resolutionMessage"
           :message-type="formErrors.resolutionMessage ? 'error' : 'info'"
           :show-character-count="false"
-          class="z-0 compact-system-message-editor"
+          class="z-0 compact-system-message-editor captain-prompt-editor"
           enable-captain-fields
           :captain-context-assistant-id="assistant.id"
         />
@@ -1050,7 +1050,7 @@ defineExpose({
               )
             "
             :show-character-count="false"
-            class="z-0 compact-system-message-editor"
+            class="z-0 compact-system-message-editor captain-prompt-editor"
             enable-captain-fields
             :captain-context-assistant-id="assistant.id"
           />
@@ -1086,7 +1086,7 @@ defineExpose({
               )
             "
             :show-character-count="false"
-            class="z-0 compact-system-message-editor"
+            class="z-0 compact-system-message-editor captain-prompt-editor"
             enable-captain-fields
             :captain-context-assistant-id="assistant.id"
           />

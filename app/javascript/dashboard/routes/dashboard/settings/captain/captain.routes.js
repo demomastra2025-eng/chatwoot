@@ -1,46 +1,22 @@
 import { frontendURL } from '../../../../helper/URLHelper';
-import { FEATURE_FLAGS } from 'dashboard/featureFlags';
-import { INSTALLATION_TYPES } from 'dashboard/constants/installationTypes';
-const SettingsWrapper = () => import('../SettingsWrapper.vue');
-const Index = () => import('./Index.vue');
+
+const conversationSettingsRedirect = to => ({
+  name: 'workspace_conversation_settings_index',
+  params: { accountId: to.params.accountId },
+  query: to.query,
+  hash: to.hash,
+});
+
 export default {
   routes: [
     {
       path: frontendURL('accounts/:accountId/captain/settings'),
-      meta: {
-        permissions: ['administrator'],
-        featureFlag: FEATURE_FLAGS.CAPTAIN,
-      },
-      component: SettingsWrapper,
-      props: {
-        headerTitle: 'CAPTAIN_SETTINGS.TITLE',
-        icon: 'i-lucide-bot',
-        showNewButton: false,
-      },
-      children: [
-        {
-          path: '',
-          name: 'captain_settings_index',
-          component: Index,
-          meta: {
-            permissions: ['administrator'],
-            featureFlag: FEATURE_FLAGS.CAPTAIN,
-            installationTypes: [
-              INSTALLATION_TYPES.ENTERPRISE,
-              INSTALLATION_TYPES.CLOUD,
-            ],
-          },
-        },
-      ],
+      name: 'captain_settings_index',
+      redirect: conversationSettingsRedirect,
     },
     {
       path: frontendURL('accounts/:accountId/settings/captain'),
-      redirect: to => ({
-        name: 'captain_settings_index',
-        params: { accountId: to.params.accountId },
-        query: to.query,
-        hash: to.hash,
-      }),
+      redirect: conversationSettingsRedirect,
     },
   ],
 };

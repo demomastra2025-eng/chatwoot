@@ -129,6 +129,49 @@ describe('ActionCableConnector', () => {
       });
     });
 
+    it('keeps generic full conversation updates on the normal stats refresh schedule', () => {
+      store.$store.state.conversations.conversationFilters = {
+        status: 'open',
+        inboxId: 12,
+      };
+
+      actionCable.onConversationUpdated({
+        id: 42,
+        status: 'open',
+        account_id: 1,
+        assignee_id: 7,
+        updated_at: 1712345678,
+      });
+
+      expect(mockDispatch).toHaveBeenCalledWith(
+        'conversationStats/get',
+        { status: 'open', inboxId: 12 },
+        { root: true }
+      );
+    });
+
+    it('prioritizes an explicit conversation status event', () => {
+      store.$store.state.conversations.conversationFilters = {
+        status: 'open',
+        inboxId: 12,
+      };
+
+      actionCable.onReceived({
+        event: 'conversation.status_changed',
+        data: { id: 42, status: 'resolved', account_id: 1 },
+      });
+
+      expect(mockDispatch).toHaveBeenCalledWith(
+        'conversationStats/get',
+        {
+          status: 'open',
+          inboxId: 12,
+          refreshPriority: 'realtime',
+        },
+        { root: true }
+      );
+    });
+
     it('accepts shared read fields when any authorized user reads the conversation', () => {
       actionCable.onConversationRead({
         id: 42,
@@ -465,22 +508,38 @@ describe('ActionCableConnector', () => {
         'updateCommunicationThreadRealtime',
         payload
       );
-      expect(emitter.emit).toHaveBeenCalledWith('fetch_conversation_stats');
+      expect(mockDispatch).toHaveBeenCalledWith(
+        'conversationStats/get',
+        {},
+        { root: true }
+      );
     });
 
-    it('avoids the duplicate legacy stats refresh in communication thread mode', () => {
+    it('refreshes thread counters with the active filters', () => {
       store.$store.state.conversations.conversationFilters = {
         communicationThreadMode: true,
+        status: 'open',
+        inboxId: 12,
       };
       const sidebarRefresh = vi.spyOn(actionCable, 'fetchSidebarUnreadCounts');
 
       actionCable.onCommunicationThreadUpdated({
         id: 7,
         communication_thread_id: 7,
+        source_event: 'conversation.status_changed',
         account_id: 1,
       });
 
-      expect(emitter.emit).not.toHaveBeenCalledWith('fetch_conversation_stats');
+      expect(mockDispatch).toHaveBeenCalledWith(
+        'conversationStats/get',
+        {
+          communicationThreadMode: true,
+          status: 'open',
+          inboxId: 12,
+          refreshPriority: 'realtime',
+        },
+        { root: true }
+      );
       expect(sidebarRefresh).toHaveBeenCalledTimes(1);
     });
 

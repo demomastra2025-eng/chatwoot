@@ -19,7 +19,6 @@ const agentAssignmentsPolicies = useMapGetter(
   'assignmentPolicies/getAssignmentPolicies'
 );
 const uiFlags = useMapGetter('assignmentPolicies/getUIFlags');
-const inboxUiFlags = useMapGetter('assignmentPolicies/getInboxUiFlags');
 
 const confirmDeletePolicyDialogRef = ref(null);
 
@@ -57,11 +56,6 @@ const onClickEditPolicy = id => {
   });
 };
 
-const handleFetchInboxes = id => {
-  if (inboxUiFlags.value.isFetching) return;
-  store.dispatch('assignmentPolicies/getInboxes', id);
-};
-
 const handleDelete = id => {
   confirmDeletePolicyDialogRef.value.openDialog(id);
 };
@@ -76,9 +70,11 @@ const handleDeletePolicy = async policyId => {
     );
     confirmDeletePolicyDialogRef.value.closeDialog();
   } catch (error) {
-    useAlert(
-      t('ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.DELETE_POLICY.ERROR_MESSAGE')
-    );
+    const messageKey =
+      error.response?.status === 409
+        ? 'ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.DELETE_POLICY.SELECTED_WORKSPACE_POLICY_ERROR'
+        : 'ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.DELETE_POLICY.ERROR_MESSAGE';
+    useAlert(t(messageKey));
   }
 };
 
@@ -112,9 +108,18 @@ onMounted(() => {
         <AssignmentPolicyCard
           v-for="policy in agentAssignmentsPolicies"
           :key="policy.id"
-          v-bind="policy"
-          :is-fetching-inboxes="inboxUiFlags.isFetching"
-          @fetch-inboxes="handleFetchInboxes"
+          :id="policy.id"
+          :name="policy.name"
+          :description="policy.description"
+          :assignment-order="policy.assignmentOrder"
+          :conversation-priority="policy.conversationPriority"
+          :assignment-delay-minutes="policy.assignmentDelayMinutes"
+          :max-open-conversations="policy.maxOpenConversations"
+          :assign-online-only="policy.assignOnlineOnly"
+          :assign-pending-conversations="policy.assignPendingConversations"
+          :monthly-new-client-quota="policy.monthlyNewClientQuota"
+          :sticky-owner-enabled="policy.stickyOwnerEnabled"
+          :sticky-owner-duration-days="policy.stickyOwnerDurationDays"
           @edit="onClickEditPolicy"
           @delete="handleDelete"
         />

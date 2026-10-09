@@ -1015,7 +1015,7 @@ const actions = {
   },
 
   toggleStatus: async (
-    { commit, state },
+    { commit, dispatch, rootState, state },
     {
       conversationId,
       status,
@@ -1039,6 +1039,14 @@ const actions = {
           status_reason: statusReason,
         });
         commitCommunicationThreadUpdate(commit, response.data);
+        dispatch(
+          'conversationStats/get',
+          {
+            ...(rootState?.conversations?.conversationFilters || {}),
+            refreshPriority: 'realtime',
+          },
+          { root: true }
+        );
         return;
       }
 
@@ -1074,6 +1082,14 @@ const actions = {
         status: updatedStatus,
         snoozedUntil: updatedSnoozedUntil,
       });
+      dispatch(
+        'conversationStats/get',
+        {
+          ...(rootState?.conversations?.conversationFilters || {}),
+          refreshPriority: 'realtime',
+        },
+        { root: true }
+      );
     } catch (error) {
       if (conversationType === 'communication_thread') throw error;
     }

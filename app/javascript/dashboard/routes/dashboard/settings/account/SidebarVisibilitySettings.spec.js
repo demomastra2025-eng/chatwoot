@@ -72,6 +72,15 @@ describe('SidebarVisibilitySettings', () => {
   it('shows configurable sections without a notification row', () => {
     const wrapper = mountComponent();
 
+    expect(
+      wrapper.find('[data-test="settings-header"]').attributes()
+    ).toMatchObject({
+      'data-title': 'GENERAL_SETTINGS.SIDEBAR_VISIBILITY.TITLE',
+      'data-description': 'GENERAL_SETTINGS.SIDEBAR_VISIBILITY.DESCRIPTION',
+    });
+    expect(wrapper.text()).not.toContain(
+      'GENERAL_SETTINGS.SIDEBAR_VISIBILITY.ORDER_HINT'
+    );
     expect(wrapper.find('[data-test="sidebar-order-pinned"]').exists()).toBe(
       false
     );

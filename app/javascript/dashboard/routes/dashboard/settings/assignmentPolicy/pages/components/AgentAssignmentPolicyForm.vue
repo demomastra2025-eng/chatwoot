@@ -8,8 +8,6 @@ import RadioCard from 'dashboard/components-next/radioCard/RadioCard.vue';
 import FairDistribution from 'dashboard/components-next/AssignmentPolicy/components/FairDistribution.vue';
 import LoadControls from 'dashboard/components-next/AssignmentPolicy/components/LoadControls.vue';
 import ExclusionRules from 'dashboard/components-next/AssignmentPolicy/components/ExclusionRules.vue';
-import DataTable from 'dashboard/components-next/AssignmentPolicy/components/DataTable.vue';
-import AddDataDropdown from 'dashboard/components-next/AssignmentPolicy/components/AddDataDropdown.vue';
 import WithLabel from 'v3/components/Form/WithLabel.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import {
@@ -50,39 +48,17 @@ const props = defineProps({
     required: true,
     validator: value => ['CREATE', 'EDIT'].includes(value),
   },
-  policyInboxes: {
-    type: Array,
-    default: () => [],
-  },
-  inboxList: {
-    type: Array,
-    default: () => [],
-  },
   labelList: {
     type: Array,
     default: () => [],
-  },
-  showInboxSection: {
-    type: Boolean,
-    default: false,
   },
   isLoading: {
     type: Boolean,
     default: false,
   },
-  isInboxLoading: {
-    type: Boolean,
-    default: false,
-  },
 });
 
-const emit = defineEmits([
-  'submit',
-  'addInbox',
-  'deleteInbox',
-  'navigateToInbox',
-  'validationChange',
-]);
+const emit = defineEmits(['submit', 'validationChange']);
 
 const { t } = useI18n();
 const route = useRoute();
@@ -342,36 +318,5 @@ defineExpose({
       :disabled="!validationState.isValid || isLoading"
       :is-loading="isLoading"
     />
-
-    <div
-      v-if="showInboxSection"
-      class="py-4 flex-col flex gap-4 border-t border-n-weak mt-6"
-    >
-      <div class="flex items-end gap-4 w-full justify-between">
-        <div class="flex flex-col items-start gap-1 py-1">
-          <label class="text-sm font-medium text-n-slate-12 py-1">
-            {{ t(`${BASE_KEY}.FORM.INBOXES.LABEL`) }}
-          </label>
-          <p class="mb-0 text-n-slate-11 text-sm">
-            {{ t(`${BASE_KEY}.FORM.INBOXES.DESCRIPTION`) }}
-          </p>
-        </div>
-        <AddDataDropdown
-          :label="t(`${BASE_KEY}.FORM.INBOXES.ADD_BUTTON`)"
-          :search-placeholder="
-            t(`${BASE_KEY}.FORM.INBOXES.DROPDOWN.SEARCH_PLACEHOLDER`)
-          "
-          :items="inboxList"
-          @add="$emit('addInbox', $event)"
-        />
-      </div>
-      <DataTable
-        :items="policyInboxes"
-        :is-fetching="isInboxLoading"
-        :empty-state-message="t(`${BASE_KEY}.FORM.INBOXES.EMPTY_STATE`)"
-        @delete="$emit('deleteInbox', $event)"
-        @navigate="$emit('navigateToInbox', $event)"
-      />
-    </div>
   </form>
 </template>

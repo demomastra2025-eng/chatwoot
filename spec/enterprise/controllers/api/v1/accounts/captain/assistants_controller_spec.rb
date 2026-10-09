@@ -971,6 +971,46 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         )
       end
 
+      it 'persists assistant safety selections while retaining omitted checks and unrelated config' do
+        assistant.update!(
+          config: {
+            'temperature' => 0.6,
+            'tool_access' => {
+              'agent' => { 'enabled' => true, 'tool_ids' => ['faq_lookup'] }
+            },
+            'safety_settings' => {
+              'moderation_enabled' => true,
+              'prompt_injection_action' => 'block',
+              'sensitive_info_action' => 'block'
+            }
+          }
+        )
+
+        patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
+              params: {
+                assistant: {
+                  config: {
+                    safety_settings: { prompt_injection_action: 'flag' }
+                  }
+                }
+              },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(assistant.reload.config).to include(
+          'temperature' => 0.6,
+          'tool_access' => {
+            'agent' => { 'enabled' => true, 'tool_ids' => ['faq_lookup'] }
+          },
+          'safety_settings' => {
+            'moderation_enabled' => true,
+            'prompt_injection_action' => 'flag',
+            'sensitive_info_action' => 'block'
+          }
+        )
+      end
+
       it 'updates usage_mode when the assistant is not connected to inboxes' do
         patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
               params: { assistant: { usage_mode: 'internal_assistant' } },
@@ -1417,6 +1457,80 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         )
       end
 
+      it 'passes supported playground overrides to one runtime request without saving the assistant' do
+        original_config = assistant.config.deep_dup
+        requested_overrides = {
+          model: 'openai/gpt-5.4',
+          temperature: 0.4,
+          thinking_effort: 'high'
+        }
+        allow(Llm::Config).to receive(:model_for).with(feature: :assistant, account: account)
+          .and_return('openai/gpt-6-luna')
+        allow(Llm::Models).to receive(:curated_model_names_for).with(:assistant, account: account)
+          .and_return(%w[openai/gpt-6-luna openai/gpt-5.4])
+        allow(Llm::Models).to receive(:valid_model_for?).with(:assistant, 'openai/gpt-5.4', account: account)
+          .and_return(true)
+        allow(Llm::Models).to receive(:supports_temperature?).with('openai/gpt-5.4', account: account)
+          .and_return(true)
+        allow(Llm::Models).to receive(:supports_thinking?).with('openai/gpt-5.4', account: account)
+          .and_return(true)
+        allow(Captain::Assistant::AgentRunnerService).to receive(:new).with(
+          assistant: assistant,
+          source: 'playground',
+          test_overrides: requested_overrides
+        ).and_return(agent_runner_service)
+        allow(agent_runner_service).to receive(:generate_response).and_return({ response: 'Test response' })
+
+        post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground",
+             params: valid_params.merge(
+               test_model: 'openai/gpt-5.4',
+               test_temperature: 0.4,
+               test_thinking_effort: 'high'
+             ),
+             headers: agent.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(Captain::Assistant::AgentRunnerService).to have_received(:new).with(
+          assistant: assistant,
+          source: 'playground',
+          test_overrides: requested_overrides
+        )
+        expect(assistant.reload.config).to eq(original_config)
+      end
+
+      it 'rejects temperature controls the selected model does not advertise' do
+        allow(Llm::Config).to receive(:model_for).with(feature: :assistant, account: account)
+          .and_return('openai/gpt-6-luna')
+        allow(Llm::Models).to receive(:supports_temperature?).with('openai/gpt-6-luna', account: account)
+          .and_return(false)
+        expect(Captain::Assistant::AgentRunnerService).not_to receive(:new)
+
+        post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground",
+             params: valid_params.merge(test_temperature: 0.4),
+             headers: agent.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(json_response).to eq(error: 'unsupported_playground_setting', field: 'test_temperature')
+      end
+
+      it 'rejects reasoning effort when the selected model does not support reasoning' do
+        allow(Llm::Config).to receive(:model_for).with(feature: :assistant, account: account)
+          .and_return('openai/gpt-6-luna')
+        allow(Llm::Models).to receive(:supports_thinking?).with('openai/gpt-6-luna', account: account)
+          .and_return(false)
+        expect(Captain::Assistant::AgentRunnerService).not_to receive(:new)
+
+        post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground",
+             params: valid_params.merge(test_thinking_effort: 'high'),
+             headers: agent.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(json_response).to eq(error: 'unsupported_playground_setting', field: 'test_thinking_effort')
+      end
+
       it 'passes an authorized conversation to the external agent runtime' do
         inbox = create(:inbox, account: account)
         conversation = create(:conversation, account: account, inbox: inbox)
@@ -1487,6 +1601,18 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(json_response).to include(response: 'Copilot response', content: 'Copilot response')
+      end
+
+      it 'rejects test-only agent controls unsupported by the employee Copilot runtime' do
+        expect(Captain::Copilot::ChatService).not_to receive(:new)
+
+        post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground",
+             params: valid_params.merge(test_temperature: 0.4),
+             headers: agent.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(json_response).to eq(error: 'unsupported_playground_setting', field: 'test_temperature')
       end
     end
 

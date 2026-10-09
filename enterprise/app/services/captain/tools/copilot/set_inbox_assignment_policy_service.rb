@@ -5,7 +5,7 @@ class Captain::Tools::Copilot::SetInboxAssignmentPolicyService < Captain::Tools:
     'set_inbox_assignment_policy'
   end
 
-  description 'Attach or replace the assignment policy for one account inbox'
+  description 'Set the legacy inbox assignment policy used for phone lines or until a workspace policy is selected'
   param :inbox_id, type: :number, desc: 'Account inbox ID', required: true
   param :assignment_policy_id, type: :number, desc: 'Account assignment policy ID to attach to the inbox', required: true
 
@@ -13,6 +13,10 @@ class Captain::Tools::Copilot::SetInboxAssignmentPolicyService < Captain::Tools:
     ensure_account_administrator!
 
     inbox = account.inboxes.active.find(inbox_id)
+    if inbox.workspace_assignment_policy_applies?
+      raise ArgumentError, 'A workspace assignment policy is active for this inbox'
+    end
+
     policy = account.assignment_policies.find(assignment_policy_id)
 
     InboxAssignmentPolicy.transaction do

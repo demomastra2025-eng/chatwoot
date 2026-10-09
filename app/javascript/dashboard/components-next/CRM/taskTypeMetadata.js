@@ -17,15 +17,47 @@ const legacyTranslationKeys = {
   touch: 'CRM.TASKS.ACTIVITY_TYPE.touch',
 };
 
+const taskTypeColors = {
+  call: 'text-n-amber-11',
+  meeting: 'text-n-iris-11',
+  message: 'text-n-blue-11',
+  task: 'text-n-teal-11',
+  touch: 'text-n-ruby-11',
+};
+
+const customTaskTypeColors = [
+  'text-n-blue-11',
+  'text-n-iris-11',
+  'text-n-teal-11',
+  'text-n-amber-11',
+  'text-n-ruby-11',
+];
+
+export const taskTypeColorClass = type => {
+  if (taskTypeColors[type?.code]) return taskTypeColors[type.code];
+
+  const key = String(type?.code || type?.id || 'custom');
+  const hash = [...key].reduce(
+    (result, character) => result + character.charCodeAt(0),
+    0
+  );
+  return customTaskTypeColors[hash % customTaskTypeColors.length];
+};
+
 // Build once per catalogue/locale change, then resolve each row in O(1).
 export const buildTaskTypeResolver = (taskTypes, t) => {
   const legacy = new Map(
     Object.entries(legacyIcons).map(([code, icon]) => [
       code,
-      { icon, label: t(legacyTranslationKeys[code]) },
+      {
+        colorClass: taskTypeColors[code],
+        icon,
+        label: t(legacyTranslationKeys[code]),
+      },
     ])
   );
   const metadata = type => ({
+    colorClass: taskTypeColorClass(type),
     icon: normalizeCrmTaskTypeIcon(type.icon || legacy.get(type.code)?.icon),
     label:
       taskTypeLabel(type, t) ||
@@ -46,7 +78,11 @@ export const buildTaskTypeResolver = (taskTypes, t) => {
       byId.get(String(task.taskTypeId || task.taskType?.id)) ||
       byCode.get(code) ||
       (task.taskType?.name ? metadata(task.taskType) : null) ||
-      legacy.get(code) || { icon: legacyIcons.task, label: code }
+      legacy.get(code) || {
+        colorClass: 'text-n-slate-11',
+        icon: legacyIcons.task,
+        label: code,
+      }
     );
   };
 };

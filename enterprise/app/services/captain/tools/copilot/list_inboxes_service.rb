@@ -73,7 +73,7 @@ class Captain::Tools::Copilot::ListInboxesService < Captain::Tools::Copilot::Bas
   end
 
   def inbox_payload(inbox, include_members:)
-    assignment_policy = inbox.assignment_policy
+    assignment_policy = inbox.effective_assignment_policy
     assignment_policy = nil unless assignment_policy&.account_id == account.id
 
     payload = {

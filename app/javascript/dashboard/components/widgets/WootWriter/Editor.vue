@@ -1181,6 +1181,14 @@ useEmitter(BUS_EVENTS.INSERT_INTO_RICH_EDITOR, insertContentIntoEditor);
   @apply overflow-auto;
 }
 
+// Prompt editors preserve the saved newlines while allowing long identifiers or URLs to wrap.
+.captain-prompt-editor .ProseMirror-woot-style {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  overflow-x: hidden;
+}
+
 .ProseMirror-woot-style:not(
     :where(
         .resizable-editor-wrapper .ProseMirror-woot-style,

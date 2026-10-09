@@ -892,5 +892,105 @@
       "15_30": "15–30 days",
       "31_plus": "31+ days"
     }
+  },
+  "REPORTS": {
+    "DATE_RANGE": {
+      "FROM": "From",
+      "TO": "To",
+      "APPLY": "Apply",
+      "TIMEZONE": "Workspace time: {timezone}",
+      "MAX_DAYS": "Choose a valid date range of up to {days} days."
+    },
+    "CALLS": {
+      "TITLE": "Call report",
+      "DESCRIPTION": "Calls are counted once per logical call, by the first leg's start date. Answered calls require an answer timestamp.",
+      "LOGICAL_CALLS": "Logical calls",
+      "LOGICAL_CALLS_INFO": "One inbound call with multiple routing legs is counted once.",
+      "ANSWERED_CALLS": "Answered calls",
+      "ANSWERED_INFO": "A call is answered when its logical representative has an answer timestamp. Completed status alone is not enough.",
+      "UNANSWERED_CALLS": "Unanswered calls",
+      "UNANSWERED_INFO": "Logical calls without an answer timestamp.",
+      "AVERAGE_DURATION": "Average answered duration",
+      "AVERAGE_DURATION_INFO": "Average duration of answered logical calls. Duration is taken from one representative leg, never summed across legs.",
+      "COVERAGE_LIMITED": "The report reached its {limit}-call analysis limit. Metrics include {count} calls in this period, and more may exist.",
+      "DAILY_TITLE": "Calls by day",
+      "ROWS_TITLE": "Recent logical calls",
+      "ROWS_LIMIT_NOTE": "This table shows the latest 100 logical calls.",
+      "DATE": "Started",
+      "DIRECTION": "Direction",
+      "STATUS": "Status",
+      "INBOX": "Inbox",
+      "PROVIDER": "Provider",
+      "DURATION": "Duration",
+      "INBOUND": "Inbound",
+      "OUTBOUND": "Outbound",
+      "STATUSES": {
+        "created": "Created",
+        "ringing": "Ringing",
+        "connecting": "Connecting",
+        "in_progress": "In progress",
+        "completed": "Completed",
+        "missed": "Missed",
+        "no_answer": "No answer",
+        "busy": "Busy",
+        "cancelled": "Cancelled",
+        "rejected": "Rejected",
+        "failed": "Failed"
+      },
+      "EMPTY": "No calls in this date range.",
+      "ERROR": "Could not load the call report. Try again."
+    },
+    "LEADS": {
+      "TITLE": "Leads and sources",
+      "DESCRIPTION": "Referral events and lead form submissions are reported separately. Event counts are distinct from unique contacts.",
+      "EVENTS_NOTE": "Events count recorded messages or form submissions. Unique contacts count linked contacts once; unlinked events remain visible.",
+      "REFERRALS_TITLE": "Messaging referrals",
+      "REFERRAL_EVENTS": "Referral events",
+      "UNIQUE_REFERRAL_CONTACTS": "Unique referred contacts",
+      "UNLINKED_REFERRALS": "Referrals without a contact",
+      "EXPLICIT_AD_EVENTS": "Explicit ad referrals",
+      "OTHER_REFERRALS": "Other or unknown referrals",
+      "CTWA_IDS": "Unique WhatsApp ad click IDs",
+      "ATTRIBUTION_BREAKDOWN": "Referral attribution",
+      "OMITTED_ATTRIBUTION": "Other attribution rows: {count} events",
+      "FORM_SUBMISSIONS_TITLE": "Lead form submissions",
+      "SUBMISSION_EVENTS": "Submission events",
+      "UNIQUE_SUBMISSION_CONTACTS": "Unique submission contacts",
+      "UNLINKED_SUBMISSIONS": "Submissions without a contact",
+      "PROCESSED_IN_PERIOD": "Processed in selected period",
+      "AVERAGE_PROCESSING": "Average processing time",
+      "SOURCE_STATUS": "Source and status",
+      "FORMS": "Lead forms",
+      "UTM_SOURCES": "UTM sources",
+      "UTM_CAMPAIGNS": "UTM campaigns",
+      "OMITTED_BREAKDOWN": "Other values: {count} events",
+      "PROVIDER": "Provider",
+      "SOURCE_TYPE": "Source type",
+      "ATTRIBUTION": "Attribution",
+      "REFERRAL_TYPE": "Referral type",
+      "SOURCE": "Source",
+      "STATUS": "Status",
+      "FORM": "Form",
+      "EVENT_COUNT": "Events",
+      "UNKNOWN": "Unknown",
+      "SOURCE_KINDS": {
+        "api": "API form",
+        "meta": "Meta form",
+        "widget": "Widget"
+      },
+      "STATUSES": {
+        "received": "Received",
+        "processed": "Processed",
+        "failed": "Failed"
+      },
+      "ATTRIBUTIONS": {
+        "click_to_whatsapp_ad": "WhatsApp ad",
+        "click_to_messenger_ad": "Facebook Messenger ad",
+        "click_to_direct_ad": "Instagram ad",
+        "messaging_referral": "Messaging referral"
+      },
+      "EMPTY": "No referral or lead form activity in this date range.",
+      "ERROR": "Could not load the leads and sources report. Try again."
+    }
   }
 }

@@ -46,11 +46,51 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(assistant).to be_valid
     end
 
+    it 'preserves prompt line breaks and surrounding whitespace when saved' do
+      prompt = "\nUse the customer’s exact account name.\n\n- Keep the heading.\n"
+      assistant = create(:captain_assistant, account: create(:account), description: prompt)
+
+      expect(assistant.reload.description).to eq(prompt)
+      expect(assistant.system_instruction).to eq(prompt.strip)
+    end
+
     it 'rejects prompt instructions above the product limit' do
       assistant = build(:captain_assistant, account: create(:account), description: 'a' * (Captain::Assistant::DESCRIPTION_MAX_LENGTH + 1))
 
       expect(assistant).not_to be_valid
       expect(assistant.errors.details[:description]).to include(error: :too_long, count: Captain::Assistant::DESCRIPTION_MAX_LENGTH)
+    end
+
+    it 'accepts only persisted safety settings supported by the runtime policy' do
+      assistant = build(
+        :captain_assistant,
+        account: create(:account),
+        config: {
+          'safety_settings' => {
+            'moderation_enabled' => true,
+            'prompt_injection_action' => 'flag',
+            'sensitive_info_action' => 'block'
+          }
+        }
+      )
+
+      expect(assistant).to be_valid
+
+      assistant.config['safety_settings']['prompt_injection_action'] = 'warn_only'
+
+      expect(assistant).not_to be_valid
+      expect(assistant.errors.of_kind?(:config, :invalid_safety_settings)).to be(true)
+    end
+
+    it 'rejects unknown assistant safety settings instead of silently persisting them' do
+      assistant = build(
+        :captain_assistant,
+        account: create(:account),
+        config: { 'safety_settings' => { 'custom_prompt_rule' => true } }
+      )
+
+      expect(assistant).not_to be_valid
+      expect(assistant.errors.of_kind?(:config, :invalid_safety_settings)).to be(true)
     end
 
     it 'rejects a model that is not enabled for Captain assistants' do

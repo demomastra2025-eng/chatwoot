@@ -37,7 +37,7 @@ module AutoAssignmentHandler
 
   def conversation_status_changed_to_pending_for_assignment?
     inbox.auto_assignment_v2_enabled? && saved_change_to_status? && pending? &&
-      inbox.assignment_policy&.assign_pending_conversations?
+      inbox.effective_assignment_policy&.assign_pending_conversations?
   end
 
   def team_member_ids_with_capacity

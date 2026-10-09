@@ -50,7 +50,9 @@ describe('CrmTaskBoard', () => {
       ],
     });
     expect(wrapper.text()).toContain('Custom label');
-    expect(wrapper.find('.i-lucide-star').exists()).toBe(true);
+    const taskTypeIcon = wrapper.find('.i-lucide-star');
+    expect(taskTypeIcon.exists()).toBe(true);
+    expect(taskTypeIcon.classes()).toContain('text-n-teal-11');
     await wrapper.setProps({ taskTypeResolver: resolve('Renamed label') });
     expect(wrapper.text()).toContain('Renamed label');
     expect(wrapper.text()).not.toContain('Custom label');
@@ -91,11 +93,20 @@ describe('CrmTaskBoard', () => {
     expect(wrapper.emitted('loadMore')).toEqual([['today']]);
   });
 
-  it('distinguishes confirmed empty buckets from filtered empty buckets', () => {
+  it('keeps empty drop targets available without displaying an empty-state sentence', () => {
     const emptyBoard = mountBoard();
     const filteredBoard = mountBoard({ filtered: true });
 
-    expect(emptyBoard.text()).toContain('CRM.TASKS.BOARD.EMPTY_COLUMN');
+    expect(emptyBoard.text()).not.toContain('CRM.TASKS.BOARD.EMPTY_COLUMN');
+    expect(emptyBoard.findAll('.crm-task-board-column')).toHaveLength(2);
+    expect(
+      emptyBoard
+        .findAll('.crm-task-board-column')
+        .map(column => column.attributes('aria-label'))
+    ).toEqual([
+      'CRM.TASKS.BOARD.TIME_BUCKETS.TODAY',
+      'CRM.TASKS.BOARD.TIME_BUCKETS.TOMORROW',
+    ]);
     expect(filteredBoard.text()).toContain('CRM.TASKS.LIST.EMPTY_FILTERED');
   });
 
@@ -105,8 +116,8 @@ describe('CrmTaskBoard', () => {
     });
     const emptyBuckets = wrapper.findAll('[data-test="empty-task-bucket"]');
 
-    expect(emptyBuckets).toHaveLength(1);
-    expect(emptyBuckets[0].text()).toBe('CRM.TASKS.BOARD.EMPTY_COLUMN');
+    expect(emptyBuckets).toHaveLength(0);
+    expect(wrapper.findAll('.crm-task-board-column')).toHaveLength(2);
   });
 
   it('turns a failed incremental bucket load into a manual retry', async () => {

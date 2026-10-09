@@ -33,7 +33,11 @@ vi.mock('dashboard/composables', () => ({
   useAlert: alertMock,
 }));
 
-const buildWrapper = ({ agents = [], routeQuery = {} } = {}) =>
+const buildWrapper = ({
+  agents = [],
+  routeQuery = { provider: 'twilio' },
+  inboxDetails = { id: 4690, channel_type: 'Channel::Voice' },
+} = {}) =>
   shallowMount(AddAgents, {
     global: {
       mocks: {
@@ -47,6 +51,7 @@ const buildWrapper = ({ agents = [], routeQuery = {} } = {}) =>
           dispatch: vi.fn(),
           getters: {
             'agents/getAgents': agents,
+            'inboxes/getInbox': () => inboxDetails,
           },
         },
       },
@@ -76,7 +81,7 @@ describe('AddAgents', () => {
     updateVirtualPbxChannelMock.mockResolvedValue({ payload: { errors: [] } });
   });
 
-  it('preserves accountId when moving to the finish step', async () => {
+  it('preserves route context when moving to the finish step', async () => {
     const wrapper = buildWrapper();
     await flushPromises();
     wrapper.vm.selectedAgentIds = [7, 8];
@@ -94,8 +99,34 @@ describe('AddAgents', () => {
         accountId: '530',
         inbox_id: '4690',
       },
-      query: {},
+      query: { provider: 'twilio' },
     });
+  });
+
+  it('keeps the employee picker available for a Voice inbox without a provider query', async () => {
+    buildWrapper({ routeQuery: {} });
+    await flushPromises();
+
+    expect(routerReplaceMock).not.toHaveBeenCalled();
+    expect(inboxMembersShowMock).toHaveBeenCalledWith('4690');
+    expect(getVirtualPbxStatusMock).toHaveBeenCalledWith('4690');
+  });
+
+  it('skips the employee picker for normal channels even with a telephony query provider', async () => {
+    buildWrapper({
+      routeQuery: { provider: 'twilio' },
+      inboxDetails: { id: 4690, channel_type: 'Channel::WebWidget' },
+    });
+    await flushPromises();
+
+    expect(routerReplaceMock).toHaveBeenCalledWith({
+      name: 'settings_inbox_finish',
+      params: { accountId: '530', inbox_id: '4690' },
+      query: { provider: 'twilio' },
+    });
+    expect(inboxMembersShowMock).not.toHaveBeenCalled();
+    expect(inboxMembersUpdateMock).not.toHaveBeenCalled();
+    expect(getVirtualPbxStatusMock).not.toHaveBeenCalled();
   });
 
   it('saves Virtual PBX Sipuni employee SIP credentials before moving to the finish step', async () => {
@@ -110,6 +141,7 @@ describe('AddAgents', () => {
     });
     const wrapper = buildWrapper({
       agents: [{ id: 7, name: 'Agent One' }],
+      routeQuery: { provider: 'sipuni' },
     });
     await flushPromises();
 
@@ -153,7 +185,7 @@ describe('AddAgents', () => {
         accountId: '530',
         inbox_id: '4690',
       },
-      query: {},
+      query: { provider: 'sipuni' },
     });
   });
 

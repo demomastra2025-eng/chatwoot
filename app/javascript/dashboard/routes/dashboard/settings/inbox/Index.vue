@@ -547,7 +547,7 @@ const uiFlags = computed(() => getters['inboxes/getUIFlags'].value);
             <div class="flex min-w-0 items-center gap-3">
               <div
                 v-if="inbox.avatar_url"
-                class="grid size-11 place-items-center rounded-xl border border-n-strong bg-n-alpha-3 shadow-sm ring ring-n-solid-1"
+                class="grid size-11 shrink-0 place-items-center rounded-xl border border-n-strong bg-n-alpha-3 shadow-sm ring ring-n-solid-1"
               >
                 <Avatar
                   :src="inbox.avatar_url"
@@ -558,7 +558,7 @@ const uiFlags = computed(() => getters['inboxes/getUIFlags'].value);
               </div>
               <div
                 v-else
-                class="grid size-11 place-items-center rounded-xl border border-n-strong bg-n-alpha-3 shadow-sm ring ring-n-solid-1"
+                class="grid size-11 shrink-0 place-items-center rounded-xl border border-n-strong bg-n-alpha-3 shadow-sm ring ring-n-solid-1"
               >
                 <ChannelIcon class="size-6 text-n-slate-10" :inbox="inbox" />
               </div>

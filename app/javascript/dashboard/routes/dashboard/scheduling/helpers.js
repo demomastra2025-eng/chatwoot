@@ -400,6 +400,16 @@ export const calendarDayAnchor = (pickedDate, timezone) => {
   return timezone ? zonedTimeToUtc(noon, timezone) : noon;
 };
 
+// Use the workspace's calendar day for the Today control. Unlike a picked
+// date, the current instant must first be converted out of the browser zone.
+export const calendarTodayAnchor = (now, timezone) => {
+  const date = toDate(now);
+  return calendarDayAnchor(
+    timezone ? utcToZonedTime(date, timezone) : date,
+    timezone
+  );
+};
+
 export const formatCalendarTitle = (view, anchorDate, locale, timezone) => {
   const range = buildCalendarRange(view, anchorDate, timezone);
   const calendarOptions = options =>

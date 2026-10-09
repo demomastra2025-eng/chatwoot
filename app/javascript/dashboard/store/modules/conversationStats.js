@@ -25,7 +25,8 @@ let conversationStatsRequestGeneration = 0;
 // Every refresh request goes through this one trailing debounce: a burst of events, or the same
 // event seen by several components, ends in a single /meta request. The wait grows with the
 // account size to spare the server on big inboxes.
-const refreshTiming = allCount => {
+const refreshTiming = (allCount, isRealtime) => {
+  if (isRealtime) return { wait: 75, maxWait: 500 };
   if (allCount > 2000) return { wait: 10000, maxWait: 20000 };
   if (allCount > 100) return { wait: 5000, maxWait: 10000 };
   return { wait: 1500, maxWait: 5000 };
@@ -35,10 +36,11 @@ const refreshScheduler = {
   context: null,
   params: undefined,
   timer: null,
-  firstRequestedAt: 0,
+  firstRequestedAt: null,
   isInFlight: false,
   runAgain: false,
   refreshOnVisible: false,
+  isRealtime: false,
 };
 
 const isTabHidden = () =>
@@ -73,7 +75,7 @@ const fetchMetaData = async (context, params, requestGeneration) => {
 
 const runMetaRefresh = async () => {
   refreshScheduler.timer = null;
-  refreshScheduler.firstRequestedAt = 0;
+  refreshScheduler.firstRequestedAt = null;
   // A hidden tab does not poll the server on events; it refreshes once when it is shown again.
   if (isTabHidden()) {
     refreshScheduler.refreshOnVisible = true;
@@ -87,6 +89,7 @@ const runMetaRefresh = async () => {
   refreshScheduler.isInFlight = true;
   conversationStatsRequestGeneration += 1;
   const { context, params } = refreshScheduler;
+  refreshScheduler.isRealtime = false;
   try {
     await fetchMetaData(context, params, conversationStatsRequestGeneration);
   } finally {
@@ -94,14 +97,19 @@ const runMetaRefresh = async () => {
     if (refreshScheduler.runAgain) {
       refreshScheduler.runAgain = false;
       // eslint-disable-next-line no-use-before-define
-      scheduleMetaRefresh(refreshScheduler.context, refreshScheduler.params);
+      scheduleMetaRefresh(
+        refreshScheduler.context,
+        refreshScheduler.params,
+        refreshScheduler.isRealtime
+      );
     }
   }
 };
 
-const scheduleMetaRefresh = (context, params) => {
+const scheduleMetaRefresh = (context, params, isRealtime = false) => {
   refreshScheduler.context = context;
   refreshScheduler.params = params;
+  refreshScheduler.isRealtime ||= isRealtime;
   clearTimeout(refreshScheduler.timer);
   refreshScheduler.timer = null;
   if (isTabHidden()) {
@@ -110,10 +118,13 @@ const scheduleMetaRefresh = (context, params) => {
   }
 
   const now = Date.now();
-  if (!refreshScheduler.firstRequestedAt) {
+  if (refreshScheduler.firstRequestedAt === null) {
     refreshScheduler.firstRequestedAt = now;
   }
-  const { wait, maxWait } = refreshTiming(context?.state?.allCount ?? 0);
+  const { wait, maxWait } = refreshTiming(
+    context?.state?.allCount ?? 0,
+    refreshScheduler.isRealtime
+  );
   const delay = Math.max(
     0,
     Math.min(wait, refreshScheduler.firstRequestedAt + maxWait - now)
@@ -140,17 +151,19 @@ export const resetMetaRefresh = () => {
     context: null,
     params: undefined,
     timer: null,
-    firstRequestedAt: 0,
+    firstRequestedAt: null,
     isInFlight: false,
     runAgain: false,
     refreshOnVisible: false,
+    isRealtime: false,
   });
   conversationStatsRequestGeneration += 1;
 };
 
 export const actions = {
   get: async (context, params) => {
-    scheduleMetaRefresh(context, params);
+    const { refreshPriority, ...filters } = params || {};
+    scheduleMetaRefresh(context, filters, refreshPriority === 'realtime');
   },
   // Exact stats that arrive together with a list. They invalidate a response that is still on its
   // way (it was requested earlier), but never cancel a refresh that is waiting to run.

@@ -29,8 +29,14 @@ responses:
       application/json:
         schema:
           $ref: '#/components/schemas/bad_request_error'
+  '400':
+    description: Invalid conversation assignment policy ID
+    content:
+      application/json:
+        schema:
+          $ref: '#/components/schemas/bad_request_error'
   '404':
-    description: Account not found
+    description: Account or enabled account-owned assignment policy not found
     content:
       application/json:
         schema:

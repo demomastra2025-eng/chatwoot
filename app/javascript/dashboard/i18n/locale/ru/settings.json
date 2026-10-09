@@ -487,6 +487,8 @@
     "ONE_OFF": "Единоразовые",
     "REPORTS_SLA": "SLA",
     "REPORTS_DEALS": "Сделки",
+    "REPORTS_CALLS": "Звонки",
+    "REPORTS_LEADS": "Лиды и источники",
     "REPORTS_BOT": "Бот",
     "REPORTS_AGENT": "Сотрудники",
     "REPORTS_LABEL": "Теги",

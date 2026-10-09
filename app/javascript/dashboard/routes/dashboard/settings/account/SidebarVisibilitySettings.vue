@@ -115,9 +115,6 @@ watch(
 
     <template #body>
       <div class="flex flex-col gap-4 mt-4">
-        <p class="m-0 text-sm text-n-slate-11">
-          {{ t('GENERAL_SETTINGS.SIDEBAR_VISIBILITY.ORDER_HINT') }}
-        </p>
         <Draggable
           v-model="sidebarItemsDraft"
           item-key="key"

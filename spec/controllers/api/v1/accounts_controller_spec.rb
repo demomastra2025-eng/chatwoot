@@ -272,6 +272,50 @@ RSpec.describe 'Accounts API', type: :request do
         expect(account.reload.custom_attributes['onboarding_step']).to eq('invite_team')
       end
 
+      it 'selects an enabled assignment policy belonging to the account' do
+        policy = create(:assignment_policy, account: account, enabled: true)
+
+        patch "/api/v1/accounts/#{account.id}",
+              params: { conversation_assignment_policy_id: policy.id },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(account.reload.conversation_assignment_policy_id).to eq(policy.id)
+      end
+
+      it 'rejects a disabled or another account\'s assignment policy' do
+        disabled_policy = create(:assignment_policy, account: account, enabled: false)
+        other_account_policy = create(:assignment_policy, enabled: true)
+        request_headers = admin.create_new_auth_token
+
+        [disabled_policy.id, other_account_policy.id].each do |policy_id|
+          patch "/api/v1/accounts/#{account.id}",
+                params: { conversation_assignment_policy_id: policy_id },
+                headers: request_headers,
+                as: :json
+
+          expect(response).to have_http_status(:not_found)
+          expect(account.reload.conversation_assignment_policy_id).to be_nil
+          request_headers = request_headers.merge(
+            response.headers.slice('access-token', 'client', 'uid')
+          )
+        end
+      end
+
+      it 'allows an administrator to return the workspace policy setting to legacy behavior' do
+        policy = create(:assignment_policy, account: account)
+        account.update!(conversation_assignment_policy_id: policy.id)
+
+        patch "/api/v1/accounts/#{account.id}",
+              params: { conversation_assignment_policy_id: nil },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(account.reload.workspace_assignment_policy_selected?).to be(false)
+      end
+
       it 'will not update onboarding step if onboarding step is not present in account custom attributes' do
         patch "/api/v1/accounts/#{account.id}",
               params: params,

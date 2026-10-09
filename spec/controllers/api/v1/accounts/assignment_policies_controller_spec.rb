@@ -279,6 +279,18 @@ RSpec.describe 'Assignment Policies API', type: :request do
         expect(assignment_policy.name).to eq('Original Policy') # unchanged
       end
 
+      it 'requires the workspace policy to be changed before disabling it' do
+        account.update!(conversation_assignment_policy_id: assignment_policy.id)
+
+        put "/api/v1/accounts/#{account.id}/assignment_policies/#{assignment_policy.id}",
+            headers: admin.create_new_auth_token,
+            params: { assignment_policy: { enabled: false } },
+            as: :json
+
+        expect(response).to have_http_status(:conflict)
+        expect(assignment_policy.reload.enabled).to be(true)
+      end
+
       it 'prevents duplicate names during update' do
         create(:assignment_policy, account: account, name: 'Existing Policy')
         duplicate_params = { assignment_policy: { name: 'Existing Policy' } }
@@ -338,6 +350,18 @@ RSpec.describe 'Assignment Policies API', type: :request do
         end.to change(AssignmentPolicy, :count).by(-1)
 
         expect(response).to have_http_status(:ok)
+      end
+
+      it 'requires the workspace policy to be changed before deleting it' do
+        account.update!(conversation_assignment_policy_id: assignment_policy.id)
+
+        expect do
+          delete "/api/v1/accounts/#{account.id}/assignment_policies/#{assignment_policy.id}",
+                 headers: admin.create_new_auth_token,
+                 as: :json
+        end.not_to change(AssignmentPolicy, :count)
+
+        expect(response).to have_http_status(:conflict)
       end
 
       it 'cascades deletion to associated inbox assignment policies' do

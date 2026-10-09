@@ -22,7 +22,11 @@ describe('task type metadata', () => {
       activityType: 'call',
       taskType: { id: 7, name: 'Old', icon: 'i-lucide-phone' },
     };
-    expect(resolve(task)).toEqual({ label: 'Renamed', icon: 'i-lucide-star' });
+    expect(resolve(task)).toEqual({
+      colorClass: 'text-n-amber-11',
+      label: 'Renamed',
+      icon: 'i-lucide-star',
+    });
     expect(resolve(task)).toBe(resolve({ activityType: 'call' }));
   });
 
@@ -30,16 +34,25 @@ describe('task type metadata', () => {
     const resolve = buildTaskTypeResolver([], t);
     expect(
       resolve({ taskType: { name: 'Historical', icon: 'i-lucide-mail' } })
-    ).toEqual({ label: 'Historical', icon: 'i-lucide-mail' });
+    ).toEqual({
+      colorClass: 'text-n-teal-11',
+      label: 'Historical',
+      icon: 'i-lucide-mail',
+    });
     expect(resolve({ activityType: 'call' })).toEqual({
+      colorClass: 'text-n-amber-11',
       label: 'CRM.TASKS.ACTIVITY_TYPE.call',
       icon: 'i-lucide-phone',
     });
     expect(resolve({})).toEqual({
+      colorClass: 'text-n-teal-11',
       label: 'CRM.TASKS.ACTIVITY_TYPE.task',
       icon: 'i-lucide-list-todo',
     });
-    expect(resolve({ activityType: 'custom' }).label).toBe('custom');
+    expect(resolve({ activityType: 'custom' })).toMatchObject({
+      colorClass: 'text-n-slate-11',
+      label: 'custom',
+    });
   });
 
   it('shows system types by code through i18n, not the seeded database name', () => {

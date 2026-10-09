@@ -34,6 +34,7 @@ const mountPage = () =>
       mocks: { $t: key => key },
       stubs: {
         RouterLink: true,
+        Button: false,
         SettingsLayout: {
           template: '<main><slot name="header" /><slot name="body" /></main>',
         },

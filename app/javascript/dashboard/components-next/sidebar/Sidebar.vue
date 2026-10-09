@@ -1293,17 +1293,6 @@ const menuItems = computed(() => {
               navigationPath: 'captain_assistants_responses_index',
             }),
           },
-          ...(checkPermissions(['administrator'])
-            ? [
-                {
-                  name: 'Settings Captain',
-                  visibilityKey: 'Settings:Captain',
-                  label: t('SIDEBAR.CAPTAIN_SETTINGS'),
-                  activeOn: ['captain_settings_index'],
-                  to: accountScopedRoute('captain_settings_index'),
-                },
-              ]
-            : []),
         ],
       },
       {
@@ -1474,6 +1463,18 @@ const menuItems = computed(() => {
             visibilityKey: 'Reports:Conversation',
             label: t('SIDEBAR.REPORTS_CONVERSATION'),
             to: accountScopedRoute('conversation_reports'),
+          },
+          {
+            name: 'Reports Calls',
+            visibilityKey: 'Reports:Calls',
+            label: t('SIDEBAR.REPORTS_CALLS'),
+            to: accountScopedRoute('call_reports'),
+          },
+          {
+            name: 'Reports Leads',
+            visibilityKey: 'Reports:Leads',
+            label: t('SIDEBAR.REPORTS_LEADS'),
+            to: accountScopedRoute('lead_reports'),
           },
           ...(hasCrmDeals.value
             ? [

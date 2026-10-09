@@ -19,6 +19,10 @@ import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/Schedu
 import SchedulingFormFieldGroup from 'dashboard/components-next/Scheduling/SchedulingFormFieldGroup.vue';
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
 import SchedulingSidePanel from 'dashboard/components-next/Scheduling/SchedulingSidePanel.vue';
+import {
+  defaultStageForManualDeal,
+  dealStageDisplayName,
+} from 'dashboard/components-next/CRM/dealStageSelection';
 
 import TagMultiSelectComboBox from 'dashboard/components-next/combobox/TagMultiSelectComboBox.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
@@ -152,7 +156,7 @@ const stageOptions = computed(() =>
       pipeline => Number(pipeline.id) === Number(form.pipelineId)
     )?.stages || []
   ).map(stage => ({
-    label: stage.name,
+    label: dealStageDisplayName(stage, t),
     value: stage.id,
   }))
 );
@@ -306,13 +310,7 @@ const upsertCompanyOption = company => {
   return option;
 };
 
-const defaultStageForPipeline = pipeline =>
-  (pipeline?.stages || []).find(stage => stage.default && stage.active) ||
-  (pipeline?.stages || []).find(
-    stage => stage.active && stage.outcome === 'open'
-  ) ||
-  (pipeline?.stages || []).find(stage => stage.active) ||
-  pipeline?.stages?.[0];
+const defaultStageForPipeline = defaultStageForManualDeal;
 
 const resetForm = () => {
   const resolvedDefaultPipeline = defaultPipeline.value;

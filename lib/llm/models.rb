@@ -276,6 +276,27 @@ module Llm::Models
       supports?(model_name, :reasoning, account: account)
     end
 
+    # Temperature is a request parameter rather than a model capability. Use the
+    # provider registry's parameter list when available (OpenRouter), then the
+    # RubyLLM model metadata for bundled provider models. Unknown support stays
+    # disabled so the UI never promises a control the provider cannot honor.
+    def supports_temperature?(model_name, account: nil)
+      canonical_name = canonical_model_name(model_name)
+      resolved_config = model_config(canonical_name, account: account).to_h
+      supported_parameters = resolved_config['supported_parameters'] || resolved_config[:supported_parameters]
+      if resolved_config.key?('supported_parameters') || resolved_config.key?(:supported_parameters)
+        return Array(supported_parameters).map(&:to_s).include?('temperature')
+      end
+
+      registry_info = registry_info_for(canonical_name)
+      metadata = registry_info.respond_to?(:metadata) ? registry_info.metadata : nil
+      metadata = metadata.to_h if metadata.respond_to?(:to_h)
+      metadata = metadata.with_indifferent_access if metadata.respond_to?(:with_indifferent_access)
+      metadata&.[](:temperature) == true
+    rescue StandardError
+      false
+    end
+
     def supports_structured_output?(model_name, account: nil)
       supports?(model_name, :structured_output, account: account)
     end
@@ -399,6 +420,7 @@ module Llm::Models
             coming_soon: model['coming_soon'],
             credit_multiplier: model['credit_multiplier'],
             capabilities: capabilities_for(canonical_name, account: account),
+            supports_temperature: supports_temperature?(canonical_name, account: account),
             type: type_for(canonical_name, account: account),
             known_to_registry: registry_known?(canonical_name, account: account),
             source: model['source'],

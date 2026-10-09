@@ -85,7 +85,25 @@ export const compareInboxes = (a, b) => {
 export const buildContactableInboxesList = contactInboxes => {
   if (!contactInboxes) return [];
 
-  return contactInboxes.map(transformInbox).sort(compareInboxes);
+  const seenEndpoints = new Set();
+  return contactInboxes
+    .filter(({ id, sourceId, contactInboxId }) => {
+      // A sendable endpoint needs a sourceId. Collapse duplicate copies of
+      // the same inbox/endpoint pair while preserving distinct endpoints in
+      // the same inbox.
+      if (id == null || !String(sourceId || '').trim()) return false;
+
+      const endpointKey = JSON.stringify([
+        String(id),
+        String(sourceId),
+        contactInboxId ?? null,
+      ]);
+      if (seenEndpoints.has(endpointKey)) return false;
+      seenEndpoints.add(endpointKey);
+      return true;
+    })
+    .map(transformInbox)
+    .sort(compareInboxes);
 };
 
 export const getCapitalizedNameFromEmail = email => {

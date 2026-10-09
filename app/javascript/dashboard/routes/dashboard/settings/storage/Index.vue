@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
 import StorageAPI from 'dashboard/api/storage';
+import Button from 'dashboard/components-next/button/Button.vue';
 import { useAccount } from 'dashboard/composables/useAccount';
 import BaseSettingsHeader from '../components/BaseSettingsHeader.vue';
 import SettingsLayout from '../SettingsLayout.vue';
@@ -426,18 +427,19 @@ onBeforeUnmount(() => {
 });
 
 const progressBarClass = computed(() => {
-  if (isUnlimited.value) return 'bg-slate-400';
-  if (usagePercent.value >= 95) return 'bg-red-500';
-  if (usagePercent.value >= 80) return 'bg-amber-500';
-  return 'bg-emerald-500';
+  if (isUnlimited.value) return 'bg-n-slate-9';
+  if (usagePercent.value >= 95) return 'bg-n-ruby-9';
+  if (usagePercent.value >= 80) return 'bg-n-amber-9';
+  return 'bg-n-teal-9';
 });
 
 const badgeClass = computed(() => {
-  if (isUnlimited.value) return 'bg-slate-100 text-slate-700 border-slate-300';
-  if (usagePercent.value >= 95) return 'bg-red-100 text-red-800 border-red-300';
+  if (isUnlimited.value) return 'bg-n-alpha-2 text-n-slate-12 border-n-weak';
+  if (usagePercent.value >= 95)
+    return 'bg-n-ruby-3 text-n-ruby-11 border-n-ruby-5';
   if (usagePercent.value >= 80)
-    return 'bg-amber-100 text-amber-800 border-amber-300';
-  return 'bg-emerald-100 text-emerald-800 border-emerald-300';
+    return 'bg-n-amber-3 text-n-amber-11 border-n-amber-5';
+  return 'bg-n-teal-3 text-n-teal-11 border-n-teal-5';
 });
 
 const statusText = computed(() => {
@@ -569,18 +571,20 @@ const getFileTypeName = type => {
         :description="$t('STORAGE.DESCRIPTION')"
       >
         <template #actions>
-          <button
+          <Button
             type="button"
-            class="button button--secondary button--sm flex items-center gap-1.5"
+            size="sm"
+            color="slate"
+            variant="outline"
+            icon="i-lucide-refresh-cw"
             :disabled="isRefreshing"
+            :is-loading="isRefreshing"
             @click="refreshStorage"
           >
-            <span v-if="isRefreshing" class="animate-spin">{{ '🔄' }}</span>
-            <span v-else>{{ '↻' }}</span>
             <span>{{
               isRefreshing ? $t('STORAGE.REFRESHING') : $t('STORAGE.REFRESH')
             }}</span>
-          </button>
+          </Button>
         </template>
       </BaseSettingsHeader>
     </template>
@@ -588,7 +592,7 @@ const getFileTypeName = type => {
     <template #body>
       <div
         v-if="!isLoading && storageData?.calculating"
-        class="rounded-xl border border-slate-200 bg-white p-6 text-slate-700"
+        class="rounded-xl border border-n-weak bg-n-surface-1 p-6 text-n-slate-12"
         role="status"
       >
         {{
@@ -602,7 +606,7 @@ const getFileTypeName = type => {
       <div v-else-if="!isLoading && storageData" class="space-y-6">
         <p
           v-if="storageData.refresh_pending || storageData.stale"
-          class="text-xs text-slate-600"
+          class="text-xs text-n-slate-11"
           role="status"
         >
           {{
@@ -619,8 +623,8 @@ const getFileTypeName = type => {
           class="rounded-xl border p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 transition-all"
           :class="
             usagePercent >= 95
-              ? 'bg-red-50 border-red-200 text-red-900 shadow-sm'
-              : 'bg-amber-50 border-amber-200 text-amber-900 shadow-sm'
+              ? 'bg-n-ruby-3 border-n-ruby-5 text-n-ruby-11 shadow-sm'
+              : 'bg-n-amber-3 border-n-amber-5 text-n-amber-11 shadow-sm'
           "
         >
           <div class="flex items-start gap-3.5">
@@ -641,7 +645,9 @@ const getFileTypeName = type => {
               </h4>
               <p
                 class="text-xs mt-1"
-                :class="usagePercent >= 95 ? 'text-red-700' : 'text-amber-800'"
+                :class="
+                  usagePercent >= 95 ? 'text-n-ruby-11' : 'text-n-amber-11'
+                "
               >
                 {{
                   usagePercent >= 95
@@ -658,40 +664,39 @@ const getFileTypeName = type => {
             </div>
           </div>
           <div class="flex items-center gap-2">
-            <button
+            <Button
               type="button"
-              class="flex-shrink-0 whitespace-nowrap text-xs font-semibold px-4 py-2 rounded-lg transition text-white shadow-sm"
-              :class="
-                usagePercent >= 95
-                  ? 'bg-red-600 hover:bg-red-700'
-                  : 'bg-amber-600 hover:bg-amber-700'
-              "
+              class="shrink-0 whitespace-nowrap"
+              :color="usagePercent >= 95 ? 'ruby' : 'amber'"
+              size="sm"
               @click="onCleanerTabClick"
             >
               {{ $t('STORAGE.ALERTS.CLEAN_BUTTON') }}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              class="text-xs underline"
+              color="slate"
+              variant="link"
+              size="xs"
               @click="dismissStorageAlert"
             >
               {{ $t('STORAGE.ALERTS.DISMISS') }}
-            </button>
+            </Button>
           </div>
         </div>
 
         <!-- Storage Quota Bar Card -->
         <div
-          class="p-5 sm:p-6 bg-white rounded-xl border border-slate-200 shadow-sm"
+          class="p-5 sm:p-6 bg-n-surface-1 rounded-xl border border-n-weak shadow-sm"
         >
           <div
             class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4"
           >
             <div>
-              <h3 class="text-base font-bold text-slate-900">
+              <h3 class="text-base font-bold text-n-slate-12">
                 {{ $t('STORAGE.OVERVIEW.TITLE') }}
               </h3>
-              <p class="text-xs text-slate-500 mt-0.5">
+              <p class="text-xs text-n-slate-11 mt-0.5">
                 {{
                   `${$t('STORAGE.OVERVIEW.LAST_UPDATED')}: ${formatDate(storageData.last_updated_at)}`
                 }}
@@ -708,10 +713,10 @@ const getFileTypeName = type => {
           </div>
 
           <div class="flex items-baseline justify-between text-sm mb-2">
-            <span class="font-bold text-slate-900 text-lg">
+            <span class="font-bold text-n-slate-12 text-lg">
               {{ formatBytes(storageData.consumed_bytes) }}
             </span>
-            <span class="text-slate-500 font-medium text-xs">
+            <span class="text-n-slate-11 font-medium text-xs">
               {{
                 isUnlimited
                   ? $t('STORAGE.OVERVIEW.UNLIMITED')
@@ -722,7 +727,7 @@ const getFileTypeName = type => {
 
           <!-- Progress Bar -->
           <div
-            class="w-full bg-slate-100 rounded-full h-3 overflow-hidden p-0.5 border border-slate-200"
+            class="w-full bg-n-alpha-2 rounded-full h-3 overflow-hidden p-0.5 border border-n-weak"
           >
             <div
               class="h-2 rounded-full transition-all duration-500"
@@ -734,7 +739,7 @@ const getFileTypeName = type => {
           </div>
 
           <div
-            class="flex items-center justify-between text-[11px] text-slate-400 mt-2 font-mono"
+            class="flex items-center justify-between text-[11px] text-n-slate-9 mt-2 font-mono"
           >
             <span>{{ '0%' }}</span>
             <span>{{ isUnlimited ? '∞' : `${usagePercent}%` }}</span>
@@ -742,13 +747,13 @@ const getFileTypeName = type => {
         </div>
 
         <!-- Navigation Tabs -->
-        <div class="flex items-center gap-2 border-b border-slate-200">
+        <div class="flex items-center gap-2 border-b border-n-weak">
           <button
             class="px-4 py-2.5 text-sm font-semibold border-b-2 transition -mb-px flex items-center gap-1.5"
             :class="
               activeTab === 'overview'
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-slate-500 hover:text-slate-700'
+                ? 'border-n-brand text-n-blue-11'
+                : 'border-transparent text-n-slate-11 hover:text-n-slate-12'
             "
             @click="activeTab = 'overview'"
           >
@@ -759,8 +764,8 @@ const getFileTypeName = type => {
             class="px-4 py-2.5 text-sm font-semibold border-b-2 transition -mb-px flex items-center gap-2"
             :class="
               activeTab === 'cleaner'
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-slate-500 hover:text-slate-700'
+                ? 'border-n-brand text-n-blue-11'
+                : 'border-transparent text-n-slate-11 hover:text-n-slate-12'
             "
             @click="onCleanerTabClick"
           >
@@ -768,7 +773,7 @@ const getFileTypeName = type => {
             <span>{{ $t('STORAGE.TABS.CLEANER') }}</span>
             <span
               v-if="trashTotalCount > 0"
-              class="px-2 py-0.5 text-[10px] rounded-full bg-amber-100 text-amber-800 font-bold"
+              class="px-2 py-0.5 text-[10px] rounded-full bg-n-amber-3 text-n-amber-11 font-bold"
             >
               {{ trashTotalCount }}
             </span>
@@ -780,7 +785,7 @@ const getFileTypeName = type => {
           <!-- File Types Breakdown Grid -->
           <div>
             <h4
-              class="text-sm font-bold text-slate-800 uppercase tracking-wider mb-3"
+              class="text-sm font-bold text-n-slate-12 uppercase tracking-wider mb-3"
             >
               {{ $t('STORAGE.TYPES.TITLE') }}
             </h4>
@@ -790,23 +795,25 @@ const getFileTypeName = type => {
               <div
                 v-for="card in typeCards"
                 :key="card.key"
-                class="p-4 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between"
+                class="p-4 bg-n-surface-1 rounded-xl border border-n-weak shadow-sm flex flex-col justify-between"
               >
                 <div>
                   <div
-                    class="flex items-center justify-between text-slate-500 text-xs"
+                    class="flex items-center justify-between text-n-slate-11 text-xs"
                   >
                     <span class="text-base">{{ card.icon }}</span>
                     <span class="font-mono text-[10px]">{{
                       `${card.percent}%`
                     }}</span>
                   </div>
-                  <p class="text-xs font-medium text-slate-600 mt-2 truncate">
+                  <p class="text-xs font-medium text-n-slate-11 mt-2 truncate">
                     {{ card.title }}
                   </p>
                 </div>
                 <div class="mt-2">
-                  <span class="text-sm font-bold text-slate-900 block truncate">
+                  <span
+                    class="text-sm font-bold text-n-slate-12 block truncate"
+                  >
                     {{ card.formatted }}
                   </span>
                 </div>
@@ -817,7 +824,7 @@ const getFileTypeName = type => {
           <!-- Inboxes Storage Consumption Grid -->
           <div v-if="inboxesList.length > 0">
             <h4
-              class="text-sm font-bold text-slate-800 uppercase tracking-wider mb-3"
+              class="text-sm font-bold text-n-slate-12 uppercase tracking-wider mb-3"
             >
               {{ $t('STORAGE.INBOXES.TITLE') }}
             </h4>
@@ -825,20 +832,20 @@ const getFileTypeName = type => {
               <div
                 v-for="inbox in inboxesList"
                 :key="inbox.id"
-                class="p-4 bg-white rounded-xl border border-slate-200 shadow-sm flex items-center justify-between"
+                class="p-4 bg-n-surface-1 rounded-xl border border-n-weak shadow-sm flex items-center justify-between"
               >
                 <div class="min-w-0 pr-3">
-                  <p class="text-sm font-semibold text-slate-900 truncate">
+                  <p class="text-sm font-semibold text-n-slate-12 truncate">
                     {{ inbox.name }}
                   </p>
-                  <p class="text-xs text-slate-500 mt-0.5">
+                  <p class="text-xs text-n-slate-11 mt-0.5">
                     {{
                       `${inbox.files_count} ${$t('STORAGE.INBOXES.FILES_COUNT')}`
                     }}
                   </p>
                 </div>
                 <div class="text-right flex-shrink-0">
-                  <span class="text-sm font-bold text-slate-900">
+                  <span class="text-sm font-bold text-n-slate-12">
                     {{ formatBytes(inbox.bytes) }}
                   </span>
                 </div>
@@ -851,16 +858,16 @@ const getFileTypeName = type => {
         <div v-else-if="activeTab === 'cleaner'" class="space-y-6">
           <!-- Smart Cleaner Form Card -->
           <div
-            class="p-5 sm:p-6 bg-white rounded-xl border border-slate-200 shadow-sm"
+            class="p-5 sm:p-6 bg-n-surface-1 rounded-xl border border-n-weak shadow-sm"
           >
-            <div class="border-b border-slate-100 pb-4 mb-4">
+            <div class="border-b border-n-weak pb-4 mb-4">
               <h3
-                class="text-base font-bold text-slate-900 flex items-center gap-2"
+                class="text-base font-bold text-n-slate-12 flex items-center gap-2"
               >
                 <span>{{ '🧹' }}</span>
                 <span>{{ $t('STORAGE.CLEANER.TITLE') }}</span>
               </h3>
-              <p class="text-xs text-slate-500 mt-1">
+              <p class="text-xs text-n-slate-11 mt-1">
                 {{ $t('STORAGE.CLEANER.SUBTITLE') }}
               </p>
             </div>
@@ -868,12 +875,12 @@ const getFileTypeName = type => {
             <!-- Cleaner Filters Form -->
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
               <div>
-                <label class="block text-xs font-semibold text-slate-700 mb-1">
+                <label class="block text-xs font-semibold text-n-slate-12 mb-1">
                   {{ $t('STORAGE.CLEANER.FILE_TYPE') }}
                 </label>
                 <select
                   v-model="cleanerFileType"
-                  class="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  class="w-full text-xs border border-n-weak rounded-lg px-3 py-2 bg-n-surface-1 text-n-slate-12 focus:outline-none focus:ring-1 focus:ring-n-brand"
                 >
                   <option value="all">
                     {{ $t('STORAGE.CLEANER.ALL_TYPES') }}
@@ -897,12 +904,12 @@ const getFileTypeName = type => {
               </div>
 
               <div>
-                <label class="block text-xs font-semibold text-slate-700 mb-1">
+                <label class="block text-xs font-semibold text-n-slate-12 mb-1">
                   {{ $t('STORAGE.CLEANER.OLDER_THAN') }}
                 </label>
                 <select
                   v-model="cleanerMonths"
-                  class="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  class="w-full text-xs border border-n-weak rounded-lg px-3 py-2 bg-n-surface-1 text-n-slate-12 focus:outline-none focus:ring-1 focus:ring-n-brand"
                 >
                   <option :value="1">
                     {{ $t('STORAGE.CLEANER.OLDER_1_MONTH') }}
@@ -920,12 +927,12 @@ const getFileTypeName = type => {
               </div>
 
               <div>
-                <label class="block text-xs font-semibold text-slate-700 mb-1">
+                <label class="block text-xs font-semibold text-n-slate-12 mb-1">
                   {{ $t('STORAGE.HEAVY_FILES.COLUMNS.INBOX') }}
                 </label>
                 <select
                   v-model="cleanerInboxId"
-                  class="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 truncate"
+                  class="w-full text-xs border border-n-weak rounded-lg px-3 py-2 bg-n-surface-1 text-n-slate-12 focus:outline-none focus:ring-1 focus:ring-n-brand truncate"
                 >
                   <option value="">
                     {{ $t('STORAGE.HEAVY_FILES.ALL_INBOXES') }}
@@ -943,31 +950,32 @@ const getFileTypeName = type => {
 
             <!-- Preview action button -->
             <div class="flex items-center gap-3">
-              <button
+              <Button
                 type="button"
-                class="button button--primary button--sm flex items-center gap-1.5"
+                color="blue"
+                size="sm"
                 :disabled="isPreviewing"
+                :is-loading="isPreviewing"
                 @click="runPreview"
               >
-                <span v-if="isPreviewing" class="animate-spin">{{ '🔄' }}</span>
                 <span>{{
                   isPreviewing
                     ? $t('STORAGE.CLEANER.PREVIEWING')
                     : $t('STORAGE.CLEANER.PREVIEW_BUTTON')
                 }}</span>
-              </button>
+              </Button>
             </div>
 
             <!-- Preview Results Box -->
             <div
               v-if="previewData"
-              class="mt-5 p-4 rounded-xl border border-blue-200 bg-blue-50/50 space-y-4"
+              class="mt-5 p-4 rounded-xl border border-n-blue-5 bg-n-blue-3/50 space-y-4"
             >
               <div class="flex items-center justify-between">
-                <h4 class="text-sm font-bold text-blue-900">
+                <h4 class="text-sm font-bold text-n-blue-12">
                   {{ $t('STORAGE.CLEANER.PREVIEW_TITLE') }}
                 </h4>
-                <span class="text-xs font-mono font-bold text-blue-700">
+                <span class="text-xs font-mono font-bold text-n-blue-11">
                   {{
                     previewData.total_human ||
                     formatBytes(previewData.total_bytes)
@@ -977,42 +985,50 @@ const getFileTypeName = type => {
 
               <div
                 v-if="previewData.total_count === 0"
-                class="text-xs text-slate-600"
+                class="text-xs text-n-slate-11"
               >
                 {{ $t('STORAGE.CLEANER.NO_MATCHING_FILES') }}
               </div>
               <div v-else class="space-y-3">
                 <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                  <div class="bg-white p-2.5 rounded-lg border border-blue-100">
-                    <span class="text-slate-500 block">{{
+                  <div
+                    class="bg-n-surface-1 p-2.5 rounded-lg border border-n-blue-4"
+                  >
+                    <span class="text-n-slate-11 block">{{
                       $t('STORAGE.CLEANER.FOUND_FILES')
                     }}</span>
-                    <strong class="text-slate-900 text-sm">{{
+                    <strong class="text-n-slate-12 text-sm">{{
                       previewData.total_count
                     }}</strong>
                   </div>
-                  <div class="bg-white p-2.5 rounded-lg border border-blue-100">
-                    <span class="text-slate-500 block">{{
+                  <div
+                    class="bg-n-surface-1 p-2.5 rounded-lg border border-n-blue-4"
+                  >
+                    <span class="text-n-slate-11 block">{{
                       $t('STORAGE.CLEANER.TO_TRASH_SIZE')
                     }}</span>
-                    <strong class="text-slate-900 text-sm">{{
+                    <strong class="text-n-slate-12 text-sm">{{
                       previewData.total_human ||
                       formatBytes(previewData.total_bytes)
                     }}</strong>
                   </div>
-                  <div class="bg-white p-2.5 rounded-lg border border-blue-100">
-                    <span class="text-slate-500 block">{{
+                  <div
+                    class="bg-n-surface-1 p-2.5 rounded-lg border border-n-blue-4"
+                  >
+                    <span class="text-n-slate-11 block">{{
                       $t('STORAGE.TYPES.RECORDINGS')
                     }}</span>
-                    <strong class="text-slate-900 text-sm">{{
+                    <strong class="text-n-slate-12 text-sm">{{
                       `${previewData.recordings_count} (${formatBytes(previewData.recordings_bytes)})`
                     }}</strong>
                   </div>
-                  <div class="bg-white p-2.5 rounded-lg border border-blue-100">
-                    <span class="text-slate-500 block">{{
+                  <div
+                    class="bg-n-surface-1 p-2.5 rounded-lg border border-n-blue-4"
+                  >
+                    <span class="text-n-slate-11 block">{{
                       $t('STORAGE.TYPES.DOCUMENTS')
                     }}</span>
-                    <strong class="text-slate-900 text-sm">{{
+                    <strong class="text-n-slate-12 text-sm">{{
                       `${previewData.attachments_count} (${formatBytes(previewData.attachments_bytes)})`
                     }}</strong>
                   </div>
@@ -1020,43 +1036,42 @@ const getFileTypeName = type => {
 
                 <!-- Retention notice -->
                 <p
-                  class="text-xs text-blue-800 bg-blue-100/60 p-2.5 rounded-lg border border-blue-200"
+                  class="text-xs text-n-blue-11 bg-n-blue-3/60 p-2.5 rounded-lg border border-n-blue-5"
                 >
                   {{ 'ℹ️ ' + $t('STORAGE.CLEANER.RETENTION_NOTICE') }}
                 </p>
 
                 <!-- Move to trash confirm button -->
-                <button
+                <Button
                   type="button"
-                  class="button button--alert button--sm flex items-center gap-1.5"
+                  color="ruby"
+                  size="sm"
                   :disabled="isMovingToTrash"
+                  :is-loading="isMovingToTrash"
                   @click="executeMoveToTrash"
                 >
-                  <span v-if="isMovingToTrash" class="animate-spin">{{
-                    '🔄'
-                  }}</span>
                   <span>{{
                     isMovingToTrash
                       ? $t('STORAGE.CLEANER.MOVING')
                       : $t('STORAGE.CLEANER.MOVE_BUTTON')
                   }}</span>
-                </button>
+                </Button>
               </div>
             </div>
           </div>
 
           <!-- Heavy Files Table -->
           <div
-            class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden"
+            class="bg-n-surface-1 rounded-xl border border-n-weak shadow-sm overflow-hidden"
           >
             <div
-              class="p-4 sm:p-5 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4"
+              class="p-4 sm:p-5 border-b border-n-weak flex flex-col md:flex-row md:items-center justify-between gap-4"
             >
               <div>
-                <h4 class="text-base font-bold text-slate-900">
+                <h4 class="text-base font-bold text-n-slate-12">
                   {{ $t('STORAGE.HEAVY_FILES.TITLE') }}
                 </h4>
-                <p class="text-xs text-slate-500 mt-0.5">
+                <p class="text-xs text-n-slate-11 mt-0.5">
                   {{ $t('STORAGE.HEAVY_FILES.SUBTITLE') }}
                 </p>
               </div>
@@ -1065,7 +1080,7 @@ const getFileTypeName = type => {
               <div class="flex flex-wrap items-center gap-2.5">
                 <select
                   v-model="selectedFileType"
-                  class="text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  class="text-xs border border-n-weak rounded-lg px-2.5 py-1.5 bg-n-surface-1 text-n-slate-12 focus:outline-none focus:ring-1 focus:ring-n-brand"
                   @change="onFilterChange"
                 >
                   <option value="all">
@@ -1091,7 +1106,7 @@ const getFileTypeName = type => {
                 <select
                   v-if="inboxesList.length > 0"
                   v-model="selectedInboxId"
-                  class="text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 max-w-[160px] truncate"
+                  class="text-xs border border-n-weak rounded-lg px-2.5 py-1.5 bg-n-surface-1 text-n-slate-12 focus:outline-none focus:ring-1 focus:ring-n-brand max-w-[160px] truncate"
                   @change="onFilterChange"
                 >
                   <option value="">
@@ -1109,7 +1124,7 @@ const getFileTypeName = type => {
                   v-model="selectedConversationId"
                   type="number"
                   min="1"
-                  class="w-28 text-xs border border-slate-300 rounded-lg px-2.5 py-1.5"
+                  class="w-28 text-xs border border-n-weak rounded-lg px-2.5 py-1.5"
                   :aria-label="$t('STORAGE.HEAVY_FILES.CONVERSATION_ID')"
                   :placeholder="$t('STORAGE.HEAVY_FILES.CONVERSATION_ID')"
                   @change="onFilterChange"
@@ -1117,14 +1132,14 @@ const getFileTypeName = type => {
                 <input
                   v-model="selectedDateFrom"
                   type="date"
-                  class="text-xs border border-slate-300 rounded-lg px-2.5 py-1.5"
+                  class="text-xs border border-n-weak rounded-lg px-2.5 py-1.5"
                   :aria-label="$t('STORAGE.HEAVY_FILES.DATE_FROM')"
                   @change="onFilterChange"
                 />
                 <input
                   v-model="selectedDateTo"
                   type="date"
-                  class="text-xs border border-slate-300 rounded-lg px-2.5 py-1.5"
+                  class="text-xs border border-n-weak rounded-lg px-2.5 py-1.5"
                   :aria-label="$t('STORAGE.HEAVY_FILES.DATE_TO')"
                   @change="onFilterChange"
                 />
@@ -1133,7 +1148,7 @@ const getFileTypeName = type => {
 
             <p
               v-if="recordingsPending && !isLoadingFiles"
-              class="px-4 pt-4 text-xs text-slate-600"
+              class="px-4 pt-4 text-xs text-n-slate-11"
               role="status"
             >
               {{
@@ -1148,13 +1163,13 @@ const getFileTypeName = type => {
             <!-- Files list table -->
             <div
               v-if="isLoadingFiles"
-              class="p-8 text-center text-xs text-slate-400"
+              class="p-8 text-center text-xs text-n-slate-9"
             >
               {{ $t('STORAGE.LOADING') }}
             </div>
             <div
               v-else-if="heavyFiles.length === 0 && !recordingsPending"
-              class="p-8 text-center text-xs text-slate-400"
+              class="p-8 text-center text-xs text-n-slate-9"
             >
               {{
                 $t(
@@ -1167,7 +1182,7 @@ const getFileTypeName = type => {
             <div v-else-if="heavyFiles.length > 0" class="overflow-x-auto">
               <table class="w-full text-left text-xs">
                 <thead
-                  class="bg-slate-50 text-slate-500 uppercase font-semibold border-b border-slate-200"
+                  class="bg-n-slate-2 text-n-slate-11 uppercase font-semibold border-b border-n-weak"
                 >
                   <tr>
                     <th class="px-4 py-3">
@@ -1190,11 +1205,11 @@ const getFileTypeName = type => {
                     </th>
                   </tr>
                 </thead>
-                <tbody class="divide-y divide-slate-100">
+                <tbody class="divide-y divide-n-weak">
                   <tr
                     v-for="file in heavyFiles"
                     :key="file.id"
-                    class="hover:bg-slate-50/80 transition"
+                    class="hover:bg-n-slate-2/80 transition"
                   >
                     <td class="px-4 py-3">
                       <div
@@ -1204,7 +1219,7 @@ const getFileTypeName = type => {
                           getFileTypeIcon(file.file_type)
                         }}</span>
                         <span
-                          class="font-medium text-slate-900 truncate"
+                          class="font-medium text-n-slate-12 truncate"
                           :title="file.name"
                         >
                           {{ file.name }}
@@ -1213,20 +1228,20 @@ const getFileTypeName = type => {
                     </td>
                     <td class="px-4 py-3 whitespace-nowrap">
                       <span
-                        class="px-2 py-0.5 text-[10px] font-semibold rounded bg-slate-100 text-slate-700"
+                        class="px-2 py-0.5 text-[10px] font-semibold rounded bg-n-alpha-2 text-n-slate-12"
                       >
                         {{ getFileTypeName(file.file_type) }}
                       </span>
                     </td>
-                    <td class="px-4 py-3 text-slate-600 whitespace-nowrap">
+                    <td class="px-4 py-3 text-n-slate-11 whitespace-nowrap">
                       {{ file.inbox_name }}
                     </td>
                     <td
-                      class="px-4 py-3 font-semibold text-slate-900 whitespace-nowrap"
+                      class="px-4 py-3 font-semibold text-n-slate-12 whitespace-nowrap"
                     >
                       {{ file.human_size }}
                     </td>
-                    <td class="px-4 py-3 text-slate-500 whitespace-nowrap">
+                    <td class="px-4 py-3 text-n-slate-11 whitespace-nowrap">
                       {{ formatDate(file.created_at) }}
                     </td>
                     <td class="px-4 py-3 text-right whitespace-nowrap">
@@ -1239,7 +1254,7 @@ const getFileTypeName = type => {
                               conversation_id: file.conversation_id,
                             },
                           }"
-                          class="text-blue-600 hover:text-blue-800 font-medium hover:underline"
+                          class="text-n-blue-11 hover:text-n-blue-11 font-medium hover:underline"
                         >
                           {{
                             $t('STORAGE.HEAVY_FILES.ACTIONS.OPEN_CONVERSATION')
@@ -1250,7 +1265,7 @@ const getFileTypeName = type => {
                           :href="file.download_url"
                           target="_blank"
                           rel="noopener noreferrer"
-                          class="text-slate-500 hover:text-slate-700 font-medium hover:underline"
+                          class="text-n-slate-11 hover:text-n-slate-12 font-medium hover:underline"
                         >
                           {{ $t('STORAGE.HEAVY_FILES.ACTIONS.DOWNLOAD') }}
                         </a>
@@ -1264,19 +1279,19 @@ const getFileTypeName = type => {
 
           <!-- Trash List Card -->
           <div
-            class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden"
+            class="bg-n-surface-1 rounded-xl border border-n-weak shadow-sm overflow-hidden"
           >
             <div
-              class="p-4 sm:p-5 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4"
+              class="p-4 sm:p-5 border-b border-n-weak flex flex-col md:flex-row md:items-center justify-between gap-4"
             >
               <div>
                 <h4
-                  class="text-base font-bold text-slate-900 flex items-center gap-2"
+                  class="text-base font-bold text-n-slate-12 flex items-center gap-2"
                 >
                   <span>{{ '🗑️' }}</span>
                   <span>{{ $t('STORAGE.TRASH.TITLE') }}</span>
                 </h4>
-                <p class="text-xs text-slate-500 mt-0.5">
+                <p class="text-xs text-n-slate-11 mt-0.5">
                   {{
                     `${$t('STORAGE.TRASH.TOTAL_IN_TRASH')} ${trashTotalCount} (${formatBytes(trashTotalBytes)})`
                   }}
@@ -1285,44 +1300,47 @@ const getFileTypeName = type => {
 
               <!-- Trash Bulk Actions -->
               <div v-if="trashTotalCount > 0" class="flex items-center gap-2">
-                <button
+                <Button
                   type="button"
-                  class="button button--secondary button--xs"
+                  color="slate"
+                  variant="outline"
+                  size="xs"
                   :disabled="isRestoring || isPurging"
                   @click="restoreAllTrash"
                 >
                   <span>{{ '🔄' }}</span>
                   <span>{{ $t('STORAGE.TRASH.RESTORE_ALL') }}</span>
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
-                  class="button button--alert button--xs"
+                  color="ruby"
+                  size="xs"
                   :disabled="isRestoring || isPurging"
                   @click="emptyAllTrash"
                 >
                   <span>{{ '🔥' }}</span>
                   <span>{{ $t('STORAGE.TRASH.EMPTY_TRASH') }}</span>
-                </button>
+                </Button>
               </div>
             </div>
 
             <!-- Trash items list -->
             <div
               v-if="isLoadingTrash"
-              class="p-8 text-center text-xs text-slate-400"
+              class="p-8 text-center text-xs text-n-slate-9"
             >
               {{ $t('STORAGE.LOADING') }}
             </div>
             <div
               v-else-if="trashData.items.length === 0"
-              class="p-8 text-center text-xs text-slate-400"
+              class="p-8 text-center text-xs text-n-slate-9"
             >
               {{ $t('STORAGE.TRASH.EMPTY') }}
             </div>
             <div v-else class="overflow-x-auto">
               <table class="w-full text-left text-xs">
                 <thead
-                  class="bg-slate-50 text-slate-500 uppercase font-semibold border-b border-slate-200"
+                  class="bg-n-slate-2 text-n-slate-11 uppercase font-semibold border-b border-n-weak"
                 >
                   <tr>
                     <th class="px-4 py-3">
@@ -1348,11 +1366,11 @@ const getFileTypeName = type => {
                     </th>
                   </tr>
                 </thead>
-                <tbody class="divide-y divide-slate-100">
+                <tbody class="divide-y divide-n-weak">
                   <tr
                     v-for="item in trashData.items"
                     :key="`${item.item_type}_${item.id}`"
-                    class="hover:bg-slate-50/80 transition"
+                    class="hover:bg-n-slate-2/80 transition"
                   >
                     <td class="px-4 py-3">
                       <div
@@ -1362,7 +1380,7 @@ const getFileTypeName = type => {
                           getFileTypeIcon(item.file_type)
                         }}</span>
                         <span
-                          class="font-medium text-slate-900 truncate"
+                          class="font-medium text-n-slate-12 truncate"
                           :title="item.file_name"
                         >
                           {{ item.file_name }}
@@ -1371,20 +1389,20 @@ const getFileTypeName = type => {
                     </td>
                     <td class="px-4 py-3 whitespace-nowrap">
                       <span
-                        class="px-2 py-0.5 text-[10px] font-semibold rounded bg-slate-100 text-slate-700"
+                        class="px-2 py-0.5 text-[10px] font-semibold rounded bg-n-alpha-2 text-n-slate-12"
                       >
                         {{ getFileTypeName(item.file_type) }}
                       </span>
                     </td>
-                    <td class="px-4 py-3 text-slate-600 whitespace-nowrap">
+                    <td class="px-4 py-3 text-n-slate-11 whitespace-nowrap">
                       {{ item.inbox_name || '—' }}
                     </td>
                     <td
-                      class="px-4 py-3 font-semibold text-slate-900 whitespace-nowrap"
+                      class="px-4 py-3 font-semibold text-n-slate-12 whitespace-nowrap"
                     >
                       {{ formatBytes(item.byte_size) }}
                     </td>
-                    <td class="px-4 py-3 text-slate-500 whitespace-nowrap">
+                    <td class="px-4 py-3 text-n-slate-11 whitespace-nowrap">
                       {{ formatDate(item.deleted_at) }}
                     </td>
                     <td class="px-4 py-3 whitespace-nowrap">
@@ -1392,10 +1410,10 @@ const getFileTypeName = type => {
                         class="px-2 py-0.5 text-[10px] font-bold rounded"
                         :class="
                           item.days_remaining <= 3
-                            ? 'bg-red-100 text-red-700'
+                            ? 'bg-n-ruby-3 text-n-ruby-11'
                             : item.days_remaining <= 7
-                              ? 'bg-amber-100 text-amber-800'
-                              : 'bg-slate-100 text-slate-700'
+                              ? 'bg-n-amber-3 text-n-amber-11'
+                              : 'bg-n-alpha-2 text-n-slate-12'
                         "
                       >
                         {{
@@ -1407,22 +1425,26 @@ const getFileTypeName = type => {
                     </td>
                     <td class="px-4 py-3 text-right whitespace-nowrap">
                       <div class="inline-flex items-center gap-2">
-                        <button
+                        <Button
                           type="button"
-                          class="text-blue-600 hover:text-blue-800 font-semibold"
+                          color="blue"
+                          variant="link"
+                          size="xs"
                           :disabled="isRestoring || isPurging"
                           @click="restoreTrashItem(item)"
                         >
                           {{ $t('STORAGE.TRASH.RESTORE') }}
-                        </button>
-                        <button
+                        </Button>
+                        <Button
                           type="button"
-                          class="text-red-500 hover:text-red-700 font-semibold"
+                          color="ruby"
+                          variant="link"
+                          size="xs"
                           :disabled="isRestoring || isPurging"
                           @click="purgeTrashItem(item)"
                         >
                           {{ $t('STORAGE.TRASH.PURGE') }}
-                        </button>
+                        </Button>
                       </div>
                     </td>
                   </tr>

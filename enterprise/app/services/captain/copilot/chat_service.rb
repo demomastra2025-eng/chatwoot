@@ -225,7 +225,8 @@ class Captain::Copilot::ChatService < Llm::BaseAiService
       feature: :copilot,
       stage: :input,
       content: input,
-      account: @account
+      account: @account,
+      preferences: runtime_safety_preferences
     )
     nil
   rescue Llm::SafetyPolicy::UnsafeContentError
@@ -239,7 +240,8 @@ class Captain::Copilot::ChatService < Llm::BaseAiService
       feature: :copilot,
       stage: :output,
       content: parsed_response['content'],
-      account: @account
+      account: @account,
+      preferences: runtime_safety_preferences
     )
     parsed_response
   rescue Llm::SafetyPolicy::UnsafeContentError
@@ -250,6 +252,10 @@ class Captain::Copilot::ChatService < Llm::BaseAiService
 
   def blocked_response_payload(reason)
     { 'content' => "I can't help with that request.", 'reasoning' => reason, 'reply_suggestion' => false, 'ui_actions' => [] }
+  end
+
+  def runtime_safety_preferences
+    Captain::AssistantSafetyPreferences.for(assistant: @assistant, feature: :copilot)
   end
 
   def request_event_context

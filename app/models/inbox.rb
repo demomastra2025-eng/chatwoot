@@ -368,6 +368,20 @@ class Inbox < ApplicationRecord
     account.feature_enabled?('assignment_v2')
   end
 
+  def workspace_assignment_policy_applies?
+    account.workspace_assignment_policy_selected?
+  end
+
+  def effective_assignment_policy
+    return assignment_policy unless workspace_assignment_policy_applies?
+
+    account.workspace_assignment_policy
+  end
+
+  def workspace_assignment_policy_unavailable?
+    workspace_assignment_policy_applies? && account.workspace_assignment_policy.blank?
+  end
+
   private
 
   def add_account_members
@@ -377,6 +391,9 @@ class Inbox < ApplicationRecord
     locked_account.with_lock('FOR NO KEY UPDATE') do
       next if deleting? || self[:deletion_attempt_id].present?
       next if locked_account.custom_attributes.to_h['marked_for_deletion_at'].present?
+      # Voice inbox membership controls access to a phone line and must be
+      # granted by an administrator for each employee.
+      next if channel_type == 'Channel::Voice'
 
       locked_account.users.ids.each { |user_id| inbox_members.find_or_create_by!(user_id: user_id) }
     end

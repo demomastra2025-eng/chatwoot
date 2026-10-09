@@ -17,6 +17,7 @@ import LineChart from 'shared/components/charts/LineChart.vue';
 import CRMActivityReports from './components/CRMActivityReports.vue';
 import ReportFilters from './components/ReportFilters.vue';
 import ReportHeader from './components/ReportHeader.vue';
+import ReportMetricCard from './components/ReportMetricCard.vue';
 
 const { t, locale } = useI18n();
 
@@ -799,44 +800,19 @@ const onFilterChange = payload => {
 </script>
 
 <template>
-  <ReportHeader :header-title="$t('CRM_DEAL_REPORTS.HEADER')" />
+  <ReportHeader
+    :header-title="$t('CRM_DEAL_REPORTS.HEADER')"
+    :header-description="$t('CRM_DEAL_REPORTS.DESCRIPTION')"
+  >
+    <span
+      class="inline-flex items-center gap-2 rounded-lg border border-n-weak bg-n-surface-1 px-3 py-2 text-xs text-n-slate-11"
+    >
+      <i class="i-lucide-coins text-n-slate-10" />
+      {{ $t('CRM_DEAL_REPORTS.CURRENCY_HINT', { currency }) }}
+    </span>
+  </ReportHeader>
 
   <div class="flex flex-col gap-4 pb-8">
-    <section
-      class="rounded-xl bg-n-solid-2 p-5 shadow-sm outline outline-1 outline-n-container"
-    >
-      <div
-        class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"
-      >
-        <div class="flex gap-3">
-          <div
-            class="mt-1 flex size-10 shrink-0 items-center justify-center rounded-xl bg-n-blue-3 text-n-blue-11"
-          >
-            <i class="i-lucide-briefcase-business text-lg" />
-          </div>
-          <div class="max-w-3xl">
-            <p
-              class="text-xs font-semibold uppercase tracking-wide text-n-blue-11"
-            >
-              {{ $t('CRM_DEAL_REPORTS.KICKER') }}
-            </p>
-            <h2 class="mt-1 text-xl font-semibold text-n-slate-12">
-              {{ $t('CRM_DEAL_REPORTS.TITLE') }}
-            </h2>
-            <p class="mt-2 text-sm leading-6 text-n-slate-11">
-              {{ $t('CRM_DEAL_REPORTS.DESCRIPTION') }}
-            </p>
-          </div>
-        </div>
-        <div
-          class="inline-flex items-center gap-2 rounded-xl bg-n-alpha-1 px-3 py-2 text-sm text-n-slate-11"
-        >
-          <i class="i-lucide-coins text-n-slate-10" />
-          {{ $t('CRM_DEAL_REPORTS.CURRENCY_HINT', { currency }) }}
-        </div>
-      </div>
-    </section>
-
     <ReportFilters
       :show-business-hours="false"
       :show-entity-filter="false"
@@ -844,26 +820,26 @@ const onFilterChange = payload => {
       @filter-change="onFilterChange"
     />
 
-    <div class="grid grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-6">
+    <div
+      class="flex gap-1 overflow-x-auto rounded-lg border border-n-weak bg-n-surface-1 p-1"
+      role="group"
+      :aria-label="$t('CRM_DEAL_REPORTS.HEADER')"
+    >
       <button
         v-for="section in sections"
         :key="section.key"
+        :aria-pressed="activeSection === section.key"
         type="button"
-        class="rounded-xl border p-4 text-left transition hover:border-n-blue-6 hover:bg-n-blue-2"
+        class="inline-flex shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition hover:bg-n-surface-2"
         :class="
           activeSection === section.key
-            ? 'border-n-blue-8 bg-n-blue-3 text-n-blue-12'
-            : 'border-n-container bg-n-solid-2 text-n-slate-11'
+            ? 'bg-n-surface-2 text-n-slate-12'
+            : 'text-n-slate-11'
         "
         @click="activeSection = section.key"
       >
-        <div class="flex items-center gap-2 text-sm font-semibold">
-          <i :class="section.icon" />
-          <span>{{ section.label }}</span>
-        </div>
-        <p class="mt-2 text-xs leading-5 opacity-80">
-          {{ section.description }}
-        </p>
+        <i :class="section.icon" aria-hidden="true" />
+        <span>{{ section.label }}</span>
       </button>
     </div>
 
@@ -884,7 +860,7 @@ const onFilterChange = payload => {
 
     <div
       v-if="isLoading && activeSection !== 'activity'"
-      class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4"
+      class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"
     >
       <div
         v-for="item in 4"
@@ -894,31 +870,26 @@ const onFilterChange = payload => {
     </div>
 
     <template v-else-if="report && activeSection !== 'activity'">
-      <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div
           v-for="card in summaryCards"
           :key="card.key"
-          class="rounded-xl bg-n-solid-2 p-5 shadow-sm outline outline-1 outline-n-container"
+          class="flex min-h-28 items-start justify-between gap-3 rounded-xl border border-n-weak bg-n-surface-1 p-3"
         >
-          <div class="flex items-start justify-between gap-3">
-            <div>
-              <p class="text-sm font-medium text-n-slate-11">
-                {{ card.label }}
-              </p>
-              <p class="mt-3 text-2xl font-semibold text-n-slate-12">
-                {{ card.value }}
-              </p>
-            </div>
-            <span
-              :class="card.accent"
-              class="flex size-9 items-center justify-center rounded-xl"
-            >
-              <i :class="card.icon" class="text-lg" />
-            </span>
-          </div>
-          <p class="mt-3 text-xs leading-5 text-n-slate-10">
-            {{ card.helper }}
-          </p>
+          <ReportMetricCard
+            class="min-w-0 flex-1"
+            :label="card.label"
+            :value="card.value"
+            :info-text="card.helper"
+            :disabled="isLoading"
+          />
+          <span
+            :class="card.accent"
+            class="flex size-8 shrink-0 items-center justify-center rounded-lg"
+            aria-hidden="true"
+          >
+            <i :class="card.icon" />
+          </span>
         </div>
       </div>
 

@@ -278,10 +278,10 @@ describe('Sidebar', () => {
   });
 
   describe('AI group', () => {
-    it('is labelled «AI Агенты» and lists the AI pages without icons', async () => {
+    it('is labelled «AI Агенты» and lists AI pages without AI settings', async () => {
       const wrapper = await mountSidebar({
         permissions: ADMINISTRATOR,
-        routeName: 'captain_settings_index',
+        routeName: 'captain_assistants_playground_index',
       });
       const captain = sidebarGroup(wrapper, 'Captain');
 
@@ -295,7 +295,6 @@ describe('Sidebar', () => {
         'Tools',
         'Observability',
         'Knowledge Base',
-        'Settings Captain',
       ]);
       captain
         .props('children')
@@ -308,7 +307,7 @@ describe('Sidebar', () => {
         }
       );
       expect(renderedLeaves(wrapper).filter(leaf => leaf.active)).toEqual([
-        { name: 'Settings Captain', active: true },
+        { name: 'Sandbox', active: true },
       ]);
       expect(
         navigationChildNames(sidebarGroup(wrapper, 'Settings'))
@@ -323,17 +322,6 @@ describe('Sidebar', () => {
 
       expect(renderedLeaves(wrapper).filter(leaf => leaf.active)).toEqual([
         { name: 'Sandbox', active: true },
-      ]);
-    });
-
-    it('highlights AI settings in the AI group', async () => {
-      const wrapper = await mountSidebar({
-        permissions: ADMINISTRATOR,
-        routeName: 'captain_settings_index',
-      });
-
-      expect(renderedLeaves(wrapper).filter(leaf => leaf.active)).toEqual([
-        { name: 'Settings Captain', active: true },
       ]);
     });
 

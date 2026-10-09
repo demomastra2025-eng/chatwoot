@@ -65,7 +65,7 @@ module Enterprise::AutoAssignment::AssignmentService
   end
 
   def policy
-    @policy ||= inbox.assignment_policy
+    @policy ||= inbox.effective_assignment_policy
   end
 
   def account

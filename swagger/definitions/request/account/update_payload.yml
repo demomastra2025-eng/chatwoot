@@ -37,6 +37,14 @@ properties:
       - 'null'
     description: Whether to ignore waiting conversations for auto resolve
     example: false
+  conversation_assignment_policy_id:
+    type:
+      - integer
+      - 'null'
+    description: >-
+      Account administrator only. Set to an enabled assignment policy ID belonging to this account to select the
+      workspace policy, or null to clear the selection and retain existing per-inbox assignment behavior. A selected
+      policy that later becomes unavailable fails closed instead of falling back to per-inbox behavior.
   # Custom attributes parameters (stored in custom_attributes JSONB column)
   industry:
     type: string

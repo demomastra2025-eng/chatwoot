@@ -2853,6 +2853,146 @@ x-scheduling-expense-schema: &scheduling_expense_schema
   get:
     $ref: ./application/reporting_events/index.yml
 
+# Standalone account reports (permission: administrator or report_manage; no CRM feature dependency)
+/api/v1/accounts/{account_id}/reports/calls:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+    - in: query
+      name: from_date
+      schema: { type: string, format: date }
+      description: Inclusive workspace-local start date. Defaults to the first day of the trailing 30-day range.
+    - in: query
+      name: to_date
+      schema: { type: string, format: date }
+      description: Inclusive workspace-local end date. Defaults to today in the account reporting timezone.
+  get:
+    tags: [Reports]
+    operationId: get-account-calls-report
+    summary: Get account logical call report
+    description: Counts inbound routing legs as one logical call. A logical call is assigned to the local date of its first leg; answered requires an answer timestamp. Up to 1,000 calls are included in metrics, with incomplete coverage explicitly reported when capped. CRM is not required.
+    security:
+      - userApiKey: []
+    responses:
+      '200':
+        description: Account-scoped call metrics and recent logical calls
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                payload:
+                  type: object
+                  properties:
+                    summary:
+                      type: object
+                      properties:
+                        logical_call_count: { type: integer }
+                        answered_count: { type: integer }
+                        unanswered_count: { type: integer }
+                        inbound_count: { type: integer }
+                        outbound_count: { type: integer }
+                        average_answered_duration_seconds: { type: [number, 'null'] }
+                    daily_breakdown:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          date: { type: string, format: date }
+                          logical_call_count: { type: integer }
+                          answered_count: { type: integer }
+                          unanswered_count: { type: integer }
+                    rows:
+                      type: array
+                      description: Latest 100 logical calls; no phone or contact details are returned.
+                      items:
+                        type: object
+                        properties:
+                          id: { type: integer }
+                          started_at: { type: string, format: date-time }
+                          direction: { type: string }
+                          status: { type: string }
+                          answered: { type: boolean }
+                          duration_seconds: { type: [integer, 'null'] }
+                          provider: { type: string }
+                          inbox_name: { type: [string, 'null'] }
+                    coverage:
+                      type: object
+                      properties:
+                        complete: { type: boolean }
+                        limit: { type: integer }
+                        sampled_calls: { type: integer }
+                        count_scope: { type: string }
+                meta:
+                  type: object
+                  properties:
+                    from_date: { type: string, format: date }
+                    to_date: { type: string, format: date }
+                    timezone:
+                      type: string
+                      description: Canonical IANA timezone identifier suitable for browser date formatting.
+                    max_range_days: { type: integer }
+      '403':
+        description: Caller lacks report permission
+      '422':
+        description: Invalid date range or reporting timezone
+
+/api/v1/accounts/{account_id}/reports/leads:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+    - in: query
+      name: from_date
+      schema: { type: string, format: date }
+      description: Inclusive workspace-local start date. Defaults to the first day of the trailing 30-day range.
+    - in: query
+      name: to_date
+      schema: { type: string, format: date }
+      description: Inclusive workspace-local end date. Defaults to today in the account reporting timezone.
+  get:
+    tags: [Reports]
+    operationId: get-account-leads-and-sources-report
+    summary: Get account leads and sources report
+    description: Reports Meta messaging-referral events and lead form submission events separately from linked unique contacts. Only explicit click-to-WhatsApp, Messenger, and Instagram attribution types count as ad referrals; unknown attribution stays visible. CRM is not required.
+    security:
+      - userApiKey: []
+    responses:
+      '200':
+        description: Account-scoped referral, lead form, and processing metrics
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                payload:
+                  type: object
+                  properties:
+                    referrals:
+                      type: object
+                      description: Event totals, linked unique contacts, ad attribution totals, and capped attribution breakdown with omitted-event count.
+                      additionalProperties: true
+                    form_submissions:
+                      type: object
+                      description: Submission events, linked unique contacts, source/status, form and UTM breakdowns; each capped breakdown includes omitted-event counts.
+                      additionalProperties: true
+                    processing:
+                      type: object
+                      properties:
+                        submissions_processed_in_selected_period: { type: integer }
+                        selected_submissions_with_processed_at: { type: integer }
+                        average_processing_seconds: { type: [number, 'null'] }
+                meta:
+                  type: object
+                  properties:
+                    from_date: { type: string, format: date }
+                    to_date: { type: string, format: date }
+                    timezone:
+                      type: string
+                      description: Canonical IANA timezone identifier suitable for browser date formatting.
+                    max_range_days: { type: integer }
+      '403':
+        description: Caller lacks report permission
+      '422':
+        description: Invalid date range or reporting timezone
+
 # List
 /api/v2/accounts/{account_id}/reports:
   parameters:
@@ -3774,9 +3914,45 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     tags: [Captain Assistants]
     operationId: update-captain-assistant
     summary: Update an account Captain assistant
-    description: Select model and update tool access, follow-up and outcome reason settings inside the existing assistant.config object. Follow-ups use native reminders; disabling them cancels that assistant's open reminders.
+    description: Select model and update tool access, follow-up, outcome reason, and runtime safety settings inside the existing assistant.config object. Omitted safety fields retain saved overrides during a partial update; explicit null resets a safety field to inheritance from the workspace policy. Unspecified safety fields on a new assistant inherit workspace policy. Follow-ups use native reminders; disabling them cancels that assistant's open reminders.
     security: [{ userApiKey: [] }]
-    requestBody: { required: true, content: { application/json: { schema: { type: object, required: [assistant], properties: { assistant: { type: object, properties: { name: { type: string }, description: { type: string }, usage_mode: { type: string, enum: [external_agent, internal_assistant] }, config: { type: object, properties: { model: { type: string }, feature_faq: { type: boolean }, feature_memory: { type: boolean }, feature_citation: { type: boolean }, feature_web: { type: boolean }, feature_document_reading: { type: boolean }, feature_image_understanding: { type: boolean }, handoff_enabled: { type: boolean }, auto_completion_enabled: { type: boolean }, auto_reply_on_last_incoming: { type: boolean }, use_audio_transcriptions: { type: boolean }, tool_access: { type: object, additionalProperties: true }, follow_up_settings: { type: object, additionalProperties: true }, outcome_reason_settings: { type: object, additionalProperties: true }, context_access: { type: object, additionalProperties: true }, voice_settings: { type: object, additionalProperties: true }, rules: { type: object, additionalProperties: true } }, additionalProperties: true } } } } } } } }
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [assistant]
+            properties:
+              assistant:
+                type: object
+                properties:
+                  name: { type: string }
+                  description: { type: string }
+                  usage_mode: { type: string, enum: [external_agent, internal_assistant] }
+                  config:
+                    type: object
+                    properties:
+                      model: { type: string }
+                      safety_settings: { $ref: '#/components/schemas/captain_assistant_safety_settings' }
+                      feature_faq: { type: boolean }
+                      feature_memory: { type: boolean }
+                      feature_citation: { type: boolean }
+                      feature_web: { type: boolean }
+                      feature_document_reading: { type: boolean }
+                      feature_image_understanding: { type: boolean }
+                      handoff_enabled: { type: boolean }
+                      auto_completion_enabled: { type: boolean }
+                      auto_reply_on_last_incoming: { type: boolean }
+                      use_audio_transcriptions: { type: boolean }
+                      tool_access: { type: object, additionalProperties: true }
+                      follow_up_settings: { type: object, additionalProperties: true }
+                      outcome_reason_settings: { type: object, additionalProperties: true }
+                      context_access: { type: object, additionalProperties: true }
+                      voice_settings: { type: object, additionalProperties: true }
+                      rules: { type: object, additionalProperties: true }
+                    additionalProperties: true
+                additionalProperties: true
     responses: { '200': { description: Updated assistant configuration, content: { application/json: { schema: { type: object, additionalProperties: true } } } }, '422': { description: Invalid assistant configuration } }
   delete:
     tags: [Captain Assistants]
@@ -3784,3 +3960,34 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     summary: Delete an account Captain assistant
     security: [{ userApiKey: [] }]
     responses: { '204': { description: Deleted }, '404': { description: Assistant not found } }
+/api/v1/accounts/{account_id}/captain/assistants/{id}/playground:
+  parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
+  post:
+    tags: [Captain Assistants]
+    operationId: test-captain-assistant-playground
+    summary: Run one assistant playground request
+    description: Per-request model, temperature, and reasoning-effort overrides are validated against the existing model registry and are never persisted. The internal assistant playground is feature-gated and, when enabled, rejects these controls. Response latency is measured end-to-end; reasoning-token usage is returned only if reported by the provider.
+    security: [{ userApiKey: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/captain_assistant_playground_request' }
+    responses:
+      '200':
+        description: Assistant response and available runtime metrics
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/captain_assistant_playground_response' }
+      '422':
+        description: Unsupported or invalid per-request override
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [error, field]
+              properties:
+                error: { type: string, enum: [unsupported_playground_setting] }
+                field: { type: string, enum: [test_model, test_temperature, test_thinking_effort] }
+      '410':
+        description: The internal assistant playground is not enabled

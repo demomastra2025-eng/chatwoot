@@ -80,6 +80,10 @@ class AccountUser < ApplicationRecord
       next if locked_account.custom_attributes.to_h['marked_for_deletion_at'].present?
 
       locked_account.inboxes.active.where(deletion_attempt_id: nil).find_each do |inbox|
+        # Voice inbox membership grants access to a phone line. Keep that
+        # membership explicit when adding a workspace employee.
+        next if inbox.channel_type == 'Channel::Voice'
+
         inbox.inbox_members.find_or_create_by!(user_id: user_id)
       end
     end
