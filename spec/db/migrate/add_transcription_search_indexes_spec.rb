@@ -67,7 +67,8 @@ RSpec.describe AddTranscriptionSearchIndexes do
     analyzed_tables = []
     subscriber = lambda do |_name, _start, _finish, _id, payload|
       sql = payload[:sql]
-      analyzed_tables << sql[/\AANALYZE\s+"?(\w+)"?/i, 1] if sql
+      table = sql[/\AANALYZE\s+"?(\w+)"?/i, 1] if sql
+      analyzed_tables << table if table
     end
 
     ActiveSupport::Notifications.subscribed(subscriber, 'sql.active_record') { migrate }

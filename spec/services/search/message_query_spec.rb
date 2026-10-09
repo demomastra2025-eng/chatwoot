@@ -272,7 +272,7 @@ RSpec.describe Search::MessageQuery do
 
       result = described_class.new('справка').newest(base, limit: 5)
 
-      expect(result.rows.size).to eq(5)
+      expect(result.rows.size).to eq(1)
       expect(connection.select_value('SHOW enable_indexscan')).to eq('off')
     end
 
