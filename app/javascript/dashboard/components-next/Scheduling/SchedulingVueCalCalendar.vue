@@ -2036,7 +2036,8 @@ onMounted(() => {
 .scheduling-vue-cal
   :deep(
     .vuecal:not(.vuecal--horizontal)
-      .vuecal__scrollable--no-all-day-bar .vuecal__time-column::before
+      .vuecal__scrollable--no-all-day-bar
+      .vuecal__time-column::before
   ) {
   content: '';
   display: block;

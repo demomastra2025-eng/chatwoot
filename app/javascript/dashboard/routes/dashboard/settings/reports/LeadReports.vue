@@ -223,11 +223,11 @@ onMounted(() => loadReport());
               </td>
               <td class="px-4 py-2.5">{{ row.source_type }}</td>
               <td class="px-4 py-2.5">{{ row.referral_type }}</td>
-              <td class="px-4 py-2.5 text-right">{{ number(row.event_count) }}</td>
+              <td class="px-4 py-2.5 text-right">
+                {{ number(row.event_count) }}
+              </td>
             </tr>
-            <tr
-              v-if="!isLoading && !hasError && referralRows.length === 0"
-            >
+            <tr v-if="!isLoading && !hasError && referralRows.length === 0">
               <td colspan="5" class="px-4 py-8 text-center text-n-slate-10">
                 {{ t('REPORTS.LEADS.EMPTY') }}
               </td>
@@ -253,9 +253,8 @@ onMounted(() => loadReport());
           {{ t('REPORTS.LEADS.FORM_SUBMISSIONS_TITLE') }}
         </h2>
         <span class="text-xs text-n-slate-10">
-          {{
-            t('REPORTS.LEADS.PROCESSED_IN_PERIOD')
-          }}: {{ number(processing.submissions_processed_in_selected_period) }}
+          {{ t('REPORTS.LEADS.PROCESSED_IN_PERIOD') }}:
+          {{ number(processing.submissions_processed_in_selected_period) }}
           <span
             v-if="
               processing.average_processing_seconds !== null &&
@@ -287,14 +286,18 @@ onMounted(() => loadReport());
           <h3 class="mb-2 mt-0 text-xs font-semibold text-n-slate-11">
             {{ t('REPORTS.LEADS.SOURCE_STATUS') }}
           </h3>
-          <ul class="m-0 divide-y divide-n-weak rounded-lg border border-n-weak p-0">
+          <ul
+            class="m-0 divide-y divide-n-weak rounded-lg border border-n-weak p-0"
+          >
             <li
               v-for="row in sourceStatusRows"
               :key="`${row.source_kind}-${row.status}`"
               class="flex items-center justify-between gap-3 px-3 py-2 text-sm"
             >
               <span class="text-n-slate-11">
-                {{ localizedValue('REPORTS.LEADS.SOURCE_KINDS', row.source_kind) }}
+                {{
+                  localizedValue('REPORTS.LEADS.SOURCE_KINDS', row.source_kind)
+                }}
                 ·
                 {{ localizedValue('REPORTS.LEADS.STATUSES', row.status) }}
               </span>
@@ -314,7 +317,9 @@ onMounted(() => loadReport());
           <h3 class="mb-2 mt-0 text-xs font-semibold text-n-slate-11">
             {{ t('REPORTS.LEADS.FORMS') }}
           </h3>
-          <ul class="m-0 divide-y divide-n-weak rounded-lg border border-n-weak p-0">
+          <ul
+            class="m-0 divide-y divide-n-weak rounded-lg border border-n-weak p-0"
+          >
             <li
               v-for="row in formRows"
               :key="`${row.lead_form_id}-${row.source_kind}`"
@@ -323,7 +328,9 @@ onMounted(() => loadReport());
               <span class="min-w-0 truncate text-n-slate-11">
                 {{ row.lead_form_name }}
                 ·
-                {{ localizedValue('REPORTS.LEADS.SOURCE_KINDS', row.source_kind) }}
+                {{
+                  localizedValue('REPORTS.LEADS.SOURCE_KINDS', row.source_kind)
+                }}
               </span>
               <span class="shrink-0 font-medium text-n-slate-12">
                 {{ number(row.event_count) }}
@@ -354,7 +361,9 @@ onMounted(() => loadReport());
           <h3 class="mb-2 mt-0 text-xs font-semibold text-n-slate-11">
             {{ t('REPORTS.LEADS.UTM_SOURCES') }}
           </h3>
-          <ul class="m-0 divide-y divide-n-weak rounded-lg border border-n-weak p-0">
+          <ul
+            class="m-0 divide-y divide-n-weak rounded-lg border border-n-weak p-0"
+          >
             <li
               v-for="row in sourceRows"
               :key="row.value"
@@ -378,7 +387,9 @@ onMounted(() => loadReport());
           >
             {{
               t('REPORTS.LEADS.OMITTED_BREAKDOWN', {
-                count: number(submissions.utm_source_breakdown_omitted_event_count),
+                count: number(
+                  submissions.utm_source_breakdown_omitted_event_count
+                ),
               })
             }}
           </p>
@@ -387,7 +398,9 @@ onMounted(() => loadReport());
           <h3 class="mb-2 mt-0 text-xs font-semibold text-n-slate-11">
             {{ t('REPORTS.LEADS.UTM_CAMPAIGNS') }}
           </h3>
-          <ul class="m-0 divide-y divide-n-weak rounded-lg border border-n-weak p-0">
+          <ul
+            class="m-0 divide-y divide-n-weak rounded-lg border border-n-weak p-0"
+          >
             <li
               v-for="row in campaignRows"
               :key="row.value"
@@ -411,7 +424,9 @@ onMounted(() => loadReport());
           >
             {{
               t('REPORTS.LEADS.OMITTED_BREAKDOWN', {
-                count: number(submissions.utm_campaign_breakdown_omitted_event_count),
+                count: number(
+                  submissions.utm_campaign_breakdown_omitted_event_count
+                ),
               })
             }}
           </p>

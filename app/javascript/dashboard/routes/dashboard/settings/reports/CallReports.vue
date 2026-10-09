@@ -191,16 +191,28 @@ onMounted(() => loadReport());
               <th class="px-4 py-2 font-medium">
                 {{ t('REPORTS.CALLS.LOGICAL_CALLS') }}
               </th>
-              <th class="px-4 py-2 font-medium">{{ t('REPORTS.CALLS.ANSWERED_CALLS') }}</th>
-              <th class="px-4 py-2 font-medium">{{ t('REPORTS.CALLS.UNANSWERED_CALLS') }}</th>
+              <th class="px-4 py-2 font-medium">
+                {{ t('REPORTS.CALLS.ANSWERED_CALLS') }}
+              </th>
+              <th class="px-4 py-2 font-medium">
+                {{ t('REPORTS.CALLS.UNANSWERED_CALLS') }}
+              </th>
             </tr>
           </thead>
           <tbody class="divide-y divide-n-weak">
-            <tr v-for="day in dailyBreakdown" :key="day.date" class="text-n-slate-11">
+            <tr
+              v-for="day in dailyBreakdown"
+              :key="day.date"
+              class="text-n-slate-11"
+            >
               <td class="px-4 py-2.5">{{ formatDate(day.date) }}</td>
-              <td class="px-4 py-2.5">{{ formatCount(day.logical_call_count) }}</td>
+              <td class="px-4 py-2.5">
+                {{ formatCount(day.logical_call_count) }}
+              </td>
               <td class="px-4 py-2.5">{{ formatCount(day.answered_count) }}</td>
-              <td class="px-4 py-2.5">{{ formatCount(day.unanswered_count) }}</td>
+              <td class="px-4 py-2.5">
+                {{ formatCount(day.unanswered_count) }}
+              </td>
             </tr>
             <tr v-if="!isLoading && !hasError && dailyBreakdown.length === 0">
               <td colspan="4" class="px-4 py-8 text-center text-n-slate-10">
@@ -212,7 +224,9 @@ onMounted(() => loadReport());
       </div>
     </section>
 
-    <section class="overflow-hidden rounded-xl border border-n-weak bg-n-surface-1">
+    <section
+      class="overflow-hidden rounded-xl border border-n-weak bg-n-surface-1"
+    >
       <div class="border-b border-n-weak px-4 py-3">
         <h2 class="m-0 text-sm font-semibold text-n-slate-12">
           {{ t('REPORTS.CALLS.ROWS_TITLE') }}
@@ -246,19 +260,21 @@ onMounted(() => loadReport());
             </tr>
           </thead>
           <tbody class="divide-y divide-n-weak">
-            <tr
-              v-for="call in rows"
-              :key="call.id"
-              class="text-n-slate-11"
-            >
+            <tr v-for="call in rows" :key="call.id" class="text-n-slate-11">
               <td class="px-4 py-2.5">{{ formatDateTime(call.started_at) }}</td>
               <td class="px-4 py-2.5">
-                {{ t(`REPORTS.CALLS.${call.direction?.toUpperCase() || 'INBOUND'}`) }}
+                {{
+                  t(
+                    `REPORTS.CALLS.${call.direction?.toUpperCase() || 'INBOUND'}`
+                  )
+                }}
               </td>
               <td class="px-4 py-2.5">{{ statusLabel(call.status) }}</td>
               <td class="px-4 py-2.5">{{ call.inbox_name || '—' }}</td>
               <td class="px-4 py-2.5">{{ call.provider || '—' }}</td>
-              <td class="px-4 py-2.5">{{ formatSeconds(call.duration_seconds) }}</td>
+              <td class="px-4 py-2.5">
+                {{ formatSeconds(call.duration_seconds) }}
+              </td>
             </tr>
             <tr v-if="!isLoading && !hasError && rows.length === 0">
               <td colspan="6" class="px-4 py-8 text-center text-n-slate-10">

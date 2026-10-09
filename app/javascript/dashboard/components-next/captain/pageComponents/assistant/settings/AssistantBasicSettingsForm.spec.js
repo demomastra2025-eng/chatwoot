@@ -324,9 +324,9 @@ describe('AssistantBasicSettingsForm', () => {
 
     expect(wrapper.html()).not.toContain('USAGE_MODE');
     expect(selects).toHaveLength(4);
-      expect(modelOptions.map(option => option.value)).toContain(
-        'openai/gpt-6-luna'
-      );
+    expect(modelOptions.map(option => option.value)).toContain(
+      'openai/gpt-6-luna'
+    );
     expect(safetyOptionValues).not.toContain('external_agent');
     expect(safetyOptionValues).not.toContain('internal_assistant');
   });
