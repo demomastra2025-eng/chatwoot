@@ -9,6 +9,37 @@ import {
 } from '../captainCatalog';
 
 describe('captainCatalog helper', () => {
+  it('localizes the patient appointments group and tool', () => {
+    const translations = {
+      'CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.GROUPS.PATIENT_APPOINTMENTS':
+        'Записи пациента',
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.list_my_appointments.TITLE':
+        'Мои записи',
+    };
+    const i18n = {
+      te: key => key in translations,
+      t: key => translations[key],
+    };
+
+    expect(
+      localizeCatalogField(
+        {
+          id: 'appointment.nearest',
+          title: 'Ближайшая запись',
+          group_name: 'Записи пациента',
+          table_name: 'appointment',
+          field_type: 'computed',
+          field_key: 'nearest',
+        },
+        i18n
+      )
+    ).toMatchObject({ group_label: 'Записи пациента', title: 'Ближайшая запись' });
+    expect(
+      localizeCatalogTool({ id: 'list_my_appointments', title: 'Fallback' }, i18n)
+        .title
+    ).toBe('Мои записи');
+  });
+
   it('matches search by title, description, and group labels', () => {
     const item = {
       id: 'contact.name',

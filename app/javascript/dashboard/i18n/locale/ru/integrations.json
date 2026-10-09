@@ -865,7 +865,8 @@
             "CONVERSATION_ATTRIBUTES": "Атрибуты диалога",
             "DEAL_ATTRIBUTES": "Атрибуты сделки",
             "TASK_ATTRIBUTES": "Атрибуты задачи",
-            "APPOINTMENT_ATTRIBUTES": "Атрибуты записи"
+            "APPOINTMENT_ATTRIBUTES": "Атрибуты записи",
+            "PATIENT_APPOINTMENTS": "Записи пациента"
           },
           "TABLES": {
             "CONTACT": {
@@ -1372,6 +1373,10 @@
             "get_appointment": {
               "TITLE": "Открыть запись",
               "DESCRIPTION": "Открывает одну запись с ее деталями."
+            },
+            "list_my_appointments": {
+              "TITLE": "Мои записи",
+              "DESCRIPTION": "Показывает записи текущего пациента с фильтрами и страницами."
             },
             "search_appointments": {
               "TITLE": "Найти записи",

@@ -31,6 +31,7 @@ const FIELD_GROUP_KEY_MAP = {
   'Deal Attributes': 'DEAL_ATTRIBUTES',
   'Task Attributes': 'TASK_ATTRIBUTES',
   'Appointment Attributes': 'APPOINTMENT_ATTRIBUTES',
+  'Записи пациента': 'PATIENT_APPOINTMENTS',
 };
 
 const FIELD_SCOPE_KEY_MAP = {
@@ -133,6 +134,10 @@ const fieldDescriptionTranslationKey = field => {
 };
 
 const fieldFallbackDescription = (field, { t, te }) => {
+  if (field?.field_type === 'computed') {
+    return field?.description;
+  }
+
   const scopeKey = FIELD_SCOPE_KEY_MAP[field?.table_name];
 
   if (!scopeKey) {
