@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n';
 import { downloadFile, getFileInfo } from '@chatwoot/utils';
 import { useAlert } from 'dashboard/composables';
 import { useAttachmentAvailability } from 'dashboard/composables/useAttachmentAvailability';
+import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 
 import FileIcon from 'next/icon/FileIcon.vue';
 import Icon from 'next/icon/Icon.vue';
@@ -122,7 +123,7 @@ const handleDownload = async () => {
         @click.stop="handleDownload"
       >
         <Icon v-if="!isDownloading" icon="i-lucide-download" />
-        <span v-else class="text-xs">…</span>
+        <Spinner v-else :size="16" class="text-n-slate-11" />
       </button>
     </div>
     <div

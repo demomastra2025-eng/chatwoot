@@ -26,11 +26,11 @@ export const installLazyChunkRecovery = ({
     event.preventDefault();
 
     const timestamp = now();
-    for (const [fingerprint, lastSeen] of lastNotices) {
+    lastNotices.forEach((lastSeen, fingerprint) => {
       if (timestamp - lastSeen >= RECOVERY_NOTICE_TTL_MS) {
         lastNotices.delete(fingerprint);
       }
-    }
+    });
 
     const fingerprint = assetFingerprint(event);
     const lastSeen = lastNotices.get(fingerprint);

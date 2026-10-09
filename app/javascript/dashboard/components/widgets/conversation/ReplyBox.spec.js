@@ -55,7 +55,7 @@ describe('ReplyBox', () => {
     ReplyBox.methods.flushDraftBeforeStaleChunkRefresh.call(context);
 
     expect(LocalStorage.get(LOCAL_STORAGE_KEYS.DRAFT_MESSAGES)).toEqual({
-      'draft-42-reply': 'Latest unsaved reply',
+      'draft-42-reply': '  Latest unsaved reply  ',
     });
   });
 

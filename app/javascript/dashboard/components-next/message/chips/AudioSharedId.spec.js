@@ -1,6 +1,7 @@
 import { mount, flushPromises } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { nextTick } from 'vue';
+import { createStore } from 'vuex';
 
 const waveSurferState = vi.hoisted(() => ({ instances: [] }));
 
@@ -38,6 +39,12 @@ vi.mock('wavesurfer.js', async () => {
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: key => key }) }));
 vi.mock('dashboard/composables', () => ({ useAlert: vi.fn() }));
 vi.mock('@chatwoot/utils', () => ({ downloadFile: vi.fn() }));
+vi.mock('vue-router', () => ({
+  useRoute: () => ({
+    fullPath: '/app/accounts/77/conversations/77',
+    params: { accountId: '77' },
+  }),
+}));
 
 import AudioChip from './Audio.vue';
 import { useAudioPlaybackState } from '../audioPlaybackState';
@@ -55,9 +62,16 @@ const ATTACHMENT = {
 let wrappers = [];
 
 const mountChip = () => {
+  const store = createStore({
+    state: {
+      conversations: { selectedChatType: 'conversation' },
+    },
+    getters: { getSelectedChat: () => ({ id: 77 }) },
+    actions: { fetchAllAttachments: vi.fn() },
+  });
   const chipWrapper = mount(AudioChip, {
     props: { attachment: { ...ATTACHMENT } },
-    global: { stubs: { Icon: true } },
+    global: { plugins: [store], stubs: { Icon: true } },
     attachTo: document.body,
   });
   wrappers.push(chipWrapper);

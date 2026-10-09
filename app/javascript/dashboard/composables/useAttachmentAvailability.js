@@ -16,11 +16,11 @@ const attachmentKey = (accountId, conversationId, attachmentId) =>
   [accountId || '', conversationId, attachmentId].join(':');
 
 const pruneAttachmentChecks = timestamp => {
-  for (const [key, check] of attachmentChecks) {
+  attachmentChecks.forEach((check, key) => {
     if (timestamp - check.checkedAt >= ATTACHMENT_CHECK_TTL_MS) {
       attachmentChecks.delete(key);
     }
-  }
+  });
 };
 
 const rememberConfirmedPurge = (attachmentId, identity) => {

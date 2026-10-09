@@ -41,7 +41,8 @@ const onNewToastMessage = ({ message: originalMessage, action }) => {
           : {}),
       }
     : action;
-  const key = ++toastSequence;
+  toastSequence += 1;
+  const key = toastSequence;
 
   snackMessages.value.push({
     key,
