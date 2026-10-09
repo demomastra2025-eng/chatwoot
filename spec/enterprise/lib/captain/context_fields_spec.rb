@@ -355,11 +355,17 @@ RSpec.describe Captain::ContextFields do
   describe '.appointment_state_for' do
     let(:conversation_record) { create(:conversation, account: account) }
     let(:resource) { create(:scheduling_resource, account: account, timezone: 'Asia/Almaty') }
+
+    around do |example|
+      travel_to(Time.zone.parse('2026-03-28 12:00:00')) { example.run }
+    end
+
     let!(:appointment_record) do
       create(
         :scheduling_appointment,
         account: account,
         resource: resource,
+        contact: conversation_record.contact,
         conversation: conversation_record,
         starts_at: '2026-03-29T10:00:00Z',
         ends_at: '2026-03-29T10:30:00Z'
@@ -430,12 +436,16 @@ RSpec.describe Captain::ContextFields do
     end
 
     it 'exposes the formatted fields in the field definitions picker' do
-      ids = described_class.definitions_for(account).map { |field| field[:id] }
+      definitions = described_class.definitions_for(account)
+      ids = definitions.pluck(:id)
 
       expect(ids).to include(
         'appointment.start_date', 'appointment.start_time',
-        'appointment.end_date', 'appointment.end_time'
+        'appointment.end_date', 'appointment.end_time',
+        'appointment.nearest', 'appointment.last_past', 'appointment.last_cancelled', 'appointment.all'
       )
+      expect(definitions.find { |field| field[:id] == 'appointment.nearest' })
+        .to include(group_name: 'Записи пациента', title: 'Ближайшая запись')
     end
   end
 

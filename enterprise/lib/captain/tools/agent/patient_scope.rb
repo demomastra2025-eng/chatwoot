@@ -48,7 +48,7 @@ class Captain::Tools::Agent::PatientScope
     scope = @assistant.account.scheduling_appointments
     return scope.none if contact_id.blank?
 
-    scope.where(contact_id: contact_id).or(scope.where(conversation_id: conversation.id))
+    scope.where(contact_id: contact_id)
   end
 
   def deals

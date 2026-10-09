@@ -1957,12 +1957,15 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         )
       end
       let!(:appointment) do
+        start_time = 2.days.from_now
         create(
           :scheduling_appointment,
           account: account,
           contact: contact,
           conversation: conversation,
           resource: create(:scheduling_resource, account: account),
+          starts_at: start_time,
+          ends_at: start_time + 30.minutes,
           custom_attributes: {
             visit_room: 'B12',
             medelement_reception_code: 'fake-reception',
