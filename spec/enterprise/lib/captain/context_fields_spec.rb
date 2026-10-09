@@ -388,23 +388,45 @@ RSpec.describe Captain::ContextFields do
       expect(state[:start_time]).to eq('15:00')
     end
 
-    it 'omits provider and payment fields from patient agent runtime and prompt context' do
+    it 'keeps selected clinic fields but omits provider and payment data from patient context' do
       account.enable_features!('scheduling')
+      create(:crm_field_definition, account: account, entity_kind: 'appointment',
+                                    key: 'provider_receipt', label: 'Provider Receipt')
+      create(:crm_field_definition, account: account, entity_kind: 'appointment',
+                                    key: 'payment_reference', label: 'Payment Reference')
       appointment_record.update!(external_ref: 'medelement:reception:example',
-                                 custom_attributes: { 'medelement_reception_code' => 'example' })
+                                 custom_attributes: {
+                                   'visit_room' => 'B12', 'medelement_reception_code' => 'example',
+                                   'provider_receipt' => 'private-receipt', 'payment_reference' => 'private-payment'
+                                 })
       assistant = create(:captain_assistant, account: account)
 
       state = described_class.runtime_state_for(account: account, conversation: conversation_record, assistant: assistant)
-      expect(state.fetch(:appointment).keys).to match_array(%i[id resource_name start_date start_time status])
-      expect(state.to_json).not_to include('medelement_reception_code', 'medelement:reception:example')
+      expect(state.fetch(:appointment)).to include(custom_attributes: { 'visit_room' => 'B12' })
+      expect(state.to_json).not_to include(
+        'medelement_reception_code', 'medelement:reception:example', 'private-receipt', 'private-payment'
+      )
 
       prompt = described_class.prompt_state_for(
         assistant: assistant, runtime_state: state,
-        field_ids: %w[appointment.id appointment.external_ref appointment.payment_status appointment.custom_attributes.visit_room]
+        field_ids: %w[
+          appointment.id appointment.external_ref appointment.payment_status appointment.custom_attributes.visit_room
+          appointment.custom_attributes.provider_receipt appointment.custom_attributes.payment_reference
+        ]
       )
       expect(prompt.dig(:visible_fields, :appointment)).to include('id')
       expect(prompt.dig(:visible_fields, :appointment)).not_to include('external_ref', 'payment_status')
-      expect(prompt.to_json).not_to include('medelement', 'payment_status', 'visit_room')
+      expect(prompt.dig(:appointment, :custom_attributes)).to eq('visit_room' => 'B12')
+      expect(prompt.to_json).not_to include('medelement', 'payment_status', 'provider_receipt', 'payment_reference')
+
+      assistant.update!(config: {
+        'context_access' => { 'appointment' => { 'enabled' => true, 'field_ids' => %w[
+          appointment.custom_attributes.visit_room appointment.custom_attributes.provider_receipt
+          appointment.custom_attributes.payment_reference
+        ] } }
+      })
+      configured_prompt = described_class.prompt_state_for(assistant: assistant, runtime_state: state)
+      expect(configured_prompt.dig(:appointment, :custom_attributes)).to eq('visit_room' => 'B12')
     end
 
     it 'exposes the formatted fields in the field definitions picker' do

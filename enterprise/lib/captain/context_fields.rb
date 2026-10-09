@@ -34,6 +34,10 @@ class Captain::ContextFields
   PATIENT_APPOINTMENT_FIELD_IDS = %w[
     appointment.id appointment.resource_name appointment.start_date appointment.start_time appointment.status
   ].freeze
+  PATIENT_APPOINTMENT_SYSTEM_KEY = Regexp.union(
+    /\Amedelement_/,
+    /(?:\A|_)(?:provider|command|receipt|reception|payment|prepaid|settlement|idempotency|external)(?:_|\z)/
+  )
   COMMUNICATION_THREAD_CHANNEL_KEYS = %i[
     conversation_id inbox_id inbox_name contact_inbox_id channel medium provider status
     can_reply can_send_text requires_template reply_window_open reply_window_closes_at
@@ -217,7 +221,15 @@ class Captain::ContextFields
       return if appointment.blank? || appointment.account_id != account.id
 
       state = build_appointment_state(appointment, account)
-      return state.slice(:id, :resource_name, :start_date, :start_time, :status) if patient_scope
+      if patient_scope
+        patient_state = state.slice(:id, :resource_name, :start_date, :start_time, :status)
+        field_keys = appointment_custom_attribute_fields(account)
+                     .select { |field| patient_appointment_definition?(field) }
+                     .map { |field| field[:field_key].to_s }
+        custom_attributes = state[:custom_attributes].to_h.stringify_keys.slice(*field_keys)
+        patient_state[:custom_attributes] = custom_attributes if custom_attributes.present?
+        return patient_state
+      end
 
       state
     end
@@ -376,6 +388,7 @@ class Captain::ContextFields
 
     def allowed_definitions_for(assistant)
       definitions = definitions_for(assistant.account)
+      definitions = definitions.select { |field| patient_appointment_definition?(field) } if assistant.usage_mode == 'external_agent'
       access = normalized_access_for(assistant, definitions)
 
       definitions.select do |field|
@@ -386,6 +399,7 @@ class Captain::ContextFields
 
     def effective_definitions_for(assistant, field_ids: nil)
       definitions = definitions_for(assistant.account)
+      definitions = definitions.select { |field| patient_appointment_definition?(field) } if assistant.usage_mode == 'external_agent'
       explicit_field_ids = sanitize_field_ids(field_ids, definitions)
 
       definitions.select { |field| explicit_field_ids.include?(field[:id]) }
@@ -407,7 +421,14 @@ class Captain::ContextFields
 
     def prompt_state_for(assistant:, runtime_state:, field_ids: nil)
       definitions = definitions_for(assistant.account)
+      definitions = definitions.select { |field| patient_appointment_definition?(field) } if assistant.usage_mode == 'external_agent'
       explicit_field_ids = sanitize_field_ids(field_ids, definitions)
+      if assistant.usage_mode == 'external_agent'
+        appointment_access = normalized_access_for(assistant, definitions)[:appointment]
+        if appointment_access[:enabled]
+          explicit_field_ids |= appointment_access[:field_ids].grep(/\Aappointment\.custom_attributes\./)
+        end
+      end
       prompt_state = {}
       visible_fields = {}
       custom_attribute_label_maps = custom_attribute_label_maps_for_definitions(
@@ -419,7 +440,6 @@ class Captain::ContextFields
           field_id.start_with?("#{scope}.")
         end
         effective_field_ids = effective_field_ids.uniq
-        effective_field_ids &= PATIENT_APPOINTMENT_FIELD_IDS if scope == :appointment && assistant.usage_mode == 'external_agent'
         next if effective_field_ids.blank?
 
         scoped_prompt_state = build_scoped_prompt_state(
@@ -509,6 +529,13 @@ class Captain::ContextFields
     end
 
     private
+
+    def patient_appointment_definition?(field)
+      return true unless field[:table_name] == 'appointment'
+      return PATIENT_APPOINTMENT_FIELD_IDS.include?(field[:id]) unless field[:field_type] == 'custom_attribute'
+
+      !field[:field_key].to_s.match?(PATIENT_APPOINTMENT_SYSTEM_KEY)
+    end
 
     def build_appointment_state(appointment, account)
       timezone = ActiveSupport::TimeZone[appointment.resource&.timezone] ||
