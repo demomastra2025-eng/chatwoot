@@ -5,7 +5,10 @@ RSpec.describe Captain::Tools::CancelAppointmentTool do
   let(:assistant) { create(:captain_assistant, account: account) }
   let(:contact) { create(:contact, account: account) }
   let(:conversation) { create(:conversation, account: account, contact: contact) }
-  let(:tool_context) { Struct.new(:state).new({ conversation: { id: conversation.id } }) }
+  let(:run_context) do
+    instance_double(Captain::Runtime::RunContext, context: { state: { conversation: { id: conversation.id } } })
+  end
+  let(:tool_context) { Captain::Runtime::ToolContext.new(run_context: run_context) }
   let(:missing_id) { 2_147_483_647 }
   let(:neutral_failure) { Captain::Tools::Agent::PatientScope::FAILURE }
 

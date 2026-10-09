@@ -6,7 +6,10 @@ RSpec.describe Captain::Tools::UpdateDealTool do
   let(:contact) { create(:contact, account: account) }
   let(:other_contact) { create(:contact, account: account) }
   let(:conversation) { create(:conversation, account: account, contact: contact) }
-  let(:tool_context) { Struct.new(:state).new({ conversation: { id: conversation.id } }) }
+  let(:run_context) do
+    instance_double(Captain::Runtime::RunContext, context: { state: { conversation: { id: conversation.id } } })
+  end
+  let(:tool_context) { Captain::Runtime::ToolContext.new(run_context: run_context) }
   let(:neutral_failure) { Captain::Tools::Agent::PatientScope::FAILURE }
 
   before do
@@ -29,12 +32,31 @@ RSpec.describe Captain::Tools::UpdateDealTool do
   end
 
   it 'takes the note target from the persisted conversation rather than a spoofed state contact' do
-    spoofed_context = Struct.new(:state).new({ conversation: { id: conversation.id }, contact: { id: other_contact.id } })
+    spoofed_run_context = instance_double(
+      Captain::Runtime::RunContext,
+      context: { state: { conversation: { id: conversation.id }, contact: { id: other_contact.id } } }
+    )
+    spoofed_context = Captain::Runtime::ToolContext.new(run_context: spoofed_run_context)
 
     result = Captain::Tools::AddContactNoteTool.new(assistant).execute(spoofed_context, note: 'Own note')
 
     expect(result).to include('Note added successfully')
     expect(contact.notes.pluck(:content)).to include('Own note')
     expect(other_contact.notes.pluck(:content)).not_to include('Own note')
+  end
+
+  it 'creates a task for the current patient deal but denies a foreign deal' do
+    account.enable_features!('crm_tasks')
+    own = create(:crm_deal, account: account)
+    foreign = create(:crm_deal, account: account)
+    create(:crm_deal_contact, account: account, deal: own, contact: contact, primary: true)
+    create(:crm_deal_contact, account: account, deal: foreign, contact: other_contact, primary: true)
+    tool = Captain::Tools::CreateTaskTool.new(assistant)
+
+    result = tool.execute(tool_context, title: 'Follow up', deal_id: own.id)
+
+    expect(JSON.parse(result).fetch('task_id')).to be_present
+    expect(tool.execute(tool_context, title: 'Must not create', deal_id: foreign.id)).to eq(neutral_failure)
+    expect(account.crm_tasks.where(title: 'Must not create')).to be_empty
   end
 end
