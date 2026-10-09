@@ -173,7 +173,9 @@ onMounted(() => loadReport());
       </div>
     </div>
 
-    <section class="overflow-hidden rounded-xl border border-n-weak bg-n-surface-1">
+    <section
+      class="overflow-hidden rounded-xl border border-n-weak bg-n-surface-1"
+    >
       <div class="border-b border-n-weak px-4 py-3">
         <h2 class="m-0 text-sm font-semibold text-n-slate-12">
           {{ t('REPORTS.CALLS.DAILY_TITLE') }}
@@ -183,8 +185,12 @@ onMounted(() => loadReport());
         <table class="w-full min-w-[34rem] text-left text-sm">
           <thead class="bg-n-surface-2 text-xs text-n-slate-10">
             <tr>
-              <th class="px-4 py-2 font-medium">{{ t('REPORTS.CALLS.DATE') }}</th>
-              <th class="px-4 py-2 font-medium">{{ t('REPORTS.CALLS.LOGICAL_CALLS') }}</th>
+              <th class="px-4 py-2 font-medium">
+                {{ t('REPORTS.CALLS.DATE') }}
+              </th>
+              <th class="px-4 py-2 font-medium">
+                {{ t('REPORTS.CALLS.LOGICAL_CALLS') }}
+              </th>
               <th class="px-4 py-2 font-medium">{{ t('REPORTS.CALLS.ANSWERED_CALLS') }}</th>
               <th class="px-4 py-2 font-medium">{{ t('REPORTS.CALLS.UNANSWERED_CALLS') }}</th>
             </tr>

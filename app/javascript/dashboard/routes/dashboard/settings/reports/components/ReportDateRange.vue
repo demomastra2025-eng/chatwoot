@@ -64,7 +64,9 @@ const apply = () => {
     @submit.prevent="apply"
   >
     <div class="grid grid-cols-2 gap-3">
-      <label class="flex min-w-0 flex-col gap-1 text-xs font-medium text-n-slate-11">
+      <label
+        class="flex min-w-0 flex-col gap-1 text-xs font-medium text-n-slate-11"
+      >
         <span>{{ t('REPORTS.DATE_RANGE.FROM') }}</span>
         <input
           :value="fromDate"
@@ -74,7 +76,9 @@ const apply = () => {
           @input="emit('update:fromDate', $event.target.value)"
         />
       </label>
-      <label class="flex min-w-0 flex-col gap-1 text-xs font-medium text-n-slate-11">
+      <label
+        class="flex min-w-0 flex-col gap-1 text-xs font-medium text-n-slate-11"
+      >
         <span>{{ t('REPORTS.DATE_RANGE.TO') }}</span>
         <input
           :value="toDate"

@@ -39,13 +39,13 @@ RSpec.describe 'Account Calls and Leads Reports API', type: :request do
   end
 
   it 'requires report permission for both endpoints' do
-    agent = create(:user, account: account, role: :agent)
-    agent_headers = agent.create_new_auth_token
+    calls_agent = create(:user, account: account, role: :agent)
+    leads_agent = create(:user, account: account, role: :agent)
 
-    get calls_path, params: date_params, headers: agent_headers, as: :json
+    get calls_path, params: date_params, headers: calls_agent.create_new_auth_token, as: :json
     expect(response).to have_http_status(:forbidden)
 
-    get leads_path, params: date_params, headers: agent_headers, as: :json
+    get leads_path, params: date_params, headers: leads_agent.create_new_auth_token, as: :json
     expect(response).to have_http_status(:forbidden)
   end
 end

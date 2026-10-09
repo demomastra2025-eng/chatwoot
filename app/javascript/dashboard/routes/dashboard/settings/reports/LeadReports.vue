@@ -21,7 +21,9 @@ const hasError = ref(false);
 const referrals = computed(() => report.value.referrals || {});
 const submissions = computed(() => report.value.form_submissions || {});
 const processing = computed(() => report.value.processing || {});
-const referralRows = computed(() => referrals.value.attribution_breakdown || []);
+const referralRows = computed(
+  () => referrals.value.attribution_breakdown || []
+);
 const sourceStatusRows = computed(
   () => submissions.value.source_status_breakdown || []
 );
@@ -161,7 +163,7 @@ onMounted(() => loadReport());
       </h2>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <div
-        v-for="metric in referralMetrics"
+          v-for="metric in referralMetrics"
           :key="metric.key"
           class="rounded-lg border border-n-weak p-3"
         >
@@ -175,7 +177,9 @@ onMounted(() => loadReport());
       </div>
     </section>
 
-    <section class="overflow-hidden rounded-xl border border-n-weak bg-n-surface-1">
+    <section
+      class="overflow-hidden rounded-xl border border-n-weak bg-n-surface-1"
+    >
       <div class="border-b border-n-weak px-4 py-3">
         <h2 class="m-0 text-sm font-semibold text-n-slate-12">
           {{ t('REPORTS.LEADS.ATTRIBUTION_BREAKDOWN') }}
