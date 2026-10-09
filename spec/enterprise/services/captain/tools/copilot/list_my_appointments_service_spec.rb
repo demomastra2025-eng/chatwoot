@@ -33,6 +33,8 @@ RSpec.describe Captain::Tools::Copilot::ListMyAppointmentsService do
   it 'returns neutral failures for invalid filters and a missing contact' do
     expect(call_tool(status: 'private')).to eq('success' => false, 'reason' => 'validation_error')
     expect(call_tool(limit: -1)).to eq('success' => false, 'reason' => 'validation_error')
+    expect(call_tool(date_from: '2026-10-10T12:00:00Z')).to eq('success' => false, 'reason' => 'validation_error')
+    expect(call_tool(date_to: '2026-02-30')).to eq('success' => false, 'reason' => 'validation_error')
     absent_context = Struct.new(:state, :context).new({ conversation: { id: 2_147_483_647 } }, {})
     adapter = Captain::Tools::Agent::AccountToolAdapter.new(assistant, tool_id: 'list_my_appointments')
     expect(JSON.parse(adapter.execute(absent_context))).to eq('success' => false, 'reason' => 'not_found')

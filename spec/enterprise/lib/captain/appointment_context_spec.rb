@@ -103,4 +103,27 @@ RSpec.describe Captain::AppointmentContext do
     expect(context.list(doctor: 'Доктор').fetch(:total)).to eq(2)
     expect(context.list(doctor: 'Другой').fetch(:appointments)).to be_empty
   end
+
+  it 'filters calendar dates using the clinic timezone when the account timezone is unset' do
+    appointment(starts_at: Time.zone.parse('2026-10-09 18:59:00 UTC'))
+    at_start = appointment(starts_at: Time.zone.parse('2026-10-09 19:00:00 UTC'))
+    at_end = appointment(starts_at: Time.zone.parse('2026-10-10 18:59:00 UTC'))
+    appointment(starts_at: Time.zone.parse('2026-10-10 19:00:00 UTC'))
+
+    page = context.list(date_from: '2026-10-10', date_to: '2026-10-10')
+    expect(page.fetch(:appointments).pluck(:id)).to contain_exactly(at_start.id, at_end.id)
+    expect(page.fetch(:appointments).pluck(:date)).to eq(['10.10.2026', '10.10.2026'])
+  end
+
+  it 'uses a configured reporting timezone for the date range' do
+    account.update!(reporting_timezone: 'Europe/Moscow')
+    appointment(starts_at: Time.zone.parse('2026-10-09 19:00:00 UTC'))
+
+    expect(context.list(date_from: '2026-10-10', date_to: '2026-10-10').fetch(:total)).to eq(0)
+  end
+
+  it 'accepts only valid ISO calendar dates' do
+    expect { context.list(date_from: '2026-10-10T12:00:00Z') }.to raise_error(ArgumentError, 'Invalid date')
+    expect { context.list(date_to: '2026-02-30') }.to raise_error(ArgumentError, 'Invalid date')
+  end
 end

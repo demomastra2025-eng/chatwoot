@@ -89,7 +89,8 @@ class Captain::AppointmentContext
   end
 
   def day_start(date)
-    zone = ActiveSupport::TimeZone[@account.reporting_timezone] || Time.zone
+    zone = ActiveSupport::TimeZone[@account.reporting_timezone] if @account.reporting_timezone.present?
+    zone ||= ActiveSupport::TimeZone[Scheduling::Constants::DEFAULT_TIMEZONE]
     zone.local(date.year, date.month, date.day)
   end
 
@@ -126,6 +127,8 @@ class Captain::AppointmentContext
 
   def parse_date(value)
     return if value.blank?
+
+    raise ArgumentError, 'Invalid date' unless value.to_s.match?(/\A\d{4}-\d{2}-\d{2}\z/)
 
     Date.iso8601(value.to_s)
   rescue Date::Error
