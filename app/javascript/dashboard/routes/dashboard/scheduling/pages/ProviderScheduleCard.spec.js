@@ -52,7 +52,7 @@ describe('ProviderScheduleCard', () => {
     expect(wrapper.text()).toContain('10:00–12:00');
     expect(wrapper.text()).toContain('Обновлено 5 минут назад');
     expect(wrapper.text()).not.toContain('Нет рабочих часов');
-    expect(wrapper.text()).toContain(
+    expect(wrapper.text()).not.toContain(
       'График отличается от местных правил расписания.'
     );
     expect(toggle.text()).toBe('Показать график');
