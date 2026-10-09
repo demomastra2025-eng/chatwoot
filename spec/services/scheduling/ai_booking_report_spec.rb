@@ -81,14 +81,20 @@ RSpec.describe Scheduling::AiBookingReport do
     failed = appointment
     unknown = appointment(starts_at: 1.day.from_now.change(hour: 11), ends_at: 1.day.from_now.change(hour: 11) + 30.minutes)
     waiting = appointment(starts_at: 1.day.from_now.change(hour: 12), ends_at: 1.day.from_now.change(hour: 12) + 30.minutes)
+    declined = appointment(starts_at: 1.day.from_now.change(hour: 13), ends_at: 1.day.from_now.change(hour: 13) + 30.minutes)
+    cancelled = appointment(starts_at: 1.day.from_now.change(hour: 14), ends_at: 1.day.from_now.change(hour: 14) + 30.minutes)
     command_for(failed, status: 'failed')
     command_for(unknown, status: 'provider_status_unknown')
     command_for(waiting, status: 'awaiting_patient_selection')
+    command_for(declined, status: 'declined')
+    command_for(cancelled, status: 'cancelled')
 
     expect(findings.map { |row| [row['appointment_id'], row['rule'], row['severity']] }).to include(
       [failed.id, 'A2_COMMAND_FAILED', 'warning'],
       [unknown.id, 'A2_PROVIDER_UNKNOWN', 'critical'],
-      [waiting.id, 'A2_AWAITING_PATIENT', 'needs_human']
+      [waiting.id, 'A2_AWAITING_PATIENT', 'needs_human'],
+      [declined.id, 'A2_COMMAND_DECLINED', 'warning'],
+      [cancelled.id, 'A2_COMMAND_CANCELLED', 'warning']
     )
   end
 
@@ -117,11 +123,14 @@ RSpec.describe Scheduling::AiBookingReport do
   end
 
   it 'does not flag completed or adjacent appointments as active overlaps' do
-    first = appointment
+    first = appointment(custom_attributes: { 'medelement_cabinet_code' => 'cab-1' })
     appointment(starts_at: first.ends_at, ends_at: first.ends_at + 30.minutes)
+    appointment(resource: create(:scheduling_resource, account: account),
+                starts_at: first.ends_at, ends_at: first.ends_at + 30.minutes,
+                custom_attributes: { 'medelement_cabinet_code' => 'cab-1' })
     appointment(status: 'completed')
 
-    expect(findings.map { |row| row['rule'] }).not_to include('A4_DUPLICATE', 'A4_DOCTOR_OVERLAP')
+    expect(findings.map { |row| row['rule'] }).not_to include('A4_DUPLICATE', 'A4_DOCTOR_OVERLAP', 'A4_CABINET_OVERLAP')
   end
 
   it 'reports a missing held notification after success and clears it when a reminder exists' do
@@ -203,5 +212,15 @@ RSpec.describe Scheduling::AiBookingReport do
     appointment(starts_at: start, ends_at: start + 30.minutes)
 
     expect(findings.map { |row| row['rule'] }).to include('A8_TIMEZONE_SUSPECT')
+  end
+
+  it 'keeps a future appointment inside the work window out of A8' do
+    start = 1.day.from_now.in_time_zone(resource.timezone).change(hour: 10, min: 0, sec: 0)
+    create(:scheduling_work_rule, account: account, resource: resource,
+                                  weekday: start.in_time_zone(resource.timezone).wday,
+                                  start_minute: 9 * 60, end_minute: 18 * 60)
+    appointment(starts_at: start, ends_at: start + 30.minutes)
+
+    expect(findings.map { |row| row['rule'] }).not_to include('A8_CREATED_AFTER_START', 'A8_OUTSIDE_WORK_WINDOW', 'A8_TIMEZONE_SUSPECT')
   end
 end
