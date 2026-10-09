@@ -42,6 +42,12 @@ RSpec.describe Conversations::ListSearchService do
                      **attributes)
   end
 
+  def write_content_attributes_as_json(message, attributes, encoded: false)
+    json = attributes.to_json
+    value = encoded ? "to_json(#{Message.connection.quote(json)}::text)" : "#{Message.connection.quote(json)}::json"
+    Message.where(id: message.id).update_all("content_attributes = #{value}")
+  end
+
   describe 'list filters' do
     let!(:open_mine) { create(:conversation, account: account, inbox: inbox, contact: ivan, status: :open, assignee: agent) }
     let!(:snoozed_unassigned) { create(:conversation, account: account, inbox: inbox, contact: ivan, status: :snoozed) }
@@ -134,9 +140,10 @@ RSpec.describe Conversations::ListSearchService do
       wildcard_lookalike = create(:conversation, account: account, inbox: inbox, contact: create(:contact, account: account))
       yo_text = create(:conversation, account: account, inbox: inbox, contact: create(:contact, account: account))
 
-      message_in(object_attributes, '', content_attributes: { text: "Нужна справка,\nпо записи" })
+      object_message = message_in(object_attributes, '')
+      write_content_attributes_as_json(object_message, { text: "Нужна справка,\nпо записи" })
       encoded_message = message_in(encoded_attributes, '')
-      encoded_message.update_column(:content_attributes, { 'email' => { 'subject' => 'Вопрос по приёму' } }.to_json)
+      write_content_attributes_as_json(encoded_message, { email: { subject: 'Вопрос по приёму' } }, encoded: true)
       message_in(cross_field, '', content_attributes: { text: 'проверить уникальный', text_content: 'ключ в реестре' })
       message_in(wildcard_only, '', content_attributes: { text: 'Код 50% принят' })
       message_in(wildcard_lookalike, '', content_attributes: { text: 'Код 500 принят' })

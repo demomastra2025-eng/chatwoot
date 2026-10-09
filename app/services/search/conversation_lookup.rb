@@ -183,10 +183,12 @@ class Search::ConversationLookup
   # separated by a newline. Candidate IDs are rechecked against #transcription_match before they can be returned, so
   # matches that cross a field boundary do not change search results.
   def transcription_candidate_ids
-    message_candidates = message_scope.where(text_candidate_match(TRANSCRIPTION_SEARCH_TEXT_SQL))
+    scoped_message_ids = message_scope.reorder(nil).select(:id)
+    message_candidates = message_scope.reorder(nil).where(text_candidate_match(TRANSCRIPTION_SEARCH_TEXT_SQL))
                                       .select('messages.id AS message_id')
-    attachment_candidates = Attachment.where(account_id: @account.id, message_id: message_scope.select(:id))
+    attachment_candidates = Attachment.where(account_id: @account.id, message_id: scoped_message_ids)
                                       .where(text_candidate_match(ATTACHMENT_TRANSCRIPTION_TEXT_SQL))
+                                      .reorder(nil)
                                       .select('attachments.message_id AS message_id')
     union = "(#{message_candidates.to_sql} UNION #{attachment_candidates.to_sql}) AS transcription_candidates"
     Message.unscoped.from(Arel.sql(union)).select('transcription_candidates.message_id')

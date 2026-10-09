@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_10_07_130000) do
+ActiveRecord::Schema[7.2].define(version: 2026_10_09_170000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -316,6 +316,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_07_130000) do
     t.string "fallback_title"
     t.string "extension"
     t.jsonb "meta", default: {}
+    t.index "((meta ->> 'transcribed_text'::text)) gin_trgm_ops", name: "index_attachments_on_transcribed_text", using: :gin
     t.index ["account_id"], name: "index_attachments_on_account_id"
     t.index ["message_id"], name: "index_attachments_on_message_id"
   end
@@ -2412,6 +2413,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_07_130000) do
     t.jsonb "additional_attributes", default: {}
     t.text "processed_message_content"
     t.jsonb "sentiment", default: {}
+    t.index "(((((((((((COALESCE(processed_message_content, ''::text) || '\n'::text) || COALESCE((\nCASE json_typeof(content_attributes)\n    WHEN 'object'::text THEN content_attributes\n    WHEN 'string'::text THEN ((content_attributes #>> '{}'::text[]))::json\n    ELSE '{}'::json\nEND ->> 'text'::text), ''::text)) || '\n'::text) || COALESCE((\nCASE json_typeof(content_attributes)\n    WHEN 'object'::text THEN content_attributes\n    WHEN 'string'::text THEN ((content_attributes #>> '{}'::text[]))::json\n    ELSE '{}'::json\nEND ->> 'text_content'::text), ''::text)) || '\n'::text) || COALESCE((\nCASE json_typeof(content_attributes)\n    WHEN 'object'::text THEN content_attributes\n    WHEN 'string'::text THEN ((content_attributes #>> '{}'::text[]))::json\n    ELSE '{}'::json\nEND ->> 'transcribed_text'::text), ''::text)) || '\n'::text) || COALESCE(((\nCASE json_typeof(content_attributes)\n    WHEN 'object'::text THEN content_attributes\n    WHEN 'string'::text THEN ((content_attributes #>> '{}'::text[]))::json\n    ELSE '{}'::json\nEND -> 'email'::text) ->> 'subject'::text), ''::text)) || '\n'::text) || COALESCE(((\nCASE json_typeof(content_attributes)\n    WHEN 'object'::text THEN content_attributes\n    WHEN 'string'::text THEN ((content_attributes #>> '{}'::text[]))::json\n    ELSE '{}'::json\nEND -> 'email'::text) ->> 'text_content'::text), ''::text))) gin_trgm_ops", name: "index_messages_on_transcription_search_text", using: :gin
     t.index "((additional_attributes -> 'campaign_id'::text))", name: "index_messages_on_additional_attributes_campaign_id", using: :gin
     t.index "to_tsvector('english'::regconfig, COALESCE(content, ''::text))", name: "index_messages_on_english_search_vector", using: :gin
     t.index ["account_id", "content_type", "created_at"], name: "idx_messages_account_content_created"
