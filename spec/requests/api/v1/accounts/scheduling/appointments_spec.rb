@@ -39,11 +39,87 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
   end
 
   def stub_medelement_availability
+    transaction_depth = ApplicationRecord.connection.open_transactions
     result = Integrations::Medelement::ResourceAvailabilityService::Result.new(
       status: 'fresh', checked_at: Time.current, slots: [{}], reason: nil
     )
     service = instance_double(Integrations::Medelement::ResourceAvailabilityService, perform: result)
-    allow(Integrations::Medelement::ResourceAvailabilityService).to receive(:new).and_return(service)
+    allow(Integrations::Medelement::ResourceAvailabilityService).to receive(:new) do
+      expect(ApplicationRecord.connection.open_transactions).to eq(transaction_depth)
+      service
+    end
+  end
+
+  def make_provider_resource!
+    resource.update!(
+      custom_attributes: {
+        'medelement_specialist_code' => 'specialist-1',
+        'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }]
+      }
+    )
+  end
+
+  def provider_booking_params(starts_at)
+    base_params.except(:service_id).merge(
+      starts_at: starts_at.iso8601,
+      ends_at: (starts_at + 30.minutes).iso8601,
+      client_first_name: 'Тест', client_last_name: 'Пациент',
+      custom_attributes: { medelement_cabinet_code: 'cabinet-1' }
+    )
+  end
+
+  it 'creates a Sunday provider appointment without a local Sunday rule' do
+    make_provider_resource!
+    stub_medelement_availability
+    zone = ActiveSupport::TimeZone['Asia/Almaty']
+    date = zone.today.next_occurring(:sunday)
+    sunday = zone.local(date.year, date.month, date.day, 10)
+
+    post path, params: provider_booking_params(sunday), headers: headers, as: :json
+
+    expect(response).to have_http_status(:created)
+    expect(Time.iso8601(response_body.dig('payload', 'starts_at'))).to eq(sunday)
+  end
+
+  it 'rejects a locally occupied provider slot after the live preflight' do
+    make_provider_resource!
+    stub_medelement_availability
+    create(:scheduling_appointment, account: account, resource: resource,
+                                    starts_at: booking_day, ends_at: booking_day + 30.minutes)
+
+    post path, params: provider_booking_params(booking_day), headers: headers, as: :json
+
+    expect(response).to have_http_status(:conflict)
+    expect(response_body['code']).to eq('SLOT_CONFLICT')
+  end
+
+  it 'rejects creation after the provider horizon with its last bookable date' do
+    make_provider_resource!
+    zone = ActiveSupport::TimeZone['Asia/Almaty']
+    last_date = zone.today + 89
+    later_date = last_date + 1
+    later = zone.local(later_date.year, later_date.month, later_date.day, 10)
+
+    post path, params: provider_booking_params(later), headers: headers, as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response_body['code']).to eq('MEDELEMENT_HORIZON_EXCEEDED')
+    expect(response_body['error']).to include(last_date.strftime('%d.%m.%Y'))
+  end
+
+  it 'rejects moving an appointment beyond the provider horizon' do
+    appointment = create(:scheduling_appointment, account: account, resource: resource, contact: contact)
+    make_provider_resource!
+    zone = ActiveSupport::TimeZone['Asia/Almaty']
+    date = zone.today + 90
+    later = zone.local(date.year, date.month, date.day, 10)
+
+    move_params = { starts_at: later.iso8601, ends_at: (later + 30.minutes).iso8601 }
+    patch "#{path}/#{appointment.id}", params: move_params, headers: headers, as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response_body['code']).to eq('MEDELEMENT_HORIZON_EXCEEDED')
+    expect(appointment.reload.starts_at).not_to eq(later)
   end
 
   it 'creates an appointment inside a valid slot' do

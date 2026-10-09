@@ -88,7 +88,20 @@ class Scheduling::CalendarViewService
     return [] unless @include_slots
 
     resources.flat_map do |resource|
-      availability_for(resource).slots(duration_min: @duration_min || resource.slot_duration_min)
+      policy = Scheduling::ResourceHoursPolicy.new(resource: resource)
+      next availability_for(resource).slots(duration_min: @duration_min || resource.slot_duration_min) unless policy.provider_hours?
+      next [] unless resource.active?
+
+      range = policy.clipped_range(from: @from, to: @to)
+      next [] if range.nil?
+
+      Integrations::Medelement::ResourceAvailabilityService.new(
+        resource: resource, from: range.first, to: range.last, slots: [],
+        candidate_slots: lambda do |windows|
+          availability_for(resource, from: range.first, to: range.last,
+                                     provider_working_windows: windows).slots(duration_min: @duration_min || resource.slot_duration_min)
+        end
+      ).perform.slots
     end
   end
 
@@ -117,15 +130,17 @@ class Scheduling::CalendarViewService
     @appointment_ids ||= appointments.map(&:id)
   end
 
-  def availability_for(resource)
+  def availability_for(resource, from: @from, to: @to, provider_working_windows: nil)
+    policy = Scheduling::ResourceHoursPolicy.new(resource: resource)
     Scheduling::AvailabilityService.new(
       resource: resource,
-      from: @from,
-      to: @to,
+      from: from,
+      to: to,
       holidays: holidays,
       workday_overrides: workday_overrides.select { |item| item.resource_id == resource.id },
       time_offs: time_offs.select { |item| item.resource_id.nil? || item.resource_id == resource.id },
-      appointments: blocking_appointments.select { |item| item.resource_id == resource.id }
+      appointments: blocking_appointments.select { |item| item.resource_id == resource.id },
+      **policy.availability_options(provider_working_windows)
     )
   end
 

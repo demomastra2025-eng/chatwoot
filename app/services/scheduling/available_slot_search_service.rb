@@ -83,17 +83,16 @@ class Scheduling::AvailableSlotSearchService
     end
   end
 
-  def local_slots(resource, provider_working_windows: nil, uncapped: false)
-    replace_work_rules = provider_working_windows.present? && default_template?(resource)
+  def local_slots(resource, from: @from, to: @to, provider_working_windows: nil, uncapped: false)
+    policy = Scheduling::ResourceHoursPolicy.new(resource: resource)
     payload = Scheduling::ResourceAvailabilityQueryService.new(
       resource: resource,
-      from: @from,
-      to: @to,
+      from: from,
+      to: to,
       service: service,
       duration_min: @requested_duration_min,
       limit: @limit,
-      provider_working_windows: provider_working_windows,
-      replace_work_rules: replace_work_rules,
+      **policy.availability_options(provider_working_windows),
       uncapped: uncapped
     ).perform
     payload.fetch(:slots, []).map do |slot|
@@ -109,13 +108,20 @@ class Scheduling::AvailableSlotSearchService
       return label_service_eligibility(local_slots(resource), 'local_configured')
     end
 
+    range = Scheduling::ResourceHoursPolicy.new(resource: resource).clipped_range(from: @from, to: @to)
+    if range.nil?
+      record_availability(resource_id: resource.id, provider: 'medelement', status: 'outside_horizon')
+      return []
+    end
+
     result = Integrations::Medelement::ResourceAvailabilityService.new(
       resource: resource,
-      from: @from,
-      to: @to,
+      from: range.first,
+      to: range.last,
       slots: [],
       candidate_slots: lambda do |provider_windows|
-        local_slots(resource, provider_working_windows: provider_windows, uncapped: true)
+        local_slots(resource, from: range.first, to: range.last,
+                              provider_working_windows: provider_windows, uncapped: true)
       end
     ).perform
     record_availability(
@@ -126,10 +132,6 @@ class Scheduling::AvailableSlotSearchService
       reason: result.reason
     )
     label_service_eligibility(result.slots.first(@limit), 'price_link_unverified')
-  end
-
-  def default_template?(resource)
-    Integrations::Medelement::SpecialistWorkRulesSyncService.new(account: @account).default_template?(resource)
   end
 
   def label_service_eligibility(slots, status)
@@ -155,6 +157,8 @@ class Scheduling::AvailableSlotSearchService
                'degraded'
              elsif statuses.include?('fresh')
                'fresh'
+             elsif statuses.present? && statuses.all?('outside_horizon')
+               'outside_horizon'
              else
                'local_only'
              end
@@ -163,6 +167,10 @@ class Scheduling::AvailableSlotSearchService
   end
 
   def availability_note
+    if availability_payload[:status] == 'outside_horizon'
+      resource = resources.find { |item| medelement_resource?(item) }
+      return Scheduling::ResourceHoursPolicy.new(resource: resource).horizon_message if resource
+    end
     return unless availability_payload[:status] == 'degraded'
 
     'Не удалось проверить график MedElement; наличие свободного времени неизвестно.'
@@ -179,8 +187,7 @@ class Scheduling::AvailableSlotSearchService
       requested_service_id: @service_id,
       service_link_status: service_link_status,
       candidate_resource_ids: resources.map(&:id),
-      service_match: service_match_payload(confirmed),
-      customer_offer_eligible: confirmed && normalized_slots.present?
+      service_match: service_match_payload(confirmed)
     }
   end
 

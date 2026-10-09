@@ -39,14 +39,14 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
     expect(payload[:total_slots]).to eq(2)
   end
 
-  it 'marks service-linked availability as customer-offer eligible' do
+  it 'returns a confirmed service link without an offer eligibility flag' do
     payload = perform(resource_ids: [resource.id], service_id: service_record.id, limit: 1)
 
     expect(payload).to include(
       availability_scope: 'service_confirmed',
-      requested_service_id: service_record.id,
-      customer_offer_eligible: true
+      requested_service_id: service_record.id
     )
+    expect(payload).not_to have_key(:customer_offer_eligible)
     expect(payload[:service_match]).to include(
       confirmed: true,
       service_id: service_record.id,
@@ -72,7 +72,6 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
 
     expect(payload[:resources]).to eq([])
     expect(payload[:slots]).to eq([])
-    expect(payload[:customer_offer_eligible]).to be(false)
   end
 
   it 'marks service availability as unconfirmed when no specialist offers the service' do
@@ -83,8 +82,7 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
 
     expect(payload).to include(
       availability_scope: 'service_unconfirmed',
-      requested_service_id: unsupported_service.id,
-      customer_offer_eligible: false
+      requested_service_id: unsupported_service.id
     )
     expect(payload[:service_match]).to eq(confirmed: false, service_id: nil, resource_id: nil, resource_ids: [])
     expect(payload[:slots]).to be_empty
@@ -98,8 +96,7 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
       expect(payload[:resources].pluck(:id)).to contain_exactly(resource.id, other_resource.id)
       expect(payload).to include(
         availability_scope: 'generic',
-        requested_service_id: nil,
-        customer_offer_eligible: false
+        requested_service_id: nil
       )
       expect(payload[:service_match]).to eq(confirmed: false, service_id: nil, resource_id: nil, resource_ids: [])
     end

@@ -1,8 +1,11 @@
 require 'rails_helper'
 
-# Labels of the slot answer (source, service link status, eligibility). The MedElement contract specs that pin the
-# basic behaviour of this service live in available_slot_search_service_spec.rb and are intentionally left untouched.
+# Labels of the slot answer (source and service link status).
 RSpec.describe Scheduling::AvailableSlotSearchService do
+  include ActiveSupport::Testing::TimeHelpers
+
+  around { |example| travel_to(Time.utc(2026, 4, 19, 12)) { example.run } }
+
   let(:account) { create(:account) }
   let(:other_account) { create(:account) }
   let(:time_zone) { ActiveSupport::TimeZone['Asia/Almaty'] }
@@ -48,7 +51,7 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
 
       expect(payload).to include(
         total_slots: 1, slot_count_scope: 'returned_only', service_link_status: 'local_configured',
-        availability_scope: 'service_confirmed', customer_offer_eligible: true, candidate_resource_ids: [local_resource.id]
+        availability_scope: 'service_confirmed', candidate_resource_ids: [local_resource.id]
       )
       expect(payload[:availability]).to include(status: 'local_only', resources: [include(resource_id: local_resource.id, status: 'local_only')])
       expect(payload[:slots].first).to include(availability_source: 'local', service_eligibility_status: 'local_configured')
@@ -59,7 +62,7 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
     it 'does not label slots with a service status when no service was requested' do
       payload = perform(resource_ids: [local_resource.id], limit: 1)
 
-      expect(payload).to include(service_link_status: 'not_requested', availability_scope: 'generic', customer_offer_eligible: false)
+      expect(payload).to include(service_link_status: 'not_requested', availability_scope: 'generic')
       expect(payload[:slots].first).not_to have_key(:service_eligibility_status)
     end
 
@@ -67,7 +70,7 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
       payload = described_class.new(account: account, from: time_zone.local(2026, 4, 21, 9, 0, 0), to: time_zone.local(2026, 4, 21, 11, 0, 0),
                                     resource_ids: [local_resource.id], service_id: service_record.id).perform
 
-      expect(payload).to include(slots: [], total_slots: 0, customer_offer_eligible: false, availability_scope: 'service_confirmed')
+      expect(payload).to include(slots: [], total_slots: 0, availability_scope: 'service_confirmed')
     end
   end
 
@@ -83,7 +86,7 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
       expect(payload[:total_slots]).to eq(1)
       expect(payload[:slots].first[:service_eligibility_status]).to eq('price_link_unverified')
       expect(payload).to include(availability_scope: 'service_unconfirmed', service_link_status: 'price_link_unverified',
-                                 customer_offer_eligible: false, candidate_resource_ids: [provider_resource.id])
+                                 candidate_resource_ids: [provider_resource.id])
       expect(payload[:service_match]).to eq(confirmed: false, service_id: nil, resource_id: nil, resource_ids: [])
     end
 
@@ -94,7 +97,6 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
       expect(payload[:availability]).to include(
         status: 'degraded', resources: [include(provider: 'medelement', status: 'unavailable', reason: 'provider_configuration_missing')]
       )
-      expect(payload).to include(customer_offer_eligible: false)
     end
 
     it 'does not claim provider confirmation after a provider time-out and never creates an appointment' do
@@ -104,7 +106,6 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
 
       expect(payload[:slots]).to be_empty
       expect(payload[:availability]).to include(status: 'degraded', resources: [include(status: 'unavailable', reason: 'provider_unavailable')])
-      expect(payload).to include(customer_offer_eligible: false)
       expect(payload.to_s).not_to include('fresh')
       expect(Scheduling::Appointment.count).to eq(0)
     end
@@ -124,7 +125,7 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
       expect(payload[:availability]).to include(
         status: 'degraded', resources: [include(status: 'unavailable', reason: 'provider_resource_route_unverified')]
       )
-      expect(payload).to include(service_link_status: 'price_link_unverified', customer_offer_eligible: false)
+      expect(payload).to include(service_link_status: 'price_link_unverified')
     end
   end
 
@@ -156,7 +157,7 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
         [first_specialist.id, 'fresh'], [second_specialist.id, 'unavailable']
       )
       expect(payload[:candidate_resource_ids]).to contain_exactly(first_specialist.id, second_specialist.id)
-      expect(payload).to include(customer_offer_eligible: false, service_link_status: 'price_link_unverified')
+      expect(payload).to include(service_link_status: 'price_link_unverified')
     end
   end
 
@@ -172,7 +173,7 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
 
       statuses = payload[:slots].to_h { |slot| [slot[:resource_id], slot[:service_eligibility_status]] }
       expect(statuses).to include(local_resource.id => 'local_configured', provider_resource.id => 'price_link_unverified')
-      expect(payload).to include(customer_offer_eligible: false, service_link_status: 'price_link_unverified')
+      expect(payload).to include(service_link_status: 'price_link_unverified')
     end
   end
 
@@ -181,7 +182,7 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
       payload = perform(service_id: service_record.id)
 
       expect(payload).to include(resources: [], slots: [], total_slots: 0, service_link_status: 'no_recorded_link',
-                                 availability_scope: 'service_unconfirmed', customer_offer_eligible: false, candidate_resource_ids: [])
+                                 availability_scope: 'service_unconfirmed', candidate_resource_ids: [])
     end
 
     it 'rejects an explicitly requested resource whose link is inactive with the pinned message and a dedicated error class' do

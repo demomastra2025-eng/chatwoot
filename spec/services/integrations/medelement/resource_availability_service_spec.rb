@@ -86,6 +86,27 @@ RSpec.describe Integrations::Medelement::ResourceAvailabilityService do
     expect(client).not_to have_received(:timetable)
   end
 
+  it 'reads and parses provider dates in the integration zone when the resource zone differs' do
+    resource.update!(timezone: 'America/New_York')
+    zone = ActiveSupport::TimeZone['Asia/Almaty']
+    from = zone.local(2026, 9, 7, 0, 30)
+    slot = { resource_id: resource.id, starts_at: from.iso8601, ends_at: (from + 30.minutes).iso8601 }
+    allow(client).to receive(:timetable).and_return(
+      '07.09.2026' => { 'timetable' => [
+        { 'start' => '07.09.2026 00:30', 'end' => '07.09.2026 01:00', 'working' => true }
+      ] }
+    )
+    allow(client).to receive(:get_receptions).and_return([])
+
+    result = described_class.new(resource: resource, from: from, to: from + 30.minutes,
+                                 slots: [slot], client: client).perform
+
+    expect(result.slots).to contain_exactly(hash_including(resource_id: resource.id))
+    expect(client).to have_received(:timetable).with(
+      specialist_code: 'specialist-1', starts_on: Date.new(2026, 9, 7), ends_on: Date.new(2026, 9, 7)
+    )
+  end
+
   it 'fails closed instead of returning local slots when the provider is unavailable' do
     allow(client).to receive(:timetable).and_raise(
       Integrations::Medelement::Client::ApiError.new('timeout', status: 504)
