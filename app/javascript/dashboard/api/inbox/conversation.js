@@ -10,7 +10,9 @@ class ConversationApi extends ApiClient {
 
   show(id, context = null, options = {}) {
     const url = context ? `${context.baseUrl}/conversations` : this.url;
-    return Object.keys(options).length ? axios.get(`${url}/${id}`, options) : axios.get(`${url}/${id}`);
+    return Object.keys(options).length
+      ? axios.get(`${url}/${id}`, options)
+      : axios.get(`${url}/${id}`);
   }
 
   // The counts are only needed with the first page, later pages are sent with includeMeta false.

@@ -4,7 +4,8 @@ export const DELETION_KIND = 'conversation_deletion';
 export const MAX_DELETION_OPERATIONS = 100;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const validDeletionId = value =>
-  (typeof value === 'number' || (typeof value === 'string' && /^\d+$/.test(value))) &&
+  (typeof value === 'number' ||
+    (typeof value === 'string' && /^\d+$/.test(value))) &&
   Number.isSafeInteger(Number(value)) &&
   Number(value) > 0;
 
@@ -24,7 +25,12 @@ export const deletionOutcome = operation => {
 // The receipt contains only operation/target identities and states. Never store
 // conversation snapshots: a failed deletion must reload the current server row.
 export const validateDeletionOperation = operation => {
-  if (!operation || typeof operation.requestKey !== 'string' || !UUID.test(operation.requestKey)) return false;
+  if (
+    !operation ||
+    typeof operation.requestKey !== 'string' ||
+    !UUID.test(operation.requestKey)
+  )
+    return false;
   if (operation.operationId !== null && !validDeletionId(operation.operationId))
     return false;
   if (operation.threadId !== null && !validDeletionId(operation.threadId))
@@ -52,22 +58,29 @@ export const deletionReceipt = (run, operation) => {
     metadata.request_key !== operation.requestKey ||
     !validDeletionId(run.id) ||
     (operation.operationId && Number(run.id) !== operation.operationId) ||
-    (metadata.selection?.thread_id !== null && !validDeletionId(metadata.selection?.thread_id)) ||
-    Number(metadata.selection?.thread_id || 0) !== Number(operation.threadId || 0)
+    (metadata.selection?.thread_id !== null &&
+      !validDeletionId(metadata.selection?.thread_id)) ||
+    Number(metadata.selection?.thread_id || 0) !==
+      Number(operation.threadId || 0)
   )
     return null;
-  const expected = operation.targets.map(target => target.id).sort((a, b) => a - b);
+  const expected = operation.targets
+    .map(target => target.id)
+    .sort((a, b) => a - b);
   const selected = metadata.selection?.conversation_ids;
   if (
     !Array.isArray(selected) ||
     !selected.every(validDeletionId) ||
-    JSON.stringify([...selected].sort((a, b) => a - b)) !== JSON.stringify(expected)
+    JSON.stringify([...selected].sort((a, b) => a - b)) !==
+      JSON.stringify(expected)
   )
     return null;
-  const targets = (Array.isArray(metadata.targets) ? metadata.targets : []).map(target => ({
-    id: target.conversation_id,
-    status: target.status,
-  }));
+  const targets = (Array.isArray(metadata.targets) ? metadata.targets : []).map(
+    target => ({
+      id: target.conversation_id,
+      status: target.status,
+    })
+  );
   const next = { ...operation, operationId: Number(run.id), targets };
   if (
     !validateDeletionOperation(next) ||
@@ -85,17 +98,22 @@ export const deletionReceipt = (run, operation) => {
 
 export const blockedDeletionIds = state =>
   new Set(
-    [...(state.deletionObservedIds || []), ...(state.deletionOperations || []).flatMap(operation =>
-      operation.targets
-        .filter(target => target.status !== 'failed')
-        .map(target => String(target.id))
-    )].map(String)
+    [
+      ...(state.deletionObservedIds || []),
+      ...(state.deletionOperations || []).flatMap(operation =>
+        operation.targets
+          .filter(target => target.status !== 'failed')
+          .map(target => String(target.id))
+      ),
+    ].map(String)
   );
 
 export const retainDeletionOperations = operations => {
   const retained = [...operations];
   while (retained.length > MAX_DELETION_OPERATIONS) {
-    const index = retained.findIndex(operation => deletionOutcome(operation) !== 'pending');
+    const index = retained.findIndex(
+      operation => deletionOutcome(operation) !== 'pending'
+    );
     if (index < 0) break;
     retained.splice(index, 1);
   }
@@ -105,10 +123,13 @@ export const retainDeletionOperations = operations => {
 // After old receipts are compacted, an absent row/channel from a late event
 // needs a fresh server read before it can be reintroduced. New IDs remain valid.
 export const requiresDeletionAuthority = (state, conversation) => {
-  if (!state.deletionOperations?.length && !state.deletionObservedIds?.length) return false;
+  if (!state.deletionOperations?.length && !state.deletionObservedIds?.length)
+    return false;
   const threaded = isCommunicationThread(conversation);
   const existing = state.allConversations.find(
-    row => String(row.id) === String(conversation.id) && isCommunicationThread(row) === threaded
+    row =>
+      String(row.id) === String(conversation.id) &&
+      isCommunicationThread(row) === threaded
   );
   if (!existing) return true;
   if (!threaded) return false;
@@ -121,7 +142,9 @@ export const requiresDeletionAuthority = (state, conversation) => {
     conversation.last_message?.conversation_id,
     ...(conversation.messages || []).map(message => message.conversation_id),
   ].filter(validDeletionId);
-  const current = new Set((existing.channels || []).map(channel => String(channel.conversation_id)));
+  const current = new Set(
+    (existing.channels || []).map(channel => String(channel.conversation_id))
+  );
   return ids.some(id => !current.has(String(id)));
 };
 
@@ -133,13 +156,24 @@ export const projectDeletedConversation = (conversation, blocked) => {
     channel => !blocked.has(String(channel.conversation_id))
   );
   // A realtime patch may omit channels. The final merged row is projected again.
-  if (channels && conversation.channels.length > 0 && !channels.length) return null;
+  if (channels && conversation.channels.length > 0 && !channels.length)
+    return null;
   return {
     ...conversation,
-    ...(blocked.has(String(conversation.conversation_id)) ? { conversation_id: null } : {}),
-    ...(blocked.has(String(conversation.message?.conversation_id)) ? { message: null, message_id: null } : {}),
-    ...(blocked.has(String(conversation.last_non_activity_message?.conversation_id)) ? { last_non_activity_message: null } : {}),
-    ...(blocked.has(String(conversation.last_message?.conversation_id)) ? { last_message: null } : {}),
+    ...(blocked.has(String(conversation.conversation_id))
+      ? { conversation_id: null }
+      : {}),
+    ...(blocked.has(String(conversation.message?.conversation_id))
+      ? { message: null, message_id: null }
+      : {}),
+    ...(blocked.has(
+      String(conversation.last_non_activity_message?.conversation_id)
+    )
+      ? { last_non_activity_message: null }
+      : {}),
+    ...(blocked.has(String(conversation.last_message?.conversation_id))
+      ? { last_message: null }
+      : {}),
     ...(channels ? { channels } : {}),
     ...(conversation.conversation_ids
       ? {
@@ -160,14 +194,22 @@ export const projectDeletedConversation = (conversation, blocked) => {
 
 export const readDeletionOperations = scope => {
   try {
-    const entries = JSON.parse(localStorage.getItem(deletionStorageKey(scope)) || '[]');
+    const entries = JSON.parse(
+      localStorage.getItem(deletionStorageKey(scope)) || '[]'
+    );
     return Array.isArray(entries)
-      ? retainDeletionOperations(entries.filter(validateDeletionOperation).map(entry => ({
-          requestKey: entry.requestKey.toLowerCase(),
-          operationId: entry.operationId === null ? null : Number(entry.operationId),
-          threadId: entry.threadId === null ? null : Number(entry.threadId),
-          targets: entry.targets.map(target => ({ id: Number(target.id), status: target.status })),
-        })))
+      ? retainDeletionOperations(
+          entries.filter(validateDeletionOperation).map(entry => ({
+            requestKey: entry.requestKey.toLowerCase(),
+            operationId:
+              entry.operationId === null ? null : Number(entry.operationId),
+            threadId: entry.threadId === null ? null : Number(entry.threadId),
+            targets: entry.targets.map(target => ({
+              id: Number(target.id),
+              status: target.status,
+            })),
+          }))
+        )
       : [];
   } catch {
     return [];
@@ -183,8 +225,12 @@ export const persistDeletionOperations = (scope, operations) => {
 
 export const readDeletionEventIds = scope => {
   try {
-    const ids = JSON.parse(localStorage.getItem(deletionEventStorageKey(scope)) || '[]');
-    return Array.isArray(ids) ? [...new Set(ids.filter(validDeletionId).map(Number))].slice(-10000) : [];
+    const ids = JSON.parse(
+      localStorage.getItem(deletionEventStorageKey(scope)) || '[]'
+    );
+    return Array.isArray(ids)
+      ? [...new Set(ids.filter(validDeletionId).map(Number))].slice(-10000)
+      : [];
   } catch {
     return [];
   }

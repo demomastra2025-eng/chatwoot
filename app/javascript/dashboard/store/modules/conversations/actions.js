@@ -21,7 +21,11 @@ import {
 import messageReadActions from './actions/messageReadActions';
 import messageTranslateActions from './actions/messageTranslateActions';
 import conversationDeletionActions from './actions/conversationDeletionActions';
-import { blockedDeletionIds, projectDeletedConversation, requiresDeletionAuthority } from './helpers/deletionState';
+import {
+  blockedDeletionIds,
+  projectDeletedConversation,
+  requiresDeletionAuthority,
+} from './helpers/deletionState';
 import BulkActionsAPI from '../../../api/bulkActions';
 import * as Sentry from '@sentry/vue';
 import {
@@ -42,9 +46,18 @@ const deletionAuthorityConversation = async (context, conversation) => {
   const key = `${captured.accountId}:${userId}:${deletionScope?.generation}:${deletionRevision}:${kind}:${conversation.id}`;
   try {
     const response = await deletionAuthorityFlight(key, () =>
-      (threaded ? CommunicationThreadApi : ConversationApi).show(conversation.id, captured, { timeout: 5000 })
+      (threaded ? CommunicationThreadApi : ConversationApi).show(
+        conversation.id,
+        captured,
+        { timeout: 5000 }
+      )
     );
-    if (!BulkActionsAPI.isContextCurrent(captured) || context.rootGetters?.getCurrentUser?.id !== userId || context.state.deletionScope !== deletionScope || context.state.deletionRevision !== deletionRevision)
+    if (
+      !BulkActionsAPI.isContextCurrent(captured) ||
+      context.rootGetters?.getCurrentUser?.id !== userId ||
+      context.state.deletionScope !== deletionScope ||
+      context.state.deletionRevision !== deletionRevision
+    )
       return null;
     return response.data;
   } catch {
@@ -60,26 +73,37 @@ const readDeletionStablePage = async (context, read) => {
   const userId = context.rootGetters?.getCurrentUser?.id;
   const scope = context.state.deletionScope;
   let revision = context.state.deletionRevision;
-  const current = () => BulkActionsAPI.isContextCurrent(captured) &&
-    context.rootGetters?.getCurrentUser?.id === userId && context.state.deletionScope === scope;
+  const current = () =>
+    BulkActionsAPI.isContextCurrent(captured) &&
+    context.rootGetters?.getCurrentUser?.id === userId &&
+    context.state.deletionScope === scope;
   let response = await read();
   if (!current()) return null;
   if (context.state.deletionRevision !== revision) {
     revision = context.state.deletionRevision;
     response = await read();
   }
-  return current() && context.state.deletionRevision === revision ? response : null;
+  return current() && context.state.deletionRevision === revision
+    ? response
+    : null;
 };
 
 const projectMessagePage = (state, chat, meta, payload) => {
-  const projected = projectDeletedConversation({
-    ...chat,
-    ...(isCommunicationThread(chat) ? { channels: meta.channels || chat.channels || [] } : {}),
-    messages: payload,
-  }, blockedDeletionIds(state));
+  const projected = projectDeletedConversation(
+    {
+      ...chat,
+      ...(isCommunicationThread(chat)
+        ? { channels: meta.channels || chat.channels || [] }
+        : {}),
+      messages: payload,
+    },
+    blockedDeletionIds(state)
+  );
   if (!projected) return null;
   return {
-    meta: isCommunicationThread(chat) ? { ...meta, channels: projected.channels } : meta,
+    meta: isCommunicationThread(chat)
+      ? { ...meta, channels: projected.channels }
+      : meta,
     payload: projected.messages,
   };
 };
@@ -423,7 +447,10 @@ const actions = {
     invalidateConversationListRequest(commit);
   },
 
-  getConversation: async ({ commit, dispatch, state, rootState, rootGetters }, request) => {
+  getConversation: async (
+    { commit, dispatch, state, rootState, rootGetters },
+    request
+  ) => {
     const accountContext = BulkActionsAPI.captureContext();
     const actorId = rootGetters?.getCurrentUser?.id;
     const deletionRevision = state.deletionRevision;
@@ -443,7 +470,13 @@ const actions = {
 
     try {
       const response = await ConversationApi.show(conversationId);
-      if (!BulkActionsAPI.isContextCurrent(accountContext) || rootGetters?.getCurrentUser?.id !== actorId || state.deletionRevision !== deletionRevision || state.deletionScope !== deletionScope) return null;
+      if (
+        !BulkActionsAPI.isContextCurrent(accountContext) ||
+        rootGetters?.getCurrentUser?.id !== actorId ||
+        state.deletionRevision !== deletionRevision ||
+        state.deletionScope !== deletionScope
+      )
+        return null;
       if (!isExpectedRouteCurrent(rootState, expectedRouteFullPath))
         return null;
 
@@ -559,7 +592,10 @@ const actions = {
     }
   },
 
-  getCommunicationThread: async ({ commit, dispatch, rootState, state = {}, rootGetters }, request) => {
+  getCommunicationThread: async (
+    { commit, dispatch, rootState, state = {}, rootGetters },
+    request
+  ) => {
     const accountContext = BulkActionsAPI.captureContext();
     const actorId = rootGetters?.getCurrentUser?.id;
     const deletionRevision = state.deletionRevision;
@@ -579,7 +615,13 @@ const actions = {
 
     try {
       const response = await CommunicationThreadApi.show(conversationId);
-      if (!BulkActionsAPI.isContextCurrent(accountContext) || rootGetters?.getCurrentUser?.id !== actorId || state.deletionRevision !== deletionRevision || state.deletionScope !== deletionScope) return null;
+      if (
+        !BulkActionsAPI.isContextCurrent(accountContext) ||
+        rootGetters?.getCurrentUser?.id !== actorId ||
+        state.deletionRevision !== deletionRevision ||
+        state.deletionScope !== deletionScope
+      )
+        return null;
       if (!isExpectedRouteCurrent(rootState, expectedRouteFullPath))
         return null;
 
@@ -745,29 +787,52 @@ const actions = {
         conversationType
       );
 
-      const threaded = isCommunicationThread(selectedChat) || conversationType === 'communication_thread';
-      const response = await readDeletionStablePage(context, () => threaded
-        ? CommunicationThreadApi.messages(data.conversationId, {
-          after: data.after,
-          before: data.before,
-          include_history: true,
-          ...(data.includeTarget ? { include_target: true } : {}),
-        })
-        : MessageApi.getPreviousMessages(data));
-      if (!response || !isExpectedRouteCurrent(rootState, data.expectedRouteFullPath))
+      const threaded =
+        isCommunicationThread(selectedChat) ||
+        conversationType === 'communication_thread';
+      const response = await readDeletionStablePage(context, () =>
+        threaded
+          ? CommunicationThreadApi.messages(data.conversationId, {
+              after: data.after,
+              before: data.before,
+              include_history: true,
+              ...(data.includeTarget ? { include_target: true } : {}),
+            })
+          : MessageApi.getPreviousMessages(data)
+      );
+      if (
+        !response ||
+        !isExpectedRouteCurrent(rootState, data.expectedRouteFullPath)
+      )
         return;
-      const currentChat = findActiveChatById(state, data.conversationId, conversationType);
+      const currentChat = findActiveChatById(
+        state,
+        data.conversationId,
+        conversationType
+      );
       if (selectedChat && !currentChat) return;
-      const page = projectMessagePage(state, currentChat || { id: data.conversationId, is_communication_thread: threaded }, response.data.meta, response.data.payload);
+      const page = projectMessagePage(
+        state,
+        currentChat || {
+          id: data.conversationId,
+          is_communication_thread: threaded,
+        },
+        response.data.meta,
+        response.data.payload
+      );
       if (!page) return;
       const { meta, payload: messagesPayload } = page;
       if (currentChat) {
         commit(types.UPDATE_CONVERSATION, {
           id: currentChat.id,
-          ...(threaded ? { is_communication_thread: true, channels: meta.channels } : {}),
+          ...(threaded
+            ? { is_communication_thread: true, channels: meta.channels }
+            : {}),
           meta: {
             ...withFirstUnreadCursor(currentChat.meta, data, meta),
-            ...(threaded ? { sender: meta.contact || currentChat.meta?.sender || {} } : {}),
+            ...(threaded
+              ? { sender: meta.contact || currentChat.meta?.sender || {} }
+              : {}),
           },
         });
       }
@@ -906,19 +971,34 @@ const actions = {
       syncConversationsMessages[syncKey] ||
       syncConversationsMessages[conversationId];
     try {
-      const response = await readDeletionStablePage(context, () => selectedChat.is_communication_thread
-        ? CommunicationThreadApi.messages(conversationId, {
-            after: lastMessageId,
-          })
-        : MessageApi.getPreviousMessages({
-            conversationId,
-            after: lastMessageId,
-          }));
+      const response = await readDeletionStablePage(context, () =>
+        selectedChat.is_communication_thread
+          ? CommunicationThreadApi.messages(conversationId, {
+              after: lastMessageId,
+            })
+          : MessageApi.getPreviousMessages({
+              conversationId,
+              after: lastMessageId,
+            })
+      );
       // Fetch all the messages after the last message id
-      if (!response || !isExpectedRouteCurrent(rootState, expectedRouteFullPath)) return;
-      const currentChat = findActiveChatById(state, conversationId, conversationType);
+      if (
+        !response ||
+        !isExpectedRouteCurrent(rootState, expectedRouteFullPath)
+      )
+        return;
+      const currentChat = findActiveChatById(
+        state,
+        conversationId,
+        conversationType
+      );
       if (!currentChat) return;
-      const page = projectMessagePage(state, currentChat, response.data.meta, response.data.payload);
+      const page = projectMessagePage(
+        state,
+        currentChat,
+        response.data.meta,
+        response.data.payload
+      );
       if (!page) return;
       const { meta, payload } = page;
       commit(`conversationMetadata/${types.SET_CONVERSATION_METADATA}`, {
@@ -927,13 +1007,16 @@ const actions = {
       });
       if (currentChat.is_communication_thread) {
         commit(types.UPDATE_CONVERSATION, {
-          id: currentChat.id, is_communication_thread: true, channels: meta.channels,
+          id: currentChat.id,
+          is_communication_thread: true,
+          channels: meta.channels,
         });
       }
       // Merge fresh messages through the mutation path so local pending echoes
       // are reconciled with server-delivered messages consistently.
       const missingMessages = payload.filter(
-        message => !(currentChat.messages || []).find(item => item.id === message.id)
+        message =>
+          !(currentChat.messages || []).find(item => item.id === message.id)
       );
       commit(
         types.SET_PREVIOUS_CONVERSATIONS,
@@ -1389,7 +1472,10 @@ const actions = {
       is_communication_thread: true,
     };
     if (state && requiresDeletionAuthority(state, identityPayload)) {
-      const authoritative = await deletionAuthorityConversation(context, identityPayload);
+      const authoritative = await deletionAuthorityConversation(
+        context,
+        identityPayload
+      );
       if (authoritative) commitCommunicationThreadUpdate(commit, authoritative);
       return;
     }

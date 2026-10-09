@@ -433,7 +433,9 @@ const applyDeletionProjection = _state => {
 
 export const mutations = {
   [types.REGISTER_CONVERSATION_DELETION_EVENT](_state, id) {
-    _state.deletionObservedIds = [...new Set([...(_state.deletionObservedIds || []), id])].slice(-10000);
+    _state.deletionObservedIds = [
+      ...new Set([...(_state.deletionObservedIds || []), id]),
+    ].slice(-10000);
     _state.deletionRevision = (_state.deletionRevision || 0) + 1;
     applyDeletionProjection(_state);
   },
@@ -443,7 +445,10 @@ export const mutations = {
     else _state.allConversations[index] = conversation;
     applyDeletionProjection(_state);
   },
-  [types.SET_CONVERSATION_DELETION_SCOPE](_state, { scope, operations, observedIds = [] }) {
+  [types.SET_CONVERSATION_DELETION_SCOPE](
+    _state,
+    { scope, operations, observedIds = [] }
+  ) {
     _state.deletionScope = scope;
     _state.deletionOperations = retainDeletionOperations(operations);
     _state.deletionObservedIds = observedIds;
@@ -451,7 +456,9 @@ export const mutations = {
   },
   [types.SET_CONVERSATION_DELETION_OPERATION](_state, operation) {
     const operations = _state.deletionOperations || [];
-    const index = operations.findIndex(entry => entry.requestKey === operation.requestKey);
+    const index = operations.findIndex(
+      entry => entry.requestKey === operation.requestKey
+    );
     if (index < 0) operations.push(operation);
     else operations[index] = operation;
     _state.deletionOperations = retainDeletionOperations(operations);
@@ -491,7 +498,9 @@ export const mutations = {
   },
   [types.REPLACE_ALL_CONVERSATION](_state, conversationList) {
     conversationList = conversationList
-      .map(conversation => projectDeletedConversation(conversation, blockedDeletionIds(_state)))
+      .map(conversation =>
+        projectDeletedConversation(conversation, blockedDeletionIds(_state))
+      )
       .filter(Boolean);
     const selectedConversation = _state.allConversations.find(conversation =>
       isSelectedConversation(_state, conversation)
@@ -811,7 +820,10 @@ export const mutations = {
   },
 
   [types.ADD_CONVERSATION](_state, conversation) {
-    conversation = projectDeletedConversation(conversation, blockedDeletionIds(_state));
+    conversation = projectDeletedConversation(
+      conversation,
+      blockedDeletionIds(_state)
+    );
     if (!conversation) return;
     const exists = _state.allConversations.some(
       existingConversation =>
@@ -884,7 +896,11 @@ export const mutations = {
   },
 
   [types.UPDATE_CONVERSATION](_state, conversation) {
-    if (!isCommunicationThread(conversation) && blockedDeletionIds(_state).has(String(conversation.id))) return;
+    if (
+      !isCommunicationThread(conversation) &&
+      blockedDeletionIds(_state).has(String(conversation.id))
+    )
+      return;
     const { allConversations } = _state;
     const index = findConversationIndexByIdAndType(_state, conversation);
 

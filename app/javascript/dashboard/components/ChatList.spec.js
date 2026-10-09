@@ -67,7 +67,8 @@ const DialogStub = {
 };
 const ThreadDialogStub = {
   name: 'CommunicationThreadDeleteDialog',
-  props: ['threadId', 'channels', 'isLoading'], emits: ['confirm', 'close'],
+  props: ['threadId', 'channels', 'isLoading'],
+  emits: ['confirm', 'close'],
   methods: { open: mocks.groupDialogOpen, close: mocks.groupDialogClose },
   template: '<div />',
 };
@@ -335,62 +336,126 @@ describe('ChatList', () => {
   });
 
   describe('deletion acknowledgement', () => {
-    it.each(['failed', 'partial'])('keeps an older %s outcome visible when the most recent deletion succeeded', async outcome => {
-      mocks.deletionOperations = [
-        { requestKey: 'older', operationId: 90, targets: outcome === 'partial'
-          ? [{ id: 12, status: 'deleted' }, { id: 13, status: 'failed' }]
-          : [{ id: 12, status: 'failed' }] },
-        { requestKey: 'newer', operationId: 91, targets: [{ id: 14, status: 'deleted' }] },
-      ];
-      const { wrapper } = await mountChatList({ status: 'open' });
-      const banner = wrapper.find('[data-test="conversation-deletion-state"]');
-      expect(banner.exists()).toBe(true);
-      expect(banner.text()).toContain(wrapper.vm.$t(outcome === 'partial'
-        ? 'CONVERSATION.DELETION_STATE.PARTIAL' : 'CONVERSATION.FAIL_DELETE_CONVERSATION'));
-    });
+    it.each(['failed', 'partial'])(
+      'keeps an older %s outcome visible when the most recent deletion succeeded',
+      async outcome => {
+        mocks.deletionOperations = [
+          {
+            requestKey: 'older',
+            operationId: 90,
+            targets:
+              outcome === 'partial'
+                ? [
+                    { id: 12, status: 'deleted' },
+                    { id: 13, status: 'failed' },
+                  ]
+                : [{ id: 12, status: 'failed' }],
+          },
+          {
+            requestKey: 'newer',
+            operationId: 91,
+            targets: [{ id: 14, status: 'deleted' }],
+          },
+        ];
+        const { wrapper } = await mountChatList({ status: 'open' });
+        const banner = wrapper.find(
+          '[data-test="conversation-deletion-state"]'
+        );
+        expect(banner.exists()).toBe(true);
+        expect(banner.text()).toContain(
+          wrapper.vm.$t(
+            outcome === 'partial'
+              ? 'CONVERSATION.DELETION_STATE.PARTIAL'
+              : 'CONVERSATION.FAIL_DELETE_CONVERSATION'
+          )
+        );
+      }
+    );
 
     it('shows pending confirmation and checks status without sending DELETE', async () => {
-      mocks.deletionOperations = [{ requestKey: 'pending', operationId: 91, targets: [{ id: 12, status: 'pending' }] }];
+      mocks.deletionOperations = [
+        {
+          requestKey: 'pending',
+          operationId: 91,
+          targets: [{ id: 12, status: 'pending' }],
+        },
+      ];
       const { wrapper, store } = await mountChatList({ status: 'open' });
       const banner = wrapper.find('[data-test="conversation-deletion-state"]');
       expect(banner.exists()).toBe(true);
       await banner.find('button').trigger('click');
-      expect(store.dispatch).toHaveBeenCalledWith('reconcileConversationDeletions');
-      expect(store.dispatch).not.toHaveBeenCalledWith('deleteConversation', expect.anything());
+      expect(store.dispatch).toHaveBeenCalledWith(
+        'reconcileConversationDeletions'
+      );
+      expect(store.dispatch).not.toHaveBeenCalledWith(
+        'deleteConversation',
+        expect.anything()
+      );
     });
 
     it('uses pending feedback for an accepted request and success feedback only for a terminal deleted result', async () => {
       const { wrapper, store } = await mountChatList({ status: 'open' });
-      store.dispatch.mockImplementation(type => Promise.resolve(type === 'deleteConversation' ? { outcome: 'pending' } : []));
+      store.dispatch.mockImplementation(type =>
+        Promise.resolve(
+          type === 'deleteConversation' ? { outcome: 'pending' } : []
+        )
+      );
       await wrapper.vm.$.provides.deleteConversation(12);
       wrapper.findComponent(DialogStub).vm.$emit('confirm');
       await flushPromises();
-      expect(mocks.alert).toHaveBeenLastCalledWith(wrapper.vm.$t('CONVERSATION.DELETION_STATE.PENDING'));
-      expect(mocks.alert).not.toHaveBeenCalledWith(wrapper.vm.$t('CONVERSATION.SUCCESS_DELETE_CONVERSATION'));
-      store.dispatch.mockImplementation(type => Promise.resolve(type === 'deleteConversation' ? { outcome: 'deleted' } : []));
+      expect(mocks.alert).toHaveBeenLastCalledWith(
+        wrapper.vm.$t('CONVERSATION.DELETION_STATE.PENDING')
+      );
+      expect(mocks.alert).not.toHaveBeenCalledWith(
+        wrapper.vm.$t('CONVERSATION.SUCCESS_DELETE_CONVERSATION')
+      );
+      store.dispatch.mockImplementation(type =>
+        Promise.resolve(
+          type === 'deleteConversation' ? { outcome: 'deleted' } : []
+        )
+      );
       await wrapper.vm.$.provides.deleteConversation(12);
       wrapper.findComponent(DialogStub).vm.$emit('confirm');
       await flushPromises();
-      expect(mocks.alert).toHaveBeenLastCalledWith(wrapper.vm.$t('CONVERSATION.SUCCESS_DELETE_CONVERSATION'));
+      expect(mocks.alert).toHaveBeenLastCalledWith(
+        wrapper.vm.$t('CONVERSATION.SUCCESS_DELETE_CONVERSATION')
+      );
     });
 
-    it.each(['account', 'employee', 'mode'])('abandons a single deletion confirmation after a %s switch', async kind => {
-      const { wrapper, store } = await mountChatList({ status: 'open' });
-      await wrapper.vm.$.provides.deleteConversation(12);
-      if (kind === 'account') {
-        store.getters.getCurrentAccountId = 2;
-        mocks.route.params.accountId = '2';
-      } else if (kind === 'employee') store.getters.getCurrentUser = { id: 8, name: 'Other employee' };
-      else await wrapper.setProps({ communicationThreadMode: true });
-      wrapper.findComponent(DialogStub).vm.$emit('confirm');
-      await flushPromises();
-      expect(store.dispatch).not.toHaveBeenCalledWith('deleteConversation', expect.anything());
-      expect(store.dispatch).not.toHaveBeenCalledWith('deleteCommunicationThreadConversations', expect.anything());
-    });
+    it.each(['account', 'employee', 'mode'])(
+      'abandons a single deletion confirmation after a %s switch',
+      async kind => {
+        const { wrapper, store } = await mountChatList({ status: 'open' });
+        await wrapper.vm.$.provides.deleteConversation(12);
+        if (kind === 'account') {
+          store.getters.getCurrentAccountId = 2;
+          mocks.route.params.accountId = '2';
+        } else if (kind === 'employee')
+          store.getters.getCurrentUser = { id: 8, name: 'Other employee' };
+        else await wrapper.setProps({ communicationThreadMode: true });
+        wrapper.findComponent(DialogStub).vm.$emit('confirm');
+        await flushPromises();
+        expect(store.dispatch).not.toHaveBeenCalledWith(
+          'deleteConversation',
+          expect.anything()
+        );
+        expect(store.dispatch).not.toHaveBeenCalledWith(
+          'deleteCommunicationThreadConversations',
+          expect.anything()
+        );
+      }
+    );
 
     it('abandons a group confirmation opened in account A during lazy import before entering cached account B', async () => {
-      const { wrapper, store } = await mountChatList({ status: 'open' }, { communicationThreadMode: true });
-      store.getters.getConversationById = () => ({ id: 7, is_communication_thread: true, channels: [{ conversation_id: 12 }] });
+      const { wrapper, store } = await mountChatList(
+        { status: 'open' },
+        { communicationThreadMode: true }
+      );
+      store.getters.getConversationById = () => ({
+        id: 7,
+        is_communication_thread: true,
+        channels: [{ conversation_id: 12 }],
+      });
       const opening = wrapper.vm.$.provides.deleteConversation(7);
       store.getters.getCurrentAccountId = 2;
       mocks.route.params.accountId = '2';
@@ -399,21 +464,34 @@ describe('ChatList', () => {
       wrapper.findComponent(ThreadDialogStub).vm.$emit('confirm', [12]);
       await flushPromises();
       expect(mocks.groupDialogOpen).not.toHaveBeenCalled();
-      expect(store.dispatch).not.toHaveBeenCalledWith('deleteCommunicationThreadConversations', expect.anything());
+      expect(store.dispatch).not.toHaveBeenCalledWith(
+        'deleteCommunicationThreadConversations',
+        expect.anything()
+      );
     });
 
     it('does not let an old deletion finalizer close or change a newly opened confirmation', async () => {
       const { wrapper, store } = await mountChatList({ status: 'open' });
       let finish;
-      store.dispatch.mockImplementation(type => type === 'deleteConversation'
-        ? new Promise(resolve => { finish = resolve; }) : Promise.resolve());
+      store.dispatch.mockImplementation(type =>
+        type === 'deleteConversation'
+          ? new Promise(resolve => {
+              finish = resolve;
+            })
+          : Promise.resolve()
+      );
       const dialog = wrapper.findComponent(DialogStub);
       const close = vi.spyOn(dialog.vm, 'close');
       await wrapper.vm.$.provides.deleteConversation(12);
       dialog.vm.$emit('confirm');
       await flushPromises();
       expect(store.dispatch).toHaveBeenCalledWith('deleteConversation', {
-        conversationId: 12, expectedScope: expect.objectContaining({ accountId: '1', userId: '7', kind: 'conversation' }),
+        conversationId: 12,
+        expectedScope: expect.objectContaining({
+          accountId: '1',
+          userId: '7',
+          kind: 'conversation',
+        }),
       });
       await wrapper.vm.$.provides.deleteConversation(13);
       const closeCount = close.mock.calls.length;
@@ -421,11 +499,20 @@ describe('ChatList', () => {
       await flushPromises();
       expect(close).toHaveBeenCalledTimes(closeCount);
       expect(mocks.alert).not.toHaveBeenCalled();
-      store.dispatch.mockImplementation(type => Promise.resolve(type === 'deleteConversation' ? { outcome: 'pending' } : []));
+      store.dispatch.mockImplementation(type =>
+        Promise.resolve(
+          type === 'deleteConversation' ? { outcome: 'pending' } : []
+        )
+      );
       dialog.vm.$emit('confirm');
       await flushPromises();
       expect(store.dispatch).toHaveBeenCalledWith('deleteConversation', {
-        conversationId: 13, expectedScope: expect.objectContaining({ accountId: '1', userId: '7', kind: 'conversation' }),
+        conversationId: 13,
+        expectedScope: expect.objectContaining({
+          accountId: '1',
+          userId: '7',
+          kind: 'conversation',
+        }),
       });
     });
   });

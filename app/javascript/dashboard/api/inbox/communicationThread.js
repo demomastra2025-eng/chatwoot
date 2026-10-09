@@ -25,7 +25,9 @@ class CommunicationThreadApi extends ApiClient {
 
   show(id, context = null, options = {}) {
     const url = context ? `${context.baseUrl}/communication_threads` : this.url;
-    return Object.keys(options).length ? axios.get(`${url}/${id}`, options) : axios.get(`${url}/${id}`);
+    return Object.keys(options).length
+      ? axios.get(`${url}/${id}`, options)
+      : axios.get(`${url}/${id}`);
   }
 
   // eslint-disable-next-line class-methods-use-this

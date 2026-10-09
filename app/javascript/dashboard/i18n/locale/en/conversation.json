@@ -185,7 +185,7 @@
       "TITLE": "Delete thread channels #{threadId}",
       "DESCRIPTION": "Select the exact channels/conversations to delete. Other channels in this thread will remain available.",
       "CONFIRM": "Delete selected",
-        "SELECTED_COUNT": "Channels to delete: {count}",
+      "SELECTED_COUNT": "Channels to delete: {count}",
       "SELECT_ALL": "Select all channels",
       "CHANNEL_ID": "Conversation #{conversationId}",
       "EMPTY": "This thread has no accessible channels to delete.",
