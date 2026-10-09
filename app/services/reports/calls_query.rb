@@ -56,7 +56,7 @@ module Reports
         relation: sessions,
         candidate_relation: in_range_sessions,
         include_group_siblings: true,
-        include_explicit_key_siblings: true,
+        include_canonical_group_siblings: true,
         limit: MAX_LOGICAL_CALLS + 1
       ).call_with_groups
     end
