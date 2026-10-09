@@ -2026,17 +2026,26 @@ onMounted(() => {
 }
 
 .scheduling-vue-cal
-  :deep(.vuecal:not(.vuecal--horizontal) .vuecal__time-column::before) {
-  content: '';
-  position: absolute;
-  top: 0;
-  right: 0;
-  left: 0;
-  z-index: 2;
-  height: calc(
+  :deep(.vuecal:not(.vuecal--horizontal) .vuecal__time-column) {
+  --scheduling-sticky-header-height: calc(
     var(--vuecal-weekday-bar-size) + var(--vuecal-schedules-bar-size) +
       var(--vuecal-all-day-bar-size)
   );
+}
+
+.scheduling-vue-cal
+  :deep(
+    .vuecal:not(.vuecal--horizontal)
+      .vuecal__scrollable--no-all-day-bar .vuecal__time-column::before
+  ) {
+  content: '';
+  display: block;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  flex: 0 0 var(--scheduling-sticky-header-height);
+  height: var(--scheduling-sticky-header-height);
+  margin-top: calc(var(--scheduling-sticky-header-height) * -1);
   pointer-events: none;
   background: var(--scheduling-panel-bg);
   box-shadow: inset 0 -1px 0 0 var(--vuecal-border-color);
@@ -2045,6 +2054,7 @@ onMounted(() => {
 .scheduling-vue-cal
   :deep(.vuecal:not(.vuecal--horizontal) .vuecal__all-day-label) {
   z-index: 3;
+  background: var(--scheduling-panel-bg) !important;
 }
 
 .scheduling-vue-cal--week :deep(.vuecal__weekdays-headings) {
@@ -2329,8 +2339,7 @@ onMounted(() => {
   background-color: rgb(var(--alpha-1));
 }
 
-.scheduling-vue-cal :deep(.vuecal__time-cell),
-.scheduling-vue-cal :deep(.vuecal__all-day-label) {
+.scheduling-vue-cal :deep(.vuecal__time-cell) {
   background: transparent !important;
 }
 

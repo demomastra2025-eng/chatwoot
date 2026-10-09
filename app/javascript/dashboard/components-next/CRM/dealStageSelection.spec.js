@@ -38,9 +38,7 @@ describe('CRM deal stage selection', () => {
 
     expect(
       defaultStageForManualDeal({
-        stages: [
-          { id: 104, code: 'new', active: false }, qualified,
-        ],
+        stages: [{ id: 104, code: 'new', active: false }, qualified],
       })
     ).toBe(qualified);
   });

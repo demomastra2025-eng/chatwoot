@@ -287,15 +287,19 @@ RSpec.describe 'Accounts API', type: :request do
       it 'rejects a disabled or another account\'s assignment policy' do
         disabled_policy = create(:assignment_policy, account: account, enabled: false)
         other_account_policy = create(:assignment_policy, enabled: true)
+        request_headers = admin.create_new_auth_token
 
         [disabled_policy.id, other_account_policy.id].each do |policy_id|
           patch "/api/v1/accounts/#{account.id}",
                 params: { conversation_assignment_policy_id: policy_id },
-                headers: admin.create_new_auth_token,
+                headers: request_headers,
                 as: :json
 
           expect(response).to have_http_status(:not_found)
           expect(account.reload.conversation_assignment_policy_id).to be_nil
+          request_headers = request_headers.merge(
+            response.headers.slice('access-token', 'client', 'uid')
+          )
         end
       end
 

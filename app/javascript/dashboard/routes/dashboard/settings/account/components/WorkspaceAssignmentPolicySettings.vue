@@ -30,8 +30,8 @@ const hasUnavailableSavedPolicy = computed(
     savedPolicyId.value !== null &&
     savedPolicyId.value !== undefined &&
     !availablePolicies.value.some(
-        policy =>
-          String(policy.id) === String(savedPolicyId.value) && policy.enabled
+      policy =>
+        String(policy.id) === String(savedPolicyId.value) && policy.enabled
     )
 );
 const isDirty = computed(
@@ -141,7 +141,9 @@ const savePolicy = async () => {
           :disabled="!isWorkspaceAdmin || isFetching || isSaving"
         >
           <option value="">
-            {{ t('GENERAL_SETTINGS.CONVERSATIONS.ASSIGNMENT_POLICY_PLACEHOLDER') }}
+            {{
+              t('GENERAL_SETTINGS.CONVERSATIONS.ASSIGNMENT_POLICY_PLACEHOLDER')
+            }}
           </option>
           <option
             v-if="hasUnavailableSavedPolicy || (fetchFailed && savedPolicyId)"
@@ -167,7 +169,9 @@ const savePolicy = async () => {
         {{ statusMessage }}
       </p>
       <p class="m-0 text-sm text-n-slate-11">
-        {{ t('GENERAL_SETTINGS.CONVERSATIONS.ASSIGNMENT_POLICY_PHONE_LINE_NOTE') }}
+        {{
+          t('GENERAL_SETTINGS.CONVERSATIONS.ASSIGNMENT_POLICY_PHONE_LINE_NOTE')
+        }}
       </p>
       <div v-if="fetchFailed" class="flex items-center gap-3">
         <p class="m-0 text-sm text-n-ruby-11" role="alert">

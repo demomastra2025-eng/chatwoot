@@ -682,11 +682,12 @@ describe('CRM pipeline settings', () => {
     await flushPromises();
 
     const selector = wrapper.get('[data-testid="auto-create-stage-select"]');
-    for (const stageId of ['14', '15', '22']) {
-      testState.selectedMenuOption = stageId;
-      // eslint-disable-next-line no-await-in-loop
-      await selector.trigger('click');
-    }
+    await Promise.all(
+      ['14', '15', '22'].map(stageId => {
+        testState.selectedMenuOption = stageId;
+        return selector.trigger('click');
+      })
+    );
     await flushPromises();
 
     expect(testState.savePipeline).not.toHaveBeenCalled();
