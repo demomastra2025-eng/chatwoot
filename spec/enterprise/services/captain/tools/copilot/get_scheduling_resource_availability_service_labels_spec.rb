@@ -1,6 +1,6 @@
 require 'rails_helper'
 
-# Integrated resources require a live provider answer before windows are returned.
+# Integrated resources require a confirmed stored schedule day before windows are returned.
 RSpec.describe Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService do
   include ActiveSupport::Testing::TimeHelpers
 
@@ -44,7 +44,7 @@ RSpec.describe Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService
   it 'returns no local windows when provider access is unavailable' do
     resource = create_resource('Provider', custom_attributes: { 'medelement_specialist_code' => 'code-1' })
     link(resource)
-    expect(Integrations::Medelement::ResourceAvailabilityService).to receive(:new).and_call_original
+    expect(Integrations::Medelement::Client).not_to receive(:new)
 
     payload = windows(resource, service_id: service_record.id)
 
@@ -59,7 +59,7 @@ RSpec.describe Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService
     zone = ActiveSupport::TimeZone['Asia/Almaty']
     date = zone.today + 90
     from = zone.local(date.year, date.month, date.day, 9)
-    expect(Integrations::Medelement::ResourceAvailabilityService).not_to receive(:new)
+    expect(Integrations::Medelement::Client).not_to receive(:new)
 
     payload = JSON.parse(tool.execute(resource_id: resource.id, from: from.iso8601, to: (from + 1.hour).iso8601))
 

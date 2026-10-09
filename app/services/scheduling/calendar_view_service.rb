@@ -87,22 +87,21 @@ class Scheduling::CalendarViewService
   def slots
     return [] unless @include_slots
 
-    resources.flat_map do |resource|
-      policy = Scheduling::ResourceHoursPolicy.new(resource: resource)
-      next availability_for(resource).slots(duration_min: @duration_min || resource.slot_duration_min) unless policy.provider_hours?
-      next [] unless resource.active?
+    resources.flat_map { |resource| slots_for(resource) }
+  end
 
-      range = policy.clipped_range(from: @from, to: @to)
-      next [] if range.nil?
+  def slots_for(resource)
+    policy = Scheduling::ResourceHoursPolicy.new(resource: resource)
+    return availability_for(resource).slots(duration_min: @duration_min || resource.slot_duration_min) unless policy.provider_hours?
+    return [] unless resource.active?
 
-      Integrations::Medelement::ResourceAvailabilityService.new(
-        resource: resource, from: range.first, to: range.last, slots: [],
-        candidate_slots: lambda do |windows|
-          availability_for(resource, from: range.first, to: range.last,
-                                     provider_working_windows: windows).slots(duration_min: @duration_min || resource.slot_duration_min)
-        end
-      ).perform.slots
-    end
+    range = policy.clipped_range(from: @from, to: @to)
+    return [] if range.nil?
+
+    Scheduling::ScheduleDayAvailabilityService.new(
+      resource: resource, from: range.first, to: range.last,
+      duration_min: @duration_min || resource.slot_duration_min
+    ).perform.slots
   end
 
   def time_offs

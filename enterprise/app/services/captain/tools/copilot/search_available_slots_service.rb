@@ -3,7 +3,7 @@ class Captain::Tools::Copilot::SearchAvailableSlotsService < Captain::Tools::Cop
     'search_available_slots'
   end
 
-  description 'Search free appointment slots using local or live MedElement hours. Returned slots can be offered; ' \
+  description 'Search free appointment slots using local rules or confirmed stored MedElement hours. Returned slots can be offered; ' \
               'creation checks availability again. Service link metadata describes recorded price links; ' \
               'total_slots counts only the returned slots'
   param :from, type: :string, desc: 'Range start datetime in ISO 8601 format', required: true

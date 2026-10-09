@@ -66,11 +66,7 @@ RSpec.describe Captain::Tools::Copilot::SearchAvailableSlotsService do
   it 'tells the model that nothing is confirmed after a provider failure and creates no appointment' do
     resource = create_resource('Provider', custom_attributes: { 'medelement_specialist_code' => 'code-1' })
     link(resource)
-    failed = Integrations::Medelement::ResourceAvailabilityService::Result.new(
-      status: 'unavailable', checked_at: Time.current, slots: [], reason: 'provider_unavailable'
-    )
-    allow(Integrations::Medelement::ResourceAvailabilityService).to receive(:new)
-      .and_return(instance_double(Integrations::Medelement::ResourceAvailabilityService, perform: failed))
+    expect(Integrations::Medelement::Client).not_to receive(:new)
 
     payload = search(resource_ids: [resource.id], service_id: service_record.id)
 

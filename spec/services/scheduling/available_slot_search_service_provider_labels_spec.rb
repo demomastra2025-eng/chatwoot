@@ -12,8 +12,16 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
   let(:from_time) { time_zone.local(2026, 4, 20, 9, 0, 0) }
   let(:to_time) { time_zone.local(2026, 4, 20, 11, 0, 0) }
   let(:service_record) { create(:scheduling_service, account: account, name: 'Consultation', duration_min: 30) }
+  let(:hook) { create(:integrations_hook, :medelement, account: account) }
   let(:local_resource) { create_resource('Local') }
-  let(:provider_resource) { create_resource('Provider', custom_attributes: { 'medelement_specialist_code' => 'provider-1' }) }
+  let(:provider_resource) do
+    create_resource('Provider', custom_attributes: {
+                      'medelement_specialist_code' => 'provider-1',
+                      'medelement_cabinets' => [{ 'companyCabinetCode' => 'room-1' }]
+                    })
+  end
+
+  before { account.enable_features!('scheduling') }
 
   def create_resource(name, **attributes)
     create(:scheduling_resource, account: account, name: name, timezone: 'Asia/Almaty', slot_duration_min: 30, **attributes).tap do |record|
@@ -29,18 +37,13 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
     described_class.new(account: account, from: from_time, to: to_time, **attributes).perform
   end
 
-  def provider_result(status:, slots: [], reason: nil)
-    Integrations::Medelement::ResourceAvailabilityService::Result.new(status: status, checked_at: Time.current, slots: slots, reason: reason)
-  end
-
-  def stub_provider(results_by_resource_id)
-    allow(Integrations::Medelement::ResourceAvailabilityService).to receive(:new) do |resource:, **|
-      instance_double(Integrations::Medelement::ResourceAvailabilityService, perform: results_by_resource_id.fetch(resource.id))
-    end
-  end
-
-  def provider_slot(resource)
-    { starts_at: from_time.iso8601, ends_at: (from_time + 30.minutes).iso8601, resource_id: resource.id }
+  def store_provider_day(resource)
+    Integrations::Medelement::ScheduleDay.create!(
+      account: account, hook: hook, resource: resource,
+      specialist_code: resource.custom_attributes['medelement_specialist_code'],
+      date: Date.new(2026, 4, 20), status: 'confirmed', source_checked_at: Time.current,
+      windows: [{ start_minute: 9 * 60, end_minute: 10 * 60 }]
+    )
   end
 
   describe 'local mode' do
@@ -77,8 +80,8 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
   describe 'a price link on a MedElement resource' do
     before { link(provider_resource) }
 
-    it 'stays unverified even when the provider returns fresh times' do
-      stub_provider(provider_resource.id => provider_result(status: 'fresh', slots: [provider_slot(provider_resource)]))
+    it 'stays unverified even when the stored schedule is fresh' do
+      store_provider_day(provider_resource)
 
       payload = perform(resource_ids: [provider_resource.id], service_id: service_record.id, limit: 1)
 
@@ -95,17 +98,17 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
 
       expect(payload[:slots]).to be_empty
       expect(payload[:availability]).to include(
-        status: 'degraded', resources: [include(provider: 'medelement', status: 'unavailable', reason: 'provider_configuration_missing')]
+        status: 'degraded', resources: [include(provider: 'medelement', status: 'provider_unavailable')]
       )
     end
 
-    it 'does not claim provider confirmation after a provider time-out and never creates an appointment' do
-      stub_provider(provider_resource.id => provider_result(status: 'unavailable', reason: 'provider_unavailable'))
+    it 'does not claim provider confirmation when the stored day is missing and never creates an appointment' do
+      hook
 
       payload = perform(resource_ids: [provider_resource.id], service_id: service_record.id)
 
       expect(payload[:slots]).to be_empty
-      expect(payload[:availability]).to include(status: 'degraded', resources: [include(status: 'unavailable', reason: 'provider_unavailable')])
+      expect(payload[:availability]).to include(status: 'degraded', resources: [include(status: 'schedule_not_confirmed')])
       expect(payload.to_s).not_to include('fresh')
       expect(Scheduling::Appointment.count).to eq(0)
     end
@@ -130,7 +133,7 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
   end
 
   describe 'two specialists sharing one room' do
-    let(:cabinets) { [{ 'cabinetCode' => 'room-1' }] }
+    let(:cabinets) { [{ 'companyCabinetCode' => 'room-1' }] }
     let(:first_specialist) do
       create_resource('First', custom_attributes: { 'medelement_specialist_code' => 'a', 'medelement_cabinets' => cabinets })
     end
@@ -143,18 +146,15 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
       link(second_specialist)
     end
 
-    it 'keeps the answer of each specialist apart and degrades the whole answer when one provider call fails' do
-      stub_provider(
-        first_specialist.id => provider_result(status: 'fresh', slots: [provider_slot(first_specialist)]),
-        second_specialist.id => provider_result(status: 'unavailable', reason: 'provider_unavailable')
-      )
+    it 'keeps specialists apart and degrades the answer when one schedule day is missing' do
+      store_provider_day(first_specialist)
 
       payload = perform(service_id: service_record.id)
 
       expect(payload[:slots].pluck(:resource_id)).to eq([first_specialist.id])
       expect(payload[:availability][:status]).to eq('degraded')
       expect(payload[:availability][:resources].pluck(:resource_id, :status)).to contain_exactly(
-        [first_specialist.id, 'fresh'], [second_specialist.id, 'unavailable']
+        [first_specialist.id, 'fresh'], [second_specialist.id, 'schedule_not_confirmed']
       )
       expect(payload[:candidate_resource_ids]).to contain_exactly(first_specialist.id, second_specialist.id)
       expect(payload).to include(service_link_status: 'price_link_unverified')
@@ -165,7 +165,7 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
     before do
       link(local_resource)
       link(provider_resource)
-      stub_provider(provider_resource.id => provider_result(status: 'fresh', slots: [provider_slot(provider_resource)]))
+      store_provider_day(provider_resource)
     end
 
     it 'labels each slot by its own link while the answer as a whole is not offer-eligible' do

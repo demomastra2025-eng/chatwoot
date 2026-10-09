@@ -30,10 +30,10 @@ RSpec.describe Scheduling::CalendarViewService do
     expect(result.fetch(:resources).map(&:id)).to contain_exactly(first_resource.id, second_resource.id)
   end
 
-  it 'uses live provider windows for an integrated specialist while local holidays still block other specialists' do
+  it 'uses stored provider windows for an integrated specialist while local holidays still block other specialists' do
     travel_to(Time.utc(2026, 9, 13, 12)) do
       account.enable_features!('scheduling')
-      create(:integrations_hook, :medelement, account: account)
+      hook = create(:integrations_hook, :medelement, account: account)
       provider = create(
         :scheduling_resource,
         account: account,
@@ -46,14 +46,12 @@ RSpec.describe Scheduling::CalendarViewService do
       local = create(:scheduling_resource, account: account, timezone: 'Asia/Almaty')
       create(:scheduling_work_rule, account: account, resource: local, weekday: 1)
       create(:scheduling_holiday, account: account, date: Date.new(2026, 9, 14))
-      client = instance_double(Integrations::Medelement::Client)
-      allow(Integrations::Medelement::Client).to receive(:new).and_return(client)
-      allow(client).to receive(:timetable).and_return(
-        '14.09.2026' => { 'timetable' => [
-          { 'start' => '14.09.2026 09:00', 'end' => '14.09.2026 11:00', 'working' => true }
-        ] }
+      Integrations::Medelement::ScheduleDay.create!(
+        account: account, hook: hook, resource: provider, specialist_code: 'doctor-1',
+        date: Date.new(2026, 9, 14), status: 'confirmed', source_checked_at: Time.current,
+        windows: [{ start_minute: 9 * 60, end_minute: 11 * 60 }]
       )
-      allow(client).to receive(:get_receptions).and_return([])
+      expect(Integrations::Medelement::Client).not_to receive(:new)
       zone = ActiveSupport::TimeZone['Asia/Almaty']
 
       payload = described_class.new(account: account, view: 'day',
@@ -62,7 +60,6 @@ RSpec.describe Scheduling::CalendarViewService do
 
       expect(payload[:slots].pluck(:resource_id)).to include(provider.id)
       expect(payload[:slots].pluck(:resource_id)).not_to include(local.id)
-      expect(client).to have_received(:timetable).once
     end
   end
 

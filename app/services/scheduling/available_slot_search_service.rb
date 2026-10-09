@@ -108,30 +108,31 @@ class Scheduling::AvailableSlotSearchService
       return label_service_eligibility(local_slots(resource), 'local_configured')
     end
 
+    integrated_slots(resource)
+  end
+
+  def integrated_slots(resource)
     range = Scheduling::ResourceHoursPolicy.new(resource: resource).clipped_range(from: @from, to: @to)
     if range.nil?
       record_availability(resource_id: resource.id, provider: 'medelement', status: 'outside_horizon')
       return []
     end
 
-    result = Integrations::Medelement::ResourceAvailabilityService.new(
-      resource: resource,
-      from: range.first,
-      to: range.last,
-      slots: [],
-      candidate_slots: lambda do |provider_windows|
-        local_slots(resource, from: range.first, to: range.last,
-                              provider_working_windows: provider_windows, uncapped: true)
-      end
+    result = Scheduling::ScheduleDayAvailabilityService.new(
+      resource: resource, from: range.first, to: range.last,
+      service: service, duration_min: @requested_duration_min
     ).perform
     record_availability(
       resource_id: resource.id,
       provider: 'medelement',
-      status: result.status,
-      checked_at: result.checked_at.iso8601(6),
-      reason: result.reason
+      status: result.state == 'ok' ? 'fresh' : result.state,
+      checked_at: result.checked_at&.iso8601(6)
     )
-    label_service_eligibility(result.slots.first(@limit), 'price_link_unverified')
+    slots = result.slots.first(@limit).map do |slot|
+      slot.merge(resource_name: resource.name, timezone: resource.timezone,
+                 availability_source: 'medelement', medelement_cabinet_code: slot[:cabinet_code])
+    end
+    label_service_eligibility(slots, 'price_link_unverified')
   end
 
   def label_service_eligibility(slots, status)
@@ -153,9 +154,9 @@ class Scheduling::AvailableSlotSearchService
   def availability_payload
     normalized_slots
     statuses = availability_resources.pluck(:status)
-    status = if statuses.include?('unavailable')
+    status = if statuses.intersect?(%w[unavailable schedule_not_confirmed provider_unavailable])
                'degraded'
-             elsif statuses.include?('fresh')
+             elsif statuses.intersect?(%w[fresh closed_day])
                'fresh'
              elsif statuses.present? && statuses.all?('outside_horizon')
                'outside_horizon'

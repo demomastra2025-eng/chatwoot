@@ -5,7 +5,7 @@ class Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService < Captai
     'get_scheduling_resource_availability'
   end
 
-  description 'Get free windows of one resource, checked against MedElement when integrated. Returned slots can be offered; creation checks again'
+  description 'Get free windows of one resource from confirmed MedElement schedule days when integrated. Creation checks live again'
   param :resource_id, type: :number, desc: 'Scheduling resource ID (specialist or diagnostic resource)', required: true
   param :from, type: :string, desc: 'Range start datetime', required: true
   param :to, type: :string, desc: 'Range end datetime', required: true
@@ -24,7 +24,7 @@ class Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService < Captai
     service_record = resolve_service_for_resource(resource: resource, service_id: service_id)
     payload = availability_payload(resource, service_record, service_id, range_from, range_to, duration_min, limit)
 
-    formatted_payload(with_provider_note(resource, range_from, range_to, payload.merge(availability_metadata(resource, service_record, payload))))
+    formatted_payload(with_provider_note(resource, range_from, range_to, payload.merge(availability_metadata(resource, service_record))))
   rescue StandardError => e
     tool_failure(e)
   end
@@ -65,7 +65,7 @@ class Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService < Captai
     Integrations::Medelement::ProviderScheduleNote.for(resource: resource, date: from_date)
   end
 
-  def availability_metadata(resource, service_record, payload)
+  def availability_metadata(resource, service_record)
     provider_required = Scheduling::AvailableSlotSearchService.provider_related?(resource)
     link_status = if service_record.blank?
                     'not_requested'
@@ -75,7 +75,7 @@ class Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService < Captai
                     'local_configured'
                   end
     { availability_source: provider_required ? 'medelement' : 'local_rules',
-      provider_checked: provider_required && payload.dig(:availability, :status) == 'fresh',
+      provider_checked: false,
       provider_required: provider_required, service_link_status: link_status }
   end
 
