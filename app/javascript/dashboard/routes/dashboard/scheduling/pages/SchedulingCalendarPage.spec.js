@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
-import { defineComponent, isReadonly, reactive } from 'vue';
+import { defineComponent, h, isReadonly, reactive } from 'vue';
+import { createStore } from 'vuex';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
@@ -117,38 +118,87 @@ const deferred = () => {
   return { promise, resolve };
 };
 const InputStub = defineComponent({
-  name: 'Input',
+  name: 'CalendarInputStub',
   props: ['modelValue', 'label', 'disabled'],
   emits: ['update:modelValue'],
-  template:
-    '<input :data-label="label" :value="modelValue" :disabled="disabled" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  setup:
+    (props, { emit }) =>
+    () =>
+      h('input', {
+        'data-label': props.label,
+        value: props.modelValue,
+        disabled: props.disabled,
+        onInput: event => emit('update:modelValue', event.target.value),
+      }),
 });
 const SelectStub = defineComponent({
   name: 'SchedulingSelectField',
   props: ['modelValue', 'label', 'disabled', 'options'],
   emits: ['update:modelValue', 'search', 'open'],
-  template:
-    '<select :data-label="label" :disabled="disabled" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><option v-for="option in options" :key="option.value" :value="option.value">{{ option.label }}</option></select>',
+  setup:
+    (props, { emit }) =>
+    () =>
+      h(
+        'select',
+        {
+          'data-label': props.label,
+          disabled: props.disabled,
+          value: props.modelValue,
+          onChange: event => emit('update:modelValue', event.target.value),
+          onInput: event => emit('search', event.target.value),
+          onFocus: () => emit('open'),
+        },
+        (props.options || []).map(option =>
+          h('option', { key: option.value, value: option.value }, option.label)
+        )
+      ),
 });
 const ButtonStub = defineComponent({
-  name: 'Button',
+  name: 'CalendarButtonStub',
   props: ['label', 'icon', 'disabled', 'isLoading'],
   emits: ['click'],
-  template:
-    '<button type="button" :data-label="label" :data-icon="icon" :disabled="disabled || isLoading" @click="$emit(\'click\')">{{ label }}</button>',
+  setup:
+    (props, { emit }) =>
+    () =>
+      h(
+        'button',
+        {
+          type: 'button',
+          'data-label': props.label,
+          'data-icon': props.icon,
+          disabled: props.disabled || props.isLoading,
+          onClick: () => emit('click'),
+        },
+        props.label
+      ),
 });
 const DatePickerStub = defineComponent({
   name: 'DateTimePicker',
   props: ['value', 'disabled'],
   emits: ['change'],
-  template: '<input class="calendar-date-picker" :disabled="disabled" />',
+  setup:
+    (props, { emit }) =>
+    () =>
+      h('input', {
+        class: 'calendar-date-picker',
+        value: props.value,
+        disabled: props.disabled,
+        onChange: event => emit('change', new Date(event.target.value)),
+      }),
 });
 const TextAreaStub = defineComponent({
   name: 'TextArea',
   props: ['modelValue', 'label', 'disabled'],
   emits: ['update:modelValue'],
-  template:
-    '<textarea :data-label="label" :disabled="disabled" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  setup:
+    (props, { emit }) =>
+    () =>
+      h('textarea', {
+        'data-label': props.label,
+        disabled: props.disabled,
+        value: props.modelValue,
+        onInput: event => emit('update:modelValue', event.target.value),
+      }),
 });
 const stubs = {
   Button: ButtonStub,
@@ -178,23 +228,23 @@ const stubs = {
 let wrapper;
 const mountPage = async () => {
   const pinia = createPinia();
+  const vuex = createStore({ getters: { getCurrentUser: () => ({ id: 9 }) } });
   setActivePinia(pinia);
   wrapper = mount(SchedulingCalendarPage, {
     global: {
-      plugins: [pinia],
+      plugins: [pinia, vuex],
       stubs,
       mocks: {
         $t: key => key,
-        $store: { getters: { getCurrentUser: { id: 9 } } },
       },
     },
   });
   await flushPromises();
   const store = useSchedulingAppointmentFormStore();
   store.contacts = [owner];
-  wrapper
-    .findComponent({ name: 'SchedulingCalendarGrid' })
-    .vm.$emit('create-appointment', slot);
+  const grid = wrapper.findComponent({ name: 'SchedulingCalendarGrid' });
+  // eslint-disable-next-line vue/custom-event-name-casing -- Preserve the existing calendar grid event contract.
+  grid.vm.$emit('create-appointment', slot);
   await flushPromises();
   const contact = wrapper
     .findAllComponents(SelectStub)
@@ -298,7 +348,7 @@ describe('SchedulingCalendarPage pending local booking', () => {
       .vm.$emit('update:modelValue', 'Late comment');
     contact.vm.$emit('update:modelValue', 43);
     contact.vm.$emit('search', 'Late search');
-    for (const section of wrapper.findAllComponents(CrmCustomFieldsSection)) {
+    wrapper.findAllComponents(CrmCustomFieldsSection).forEach(section => {
       expect(section.props('disabled')).toBe(true);
       expect(isReadonly(section.props('modelValue'))).toBe(true);
       section.vm.$emit('update:modelValue', {
@@ -308,7 +358,7 @@ describe('SchedulingCalendarPage pending local booking', () => {
       section
         .findComponent(InputStub)
         .vm.$emit('update:modelValue', 'Late nested popup');
-    }
+    });
     await wrapper
       .get('#scheduling-appointment-drawer-title')
       .setValue('Late name');
@@ -364,13 +414,14 @@ describe('SchedulingCalendarPage pending local booking', () => {
     const dismiss = wrapper.get('.modal-mask button[data-icon="i-lucide-x"]');
     expect(dismiss.element.disabled).toBe(false);
     await dismiss.trigger('click');
-    wrapper
-      .findComponent({ name: 'SchedulingCalendarGrid' })
-      .vm.$emit('create-appointment', {
-        ...slot,
-        startsAt: '2026-10-11T05:00:00Z',
-        endsAt: '2026-10-11T05:30:00Z',
-      });
+    const nextSlot = {
+      ...slot,
+      startsAt: '2026-10-11T05:00:00Z',
+      endsAt: '2026-10-11T05:30:00Z',
+    };
+    const grid = wrapper.findComponent({ name: 'SchedulingCalendarGrid' });
+    // eslint-disable-next-line vue/custom-event-name-casing -- Preserve the existing calendar grid event contract.
+    grid.vm.$emit('create-appointment', nextSlot);
     await flushPromises();
     await wrapper.get('#scheduling-appointment-drawer-title').setValue('Other');
     const freshForm = JSON.parse(JSON.stringify(store.form));
