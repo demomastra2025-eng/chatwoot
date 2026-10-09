@@ -14,7 +14,7 @@ RSpec.describe AutomationRules::AppointmentCreatedNotificationHold do
     create(:scheduling_appointment, account: account, resource: resource, contact: contact, conversation: conversation,
                                     custom_attributes: { Integrations::Medelement::AppointmentProviderStatus::ATTRIBUTE_KEY => 'pending' })
   end
-  let!(:rule) do
+  let(:rule) do
     create(
       :automation_rule, account: account, event_name: 'appointment_created',
       conditions: [{ attribute_key: 'status', filter_operator: 'equal_to', values: ['scheduled'], query_operator: nil }],
@@ -28,6 +28,7 @@ RSpec.describe AutomationRules::AppointmentCreatedNotificationHold do
 
   before do
     account.enable_features!('scheduling')
+    rule
     settings = attributes_for(:integrations_hook, :medelement)[:settings].merge('write_enabled' => true)
     create(:integrations_hook, :medelement, account: account, settings: settings)
     clear_enqueued_jobs
