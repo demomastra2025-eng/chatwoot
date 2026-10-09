@@ -127,6 +127,18 @@ RSpec.describe Captain::Tools::Agent::AccountToolAdapter do
     expect(foreign_conversation.messages.where(content: 'Private note')).to be_empty
   end
 
+  it 'keeps a message to the current patient conversation available' do
+    create(:captain_inbox, inbox: conversation.inbox, captain_assistant: assistant)
+
+    result = call_tool(
+      'send_message_to_conversation', conversation_id: conversation.display_id,
+                                      content: 'Own private note', private_note: true
+    )
+
+    expect(JSON.parse(result).dig('message', 'content')).to eq('Own private note')
+    expect(conversation.messages.where(content: 'Own private note')).to exist
+  end
+
   it 'records a minimal denied event without the supplied id or patient details' do
     foreign = create(:scheduling_appointment, account: account, contact: other_contact)
     events = []
