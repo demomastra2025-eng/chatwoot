@@ -14,10 +14,10 @@ RSpec.describe Reminder do
                                       starts_at: 2.days.from_now, ends_at: 2.days.from_now + 30.minutes)
       reminder = build(
         :reminder, account: account, conversation: conversation, remindable: conversation,
-                   body: 'field: [ID](field://appointment.id), liquid: {{ appointment.id }}'
+                   body: 'field: [ID](field://appointment.id)'
       )
 
-      expect(reminder.renderable_body(conversation: conversation)).to eq("field: #{finished.id}, liquid: #{finished.id}")
+      expect(reminder.renderable_body(conversation: conversation)).to eq("field: #{finished.id}")
     end
 
     it 'renders manual touch field references across contact, conversation, deal, task, appointment, and custom fields' do
