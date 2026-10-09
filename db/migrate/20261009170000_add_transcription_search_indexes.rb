@@ -20,10 +20,10 @@ class AddTranscriptionSearchIndexes < ActiveRecord::Migration[7.1]
   ].join(" || E'\\n' || ").freeze
 
   INDEXES = [
-    # add_index treats expression indexes specially, but PostgreSQL needs the concatenation grouped before the
-    # operator class: USING gin ((expression) gin_trgm_ops). Keep these parentheses in the expression passed to Rails.
-    { table: :messages, name: 'index_messages_on_transcription_search_text', expression: "(#{MESSAGE_SEARCH_TEXT})" },
-    { table: :attachments, name: 'index_attachments_on_transcribed_text', expression: "(meta ->> 'transcribed_text')" }
+    # Rails passes string expressions through verbatim and does not apply its opclass option to them, so include the
+    # operator class in the expression string after grouping the indexed expression for PostgreSQL.
+    { table: :messages, name: 'index_messages_on_transcription_search_text', expression: "(#{MESSAGE_SEARCH_TEXT}) gin_trgm_ops" },
+    { table: :attachments, name: 'index_attachments_on_transcribed_text', expression: "(meta ->> 'transcribed_text') gin_trgm_ops" }
   ].freeze
   BUILD_STATEMENT_TIMEOUT = '30min'.freeze
   LOCK_TIMEOUT = '5s'.freeze
@@ -56,7 +56,7 @@ class AddTranscriptionSearchIndexes < ActiveRecord::Migration[7.1]
 
     with_retries do
       drop_invalid_index!(name)
-      add_index table, index.fetch(:expression), using: :gin, opclass: :gin_trgm_ops, name: name,
+      add_index table, index.fetch(:expression), using: :gin, name: name,
                                                           algorithm: :concurrently, if_not_exists: true
     end
     true
