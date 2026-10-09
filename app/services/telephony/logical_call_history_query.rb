@@ -1,6 +1,16 @@
 class Telephony::LogicalCallHistoryQuery
   BATCH_SIZE = 200
   MAX_BATCH_SIZE = 500
+  LOGICAL_CALL_KEY_PATHS = [
+    "metadata #>> '{metadata,logical_call_key}'",
+    "metadata #>> '{metadata,logicalCallKey}'",
+    "metadata #>> '{metadata,call_group_key}'",
+    "metadata #>> '{metadata,callGroupKey}'",
+    "metadata #>> '{last_payload,logical_call_key}'",
+    "metadata #>> '{last_payload,logicalCallKey}'",
+    "metadata #>> '{last_payload,call_group_key}'",
+    "metadata #>> '{last_payload,callGroupKey}'"
+  ].freeze
 
   STATUS_PRIORITY = {
     'in_progress' => 0,
@@ -16,13 +26,15 @@ class Telephony::LogicalCallHistoryQuery
     'failed' => 5
   }.freeze
 
-  def initialize(relation:, limit:, status: nil, candidate_relation: nil, include_group_siblings: false)
+  def initialize(relation:, limit:, status: nil, candidate_relation: nil, include_group_siblings: false,
+                 include_explicit_key_siblings: false)
     @relation = relation.reorder(nil)
     @candidate_relation = (candidate_relation || relation).reorder(nil)
     @limit = limit
     @status = Telephony::CallSession.normalize_status(status) || status.to_s.presence
     @candidate_relation = @candidate_relation.where(status: status_values) if status.present?
     @include_group_siblings = include_group_siblings
+    @include_explicit_key_siblings = include_explicit_key_siblings
     @candidate_ids = Set.new
   end
 
@@ -49,7 +61,8 @@ class Telephony::LogicalCallHistoryQuery
       .first(limit)
   end
 
-  attr_reader :candidate_relation, :candidate_ids, :include_group_siblings, :relation, :limit, :status
+  attr_reader :candidate_relation, :candidate_ids, :include_explicit_key_siblings, :include_group_siblings, :relation,
+              :limit, :status
 
   def scan_groups
     sessions_by_id = {}
@@ -110,11 +123,52 @@ class Telephony::LogicalCallHistoryQuery
     windows = sibling_windows(inbound)
     siblings = relation.where(direction: 'inbound', provider: inbound.map(&:provider).uniq, inbox_id: inbound.map(&:inbox_id).uniq)
                        .where(windows.map { 'created_at BETWEEN ? AND ?' }.join(' OR '), *windows.flatten)
-                       .to_a.reject { |session| sessions_by_id.key?(session.id) }
+                       .to_a
+    siblings.concat(load_explicit_key_siblings(batch)) if include_explicit_key_siblings
+    siblings = siblings.uniq(&:id).reject { |session| sessions_by_id.key?(session.id) }
     return if siblings.empty?
 
     siblings.each { |session| sessions_by_id[session.id] = session }
     load_missing_group_parents(sessions_by_id, siblings)
+  end
+
+  def load_explicit_key_siblings(batch)
+    # Reports assign grouped calls to their first leg, so a keyed handoff may
+    # need context from outside the nearby-leg window or date range.
+    signatures = batch.filter_map { |session| explicit_key_signature(session) }.to_set
+    return [] if signatures.empty?
+
+    scopes = signatures.group_by { |provider, inbox_id, _logical_key| [provider, inbox_id] }
+    clauses = []
+    binds = []
+    scopes.each do |(provider, inbox_id), scoped_signatures|
+      keys = scoped_signatures.map(&:last).uniq
+      clause_key_bindings = []
+      key_clauses = LOGICAL_CALL_KEY_PATHS.map do |path|
+        placeholders = Array.new(keys.size, '?').join(', ')
+        clause_key_bindings.concat(keys)
+        "#{path} IN (#{placeholders})"
+      end
+      clauses << "(provider = ? AND inbox_id IS NOT DISTINCT FROM ? AND (#{key_clauses.join(' OR ')}))"
+      binds.concat([provider, inbox_id] + clause_key_bindings)
+    end
+
+    relation.where(direction: 'inbound')
+            .where(clauses.join(' OR '), *binds)
+            .to_a
+            .select { |session| signatures.include?(explicit_key_signature(session)) }
+  end
+
+  def explicit_key_signature(session)
+    return unless session.direction == 'inbound'
+
+    logical_key = session.logical_call_key
+    return if logical_key.blank?
+
+    canonical_key = ['logical', session.provider, session.inbox_id, logical_key].join(':')
+    return unless session.logical_history_key == canonical_key
+
+    [session.provider, session.inbox_id, logical_key]
   end
 
   def sibling_windows(sessions)
