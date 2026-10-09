@@ -15,6 +15,7 @@ import {
 const workspaceTimezone = 'Asia/Almaty';
 const currentView = ref('week');
 const currentPresentation = ref('calendar');
+const showAllDayEvents = ref(true);
 const anchorDate = ref('2026-10-05T07:00:00.000Z');
 const selectedResourceIds = ref([12, 13]);
 const resources = [
@@ -139,9 +140,15 @@ const goToToday = () => {
         </SchedulingToolbar>
 
         <main class="flex min-h-0 flex-1 flex-col px-5 pb-4 pt-2">
+          <label
+            class="mb-2 inline-flex items-center gap-2 text-sm text-n-slate-11"
+          >
+            <input v-model="showAllDayEvents" type="checkbox" />
+            <span>Show all-day row</span>
+          </label>
           <SchedulingVueCalCalendar
             class="min-h-0 flex-1"
-            all-day-events
+            :all-day-events="showAllDayEvents"
             :anchor-date="anchorDate"
             :appointments="visibleAppointments"
             read-only

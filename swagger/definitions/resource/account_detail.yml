@@ -41,6 +41,14 @@ properties:
       auto_resolve_ignore_waiting:
         type: boolean
         description: Whether to ignore waiting conversations for auto resolve
+      conversation_assignment_policy_id:
+        type:
+          - integer
+          - 'null'
+        description: >-
+          Enabled assignment policy selected for this account's conversations. Null means no workspace policy has been
+          selected and the existing per-inbox assignment behavior remains in effect. If a selected policy becomes
+          unavailable, workspace assignment fails closed rather than falling back to a per-inbox policy.
   custom_attributes:
     type: object
     description: Custom attributes of the account
