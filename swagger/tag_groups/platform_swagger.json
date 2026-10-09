@@ -1706,10 +1706,13 @@
           },
           "config": {
             "type": "object",
-            "description": "Assistant configuration is updated through the existing assistant endpoint. Model, tool access, follow-up settings, and outcome reason settings are account-scoped per assistant.",
+            "description": "Assistant configuration is updated through the existing assistant endpoint. Model, tool access, follow-up settings, and outcome reason settings are account-scoped per assistant. Omitted safety fields retain saved overrides during a partial update; explicit null resets a safety field to inheritance from the workspace policy. Unspecified safety fields on a new assistant inherit workspace policy.",
             "properties": {
               "model": {
                 "type": "string"
+              },
+              "safety_settings": {
+                "$ref": "#/components/schemas/captain_assistant_safety_settings"
               },
               "tool_access": {
                 "type": "object",
@@ -3358,6 +3361,13 @@
               "auto_resolve_ignore_waiting": {
                 "type": "boolean",
                 "description": "Whether to ignore waiting conversations for auto resolve"
+              },
+              "conversation_assignment_policy_id": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "Enabled assignment policy selected for this account's conversations. Null means no workspace policy has been selected and the existing per-inbox assignment behavior remains in effect. If a selected policy becomes unavailable, workspace assignment fails closed rather than falling back to a per-inbox policy."
               }
             }
           },
@@ -4333,6 +4343,13 @@
             ],
             "description": "Whether to ignore waiting conversations for auto resolve",
             "example": false
+          },
+          "conversation_assignment_policy_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Account administrator only. Set to an enabled assignment policy ID belonging to this account to select the workspace policy, or null to clear the selection and retain existing per-inbox assignment behavior. A selected policy that later becomes unavailable fails closed instead of falling back to per-inbox behavior."
           },
           "industry": {
             "type": "string",
@@ -7675,9 +7692,13 @@
               },
               "config": {
                 "type": "object",
+                "description": "Omitted safety fields retain saved overrides during a partial update; explicit null resets a safety field to inheritance from the workspace policy. Unspecified safety fields on a new assistant inherit workspace policy.",
                 "properties": {
                   "model": {
                     "type": "string"
+                  },
+                  "safety_settings": {
+                    "$ref": "#/components/schemas/captain_assistant_safety_settings"
                   },
                   "tool_access": {
                     "type": "object",
@@ -7706,6 +7727,152 @@
             "additionalProperties": true
           }
         }
+      },
+      "captain_assistant_safety_settings": {
+        "type": "object",
+        "description": "Omitted safety fields retain saved overrides during a partial update; explicit null resets a safety field to inheritance from the workspace policy. Unspecified safety fields on a new assistant inherit workspace policy.",
+        "properties": {
+          "moderation_enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Enable or disable provider moderation for this assistant; null inherits the workspace value."
+          },
+          "prompt_injection_action": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "disabled",
+              "flag",
+              "block",
+              null
+            ],
+            "description": "Runtime prompt-injection guardrail action; null inherits the workspace value."
+          },
+          "sensitive_info_action": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "disabled",
+              "flag",
+              "block",
+              null
+            ],
+            "description": "Runtime sensitive-information guardrail action; null inherits the workspace value."
+          }
+        },
+        "additionalProperties": false
+      },
+      "captain_assistant_playground_request": {
+        "type": "object",
+        "required": [
+          "message_content"
+        ],
+        "properties": {
+          "message_content": {
+            "type": "string"
+          },
+          "message_history": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "role",
+                "content"
+              ],
+              "properties": {
+                "role": {
+                  "type": "string"
+                },
+                "content": {
+                  "type": "string"
+                },
+                "agent_name": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "conversation_id": {
+            "type": "string",
+            "description": "Optional account-visible conversation used to provide runtime context."
+          },
+          "test_model": {
+            "type": "string",
+            "description": "Per-request selectable model override. It is validated against the assistant model registry and is not saved to the assistant."
+          },
+          "test_temperature": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Per-request temperature override; accepted only when the selected model supports temperature."
+          },
+          "test_thinking_effort": {
+            "type": "string",
+            "enum": [
+              "none",
+              "low",
+              "medium",
+              "high"
+            ],
+            "description": "Per-request reasoning effort override; accepted only when supported by the selected model."
+          }
+        }
+      },
+      "captain_assistant_playground_response": {
+        "type": "object",
+        "required": [
+          "response"
+        ],
+        "properties": {
+          "response": {
+            "type": "string"
+          },
+          "agent_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reasoning": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "response_latency_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Measured end-to-end response latency in milliseconds."
+          },
+          "reported_reasoning_tokens": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Provider-reported reasoning tokens",
+            "included only when the provider supplies this usage metric.": null
+          },
+          "tool_trace": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "tool": {
+                  "type": "string"
+                },
+                "event": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          }
+        },
+        "additionalProperties": true
       },
       "crm_task_lifecycle_snapshot": {
         "type": "object",
