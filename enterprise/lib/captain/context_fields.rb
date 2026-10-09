@@ -223,7 +223,11 @@ class Captain::ContextFields
     def appointment_state_for(account:, conversation: nil, appointment: nil, patient_scope: false)
       return if account.blank? || !appointment_context_enabled?(account)
 
-      appointment ||= appointment_for(account: account, conversation: conversation)
+      appointment ||= if patient_scope
+                        appointment_for_patient_agent(account: account, conversation: conversation)
+                      else
+                        appointment_for(account: account, conversation: conversation)
+                      end
       return if appointment.blank? || appointment.account_id != account.id
 
       state = build_appointment_state(appointment, account)
@@ -269,6 +273,16 @@ class Captain::ContextFields
     end
 
     def appointment_for(account:, conversation:)
+      return if account.blank? || conversation.blank?
+      return unless appointment_context_enabled?(account)
+
+      appointments = account.scheduling_appointments.where(conversation_id: conversation.id)
+
+      appointments.active_statuses.order(starts_at: :desc, id: :desc).first ||
+        appointments.order(starts_at: :desc, id: :desc).first
+    end
+
+    def appointment_for_patient_agent(account:, conversation:)
       return if account.blank? || conversation.blank?
       return unless appointment_context_enabled?(account)
 

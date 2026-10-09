@@ -29,6 +29,8 @@ RSpec.describe Captain::Assistant, type: :model do
 
   it 'renders selected blocks and single fields from the same nearest appointment' do
     travel_to(Time.zone.parse('2026-10-09 12:00:00 UTC')) do
+      create(:scheduling_appointment, account: account, contact: contact, conversation: conversation,
+                                      starts_at: 1.day.ago, ends_at: 1.day.ago + 30.minutes, status: 'completed')
       nearest = create(:scheduling_appointment, account: account, contact: contact,
                                                 starts_at: 10.minutes.ago, ends_at: 20.minutes.from_now,
                                                 status: 'confirmed')

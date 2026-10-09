@@ -385,6 +385,20 @@ RSpec.describe Captain::ContextFields do
       end
     end
 
+    it 'keeps the dialog appointment for shared fields and selects the contact future appointment for the agent' do
+      appointment_record.update!(starts_at: 2.days.ago, ends_at: 2.days.ago + 30.minutes, status: 'completed')
+      other_conversation = create(:conversation, account: account, contact: conversation_record.contact)
+      upcoming = create(:scheduling_appointment, account: account, contact: conversation_record.contact,
+                                                 conversation: other_conversation,
+                                                 starts_at: 2.days.from_now, ends_at: 2.days.from_now + 30.minutes)
+
+      shared_state = described_class.appointment_state_for(account: account, conversation: conversation_record)
+      agent_state = described_class.appointment_state_for(account: account, conversation: conversation_record, patient_scope: true)
+
+      expect(shared_state).to include(id: appointment_record.id, status: 'completed')
+      expect(agent_state[:id]).to eq(upcoming.id)
+    end
+
     it 'uses an explicit appointment without a conversation context' do
       appointment_record.update!(conversation: nil)
 
