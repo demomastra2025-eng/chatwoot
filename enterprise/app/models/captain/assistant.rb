@@ -71,6 +71,9 @@ class Captain::Assistant < ApplicationRecord
   CRM_DEAL_WRITE_TOOL_IDS = %w[create_deal update_deal transition_deal_stage].freeze
   APPOINTMENT_PROVIDER_STATUS_COMPANION_TOOL_IDS = %w[get_appointment_provider_status].freeze
   APPOINTMENT_PROVIDER_MUTATION_TOOL_IDS = %w[create_appointment update_appointment cancel_appointment].freeze
+  SCHEDULING_CONTEXT_TOOL_IDS = %w[
+    get_appointment list_my_appointments search_appointments create_appointment update_appointment cancel_appointment
+  ].freeze
   CRM_CUSTOM_FIELD_COMPANION_TOOL_IDS_BY_ENTITY = {
     deal: 'list_deal_custom_fields',
     task: 'list_task_custom_fields',
@@ -1012,6 +1015,14 @@ class Captain::Assistant < ApplicationRecord
   def initialize_context_access_config
     self.config = (config || {}).deep_stringify_keys
     config['context_access'] ||= {}
+    selected_tools = Array(config.dig('tool_access', 'agent', 'tool_ids')).map(&:to_s)
+    return unless selected_tools.intersect?(SCHEDULING_CONTEXT_TOOL_IDS)
+    return if config['context_access'].key?('appointment')
+
+    config['context_access']['appointment'] = {
+      'enabled' => true,
+      'field_ids' => %w[appointment.nearest appointment.last_past appointment.last_cancelled]
+    }
   end
 
   def internal_assistant_cannot_have_connected_inboxes
