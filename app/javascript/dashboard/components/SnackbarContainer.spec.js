@@ -45,8 +45,9 @@ describe('SnackbarContainer', () => {
 
     await vi.advanceTimersByTimeAsync(1501);
     await nextTick();
-    expect(wrapper.findAll('[data-testid="toast"]').map(toast => toast.text()))
-      .toEqual(['recovery notice']);
+    expect(
+      wrapper.findAll('[data-testid="toast"]').map(toast => toast.text())
+    ).toEqual(['recovery notice']);
 
     await vi.advanceTimersByTimeAsync(8499);
     await nextTick();

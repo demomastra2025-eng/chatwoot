@@ -34,7 +34,10 @@ export const installLazyChunkRecovery = ({
 
     const fingerprint = assetFingerprint(event);
     const lastSeen = lastNotices.get(fingerprint);
-    if (lastSeen !== undefined && timestamp - lastSeen < RECOVERY_NOTICE_TTL_MS) {
+    if (
+      lastSeen !== undefined &&
+      timestamp - lastSeen < RECOVERY_NOTICE_TTL_MS
+    ) {
       return;
     }
 

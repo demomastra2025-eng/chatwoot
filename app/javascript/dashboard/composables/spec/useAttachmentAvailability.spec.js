@@ -67,9 +67,11 @@ describe('useAttachmentAvailability', () => {
   });
 
   it('suppresses a stale URL only when the authorized response confirms purge', async () => {
-    const dispatch = vi.fn().mockResolvedValue([
-      { id: 81003, file_purged: true, data_url: '', thumb_url: '' },
-    ]);
+    const dispatch = vi
+      .fn()
+      .mockResolvedValue([
+        { id: 81003, file_purged: true, data_url: '', thumb_url: '' },
+      ]);
     const attachment = ref({
       id: 81003,
       filePurged: false,

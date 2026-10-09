@@ -72,9 +72,11 @@ describe('AttachmentChips', () => {
     const wrapper = createWrapper([attachment]);
     const availability = createAttachmentAvailability({
       attachment: ref(attachment),
-      dispatch: vi.fn().mockResolvedValue([
-        { id: attachment.id, file_purged: true, data_url: '', thumb_url: '' },
-      ]),
+      dispatch: vi
+        .fn()
+        .mockResolvedValue([
+          { id: attachment.id, file_purged: true, data_url: '', thumb_url: '' },
+        ]),
       getIdentity: () => ({
         accountId: '3',
         routeFullPath: '/app/accounts/3/conversations/7',

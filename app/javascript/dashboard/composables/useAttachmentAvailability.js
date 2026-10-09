@@ -38,8 +38,7 @@ const rememberConfirmedPurge = (attachmentId, identity) => {
 };
 
 export const isAttachmentConfirmedPurged = (attachmentOrId, identity = {}) => {
-  const attachment =
-    typeof attachmentOrId === 'object' ? attachmentOrId : null;
+  const attachment = typeof attachmentOrId === 'object' ? attachmentOrId : null;
   const attachmentId = attachment ? attachment.id : attachmentOrId;
   const accountId =
     identity.accountId ?? attachment?.accountId ?? attachment?.account_id;

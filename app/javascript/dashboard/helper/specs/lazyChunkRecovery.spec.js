@@ -23,7 +23,11 @@ describe('lazyChunkRecovery', () => {
   it('shows a refresh action once for a repeated stale chunk failure', () => {
     const windowRef = createWindow();
     const emit = vi.fn();
-    const dispose = installLazyChunkRecovery({ windowRef, emit, now: () => 100 });
+    const dispose = installLazyChunkRecovery({
+      windowRef,
+      emit,
+      now: () => 100,
+    });
     const firstFailure = createPreloadError('/assets/conversation.abc123.js');
     const repeatedFailure = createPreloadError(
       '/assets/conversation.abc123.js'

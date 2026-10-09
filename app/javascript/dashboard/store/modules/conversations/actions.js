@@ -762,7 +762,8 @@ const actions = {
     let requestSucceeded = false;
     const { conversationId, isCommunicationThread: isThreadAttachmentTarget } =
       resolveAttachmentTarget(state, payload);
-    const expectedContext = payload && typeof payload === 'object' ? payload : {};
+    const expectedContext =
+      payload && typeof payload === 'object' ? payload : {};
     const hasExpectedContext = Boolean(
       expectedContext.expectedRouteFullPath ||
         expectedContext.expectedAccountId !== undefined ||
