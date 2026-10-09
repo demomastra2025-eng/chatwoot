@@ -69,7 +69,7 @@ RSpec.describe Integrations::Medelement::ProviderCommands::PatientSelectionServi
     old_receipt = command.confirmation_request
     old_fingerprint = command.execution_state['request_fingerprint']
     original_intent = command.execution_state['idempotency_fingerprint']
-    owner_before = owner.attributes
+    owner_before = owner.reload.attributes
 
     expect { actions.select!(token: token) }.to have_enqueued_job(Integrations::Medelement::ProviderCommandJob).with(command.id)
 
@@ -119,7 +119,7 @@ RSpec.describe Integrations::Medelement::ProviderCommands::PatientSelectionServi
   end
 
   it 'creates a separate patient card when the selected code has no local card' do
-    original_owner = owner.attributes
+    original_owner = owner.reload.attributes
     actions.select!(token: token)
     selected = appointment.reload.patient_contact
     expect(selected.id).not_to eq(owner.id)
@@ -208,9 +208,9 @@ RSpec.describe Integrations::Medelement::ProviderCommands::PatientSelectionServi
                                                                   company_cabinet_code: 'cabinet-1',
                                                                   provider_patient_code: patient['PROFILE_CODE'], provider_reception_code: 'old-visit',
                                                                   execution_state: { 'write_phase' => 'reception_create' })
-      owner_before = owner.attributes
-      clinical_before = clinical.attributes
-      history_before = history.attributes
+      owner_before = owner.reload.attributes
+      clinical_before = clinical.reload.attributes
+      history_before = history.reload.attributes
       actions.select!(token: token)
       expect(appointment.reload.patient_contact_id).to eq(owner.id)
       expect(appointment.patient_contact.custom_attributes['medelement_patient_code']).to eq(patient['PROFILE_CODE'])
@@ -292,7 +292,7 @@ RSpec.describe Integrations::Medelement::ProviderCommands::PatientSelectionServi
     it 'rejects a changed effective gender inferred from a selected IIN when the provider omits GENDER' do
       chosen = card
       chosen.update!(custom_attributes: chosen.custom_attributes.merge('medelement_iin' => '940720400125'))
-      chosen_before = chosen.attributes
+      chosen_before = chosen.reload.attributes
       appointment.update!(client_gender: 'male')
       original = command.request_snapshot.deep_dup
       old_confirmation_id = command.confirmation_request_id

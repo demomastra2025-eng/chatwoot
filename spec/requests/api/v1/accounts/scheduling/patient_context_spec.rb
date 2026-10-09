@@ -56,8 +56,8 @@ RSpec.describe 'Scheduling patient context', type: :request do
   end
 
   it 'creates a separate local patient from the original dialogue without moving the primary number or history' do
-    original_owner = owner.attributes
-    original_conversation = conversation.attributes
+    original_owner = owner.reload.attributes
+    original_conversation = conversation.reload.attributes
     post patients_path, params: {
       first_name: 'Child', last_name: 'Patient', middle_name: 'Relative', iin: '940720300129',
       phone: owner.phone_number, birth_date: '1994-07-20', gender: 'M', conversation_display_id: conversation.display_id,
@@ -111,7 +111,7 @@ RSpec.describe 'Scheduling patient context', type: :request do
   end
 
   it 'creates an appointment for the selected card with separate patient and communication context' do
-    owner_before = owner.attributes
+    owner_before = owner.reload.attributes
     post appointments_path, params: new_appointment_params, headers: headers, as: :json
 
     expect(response).to have_http_status(:created), response.parsed_body.inspect
@@ -175,7 +175,7 @@ RSpec.describe 'Scheduling patient context', type: :request do
                                            client_first_name: 'Previous', client_last_name: 'Patient', client_identifier: nil,
                                            custom_attributes: { Integrations::Medelement::AppointmentPatientIdentity::OWNED_IDENTITY_KEY => true })
     create(:scheduling_appointment, account: account, resource: resource, contact: owner, patient_contact: previous)
-    previous_before = previous.attributes
+    previous_before = previous.reload.attributes
     patch "#{appointments_path}/#{target.id}", params: { patient_contact_id: patient.id }, headers: headers, as: :json
     expect(response).to have_http_status(:ok), response.parsed_body.inspect
     expect(target.reload.patient_contact_id).to eq(patient.id)
@@ -184,7 +184,7 @@ RSpec.describe 'Scheduling patient context', type: :request do
 
   it 'uses the verified communication owner as an explicitly selected existing patient without changing its profile' do
     owner.update!(identifier: '940720300129', custom_attributes: { 'medelement_patient_code' => 'verified-owner', 'medelement_iin' => '940720300129' })
-    owner_before = owner.attributes
+    owner_before = owner.reload.attributes
     post appointments_path, params: new_appointment_params.merge(patient_contact_id: owner.id), headers: headers, as: :json
     expect(response).to have_http_status(:created), response.parsed_body.inspect
     appointment = account.scheduling_appointments.find(response.parsed_body.dig('payload', 'id'))
@@ -199,7 +199,7 @@ RSpec.describe 'Scheduling patient context', type: :request do
                     'medelement_birth_date' => '20.07.1994', 'medelement_gender' => '2',
                     'birth_date' => '1980-01-01', 'gender' => 'female'
                   })
-    owner_before = owner.attributes
+    owner_before = owner.reload.attributes
     get patients_path, headers: headers, as: :json
     expect(response).to have_http_status(:ok)
     selected = response.parsed_body.dig('payload', 'patients').find { |item| item['id'] == owner.id }

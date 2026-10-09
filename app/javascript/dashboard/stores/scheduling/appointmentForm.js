@@ -4,6 +4,10 @@ import SchedulingContactsAPI from 'dashboard/api/scheduling/contacts';
 import { DEFAULT_WORKSPACE_TIMEZONE } from 'dashboard/routes/dashboard/scheduling/constants';
 import { schedulingContactNameParts } from './contactName';
 import {
+  hasProviderPatientIdentity,
+  patientBookingContact,
+} from './patientContext';
+import {
   compactPayload,
   extractSchedulingError,
   normalizePayload,
@@ -77,6 +81,20 @@ const editableCustomAttributes = attributes =>
       );
     })
   );
+
+const inlineContactPayload = (contact, omitPhone = false) =>
+  compactPayload({
+    birth_date: contact.birthDate,
+    company_id: toNumeric(contact.companyId),
+    first_name: contact.firstName,
+    full_name: contact.fullName,
+    gender: contact.gender,
+    iin: contact.iin || undefined,
+    last_name: contact.lastName,
+    middle_name: contact.middleName,
+    ...(omitPhone ? {} : { phone: contact.phone }),
+    resource_id: toNumeric(contact.resourceId),
+  });
 
 const normalizeIdArray = values => {
   const normalizedValues = Array.isArray(values) ? values : [values];
@@ -160,6 +178,8 @@ export const useSchedulingAppointmentFormStore = defineStore(
       recordId: null,
       selectedContact: null,
       selectedAppointment: null,
+      inlineContactSnapshot: null,
+      inlineContactEditVersion: 0,
       ui: {
         error: null,
         isCreatingContact: false,
@@ -169,6 +189,13 @@ export const useSchedulingAppointmentFormStore = defineStore(
     }),
 
     getters: {
+      isProviderPatientIdentity: state =>
+        hasProviderPatientIdentity(state.selectedContact) ||
+        hasProviderPatientIdentity({
+          custom_attributes:
+            state.selectedAppointment?.customAttributes ||
+            state.selectedAppointment?.custom_attributes,
+        }),
       validationErrors: state => ({
         endsAt:
           state.form.endsAt &&
@@ -218,6 +245,9 @@ export const useSchedulingAppointmentFormStore = defineStore(
         this.recordId = null;
         this.selectedContact = null;
         this.selectedAppointment = null;
+        this.inlineContactSnapshot = null;
+        this.inlineContactEditVersion += 1;
+        this.ui.isCreatingContact = false;
         this.ui.error = null;
       },
 
@@ -292,6 +322,10 @@ export const useSchedulingAppointmentFormStore = defineStore(
             lastName: this.form.clientLastName,
             middleName: this.form.clientMiddleName,
             phone: this.form.clientPhone,
+            customAttributes:
+              appointment.customAttributes ||
+              appointment.custom_attributes ||
+              {},
           };
         }
       },
@@ -352,18 +386,19 @@ export const useSchedulingAppointmentFormStore = defineStore(
         const previousContactPhone = this.selectedContact?.phone || '';
         const phoneCameFromPreviousContact =
           previousContactPhone && existingPhone === previousContactPhone;
-        const contactName = schedulingContactNameParts(contact);
+        const patient = patientBookingContact(contact);
+        const contactName = schedulingContactNameParts(patient);
 
         this.selectedContact = contact;
         this.form = {
           ...this.form,
-          clientBirthDate: contact.birthDate || '',
+          clientBirthDate: patient.birthDate || '',
           clientFirstName: contactName.firstName,
-          clientGender: contact.gender || '',
-          clientIdentifier: contact.identifier || '',
+          clientGender: patient.gender || '',
+          clientIdentifier: patient.identifier || '',
           clientLastName: contactName.lastName,
           clientMiddleName: contactName.middleName,
-          clientName: contact.fullName || '',
+          clientName: patient.fullName || '',
           clientNameStructured: true,
           clientPhone:
             contact.phone ||
@@ -376,9 +411,19 @@ export const useSchedulingAppointmentFormStore = defineStore(
 
       applyPatientContact(contact) {
         const ownerId = this.form.contactId;
-        this.applyContact({ ...contact, phone: contact.phone || this.form.clientPhone });
+        this.applyContact({
+          ...contact,
+          phone: contact.phone || this.form.clientPhone,
+        });
         this.form.contactId = ownerId;
         this.form.patientContactId = contact.id;
+      },
+
+      beginInlineContactEdit(contact) {
+        this.inlineContactEditVersion += 1;
+        this.inlineContactSnapshot = this.isProviderPatientIdentity
+          ? null
+          : inlineContactPayload(contact, Boolean(this.form.patientContactId));
       },
 
       syncServicePricing(services) {
@@ -495,34 +540,74 @@ export const useSchedulingAppointmentFormStore = defineStore(
         }
       },
 
-      async updateInlineContact(contactId, contact) {
+      async updateInlineContact(
+        contactId,
+        contact,
+        isCurrentContext = () => true
+      ) {
+        if (this.isProviderPatientIdentity || !isCurrentContext()) return null;
         const recordId = this.recordId;
         const patientId = this.form.patientContactId;
         const ownerId = this.form.contactId;
-        const isPatientCard = this.mode === 'edit' && Number(patientId) === Number(contactId);
-        const isCurrent = () => this.recordId === recordId &&
-          this.form.patientContactId === patientId && this.form.contactId === ownerId;
+        const version = this.inlineContactEditVersion;
+        const accountId =
+          this.selectedContact?.accountId ||
+          this.selectedAppointment?.accountId;
+        if (ownerId && Number(contactId) !== Number(patientId || ownerId))
+          return null;
+        const isPatientCard =
+          this.mode === 'edit' && Number(patientId) === Number(contactId);
+        const isCurrent = () =>
+          isCurrentContext() &&
+          this.recordId === recordId &&
+          this.form.patientContactId === patientId &&
+          this.form.contactId === ownerId &&
+          this.inlineContactEditVersion === version;
+        const values = inlineContactPayload(contact, isPatientCard);
+        const dirtyValues = this.inlineContactSnapshot
+          ? Object.fromEntries(
+              Object.entries(values).filter(
+                ([field, value]) =>
+                  field !== 'resource_id' &&
+                  value !== this.inlineContactSnapshot[field]
+              )
+            )
+          : values;
+        if (!Object.keys(dirtyValues).length) return this.selectedContact;
+        const payload = {
+          ...dirtyValues,
+          ...(values.resource_id ? { resource_id: values.resource_id } : {}),
+        };
         this.ui.isCreatingContact = true;
 
         try {
-          const payload = compactPayload({
-            birth_date: contact.birthDate,
-            company_id: toNumeric(contact.companyId),
-            first_name: contact.firstName,
-            full_name: contact.fullName,
-            gender: contact.gender,
-            iin: contact.iin || undefined,
-            last_name: contact.lastName,
-            middle_name: contact.middleName,
-            ...(isPatientCard ? {} : { phone: contact.phone }),
-            resource_id: toNumeric(contact.resourceId),
-          });
           const { data } = await SchedulingContactsAPI.update(
             contactId,
             payload
           );
-          const updatedContact = normalizePayload(data);
+          let updatedContact = normalizePayload(data);
           if (!isCurrent()) return null;
+          if (Number(updatedContact?.id) !== Number(contactId))
+            throw new Error('patient_context_mismatch');
+          if (
+            accountId &&
+            Number(updatedContact.accountId) !== Number(accountId)
+          )
+            throw new Error('patient_context_mismatch');
+          if (isPatientCard) {
+            const response = await SchedulingContactsAPI.patients(ownerId);
+            if (!isCurrent()) return null;
+            const projection = normalizePayload(response.data);
+            if (Number(projection?.contactId) !== Number(ownerId))
+              throw new Error('patient_context_mismatch');
+            updatedContact = projection.patients?.find(
+              patient =>
+                Number(patient.id) === Number(patientId) &&
+                Number(patient.communicationContactId) === Number(ownerId) &&
+                (!accountId || Number(patient.accountId) === Number(accountId))
+            );
+            if (!updatedContact) throw new Error('patient_context_mismatch');
+          }
           this.contacts = [
             updatedContact,
             ...this.contacts.filter(item => item.id !== updatedContact.id),

@@ -13,7 +13,9 @@ export const patientContactId = value => {
 export const conversationPatientContextKey = ({ accountId, userId, chat }) => {
   const account = patientContactId(accountId);
   const user = patientContactId(userId);
-  const dialog = patientContactId(chat?.display_id || chat?.displayId || chat?.id);
+  const dialog = patientContactId(
+    chat?.display_id || chat?.displayId || chat?.id
+  );
   if (!account || !user || !dialog) return '';
   const kind = chat?.is_communication_thread ? 'thread' : 'conversation';
   return `${account}:${user}:${kind}:${dialog}`;
@@ -40,6 +42,88 @@ export const formatPatientBirthDate = patient => {
   return match ? `${match[3]}.${match[2]}.${match[1]}` : '';
 };
 
+export const hasProviderPatientIdentity = patient => {
+  const attributes =
+    patient?.custom_attributes || patient?.customAttributes || {};
+  return [
+    'medelement_patient_code',
+    'medelement_iin',
+    'medelement_first_name',
+    'medelement_last_name',
+    'medelement_middle_name',
+    'medelement_birth_date',
+    'medelement_gender',
+  ].some(key => {
+    const camelKey = key.replace(/_([a-z])/g, (_, letter) =>
+      letter.toUpperCase()
+    );
+    const value = attributes[key] ?? attributes[camelKey];
+    return value != null && Boolean(String(value).trim());
+  });
+};
+
+export const canEditLocalPatient = patient =>
+  Boolean(patient?.patient_contact_id) &&
+  Number(patient.id) !== Number(patient.communication_contact_id) &&
+  !hasProviderPatientIdentity(patient);
+
+export const normalizePatientGender = value =>
+  ({
+    1: 'female',
+    2: 'male',
+    f: 'female',
+    m: 'male',
+    female: 'female',
+    male: 'male',
+    other: 'other',
+    unknown: 'unknown',
+  })[String(value || '').toLowerCase()] || 'unknown';
+
+export const patientBookingContact = contact => {
+  if (!hasProviderPatientIdentity(contact)) return contact;
+  // The scoped patient DTO is already the server's clinical projection. Generic
+  // contacts retain messenger aliases, so only their recorded provider profile
+  // supplies booking identity; the original Contact object remains unchanged.
+  if (contact.communicationContactId || contact.communication_contact_id) {
+    return { ...contact, gender: normalizePatientGender(contact.gender) };
+  }
+  const attributes =
+    contact.customAttributes || contact.custom_attributes || {};
+  const recorded = key =>
+    attributes[key] ??
+    attributes[key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase())];
+  const nameKeys = ['first_name', 'last_name', 'middle_name'];
+  const hasRecordedNames = nameKeys.some(key =>
+    Boolean(recorded(`medelement_${key}`))
+  );
+  const names = hasRecordedNames
+    ? nameKeys.map(key => recorded(`medelement_${key}`) || '')
+    : [
+        contact.firstName || contact.first_name || '',
+        contact.lastName || contact.last_name || '',
+        contact.middleName || contact.middle_name || '',
+      ];
+  return {
+    ...contact,
+    firstName: names[0],
+    lastName: names[1],
+    middleName: names[2],
+    fullName: hasRecordedNames
+      ? names.filter(Boolean).join(' ')
+      : contact.fullName || contact.full_name || '',
+    identifier:
+      recorded('medelement_iin') || contact.identifier || attributes.iin || '',
+    birthDate:
+      recorded('medelement_birth_date') ||
+      contact.birthDate ||
+      contact.birth_date ||
+      '',
+    gender: normalizePatientGender(
+      recorded('medelement_gender') || contact.gender
+    ),
+  };
+};
+
 const readSelections = () => {
   try {
     const values = JSON.parse(
@@ -48,7 +132,8 @@ const readSelections = () => {
     return Object.fromEntries(
       Object.entries(values).filter(
         ([key, id]) =>
-          /^\d+:\d+:(thread|conversation):\d+$/.test(key) && patientContactId(id)
+          /^\d+:\d+:(thread|conversation):\d+$/.test(key) &&
+          patientContactId(id)
       )
     );
   } catch {
@@ -101,7 +186,9 @@ export const useConversationPatientContextStore = defineStore(
       select(key, id) {
         const entry = this.contexts[key];
         const contactId = patientContactId(id);
-        if (!entry?.patients.some(patient => Number(patient.id) === contactId)) {
+        if (
+          !entry?.patients.some(patient => Number(patient.id) === contactId)
+        ) {
           return false;
         }
         entry.selectedId = contactId;
@@ -136,10 +223,11 @@ export const useConversationPatientContextStore = defineStore(
             throw new Error('patient_context_mismatch');
           }
           entry = this.contexts[key];
-          entry.patients = (payload.patients || []).filter(patient =>
-            patientContactId(patient.id) &&
-            Number(patient.account_id) === Number(key.split(':')[0]) &&
-            Number(patient.communication_contact_id) === Number(contactId)
+          entry.patients = (payload.patients || []).filter(
+            patient =>
+              patientContactId(patient.id) &&
+              Number(patient.account_id) === Number(key.split(':')[0]) &&
+              Number(patient.communication_contact_id) === Number(contactId)
           );
           entry.loaded = true;
           const desired = this.selections[key] || entry.selectedId || contactId;
@@ -165,8 +253,11 @@ export const useConversationPatientContextStore = defineStore(
             contactId,
             attributes
           );
-          if (this.contexts[key]?.requestId !== requestId ||
-              this.contexts[key]?.selectedId !== selectedId) return null;
+          if (
+            this.contexts[key]?.requestId !== requestId ||
+            this.contexts[key]?.selectedId !== selectedId
+          )
+            return null;
           const patient = responsePayload(response);
           if (
             !patientContactId(patient?.id) ||
@@ -176,7 +267,9 @@ export const useConversationPatientContextStore = defineStore(
             throw new Error('patient_context_mismatch');
           }
           entry.patients = [
-            ...entry.patients.filter(item => Number(item.id) !== Number(patient.id)),
+            ...entry.patients.filter(
+              item => Number(item.id) !== Number(patient.id)
+            ),
             patient,
           ];
           this.select(key, patient.id);
@@ -187,24 +280,53 @@ export const useConversationPatientContextStore = defineStore(
       },
       async updatePatient(key, id, attributes) {
         const entry = this.contexts[key];
-        const existing = entry?.patients.find(patient => Number(patient.id) === Number(id));
-        if (!entry?.loaded || entry.saving || !existing?.patient_contact_id) return null;
+        const existing = entry?.patients.find(
+          patient => Number(patient.id) === Number(id)
+        );
+        if (
+          !entry?.loaded ||
+          entry.saving ||
+          !canEditLocalPatient(existing) ||
+          Number(entry.selectedId) !== Number(id)
+        )
+          return null;
         const requestId = entry.requestId;
         const selectedId = entry.selectedId;
+        const contactId = entry.contactId;
+        const isCurrent = () =>
+          this.contexts[key]?.requestId === requestId &&
+          this.contexts[key]?.contactId === contactId &&
+          this.contexts[key]?.selectedId === selectedId;
+        if (!Object.keys(attributes).length) return existing;
         entry.saving = true;
         try {
           const response = await SchedulingContactsAPI.update(id, attributes);
-          if (this.contexts[key]?.requestId !== requestId ||
-              this.contexts[key]?.selectedId !== selectedId) return null;
+          if (!isCurrent()) return null;
           const updated = responsePayload(response);
-          if (Number(updated?.id) !== Number(id) ||
-              Number(updated.account_id) !== Number(existing.account_id)) {
+          if (
+            Number(updated?.id) !== Number(id) ||
+            Number(updated.account_id) !== Number(existing.account_id)
+          ) {
             throw new Error('patient_context_mismatch');
           }
-          const patient = { ...existing, ...updated, phone: updated.phone || existing.phone };
-          entry.patients = entry.patients.map(item =>
-            Number(item.id) === Number(id) ? patient : item
+          // A generic contact PATCH returns communication fields. Always reload the
+          // patient projection, retaining this employee's current selection.
+          const projection = responsePayload(
+            await SchedulingContactsAPI.patients(contactId)
           );
+          if (!isCurrent()) return null;
+          if (Number(projection?.contact_id) !== contactId)
+            throw new Error('patient_context_mismatch');
+          const patients = (projection.patients || []).filter(
+            patient =>
+              patientContactId(patient.id) &&
+              Number(patient.account_id) === Number(key.split(':')[0]) &&
+              Number(patient.communication_contact_id) === contactId
+          );
+          const patient = patients.find(item => Number(item.id) === Number(id));
+          if (!patient) throw new Error('patient_context_mismatch');
+          entry.patients = patients;
+          this.select(key, selectedId);
           return patient;
         } finally {
           if (this.contexts[key]?.requestId === requestId) entry.saving = false;

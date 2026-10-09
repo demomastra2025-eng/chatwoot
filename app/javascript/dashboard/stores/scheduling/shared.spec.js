@@ -29,6 +29,43 @@ describe('scheduling shared helpers', () => {
     expect(formatSchedulingErrorMessage(error, t)).toBe('Нерабочее время');
   });
 
+  it('formats a network error without treating the Error object as text', () => {
+    expect(
+      formatSchedulingErrorMessage(new Error('Network Error'), key => key)
+    ).toBe('Network Error');
+  });
+
+  it.each([
+    { message: { unexpected: true } },
+    { message: 7 },
+    { error: { unexpected: true } },
+    { errors: [{ message: 'Nested object' }] },
+    { errors: [7] },
+    { errors: { patient: ['invalid'] } },
+  ])('uses a string fallback for malformed API errors: %j', data => {
+    const t = key => (key === 'SCHEDULING.ERRORS.GENERIC' ? 'Try again' : key);
+    expect(formatSchedulingErrorMessage({ response: { data } }, t)).toBe(
+      'Try again'
+    );
+  });
+
+  it('retains a translated code when its normalized message is not a string', () => {
+    const t = key =>
+      key === 'SCHEDULING.ERRORS.INVALID_IIN' ? 'Invalid identifier' : key;
+    expect(
+      formatSchedulingErrorMessage({ code: 'INVALID_IIN', message: {} }, t)
+    ).toBe('Invalid identifier');
+  });
+
+  it('retains a string error in the API errors array', () => {
+    expect(
+      formatSchedulingErrorMessage(
+        { response: { data: { errors: ['Please retry'] } } },
+        key => key
+      )
+    ).toBe('Please retry');
+  });
+
   it.each([
     [
       'MEDELEMENT_SERVICE_REQUIRED',
