@@ -566,9 +566,7 @@ describe('conversation actions', () => {
 
     it('preserves the populated attachment list when a refresh request fails', async () => {
       const commit = vi.fn();
-      const existingAttachments = [
-        { id: 51, data_url: 'previously-loaded' },
-      ];
+      const existingAttachments = [{ id: 51, data_url: 'previously-loaded' }];
       vi.spyOn(ConversationApi, 'getAllAttachments').mockRejectedValue(
         new Error('temporary network failure')
       );
