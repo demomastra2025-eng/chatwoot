@@ -33,7 +33,10 @@ describe('captainCatalog helper', () => {
         },
         i18n
       )
-    ).toMatchObject({ group_label: 'Записи пациента', title: 'Ближайшая запись' });
+    ).toMatchObject({
+      group_label: 'Записи пациента',
+      title: 'Ближайшая запись',
+    });
     const tool = localizeCatalogTool(
       { id: 'list_my_appointments', title: 'Fallback' },
       i18n
