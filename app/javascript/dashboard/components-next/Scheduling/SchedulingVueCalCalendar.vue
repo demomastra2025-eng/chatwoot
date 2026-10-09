@@ -190,6 +190,13 @@ const resourceById = computed(() => {
   }, {});
 });
 
+const isProviderResource = resource =>
+  Boolean(resource?.customAttributes?.medelement_specialist_code);
+const isProviderColumn = column =>
+  isProviderResource(resourceById.value[column.resourceId]);
+const sharedHolidayForDay = day =>
+  props.resources.some(isProviderResource) ? null : blockingHolidayForDay(day);
+
 const timelineStepMin = computed(() => TIMELINE_DISPLAY_STEP_MIN);
 const timelineSlotDurationStepMin = computed(() =>
   Math.max(MINUTE_STEP, slotStepMin.value || MINUTE_STEP)
@@ -336,6 +343,21 @@ const subtractIntervals = (baseIntervals, blockedIntervals) => {
 };
 
 const buildWorkingIntervalsForColumn = column => {
+  if (isProviderColumn(column)) {
+    return mergeIntervals(
+      props.slots
+        .filter(slot => Number(slot.resourceId) === Number(column.resourceId))
+        .map(slot =>
+          clipIntervalToDay(
+            toCalendarDate(slot.startsAt),
+            toCalendarDate(slot.endsAt),
+            column.date
+          )
+        )
+        .filter(Boolean)
+    );
+  }
+
   const override = props.workdayOverrides.find(item => {
     return (
       Number(item.resourceId) === Number(column.resourceId) &&
@@ -403,6 +425,10 @@ const buildCreatableIntervalsForColumn = (
   column,
   { excludeAppointmentId = null } = {}
 ) => {
+  if (isProviderColumn(column)) {
+    return buildWorkingIntervalsForColumn(column);
+  }
+
   return subtractIntervals(buildWorkingIntervalsForColumn(column), [
     ...buildBreakIntervals(props.breakRules, props.workdayOverrides, column),
     ...buildWorkspaceTimeOffIntervals(column),
@@ -411,6 +437,10 @@ const buildCreatableIntervalsForColumn = (
 };
 
 const buildAvailabilityDisplayIntervalsForColumn = column => {
+  if (isProviderColumn(column)) {
+    return buildWorkingIntervalsForColumn(column);
+  }
+
   return subtractIntervals(buildWorkingIntervalsForColumn(column), [
     ...buildBreakIntervals(props.breakRules, props.workdayOverrides, column),
     ...buildWorkspaceTimeOffIntervals(column),
@@ -418,6 +448,10 @@ const buildAvailabilityDisplayIntervalsForColumn = column => {
 };
 
 const resolveFullDayBackgroundKindForColumn = column => {
+  if (isProviderColumn(column)) {
+    return buildWorkingIntervalsForColumn(column).length ? null : 'closed';
+  }
+
   if (blockingHolidayForDay(column.date)) {
     return 'holiday';
   }
@@ -490,7 +524,10 @@ const canCreateTimelineRangeForResource = ({
     );
   });
 
-  if (!column || blockingHolidayForDay(column.date)) {
+  if (
+    !column ||
+    (!isProviderColumn(column) && blockingHolidayForDay(column.date))
+  ) {
     return false;
   }
 
@@ -769,7 +806,7 @@ const unavailableBackgroundEvents = computed(() => {
 
   if (isWeekSharedTimeline.value) {
     return weekDays.value.flatMap(day => {
-      if (blockingHolidayForDay(day)) {
+      if (sharedHolidayForDay(day)) {
         return [];
       }
 
@@ -843,8 +880,12 @@ const timelineBackgroundEvents = computed(() => {
   if (isWeekSharedTimeline.value) {
     return weekDays.value.flatMap(day => {
       const dateKey = formatDateKey(day);
-      const holiday = blockingHolidayForDay(day);
+      const holiday = sharedHolidayForDay(day);
       const column = columns.value.find(item => item.dateKey === dateKey);
+
+      if (column && props.resources.length === 1 && isProviderColumn(column)) {
+        return [];
+      }
 
       if (!holiday && props.resources.length === 1 && column) {
         const intervalEvent = (interval, kind) => {
@@ -911,7 +952,9 @@ const timelineBackgroundEvents = computed(() => {
   return columns.value.flatMap(column => {
     const events = [];
     const fullDayKind = resolveFullDayBackgroundKindForColumn(column);
-    const holiday = blockingHolidayForDay(column.date);
+    const holiday = isProviderColumn(column)
+      ? null
+      : blockingHolidayForDay(column.date);
 
     if (fullDayKind) {
       const start = new Date(column.date);
@@ -938,6 +981,10 @@ const timelineBackgroundEvents = computed(() => {
       if (fullDayKind === 'holiday') {
         return events;
       }
+    }
+
+    if (isProviderColumn(column)) {
+      return events;
     }
 
     buildBreakIntervals(
@@ -1323,10 +1370,6 @@ const formatMonthSlotMeta = day => {
 };
 
 const defaultCreatePayload = day => {
-  if (props.slots.length && blockingHolidayForDay(day)) {
-    return null;
-  }
-
   const firstAvailableSlot = findFirstAvailableSlotForDay({
     day,
     preferredResourceIds: props.resources.map(resource => resource.id),
@@ -1340,6 +1383,16 @@ const defaultCreatePayload = day => {
     };
   }
 
+  const fallbackResource = props.resources.find(
+    resource => !isProviderResource(resource)
+  );
+  if (
+    (props.resources.length && !fallbackResource) ||
+    blockingHolidayForDay(day)
+  ) {
+    return null;
+  }
+
   if (props.slots.length) {
     return null;
   }
@@ -1348,13 +1401,13 @@ const defaultCreatePayload = day => {
   startsAt.setHours(9, 0, 0, 0);
 
   const defaultDuration =
-    Number(props.resources[0]?.slotDurationMin) || timelineStepMin.value;
+    Number(fallbackResource?.slotDurationMin) || timelineStepMin.value;
   const endsAt = new Date(startsAt);
   endsAt.setMinutes(endsAt.getMinutes() + defaultDuration);
 
   return {
     endsAt: toApiIso(endsAt),
-    resourceId: props.resources[0]?.id || '',
+    resourceId: fallbackResource?.id || '',
     startsAt: toApiIso(startsAt),
   };
 };
@@ -1716,7 +1769,7 @@ onMounted(() => {
                   {{ date.getDate() }}
                 </span>
                 <span
-                  v-if="view === 'week' && blockingHolidayForDay(date)"
+                  v-if="view === 'week' && sharedHolidayForDay(date)"
                   class="scheduling-vue-cal__weekday-holiday-dot"
                 />
               </div>
@@ -1790,16 +1843,16 @@ onMounted(() => {
               class="scheduling-vue-cal__month-cell-overlay"
               :class="{
                 'scheduling-vue-cal__month-cell-overlay--holiday':
-                  blockingHolidayForDay(cell.start),
+                  sharedHolidayForDay(cell.start),
                 'scheduling-vue-cal__month-cell-overlay--today':
                   formatDateKey(cell.start) === todayDateKey,
               }"
             >
               <span
-                v-if="blockingHolidayForDay(cell.start)"
+                v-if="sharedHolidayForDay(cell.start)"
                 class="scheduling-vue-cal__month-badge scheduling-vue-cal__month-badge--holiday"
               >
-                {{ blockingHolidayForDay(cell.start).title }}
+                {{ sharedHolidayForDay(cell.start).title }}
               </span>
               <span
                 v-if="formatMonthSlotMeta(cell.start)"
