@@ -1,13 +1,14 @@
 -- Read-only. Bind $1::integer = hours (1..168), $2::bigint = account id or NULL,
 -- $3::text = comma-separated rule codes (NULL for all). The rake task uses this exact query.
 -- Thresholds live here; changing them changes both the report and monitor.
-WITH limits AS (
-  SELECT now() AS checked_at, now() - ($1::integer * interval '1 hour') AS since,
+WITH limits AS MATERIALIZED (
+  SELECT clock.checked_at, clock.checked_at - ($1::integer * interval '1 hour') AS since,
          $2::bigint AS account_id, $3::text AS rules,
          interval '2 minutes' AS unbound_pending,
          interval '5 minutes' AS warning_age,
          interval '15 minutes' AS critical_age,
          interval '10 minutes' AS notification_age
+  FROM (SELECT clock_timestamp() AS checked_at) clock
 ), ai AS MATERIALIZED (
   SELECT a.id, a.account_id, a.contact_id, a.patient_contact_id,
          a.conversation_id, a.resource_id, a.starts_at, a.ends_at,
