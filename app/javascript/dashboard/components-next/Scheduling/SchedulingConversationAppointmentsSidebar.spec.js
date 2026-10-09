@@ -1268,6 +1268,7 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
         payload: [
           {
             ...manualReviewCommand,
+            manual_cancellation_available: false,
             status: 'reconciliation_required',
           },
         ],
@@ -1294,11 +1295,15 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     SchedulingProviderCommandsAPI.list.mockResolvedValue({
       data: { payload: [patientActionCommand()] },
     });
+    SchedulingProviderCommandsAPI.patientCandidates.mockResolvedValue({
+      data: { payload: { candidates: [{ token: 'candidate-token' }] } },
+    });
     const wrapper = mountComponent();
     await flushPromises();
     await wrapper.vm.checkProviderBooking(wrapper.vm.appointments[0]);
     const action = wrapper.vm.patientActions['appointment-501'];
     action.selectedPatientToken = 'candidate-token';
+    expect(wrapper.vm.canContinuePatientAction(action)).toBe(true);
     wrapper.vm.appointmentForms['appointment-501'].clientPhone = '+77000000002';
 
     expect(wrapper.vm.canContinuePatientAction(action)).toBe(false);
@@ -1313,6 +1318,9 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     configureMedelementResource();
     SchedulingProviderCommandsAPI.list.mockResolvedValue({
       data: { payload: [patientActionCommand()] },
+    });
+    SchedulingProviderCommandsAPI.patientCandidates.mockResolvedValue({
+      data: { payload: { candidates: [{ token: 'candidate-token' }] } },
     });
     const wrapper = mountComponent();
     await flushPromises();
@@ -1412,6 +1420,8 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     mocks.services[0].prices = [{ active: true, price: 5000, resourceId: 7 }];
     const localAppointment = {
       ...existingAppointment,
+      clientName: 'Айша Касымова',
+      clientLastName: 'Касымова',
       clientPhone: '+77000000001',
       customAttributes: { medelementCabinetCode: '501' },
       source: 'conversation',
@@ -1428,12 +1438,24 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
         ],
       },
     });
+    SchedulingAppointmentsAPI.update.mockResolvedValueOnce({
+      data: { payload: localAppointment },
+    });
     const wrapper = mountComponent();
     await flushPromises();
 
     await wrapper.vm.saveAppointment(localAppointment);
     await flushPromises();
 
+    expect(SchedulingAppointmentsAPI.update).toHaveBeenCalledWith(
+      localAppointment.id,
+      expect.any(Object)
+    );
+    expect(SchedulingProviderCommandsAPI.list).toHaveBeenCalledWith({
+      activeOnly: true,
+      appointmentId: localAppointment.id,
+      provider: 'medelement',
+    });
     expect(wrapper.text()).toContain(
       'SCHEDULING.MEDELEMENT.PATIENT_CREATION_TITLE'
     );
