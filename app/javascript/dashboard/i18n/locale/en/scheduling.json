@@ -171,6 +171,15 @@
       "TITLE": "No dialog created yet"
     },
     "APPOINTMENT_FORM": {
+      "AVAILABILITY": {
+        "DATE": "Дата приёма",
+        "LOADING": "Загружаем свободное время…",
+        "EMPTY": "Нет свободного времени",
+        "NOT_CONFIRMED": "График врача пока не подтверждён. Выберите другую дату или попробуйте позже.",
+        "UNAVAILABLE": "Не удалось проверить доступность. Попробуйте позже.",
+        "HORIZON": "График врача открыт до {date}",
+        "CONFLICT": "Время уже занято, выберите другое"
+      },
       "PATIENT_CARD": "Patient card",
       "PATIENT_CARD_LINK": "Patient card: {patientName} #{contactId}",
       "APPOINTMENT_DESCRIPTION": "Choose the specialist, service, and time slot for the visit.",

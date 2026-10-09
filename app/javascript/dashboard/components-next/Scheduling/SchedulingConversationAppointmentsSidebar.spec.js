@@ -1,9 +1,11 @@
-import { shallowMount, flushPromises } from '@vue/test-utils';
+import { mount, shallowMount, flushPromises } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import SchedulingConversationAppointmentsSidebar from './SchedulingConversationAppointmentsSidebar.vue';
 import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
+import SchedulingAvailabilityAPI from 'dashboard/api/scheduling/availability';
 import SchedulingProviderCommandsAPI from 'dashboard/api/scheduling/providerCommands';
+import SchedulingAvailabilityPicker from './SchedulingAvailabilityPicker.vue';
 
 const existingAppointment = {
   id: 501,
@@ -134,6 +136,16 @@ vi.mock('dashboard/api/scheduling/providerCommands', () => ({
     list: vi.fn(),
     reconcile: vi.fn(),
     resolveCancellation: vi.fn(),
+  },
+}));
+
+vi.mock('dashboard/api/scheduling/availability', () => ({
+  default: {
+    show: vi.fn(() =>
+      Promise.resolve({
+        data: { payload: { state: 'ok', windows: [], last_bookable_date: null } },
+      })
+    ),
   },
 }));
 
@@ -279,6 +291,10 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     SchedulingAppointmentsAPI.get.mockClear();
     SchedulingAppointmentsAPI.update.mockClear();
     SchedulingAppointmentsAPI.cancel.mockClear();
+    SchedulingAvailabilityAPI.show.mockReset();
+    SchedulingAvailabilityAPI.show.mockResolvedValue({
+      data: { payload: { state: 'ok', windows: [], last_bookable_date: null } },
+    });
     SchedulingProviderCommandsAPI.list.mockReset();
     SchedulingProviderCommandsAPI.reconcile.mockReset();
     SchedulingProviderCommandsAPI.resolveCancellation.mockReset();
@@ -294,6 +310,116 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     SchedulingAppointmentsAPI.get.mockResolvedValue({
       data: { payload: [existingAppointment] },
     });
+  });
+
+  it('loads windows and clears the chosen time when the date or service changes', async () => {
+    const window = {
+      starts_at: '2026-06-27T10:00:00+05:00',
+      ends_at: '2026-06-27T10:30:00+05:00',
+    };
+    SchedulingAvailabilityAPI.show.mockResolvedValue({
+      data: { payload: { state: 'ok', windows: [window] } },
+    });
+    const wrapper = mountComponent();
+    await flushPromises();
+    await wrapper.vm.startCreateAppointment();
+    await flushPromises();
+
+    wrapper.vm.selectWindow(wrapper.vm.createForm, window);
+    expect(wrapper.vm.createForm.startsAt).toBe('2026-06-27T10:00');
+    wrapper.vm.changePickerDate(wrapper.vm.createForm, '2026-06-28');
+    expect(wrapper.vm.createForm.startsAt).toBe('');
+    await flushPromises();
+    expect(SchedulingAvailabilityAPI.show).toHaveBeenCalledWith(
+      expect.objectContaining({ date: '2026-06-28', resource_id: 7 })
+    );
+
+    wrapper.vm.selectWindow(wrapper.vm.createForm, window);
+    wrapper.vm.handleCreateServiceChange(9);
+    expect(wrapper.vm.createForm.startsAt).toBe('');
+    expect(SchedulingAvailabilityAPI.show).toHaveBeenCalledWith(
+      expect.objectContaining({ service_id: 9 })
+    );
+
+    wrapper.vm.selectWindow(wrapper.vm.createForm, window);
+    wrapper.vm.handleCreateResourceChange(7);
+    expect(wrapper.vm.createForm.startsAt).toBe('');
+    wrapper.vm.changeCabinet(wrapper.vm.createForm, 'room-1');
+    expect(SchedulingAvailabilityAPI.show).toHaveBeenCalledWith(
+      expect.objectContaining({ cabinet_code: 'room-1', resource_id: 7 })
+    );
+  });
+
+  it('shows loading and unavailable states without offering a window', async () => {
+    const wrapper = mountComponent();
+    await flushPromises();
+    const pending = deferredRequest();
+    SchedulingAvailabilityAPI.show.mockImplementationOnce(() => pending.promise);
+    wrapper.vm.changePickerDate(
+      wrapper.vm.appointmentForms['appointment-501'],
+      '2026-06-28'
+    );
+    expect(
+      wrapper.vm.availabilityForForm(
+        wrapper.vm.appointmentForms['appointment-501']
+      ).state
+    ).toBe('loading');
+    pending.reject(new Error('unavailable'));
+    await flushPromises();
+    expect(
+      wrapper.vm.availabilityForForm(
+        wrapper.vm.appointmentForms['appointment-501']
+      ).state
+    ).toBe('provider_unavailable');
+  });
+
+  it('refreshes the window list after a live booking conflict', async () => {
+    const wrapper = mountComponent();
+    await flushPromises();
+    await wrapper.vm.startCreateAppointment();
+    Object.assign(wrapper.vm.createForm, {
+      clientFirstName: 'Айша',
+      endsAt: '2026-06-27T10:30',
+      startsAt: '2026-06-27T10:00',
+    });
+    SchedulingAppointmentsAPI.create.mockRejectedValueOnce({
+      response: { data: { code: 'APPOINTMENT_SLOT_UNAVAILABLE' } },
+    });
+    const requestsBeforeSave = SchedulingAvailabilityAPI.show.mock.calls.length;
+
+    await wrapper.vm.saveCreateAppointment();
+
+    expect(mocks.alert).toHaveBeenCalledWith(
+      'SCHEDULING.APPOINTMENT_FORM.AVAILABILITY.CONFLICT'
+    );
+    expect(wrapper.vm.createForm.startsAt).toBe('');
+    expect(SchedulingAvailabilityAPI.show.mock.calls.length).toBeGreaterThan(
+      requestsBeforeSave
+    );
+  });
+
+  it('limits the date input and reports closed and unconfirmed days', async () => {
+    const picker = mount(SchedulingAvailabilityPicker, {
+      props: {
+        date: '2026-07-18',
+        maxDate: '2026-07-18',
+        state: 'beyond_horizon',
+      },
+    });
+    expect(picker.find('input[type="date"]').attributes('max')).toBe(
+      '2026-07-18'
+    );
+    expect(picker.find('[role="status"]').text()).toContain(
+      'SCHEDULING.APPOINTMENT_FORM.AVAILABILITY.HORIZON'
+    );
+    await picker.setProps({ state: 'closed_day' });
+    expect(picker.find('[role="status"]').text()).toContain(
+      'SCHEDULING.APPOINTMENT_FORM.AVAILABILITY.EMPTY'
+    );
+    await picker.setProps({ state: 'schedule_not_confirmed' });
+    expect(picker.find('[role="status"]').text()).toContain(
+      'SCHEDULING.APPOINTMENT_FORM.AVAILABILITY.NOT_CONFIRMED'
+    );
   });
 
   it('opens the new appointment form inline from the header plus button', async () => {
