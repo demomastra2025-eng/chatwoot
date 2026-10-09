@@ -240,10 +240,29 @@ RSpec.describe 'Conversations API', type: :request do
         attended_conversation = create(:conversation, account: account, first_reply_created_at: Time.now.utc, waiting_since: nil)
         # to ensure that waiting since value is populated
         create(:message, message_type: :outgoing, conversation: attended_conversation, account: account)
+        attended_conversation.update!(waiting_since: nil)
         unattended_conversation_no_first_reply = create(:conversation, account: account, first_reply_created_at: nil)
         unattended_conversation_waiting_since = create(:conversation, account: account, first_reply_created_at: Time.now.utc)
 
         agent_1 = create(:user, account: account, role: :agent)
+        target_conversations = [
+          attended_conversation,
+          unattended_conversation_no_first_reply,
+          unattended_conversation_waiting_since
+        ]
+        expect(attended_conversation.reload.first_reply_created_at).to be_present
+        expect(attended_conversation.waiting_since).to be_nil
+        expect(unattended_conversation_no_first_reply.reload.first_reply_created_at).to be_nil
+        expect(unattended_conversation_waiting_since.reload.first_reply_created_at).to be_present
+        expect(unattended_conversation_waiting_since.waiting_since).to be_present
+        expect(target_conversations.map(&:inbox_id)).not_to include(conversation.inbox_id)
+        expect(InboxMember.exists?(user: agent_1, inbox: conversation.inbox)).to be(true)
+        target_conversations.each do |target_conversation|
+          expect(InboxMember.exists?(user: agent_1, inbox: target_conversation.inbox)).to be(true)
+        end
+        InboxMember.where(user: agent_1, inbox: conversation.inbox).destroy_all
+        expect(InboxMember.exists?(user: agent_1, inbox: conversation.inbox)).to be(false)
+
         create(:inbox_member, user: agent_1, inbox: attended_conversation.inbox)
         create(:inbox_member, user: agent_1, inbox: unattended_conversation_no_first_reply.inbox)
         create(:inbox_member, user: agent_1, inbox: unattended_conversation_waiting_since.inbox)
@@ -257,6 +276,9 @@ RSpec.describe 'Conversations API', type: :request do
         body = JSON.parse(response.body, symbolize_names: true)
         expect(body[:data][:meta][:all_count]).to eq(2)
         expect(body[:data][:payload].count).to eq(2)
+        expect(body[:data][:payload].map { |payload| payload[:id] }).to match_array(
+          [unattended_conversation_no_first_reply.display_id, unattended_conversation_waiting_since.display_id]
+        )
       end
     end
   end

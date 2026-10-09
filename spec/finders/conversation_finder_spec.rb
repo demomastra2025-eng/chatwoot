@@ -727,13 +727,41 @@ describe ConversationFinder do
       let(:params) { { status: 'open', assignee_type: 'me', conversation_type: 'unattended' } }
 
       it 'returns unattended conversations' do
-        create(:conversation, account: account, first_reply_created_at: Time.now.utc, assignee: user_1) # attended_conversation
-        create(:conversation, account: account, first_reply_created_at: nil, assignee: user_1) # unattended_conversation_no_first_reply
-        create(:conversation, account: account, first_reply_created_at: Time.now.utc,
-                              assignee: user_1, waiting_since: Time.now.utc) # unattended_conversation_waiting_since
+        attended_conversation = create(:conversation, account: account, first_reply_created_at: Time.now.utc, assignee: user_1)
+        attended_conversation.update!(waiting_since: nil)
+        unattended_conversation_no_first_reply = create(:conversation, account: account, first_reply_created_at: nil, assignee: user_1)
+        unattended_conversation_waiting_since = create(
+          :conversation,
+          account: account,
+          first_reply_created_at: Time.now.utc,
+          assignee: user_1,
+          waiting_since: Time.now.utc
+        )
+
+        target_conversations = [
+          attended_conversation,
+          unattended_conversation_no_first_reply,
+          unattended_conversation_waiting_since
+        ]
+        expect(attended_conversation.reload.first_reply_created_at).to be_present
+        expect(attended_conversation.waiting_since).to be_nil
+        expect(unattended_conversation_no_first_reply.reload.first_reply_created_at).to be_nil
+        expect(unattended_conversation_waiting_since.reload.first_reply_created_at).to be_present
+        expect(unattended_conversation_waiting_since.waiting_since).to be_present
+
+        inbox.inbox_members.where(user: user_1).destroy_all
+        target_conversations.each do |conversation|
+          conversation.inbox.inbox_members.find_or_create_by!(user: user_1)
+        end
+
+        expect(inbox.inbox_members.exists?(user: user_1)).to be(false)
+        expect(target_conversations.map { |conversation| conversation.inbox.inbox_members.exists?(user: user_1) }).to all(be(true))
 
         result = conversation_finder.perform
         expect(result[:conversations].length).to be 2
+        expect(result[:conversations].map(&:id)).to match_array(
+          [unattended_conversation_no_first_reply.id, unattended_conversation_waiting_since.id]
+        )
       end
     end
   end

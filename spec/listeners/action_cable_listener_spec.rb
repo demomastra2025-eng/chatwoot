@@ -234,7 +234,7 @@ describe ActionCableListener do
       end
 
       expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
-        a_collection_containing_exactly(agent.pubsub_token, admin.pubsub_token),
+        a_collection_containing_exactly(agent.pubsub_token, admin.pubsub_token, message.sender.pubsub_token),
         'communication_thread.updated',
         hash_including(
           id: communication_thread.display_id,
@@ -258,7 +258,7 @@ describe ActionCableListener do
       end
 
       expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
-        a_collection_containing_exactly(agent.pubsub_token, admin.pubsub_token),
+        a_collection_containing_exactly(agent.pubsub_token, admin.pubsub_token, message.sender.pubsub_token),
         'communication_thread.updated',
         hash_including(
           id: communication_thread.display_id,
