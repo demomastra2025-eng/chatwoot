@@ -14,6 +14,7 @@ module Scheduling::PayloadBuilder
       resource_name: appointment.resource&.name,
       contact_id: appointment.contact_id,
       patient_contact_id: appointment.patient_contact_id,
+      patient_context_contact_id: appointment.patient_contact_id || appointment.contact_id,
       patient_contact_name: [appointment.patient_contact&.name, appointment.patient_contact&.last_name,
                              appointment.patient_contact&.middle_name].compact_blank.join(' ').presence,
       service_id: appointment.service_id,

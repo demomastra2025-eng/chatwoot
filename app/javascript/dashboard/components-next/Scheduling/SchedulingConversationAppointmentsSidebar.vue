@@ -35,11 +35,17 @@ import {
 } from 'dashboard/stores/scheduling/shared';
 import {
   providerCommandIntentMatches,
+  providerCommandRequiresPatientSelection,
   useSchedulingProviderCommandsStore,
 } from 'dashboard/stores/scheduling/providerCommands';
 import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/references';
 import { isKazakhstanE164Phone } from 'dashboard/stores/scheduling/appointmentForm';
 import { schedulingContactNameParts } from 'dashboard/stores/scheduling/contactName';
+import {
+  patientBirthDate,
+  patientContactId,
+  useConversationPatientContextStore,
+} from 'dashboard/stores/scheduling/patientContext';
 import {
   addMinutesToDateTimeInputValue,
   appointmentCancellationAlertMessage,
@@ -70,8 +76,12 @@ const props = defineProps({
     required: true,
     type: Object,
   },
+  selectedPatient: { type: Object, default: null },
+  patientContextEnabled: { type: Boolean, default: false },
+  patientContextLoading: { type: Boolean, default: false },
+  patientContextKey: { type: String, default: '' },
 });
-const emit = defineEmits(['close']);
+const emit = defineEmits(['close', 'patientBound']);
 // Appointments are shown and edited on the clinic clock, the same timezone as
 // the calendar grid, whatever the browser timezone is.
 const SCHEDULING_TIMEZONE = DEFAULT_WORKSPACE_TIMEZONE;
@@ -87,6 +97,7 @@ const store = useStore();
 const route = useRoute();
 const schedulingReferencesStore = useSchedulingReferencesStore();
 const providerCommandsStore = useSchedulingProviderCommandsStore();
+const patientContextStore = useConversationPatientContextStore();
 
 const appointments = ref([]);
 const appointmentForms = reactive({});
@@ -109,7 +120,10 @@ let sidebarDisposed = false;
 let appointmentSaveRequestId = 0;
 let createSaveRequestId = 0;
 let appointmentCancellationRequestId = 0;
+let referencesReadyPromise;
 const createForm = reactive({
+  clientBirthDate: '',
+  clientGender: '',
   clientIdentifier: '',
   clientIdentifierInferred: false,
   clientFirstName: '',
@@ -118,6 +132,8 @@ const createForm = reactive({
   clientName: '',
   clientNameStructured: true,
   clientPhone: '',
+  patientContactId: null,
+  patientContextContactId: null,
   endsAt: '',
   medelementCabinetCode: '',
   resourceId: '',
@@ -133,7 +149,7 @@ const ui = reactive({
 });
 
 const headerButtons = computed(() =>
-  isCreating.value
+  isCreating.value || !patientContextReady.value
     ? []
     : [
         {
@@ -209,6 +225,28 @@ const hasServiceOptionsForForm = form => serviceOptionsForForm(form).length > 0;
 
 const contact = computed(() => resolveChatContact(props.currentChat));
 const contactId = computed(() => resolveChatContactId(props.currentChat));
+// The chat owner remains the recipient. Only clinical context changes here.
+const patient = computed(() =>
+  props.patientContextEnabled ? props.selectedPatient : contact.value
+);
+const selectedPatientContextId = computed(() =>
+  patientContactId(props.patientContextEnabled ? patient.value?.id : contactId.value)
+);
+const selectedPatientCardId = computed(() =>
+  props.patientContextEnabled && patient.value?.selectable_patient
+    ? patientContactId(patient.value?.patient_contact_id)
+    : null
+);
+const patientContextReady = computed(() =>
+  !props.patientContextEnabled ||
+  (!props.patientContextLoading && Boolean(selectedPatientContextId.value))
+);
+const currentDraftKey = computed(() =>
+  props.patientContextEnabled && props.patientContextKey && selectedPatientContextId.value
+    ? `${props.patientContextKey}:${selectedPatientContextId.value}`
+    : ''
+);
+let activeDraftKey = currentDraftKey.value;
 const accountId = computed(() => String(route.params?.accountId || ''));
 
 const createConversationDisplayId = computed(() => {
@@ -227,16 +265,18 @@ const createConversationDisplayId = computed(() => {
 
 const contactName = computed(
   () =>
-    contact.value?.name ||
-    contact.value?.fullName ||
-    contact.value?.full_name ||
+    patient.value?.name ||
+    patient.value?.fullName ||
+    patient.value?.full_name ||
     ''
 );
 const contactPhone = computed(
   () =>
-    contact.value?.phone_number ||
-    contact.value?.phoneNumber ||
-    contact.value?.phone ||
+    patient.value?.phone_number ||
+    patient.value?.phoneNumber ||
+    patient.value?.phone ||
+    (props.patientContextEnabled ?
+      contact.value?.phone_number || contact.value?.phoneNumber || contact.value?.phone : '') ||
     ''
 );
 
@@ -257,12 +297,12 @@ const isValidPatientIin = value => {
 };
 const contactIin = computed(() => {
   const attributes =
-    contact.value?.custom_attributes || contact.value?.customAttributes || {};
+    patient.value?.custom_attributes || patient.value?.customAttributes || {};
   const value = [
     attributes.medelement_iin,
     attributes.medelementIin,
     attributes.iin,
-    contact.value?.identifier,
+    patient.value?.identifier,
   ].find(isValidPatientIin);
   return value ? normalizePatientIin(value) : '';
 });
@@ -333,13 +373,15 @@ const resetCreateForm = () => {
     medelementCabinetsForResource(primaryResource);
   const defaults = buildDefaultAppointmentTimes();
   const contactNameParts = schedulingContactNameParts({
-    firstName: contact.value?.first_name || contact.value?.firstName,
+    firstName: patient.value?.first_name || patient.value?.firstName,
     fullName: contactName.value,
-    lastName: contact.value?.last_name || contact.value?.lastName,
-    middleName: contact.value?.middle_name || contact.value?.middleName,
+    lastName: patient.value?.last_name || patient.value?.lastName,
+    middleName: patient.value?.middle_name || patient.value?.middleName,
   });
 
   Object.assign(createForm, {
+    clientBirthDate: patientBirthDate(patient.value),
+    clientGender: patient.value?.gender || '',
     clientIdentifier: contactIin.value,
     clientIdentifierInferred: Boolean(contactIin.value),
     clientFirstName: contactNameParts.firstName,
@@ -348,6 +390,8 @@ const resetCreateForm = () => {
     clientName: contactName.value,
     clientNameStructured: true,
     clientPhone: contactPhone.value,
+    patientContactId: selectedPatientCardId.value,
+    patientContextContactId: selectedPatientContextId.value,
     endsAt: defaults.endsAt,
     medelementCabinetCode:
       primaryResourceCabinets.length === 1
@@ -400,6 +444,11 @@ const conversationDisplayIds = computed(() => {
 });
 
 const lookupParams = computed(() => {
+  if (props.patientContextEnabled) {
+    return patientContextReady.value
+      ? [{ patient_contact_ids: selectedPatientContextId.value }]
+      : [];
+  }
   const params = [];
 
   if (contactId.value) {
@@ -420,6 +469,8 @@ const PATIENT_ACTION_STATUSES = new Set([
   'awaiting_patient_selection',
   'awaiting_phone_refresh',
 ]);
+const hasPatientAction = command => PATIENT_ACTION_STATUSES.has(command?.status) ||
+  providerCommandRequiresPatientSelection(command);
 
 const appointmentKey = appointment => `appointment-${appointment.id}`;
 const invalidatePatientAction = key => {
@@ -434,11 +485,14 @@ const invalidatePatientAction = key => {
   }
 };
 const APPOINTMENT_PROVIDER_FORM_INTENT_FIELDS = [
+  'clientBirthDate',
+  'clientGender',
   'clientFirstName',
   'clientIdentifier',
   'clientLastName',
   'clientMiddleName',
   'clientPhone',
+  'patientContactId',
   'endsAt',
   'medelementCabinetCode',
   'resourceId',
@@ -455,11 +509,14 @@ const providerFormIntentFingerprint = form =>
 const appointmentProviderFormIntent = appointment => {
   const nameParts = patientNameParts(appointment);
   return {
+    clientBirthDate: appointment?.clientBirthDate || '',
+    clientGender: appointment?.clientGender || '',
     clientFirstName: nameParts.clientFirstName,
     clientIdentifier: appointment?.clientIdentifier || '',
     clientLastName: nameParts.clientLastName,
     clientMiddleName: nameParts.clientMiddleName,
     clientPhone: appointment?.clientPhone || '',
+    patientContactId: patientContactId(appointment?.patientContactId),
     endsAt: toClinicDateTime(appointment?.endsAt),
     medelementCabinetCode:
       appointment?.customAttributes?.medelementCabinetCode ||
@@ -509,6 +566,8 @@ const captureSidebarContext = () => ({
   chatId: String(props.currentChat?.id || ''),
   contactId: String(contactId.value || ''),
   conversationIds: conversationDisplayIds.value.join(','),
+  patientContextId: selectedPatientContextId.value,
+  patientContextKey: props.patientContextKey,
   generation: providerReviewGeneration,
 });
 const isCurrentSidebarContext = context =>
@@ -517,6 +576,9 @@ const isCurrentSidebarContext = context =>
   context.accountId === accountId.value &&
   context.chatId === String(props.currentChat?.id || '') &&
   context.contactId === String(contactId.value || '') &&
+  context.patientContextId === selectedPatientContextId.value &&
+  context.patientContextKey === props.patientContextKey &&
+  patientContextReady.value &&
   context.conversationIds === conversationDisplayIds.value.join(',');
 const captureProviderContext = appointment => ({
   ...captureSidebarContext(),
@@ -555,7 +617,7 @@ const isPatientActionPendingOnAppointment = appointment =>
       'pending');
 const patientActionTitle = entry => {
   const status = entry?.command?.status;
-  if (status === 'awaiting_patient_selection') {
+  if (providerCommandRequiresPatientSelection(entry?.command)) {
     return t('SCHEDULING.MEDELEMENT.PATIENT_SELECTION_TITLE');
   }
   if (status === 'awaiting_patient_creation') {
@@ -607,7 +669,10 @@ const patientActionDescription = entry => {
   ) {
     return t('SCHEDULING.MEDELEMENT.STALE_COMMAND_DESCRIPTION');
   }
-  if (command?.status === 'awaiting_patient_selection') {
+  if (providerCommandRequiresPatientSelection(command)) {
+    if (command.patientAction?.requiresPatientCardConfirmation) {
+      return t('SCHEDULING.PATIENT_CONTEXT.CONFIRM_PATIENT_CARD');
+    }
     return t('SCHEDULING.MEDELEMENT.PATIENT_SELECTION_DESCRIPTION', {
       count: command.patientAction?.candidateCount || candidates.length || 0,
     });
@@ -627,7 +692,7 @@ const patientActionDescription = entry => {
 };
 const patientActionButtonLabel = entry => {
   const status = entry?.command?.status;
-  if (status === 'awaiting_patient_selection') {
+  if (providerCommandRequiresPatientSelection(entry?.command)) {
     return t('SCHEDULING.MEDELEMENT.PATIENT_SELECT_ACTION');
   }
   if (status === 'awaiting_patient_creation') {
@@ -657,7 +722,7 @@ const canContinuePatientAction = entry => {
     return false;
   }
 
-  if (entry.command?.status === 'awaiting_patient_selection') {
+  if (providerCommandRequiresPatientSelection(entry.command)) {
     return Boolean(
       entry.selectedPatientToken &&
         entry.candidates.some(
@@ -714,11 +779,17 @@ const formFromAppointment = appointment => {
   const nameParts = patientNameParts(appointment);
   return {
     appointmentType: appointment.appointmentType || 'primary',
+    clientBirthDate: appointment.clientBirthDate || '',
+    clientGender: appointment.clientGender || '',
     clientIdentifier: appointment.clientIdentifier || '',
     clientIdentifierInferred: false,
     ...nameParts,
     clientName: appointment.clientName || '',
     clientPhone: appointment.clientPhone || '',
+    patientContactId: patientContactId(appointment.patientContactId),
+    patientContextContactId: patientContactId(
+      appointment.patientContextContactId || appointment.patientContactId || appointment.contactId
+    ),
     contactId: appointment.contactId || contactId.value || '',
     conversationDisplayId:
       appointment.conversationDisplayId ||
@@ -749,6 +820,44 @@ const setAppointmentForms = () => {
     appointmentForms[appointmentKey(appointment)] =
       formFromAppointment(appointment);
   });
+};
+
+const rememberPatientDraft = () => {
+  if (!activeDraftKey || (!isCreating.value && !appointments.value.length)) return;
+  patientContextStore.saveDraft(activeDraftKey, {
+    createForm: isCreating.value ? createForm : null,
+    appointmentForms: Object.fromEntries(appointments.value.map(appointment => [
+      appointmentKey(appointment),
+      {
+        form: appointmentForms[appointmentKey(appointment)],
+        fingerprint: appointmentContextFingerprint(appointment),
+      },
+    ])),
+  });
+};
+
+const restorePatientDraft = () => {
+  if (!patientContextReady.value || !currentDraftKey.value) return false;
+  const draft = patientContextStore.drafts[currentDraftKey.value];
+  if (!draft) return false;
+  appointments.value.forEach(appointment => {
+    const key = appointmentKey(appointment);
+    const saved = draft.appointmentForms?.[key];
+    if (saved?.fingerprint === appointmentContextFingerprint(appointment)) {
+      appointmentForms[key] = { ...saved.form };
+    }
+  });
+  if (
+    draft.createForm &&
+    draft.createForm.patientContextContactId === selectedPatientContextId.value &&
+    draft.createForm.patientContactId === selectedPatientCardId.value
+  ) {
+    Object.assign(createForm, draft.createForm);
+    isCreating.value = true;
+    openAppointmentKeys.value = [NEW_APPOINTMENT_KEY, ...openAppointmentKeys.value];
+    return true;
+  }
+  return false;
 };
 
 const selectedServiceForForm = form =>
@@ -893,6 +1002,9 @@ const medelementCabinetError = form =>
     : '';
 
 const isAppointmentFormInvalid = form =>
+  !patientContextReady.value ||
+  (props.patientContextEnabled &&
+    form?.patientContextContactId !== selectedPatientContextId.value) ||
   !contactId.value ||
   !form?.clientFirstName?.trim() ||
   Boolean(medelementLastNameError(form)) ||
@@ -917,6 +1029,8 @@ const buildAppointmentPayload = form =>
           }
         : {}),
       client_name: fullPatientName(form),
+      client_birth_date: form.clientBirthDate || undefined,
+      client_gender: form.clientGender || undefined,
       client_phone: form.clientPhone,
       ...(isMedelementResource(selectedResourceForForm(form))
         ? {
@@ -925,6 +1039,9 @@ const buildAppointmentPayload = form =>
           }
         : {}),
       contact_id: toNumeric(form.contactId || contactId.value),
+      ...(patientContactId(form.patientContactId)
+        ? { patient_contact_id: patientContactId(form.patientContactId) }
+        : {}),
       conversation_display_id: toNumeric(
         form.conversationId
           ? null
@@ -960,6 +1077,8 @@ const buildCreatePayload = () =>
           }
         : {}),
       client_name: fullPatientName(createForm),
+      client_birth_date: createForm.clientBirthDate || undefined,
+      client_gender: createForm.clientGender || undefined,
       client_phone: createForm.clientPhone,
       ...(isMedelementResource(selectedResourceForForm(createForm))
         ? {
@@ -968,6 +1087,9 @@ const buildCreatePayload = () =>
           }
         : {}),
       contact_id: toNumeric(contactId.value),
+      ...(patientContactId(createForm.patientContactId)
+        ? { patient_contact_id: patientContactId(createForm.patientContactId) }
+        : {}),
       conversation_display_id: toNumeric(createConversationDisplayId.value),
       ...(createForm.medelementCabinetCode
         ? {
@@ -1047,7 +1169,7 @@ async function showPatientAction(appointment, command, context, lookupId) {
     (lookupId && !isCurrentPatientActionLookup(key, context, lookupId)) ||
     Number(command.appointmentId || command.appointment_id) !==
       Number(appointment.id) ||
-    !PATIENT_ACTION_STATUSES.has(command.status)
+    !hasPatientAction(command)
   ) {
     return null;
   }
@@ -1075,7 +1197,7 @@ async function showPatientAction(appointment, command, context, lookupId) {
   patientActions[key] = entry;
 
   if (
-    command.status === 'awaiting_patient_selection' &&
+    providerCommandRequiresPatientSelection(command) &&
     !entry.intentMismatch
   ) {
     entry.loadingCandidates = true;
@@ -1249,7 +1371,7 @@ async function refreshPendingPatientAction(
     const command = commands.find(
       item =>
         item.operation === 'create_reception' &&
-        PATIENT_ACTION_STATUSES.has(item.status)
+        hasPatientAction(item)
     );
     if (command) {
       return showPatientAction(appointment, command, context, lookupId);
@@ -1287,9 +1409,11 @@ const loadAppointments = async () => {
   const requestId = loadRequestId;
   const params = lookupParams.value;
   const lookupKey = JSON.stringify(params);
+  const context = captureSidebarContext();
   const isCurrentRequest = () =>
     !sidebarDisposed &&
     requestId === loadRequestId &&
+    isCurrentSidebarContext(context) &&
     lookupKey === JSON.stringify(lookupParams.value);
 
   if (!params.length) {
@@ -1307,6 +1431,12 @@ const loadAppointments = async () => {
     const results = await Promise.all(params.map(fetchAppointmentsByParams));
     if (!isCurrentRequest()) return false;
     appointments.value = mergeUniqueAppointments(...results);
+    if (props.patientContextEnabled) {
+      appointments.value = appointments.value.filter(appointment =>
+        patientContactId(appointment.patientContextContactId ||
+          appointment.patientContactId || appointment.contactId) === selectedPatientContextId.value
+      );
+    }
     setAppointmentForms();
     appointments.value
       .filter(
@@ -1408,6 +1538,7 @@ const handleCreateServiceChange = value => {
 };
 
 const startCreateAppointment = async ({ scroll = true } = {}) => {
+  if (!patientContextReady.value) return;
   resetCreateForm();
   isCreating.value = true;
   if (!openAppointmentKeys.value.includes(NEW_APPOINTMENT_KEY)) {
@@ -1423,6 +1554,7 @@ const cancelCreateAppointment = () => {
   if (!appointments.value.length) return;
 
   isCreating.value = false;
+  patientContextStore.clearDraft(currentDraftKey.value);
   openAppointmentKeys.value = openAppointmentKeys.value.filter(
     key => key !== NEW_APPOINTMENT_KEY
   );
@@ -1462,10 +1594,12 @@ const saveCreateAppointment = async () => {
       await SchedulingAppointmentsAPI.create(buildCreatePayload());
     if (!isCurrentSidebarContext(context)) return;
     const savedAppointment = normalizePayload(response.data);
+    patientContextStore.clearDraft(currentDraftKey.value);
     refreshDialogAppointments(savedAppointment);
     refreshPendingPatientAction(savedAppointment).catch(() => {});
     refreshSidebarCounters();
     useAlert(t('SCHEDULING.APPOINTMENT_FORM.SUCCESS_SAVE'));
+    emit('patientBound', savedAppointment);
   } catch (error) {
     if (isCurrentSidebarContext(context)) {
       useAlert(formatSchedulingErrorMessage(error, t));
@@ -1542,7 +1676,7 @@ async function continuePatientAction(appointment) {
   entry.error = '';
   try {
     let command;
-    if (entry.command.status === 'awaiting_patient_selection') {
+    if (providerCommandRequiresPatientSelection(entry.command)) {
       command = await providerCommandsStore.selectPatient(
         entry.command,
         entry.selectedPatientToken,
@@ -1574,7 +1708,15 @@ async function continuePatientAction(appointment) {
       entry.error = t('SCHEDULING.MEDELEMENT.STALE_COMMAND_DESCRIPTION');
       return;
     }
-    if (PATIENT_ACTION_STATUSES.has(command.status)) {
+    // The server may safely bind a legacy draft during explicit patient selection.
+    const boundAppointment = Number(command.appointment?.id) === Number(appointment.id)
+      ? command.appointment : null;
+    if (boundAppointment) {
+      upsertAppointment(boundAppointment);
+      appointment = boundAppointment;
+      entry.context = captureProviderContext(boundAppointment);
+    }
+    if (hasPatientAction(command)) {
       await showPatientAction(appointment, command, entry.context);
     } else {
       entry.command = command;
@@ -1594,6 +1736,7 @@ async function continuePatientAction(appointment) {
         await refreshProviderAppointmentState(appointment, entry.context);
       }
     }
+    if (boundAppointment) emit('patientBound', boundAppointment);
   } catch (error) {
     if (isCurrentProviderContext(entry.context)) {
       entry.error = formatSchedulingErrorMessage(error, t);
@@ -1635,7 +1778,7 @@ async function checkProviderBooking(appointment) {
     const pendingPatientCommand = commands.find(
       item =>
         item.operation === 'create_reception' &&
-        PATIENT_ACTION_STATUSES.has(item.status)
+        hasPatientAction(item)
     );
     if (pendingPatientCommand) {
       await showPatientAction(
@@ -1824,6 +1967,7 @@ const saveAppointment = async appointment => {
     openAppointmentKeys.value = [appointmentKey(savedAppointment)];
     refreshSidebarCounters();
     useAlert(t('SCHEDULING.APPOINTMENT_FORM.SUCCESS_SAVE'));
+    emit('patientBound', savedAppointment);
   } catch (error) {
     if (isCurrentSidebarContext(context)) {
       useAlert(formatSchedulingErrorMessage(error, t));
@@ -1893,19 +2037,25 @@ const appointmentMeta = appointment => {
 };
 
 const initializeSidebar = async () => {
-  try {
-    await Promise.all([
-      schedulingReferencesStore.loadResources(),
-      schedulingReferencesStore.loadServices(),
-    ]);
-  } catch {
-    // Keep the appointments list usable even if optional references fail.
-  }
-
+  const context = captureSidebarContext();
+  await loadReferences();
+  if (!isCurrentSidebarContext(context)) return;
   const loaded = await loadAppointments();
-  if (loaded && !appointments.value.length) {
+  if (loaded && !restorePatientDraft() && !appointments.value.length) {
     await startCreateAppointment({ scroll: false });
   }
+};
+
+const loadReferences = () => {
+  if (!referencesReadyPromise) {
+    referencesReadyPromise = Promise.all([
+      schedulingReferencesStore.loadResources(),
+      schedulingReferencesStore.loadServices(),
+    ]).catch(() => {
+      // Keep appointments usable when optional references fail.
+    });
+  }
+  return referencesReadyPromise;
 };
 
 onMounted(() => {
@@ -1913,6 +2063,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  rememberPatientDraft();
   sidebarDisposed = true;
   loadRequestId += 1;
   providerReviewGeneration += 1;
@@ -1931,8 +2082,14 @@ watch(
     props.currentChat?.id,
     contactId.value,
     conversationDisplayIds.value.join(','),
+    selectedPatientContextId.value,
+    props.patientContextKey,
+    props.patientContextLoading,
+    props.patientContextEnabled,
   ],
   async () => {
+    rememberPatientDraft();
+    activeDraftKey = currentDraftKey.value;
     providerReviewGeneration += 1;
     appointmentSaveRequestId += 1;
     createSaveRequestId += 1;
@@ -1952,8 +2109,15 @@ watch(
     providerCommandsStore.ui.isExecuting = false;
     providerCommandsStore.ui.error = null;
     isCreating.value = false;
+    appointments.value = [];
+    setAppointmentForms();
+    openAppointmentKeys.value = [];
+    resetCreateForm();
+    const context = captureSidebarContext();
+    await loadReferences();
+    if (!isCurrentSidebarContext(context)) return;
     const loaded = await loadAppointments();
-    if (loaded && !appointments.value.length) {
+    if (loaded && !restorePatientDraft() && !appointments.value.length) {
       await startCreateAppointment({ scroll: false });
     }
   },
@@ -2481,10 +2645,7 @@ watch(
               {{ patientActions[appointmentKey(appointment)].error }}
             </p>
             <div
-              v-if="
-                patientActions[appointmentKey(appointment)].command.status ===
-                'awaiting_patient_selection'
-              "
+              v-if="providerCommandRequiresPatientSelection(patientActions[appointmentKey(appointment)].command)"
               class="mt-2 flex flex-col gap-2"
             >
               <Spinner

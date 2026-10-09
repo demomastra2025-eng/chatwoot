@@ -210,7 +210,10 @@ Rails.application.routes.draw do
               resource :work_rules, only: [:show, :update], controller: 'resource_work_rules'
               resource :break_rules, only: [:show, :update], controller: 'resource_break_rules'
             end
-            resources :contacts, only: [:index, :create, :update]
+            resources :contacts, only: [:index, :create, :update] do
+              get :patients, on: :member
+              post :patients, action: :create_patient, on: :member
+            end
             resources :services, only: [:index, :show, :create, :update, :destroy]
             resources :appointments, only: [:index, :show, :create, :update, :destroy] do
               post :cancel, on: :member

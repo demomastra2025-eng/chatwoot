@@ -14,6 +14,13 @@ const TERMINAL_STATUSES = new Set([
   'succeeded',
 ]);
 
+export const providerCommandRequiresPatientSelection = command =>
+  command?.status === 'awaiting_patient_selection' ||
+  (command?.status === 'failed' &&
+    command.patientAction?.type === 'patient_selection' &&
+    command.patientAction?.canConfirm === true &&
+    command.patientAction?.requiresPatientCardConfirmation === true);
+
 const pause = milliseconds => {
   if (milliseconds <= 0) return Promise.resolve();
 

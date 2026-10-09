@@ -43,6 +43,12 @@ class Integrations::Medelement::ProviderCommand < ApplicationRecord
 
   scope :executable, -> { where(status: execution_statuses('queued')) }
   scope :unfinished, -> { where(status: UNFINISHED_STATUSES) }
+  scope :recoverable_patient_selection, lambda {
+    where(status: 'failed', operation: 'create_reception', last_error_code: 'patient_ref_conflict', provider_reception_code: [nil, ''])
+      .where("NULLIF(execution_state ->> 'write_phase', '') IS NULL")
+      .where("NULLIF(execution_state ->> 'write_provider_patient_code', '') IS NULL")
+      .where("NULLIF(execution_state ->> 'write_provider_reception_code', '') IS NULL")
+  }
   scope :patient_identity_writes, -> { where(PATIENT_IDENTITY_WRITE_PREDICATE) }
 
   before_validation :normalize_execution_state

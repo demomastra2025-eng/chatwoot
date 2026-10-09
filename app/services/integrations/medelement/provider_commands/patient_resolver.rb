@@ -13,6 +13,12 @@ class Integrations::Medelement::ProviderCommands::PatientResolver
     'patient_phone_2' => 'PATIENT_PHONE_2'
   }.freeze
 
+  def self.patient_code(payload)
+    return if payload.blank?
+
+    %w[profile_code PROFILE_CODE PATIENT_CODE patient_code].filter_map { |key| payload[key].to_s.presence }.first
+  end
+
   def initialize(command:, client:, before_create: nil, organization_id: nil)
     @command = command
     @client = client
@@ -65,6 +71,12 @@ class Integrations::Medelement::ProviderCommands::PatientResolver
         end.uniq.join(', ').presence
       }.compact
     end
+  end
+
+  # This is the same command/account-bound HMAC lookup used by the worker. The raw provider
+  # record stays inside the staff action; public candidates expose only an opaque token.
+  def selection_candidate(token:)
+    lookup_candidates.find { |patient| secure_token_match?(candidate_token(patient), token.to_s) }
   end
 
   def resolve_existing
@@ -434,9 +446,7 @@ class Integrations::Medelement::ProviderCommands::PatientResolver
   end
 
   def patient_code(payload)
-    return if payload.blank?
-
-    payload['profile_code'].presence || payload['PROFILE_CODE'].presence || payload['PATIENT_CODE'].presence
+    self.class.patient_code(payload)
   end
 
   def patient_snapshot

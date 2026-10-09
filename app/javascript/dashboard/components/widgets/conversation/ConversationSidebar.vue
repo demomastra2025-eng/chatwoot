@@ -1,5 +1,13 @@
 <script setup>
-import { computed, defineAsyncComponent } from 'vue';
+import { computed, defineAsyncComponent, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import { useMapGetter } from 'dashboard/composables/store';
+import { resolveChatContactId } from 'dashboard/components-next/CRM/crmConversationDealContext';
+import SchedulingConversationPatientSelector from 'dashboard/components-next/Scheduling/SchedulingConversationPatientSelector.vue';
+import {
+  conversationPatientContextKey,
+  useConversationPatientContextStore,
+} from 'dashboard/stores/scheduling/patientContext';
 import { useUISettings } from 'dashboard/composables/useUISettings';
 import { useConversationSidepanelAvailability } from 'dashboard/composables/useConversationSidepanelAvailability';
 import { useWindowSize } from '@vueuse/core';
@@ -26,7 +34,42 @@ const SchedulingConversationAppointmentsSidebar = defineAsyncComponent(
 );
 
 const { uiSettings, updateUISettings } = useUISettings();
-const { activePanel } = useConversationSidepanelAvailability();
+const { activePanel, appointmentsAvailable } = useConversationSidepanelAvailability();
+const route = useRoute();
+const router = useRouter();
+const currentAccountId = useMapGetter('getCurrentAccountId');
+const currentUser = useMapGetter('getCurrentUser');
+const patientStore = useConversationPatientContextStore();
+const patientContextKey = computed(() => conversationPatientContextKey({
+  accountId: currentAccountId.value,
+  userId: currentUser.value?.id,
+  chat: props.currentChat,
+}));
+const chatContactId = computed(() => resolveChatContactId(props.currentChat));
+const patientContextEnabled = computed(() =>
+  appointmentsAvailable.value && ['contact', 'appointments'].includes(activePanel.value)
+);
+const patientEntry = computed(() => patientStore.contexts[patientContextKey.value] || null);
+const selectedPatient = computed(() => patientStore.selectedPatient(patientContextKey.value));
+watch(
+  () => [patientContextKey.value, chatContactId.value, patientContextEnabled.value,
+    route.query?.patientContactId, route.query?.patientChatContactId],
+  () => {
+    if (!patientContextEnabled.value || !patientContextKey.value || !chatContactId.value) return;
+    const requestedPatient = route.query?.patientContactId;
+    const hasPatientRequest = Number(route.query?.patientChatContactId) === Number(chatContactId.value) && Boolean(requestedPatient);
+    if (hasPatientRequest) {
+      patientStore.rememberSelection(patientContextKey.value, requestedPatient);
+      if (patientEntry.value?.loaded) patientStore.select(patientContextKey.value, requestedPatient);
+      const query = { ...route.query };
+      delete query.patientContactId;
+      delete query.patientChatContactId;
+      router.replace({ query });
+    }
+    patientStore.load(patientContextKey.value, chatContactId.value, { force: hasPatientRequest });
+  },
+  { immediate: true }
+);
 const { width: windowWidth } = useWindowSize();
 const clickOutsideOptions = {
   ignore: [
@@ -58,6 +101,20 @@ const activeInboxId = computed(
     props.currentChat?.active_reply_channel_inbox_id ||
     props.currentChat?.inbox_id
 );
+const patientConversationDisplayId = computed(() =>
+  activeReplyChannel.value?.conversation_id ||
+  props.currentChat?.active_reply_channel_conversation_id ||
+  props.currentChat?.conversation_ids?.[0] ||
+  (props.currentChat?.is_communication_thread ? null : props.currentChat?.id)
+);
+const refreshBoundPatient = async appointment => {
+  const key = patientContextKey.value;
+  const owner = chatContactId.value;
+  const patientId = appointment?.patientContextContactId || appointment?.patientContactId;
+  if (!key || !owner) return;
+  if (patientId) patientStore.rememberSelection(key, patientId);
+  await patientStore.load(key, owner, { force: true });
+};
 
 const isSmallScreen = computed(
   () => windowWidth.value < wootConstants.SMALL_SCREEN_BREAKPOINT
@@ -110,11 +167,20 @@ const closeAppointmentsSidebar = () => {
       },
     ]"
   >
+    <SchedulingConversationPatientSelector
+      v-if="patientContextEnabled && patientContextKey"
+      :context-key="patientContextKey"
+      :entry="patientEntry"
+      :conversation-display-id="patientConversationDisplayId"
+    />
     <div class="flex flex-1 overflow-y-auto overflow-x-hidden">
       <ContactPanel
         v-if="activeTab === 'contact'"
         :conversation-id="activeConversationId"
         :inbox-id="activeInboxId"
+        :selected-patient="selectedPatient"
+        :patient-context-enabled="patientContextEnabled"
+        :patient-context-key="patientContextKey"
       />
       <div v-if="activeTab === 'deals'" class="min-w-0 flex-1">
         <CrmConversationDealsSidebar
@@ -125,6 +191,11 @@ const closeAppointmentsSidebar = () => {
       <div v-if="activeTab === 'appointments'" class="min-w-0 flex-1">
         <SchedulingConversationAppointmentsSidebar
           :current-chat="currentChat"
+          :selected-patient="selectedPatient"
+          :patient-context-enabled="patientContextEnabled"
+          :patient-context-key="patientContextKey"
+          :patient-context-loading="!patientEntry?.loaded || patientEntry?.loading"
+          @patient-bound="refreshBoundPatient"
           @close="closeAppointmentsSidebar"
         />
       </div>

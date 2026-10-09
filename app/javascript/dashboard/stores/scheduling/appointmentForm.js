@@ -125,6 +125,7 @@ const createDefaultForm = () => ({
   clientPhone: '',
   companyId: '',
   contactId: '',
+  patientContactId: '',
   conversationDisplayId: '',
   conversationId: '',
   customAttributes: {},
@@ -259,6 +260,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
           clientPhone: appointment.clientPhone || '',
           companyId: appointment.companyId || '',
           contactId: appointment.contactId || '',
+          patientContactId: appointment.patientContactId || '',
           conversationDisplayId: appointment.conversationDisplayId || '',
           conversationId: appointment.conversationId || '',
           customAttributes: appointment.customAttributes || {},
@@ -279,6 +281,19 @@ export const useSchedulingAppointmentFormStore = defineStore(
           startsAt: toFormDateTime(appointment.startsAt),
           status: appointment.status || 'scheduled',
         };
+        if (this.form.patientContactId) {
+          this.selectedContact = {
+            id: this.form.patientContactId,
+            birthDate: this.form.clientBirthDate,
+            firstName: this.form.clientFirstName,
+            fullName: appointment.patientContactName || this.form.clientName,
+            gender: this.form.clientGender,
+            identifier: this.form.clientIdentifier,
+            lastName: this.form.clientLastName,
+            middleName: this.form.clientMiddleName,
+            phone: this.form.clientPhone,
+          };
+        }
       },
 
       close() {
@@ -355,7 +370,15 @@ export const useSchedulingAppointmentFormStore = defineStore(
             (phoneCameFromPreviousContact ? '' : existingPhone),
           companyId: contact.companyId || this.form.companyId || '',
           contactId: contact.id,
+          patientContactId: '',
         };
+      },
+
+      applyPatientContact(contact) {
+        const ownerId = this.form.contactId;
+        this.applyContact({ ...contact, phone: contact.phone || this.form.clientPhone });
+        this.form.contactId = ownerId;
+        this.form.patientContactId = contact.id;
       },
 
       syncServicePricing(services) {
@@ -473,6 +496,12 @@ export const useSchedulingAppointmentFormStore = defineStore(
       },
 
       async updateInlineContact(contactId, contact) {
+        const recordId = this.recordId;
+        const patientId = this.form.patientContactId;
+        const ownerId = this.form.contactId;
+        const isPatientCard = this.mode === 'edit' && Number(patientId) === Number(contactId);
+        const isCurrent = () => this.recordId === recordId &&
+          this.form.patientContactId === patientId && this.form.contactId === ownerId;
         this.ui.isCreatingContact = true;
 
         try {
@@ -485,7 +514,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
             iin: contact.iin || undefined,
             last_name: contact.lastName,
             middle_name: contact.middleName,
-            phone: contact.phone,
+            ...(isPatientCard ? {} : { phone: contact.phone }),
             resource_id: toNumeric(contact.resourceId),
           });
           const { data } = await SchedulingContactsAPI.update(
@@ -493,17 +522,19 @@ export const useSchedulingAppointmentFormStore = defineStore(
             payload
           );
           const updatedContact = normalizePayload(data);
+          if (!isCurrent()) return null;
           this.contacts = [
             updatedContact,
             ...this.contacts.filter(item => item.id !== updatedContact.id),
           ];
-          this.applyContact(updatedContact);
+          if (isPatientCard) this.applyPatientContact(updatedContact);
+          else this.applyContact(updatedContact);
           return updatedContact;
         } catch (error) {
-          this.ui.error = extractSchedulingError(error);
+          if (isCurrent()) this.ui.error = extractSchedulingError(error);
           throw error;
         } finally {
-          this.ui.isCreatingContact = false;
+          if (isCurrent()) this.ui.isCreatingContact = false;
         }
       },
 
@@ -528,6 +559,9 @@ export const useSchedulingAppointmentFormStore = defineStore(
           client_name: fullPatientName(normalizedForm),
           client_phone: normalizedForm.clientPhone,
           contact_id: toNumeric(normalizedForm.contactId),
+          ...(toNumeric(normalizedForm.patientContactId)
+            ? { patient_contact_id: toNumeric(normalizedForm.patientContactId) }
+            : {}),
           conversation_display_id: toNumeric(
             normalizedForm.conversationId
               ? undefined

@@ -24,6 +24,7 @@ import ShopifyOrdersList from 'dashboard/components/widgets/conversation/Shopify
 import SidebarActionsHeader from 'dashboard/components-next/SidebarActionsHeader.vue';
 import LinearIssuesList from 'dashboard/components/widgets/conversation/linear/IssuesList.vue';
 import LinearSetupCTA from 'dashboard/components/widgets/conversation/linear/LinearSetupCTA.vue';
+import SchedulingPatientDetails from 'dashboard/components-next/Scheduling/SchedulingPatientDetails.vue';
 
 const props = defineProps({
   conversationId: {
@@ -34,6 +35,9 @@ const props = defineProps({
     type: Number,
     default: undefined,
   },
+  selectedPatient: { type: Object, default: null },
+  patientContextEnabled: { type: Boolean, default: false },
+  patientContextKey: { type: String, default: '' },
 });
 
 const {
@@ -92,6 +96,9 @@ const channelType = computed(() => currentChat.value.meta?.channel);
 const contactGetter = useMapGetter('contacts/getContact');
 const contactId = computed(() => currentChat.value.meta?.sender?.id);
 const contact = computed(() => contactGetter.value(contactId.value));
+const detailsContactId = computed(() =>
+  props.patientContextEnabled ? props.selectedPatient?.id : contactId.value
+);
 const contactAdditionalAttributes = computed(
   () => contact.value.additional_attributes || {}
 );
@@ -107,6 +114,11 @@ watch(contactId, (newContactId, prevContactId) => {
     getContactDetails();
   }
 });
+watch(detailsContactId, id => {
+  if (props.patientContextEnabled && id && Number(id) !== Number(contactId.value)) {
+    store.dispatch('contacts/show', { id });
+  }
+}, { immediate: true });
 
 const onDragEnd = () => {
   dragging.value = false;
@@ -137,7 +149,13 @@ onMounted(() => {
       :title="$t('CONVERSATION.SIDEBAR.CONTACT')"
       @close="closeContactPanel"
     />
-    <ContactInfo :contact="contact" :channel-type="channelType" />
+    <SchedulingPatientDetails
+      v-if="patientContextEnabled && selectedPatient"
+      :key="`${patientContextKey}:${selectedPatient.id}`"
+      :patient="selectedPatient"
+      :context-key="patientContextKey"
+    />
+    <ContactInfo v-else-if="!patientContextEnabled" :contact="contact" :channel-type="channelType" />
     <div class="px-2 pb-8 list-group">
       <Draggable
         :list="conversationSidebarItems"
@@ -211,9 +229,11 @@ onMounted(() => {
               "
             >
               <CustomAttributes
+                v-if="detailsContactId"
+                :key="detailsContactId"
                 attribute-type="contact_attribute"
                 attribute-from="conversation_contact_panel"
-                :contact-id="contact.id"
+                :contact-id="detailsContactId"
                 :empty-state-message="
                   $t('CONVERSATION_CUSTOM_ATTRIBUTES.NO_RECORDS_FOUND')
                 "
@@ -295,7 +315,7 @@ onMounted(() => {
                 value => toggleSidebarUIState('is_contact_notes_open', value)
               "
             >
-              <ContactNotes :contact-id="contactId" />
+              <ContactNotes v-if="detailsContactId" :key="detailsContactId" :contact-id="detailsContactId" />
             </AccordionItem>
           </div>
           <div v-else-if="element.name === 'shared_files'">

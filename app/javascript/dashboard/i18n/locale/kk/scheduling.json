@@ -1,5 +1,17 @@
 {
   "SCHEDULING": {
+    "PATIENT_CONTEXT": {
+      "SELECT_PATIENT": "Пациент",
+      "NO_BIRTH_DATE": "Туған күні көрсетілмеген",
+      "SELECTION_SCOPE": "Таңдауыңыз осы диалог үшін сақталған.",
+      "LOAD_ERROR": "Осы диалогтың пациенттерін жүктеу мүмкін болмады",
+      "NEW_PATIENT": "Пациент қосу",
+      "OWN_PHONE": "Пациенттің өз телефоны, басқа болса",
+      "CREATE_DESCRIPTION": "Осы ортақ нөмір үшін жеке пациент картасын жасаңыз. Диалог сақталады.",
+      "PROVIDER_ID": "MedElement пациент коды",
+      "CONFIRM_PATIENT_CARD": "Осы қабылдау үшін таңдалған пациентті растаңыз. Диалог пен оның алушысы сақталады.",
+      "OPEN_DIALOG": "Диалогты ашу"
+    },
     "RESOURCES": {
       "PROVIDER_SCHEDULE_TITLE": "График из MedElement",
       "PROVIDER_NOT_LOADED": "График MedElement пока не загружен.",

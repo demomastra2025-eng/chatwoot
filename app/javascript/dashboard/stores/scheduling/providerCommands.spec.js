@@ -6,8 +6,23 @@ import {
   buildProviderCommandAction,
   buildProviderCommandParamsFromCommand,
   providerCommandIntentMatches,
+  providerCommandRequiresPatientSelection,
   useSchedulingProviderCommandsStore,
 } from './providerCommands';
+
+describe('server-authorized failed patient selection', () => {
+  it('requires explicit confirmation metadata and keeps ordinary failures terminal', () => {
+    const command = { status: 'failed', patientAction: {
+      type: 'patient_selection', canConfirm: true, requiresPatientCardConfirmation: true,
+    } };
+    expect(providerCommandRequiresPatientSelection(command)).toBe(true);
+    expect(providerCommandRequiresPatientSelection({ status: 'failed' })).toBe(false);
+    expect(providerCommandRequiresPatientSelection({ ...command,
+      patientAction: { ...command.patientAction, canConfirm: false } })).toBe(false);
+    expect(providerCommandRequiresPatientSelection({ ...command,
+      patientAction: { ...command.patientAction, requiresPatientCardConfirmation: false } })).toBe(false);
+  });
+});
 
 vi.mock('dashboard/api/scheduling/providerCommands', () => ({
   default: {

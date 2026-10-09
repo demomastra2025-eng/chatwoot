@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ref } from 'vue';
+import { createPinia } from 'pinia';
 import { flushPromises, shallowMount } from '@vue/test-utils';
 
 import ConversationSidebar from './ConversationSidebar.vue';
+import SchedulingContactsAPI from 'dashboard/api/scheduling/contacts';
+import { useConversationPatientContextStore } from 'dashboard/stores/scheduling/patientContext';
 
 const mocks = vi.hoisted(() => ({
   currentAccount: null,
@@ -11,6 +14,16 @@ const mocks = vi.hoisted(() => ({
   updateUISettings: vi.fn(),
   isFeatureEnabledonAccount: { __v_isRef: true, value: () => true },
   permissions: ['administrator', 'crm_deal_manage', 'scheduling_manage'],
+  route: { params: { accountId: '1' }, query: {} },
+  replace: vi.fn(),
+}));
+
+vi.mock('vue-router', () => ({
+  useRoute: () => mocks.route,
+  useRouter: () => ({ replace: mocks.replace }),
+}));
+vi.mock('dashboard/api/scheduling/contacts', () => ({
+  default: { patients: vi.fn() },
 }));
 
 vi.mock('dashboard/composables/store', () => ({
@@ -21,7 +34,7 @@ vi.mock('dashboard/composables/store', () => ({
       getCurrentUser: {
         __v_isRef: true,
         get value() {
-          return { accounts: [{ id: 1, permissions: mocks.permissions }] };
+          return { id: 9, accounts: [{ id: 1, permissions: mocks.permissions }] };
         },
       },
     };
@@ -47,16 +60,17 @@ vi.mock('dashboard/composables/useAccount', () => ({
   }),
 }));
 
-const mountComponent = (currentChat = { id: 1, inbox_id: 2 }) =>
+const mountComponent = (currentChat = { id: 1, inbox_id: 2 }, pinia = createPinia()) =>
   shallowMount(ConversationSidebar, {
     props: {
       currentChat,
     },
     global: {
+      plugins: [pinia],
       stubs: {
         ContactPanel: {
           name: 'ContactPanel',
-          props: ['conversationId', 'inboxId'],
+          props: ['conversationId', 'inboxId', 'selectedPatient', 'patientContextEnabled'],
           template: '<div />',
         },
         CrmConversationDealsSidebar: {
@@ -65,6 +79,7 @@ const mountComponent = (currentChat = { id: 1, inbox_id: 2 }) =>
         },
         SchedulingConversationAppointmentsSidebar: {
           name: 'SchedulingConversationAppointmentsSidebar',
+          props: ['currentChat', 'selectedPatient', 'patientContextEnabled', 'patientContextKey'],
           template: '<div />',
         },
       },
@@ -82,6 +97,57 @@ describe('ConversationSidebar', () => {
     ];
     mocks.width = ref(390);
     mocks.updateUISettings.mockClear();
+    mocks.route = { params: { accountId: '1' }, query: {} };
+    mocks.replace.mockClear();
+    window.localStorage.clear();
+    SchedulingContactsAPI.patients.mockResolvedValue({ data: { payload: {
+      contact_id: 42, patients: [
+        { id: 42, account_id: 1, communication_contact_id: 42, full_name: 'Owner' },
+        { id: 84, account_id: 1, communication_contact_id: 42, patient_contact_id: 84,
+          full_name: 'Patient' },
+      ],
+    } } });
+  });
+
+  it('passes selected clinical context while keeping the chat recipient intact', async () => {
+    mocks.uiSettings = ref({ is_scheduling_appointments_panel_open: true });
+    const chat = { id: 123, inbox_id: 2, meta: { sender: { id: 42, name: 'Owner' } } };
+    const wrapper = mountComponent(chat);
+    await flushPromises();
+    const store = useConversationPatientContextStore();
+    store.select('1:9:conversation:123', 84);
+    await flushPromises();
+    const sidebar = wrapper.findComponent({ name: 'SchedulingConversationAppointmentsSidebar' });
+    expect(sidebar.props('selectedPatient').id).toBe(84);
+    expect(sidebar.props('currentChat').meta.sender.id).toBe(42);
+  });
+
+  it('uses a calendar patient request only for the matching original owner', async () => {
+    mocks.uiSettings = ref({ is_scheduling_appointments_panel_open: true });
+    mocks.route.query = { patientContactId: '84', patientChatContactId: '42', status: 'open' };
+    const wrapper = mountComponent({ id: 123, meta: { sender: { id: 42 } } });
+    await flushPromises();
+    expect(wrapper.findComponent({ name: 'SchedulingConversationAppointmentsSidebar' })
+      .props('selectedPatient').id).toBe(84);
+    expect(mocks.replace).toHaveBeenCalledWith({ query: { status: 'open' } });
+  });
+
+  it('refreshes a cached patient list when returning to an appointment added by another operator', async () => {
+    mocks.uiSettings = ref({ is_scheduling_appointments_panel_open: true });
+    const chat = { id: 123, meta: { sender: { id: 42 } } };
+    const pinia = createPinia();
+    const first = mountComponent(chat, pinia);
+    await flushPromises();
+    const store = useConversationPatientContextStore();
+    const cached = store.contexts['1:9:conversation:123'];
+    cached.patients = cached.patients.filter(patient => patient.id === 42);
+    first.unmount();
+    mocks.route.query = { patientContactId: '84', patientChatContactId: '42' };
+    const wrapper = mountComponent(chat, pinia);
+    await flushPromises();
+    expect(SchedulingContactsAPI.patients).toHaveBeenCalledTimes(2);
+    expect(wrapper.findComponent({ name: 'SchedulingConversationAppointmentsSidebar' })
+      .props('selectedPatient').id).toBe(84);
   });
 
   it('moves the mobile drawer off-canvas when no sidebar tab is open', () => {

@@ -29,6 +29,30 @@ describe('useSchedulingAppointmentFormStore', () => {
     vi.clearAllMocks();
   });
 
+  it('retains the patient card and original chat owner when editing a booking', () => {
+    const store = useSchedulingAppointmentFormStore();
+    store.openEdit({ id: 11, contactId: 42, patientContactId: 84,
+      conversationId: 12002, clientFirstName: 'Patient', clientName: 'Patient',
+      clientBirthDate: '2017-01-02' });
+    expect(store.selectedContact.id).toBe(84);
+    expect(store.buildPayload()).toMatchObject({ contact_id: 42,
+      patient_contact_id: 84, conversation_id: 12002 });
+  });
+
+  it('updates patient details without changing the owner or promoting the family phone', async () => {
+    const store = useSchedulingAppointmentFormStore();
+    store.openEdit({ id: 11, contactId: 42, patientContactId: 84,
+      conversationId: 12002, clientFirstName: 'Patient' });
+    SchedulingContactsAPI.update.mockResolvedValue({ data: { payload: {
+      id: 84, full_name: 'Changed Patient', first_name: 'Changed',
+    } } });
+    await store.updateInlineContact(84, { firstName: 'Changed', phone: '+77001234567' });
+    expect(SchedulingContactsAPI.update.mock.calls[0][0]).toBe(84);
+    expect(SchedulingContactsAPI.update.mock.calls[0][1]).not.toHaveProperty('phone');
+    expect(store.form).toMatchObject({ contactId: 42, patientContactId: 84,
+      clientFirstName: 'Changed' });
+  });
+
   it('sends the cancellation mode shown on the appointment to the cancel endpoint', async () => {
     SchedulingAppointmentsAPI.cancel.mockResolvedValue({
       data: { payload: { id: 11, status: 'cancelled' } },
