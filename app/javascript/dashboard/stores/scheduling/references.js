@@ -64,6 +64,12 @@ export const useSchedulingReferencesStore = defineStore(
 
         try {
           const payload = compactPayload(resource);
+          if (
+            resource.id &&
+            Object.prototype.hasOwnProperty.call(resource, 'specialty')
+          ) {
+            payload.specialty = resource.specialty;
+          }
           const response = payload.id
             ? await SchedulingResourcesAPI.update(payload.id, payload)
             : await SchedulingResourcesAPI.create(payload);
