@@ -34,39 +34,63 @@ const SchedulingConversationAppointmentsSidebar = defineAsyncComponent(
 );
 
 const { uiSettings, updateUISettings } = useUISettings();
-const { activePanel, appointmentsAvailable } = useConversationSidepanelAvailability();
+const { activePanel, appointmentsAvailable } =
+  useConversationSidepanelAvailability();
 const route = useRoute();
 const router = useRouter();
 const currentAccountId = useMapGetter('getCurrentAccountId');
 const currentUser = useMapGetter('getCurrentUser');
 const patientStore = useConversationPatientContextStore();
-const patientContextKey = computed(() => conversationPatientContextKey({
-  accountId: currentAccountId.value,
-  userId: currentUser.value?.id,
-  chat: props.currentChat,
-}));
-const chatContactId = computed(() => resolveChatContactId(props.currentChat));
-const patientContextEnabled = computed(() =>
-  appointmentsAvailable.value && ['contact', 'appointments'].includes(activePanel.value)
+const patientContextKey = computed(() =>
+  conversationPatientContextKey({
+    accountId: currentAccountId.value,
+    userId: currentUser.value?.id,
+    chat: props.currentChat,
+  })
 );
-const patientEntry = computed(() => patientStore.contexts[patientContextKey.value] || null);
-const selectedPatient = computed(() => patientStore.selectedPatient(patientContextKey.value));
+const chatContactId = computed(() => resolveChatContactId(props.currentChat));
+const patientContextEnabled = computed(
+  () =>
+    appointmentsAvailable.value &&
+    ['contact', 'appointments'].includes(activePanel.value)
+);
+const patientEntry = computed(
+  () => patientStore.contexts[patientContextKey.value] || null
+);
+const selectedPatient = computed(() =>
+  patientStore.selectedPatient(patientContextKey.value)
+);
 watch(
-  () => [patientContextKey.value, chatContactId.value, patientContextEnabled.value,
-    route.query?.patientContactId, route.query?.patientChatContactId],
+  () => [
+    patientContextKey.value,
+    chatContactId.value,
+    patientContextEnabled.value,
+    route.query?.patientContactId,
+    route.query?.patientChatContactId,
+  ],
   () => {
-    if (!patientContextEnabled.value || !patientContextKey.value || !chatContactId.value) return;
+    if (
+      !patientContextEnabled.value ||
+      !patientContextKey.value ||
+      !chatContactId.value
+    )
+      return;
     const requestedPatient = route.query?.patientContactId;
-    const hasPatientRequest = Number(route.query?.patientChatContactId) === Number(chatContactId.value) && Boolean(requestedPatient);
+    const hasPatientRequest =
+      Number(route.query?.patientChatContactId) ===
+        Number(chatContactId.value) && Boolean(requestedPatient);
     if (hasPatientRequest) {
       patientStore.rememberSelection(patientContextKey.value, requestedPatient);
-      if (patientEntry.value?.loaded) patientStore.select(patientContextKey.value, requestedPatient);
+      if (patientEntry.value?.loaded)
+        patientStore.select(patientContextKey.value, requestedPatient);
       const query = { ...route.query };
       delete query.patientContactId;
       delete query.patientChatContactId;
       router.replace({ query });
     }
-    patientStore.load(patientContextKey.value, chatContactId.value, { force: hasPatientRequest });
+    patientStore.load(patientContextKey.value, chatContactId.value, {
+      force: hasPatientRequest,
+    });
   },
   { immediate: true }
 );
@@ -101,16 +125,18 @@ const activeInboxId = computed(
     props.currentChat?.active_reply_channel_inbox_id ||
     props.currentChat?.inbox_id
 );
-const patientConversationDisplayId = computed(() =>
-  activeReplyChannel.value?.conversation_id ||
-  props.currentChat?.active_reply_channel_conversation_id ||
-  props.currentChat?.conversation_ids?.[0] ||
-  (props.currentChat?.is_communication_thread ? null : props.currentChat?.id)
+const patientConversationDisplayId = computed(
+  () =>
+    activeReplyChannel.value?.conversation_id ||
+    props.currentChat?.active_reply_channel_conversation_id ||
+    props.currentChat?.conversation_ids?.[0] ||
+    (props.currentChat?.is_communication_thread ? null : props.currentChat?.id)
 );
 const refreshBoundPatient = async appointment => {
   const key = patientContextKey.value;
   const owner = chatContactId.value;
-  const patientId = appointment?.patientContextContactId || appointment?.patientContactId;
+  const patientId =
+    appointment?.patientContextContactId || appointment?.patientContactId;
   if (!key || !owner) return;
   if (patientId) patientStore.rememberSelection(key, patientId);
   await patientStore.load(key, owner, { force: true });
@@ -194,7 +220,9 @@ const closeAppointmentsSidebar = () => {
           :selected-patient="selectedPatient"
           :patient-context-enabled="patientContextEnabled"
           :patient-context-key="patientContextKey"
-          :patient-context-loading="!patientEntry?.loaded || patientEntry?.loading"
+          :patient-context-loading="
+            !patientEntry?.loaded || patientEntry?.loading
+          "
           @patient-bound="refreshBoundPatient"
           @close="closeAppointmentsSidebar"
         />

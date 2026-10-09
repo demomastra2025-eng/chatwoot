@@ -34,7 +34,10 @@ vi.mock('dashboard/composables/store', () => ({
       getCurrentUser: {
         __v_isRef: true,
         get value() {
-          return { id: 9, accounts: [{ id: 1, permissions: mocks.permissions }] };
+          return {
+            id: 9,
+            accounts: [{ id: 1, permissions: mocks.permissions }],
+          };
         },
       },
     };
@@ -60,7 +63,10 @@ vi.mock('dashboard/composables/useAccount', () => ({
   }),
 }));
 
-const mountComponent = (currentChat = { id: 1, inbox_id: 2 }, pinia = createPinia()) =>
+const mountComponent = (
+  currentChat = { id: 1, inbox_id: 2 },
+  pinia = createPinia()
+) =>
   shallowMount(ConversationSidebar, {
     props: {
       currentChat,
@@ -70,7 +76,12 @@ const mountComponent = (currentChat = { id: 1, inbox_id: 2 }, pinia = createPini
       stubs: {
         ContactPanel: {
           name: 'ContactPanel',
-          props: ['conversationId', 'inboxId', 'selectedPatient', 'patientContextEnabled'],
+          props: [
+            'conversationId',
+            'inboxId',
+            'selectedPatient',
+            'patientContextEnabled',
+          ],
           template: '<div />',
         },
         CrmConversationDealsSidebar: {
@@ -79,7 +90,12 @@ const mountComponent = (currentChat = { id: 1, inbox_id: 2 }, pinia = createPini
         },
         SchedulingConversationAppointmentsSidebar: {
           name: 'SchedulingConversationAppointmentsSidebar',
-          props: ['currentChat', 'selectedPatient', 'patientContextEnabled', 'patientContextKey'],
+          props: [
+            'currentChat',
+            'selectedPatient',
+            'patientContextEnabled',
+            'patientContextKey',
+          ],
           template: '<div />',
         },
       },
@@ -100,35 +116,63 @@ describe('ConversationSidebar', () => {
     mocks.route = { params: { accountId: '1' }, query: {} };
     mocks.replace.mockClear();
     window.localStorage.clear();
-    SchedulingContactsAPI.patients.mockResolvedValue({ data: { payload: {
-      contact_id: 42, patients: [
-        { id: 42, account_id: 1, communication_contact_id: 42, full_name: 'Owner' },
-        { id: 84, account_id: 1, communication_contact_id: 42, patient_contact_id: 84,
-          full_name: 'Patient' },
-      ],
-    } } });
+    SchedulingContactsAPI.patients.mockResolvedValue({
+      data: {
+        payload: {
+          contact_id: 42,
+          patients: [
+            {
+              id: 42,
+              account_id: 1,
+              communication_contact_id: 42,
+              full_name: 'Owner',
+            },
+            {
+              id: 84,
+              account_id: 1,
+              communication_contact_id: 42,
+              patient_contact_id: 84,
+              full_name: 'Patient',
+            },
+          ],
+        },
+      },
+    });
   });
 
   it('passes selected clinical context while keeping the chat recipient intact', async () => {
     mocks.uiSettings = ref({ is_scheduling_appointments_panel_open: true });
-    const chat = { id: 123, inbox_id: 2, meta: { sender: { id: 42, name: 'Owner' } } };
+    const chat = {
+      id: 123,
+      inbox_id: 2,
+      meta: { sender: { id: 42, name: 'Owner' } },
+    };
     const wrapper = mountComponent(chat);
     await flushPromises();
     const store = useConversationPatientContextStore();
     store.select('1:9:conversation:123', 84);
     await flushPromises();
-    const sidebar = wrapper.findComponent({ name: 'SchedulingConversationAppointmentsSidebar' });
+    const sidebar = wrapper.findComponent({
+      name: 'SchedulingConversationAppointmentsSidebar',
+    });
     expect(sidebar.props('selectedPatient').id).toBe(84);
     expect(sidebar.props('currentChat').meta.sender.id).toBe(42);
   });
 
   it('uses a calendar patient request only for the matching original owner', async () => {
     mocks.uiSettings = ref({ is_scheduling_appointments_panel_open: true });
-    mocks.route.query = { patientContactId: '84', patientChatContactId: '42', status: 'open' };
+    mocks.route.query = {
+      patientContactId: '84',
+      patientChatContactId: '42',
+      status: 'open',
+    };
     const wrapper = mountComponent({ id: 123, meta: { sender: { id: 42 } } });
     await flushPromises();
-    expect(wrapper.findComponent({ name: 'SchedulingConversationAppointmentsSidebar' })
-      .props('selectedPatient').id).toBe(84);
+    expect(
+      wrapper
+        .findComponent({ name: 'SchedulingConversationAppointmentsSidebar' })
+        .props('selectedPatient').id
+    ).toBe(84);
     expect(mocks.replace).toHaveBeenCalledWith({ query: { status: 'open' } });
   });
 
@@ -146,8 +190,11 @@ describe('ConversationSidebar', () => {
     const wrapper = mountComponent(chat, pinia);
     await flushPromises();
     expect(SchedulingContactsAPI.patients).toHaveBeenCalledTimes(2);
-    expect(wrapper.findComponent({ name: 'SchedulingConversationAppointmentsSidebar' })
-      .props('selectedPatient').id).toBe(84);
+    expect(
+      wrapper
+        .findComponent({ name: 'SchedulingConversationAppointmentsSidebar' })
+        .props('selectedPatient').id
+    ).toBe(84);
   });
 
   it('moves the mobile drawer off-canvas when no sidebar tab is open', () => {

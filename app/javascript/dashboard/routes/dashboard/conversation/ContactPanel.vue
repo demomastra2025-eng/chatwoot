@@ -114,11 +114,19 @@ watch(contactId, (newContactId, prevContactId) => {
     getContactDetails();
   }
 });
-watch(detailsContactId, id => {
-  if (props.patientContextEnabled && id && Number(id) !== Number(contactId.value)) {
-    store.dispatch('contacts/show', { id });
-  }
-}, { immediate: true });
+watch(
+  detailsContactId,
+  id => {
+    if (
+      props.patientContextEnabled &&
+      id &&
+      Number(id) !== Number(contactId.value)
+    ) {
+      store.dispatch('contacts/show', { id });
+    }
+  },
+  { immediate: true }
+);
 
 const onDragEnd = () => {
   dragging.value = false;
@@ -155,7 +163,11 @@ onMounted(() => {
       :patient="selectedPatient"
       :context-key="patientContextKey"
     />
-    <ContactInfo v-else-if="!patientContextEnabled" :contact="contact" :channel-type="channelType" />
+    <ContactInfo
+      v-else-if="!patientContextEnabled"
+      :contact="contact"
+      :channel-type="channelType"
+    />
     <div class="px-2 pb-8 list-group">
       <Draggable
         :list="conversationSidebarItems"
@@ -315,7 +327,11 @@ onMounted(() => {
                 value => toggleSidebarUIState('is_contact_notes_open', value)
               "
             >
-              <ContactNotes v-if="detailsContactId" :key="detailsContactId" :contact-id="detailsContactId" />
+              <ContactNotes
+                v-if="detailsContactId"
+                :key="detailsContactId"
+                :contact-id="detailsContactId"
+              />
             </AccordionItem>
           </div>
           <div v-else-if="element.name === 'shared_files'">

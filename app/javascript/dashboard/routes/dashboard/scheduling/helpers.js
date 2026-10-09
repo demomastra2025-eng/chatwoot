@@ -307,8 +307,11 @@ export const appointmentPatientDialogRoute = (appointment, accountId) => {
   const target = resolveAppointmentConversationTarget(appointment);
   const ownerId = numericId(appointment?.contactId || appointment?.contact_id);
   const patientId = numericId(
-    appointment?.patientContextContactId || appointment?.patient_context_contact_id ||
-    appointment?.patientContactId || appointment?.patient_contact_id || ownerId
+    appointment?.patientContextContactId ||
+      appointment?.patient_context_contact_id ||
+      appointment?.patientContactId ||
+      appointment?.patient_contact_id ||
+      ownerId
   );
   if (!ownerId || !patientId || !numericId(accountId)) return null;
   const query = {
@@ -318,7 +321,10 @@ export const appointmentPatientDialogRoute = (appointment, accountId) => {
   if (target.communicationThreadDisplayId) {
     return {
       name: 'communication_thread_conversation',
-      params: { accountId, communication_thread_id: target.communicationThreadDisplayId },
+      params: {
+        accountId,
+        communication_thread_id: target.communicationThreadDisplayId,
+      },
       query,
     };
   }

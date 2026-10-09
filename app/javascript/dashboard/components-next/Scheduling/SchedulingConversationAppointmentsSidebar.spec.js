@@ -210,7 +210,10 @@ const defaultCurrentChat = () => ({
   },
 });
 
-const mountComponent = (currentChat = defaultCurrentChat(), patientProps = {}) => {
+const mountComponent = (
+  currentChat = defaultCurrentChat(),
+  patientProps = {}
+) => {
   mocks.route = makeReactive({ params: { accountId: '1' } });
   return shallowMount(SchedulingConversationAppointmentsSidebar, {
     props: {
@@ -244,9 +247,15 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     patientContextEnabled: true,
     patientContextKey: '1:9:conversation:123',
     selectedPatient: {
-      id, patient_contact_id: id, selectable_patient: true,
-      first_name: `Patient ${id}`, last_name: 'Family', full_name: `Family Patient ${id}`,
-      phone: '+77001234567', birth_date: '2017-01-02', gender: 'female',
+      id,
+      patient_contact_id: id,
+      selectable_patient: true,
+      first_name: `Patient ${id}`,
+      last_name: 'Family',
+      full_name: `Family Patient ${id}`,
+      phone: '+77001234567',
+      birth_date: '2017-01-02',
+      gender: 'female',
     },
   });
 
@@ -255,11 +264,16 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     const chat = defaultCurrentChat();
     const wrapper = mountComponent(chat, patientContextProps());
     await flushPromises();
-    expect(SchedulingAppointmentsAPI.get).toHaveBeenCalledWith({ patient_contact_ids: 84 });
+    expect(SchedulingAppointmentsAPI.get).toHaveBeenCalledWith({
+      patient_contact_ids: 84,
+    });
     expect(wrapper.vm.createForm.clientFirstName).toBe('Patient 84');
     expect(wrapper.vm.buildCreatePayload()).toMatchObject({
-      contact_id: 42, patient_contact_id: 84, conversation_display_id: 123,
-      client_first_name: 'Patient 84', client_birth_date: '2017-01-02',
+      contact_id: 42,
+      patient_contact_id: 84,
+      conversation_display_id: 123,
+      client_first_name: 'Patient 84',
+      client_birth_date: '2017-01-02',
     });
     expect(chat.meta.sender.id).toBe(42);
     expect(chat.meta.sender.name).toBe('Айша');
@@ -269,12 +283,18 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     SchedulingAppointmentsAPI.get.mockResolvedValue({ data: { payload: [] } });
     const wrapper = mountComponent(defaultCurrentChat(), {
       ...patientContextProps(),
-      selectedPatient: { id: 42, first_name: 'Owner', patient_contact_id: null,
-        selectable_patient: false },
+      selectedPatient: {
+        id: 42,
+        first_name: 'Owner',
+        patient_contact_id: null,
+        selectable_patient: false,
+      },
     });
     await flushPromises();
     expect(wrapper.vm.buildCreatePayload().contact_id).toBe(42);
-    expect(wrapper.vm.buildCreatePayload()).not.toHaveProperty('patient_contact_id');
+    expect(wrapper.vm.buildCreatePayload()).not.toHaveProperty(
+      'patient_contact_id'
+    );
   });
 
   it('can explicitly use a verified original chat owner as the patient', async () => {
@@ -282,7 +302,10 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     const props = patientContextProps(42);
     const wrapper = mountComponent(defaultCurrentChat(), props);
     await flushPromises();
-    expect(wrapper.vm.buildCreatePayload()).toMatchObject({ contact_id: 42, patient_contact_id: 42 });
+    expect(wrapper.vm.buildCreatePayload()).toMatchObject({
+      contact_id: 42,
+      patient_contact_id: 42,
+    });
     expect(wrapper.props('currentChat').meta.sender.id).toBe(42);
   });
 
@@ -309,12 +332,22 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     SchedulingAppointmentsAPI.get.mockReturnValueOnce(previous.promise);
     const wrapper = mountComponent(defaultCurrentChat(), patientContextProps());
     await flushPromises();
-    SchedulingAppointmentsAPI.get.mockResolvedValue({ data: { payload: [{
-      ...existingAppointment, id: 502, patientContactId: 85,
-    }] } });
+    SchedulingAppointmentsAPI.get.mockResolvedValue({
+      data: {
+        payload: [
+          {
+            ...existingAppointment,
+            id: 502,
+            patientContactId: 85,
+          },
+        ],
+      },
+    });
     await wrapper.setProps(patientContextProps(85));
     await flushPromises();
-    previous.resolve({ data: { payload: [{ ...existingAppointment, patientContactId: 84 }] } });
+    previous.resolve({
+      data: { payload: [{ ...existingAppointment, patientContactId: 84 }] },
+    });
     await flushPromises();
     expect(wrapper.vm.appointments.map(item => item.id)).toEqual([502]);
   });
@@ -326,12 +359,17 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     const wrapper = mountComponent(defaultCurrentChat(), patientContextProps());
     await flushPromises();
     const saving = wrapper.vm.saveCreateAppointment();
-    expect(SchedulingAppointmentsAPI.create).toHaveBeenCalledWith(expect.objectContaining({
-      contact_id: 42, patient_contact_id: 84,
-    }));
+    expect(SchedulingAppointmentsAPI.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contact_id: 42,
+        patient_contact_id: 84,
+      })
+    );
     await wrapper.setProps(patientContextProps(85));
     await flushPromises();
-    previous.resolve({ data: { payload: { ...existingAppointment, patientContactId: 84 } } });
+    previous.resolve({
+      data: { payload: { ...existingAppointment, patientContactId: 84 } },
+    });
     await saving;
     expect(wrapper.vm.appointments).toEqual([]);
     expect(wrapper.vm.createForm.patientContactId).toBe(85);
@@ -339,32 +377,74 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
   });
 
   it('keeps an existing appointment binding when preparing its update', async () => {
-    SchedulingAppointmentsAPI.get.mockResolvedValue({ data: { payload: [{
-      ...existingAppointment, patientContactId: 84,
-    }] } });
+    SchedulingAppointmentsAPI.get.mockResolvedValue({
+      data: {
+        payload: [
+          {
+            ...existingAppointment,
+            patientContactId: 84,
+          },
+        ],
+      },
+    });
     const wrapper = mountComponent(defaultCurrentChat(), patientContextProps());
     await flushPromises();
-    expect(wrapper.vm.buildAppointmentPayload(wrapper.vm.appointmentForms['appointment-501']))
-      .toMatchObject({ contact_id: 42, patient_contact_id: 84, conversation_id: 123 });
+    expect(
+      wrapper.vm.buildAppointmentPayload(
+        wrapper.vm.appointmentForms['appointment-501']
+      )
+    ).toMatchObject({
+      contact_id: 42,
+      patient_contact_id: 84,
+      conversation_id: 123,
+    });
   });
 
   it('offers failed conflict recovery only after a local command read and explicit patient confirmation', async () => {
     configureMedelementResource();
-    const appointment = { ...existingAppointment, patientContactId: 84,
-      providerConfirmationStatus: 'failed' };
-    SchedulingAppointmentsAPI.get.mockResolvedValue({ data: { payload: [appointment] } });
-    SchedulingProviderCommandsAPI.list.mockResolvedValue({ data: { payload: [
-      patientActionCommand('failed', { last_error_code: 'patient_ref_conflict',
-        patient_action: { type: 'patient_selection', can_confirm: true,
-          requires_patient_card_confirmation: true, cancellable: false } }),
-    ] } });
-    SchedulingProviderCommandsAPI.patientCandidates.mockResolvedValue({ data: { payload: {
-      candidates: [{ token: 'opaque-candidate' }],
-    } } });
-    SchedulingProviderCommandsAPI.selectPatient.mockResolvedValueOnce({ data: { payload: {
-      id: 66, appointment_id: 501, operation: 'create_reception', provider: 'medelement',
-      company_cabinet_code: '501', status: 'succeeded', appointment,
-    } } });
+    const appointment = {
+      ...existingAppointment,
+      patientContactId: 84,
+      providerConfirmationStatus: 'failed',
+    };
+    SchedulingAppointmentsAPI.get.mockResolvedValue({
+      data: { payload: [appointment] },
+    });
+    SchedulingProviderCommandsAPI.list.mockResolvedValue({
+      data: {
+        payload: [
+          patientActionCommand('failed', {
+            last_error_code: 'patient_ref_conflict',
+            patient_action: {
+              type: 'patient_selection',
+              can_confirm: true,
+              requires_patient_card_confirmation: true,
+              cancellable: false,
+            },
+          }),
+        ],
+      },
+    });
+    SchedulingProviderCommandsAPI.patientCandidates.mockResolvedValue({
+      data: {
+        payload: {
+          candidates: [{ token: 'opaque-candidate' }],
+        },
+      },
+    });
+    SchedulingProviderCommandsAPI.selectPatient.mockResolvedValueOnce({
+      data: {
+        payload: {
+          id: 66,
+          appointment_id: 501,
+          operation: 'create_reception',
+          provider: 'medelement',
+          company_cabinet_code: '501',
+          status: 'succeeded',
+          appointment,
+        },
+      },
+    });
     const wrapper = mountComponent(defaultCurrentChat(), patientContextProps());
     await flushPromises();
     expect(SchedulingProviderCommandsAPI.selectPatient).not.toHaveBeenCalled();
@@ -375,9 +455,13 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     entry.selectedPatientToken = 'opaque-candidate';
     expect(wrapper.vm.canContinuePatientAction(entry)).toBe(true);
     await wrapper.vm.continuePatientAction(wrapper.vm.appointments[0]);
-    expect(SchedulingProviderCommandsAPI.selectPatient).toHaveBeenCalledWith(66, {
-      provider: 'medelement', token: 'opaque-candidate',
-    });
+    expect(SchedulingProviderCommandsAPI.selectPatient).toHaveBeenCalledWith(
+      66,
+      {
+        provider: 'medelement',
+        token: 'opaque-candidate',
+      }
+    );
     expect(wrapper.emitted('patientBound')[0][0].patientContactId).toBe(84);
     expect(wrapper.props('currentChat').meta.sender.id).toBe(42);
   });

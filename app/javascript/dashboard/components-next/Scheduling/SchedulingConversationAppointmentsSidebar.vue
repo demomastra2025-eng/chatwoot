@@ -230,19 +230,24 @@ const patient = computed(() =>
   props.patientContextEnabled ? props.selectedPatient : contact.value
 );
 const selectedPatientContextId = computed(() =>
-  patientContactId(props.patientContextEnabled ? patient.value?.id : contactId.value)
+  patientContactId(
+    props.patientContextEnabled ? patient.value?.id : contactId.value
+  )
 );
 const selectedPatientCardId = computed(() =>
   props.patientContextEnabled && patient.value?.selectable_patient
     ? patientContactId(patient.value?.patient_contact_id)
     : null
 );
-const patientContextReady = computed(() =>
-  !props.patientContextEnabled ||
-  (!props.patientContextLoading && Boolean(selectedPatientContextId.value))
+const patientContextReady = computed(
+  () =>
+    !props.patientContextEnabled ||
+    (!props.patientContextLoading && Boolean(selectedPatientContextId.value))
 );
 const currentDraftKey = computed(() =>
-  props.patientContextEnabled && props.patientContextKey && selectedPatientContextId.value
+  props.patientContextEnabled &&
+  props.patientContextKey &&
+  selectedPatientContextId.value
     ? `${props.patientContextKey}:${selectedPatientContextId.value}`
     : ''
 );
@@ -275,8 +280,11 @@ const contactPhone = computed(
     patient.value?.phone_number ||
     patient.value?.phoneNumber ||
     patient.value?.phone ||
-    (props.patientContextEnabled ?
-      contact.value?.phone_number || contact.value?.phoneNumber || contact.value?.phone : '') ||
+    (props.patientContextEnabled
+      ? contact.value?.phone_number ||
+        contact.value?.phoneNumber ||
+        contact.value?.phone
+      : '') ||
     ''
 );
 
@@ -469,7 +477,8 @@ const PATIENT_ACTION_STATUSES = new Set([
   'awaiting_patient_selection',
   'awaiting_phone_refresh',
 ]);
-const hasPatientAction = command => PATIENT_ACTION_STATUSES.has(command?.status) ||
+const hasPatientAction = command =>
+  PATIENT_ACTION_STATUSES.has(command?.status) ||
   providerCommandRequiresPatientSelection(command);
 
 const appointmentKey = appointment => `appointment-${appointment.id}`;
@@ -788,7 +797,9 @@ const formFromAppointment = appointment => {
     clientPhone: appointment.clientPhone || '',
     patientContactId: patientContactId(appointment.patientContactId),
     patientContextContactId: patientContactId(
-      appointment.patientContextContactId || appointment.patientContactId || appointment.contactId
+      appointment.patientContextContactId ||
+        appointment.patientContactId ||
+        appointment.contactId
     ),
     contactId: appointment.contactId || contactId.value || '',
     conversationDisplayId:
@@ -823,16 +834,19 @@ const setAppointmentForms = () => {
 };
 
 const rememberPatientDraft = () => {
-  if (!activeDraftKey || (!isCreating.value && !appointments.value.length)) return;
+  if (!activeDraftKey || (!isCreating.value && !appointments.value.length))
+    return;
   patientContextStore.saveDraft(activeDraftKey, {
     createForm: isCreating.value ? createForm : null,
-    appointmentForms: Object.fromEntries(appointments.value.map(appointment => [
-      appointmentKey(appointment),
-      {
-        form: appointmentForms[appointmentKey(appointment)],
-        fingerprint: appointmentContextFingerprint(appointment),
-      },
-    ])),
+    appointmentForms: Object.fromEntries(
+      appointments.value.map(appointment => [
+        appointmentKey(appointment),
+        {
+          form: appointmentForms[appointmentKey(appointment)],
+          fingerprint: appointmentContextFingerprint(appointment),
+        },
+      ])
+    ),
   });
 };
 
@@ -849,12 +863,16 @@ const restorePatientDraft = () => {
   });
   if (
     draft.createForm &&
-    draft.createForm.patientContextContactId === selectedPatientContextId.value &&
+    draft.createForm.patientContextContactId ===
+      selectedPatientContextId.value &&
     draft.createForm.patientContactId === selectedPatientCardId.value
   ) {
     Object.assign(createForm, draft.createForm);
     isCreating.value = true;
-    openAppointmentKeys.value = [NEW_APPOINTMENT_KEY, ...openAppointmentKeys.value];
+    openAppointmentKeys.value = [
+      NEW_APPOINTMENT_KEY,
+      ...openAppointmentKeys.value,
+    ];
     return true;
   }
   return false;
@@ -1369,9 +1387,7 @@ async function refreshPendingPatientAction(
 
     const commands = normalizePayload(response.data) || [];
     const command = commands.find(
-      item =>
-        item.operation === 'create_reception' &&
-        hasPatientAction(item)
+      item => item.operation === 'create_reception' && hasPatientAction(item)
     );
     if (command) {
       return showPatientAction(appointment, command, context, lookupId);
@@ -1432,9 +1448,13 @@ const loadAppointments = async () => {
     if (!isCurrentRequest()) return false;
     appointments.value = mergeUniqueAppointments(...results);
     if (props.patientContextEnabled) {
-      appointments.value = appointments.value.filter(appointment =>
-        patientContactId(appointment.patientContextContactId ||
-          appointment.patientContactId || appointment.contactId) === selectedPatientContextId.value
+      appointments.value = appointments.value.filter(
+        appointment =>
+          patientContactId(
+            appointment.patientContextContactId ||
+              appointment.patientContactId ||
+              appointment.contactId
+          ) === selectedPatientContextId.value
       );
     }
     setAppointmentForms();
@@ -1709,8 +1729,10 @@ async function continuePatientAction(appointment) {
       return;
     }
     // The server may safely bind a legacy draft during explicit patient selection.
-    const boundAppointment = Number(command.appointment?.id) === Number(appointment.id)
-      ? command.appointment : null;
+    const boundAppointment =
+      Number(command.appointment?.id) === Number(appointment.id)
+        ? command.appointment
+        : null;
     if (boundAppointment) {
       upsertAppointment(boundAppointment);
       appointment = boundAppointment;
@@ -1776,9 +1798,7 @@ async function checkProviderBooking(appointment) {
     const commands = normalizePayload(response.data) || [];
     if (!isCurrentPatientActionLookup(key, context, lookupId)) return;
     const pendingPatientCommand = commands.find(
-      item =>
-        item.operation === 'create_reception' &&
-        hasPatientAction(item)
+      item => item.operation === 'create_reception' && hasPatientAction(item)
     );
     if (pendingPatientCommand) {
       await showPatientAction(
@@ -2645,7 +2665,11 @@ watch(
               {{ patientActions[appointmentKey(appointment)].error }}
             </p>
             <div
-              v-if="providerCommandRequiresPatientSelection(patientActions[appointmentKey(appointment)].command)"
+              v-if="
+                providerCommandRequiresPatientSelection(
+                  patientActions[appointmentKey(appointment)].command
+                )
+              "
               class="mt-2 flex flex-col gap-2"
             >
               <Spinner

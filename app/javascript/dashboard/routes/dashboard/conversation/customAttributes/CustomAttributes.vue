@@ -67,10 +67,16 @@ const customAttributes = computed(() => {
 
 const conversationId = computed(() => currentChat.value.id);
 let disposed = false;
-onBeforeUnmount(() => { disposed = true; });
-const mutationContext = () => JSON.stringify([
-  route.params.accountId, props.attributeType, contactIdentifier.value, conversationId.value,
-]);
+onBeforeUnmount(() => {
+  disposed = true;
+});
+const mutationContext = () =>
+  JSON.stringify([
+    route.params.accountId,
+    props.attributeType,
+    contactIdentifier.value,
+    conversationId.value,
+  ]);
 
 const toggleButtonText = computed(() =>
   !showAllAttributes.value
