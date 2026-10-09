@@ -2,7 +2,7 @@ require 'rails_helper'
 
 RSpec.describe Scheduling::AiBookingReport do
   let(:account) { create(:account).tap { |record| record.enable_features!('scheduling') } }
-  let(:resource) { create(:scheduling_resource, account: account) }
+  let(:resource) { create(:scheduling_resource, account: account, timezone: 'Asia/Almaty') }
   let(:contact) { create(:contact, account: account, phone_number: '+77010000001') }
   let(:hook) { create(:integrations_hook, :medelement, account: account) }
 
@@ -35,7 +35,7 @@ RSpec.describe Scheduling::AiBookingReport do
     appointment
     legacy = appointment(source: 'manual', starts_at: 1.day.from_now.change(hour: 11),
                          ends_at: 1.day.from_now.change(hour: 11) + 30.minutes)
-    staff = appointment(source: 'manual', starts_at: 1.day.from_now.change(hour: 12),
+    staff = appointment(source: 'manual', contact: create(:contact, account: account), starts_at: 1.day.from_now.change(hour: 12),
                         ends_at: 1.day.from_now.change(hour: 12) + 30.minutes)
     command_for(legacy)
     command_for(staff, actor: 'User')
@@ -48,8 +48,10 @@ RSpec.describe Scheduling::AiBookingReport do
 
   it 'uses the 5 and 15 minute command thresholds and the 2 minute unbound threshold' do
     warning = appointment
-    critical = appointment(starts_at: 1.day.from_now.change(hour: 11), ends_at: 1.day.from_now.change(hour: 11) + 30.minutes)
-    fresh = appointment(starts_at: 1.day.from_now.change(hour: 12), ends_at: 1.day.from_now.change(hour: 12) + 30.minutes)
+    critical = appointment(contact: create(:contact, account: account), starts_at: 1.day.from_now.change(hour: 11),
+                           ends_at: 1.day.from_now.change(hour: 11) + 30.minutes)
+    fresh = appointment(contact: create(:contact, account: account), starts_at: 1.day.from_now.change(hour: 12),
+                        ends_at: 1.day.from_now.change(hour: 12) + 30.minutes)
     unbound = appointment(starts_at: 1.day.from_now.change(hour: 13), ends_at: 1.day.from_now.change(hour: 13) + 30.minutes,
                           custom_attributes: { 'medelement_provider_sync_status' => 'pending' })
     fresh_unbound = appointment(starts_at: 1.day.from_now.change(hour: 14), ends_at: 1.day.from_now.change(hour: 14) + 30.minutes,
@@ -80,7 +82,8 @@ RSpec.describe Scheduling::AiBookingReport do
   it 'keeps patient action separate from failed and unknown commands' do
     failed = appointment
     unknown = appointment(starts_at: 1.day.from_now.change(hour: 11), ends_at: 1.day.from_now.change(hour: 11) + 30.minutes)
-    waiting = appointment(starts_at: 1.day.from_now.change(hour: 12), ends_at: 1.day.from_now.change(hour: 12) + 30.minutes)
+    waiting = appointment(contact: create(:contact, account: account), starts_at: 1.day.from_now.change(hour: 12),
+                          ends_at: 1.day.from_now.change(hour: 12) + 30.minutes)
     declined = appointment(starts_at: 1.day.from_now.change(hour: 13), ends_at: 1.day.from_now.change(hour: 13) + 30.minutes)
     cancelled = appointment(starts_at: 1.day.from_now.change(hour: 14), ends_at: 1.day.from_now.change(hour: 14) + 30.minutes)
     command_for(failed, status: 'failed')
