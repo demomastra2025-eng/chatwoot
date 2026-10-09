@@ -2,7 +2,6 @@ class Integrations::Medelement::Configuration
   INTEGRATOR_KEY_ENV = 'MEDELEMENT_INTEGRATOR_KEY'.freeze
   DEFAULT_DAYS_BACK = 3
   DEFAULT_DAYS_FORWARD = 89
-  LEGACY_DAYS_FORWARD = 70
   DEFAULT_THROTTLE_MS = 275
   DEFAULT_SYNC_INTERVAL_HOURS = 0.25
   CATALOG_SYNC_INTERVAL_HOURS = 6
@@ -41,8 +40,7 @@ class Integrations::Medelement::Configuration
   end
 
   def receptions_days_forward
-    configured = integer_setting('receptions_days_forward', DEFAULT_DAYS_FORWARD)
-    configured == LEGACY_DAYS_FORWARD ? DEFAULT_DAYS_FORWARD : configured
+    [integer_setting('receptions_days_forward', DEFAULT_DAYS_FORWARD), DEFAULT_DAYS_FORWARD].max
   end
 
   def sync_patients?
