@@ -88,7 +88,8 @@ const loadPlaygroundSettings = async (
   assistantId = props.assistantId,
   { force = false } = {}
 ) => {
-  const requestSequence = ++settingsRequestSequence;
+  settingsRequestSequence += 1;
+  const requestSequence = settingsRequestSequence;
   isLoadingSettings.value = true;
   settingsFailed.value = false;
   try {
@@ -179,7 +180,8 @@ const sendMessage = async () => {
   const currentMessage = newMessage.value;
   const requestAssistantId = props.assistantId;
   const sessionSequence = assistantSessionSequence;
-  const requestSequence = ++playgroundRequestSequence;
+  playgroundRequestSequence += 1;
+  const requestSequence = playgroundRequestSequence;
   const messageHistory = formatMessagesForApi();
   messages.value.push({
     content: currentMessage,

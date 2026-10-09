@@ -122,6 +122,99 @@ describe('WhatsAppTemplatesPage', () => {
     expect(details.text()).toContain('Gracias por contactar con soporte.');
   });
 
+  it(
+    'shows native carousel components and keeps flat draft cards available',
+    () => {
+      const wrapper = mountComponent({
+        id: 7,
+        csat_config: {},
+        message_templates: [
+          template('native_carousel', {
+            category: 'MARKETING',
+            components: [
+              { type: 'BODY', text: 'Browse these products.' },
+              {
+                type: 'CAROUSEL',
+                cards: [
+                  {
+                    components: [
+                      { type: 'HEADER', format: 'IMAGE' },
+                      { type: 'BODY', text: 'First product card.' },
+                      {
+                        type: 'BUTTONS',
+                        buttons: [
+                          {
+                            type: 'URL',
+                            text: 'View first product',
+                            url: 'https://example.test/first',
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                  {
+                    components: [
+                      { type: 'HEADER', format: 'VIDEO' },
+                      { type: 'BODY', text: 'Second product card.' },
+                      {
+                        type: 'BUTTONS',
+                        buttons: [
+                          { type: 'QUICK_REPLY', text: 'Ask about it' },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          }),
+          template('flat_carousel_draft', {
+            category: 'MARKETING',
+            carousel_cards: [
+              {
+                header_type: 'image',
+                body_text: 'Flat draft card body.',
+                buttons: [{ type: 'QUICK_REPLY', text: 'Draft button' }],
+              },
+            ],
+          }),
+        ],
+      });
+      const templateCards = wrapper.findAll(
+        '[data-test="whatsapp-template-card"]'
+      );
+      const nativeTemplateCard = templateCards.find(card =>
+        card.text().includes('native_carousel')
+      );
+      const nativeDetails = nativeTemplateCard.find(
+        '[data-test="full-template-details"]'
+      );
+      const nativeCarouselCards = nativeDetails.findAll(
+        '[data-test="template-carousel-card"]'
+      );
+      const flatTemplateCard = templateCards.find(card =>
+        card.text().includes('flat_carousel_draft')
+      );
+      const flatDetails = flatTemplateCard.find(
+        '[data-test="full-template-details"]'
+      );
+
+      expect(nativeCarouselCards).toHaveLength(2);
+      expect(nativeCarouselCards[0].text()).toContain('IMAGE');
+      expect(nativeCarouselCards[0].text()).toContain('First product card.');
+      expect(nativeCarouselCards[0].text()).toContain('View first product');
+      expect(nativeCarouselCards[0].text()).toContain(
+        'https://example.test/first'
+      );
+      expect(nativeCarouselCards[1].text()).toContain('VIDEO');
+      expect(nativeCarouselCards[1].text()).toContain('Second product card.');
+      expect(nativeCarouselCards[1].text()).toContain('Ask about it');
+      expect(flatDetails.text()).toContain('image');
+      expect(flatDetails.text()).toContain('Flat draft card body.');
+      expect(flatDetails.text()).toContain('Draft button');
+    }
+  );
+
   it('hides a template from the conversation picker', async () => {
     dispatch.mockResolvedValue({});
     const wrapper = mountComponent();

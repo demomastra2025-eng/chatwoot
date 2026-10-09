@@ -89,15 +89,13 @@ const deferred = () => {
 describe('AssistantPlayground («Площадка»)', () => {
   beforeEach(() => {
     mocks.playground.mockReset();
-    mocks.show
-      .mockReset()
-      .mockResolvedValue({
-        data: {
-          id: 4,
-          usage_mode: 'external_agent',
-          config: { model: 'openai/gpt-6-luna', temperature: 0.7 },
-        },
-      });
+    mocks.show.mockReset().mockResolvedValue({
+      data: {
+        id: 4,
+        usage_mode: 'external_agent',
+        config: { model: 'openai/gpt-6-luna', temperature: 0.7 },
+      },
+    });
     mocks.fetch.mockReset().mockResolvedValue();
     mocks.getModelsForFeature.mockReset().mockReturnValue([
       {
@@ -113,7 +111,9 @@ describe('AssistantPlayground («Площадка»)', () => {
         capabilities: [],
       },
     ]);
-    mocks.getSelectedModelForFeature.mockReset().mockReturnValue('openai/gpt-6-luna');
+    mocks.getSelectedModelForFeature
+      .mockReset()
+      .mockReturnValue('openai/gpt-6-luna');
     mocks.uiFlags.fetchError = false;
   });
 
@@ -265,7 +265,9 @@ describe('AssistantPlayground («Площадка»)', () => {
       clientMetadataOnly: true,
       force: true,
     });
-    expect(wrapper.text()).not.toContain('CAPTAIN.PLAYGROUND.TEST_SETTINGS_ERROR');
+    expect(wrapper.text()).not.toContain(
+      'CAPTAIN.PLAYGROUND.TEST_SETTINGS_ERROR'
+    );
   });
 
   it('ignores stale settings after route reuse and keeps the new assistant model capabilities', async () => {

@@ -27,6 +27,7 @@ const mountComponent = props =>
       stubs: {
         SectionLayout: { template: '<section><slot /></section>' },
         Switch: {
+          name: 'Switch',
           props: ['modelValue', 'disabled'],
           emits: ['change'],
           template:
@@ -159,6 +160,7 @@ describe('CaptainAiEditorSettings', () => {
     const wrapper = mountComponent();
     await flushPromises();
     const switches = wrapper.findAllComponents({ name: 'Switch' });
+    expect(switches).toHaveLength(2);
 
     switches[0].vm.$emit('change', false);
     switches[1].vm.$emit('change', false);

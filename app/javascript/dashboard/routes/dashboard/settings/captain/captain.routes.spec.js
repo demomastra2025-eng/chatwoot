@@ -5,7 +5,7 @@ describe('Captain settings routes', () => {
     expect(captainSettingsRoutes.routes).toHaveLength(2);
     const legacyRoutes = captainSettingsRoutes.routes;
 
-    for (const legacyRoute of legacyRoutes) {
+    legacyRoutes.forEach(legacyRoute => {
       expect(
         legacyRoute.redirect({
           params: { accountId: '7' },
@@ -18,6 +18,6 @@ describe('Captain settings routes', () => {
         query: { tab: 'models' },
         hash: '#model',
       });
-    }
+    });
   });
 });

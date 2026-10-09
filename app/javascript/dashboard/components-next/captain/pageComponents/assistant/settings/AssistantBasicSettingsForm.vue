@@ -368,7 +368,9 @@ const updateStateFromAssistant = assistant => {
   state.historyMessageLimit = Number(config.history_message_limit || 0);
   const safetySettings = config.safety_settings || {};
   state.safetySettings = {
-    moderationEnabled: moderationSettingValue(safetySettings.moderation_enabled),
+    moderationEnabled: moderationSettingValue(
+      safetySettings.moderation_enabled
+    ),
     promptInjectionAction: safetySettings.prompt_injection_action || 'inherit',
     sensitiveInfoAction: safetySettings.sensitive_info_action || 'inherit',
   };

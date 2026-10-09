@@ -174,10 +174,32 @@ const getTemplateCarouselCards = template => {
   const carouselComponent = template?.components?.find(
     component => component.type === 'CAROUSEL'
   );
-
-  return Array.isArray(template?.carousel_cards)
+  const nativeCards = carouselComponent?.cards;
+  let cards = Array.isArray(template?.carousel_cards)
     ? template.carousel_cards
-    : carouselComponent?.cards || [];
+    : [];
+
+  if (Array.isArray(nativeCards)) {
+    if (nativeCards.length > 0 || cards.length === 0) {
+      cards = nativeCards;
+    }
+  }
+
+  return cards.map(card => {
+    const components = Array.isArray(card?.components) ? card.components : [];
+    const header = components.find(component => component.type === 'HEADER');
+    const body = components.find(component => component.type === 'BODY');
+    const buttons = components.find(component => component.type === 'BUTTONS');
+
+    return {
+      ...card,
+      header_type: card?.header_type || header?.format || '',
+      body_text: card?.body_text || body?.text || '',
+      buttons: Array.isArray(card?.buttons)
+        ? card.buttons
+        : buttons?.buttons || [],
+    };
+  });
 };
 </script>
 
@@ -443,6 +465,7 @@ const getTemplateCarouselCards = template => {
                       v-for="(card, index) in getTemplateCarouselCards(variant)"
                       :key="`${variant.language}-carousel-${index}`"
                       class="mt-1 rounded-md border border-n-weak p-2"
+                      data-test="template-carousel-card"
                     >
                       <p class="mb-1 text-xs font-medium text-n-slate-12">
                         {{
