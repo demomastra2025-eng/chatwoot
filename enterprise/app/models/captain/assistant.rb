@@ -566,7 +566,10 @@ class Captain::Assistant < ApplicationRecord
     prompt_visible_tools_for_scope(
       Captain::ToolAccess::SCOPE_AGENT,
       explicit_tool_ids: explicit_tool_ids
-    ).reject { |tool| tool.id == 'get_appointment_provider_status' }
+    ).reject do |tool|
+      tool_id = tool.is_a?(Hash) ? tool[:id] || tool['id'] : tool.id
+      tool_id.to_s == 'get_appointment_provider_status'
+    end
   end
 
   def voice_runtime_agent_tools

@@ -633,6 +633,28 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(assistant.prompt_runtime_agent_tools.pluck(:id)).not_to include('get_appointment_provider_status')
     end
 
+    it 'keeps saved provider-status references without offering the tool to patients' do
+      account.enable_features!('scheduling')
+      description = 'Use [Provider Status](tool://get_appointment_provider_status) when needed.'
+      assistant.update!(description: description)
+
+      expect(assistant.reload.description).to eq(description)
+      expect(assistant.prompt_runtime_agent_tools.pluck(:id)).not_to include('get_appointment_provider_status')
+    end
+
+    it 'filters provider status from hash and object tool definitions' do
+      visible_tool = { id: 'faq_lookup' }
+      tools = [
+        visible_tool,
+        { id: 'get_appointment_provider_status' },
+        { 'id' => 'get_appointment_provider_status' },
+        Struct.new(:id).new('get_appointment_provider_status')
+      ]
+      allow(assistant).to receive(:prompt_visible_tools_for_scope).and_return(tools)
+
+      expect(assistant.prompt_runtime_agent_tools).to eq([visible_tool])
+    end
+
     it 'does not expose scenario-only template tool references in the root assistant prompt' do
       updated_rules = assistant.rule_entries.map do |entry|
         next entry unless entry[:id] == 'scenario_role'
