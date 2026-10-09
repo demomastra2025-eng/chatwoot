@@ -175,6 +175,44 @@ describe('useSchedulingProviderCommandsStore', () => {
     expect(command.status).toBe('succeeded');
   });
 
+  it('does not publish a resumed command after its owning context is stale', async () => {
+    let resolveSelection;
+    SchedulingProviderCommandsAPI.selectPatient.mockReturnValue(
+      new Promise(resolve => {
+        resolveSelection = resolve;
+      })
+    );
+    const activeCommand = {
+      appointmentId: 20,
+      companyCabinetCode: 'CAB-20',
+      id: 46,
+      operation: 'create_reception',
+      provider: 'medelement',
+      status: 'awaiting_patient_selection',
+    };
+    const store = useSchedulingProviderCommandsStore();
+    let isCurrent = true;
+    const continuation = store.selectPatient(
+      activeCommand,
+      'candidate-token',
+      buildProviderCommandParamsFromCommand(activeCommand),
+      () => isCurrent
+    );
+
+    isCurrent = false;
+    resolveSelection({
+      data: {
+        payload: { ...activeCommand, status: 'queued' },
+      },
+    });
+    const command = await continuation;
+
+    expect(command.status).toBe('queued');
+    expect(SchedulingProviderCommandsAPI.get).not.toHaveBeenCalled();
+    expect(store.lastCommand).toBeNull();
+    expect(store.ui.isExecuting).toBe(false);
+  });
+
   it('retries a provider-scoped phone mismatch command without creating a duplicate', async () => {
     const activeCommand = {
       appointmentId: 20,

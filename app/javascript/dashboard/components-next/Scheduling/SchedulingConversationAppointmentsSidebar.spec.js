@@ -1,4 +1,6 @@
 import { shallowMount, flushPromises } from '@vue/test-utils';
+import { createPinia } from 'pinia';
+import { reactive } from 'vue';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import SchedulingConversationAppointmentsSidebar from './SchedulingConversationAppointmentsSidebar.vue';
@@ -30,6 +32,31 @@ const manualReviewCommand = {
   status: 'provider_status_unknown',
   manual_cancellation_available: true,
   manual_cancellation_reception_code: 'created-1',
+};
+
+const patientActionCommand = (
+  status = 'awaiting_patient_selection',
+  attributes = {}
+) => ({
+  id: 66,
+  appointment_id: 501,
+  operation: 'create_reception',
+  provider: 'medelement',
+  company_cabinet_code: '501',
+  status,
+  patient_action: {
+    can_confirm: true,
+    candidate_count: 1,
+    ...attributes.patient_action,
+  },
+  ...attributes,
+});
+
+const configureMedelementResource = () => {
+  mocks.resources[0].customAttributes = {
+    medelement_cabinets: [{ company_cabinet_code: '501' }],
+    medelement_specialist_code: 'specialist-1',
+  };
 };
 
 const verifiedCancellationResponse = () => ({
@@ -80,6 +107,7 @@ const mocks = vi.hoisted(() => ({
       prices: [],
     },
   ],
+  route: null,
 }));
 
 vi.mock('vue-i18n', () => ({
@@ -93,9 +121,11 @@ vi.mock('dashboard/composables', () => ({
   useAlert: mocks.alert,
 }));
 
-vi.mock('vue-router', () => ({
-  useRoute: () => ({ params: { accountId: '1' } }),
-}));
+vi.mock('vue-router', async () => {
+  const { reactive } = await import('vue');
+  mocks.route = reactive({ params: { accountId: '1' } });
+  return { useRoute: () => mocks.route };
+});
 
 vi.mock('dashboard/composables/store', () => ({
   useStore: () => ({ dispatch: mocks.dispatch }),
@@ -134,6 +164,10 @@ vi.mock('dashboard/api/scheduling/providerCommands', () => ({
     list: vi.fn(),
     reconcile: vi.fn(),
     resolveCancellation: vi.fn(),
+    patientCandidates: vi.fn(),
+    selectPatient: vi.fn(),
+    confirmPatientCreation: vi.fn(),
+    retry: vi.fn(),
   },
 }));
 
@@ -159,12 +193,14 @@ const defaultCurrentChat = () => ({
   },
 });
 
-const mountComponent = (currentChat = defaultCurrentChat()) =>
-  shallowMount(SchedulingConversationAppointmentsSidebar, {
+const mountComponent = (currentChat = defaultCurrentChat()) => {
+  mocks.route = reactive({ params: { accountId: '1' } });
+  return shallowMount(SchedulingConversationAppointmentsSidebar, {
     props: {
       currentChat,
     },
     global: {
+      plugins: [createPinia()],
       stubs: {
         RouterLink: {
           name: 'RouterLink',
@@ -183,6 +219,7 @@ const mountComponent = (currentChat = defaultCurrentChat()) =>
       },
     },
   });
+};
 
 describe('SchedulingConversationAppointmentsSidebar', () => {
   it('links a separate patient card without replacing the chat contact', async () => {
@@ -282,6 +319,10 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     SchedulingProviderCommandsAPI.list.mockReset();
     SchedulingProviderCommandsAPI.reconcile.mockReset();
     SchedulingProviderCommandsAPI.resolveCancellation.mockReset();
+    SchedulingProviderCommandsAPI.patientCandidates.mockReset();
+    SchedulingProviderCommandsAPI.selectPatient.mockReset();
+    SchedulingProviderCommandsAPI.confirmPatientCreation.mockReset();
+    SchedulingProviderCommandsAPI.retry.mockReset();
     SchedulingProviderCommandsAPI.resolveCancellation.mockResolvedValue(
       verifiedCancellationResponse()
     );
@@ -290,6 +331,45 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     });
     SchedulingProviderCommandsAPI.reconcile.mockResolvedValue({
       data: { payload: {} },
+    });
+    SchedulingProviderCommandsAPI.patientCandidates.mockResolvedValue({
+      data: { payload: { candidates: [] } },
+    });
+    SchedulingProviderCommandsAPI.selectPatient.mockResolvedValue({
+      data: {
+        payload: {
+          id: 66,
+          appointment_id: 501,
+          operation: 'create_reception',
+          provider: 'medelement',
+          company_cabinet_code: '501',
+          status: 'succeeded',
+        },
+      },
+    });
+    SchedulingProviderCommandsAPI.confirmPatientCreation.mockResolvedValue({
+      data: {
+        payload: {
+          id: 66,
+          appointment_id: 501,
+          operation: 'create_reception',
+          provider: 'medelement',
+          company_cabinet_code: '501',
+          status: 'succeeded',
+        },
+      },
+    });
+    SchedulingProviderCommandsAPI.retry.mockResolvedValue({
+      data: {
+        payload: {
+          id: 66,
+          appointment_id: 501,
+          operation: 'create_reception',
+          provider: 'medelement',
+          company_cabinet_code: '501',
+          status: 'succeeded',
+        },
+      },
     });
     SchedulingAppointmentsAPI.get.mockResolvedValue({
       data: { payload: [existingAppointment] },
@@ -903,6 +983,212 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     expect(mocks.alert).toHaveBeenCalledWith(
       'SCHEDULING.APPOINTMENT_FORM.CHECK_STARTED'
     );
+  });
+
+  it('requires an explicit patient choice before resuming a pending booking', async () => {
+    configureMedelementResource();
+    const candidateCommand = patientActionCommand();
+    SchedulingProviderCommandsAPI.list.mockResolvedValue({
+      data: { payload: [candidateCommand] },
+    });
+    SchedulingProviderCommandsAPI.patientCandidates.mockResolvedValue({
+      data: {
+        payload: {
+          candidates: [
+            {
+              birthday: '1990-01-02',
+              iin_masked: '9001******12',
+              name: 'Алия',
+              phone_masked: '+7 *** *** 1234',
+              token: 'candidate-token',
+            },
+          ],
+        },
+      },
+    });
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    await wrapper.vm.checkProviderBooking(wrapper.vm.appointments[0]);
+
+    const action = wrapper.vm.patientActions['appointment-501'];
+    expect(wrapper.text()).toContain(
+      'SCHEDULING.MEDELEMENT.PATIENT_SELECTION_TITLE'
+    );
+    expect(action.candidates).toHaveLength(1);
+    expect(action.selectedPatientToken).toBe('');
+    expect(wrapper.vm.canContinuePatientAction(action)).toBe(false);
+    expect(SchedulingProviderCommandsAPI.selectPatient).not.toHaveBeenCalled();
+    expect(SchedulingProviderCommandsAPI.reconcile).not.toHaveBeenCalled();
+
+    wrapper.vm.selectPatientCandidate(wrapper.vm.appointments[0], 'candidate-token');
+    expect(wrapper.vm.canContinuePatientAction(action)).toBe(true);
+    await wrapper.vm.continuePatientAction(wrapper.vm.appointments[0]);
+
+    expect(SchedulingProviderCommandsAPI.selectPatient).toHaveBeenCalledWith(
+      66,
+      { provider: 'medelement', token: 'candidate-token' }
+    );
+    expect(wrapper.text()).toContain('SCHEDULING.MEDELEMENT.SUCCESS');
+  });
+
+  it('shows pending patient action after saving a local MedElement appointment', async () => {
+    configureMedelementResource();
+    mocks.services[0].customAttributes = {
+      medelement_nomenclature_code: 'service-9',
+    };
+    mocks.services[0].prices = [{ active: true, price: 5000, resourceId: 7 }];
+    const localAppointment = {
+      ...existingAppointment,
+      clientPhone: '+77000000001',
+      customAttributes: { medelementCabinetCode: '501' },
+      source: 'conversation',
+    };
+    SchedulingAppointmentsAPI.get.mockResolvedValue({
+      data: { payload: [localAppointment] },
+    });
+    SchedulingProviderCommandsAPI.list.mockResolvedValue({
+      data: {
+        payload: [
+          patientActionCommand('awaiting_patient_creation', {
+            patient_action: { can_confirm: true, missing_fields: [] },
+          }),
+        ],
+      },
+    });
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    await wrapper.vm.saveAppointment(localAppointment);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain(
+      'SCHEDULING.MEDELEMENT.PATIENT_CREATION_TITLE'
+    );
+    expect(wrapper.vm.patientActions['appointment-501'].command.status).toBe(
+      'awaiting_patient_creation'
+    );
+    expect(SchedulingProviderCommandsAPI.confirmPatientCreation).not.toHaveBeenCalled();
+  });
+
+  it('requires the provider confirmation flag before creating a patient', async () => {
+    configureMedelementResource();
+    SchedulingProviderCommandsAPI.list.mockResolvedValue({
+      data: {
+        payload: [
+          patientActionCommand('awaiting_patient_creation', {
+            patient_action: { can_confirm: false, missing_fields: [] },
+          }),
+        ],
+      },
+    });
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    await wrapper.vm.checkProviderBooking(wrapper.vm.appointments[0]);
+
+    const action = wrapper.vm.patientActions['appointment-501'];
+    expect(wrapper.vm.canContinuePatientAction(action)).toBe(false);
+    await wrapper.vm.continuePatientAction(wrapper.vm.appointments[0]);
+    expect(
+      SchedulingProviderCommandsAPI.confirmPatientCreation
+    ).not.toHaveBeenCalled();
+
+    action.command.patientAction.canConfirm = true;
+    await wrapper.vm.continuePatientAction(wrapper.vm.appointments[0]);
+    expect(
+      SchedulingProviderCommandsAPI.confirmPatientCreation
+    ).toHaveBeenCalledWith(66, { provider: 'medelement' });
+  });
+
+  it('waits for an explicit click before retrying a phone mismatch', async () => {
+    configureMedelementResource();
+    SchedulingProviderCommandsAPI.list.mockResolvedValue({
+      data: { payload: [patientActionCommand('awaiting_phone_refresh')] },
+    });
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    await wrapper.vm.checkProviderBooking(wrapper.vm.appointments[0]);
+    expect(SchedulingProviderCommandsAPI.retry).not.toHaveBeenCalled();
+
+    await wrapper.vm.continuePatientAction(wrapper.vm.appointments[0]);
+    expect(SchedulingProviderCommandsAPI.retry).toHaveBeenCalledWith(66, {
+      provider: 'medelement',
+    });
+  });
+
+  it('does not show a patient action response after the chat changes', async () => {
+    configureMedelementResource();
+    const request = deferredRequest();
+    SchedulingProviderCommandsAPI.list.mockReturnValueOnce(request.promise);
+    const wrapper = mountComponent();
+    await flushPromises();
+    const checking = wrapper.vm.checkProviderBooking(
+      wrapper.vm.appointments[0]
+    );
+
+    await wrapper.setProps({
+      currentChat: { id: 999, meta: { sender: { id: 77 } } },
+    });
+    request.resolve({
+      data: { payload: [patientActionCommand()] },
+    });
+    await checking;
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="provider-patient-action-501"]').exists()).toBe(
+      false
+    );
+    expect(SchedulingProviderCommandsAPI.patientCandidates).not.toHaveBeenCalled();
+  });
+
+  it('does not show a patient action response after the account changes', async () => {
+    configureMedelementResource();
+    const request = deferredRequest();
+    SchedulingProviderCommandsAPI.list.mockReturnValueOnce(request.promise);
+    const wrapper = mountComponent();
+    await flushPromises();
+    const checking = wrapper.vm.checkProviderBooking(
+      wrapper.vm.appointments[0]
+    );
+
+    mocks.route.params.accountId = '2';
+    await flushPromises();
+    request.resolve({
+      data: { payload: [patientActionCommand()] },
+    });
+    await checking;
+
+    expect(wrapper.find('[data-testid="provider-patient-action-501"]').exists()).toBe(
+      false
+    );
+    expect(SchedulingProviderCommandsAPI.patientCandidates).not.toHaveBeenCalled();
+  });
+
+  it('discards a patient action lookup when the appointment snapshot changes', async () => {
+    configureMedelementResource();
+    const request = deferredRequest();
+    SchedulingProviderCommandsAPI.list.mockReturnValueOnce(request.promise);
+    const wrapper = mountComponent();
+    await flushPromises();
+    const checking = wrapper.vm.checkProviderBooking(
+      wrapper.vm.appointments[0]
+    );
+
+    wrapper.vm.upsertAppointment({
+      ...wrapper.vm.appointments[0],
+      startsAt: '2026-06-27T11:00:00.000Z',
+    });
+    request.resolve({
+      data: { payload: [patientActionCommand()] },
+    });
+    await checking;
+
+    expect(wrapper.find('[data-testid="provider-patient-action-501"]').exists()).toBe(
+      false
+    );
+    expect(SchedulingProviderCommandsAPI.patientCandidates).not.toHaveBeenCalled();
   });
 
   it('asks for manual review when an unknown booking has no reconcilable command', async () => {
