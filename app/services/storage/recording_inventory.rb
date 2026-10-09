@@ -57,9 +57,12 @@ class Storage::RecordingInventory
   end
 
   def missing_primary_sizes?
+    size_expression = Arel::Nodes::Grouping.new(
+      Arel.sql(Storage::RecordingMetadata.primary_size_sql(account_id: @account.id))
+    )
     sessions.where("NULLIF(recording_ref, '') IS NOT NULL AND metadata->'trash' IS NULL")
             .where(Storage::RecordingMetadata.reconcilable_reference_sql(account_id: @account.id))
-            .where("(#{Storage::RecordingMetadata.primary_size_sql(account_id: @account.id)}) IS NULL").exists?
+            .where(size_expression.eq(nil)).exists?
   end
 
   def reconcile!

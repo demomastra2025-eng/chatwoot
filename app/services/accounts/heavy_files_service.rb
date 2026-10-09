@@ -162,15 +162,16 @@ class Accounts::HeavyFilesService
   def fetch_recordings
     with_statement_timeout do
       size_sql = Storage::RecordingMetadata.primary_size_sql(account_id: account.id)
+      size_expression = Arel::Nodes::Grouping.new(Arel.sql(size_sql))
       scope = filtered_recording_scope
       @recordings_pending = scope.where(Storage::RecordingMetadata.reconcilable_reference_sql(account_id: account.id))
-                                 .where("(#{size_sql}) IS NULL").exists?
+                                 .where(size_expression.eq(nil)).exists?
       if recordings_pending?
         overview = Accounts::StorageOverviewService.new(account: account)
         overview.schedule_refresh(force: true)
         @recordings_refresh_status = overview.refresh_status
       end
-      sessions = scope.where("(#{size_sql}) > 0").order(Arel.sql("(#{size_sql}) DESC, id DESC")).limit(limit)
+      sessions = scope.where(size_expression.gt(0)).order(Arel.sql("(#{size_sql}) DESC, id DESC")).limit(limit)
       inbox_names = account.inboxes.pluck(:id, :name).to_h
       sessions.map do |session|
         row = {
