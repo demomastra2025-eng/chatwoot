@@ -198,6 +198,108 @@ class DockerCopyTarTest(unittest.TestCase):
                     tar_stream(members), "public/vite/assets/dashboard.js", byte_limit
                 )
 
+    def test_git_sha_marker_symlink_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "not a bounded regular file"):
+            assets.extract_single_regular_tar(
+                tar_stream([(".git_sha", b"", tarfile.SYMTYPE)]),
+                ".git_sha",
+                assets.MAX_GIT_SHA_MARKER_BYTES,
+            )
+
+
+class ImageMarkerCollectionTest(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parent)
+        self.addCleanup(self.temporary.cleanup)
+        self.output = Path(self.temporary.name) / "staging"
+        self.output.mkdir()
+        self.container = "a" * 12
+        self.image = f"{assets.APP_IMAGE_REPOSITORY}@sha256:{APP_DIGEST_A}"
+
+    def test_missing_marker_is_rejected_before_manifest_read(self):
+        with patch.object(assets, "_docker_copy_file", return_value=None) as copy_file:
+            with self.assertRaisesRegex(ValueError, "marker is missing"):
+                assets.collect_image(self.output, self.container, SHA_A, self.image)
+
+        copy_file.assert_called_once_with(
+            self.container,
+            ".git_sha",
+            max_bytes=assets.MAX_GIT_SHA_MARKER_BYTES,
+            optional=True,
+        )
+
+    def test_invalid_marker_is_rejected_before_manifest_read(self):
+        with patch.object(assets, "_docker_copy_file", return_value=b"not-a-sha\n") as copy_file:
+            with self.assertRaisesRegex(ValueError, "marker is invalid"):
+                assets.collect_image(self.output, self.container, SHA_A, self.image)
+
+        copy_file.assert_called_once_with(
+            self.container,
+            ".git_sha",
+            max_bytes=assets.MAX_GIT_SHA_MARKER_BYTES,
+            optional=True,
+        )
+
+    def test_marker_with_different_valid_sha_is_rejected(self):
+        with patch.object(assets, "_docker_copy_file", return_value=f"{SHA_B}\n".encode()) as copy_file:
+            with self.assertRaisesRegex(ValueError, "does not match"):
+                assets.collect_image(self.output, self.container, SHA_A, self.image)
+
+        copy_file.assert_called_once_with(
+            self.container,
+            ".git_sha",
+            max_bytes=assets.MAX_GIT_SHA_MARKER_BYTES,
+            optional=True,
+        )
+
+    def test_symlink_marker_is_rejected_before_manifest_read(self):
+        def copy_file(container, relative, *, max_bytes, optional=False):
+            self.assertEqual(relative, ".git_sha")
+            return assets.extract_single_regular_tar(
+                tar_stream([(".git_sha", b"", tarfile.SYMTYPE)]),
+                relative,
+                max_bytes,
+            )
+
+        with patch.object(assets, "_docker_copy_file", side_effect=copy_file) as mocked:
+            with self.assertRaisesRegex(ValueError, "not a bounded regular file"):
+                assets.collect_image(self.output, self.container, SHA_A, self.image)
+
+        self.assertEqual(mocked.call_count, 1)
+
+    def test_exact_marker_line_is_accepted_before_manifest_read(self):
+        calls = []
+
+        def copy_file(container, relative, **options):
+            calls.append(relative)
+            if relative == ".git_sha":
+                return f"{SHA_A}\n".encode("ascii")
+            return None
+
+        with patch.object(assets, "_docker_copy_file", side_effect=copy_file):
+            with self.assertRaisesRegex(ValueError, "current Vite manifest is missing"):
+                assets.collect_image(self.output, self.container, SHA_A, self.image)
+
+        self.assertEqual(calls, [".git_sha", assets.CURRENT_MANIFEST])
+
+
+class ReleaseWorkflowOrderTest(unittest.TestCase):
+    def test_old_image_is_verified_before_creating_or_reading_a_container(self):
+        workflow = Path(__file__).resolve().parents[2] / ".github/workflows/onelink_release.yml"
+        contents = workflow.read_text(encoding="utf-8")
+        start = contents.index("      - name: Verify and stage previous production Vite assets")
+        end = contents.index("      - name: Build and publish immutable release image", start)
+        step = contents[start:end]
+
+        self.assertNotIn("docker run", step)
+        cosign = step.index("cosign verify")
+        attestation = step.index("gh attestation verify")
+        create = step.index('docker create "$previous_image"')
+        collect = step.index("retain_previous_vite_assets.py collect")
+        self.assertLess(cosign, attestation)
+        self.assertLess(attestation, create)
+        self.assertLess(create, collect)
+
 
 class RetainedOutputTest(unittest.TestCase):
     def setUp(self):

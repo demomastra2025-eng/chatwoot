@@ -26,6 +26,7 @@ MAX_RETAINED_VERSIONS = 2
 MAX_DEPLOYMENTS_TO_SCAN = 500
 API_PAGE_SIZE = 100
 MAX_MANIFEST_BYTES = 2 * 1024 * 1024
+MAX_GIT_SHA_MARKER_BYTES = 128
 MAX_FILE_BYTES = 32 * 1024 * 1024
 MAX_TOTAL_BYTES = 256 * 1024 * 1024
 MAX_FILES = 4096
@@ -525,6 +526,19 @@ def collect_image(output: Path, container: str, sha: str, image: str) -> None:
     sha, digest = parse_image_reference(sha, image)
     if not re.fullmatch(r"[0-9a-f]{12,64}", container):
         raise ValueError("invalid Docker container identifier")
+
+    marker = _docker_copy_file(
+        container,
+        ".git_sha",
+        max_bytes=MAX_GIT_SHA_MARKER_BYTES,
+        optional=True,
+    )
+    if marker is None:
+        raise ValueError("production image revision marker is missing")
+    if not re.fullmatch(rb"[0-9a-f]{40}\n", marker):
+        raise ValueError("production image revision marker is invalid")
+    if marker[:-1].decode("ascii") != sha:
+        raise ValueError("production image revision marker does not match its deployment proof")
 
     manifest_data = _docker_copy_file(container, CURRENT_MANIFEST, max_bytes=MAX_MANIFEST_BYTES)
     if manifest_data is None:

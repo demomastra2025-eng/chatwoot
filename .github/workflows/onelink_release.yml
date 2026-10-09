@@ -229,11 +229,6 @@ jobs:
           while IFS=$'\t' read -r previous_sha previous_image; do
             [[ -n "$previous_sha" ]] || continue
             docker pull "$previous_image"
-            embedded_sha="$(docker run --rm --entrypoint cat "$previous_image" /app/.git_sha | tr -d '\r\n')"
-            [[ "$embedded_sha" == "$previous_sha" ]] || {
-              echo 'Production image revision marker does not match its deployment proof.' >&2
-              exit 1
-            }
             cosign verify \
               --certificate-oidc-issuer https://token.actions.githubusercontent.com \
               --certificate-identity-regexp \
