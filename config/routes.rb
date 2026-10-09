@@ -206,6 +206,7 @@ Rails.application.routes.draw do
 
           namespace :scheduling do
             resource :calendar, only: [:show], controller: 'calendar'
+            resource :availability, only: [:show], controller: 'availability'
             resources :resources, only: [:index, :show, :create, :update, :destroy] do
               resource :work_rules, only: [:show, :update], controller: 'resource_work_rules'
               resource :break_rules, only: [:show, :update], controller: 'resource_break_rules'
