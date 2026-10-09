@@ -40,6 +40,12 @@ WITH limits AS MATERIALIZED (
     ORDER BY (c.id::text = a.custom_attributes ->> 'medelement_provider_command_id') DESC,
              c.created_at DESC, c.id DESC LIMIT 1
   ) c ON true
+), local_windows AS MATERIALIZED (
+  -- Rails datetime columns store UTC timestamps without a time zone.
+  SELECT a.id AS appointment_id,
+         (a.starts_at AT TIME ZONE 'UTC') AT TIME ZONE r.timezone AS local_starts_at,
+         (a.ends_at AT TIME ZONE 'UTC') AT TIME ZONE r.timezone AS local_ends_at
+  FROM linked a JOIN scheduling_resources r ON r.id = a.resource_id
 ), findings AS (
   SELECT a.account_id, a.id AS appointment_id, a.command_id, a.conversation_id,
          'A1_CREATE_PENDING'::text AS rule, 'warning'::text AS severity,
@@ -201,43 +207,44 @@ WITH limits AS MATERIALIZED (
   SELECT a.account_id, a.id, a.command_id, a.conversation_id,
          'A8_OUTSIDE_WORK_WINDOW', 'warning',
          EXTRACT(EPOCH FROM (l.checked_at - a.created_at))::integer
-  FROM linked a JOIN scheduling_resources r ON r.id = a.resource_id CROSS JOIN limits l
+  FROM linked a JOIN local_windows lw ON lw.appointment_id = a.id
+    JOIN scheduling_resources r ON r.id = a.resource_id CROSS JOIN limits l
   WHERE EXISTS (SELECT 1 FROM scheduling_work_rules w WHERE w.resource_id = r.id AND w.active)
     AND NOT EXISTS (
       SELECT 1 FROM scheduling_workday_overrides o
-      WHERE o.resource_id = r.id AND o.date = (a.starts_at AT TIME ZONE r.timezone)::date
-        AND o.start_minute <= EXTRACT(HOUR FROM a.starts_at AT TIME ZONE r.timezone) * 60 +
-                              EXTRACT(MINUTE FROM a.starts_at AT TIME ZONE r.timezone)
-        AND o.end_minute >= EXTRACT(HOUR FROM a.ends_at AT TIME ZONE r.timezone) * 60 +
-                            EXTRACT(MINUTE FROM a.ends_at AT TIME ZONE r.timezone)
+      WHERE o.resource_id = r.id AND o.date = lw.local_starts_at::date
+        AND o.start_minute <= EXTRACT(HOUR FROM lw.local_starts_at) * 60 +
+                              EXTRACT(MINUTE FROM lw.local_starts_at)
+        AND o.end_minute >= EXTRACT(HOUR FROM lw.local_ends_at) * 60 +
+                            EXTRACT(MINUTE FROM lw.local_ends_at)
     )
     AND (EXISTS (
       SELECT 1 FROM scheduling_workday_overrides o
-      WHERE o.resource_id = r.id AND o.date = (a.starts_at AT TIME ZONE r.timezone)::date
+      WHERE o.resource_id = r.id AND o.date = lw.local_starts_at::date
     ) OR NOT EXISTS (
       SELECT 1 FROM scheduling_work_rules w
       WHERE w.resource_id = r.id AND w.active
-        AND w.weekday = EXTRACT(DOW FROM a.starts_at AT TIME ZONE r.timezone)
-        AND w.start_minute <= EXTRACT(HOUR FROM a.starts_at AT TIME ZONE r.timezone) * 60 +
-                              EXTRACT(MINUTE FROM a.starts_at AT TIME ZONE r.timezone)
-        AND w.end_minute >= EXTRACT(HOUR FROM a.ends_at AT TIME ZONE r.timezone) * 60 +
-                            EXTRACT(MINUTE FROM a.ends_at AT TIME ZONE r.timezone)
+        AND w.weekday = EXTRACT(DOW FROM lw.local_starts_at)
+        AND w.start_minute <= EXTRACT(HOUR FROM lw.local_starts_at) * 60 +
+                              EXTRACT(MINUTE FROM lw.local_starts_at)
+        AND w.end_minute >= EXTRACT(HOUR FROM lw.local_ends_at) * 60 +
+                            EXTRACT(MINUTE FROM lw.local_ends_at)
     ))
 ), timezone_symptoms AS (
   SELECT f.account_id, f.appointment_id, f.command_id, f.conversation_id,
          'A8_TIMEZONE_SUSPECT'::text AS rule, 'needs_review'::text AS severity,
          f.age_seconds
   FROM findings f JOIN linked a ON a.id = f.appointment_id
-    JOIN scheduling_resources r ON r.id = a.resource_id
+    JOIN local_windows lw ON lw.appointment_id = a.id
   WHERE f.rule = 'A8_OUTSIDE_WORK_WINDOW'
     AND EXISTS (
       SELECT 1 FROM (VALUES (-6), (-5), (-3), (3), (5), (6)) shift(hours)
-        JOIN scheduling_work_rules w ON w.resource_id = r.id AND w.active
-      WHERE w.weekday = EXTRACT(DOW FROM (a.starts_at + shift.hours * interval '1 hour') AT TIME ZONE r.timezone)
-        AND w.start_minute <= EXTRACT(HOUR FROM (a.starts_at + shift.hours * interval '1 hour') AT TIME ZONE r.timezone) * 60 +
-                              EXTRACT(MINUTE FROM (a.starts_at + shift.hours * interval '1 hour') AT TIME ZONE r.timezone)
-        AND w.end_minute >= EXTRACT(HOUR FROM (a.ends_at + shift.hours * interval '1 hour') AT TIME ZONE r.timezone) * 60 +
-                            EXTRACT(MINUTE FROM (a.ends_at + shift.hours * interval '1 hour') AT TIME ZONE r.timezone)
+        JOIN scheduling_work_rules w ON w.resource_id = a.resource_id AND w.active
+      WHERE w.weekday = EXTRACT(DOW FROM lw.local_starts_at + shift.hours * interval '1 hour')
+        AND w.start_minute <= EXTRACT(HOUR FROM lw.local_starts_at + shift.hours * interval '1 hour') * 60 +
+                              EXTRACT(MINUTE FROM lw.local_starts_at + shift.hours * interval '1 hour')
+        AND w.end_minute >= EXTRACT(HOUR FROM lw.local_ends_at + shift.hours * interval '1 hour') * 60 +
+                            EXTRACT(MINUTE FROM lw.local_ends_at + shift.hours * interval '1 hour')
     )
 ), report_accounts AS (
   SELECT account_id FROM ai
