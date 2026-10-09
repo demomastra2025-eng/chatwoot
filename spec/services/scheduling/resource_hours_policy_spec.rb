@@ -12,7 +12,10 @@ RSpec.describe Scheduling::ResourceHoursPolicy do
 
   around { |example| travel_to(Time.utc(2026, 4, 19, 20)) { example.run } }
 
-  before { create(:integrations_hook, :medelement, account: account, settings: { 'timezone' => 'Asia/Almaty' }) }
+  before do
+    account.enable_features!('scheduling')
+    create(:integrations_hook, :medelement, account: account, settings: { 'timezone' => 'Asia/Almaty' })
+  end
 
   it 'uses the integration date even when the resource has another time zone' do
     policy = described_class.new(resource: resource)

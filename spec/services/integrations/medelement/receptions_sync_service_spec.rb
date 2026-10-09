@@ -66,6 +66,7 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
   end
 
   it 'uses at least 90 calendar dates and keeps larger overrides' do
+    account.enable_features!('scheduling')
     hook = create(:integrations_hook, :medelement, account: account)
     travel_to(Time.utc(2026, 10, 9, 12)) do
       configuration = Integrations::Medelement::Configuration.new(hook: hook)
