@@ -18,7 +18,8 @@ class AutoAssignment::InboxRoundRobinService
 
   def reset_queue
     clear_queue
-    add_agent_to_queue(inbox.inbox_members.map(&:user_id))
+    member_ids = inbox.inbox_members.map(&:user_id)
+    add_agent_to_queue(member_ids) if member_ids.any?
   end
 
   # end of queue management functions

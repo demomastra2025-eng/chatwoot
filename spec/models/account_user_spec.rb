@@ -33,6 +33,23 @@ RSpec.describe AccountUser do
       expect(membership.reload.role).to eq('agent')
     end
 
+    it 'preserves unsaved account feature flags while joining the new employee to inboxes' do
+      membership = account_user
+      dirty_account = membership.account
+      persisted_feature_flags = dirty_account.feature_flags
+      dirty_account.feature_flags = persisted_feature_flags + 1
+      inbox.inbox_members.where(user: membership.user).destroy_all
+      expect(inbox.reload.members.ids).not_to include(membership.user_id)
+
+      membership.send(:join_account_inboxes)
+
+      expect(membership).to be_persisted
+      expect(inbox.reload.members.ids).to include(membership.user_id)
+      expect(dirty_account.feature_flags).to eq(persisted_feature_flags + 1)
+      expect(dirty_account.changes_to_save).to include('feature_flags' => [persisted_feature_flags, persisted_feature_flags + 1])
+      expect(Account.find(dirty_account.id).feature_flags).to eq(persisted_feature_flags)
+    end
+
     it 'does not duplicate a membership that already exists' do
       new_user = create(:user)
       existing_member = create(:inbox_member, inbox: inbox, user: new_user)

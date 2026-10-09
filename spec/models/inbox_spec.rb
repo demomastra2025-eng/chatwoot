@@ -137,6 +137,19 @@ RSpec.describe Inbox do
       expect(account.account_users.pluck(:role)).to contain_exactly('agent', 'administrator')
     end
 
+    it 'preserves unsaved account feature flags while adding default inbox members' do
+      agent = create(:user, account: account)
+      persisted_feature_flags = account.feature_flags
+      account.feature_flags = persisted_feature_flags + 1
+
+      inbox = create(:inbox, account: account)
+
+      expect(inbox.reload.members.ids).to contain_exactly(agent.id)
+      expect(account.feature_flags).to eq(persisted_feature_flags + 1)
+      expect(account.changes_to_save).to include('feature_flags' => [persisted_feature_flags, persisted_feature_flags + 1])
+      expect(Account.find(account.id).feature_flags).to eq(persisted_feature_flags)
+    end
+
     it 'keeps existing memberships when creation defaults are applied again' do
       agent = create(:user, account: account)
       inbox = create(:inbox, account: account)

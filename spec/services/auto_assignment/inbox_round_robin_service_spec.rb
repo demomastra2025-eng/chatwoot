@@ -36,6 +36,16 @@ describe AutoAssignment::InboxRoundRobinService do
       expect(inbox_round_robin_service.send(:queue).map(&:to_i)).to match_array(inbox_members.map(&:user_id))
     end
 
+    it 'clears a stale queue and returns nil without pushing when the inbox has no members' do
+      inbox.inbox_members.destroy_all
+      inbox_round_robin_service.add_agent_to_queue('stale-user')
+      expect(Redis::Alfred).not_to receive(:lpush)
+
+      expect(inbox_round_robin_service.available_agent(allowed_agent_ids: ['stale-user'])).to be_nil
+
+      expect(inbox_round_robin_service.send(:queue)).to eq([])
+    end
+
     context 'when allowed_agent_ids is passed' do
       it 'will get the first allowed member and move it to the end of the queue' do
         expected_queue = [inbox_members[3].user_id, inbox_members[2].user_id, inbox_members[4].user_id, inbox_members[1].user_id,

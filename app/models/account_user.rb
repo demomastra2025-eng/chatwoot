@@ -74,10 +74,12 @@ class AccountUser < ApplicationRecord
   private
 
   def join_account_inboxes
-    account.with_lock('FOR NO KEY UPDATE') do
-      next if account.custom_attributes.to_h['marked_for_deletion_at'].present?
+    # Keep unsaved changes on the associated account while locking its persisted row.
+    locked_account = Account.find(account_id)
+    locked_account.with_lock('FOR NO KEY UPDATE') do
+      next if locked_account.custom_attributes.to_h['marked_for_deletion_at'].present?
 
-      account.inboxes.active.where(deletion_attempt_id: nil).find_each do |inbox|
+      locked_account.inboxes.active.where(deletion_attempt_id: nil).find_each do |inbox|
         inbox.inbox_members.find_or_create_by!(user_id: user_id)
       end
     end

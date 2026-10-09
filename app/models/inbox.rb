@@ -371,11 +371,14 @@ class Inbox < ApplicationRecord
   private
 
   def add_account_members
+    # Lock a fresh persisted record so with_lock does not reload unsaved changes on the associated account.
     # Serialize both creation paths without conflicting with their account foreign-key locks.
-    account.with_lock('FOR NO KEY UPDATE') do
-      next if deleting? || self[:deletion_attempt_id].present? || account_deletion_requested?
+    locked_account = Account.find(account_id)
+    locked_account.with_lock('FOR NO KEY UPDATE') do
+      next if deleting? || self[:deletion_attempt_id].present?
+      next if locked_account.custom_attributes.to_h['marked_for_deletion_at'].present?
 
-      account.users.ids.each { |user_id| inbox_members.find_or_create_by!(user_id: user_id) }
+      locked_account.users.ids.each { |user_id| inbox_members.find_or_create_by!(user_id: user_id) }
     end
   end
 
