@@ -21,7 +21,11 @@ class Search::ConversationLookup
   NORMALIZED_CONTENT_ATTRIBUTES_SQL = <<~'SQL'.squish.freeze
     (CASE json_typeof(messages.content_attributes)
      WHEN 'object' THEN messages.content_attributes
-     WHEN 'string' THEN (messages.content_attributes #>> '{}')::json
+     WHEN 'string' THEN CASE
+       WHEN (messages.content_attributes #>> '{}') IS JSON OBJECT
+         THEN (messages.content_attributes #>> '{}')::json
+       ELSE '{}'::json
+     END
      ELSE '{}'::json END)
   SQL
   TRANSCRIPTION_SEARCH_TEXT_SQL = [

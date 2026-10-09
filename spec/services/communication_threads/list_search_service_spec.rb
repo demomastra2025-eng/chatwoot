@@ -101,6 +101,27 @@ RSpec.describe CommunicationThreads::ListSearchService do
       end
     end
 
+    it 'inserts malformed legacy attributes and finds the message body through the indexed fallback' do
+      thread = thread_of(resolved_conversation)
+      stub_const('Search::MessageQuery::RECENT_ROWS', 1)
+      connection = Message.connection
+      legacy_attributes = connection.quote('{legacy opaque value'.to_json)
+      body = connection.quote('Imported legacy body phrase')
+      now = connection.quote(Time.current)
+
+      connection.execute(<<~SQL.squish)
+        INSERT INTO messages (
+          account_id, inbox_id, conversation_id, message_type, processed_message_content,
+          content_attributes, created_at, updated_at
+        ) VALUES (
+          #{account.id}, #{inbox.id}, #{resolved_conversation.id}, #{Message.message_types.fetch('incoming')},
+          #{body}, #{legacy_attributes}::json, #{now}, #{now}
+        )
+      SQL
+
+      expect(ids_for('legacy body phrase')).to eq([thread.id])
+    end
+
     it 'returns a thread once when several conversations and messages match' do
       thread = thread_of(resolved_conversation)
       2.times { |index| message_in(resolved_conversation, "Нужна справка номер #{index}") }

@@ -7,7 +7,11 @@ class AddTranscriptionSearchIndexes < ActiveRecord::Migration[7.1]
   NORMALIZED_ATTRIBUTES = <<~'SQL'.squish.freeze
     (CASE json_typeof(content_attributes)
      WHEN 'object' THEN content_attributes
-     WHEN 'string' THEN (content_attributes #>> '{}')::json
+     WHEN 'string' THEN CASE
+       WHEN (content_attributes #>> '{}') IS JSON OBJECT
+         THEN (content_attributes #>> '{}')::json
+       ELSE '{}'::json
+     END
      ELSE '{}'::json END)
   SQL
   MESSAGE_SEARCH_TEXT = [
