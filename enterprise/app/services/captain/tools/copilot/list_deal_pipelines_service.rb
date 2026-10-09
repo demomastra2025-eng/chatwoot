@@ -34,7 +34,12 @@ class Captain::Tools::Copilot::ListDealPipelinesService < Captain::Tools::Copilo
     stages = stages.active unless include_inactive
     default_stage = default_stage_for(pipeline)
 
-    ::Crm::PayloadBuilder.pipeline(pipeline, include_stages: false).except(:deal_count).merge(
+    pipeline_data = if patient_scope
+                      ::Crm::PayloadBuilder.pipeline_attributes(pipeline)
+                    else
+                      ::Crm::PayloadBuilder.pipeline(pipeline, include_stages: false).except(:deal_count)
+                    end
+    pipeline_data.merge(
       stages: stages.map do |stage|
         stage_payload(stage, default_stage_id: default_stage&.id)
       end

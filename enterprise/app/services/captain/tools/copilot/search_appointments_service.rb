@@ -16,17 +16,22 @@ class Captain::Tools::Copilot::SearchAppointmentsService < Captain::Tools::Copil
 
   def execute(client_name: nil, client_identifier: nil, status: nil, payment_status: nil, contact_id: nil, resource_id: nil, from: nil, to: nil,
               limit: nil)
-    contact_id = verified_optional_record_id(contact_id, scope: account.contacts, field_name: 'contact_id')
+    contact_id = if patient_scope
+                   patient_scope.require_contact_filter!(contact_id, tool: 'search_appointments')
+                   patient_scope.contact_id
+                 else
+                   verified_optional_record_id(contact_id, scope: account.contacts, field_name: 'contact_id')
+                 end
     resource_id = verified_optional_record_id(resource_id, scope: account.scheduling_resources, field_name: 'resource_id')
 
-    appointments = account.scheduling_appointments.includes(
+    appointments = (patient_scope ? patient_scope.appointments : account.scheduling_appointments).includes(
       :resource,
       :service,
       :company,
       :contact,
       conversation: [:inbox, :communication_thread]
     )
-    appointments = appointments.where(contact_id: contact_id) if contact_id.present?
+    appointments = appointments.where(contact_id: contact_id) if contact_id.present? && patient_scope.nil?
     appointments = appointments.where(resource_id: resource_id) if resource_id.present?
     appointments = appointments.where(status: status) if status.present?
     appointments = appointments.where(payment_status: payment_status) if payment_status.present?
@@ -55,6 +60,8 @@ class Captain::Tools::Copilot::SearchAppointmentsService < Captain::Tools::Copil
       total_count: total_count,
       appointments: records
     )
+  rescue Captain::Tools::Agent::PatientScope::Denied
+    Captain::Tools::Agent::PatientScope::FAILURE
   rescue StandardError => e
     tool_failure(e)
   end

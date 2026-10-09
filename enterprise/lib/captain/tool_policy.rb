@@ -1,5 +1,13 @@
 class Captain::ToolPolicy
   AGENT_HIGH_RISK_LEVELS = %w[high custom].freeze
+  AGENT_UNSCOPED_TOOL_IDS = %w[
+    get_company search_companies create_company update_company
+    get_deal_timeline get_task search_tasks get_task_timeline create_task update_task change_task_status list_task_custom_fields
+    create_touch cancel_touch delete_touch cancel_touches
+    send_notification search_linear_issues send_message_to_conversation assign_conversation
+    retry_failed_message edit_message translate_message search_canned_responses
+    merge_contacts remove_label_from_conversation
+  ].freeze
 
   class << self
     def runtime_allowed?(tool_definition, assistant:, scope_name:, user: nil)
@@ -67,6 +75,7 @@ class Captain::ToolPolicy
   attr_reader :assistant, :scope_name, :user
 
   def scope_allowed?
+    return false if scope_name == Captain::ToolAccess::SCOPE_AGENT && AGENT_UNSCOPED_TOOL_IDS.include?(tool_id)
     return true if allowed_scopes.blank? || scope_name.blank?
 
     allowed_scopes.include?(scope_name)

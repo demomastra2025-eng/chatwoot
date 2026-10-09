@@ -1,5 +1,6 @@
 class Captain::Tools::Copilot::BaseAccountTool < Captain::Tools::BaseTool
   MAX_RESULTS = 50
+  attr_accessor :patient_scope
 
   private
 

@@ -110,6 +110,7 @@ RSpec.describe Captain::ToolRegistry do
 
       expect(agent_tool_ids).to include(*expected_agent_business_tool_ids)
       expect(agent_tool_ids).not_to include(*assistant_only_admin_tool_ids)
+      expect(agent_tool_ids).not_to include(*Captain::ToolPolicy::AGENT_UNSCOPED_TOOL_IDS)
       expect(agent_tool_ids.size).to eq(expected_agent_business_tool_ids.size)
     end
 
@@ -176,7 +177,7 @@ RSpec.describe Captain::ToolRegistry do
     it 'marks capability tools that are controlled through assistant settings checkboxes' do
       handoff = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_AGENT).find { |tool| tool[:id] == 'handoff' }
       cancel_response = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_AGENT).find { |tool| tool[:id] == 'cancel_response' }
-      send_notification = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_AGENT).find { |tool| tool[:id] == 'send_notification' }
+      send_notification = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_ASSISTANT).find { |tool| tool[:id] == 'send_notification' }
       add_private_note = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_ASSISTANT).find { |tool| tool[:id] == 'add_private_note' }
 
       expect(handoff).to include(id: 'handoff', capability_tool: true)
@@ -217,7 +218,7 @@ RSpec.describe Captain::ToolRegistry do
   end
 
   def expected_agent_business_tool_ids
-    all_tool_ids - assistant_only_admin_tool_ids
+    all_tool_ids - assistant_only_admin_tool_ids - Captain::ToolPolicy::AGENT_UNSCOPED_TOOL_IDS
   end
 
   def all_tool_ids

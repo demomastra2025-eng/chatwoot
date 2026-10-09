@@ -7,8 +7,9 @@ class Captain::Tools::Copilot::GetContactService < Captain::Tools::Copilot::Base
   param :contact_id, type: :number, desc: 'The ID of the contact to retrieve', required: true
 
   def execute(contact_id:)
-    contact = account.contacts.includes(:company).find_by(id: contact_id)
-    return tool_failure('Contact not found') if contact.nil?
+    contacts = patient_scope ? patient_scope.contacts : account.contacts
+    contact = contacts.includes(:company).find_by(id: contact_id)
+    return patient_scope ? Captain::Tools::Agent::PatientScope::FAILURE : tool_failure('Contact not found') if contact.nil?
 
     formatted_payload(contact: contact_payload(contact))
   end

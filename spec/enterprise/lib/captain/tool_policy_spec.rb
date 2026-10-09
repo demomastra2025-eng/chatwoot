@@ -6,6 +6,14 @@ RSpec.describe Captain::ToolPolicy do
   let(:user) { create(:user) }
 
   describe '.runtime_allowed?' do
+    it 'hides unscoped record tools from the patient-facing agent but keeps staff scope' do
+      tool_definition = Captain::ToolRegistry.definition_for('search_tasks').to_h
+      account.enable_features!('crm_tasks')
+
+      expect(described_class.runtime_allowed?(tool_definition, assistant: assistant, scope_name: Captain::ToolAccess::SCOPE_AGENT)).to be(false)
+      expect(described_class.runtime_allowed?(tool_definition, assistant: assistant, scope_name: Captain::ToolAccess::SCOPE_ASSISTANT)).to be(true)
+    end
+
     it 'allows agent tools when their required feature is enabled' do
       account.enable_features!('crm_deals')
       tool_definition = Captain::ToolRegistry.definition_for('create_deal').to_h

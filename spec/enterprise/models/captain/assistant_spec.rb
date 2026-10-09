@@ -601,7 +601,8 @@ RSpec.describe Captain::Assistant, type: :model do
         }
       )
 
-      expect(assistant.allowed_agent_tool_ids).to include('send_message_to_conversation', 'list_captain_documents')
+      expect(assistant.allowed_agent_tool_ids).not_to include('send_message_to_conversation')
+      expect(assistant.allowed_agent_tool_ids).to include('list_captain_documents')
     end
 
     it 'adds CRM custom-field catalog companions for task and appointment write tools' do
@@ -620,9 +621,8 @@ RSpec.describe Captain::Assistant, type: :model do
         }
       )
 
+      expect(assistant.allowed_agent_tool_ids).not_to include('create_task', 'list_task_custom_fields')
       expect(assistant.allowed_agent_tool_ids).to include(
-        'create_task',
-        'list_task_custom_fields',
         'create_appointment',
         'list_appointment_custom_fields',
         'get_appointment_provider_status'

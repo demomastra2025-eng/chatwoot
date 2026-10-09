@@ -39,8 +39,14 @@ class Captain::Tools::Agent::AccountToolAdapter < Captain::Runtime::Tool
 
   def execute(tool_context, **params)
     ensure_tool_execution_allowed!
-    result = invoke_delegate(tool_context, params)
+    scope = patient_scope(tool_context)
+    scope.authorize_adapter_tool!(tool_id, params)
+    result = invoke_delegate(tool_context, params, scope)
     audit_tool_execution(arguments: params, result: result, runtime_context: runtime_context(tool_context))
+    result
+  rescue Captain::Tools::Agent::PatientScope::Denied
+    result = Captain::Tools::Agent::PatientScope::FAILURE
+    audit_tool_execution(arguments: {}, result: result, runtime_context: runtime_context(tool_context))
     result
   rescue StandardError => e
     audit_tool_execution(arguments: params, error: e, runtime_context: runtime_context(tool_context))
@@ -82,15 +88,22 @@ class Captain::Tools::Agent::AccountToolAdapter < Captain::Runtime::Tool
     @schema_delegate ||= delegate_class.new(assistant, user: assistant)
   end
 
-  def invoke_delegate(tool_context, params)
+  def invoke_delegate(tool_context, params, scope)
     delegate = delegate_class.new(
       assistant,
       user: assistant,
       conversation: current_conversation(tool_context)
     )
+    delegate.patient_scope = scope if delegate.respond_to?(:patient_scope=)
     execute_method = delegate.method(:execute)
     execute_method = execute_method.super_method if execute_method.owner == Captain::Tools::Instrumentation && execute_method.super_method
     execute_method.call(**params)
+  end
+
+  def patient_scope(tool_context)
+    Captain::Tools::Agent::PatientScope.new(
+      assistant: assistant, conversation: current_conversation(tool_context)
+    )
   end
 
   def current_conversation(tool_context)

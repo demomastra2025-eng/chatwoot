@@ -10,7 +10,7 @@ class Captain::Tools::Copilot::SearchContactsService < Captain::Tools::Copilot::
   param :limit, type: :number, desc: 'Maximum number of contacts to return', required: false
 
   def execute(email: nil, phone_number: nil, name: nil, limit: nil)
-    contacts = account.contacts.order(:name, :id)
+    contacts = (patient_scope ? patient_scope.contacts : account.contacts).order(:name, :id)
     contacts = contacts.where(email: email) if email.present?
     contacts = contacts.where(phone_number: phone_number) if phone_number.present?
     contacts = contacts.where('LOWER(name) ILIKE ?', "%#{name.to_s.downcase}%") if name.present?

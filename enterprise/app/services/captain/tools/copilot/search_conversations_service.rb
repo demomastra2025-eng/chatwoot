@@ -14,7 +14,12 @@ class Captain::Tools::Copilot::SearchConversationsService < Captain::Tools::Copi
     filter_error = validate_filters(status: status, priority: priority)
     return filter_error if filter_error
 
-    contact_id = verified_optional_record_id(contact_id, scope: account.contacts, field_name: 'contact_id')
+    contact_id = if patient_scope
+                   patient_scope.require_contact_filter!(contact_id, tool: 'search_conversations')
+                   patient_scope.contact_id
+                 else
+                   verified_optional_record_id(contact_id, scope: account.contacts, field_name: 'contact_id')
+                 end
 
     conversations = filtered_conversations(status: status, contact_id: contact_id, priority: priority, labels: labels)
     total_count = conversations.count
@@ -30,6 +35,8 @@ class Captain::Tools::Copilot::SearchConversationsService < Captain::Tools::Copi
       total_count: total_count,
       conversations: records
     )
+  rescue Captain::Tools::Agent::PatientScope::Denied
+    Captain::Tools::Agent::PatientScope::FAILURE
   rescue StandardError => e
     tool_failure(e)
   end
@@ -48,7 +55,8 @@ class Captain::Tools::Copilot::SearchConversationsService < Captain::Tools::Copi
   end
 
   def filtered_conversations(status:, contact_id:, priority:, labels:)
-    conversations = permissible_conversations.includes(:contact, :assignee, :inbox).order(last_activity_at: :desc, id: :desc)
+    scope = patient_scope ? patient_scope.conversations : permissible_conversations
+    conversations = scope.includes(:contact, :assignee, :inbox).order(last_activity_at: :desc, id: :desc)
     conversations = conversations.where(contact_id: contact_id) if contact_id.present?
     conversations = conversations.where(status: status) if valid_status?(status)
     conversations = conversations.where(priority: priority) if valid_priority?(priority)
