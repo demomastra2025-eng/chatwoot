@@ -102,6 +102,7 @@ jobs:
           python3 -m unittest script/onelink/test_verify_release_tree.py
           python3 -m unittest script/onelink/test_workflow_native_deps.py
           python3 -m unittest script/onelink/test_dev_built_assets.py
+          python3 -m unittest script/onelink/test_retain_previous_vite_assets.py
           python3 script/onelink/change_plan.py \
             --base "$BASE_SHA" --head "$HEAD_SHA" \
             --github-output "$GITHUB_OUTPUT" \
@@ -189,6 +190,7 @@ jobs:
     permissions:
       attestations: write
       contents: read
+      deployments: read
       id-token: write
       packages: write
     outputs:
@@ -201,11 +203,57 @@ jobs:
         with:
           persist-credentials: false
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Clear prior-production Vite asset staging
+        run: python3 script/onelink/retain_previous_vite_assets.py reset --output script/onelink/retained-vite-assets
+      - name: Resolve the two newest successful production image proofs
+        id: production-assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 script/onelink/retain_previous_vite_assets.py resolve \
+            --repo "$GITHUB_REPOSITORY" \
+            --github-output "$GITHUB_OUTPUT"
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+      - name: Verify and stage previous production Vite assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRODUCTION_IMAGES: ${{ steps.production-assets.outputs.images }}
+        run: |
+          set -euo pipefail
+          image_rows="$(python3 script/onelink/retain_previous_vite_assets.py list-images "$PRODUCTION_IMAGES")"
+          while IFS=$'\t' read -r previous_sha previous_image; do
+            [[ -n "$previous_sha" ]] || continue
+            docker pull "$previous_image"
+            embedded_sha="$(docker run --rm --entrypoint cat "$previous_image" /app/.git_sha | tr -d '\r\n')"
+            [[ "$embedded_sha" == "$previous_sha" ]] || {
+              echo 'Production image revision marker does not match its deployment proof.' >&2
+              exit 1
+            }
+            cosign verify \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              --certificate-identity-regexp \
+                '^https://github.com/demomastra2025-eng/chatwoot/.github/workflows/onelink_release.yml@refs/heads/onelink-dev$' \
+              "$previous_image" >/dev/null
+            gh attestation verify "oci://$previous_image" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/onelink_release.yml" \
+              --source-ref refs/heads/onelink-dev \
+              --source-digest "$previous_sha" >/dev/null
+            container_id="$(docker create "$previous_image")"
+            trap 'docker rm -f "$container_id" >/dev/null 2>&1 || true' EXIT
+            python3 script/onelink/retain_previous_vite_assets.py collect \
+              --output script/onelink/retained-vite-assets \
+              --container "$container_id" \
+              --sha "$previous_sha" \
+              --image "$previous_image"
+            docker rm "$container_id" >/dev/null
+            trap - EXIT
+          done <<< "$image_rows"
       - name: Build and publish immutable release image
         id: build
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
@@ -241,7 +289,6 @@ jobs:
           cache-to: type=gha,mode=max,scope=onelink-ai-voice-production
           provenance: mode=max
           sbom: true
-      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
       - name: Sign image digests with GitHub OIDC
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
