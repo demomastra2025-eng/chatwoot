@@ -1998,6 +1998,7 @@ onMounted(() => {
 }
 
 .scheduling-vue-cal :deep(.vuecal__headings) {
+  z-index: 6;
   isolation: isolate;
   background: var(--scheduling-panel-bg) !important;
   box-shadow: inset 0 -1px 0 0 var(--vuecal-border-color);
@@ -2018,6 +2019,10 @@ onMounted(() => {
 .scheduling-vue-cal :deep(.vuecal__time-column) {
   isolation: isolate;
   background: var(--scheduling-panel-bg) !important;
+}
+
+.scheduling-vue-cal :deep(.vuecal__time-column) {
+  z-index: 5;
 }
 
 .scheduling-vue-cal--week :deep(.vuecal__weekdays-headings) {

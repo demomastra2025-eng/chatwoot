@@ -1868,7 +1868,7 @@ onMounted(async () => {
       :anchor-date="calendarStore.anchorDate"
       :current-label="pageTitle"
       :views="calendarTypeViews"
-      :show-today="false"
+      show-today
       show-view-switcher
       @previous="
         calendarStore.shiftAnchor(-1);
@@ -1879,7 +1879,9 @@ onMounted(async () => {
         fetchCalendar();
       "
       @today="
-        calendarStore.setAnchorDate(new Date().toISOString());
+        calendarStore.setAnchorDate(
+          calendarDayAnchor(new Date(), workspaceTimezone).toISOString()
+        );
         fetchCalendar();
       "
       @select-date="handleAnchorDateSelect"

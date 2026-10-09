@@ -11,6 +11,7 @@ import { useAlert } from 'dashboard/composables';
 import { formatCrmErrorMessage } from 'dashboard/stores/crm/shared';
 import { CRM_TASK_TYPE_ICONS, normalizeCrmTaskTypeIcon } from './taskTypeIcons';
 import { taskOutcomeLabel, taskTypeLabel } from './taskCatalogLabels';
+import { taskTypeColorClass } from './taskTypeMetadata';
 
 const props = defineProps({
   canManage: {
@@ -132,15 +133,7 @@ const toggleTaskType = async taskType => {
 
 <template>
   <section>
-    <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
-      <div>
-        <h3 class="mb-1 text-base font-semibold text-n-slate-12">
-          {{ t('CRM.SETTINGS.TASK_CATALOGS.TITLE') }}
-        </h3>
-        <p class="mb-0 text-sm text-n-slate-11">
-          {{ t('CRM.SETTINGS.TASK_CATALOGS.DESCRIPTION') }}
-        </p>
-      </div>
+    <div class="mb-4 flex justify-end">
       <Button
         v-if="canManage"
         size="sm"
@@ -159,8 +152,8 @@ const toggleTaskType = async taskType => {
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div class="flex min-w-0 items-center gap-3">
             <span
-              class="size-5 shrink-0 text-n-slate-11"
-              :class="taskType.icon"
+              class="size-5 shrink-0"
+              :class="[taskType.icon, taskTypeColorClass(taskType)]"
             />
             <div class="min-w-0">
               <div class="flex flex-wrap items-center gap-2">

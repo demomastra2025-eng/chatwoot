@@ -64,6 +64,7 @@ describe('composeConversationHelper', () => {
           email: 'support@example.com',
           channelType: INBOX_TYPES.EMAIL,
           phoneNumber: null,
+          sourceId: 'support@example.com',
         },
       ];
 
@@ -78,6 +79,60 @@ describe('composeConversationHelper', () => {
         email: 'support@example.com',
         channelType: INBOX_TYPES.EMAIL,
       });
+    });
+
+    it('deduplicates identical routes but keeps distinct endpoints in the same inbox', () => {
+      const result = helpers.buildContactableInboxesList([
+        {
+          id: 7,
+          name: 'Support',
+          channelType: INBOX_TYPES.WHATSAPP,
+          sourceId: '',
+          phoneNumber: null,
+        },
+        {
+          id: 7,
+          name: 'Support',
+          channelType: INBOX_TYPES.WHATSAPP,
+          sourceId: '15551234567',
+          phoneNumber: '+15551234567',
+          contactInboxId: 44,
+        },
+        {
+          id: '7',
+          name: 'Support',
+          channelType: INBOX_TYPES.WHATSAPP,
+          sourceId: '15551234567',
+          phoneNumber: '+15551234567',
+          contactInboxId: 44,
+        },
+        {
+          id: 7,
+          name: 'Support',
+          channelType: INBOX_TYPES.WHATSAPP,
+          sourceId: '15557654321',
+          phoneNumber: '+15557654321',
+          contactInboxId: 45,
+        },
+        {
+          id: 8,
+          name: 'Support',
+          channelType: INBOX_TYPES.WHATSAPP,
+          sourceId: '15557654321',
+          phoneNumber: '+15557654321',
+        },
+      ]);
+
+      expect(result.map(({ id, sourceId }) => [id, sourceId])).toEqual([
+        [7, '15551234567'],
+        [7, '15557654321'],
+        [8, '15557654321'],
+      ]);
+      expect(result.map(({ label }) => label)).toEqual([
+        'Support (+15551234567)',
+        'Support (+15557654321)',
+        'Support (+15557654321)',
+      ]);
     });
   });
 
