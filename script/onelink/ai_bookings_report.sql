@@ -146,6 +146,7 @@ WITH limits AS (
       ) OR EXISTS (
         SELECT 1 FROM llm_events e
         WHERE e.account_id = m.account_id AND e.conversation_id = m.conversation_id
+          AND e.event_name = 'llm.tool.complete'
           AND e.tool_name = 'create_appointment' AND e.created_at BETWEEN m.created_at - interval '5 minutes' AND m.created_at
           AND e.payload ->> 'result_success' = 'false'
       ) OR (
@@ -167,6 +168,7 @@ WITH limits AS (
     AND NOT EXISTS (
       SELECT 1 FROM llm_events e
       WHERE e.account_id = m.account_id AND e.conversation_id = m.conversation_id
+        AND e.event_name = 'llm.tool.complete'
         AND e.tool_name = 'create_appointment' AND e.created_at BETWEEN m.created_at - interval '5 minutes' AND m.created_at
         AND e.payload ->> 'result_success' = 'true'
     )

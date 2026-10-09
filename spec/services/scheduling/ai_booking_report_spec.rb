@@ -142,13 +142,13 @@ RSpec.describe Scheduling::AiBookingReport do
     inbox = create(:inbox, account: account)
     conversation = create(:conversation, account: account, inbox: inbox, contact: contact)
     message = create(:message, account: account, inbox: inbox, conversation: conversation,
-                             sender: assistant, message_type: :outgoing, content: 'Вы записаны на приём')
-    LlmEvent.create!(account: account, conversation: conversation, event_name: 'tool.complete',
+                               sender: assistant, message_type: :outgoing, content: 'Вы записаны на приём')
+    LlmEvent.create!(account: account, conversation: conversation, event_name: 'llm.tool.complete',
                      tool_name: 'create_appointment', payload: { 'result_success' => false },
                      created_at: message.created_at - 5.minutes - 2.seconds)
     expect(findings.map { |row| row['rule'] }).not_to include('A5_CLAIM_WITHOUT_SUCCESS')
 
-    LlmEvent.create!(account: account, conversation: conversation, event_name: 'tool.complete',
+    LlmEvent.create!(account: account, conversation: conversation, event_name: 'llm.tool.complete',
                      tool_name: 'create_appointment', payload: { 'result_success' => false },
                      created_at: message.created_at - 5.minutes + 2.seconds)
     expect(findings.map { |row| row['rule'] }).to include('A5_CLAIM_WITHOUT_SUCCESS')
