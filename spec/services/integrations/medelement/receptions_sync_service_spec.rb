@@ -65,6 +65,22 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
     end
   end
 
+  it 'uses 90 calendar dates by default, upgrades the legacy 70 setting, and keeps larger overrides' do
+    hook = create(:integrations_hook, :medelement, account: account)
+    travel_to(Time.utc(2026, 10, 9, 12)) do
+      configuration = Integrations::Medelement::Configuration.new(hook: hook)
+      expect(configuration.receptions_days_forward).to eq(89)
+      expect(described_class.new(account: account, client: client, configuration: configuration)
+        .send(:range_end).to_date).to eq(Date.new(2027, 1, 7))
+
+      hook.update!(settings: hook.settings.merge('receptions_days_forward' => 70))
+      expect(Integrations::Medelement::Configuration.new(hook: hook).receptions_days_forward).to eq(89)
+
+      hook.update!(settings: hook.settings.merge('receptions_days_forward' => 120))
+      expect(Integrations::Medelement::Configuration.new(hook: hook).receptions_days_forward).to eq(120)
+    end
+  end
+
   it 'skips provider detail for an unchanged appointment until its detail refresh expires' do
     first_result = service.perform
     second_result = service.perform
