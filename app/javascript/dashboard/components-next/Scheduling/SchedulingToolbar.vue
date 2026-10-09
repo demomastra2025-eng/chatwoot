@@ -55,7 +55,7 @@ const translatedViews = computed(() =>
 
 <template>
   <div
-    class="px-5 py-3"
+    class="px-5 pb-2 pt-4"
     :class="props.transparent ? 'bg-transparent' : 'bg-n-surface-1'"
   >
     <div class="flex min-h-8 flex-wrap items-center gap-3">

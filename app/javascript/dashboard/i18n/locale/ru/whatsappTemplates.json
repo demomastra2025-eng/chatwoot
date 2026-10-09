@@ -85,6 +85,7 @@
       "CSAT_BADGE": "Управляется через CSAT",
       "SHOW_IN_CONVERSATIONS": "Показывать в диалогах",
       "VISIBILITY_ERROR": "Не удалось изменить видимость шаблона.",
+      "VIEW_FULL_TEMPLATE": "Показать шаблон полностью",
       "LANGUAGES": "Языки: {languages}",
       "REJECTION_REASON": "Причина отклонения для языка {language}",
       "BODY_SECTION": "Основной текст",

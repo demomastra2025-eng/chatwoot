@@ -51,6 +51,7 @@ import {
   hasMedelementReceptionIdentity,
   buildMedelementProviderCommandParams,
   calendarDayAnchor,
+  calendarTodayAnchor,
   canCreateAppointmentConversation,
   formatCalendarTitle,
   formatSchedulingDateTime,
@@ -1880,7 +1881,7 @@ onMounted(async () => {
       "
       @today="
         calendarStore.setAnchorDate(
-          calendarDayAnchor(new Date(), workspaceTimezone).toISOString()
+          calendarTodayAnchor(new Date(), workspaceTimezone).toISOString()
         );
         fetchCalendar();
       "

@@ -189,7 +189,6 @@
     "SIDEBAR_VISIBILITY": {
       "TITLE": "Sidebar settings",
       "DESCRIPTION": "Choose and arrange the primary sections shown in the employee sidebar.",
-      "ORDER_HINT": "Drag sections or use the arrow buttons to change their order.",
       "DRAG": "Drag to reorder",
       "MOVE_UP": "Move up",
       "MOVE_DOWN": "Move down",

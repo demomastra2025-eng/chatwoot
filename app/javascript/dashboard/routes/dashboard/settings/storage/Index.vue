@@ -435,7 +435,8 @@ const progressBarClass = computed(() => {
 
 const badgeClass = computed(() => {
   if (isUnlimited.value) return 'bg-n-alpha-2 text-n-slate-12 border-n-weak';
-  if (usagePercent.value >= 95) return 'bg-n-ruby-3 text-n-ruby-11 border-n-ruby-5';
+  if (usagePercent.value >= 95)
+    return 'bg-n-ruby-3 text-n-ruby-11 border-n-ruby-5';
   if (usagePercent.value >= 80)
     return 'bg-n-amber-3 text-n-amber-11 border-n-amber-5';
   return 'bg-n-teal-3 text-n-teal-11 border-n-teal-5';
@@ -644,7 +645,9 @@ const getFileTypeName = type => {
               </h4>
               <p
                 class="text-xs mt-1"
-                :class="usagePercent >= 95 ? 'text-n-ruby-11' : 'text-n-amber-11'"
+                :class="
+                  usagePercent >= 95 ? 'text-n-ruby-11' : 'text-n-amber-11'
+                "
               >
                 {{
                   usagePercent >= 95
@@ -808,7 +811,9 @@ const getFileTypeName = type => {
                   </p>
                 </div>
                 <div class="mt-2">
-                  <span class="text-sm font-bold text-n-slate-12 block truncate">
+                  <span
+                    class="text-sm font-bold text-n-slate-12 block truncate"
+                  >
                     {{ card.formatted }}
                   </span>
                 </div>
@@ -986,7 +991,9 @@ const getFileTypeName = type => {
               </div>
               <div v-else class="space-y-3">
                 <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                  <div class="bg-n-surface-1 p-2.5 rounded-lg border border-n-blue-4">
+                  <div
+                    class="bg-n-surface-1 p-2.5 rounded-lg border border-n-blue-4"
+                  >
                     <span class="text-n-slate-11 block">{{
                       $t('STORAGE.CLEANER.FOUND_FILES')
                     }}</span>
@@ -994,7 +1001,9 @@ const getFileTypeName = type => {
                       previewData.total_count
                     }}</strong>
                   </div>
-                  <div class="bg-n-surface-1 p-2.5 rounded-lg border border-n-blue-4">
+                  <div
+                    class="bg-n-surface-1 p-2.5 rounded-lg border border-n-blue-4"
+                  >
                     <span class="text-n-slate-11 block">{{
                       $t('STORAGE.CLEANER.TO_TRASH_SIZE')
                     }}</span>
@@ -1003,7 +1012,9 @@ const getFileTypeName = type => {
                       formatBytes(previewData.total_bytes)
                     }}</strong>
                   </div>
-                  <div class="bg-n-surface-1 p-2.5 rounded-lg border border-n-blue-4">
+                  <div
+                    class="bg-n-surface-1 p-2.5 rounded-lg border border-n-blue-4"
+                  >
                     <span class="text-n-slate-11 block">{{
                       $t('STORAGE.TYPES.RECORDINGS')
                     }}</span>
@@ -1011,7 +1022,9 @@ const getFileTypeName = type => {
                       `${previewData.recordings_count} (${formatBytes(previewData.recordings_bytes)})`
                     }}</strong>
                   </div>
-                  <div class="bg-n-surface-1 p-2.5 rounded-lg border border-n-blue-4">
+                  <div
+                    class="bg-n-surface-1 p-2.5 rounded-lg border border-n-blue-4"
+                  >
                     <span class="text-n-slate-11 block">{{
                       $t('STORAGE.TYPES.DOCUMENTS')
                     }}</span>

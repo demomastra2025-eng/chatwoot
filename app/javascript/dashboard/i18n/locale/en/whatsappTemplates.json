@@ -85,6 +85,7 @@
       "CSAT_BADGE": "Managed by CSAT",
       "SHOW_IN_CONVERSATIONS": "Show in conversations",
       "VISIBILITY_ERROR": "Could not update template visibility.",
+      "VIEW_FULL_TEMPLATE": "View full template",
       "LANGUAGES": "Languages: {languages}",
       "REJECTION_REASON": "Rejection reason for {language}",
       "BODY_SECTION": "Body content",

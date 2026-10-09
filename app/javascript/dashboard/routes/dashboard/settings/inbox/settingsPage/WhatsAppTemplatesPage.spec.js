@@ -53,7 +53,7 @@ const mountComponent = (inboxProp = inbox) =>
 
 const switchFor = (wrapper, templateName) => {
   const card = wrapper
-    .findAll('.rounded-2xl')
+    .findAll('[data-test="whatsapp-template-card"]')
     .find(node => node.text().includes(templateName));
   return card.findComponent(Switch);
 };
@@ -71,6 +71,55 @@ describe('WhatsAppTemplatesPage', () => {
     expect(switchFor(wrapper, 'automation_only').props('modelValue')).toBe(
       false
     );
+  });
+
+  it('keeps compact copy and exposes every language variant', () => {
+    const wrapper = mountComponent({
+      id: 7,
+      csat_config: { template: { name: 'support_survey' } },
+      message_templates: [
+        template('support_survey', {
+          components: [
+            { type: 'HEADER', format: 'TEXT', text: 'How did we do?' },
+            {
+              type: 'BODY',
+              text: 'Thanks for contacting support. Please rate the service.',
+            },
+            { type: 'FOOTER', text: 'Thank you' },
+            {
+              type: 'BUTTONS',
+              buttons: [{ type: 'QUICK_REPLY', text: 'Rate now' }],
+            },
+          ],
+        }),
+        template('support_survey', {
+          language: 'es_ES',
+          status: 'PENDING',
+          components: [
+            { type: 'BODY', text: 'Gracias por contactar con soporte.' },
+          ],
+        }),
+      ],
+    });
+    const card = wrapper.find('[data-test="whatsapp-template-card"]');
+    const details = card.find('[data-test="full-template-details"]');
+
+    expect(
+      card.find('[data-test="template-body-preview"]').classes()
+    ).toContain('line-clamp-2');
+    expect(card.findAll('[data-test="template-variant"]')).toHaveLength(2);
+    expect(card.text()).toContain('WHATSAPP_TEMPLATES.MANAGEMENT.CSAT_BADGE');
+    expect(details.element.tagName).toBe('DETAILS');
+    expect(
+      details.findAll('[data-test="template-variant-details"]')
+    ).toHaveLength(2);
+    expect(details.text()).toContain('How did we do?');
+    expect(details.text()).toContain(
+      'Thanks for contacting support. Please rate the service.'
+    );
+    expect(details.text()).toContain('Thank you');
+    expect(details.text()).toContain('Rate now');
+    expect(details.text()).toContain('Gracias por contactar con soporte.');
   });
 
   it('hides a template from the conversation picker', async () => {

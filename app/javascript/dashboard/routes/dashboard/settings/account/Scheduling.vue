@@ -72,10 +72,14 @@ const saveSchedulingSettings = async () => {
           <div class="flex items-start justify-between gap-4">
             <div class="min-w-0">
               <p class="mb-1 text-sm font-medium text-n-slate-12">
-                {{ $t('GENERAL_SETTINGS.FORM.SCHEDULING.COMPANY_ENABLED.LABEL') }}
+                {{
+                  $t('GENERAL_SETTINGS.FORM.SCHEDULING.COMPANY_ENABLED.LABEL')
+                }}
               </p>
               <p class="text-sm text-n-slate-11">
-                {{ $t('GENERAL_SETTINGS.FORM.SCHEDULING.COMPANY_ENABLED.NOTE') }}
+                {{
+                  $t('GENERAL_SETTINGS.FORM.SCHEDULING.COMPANY_ENABLED.NOTE')
+                }}
               </p>
             </div>
             <Switch v-model="schedulingCompanyEnabled" />

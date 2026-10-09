@@ -5,6 +5,7 @@ import {
   buildMedelementProviderCommandParams,
   buildTimeOffIntervals,
   calendarDayAnchor,
+  calendarTodayAnchor,
   canCreateAppointmentConversation,
   deriveVisibleMinuteWindow,
   formatCalendarTitle,
@@ -474,6 +475,16 @@ describe('scheduling helpers', () => {
     expect(calendarDayAnchor(new Date(2026, 2, 9)).toISOString()).toBe(
       new Date(2026, 2, 9, 12, 0).toISOString()
     );
+  });
+
+  it('uses the Workspace date for Today across a UTC date boundary', () => {
+    const now = new Date('2026-03-09T20:00:00.000Z');
+    const anchor = calendarTodayAnchor(now, 'Asia/Almaty');
+
+    expect(anchor.toISOString()).toBe('2026-03-10T07:00:00.000Z');
+    expect(
+      buildCalendarRange('day', anchor, 'Asia/Almaty').from.toISOString()
+    ).toBe('2026-03-09T19:00:00.000Z');
   });
 
   it('formats calendar titles in the Workspace timezone', () => {
