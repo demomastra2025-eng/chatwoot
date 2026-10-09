@@ -352,12 +352,8 @@ const getTemplateCarouselCards = template => {
                   color="ruby"
                   size="xs"
                   icon="i-lucide-trash-2"
-                  :aria-label="
-                    `${t('WHATSAPP_TEMPLATES.MANAGEMENT.DELETE_ACTION')}: ${templateGroup.name}`
-                  "
-                  :title="
-                    `${t('WHATSAPP_TEMPLATES.MANAGEMENT.DELETE_ACTION')}: ${templateGroup.name}`
-                  "
+                  :aria-label="`${t('WHATSAPP_TEMPLATES.MANAGEMENT.DELETE_ACTION')}: ${templateGroup.name}`"
+                  :title="`${t('WHATSAPP_TEMPLATES.MANAGEMENT.DELETE_ACTION')}: ${templateGroup.name}`"
                   @click="openDeleteDialog(templateGroup)"
                 />
               </div>
@@ -520,7 +516,6 @@ const getTemplateCarouselCards = template => {
                 </section>
               </div>
             </details>
-
           </div>
         </div>
       </div>

@@ -68,9 +68,7 @@ const currentLabel = computed(() =>
   )
 );
 const selectedResources = computed(() =>
-  resources.filter(resource =>
-    selectedResourceIds.value.includes(resource.id)
-  )
+  resources.filter(resource => selectedResourceIds.value.includes(resource.id))
 );
 const visibleAppointments = computed(() =>
   appointments.filter(appointment =>
@@ -136,11 +134,7 @@ const goToToday = () => {
               icon="i-lucide-filter"
               aria-label="Filters"
             />
-            <Button
-              size="sm"
-              icon="i-lucide-plus"
-              label="New appointment"
-            />
+            <Button size="sm" icon="i-lucide-plus" label="New appointment" />
           </template>
         </SchedulingToolbar>
 
@@ -150,7 +144,7 @@ const goToToday = () => {
             all-day-events
             :anchor-date="anchorDate"
             :appointments="visibleAppointments"
-            :read-only="true"
+            read-only
             :resources="selectedResources"
             :view="currentView"
             :workspace-timezone="workspaceTimezone"
