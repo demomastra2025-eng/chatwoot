@@ -2,22 +2,28 @@
 
 class Api::V1::Accounts::ReportsController < Api::V1::Accounts::BaseController
   rescue_from ArgumentError, with: :render_unprocessable_entity
+  before_action :authorize_report_access!, only: %i[calls leads]
 
   def calls
-    authorize :report, :view?
-
     report = ::Reports::CallsQuery.new(account: Current.account, params: report_params)
     render_payload(report.perform, meta: report.meta)
   end
 
   def leads
-    authorize :report, :view?
-
     report = ::Reports::LeadsQuery.new(account: Current.account, params: report_params)
     render_payload(report.perform, meta: report.meta)
   end
 
   private
+
+  def authorize_report_access!
+    return if performed?
+
+    authorize :report, :view?
+  rescue Pundit::NotAuthorizedError => error
+    log_handled_error(error)
+    render json: { error: 'You are not authorized to do this action' }, status: :forbidden
+  end
 
   def report_params
     params.permit(:from_date, :to_date)

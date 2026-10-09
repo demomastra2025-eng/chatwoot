@@ -41,6 +41,7 @@ RSpec.describe 'Account Calls and Leads Reports API', type: :request do
   it 'requires report permission for the calls endpoint' do
     agent = create(:user)
     create(:account_user, user: agent, account: account, role: :agent)
+    expect(Reports::CallsQuery).not_to receive(:new)
 
     get calls_path, params: date_params, headers: agent.create_new_auth_token, as: :json
     expect(response).to have_http_status(:forbidden)
@@ -49,8 +50,28 @@ RSpec.describe 'Account Calls and Leads Reports API', type: :request do
   it 'requires report permission for the leads endpoint' do
     agent = create(:user)
     create(:account_user, user: agent, account: account, role: :agent)
+    expect(Reports::LeadsQuery).not_to receive(:new)
 
     get leads_path, params: date_params, headers: agent.create_new_auth_token, as: :json
     expect(response).to have_http_status(:forbidden)
+  end
+
+  it 'still requires authentication before returning a report permission response' do
+    get calls_path, params: date_params, as: :json
+
+    expect(response).to have_http_status(:unauthorized)
+  end
+
+  it 'still rejects authenticated users who do not belong to the requested account' do
+    agent = create(:user)
+    create(:account_user, user: agent, account: account, role: :agent)
+    foreign_account = create(:account)
+
+    get "/api/v1/accounts/#{foreign_account.id}/reports/leads",
+        params: date_params,
+        headers: agent.create_new_auth_token,
+        as: :json
+
+    expect(response).to have_http_status(:unauthorized)
   end
 end
