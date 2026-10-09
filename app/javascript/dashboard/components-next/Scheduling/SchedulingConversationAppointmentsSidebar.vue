@@ -609,8 +609,7 @@ const patientActionDescription = entry => {
   }
   if (command?.status === 'awaiting_patient_selection') {
     return t('SCHEDULING.MEDELEMENT.PATIENT_SELECTION_DESCRIPTION', {
-      count:
-        command.patientAction?.candidateCount || candidates.length || 0,
+      count: command.patientAction?.candidateCount || candidates.length || 0,
     });
   }
   if (command?.status === 'awaiting_patient_creation') {
@@ -1027,8 +1026,7 @@ const beginPatientActionLookup = key => {
   return patientActionLookupIds[key];
 };
 const isCurrentPatientActionLookup = (key, context, lookupId) =>
-  isCurrentProviderContext(context) &&
-  patientActionLookupIds[key] === lookupId;
+  isCurrentProviderContext(context) && patientActionLookupIds[key] === lookupId;
 const COMMANDS_WAITING_FOR_PROVIDER = new Set([
   'awaiting_confirmation',
   'pending',
@@ -1082,9 +1080,8 @@ async function showPatientAction(appointment, command, context, lookupId) {
   ) {
     entry.loadingCandidates = true;
     try {
-      const payload = await providerCommandsStore.loadPatientCandidates(
-        command
-      );
+      const payload =
+        await providerCommandsStore.loadPatientCandidates(command);
       if (
         !isCurrentProviderContext(context) ||
         patientActions[key] !== entry ||
@@ -1656,7 +1653,12 @@ async function checkProviderBooking(appointment) {
         COMMANDS_WAITING_FOR_PROVIDER.has(item.status)
     );
     if (waitingCommand) {
-      showProviderCommandWaiting(appointment, context, lookupId, waitingCommand);
+      showProviderCommandWaiting(
+        appointment,
+        context,
+        lookupId,
+        waitingCommand
+      );
       return;
     }
 
@@ -2454,7 +2456,9 @@ watch(
             :data-testid="`provider-patient-action-${appointment.id}`"
           >
             <p class="text-sm font-medium text-n-slate-12">
-              {{ patientActionTitle(patientActions[appointmentKey(appointment)]) }}
+              {{
+                patientActionTitle(patientActions[appointmentKey(appointment)])
+              }}
             </p>
             <p
               v-if="
@@ -2490,9 +2494,8 @@ watch(
                 class="!h-4 !w-4"
               />
               <button
-                v-for="candidate in patientActions[
-                  appointmentKey(appointment)
-                ].candidates"
+                v-for="candidate in patientActions[appointmentKey(appointment)]
+                  .candidates"
                 :key="candidate.token"
                 type="button"
                 class="flex flex-col items-start gap-1 rounded-md border p-2 text-start"
@@ -2530,15 +2533,29 @@ watch(
               </button>
             </div>
             <div
-              v-if="patientActionButtonLabel(patientActions[appointmentKey(appointment)])"
+              v-if="
+                patientActionButtonLabel(
+                  patientActions[appointmentKey(appointment)]
+                )
+              "
               class="mt-3 flex justify-end"
             >
               <Button
                 size="sm"
                 color="blue"
-                :is-loading="patientActionBusyKey === appointmentKey(appointment)"
-                :disabled="!canContinuePatientAction(patientActions[appointmentKey(appointment)])"
-                :label="patientActionButtonLabel(patientActions[appointmentKey(appointment)])"
+                :is-loading="
+                  patientActionBusyKey === appointmentKey(appointment)
+                "
+                :disabled="
+                  !canContinuePatientAction(
+                    patientActions[appointmentKey(appointment)]
+                  )
+                "
+                :label="
+                  patientActionButtonLabel(
+                    patientActions[appointmentKey(appointment)]
+                  )
+                "
                 :data-testid="`continue-provider-patient-action-${appointment.id}`"
                 @click="continuePatientAction(appointment)"
               />

@@ -1042,7 +1042,10 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     expect(SchedulingProviderCommandsAPI.selectPatient).not.toHaveBeenCalled();
     expect(SchedulingProviderCommandsAPI.reconcile).not.toHaveBeenCalled();
 
-    wrapper.vm.selectPatientCandidate(wrapper.vm.appointments[0], 'candidate-token');
+    wrapper.vm.selectPatientCandidate(
+      wrapper.vm.appointments[0],
+      'candidate-token'
+    );
     expect(wrapper.vm.canContinuePatientAction(action)).toBe(true);
     await wrapper.vm.continuePatientAction(wrapper.vm.appointments[0]);
 
@@ -1138,9 +1141,9 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     });
     await olderLookup;
 
-    expect(
-      wrapper.vm.patientActions['appointment-501'].command.status
-    ).toBe('awaiting_patient_selection');
+    expect(wrapper.vm.patientActions['appointment-501'].command.status).toBe(
+      'awaiting_patient_selection'
+    );
   });
 
   it('refreshes a cached pending status when no active command remains', async () => {
@@ -1296,8 +1299,7 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     await wrapper.vm.checkProviderBooking(wrapper.vm.appointments[0]);
     const action = wrapper.vm.patientActions['appointment-501'];
     action.selectedPatientToken = 'candidate-token';
-    wrapper.vm.appointmentForms['appointment-501'].clientPhone =
-      '+77000000002';
+    wrapper.vm.appointmentForms['appointment-501'].clientPhone = '+77000000002';
 
     expect(wrapper.vm.canContinuePatientAction(action)).toBe(false);
     expect(wrapper.vm.patientActionDescription(action)).toBe(
@@ -1328,7 +1330,9 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     await wrapper.vm.saveAppointment(wrapper.vm.appointments[0]);
     await wrapper.vm.cancelAppointment(wrapper.vm.appointments[0]);
 
-    expect(SchedulingProviderCommandsAPI.selectPatient).toHaveBeenCalledTimes(1);
+    expect(SchedulingProviderCommandsAPI.selectPatient).toHaveBeenCalledTimes(
+      1
+    );
     expect(SchedulingAppointmentsAPI.update).not.toHaveBeenCalled();
     expect(SchedulingAppointmentsAPI.cancel).not.toHaveBeenCalled();
 
@@ -1393,7 +1397,9 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     expect(wrapper.text()).toContain(
       'SCHEDULING.MEDELEMENT.STALE_COMMAND_DESCRIPTION'
     );
-    expect(SchedulingProviderCommandsAPI.patientCandidates).not.toHaveBeenCalled();
+    expect(
+      SchedulingProviderCommandsAPI.patientCandidates
+    ).not.toHaveBeenCalled();
     await wrapper.vm.continuePatientAction(wrapper.vm.appointments[0]);
     expect(SchedulingProviderCommandsAPI.selectPatient).not.toHaveBeenCalled();
   });
@@ -1434,7 +1440,9 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     expect(wrapper.vm.patientActions['appointment-501'].command.status).toBe(
       'awaiting_patient_creation'
     );
-    expect(SchedulingProviderCommandsAPI.confirmPatientCreation).not.toHaveBeenCalled();
+    expect(
+      SchedulingProviderCommandsAPI.confirmPatientCreation
+    ).not.toHaveBeenCalled();
   });
 
   it('requires the provider confirmation flag before creating a patient', async () => {
@@ -1503,10 +1511,12 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     await checking;
     await flushPromises();
 
-    expect(wrapper.find('[data-testid="provider-patient-action-501"]').exists()).toBe(
-      false
-    );
-    expect(SchedulingProviderCommandsAPI.patientCandidates).not.toHaveBeenCalled();
+    expect(
+      wrapper.find('[data-testid="provider-patient-action-501"]').exists()
+    ).toBe(false);
+    expect(
+      SchedulingProviderCommandsAPI.patientCandidates
+    ).not.toHaveBeenCalled();
   });
 
   it('does not show a patient action response after the account changes', async () => {
@@ -1526,10 +1536,12 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     });
     await checking;
 
-    expect(wrapper.find('[data-testid="provider-patient-action-501"]').exists()).toBe(
-      false
-    );
-    expect(SchedulingProviderCommandsAPI.patientCandidates).not.toHaveBeenCalled();
+    expect(
+      wrapper.find('[data-testid="provider-patient-action-501"]').exists()
+    ).toBe(false);
+    expect(
+      SchedulingProviderCommandsAPI.patientCandidates
+    ).not.toHaveBeenCalled();
   });
 
   it('discards a patient action lookup when the appointment snapshot changes', async () => {
@@ -1551,10 +1563,12 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     });
     await checking;
 
-    expect(wrapper.find('[data-testid="provider-patient-action-501"]').exists()).toBe(
-      false
-    );
-    expect(SchedulingProviderCommandsAPI.patientCandidates).not.toHaveBeenCalled();
+    expect(
+      wrapper.find('[data-testid="provider-patient-action-501"]').exists()
+    ).toBe(false);
+    expect(
+      SchedulingProviderCommandsAPI.patientCandidates
+    ).not.toHaveBeenCalled();
   });
 
   it('invalidates a delayed candidate response when a snake-case cabinet changes', async () => {
