@@ -6,6 +6,22 @@ RSpec.describe Captain::ToolExecutionAuditService do
   let(:user) { create(:user, :administrator, account: account) }
   let(:tool_audit_count) { -> { Enterprise::AuditLog.where(action: 'captain_tool_execute').count } }
 
+  it 'records patient appointment lookup without filter names or appointment cards' do
+    account.enable_features!('audit_logs')
+    described_class.record(
+      assistant: assistant,
+      scope_name: Captain::ToolAccess::SCOPE_AGENT,
+      tool_definition: { id: 'list_my_appointments', title: 'Мои записи' },
+      arguments: { doctor: 'Доктор Пример' },
+      result: { success: true, appointments: [{ id: 12, doctor: 'Доктор Пример' }] },
+      runtime_context: { conversation_id: 34 }
+    )
+
+    payload = Enterprise::AuditLog.where(action: 'captain_tool_execute').last.audited_changes
+    expect(payload).to include('tool_id' => 'list_my_appointments', 'conversation_id' => 34)
+    expect(payload.to_json).not_to include('Доктор Пример', 'appointments', 'doctor')
+  end
+
   it 'always audits confirmation-required tool calls with redacted sensitive keys' do
     expect(account).not_to be_feature_enabled(:audit_logs)
 

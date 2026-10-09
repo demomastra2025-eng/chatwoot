@@ -1077,6 +1077,19 @@ class Captain::ToolRegistry
           risk_level: 'low'
         ),
         definition(
+          id: 'list_my_appointments',
+          title: 'Мои записи',
+          description: 'Показывает записи текущего пациента с фильтрами и страницами',
+          group_name: 'Scheduling',
+          icon: 'calendar',
+          allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
+          agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
+          assistant_tool_class: Captain::Tools::Copilot::ListMyAppointmentsService,
+          required_features: %w[scheduling],
+          risk_level: 'low',
+          selected_by_default: false
+        ),
+        definition(
           id: 'search_appointments',
           title: 'Search Appointments',
           description: 'Search appointments by client, exact normalized IIN, status, payment status, contact, or specialist',
