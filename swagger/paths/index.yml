@@ -2853,6 +2853,142 @@ x-scheduling-expense-schema: &scheduling_expense_schema
   get:
     $ref: ./application/reporting_events/index.yml
 
+# Standalone account reports (permission: administrator or report_manage; no CRM feature dependency)
+/api/v1/accounts/{account_id}/reports/calls:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+    - in: query
+      name: from_date
+      schema: { type: string, format: date }
+      description: Inclusive workspace-local start date. Defaults to the first day of the trailing 30-day range.
+    - in: query
+      name: to_date
+      schema: { type: string, format: date }
+      description: Inclusive workspace-local end date. Defaults to today in the account reporting timezone.
+  get:
+    tags: [Reports]
+    operationId: get-account-calls-report
+    summary: Get account logical call report
+    description: Counts inbound routing legs as one logical call. A logical call is assigned to the local date of its first leg; answered requires an answer timestamp. Up to 1,000 calls are included in metrics, with incomplete coverage explicitly reported when capped. CRM is not required.
+    security:
+      - userApiKey: []
+    responses:
+      '200':
+        description: Account-scoped call metrics and recent logical calls
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                payload:
+                  type: object
+                  properties:
+                    summary:
+                      type: object
+                      properties:
+                        logical_call_count: { type: integer }
+                        answered_count: { type: integer }
+                        unanswered_count: { type: integer }
+                        inbound_count: { type: integer }
+                        outbound_count: { type: integer }
+                        average_answered_duration_seconds: { type: number, nullable: true }
+                    daily_breakdown:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          date: { type: string, format: date }
+                          logical_call_count: { type: integer }
+                          answered_count: { type: integer }
+                          unanswered_count: { type: integer }
+                    rows:
+                      type: array
+                      description: Latest 100 logical calls; no phone or contact details are returned.
+                      items:
+                        type: object
+                        properties:
+                          id: { type: integer }
+                          started_at: { type: string, format: date-time }
+                          direction: { type: string }
+                          status: { type: string }
+                          answered: { type: boolean }
+                          duration_seconds: { type: integer, nullable: true }
+                          provider: { type: string, nullable: true }
+                          inbox_name: { type: string, nullable: true }
+                    coverage:
+                      type: object
+                      properties:
+                        complete: { type: boolean }
+                        limit: { type: integer }
+                        sampled_calls: { type: integer }
+                        count_scope: { type: string }
+                meta:
+                  type: object
+                  properties:
+                    from_date: { type: string, format: date }
+                    to_date: { type: string, format: date }
+                    timezone: { type: string }
+                    max_range_days: { type: integer }
+      '403':
+        description: Caller lacks report permission
+      '422':
+        description: Invalid date range or reporting timezone
+
+/api/v1/accounts/{account_id}/reports/leads:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+    - in: query
+      name: from_date
+      schema: { type: string, format: date }
+      description: Inclusive workspace-local start date. Defaults to the first day of the trailing 30-day range.
+    - in: query
+      name: to_date
+      schema: { type: string, format: date }
+      description: Inclusive workspace-local end date. Defaults to today in the account reporting timezone.
+  get:
+    tags: [Reports]
+    operationId: get-account-leads-and-sources-report
+    summary: Get account leads and sources report
+    description: Reports Meta messaging-referral events and lead form submission events separately from linked unique contacts. Only explicit click-to-WhatsApp, Messenger, and Instagram attribution types count as ad referrals; unknown attribution stays visible. CRM is not required.
+    security:
+      - userApiKey: []
+    responses:
+      '200':
+        description: Account-scoped referral, lead form, and processing metrics
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                payload:
+                  type: object
+                  properties:
+                    referrals:
+                      type: object
+                      description: Event totals, linked unique contacts, ad attribution totals, and capped attribution breakdown with omitted-event count.
+                      additionalProperties: true
+                    form_submissions:
+                      type: object
+                      description: Submission events, linked unique contacts, source/status, form and UTM breakdowns; each capped breakdown includes omitted-event counts.
+                      additionalProperties: true
+                    processing:
+                      type: object
+                      properties:
+                        submissions_processed_in_selected_period: { type: integer }
+                        selected_submissions_with_processed_at: { type: integer }
+                        average_processing_seconds: { type: number, nullable: true }
+                meta:
+                  type: object
+                  properties:
+                    from_date: { type: string, format: date }
+                    to_date: { type: string, format: date }
+                    timezone: { type: string }
+                    max_range_days: { type: integer }
+      '403':
+        description: Caller lacks report permission
+      '422':
+        description: Invalid date range or reporting timezone
+
 # List
 /api/v2/accounts/{account_id}/reports:
   parameters:

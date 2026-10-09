@@ -16,26 +16,40 @@ class Telephony::LogicalCallHistoryQuery
     'failed' => 5
   }.freeze
 
-  def initialize(relation:, limit:, status: nil)
+  def initialize(relation:, limit:, status: nil, candidate_relation: nil, include_group_siblings: false)
     @relation = relation.reorder(nil)
+    @candidate_relation = (candidate_relation || relation).reorder(nil)
     @limit = limit
     @status = Telephony::CallSession.normalize_status(status) || status.to_s.presence
-    @candidate_relation = status.present? ? @relation.where(status: status_values) : @relation
+    @candidate_relation = @candidate_relation.where(status: status_values) if status.present?
+    @include_group_siblings = include_group_siblings
     @candidate_ids = Set.new
   end
 
   def call
+    selected_groups.map { |group| group.fetch(:representative) }
+  end
+
+  def call_with_groups
+    selected_groups.map do |group|
+      {
+        representative: group.fetch(:representative),
+        sessions: group.fetch(:sessions)
+      }
+    end
+  end
+
+  private
+
+  def selected_groups
     groups = scan_groups
 
     matching_groups(groups)
       .sort_by { |group| group_sort_key(group) }
       .first(limit)
-      .map { |group| group.fetch(:representative) }
   end
 
-  private
-
-  attr_reader :candidate_relation, :candidate_ids, :relation, :limit, :status
+  attr_reader :candidate_relation, :candidate_ids, :include_group_siblings, :relation, :limit, :status
 
   def scan_groups
     sessions_by_id = {}
@@ -88,7 +102,7 @@ class Telephony::LogicalCallHistoryQuery
   # call are created within seconds of each other, so the rows around the
   # selected ones are loaded and the grouping itself is left to build_groups.
   def load_group_siblings(sessions_by_id, batch)
-    return if status.blank?
+    return if status.blank? && !include_group_siblings
 
     inbound = batch.select { |session| session.direction == 'inbound' }
     return if inbound.empty?
@@ -183,6 +197,7 @@ class Telephony::LogicalCallHistoryQuery
     {
       representative: sessions.reduce { |current, candidate| preferred_session(current, candidate) },
       newest_created_at: sessions.filter_map(&:created_at).max,
+      sessions: sessions,
       session_ids: sessions.to_set(&:id)
     }
   end
@@ -232,10 +247,11 @@ class Telephony::LogicalCallHistoryQuery
   end
 
   def matching_groups(groups)
-    return groups if status.blank?
+    return groups if status.blank? && !include_group_siblings
 
     groups.select do |group|
-      group.fetch(:session_ids).intersect?(candidate_ids) && group.fetch(:representative).canonical_status == status
+      is_candidate = group.fetch(:session_ids).intersect?(candidate_ids)
+      is_candidate && (status.blank? || group.fetch(:representative).canonical_status == status)
     end
   end
 

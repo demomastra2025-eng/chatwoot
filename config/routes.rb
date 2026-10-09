@@ -546,6 +546,12 @@ Rails.application.routes.draw do
           resources :labels, only: [:index, :show, :create, :update, :destroy]
           resources :lead_forms, only: [:index, :show, :create, :update, :destroy]
           resources :lead_submissions, only: [:index, :show]
+          resources :reports, only: [] do
+            collection do
+              get :calls
+              get :leads
+            end
+          end
 
           resources :notifications, only: [:index, :update, :destroy] do
             collection do

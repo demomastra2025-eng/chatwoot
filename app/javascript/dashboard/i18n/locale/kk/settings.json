@@ -472,6 +472,8 @@
     "ONE_OFF": "One off",
     "REPORTS_SLA": "SLA",
     "REPORTS_DEALS": "Мәмілелер",
+    "REPORTS_CALLS": "Қоңыраулар",
+    "REPORTS_LEADS": "Лидтер мен көздер",
     "REPORTS_BOT": "Robot",
     "REPORTS_AGENT": "Employees",
     "REPORTS_LABEL": "Tags",

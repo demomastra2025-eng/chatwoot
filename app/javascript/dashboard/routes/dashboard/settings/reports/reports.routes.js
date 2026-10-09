@@ -18,6 +18,8 @@ const TeamReports = () => import('./TeamReports.vue');
 const CsatResponses = () => import('./CsatResponses.vue');
 const BotReports = () => import('./BotReports.vue');
 const DealReports = () => import('./DealReports.vue');
+const CallReports = () => import('./CallReports.vue');
+const LeadReports = () => import('./LeadReports.vue');
 const LiveReports = () => import('./LiveReports.vue');
 const SLAReports = () => import('./SLAReports.vue');
 const meta = {
@@ -158,6 +160,18 @@ export default {
           name: 'deal_reports',
           meta,
           component: DealReports,
+        },
+        {
+          path: 'calls',
+          name: 'call_reports',
+          meta,
+          component: CallReports,
+        },
+        {
+          path: 'leads',
+          name: 'lead_reports',
+          meta,
+          component: LeadReports,
         },
         ...oldReportRoutes,
         ...revisedReportRoutes,

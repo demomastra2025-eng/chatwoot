@@ -1464,6 +1464,18 @@ const menuItems = computed(() => {
             label: t('SIDEBAR.REPORTS_CONVERSATION'),
             to: accountScopedRoute('conversation_reports'),
           },
+          {
+            name: 'Reports Calls',
+            visibilityKey: 'Reports:Calls',
+            label: t('SIDEBAR.REPORTS_CALLS'),
+            to: accountScopedRoute('call_reports'),
+          },
+          {
+            name: 'Reports Leads',
+            visibilityKey: 'Reports:Leads',
+            label: t('SIDEBAR.REPORTS_LEADS'),
+            to: accountScopedRoute('lead_reports'),
+          },
           ...(hasCrmDeals.value
             ? [
                 {
