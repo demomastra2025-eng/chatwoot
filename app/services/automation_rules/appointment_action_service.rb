@@ -4,17 +4,20 @@ class AutomationRules::AppointmentActionService
     @account = account
     @appointment = appointment
     @changed_attributes = options[:changed_attributes]
+    @delayed_notification = options[:delayed_notification] == true
+    @notification_key = options[:notification_key]
     Current.executed_by = rule
   end
 
-  def perform
-    @rule.actions.each do |action|
+  def perform(actions: @rule.actions, raise_errors: false)
+    actions.each do |action|
       action = action.with_indifferent_access
       begin
         @current_action_id = action[:action_id]
         send(action[:action_name], action[:action_params])
       rescue StandardError => e
         ChatwootExceptionTracker.new(e, account: @account).capture_exception
+        raise if raise_errors
       ensure
         @current_action_id = nil
       end
@@ -28,7 +31,13 @@ class AutomationRules::AppointmentActionService
   def send_webhook_event(webhook_url)
     payload = @appointment.automation_webhook_data.merge(event: "automation_event.#{@rule.event_name}")
     payload[:changed_attributes] = formatted_changed_attributes if formatted_changed_attributes.present?
-    WebhookJob.perform_later(webhook_url[0], payload)
+    if @delayed_notification
+      delivery_id = Digest::SHA256.hexdigest(@notification_key)
+      job = WebhookJob.perform_later(webhook_url[0], payload, delivery_id: delivery_id)
+      raise 'Appointment webhook could not be queued' unless job
+    else
+      WebhookJob.perform_later(webhook_url[0], payload)
+    end
   end
 
   def change_appointment_status(action_params)
@@ -91,7 +100,8 @@ class AutomationRules::AppointmentActionService
       rule: @rule,
       account: @account,
       record: @appointment,
-      entity_kind: 'appointment'
+      entity_kind: 'appointment',
+      permanent_dedup: @delayed_notification
     )
   end
 end

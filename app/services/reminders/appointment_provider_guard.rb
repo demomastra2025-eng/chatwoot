@@ -14,6 +14,9 @@ class Reminders::AppointmentProviderGuard
     return if appointment.blank?
     return if provider_cancellation_notification?(appointment)
 
+    create_result = create_command_result(appointment)
+    return create_result if create_result
+
     verify_appointment(appointment)
   end
 
@@ -22,7 +25,8 @@ class Reminders::AppointmentProviderGuard
     return CONTINUE if appointment.blank?
     return handle_cancellation_notification(appointment) if provider_cancellation_notification?(appointment)
 
-    verification = local_cancellation_result if appointment.status == 'cancelled'
+    verification = create_command_result(appointment) || verification
+    verification ||= local_cancellation_result if appointment.status == 'cancelled'
     verification ||= verify_appointment(appointment)
     return CONTINUE if verification.allowed?
 
@@ -33,6 +37,24 @@ class Reminders::AppointmentProviderGuard
   private
 
   attr_reader :reminder, :phase
+
+  def create_command_result(appointment)
+    return unless reminder.metadata.to_h[Reminder::AUTOMATION_EVENT_NAME_KEY] == 'appointment_created'
+    status = Integrations::Medelement::AppointmentProviderStatus
+    return if appointment.custom_attributes.to_h[status::ATTRIBUTE_KEY].blank?
+
+    command_id = appointment.custom_attributes.to_h[status::COMMAND_ID_KEY]
+    command = Integrations::Medelement::ProviderCommand.find_by(
+      id: command_id, account_id: appointment.account_id, appointment_id: appointment.id, operation: 'create_reception'
+    ) if command_id.present?
+    return if command&.succeeded?
+
+    terminal = command&.status.in?(%w[failed declined cancelled])
+    Integrations::Medelement::AppointmentFreshnessVerifier::Result.new(
+      status: terminal ? 'cancelled' : 'blocked', reason: 'provider_create_not_succeeded',
+      checked_at: Time.current, command_id: command&.id, command_status: command&.status
+    )
+  end
 
   def verify_appointment(appointment)
     Integrations::Medelement::AppointmentFreshnessVerifier.new(appointment: appointment).perform

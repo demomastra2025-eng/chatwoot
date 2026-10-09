@@ -13,17 +13,23 @@ class AutomationRules::TouchActionService
 
   attr_reader :account, :entity_kind, :record, :rule, :trigger_message
 
-  def initialize(rule:, account:, record:, entity_kind:, trigger_message: nil)
+  def initialize(rule:, account:, record:, entity_kind:, trigger_message: nil, permanent_dedup: false)
     @rule = rule
     @account = account
     @record = record
     @entity_kind = entity_kind
     @trigger_message = trigger_message
+    @permanent_dedup = permanent_dedup
   end
 
   # Legacy action retained for automation rules saved before plan removal.
   def apply_touch_plan(action_params)
     reminder_group = load_touch_plan!(action_params)
+    if @permanent_dedup
+      existing = account.reminders.where(remindable: record, reminder_group: reminder_group)
+                        .where('metadata @> ?', { 'automation_rule_id' => rule.id }.to_json)
+      return existing.to_a if existing.exists?
+    end
 
     result = Reminders::PlanApplicationService.new(
       account: account,
@@ -115,7 +121,7 @@ class AutomationRules::TouchActionService
     }
     metadata[Reminder::AUTOMATION_TRIGGER_MESSAGE_ID_KEY] = trigger_message.id if trigger_message.present?
     scope = account.reminders.where(remindable: record).where('metadata @> ?', metadata.to_json)
-    scope = scope.where(status: Reminder::OPEN_STATUSES) if trigger_message.blank?
+    scope = scope.where(status: Reminder::OPEN_STATUSES) if trigger_message.blank? && !@permanent_dedup
     return scope.first if action_signature.blank?
 
     matching_touch = scope.where('metadata @> ?', { Reminder::AUTOMATION_ACTION_SIGNATURE_KEY => action_signature }.to_json).first

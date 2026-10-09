@@ -20,6 +20,11 @@ medelement_provider_command_dispatcher_job:
   class: 'Integrations::Medelement::ProviderCommandDispatcherJob'
   queue: medelement_provider_commands
 
+appointment_created_notification_recovery_job:
+  cron: '*/1 * * * *'
+  class: 'AutomationRules::ReleaseAppointmentCreatedNotificationsJob'
+  queue: medelement_provider_commands
+
 # recovers silent read-sync runs only after owner, queue and account-lock checks
 medelement_stale_sync_run_recovery_job:
   cron: '*/5 * * * *'
