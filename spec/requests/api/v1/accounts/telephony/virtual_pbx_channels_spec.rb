@@ -1423,7 +1423,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(payload.dig('ui_config', 'status', 'read_only')).to be(false)
     expect(payload.dig('ui_config', 'connection', 'configured')).to be(true)
     inbox = Inbox.find(inbox_id)
-    expect(inbox.inbox_members.pluck(:user_id)).to contain_exactly(administrator.id)
+    expect(inbox.inbox_members).to be_empty
     expect(inbox.telephony_sip_profiles).to be_empty
     expect(Telephony::NumberBinding.find_by!(inbox_id: inbox_id)).to be_managed
     expect(payload.to_json).not_to include('do-not-return-this-secret')
@@ -1457,7 +1457,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     inbox = Inbox.find(inbox_id)
     profile = inbox.telephony_sip_profiles.find_by!(user_id: agent.id)
 
-    expect(inbox.inbox_members.pluck(:user_id)).to include(agent.id)
+    expect(inbox.inbox_members.pluck(:user_id)).to contain_exactly(agent.id)
     expect(profile).to have_attributes(
       internal_extension: '207',
       sip_username: 'manager-207-login',
@@ -1503,7 +1503,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
                                    as: :json
 
     expect(response).to have_http_status(:ok)
-    expect(inbox.reload.inbox_members.pluck(:user_id)).to contain_exactly(administrator.id, agent.id, second_agent.id)
+    expect(inbox.reload.inbox_members.pluck(:user_id)).to contain_exactly(agent.id, second_agent.id)
     expect(inbox.telephony_sip_profiles.pluck(:user_id, :internal_extension, :sip_username)).to contain_exactly(
       [agent.id, '207', 'manager-207-login'],
       [second_agent.id, '208', 'manager-208-login']

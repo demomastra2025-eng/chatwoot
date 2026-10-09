@@ -489,8 +489,26 @@
       "TRACE_EMPTY": "Орындалу барысын көру үшін хабарлама жіберіңіз.",
       "TRACE_RESPONSE": "Жауап {number}",
       "TRACE_REASONING": "Пайымдау",
+      "RESPONSE_LATENCY": "Жауап беру уақыты",
+      "RESPONSE_LATENCY_VALUE": "{ms} мс (сервер өлшеген толық уақыт)",
+      "REPORTED_REASONING_TOKENS": "Провайдер хабарлаған пайымдау токендері",
       "TRACE_TOOLS": "Құралдар",
-      "TRACE_NO_TOOLS": "Құралдар шақырылмады"
+      "TRACE_NO_TOOLS": "Құралдар шақырылмады",
+      "TEST_SETTINGS": "Тестілеу баптаулары",
+      "TEST_SETTINGS_DESCRIPTION": "Бұл параметрлер тек сынақ алаңындағы сұрауларға қолданылады және сақталған ассистенттің баптауларын өзгертпейді.",
+      "TEST_SETTINGS_ERROR": "Сынақ баптауларын жүктеу мүмкін болмады. Бетті жаңартып, қайта көріңіз.",
+      "TEST_MODEL": "Осы сынаққа арналған модель",
+      "USE_ASSISTANT_MODEL": "Ассистент баптаған модельді пайдалану",
+      "CURRENT_MODEL": "{model} (ағымдағы модель)",
+      "TEST_TEMPERATURE": "Температура мәнін өзгерту",
+      "UNSUPPORTED_TEMPERATURE": "Таңдалған модель температура параметрін басқаруды қолдамайды.",
+      "TEST_REASONING_EFFORT": "Осы сынаққа арналған пайымдау деңгейі",
+      "USE_WORKSPACE_REASONING": "Жұмыс кеңістігінің баптауын пайдалану",
+      "REASONING_NONE": "Жоқ",
+      "REASONING_LOW": "Төмен",
+      "REASONING_MEDIUM": "Орташа",
+      "REASONING_HIGH": "Жоғары",
+      "UNSUPPORTED_REASONING": "Таңдалған модель пайымдау деңгейін қолдамайды."
     },
     "PAYWALL": {
       "TITLE": "Upgrade to use Captain AI",
@@ -547,6 +565,18 @@
         "TEMPERATURE": {
           "LABEL": "Response Temperature",
           "DESCRIPTION": "Adjust how creative or restrictive the assistant's responses should be. Lower values produce more focused and deterministic responses, while higher values allow for more creative and varied outputs."
+        },
+        "SAFETY_SETTINGS": {
+          "LABEL": "Қауіпсіздік тексерістері",
+          "DESCRIPTION": "Агент жұмыс істеген кезде қолданылатын тексерістерді таңдаңыз. «Мұралау» жұмыс кеңістігінің баптауын қолданады; бұғаттау сәйкес сұрауларды тоқтатады, белгілеу сәйкестікті тіркеп, жалғастырады, ал өшіру тексерісті өткізіп жібереді.",
+          "MODERATION": "Провайдердің мазмұнды модерациялауы",
+          "PROMPT_INJECTION": "Жасырын нұсқау енгізу шабуылы",
+          "SENSITIVE_INFO": "Құпия мәліметтер мен тіркелгі деректері",
+          "INHERIT": "Жұмыс кеңістігінің баптауын қолдану",
+          "ENABLED": "Қосулы",
+          "DISABLED": "Өшірулі",
+          "BLOCK": "Бұғаттау",
+          "FLAG": "Белгілеу және жалғастыру"
         },
         "DESCRIPTION": {
           "LABEL": "Description",

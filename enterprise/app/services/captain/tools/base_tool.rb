@@ -46,7 +46,17 @@ class Captain::Tools::BaseTool < RubyLLM::Tool
   end
 
   def tool_safety_preferences
-    Captain::AssistantSafetyPreferences.for(assistant: assistant, feature: tool_safety_feature)
+    preferences = Captain::AssistantSafetyPreferences.for(assistant: assistant, feature: tool_safety_feature)
+    return preferences unless legacy_copilot_tool? && preferences.key?('copilot_safety_blocklist')
+    return preferences if preferences.key?('assistant_safety_blocklist')
+
+    preferences.merge('assistant_safety_blocklist' => preferences['copilot_safety_blocklist'])
+  end
+
+  def legacy_copilot_tool?
+    is_a?(Captain::Tools::Copilot::BaseAccountTool) ||
+      is_a?(Captain::Tools::Copilot::CustomHttpTool) ||
+      is_a?(Captain::Tools::Copilot::McpTool)
   end
 
   def tool_safety_arguments(arguments)

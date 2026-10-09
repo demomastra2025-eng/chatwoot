@@ -164,7 +164,7 @@ RSpec.describe 'Inboxes API', type: :request do
       it 'does not expose legacy Sipuni webhook details for voice inboxes' do
         voice_channel = create(:channel_voice, :sipuni, account: account)
         voice_inbox = voice_channel.inbox
-        voice_inbox.inbox_members.find_by!(user: agent)
+        voice_inbox.inbox_members.find_or_create_by!(user_id: agent.id)
 
         get "/api/v1/accounts/#{account.id}/inboxes/#{voice_inbox.id}",
             headers: agent.create_new_auth_token,

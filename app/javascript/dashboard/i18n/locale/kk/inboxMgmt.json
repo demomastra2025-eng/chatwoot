@@ -1560,6 +1560,8 @@
       "TITLE": "Conversation Assignment",
       "DESCRIPTION": "Automatically assign incoming conversations to available employees based on assignment policies",
       "ENABLE_AUTO_ASSIGNMENT": "Enable automatic conversation assignment",
+      "WORKSPACE_POLICY_NOTICE": "Бұл арнаның автоматты тағайындауға арналған жеке қосқышы бар. Жұмыс кеңістігіне ортақ тағайындау саясаты «Диалогтар» баптауларында таңдалады.",
+      "OPEN_WORKSPACE_SETTINGS": "«Диалогтар» баптауларын ашу",
       "DEFAULT_RULES_TITLE": "Default assignment rules",
       "DEFAULT_RULES_DESCRIPTION": "Using the default assignment behavior for all conversations",
       "DEFAULT_RULE_1": "Earliest created conversations first",
