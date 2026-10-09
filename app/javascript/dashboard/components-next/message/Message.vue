@@ -28,6 +28,7 @@ import {
   CONTENT_TYPES,
 } from './constants';
 import { isAutomationTouchMessage } from './helpers/messageProvenance';
+import { isAttachmentConfirmedPurged } from 'dashboard/composables/useAttachmentAvailability';
 
 import Avatar from 'next/avatar/Avatar.vue';
 
@@ -396,7 +397,16 @@ const componentToRender = computed(() => {
     const fileType = props.attachments[0].fileType;
 
     // A file purged from the storage trash has no media to play; the text bubble shows the note and transcript.
-    if (props.attachments[0].filePurged) return TextBubble;
+    if (
+      props.attachments[0].filePurged === true ||
+      props.attachments[0].file_purged === true ||
+      isAttachmentConfirmedPurged(props.attachments[0], {
+        accountId: route.params.accountId,
+        conversationId: props.conversationId,
+      })
+    ) {
+      return TextBubble;
+    }
 
     if (
       isVoiceNote.value &&

@@ -60,6 +60,28 @@ RSpec.describe Integrations::Medelement::ConflictTracker do
     expect(conflict.resolution_note).to include('successful sync phase')
   end
 
+  it 'keeps only the matching invalid reception conflict open for a listed but unprocessed row' do
+    first_tracker = described_class.new(sync_run: first_run)
+    first_tracker.record!(
+      phase: 'receptions', entity_type: 'reception', conflict_type: 'invalid_reception', entity_key: 'reception-1'
+    )
+    first_tracker.record!(
+      phase: 'receptions', entity_type: 'reception', conflict_type: 'stale_snapshot', entity_key: 'reception-1'
+    )
+    first_run.update!(status: 'succeeded')
+    second_run = Integrations::Medelement::SyncRun.create!(account: account, hook: hook, trigger: 'retry', status: 'running')
+    tracker = described_class.new(sync_run: second_run)
+
+    tracker.preserve_open_conflict!(
+      phase: 'receptions', entity_type: 'reception', conflict_type: 'invalid_reception', entity_key: 'reception-1'
+    )
+    tracker.resolve_absent!('receptions')
+
+    conflicts = Integrations::Medelement::SyncConflict.order(:conflict_type)
+    expect(conflicts.find_by!(conflict_type: 'invalid_reception')).to be_open
+    expect(conflicts.find_by!(conflict_type: 'stale_snapshot')).to be_resolved
+  end
+
   it 'resolves only conflicts belonging to processed entity keys for a bounded phase' do
     tracker = described_class.new(sync_run: first_run)
     tracker.record!(phase: 'contacts', entity_type: 'contact', conflict_type: 'phone_mismatch', entity_key: 'patient-1')

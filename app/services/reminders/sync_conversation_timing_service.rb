@@ -10,6 +10,7 @@ class Reminders::SyncConversationTimingService
     relevant_touches.find_each do |touch|
       sync_touch!(touch)
     rescue StandardError => e
+      Reminders::OperationDiagnostics.report(operation: 'reschedule', error: e, record: conversation, touch: touch)
       ChatwootExceptionTracker.new(e, account: conversation.account).capture_exception
     end
   end

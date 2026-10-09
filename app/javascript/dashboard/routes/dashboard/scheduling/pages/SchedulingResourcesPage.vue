@@ -23,7 +23,11 @@ import SchedulingFormFieldGroup from 'dashboard/components-next/Scheduling/Sched
 import SchedulingPageHeader from 'dashboard/components-next/Scheduling/SchedulingPageHeader.vue';
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
 import ProviderScheduleCard from './ProviderScheduleCard.vue';
-import { RESOURCE_COLORS, WEEKDAY_VALUES } from '../constants';
+import {
+  MAX_DURATION_MINUTES,
+  RESOURCE_COLORS,
+  WEEKDAY_VALUES,
+} from '../constants';
 import {
   formatSchedulingErrorMessage,
   toIntegerNumeric,
@@ -774,6 +778,7 @@ onMounted(async () => {
             <SchedulingDurationInput
               v-model="resourceForm.slotDurationMin"
               min="5"
+              :max="MAX_DURATION_MINUTES"
               :label="$t('SCHEDULING.RESOURCES.SLOT_DURATION')"
             />
           </div>

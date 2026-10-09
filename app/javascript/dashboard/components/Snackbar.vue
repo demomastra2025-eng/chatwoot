@@ -33,6 +33,14 @@ export default {
         >
           {{ action.message }}
         </router-link>
+        <button
+          v-else-if="action.type === 'callback' && action.onClick"
+          type="button"
+          class="font-medium cursor-pointer select-none text-n-brand hover:text-n-brand"
+          @click="action.onClick"
+        >
+          {{ action.message }}
+        </button>
       </div>
     </div>
   </div>

@@ -506,6 +506,7 @@ RSpec.describe Reminder do
 
       expect(duplicate).not_to be_valid
       expect(duplicate.errors[:base]).to include('An open touch with the same content already exists')
+      expect(duplicate.errors.details[:base]).to include(error: Reminder::DUPLICATE_OPEN_TOUCH_ERROR)
     end
   end
 

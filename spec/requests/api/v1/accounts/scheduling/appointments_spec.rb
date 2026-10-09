@@ -46,6 +46,12 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     allow(Integrations::Medelement::ResourceAvailabilityService).to receive(:new).and_return(service)
   end
 
+  def stub_local_availability
+    result = Scheduling::AvailabilityService::Result.new(available: true)
+    availability = instance_double(Scheduling::AvailabilityService, availability_result: result)
+    allow(Scheduling::AvailabilityService).to receive(:new).and_return(availability)
+  end
+
   it 'creates an appointment inside a valid slot' do
     post path, params: base_params, headers: headers, as: :json
 
@@ -53,6 +59,34 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(response_body.dig('payload', 'resource_id')).to eq(resource.id)
     expect(response_body.dig('payload', 'resource_name')).to eq(resource.name)
     expect(response_body.dig('payload', 'service_id')).to eq(service.id)
+  end
+
+  it 'accepts an appointment up to 24 hours and rejects one longer through the API' do
+    stub_local_availability
+    starts_at = booking_day
+    accepted_ends_at = starts_at + 24.hours
+    params = base_params.merge(
+      starts_at: starts_at.iso8601,
+      ends_at: accepted_ends_at.iso8601,
+      duration_min: 24 * 60
+    )
+
+    post path, params: params, headers: headers, as: :json
+
+    expect(response).to have_http_status(:created)
+    expect(response_body.dig('payload', 'duration_min')).to eq(24 * 60)
+
+    post path,
+         params: params.merge(
+           starts_at: (starts_at + 2.days).iso8601,
+           ends_at: (starts_at + 2.days + 1441.minutes).iso8601,
+           duration_min: 1441
+         ),
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(Scheduling::Appointment.count).to eq(1)
   end
 
   it 'exposes an account-scoped separate patient card while ignoring a supplied foreign binding ID' do

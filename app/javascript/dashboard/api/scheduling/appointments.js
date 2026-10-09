@@ -10,6 +10,10 @@ class SchedulingAppointmentsAPI extends ApiClient {
     return axios.get(this.url, { params });
   }
 
+  show(id) {
+    return axios.get(`${this.url}/${id}`);
+  }
+
   create(data) {
     return axios.post(this.url, data);
   }

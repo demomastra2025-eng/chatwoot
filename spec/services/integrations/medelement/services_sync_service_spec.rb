@@ -120,6 +120,18 @@ RSpec.describe Integrations::Medelement::ServicesSyncService do
     )
   end
 
+  it 'skips a provider service duration longer than 24 hours' do
+    result = described_class.new(
+      account: account,
+      client: nil,
+      service_payloads: [normalized_service_payloads.first.merge('durationMin' => (24 * 60) + 1)]
+    ).perform
+
+    expect(result).to include(imported_count: 0, skipped_count: 1)
+    expect(account.scheduling_services.reload).to be_empty
+    expect(Scheduling::Service.where(account_id: account.id).count).to eq(0)
+  end
+
   it 'keeps a provider name that exceeds the native display-name limit' do
     provider_name = 'Long provider service ' * 20
 

@@ -24,13 +24,18 @@ const pause = milliseconds => {
 
 const pollProviderCommand = async (
   command,
-  { attempt = 0, maxPollAttempts, pollIntervalMs }
+  { attempt = 0, maxPollAttempts, pollIntervalMs, isCurrent = () => true }
 ) => {
-  if (TERMINAL_STATUSES.has(command.status) || attempt >= maxPollAttempts) {
+  if (
+    TERMINAL_STATUSES.has(command.status) ||
+    attempt >= maxPollAttempts ||
+    !isCurrent()
+  ) {
     return command;
   }
 
   await pause(pollIntervalMs);
+  if (!isCurrent()) return command;
   const showResponse = command.provider
     ? await SchedulingProviderCommandsAPI.get(command.id, {
         provider: command.provider,
@@ -41,6 +46,7 @@ const pollProviderCommand = async (
     attempt: attempt + 1,
     maxPollAttempts,
     pollIntervalMs,
+    isCurrent,
   });
 };
 
@@ -146,6 +152,7 @@ export const useSchedulingProviderCommandsStore = defineStore(
       ui: {
         error: null,
         isExecuting: false,
+        operationId: 0,
       },
     }),
 
@@ -168,8 +175,15 @@ export const useSchedulingProviderCommandsStore = defineStore(
         return normalizePayload(response.data);
       },
 
-      async resumePatientAction(command, action, expectedIntent) {
+      async resumePatientAction(
+        command,
+        action,
+        expectedIntent,
+        isCurrent = () => true
+      ) {
         assertProviderCommandIntent(command, expectedIntent);
+        this.ui.operationId += 1;
+        const operationId = this.ui.operationId;
         this.ui.error = null;
         this.ui.isExecuting = true;
         try {
@@ -178,18 +192,26 @@ export const useSchedulingProviderCommandsStore = defineStore(
           resumedCommand = await pollProviderCommand(resumedCommand, {
             maxPollAttempts: 75,
             pollIntervalMs: 1000,
+            isCurrent,
           });
-          this.lastCommand = resumedCommand;
+          if (isCurrent() && this.ui.operationId === operationId) {
+            this.lastCommand = resumedCommand;
+          }
           return resumedCommand;
         } catch (error) {
-          this.ui.error = extractSchedulingError(error);
-          throw this.ui.error;
+          const schedulingError = extractSchedulingError(error);
+          if (isCurrent() && this.ui.operationId === operationId) {
+            this.ui.error = schedulingError;
+          }
+          throw schedulingError;
         } finally {
-          this.ui.isExecuting = false;
+          if (this.ui.operationId === operationId) {
+            this.ui.isExecuting = false;
+          }
         }
       },
 
-      selectPatient(command, token, expectedIntent) {
+      selectPatient(command, token, expectedIntent, isCurrent) {
         return this.resumePatientAction(
           command,
           () =>
@@ -197,11 +219,12 @@ export const useSchedulingProviderCommandsStore = defineStore(
               ...(command.provider ? { provider: command.provider } : {}),
               token,
             }),
-          expectedIntent
+          expectedIntent,
+          isCurrent
         );
       },
 
-      confirmPatientCreation(command, expectedIntent) {
+      confirmPatientCreation(command, expectedIntent, isCurrent) {
         return this.resumePatientAction(
           command,
           () =>
@@ -213,18 +236,20 @@ export const useSchedulingProviderCommandsStore = defineStore(
               : SchedulingProviderCommandsAPI.confirmPatientCreation(
                   command.id
                 ),
-          expectedIntent
+          expectedIntent,
+          isCurrent
         );
       },
 
-      retryPhoneMismatch(command, expectedIntent) {
+      retryPhoneMismatch(command, expectedIntent, isCurrent) {
         return this.resumePatientAction(
           command,
           () =>
             SchedulingProviderCommandsAPI.retry(command.id, {
               provider: command.provider,
             }),
-          expectedIntent
+          expectedIntent,
+          isCurrent
         );
       },
 

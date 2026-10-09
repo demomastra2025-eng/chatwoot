@@ -76,7 +76,8 @@ class Integrations::Medelement::ServiceUpsertService
     return if value.blank?
 
     duration = normalized_integer(value, :duration_min)
-    raise ArgumentError, 'duration_min is outside 5..720' unless duration.between?(5, 720)
+    allowed_range = Scheduling::Constants::MIN_DURATION_MINUTES..Scheduling::Constants::MAX_DURATION_MINUTES
+    raise ArgumentError, "duration_min is outside #{allowed_range}" unless allowed_range.cover?(duration)
 
     duration
   end

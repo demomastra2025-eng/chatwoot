@@ -201,6 +201,54 @@ RSpec.describe AutomationRules::ActionService do
           'Second automation touch'
         )
       end
+
+      it 'preserves the incoming message and continues later actions after a relative-touch policy conflict' do
+        incoming_message = create(
+          :message,
+          account: account,
+          inbox: conversation.inbox,
+          conversation: conversation,
+          sender: conversation.contact,
+          message_type: :incoming,
+          private: false,
+          content: 'Original incoming message'
+        )
+        relative_touch = {
+          body: 'Relative automation touch',
+          timing_mode: 'relative',
+          relative_anchor: 'touch.created_at',
+          relative_offset_seconds: 3_600,
+          auto_cancel_on_incoming: false
+        }
+        rule.actions = [
+          { action_name: 'create_touch', action_params: [relative_touch] },
+          { action_name: 'create_touch', action_params: [relative_touch.merge(auto_cancel_on_incoming: true)] },
+          { action_name: 'send_message', action_params: ['Continue after duplicate'] }
+        ]
+        rule.save!(validate: false)
+        exception_tracker = instance_spy(ChatwootExceptionTracker)
+        expected_account = account
+        allow(ChatwootExceptionTracker).to receive(:new) do |error, **options|
+          expect(options.fetch(:account)).to eq(expected_account)
+          expect(error).to be_a(ActiveRecord::RecordInvalid)
+          expect(error.record.errors.details[:base]).to include(error: Reminder::DUPLICATE_OPEN_TOUCH_ERROR)
+          exception_tracker
+        end
+        allow(Rails.logger).to receive(:warn).and_raise(IOError, 'diagnostic logger unavailable')
+
+        travel_to(Time.zone.local(2026, 10, 9, 12, 30, 15)) do
+          described_class.new(rule, account, conversation, trigger_message: incoming_message).perform
+        end
+
+        expect(account.reminders.where(remindable: conversation).count).to eq(1)
+        expect(incoming_message.reload).to have_attributes(
+          content: 'Original incoming message',
+          message_type: 'incoming',
+          private: false
+        )
+        expect(conversation.messages.outgoing.sole.content).to eq('Continue after duplicate')
+        expect(exception_tracker).to have_received(:capture_exception).once
+      end
     end
 
     describe '#perform with a legacy message-triggered create_touch action' do

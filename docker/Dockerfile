@@ -33,6 +33,7 @@ RUN apk update && apk add --no-cache \
   postgresql-client \
   git \
   curl \
+  python3 \
   xz \
   && mkdir -p /var/app \
   && gem install bundler -v "$BUNDLER_VERSION"
@@ -77,6 +78,9 @@ RUN pnpm i
 
 COPY . /app
 
+# Retention data is injected only after the fresh production assets are built.
+RUN rm -rf /app/script/onelink/retained-vite-assets
+
 # creating a log directory so that image wont fail when RAILS_LOG_TO_STDOUT is false
 # https://github.com/chatwoot/chatwoot/issues/701
 RUN mkdir -p /app/log
@@ -86,6 +90,16 @@ RUN if [ "$RAILS_ENV" = "production" ]; then \
   SECRET_KEY_BASE=precompile_placeholder RAILS_LOG_TO_STDOUT=enabled bundle exec rake assets:precompile \
   && rm -rf spec node_modules tmp/cache; \
   fi
+
+# Preserve only the allowlisted, manifest-referenced files from the previous
+# production images. The helper verifies all path collisions before copying.
+COPY script/onelink/retained-vite-assets/ /tmp/onelink-retained-vite-assets/
+RUN if [ "$RAILS_ENV" = "production" ] && [ -d /tmp/onelink-retained-vite-assets/public/vite ]; then \
+  python3 /app/script/onelink/retain_previous_vite_assets.py merge \
+    --current /app/public/vite \
+    --retained /tmp/onelink-retained-vite-assets/public/vite; \
+  fi \
+  && rm -rf /tmp/onelink-retained-vite-assets
 
 ARG SOURCE_SHA="unknown"
 

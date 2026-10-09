@@ -18,6 +18,21 @@ class Search::ConversationLookup
   MESSAGE_LIMIT = 100
   MIN_TEXT_LENGTH = 3
   DISPLAY_ID = /\A#?(\d{1,9})\z/
+  NORMALIZED_CONTENT_ATTRIBUTES_SQL = <<~'SQL'.squish.freeze
+    (CASE json_typeof(messages.content_attributes)
+     WHEN 'object' THEN messages.content_attributes
+     WHEN 'string' THEN (messages.content_attributes #>> '{}')::json
+     ELSE '{}'::json END)
+  SQL
+  TRANSCRIPTION_SEARCH_TEXT_SQL = [
+    "COALESCE(messages.processed_message_content, ''::text)",
+    "COALESCE(#{NORMALIZED_CONTENT_ATTRIBUTES_SQL} ->> 'text', ''::text)",
+    "COALESCE(#{NORMALIZED_CONTENT_ATTRIBUTES_SQL} ->> 'text_content', ''::text)",
+    "COALESCE(#{NORMALIZED_CONTENT_ATTRIBUTES_SQL} ->> 'transcribed_text', ''::text)",
+    "COALESCE(#{NORMALIZED_CONTENT_ATTRIBUTES_SQL} -> 'email' ->> 'subject', ''::text)",
+    "COALESCE(#{NORMALIZED_CONTENT_ATTRIBUTES_SQL} -> 'email' ->> 'text_content', ''::text)"
+  ].join(" || E'\\n' || ").freeze
+  ATTACHMENT_TRANSCRIPTION_TEXT_SQL = "attachments.meta ->> 'transcribed_text'".freeze
 
   def initialize(account:, raw_query:, access:, message_since: Search::MessageQuery.lookback_since)
     @account = account
@@ -135,7 +150,9 @@ class Search::ConversationLookup
   def transcription_conversation_ids
     return [] unless text_searchable?
 
-    result = Search::MessageQuery.new(@text).newest(message_scope, match: transcription_match, limit: MESSAGE_LIMIT)
+    result = Search::MessageQuery.new(@text).newest(
+      message_scope, match: transcription_match, indexed_candidates: transcription_candidate_ids, limit: MESSAGE_LIMIT
+    )
     @capped ||= result.rows.size >= MESSAGE_LIMIT
     @partial ||= result.partial
     @scope.where(id: result.rows.map(&:last).uniq).pluck(:id)
@@ -162,14 +179,32 @@ class Search::ConversationLookup
     Arel::Nodes::Grouping.new(Arel.sql(sql))
   end
 
+  # The indexed expression is a superset of the exact predicate above: every searched message-side field is included,
+  # separated by a newline. Candidate IDs are rechecked against #transcription_match before they can be returned, so
+  # matches that cross a field boundary do not change search results.
+  def transcription_candidate_ids
+    scoped_message_ids = message_scope.reorder(nil).select(:id)
+    message_candidates = message_scope.reorder(nil).where(text_candidate_match(TRANSCRIPTION_SEARCH_TEXT_SQL))
+                                      .select('messages.id AS message_id')
+    attachment_candidates = Attachment.where(account_id: @account.id, message_id: scoped_message_ids)
+                                      .where(text_candidate_match(ATTACHMENT_TRANSCRIPTION_TEXT_SQL))
+                                      .reorder(nil)
+                                      .select('attachments.message_id AS message_id')
+    union = "(#{message_candidates.to_sql} UNION #{attachment_candidates.to_sql}) AS transcription_candidates"
+    Message.unscoped.from(Arel.sql(union)).select('transcription_candidates.message_id')
+  end
+
+  def text_candidate_match(expression)
+    regexp = Search::QueryText.yo?(@text) || Search::QueryText.gap?(@text)
+    operator = regexp ? '~*' : 'ILIKE'
+    pattern = regexp ? Search::QueryText.literal_regexp(@text) : Search::QueryText.like_pattern(@text)
+    sql = ActiveRecord::Base.sanitize_sql_array(["#{expression} #{operator} ?", pattern])
+    Arel.sql(sql)
+  end
+
   def normalized_content_attributes
     # ActiveRecord::Store writes a JSON string; imported rows can hold a JSON object.
-    <<~SQL.squish
-      (CASE json_typeof(messages.content_attributes)
-       WHEN 'object' THEN messages.content_attributes
-       WHEN 'string' THEN (messages.content_attributes #>> '{}')::json
-       ELSE '{}'::json END)
-    SQL
+    NORMALIZED_CONTENT_ATTRIBUTES_SQL
   end
 
   def bounded_ids(scope)

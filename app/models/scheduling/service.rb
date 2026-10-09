@@ -35,7 +35,10 @@ class Scheduling::Service < ApplicationRecord
 
   validates :name, presence: true
   validates :base_price, numericality: { greater_than_or_equal_to: 0, only_integer: true }
-  validates :duration_min, inclusion: { in: 5..720 }
+  validates :duration_min,
+            inclusion: {
+              in: Scheduling::Constants::MIN_DURATION_MINUTES..Scheduling::Constants::MAX_DURATION_MINUTES
+            }
 
   scope :ordered, -> { order(:name, :id) }
   scope :active, -> { where(active: true) }

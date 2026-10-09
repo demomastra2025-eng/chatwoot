@@ -42,6 +42,12 @@ RSpec.describe Conversations::ListSearchService do
                      **attributes)
   end
 
+  def write_content_attributes_as_json(message, attributes, encoded: false)
+    json = attributes.to_json
+    value = encoded ? "to_json(#{Message.connection.quote(json)}::text)" : "#{Message.connection.quote(json)}::json"
+    Message.where(id: message.id).update_all("content_attributes = #{value}")
+  end
+
   describe 'list filters' do
     let!(:open_mine) { create(:conversation, account: account, inbox: inbox, contact: ivan, status: :open, assignee: agent) }
     let!(:snoozed_unassigned) { create(:conversation, account: account, inbox: inbox, contact: ivan, status: :snoozed) }
@@ -124,6 +130,32 @@ RSpec.describe Conversations::ListSearchService do
       message_in(resolved_conversation, '', content_attributes: { email: { subject: 'Вопрос по приёму' } })
 
       expect(ids_for('вопрос по приему')).to eq([resolved_conversation.id])
+    end
+
+    it 'keeps transcript matching literal across JSON storage shapes and rechecks concatenated candidates' do
+      object_attributes = create(:conversation, account: account, inbox: inbox, contact: create(:contact, account: account))
+      encoded_attributes = create(:conversation, account: account, inbox: inbox, contact: create(:contact, account: account))
+      cross_field = create(:conversation, account: account, inbox: inbox, contact: create(:contact, account: account))
+      wildcard_only = create(:conversation, account: account, inbox: inbox, contact: create(:contact, account: account))
+      wildcard_lookalike = create(:conversation, account: account, inbox: inbox, contact: create(:contact, account: account))
+      yo_text = create(:conversation, account: account, inbox: inbox, contact: create(:contact, account: account))
+
+      object_message = message_in(object_attributes, '')
+      write_content_attributes_as_json(object_message, { text: "Нужна справка,\nпо записи" })
+      encoded_message = message_in(encoded_attributes, '')
+      write_content_attributes_as_json(encoded_message, { email: { subject: 'Вопрос по приёму' } }, encoded: true)
+      message_in(cross_field, '', content_attributes: { text: 'проверить уникальный', text_content: 'ключ в реестре' })
+      message_in(wildcard_only, '', content_attributes: { text: 'Код 50% принят' })
+      message_in(wildcard_lookalike, '', content_attributes: { text: 'Код 500 принят' })
+      message_in(yo_text, '', content_attributes: { transcribed_text: 'Нужна приёмная врача' })
+
+      aggregate_failures do
+        expect(ids_for('справка по записи')).to eq([object_attributes.id])
+        expect(ids_for('вопрос по приему')).to eq([encoded_attributes.id])
+        expect(ids_for('уникальный ключ')).not_to include(cross_field.id)
+        expect(ids_for('50%')).to eq([wildcard_only.id])
+        expect(ids_for('приемная')).to eq([yo_text.id])
+      end
     end
 
     it 'finds a conversation by the text of a message exactly as typed, without word forms' do
@@ -216,6 +248,28 @@ RSpec.describe Conversations::ListSearchService do
       expect(ids_for('справка')).to eq([resolved_conversation.id])
     end
 
+    it 'does not let transcripts from an inaccessible inbox use up the message limit' do
+      stub_const('Search::ConversationLookup::MESSAGE_LIMIT', 2)
+      hidden = create(:conversation, account: account, inbox: other_inbox, contact: create(:contact, account: account))
+      3.times do
+        message = message_in(hidden, '')
+        Attachment.create!(account: account, message: message, file_type: :audio, meta: { transcribed_text: 'Нужна справка' })
+      end
+      visible = message_in(resolved_conversation, '', created_at: 2.days.ago)
+      Attachment.create!(account: account, message: visible, file_type: :audio, meta: { transcribed_text: 'Нужна справка' })
+
+      expect(ids_for('справка')).to eq([resolved_conversation.id])
+    end
+
+    it 'requires the attachment and message to belong to the searched account' do
+      foreign_account = create(:account)
+      message = message_in(resolved_conversation, '')
+      Attachment.create!(account: foreign_account, message: message, file_type: :audio,
+                         meta: { transcribed_text: 'Исключённая транскрипция' })
+
+      expect(ids_for('исключенная транскрипция')).to be_empty
+    end
+
     context 'with a custom role that opens fewer conversations than its inbox holds' do
       let(:hidden_contact) { create(:contact, account: account, name: 'Скрытый Петров', phone_number: '+77015550000') }
       # in an inbox of the agent, but unassigned and without the agent taking part: not for this role
@@ -245,6 +299,20 @@ RSpec.describe Conversations::ListSearchService do
         3.times { message_in(hidden, 'Нужная справка, но скрытая') }
 
         expect(ids_for('справка')).to eq([visible.id])
+      end
+
+      it 'does not let transcripts of conversations the role cannot open use up the message limit' do
+        stub_const('Search::ConversationLookup::MESSAGE_LIMIT', 2)
+        3.times do
+          message = message_in(hidden, '')
+          Attachment.create!(account: account, message: message, file_type: :audio,
+                             meta: { transcribed_text: 'Ограниченный транскрипт' })
+        end
+        message = message_in(visible, '', created_at: 2.days.ago)
+        Attachment.create!(account: account, message: message, file_type: :audio,
+                           meta: { transcribed_text: 'Ограниченный транскрипт' })
+
+        expect(ids_for('ограниченный транскрипт')).to eq([visible.id])
       end
     end
 

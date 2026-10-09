@@ -72,7 +72,7 @@ class Search::MessageQuery
 
   # The newest messages of `base` (messages already limited to an account, inboxes, the look-back and so on) that match
   # `match` (the literal condition unless the caller combines it with another), `limit` of them after `offset`.
-  def newest(base, limit:, offset: 0, match: condition)
+  def newest(base, limit:, offset: 0, match: condition, indexed_candidates: nil)
     needed = offset + limit
     return Result.new([], false) if !searchable? || offset >= MAX_RESULTS
 
@@ -82,7 +82,7 @@ class Search::MessageQuery
     begin
       within_statement_timeout do
         rows = recent_rows(base, match, needed)
-        rows = indexed_rows(base, match, needed) if rows.size < needed
+        rows = indexed_rows(base, match, needed, candidates: indexed_candidates) if rows.size < needed
       end
     rescue ActiveRecord::QueryCanceled
       Rails.logger.warn('Message text search was cancelled by its time limit')
@@ -101,9 +101,13 @@ class Search::MessageQuery
   end
 
   # A failed statement rolls the settings back with its savepoint, so they are put back only when it succeeded.
-  def indexed_rows(base, match, needed)
+  def indexed_rows(base, match, needed, candidates: nil)
+    previous_enable_indexscan = ActiveRecord::Base.connection.select_value('SHOW enable_indexscan')
     switch_plan_setting('enable_indexscan', 'off')
-    ordered(base.where(match), needed).tap { switch_plan_setting('enable_indexscan', 'on') }
+    scope = candidates ? base.where(id: candidates) : base
+    rows = ordered(scope.where(match), needed)
+    switch_plan_setting('enable_indexscan', previous_enable_indexscan)
+    rows
   end
 
   def ordered(relation, count)

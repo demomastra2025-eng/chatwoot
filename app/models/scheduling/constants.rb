@@ -8,4 +8,6 @@ module Scheduling::Constants
   PAYMENT_KINDS = %w[prepaid payment adjustment].freeze
   DEFAULT_TIMEZONE = 'Asia/Almaty'.freeze
   SLOT_STEP_MINUTES = 5
+  MIN_DURATION_MINUTES = 5
+  MAX_DURATION_MINUTES = 24 * 60
 end

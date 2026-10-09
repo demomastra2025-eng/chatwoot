@@ -33,12 +33,17 @@ import {
   toIntegerNumeric,
   toNumeric,
 } from 'dashboard/stores/scheduling/shared';
+import {
+  providerCommandIntentMatches,
+  useSchedulingProviderCommandsStore,
+} from 'dashboard/stores/scheduling/providerCommands';
 import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/references';
 import { isKazakhstanE164Phone } from 'dashboard/stores/scheduling/appointmentForm';
 import { schedulingContactNameParts } from 'dashboard/stores/scheduling/contactName';
 import {
   addMinutesToDateTimeInputValue,
   appointmentCancellationAlertMessage,
+  buildMedelementProviderCommandParams,
   fromDateTimeInputValue,
   getServicePriceForResource,
   isAppointmentProviderOwned,
@@ -49,6 +54,7 @@ import {
   providerCancellationPending,
   isMedelementResource,
   medelementCabinetsForResource,
+  resolveAppointmentMedelementCabinetCode,
   servicesAvailableForResource,
   toDateTimeInputValue,
 } from 'dashboard/routes/dashboard/scheduling/helpers';
@@ -80,6 +86,7 @@ const { t, locale } = useI18n();
 const store = useStore();
 const route = useRoute();
 const schedulingReferencesStore = useSchedulingReferencesStore();
+const providerCommandsStore = useSchedulingProviderCommandsStore();
 
 const appointments = ref([]);
 const appointmentForms = reactive({});
@@ -92,7 +99,16 @@ const cancellingAppointmentKey = ref('');
 const checkingAppointmentKey = ref('');
 const resolvingCancellationKey = ref('');
 const cancellationReviews = reactive({});
+const patientActions = reactive({});
+const patientActionLookupIds = reactive({});
+const patientActionBusyKey = ref('');
+const patientActionRequestId = ref(0);
 let providerReviewGeneration = 0;
+let loadRequestId = 0;
+let sidebarDisposed = false;
+let appointmentSaveRequestId = 0;
+let createSaveRequestId = 0;
+let appointmentCancellationRequestId = 0;
 const createForm = reactive({
   clientIdentifier: '',
   clientIdentifierInferred: false,
@@ -193,6 +209,7 @@ const hasServiceOptionsForForm = form => serviceOptionsForForm(form).length > 0;
 
 const contact = computed(() => resolveChatContact(props.currentChat));
 const contactId = computed(() => resolveChatContactId(props.currentChat));
+const accountId = computed(() => String(route.params?.accountId || ''));
 
 const createConversationDisplayId = computed(() => {
   const ids = [
@@ -398,7 +415,261 @@ const lookupParams = computed(() => {
   return params;
 });
 
+const PATIENT_ACTION_STATUSES = new Set([
+  'awaiting_patient_creation',
+  'awaiting_patient_selection',
+  'awaiting_phone_refresh',
+]);
+
 const appointmentKey = appointment => `appointment-${appointment.id}`;
+const invalidatePatientAction = key => {
+  patientActionLookupIds[key] = (patientActionLookupIds[key] || 0) + 1;
+  delete patientActions[key];
+  if (patientActionBusyKey.value === key) {
+    patientActionRequestId.value += 1;
+    patientActionBusyKey.value = '';
+    providerCommandsStore.ui.operationId += 1;
+    providerCommandsStore.ui.isExecuting = false;
+    providerCommandsStore.ui.error = null;
+  }
+};
+const APPOINTMENT_PROVIDER_FORM_INTENT_FIELDS = [
+  'clientFirstName',
+  'clientIdentifier',
+  'clientLastName',
+  'clientMiddleName',
+  'clientPhone',
+  'endsAt',
+  'medelementCabinetCode',
+  'resourceId',
+  'serviceId',
+  'startsAt',
+  'status',
+];
+const providerFormIntentFingerprint = form =>
+  JSON.stringify(
+    APPOINTMENT_PROVIDER_FORM_INTENT_FIELDS.map(field =>
+      String(form?.[field] ?? '').trim()
+    )
+  );
+const appointmentProviderFormIntent = appointment => {
+  const nameParts = patientNameParts(appointment);
+  return {
+    clientFirstName: nameParts.clientFirstName,
+    clientIdentifier: appointment?.clientIdentifier || '',
+    clientLastName: nameParts.clientLastName,
+    clientMiddleName: nameParts.clientMiddleName,
+    clientPhone: appointment?.clientPhone || '',
+    endsAt: toClinicDateTime(appointment?.endsAt),
+    medelementCabinetCode:
+      appointment?.customAttributes?.medelementCabinetCode ||
+      appointment?.customAttributes?.medelement_cabinet_code ||
+      appointment?.custom_attributes?.medelement_cabinet_code ||
+      '',
+    resourceId: appointment?.resourceId || '',
+    serviceId: appointment?.serviceId || '',
+    startsAt: toClinicDateTime(appointment?.startsAt),
+    status: appointment?.status || 'scheduled',
+  };
+};
+const isAppointmentProviderFormUnchanged = appointment => {
+  const form = appointmentForms[appointmentKey(appointment)];
+  return (
+    providerFormIntentFingerprint(form) ===
+    providerFormIntentFingerprint(appointmentProviderFormIntent(appointment))
+  );
+};
+const appointmentContextFingerprint = appointment =>
+  JSON.stringify([
+    appointment?.id,
+    appointment?.resourceId,
+    appointment?.serviceId,
+    appointment?.startsAt,
+    appointment?.endsAt,
+    appointment?.status,
+    appointment?.source,
+    appointment?.contactId,
+    appointment?.conversationId,
+    appointment?.conversationDisplayId,
+    appointment?.patientContactId,
+    appointment?.clientIdentifier,
+    appointment?.clientPhone,
+    appointment?.clientName,
+    appointment?.clientFirstName,
+    appointment?.clientLastName,
+    appointment?.clientMiddleName,
+    appointment?.customAttributes?.medelementCabinetCode ||
+      appointment?.customAttributes?.medelement_cabinet_code ||
+      appointment?.custom_attributes?.medelement_cabinet_code ||
+      appointment?.custom_attributes?.medelementCabinetCode ||
+      '',
+  ]);
+const captureSidebarContext = () => ({
+  accountId: accountId.value,
+  chatId: String(props.currentChat?.id || ''),
+  contactId: String(contactId.value || ''),
+  conversationIds: conversationDisplayIds.value.join(','),
+  generation: providerReviewGeneration,
+});
+const isCurrentSidebarContext = context =>
+  !sidebarDisposed &&
+  context.generation === providerReviewGeneration &&
+  context.accountId === accountId.value &&
+  context.chatId === String(props.currentChat?.id || '') &&
+  context.contactId === String(contactId.value || '') &&
+  context.conversationIds === conversationDisplayIds.value.join(',');
+const captureProviderContext = appointment => ({
+  ...captureSidebarContext(),
+  appointmentId: Number(appointment?.id),
+  appointmentFingerprint: appointmentContextFingerprint(appointment),
+});
+const isCurrentProviderContext = context => {
+  if (!isCurrentSidebarContext(context)) return false;
+
+  const currentAppointment = appointments.value.find(
+    item => Number(item.id) === context.appointmentId
+  );
+  return (
+    currentAppointment &&
+    appointmentContextFingerprint(currentAppointment) ===
+      context.appointmentFingerprint
+  );
+};
+const appointmentResource = appointment =>
+  activeResources.value.find(
+    resource => Number(resource.id) === Number(appointment?.resourceId)
+  );
+const isMedelementAppointment = appointment =>
+  isMedelementResource(appointmentResource(appointment));
+const isPatientActionPendingOnAppointment = appointment =>
+  appointment?.status !== 'cancelled' &&
+  !providerCancellationPending(appointment) &&
+  (PATIENT_ACTION_STATUSES.has(
+    appointment?.providerConfirmationStatus ||
+      appointment?.customAttributes?.medelement_provider_sync_status ||
+      appointment?.custom_attributes?.medelement_provider_sync_status
+  ) ||
+    (appointment?.providerConfirmationStatus ||
+      appointment?.customAttributes?.medelement_provider_sync_status ||
+      appointment?.custom_attributes?.medelement_provider_sync_status) ===
+      'pending');
+const patientActionTitle = entry => {
+  const status = entry?.command?.status;
+  if (status === 'awaiting_patient_selection') {
+    return t('SCHEDULING.MEDELEMENT.PATIENT_SELECTION_TITLE');
+  }
+  if (status === 'awaiting_patient_creation') {
+    return t('SCHEDULING.MEDELEMENT.PATIENT_CREATION_TITLE');
+  }
+  if (status === 'awaiting_phone_refresh') {
+    return t('SCHEDULING.MEDELEMENT.PHONE_REFRESH_TITLE');
+  }
+  if (status === 'succeeded') return t('SCHEDULING.MEDELEMENT.SUCCESS');
+  if (
+    status === 'provider_status_unknown' ||
+    status === 'v2_provider_status_unknown'
+  ) {
+    return entry?.appointment?.status === 'cancelled'
+      ? t('SCHEDULING.APPOINTMENT_STATUS.CANCELLATION_REVIEW')
+      : t('SCHEDULING.APPOINTMENT_STATUS.PROVIDER_REVIEW');
+  }
+  if (
+    status === 'reconciliation_required' ||
+    status === 'v2_reconciliation_required' ||
+    ['queued', 'processing', 'awaiting_confirmation', 'pending'].includes(
+      status
+    )
+  ) {
+    return t('SCHEDULING.MEDELEMENT.RECONCILING');
+  }
+  if (status === 'cancelled') {
+    return t('SCHEDULING.APPOINTMENT_STATUS.CANCELLATION_REVIEW');
+  }
+  if (['failed', 'declined'].includes(status)) {
+    return t('SCHEDULING.MEDELEMENT.FAILED', {
+      code: entry.command.lastErrorCode || status,
+    });
+  }
+
+  return entry?.appointment
+    ? providerBookingStatusMessage(entry.appointment, t) ||
+        t('SCHEDULING.APPOINTMENT_STATUS.PROVIDER_REVIEW')
+    : t('SCHEDULING.MEDELEMENT.RECONCILING');
+};
+const patientActionDescription = entry => {
+  const { command, candidates = [] } = entry || {};
+  const appointment = appointments.value.find(
+    item => Number(item.id) === Number(entry?.context?.appointmentId)
+  );
+  if (
+    entry?.intentMismatch ||
+    (appointment && !isAppointmentProviderFormUnchanged(appointment))
+  ) {
+    return t('SCHEDULING.MEDELEMENT.STALE_COMMAND_DESCRIPTION');
+  }
+  if (command?.status === 'awaiting_patient_selection') {
+    return t('SCHEDULING.MEDELEMENT.PATIENT_SELECTION_DESCRIPTION', {
+      count: command.patientAction?.candidateCount || candidates.length || 0,
+    });
+  }
+  if (command?.status === 'awaiting_patient_creation') {
+    const missingFields = command.patientAction?.missingFields || [];
+    return missingFields.length
+      ? t('SCHEDULING.MEDELEMENT.PATIENT_CREATION_INCOMPLETE', {
+          fields: missingFields.join(', '),
+        })
+      : t('SCHEDULING.MEDELEMENT.PATIENT_CREATION_DESCRIPTION');
+  }
+  if (command?.status === 'awaiting_phone_refresh') {
+    return t('SCHEDULING.MEDELEMENT.PHONE_REFRESH_UNSUPPORTED');
+  }
+  return entry?.error || '';
+};
+const patientActionButtonLabel = entry => {
+  const status = entry?.command?.status;
+  if (status === 'awaiting_patient_selection') {
+    return t('SCHEDULING.MEDELEMENT.PATIENT_SELECT_ACTION');
+  }
+  if (status === 'awaiting_patient_creation') {
+    return t('SCHEDULING.MEDELEMENT.PATIENT_CREATE_ACTION');
+  }
+  if (status === 'awaiting_phone_refresh') {
+    return t('SCHEDULING.MEDELEMENT.PHONE_RETRY_ACTION');
+  }
+  return '';
+};
+const canContinuePatientAction = entry => {
+  const appointment = appointments.value.find(
+    item => Number(item.id) === Number(entry?.context?.appointmentId)
+  );
+  const key = appointment ? appointmentKey(appointment) : '';
+  if (
+    !entry ||
+    patientActionBusyKey.value ||
+    providerCommandsStore.ui.isExecuting ||
+    entry.intentMismatch ||
+    !appointment ||
+    checkingAppointmentKey.value === key ||
+    savingAppointmentKey.value === key ||
+    cancellingAppointmentKey.value === key ||
+    !isAppointmentProviderFormUnchanged(appointment)
+  ) {
+    return false;
+  }
+
+  if (entry.command?.status === 'awaiting_patient_selection') {
+    return Boolean(
+      entry.selectedPatientToken &&
+        entry.candidates.some(
+          candidate => candidate.token === entry.selectedPatientToken
+        )
+    );
+  }
+  if (entry.command?.status === 'awaiting_patient_creation') {
+    return entry.command.patientAction?.canConfirm === true;
+  }
+  return entry.command?.status === 'awaiting_phone_refresh';
+};
 const isProviderCancellationPending = appointment =>
   (isAppointmentProviderOwned(appointment) &&
     appointment?.providerConfirmationStatus === 'pending') ||
@@ -720,6 +991,18 @@ const buildCreatePayload = () =>
   );
 
 const upsertAppointment = appointment => {
+  const key = appointmentKey(appointment);
+  const existingAppointment = appointments.value.find(
+    item => Number(item.id) === Number(appointment.id)
+  );
+  if (
+    existingAppointment &&
+    appointmentContextFingerprint(existingAppointment) !==
+      appointmentContextFingerprint(appointment)
+  ) {
+    invalidatePatientAction(key);
+  }
+
   appointments.value = mergeUniqueAppointments(appointments.value, [
     appointment,
   ]);
@@ -738,8 +1021,266 @@ const fetchAppointmentsByParams = async params => {
   return normalizePayload(response.data);
 };
 
-let loadRequestId = 0;
-let sidebarDisposed = false;
+const beginPatientActionLookup = key => {
+  patientActionLookupIds[key] = (patientActionLookupIds[key] || 0) + 1;
+  return patientActionLookupIds[key];
+};
+const isCurrentPatientActionLookup = (key, context, lookupId) =>
+  isCurrentProviderContext(context) && patientActionLookupIds[key] === lookupId;
+const COMMANDS_WAITING_FOR_PROVIDER = new Set([
+  'awaiting_confirmation',
+  'pending',
+  'processing',
+  'queued',
+]);
+const COMMANDS_NEEDING_RECONCILIATION = new Set([
+  'provider_status_unknown',
+  'reconciliation_required',
+  'v2_provider_status_unknown',
+  'v2_reconciliation_required',
+]);
+
+async function showPatientAction(appointment, command, context, lookupId) {
+  const key = appointmentKey(appointment);
+  if (
+    !isCurrentProviderContext(context) ||
+    (lookupId && !isCurrentPatientActionLookup(key, context, lookupId)) ||
+    Number(command.appointmentId || command.appointment_id) !==
+      Number(appointment.id) ||
+    !PATIENT_ACTION_STATUSES.has(command.status)
+  ) {
+    return null;
+  }
+
+  const expectedIntent = buildMedelementProviderCommandParams({
+    appointment,
+    companyCabinetCode: resolveAppointmentMedelementCabinetCode(
+      appointment,
+      activeResources.value
+    ),
+    operation: command.operation,
+  });
+  const entry = reactive({
+    command,
+    context,
+    appointment,
+    lookupId,
+    expectedIntent,
+    intentMismatch: !providerCommandIntentMatches(expectedIntent, command),
+    candidates: [],
+    selectedPatientToken: '',
+    error: '',
+    loadingCandidates: false,
+  });
+  patientActions[key] = entry;
+
+  if (
+    command.status === 'awaiting_patient_selection' &&
+    !entry.intentMismatch
+  ) {
+    entry.loadingCandidates = true;
+    try {
+      const payload =
+        await providerCommandsStore.loadPatientCandidates(command);
+      if (
+        !isCurrentProviderContext(context) ||
+        patientActions[key] !== entry ||
+        (lookupId && !isCurrentPatientActionLookup(key, context, lookupId))
+      ) {
+        return null;
+      }
+      entry.candidates = payload?.candidates || [];
+    } catch (error) {
+      if (
+        isCurrentProviderContext(context) &&
+        patientActions[key] === entry &&
+        (!lookupId || isCurrentPatientActionLookup(key, context, lookupId))
+      ) {
+        entry.error = formatSchedulingErrorMessage(error, t);
+      }
+    } finally {
+      if (
+        isCurrentProviderContext(context) &&
+        patientActions[key] === entry &&
+        (!lookupId || isCurrentPatientActionLookup(key, context, lookupId))
+      ) {
+        entry.loadingCandidates = false;
+      }
+    }
+  }
+
+  return entry;
+}
+
+const showProviderCommandWaiting = (
+  appointment,
+  context,
+  lookupId,
+  command = null
+) => {
+  const key = appointmentKey(appointment);
+  if (!isCurrentPatientActionLookup(key, context, lookupId)) return null;
+
+  const expectedIntent = command
+    ? buildMedelementProviderCommandParams({
+        appointment,
+        companyCabinetCode: resolveAppointmentMedelementCabinetCode(
+          appointment,
+          activeResources.value
+        ),
+        operation: command.operation,
+      })
+    : null;
+  const entry = reactive({
+    command: command || { status: 'pending' },
+    context,
+    appointment,
+    lookupId,
+    expectedIntent,
+    intentMismatch: Boolean(
+      command && !providerCommandIntentMatches(expectedIntent, command)
+    ),
+    candidates: [],
+    selectedPatientToken: '',
+    error: '',
+    loadingCandidates: false,
+  });
+  patientActions[key] = entry;
+  return entry;
+};
+
+async function refreshProviderAppointmentState(
+  appointment,
+  context,
+  isCurrent = () => isCurrentProviderContext(context)
+) {
+  try {
+    const response = await SchedulingAppointmentsAPI.show(appointment.id);
+    if (!isCurrent()) return null;
+
+    const refreshed = normalizePayload(response.data);
+    if (Number(refreshed?.id) !== Number(appointment.id)) return null;
+
+    const currentAppointment = appointments.value.find(
+      item => Number(item.id) === Number(appointment.id)
+    );
+    if (!currentAppointment) return null;
+
+    const refreshedAttributes = refreshed.customAttributes || {};
+    const providerStatus =
+      refreshed.providerConfirmationStatus ||
+      refreshedAttributes.medelementProviderSyncStatus ||
+      refreshedAttributes.medelement_provider_sync_status;
+    if (providerStatus) {
+      currentAppointment.providerConfirmationStatus = providerStatus;
+    }
+
+    const providerAttributeKeys = [
+      'medelement_provider_sync_status',
+      'medelementProviderSyncStatus',
+      'medelement_reception_code',
+      'medelementReceptionCode',
+    ];
+    const updatedAttributes = { ...currentAppointment.customAttributes };
+    providerAttributeKeys.forEach(attributeKey => {
+      if (Object.hasOwn(refreshedAttributes, attributeKey)) {
+        updatedAttributes[attributeKey] = refreshedAttributes[attributeKey];
+      }
+    });
+    currentAppointment.customAttributes = updatedAttributes;
+    if (refreshed.externalRef) {
+      currentAppointment.externalRef = refreshed.externalRef;
+    }
+    return currentAppointment;
+  } catch {
+    // The provider result remains visible if the local appointment readback fails.
+    return null;
+  }
+}
+
+const refreshPendingProviderReadback = async (
+  appointment,
+  context,
+  lookupId
+) => {
+  const key = appointmentKey(appointment);
+  const isCurrentReadback = () =>
+    isCurrentPatientActionLookup(key, context, lookupId);
+  const refreshedAppointment = await refreshProviderAppointmentState(
+    appointment,
+    context,
+    isCurrentReadback
+  );
+  if (!isCurrentReadback()) return null;
+
+  const currentAppointment =
+    refreshedAppointment ||
+    appointments.value.find(item => Number(item.id) === Number(appointment.id));
+  if (isPatientActionPendingOnAppointment(currentAppointment)) {
+    showProviderCommandWaiting(currentAppointment, context, lookupId);
+  } else {
+    delete patientActions[key];
+  }
+  return currentAppointment || null;
+};
+
+async function refreshPendingPatientAction(
+  appointment,
+  context = captureProviderContext(appointment),
+  lookupId = beginPatientActionLookup(appointmentKey(appointment))
+) {
+  if (
+    !isMedelementAppointment(appointment) ||
+    isAppointmentProviderOwned(appointment)
+  ) {
+    return null;
+  }
+
+  const key = appointmentKey(appointment);
+  try {
+    const response = await SchedulingProviderCommandsAPI.list({
+      provider: 'medelement',
+      appointmentId: appointment.id,
+      activeOnly: true,
+    });
+    if (!isCurrentPatientActionLookup(key, context, lookupId)) return null;
+
+    const commands = normalizePayload(response.data) || [];
+    const command = commands.find(
+      item =>
+        item.operation === 'create_reception' &&
+        PATIENT_ACTION_STATUSES.has(item.status)
+    );
+    if (command) {
+      return showPatientAction(appointment, command, context, lookupId);
+    }
+
+    const waitingCommand = commands.find(
+      item =>
+        item.operation === 'create_reception' &&
+        (COMMANDS_WAITING_FOR_PROVIDER.has(item.status) ||
+          COMMANDS_NEEDING_RECONCILIATION.has(item.status))
+    );
+    if (waitingCommand) {
+      return showProviderCommandWaiting(
+        appointment,
+        context,
+        lookupId,
+        waitingCommand
+      );
+    }
+
+    if (isPatientActionPendingOnAppointment(appointment)) {
+      return refreshPendingProviderReadback(appointment, context, lookupId);
+    }
+
+    delete patientActions[key];
+  } catch {
+    // Keep local appointment saves usable when this read-only lookup fails.
+  }
+  return null;
+}
+
 const loadAppointments = async () => {
   if (sidebarDisposed) return false;
   loadRequestId += 1;
@@ -767,6 +1308,16 @@ const loadAppointments = async () => {
     if (!isCurrentRequest()) return false;
     appointments.value = mergeUniqueAppointments(...results);
     setAppointmentForms();
+    appointments.value
+      .filter(
+        appointment =>
+          !isAppointmentProviderOwned(appointment) &&
+          isMedelementAppointment(appointment) &&
+          isPatientActionPendingOnAppointment(appointment)
+      )
+      .forEach(appointment => {
+        refreshPendingPatientAction(appointment).catch(() => {});
+      });
     const firstEditableAppointment = appointments.value.find(
       appointment => !isAppointmentProviderOwned(appointment)
     );
@@ -893,24 +1444,50 @@ const refreshDialogAppointments = savedAppointment => {
 
 const saveCreateAppointment = async () => {
   if (isCreateFormInvalid.value) return;
+  if (
+    isSavingCreate.value ||
+    savingAppointmentKey.value ||
+    cancellingAppointmentKey.value ||
+    patientActionBusyKey.value
+  ) {
+    return;
+  }
 
+  const context = captureSidebarContext();
+  createSaveRequestId += 1;
+  const requestId = createSaveRequestId;
   isSavingCreate.value = true;
   try {
     const response =
       await SchedulingAppointmentsAPI.create(buildCreatePayload());
+    if (!isCurrentSidebarContext(context)) return;
     const savedAppointment = normalizePayload(response.data);
     refreshDialogAppointments(savedAppointment);
+    refreshPendingPatientAction(savedAppointment).catch(() => {});
     refreshSidebarCounters();
     useAlert(t('SCHEDULING.APPOINTMENT_FORM.SUCCESS_SAVE'));
   } catch (error) {
-    useAlert(formatSchedulingErrorMessage(error, t));
+    if (isCurrentSidebarContext(context)) {
+      useAlert(formatSchedulingErrorMessage(error, t));
+    }
   } finally {
-    isSavingCreate.value = false;
+    if (requestId === createSaveRequestId) isSavingCreate.value = false;
   }
 };
 
 async function cancelAppointment(appointment) {
   const key = appointmentKey(appointment);
+  if (
+    savingAppointmentKey.value ||
+    cancellingAppointmentKey.value ||
+    patientActionBusyKey.value
+  ) {
+    return;
+  }
+
+  const context = captureSidebarContext();
+  appointmentCancellationRequestId += 1;
+  const requestId = appointmentCancellationRequestId;
   cancellingAppointmentKey.value = key;
   try {
     const cancellationMode = appointment.medelementCancellationMode;
@@ -919,41 +1496,183 @@ async function cancelAppointment(appointment) {
           medelement_cancellation_mode: cancellationMode,
         })
       : await SchedulingAppointmentsAPI.cancel(appointment.id);
+    if (!isCurrentSidebarContext(context)) return;
     const savedAppointment = normalizePayload(response.data);
     upsertAppointment(savedAppointment);
     refreshSidebarCounters();
     useAlert(appointmentCancellationAlertMessage(savedAppointment, t));
   } catch (error) {
-    useAlert(formatSchedulingErrorMessage(error, t));
+    if (isCurrentSidebarContext(context)) {
+      useAlert(formatSchedulingErrorMessage(error, t));
+    }
   } finally {
-    cancellingAppointmentKey.value = '';
+    if (requestId === appointmentCancellationRequestId) {
+      cancellingAppointmentKey.value = '';
+    }
+  }
+}
+
+const selectPatientCandidate = (appointment, token) => {
+  const entry = patientActions[appointmentKey(appointment)];
+  if (
+    !entry ||
+    !isCurrentProviderContext(entry.context) ||
+    !entry.candidates.some(candidate => candidate.token === token)
+  ) {
+    return;
+  }
+  entry.selectedPatientToken = token;
+};
+
+async function continuePatientAction(appointment) {
+  const key = appointmentKey(appointment);
+  const entry = patientActions[key];
+  if (
+    !entry ||
+    !isCurrentProviderContext(entry.context) ||
+    !canContinuePatientAction(entry)
+  ) {
+    return;
+  }
+
+  patientActionRequestId.value += 1;
+  const requestId = patientActionRequestId.value;
+  beginPatientActionLookup(key);
+  patientActionBusyKey.value = key;
+  entry.error = '';
+  try {
+    let command;
+    if (entry.command.status === 'awaiting_patient_selection') {
+      command = await providerCommandsStore.selectPatient(
+        entry.command,
+        entry.selectedPatientToken,
+        entry.expectedIntent,
+        () => isCurrentProviderContext(entry.context)
+      );
+    } else if (entry.command.status === 'awaiting_patient_creation') {
+      command = await providerCommandsStore.confirmPatientCreation(
+        entry.command,
+        entry.expectedIntent,
+        () => isCurrentProviderContext(entry.context)
+      );
+    } else if (entry.command.status === 'awaiting_phone_refresh') {
+      command = await providerCommandsStore.retryPhoneMismatch(
+        entry.command,
+        entry.expectedIntent,
+        () => isCurrentProviderContext(entry.context)
+      );
+    } else {
+      return;
+    }
+
+    if (!isCurrentProviderContext(entry.context)) return;
+    if (
+      Number(command.id) !== Number(entry.command.id) ||
+      (command.appointmentId !== undefined &&
+        Number(command.appointmentId) !== entry.context.appointmentId)
+    ) {
+      entry.error = t('SCHEDULING.MEDELEMENT.STALE_COMMAND_DESCRIPTION');
+      return;
+    }
+    if (PATIENT_ACTION_STATUSES.has(command.status)) {
+      await showPatientAction(appointment, command, entry.context);
+    } else {
+      entry.command = command;
+      entry.selectedPatientToken = '';
+      entry.candidates = [];
+      if (command.status === 'succeeded') {
+        const currentAppointment = appointments.value.find(
+          item => Number(item.id) === Number(appointment.id)
+        );
+        if (currentAppointment) {
+          currentAppointment.providerConfirmationStatus = 'succeeded';
+          currentAppointment.customAttributes = {
+            ...currentAppointment.customAttributes,
+            medelement_provider_sync_status: 'succeeded',
+          };
+        }
+        await refreshProviderAppointmentState(appointment, entry.context);
+      }
+    }
+  } catch (error) {
+    if (isCurrentProviderContext(entry.context)) {
+      entry.error = formatSchedulingErrorMessage(error, t);
+    }
+  } finally {
+    if (
+      patientActionRequestId.value === requestId &&
+      patientActionBusyKey.value === key
+    ) {
+      patientActionBusyKey.value = '';
+    }
   }
 }
 
 async function checkProviderBooking(appointment) {
   if (checkingAppointmentKey.value || resolvingCancellationKey.value) return;
 
-  const generation = providerReviewGeneration;
+  const key = appointmentKey(appointment);
+  if (
+    savingAppointmentKey.value === key ||
+    cancellingAppointmentKey.value === key ||
+    patientActionBusyKey.value === key
+  ) {
+    return;
+  }
 
-  checkingAppointmentKey.value = appointmentKey(appointment);
+  const context = captureProviderContext(appointment);
+  const lookupId = beginPatientActionLookup(key);
+
+  checkingAppointmentKey.value = key;
   try {
     const response = await SchedulingProviderCommandsAPI.list({
       provider: 'medelement',
       appointmentId: appointment.id,
       activeOnly: true,
     });
-    const command = normalizePayload(response.data).find(
+    const commands = normalizePayload(response.data) || [];
+    if (!isCurrentPatientActionLookup(key, context, lookupId)) return;
+    const pendingPatientCommand = commands.find(
       item =>
         item.operation === 'create_reception' &&
-        [
-          'reconciliation_required',
-          'provider_status_unknown',
-          'v2_reconciliation_required',
-          'v2_provider_status_unknown',
-        ].includes(item.status)
+        PATIENT_ACTION_STATUSES.has(item.status)
     );
-    if (generation !== providerReviewGeneration) return;
+    if (pendingPatientCommand) {
+      await showPatientAction(
+        appointment,
+        pendingPatientCommand,
+        context,
+        lookupId
+      );
+      return;
+    }
+
+    const waitingCommand = commands.find(
+      item =>
+        item.operation === 'create_reception' &&
+        COMMANDS_WAITING_FOR_PROVIDER.has(item.status)
+    );
+    if (waitingCommand) {
+      showProviderCommandWaiting(
+        appointment,
+        context,
+        lookupId,
+        waitingCommand
+      );
+      return;
+    }
+
+    const command = commands.find(
+      item =>
+        item.operation === 'create_reception' &&
+        COMMANDS_NEEDING_RECONCILIATION.has(item.status)
+    );
+    if (!isCurrentPatientActionLookup(key, context, lookupId)) return;
     if (!command) {
+      if (isPatientActionPendingOnAppointment(appointment)) {
+        await refreshPendingProviderReadback(appointment, context, lookupId);
+        return;
+      }
       if (appointment.status === 'cancelled') {
         useAlert(t('SCHEDULING.APPOINTMENT_STATUS.CANCELLATION_REVIEW'));
       } else {
@@ -983,19 +1702,23 @@ async function checkProviderBooking(appointment) {
     await SchedulingProviderCommandsAPI.reconcile(command.id, {
       provider: 'medelement',
     });
-    if (generation !== providerReviewGeneration) return;
+    if (!isCurrentPatientActionLookup(key, context, lookupId)) return;
     if (appointment.status === 'cancelled') {
       useAlert(t('SCHEDULING.APPOINTMENT_FORM.CHECK_CANCELLED_STARTED'));
     } else {
       useAlert(t('SCHEDULING.APPOINTMENT_FORM.CHECK_STARTED'));
     }
   } catch (error) {
-    if (generation === providerReviewGeneration) {
+    if (isCurrentPatientActionLookup(key, context, lookupId)) {
       useAlert(formatSchedulingErrorMessage(error, t));
     }
   } finally {
-    if (generation === providerReviewGeneration)
+    if (
+      isCurrentProviderContext(context) &&
+      checkingAppointmentKey.value === key
+    ) {
       checkingAppointmentKey.value = '';
+    }
   }
 }
 
@@ -1070,6 +1793,13 @@ const saveAppointment = async appointment => {
   if (isAppointmentProviderOwned(appointment)) return;
 
   const key = appointmentKey(appointment);
+  if (
+    savingAppointmentKey.value ||
+    cancellingAppointmentKey.value ||
+    patientActionBusyKey.value
+  ) {
+    return;
+  }
   const form = appointmentForms[key];
   if (isAppointmentFormInvalid(form)) return;
   if (form.status === 'cancelled' && appointment.status !== 'cancelled') {
@@ -1077,21 +1807,31 @@ const saveAppointment = async appointment => {
     return;
   }
 
+  const context = captureSidebarContext();
+  appointmentSaveRequestId += 1;
+  const requestId = appointmentSaveRequestId;
   savingAppointmentKey.value = key;
   try {
     const response = await SchedulingAppointmentsAPI.update(
       appointment.id,
       buildAppointmentPayload(form)
     );
+    if (!isCurrentSidebarContext(context)) return;
     const savedAppointment = normalizePayload(response.data);
     upsertAppointment(savedAppointment);
+    invalidatePatientAction(key);
+    refreshPendingPatientAction(savedAppointment).catch(() => {});
     openAppointmentKeys.value = [appointmentKey(savedAppointment)];
     refreshSidebarCounters();
     useAlert(t('SCHEDULING.APPOINTMENT_FORM.SUCCESS_SAVE'));
   } catch (error) {
-    useAlert(formatSchedulingErrorMessage(error, t));
+    if (isCurrentSidebarContext(context)) {
+      useAlert(formatSchedulingErrorMessage(error, t));
+    }
   } finally {
-    savingAppointmentKey.value = '';
+    if (requestId === appointmentSaveRequestId) {
+      savingAppointmentKey.value = '';
+    }
   }
 };
 
@@ -1176,21 +1916,41 @@ onBeforeUnmount(() => {
   sidebarDisposed = true;
   loadRequestId += 1;
   providerReviewGeneration += 1;
+  appointmentSaveRequestId += 1;
+  createSaveRequestId += 1;
+  appointmentCancellationRequestId += 1;
+  patientActionRequestId.value += 1;
+  providerCommandsStore.ui.operationId += 1;
+  providerCommandsStore.ui.isExecuting = false;
+  providerCommandsStore.ui.error = null;
 });
 
 watch(
   () => [
+    accountId.value,
     props.currentChat?.id,
     contactId.value,
     conversationDisplayIds.value.join(','),
   ],
   async () => {
     providerReviewGeneration += 1;
+    appointmentSaveRequestId += 1;
+    createSaveRequestId += 1;
+    appointmentCancellationRequestId += 1;
     Object.keys(cancellationReviews).forEach(
       key => delete cancellationReviews[key]
     );
     checkingAppointmentKey.value = '';
     resolvingCancellationKey.value = '';
+    savingAppointmentKey.value = '';
+    cancellingAppointmentKey.value = '';
+    isSavingCreate.value = false;
+    patientActionRequestId.value += 1;
+    patientActionBusyKey.value = '';
+    Object.keys(patientActions).forEach(key => delete patientActions[key]);
+    providerCommandsStore.ui.operationId += 1;
+    providerCommandsStore.ui.isExecuting = false;
+    providerCommandsStore.ui.error = null;
     isCreating.value = false;
     const loaded = await loadAppointments();
     if (loaded && !appointments.value.length) {
@@ -1690,9 +2450,124 @@ watch(
           </RouterLink>
 
           <div
+            v-if="patientActions[appointmentKey(appointment)]"
+            class="mx-3 mb-3 rounded-md border border-n-weak bg-n-alpha-1 p-3"
+            role="status"
+            :data-testid="`provider-patient-action-${appointment.id}`"
+          >
+            <p class="text-sm font-medium text-n-slate-12">
+              {{
+                patientActionTitle(patientActions[appointmentKey(appointment)])
+              }}
+            </p>
+            <p
+              v-if="
+                patientActionDescription(
+                  patientActions[appointmentKey(appointment)]
+                )
+              "
+              class="mt-1 text-xs leading-5 text-n-slate-11"
+            >
+              {{
+                patientActionDescription(
+                  patientActions[appointmentKey(appointment)]
+                )
+              }}
+            </p>
+            <p
+              v-if="patientActions[appointmentKey(appointment)].error"
+              class="mt-1 text-xs leading-5 text-n-ruby-11"
+            >
+              {{ patientActions[appointmentKey(appointment)].error }}
+            </p>
+            <div
+              v-if="
+                patientActions[appointmentKey(appointment)].command.status ===
+                'awaiting_patient_selection'
+              "
+              class="mt-2 flex flex-col gap-2"
+            >
+              <Spinner
+                v-if="
+                  patientActions[appointmentKey(appointment)].loadingCandidates
+                "
+                class="!h-4 !w-4"
+              />
+              <button
+                v-for="candidate in patientActions[appointmentKey(appointment)]
+                  .candidates"
+                :key="candidate.token"
+                type="button"
+                class="flex flex-col items-start gap-1 rounded-md border p-2 text-start"
+                :class="
+                  patientActions[appointmentKey(appointment)]
+                    .selectedPatientToken === candidate.token
+                    ? 'border-n-brand bg-n-brand/10'
+                    : 'border-n-weak hover:border-n-strong'
+                "
+                :aria-pressed="
+                  patientActions[appointmentKey(appointment)]
+                    .selectedPatientToken === candidate.token
+                "
+                :data-testid="`patient-candidate-${appointment.id}-${candidate.token}`"
+                @click="selectPatientCandidate(appointment, candidate.token)"
+              >
+                <span class="text-sm font-medium text-n-slate-12">
+                  {{
+                    [candidate.name, candidate.middlename]
+                      .filter(Boolean)
+                      .join(' ')
+                  }}
+                </span>
+                <span class="text-xs text-n-slate-11">
+                  {{
+                    [
+                      candidate.birthday,
+                      candidate.iinMasked,
+                      candidate.phoneMasked,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')
+                  }}
+                </span>
+              </button>
+            </div>
+            <div
+              v-if="
+                patientActionButtonLabel(
+                  patientActions[appointmentKey(appointment)]
+                )
+              "
+              class="mt-3 flex justify-end"
+            >
+              <Button
+                size="sm"
+                color="blue"
+                :is-loading="
+                  patientActionBusyKey === appointmentKey(appointment)
+                "
+                :disabled="
+                  !canContinuePatientAction(
+                    patientActions[appointmentKey(appointment)]
+                  )
+                "
+                :label="
+                  patientActionButtonLabel(
+                    patientActions[appointmentKey(appointment)]
+                  )
+                "
+                :data-testid="`continue-provider-patient-action-${appointment.id}`"
+                @click="continuePatientAction(appointment)"
+              />
+            </div>
+          </div>
+
+          <div
             v-if="
-              providerBookingNeedsReview(appointment) &&
-              !isAppointmentProviderOwned(appointment)
+              !isAppointmentProviderOwned(appointment) &&
+              (providerBookingNeedsReview(appointment) ||
+                (isMedelementAppointment(appointment) &&
+                  isPatientActionPendingOnAppointment(appointment)))
             "
             class="flex justify-end px-3 pb-2.5"
           >
@@ -1703,7 +2578,12 @@ watch(
               :is-loading="
                 checkingAppointmentKey === appointmentKey(appointment)
               "
-              :disabled="Boolean(resolvingCancellationKey)"
+              :disabled="
+                Boolean(resolvingCancellationKey) ||
+                patientActionBusyKey === appointmentKey(appointment) ||
+                savingAppointmentKey === appointmentKey(appointment) ||
+                cancellingAppointmentKey === appointmentKey(appointment)
+              "
               :label="$t('SCHEDULING.APPOINTMENT_FORM.CHECK_PROVIDER_BOOKING')"
               @click="checkProviderBooking(appointment)"
             />
@@ -1769,6 +2649,10 @@ watch(
               faded
               :is-loading="
                 cancellingAppointmentKey === appointmentKey(appointment)
+              "
+              :disabled="
+                patientActionBusyKey === appointmentKey(appointment) ||
+                savingAppointmentKey === appointmentKey(appointment)
               "
               :label="$t('SCHEDULING.APPOINTMENT_FORM.CANCEL_APPOINTMENT')"
               @click="cancelAppointment(appointment)"
@@ -2252,7 +3136,9 @@ watch(
                   :disabled="
                     isAppointmentFormInvalid(
                       appointmentForms[appointmentKey(appointment)]
-                    )
+                    ) ||
+                    patientActionBusyKey === appointmentKey(appointment) ||
+                    cancellingAppointmentKey === appointmentKey(appointment)
                   "
                   :label="$t('SCHEDULING.GENERAL.SAVE')"
                   @click="saveAppointment(appointment)"

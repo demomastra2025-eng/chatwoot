@@ -21,13 +21,14 @@ import {
 import { downloadFile } from '@chatwoot/utils';
 import { useAlert } from 'dashboard/composables';
 import { useEmitter } from 'dashboard/composables/emitter';
+import { useAttachmentAvailability } from 'dashboard/composables/useAttachmentAvailability';
 import { emitter } from 'shared/helpers/mitt';
 import {
   clearAudioPlaybackState,
   setAudioPlaybackState,
 } from '../audioPlaybackState';
 
-const { attachment } = defineProps({
+const props = defineProps({
   attachment: {
     type: Object,
     required: true,
@@ -37,6 +38,9 @@ const { attachment } = defineProps({
     default: true,
   },
 });
+const attachmentRef = computed(() => props.attachment);
+const { isPurged, refreshAfterMediaFailure } =
+  useAttachmentAvailability(attachmentRef);
 
 defineOptions({
   inheritAttrs: false,
@@ -72,7 +76,7 @@ const normalizeCurrentOriginMediaURL = dataUrl => {
 };
 
 const normalizedAudioURL = computed(() => {
-  return normalizeCurrentOriginMediaURL(attachment.dataUrl);
+  return normalizeCurrentOriginMediaURL(attachmentRef.value.dataUrl);
 });
 
 const timeStampURL = computed(() => {
@@ -81,8 +85,10 @@ const timeStampURL = computed(() => {
 });
 
 const inferredAudioExtension = computed(() => {
-  if (attachment.extension) {
-    return String(attachment.extension).replace(/^\./, '').toLowerCase();
+  if (attachmentRef.value.extension) {
+    return String(attachmentRef.value.extension)
+      .replace(/^\./, '')
+      .toLowerCase();
   }
 
   const filename = extractFilenameFromUrl(normalizedAudioURL.value || '');
@@ -294,7 +300,7 @@ onUnmounted(() => {
   clearPendingWaveformInit();
   unloadNativeAudio();
   destroyWaveform();
-  clearAudioPlaybackState(attachment.id, uid);
+  clearAudioPlaybackState(attachmentRef.value.id, uid);
 });
 
 useResizeObserver(waveformContainer, () => {
@@ -463,7 +469,9 @@ const fallbackAudioDownload = url => {
 
   const link = document.createElement('a');
   link.href = url;
-  link.download = `audio_${attachment.id || Date.now()}.${inferredAudioExtension.value}`;
+  link.download = `audio_${
+    attachmentRef.value.id || Date.now()
+  }.${inferredAudioExtension.value}`;
   link.rel = 'noreferrer noopener nofollow';
   document.body.appendChild(link);
   link.click();
@@ -471,7 +479,7 @@ const fallbackAudioDownload = url => {
 };
 
 const downloadAudio = async () => {
-  const { fileType } = attachment;
+  const { fileType } = attachmentRef.value;
 
   try {
     await downloadFile({
@@ -480,6 +488,8 @@ const downloadAudio = async () => {
       extension: inferredAudioExtension.value,
     });
   } catch {
+    if (await refreshAfterMediaFailure()) return;
+
     if (normalizedAudioURL.value) {
       fallbackAudioDownload(normalizedAudioURL.value);
       return;
@@ -525,15 +535,16 @@ const onNativeAudioEnded = () => {
   audioElement.value.playbackRate = 1;
 };
 
-const onNativeAudioError = () => {
+const onNativeAudioError = async () => {
   if (!isFallbackMode.value) return;
   hasNativeAudioFailed.value = true;
   resetPlayerState(isMuted.value);
+  await refreshAfterMediaFailure();
 };
 
 watchEffect(() => {
   setAudioPlaybackState(
-    attachment.id,
+    attachmentRef.value.id,
     {
       timeLabel: playbackTimeLabel.value,
       isPlaying: isPlaying.value,
@@ -545,6 +556,13 @@ watchEffect(() => {
 
 <template>
   <div
+    v-if="isPurged"
+    class="rounded-lg bg-n-alpha-1 p-3 text-sm text-n-slate-11"
+  >
+    {{ t('COMPONENTS.MEDIA.LOADING_FAILED') }}
+  </div>
+  <div
+    v-else
     v-bind="$attrs"
     class="w-[min(24rem,calc(100vw-6rem))] max-w-full gap-2 flex flex-col items-stretch"
   >
@@ -641,10 +659,10 @@ watchEffect(() => {
     />
 
     <div
-      v-if="attachment.transcribedText && showTranscribedText"
+      v-if="attachmentRef.transcribedText && showTranscribedText"
       class="text-n-slate-12 p-3 text-sm rounded-lg w-full break-words"
     >
-      {{ attachment.transcribedText }}
+      {{ attachmentRef.transcribedText }}
     </div>
   </div>
 </template>

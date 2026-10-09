@@ -17,6 +17,8 @@
     },
     "BACK": "Back",
     "DISMISS": "Dismiss",
+    "STALE_CHUNK_RECOVERY": "A page feature could not be loaded. Save any changes before refreshing.",
+    "STALE_CHUNK_REFRESH": "Refresh",
     "UPDATE": {
       "ERROR": "Could not update company settings, try again!",
       "SUCCESS": "Company settings updated"

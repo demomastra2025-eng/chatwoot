@@ -1,11 +1,12 @@
 <script setup>
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import Icon from 'next/icon/Icon.vue';
 import { useSnakeCase } from 'dashboard/composables/useTransformKeys';
+import { useAttachmentAvailability } from 'dashboard/composables/useAttachmentAvailability';
 import { useMessageContext } from '../provider.js';
 import GalleryView from 'dashboard/components/widgets/conversation/components/GalleryView.vue';
 
-defineProps({
+const props = defineProps({
   attachment: {
     type: Object,
     required: true,
@@ -13,12 +14,29 @@ defineProps({
 });
 
 const showGallery = ref(false);
+const hasError = ref(false);
+const attachment = computed(() => props.attachment);
+const { isPurged, refreshAfterMediaFailure } =
+  useAttachmentAvailability(attachment);
 
 const { filteredCurrentChatAttachments } = useMessageContext();
+
+const handleError = async () => {
+  hasError.value = true;
+  await refreshAfterMediaFailure();
+};
 </script>
 
 <template>
   <div
+    v-if="hasError || isPurged"
+    class="flex size-[72px] items-center justify-center gap-1 rounded-xl bg-n-alpha-1 px-2 text-center text-xs text-n-slate-11"
+  >
+    <Icon icon="i-lucide-circle-off" />
+    {{ $t('COMPONENTS.MEDIA.LOADING_FAILED') }}
+  </div>
+  <div
+    v-else
     class="size-[72px] overflow-hidden contain-content rounded-xl cursor-pointer relative group"
     @click="showGallery = true"
   >
@@ -27,6 +45,7 @@ const { filteredCurrentChatAttachments } = useMessageContext();
       class="w-full h-full object-cover"
       muted
       playsInline
+      @error="handleError"
     />
     <div
       class="absolute w-full h-full inset-0 p-1 flex items-center justify-center"
@@ -42,11 +61,11 @@ const { filteredCurrentChatAttachments } = useMessageContext();
     </div>
   </div>
   <GalleryView
-    v-if="showGallery"
+    v-if="showGallery && !isPurged"
     v-model:show="showGallery"
     :attachment="useSnakeCase(attachment)"
     :all-attachments="filteredCurrentChatAttachments"
-    @error="onError"
+    @error="handleError"
     @close="() => (showGallery = false)"
   />
 </template>

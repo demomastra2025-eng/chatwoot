@@ -179,7 +179,7 @@ class Integrations::Medelement::SpecialistsSyncService
 
   def slot_duration(payload, resource)
     value = payload['slotDurationMin'].presence || payload['receptionTime'].presence || resource.slot_duration_min
-    value.to_i.clamp(5, 720)
+    value.to_i.clamp(Scheduling::Constants::MIN_DURATION_MINUTES, Scheduling::Constants::MAX_DURATION_MINUTES)
   end
 
   def specialist_active?(payload)

@@ -265,6 +265,33 @@ RSpec.describe Search::MessageQuery do
       expect(after_values).to eq(before_values)
     end
 
+    it 'restores the caller plan setting after a successful indexed fallback' do
+      connection = ActiveRecord::Base.connection
+      connection.execute('SET LOCAL enable_indexscan = off')
+      expect(connection.select_value('SHOW enable_indexscan')).to eq('off')
+
+      result = described_class.new('справка').newest(base, limit: 5)
+
+      expect(result.rows.size).to eq(1)
+      expect(connection.select_value('SHOW enable_indexscan')).to eq('off')
+    end
+
+    it 'preserves the caller plan setting when the indexed fallback times out' do
+      stub_const("#{described_class}::TIMEOUT", '60ms')
+      connection = ActiveRecord::Base.connection
+      connection.execute('SET LOCAL enable_indexscan = off')
+      connection.execute("SET LOCAL statement_timeout = '9s'")
+      before_statement_timeout = connection.select_value('SHOW statement_timeout')
+      query = described_class.new('справка')
+      allow(query).to receive(:recent_rows).and_return([])
+
+      result = query.newest(base, limit: 1, match: Arel.sql('pg_sleep(0.3) IS NOT NULL'))
+
+      expect(result.partial).to be(true)
+      expect(connection.select_value('SHOW enable_indexscan')).to eq('off')
+      expect(connection.select_value('SHOW statement_timeout')).to eq(before_statement_timeout)
+    end
+
     it 'leaves the connection usable after a cancelled statement' do
       stub_const("#{described_class}::TIMEOUT", '60ms')
       described_class.new('справка').newest(base.where('pg_sleep(0.3) IS NOT NULL'), limit: 5)

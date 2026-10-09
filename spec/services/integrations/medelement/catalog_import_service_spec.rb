@@ -89,6 +89,19 @@ RSpec.describe Integrations::Medelement::CatalogImportService do
     expect(service_price).to have_attributes(price: 17_000, compensation_type: 'percent', compensation_value: 20)
   end
 
+  it 'accepts a 24 hour service duration and resource slot duration' do
+    long_duration_payload = payload.deep_dup
+    long_duration_payload['specialists'][0]['slotDurationMin'] = 24 * 60
+    long_duration_payload['services'][0]['durationMin'] = 24 * 60
+
+    described_class.new(hook: hook, payload: long_duration_payload).perform
+
+    resource = account.scheduling_resources.find_by!("custom_attributes ->> 'medelement_specialist_code' = ?", 'ME-SPEC-001')
+    service = account.scheduling_services.find_by!("custom_attributes ->> 'medelement_nomenclature_code' = ?", 'ME-SVC-001')
+    expect(resource.slot_duration_min).to eq(24 * 60)
+    expect(service.duration_min).to eq(24 * 60)
+  end
+
   it 'rejects links to specialists or services outside the snapshot' do
     invalid_payload = payload.deep_dup
     invalid_payload['specialistServices'][0]['serviceCode'] = 'missing-service'

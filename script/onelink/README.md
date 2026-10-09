@@ -187,6 +187,17 @@ Workflow допускает promotion только если:
   его отсутствии promotion автоматически запускает тот же полный suite;
 - человек подтвердил GitHub Environment `production`.
 
+Перед сборкой нового production image release workflow дополнительно ищет до двух
+последних успешных production deployment с разными Git SHA. Для каждого он проверяет
+immutable image digest, SHA внутри image, Cosign signature и GitHub attestation, затем
+берёт только файлы, на которые ссылаются `.vite/manifest.json` и, если он есть,
+`.vite/manifest-assets.json`. HTML, manifests и service workers не сохраняются.
+Хранилище ограничено 4096 файлами и 256 MiB суммарно (32 MiB на файл); при сборке
+предыдущие файлы добавляются после свежей компиляции только при отсутствии коллизии
+либо при совпадении байтов. Ошибка доказательства, небезопасный путь или разные байты
+по одному пути останавливают сборку. Если успешных production deployment ещё нет,
+сборка выполняется без предыдущих assets.
+
 Rollout идёт workers → второй web → первый web. При ошибке сервисы возвращаются на
 предыдущий image, а `.env.production` обновляется только после полной проверки.
 Promotion script намеренно использует orchestration boundary `/root/crafty`:

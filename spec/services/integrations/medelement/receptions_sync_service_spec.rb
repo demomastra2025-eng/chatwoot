@@ -18,7 +18,9 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
       organization_id: 'company-1'
     )
   end
-  let(:conflict_tracker) { instance_double(Integrations::Medelement::ConflictTracker, record!: true) }
+  let(:conflict_tracker) do
+    instance_double(Integrations::Medelement::ConflictTracker, record!: true, preserve_open_conflict!: true)
+  end
   let(:service) do
     described_class.new(
       account: account,
@@ -135,6 +137,79 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
       'medelement_detail_retry_at' => be_present,
       'concurrent_marker' => 'preserve-me'
     )
+  end
+
+  it 'keeps an invalid reception conflict open while detail is deferred, then resolves it after a valid import' do
+    travel_to(Time.zone.parse('2026-03-20 10:00:00')) do
+      service.perform
+      appointment = account.scheduling_appointments.first
+      foreign_owner = create(:user, account: create(:account))
+      # rubocop:disable Rails/SkipsModelValidations
+      appointment.update_column(:owner_id, foreign_owner.id)
+      appointment.update_column(
+        :custom_attributes,
+        appointment.custom_attributes.except('medelement_detail_synced_at')
+      )
+      # rubocop:enable Rails/SkipsModelValidations
+      travel 7.hours
+
+      account.enable_features!('scheduling')
+      hook = create(:integrations_hook, :medelement, account: account)
+      invalid_run = Integrations::Medelement::SyncRun.create!(
+        account: account, hook: hook, trigger: 'manual', status: 'running'
+      )
+      invalid_tracker = Integrations::Medelement::ConflictTracker.new(sync_run: invalid_run)
+      invalid_service = described_class.new(
+        account: account,
+        client: client,
+        configuration: configuration,
+        conflict_tracker: invalid_tracker
+      )
+      invalid_result = invalid_service.perform
+      invalid_tracker.resolve_absent!('receptions')
+      conflict = invalid_run.observed_conflicts.find_by!(conflict_type: 'invalid_reception')
+      invalid_run.update!(status: 'succeeded')
+
+      deferred_run = Integrations::Medelement::SyncRun.create!(
+        account: account, hook: invalid_run.hook, trigger: 'retry', status: 'running'
+      )
+      deferred_tracker = Integrations::Medelement::ConflictTracker.new(sync_run: deferred_run)
+      deferred_service = described_class.new(
+        account: account,
+        client: client,
+        configuration: configuration,
+        conflict_tracker: deferred_tracker
+      )
+      deferred_result = deferred_service.perform
+      deferred_tracker.resolve_absent!('receptions')
+
+      expect(invalid_result).to include(skipped_count: 1)
+      expect(deferred_result).to include(detail_retry_deferred_count: 1)
+      expect(conflict.reload).to be_open
+      expect(appointment.reload).to have_attributes(status: 'scheduled')
+      expect(appointment.custom_attributes).not_to include('medelement_missing_syncs', 'medelement_missing_since')
+      deferred_run.update!(status: 'succeeded')
+
+      travel 16.minutes
+      # rubocop:disable Rails/SkipsModelValidations
+      appointment.update_column(:owner_id, nil)
+      # rubocop:enable Rails/SkipsModelValidations
+      valid_run = Integrations::Medelement::SyncRun.create!(
+        account: account, hook: invalid_run.hook, trigger: 'retry', status: 'running'
+      )
+      valid_tracker = Integrations::Medelement::ConflictTracker.new(sync_run: valid_run)
+      valid_service = described_class.new(
+        account: account,
+        client: client,
+        configuration: configuration,
+        conflict_tracker: valid_tracker
+      )
+
+      expect(valid_service.perform).to include(imported_count: 1)
+      valid_tracker.resolve_absent!('receptions')
+
+      expect(conflict.reload).to be_resolved
+    end
   end
 
   it 'refreshes provider detail immediately when the list fingerprint changes' do

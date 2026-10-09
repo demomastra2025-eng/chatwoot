@@ -15,6 +15,8 @@ const { t } = useI18n();
 
 const snackMessages = ref([]);
 const snackbarContainer = ref(null);
+let toastSequence = 0;
+const timeoutHandles = new Map();
 
 const showPopover = () => {
   try {
@@ -31,18 +33,32 @@ const showPopover = () => {
 const onNewToastMessage = ({ message: originalMessage, action }) => {
   const message = action?.usei18n ? t(originalMessage) : originalMessage;
   const duration = action?.duration || props.duration;
+  const resolvedAction = action?.usei18n
+    ? {
+        ...action,
+        ...(typeof action.message === 'string'
+          ? { message: t(action.message) }
+          : {}),
+      }
+    : action;
+  toastSequence += 1;
+  const key = toastSequence;
 
   snackMessages.value.push({
-    key: Date.now(),
+    key,
     message,
-    action,
+    action: resolvedAction,
   });
 
   nextTick(showPopover);
 
-  setTimeout(() => {
-    snackMessages.value.shift();
+  const timeout = setTimeout(() => {
+    snackMessages.value = snackMessages.value.filter(
+      snackMessage => snackMessage.key !== key
+    );
+    timeoutHandles.delete(key);
   }, duration);
+  timeoutHandles.set(key, timeout);
 };
 
 onMounted(() => {
@@ -51,6 +67,8 @@ onMounted(() => {
 
 onUnmounted(() => {
   emitter.off('newToastMessage', onNewToastMessage);
+  timeoutHandles.forEach(timeout => clearTimeout(timeout));
+  timeoutHandles.clear();
 });
 </script>
 

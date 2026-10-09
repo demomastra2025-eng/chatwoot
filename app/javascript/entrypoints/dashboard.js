@@ -37,6 +37,7 @@ import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import Radio from 'dashboard/components-next/radio/Radio.vue';
 import Select from 'dashboard/components-next/select/Select.vue';
 import { runWhenDOMReady } from 'dashboard/helper/domReady';
+import { installLazyChunkRecovery } from 'dashboard/helper/lazyChunkRecovery';
 
 import 'floating-vue/dist/style.css';
 
@@ -54,6 +55,7 @@ sync(store, router);
 const pinia = createPinia();
 
 const app = createApp(App);
+installLazyChunkRecovery();
 app.use(i18n);
 app.use(store);
 app.use(pinia);

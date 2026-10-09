@@ -3,7 +3,6 @@ class Integrations::Medelement::AppointmentImporterService
   MEDELEMENT_SOURCE = 'medelement'.freeze
   RECEPTION_EXTERNAL_REF_PREFIX = 'medelement:reception:'.freeze
   PRIMARY_APPOINTMENT_TYPE = 'primary'.freeze
-  MIN_DURATION_MINUTES = 5
   NO_SHOW_PROVIDER_STATUSES = ['no_show', 'no show', 'неявка', 'не явился', 'не явилась'].freeze
   CANCELLED_PROVIDER_STATUSES = %w[cancelled canceled отменена отменено].freeze
   COMPLETED_PROVIDER_STATUSES = %w[completed complete завершена завершено оказана].freeze
@@ -409,7 +408,7 @@ class Integrations::Medelement::AppointmentImporterService
   end
 
   def duration_minutes(starts_at, ends_at)
-    [((ends_at - starts_at) / 60).round, MIN_DURATION_MINUTES].max
+    [((ends_at - starts_at) / 60).round, Scheduling::Constants::MIN_DURATION_MINUTES].max
   end
 
   def provider_binding(appointment, reception)

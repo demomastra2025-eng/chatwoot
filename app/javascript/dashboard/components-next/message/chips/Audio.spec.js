@@ -37,6 +37,15 @@ vi.mock('wavesurfer.js', async () => {
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: key => key }) }));
 vi.mock('dashboard/composables', () => ({ useAlert: vi.fn() }));
 vi.mock('dashboard/composables/emitter', () => ({ useEmitter: vi.fn() }));
+vi.mock('dashboard/composables/useAttachmentAvailability', async () => {
+  const { ref } = await import('vue');
+  return {
+    useAttachmentAvailability: () => ({
+      isPurged: ref(false),
+      refreshAfterMediaFailure: vi.fn(),
+    }),
+  };
+});
 vi.mock('@chatwoot/utils', () => ({ downloadFile: vi.fn() }));
 
 import AudioChip from './Audio.vue';
@@ -309,5 +318,33 @@ describe('Audio chip playback', () => {
       type: 'audio',
       extension: 'wav',
     });
+  });
+
+  it('uses the current attachment after the prop object is replaced', async () => {
+    withContainerWidth(0);
+    const chip = mountChip({ transcribedText: 'Previous transcript' });
+    await flushPromises();
+
+    const replacementUrl =
+      '/api/v1/accounts/77/telephony/calls/recording?recording_token=refreshed';
+    await chip.setProps({
+      attachment: {
+        ...chip.props('attachment'),
+        id: 'voice-recordings/janus/77/call/refreshed.wav',
+        dataUrl: replacementUrl,
+        transcribedText: 'Updated transcript',
+      },
+    });
+    await flushPromises();
+
+    expect(chip.text()).toContain('Updated transcript');
+    expect(chip.text()).not.toContain('Previous transcript');
+
+    await chip.findAll('button').at(-1).trigger('click');
+    await flushPromises();
+
+    expect(downloadFile).toHaveBeenCalledWith(
+      expect.objectContaining({ url: expect.stringContaining('refreshed') })
+    );
   });
 });

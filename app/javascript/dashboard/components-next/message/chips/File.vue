@@ -1,12 +1,15 @@
 <script setup>
-import { computed, useAttrs } from 'vue';
+import { computed, ref, useAttrs } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { getFileInfo } from '@chatwoot/utils';
+import { downloadFile, getFileInfo } from '@chatwoot/utils';
+import { useAlert } from 'dashboard/composables';
+import { useAttachmentAvailability } from 'dashboard/composables/useAttachmentAvailability';
+import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 
 import FileIcon from 'next/icon/FileIcon.vue';
 import Icon from 'next/icon/Icon.vue';
 
-const { attachment } = defineProps({
+const props = defineProps({
   attachment: {
     type: Object,
     required: true,
@@ -19,9 +22,13 @@ defineOptions({
 
 const { t } = useI18n();
 const attrs = useAttrs();
+const attachmentRef = computed(() => props.attachment);
+const { isPurged, refreshAfterMediaFailure } =
+  useAttachmentAvailability(attachmentRef);
+const isDownloading = ref(false);
 
 const fileDetails = computed(() => {
-  return getFileInfo(attachment?.dataUrl || '');
+  return getFileInfo(props.attachment?.dataUrl || '');
 });
 
 const displayFileName = computed(() => {
@@ -63,12 +70,37 @@ const textColorClass = computed(() => {
 });
 
 const parsedText = computed(
-  () => attachment?.parsedText || attachment?.transcribedText || ''
+  () => props.attachment?.parsedText || props.attachment?.transcribedText || ''
 );
+
+const handleDownload = async () => {
+  if (isPurged.value || !props.attachment?.dataUrl) return;
+
+  try {
+    isDownloading.value = true;
+    await downloadFile({
+      url: props.attachment.dataUrl,
+      type: props.attachment.fileType,
+      extension: props.attachment.extension,
+    });
+  } catch {
+    await refreshAfterMediaFailure();
+    useAlert(t('GALLERY_VIEW.ERROR_DOWNLOADING'));
+  } finally {
+    isDownloading.value = false;
+  }
+};
 </script>
 
 <template>
   <div
+    v-if="isPurged"
+    class="rounded-lg bg-n-alpha-1 p-3 text-sm text-n-slate-11"
+  >
+    {{ t('COMPONENTS.MEDIA.LOADING_FAILED') }}
+  </div>
+  <div
+    v-else
     class="max-w-[28rem] overflow-hidden rounded-lg border border-n-container bg-n-alpha-white"
   >
     <div
@@ -83,15 +115,16 @@ const parsedText = computed(
       >
         {{ displayFileName }}
       </span>
-      <a
+      <button
         v-tooltip="t('CONVERSATION.DOWNLOAD')"
-        class="flex-shrink-0 size-9 grid place-content-center cursor-pointer text-n-slate-11 hover:text-n-slate-12 transition-colors"
-        :href="attachment.dataUrl"
-        rel="noreferrer noopener nofollow"
-        target="_blank"
+        type="button"
+        class="flex-shrink-0 size-9 grid place-content-center cursor-pointer text-n-slate-11 hover:text-n-slate-12 transition-colors disabled:cursor-not-allowed"
+        :disabled="isDownloading"
+        @click.stop="handleDownload"
       >
-        <Icon icon="i-lucide-download" />
-      </a>
+        <Icon v-if="!isDownloading" icon="i-lucide-download" />
+        <Spinner v-else :size="16" class="text-n-slate-11" />
+      </button>
     </div>
     <div
       v-if="parsedText"
