@@ -110,7 +110,6 @@ RSpec.describe Captain::ToolRegistry do
 
       expect(agent_tool_ids).to include(*expected_agent_business_tool_ids)
       expect(agent_tool_ids).not_to include(*assistant_only_admin_tool_ids)
-      expect(agent_tool_ids).not_to include(*Captain::ToolPolicy::AGENT_UNSCOPED_TOOL_IDS)
       expect(agent_tool_ids.size).to eq(expected_agent_business_tool_ids.size)
     end
 
@@ -218,7 +217,7 @@ RSpec.describe Captain::ToolRegistry do
   end
 
   def expected_agent_business_tool_ids
-    all_tool_ids - assistant_only_admin_tool_ids - Captain::ToolPolicy::AGENT_UNSCOPED_TOOL_IDS
+    all_tool_ids - assistant_only_admin_tool_ids
   end
 
   def all_tool_ids

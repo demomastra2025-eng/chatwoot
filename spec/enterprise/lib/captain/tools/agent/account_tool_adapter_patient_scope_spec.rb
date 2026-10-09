@@ -102,6 +102,31 @@ RSpec.describe Captain::Tools::Agent::AccountToolAdapter do
     expect(payload.to_json).not_to include(other_contact.name)
   end
 
+  it 'denies account-wide task search at call time and records the denied attempt' do
+    account.enable_features!('crm_tasks')
+    events = []
+    subscription = ActiveSupport::Notifications.subscribe('llm.captain.tool.denied') do |_name, _start, _finish, _unique_id, payload|
+      events << payload
+    end
+
+    expect(call_tool('search_tasks')).to eq(neutral_failure)
+    expect(events.last).to include('tool_name' => 'search_tasks', 'id_kind' => 'task', 'outcome' => 'denied')
+  ensure
+    ActiveSupport::Notifications.unsubscribe(subscription) if subscription
+  end
+
+  it 'denies a message to another contact conversation with the neutral result' do
+    foreign_conversation = create(:conversation, account: account, contact: other_contact)
+
+    result = call_tool(
+      'send_message_to_conversation', conversation_id: foreign_conversation.display_id,
+                                      content: 'Private note', private_note: true
+    )
+
+    expect(result).to eq(neutral_failure)
+    expect(foreign_conversation.messages.where(content: 'Private note')).to be_empty
+  end
+
   it 'records a minimal denied event without the supplied id or patient details' do
     foreign = create(:scheduling_appointment, account: account, contact: other_contact)
     events = []

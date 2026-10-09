@@ -49,8 +49,6 @@ class Captain::ToolRegistry
     end
 
     def supports_scope?(scope_name)
-      return false if scope_name.to_s == Captain::ToolAccess::SCOPE_AGENT && Captain::ToolPolicy::AGENT_UNSCOPED_TOOL_IDS.include?(id)
-
       allowed_scopes.include?(scope_name.to_s)
     end
 
