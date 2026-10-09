@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
 import { useStore } from 'vuex';
+import { useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useMapGetter } from 'dashboard/composables/store';
 import { useAlert } from 'dashboard/composables';
@@ -11,6 +12,7 @@ import {
   shortTimestamp,
 } from 'shared/helpers/timeHelper';
 import { downloadFile } from '@chatwoot/utils';
+import { createAttachmentAvailability } from 'dashboard/composables/useAttachmentAvailability';
 import {
   ATTACHMENT_TYPES,
   MEDIA_TYPES,
@@ -27,6 +29,7 @@ const FILES_PEEK_LIMIT = 3;
 
 const { t } = useI18n();
 const store = useStore();
+const route = useRoute();
 
 const allAttachments = useMapGetter('getSelectedChatAttachments');
 const attachmentsLoaded = useMapGetter('getSelectedChatAttachmentsLoaded');
@@ -56,6 +59,12 @@ watch(
       isCommunicationThread: Boolean(
         selectedChat.value.is_communication_thread
       ),
+      expectedRouteFullPath: route.fullPath,
+      expectedAccountId: route.params?.accountId,
+      expectedSelectedChatId: selectedChat.value.id,
+      expectedSelectedChatType: selectedChat.value.is_communication_thread
+        ? 'communication_thread'
+        : 'conversation',
     });
   },
   { immediate: true }
@@ -101,6 +110,21 @@ const showGallery = ref(false);
 const selectedAttachment = ref(null);
 const downloadingId = ref(null);
 
+const attachmentAvailability = attachment =>
+  createAttachmentAvailability({
+    attachment: computed(() => attachment),
+    dispatch: store.dispatch.bind(store),
+    getIdentity: () => ({
+      accountId: route.params?.accountId,
+      routeFullPath: route.fullPath,
+      selectedChatId: selectedChat.value?.id,
+      selectedChatType: store.state.conversations?.selectedChatType,
+      isCommunicationThread: Boolean(
+        selectedChat.value?.is_communication_thread
+      ),
+    }),
+  });
+
 const fileNameFromUrl = url => {
   if (!url) return '';
   const name = url.split('/').pop();
@@ -113,6 +137,7 @@ const onDownloadFile = async attachment => {
     downloadingId.value = id;
     await downloadFile({ url, type, extension });
   } catch (error) {
+    await attachmentAvailability(attachment).refreshAfterMediaFailure();
     useAlert(t('CONVERSATION_SIDEBAR.SHARED_FILES.DOWNLOAD_ERROR'));
   } finally {
     downloadingId.value = null;
@@ -168,7 +193,7 @@ const imagePreviewSrc = ({
   return null;
 };
 
-const onPreviewError = ({
+const onPreviewError = async ({
   id,
   file_type: type,
   thumb_url: thumbUrl,
@@ -183,6 +208,12 @@ const onPreviewError = ({
     return;
   }
   failedPreviews.value.add(id);
+  await attachmentAvailability({
+    id,
+    file_type: type,
+    thumb_url: thumbUrl,
+    data_url: dataUrl,
+  }).refreshAfterMediaFailure();
 };
 
 const hasPreview = attachment =>

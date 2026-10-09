@@ -67,6 +67,7 @@ import {
 import { LOCAL_STORAGE_KEYS } from 'dashboard/constants/localStorage';
 import { LocalStorage } from 'shared/helpers/localStorage';
 import { emitter } from 'shared/helpers/mitt';
+import { STALE_CHUNK_REFRESH_EVENT } from 'dashboard/helper/lazyChunkRecovery';
 const EmojiInput = defineAsyncComponent(
   () => import('shared/components/emoji/EmojiInput.vue')
 );
@@ -655,6 +656,10 @@ export default {
     document.addEventListener('paste', this.onPaste);
     document.addEventListener('keydown', this.handleKeyEvents);
     this.setCCAndToEmailsFromLastChat();
+    window.addEventListener(
+      STALE_CHUNK_REFRESH_EVENT,
+      this.flushDraftBeforeStaleChunkRefresh
+    );
     this.doAutoSaveDraft = debounce(
       () => {
         this.saveDraft(this.conversationIdByRoute, this.replyType);
@@ -678,6 +683,10 @@ export default {
     emitter.on(CMD_AI_ASSIST, this.executeCopilotAction);
   },
   unmounted() {
+    window.removeEventListener(
+      STALE_CHUNK_REFRESH_EVENT,
+      this.flushDraftBeforeStaleChunkRefresh
+    );
     document.removeEventListener('paste', this.onPaste);
     document.removeEventListener('keydown', this.handleKeyEvents);
     emitter.off(BUS_EVENTS.TOGGLE_REPLY_TO_MESSAGE, this.onReplyToMessage);
@@ -816,6 +825,10 @@ export default {
           message: draftToSave,
         });
       }
+    },
+    flushDraftBeforeStaleChunkRefresh() {
+      if (this.isEditingMessage) return;
+      this.saveDraft(this.conversationIdByRoute, this.replyType);
     },
     setToDraft(conversationId, replyType) {
       this.saveDraft(conversationId, replyType);

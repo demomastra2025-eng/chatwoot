@@ -757,10 +757,52 @@ const actions = {
     }
   },
 
-  fetchAllAttachments: async ({ commit, state = {} }, payload) => {
+  fetchAllAttachments: async ({ commit, state = {}, rootState }, payload) => {
     let attachments = [];
+    let requestSucceeded = false;
     const { conversationId, isCommunicationThread: isThreadAttachmentTarget } =
       resolveAttachmentTarget(state, payload);
+    const expectedContext = payload && typeof payload === 'object' ? payload : {};
+    const hasExpectedContext = Boolean(
+      expectedContext.expectedRouteFullPath ||
+        expectedContext.expectedAccountId !== undefined ||
+        expectedContext.expectedSelectedChatId !== undefined ||
+        expectedContext.expectedSelectedChatType !== undefined
+    );
+    const isExpectedContextCurrent = () => {
+      if (!hasExpectedContext) return true;
+
+      const currentRoute = rootState?.route;
+      if (
+        expectedContext.expectedRouteFullPath &&
+        currentRoute?.fullPath !== expectedContext.expectedRouteFullPath
+      ) {
+        return false;
+      }
+      if (
+        expectedContext.expectedAccountId !== undefined &&
+        String(currentRoute?.params?.accountId) !==
+          String(expectedContext.expectedAccountId)
+      ) {
+        return false;
+      }
+      if (
+        expectedContext.expectedSelectedChatId !== undefined &&
+        String(state.selectedChatId) !==
+          String(expectedContext.expectedSelectedChatId)
+      ) {
+        return false;
+      }
+      if (
+        expectedContext.expectedSelectedChatType !== undefined &&
+        state.selectedChatType !== expectedContext.expectedSelectedChatType
+      ) {
+        return false;
+      }
+      return true;
+    };
+
+    if (!isExpectedContextCurrent()) return attachments;
     const attachmentsApi = isThreadAttachmentTarget
       ? CommunicationThreadApi.attachments(conversationId)
       : ConversationApi.getAllAttachments(conversationId);
@@ -768,6 +810,7 @@ const actions = {
     try {
       const { data } = await attachmentsApi;
       attachments = data.payload;
+      requestSucceeded = true;
     } catch (error) {
       // in case of error, log the error and continue
       Sentry.setContext('Conversation', {
@@ -778,13 +821,19 @@ const actions = {
       });
       Sentry.captureException(error);
     } finally {
-      // we run the commit even if the request fails
-      // this ensures that the `attachment` variable is always present on chat
-      commit(types.SET_ALL_ATTACHMENTS, {
-        id: conversationId,
-        data: attachments,
-      });
+      // A delayed request must not replace the current chat's attachments after
+      // the account, route, or selected chat changes.
+      if (isExpectedContextCurrent()) {
+        commit(types.SET_ALL_ATTACHMENTS, {
+          id: conversationId,
+          data: requestSucceeded
+            ? attachments
+            : state.attachments?.[conversationId] || [],
+        });
+      }
     }
+
+    return requestSucceeded && isExpectedContextCurrent() ? attachments : [];
   },
 
   syncActiveConversationMessages: async (

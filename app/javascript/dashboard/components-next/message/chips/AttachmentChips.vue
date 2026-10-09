@@ -1,11 +1,13 @@
 <script setup>
 import { computed, defineOptions, useAttrs } from 'vue';
+import { useRoute } from 'vue-router';
 
 import ImageChip from 'next/message/chips/Image.vue';
 import VideoChip from 'next/message/chips/Video.vue';
 import AudioChip from 'next/message/chips/Audio.vue';
 import FileChip from 'next/message/chips/File.vue';
 import { useMessageContext } from '../provider.js';
+import { isAttachmentConfirmedPurged } from 'dashboard/composables/useAttachmentAvailability';
 
 import { ATTACHMENT_TYPES } from '../constants';
 
@@ -37,7 +39,8 @@ defineOptions({
 });
 
 const attrs = useAttrs();
-const { orientation } = useMessageContext();
+const route = useRoute();
+const { orientation, conversationId } = useMessageContext();
 
 const classToApply = computed(() => {
   const baseClasses = [attrs.class, 'flex', 'flex-wrap'];
@@ -53,12 +56,20 @@ const attachmentList = computed(() => {
   return Array.isArray(props.attachments) ? props.attachments : [];
 });
 
+const isPurged = attachment =>
+  attachment.filePurged === true ||
+  attachment.file_purged === true ||
+  isAttachmentConfirmedPurged(attachment, {
+    accountId: route.params.accountId,
+    conversationId: conversationId.value,
+  });
+
 const purgedAttachments = computed(() => {
-  return attachmentList.value.filter(attachment => attachment.filePurged);
+  return attachmentList.value.filter(isPurged);
 });
 
 const allAttachments = computed(() => {
-  return attachmentList.value.filter(attachment => !attachment.filePurged);
+  return attachmentList.value.filter(attachment => !isPurged(attachment));
 });
 
 const purgedText = attachment =>

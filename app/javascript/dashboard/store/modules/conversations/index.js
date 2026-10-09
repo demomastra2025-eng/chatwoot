@@ -23,7 +23,8 @@ import { timestampInSeconds } from 'dashboard/helper/timestampHelper';
 const state = {
   allConversations: [],
   attachments: {},
-  // Chats whose full attachment list was fetched (see SET_ALL_ATTACHMENTS).
+  // Chats whose full attachment load attempt settled; failed refreshes retain
+  // any attachment data already in the store.
   fullyLoadedAttachments: {},
   listLoadingStatus: true,
   listLoadingError: false,

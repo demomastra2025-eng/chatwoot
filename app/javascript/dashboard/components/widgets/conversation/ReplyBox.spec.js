@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { LocalStorage } from 'shared/helpers/localStorage';
+import { LOCAL_STORAGE_KEYS } from 'dashboard/constants/localStorage';
+import draftMessages from 'dashboard/store/modules/draftMessages';
 import ReplyBox from './ReplyBox.vue';
 
 const replyButtonLabel = context =>
@@ -26,6 +28,71 @@ const replyButtonLabel = context =>
 describe('ReplyBox', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    LocalStorage.remove(LOCAL_STORAGE_KEYS.DRAFT_MESSAGES);
+  });
+
+  it('persists the latest reply synchronously before a stale-chunk refresh', () => {
+    const state = { records: {} };
+    const context = {
+      message: '  Latest unsaved reply  ',
+      maxLength: 5000,
+      conversationIdByRoute: 42,
+      replyType: 'reply',
+      saveDraft: ReplyBox.methods.saveDraft,
+      getDraftKey: ReplyBox.methods.getDraftKey,
+      $store: {
+        dispatch: (_action, payload) =>
+          draftMessages.actions.set(
+            {
+              commit: (mutation, data) =>
+                draftMessages.mutations[mutation](state, data),
+            },
+            payload
+          ),
+      },
+    };
+
+    ReplyBox.methods.flushDraftBeforeStaleChunkRefresh.call(context);
+
+    expect(LocalStorage.get(LOCAL_STORAGE_KEYS.DRAFT_MESSAGES)).toEqual({
+      'draft-42-reply': 'Latest unsaved reply',
+    });
+  });
+
+  it('keeps the saved reply draft when refreshing while editing a sent message', () => {
+    const state = { records: {} };
+    const context = {
+      message: 'Edited sent message',
+      maxLength: 5000,
+      conversationIdByRoute: 42,
+      replyType: 'reply',
+      isEditingMessage: true,
+      saveDraft: ReplyBox.methods.saveDraft,
+      getDraftKey: ReplyBox.methods.getDraftKey,
+      $store: {
+        dispatch: (_action, payload) =>
+          draftMessages.actions.set(
+            {
+              commit: (mutation, data) =>
+                draftMessages.mutations[mutation](state, data),
+            },
+            payload
+          ),
+      },
+    };
+    draftMessages.actions.set(
+      {
+        commit: (mutation, data) =>
+          draftMessages.mutations[mutation](state, data),
+      },
+      { key: 'draft-42-reply', message: 'Saved composed reply' }
+    );
+
+    ReplyBox.methods.flushDraftBeforeStaleChunkRefresh.call(context);
+
+    expect(LocalStorage.get(LOCAL_STORAGE_KEYS.DRAFT_MESSAGES)).toEqual({
+      'draft-42-reply': 'Saved composed reply',
+    });
   });
 
   it('keeps the text editor enabled for communication-thread voice channels', () => {

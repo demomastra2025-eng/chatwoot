@@ -2,7 +2,9 @@
 import { ref, computed, onMounted, useTemplateRef, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useStore } from 'vuex';
+import { useRoute } from 'vue-router';
 import { useAlert } from 'dashboard/composables';
+import { useAttachmentAvailability } from 'dashboard/composables/useAttachmentAvailability';
 
 import { useStoreGetters } from 'dashboard/composables/store';
 import { useKeyboardEvents } from 'dashboard/composables/useKeyboardEvents';
@@ -12,6 +14,7 @@ import { downloadFile } from '@chatwoot/utils';
 
 import NextButton from 'dashboard/components-next/button/Button.vue';
 import Avatar from 'next/avatar/Avatar.vue';
+import Icon from 'next/icon/Icon.vue';
 import TeleportWithDirection from 'dashboard/components-next/TeleportWithDirection.vue';
 
 const props = defineProps({
@@ -34,6 +37,7 @@ const show = defineModel('show', { type: Boolean, default: false });
 
 const { t } = useI18n();
 const store = useStore();
+const route = useRoute();
 const getters = useStoreGetters();
 
 const ALLOWED_FILE_TYPES = {
@@ -46,6 +50,9 @@ const ALLOWED_FILE_TYPES = {
 const isDownloading = ref(false);
 const activeAttachment = ref({});
 const activeFileType = ref('');
+const activeAttachmentSource = computed(() => activeAttachment.value);
+const { isPurged, refreshAfterMediaFailure } =
+  useAttachmentAvailability(activeAttachmentSource);
 // Position of an attachment in the list: by attachment id, else by message.
 const indexOfAttachment = (attachments, target) => {
   if (!target) return -1;
@@ -145,12 +152,19 @@ const onClickChangeAttachment = (attachment, index) => {
 
 const onClickDownload = async () => {
   const { file_type: type, data_url: url, extension } = activeAttachment.value;
-  if (!Object.values(ALLOWED_FILE_TYPES).includes(type)) return;
+  if (
+    isPurged.value ||
+    !url ||
+    !Object.values(ALLOWED_FILE_TYPES).includes(type)
+  ) {
+    return;
+  }
 
   try {
     isDownloading.value = true;
     await downloadFile({ url, type, extension });
   } catch (error) {
+    await refreshAfterMediaFailure();
     useAlert(t('GALLERY_VIEW.ERROR_DOWNLOADING'));
   } finally {
     isDownloading.value = false;
@@ -197,7 +211,18 @@ const loadSelectedChatAttachments = () => {
   store.dispatch('fetchAllAttachments', {
     conversationId: selectedChat.id,
     isCommunicationThread: Boolean(selectedChat.is_communication_thread),
+    expectedRouteFullPath: route.fullPath,
+    expectedAccountId: route.params?.accountId,
+    expectedSelectedChatId: selectedChat.id,
+    expectedSelectedChatType: selectedChat.is_communication_thread
+      ? 'communication_thread'
+      : 'conversation',
   });
+};
+
+const onMediaError = async () => {
+  emit('error');
+  await refreshAfterMediaFailure();
 };
 
 // Keep the counter and previous/next on the attachment being shown when the
@@ -209,7 +234,12 @@ watch(
       ? activeAttachment.value
       : props.attachment;
     const index = indexOfAttachment(attachments, shown);
-    if (index >= 0) activeImageIndex.value = index;
+    if (index >= 0) {
+      activeImageIndex.value = index;
+      const refreshedAttachment = attachments[index];
+      activeAttachment.value = refreshedAttachment;
+      activeFileType.value = refreshedAttachment.file_type;
+    }
   }
 );
 
@@ -331,7 +361,14 @@ onMounted(() => {
 
           <div class="flex-1 flex items-center justify-center overflow-hidden">
             <div
-              v-if="isImage"
+              v-if="isPurged"
+              class="flex h-full w-full items-center justify-center gap-2 text-sm text-n-slate-11"
+            >
+              <Icon icon="i-lucide-circle-off" />
+              {{ t('COMPONENTS.MEDIA.LOADING_FAILED') }}
+            </div>
+            <div
+              v-else-if="isImage"
               :style="imageWrapperStyle"
               class="flex items-center justify-center origin-center"
               :class="{
@@ -353,11 +390,12 @@ onMounted(() => {
                 @wheel.prevent.stop="onWheelImageZoom"
                 @mousemove="onMouseMove"
                 @mouseleave="onMouseLeave"
+                @error="onMediaError"
               />
             </div>
 
             <video
-              v-if="isVideo"
+              v-if="isVideo && !isPurged"
               :key="activeAttachment.message_id"
               :src="activeAttachment.data_url"
               controls
@@ -365,15 +403,17 @@ onMounted(() => {
               :autoplay="autoPlay"
               class="max-h-full max-w-full object-contain"
               @click.stop
+              @error="onMediaError"
             />
 
             <audio
-              v-if="isAudio"
+              v-if="isAudio && !isPurged"
               :key="activeAttachment.message_id"
               controls
               :autoplay="autoPlay"
               class="w-full max-w-md"
               @click.stop
+              @error="onMediaError"
             >
               <source :src="`${activeAttachment.data_url}?t=${Date.now()}`" />
             </audio>

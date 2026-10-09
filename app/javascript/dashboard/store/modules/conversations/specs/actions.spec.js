@@ -526,6 +526,147 @@ describe('conversation actions', () => {
         data: [{ id: 100, file_type: 'file' }],
       });
     });
+
+    it('returns the permission-scoped attachment payload for failure recovery', async () => {
+      const commit = vi.fn();
+      const attachments = [{ id: 44, file_purged: true, data_url: '' }];
+      vi.spyOn(ConversationApi, 'getAllAttachments').mockResolvedValue({
+        data: { payload: attachments },
+      });
+      const context = {
+        commit,
+        state: {
+          allConversations: [{ id: 7 }],
+          selectedChatId: 7,
+          selectedChatType: 'conversation',
+        },
+        rootState: {
+          route: {
+            fullPath: '/app/accounts/3/conversations/7',
+            params: { accountId: '3' },
+          },
+        },
+      };
+
+      const result = await actions.fetchAllAttachments(context, {
+        conversationId: 7,
+        isCommunicationThread: false,
+        expectedRouteFullPath: '/app/accounts/3/conversations/7',
+        expectedAccountId: '3',
+        expectedSelectedChatId: 7,
+        expectedSelectedChatType: 'conversation',
+      });
+
+      expect(result).toEqual(attachments);
+      expect(commit).toHaveBeenCalledWith(types.SET_ALL_ATTACHMENTS, {
+        id: 7,
+        data: attachments,
+      });
+    });
+
+    it('preserves the populated attachment list when a refresh request fails', async () => {
+      const commit = vi.fn();
+      const existingAttachments = [
+        { id: 51, data_url: 'previously-loaded' },
+      ];
+      vi.spyOn(ConversationApi, 'getAllAttachments').mockRejectedValue(
+        new Error('temporary network failure')
+      );
+
+      const result = await actions.fetchAllAttachments(
+        {
+          commit,
+          state: {
+            allConversations: [{ id: 7 }],
+            attachments: { 7: existingAttachments },
+            selectedChatId: 7,
+            selectedChatType: 'conversation',
+          },
+          rootState: {
+            route: {
+              fullPath: '/app/accounts/3/conversations/7',
+              params: { accountId: '3' },
+            },
+          },
+        },
+        {
+          conversationId: 7,
+          expectedRouteFullPath: '/app/accounts/3/conversations/7',
+          expectedAccountId: '3',
+          expectedSelectedChatId: 7,
+          expectedSelectedChatType: 'conversation',
+        }
+      );
+
+      expect(result).toEqual([]);
+      expect(commit).toHaveBeenCalledWith(types.SET_ALL_ATTACHMENTS, {
+        id: 7,
+        data: existingAttachments,
+      });
+    });
+
+    it('marks an initial empty attachment request complete after failure', async () => {
+      const commit = vi.fn();
+      vi.spyOn(ConversationApi, 'getAllAttachments').mockRejectedValue(
+        new Error('temporary network failure')
+      );
+
+      const result = await actions.fetchAllAttachments(
+        {
+          commit,
+          state: { allConversations: [{ id: 7 }], attachments: {} },
+        },
+        7
+      );
+
+      expect(result).toEqual([]);
+      expect(commit).toHaveBeenCalledWith(types.SET_ALL_ATTACHMENTS, {
+        id: 7,
+        data: [],
+      });
+    });
+
+    it('does not commit a delayed attachment response after account or chat changes', async () => {
+      const commit = vi.fn();
+      let resolveRequest;
+      vi.spyOn(ConversationApi, 'getAllAttachments').mockReturnValue(
+        new Promise(resolve => {
+          resolveRequest = resolve;
+        })
+      );
+      const state = {
+        allConversations: [{ id: 7 }],
+        selectedChatId: 7,
+        selectedChatType: 'conversation',
+      };
+      const rootState = {
+        route: {
+          fullPath: '/app/accounts/3/conversations/7',
+          params: { accountId: '3' },
+        },
+      };
+      const request = actions.fetchAllAttachments(
+        { commit, state, rootState },
+        {
+          conversationId: 7,
+          isCommunicationThread: false,
+          expectedRouteFullPath: '/app/accounts/3/conversations/7',
+          expectedAccountId: '3',
+          expectedSelectedChatId: 7,
+          expectedSelectedChatType: 'conversation',
+        }
+      );
+
+      state.selectedChatId = 8;
+      rootState.route.fullPath = '/app/accounts/4/conversations/8';
+      rootState.route.params.accountId = '4';
+      resolveRequest({
+        data: { payload: [{ id: 44, file_purged: true, data_url: '' }] },
+      });
+
+      await expect(request).resolves.toEqual([]);
+      expect(commit).not.toHaveBeenCalled();
+    });
   });
 
   describe('#toggleStatus', () => {

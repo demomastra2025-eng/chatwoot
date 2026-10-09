@@ -6,6 +6,7 @@ import { useMapGetter } from 'dashboard/composables/store';
 import { useSnakeCase } from 'dashboard/composables/useTransformKeys';
 import { INBOX_TYPES } from 'dashboard/helper/inbox';
 import { useMessageContext } from '../provider.js';
+import { useAttachmentAvailability } from 'dashboard/composables/useAttachmentAvailability';
 
 import GalleryView from 'dashboard/components/widgets/conversation/components/GalleryView.vue';
 
@@ -20,6 +21,9 @@ const localHasError = ref(false);
 const showGallery = ref(false);
 
 const { filteredCurrentChatAttachments, inboxId } = useMessageContext();
+const attachment = computed(() => props.attachment);
+const { isPurged, refreshAfterMediaFailure } =
+  useAttachmentAvailability(attachment);
 const inboxGetter = useMapGetter('inboxes/getInbox');
 const { isLoaded, hasError, loadWithRetry } = useLoadWithRetry({
   max_retry: 4,
@@ -32,19 +36,23 @@ const shouldRetryLoad = computed(() => {
 });
 const imageSrc = computed(() => props.attachment.dataUrl);
 const shouldShowError = computed(() => {
-  return shouldRetryLoad.value ? hasError.value : localHasError.value;
+  return (
+    isPurged.value ||
+    (shouldRetryLoad.value ? hasError.value : localHasError.value)
+  );
 });
 const shouldRenderImage = computed(() => {
-  return !shouldRetryLoad.value || isLoaded.value;
+  return !isPurged.value && (!shouldRetryLoad.value || isLoaded.value);
 });
 
-const handleError = () => {
+const handleError = async () => {
   if (shouldRetryLoad.value) {
     hasError.value = true;
-    return;
+  } else {
+    localHasError.value = true;
   }
 
-  localHasError.value = true;
+  await refreshAfterMediaFailure();
 };
 
 watch(
@@ -59,6 +67,7 @@ watch(
     }
 
     await loadWithRetry(src);
+    if (hasError.value) await refreshAfterMediaFailure();
   },
   { immediate: true }
 );
@@ -84,7 +93,7 @@ watch(
     />
   </div>
   <GalleryView
-    v-if="showGallery"
+    v-if="showGallery && !isPurged"
     v-model:show="showGallery"
     :attachment="useSnakeCase(attachment)"
     :all-attachments="filteredCurrentChatAttachments"

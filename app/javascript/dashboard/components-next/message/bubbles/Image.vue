@@ -8,6 +8,7 @@ import Button from 'next/button/Button.vue';
 import Icon from 'next/icon/Icon.vue';
 import { useSnakeCase } from 'dashboard/composables/useTransformKeys';
 import { useMessageContext } from '../provider.js';
+import { useAttachmentAvailability } from 'dashboard/composables/useAttachmentAvailability';
 import { downloadFile } from '@chatwoot/utils';
 
 import GalleryView from 'dashboard/components/widgets/conversation/components/GalleryView.vue';
@@ -19,15 +20,23 @@ const { filteredCurrentChatAttachments, attachments } = useMessageContext();
 const attachment = computed(() => {
   return attachments.value[0];
 });
+const { isPurged, refreshAfterMediaFailure } =
+  useAttachmentAvailability(attachment);
 
 const { isLoaded, hasError, loadWithRetry } = useLoadWithRetry();
 
 const showGallery = ref(false);
 const isDownloading = ref(false);
 
-onMounted(() => {
+onMounted(async () => {
+  if (isPurged.value) {
+    hasError.value = true;
+    return;
+  }
+
   if (attachment.value?.dataUrl) {
-    loadWithRetry(attachment.value.dataUrl);
+    await loadWithRetry(attachment.value.dataUrl);
+    if (hasError.value) await refreshAfterMediaFailure();
   }
 });
 
@@ -37,14 +46,16 @@ const downloadAttachment = async () => {
     isDownloading.value = true;
     await downloadFile({ url: dataUrl, type: fileType, extension });
   } catch (error) {
+    await refreshAfterMediaFailure();
     useAlert(t('GALLERY_VIEW.ERROR_DOWNLOADING'));
   } finally {
     isDownloading.value = false;
   }
 };
 
-const handleImageError = () => {
+const handleImageError = async () => {
   hasError.value = true;
+  await refreshAfterMediaFailure();
 };
 </script>
 
@@ -54,7 +65,10 @@ const handleImageError = () => {
     data-bubble-name="image"
     @click="showGallery = true"
   >
-    <div v-if="hasError" class="flex items-center gap-1 text-center rounded-lg">
+    <div
+      v-if="hasError || isPurged"
+      class="flex items-center gap-1 text-center rounded-lg"
+    >
       <Icon icon="i-lucide-circle-off" class="text-n-slate-11" />
       <p class="mb-0 text-n-slate-11">
         {{ $t('COMPONENTS.MEDIA.IMAGE_UNAVAILABLE') }}
@@ -89,7 +103,7 @@ const handleImageError = () => {
     </div>
   </BaseBubble>
   <GalleryView
-    v-if="showGallery"
+    v-if="showGallery && !isPurged"
     v-model:show="showGallery"
     :attachment="useSnakeCase(attachment)"
     :all-attachments="filteredCurrentChatAttachments"

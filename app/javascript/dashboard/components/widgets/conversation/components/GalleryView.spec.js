@@ -2,6 +2,13 @@ import { mount } from '@vue/test-utils';
 import { createStore } from 'vuex';
 import GalleryView from './GalleryView.vue';
 
+vi.mock('vue-router', () => ({
+  useRoute: () => ({
+    fullPath: '/app/accounts/3/conversations/7',
+    params: { accountId: '3' },
+  }),
+}));
+
 const image = (messageId, id = messageId) => ({
   id,
   message_id: messageId,
@@ -50,10 +57,12 @@ describe('GalleryView', () => {
     mountGallery(store, { attachment: image(2), allAttachments: [] });
 
     expect(fetchAllAttachments).toHaveBeenCalledTimes(1);
-    expect(fetchAllAttachments).toHaveBeenCalledWith({
-      conversationId: 7,
-      isCommunicationThread: true,
-    });
+    expect(fetchAllAttachments).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: 7,
+        isCommunicationThread: true,
+      })
+    );
   });
 
   it('does not load again when the full list is loaded and has the opened attachment', () => {
@@ -78,10 +87,12 @@ describe('GalleryView', () => {
     });
 
     expect(fetchAllAttachments).toHaveBeenCalledTimes(1);
-    expect(fetchAllAttachments).toHaveBeenCalledWith({
-      conversationId: 7,
-      isCommunicationThread: false,
-    });
+    expect(fetchAllAttachments).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: 7,
+        isCommunicationThread: false,
+      })
+    );
     expect(wrapper.find('footer').text()).toBe('0 / 1');
 
     await wrapper.setProps({

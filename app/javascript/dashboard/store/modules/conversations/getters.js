@@ -101,9 +101,9 @@ const getters = {
   getSelectedChatAttachments: ({ selectedChatId, attachments }) => {
     return attachments[selectedChatId] || [];
   },
-  // True only once the chat's full list was fetched (SET_ALL_ATTACHMENTS). A
-  // list started by a message that arrived or was sent while the chat is open
-  // (ADD_CONVERSATION_ATTACHMENTS) is partial.
+  // True once the full-list load attempt settles (SET_ALL_ATTACHMENTS). A
+  // failed refresh retains the current partial data so the panel can render it.
+  // A list started by a message during the open chat is partial until fetched.
   getSelectedChatAttachmentsLoaded: ({
     selectedChatId,
     fullyLoadedAttachments = {},

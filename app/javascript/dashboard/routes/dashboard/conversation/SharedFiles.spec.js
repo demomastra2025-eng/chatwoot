@@ -2,6 +2,13 @@ import { flushPromises, mount } from '@vue/test-utils';
 import { createStore } from 'vuex';
 import SharedFiles from './SharedFiles.vue';
 
+vi.mock('vue-router', () => ({
+  useRoute: () => ({
+    fullPath: '/app/accounts/3/conversations/7',
+    params: { accountId: '3' },
+  }),
+}));
+
 const buildStore = chat => {
   const fetchAllAttachments = vi.fn();
   const store = createStore({
@@ -48,10 +55,12 @@ describe('SharedFiles', () => {
     mountSharedFiles(store);
 
     expect(fetchAllAttachments).toHaveBeenCalledTimes(1);
-    expect(fetchAllAttachments).toHaveBeenCalledWith({
-      conversationId: 7,
-      isCommunicationThread: true,
-    });
+    expect(fetchAllAttachments).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: 7,
+        isCommunicationThread: true,
+      })
+    );
   });
 
   it('reloads when switching between a thread and a conversation with the same id', async () => {
@@ -65,10 +74,12 @@ describe('SharedFiles', () => {
     await flushPromises();
 
     expect(fetchAllAttachments).toHaveBeenCalledTimes(2);
-    expect(fetchAllAttachments).toHaveBeenLastCalledWith({
-      conversationId: 7,
-      isCommunicationThread: false,
-    });
+    expect(fetchAllAttachments).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        conversationId: 7,
+        isCommunicationThread: false,
+      })
+    );
   });
 
   it('does not reload for updates of the same chat', async () => {
