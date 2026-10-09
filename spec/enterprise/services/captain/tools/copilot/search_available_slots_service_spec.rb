@@ -18,7 +18,8 @@ RSpec.describe Captain::Tools::Copilot::SearchAvailableSlotsService do
     create(:scheduling_break_rule, resource: resource, weekday: 1, start_minute: 11 * 60, end_minute: (11 * 60) + 30)
     create(:scheduling_service_price, account: account, service: consultation, resource: resource, active: true, price: 20_000)
     create(:scheduling_appointment, account: account, resource: resource, service: consultation,
-                                    starts_at: Time.zone.parse('2026-04-20 10:00:00 +0500'), ends_at: Time.zone.parse('2026-04-20 10:45:00 +0500'), duration_min: 45)
+                                    starts_at: Time.zone.parse('2026-04-20 10:00:00 +0500'),
+                                    ends_at: Time.zone.parse('2026-04-20 10:45:00 +0500'), duration_min: 45)
   end
 
   describe '#execute' do
@@ -48,7 +49,6 @@ RSpec.describe Captain::Tools::Copilot::SearchAvailableSlotsService do
       expect(payload).to include(
         'availability_scope' => 'service_confirmed',
         'requested_service_id' => consultation.id,
-        'customer_offer_eligible' => true,
         'service_match' => include(
           'confirmed' => true,
           'service_id' => consultation.id,
@@ -56,6 +56,13 @@ RSpec.describe Captain::Tools::Copilot::SearchAvailableSlotsService do
           'resource_ids' => [resource.id]
         )
       )
+    end
+
+    it 'omits offer eligibility from the agent answer' do
+      payload = JSON.parse(service.execute(from: from_time.iso8601, to: to_time.iso8601,
+                                           resource_ids: [resource.id], service_id: consultation.id, limit: 1))
+
+      expect(payload).not_to have_key('customer_offer_eligible')
     end
 
     it 'treats non-positive and blank service ids as an omitted filter' do
@@ -69,7 +76,6 @@ RSpec.describe Captain::Tools::Copilot::SearchAvailableSlotsService do
         expect(payload).to include(
           'availability_scope' => 'generic',
           'requested_service_id' => nil,
-          'customer_offer_eligible' => false,
           'service_match' => {
             'confirmed' => false,
             'service_id' => nil,

@@ -1,8 +1,11 @@
 require 'rails_helper'
 
-# What the LLM is told about the source and the eligibility of the times it receives. The pinned MedElement contract
-# spec (search_available_slots_service_spec.rb) is intentionally left untouched.
+# What the LLM is told about the source of the times it receives.
 RSpec.describe Captain::Tools::Copilot::SearchAvailableSlotsService do
+  include ActiveSupport::Testing::TimeHelpers
+
+  around { |example| travel_to(Time.utc(2026, 4, 19, 12)) { example.run } }
+
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account) }
   let(:assistant) { create(:captain_assistant, account: account) }
@@ -45,7 +48,7 @@ RSpec.describe Captain::Tools::Copilot::SearchAvailableSlotsService do
     payload = search(resource_ids: [resource.id], service_id: service_record.id, limit: 2)
 
     expect(payload).to include('total_slots' => 2, 'slot_count_scope' => 'returned_only', 'service_link_status' => 'local_configured',
-                               'customer_offer_eligible' => true, 'candidate_resource_ids' => [resource.id])
+                               'candidate_resource_ids' => [resource.id])
     expect(payload['availability']).to include('status' => 'local_only')
   end
 
@@ -56,7 +59,7 @@ RSpec.describe Captain::Tools::Copilot::SearchAvailableSlotsService do
 
     payload = search(resource_ids: [resource.id], service_id: service_record.id)
 
-    expect(payload).to include('customer_offer_eligible' => false, 'service_link_status' => 'price_link_unverified')
+    expect(payload).to include('service_link_status' => 'price_link_unverified')
     expect(Llm::EventBus).to have_received(:publish).with('captain.service_match_missing', hash_including(resource_ids: []))
   end
 
@@ -71,7 +74,7 @@ RSpec.describe Captain::Tools::Copilot::SearchAvailableSlotsService do
 
     payload = search(resource_ids: [resource.id], service_id: service_record.id)
 
-    expect(payload).to include('slots' => [], 'total_slots' => 0, 'customer_offer_eligible' => false)
+    expect(payload).to include('slots' => [], 'total_slots' => 0)
     expect(payload['availability']).to include('status' => 'degraded')
     expect(Scheduling::Appointment.count).to eq(0)
   end
