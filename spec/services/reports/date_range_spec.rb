@@ -20,6 +20,28 @@ RSpec.describe Reports::DateRange do
     )
   end
 
+  it 'returns an IANA timezone identifier when the account stores a Rails friendly zone' do
+    account = build(:account, reporting_timezone: 'Almaty')
+    range = described_class.new(
+      account: account,
+      params: { from_date: '2026-03-29', to_date: '2026-03-29' }
+    )
+
+    expect(range.meta[:timezone]).to eq('Asia/Almaty')
+    local_start_date = range.from_at.in_time_zone(range.timezone).to_date
+    local_end_date = (range.until_at - 1.second).in_time_zone(range.timezone).to_date
+
+    expect(local_start_date).to eq(Date.new(2026, 3, 29))
+    expect(local_end_date).to eq(Date.new(2026, 3, 29))
+  end
+
+  it 'preserves explicit IANA timezone identifiers in response metadata' do
+    account = build(:account, reporting_timezone: 'Asia/Almaty')
+    range = described_class.new(account: account)
+
+    expect(range.meta[:timezone]).to eq('Asia/Almaty')
+  end
+
   it 'rejects invalid dates, reversed dates, and ranges wider than 90 days' do
     expect do
       described_class.new(account: account, params: { from_date: '2026-02-30' })

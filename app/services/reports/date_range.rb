@@ -19,7 +19,7 @@ module Reports
       {
         from_date: from_date.iso8601,
         to_date: to_date.iso8601,
-        timezone: timezone.name,
+        timezone: timezone.tzinfo.name,
         max_range_days: MAX_RANGE_DAYS
       }
     end

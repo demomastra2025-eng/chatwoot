@@ -2927,7 +2927,9 @@ x-scheduling-expense-schema: &scheduling_expense_schema
                   properties:
                     from_date: { type: string, format: date }
                     to_date: { type: string, format: date }
-                    timezone: { type: string }
+                    timezone:
+                      type: string
+                      description: Canonical IANA timezone identifier suitable for browser date formatting.
                     max_range_days: { type: integer }
       '403':
         description: Caller lacks report permission
@@ -2982,7 +2984,9 @@ x-scheduling-expense-schema: &scheduling_expense_schema
                   properties:
                     from_date: { type: string, format: date }
                     to_date: { type: string, format: date }
-                    timezone: { type: string }
+                    timezone:
+                      type: string
+                      description: Canonical IANA timezone identifier suitable for browser date formatting.
                     max_range_days: { type: integer }
       '403':
         description: Caller lacks report permission
