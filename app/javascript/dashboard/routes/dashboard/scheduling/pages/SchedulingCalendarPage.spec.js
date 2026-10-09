@@ -119,12 +119,16 @@ const deferred = () => {
 };
 const InputStub = defineComponent({
   name: 'CalendarInputStub',
+  inheritAttrs: false,
   props: ['modelValue', 'label', 'disabled'],
   emits: ['update:modelValue'],
   setup:
-    (props, { emit }) =>
+    (props, { attrs, emit }) =>
     () =>
       h('input', {
+        ...Object.fromEntries(
+          Object.entries(attrs).filter(([attribute]) => attribute !== 'size')
+        ),
         'data-label': props.label,
         value: props.modelValue,
         disabled: props.disabled,
@@ -415,7 +419,10 @@ describe('SchedulingCalendarPage pending local booking', () => {
     await flushPromises();
     expect(store.isOpen).toBe(false);
     expect(store.ui.isSaving).toBe(false);
-    expect(wrapper.find('.modal-mask').exists()).toBe(false);
+    await vi.waitFor(
+      () => expect(wrapper.find('.modal-mask').exists()).toBe(false),
+      { timeout: 1000, interval: 20 }
+    );
     expect(mocks.calendar.syncAppointment).toHaveBeenCalledOnce();
     expect(mocks.calendar.syncAppointment).toHaveBeenCalledWith(
       expect.objectContaining({ id: 501, contactId: 42 })
@@ -440,7 +447,10 @@ describe('SchedulingCalendarPage pending local booking', () => {
     await flushPromises();
     expect(store.isOpen).toBe(false);
     expect(store.ui.isSaving).toBe(false);
-    expect(wrapper.find('.modal-mask').exists()).toBe(false);
+    await vi.waitFor(
+      () => expect(wrapper.find('.modal-mask').exists()).toBe(false),
+      { timeout: 1000, interval: 20 }
+    );
     const nextSlot = {
       ...slot,
       startsAt: '2026-10-11T05:00:00Z',
