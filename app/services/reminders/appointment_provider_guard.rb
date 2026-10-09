@@ -25,9 +25,11 @@ class Reminders::AppointmentProviderGuard
     return CONTINUE if appointment.blank?
     return handle_cancellation_notification(appointment) if provider_cancellation_notification?(appointment)
 
-    verification = create_command_result(appointment) || verification
-    verification ||= local_cancellation_result if appointment.status == 'cancelled'
-    verification ||= verify_appointment(appointment)
+    verification = if appointment.status == 'cancelled'
+                     local_cancellation_result
+                   else
+                     create_command_result(appointment) || verification || verify_appointment(appointment)
+                   end
     return CONTINUE if verification.allowed?
 
     verification.terminal? ? cancel!(verification) : defer!(verification)
