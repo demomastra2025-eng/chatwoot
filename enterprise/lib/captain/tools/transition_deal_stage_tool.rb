@@ -40,7 +40,10 @@ class Captain::Tools::TransitionDealStageTool < Captain::Tools::BasePublicTool
   def transition_deal_stage_payload(state, **attributes)
     previous_stage = current_deal(state).stage
     deal = operations(state).transition_current_deal_stage(**attributes)
-    ::Crm::ToolPayloadBuilder.deal_transition_payload(action: 'transition_deal_stage', deal: deal, previous_stage: previous_stage)
+    patient_scope_for(state).deal_tool_payload(action: 'transition_deal_stage', deal: deal).merge(
+      previous_stage: ::Crm::PayloadBuilder.stage(previous_stage),
+      current_stage: ::Crm::PayloadBuilder.stage(deal.stage)
+    ).compact
   end
 
   def operations(state)

@@ -32,7 +32,9 @@ class Captain::Tools::Operations::ConfirmationOperations < Captain::Tools::Opera
   # rubocop:enable Metrics/ParameterLists
 
   def resolve_confirmation(confirmation_request_id:, decision:, source:, confidence: nil, metadata: {})
-    request = ConfirmationRequest.where(account_id: account.id).find(confirmation_request_id)
+    requests = ConfirmationRequest.where(account_id: account.id)
+    requests = requests.where(conversation_id: conversation&.id) if actor.nil?
+    request = requests.find(confirmation_request_id)
     Confirmations::ResolveService.new(
       account: account,
       confirmation_request: request,

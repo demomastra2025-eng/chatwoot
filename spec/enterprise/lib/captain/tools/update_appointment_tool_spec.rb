@@ -93,7 +93,7 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
 
     result = tool.perform(tool_context, appointment_id: unauthorized.id, client_comment: 'Must not be applied')
 
-    expect(result).to include('ERROR: ArgumentError: Appointment is not available for the current conversation')
+    expect(result).to include('ERROR: ArgumentError: Record is not available')
     expect(linked.reload.client_comment).to be_nil
     expect(unauthorized.reload.client_comment).to be_nil
   end
@@ -109,7 +109,7 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
 
     result = tool.perform(tool_context, appointment_id: foreign.id, client_comment: 'Must not be applied')
 
-    expect(result).to include('ERROR: ArgumentError: Appointment is not available for the current conversation')
+    expect(result).to include('ERROR: ArgumentError: Record is not available')
     expect(linked.reload.client_comment).to be_nil
     expect(foreign.reload.client_comment).to be_nil
   end

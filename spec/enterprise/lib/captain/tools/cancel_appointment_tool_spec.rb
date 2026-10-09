@@ -54,7 +54,7 @@ RSpec.describe Captain::Tools::CancelAppointmentTool, type: :model do
 
     result = tool.perform(tool_context, appointment_id: appointment.id + 1_000_000)
 
-    expect(result).to include('ERROR: ArgumentError: Appointment is not available for the current conversation')
+    expect(result).to include('ERROR: ArgumentError: Record is not available')
     expect(appointment.reload.status).to eq('scheduled')
   end
 

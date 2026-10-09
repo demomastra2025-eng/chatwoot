@@ -100,7 +100,7 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
     raise ArgumentError, 'Current conversation is not available' if conversation.blank?
 
     appointments = account.scheduling_appointments.where(conversation_id: conversation.id)
-    return explicit_target_appointment(appointments, appointment_id) unless appointment_id.nil?
+    return explicit_target_appointment(explicit_appointments_scope(appointments), appointment_id) unless appointment_id.nil?
 
     compatible_appointments = appointments.limit(2).to_a
     raise ArgumentError, 'Current appointment is not available' if compatible_appointments.empty?
@@ -109,10 +109,19 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
     compatible_appointments.first
   end
 
+  def explicit_appointments_scope(conversation_appointments)
+    return conversation_appointments unless actor.is_a?(Captain::Assistant) && current_contact.present?
+
+    account.scheduling_appointments.where(contact_id: current_contact.id).or(conversation_appointments)
+  end
+
   def explicit_target_appointment(appointments, appointment_id)
     appointment_id = required_positive_id(appointment_id, field_name: 'appointment_id')
     appointment = appointments.find_by(id: appointment_id)
-    raise ArgumentError, 'Appointment is not available for the current conversation' if appointment.blank?
+    if appointment.blank?
+      message = actor.is_a?(Captain::Assistant) ? 'Record is not available' : 'Appointment is not available for the current conversation'
+      raise ArgumentError, message
+    end
 
     appointment
   end
