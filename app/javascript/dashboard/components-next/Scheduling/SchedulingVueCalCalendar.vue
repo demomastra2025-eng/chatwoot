@@ -2025,6 +2025,28 @@ onMounted(() => {
   z-index: 5;
 }
 
+.scheduling-vue-cal
+  :deep(.vuecal:not(.vuecal--horizontal) .vuecal__time-column::before) {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 2;
+  height: calc(
+    var(--vuecal-weekday-bar-size) + var(--vuecal-schedules-bar-size) +
+      var(--vuecal-all-day-bar-size)
+  );
+  pointer-events: none;
+  background: var(--scheduling-panel-bg);
+  box-shadow: inset 0 -1px 0 0 var(--vuecal-border-color);
+}
+
+.scheduling-vue-cal
+  :deep(.vuecal:not(.vuecal--horizontal) .vuecal__all-day-label) {
+  z-index: 3;
+}
+
 .scheduling-vue-cal--week :deep(.vuecal__weekdays-headings) {
   flex: 0 0 var(--vuecal-weekday-bar-size);
   height: var(--vuecal-weekday-bar-size);
