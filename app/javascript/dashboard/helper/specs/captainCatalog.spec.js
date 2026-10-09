@@ -34,10 +34,11 @@ describe('captainCatalog helper', () => {
         i18n
       )
     ).toMatchObject({ group_label: 'Записи пациента', title: 'Ближайшая запись' });
-    expect(
-      localizeCatalogTool({ id: 'list_my_appointments', title: 'Fallback' }, i18n)
-        .title
-    ).toBe('Мои записи');
+    const tool = localizeCatalogTool(
+      { id: 'list_my_appointments', title: 'Fallback' },
+      i18n
+    );
+    expect(tool.title).toBe('Мои записи');
   });
 
   it('matches search by title, description, and group labels', () => {
