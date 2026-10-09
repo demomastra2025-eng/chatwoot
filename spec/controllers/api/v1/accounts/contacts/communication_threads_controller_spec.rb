@@ -16,6 +16,7 @@ RSpec.describe '/api/v1/accounts/{account.id}/contacts/:id/communication_threads
     create(:inbox_member, user: agent, inbox: inbox_1)
     create(:conversation, account: account, inbox: inbox_1, contact: contact, contact_inbox: contact_inbox_1)
     create(:conversation, account: account, inbox: inbox_2, contact: contact, contact_inbox: contact_inbox_2)
+    InboxMember.where(user: agent, inbox: inbox_2).delete_all
   end
 
   describe 'GET /api/v1/accounts/{account.id}/contacts/:id/communication_threads' do
@@ -56,6 +57,7 @@ RSpec.describe '/api/v1/accounts/{account.id}/contacts/:id/communication_threads
       end
 
       it 'returns no threads for users without inbox access' do
+        InboxMember.where(user: unknown).delete_all
         get "/api/v1/accounts/#{account.id}/contacts/#{contact.id}/communication_threads", headers: unknown.create_new_auth_token
 
         expect(response).to have_http_status(:success)

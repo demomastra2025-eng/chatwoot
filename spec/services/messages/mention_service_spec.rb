@@ -168,6 +168,10 @@ describe Messages::MentionService do
     context 'when mentioned user is not an inbox member' do
       let!(:non_member_user) { create(:user, account: account) }
 
+      before do
+        inbox.inbox_members.where(user: non_member_user).destroy_all
+      end
+
       it 'does not create notifications for non-inbox members' do
         message = build(
           :message,
@@ -185,6 +189,10 @@ describe Messages::MentionService do
     end
 
     context 'when mentioned user is an admin' do
+      before do
+        inbox.inbox_members.where(user: admin_user).destroy_all
+      end
+
       it 'creates notifications for admin users even if not inbox members' do
         message = build(
           :message,
@@ -295,6 +303,7 @@ describe Messages::MentionService do
 
       before do
         create(:team_member, user: non_inbox_team_member, team: team)
+        inbox.inbox_members.where(user: non_inbox_team_member).destroy_all
       end
 
       it 'only notifies team members who are also inbox members' do

@@ -94,6 +94,7 @@ RSpec.describe 'Telephony Calls API', type: :request do
     it 'shows nothing about a conversation the user cannot see' do
       create_activity_session
       outsider = create(:user, account: account, role: :agent)
+      voice_inbox.inbox_members.where(user: outsider).destroy_all
 
       get activity_path, params: { conversation_id: conversation.display_id }, headers: outsider.create_new_auth_token
 

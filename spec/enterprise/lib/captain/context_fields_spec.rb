@@ -513,6 +513,7 @@ RSpec.describe Captain::ContextFields do
       )
       actor = create(:user, account: account, role: :agent)
       create(:inbox_member, inbox: conversation_record.inbox, user: actor)
+      InboxMember.where(inbox: second_inbox, user: actor).delete_all
 
       state = described_class.communication_thread_state_for(
         account: account,

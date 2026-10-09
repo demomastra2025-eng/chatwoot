@@ -7,7 +7,11 @@ RSpec.describe CommunicationThreads::ListSearchService do
   let(:agent) { create(:user, account: account, role: :agent) }
   let(:colleague) { create(:user, account: account, role: :agent) }
   let(:inbox) { create(:inbox, account: account) }
-  let(:other_inbox) { create(:inbox, account: account) }
+  let(:other_inbox) do
+    create(:inbox, account: account).tap do |target_inbox|
+      target_inbox.inbox_members.where(user: agent).destroy_all
+    end
+  end
   let(:params) { { q: 'Иванов' } }
 
   let!(:ivan) { create(:contact, account: account, name: 'Иван Иванов', phone_number: '+77072817060') }
@@ -199,6 +203,7 @@ RSpec.describe CommunicationThreads::ListSearchService do
 
     it 'returns the threads of every inbox to an administrator' do
       admin = create(:user, account: account, role: :administrator)
+      other_inbox.inbox_members.where(user: admin).destroy_all
       hidden_conversation = create(:conversation, account: account, inbox: other_inbox,
                                                   contact: create(:contact, account: account, name: 'Скрытый Иванов'))
       hidden_thread = thread_of(hidden_conversation)

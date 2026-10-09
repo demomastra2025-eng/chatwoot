@@ -65,6 +65,8 @@ RSpec.describe ConversationPolicy, type: :policy do
     context 'when agent lacks inbox and team access' do
       let(:conversation) { create(:conversation, account: account) }
 
+      before { InboxMember.where(user: agent, inbox: conversation.inbox).delete_all }
+
       it 'denies access' do
         expect(subject).not_to permit(agent_context, conversation)
       end

@@ -112,6 +112,7 @@ RSpec.describe Api::V1::Accounts::InboxCsatTemplatesController, type: :request d
 
       it 'returns unauthorized when agent is not assigned to inbox' do
         other_agent = create(:user, account: account, role: :agent)
+        InboxMember.where(user: other_agent, inbox: whatsapp_inbox).delete_all
 
         get "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/csat_template",
             headers: other_agent.create_new_auth_token,
@@ -357,6 +358,7 @@ RSpec.describe Api::V1::Accounts::InboxCsatTemplatesController, type: :request d
 
       it 'returns unauthorized when agent is not assigned to inbox' do
         other_agent = create(:user, account: account, role: :agent)
+        InboxMember.where(user: other_agent, inbox: whatsapp_inbox).delete_all
 
         post "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/csat_template",
              headers: other_agent.create_new_auth_token,
@@ -448,6 +450,7 @@ RSpec.describe Api::V1::Accounts::InboxCsatTemplatesController, type: :request d
 
       it 'returns unauthorized when agent is not assigned to inbox' do
         other_agent = create(:user, account: account, role: :agent)
+        InboxMember.where(user: other_agent, inbox: whatsapp_inbox).delete_all
 
         post "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/csat_template/analyze",
              headers: other_agent.create_new_auth_token,

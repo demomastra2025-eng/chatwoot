@@ -51,6 +51,7 @@ RSpec.describe Conversations::SidebarUnreadCountService do
     agent = create(:user, account: account, role: :agent)
     other_inbox = create(:inbox, account: account)
     create(:inbox_member, user: agent, inbox: inbox)
+    other_inbox.inbox_members.where(user: agent).destroy_all
     visible = create(:conversation, account: account, inbox: inbox, team: team, agent_last_seen_at: 1.day.ago)
     hidden = create(:conversation, account: account, inbox: other_inbox, team: team, agent_last_seen_at: 1.day.ago)
     [visible, hidden].each do |conversation|

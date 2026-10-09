@@ -616,6 +616,7 @@ RSpec.describe 'Contacts API', type: :request do
 
       it 'shows the contactable inboxes which the user has access to' do
         create(:inbox_member, user: agent, inbox: twilio_whatsapp_inbox)
+        InboxMember.where(user: agent, inbox: twilio_sms_inbox).delete_all
 
         inbox_service = double
         allow(Contacts::ContactableInboxesService).to receive(:new).and_return(inbox_service)

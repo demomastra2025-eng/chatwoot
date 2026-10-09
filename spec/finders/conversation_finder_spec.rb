@@ -9,7 +9,11 @@ describe ConversationFinder do
   let!(:admin) { create(:user, account: account, role: :administrator) }
   let!(:inbox) { create(:inbox, account: account, enable_auto_assignment: false) }
   let!(:contact_inbox) { create(:contact_inbox, inbox: inbox, source_id: 'testing_source_id') }
-  let!(:restricted_inbox) { create(:inbox, account: account) }
+  let!(:restricted_inbox) do
+    create(:inbox, account: account).tap do |target_inbox|
+      target_inbox.inbox_members.where(user: [user_1, admin]).destroy_all
+    end
+  end
 
   before do
     create(:inbox_member, user: user_1, inbox: inbox)

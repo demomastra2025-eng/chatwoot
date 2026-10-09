@@ -67,10 +67,12 @@ RSpec.describe Conversation do
     end
 
     it 'does not inherit the contact owner when the owner cannot access the inbox' do
+      inaccessible_owner = owner
+      inbox.inbox_members.where(user: inaccessible_owner).destroy_all
       conversation = create(:conversation, account: account, contact: contact, inbox: inbox, assignee: nil)
 
       expect(conversation.assignee).to be_nil
-      expect(contact.reload.owner).to eq(owner)
+      expect(contact.reload.owner).to eq(inaccessible_owner)
     end
 
     it 'updates contact owner when a new conversation has an explicit human assignee' do

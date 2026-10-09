@@ -38,9 +38,14 @@ RSpec.describe 'Conversations API', type: :request do
 
       before do
         create(:team_member, team: team, user: agent)
+        conversation
+        InboxMember.where(user: agent, inbox: conversation.inbox).delete_all
       end
 
       it 'allows accessing the conversation via team membership' do
+        expect(conversation.inbox.inbox_members.exists?(user: agent)).to be(false)
+        expect(team.team_members.exists?(user: agent)).to be(true)
+
         get "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}", headers: agent.create_new_auth_token
 
         expect(response).to have_http_status(:ok)
@@ -199,6 +204,8 @@ RSpec.describe 'Conversations API', type: :request do
       let(:limited_agent) { create(:user, account: account, role: :agent) }
 
       it 'returns unauthorized for unassigned conversation without permission' do
+        InboxMember.where(user: limited_agent, inbox: conversation.inbox).delete_all
+
         get "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/reporting_events",
             headers: limited_agent.create_new_auth_token,
             as: :json
@@ -230,9 +237,13 @@ RSpec.describe 'Conversations API', type: :request do
       before do
         create(:team_member, team: team, user: team_agent)
         conversation.update!(team: team)
+        InboxMember.where(user: team_agent, inbox: inbox).delete_all
       end
 
       it 'allows accessing conversation reporting events via team membership' do
+        expect(inbox.inbox_members.exists?(user: team_agent)).to be(false)
+        expect(team.team_members.exists?(user: team_agent)).to be(true)
+
         get "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/reporting_events",
             headers: team_agent.create_new_auth_token,
             as: :json

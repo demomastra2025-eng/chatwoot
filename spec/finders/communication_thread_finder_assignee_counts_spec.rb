@@ -20,6 +20,7 @@ RSpec.describe CommunicationThreadFinder do
 
   before do
     Current.account = account
+    restricted_inbox.inbox_members.where(user: [agent, admin]).destroy_all
     create(:inbox_member, user: agent, inbox: first_inbox)
     create(:inbox_member, user: agent, inbox: second_inbox)
     assignees = [agent, other_agent, admin, nil, nil]

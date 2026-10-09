@@ -93,7 +93,14 @@ RSpec.describe 'Global search conversation navigation', type: :request do
     custom_role = create(:custom_role, account: account, permissions: %w[conversation_participating_manage contact_manage])
     agent.account_users.find_by(account: account).update!(custom_role: custom_role)
     colleague = create(:user, account: account, role: :agent)
-    hidden = create(:conversation, account: account, inbox: inbox, contact: contact, assignee: colleague)
+    previous_executor = Current.executed_by
+    begin
+      # Model an inbox fallback assignment so the hidden conversation does not take over contact ownership.
+      Current.executed_by = inbox
+      hidden = create(:conversation, account: account, inbox: inbox, contact: contact, assignee: colleague)
+    ensure
+      Current.executed_by = previous_executor
+    end
     hidden.reload.refresh_communication_thread!
     create(:message, account: account, inbox: inbox, conversation: hidden, content: 'Секретная справка')
 

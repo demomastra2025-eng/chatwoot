@@ -219,7 +219,11 @@ RSpec.describe CommunicationThreadFinder do
 
   describe '#perform_sidebar_unread_counts' do
     let(:second_inbox) { create(:inbox, account: account, enable_auto_assignment: false) }
-    let(:inaccessible_inbox) { create(:inbox, account: account, enable_auto_assignment: false) }
+    let(:inaccessible_inbox) do
+      create(:inbox, account: account, enable_auto_assignment: false).tap do |target_inbox|
+        target_inbox.inbox_members.where(user: user).destroy_all
+      end
+    end
     let(:first_team) { create(:team, account: account) }
     let(:second_team) { create(:team, account: account) }
     let(:first_pipeline) { create(:crm_pipeline, account: account) }

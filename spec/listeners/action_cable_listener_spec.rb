@@ -23,10 +23,10 @@ describe ActionCableListener do
 
     it 'sends message to account admins, inbox agents and the contact' do
       # HACK: to reload conversation inbox members
-      expect(conversation.inbox.reload.inbox_members.count).to eq(1)
+      expect(conversation.inbox.reload.members).to contain_exactly(admin, agent, message.sender)
 
       expect(ActionCableBroadcastJob).to receive(:perform_later).with(
-        a_collection_containing_exactly(agent.pubsub_token, admin.pubsub_token),
+        a_collection_containing_exactly(*dashboard_tokens(conversation)),
         'message.created',
         message.push_event_data.merge(account_id: account.id)
       )
@@ -50,14 +50,14 @@ describe ActionCableListener do
 
     it 'sends message to all hmac verified contact inboxes' do
       # HACK: to reload conversation inbox members
-      expect(conversation.inbox.reload.inbox_members.count).to eq(1)
+      expect(conversation.inbox.reload.members).to contain_exactly(admin, agent, message.sender)
       conversation.contact_inbox.update(hmac_verified: true)
       # creating a non verified contact inbox to ensure the events are not sent to it
       create(:contact_inbox, contact: conversation.contact, inbox: inbox)
       verified_contact_inbox = create(:contact_inbox, contact: conversation.contact, inbox: inbox, hmac_verified: true)
 
       expect(ActionCableBroadcastJob).to receive(:perform_later).with(
-        a_collection_containing_exactly(agent.pubsub_token, admin.pubsub_token),
+        a_collection_containing_exactly(*dashboard_tokens(conversation)),
         'message.created',
         message.push_event_data.merge(account_id: account.id)
       )
@@ -76,7 +76,7 @@ describe ActionCableListener do
       perform_communication_thread_realtime { listener.message_created(event) }
 
       expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
-        a_collection_containing_exactly(agent.pubsub_token, admin.pubsub_token),
+        a_collection_containing_exactly(*dashboard_tokens(conversation)),
         'message.created',
         message.push_event_data.merge(account_id: account.id)
       )
@@ -111,7 +111,7 @@ describe ActionCableListener do
         unread_count: communication_thread.unread_count
       )
       expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
-        a_collection_containing_exactly(agent.pubsub_token, admin.pubsub_token),
+        a_collection_containing_exactly(*dashboard_tokens(conversation)),
         'communication_thread.updated',
         expected_payload
       )
@@ -136,7 +136,7 @@ describe ActionCableListener do
       end
 
       expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
-        a_collection_containing_exactly(agent.pubsub_token, admin.pubsub_token),
+        a_collection_containing_exactly(*dashboard_tokens(conversation)),
         'communication_thread.updated',
         hash_including(
           id: communication_thread.display_id,
@@ -158,7 +158,7 @@ describe ActionCableListener do
       end
 
       expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
-        a_collection_containing_exactly(agent.pubsub_token, admin.pubsub_token),
+        a_collection_containing_exactly(*dashboard_tokens(conversation)),
         'communication_thread.updated',
         hash_including(
           id: communication_thread.display_id,
@@ -206,7 +206,7 @@ describe ActionCableListener do
       )
 
       expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
-        a_collection_containing_exactly(agent.pubsub_token, admin.pubsub_token),
+        a_collection_containing_exactly(*dashboard_tokens(conversation)),
         'message.created',
         dashboard_payload
       )
@@ -216,7 +216,7 @@ describe ActionCableListener do
         customer_payload_without_thread
       )
       expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
-        a_collection_containing_exactly(agent.pubsub_token, admin.pubsub_token),
+        a_collection_containing_exactly(*dashboard_tokens(conversation)),
         'communication_thread.updated',
         thread_payload
       )
@@ -280,6 +280,8 @@ describe ActionCableListener do
       second_contact_inbox = create(:contact_inbox, contact: contact, inbox: second_inbox)
       second_conversation = create(:conversation, account: account, contact: contact, inbox: second_inbox, contact_inbox: second_contact_inbox)
       create(:inbox_member, user: second_agent, inbox: second_inbox)
+      InboxMember.where(user: agent, inbox: second_inbox).delete_all
+      InboxMember.where(user: second_agent, inbox: inbox).delete_all
       allow(ActionCableBroadcastJob).to receive(:perform_later)
 
       perform_enqueued_jobs(only: CommunicationThreads::RealtimeUpdateJob) do
@@ -292,7 +294,7 @@ describe ActionCableListener do
         hash_including(conversation_ids: [conversation.display_id])
       )
       expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
-        [admin.pubsub_token],
+        a_collection_containing_exactly(admin.pubsub_token, message.sender.pubsub_token),
         'communication_thread.updated',
         hash_including(conversation_ids: contain_exactly(conversation.display_id, second_conversation.display_id))
       )
@@ -309,18 +311,23 @@ describe ActionCableListener do
     it 'sends shared unread state only to employees who can view the conversation' do
       team = create(:team, account: account)
       team_member = create(:user, account: account, role: :agent)
+      additional_account_agent = create(:user, account: account, role: :agent)
       create(:team_member, team: team, user: team_member)
+      InboxMember.where(user: team_member, inbox: inbox).delete_all
       create(:team_member, team: team, user: agent)
       inbox.update!(enable_auto_assignment: false)
       conversation.update!(team: team, agent_last_seen_at: 1.hour.ago)
-      create(:user, account: account, role: :agent)
       create(:user, role: :agent)
       create(:message, account: account, inbox: inbox, conversation: conversation, message_type: :incoming, created_at: 5.minutes.ago)
       Current.user = agent
       event = Events::Base.new(:'conversation.read', Time.current, conversation: conversation)
 
+      expect(inbox.inbox_members.exists?(user: team_member)).to be(false)
+      expect(team.team_members.exists?(user: team_member)).to be(true)
       expect(ActionCableBroadcastJob).to receive(:perform_later).with(
-        a_collection_containing_exactly(agent.pubsub_token, admin.pubsub_token, team_member.pubsub_token),
+        a_collection_containing_exactly(
+          agent.pubsub_token, admin.pubsub_token, team_member.pubsub_token, additional_account_agent.pubsub_token
+        ),
         'conversation.read',
         a_hash_including(
           account_id: account.id,
@@ -485,7 +492,7 @@ describe ActionCableListener do
 
     it 'accepts the native three-argument keyword payload and keeps the typing recipient policy' do
       # HACK: to reload conversation inbox members
-      expect(conversation.inbox.reload.inbox_members.count).to eq(1)
+      expect(conversation.inbox.reload.members).to contain_exactly(admin, agent)
       expect(ActionCableBroadcastJob).to receive(:perform_later).with(
         a_collection_containing_exactly(
           admin.pubsub_token, conversation.contact_inbox.pubsub_token
@@ -505,7 +512,7 @@ describe ActionCableListener do
 
     it 'sends message to account admins, inbox agents and the contact' do
       # HACK: to reload conversation inbox members
-      expect(conversation.inbox.reload.inbox_members.count).to eq(1)
+      expect(conversation.inbox.reload.members).to contain_exactly(admin, agent)
       expect(ActionCableBroadcastJob).to receive(:perform_later).with(
         a_collection_containing_exactly(
           admin.pubsub_token, agent.pubsub_token
@@ -525,7 +532,7 @@ describe ActionCableListener do
     let!(:event) { Events::Base.new(event_name, Time.zone.now, conversation: conversation, user: agent_bot, is_private: false) }
 
     it 'sends message to account admins, inbox agents and the contact' do
-      expect(conversation.inbox.reload.inbox_members.count).to eq(1)
+      expect(conversation.inbox.reload.members).to contain_exactly(admin, agent)
       expect(ActionCableBroadcastJob).to receive(:perform_later).with(
         a_collection_containing_exactly(
           admin.pubsub_token, agent.pubsub_token, conversation.contact_inbox.pubsub_token
@@ -545,7 +552,7 @@ describe ActionCableListener do
 
     it 'accepts the native three-argument keyword payload and keeps the typing recipient policy' do
       # HACK: to reload conversation inbox members
-      expect(conversation.inbox.reload.inbox_members.count).to eq(1)
+      expect(conversation.inbox.reload.members).to contain_exactly(admin, agent)
       expect(ActionCableBroadcastJob).to receive(:perform_later).with(
         a_collection_containing_exactly(
           admin.pubsub_token, conversation.contact_inbox.pubsub_token
@@ -749,10 +756,10 @@ describe ActionCableListener do
     end
 
     it 'sends update to inbox members' do
-      expect(conversation.inbox.reload.inbox_members.count).to eq(1)
+      expect(conversation.inbox.reload.members).to contain_exactly(admin, agent)
 
       expect(ActionCableBroadcastJob).to receive(:perform_later).with(
-        [agent.pubsub_token, admin.pubsub_token, conversation.contact_inbox.pubsub_token],
+        a_collection_containing_exactly(*dashboard_tokens(conversation), conversation.contact_inbox.pubsub_token),
         'conversation.updated',
         conversation.push_event_data.merge(account_id: account.id)
       )
@@ -763,7 +770,7 @@ describe ActionCableListener do
       expect(conversation.reload.push_event_data[:labels]).to eq(conversation.labels.pluck(:name))
 
       expect(ActionCableBroadcastJob).to receive(:perform_later).with(
-        [agent.pubsub_token, admin.pubsub_token, conversation.contact_inbox.pubsub_token],
+        a_collection_containing_exactly(*dashboard_tokens(conversation), conversation.contact_inbox.pubsub_token),
         'conversation.updated',
         conversation.push_event_data.merge(account_id: account.id)
       )
@@ -854,8 +861,14 @@ describe ActionCableListener do
                      message_type: :incoming, created_at: 5.minutes.ago)
     second_agent = create(:user, account: account, role: :agent)
     create(:inbox_member, inbox: second_inbox, user: second_agent)
+    InboxMember.where(user: agent, inbox: second_inbox).delete_all
+    InboxMember.where(user: second_agent, inbox: inbox).delete_all
 
     [second_conversation, second_agent]
+  end
+
+  def dashboard_tokens(conversation)
+    (conversation.inbox.members.pluck(:pubsub_token) + conversation.account.administrators.pluck(:pubsub_token)).uniq
   end
 
   def perform_communication_thread_realtime(&)

@@ -99,6 +99,7 @@ RSpec.describe BulkActionsJob do
 
     it 'does not update conversations the agent cannot access' do
       inaccessible_conversation = create(:conversation, account_id: account.id, status: :open)
+      InboxMember.where(inbox_id: inaccessible_conversation.inbox_id, user_id: agent.id).delete_all
       params = {
         type: 'Conversation',
         fields: { status: 'snoozed' },

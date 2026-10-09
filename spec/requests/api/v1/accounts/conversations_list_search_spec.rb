@@ -54,7 +54,9 @@ RSpec.describe 'Conversation list search API', type: :request do
   end
 
   it 'does not return conversations of an inbox the agent has no access to' do
-    hidden = create(:conversation, account: account, inbox: create(:inbox, account: account), contact: contact)
+    inaccessible_inbox = create(:inbox, account: account)
+    inaccessible_inbox.inbox_members.where(user: agent).destroy_all
+    hidden = create(:conversation, account: account, inbox: inaccessible_inbox, contact: contact)
 
     expect(search(q: 'Иванов')[:data][:payload].pluck(:id)).to eq([conversation.display_id])
     expect(search(q: 'Иванов')[:data][:payload].pluck(:id)).not_to include(hidden.display_id)

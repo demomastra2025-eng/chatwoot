@@ -571,7 +571,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
     inbox = Inbox.find(inbox_id)
     expect(inbox.telephony_number_binding.provider_connection.metadata['outbound_dial_format']).to eq('kz_trunk')
-    inbox.inbox_members.create!(user_id: agent.id)
+    inbox.inbox_members.find_or_create_by!(user_id: agent.id)
 
     put_with_configuration_version "#{base_path}/#{inbox_id}",
                                    params: {
@@ -1373,6 +1373,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
   it 'rejects SIP profile assignment before the user is an inbox collaborator' do
     post base_path, params: valid_create_payload.merge(dry_run: false, remote_commit: false), headers: headers, as: :json
     inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
+    InboxMember.where(user: agent, inbox_id: inbox_id).delete_all
 
     put_with_configuration_version "#{base_path}/#{inbox_id}",
                                    params: {
@@ -1422,7 +1423,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(payload.dig('ui_config', 'status', 'read_only')).to be(false)
     expect(payload.dig('ui_config', 'connection', 'configured')).to be(true)
     inbox = Inbox.find(inbox_id)
-    expect(inbox.inbox_members).to be_empty
+    expect(inbox.inbox_members.pluck(:user_id)).to contain_exactly(administrator.id)
     expect(inbox.telephony_sip_profiles).to be_empty
     expect(Telephony::NumberBinding.find_by!(inbox_id: inbox_id)).to be_managed
     expect(payload.to_json).not_to include('do-not-return-this-secret')
@@ -1502,7 +1503,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
                                    as: :json
 
     expect(response).to have_http_status(:ok)
-    expect(inbox.reload.inbox_members.pluck(:user_id)).to contain_exactly(agent.id, second_agent.id)
+    expect(inbox.reload.inbox_members.pluck(:user_id)).to contain_exactly(administrator.id, agent.id, second_agent.id)
     expect(inbox.telephony_sip_profiles.pluck(:user_id, :internal_extension, :sip_username)).to contain_exactly(
       [agent.id, '207', 'manager-207-login'],
       [second_agent.id, '208', 'manager-208-login']

@@ -34,7 +34,7 @@ RSpec.describe 'Captain follow-up and TouchPlan scheduling', type: :job do
 
   def create_race_context
     account = create(:account)
-    account.enable_features('captain_integration')
+    account.enable_features!('captain_integration')
     ai_context = create_ai_schedule_context(account)
     group = create(:reminder_group, account: account, entity_kinds: ['conversation'], touches: [touch_definition])
     actor = create(:user, account: account, role: :administrator)

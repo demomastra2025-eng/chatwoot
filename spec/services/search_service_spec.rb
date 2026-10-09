@@ -97,7 +97,9 @@ describe SearchService do
         # random messages in another account
         create(:message, content: 'Harry Potter is a wizard')
         # random messsage in inbox with out access
-        create(:message, account: account, inbox: create(:inbox, account: account), content: 'Harry Potter is a wizard')
+        inaccessible_inbox = create(:inbox, account: account)
+        inaccessible_inbox.inbox_members.where(user: user).destroy_all
+        create(:message, account: account, inbox: inaccessible_inbox, content: 'Harry Potter is a wizard')
         params = { q: 'Harry' }
         search = described_class.new(current_user: user, current_account: account, params: params, search_type: 'Message')
         expect(search.perform[:messages].map(&:id)).to eq([message2.id, message.id])
@@ -316,6 +318,7 @@ describe SearchService do
 
       it 'keeps message-content conversation search account and inbox scoped' do
         inaccessible_inbox = create(:inbox, account: account)
+        inaccessible_inbox.inbox_members.where(user: user).destroy_all
         inaccessible_conversation = create(
           :conversation,
           contact: create(:contact, account_id: account.id),
@@ -497,7 +500,8 @@ describe SearchService do
 
       it 'filters by accessible inbox_id when user has limited access' do
         # Create an additional inbox that user is NOT assigned to
-        create(:inbox, account: account)
+        inaccessible_inbox = create(:inbox, account: account)
+        inaccessible_inbox.inbox_members.where(user: user).destroy_all
 
         base_query = search.send(:message_base_query)
 
@@ -560,6 +564,7 @@ describe SearchService do
 
     it 'limits an explicitly selected inbox to one the user can open' do
       foreign_inbox = create(:inbox, account: account)
+      foreign_inbox.inbox_members.where(user: user).destroy_all
       params = { q: 'справка', inbox_id: foreign_inbox.id }
       service = described_class.new(current_user: user, current_account: account, params: params, search_type: search_type)
 

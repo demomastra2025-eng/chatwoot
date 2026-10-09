@@ -122,13 +122,13 @@ RSpec.describe 'Captain follow-up provider dispatch boundary', type: :job do
 
   it 'serializes a real staff reply behind the final provider call' do
     account, inbox, conversation, _assistant, _reminder, message = materialized_follow_up
+    staff = create(:user, account: account)
     entered, release, provider_finished, provider = paused_provider
     dispatch_thread = in_thread { SendReplyJob.perform_now(message.id) }
     wait_for_signal(entered, dispatch_thread)
 
     staff_started = Queue.new
     staff_finished = Queue.new
-    staff = create(:user, account: account)
     staff_thread = in_thread do
       staff_started << true
       Message.create!(

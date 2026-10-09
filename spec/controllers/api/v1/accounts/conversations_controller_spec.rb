@@ -237,7 +237,7 @@ RSpec.describe 'Conversations API', type: :request do
       end
 
       it 'returns unattended conversations' do
-        attended_conversation = create(:conversation, account: account, first_reply_created_at: Time.now.utc)
+        attended_conversation = create(:conversation, account: account, first_reply_created_at: Time.now.utc, waiting_since: nil)
         # to ensure that waiting since value is populated
         create(:message, message_type: :outgoing, conversation: attended_conversation, account: account)
         unattended_conversation_no_first_reply = create(:conversation, account: account, first_reply_created_at: nil)
@@ -446,6 +446,7 @@ RSpec.describe 'Conversations API', type: :request do
       let(:administrator) { create(:user, account: account, role: :administrator) }
 
       it 'does not shows the conversation if you do not have access to it' do
+        InboxMember.where(user: agent, inbox: conversation.inbox).delete_all
         get "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}",
             headers: agent.create_new_auth_token,
             as: :json
@@ -528,6 +529,7 @@ RSpec.describe 'Conversations API', type: :request do
       let(:administrator) { create(:user, account: account, role: :administrator) }
 
       it 'does not update the conversation if you do not have access to it' do
+        InboxMember.where(user: agent, inbox: conversation.inbox).delete_all
         patch "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}",
               params: params,
               headers: agent.create_new_auth_token,
@@ -581,6 +583,7 @@ RSpec.describe 'Conversations API', type: :request do
 
       it 'will not create a new conversation if agent does not have access to inbox' do
         allow(Rails.configuration.dispatcher).to receive(:dispatch)
+        InboxMember.where(user: agent, inbox: contact_inbox.inbox).delete_all
         additional_attributes = { test: 'test' }
         post "/api/v1/accounts/#{account.id}/conversations",
              headers: agent.create_new_auth_token,
@@ -1120,6 +1123,7 @@ RSpec.describe 'Conversations API', type: :request do
 
       it 'rejects an agent without access to the channel conversation' do
         outsider = create(:user, account: account, role: :agent)
+        InboxMember.where(user: outsider, inbox: conversation.inbox).delete_all
 
         post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/cancel_captain_response",
              headers: outsider.create_new_auth_token,
@@ -1817,6 +1821,7 @@ RSpec.describe 'Conversations API', type: :request do
       end
 
       it 'does not return the attachments if you do not have access to it' do
+        InboxMember.where(user: agent, inbox: conversation.inbox).delete_all
         get "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/attachments",
             headers: agent.create_new_auth_token,
             as: :json

@@ -10,6 +10,19 @@ RSpec.describe '/api/v1/accounts/{account.id}/contacts/:id/conversations enterpr
     context 'with user having custom role' do
       let(:agent_with_custom_role) { create(:user, account: account, role: :agent) }
       let(:custom_role) { create(:custom_role, account: account) }
+      let(:colleague) { create(:user, account: account, role: :agent) }
+      let(:colleague_conversation) do
+        colleague_user = colleague
+        previous_executor = Current.executed_by
+        begin
+          # Model an inbox fallback assignment so this colleague does not replace the contact owner.
+          Current.executed_by = inbox
+          create(:conversation, account: account, inbox: inbox, contact: contact,
+                                contact_inbox: contact_inbox, assignee: colleague_user)
+        ensure
+          Current.executed_by = previous_executor
+        end
+      end
 
       before do
         create(:inbox_member, user: agent_with_custom_role, inbox: inbox)
@@ -24,10 +37,7 @@ RSpec.describe '/api/v1/accounts/{account.id}/contacts/:id/conversations enterpr
         before do
           # Create a conversation assigned to this agent
           assigned_conversation
-
-          # Create another conversation that shouldn't be visible
-          create(:conversation, account: account, inbox: inbox, contact: contact,
-                                contact_inbox: contact_inbox, assignee: create(:user, account: account, role: :agent))
+          colleague_conversation
 
           # Set up permissions
           custom_role.update!(permissions: %w[conversation_participating_manage])
@@ -38,6 +48,10 @@ RSpec.describe '/api/v1/accounts/{account.id}/contacts/:id/conversations enterpr
         end
 
         it 'returns only conversations assigned to the agent' do
+          expect(assigned_conversation.reload.assignee).to eq(agent_with_custom_role)
+          expect(colleague_conversation.reload.assignee).to eq(colleague)
+          expect(colleague_conversation.inbox.inbox_members.exists?(user: agent_with_custom_role)).to be(true)
+
           get "/api/v1/accounts/#{account.id}/contacts/#{contact.id}/conversations",
               headers: agent_with_custom_role.create_new_auth_token
 
@@ -65,8 +79,7 @@ RSpec.describe '/api/v1/accounts/{account.id}/contacts/:id/conversations enterpr
           # Create the conversations
           unassigned_conversation
           assigned_conversation
-          create(:conversation, account: account, inbox: inbox, contact: contact,
-                                contact_inbox: contact_inbox, assignee: create(:user, account: account, role: :agent))
+          colleague_conversation
 
           # Set up permissions
           custom_role.update!(permissions: %w[conversation_unassigned_manage])
@@ -74,9 +87,15 @@ RSpec.describe '/api/v1/accounts/{account.id}/contacts/:id/conversations enterpr
           # Associate the custom role with the agent
           account_user = AccountUser.find_by(user: agent_with_custom_role, account: account)
           account_user.update!(role: :agent, custom_role: custom_role)
+          unassigned_conversation.update_columns(assignee_id: nil)
         end
 
         it 'returns unassigned conversations AND conversations assigned to the agent' do
+          expect(unassigned_conversation.reload.assignee_id).to be_nil
+          expect(assigned_conversation.reload.assignee).to eq(agent_with_custom_role)
+          expect(colleague_conversation.reload.assignee).to eq(colleague)
+          expect(inbox.inbox_members.exists?(user: agent_with_custom_role)).to be(true)
+
           get "/api/v1/accounts/#{account.id}/contacts/#{contact.id}/conversations",
               headers: agent_with_custom_role.create_new_auth_token
 

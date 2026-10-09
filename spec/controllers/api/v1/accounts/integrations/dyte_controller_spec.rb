@@ -28,6 +28,8 @@ RSpec.describe 'Dyte Integration API', type: :request do
     end
 
     context 'when the agent does not have access to the inbox' do
+      before { InboxMember.where(user: unauthorized_agent, inbox: conversation.inbox).delete_all }
+
       it 'returns unauthorized' do
         post create_a_meeting_api_v1_account_integrations_dyte_url(account),
              params: { conversation_id: conversation.display_id },
@@ -91,6 +93,8 @@ RSpec.describe 'Dyte Integration API', type: :request do
     end
 
     context 'when the agent does not have access to the inbox' do
+      before { InboxMember.where(user: unauthorized_agent, inbox: conversation.inbox).delete_all }
+
       it 'returns unauthorized' do
         post add_participant_to_meeting_api_v1_account_integrations_dyte_url(account),
              params: { message_id: message.id },

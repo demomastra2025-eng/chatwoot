@@ -27,6 +27,7 @@ RSpec.describe Telephony::OperatorActivityBroadcaster do
     [operator, colleague].each { |user| create(:inbox_member, inbox: inbox, user: user) }
     administrator
     outsider
+    inbox.inbox_members.where(user: [administrator, outsider]).destroy_all
     allow(ActionCable.server).to receive(:broadcast) { |token, event| broadcasts << [token, event] }
   end
 

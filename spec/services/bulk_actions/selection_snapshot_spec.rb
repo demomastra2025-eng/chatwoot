@@ -96,6 +96,12 @@ RSpec.describe BulkActions::SelectionSnapshot do
     thread
   end
 
+  def create_inaccessible_inbox
+    create(:inbox, account: account).tap do |target_inbox|
+      target_inbox.inbox_members.where(user: user).destroy_all
+    end
+  end
+
   def insert_open_conversations(count, first_display_id: 1)
     count.times do |offset|
       create(:conversation, account: account, inbox: inbox, status: :open, display_id: first_display_id + offset)
@@ -198,7 +204,7 @@ RSpec.describe BulkActions::SelectionSnapshot do
 
   it 'never includes conversations of another account or of inboxes the user cannot access' do
     visible = create(:conversation, account: account, inbox: inbox)
-    create(:conversation, account: account, inbox: create(:inbox, account: account))
+    create(:conversation, account: account, inbox: create_inaccessible_inbox)
     create(:conversation, account: create(:account))
 
     selection = create_snapshot(filters: { status: 'all' })
@@ -211,7 +217,7 @@ RSpec.describe BulkActions::SelectionSnapshot do
   it 'excludes communication threads whose channels the user cannot access' do
     account.enable_features!('communication_threads')
     visible = create_thread_in(inbox)
-    create_thread_in(create(:inbox, account: account))
+    create_thread_in(create_inaccessible_inbox)
 
     selection = create_snapshot(resource_type: 'CommunicationThread', filters: { status: 'all' })
 
@@ -308,7 +314,7 @@ RSpec.describe BulkActions::SelectionSnapshot do
     contact = create(:contact, account: account, name: 'Пациент Проверка')
     first = create(:conversation, account: account, inbox: inbox, contact: contact, status: :open)
     second = create(:conversation, account: account, inbox: inbox, contact: contact, status: :resolved)
-    create(:conversation, account: account, inbox: create(:inbox, account: account), contact: contact)
+    create(:conversation, account: account, inbox: create_inaccessible_inbox, contact: contact)
     foreign_account = create(:account)
     create(:conversation, account: foreign_account, inbox: create(:inbox, account: foreign_account),
                           contact: create(:contact, account: foreign_account, name: 'Пациент Проверка'))
@@ -325,7 +331,7 @@ RSpec.describe BulkActions::SelectionSnapshot do
   it 'uses the thread list search scope for a thread snapshot' do
     account.enable_features!('communication_threads')
     visible = create_thread_in(inbox)
-    hidden = create_thread_in(create(:inbox, account: account))
+    hidden = create_thread_in(create_inaccessible_inbox)
     visible.contact.update!(name: 'Пациент Проверка')
     hidden.contact.update!(name: 'Пациент Проверка')
 

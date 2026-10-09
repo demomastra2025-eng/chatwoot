@@ -23,6 +23,7 @@ RSpec.describe 'Conversation counters query budget', type: :request do
     account.enable_features!('communication_threads', 'crm_deals', 'scheduling')
     inboxes = Array.new(3) { create(:inbox, account: account, enable_auto_assignment: false) }
     inboxes.first(2).each { |inbox| create(:inbox_member, user: agent, inbox: inbox) }
+    inboxes.last.inbox_members.where(user: agent).destroy_all
     inboxes.each { |inbox| create(:inbox_member, user: administrator, inbox: inbox) }
     create_unread_conversations(inboxes)
   end

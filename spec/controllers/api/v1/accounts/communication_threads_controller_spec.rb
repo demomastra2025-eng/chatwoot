@@ -177,6 +177,7 @@ RSpec.describe 'Communication Threads API', type: :request do
       accessible_conversation = create(:conversation, account: account, contact: contact)
       inaccessible_conversation = create(:conversation, account: account, contact: contact)
       create(:inbox_member, user: agent, inbox: accessible_conversation.inbox)
+      InboxMember.where(user: agent, inbox: inaccessible_conversation.inbox).delete_all
 
       get "/api/v1/accounts/#{account.id}/communication_threads", headers: headers, as: :json
 
@@ -191,6 +192,7 @@ RSpec.describe 'Communication Threads API', type: :request do
       accessible_conversation = create(:conversation, account: account, contact: contact)
       inaccessible_conversation = create(:conversation, account: account, contact: contact)
       create(:inbox_member, user: agent, inbox: accessible_conversation.inbox)
+      InboxMember.where(user: agent, inbox: inaccessible_conversation.inbox).delete_all
       thread = accessible_conversation.reload.communication_thread
       contact.update!(
         additional_attributes: {
@@ -251,6 +253,7 @@ RSpec.describe 'Communication Threads API', type: :request do
 
       create(:inbox_member, user: agent, inbox: accessible_conversation.inbox)
       create(:inbox_member, user: agent, inbox: visible_conversation.inbox)
+      InboxMember.where(user: agent, inbox: inaccessible_conversation.inbox).delete_all
       accessible_message = create(
         :message,
         account: account,
@@ -755,6 +758,7 @@ RSpec.describe 'Communication Threads API', type: :request do
       inaccessible_conversation = create(:conversation, account: account, status: :open)
       create_shared_unread_message(inaccessible_conversation)
       inaccessible_conversation.reload.communication_thread.update!(team: team)
+      InboxMember.where(user: agent, inbox: inaccessible_conversation.inbox).delete_all
 
       get "/api/v1/accounts/#{account.id}/communication_threads/sidebar_unread_counts",
           params: { status: 'all', assignee_type: 'all' },
@@ -918,6 +922,7 @@ RSpec.describe 'Communication Threads API', type: :request do
       create_thread_stage_deal(second_matching_conversation, matching_stage)
 
       hidden_linked_conversation = create(:conversation, account: account, contact: matching_conversation.contact)
+      InboxMember.where(user: agent, inbox: hidden_linked_conversation.inbox).delete_all
       matching_public_message = create(:message, conversation: matching_conversation, message_type: :incoming, created_at: base_time - 2.days)
       matching_activity_message = create(:message, conversation: matching_conversation, message_type: :activity, created_at: base_time)
       create(:message, conversation: hidden_linked_conversation, message_type: :incoming, created_at: base_time + 1.hour)
@@ -1085,6 +1090,7 @@ RSpec.describe 'Communication Threads API', type: :request do
       visible_message = create(:message, account: account, conversation: accessible_conversation, content: 'Visible')
       hidden_message = create(:message, account: account, conversation: inaccessible_conversation, content: 'Hidden')
       create(:inbox_member, user: agent, inbox: accessible_conversation.inbox)
+      InboxMember.where(user: agent, inbox: inaccessible_conversation.inbox).delete_all
 
       thread = accessible_conversation.reload.communication_thread
       get "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/messages", headers: headers, as: :json
@@ -1544,11 +1550,23 @@ RSpec.describe 'Communication Threads API', type: :request do
       visible_conversation = create(:conversation, account: account, contact: contact, assignee: agent)
       hidden_inbox = create(:inbox, account: account)
       hidden_contact_inbox = create(:contact_inbox, contact: contact, inbox: hidden_inbox)
-      hidden_conversation = create(:conversation, account: account, contact: contact, inbox: hidden_inbox, contact_inbox: hidden_contact_inbox)
+      colleague = create(:user, account: account, role: :agent)
+      previous_executor = Current.executed_by
+      begin
+        # Keep the contact owner on the visible conversation while modeling an inbox fallback assignment.
+        Current.executed_by = hidden_inbox
+        hidden_conversation = create(:conversation, account: account, contact: contact, inbox: hidden_inbox,
+                                                    contact_inbox: hidden_contact_inbox, assignee: colleague)
+      ensure
+        Current.executed_by = previous_executor
+      end
       custom_role = create(:custom_role, account: account, permissions: %w[conversation_participating_manage])
       agent.account_users.find_by(account: account).update!(custom_role: custom_role)
       create(:inbox_member, user: agent, inbox: visible_conversation.inbox)
-      create(:inbox_member, user: agent, inbox: hidden_inbox)
+      expect(visible_conversation.reload.assignee).to eq(agent)
+      expect(hidden_conversation.reload.assignee).to eq(colleague)
+      expect(visible_conversation.inbox.inbox_members.exists?(user: agent)).to be(true)
+      expect(hidden_conversation.inbox.inbox_members.exists?(user: agent)).to be(true)
       thread = visible_conversation.reload.communication_thread
 
       post "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/messages",
@@ -1741,6 +1759,7 @@ RSpec.describe 'Communication Threads API', type: :request do
       hidden_conversation.update_labels(%w[hidden])
       create(:inbox_member, user: agent, inbox: first_conversation.inbox)
       create(:inbox_member, user: agent, inbox: second_conversation.inbox)
+      InboxMember.where(user: agent, inbox: hidden_conversation.inbox).delete_all
       thread = first_conversation.reload.communication_thread
 
       get "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/labels", headers: headers, as: :json
@@ -1777,6 +1796,7 @@ RSpec.describe 'Communication Threads API', type: :request do
       inaccessible_conversation = create(:conversation, account: account, contact: contact)
       inaccessible_conversation.update_labels(%w[hidden])
       create(:inbox_member, user: agent, inbox: accessible_conversation.inbox)
+      InboxMember.where(user: agent, inbox: inaccessible_conversation.inbox).delete_all
       thread = accessible_conversation.reload.communication_thread
 
       post "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/labels",
@@ -1903,6 +1923,7 @@ RSpec.describe 'Communication Threads API', type: :request do
       accessible_conversation = create(:conversation, account: account, contact: contact, status: :open)
       inaccessible_conversation = create(:conversation, account: account, contact: contact, status: :open)
       create(:inbox_member, user: agent, inbox: accessible_conversation.inbox)
+      InboxMember.where(user: agent, inbox: inaccessible_conversation.inbox).delete_all
       thread = accessible_conversation.reload.communication_thread
 
       patch "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}",

@@ -19,7 +19,10 @@ RSpec.describe Captain::Tools::Copilot::GetInboxSettingsService do
 
     expect(payload['action']).to eq('get_inbox_settings')
     expect(payload['inbox']).to include('id' => inbox.id, 'name' => 'Support', 'timezone' => 'Asia/Almaty')
-    expect(payload['members']).to contain_exactly(include('id' => member.id, 'name' => 'Operator One'))
+    expect(payload['members']).to contain_exactly(
+      include('id' => member.id, 'name' => 'Operator One'),
+      include('id' => user.id)
+    )
     expect(payload['working_hours'].size).to eq(7)
     expect(payload['assignment_policy']).to include('id' => policy.id, 'name' => 'Support routing', 'assign_online_only' => false)
     expect(payload['captain']).to include('enabled' => true, 'assistant_id' => assistant.id)

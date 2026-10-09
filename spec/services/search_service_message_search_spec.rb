@@ -83,7 +83,9 @@ RSpec.describe SearchService do
 
         it 'does not search the messages of another account or of an inbox the user cannot open' do
           create(:message, content: 'Мы записали вас в другом аккаунте')
-          create(:message, account: account, inbox: create(:inbox, account: account), content: 'Мы записали вас в чужом ящике')
+          inaccessible_inbox = create(:inbox, account: account)
+          inaccessible_inbox.inbox_members.where(user: user).destroy_all
+          create(:message, account: account, inbox: inaccessible_inbox, content: 'Мы записали вас в чужом ящике')
 
           expect(found_ids('записали')).to eq([past.id])
         end

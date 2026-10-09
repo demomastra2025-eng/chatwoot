@@ -47,17 +47,20 @@ RSpec.describe 'Enterprise Audit API', type: :request do
 
         expect(response).to have_http_status(:success)
         json_response = JSON.parse(response.body)
-        expect(json_response['audit_logs'][1]['auditable_type']).to eql('Inbox')
-        expect(json_response['audit_logs'][1]['action']).to eql('create')
-        expect(json_response['audit_logs'][1]['auditable']['channel_type']).to eql(inbox.display_channel_type)
-        expect(json_response['audit_logs'][1]['audited_changes']['name']).to eql(inbox.name)
-        expect(json_response['audit_logs'][1]['associated_id']).to eql(account.id)
+        inbox_log = json_response['audit_logs'].find do |audit_log|
+          audit_log['auditable_type'] == 'Inbox' && audit_log['action'] == 'create' &&
+            audit_log.dig('auditable', 'id') == inbox.id
+        end
+        expect(inbox_log).to be_present
+        expect(inbox_log['auditable']['channel_type']).to eql(inbox.display_channel_type)
+        expect(inbox_log['audited_changes']['name']).to eql(inbox.name)
+        expect(inbox_log['associated_id']).to eql(account.id)
         # contains audit log for account user as well
         # contains audit logs for account update(enable audit logs)
         expect(json_response.slice('current_page', 'per_page', 'total_entries')).to eql(
           'current_page' => 1,
           'per_page' => 25,
-          'total_entries' => 3
+          'total_entries' => 4
         )
       end
     end

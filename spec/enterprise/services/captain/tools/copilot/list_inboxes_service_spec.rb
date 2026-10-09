@@ -39,7 +39,10 @@ RSpec.describe Captain::Tools::Copilot::ListInboxesService do
       'auto_reply_mode' => CaptainInbox::AUTO_REPLY_ALWAYS,
       'auto_reply_allowed_now' => true
     )
-    expect(payload['inboxes'].first['members']).to contain_exactly(include('id' => member.id, 'name' => 'Operator One'))
+    expect(payload['inboxes'].first['members']).to contain_exactly(
+      include('id' => member.id, 'name' => 'Operator One'),
+      include('id' => user.id)
+    )
   end
 
   it 'is active only for account administrators' do

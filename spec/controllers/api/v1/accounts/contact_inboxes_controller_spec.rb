@@ -47,6 +47,7 @@ RSpec.describe 'Contact Inboxes API', type: :request do
 
       before do
         create(:inbox_member, user: agent_with_inbox_access, inbox: inbox)
+        InboxMember.where(user: agent_without_inbox_access, inbox: inbox).delete_all
       end
 
       it 'returns unauthorized if agent does not have inbox access' do

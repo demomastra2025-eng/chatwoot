@@ -121,7 +121,7 @@ RSpec.describe 'Captain account admin people copilot tools' do
       expect(payload['idempotent_replay']).to be(false)
       expect(AccountUser.exists?(account: account, user: operator)).to be(false)
       expect(team.reload.members).to be_empty
-      expect(inbox.reload.members).to be_empty
+      expect(inbox.reload.members).to contain_exactly(admin)
     end
 
     it 'returns the active lifecycle snapshot when deactivation is repeated' do

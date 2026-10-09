@@ -58,12 +58,14 @@ RSpec.describe Contacts::OwnerSyncService do
     end
 
     it 'does not assign a conversation to the contact owner when that owner cannot access the inbox' do
+      inaccessible_owner = owner
       inaccessible_owner_conversation = create(:conversation, account: account, contact: contact, assignee: other_agent)
+      inaccessible_owner_conversation.inbox.inbox_members.where(user: inaccessible_owner).destroy_all
 
-      contact.update!(owner: owner)
+      contact.update!(owner: inaccessible_owner)
 
       expect(inaccessible_owner_conversation.reload.assignee).to eq(other_agent)
-      expect(contact.reload.owner).to eq(owner)
+      expect(contact.reload.owner).to eq(inaccessible_owner)
     end
 
     it 'clears synced owners when the contact owner is cleared' do

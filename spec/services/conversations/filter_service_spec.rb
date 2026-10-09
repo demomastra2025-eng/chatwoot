@@ -697,6 +697,7 @@ describe Conversations::FilterService do
 
       # Make user_1 a regular agent with access to inbox_1 only
       create(:inbox_member, user: user_1, inbox: inbox_1)
+      inbox_2.inbox_members.where(user: [user_1, admin]).destroy_all
 
       # Create conversations in both inboxes
       create(:conversation, account: account, inbox: inbox_1)

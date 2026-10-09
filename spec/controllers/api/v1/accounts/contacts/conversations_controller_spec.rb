@@ -13,6 +13,7 @@ RSpec.describe '/api/v1/accounts/{account.id}/contacts/:id/conversations', type:
 
   before do
     create(:inbox_member, user: agent, inbox: inbox_1)
+    InboxMember.where(user: agent, inbox: inbox_2).delete_all
     2.times.each do
       create(:conversation, account: account, inbox: inbox_1, contact: contact, contact_inbox: contact_inbox_1)
       create(:conversation, account: account, inbox: inbox_2, contact: contact, contact_inbox: contact_inbox_2)
@@ -52,6 +53,7 @@ RSpec.describe '/api/v1/accounts/{account.id}/contacts/:id/conversations', type:
 
       context 'with user as unknown role' do
         it 'returns conversations from no inboxes' do
+          InboxMember.where(user: unknown).delete_all
           get "/api/v1/accounts/#{account.id}/contacts/#{contact.id}/conversations", headers: unknown.create_new_auth_token
 
           expect(response).to have_http_status(:success)

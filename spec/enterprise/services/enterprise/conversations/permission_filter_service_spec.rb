@@ -13,7 +13,10 @@ RSpec.describe Enterprise::Conversations::PermissionFilterService do
   let!(:another_inbox_conversation) { create(:conversation, account: account, inbox: inbox2) }
 
   # This inbox_member is used to establish the agent's access to the inbox
-  before { create(:inbox_member, user: agent, inbox: inbox) }
+  before do
+    create(:inbox_member, user: agent, inbox: inbox)
+    InboxMember.where(user: agent, inbox: inbox2).delete_all
+  end
 
   describe '#perform' do
     context 'when user is an administrator' do
@@ -57,6 +60,7 @@ RSpec.describe Enterprise::Conversations::PermissionFilterService do
         # Create test agent
         test_agent = create(:user, account: test_account, role: :agent)
         create(:inbox_member, user: test_agent, inbox: test_inbox)
+        InboxMember.where(user: test_agent, inbox: test_inbox2).delete_all
 
         # Create custom role with conversation_manage permission
         test_custom_role = create(:custom_role, account: test_account, permissions: ['conversation_manage'])
@@ -95,6 +99,7 @@ RSpec.describe Enterprise::Conversations::PermissionFilterService do
         # Create test agent
         test_agent = create(:user, account: test_account, role: :agent)
         create(:inbox_member, user: test_agent, inbox: test_inbox)
+        InboxMember.where(user: test_agent, inbox: test_inbox2).delete_all
 
         # Create a custom role with only the conversation_participating_manage permission
         test_custom_role = create(:custom_role, account: test_account, permissions: %w[conversation_participating_manage])
@@ -135,6 +140,7 @@ RSpec.describe Enterprise::Conversations::PermissionFilterService do
         # Create test agent
         test_agent = create(:user, account: test_account, role: :agent)
         create(:inbox_member, user: test_agent, inbox: test_inbox)
+        InboxMember.where(user: test_agent, inbox: test_inbox2).delete_all
 
         # Create a custom role with only the conversation_unassigned_manage permission
         test_custom_role = create(:custom_role, account: test_account, permissions: %w[conversation_unassigned_manage])
@@ -176,6 +182,7 @@ RSpec.describe Enterprise::Conversations::PermissionFilterService do
         # Create test agent
         test_agent = create(:user, account: test_account, role: :agent)
         create(:inbox_member, user: test_agent, inbox: test_inbox)
+        InboxMember.where(user: test_agent, inbox: test_inbox2).delete_all
 
         # Create a custom role with both participating and unassigned permissions
         permissions = %w[conversation_participating_manage conversation_unassigned_manage]

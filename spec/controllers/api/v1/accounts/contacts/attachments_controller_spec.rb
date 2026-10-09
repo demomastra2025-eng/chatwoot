@@ -16,6 +16,7 @@ RSpec.describe '/api/v1/accounts/{account.id}/contacts/:id/attachments', type: :
 
     conversation_1 = create(:conversation, account: account, inbox: inbox_1, contact: contact, contact_inbox: contact_inbox_1)
     conversation_2 = create(:conversation, account: account, inbox: inbox_2, contact: contact, contact_inbox: contact_inbox_2)
+    InboxMember.where(user: agent, inbox: inbox_2).delete_all
 
     create(:message, :with_attachment, conversation: conversation_1, account: account, inbox: inbox_1, message_type: 'incoming')
     create(:message, :with_attachment, conversation: conversation_2, account: account, inbox: inbox_2, message_type: 'incoming')
@@ -67,6 +68,7 @@ RSpec.describe '/api/v1/accounts/{account.id}/contacts/:id/attachments', type: :
 
       context 'with user as unknown role' do
         it 'returns no attachments' do
+          InboxMember.where(user: unknown).delete_all
           get "/api/v1/accounts/#{account.id}/contacts/#{contact.id}/attachments", headers: unknown.create_new_auth_token
 
           expect(response).to have_http_status(:success)

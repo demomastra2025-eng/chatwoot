@@ -82,7 +82,9 @@ RSpec.describe 'Communication thread list search API', type: :request do
 
   it 'does not return a thread of conversations in inboxes the agent has no access to' do
     other_contact = create(:contact, account: account, name: 'Скрытый Иванов')
-    hidden = create(:conversation, account: account, inbox: create(:inbox, account: account), contact: other_contact)
+    inaccessible_inbox = create(:inbox, account: account)
+    inaccessible_inbox.inbox_members.where(user: agent).destroy_all
+    hidden = create(:conversation, account: account, inbox: inaccessible_inbox, contact: other_contact)
     hidden.reload.refresh_communication_thread!
 
     expect(search(q: 'Иванов')[:data][:payload].pluck(:id)).to eq([thread.display_id])

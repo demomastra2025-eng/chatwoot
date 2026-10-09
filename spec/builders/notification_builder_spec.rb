@@ -28,6 +28,7 @@ describe NotificationBuilder do
 
     it 'does not create conversation notifications for agents without conversation access' do
       restricted_agent = create(:user, account: account, role: :agent)
+      InboxMember.where(user: restricted_agent, inbox: primary_actor.inbox).delete_all
       notification_setting = restricted_agent.notification_settings.find_by(account_id: account.id)
       notification_setting.selected_email_flags = [:email_conversation_creation]
       notification_setting.selected_push_flags = [:push_conversation_creation]

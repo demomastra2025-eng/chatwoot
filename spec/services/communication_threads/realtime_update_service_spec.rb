@@ -87,6 +87,10 @@ RSpec.describe CommunicationThreads::RealtimeUpdateService do
       hidden_inbox_user = create(:user, account: account, role: :agent)
       create(:team_member, team: source_team, user: team_user)
       create(:inbox_member, inbox: hidden_inbox, user: hidden_inbox_user)
+      [source_inbox, hidden_inbox].each do |target_inbox|
+        target_inbox.inbox_members.where(user: team_user).destroy_all
+      end
+      source_inbox.inbox_members.where(user: hidden_inbox_user).destroy_all
 
       source_conversation = create(
         :conversation,

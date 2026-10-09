@@ -20,6 +20,7 @@ describe ConversationFinder do
 
   before do
     Current.account = account
+    restricted_inbox.inbox_members.where(user: [agent, admin]).destroy_all
     [agent, other_agent].each do |member|
       create(:inbox_member, user: member, inbox: first_inbox)
       create(:inbox_member, user: member, inbox: second_inbox)
