@@ -31,6 +31,9 @@ class Captain::ContextFields
     start_date start_time end_date end_time
     custom_attributes
   ].freeze
+  PATIENT_APPOINTMENT_FIELD_IDS = %w[
+    appointment.id appointment.resource_name appointment.start_date appointment.start_time appointment.status
+  ].freeze
   COMMUNICATION_THREAD_CHANNEL_KEYS = %i[
     conversation_id inbox_id inbox_name contact_inbox_id channel medium provider status
     can_reply can_send_text requires_template reply_window_open reply_window_closes_at
@@ -207,13 +210,16 @@ class Captain::ContextFields
       definitions_for(account).map { |field| field[:id] }
     end
 
-    def appointment_state_for(account:, conversation: nil, appointment: nil)
+    def appointment_state_for(account:, conversation: nil, appointment: nil, patient_scope: false)
       return if account.blank? || !appointment_context_enabled?(account)
 
       appointment ||= appointment_for(account: account, conversation: conversation)
       return if appointment.blank? || appointment.account_id != account.id
 
-      build_appointment_state(appointment, account)
+      state = build_appointment_state(appointment, account)
+      return state.slice(:id, :resource_name, :start_date, :start_time, :status) if patient_scope
+
+      state
     end
 
     def deal_state_for(account:, conversation:)
@@ -308,7 +314,9 @@ class Captain::ContextFields
       task_state = task_state_for(account: account, conversation: conversation)
       runtime_state[:task] = task_state if task_state.present?
 
-      appointment_state = appointment_state_for(account: account, conversation: conversation)
+      appointment_state = appointment_state_for(
+        account: account, conversation: conversation, patient_scope: assistant&.usage_mode == 'external_agent'
+      )
       runtime_state[:appointment] = appointment_state if appointment_state.present?
       runtime_state
     end
@@ -411,10 +419,10 @@ class Captain::ContextFields
           field_id.start_with?("#{scope}.")
         end
         effective_field_ids = effective_field_ids.uniq
+        effective_field_ids &= PATIENT_APPOINTMENT_FIELD_IDS if scope == :appointment && assistant.usage_mode == 'external_agent'
         next if effective_field_ids.blank?
 
         scoped_prompt_state = build_scoped_prompt_state(
-          scope: scope,
           raw_scope_state: runtime_state[scope],
           allowed_field_ids: effective_field_ids
         )
@@ -771,7 +779,7 @@ class Captain::ContextFields
       tokens.include?('administrator') || permissions.any? { |token| tokens.include?(token) }
     end
 
-    def build_scoped_prompt_state(scope:, raw_scope_state:, allowed_field_ids:)
+    def build_scoped_prompt_state(raw_scope_state:, allowed_field_ids:)
       return {} if raw_scope_state.blank? || allowed_field_ids.blank?
 
       scope_state = raw_scope_state.with_indifferent_access

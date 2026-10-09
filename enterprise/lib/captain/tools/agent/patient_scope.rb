@@ -3,7 +3,6 @@ class Captain::Tools::Agent::PatientScope
 
   ADAPTER_ID_TOOLS = {
     'get_appointment' => [:appointments, :appointment_id, 'appointment'],
-    'get_appointment_provider_status' => [:provider_commands, :provider_command_id, 'appointment'],
     'get_contact' => [:contacts, :contact_id, 'contact'],
     'get_deal' => [:deals, :deal_id, 'deal'],
     'list_deal_stages' => [:deals, :deal_id, 'deal']
@@ -68,10 +67,6 @@ class Captain::Tools::Agent::PatientScope
     return scope.none if contact_id.blank?
 
     scope.where(contact_id: contact_id)
-  end
-
-  def provider_commands
-    Integrations::Medelement::ProviderCommand.where(account_id: @assistant.account_id, appointment_id: appointments.select(:id))
   end
 
   def authorize_adapter_tool!(tool, params)

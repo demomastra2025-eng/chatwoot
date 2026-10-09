@@ -7,7 +7,9 @@ class Captain::Tools::Copilot::GetAppointmentProviderStatusService < Captain::To
   param :provider_command_id, type: :number, desc: 'Provider command ID returned by the mutation tool', required: true
 
   def execute(provider_command_id:)
-    commands = patient_scope ? patient_scope.provider_commands : Integrations::Medelement::ProviderCommand.where(account_id: account.id)
+    return formatted_payload(success: false, reason: 'staff_will_help') if patient_scope
+
+    commands = Integrations::Medelement::ProviderCommand.where(account_id: account.id)
     command = commands.find(
       required_positive_id(provider_command_id, field_name: 'provider_command_id')
     )

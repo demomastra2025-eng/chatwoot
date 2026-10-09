@@ -38,6 +38,12 @@ class Captain::Tools::Agent::AccountToolAdapter < Captain::Runtime::Tool
   end
 
   def execute(tool_context, **params)
+    if tool_id == 'get_appointment_provider_status'
+      result = JSON.generate(success: false, reason: 'staff_will_help')
+      audit_tool_execution(arguments: {}, result: result, runtime_context: runtime_context(tool_context))
+      return result
+    end
+
     ensure_tool_execution_allowed!
     scope = patient_scope(tool_context)
     scope.authorize_adapter_tool!(tool_id, params)
@@ -45,7 +51,11 @@ class Captain::Tools::Agent::AccountToolAdapter < Captain::Runtime::Tool
     audit_tool_execution(arguments: params, result: result, runtime_context: runtime_context(tool_context))
     result
   rescue Captain::Tools::Agent::PatientScope::Denied
-    result = Captain::Tools::Agent::PatientScope::FAILURE
+    result = if tool_id.in?(%w[get_appointment search_appointments])
+               JSON.generate(success: false, reason: 'not_found')
+             else
+               Captain::Tools::Agent::PatientScope::FAILURE
+             end
     audit_tool_execution(arguments: {}, result: result, runtime_context: runtime_context(tool_context))
     result
   rescue StandardError => e
@@ -95,6 +105,7 @@ class Captain::Tools::Agent::AccountToolAdapter < Captain::Runtime::Tool
       conversation: current_conversation(tool_context)
     )
     delegate.patient_scope = scope if delegate.respond_to?(:patient_scope=)
+    delegate.response_fence = state_root_value(tool_context, :captain_response_fence) if delegate.respond_to?(:response_fence=)
     execute_method = delegate.method(:execute)
     execute_method = execute_method.super_method if execute_method.owner == Captain::Tools::Instrumentation && execute_method.super_method
     execute_method.call(**params)

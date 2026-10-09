@@ -4,6 +4,13 @@ require 'rails_helper'
 
 RSpec.describe Captain::ToolResult do
   describe '.normalize' do
+    it 'keeps compact booking failures nonretryable without adding provider details to the rendered result' do
+      payload = '{"success":false,"reason":"staff_will_help"}'
+
+      expect(described_class.normalize(payload)).to include(success: false, retryable: false)
+      expect(described_class.render(payload)).to eq(payload)
+    end
+
     it 'wraps plain strings as success messages' do
       result = described_class.normalize('Done')
 

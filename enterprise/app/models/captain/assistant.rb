@@ -532,7 +532,7 @@ class Captain::Assistant < ApplicationRecord
 
     (scenario_default_tool_ids + explicit_tool_ids)
       .uniq
-      .select { |tool_id| available_ids.include?(tool_id) }
+      .select { |tool_id| available_ids.include?(tool_id) && tool_id != 'get_appointment_provider_status' }
   end
 
   def selected_agent_tool_ids
@@ -553,11 +553,11 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def allowed_agent_tools
-    select_tools_by_ids(available_agent_tools, allowed_agent_tool_ids)
+    select_tools_by_ids(available_agent_tools, allowed_agent_tool_ids - APPOINTMENT_PROVIDER_STATUS_COMPANION_TOOL_IDS)
   end
 
   def direct_agent_tools
-    select_tools_by_ids(available_agent_tools, direct_agent_tool_ids)
+    select_tools_by_ids(available_agent_tools, direct_agent_tool_ids - APPOINTMENT_PROVIDER_STATUS_COMPANION_TOOL_IDS)
   end
 
   def prompt_runtime_agent_tools
@@ -566,7 +566,7 @@ class Captain::Assistant < ApplicationRecord
     prompt_visible_tools_for_scope(
       Captain::ToolAccess::SCOPE_AGENT,
       explicit_tool_ids: explicit_tool_ids
-    )
+    ).reject { |tool| tool.id == 'get_appointment_provider_status' }
   end
 
   def voice_runtime_agent_tools
@@ -588,6 +588,7 @@ class Captain::Assistant < ApplicationRecord
     end
 
     (direct_tools + prompt_tools).uniq { |tool| tool[:id].to_s }
+                                 .reject { |tool| tool[:id].to_s == 'get_appointment_provider_status' }
   end
 
   def tool_glossary_groups(tools = direct_agent_tools, tool_ids = nil)

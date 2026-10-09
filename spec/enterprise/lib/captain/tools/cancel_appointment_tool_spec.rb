@@ -20,17 +20,8 @@ RSpec.describe Captain::Tools::CancelAppointmentTool, type: :model do
 
     payload = JSON.parse(tool.perform(tool_context))
 
-    expect(payload).to include(
-      'action' => 'cancel_appointment',
-      'appointment_id' => appointment.id,
-      'status' => 'cancelled',
-      'resource_id' => resource.id,
-      'contact_id' => contact.id,
-      'service_id' => scheduling_service.id,
-      'starts_at' => payload.dig('appointment', 'starts_at'),
-      'ends_at' => payload.dig('appointment', 'ends_at')
-    )
-    expect(payload['appointment']).to include('id' => appointment.id, 'status' => 'cancelled')
+    expect(payload).to include('success' => true, 'appointment_id' => appointment.id, 'status' => 'cancelled')
+    expect(payload.keys).to match_array(%w[success appointment_id doctor_name local_date local_time status])
   end
 
   it 're-reads the explicitly selected cancelled appointment without cancelling another active appointment' do
@@ -54,7 +45,7 @@ RSpec.describe Captain::Tools::CancelAppointmentTool, type: :model do
 
     result = tool.perform(tool_context, appointment_id: appointment.id + 1_000_000)
 
-    expect(result).to include('ERROR: ArgumentError: Record is not available')
+    expect(JSON.parse(result)).to eq('success' => false, 'reason' => 'not_found')
     expect(appointment.reload.status).to eq('scheduled')
   end
 
@@ -66,7 +57,7 @@ RSpec.describe Captain::Tools::CancelAppointmentTool, type: :model do
 
     result = tool.perform(tool_context)
 
-    expect(result).to include('ERROR: ArgumentError: appointment_id is required when the conversation has multiple appointments')
+    expect(JSON.parse(result)).to eq('success' => false, 'reason' => 'validation_error')
     expect(appointments.map { |appointment| appointment.reload.status }).to all(eq('scheduled'))
   end
 
@@ -87,7 +78,7 @@ RSpec.describe Captain::Tools::CancelAppointmentTool, type: :model do
 
     result = tool.perform(tool_context)
 
-    expect(result).to include('ERROR: Scheduling::Error: Imported Medelement appointments are read-only')
+    expect(JSON.parse(result)).to eq('success' => false, 'reason' => 'validation_error')
     expect(appointment.reload.status).to eq('scheduled')
   end
 
@@ -122,12 +113,10 @@ RSpec.describe Captain::Tools::CancelAppointmentTool, type: :model do
 
     payload = JSON.parse(result)
 
-    command_payload = payload.dig('provider_command_receipt', 'command')
-    expect(command_payload).to include(
-      'operation' => 'remove_reception',
-      'requested_by' => { 'type' => 'Captain::Assistant', 'id' => assistant.id }
-    )
-    expect(Integrations::Medelement::ProviderCommand.find(command_payload.fetch('id')).appointment_id).to eq(appointment.id)
+    expect(payload).to include('success' => true, 'appointment_id' => appointment.id, 'status' => 'cancelled')
+    expect(payload.keys).to match_array(%w[success appointment_id doctor_name local_date local_time status])
+    command = Integrations::Medelement::ProviderCommand.find_by!(appointment_id: appointment.id, operation: 'remove_reception')
+    expect(command.request_snapshot.dig('actor', 'type')).to eq('Captain::Assistant')
     expect(other.reload.status).to eq('scheduled')
   end
 
@@ -154,7 +143,7 @@ RSpec.describe Captain::Tools::CancelAppointmentTool, type: :model do
     payload = JSON.parse(tool.perform(tool_context, appointment_id: appointment.id))
 
     expect(payload).to include('appointment_id' => appointment.id, 'status' => 'cancelled')
-    expect(payload['provider_command_receipt']).to be_blank
+    expect(payload.keys).to match_array(%w[success appointment_id doctor_name local_date local_time status])
     expect(appointment.reload.custom_attributes[Integrations::Medelement::LocalCancellation::MARKER_KEY]).to include(
       'actor' => { 'type' => 'Captain::Assistant', 'id' => assistant.id }
     )
@@ -185,7 +174,7 @@ RSpec.describe Captain::Tools::CancelAppointmentTool, type: :model do
 
     result = tool.perform(tool_context, appointment_id: appointment.id)
 
-    expect(result).to include('ERROR: Scheduling::Error: Medelement reception must be verified before cancellation')
+    expect(JSON.parse(result)).to eq('success' => false, 'reason' => 'staff_will_help')
     expect(appointment.reload.status).to eq('scheduled')
     expect(Integrations::Medelement::ProviderCommand.where(appointment_id: appointment.id, operation: 'remove_reception')).to be_empty
   end

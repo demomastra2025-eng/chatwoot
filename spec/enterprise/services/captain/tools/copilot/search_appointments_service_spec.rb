@@ -19,6 +19,23 @@ RSpec.describe Captain::Tools::Copilot::SearchAppointmentsService do
   end
 
   describe '#execute' do
+    it 'returns a capped allowlist for the patient while staff keeps the full payload' do
+      21.times do |index|
+        create(:scheduling_appointment, account: account, contact: contact, conversation: conversation,
+                                        starts_at: (index + 1).days.from_now)
+      end
+      service.patient_scope = Captain::Tools::Agent::PatientScope.new(assistant: assistant, conversation: conversation)
+
+      patient_payload = JSON.parse(service.execute(limit: 100))
+      expect(patient_payload.keys).to match_array(%w[success appointments has_more])
+      expect(patient_payload['appointments'].length).to eq(Captain::Tools::Agent::AppointmentResult::MAX_SEARCH_RESULTS)
+      expect(patient_payload['has_more']).to be(true)
+      expect(patient_payload['appointments'].first.keys).to match_array(%w[appointment_id doctor_name local_date local_time status])
+
+      service.patient_scope = nil
+      expect(JSON.parse(service.execute(limit: 1))).to include('total_count' => 22)
+    end
+
     it 'returns normalized appointments with filters and total_count' do
       expect(Scheduling::PayloadBuilder).to receive(:appointment).with(
         satisfy do |appointment|

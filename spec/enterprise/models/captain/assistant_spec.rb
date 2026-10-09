@@ -629,6 +629,8 @@ RSpec.describe Captain::Assistant, type: :model do
         'get_appointment_provider_status'
       )
       expect(assistant.prompt_runtime_agent_tools.pluck(:id)).to include('create_task', 'list_task_custom_fields')
+      expect(assistant.allowed_agent_tools.pluck(:id)).not_to include('get_appointment_provider_status')
+      expect(assistant.prompt_runtime_agent_tools.pluck(:id)).not_to include('get_appointment_provider_status')
     end
 
     it 'does not expose scenario-only template tool references in the root assistant prompt' do

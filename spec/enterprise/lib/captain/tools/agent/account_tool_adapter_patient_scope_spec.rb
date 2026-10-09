@@ -24,9 +24,11 @@ RSpec.describe Captain::Tools::Agent::AccountToolAdapter do
     other_account = create(:account)
     cross_account = create(:scheduling_appointment, account: other_account)
 
-    expect(JSON.parse(call_tool('get_appointment', appointment_id: own.id)).dig('appointment', 'id')).to eq(own.id)
+    own_payload = JSON.parse(call_tool('get_appointment', appointment_id: own.id))
+    expect(own_payload).to include('success' => true, 'appointment_id' => own.id)
+    expect(own_payload.keys).to match_array(%w[success appointment_id doctor_name local_date local_time status])
     [foreign.id, cross_account.id, missing_id].each do |id|
-      expect(call_tool('get_appointment', appointment_id: id)).to eq(neutral_failure)
+      expect(JSON.parse(call_tool('get_appointment', appointment_id: id))).to eq('success' => false, 'reason' => 'not_found')
     end
   end
 
@@ -34,23 +36,25 @@ RSpec.describe Captain::Tools::Agent::AccountToolAdapter do
     own = create(:scheduling_appointment, account: account, contact: contact, conversation: conversation, client_name: 'Patient Alpha')
     other = create(:scheduling_appointment, account: account, contact: other_contact, client_name: 'Patient Beta')
 
-    expect(JSON.parse(call_tool('search_appointments')).fetch('appointments').pluck('id')).to eq([own.id])
+    search = JSON.parse(call_tool('search_appointments'))
+    expect(search.fetch('appointments').pluck('appointment_id')).to eq([own.id])
+    expect(search.keys).to match_array(%w[success appointments has_more])
     expect(JSON.parse(call_tool('search_appointments', client_name: 'Patient Beta')).fetch('appointments')).to be_empty
-    expect(call_tool('search_appointments', contact_id: other_contact.id)).to eq(neutral_failure)
-    expect(call_tool('search_appointments', contact_id: missing_id)).to eq(neutral_failure)
+    expect(JSON.parse(call_tool('search_appointments', contact_id: other_contact.id))).to eq('success' => false, 'reason' => 'not_found')
+    expect(JSON.parse(call_tool('search_appointments', contact_id: missing_id))).to eq('success' => false, 'reason' => 'not_found')
     expect(other.id).not_to eq(own.id)
   end
 
-  it 'reads provider status only for a command linked to an own appointment' do
+  it 'keeps provider status neutral even for an own command' do
     own = create(:scheduling_appointment, account: account, contact: contact, conversation: conversation)
     foreign = create(:scheduling_appointment, account: account, contact: other_contact)
     own_command = provider_command_for(own)
     foreign_command = provider_command_for(foreign)
 
-    receipt = JSON.parse(call_tool('get_appointment_provider_status', provider_command_id: own_command.id))
-    expect(receipt.dig('provider_command_receipt', 'command', 'id')).to eq(own_command.id)
-    expect(call_tool('get_appointment_provider_status', provider_command_id: foreign_command.id)).to eq(neutral_failure)
-    expect(call_tool('get_appointment_provider_status', provider_command_id: missing_id)).to eq(neutral_failure)
+    [own_command.id, foreign_command.id, missing_id].each do |id|
+      expect(JSON.parse(call_tool('get_appointment_provider_status', provider_command_id: id)))
+        .to eq('success' => false, 'reason' => 'staff_will_help')
+    end
   end
 
   it 'restricts conversation search to the current contact' do

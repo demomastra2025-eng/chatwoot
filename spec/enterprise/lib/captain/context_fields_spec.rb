@@ -388,6 +388,25 @@ RSpec.describe Captain::ContextFields do
       expect(state[:start_time]).to eq('15:00')
     end
 
+    it 'omits provider and payment fields from patient agent runtime and prompt context' do
+      account.enable_features!('scheduling')
+      appointment_record.update!(external_ref: 'medelement:reception:example',
+                                 custom_attributes: { 'medelement_reception_code' => 'example' })
+      assistant = create(:captain_assistant, account: account)
+
+      state = described_class.runtime_state_for(account: account, conversation: conversation_record, assistant: assistant)
+      expect(state.fetch(:appointment).keys).to match_array(%i[id resource_name start_date start_time status])
+      expect(state.to_json).not_to include('medelement_reception_code', 'medelement:reception:example')
+
+      prompt = described_class.prompt_state_for(
+        assistant: assistant, runtime_state: state,
+        field_ids: %w[appointment.id appointment.external_ref appointment.payment_status appointment.custom_attributes.visit_room]
+      )
+      expect(prompt.dig(:visible_fields, :appointment)).to include('id')
+      expect(prompt.dig(:visible_fields, :appointment)).not_to include('external_ref', 'payment_status')
+      expect(prompt.to_json).not_to include('medelement', 'payment_status', 'visit_room')
+    end
+
     it 'exposes the formatted fields in the field definitions picker' do
       ids = described_class.definitions_for(account).map { |field| field[:id] }
 

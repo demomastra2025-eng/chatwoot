@@ -43,6 +43,17 @@ class Captain::Tools::Copilot::SearchAppointmentsService < Captain::Tools::Copil
     appointments = appointments.where('starts_at >= ?', range_from) if range_from.present?
     appointments = appointments.where('starts_at < ?', range_to) if range_to.present?
 
+    if patient_scope
+      records = appointments.order(starts_at: :desc, id: :desc).limit(Captain::Tools::Agent::AppointmentResult::MAX_SEARCH_RESULTS + 1).to_a
+      return formatted_payload(
+        success: true,
+        appointments: records.first(Captain::Tools::Agent::AppointmentResult::MAX_SEARCH_RESULTS).map do |appointment|
+          Captain::Tools::Agent::AppointmentResult.appointment(appointment)
+        end,
+        has_more: records.size > Captain::Tools::Agent::AppointmentResult::MAX_SEARCH_RESULTS
+      )
+    end
+
     total_count = appointments.count
     records = appointment_records(appointments, limit: parse_limit(limit), include_client_name: client_name.present?)
 
@@ -61,9 +72,9 @@ class Captain::Tools::Copilot::SearchAppointmentsService < Captain::Tools::Copil
       appointments: records
     )
   rescue Captain::Tools::Agent::PatientScope::Denied
-    Captain::Tools::Agent::PatientScope::FAILURE
+    formatted_payload(success: false, reason: 'not_found')
   rescue StandardError => e
-    tool_failure(e)
+    patient_scope ? formatted_payload(Captain::Tools::Agent::AppointmentResult.failure(e)) : tool_failure(e)
   end
 
   def active?

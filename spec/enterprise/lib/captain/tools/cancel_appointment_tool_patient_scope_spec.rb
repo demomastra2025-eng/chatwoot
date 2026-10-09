@@ -10,7 +10,7 @@ RSpec.describe Captain::Tools::CancelAppointmentTool do
   end
   let(:tool_context) { Captain::Runtime::ToolContext.new(run_context: run_context) }
   let(:missing_id) { 2_147_483_647 }
-  let(:neutral_failure) { Captain::Tools::Agent::PatientScope::FAILURE }
+  let(:neutral_failure) { { 'success' => false, 'reason' => 'not_found' } }
 
   before do
     account.enable_features!('scheduling')
@@ -37,7 +37,7 @@ RSpec.describe Captain::Tools::CancelAppointmentTool do
       results = [foreign.id, cross_account.id, missing_id].map do |id|
         tool_class.new(assistant).execute(tool_context, appointment_id: id, **arguments)
       end
-      expect(results).to all(eq(neutral_failure))
+      expect(results.map { |result| JSON.parse(result) }).to all(eq(neutral_failure))
     end
 
     expect(foreign.reload.status).to eq('scheduled')

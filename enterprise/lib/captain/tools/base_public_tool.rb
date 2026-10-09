@@ -22,7 +22,11 @@ class Captain::Tools::BasePublicTool < Captain::Runtime::Tool
     audit_tool_execution(arguments: params, result: result, runtime_context: runtime_context(tool_context))
     result
   rescue Captain::Tools::Agent::PatientScope::Denied
-    result = Captain::Tools::Agent::PatientScope::FAILURE
+    result = if name.in?(%w[create_appointment update_appointment cancel_appointment])
+               JSON.generate(success: false, reason: 'not_found')
+             else
+               Captain::Tools::Agent::PatientScope::FAILURE
+             end
     audit_tool_execution(arguments: {}, result: result, runtime_context: runtime_context(tool_context))
     result
   rescue StandardError => e

@@ -16,9 +16,19 @@ class Captain::Tools::Copilot::GetAppointmentService < Captain::Tools::Copilot::
       :contact,
       conversation: [:inbox, :communication_thread]
     ).find_by(id: appointment_id)
-    return patient_scope ? Captain::Tools::Agent::PatientScope::FAILURE : tool_failure('Appointment not found') if appointment.blank?
+    if appointment.blank?
+      return formatted_payload(success: false, reason: 'not_found') if patient_scope
+
+      return tool_failure('Appointment not found')
+    end
+
+    return formatted_payload(Captain::Tools::Agent::AppointmentResult.success(appointment)) if patient_scope
 
     formatted_payload(appointment: ::Scheduling::PayloadBuilder.appointment(appointment))
+  rescue StandardError => e
+    raise unless patient_scope
+
+    formatted_payload(Captain::Tools::Agent::AppointmentResult.failure(e))
   end
 
   def active?
