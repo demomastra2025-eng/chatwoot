@@ -98,13 +98,19 @@ RSpec.describe Conversations::DeletionJob do
 
   it 'broadcasts only safe IDs to current authorized employees of the accepted account' do
     excluded = create(:user, account: account, role: :agent)
+    allowed = create(:user, account: account, role: :agent)
+    InboxMember.where(user: excluded, inbox: conversation.inbox).delete_all
     outsider = create(:user, account: create(:account), role: :administrator)
+    excluded_membership = account.account_users.find_by!(user_id: excluded.id)
+    allowed_membership = account.account_users.find_by!(user_id: allowed.id)
+    expect(ConversationPolicy.new({ account: account, user: excluded, account_user: excluded_membership }, conversation).show?).to be(false)
+    expect(ConversationPolicy.new({ account: account, user: allowed, account_user: allowed_membership }, conversation).show?).to be(true)
     events = []
     allow(ActionCableBroadcastJob).to receive(:perform_now) { |*args| events << args }
     run = enroll
     described_class.perform_now(run.id)
     recipients, event, payload = events.find { |args| args[1] == Events::Types::CONVERSATION_DELETED }
-    expect(recipients).to include(user.pubsub_token)
+    expect(recipients).to include(user.pubsub_token, allowed.pubsub_token)
     expect(recipients).not_to include(excluded.pubsub_token, outsider.pubsub_token)
     expect(event).to eq(Events::Types::CONVERSATION_DELETED)
     expect(payload).to eq(account_id: account.id, id: conversation.display_id)

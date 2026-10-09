@@ -250,16 +250,16 @@ describe('durable conversation deletion', () => {
 
   it('reports failed enqueue and reloads authority instead of restoring a stale snapshot', async () => {
     const context = contextFor();
-    vi.spyOn(ConversationAPI, 'delete').mockImplementation(() =>
-      Promise.reject({
-        response: {
-          status: 503,
-          data: {
-            payload: receipt(context.state.deletionOperations[0], ['failed']),
-          },
+    vi.spyOn(ConversationAPI, 'delete').mockImplementation(() => {
+      const error = new Error('Deletion enqueue failed');
+      error.response = {
+        status: 503,
+        data: {
+          payload: receipt(context.state.deletionOperations[0], ['failed']),
         },
-      })
-    );
+      };
+      return Promise.reject(error);
+    });
     vi.spyOn(BulkActionsAPI, 'show');
     vi.spyOn(ConversationAPI, 'show').mockResolvedValue({
       data: plain(12, 'new server content'),
@@ -342,11 +342,9 @@ describe('durable conversation deletion', () => {
       types.SET_CONVERSATION_DELETION_OPERATION,
       operation(['deleted'])
     );
-    for (const type of [
-      types.SET_ALL_CONVERSATION,
-      types.REPLACE_ALL_CONVERSATION,
-    ])
-      context.commit(type, [plain(), thread()]);
+    [types.SET_ALL_CONVERSATION, types.REPLACE_ALL_CONVERSATION].forEach(type =>
+      context.commit(type, [plain(), thread()])
+    );
     context.commit(types.ADD_CONVERSATION, plain());
     context.commit(types.UPDATE_CONVERSATION, plain());
     context.commit(types.UPDATE_CONVERSATION, { ...thread(), updated_at: 5 });
@@ -448,14 +446,15 @@ describe('durable conversation deletion', () => {
       })
     );
     expect(ConversationAPI.delete).not.toHaveBeenCalled();
-    for (const ids of [[12, '12'], [[12]], { id: 12 }]) {
+    await [[12, '12'], [[12]], { id: 12 }].reduce(async (previous, ids) => {
+      await previous;
       await expect(
         actions.deleteCommunicationThreadConversations(context, {
           threadId: 7,
           conversationIds: ids,
         })
       ).rejects.toThrow('Invalid deletion target');
-    }
+    }, Promise.resolve());
     const malformed = {
       ...operation(),
       targets: [{ id: [12], status: 'pending' }],

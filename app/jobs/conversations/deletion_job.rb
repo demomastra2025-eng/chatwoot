@@ -84,7 +84,7 @@ class Conversations::DeletionJob < ApplicationJob
 
     thread_id = run.metadata.fetch('selection')['thread_id']
     if thread_id
-      thread = run.account.communication_threads.find_by(display_id: thread_id)
+      thread = CommunicationThread.find_by(account_id: run.account_id, display_id: thread_id)
       raise Conversations::DeletionService::InvalidRequest unless thread&.communication_thread_conversations&.exists?(conversation_id: object.id)
     end
     object

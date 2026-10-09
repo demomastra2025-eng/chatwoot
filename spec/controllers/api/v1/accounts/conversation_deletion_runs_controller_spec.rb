@@ -50,12 +50,14 @@ RSpec.describe 'Conversation deletion receipts', type: :request do
   end
 
   it 'rejects unsafe IDs and invalid UUID before attempting destructive enrollment' do
-    get "/api/v1/accounts/#{account.id}/bulk_action_runs/1e2", headers: user.create_new_auth_token, as: :json
+    headers = user.create_new_auth_token
+    get "/api/v1/accounts/#{account.id}/bulk_action_runs/1e2", headers: headers, as: :json
     expect(response).to have_http_status(:unprocessable_content)
-    delete "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}", headers: user.create_new_auth_token,
+    expect(user.reload.active_auth_client?(headers['client'])).to be(true)
+    delete "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}", headers: headers,
            params: { request_key: '' }, as: :json
     expect(response).to have_http_status(:unprocessable_content)
-    delete "/api/v1/accounts/#{account.id}/conversations/1e2", headers: user.create_new_auth_token, as: :json
+    delete "/api/v1/accounts/#{account.id}/conversations/1e2", headers: headers, as: :json
     expect(response).to have_http_status(:unprocessable_content)
   end
 end

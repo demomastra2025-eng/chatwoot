@@ -74,12 +74,13 @@ const save = (context, scope, operation) => {
 /* eslint-disable no-await-in-loop */
 const poll = async (context, scope, initial, apiContext) => {
   let operation = initial;
+  const requestKey = initial.requestKey;
   const deadline = Date.now() + 15000;
   for (let attempt = 0; attempt < 20 && Date.now() < deadline; attempt += 1) {
     if (!isCurrent(context, scope)) return { outcome: 'scope_changed' };
     operation =
       context.state.deletionOperations.find(
-        entry => entry.requestKey === operation.requestKey
+        entry => entry.requestKey === requestKey
       ) || operation;
     if (deletionOutcome(operation) !== 'pending') break;
     try {
@@ -97,11 +98,13 @@ const poll = async (context, scope, initial, apiContext) => {
       // A timeout/lost response is still pending. GET never starts deletion.
     }
     if (deletionOutcome(operation) === 'pending')
-      await new Promise(resolve => setTimeout(resolve, 750));
+      await new Promise(resolve => {
+        setTimeout(resolve, 750);
+      });
   }
   operation =
     context.state.deletionOperations.find(
-      entry => entry.requestKey === operation.requestKey
+      entry => entry.requestKey === requestKey
     ) || operation;
   if (
     isCurrent(context, scope) &&

@@ -33,6 +33,7 @@ class BulkActionsAPI extends ApiClient {
       : axios.get(url);
   }
 
+  // eslint-disable-next-line class-methods-use-this -- Reconciliation uses only the captured account URL.
   findDeletion(requestKey, context) {
     return axios.get(`${context.baseUrl}/bulk_action_runs`, {
       params: { request_key: requestKey },

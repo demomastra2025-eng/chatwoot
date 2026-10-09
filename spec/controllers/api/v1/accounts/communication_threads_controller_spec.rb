@@ -1822,7 +1822,9 @@ RSpec.describe 'Communication Threads API', type: :request do
       params = { conversation_ids: [conversation.display_id], request_key: key }
       delete url, params: params, headers: admin_headers, as: :json
       run_id = response.parsed_body.fetch('operation_id')
+      run = account.bulk_action_runs.find(run_id)
       Conversations::DeletionJob.perform_now(run_id)
+      expect(run.reload).to have_attributes(status: 'completed', processed_count: 1, failed_count: 0)
       expect(Conversation.exists?(conversation.id)).to be(false)
       expect(CommunicationThread.exists?(thread.id)).to be(false)
       expect do
