@@ -101,7 +101,9 @@ describe('WorkspaceAssignmentPolicySettings', () => {
     await wrapper
       .get('[data-test="workspace-assignment-policy-select"]')
       .setValue('20');
-    await wrapper.get('[data-test="workspace-assignment-policy-save"]').trigger('click');
+    await wrapper
+      .get('[data-test="workspace-assignment-policy-save"]')
+      .trigger('click');
 
     expect(updateAccountMock).toHaveBeenCalledWith(
       { conversation_assignment_policy_id: 20 },
@@ -123,7 +125,9 @@ describe('WorkspaceAssignmentPolicySettings', () => {
     await wrapper
       .get('[data-test="workspace-assignment-policy-select"]')
       .setValue('');
-    await wrapper.get('[data-test="workspace-assignment-policy-save"]').trigger('click');
+    await wrapper
+      .get('[data-test="workspace-assignment-policy-save"]')
+      .trigger('click');
 
     expect(updateAccountMock).toHaveBeenCalledWith(
       { conversation_assignment_policy_id: null },

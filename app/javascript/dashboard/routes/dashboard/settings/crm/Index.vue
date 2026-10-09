@@ -36,6 +36,7 @@ import {
   isTerminalStageOutcome,
   sortStages,
 } from './stageOrder';
+import { dealStageDisplayName } from 'dashboard/components-next/CRM/dealStageSelection';
 
 const referencesStore = useCrmReferencesStore();
 const route = useRoute();
@@ -127,6 +128,29 @@ const selectedPipeline = computed(
 const selectedStages = computed(() =>
   sortStages(selectedPipeline.value?.stages || [])
 );
+const autoCreateStagesForPipeline = pipeline => {
+  if (!pipeline || pipeline.active === false) return [];
+
+  return sortStages(pipeline.stages || []).filter(
+    stage =>
+      (stage.pipelineId == null ||
+        Number(stage.pipelineId) === Number(pipeline.id)) &&
+      stage.active !== false &&
+      String(stage.outcome).toLowerCase() === 'open'
+  );
+};
+const defaultAutoCreateStageForPipeline = pipeline => {
+  const eligibleStages = autoCreateStagesForPipeline(pipeline);
+  return eligibleStages.find(stage => stage.default);
+};
+const fallbackAutoCreateStageForPipeline = pipeline => {
+  const eligibleStages = autoCreateStagesForPipeline(pipeline);
+  return (
+    defaultAutoCreateStageForPipeline(pipeline) ||
+    eligibleStages.find(stage => !isTechnicalStage(stage)) ||
+    eligibleStages[0]
+  );
+};
 const dealFieldDefinitions = computed(
   () => referencesStore.dealFieldDefinitions
 );
@@ -149,14 +173,10 @@ const stageRequirementFieldOptions = computed(() => [
     .map(definition => ({ key: definition.key, label: definition.label })),
 ]);
 const autoCreateStageOptions = computed(() =>
-  sortStages(selectedPipeline.value?.stages || [])
-    .filter(
-      stage =>
-        stage.active !== false &&
-        String(stage.outcome).toLowerCase() === 'open' &&
-        !isTechnicalStage(stage)
-    )
-    .map(stage => ({ label: stage.name, value: String(stage.id) }))
+  autoCreateStagesForPipeline(selectedPipeline.value).map(stage => ({
+    label: dealStageDisplayName(stage, t),
+    value: String(stage.id),
+  }))
 );
 const selectedPipelineIndex = computed(() =>
   orderedActivePipelines.value.findIndex(
@@ -164,15 +184,7 @@ const selectedPipelineIndex = computed(() =>
   )
 );
 const selectedAutoCreateStageId = computed(() =>
-  String(
-    selectedPipeline.value?.stages?.find(
-      stage =>
-        stage.active !== false &&
-        stage.default &&
-        String(stage.outcome).toLowerCase() === 'open' &&
-        !isTechnicalStage(stage)
-    )?.id || ''
-  )
+  String(defaultAutoCreateStageForPipeline(selectedPipeline.value)?.id || '')
 );
 const selectedAutoCreateStageLabel = computed(
   () =>
@@ -573,14 +585,8 @@ const togglePipelineAutoCreate = async value => {
     return;
   }
 
-  const openStages = sortStages(pipeline.stages || []).filter(
-    stage =>
-      stage.active !== false &&
-      String(stage.outcome).toLowerCase() === 'open' &&
-      !isTechnicalStage(stage)
-  );
   const stageId = String(
-    openStages.find(stage => stage.default)?.id || openStages[0]?.id || ''
+    fallbackAutoCreateStageForPipeline(pipeline)?.id || ''
   );
   const saved = stageId
     ? await persistPipelineAutoCreate(pipeline, true, stageId)
@@ -589,13 +595,24 @@ const togglePipelineAutoCreate = async value => {
 };
 
 const updatePipelineAutoCreateStage = async stageId => {
+  const pipeline = selectedPipeline.value;
+  const normalizedStageId = String(stageId || '');
+  if (
+    !autoCreateStagesForPipeline(pipeline).some(
+      stage => String(stage.id) === normalizedStageId
+    )
+  ) {
+    return false;
+  }
+
   const saved = await persistPipelineAutoCreate(
-    selectedPipeline.value,
+    pipeline,
     true,
-    stageId
+    normalizedStageId
   );
   if (!saved)
     await referencesStore.loadPipelines({ include_inactive_stages: true });
+  return saved;
 };
 
 const toggleUnsortedStage = active => {

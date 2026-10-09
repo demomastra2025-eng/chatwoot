@@ -81,7 +81,7 @@ describe('AddAgents', () => {
     updateVirtualPbxChannelMock.mockResolvedValue({ payload: { errors: [] } });
   });
 
-  it('preserves accountId when moving to the finish step', async () => {
+  it('preserves route context when moving to the finish step', async () => {
     const wrapper = buildWrapper();
     await flushPromises();
     wrapper.vm.selectedAgentIds = [7, 8];
@@ -99,12 +99,12 @@ describe('AddAgents', () => {
         accountId: '530',
         inbox_id: '4690',
       },
-      query: {},
+      query: { provider: 'twilio' },
     });
   });
 
   it('keeps the employee picker available for a Voice inbox without a provider query', async () => {
-    const wrapper = buildWrapper({ routeQuery: {} });
+    buildWrapper({ routeQuery: {} });
     await flushPromises();
 
     expect(routerReplaceMock).not.toHaveBeenCalled();
@@ -113,7 +113,7 @@ describe('AddAgents', () => {
   });
 
   it('skips the employee picker for normal channels even with a telephony query provider', async () => {
-    const wrapper = buildWrapper({
+    buildWrapper({
       routeQuery: { provider: 'twilio' },
       inboxDetails: { id: 4690, channel_type: 'Channel::WebWidget' },
     });
@@ -122,7 +122,7 @@ describe('AddAgents', () => {
     expect(routerReplaceMock).toHaveBeenCalledWith({
       name: 'settings_inbox_finish',
       params: { accountId: '530', inbox_id: '4690' },
-      query: {},
+      query: { provider: 'twilio' },
     });
     expect(inboxMembersShowMock).not.toHaveBeenCalled();
     expect(inboxMembersUpdateMock).not.toHaveBeenCalled();
@@ -141,6 +141,7 @@ describe('AddAgents', () => {
     });
     const wrapper = buildWrapper({
       agents: [{ id: 7, name: 'Agent One' }],
+      routeQuery: { provider: 'sipuni' },
     });
     await flushPromises();
 
@@ -184,7 +185,7 @@ describe('AddAgents', () => {
         accountId: '530',
         inbox_id: '4690',
       },
-      query: {},
+      query: { provider: 'sipuni' },
     });
   });
 

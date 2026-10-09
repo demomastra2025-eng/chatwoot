@@ -76,10 +76,6 @@ const hasAssignmentV2 = computed(() => {
   return isFeatureEnabled('assignment_v2');
 });
 
-const showAdvancedAssignmentUI = computed(() => {
-  return hasAdvancedAssignment.value && hasAssignmentV2.value;
-});
-
 // Vuelidate validation rules
 const rules = {
   maxAssignmentLimit: {
@@ -307,7 +303,5 @@ onMounted(() => {
         </template>
       </SettingsToggleSection>
     </SettingsAccordion>
-
-
   </div>
 </template>

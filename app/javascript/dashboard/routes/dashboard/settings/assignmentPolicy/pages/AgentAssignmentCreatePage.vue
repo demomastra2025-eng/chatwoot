@@ -28,14 +28,14 @@ const allLabels = computed(() =>
 );
 
 const breadcrumbItems = computed(() => [
-    {
-      label: t('ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.INDEX.HEADER.TITLE'),
-      routeName: 'agent_assignment_policy_index',
-    },
-    {
-      label: t('ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.CREATE.HEADER.TITLE'),
-    },
-  ]);
+  {
+    label: t('ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.INDEX.HEADER.TITLE'),
+    routeName: 'agent_assignment_policy_index',
+  },
+  {
+    label: t('ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.CREATE.HEADER.TITLE'),
+  },
+]);
 
 const handleBreadcrumbClick = item =>
   router.push({

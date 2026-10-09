@@ -23,6 +23,7 @@ const testState = vi.hoisted(() => ({
   pipelineList: [],
   routeLeaveGuard: null,
   routeUpdateGuard: null,
+  selectedMenuOption: null,
   router: {
     push: vi.fn(() => Promise.resolve()),
     replace: vi.fn(() => Promise.resolve()),
@@ -206,11 +207,13 @@ const SelectMenuStub = {
     subMenuPosition: { type: String, default: 'right' },
   },
   emits: ['action', 'update:modelValue'],
+  setup: () => ({ testState }),
   template: `
     <button
       type="button"
       :data-position="subMenuPosition"
-      @click="$emit('update:modelValue', options[1]?.value)"
+      :data-options="options.map(option => option.value).join(',')"
+      @click="$emit('update:modelValue', testState.selectedMenuOption || options[1]?.value)"
     >
       {{ label }}
       <span
@@ -263,6 +266,7 @@ describe('CRM pipeline settings', () => {
     testState.loadPipelines.mockClear();
     testState.reorderStages.mockClear();
     testState.savePipeline.mockClear();
+    testState.selectedMenuOption = null;
     testState.saveStage.mockReset();
     testState.saveStage.mockResolvedValue({
       color: '#16A34A',
@@ -570,16 +574,40 @@ describe('CRM pipeline settings', () => {
   });
 
   it('keeps the default stage selector inside auto-create settings', async () => {
+    const inactiveStage = {
+      active: false,
+      code: 'inactive_open',
+      id: 14,
+      name: 'Inactive open',
+      outcome: 'open',
+      pipelineId: 1,
+      position: 3,
+    };
+    const closedStage = {
+      active: true,
+      code: 'won',
+      id: 15,
+      name: 'Won',
+      outcome: 'won',
+      pipelineId: 1,
+      position: 4,
+    };
+    testState.pipelineList = [
+      { ...pipeline, stages: [...pipeline.stages, inactiveStage, closedStage] },
+    ];
     const wrapper = mountComponent();
     await flushPromises();
 
     const selector = wrapper.get('[data-testid="auto-create-stage-select"]');
     expect(selector.text()).toBe('Qualified');
     expect(selector.attributes('data-position')).toBe('bottom');
+    expect(selector.attributes('data-options').split(',')).toContain('10');
+    expect(selector.attributes('data-options').split(',')).not.toContain('14');
+    expect(selector.attributes('data-options').split(',')).not.toContain('15');
     expect(selector.element.parentElement.classList).not.toContain(
       'rounded-xl'
     );
-
+    testState.selectedMenuOption = '13';
     await selector.trigger('click');
     await flushPromises();
     expect(testState.savePipeline).toHaveBeenCalledWith(
@@ -589,6 +617,93 @@ describe('CRM pipeline settings', () => {
         id: 1,
       })
     );
+  });
+
+  it('saves the Unsorted stage database id for automatic deal creation', async () => {
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    const selector = wrapper.get('[data-testid="auto-create-stage-select"]');
+    expect(selector.attributes('data-options').split(',')).toContain('10');
+    testState.selectedMenuOption = '10';
+    await selector.trigger('click');
+    await flushPromises();
+
+    expect(testState.savePipeline).toHaveBeenCalledWith(
+      expect.objectContaining({
+        auto_create_deal_on_channel_contact: true,
+        auto_create_stage_id: '10',
+        id: 1,
+      })
+    );
+  });
+
+  it('does not persist a closed, inactive, or other-pipeline stage selection', async () => {
+    testState.pipelineList = [
+      {
+        ...pipeline,
+        stages: [
+          ...pipeline.stages,
+          {
+            active: false,
+            code: 'inactive_open',
+            id: 14,
+            name: 'Inactive open',
+            outcome: 'open',
+            pipelineId: 1,
+          },
+          {
+            active: true,
+            code: 'won',
+            id: 15,
+            name: 'Won',
+            outcome: 'won',
+            pipelineId: 1,
+          },
+        ],
+      },
+      {
+        active: true,
+        id: 2,
+        name: 'Other pipeline',
+        stages: [
+          {
+            active: true,
+            code: 'other',
+            id: 22,
+            name: 'Other stage',
+            outcome: 'open',
+            pipelineId: 2,
+          },
+        ],
+      },
+    ];
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    const selector = wrapper.get('[data-testid="auto-create-stage-select"]');
+    for (const stageId of ['14', '15', '22']) {
+      testState.selectedMenuOption = stageId;
+      // eslint-disable-next-line no-await-in-loop
+      await selector.trigger('click');
+    }
+    await flushPromises();
+
+    expect(testState.savePipeline).not.toHaveBeenCalled();
+  });
+
+  it('does not offer stages from an inactive pipeline for automatic deals', async () => {
+    testState.pipelineList = [{ ...pipeline, active: false }];
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    const selector = wrapper.get('[data-testid="auto-create-stage-select"]');
+    expect(selector.attributes('data-options')).toBe('');
+    testState.selectedMenuOption = '11';
+    await selector.trigger('click');
+    await flushPromises();
+
+    expect(testState.savePipeline).not.toHaveBeenCalled();
   });
 
   it('renders settings directly on stage cards without legacy fields', async () => {

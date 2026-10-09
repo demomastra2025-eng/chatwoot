@@ -81,7 +81,10 @@ const formData = computed(() => ({
 }));
 
 const handleBreadcrumbClick = ({ routeName }) => {
-  router.push({ name: routeName, params: { accountId: route.params.accountId } });
+  router.push({
+    name: routeName,
+    params: { accountId: route.params.accountId },
+  });
 };
 
 const handleSubmit = async formState => {

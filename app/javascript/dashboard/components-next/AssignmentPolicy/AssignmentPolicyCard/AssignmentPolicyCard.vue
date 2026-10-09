@@ -113,7 +113,6 @@ const handleEdit = () => {
 const handleDelete = () => {
   emit('delete', props.id);
 };
-
 </script>
 
 <template>

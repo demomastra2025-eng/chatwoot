@@ -129,6 +129,49 @@ describe('ActionCableConnector', () => {
       });
     });
 
+    it('keeps generic full conversation updates on the normal stats refresh schedule', () => {
+      store.$store.state.conversations.conversationFilters = {
+        status: 'open',
+        inboxId: 12,
+      };
+
+      actionCable.onConversationUpdated({
+        id: 42,
+        status: 'open',
+        account_id: 1,
+        assignee_id: 7,
+        updated_at: 1712345678,
+      });
+
+      expect(mockDispatch).toHaveBeenCalledWith(
+        'conversationStats/get',
+        { status: 'open', inboxId: 12 },
+        { root: true }
+      );
+    });
+
+    it('prioritizes an explicit conversation status event', () => {
+      store.$store.state.conversations.conversationFilters = {
+        status: 'open',
+        inboxId: 12,
+      };
+
+      actionCable.onReceived({
+        event: 'conversation.status_changed',
+        data: { id: 42, status: 'resolved', account_id: 1 },
+      });
+
+      expect(mockDispatch).toHaveBeenCalledWith(
+        'conversationStats/get',
+        {
+          status: 'open',
+          inboxId: 12,
+          refreshPriority: 'realtime',
+        },
+        { root: true }
+      );
+    });
+
     it('accepts shared read fields when any authorized user reads the conversation', () => {
       actionCable.onConversationRead({
         id: 42,

@@ -30,7 +30,8 @@ const hasUnavailableSavedPolicy = computed(
     savedPolicyId.value !== null &&
     savedPolicyId.value !== undefined &&
     !availablePolicies.value.some(
-      policy => String(policy.id) === String(savedPolicyId.value) && policy.enabled
+        policy =>
+          String(policy.id) === String(savedPolicyId.value) && policy.enabled
     )
 );
 const isDirty = computed(
@@ -44,9 +45,7 @@ const statusMessage = computed(() => {
   }
 
   if (hasUnavailableSavedPolicy.value) {
-    return t(
-      'GENERAL_SETTINGS.CONVERSATIONS.ASSIGNMENT_POLICY_UNAVAILABLE'
-    );
+    return t('GENERAL_SETTINGS.CONVERSATIONS.ASSIGNMENT_POLICY_UNAVAILABLE');
   }
 
   return savedPolicyId.value
@@ -100,7 +99,9 @@ const savePolicy = async () => {
   if (!isWorkspaceAdmin.value || !isDirty.value || isSaving.value) return;
 
   const requestAccountId = accountId.value;
-  const policyId = selectedPolicyId.value ? Number(selectedPolicyId.value) : null;
+  const policyId = selectedPolicyId.value
+    ? Number(selectedPolicyId.value)
+    : null;
   isSaving.value = true;
   try {
     await updateAccount(
@@ -140,11 +141,7 @@ const savePolicy = async () => {
           :disabled="!isWorkspaceAdmin || isFetching || isSaving"
         >
           <option value="">
-            {{
-              t(
-                'GENERAL_SETTINGS.CONVERSATIONS.ASSIGNMENT_POLICY_PLACEHOLDER'
-              )
-            }}
+            {{ t('GENERAL_SETTINGS.CONVERSATIONS.ASSIGNMENT_POLICY_PLACEHOLDER') }}
           </option>
           <option
             v-if="hasUnavailableSavedPolicy || (fetchFailed && savedPolicyId)"
@@ -170,17 +167,11 @@ const savePolicy = async () => {
         {{ statusMessage }}
       </p>
       <p class="m-0 text-sm text-n-slate-11">
-        {{
-          t(
-            'GENERAL_SETTINGS.CONVERSATIONS.ASSIGNMENT_POLICY_PHONE_LINE_NOTE'
-          )
-        }}
+        {{ t('GENERAL_SETTINGS.CONVERSATIONS.ASSIGNMENT_POLICY_PHONE_LINE_NOTE') }}
       </p>
       <div v-if="fetchFailed" class="flex items-center gap-3">
         <p class="m-0 text-sm text-n-ruby-11" role="alert">
-          {{
-            t('GENERAL_SETTINGS.CONVERSATIONS.ASSIGNMENT_POLICY_LOAD_ERROR')
-          }}
+          {{ t('GENERAL_SETTINGS.CONVERSATIONS.ASSIGNMENT_POLICY_LOAD_ERROR') }}
         </p>
         <Button
           sm

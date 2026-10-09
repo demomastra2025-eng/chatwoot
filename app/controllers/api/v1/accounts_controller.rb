@@ -132,7 +132,7 @@ class Api::V1::AccountsController < Api::BaseController
     policy_id = permitted_settings[:conversation_assignment_policy_id]
     return if policy_id.blank?
 
-    @account.assignment_policies.enabled.find(policy_id)
+    @account.assignment_policies.where(enabled: true).find(policy_id)
   end
 
   def permitted_settings_attributes

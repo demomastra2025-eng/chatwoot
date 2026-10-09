@@ -52,7 +52,9 @@ describe('Captain preferences store', () => {
   it('uses a short account-scoped cache and supports explicit revalidation', async () => {
     let now = 1000;
     vi.spyOn(Date, 'now').mockImplementation(() => now);
-    getMock.mockResolvedValue({ data: { features: { editor: { enabled: true } } } });
+    getMock.mockResolvedValue({
+      data: { features: { editor: { enabled: true } } },
+    });
     const store = useCaptainConfigStore();
 
     await store.fetch();
@@ -69,8 +71,12 @@ describe('Captain preferences store', () => {
 
   it('upgrades a client-metadata request to a full request for the same account', async () => {
     getMock
-      .mockResolvedValueOnce({ data: { features: { editor: { enabled: false } } } })
-      .mockResolvedValueOnce({ data: { features: { editor: { enabled: true } } } });
+      .mockResolvedValueOnce({
+        data: { features: { editor: { enabled: false } } },
+      })
+      .mockResolvedValueOnce({
+        data: { features: { editor: { enabled: true } } },
+      });
     const store = useCaptainConfigStore();
 
     await store.fetch({ clientMetadataOnly: true });

@@ -188,9 +188,17 @@ export const useCaptainConfigStore = defineStore('captainConfig', {
           return null;
         } finally {
           const currentFlights = fetchFlightsByStore.get(this)?.get(accountId);
-          if (currentFlights?.full === request) delete currentFlights.full;
-          if (currentFlights?.metadata === request) delete currentFlights.metadata;
-          if (currentFlights && !currentFlights.full && !currentFlights.metadata) {
+          if (currentFlights?.full === request) {
+            delete currentFlights.full;
+          }
+          if (currentFlights?.metadata === request) {
+            delete currentFlights.metadata;
+          }
+          if (
+            currentFlights &&
+            !currentFlights.full &&
+            !currentFlights.metadata
+          ) {
             fetchFlightsByStore.get(this).delete(accountId);
           }
           updateFetchingFlag(this);

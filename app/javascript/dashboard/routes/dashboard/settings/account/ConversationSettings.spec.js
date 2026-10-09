@@ -97,8 +97,14 @@ describe('ConversationSettings', () => {
     expect(
       wrapper.get('[data-test="workspace-assignment-policy"]')
     ).toBeTruthy();
-    expect(wrapper.get('[data-test="captain-ai-editor-settings"]')).toBeTruthy();
-    expect(wrapper.find('[data-test="conversation-settings-text-improvement"]').exists()).toBe(false);
+    expect(
+      wrapper.get('[data-test="captain-ai-editor-settings"]')
+    ).toBeTruthy();
+    expect(
+      wrapper
+        .find('[data-test="conversation-settings-text-improvement"]')
+        .exists()
+    ).toBe(false);
   });
 
   it('fetches the account only when it is not already in the store', () => {

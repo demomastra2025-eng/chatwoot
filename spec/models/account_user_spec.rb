@@ -34,7 +34,7 @@ RSpec.describe AccountUser do
     end
 
     it 'keeps Voice inbox membership explicit when the line or employee is created' do
-      voice_channel = create(:channel_voice, account: account_user.account)
+      voice_channel = create(:channel_voice, :sipuni, account: account_user.account)
       voice_inbox = account_user.account.inboxes.find_by!(channel: voice_channel)
       new_user = create(:user)
 

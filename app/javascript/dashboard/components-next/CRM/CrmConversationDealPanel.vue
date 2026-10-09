@@ -20,7 +20,7 @@ import SchedulingFormFieldGroup from 'dashboard/components-next/Scheduling/Sched
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
 import SchedulingSidePanel from 'dashboard/components-next/Scheduling/SchedulingSidePanel.vue';
 import {
-  defaultStageForNewDeal,
+  defaultStageForManualDeal,
   dealStageDisplayName,
 } from 'dashboard/components-next/CRM/dealStageSelection';
 
@@ -310,7 +310,7 @@ const upsertCompanyOption = company => {
   return option;
 };
 
-const defaultStageForPipeline = defaultStageForNewDeal;
+const defaultStageForPipeline = defaultStageForManualDeal;
 
 const resetForm = () => {
   const resolvedDefaultPipeline = defaultPipeline.value;

@@ -1,10 +1,10 @@
 import {
-  defaultStageForNewDeal,
+  defaultStageForManualDeal,
   dealStageDisplayName,
 } from './dealStageSelection';
 
 describe('CRM deal stage selection', () => {
-  it('uses the active Unsorted stage record and keeps its actual database id', () => {
+  it('keeps the configured default ahead of Unsorted for manual deal creation', () => {
     const unsorted = {
       id: 104,
       code: 'new',
@@ -20,33 +20,28 @@ describe('CRM deal stage selection', () => {
       outcome: 'open',
     };
 
-    expect(defaultStageForNewDeal({ stages: [assigned, unsorted] })).toBe(
-      unsorted
-    );
-    expect(defaultStageForNewDeal({ stages: [assigned, unsorted] }).id).toBe(
-      104
+    expect(defaultStageForManualDeal({ stages: [unsorted, assigned] })).toBe(
+      assigned
     );
     expect(dealStageDisplayName(unsorted, key => key)).toBe(
       'CRM.SETTINGS.STAGES.SYSTEM.UNSORTED'
     );
   });
 
-  it('falls back to an active default when Unsorted is inactive or absent', () => {
-    const assigned = {
+  it('falls back to the first active open stage when no default is configured', () => {
+    const qualified = {
       id: 205,
       code: 'qualify',
       active: true,
-      default: true,
       outcome: 'open',
     };
 
     expect(
-      defaultStageForNewDeal({
+      defaultStageForManualDeal({
         stages: [
-          { id: 104, code: 'new', active: false },
-          assigned,
+          { id: 104, code: 'new', active: false }, qualified,
         ],
       })
-    ).toBe(assigned);
+    ).toBe(qualified);
   });
 });

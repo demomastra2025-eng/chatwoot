@@ -18,7 +18,7 @@ import CrmConflictNotice from 'dashboard/components-next/CRM/CrmConflictNotice.v
 import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomFieldsSection.vue';
 import CrmDealTasksPanel from 'dashboard/components-next/CRM/CrmDealTasksPanel.vue';
 import {
-  defaultStageForNewDeal,
+  defaultStageForManualDeal,
   dealStageDisplayName,
 } from 'dashboard/components-next/CRM/dealStageSelection';
 import { DEFAULT_STAGE_COLOR } from 'dashboard/stores/crm/stageColors';
@@ -230,7 +230,7 @@ const headerButtons = computed(() =>
       ]
 );
 
-const defaultStageForPipeline = defaultStageForNewDeal;
+const defaultStageForPipeline = defaultStageForManualDeal;
 const stageDisplayName = stage => dealStageDisplayName(stage, t);
 
 const stageOptionsForForm = form =>

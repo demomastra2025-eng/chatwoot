@@ -56,7 +56,7 @@ import TagMultiSelectComboBox from 'dashboard/components-next/combobox/TagMultiS
 import CreateCompanyDialog from 'dashboard/components-next/Companies/CompanyForm/CreateCompanyDialog.vue';
 import CreateNewContactDialog from 'dashboard/components-next/Contacts/ContactsForm/CreateNewContactDialog.vue';
 import {
-  defaultStageForNewDeal,
+  defaultStageForManualDeal,
   dealStageDisplayName,
 } from 'dashboard/components-next/CRM/dealStageSelection';
 import {
@@ -1298,7 +1298,7 @@ const upsertCompanyOption = company => {
   return option;
 };
 
-const defaultStageForPipeline = defaultStageForNewDeal;
+const defaultStageForPipeline = defaultStageForManualDeal;
 
 const resetForm = () => {
   const defaultPipelineId = resolvePipelineFilterId(filters.pipelineId);
