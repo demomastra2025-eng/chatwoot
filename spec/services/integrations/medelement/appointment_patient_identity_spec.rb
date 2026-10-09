@@ -13,8 +13,10 @@ RSpec.describe Integrations::Medelement::AppointmentPatientIdentity do
                                  custom_attributes: { 'medelement_specialist_code' => 'specialist-1',
                                                       'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }] })
   end
+  let(:starts_at) { 2.days.from_now.change(hour: 10, min: 0, sec: 0) }
   let(:appointment) do
     create(:scheduling_appointment, account: account, contact: contact, resource: resource, service: nil,
+                                    starts_at: starts_at, ends_at: starts_at + 30.minutes,
                                     client_first_name: 'Relative', client_last_name: 'Patient', client_middle_name: nil,
                                     client_name: 'Relative Patient', client_phone: contact.phone_number,
                                     client_identifier: '940720300129',
@@ -44,6 +46,7 @@ RSpec.describe Integrations::Medelement::AppointmentPatientIdentity do
   context 'when creating a new appointment with authored names and no identifier key' do
     let(:appointment) do
       build(:scheduling_appointment, account: account, contact: contact, resource: resource, service: nil,
+                                     starts_at: starts_at, ends_at: starts_at + 30.minutes,
                                      client_first_name: nil, client_last_name: nil, client_middle_name: nil,
                                      client_identifier: nil, client_birth_date: nil, client_gender: nil,
                                      custom_attributes: { 'medelement_cabinet_code' => 'cabinet-1' })
@@ -52,6 +55,7 @@ RSpec.describe Integrations::Medelement::AppointmentPatientIdentity do
     def create_patient(params)
       service = Scheduling::Appointments::UpsertService.new(account: account, appointment: appointment, params: params)
       allow(service).to receive(:validate_availability!)
+      allow(service).to receive(:validate_provider_availability!)
       service.perform
     end
 
