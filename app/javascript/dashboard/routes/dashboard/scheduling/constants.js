@@ -99,6 +99,7 @@ export const MINUTE_STEP = 5;
 export const HOUR_ROW_HEIGHT = 100;
 export const MINUTE_HEIGHT = HOUR_ROW_HEIGHT / 60;
 export const MIN_APPOINTMENT_MINUTES = 5;
+export const MAX_DURATION_MINUTES = 24 * 60;
 export const SIDEBAR_DATE_FORMAT = 'EEE, d MMM';
 
 export const RESOURCE_COLORS = [

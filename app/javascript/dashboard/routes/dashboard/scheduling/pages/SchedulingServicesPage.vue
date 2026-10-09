@@ -25,6 +25,7 @@ import {
   buildServicePricePayload,
   resolveDraftServicePrice,
 } from '../servicePricing';
+import { MAX_DURATION_MINUTES } from '../constants';
 import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/references';
 
 const { t } = useI18n();
@@ -405,6 +406,7 @@ onMounted(async () => {
             <SchedulingDurationInput
               v-model="serviceForm.durationMin"
               min="5"
+              :max="MAX_DURATION_MINUTES"
               :label="$t('SCHEDULING.SERVICES.DURATION')"
             />
             <Input

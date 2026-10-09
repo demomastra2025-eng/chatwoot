@@ -82,6 +82,8 @@ class Reminder < ApplicationRecord
   include AccountStorageLimitable
 
   OPEN_STATUSES = %w[draft pending processing].freeze
+  DUPLICATE_OPEN_TOUCH_ERROR = :duplicate_open_touch
+  DUPLICATE_OPEN_TOUCH_MESSAGE = 'An open touch with the same content already exists'.freeze
   PROCESSING_CLAIM_KEY = 'processing_claim_token'.freeze
   DELIVERY_MATERIALIZED_MESSAGE_ID_KEY = 'delivery_materialized_message_id'.freeze
   DELIVERY_DISPATCHED_MESSAGE_ID_KEY = 'delivery_dispatched_message_id'.freeze
@@ -1359,7 +1361,7 @@ class Reminder < ApplicationRecord
     with_open_duplicate_lock do
       next unless open_duplicate_scope.exists?
 
-      errors.add(:base, 'An open touch with the same content already exists')
+      errors.add(:base, DUPLICATE_OPEN_TOUCH_ERROR, message: DUPLICATE_OPEN_TOUCH_MESSAGE)
     end
   end
 

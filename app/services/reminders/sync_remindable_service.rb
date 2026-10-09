@@ -21,6 +21,7 @@ class Reminders::SyncRemindableService
       touch.transaction(requires_new: true) { sync_locked_touch!(touch) }
     end
   rescue StandardError => e
+    Reminders::OperationDiagnostics.report(operation: 'sync_route', error: e, record: remindable, touch: touch)
     raise if raise_errors
 
     ChatwootExceptionTracker.new(e, account: remindable.account).capture_exception

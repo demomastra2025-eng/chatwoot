@@ -1,6 +1,7 @@
 class Integrations::Medelement::ConflictTracker
   def initialize(sync_run:)
     @sync_run = sync_run
+    @resolution_exclusions = Hash.new { |exclusions, key| exclusions[key] = [] }
   end
 
   def record!(phase:, entity_type:, conflict_type:, entity_key:, **options)
@@ -25,12 +26,28 @@ class Integrations::Medelement::ConflictTracker
       entity_key_digests = entity_keys.map { |entity_key| Integrations::Medelement::ErrorSanitizer.digest(entity_key) }
       scope = scope.where(entity_key_digest: entity_key_digests)
     end
+    resolution_exclusions.each do |(excluded_phase, entity_type, conflict_type), entity_key_digests|
+      next unless excluded_phase == phase.to_s && entity_key_digests.any?
+
+      scope = scope.where.not(
+        entity_type: entity_type,
+        conflict_type: conflict_type,
+        entity_key_digest: entity_key_digests.uniq
+      )
+    end
     scope.find_each(&:resolve_automatically!)
+  end
+
+  # Keep a prior conflict open when this snapshot included its entity but the row was not reconciled.
+  # Store only a digest; provider identifiers remain transient and are never added to sync-run state.
+  def preserve_open_conflict!(phase:, entity_type:, conflict_type:, entity_key:)
+    key = [phase.to_s, entity_type.to_s, conflict_type.to_s]
+    resolution_exclusions[key] << Integrations::Medelement::ErrorSanitizer.digest(entity_key)
   end
 
   private
 
-  attr_reader :sync_run
+  attr_reader :resolution_exclusions, :sync_run
 
   def conflict_fingerprint(phase, entity_type, conflict_type, entity_key_digest)
     Integrations::Medelement::ErrorSanitizer.digest(

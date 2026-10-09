@@ -10,6 +10,13 @@ class AutomationRules::TouchActionService
     response_action response_button_index
     target_contact_id target_contact_inbox_id target_conversation_id target_inbox_id template_params text_mode timing_mode timezone
   ].freeze
+  DUPLICATE_COMPATIBILITY_ATTRIBUTES = %i[
+    action_type attachments auto_cancel_on_incoming body content_kind conversation_id creator_id instructions
+    manual_schedule_override owner_id reminder_group_id repeat_mode repeat_until_at relative_anchor
+    relative_offset_seconds relative_time_mode relative_time_of_day response_action response_button_index
+    scheduled_at target_contact_id target_contact_inbox_id target_conversation_id target_inbox_id template_params
+    text_mode timing_mode timezone post_delivery_action
+  ].freeze
 
   attr_reader :account, :entity_kind, :record, :rule, :trigger_message
 
@@ -39,6 +46,9 @@ class AutomationRules::TouchActionService
     end
 
     reminders
+  rescue StandardError => e
+    Reminders::OperationDiagnostics.report(operation: 'apply_plan', error: e, record: record)
+    raise
   end
 
   def create_touch(action_params = nil, action_id: nil, action_key: nil, **keyword_params)
@@ -53,6 +63,12 @@ class AutomationRules::TouchActionService
     Reminders::StaleAutomationTouchService.new(reminder: reminder, trigger_message: trigger_message).perform
     Reminders::CampaignConflictPolicy.new(reminder: reminder).cancel_if_conflict!
     reminder
+  rescue StandardError => e
+    unless e.is_a?(ActiveRecord::RecordInvalid) && duplicate_open_touch_error?(e.record)
+      touch = e.record if e.is_a?(ActiveRecord::RecordInvalid) && e.record.is_a?(Reminder)
+      Reminders::OperationDiagnostics.report(operation: 'create', error: e, record: record, touch: touch)
+    end
+    raise
   end
 
   def cancel_touches(action_params)
@@ -85,12 +101,56 @@ class AutomationRules::TouchActionService
   rescue ActiveRecord::RecordInvalid => e
     raise unless duplicate_open_touch_error?(e.record)
 
-    account.reminders.where(status: Reminder::OPEN_STATUSES, fingerprint: e.record.fingerprint).first || raise
+    duplicate_touch = duplicate_open_touch_candidate(e.record)
+    existing_touch = compatible_duplicate_touch(duplicate_touch, e.record, action_key, action_signature)
+    log_duplicate_open_touch(e, e.record, existing_touch, duplicate_touch)
+    existing_touch || raise
   end
 
   def duplicate_open_touch_error?(reminder)
-    reminder.is_a?(Reminder) &&
-      reminder.errors.to_hash == { base: ['An open touch with the same content already exists'] }
+    reminder.is_a?(Reminder) && reminder.errors.details == { base: [{ error: Reminder::DUPLICATE_OPEN_TOUCH_ERROR }] }
+  end
+
+  def duplicate_open_touch_candidate(attempted_touch)
+    account.reminders.where(
+      status: Reminder::OPEN_STATUSES,
+      fingerprint: attempted_touch.fingerprint,
+      remindable: record
+    ).first
+  end
+
+  def compatible_duplicate_touch(existing_touch, attempted_touch, action_key, action_signature)
+    return unless existing_touch.present? && compatible_duplicate_provenance?(existing_touch, action_key, action_signature)
+    return unless DUPLICATE_COMPATIBILITY_ATTRIBUTES.all? do |attribute|
+      existing_touch.public_send(attribute) == attempted_touch.public_send(attribute)
+    end
+
+    existing_touch
+  end
+
+  def compatible_duplicate_provenance?(existing_touch, action_key, action_signature)
+    metadata = existing_touch.metadata.to_h
+    expected = {
+      Reminder::POST_DELIVERY_AUDIT_SOURCE_KEY => 'automation',
+      Reminder::POST_DELIVERY_AUTOMATION_RULE_ID_KEY => rule.id,
+      Reminder::AUTOMATION_ACTION_KEY => action_key.to_s,
+      Reminder::AUTOMATION_ACTION_SIGNATURE_KEY => action_signature.presence&.to_s,
+      Reminder::AUTOMATION_TRIGGER_MESSAGE_ID_KEY => trigger_message&.id
+    }
+
+    expected.all? { |key, value| metadata[key] == value }
+  end
+
+  def log_duplicate_open_touch(error, attempted_touch, existing_touch, duplicate_touch)
+    status = existing_touch.present? ? 'duplicate_reused' : 'duplicate_policy_or_provenance_conflict'
+    Reminders::OperationDiagnostics.report(
+      operation: 'create',
+      error: error,
+      record: record,
+      touch: attempted_touch,
+      persisted_touch: duplicate_touch,
+      status: status
+    )
   end
 
   def create_automation_touch(params, action_key, action_signature)

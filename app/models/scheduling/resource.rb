@@ -47,7 +47,10 @@ class Scheduling::Resource < ApplicationRecord
   has_many :workday_overrides, class_name: 'Scheduling::WorkdayOverride', dependent: :destroy_async, inverse_of: :resource
 
   validates :name, :timezone, presence: true
-  validates :slot_duration_min, inclusion: { in: 5..720 }
+  validates :slot_duration_min,
+            inclusion: {
+              in: Scheduling::Constants::MIN_DURATION_MINUTES..Scheduling::Constants::MAX_DURATION_MINUTES
+            }
   validates :compensation_type, inclusion: { in: Scheduling::Constants::COMPENSATION_TYPES }
   validates :compensation_value, numericality: { greater_than_or_equal_to: 0, only_integer: true }
   validates :compensation_percent, numericality: { greater_than_or_equal_to: 0, only_integer: true }

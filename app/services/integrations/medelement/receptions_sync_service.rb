@@ -518,6 +518,7 @@ class Integrations::Medelement::ReceptionsSyncService
 
   def sync_snapshot_reception(reception, resource, contacts_by_patient_code, result)
     if reception[DETAIL_STATE_KEY] != 'fetched'
+      preserve_unprocessed_reception_conflict!(reception)
       counter = detail_state_counter(reception[DETAIL_STATE_KEY])
       result[counter] += 1
       return
@@ -530,6 +531,7 @@ class Integrations::Medelement::ReceptionsSyncService
     result[:imported_count] += 1
   rescue Integrations::Medelement::AppointmentSnapshotGuard::StaleSnapshotError => e
     result[:skipped_count] += 1
+    preserve_unprocessed_reception_conflict!(reception)
     log_stale_snapshot(reception, resource, e)
   rescue InvalidReceptionError, Integrations::Medelement::ReceptionServiceRows::InvalidSnapshotError,
          ActiveRecord::RecordInvalid, Scheduling::Error => e
@@ -587,7 +589,7 @@ class Integrations::Medelement::ReceptionsSyncService
   end
 
   def log_stale_snapshot(reception, resource, error)
-    entity_key = reception['RECEPTION_CODE'].to_s
+    entity_key = reception_entity_key(reception)
     conflict_tracker&.record!(
       phase: 'receptions',
       entity_type: 'reception',
@@ -603,7 +605,7 @@ class Integrations::Medelement::ReceptionsSyncService
   end
 
   def log_skipped_reception(reception, resource, error)
-    entity_key = reception['RECEPTION_CODE'].presence || [reception['specialistCode'], reception['STARTTIME']].join(':')
+    entity_key = reception_entity_key(reception)
     conflict_tracker&.record!(
       phase: 'receptions',
       entity_type: 'reception',
@@ -617,6 +619,21 @@ class Integrations::Medelement::ReceptionsSyncService
       "resource_id=#{resource.id} entity_digest=#{Integrations::Medelement::ErrorSanitizer.digest(entity_key)} " \
       "reason=#{error.class}"
     )
+  end
+
+  def preserve_unprocessed_reception_conflict!(reception)
+    return unless conflict_tracker
+
+    conflict_tracker.preserve_open_conflict!(
+      phase: 'receptions',
+      entity_type: 'reception',
+      conflict_type: 'invalid_reception',
+      entity_key: reception_entity_key(reception)
+    )
+  end
+
+  def reception_entity_key(reception)
+    reception['RECEPTION_CODE'].presence || [reception['specialistCode'], reception['STARTTIME']].join(':')
   end
 
   def reception_time_epoch(value)

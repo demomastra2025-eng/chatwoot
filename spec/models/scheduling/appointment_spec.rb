@@ -1,6 +1,33 @@
 require 'rails_helper'
 
 RSpec.describe Scheduling::Appointment do
+  describe 'duration limits' do
+    let(:starts_at) { Time.zone.parse('2026-03-21 09:00:00') }
+
+    it 'accepts a 24 hour duration and rejects a duration above 24 hours' do
+      appointment = build(
+        :scheduling_appointment,
+        starts_at: starts_at,
+        ends_at: starts_at + 24.hours,
+        duration_min: Scheduling::Constants::MAX_DURATION_MINUTES
+      )
+
+      expect(appointment).to be_valid
+
+      appointment.duration_min = Scheduling::Constants::MAX_DURATION_MINUTES + 1
+
+      expect(appointment).not_to be_valid
+      expect(appointment.errors.attribute_names).to include(:duration_min)
+    end
+
+    it 'continues rejecting a non-positive appointment interval' do
+      appointment = build(:scheduling_appointment, starts_at: starts_at, ends_at: starts_at)
+
+      expect(appointment).not_to be_valid
+      expect(appointment.errors.attribute_names).to include(:ends_at)
+    end
+  end
+
   describe 'contact owner sync' do
     let(:account) { create(:account) }
     let(:owner) { create(:user, account: account, role: :agent) }

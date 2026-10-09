@@ -39,6 +39,19 @@ RSpec.describe Integrations::Medelement::AppointmentImporterService do
     expect(owner.reload).to have_attributes(name: 'Primary', phone_number: '+77000000001')
   end
 
+  it 'imports a valid 870 minute reception' do
+    starts_at = Time.zone.parse('2026-03-21 09:00:00')
+
+    appointment = service.upsert!(
+      resource: resource,
+      contact: nil,
+      reception: reception,
+      import_context: import_context.merge(starts_at: starts_at, ends_at: starts_at + 870.minutes)
+    )
+
+    expect(appointment).to have_attributes(duration_min: 870, starts_at: starts_at, ends_at: starts_at + 870.minutes)
+  end
+
   describe 'provider-side patient change of a bound MedElement reception' do
     let(:policy) { Integrations::Medelement::AppointmentPatientIdentity }
     let(:run) { Integrations::Medelement::SyncRun.create!(account: account, trigger: 'manual', status: 'running') }

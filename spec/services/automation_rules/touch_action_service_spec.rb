@@ -113,6 +113,110 @@ RSpec.describe AutomationRules::TouchActionService do
       end
     end
 
+    it 'reuses a duplicate only when automation provenance and non-fingerprint policies match' do
+      params = { body: 'Same automation follow-up', delay_minutes: 10 }
+      existing_touch = service.create_touch(params, action_key: 'same-action')
+      duplicate_touch = existing_touch.dup
+      duplicate_touch.errors.add(
+        :base,
+        Reminder::DUPLICATE_OPEN_TOUCH_ERROR,
+        message: Reminder::DUPLICATE_OPEN_TOUCH_MESSAGE
+      )
+      validation_error = ActiveRecord::RecordInvalid.new(duplicate_touch)
+      allow(service).to receive(:existing_event_touch).and_return(nil)
+      allow(service).to receive(:create_automation_touch).and_raise(validation_error)
+
+      expect(service.create_touch(params, action_key: 'same-action')).to eq(existing_touch)
+    end
+
+    context 'when duplicate diagnostics fail' do
+      let(:duplicate_params) { { body: 'Same automation follow-up', delay_minutes: 10 } }
+      let!(:existing_touch) { service.create_touch(duplicate_params, action_key: 'same-action') }
+      let(:validation_error) do
+        duplicate_touch = existing_touch.dup
+        duplicate_touch.errors.add(
+          :base,
+          Reminder::DUPLICATE_OPEN_TOUCH_ERROR,
+          message: Reminder::DUPLICATE_OPEN_TOUCH_MESSAGE
+        )
+        ActiveRecord::RecordInvalid.new(duplicate_touch)
+      end
+
+      before do
+        allow(service).to receive(:existing_event_touch).and_return(nil)
+        allow(service).to receive(:create_automation_touch).and_raise(validation_error)
+      end
+
+      it 'returns the compatible existing touch when warning logging raises' do
+        allow(Rails.logger).to receive(:warn).and_raise(IOError, 'diagnostic logger unavailable')
+
+        expect(service.create_touch(duplicate_params, action_key: 'same-action')).to eq(existing_touch)
+      end
+
+      it 'returns the compatible existing touch when HMAC label generation raises' do
+        allow(OpenSSL::HMAC).to receive(:hexdigest).and_raise(RuntimeError, 'HMAC unavailable')
+
+        expect(service.create_touch(duplicate_params, action_key: 'same-action')).to eq(existing_touch)
+      end
+
+      it 'preserves a policy-conflict validation error when touch-label HMAC generation raises' do
+        relative_params = {
+          body: 'Relative follow-up',
+          timing_mode: 'relative',
+          relative_anchor: 'touch.created_at',
+          relative_offset_seconds: 3_600,
+          auto_cancel_on_incoming: false
+        }
+
+        travel_to(Time.zone.local(2026, 10, 9, 12, 30, 15)) do
+          existing_relative_touch = service.create_touch(relative_params, action_key: 'first-action')
+          allow(OpenSSL::HMAC).to receive(:hexdigest).and_raise(RuntimeError, 'HMAC unavailable')
+
+          expect do
+            service.create_touch(relative_params.merge(auto_cancel_on_incoming: true), action_key: 'second-action')
+          end.to raise_error(ActiveRecord::RecordInvalid) do |error|
+            expect(error.record.errors.details[:base]).to include(error: Reminder::DUPLICATE_OPEN_TOUCH_ERROR)
+            expect(error.record.errors[:base]).to include(Reminder::DUPLICATE_OPEN_TOUCH_MESSAGE)
+          end
+          expect(existing_relative_touch.reload.auto_cancel_on_incoming).to be(false)
+        end
+      end
+    end
+
+    it 'does not merge same-second relative touches with different policies' do
+      params = {
+        body: 'Relative follow-up',
+        timing_mode: 'relative',
+        relative_anchor: 'touch.created_at',
+        relative_offset_seconds: 3_600,
+        auto_cancel_on_incoming: false
+      }
+
+      travel_to(Time.zone.local(2026, 10, 9, 12, 30, 15)) do
+        existing_touch = service.create_touch(params, action_key: 'first-action')
+        duplicate_error = nil
+
+        expect do
+          service.create_touch(params.merge(auto_cancel_on_incoming: true), action_key: 'second-action')
+        end.to raise_error(ActiveRecord::RecordInvalid) { |error| duplicate_error = error }
+
+        expect(existing_touch).to be_pending
+        expect(existing_touch.auto_cancel_on_incoming).to be(false)
+        expect(duplicate_error.record.scheduled_at).to eq(existing_touch.scheduled_at)
+        expect(duplicate_error.record.fingerprint).to eq(existing_touch.fingerprint)
+        expect(duplicate_error.record.metadata).to include(
+          'touch_source' => 'automation',
+          'automation_rule_id' => rule.id,
+          'auto_cancel_on_incoming_explicit' => true
+        )
+        expect(duplicate_error.record.errors[:base]).to include(Reminder::DUPLICATE_OPEN_TOUCH_MESSAGE)
+        expect(duplicate_error.record.errors.details[:base]).to include(
+          error: Reminder::DUPLICATE_OPEN_TOUCH_ERROR
+        )
+        expect(account.reminders.where(remindable: conversation).count).to eq(1)
+      end
+    end
+
     it 'adopts an open touch created before action signatures were stored' do
       params = { body: 'Legacy follow-up', delay_minutes: 10 }
       existing_touch = service.create_touch(params, action_key: 'legacy-action')

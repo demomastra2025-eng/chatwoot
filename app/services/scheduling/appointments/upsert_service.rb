@@ -758,13 +758,13 @@ class Scheduling::Appointments::UpsertService
     end
 
     return explicit_duration if explicit_duration.present?
-    return [((explicit_ends_at - starts_at) / 60).round, 5].max if explicit_ends_at.present?
+    return [((explicit_ends_at - starts_at) / 60).round, Scheduling::Constants::MIN_DURATION_MINUTES].max if explicit_ends_at.present?
 
     service_duration = services.sum { |service| service.duration_min.to_i }
     return service_duration if service_duration.positive?
     return current_duration_min.to_i if current_duration_min.to_i.positive?
 
-    [resource.slot_duration_min.to_i, 5].max
+    [resource.slot_duration_min.to_i, Scheduling::Constants::MIN_DURATION_MINUTES].max
   end
 
   def resolve_ends_at(starts_at:, duration_min:, current:)

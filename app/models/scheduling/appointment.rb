@@ -112,7 +112,10 @@ class Scheduling::Appointment < ApplicationRecord
   validates :prepaid_payment_method, inclusion: { in: Scheduling::Constants::PAYMENT_METHODS }, allow_blank: true
   validates :settlement_payment_method, inclusion: { in: Scheduling::Constants::PAYMENT_METHODS }, allow_blank: true
   validates :compensation_type_snapshot, inclusion: { in: Scheduling::Constants::COMPENSATION_TYPES }, allow_blank: true
-  validates :duration_min, inclusion: { in: 5..720 }
+  validates :duration_min,
+            inclusion: {
+              in: Scheduling::Constants::MIN_DURATION_MINUTES..Scheduling::Constants::MAX_DURATION_MINUTES
+            }
   validates :service_amount, :prepaid_amount, :settlement_amount, numericality: { greater_than_or_equal_to: 0, only_integer: true }
   validates :compensation_percent_snapshot, numericality: { greater_than_or_equal_to: 0, only_integer: true }
   validates :external_ref, uniqueness: { scope: :account_id }, allow_blank: true
@@ -298,7 +301,7 @@ class Scheduling::Appointment < ApplicationRecord
   def assign_duration_min
     return if starts_at.blank? || ends_at.blank?
 
-    self.duration_min = [((ends_at - starts_at) / 60).round, 5].max if duration_min.blank? || duration_min.to_i <= 0
+    self.duration_min = [((ends_at - starts_at) / 60).round, Scheduling::Constants::MIN_DURATION_MINUTES].max if duration_min.blank? || duration_min.to_i <= 0
   end
 
   def associations_belong_to_account
