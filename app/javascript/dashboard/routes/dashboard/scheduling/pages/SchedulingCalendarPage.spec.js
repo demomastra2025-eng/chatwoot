@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
-import { defineComponent, h, isReadonly, reactive } from 'vue';
+import { defineComponent, h, isReadonly, reactive, ref } from 'vue';
 import { createStore } from 'vuex';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -200,6 +200,29 @@ const TextAreaStub = defineComponent({
         onInput: event => emit('update:modelValue', event.target.value),
       }),
 });
+const DialogStub = defineComponent({
+  name: 'CalendarDialogStub',
+  props: { renderOnOpenOnly: { type: Boolean, default: true } },
+  emits: ['close'],
+  setup(props, { emit, expose, slots }) {
+    const isOpen = ref(false);
+    const open = () => {
+      isOpen.value = true;
+    };
+    const close = () => {
+      if (!isOpen.value) return;
+      isOpen.value = false;
+      emit('close');
+    };
+    expose({ open, close });
+    return () =>
+      h(
+        'div',
+        { 'data-dialog-open': isOpen.value },
+        isOpen.value || !props.renderOnOpenOnly ? slots.default?.() : []
+      );
+  },
+});
 const stubs = {
   Button: ButtonStub,
   Input: InputStub,
@@ -215,7 +238,7 @@ const stubs = {
   TagMultiSelectComboBox: true,
   Checkbox: true,
   CrmDealConversationPanel: true,
-  Dialog: true,
+  Dialog: DialogStub,
   SchedulingCalendarGrid: true,
   SchedulingCustomFieldAdvancedFilter: true,
   SchedulingErrorState: true,
@@ -414,6 +437,10 @@ describe('SchedulingCalendarPage pending local booking', () => {
     const dismiss = wrapper.get('.modal-mask button[data-icon="i-lucide-x"]');
     expect(dismiss.element.disabled).toBe(false);
     await dismiss.trigger('click');
+    await flushPromises();
+    expect(store.isOpen).toBe(false);
+    expect(store.ui.isSaving).toBe(false);
+    expect(wrapper.find('.modal-mask').exists()).toBe(false);
     const nextSlot = {
       ...slot,
       startsAt: '2026-10-11T05:00:00Z',
