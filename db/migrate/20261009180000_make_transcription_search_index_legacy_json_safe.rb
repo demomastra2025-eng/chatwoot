@@ -93,9 +93,7 @@ class MakeTranscriptionSearchIndexLegacyJsonSafe < ActiveRecord::Migration[7.1]
              pg_get_indexdef(pg_index.indexrelid) AS definition
       FROM pg_index
       JOIN pg_class ON pg_class.oid = pg_index.indexrelid
-      JOIN pg_namespace ON pg_namespace.oid = pg_class.relnamespace
-      WHERE pg_class.relname = #{quote(MESSAGE_INDEX_NAME)}
-        AND pg_namespace.nspname = ANY (current_schemas(false))
+      WHERE pg_class.oid = to_regclass(#{quote(MESSAGE_INDEX_NAME)})
     SQL
   end
 
