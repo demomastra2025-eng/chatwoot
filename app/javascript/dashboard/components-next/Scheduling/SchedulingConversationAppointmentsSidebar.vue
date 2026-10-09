@@ -114,6 +114,7 @@ const createForm = reactive({
   startsAt: '',
   availabilityDate: '',
   selectedWindowStartsAt: '',
+  rejectedStartsAt: [],
   status: 'scheduled',
 });
 const ui = reactive({
@@ -348,6 +349,7 @@ const resetCreateForm = () => {
     startsAt: '',
     availabilityDate: defaults.startsAt.slice(0, 10),
     selectedWindowStartsAt: '',
+    rejectedStartsAt: [],
     status: 'scheduled',
   });
 };
@@ -479,6 +481,7 @@ const formFromAppointment = appointment => {
     startsAt: toClinicDateTime(appointment.startsAt),
     availabilityDate: appointmentDate < today ? today : appointmentDate,
     selectedWindowStartsAt: '',
+    rejectedStartsAt: [],
     status: appointment.status || 'scheduled',
     pickerKey: appointmentKey(appointment),
   };
@@ -553,7 +556,12 @@ const loadFormWindows = async form => {
     const payload = response.data.payload;
     availabilityByForm[key] = {
       state: payload.state,
-      windows: payload.windows || [],
+      windows: (payload.windows || []).filter(
+        window =>
+          !form.rejectedStartsAt?.some(
+            rejected => Date.parse(rejected) === Date.parse(window.starts_at)
+          )
+      ),
       maxDate: payload.last_bookable_date || '',
       requestId,
     };
@@ -571,6 +579,7 @@ const loadFormWindows = async form => {
 
 const changePickerDate = (form, date) => {
   form.availabilityDate = date;
+  form.rejectedStartsAt = [];
   resetSelectedWindow(form);
   loadFormWindows(form);
 };
@@ -583,6 +592,7 @@ const selectWindow = (form, window) => {
 
 const changeCabinet = (form, value) => {
   form.medelementCabinetCode = value;
+  form.rejectedStartsAt = [];
   resetSelectedWindow(form);
   loadFormWindows(form);
 };
@@ -625,6 +635,7 @@ const syncFormServiceFields = form => {
 
 const handleFormResourceChange = (form, value) => {
   form.resourceId = value;
+  form.rejectedStartsAt = [];
   const cabinets = medelementCabinetsForResource(selectedResourceForForm(form));
   form.medelementCabinetCode = cabinets.length === 1 ? cabinets[0].code : '';
   if (
@@ -642,6 +653,7 @@ const handleFormResourceChange = (form, value) => {
 
 const handleFormServiceChange = (form, value) => {
   form.serviceId = value;
+  form.rejectedStartsAt = [];
   form.serviceNameSnapshot = '';
   syncFormServiceFields(form);
   resetSelectedWindow(form);
@@ -937,6 +949,7 @@ const syncCreateServiceFields = () => {
 
 const handleCreateResourceChange = value => {
   createForm.resourceId = value;
+  createForm.rejectedStartsAt = [];
   const cabinets = medelementCabinetsForResource(selectedCreateResource.value);
   createForm.medelementCabinetCode =
     cabinets.length === 1 ? cabinets[0].code : '';
@@ -955,6 +968,7 @@ const handleCreateResourceChange = value => {
 
 const handleCreateServiceChange = value => {
   createForm.serviceId = value;
+  createForm.rejectedStartsAt = [];
   createForm.serviceNameSnapshot = '';
   syncCreateServiceFields();
   resetSelectedWindow(createForm);
@@ -997,6 +1011,10 @@ const handleSaveAvailabilityError = (error, form) => {
   const code = error?.response?.data?.code;
   if (['SLOT_CONFLICT', 'APPOINTMENT_SLOT_UNAVAILABLE'].includes(code)) {
     useAlert(t('SCHEDULING.APPOINTMENT_FORM.AVAILABILITY.CONFLICT'));
+    form.rejectedStartsAt = [
+      ...(form.rejectedStartsAt || []),
+      form.selectedWindowStartsAt || fromClinicDateTime(form.startsAt),
+    ];
     resetSelectedWindow(form);
     loadFormWindows(form);
     return true;

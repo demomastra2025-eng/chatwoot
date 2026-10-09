@@ -374,6 +374,19 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
   });
 
   it('refreshes the window list after a live booking conflict', async () => {
+    SchedulingAvailabilityAPI.show.mockResolvedValue({
+      data: {
+        payload: {
+          state: 'ok',
+          windows: [
+            {
+              starts_at: '2026-06-27T10:00:00+05:00',
+              ends_at: '2026-06-27T10:30:00+05:00',
+            },
+          ],
+        },
+      },
+    });
     const wrapper = mountComponent();
     await flushPromises();
     await wrapper.vm.startCreateAppointment();
@@ -388,6 +401,7 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     const requestsBeforeSave = SchedulingAvailabilityAPI.show.mock.calls.length;
 
     await wrapper.vm.saveCreateAppointment();
+    await flushPromises();
 
     expect(mocks.alert).toHaveBeenCalledWith(
       'SCHEDULING.APPOINTMENT_FORM.AVAILABILITY.CONFLICT'
@@ -395,6 +409,9 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     expect(wrapper.vm.createForm.startsAt).toBe('');
     expect(SchedulingAvailabilityAPI.show.mock.calls.length).toBeGreaterThan(
       requestsBeforeSave
+    );
+    expect(wrapper.vm.availabilityForForm(wrapper.vm.createForm).windows).toEqual(
+      []
     );
   });
 
