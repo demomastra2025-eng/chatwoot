@@ -6,6 +6,7 @@ import AssistantPlayground from './AssistantPlayground.vue';
 const mocks = vi.hoisted(() => ({
   playground: vi.fn(),
   show: vi.fn(),
+  update: vi.fn(),
   fetch: vi.fn(),
   getModelsForFeature: vi.fn(),
   getSelectedModelForFeature: vi.fn(),
@@ -25,7 +26,11 @@ vi.mock('vue-i18n', () => ({
 }));
 
 vi.mock('dashboard/api/captain/assistant', () => ({
-  default: { playground: mocks.playground, show: mocks.show },
+  default: {
+    playground: mocks.playground,
+    show: mocks.show,
+    update: mocks.update,
+  },
 }));
 
 vi.mock('dashboard/store/captain/preferences', () => ({
@@ -53,9 +58,9 @@ const selectStub = {
     '<select :value="modelValue" :disabled="disabled" @change="$emit(\'update:modelValue\', $event.target.value)"><option v-for="option in options" :key="option.value" :value="option.value">{{ option.label }}</option></select>',
 };
 
-const mountPlayground = (assistantId = 4) =>
+const mountPlayground = (assistantId = 4, accountId = 74) =>
   mount(AssistantPlayground, {
-    props: { assistantId },
+    props: { assistantId, accountId },
     global: {
       stubs: {
         NextButton: buttonStub,
@@ -89,6 +94,7 @@ const deferred = () => {
 describe('AssistantPlayground («Площадка»)', () => {
   beforeEach(() => {
     mocks.playground.mockReset();
+    mocks.update.mockReset();
     mocks.show.mockReset().mockResolvedValue({
       data: {
         id: 4,
@@ -103,12 +109,14 @@ describe('AssistantPlayground («Площадка»)', () => {
         display_name: 'GPT-6 Luna',
         supports_temperature: true,
         capabilities: ['reasoning'],
+        reasoning_efforts: ['none', 'low', 'medium', 'high'],
       },
       {
         id: 'openai/gpt-5.4-mini',
         display_name: 'GPT-5.4 mini',
         supports_temperature: false,
         capabilities: [],
+        reasoning_efforts: [],
       },
     ]);
     mocks.getSelectedModelForFeature
@@ -209,6 +217,144 @@ describe('AssistantPlayground («Площадка»)', () => {
     expect(wrapper.text()).toContain(
       'CAPTAIN.PLAYGROUND.UNSUPPORTED_REASONING'
     );
+  });
+
+  it('uses the saved model metadata outside the curated list and sends zero temperature without saving config', async () => {
+    const savedConfig = { model: 'vendor/saved-model', temperature: 0 };
+    mocks.show.mockResolvedValueOnce({
+      data: {
+        id: 4,
+        usage_mode: 'external_agent',
+        config: savedConfig,
+        playground_model: {
+          id: 'vendor/saved-model',
+          display_name: 'Saved model',
+          supports_temperature: true,
+          reasoning_efforts: ['low', 'high'],
+        },
+      },
+    });
+    mocks.playground.mockResolvedValue({ data: { response: 'Test response' } });
+    const wrapper = mountPlayground();
+    await flushPromises();
+
+    expect(wrapper.find('input[type="checkbox"]').element.disabled).toBe(false);
+    expect(wrapper.find('input[type="range"]').element.value).toBe('0');
+    expect(
+      wrapper
+        .findAll('select')[1]
+        .findAll('option')
+        .map(option => option.element.value)
+    ).toEqual(['', 'low', 'high']);
+    expect(
+      wrapper
+        .findAll('select')[0]
+        .findAll('option')
+        .filter(option => option.element.value === 'vendor/saved-model')
+    ).toHaveLength(1);
+    await wrapper.find('input[type="checkbox"]').setValue(true);
+    await wrapper.findAll('select')[1].setValue('high');
+    await send(wrapper, 'Test the saved model');
+
+    expect(mocks.playground).toHaveBeenCalledWith({
+      assistantId: 4,
+      messageContent: 'Test the saved model',
+      messageHistory: [],
+      testOptions: { temperature: 0, thinkingEffort: 'high' },
+    });
+    expect(savedConfig).toEqual({
+      model: 'vendor/saved-model',
+      temperature: 0,
+    });
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+
+  it('uses metadata for the server-resolved default and keeps unknown capabilities disabled', async () => {
+    mocks.show.mockResolvedValueOnce({
+      data: {
+        id: 4,
+        usage_mode: 'external_agent',
+        config: { model: 'removed/model', temperature: null },
+        playground_model: {
+          id: 'vendor/default-model',
+          supports_temperature: false,
+          reasoning_efforts: [],
+        },
+      },
+    });
+    const wrapper = mountPlayground();
+    await flushPromises();
+
+    expect(wrapper.find('input[type="checkbox"]').element.disabled).toBe(true);
+    expect(wrapper.findAll('select')[1].element.disabled).toBe(true);
+    expect(wrapper.find('input[type="range"]').element.value).toBe('1');
+    expect(
+      wrapper
+        .findAll('select')[0]
+        .find('option[value="vendor/default-model"]')
+        .exists()
+    ).toBe(true);
+    expect(
+      wrapper
+        .findAll('select')[0]
+        .find('option[value="removed/model"]')
+        .exists()
+    ).toBe(false);
+  });
+
+  it('clears an effort when switching to a model that does not support that effort', async () => {
+    mocks.getModelsForFeature.mockReturnValue([
+      {
+        id: 'openai/gpt-6-luna',
+        supports_temperature: true,
+        reasoning_efforts: ['none', 'high'],
+      },
+      {
+        id: 'vendor/mandatory-model',
+        supports_temperature: true,
+        reasoning_efforts: ['medium'],
+      },
+    ]);
+    mocks.playground.mockResolvedValue({ data: { response: 'Test response' } });
+    const wrapper = mountPlayground();
+    await flushPromises();
+    await wrapper.findAll('select')[1].setValue('none');
+    await wrapper.findAll('select')[0].setValue('vendor/mandatory-model');
+    await flushPromises();
+
+    expect(wrapper.findAll('select')[1].element.value).toBe('');
+    expect(
+      wrapper.findAll('select')[1].find('option[value="none"]').exists()
+    ).toBe(false);
+    await send(wrapper, 'Use this model');
+    expect(mocks.playground.mock.calls[0][0].testOptions).toEqual({
+      model: 'vendor/mandatory-model',
+    });
+  });
+
+  it('keeps compact panels and settings in scrollable flow with a shrinkable message area', async () => {
+    const wrapper = mountPlayground();
+    await flushPromises();
+
+    expect(wrapper.find('[data-test="playground-layout"]').classes()).toContain(
+      'overflow-y-auto'
+    );
+    expect(wrapper.find('[data-test="playground-chat"]').classes()).toContain(
+      'min-h-0'
+    );
+    expect(
+      wrapper.find('[data-test="playground-chat"]').classes()
+    ).not.toContain('min-h-[32rem]');
+    expect(wrapper.find('[data-test="playground-panels"]').classes()).toContain(
+      'shrink-0'
+    );
+    expect(
+      wrapper.find('[data-test="playground-test-settings"]').classes()
+    ).toContain('shrink-0');
+    expect(wrapper.find('[data-test="playground-trace"]').classes()).toContain(
+      'max-h-80'
+    );
+    expect(wrapper.find('input').classes()).toContain('min-w-0');
   });
 
   it('shows the error answer when the request fails and clears on reset', async () => {
@@ -384,5 +530,90 @@ describe('AssistantPlayground («Площадка»)', () => {
       'New assistant request',
       'New assistant response',
     ]);
+  });
+
+  it('rejects old-account metadata when only the account route changes', async () => {
+    const oldAssistant = deferred();
+    mocks.show.mockReturnValueOnce(oldAssistant.promise).mockResolvedValueOnce({
+      data: {
+        id: 4,
+        usage_mode: 'external_agent',
+        config: {},
+        playground_model: {
+          id: 'vendor/new-default',
+          supports_temperature: false,
+          reasoning_efforts: [],
+        },
+      },
+    });
+    const wrapper = mountPlayground(4, 74);
+    await wrapper.setProps({ accountId: 75 });
+    await flushPromises();
+
+    oldAssistant.resolve({
+      data: {
+        id: 4,
+        usage_mode: 'external_agent',
+        config: { model: 'vendor/previous-model', temperature: 0.8 },
+        playground_model: {
+          id: 'vendor/previous-model',
+          supports_temperature: true,
+          reasoning_efforts: ['high'],
+        },
+      },
+    });
+    await flushPromises();
+
+    expect(wrapper.find('input[type="checkbox"]').element.disabled).toBe(true);
+    expect(wrapper.find('input[type="range"]').element.value).toBe('1');
+    expect(
+      wrapper
+        .findAll('select')[0]
+        .find('option[value="vendor/previous-model"]')
+        .exists()
+    ).toBe(false);
+  });
+
+  it('clears account history and rejects a late reply after account-only route reuse', async () => {
+    const oldResponse = deferred();
+    mocks.playground
+      .mockReturnValueOnce(oldResponse.promise)
+      .mockResolvedValueOnce({
+        data: { response: 'Current workspace response' },
+      });
+    const wrapper = mountPlayground(4, 74);
+    await flushPromises();
+    await wrapper.find('input').setValue('Previous workspace request');
+    await wrapper.find('button[data-icon="i-lucide-send"]').trigger('click');
+    await wrapper.setProps({ accountId: 75 });
+    await flushPromises();
+
+    expect(wrapper.findAll('li')).toHaveLength(0);
+    await send(wrapper, 'Current workspace request');
+    expect(mocks.playground.mock.calls[1][0].messageHistory).toEqual([]);
+    oldResponse.resolve({ data: { response: 'Previous workspace response' } });
+    await flushPromises();
+
+    expect(wrapper.findAll('li').map(item => item.text())).toEqual([
+      'Current workspace request',
+      'Current workspace response',
+    ]);
+  });
+
+  it('keeps reset conversation empty when the previous request finishes', async () => {
+    const oldResponse = deferred();
+    mocks.playground.mockReturnValueOnce(oldResponse.promise);
+    const wrapper = mountPlayground();
+    await flushPromises();
+    await wrapper.find('input').setValue('Previous request');
+    await wrapper.find('button[data-icon="i-lucide-send"]').trigger('click');
+    await wrapper
+      .find('button[data-icon="i-lucide-rotate-ccw"]')
+      .trigger('click');
+    oldResponse.resolve({ data: { response: 'Previous response' } });
+    await flushPromises();
+
+    expect(wrapper.findAll('li')).toHaveLength(0);
+    expect(wrapper.text()).toContain('CAPTAIN.PLAYGROUND.TRACE_EMPTY');
   });
 });

@@ -12,6 +12,10 @@ const props = defineProps({
     type: Number,
     required: true,
   },
+  accountId: {
+    type: [String, Number],
+    default: '',
+  },
 });
 
 const { t } = useI18n();
@@ -33,43 +37,62 @@ let playgroundRequestSequence = 0;
 const availableModels = computed(() =>
   captainConfigStore.getModelsForFeature('assistant')
 );
-const effectiveModel = computed(
+const assistantModelMetadata = computed(
+  () => assistant.value?.playground_model
+);
+const assistantModel = computed(
   () =>
-    selectedModel.value ||
+    assistantModelMetadata.value?.id ||
     assistant.value?.config?.model ||
     captainConfigStore.getSelectedModelForFeature('assistant') ||
     ''
 );
-const effectiveModelMetadata = computed(() =>
-  availableModels.value.find(model => model.id === effectiveModel.value)
+const effectiveModel = computed(
+  () => selectedModel.value || assistantModel.value
 );
+const effectiveModelMetadata = computed(() => {
+  if (assistantModelMetadata.value?.id === effectiveModel.value) {
+    return assistantModelMetadata.value;
+  }
+
+  return availableModels.value.find(model => model.id === effectiveModel.value);
+});
 const supportsTemperature = computed(
   () => effectiveModelMetadata.value?.supports_temperature === true
 );
-const supportsReasoning = computed(() =>
-  effectiveModelMetadata.value?.capabilities?.includes('reasoning')
+const supportedReasoningEfforts = computed(
+  () => effectiveModelMetadata.value?.reasoning_efforts || []
 );
+const supportsReasoning = computed(
+  () => supportedReasoningEfforts.value.length > 0
+);
+const selectableModels = computed(() => {
+  const models = availableModels.value.filter(
+    model => !model.current_only || model.id === assistantModel.value
+  );
+  const current = assistantModelMetadata.value;
+  if (current?.id && !models.some(model => model.id === current.id)) {
+    return [...models, { ...current, current_only: true }];
+  }
+
+  return models;
+});
 const modelOptions = computed(() => [
   {
     value: '',
     label: t('CAPTAIN.PLAYGROUND.USE_ASSISTANT_MODEL'),
   },
-  ...availableModels.value
-    .filter(
-      model =>
-        !model.current_only || model.id === assistant.value?.config?.model
-    )
-    .map(model => ({
-      value: model.id,
-      label: model.current_only
-        ? t('CAPTAIN.PLAYGROUND.CURRENT_MODEL', {
-            model: model.display_name || model.id,
-          })
-        : model.display_name || model.id,
-    })),
+  ...selectableModels.value.map(model => ({
+    value: model.id,
+    label: model.current_only
+      ? t('CAPTAIN.PLAYGROUND.CURRENT_MODEL', {
+          model: model.display_name || model.id,
+        })
+      : model.display_name || model.id,
+  })),
 ]);
 const savedTemperature = computed(() => {
-  const value = Number(assistant.value?.config?.temperature);
+  const value = Number(assistant.value?.config?.temperature ?? 1);
   return Number.isFinite(value) ? value : 1;
 });
 const formattedTemperature = computed(() =>
@@ -78,10 +101,12 @@ const formattedTemperature = computed(() =>
 
 const reasoningEffortOptions = computed(() => [
   { value: '', label: t('CAPTAIN.PLAYGROUND.USE_WORKSPACE_REASONING') },
-  { value: 'none', label: t('CAPTAIN.PLAYGROUND.REASONING_NONE') },
-  { value: 'low', label: t('CAPTAIN.PLAYGROUND.REASONING_LOW') },
-  { value: 'medium', label: t('CAPTAIN.PLAYGROUND.REASONING_MEDIUM') },
-  { value: 'high', label: t('CAPTAIN.PLAYGROUND.REASONING_HIGH') },
+  ...['none', 'low', 'medium', 'high']
+    .filter(effort => supportedReasoningEfforts.value.includes(effort))
+    .map(effort => ({
+      value: effort,
+      label: t(`CAPTAIN.PLAYGROUND.REASONING_${effort.toUpperCase()}`),
+    })),
 ]);
 
 const loadPlaygroundSettings = async (
@@ -90,6 +115,7 @@ const loadPlaygroundSettings = async (
 ) => {
   settingsRequestSequence += 1;
   const requestSequence = settingsRequestSequence;
+  const requestAccountId = String(props.accountId);
   isLoadingSettings.value = true;
   settingsFailed.value = false;
   try {
@@ -102,7 +128,8 @@ const loadPlaygroundSettings = async (
     ]);
     if (
       requestSequence !== settingsRequestSequence ||
-      assistantId !== props.assistantId
+      assistantId !== props.assistantId ||
+      requestAccountId !== String(props.accountId)
     ) {
       return;
     }
@@ -113,14 +140,16 @@ const loadPlaygroundSettings = async (
   } catch {
     if (
       requestSequence === settingsRequestSequence &&
-      assistantId === props.assistantId
+      assistantId === props.assistantId &&
+      requestAccountId === String(props.accountId)
     ) {
       settingsFailed.value = true;
     }
   } finally {
     if (
       requestSequence === settingsRequestSequence &&
-      assistantId === props.assistantId
+      assistantId === props.assistantId &&
+      requestAccountId === String(props.accountId)
     ) {
       isLoadingSettings.value = false;
     }
@@ -130,8 +159,8 @@ const loadPlaygroundSettings = async (
 watch(supportsTemperature, supported => {
   if (!supported) temperatureOverrideEnabled.value = false;
 });
-watch(supportsReasoning, supported => {
-  if (!supported) thinkingEffort.value = '';
+watch(supportedReasoningEfforts, efforts => {
+  if (!efforts.includes(thinkingEffort.value)) thinkingEffort.value = '';
 });
 
 const formatMessagesForApi = () =>
@@ -144,8 +173,10 @@ const formatMessagesForApi = () =>
   }));
 
 const resetConversation = () => {
+  playgroundRequestSequence += 1;
   messages.value = [];
   newMessage.value = '';
+  isLoading.value = false;
 };
 
 const resetAssistantSession = () => {
@@ -163,9 +194,9 @@ const resetAssistantSession = () => {
 };
 
 watch(
-  () => props.assistantId,
-  (newId, oldId) => {
-    if (newId === oldId) return;
+  () => [String(props.accountId), props.assistantId],
+  ([newAccountId, newId], [oldAccountId, oldId]) => {
+    if (newId === oldId && newAccountId === oldAccountId) return;
 
     settingsRequestSequence += 1;
     resetAssistantSession();
@@ -179,6 +210,7 @@ const sendMessage = async () => {
 
   const currentMessage = newMessage.value;
   const requestAssistantId = props.assistantId;
+  const requestAccountId = String(props.accountId);
   const sessionSequence = assistantSessionSequence;
   playgroundRequestSequence += 1;
   const requestSequence = playgroundRequestSequence;
@@ -210,6 +242,7 @@ const sendMessage = async () => {
     if (
       sessionSequence !== assistantSessionSequence ||
       requestAssistantId !== props.assistantId ||
+      requestAccountId !== String(props.accountId) ||
       requestSequence !== playgroundRequestSequence
     ) {
       return;
@@ -229,6 +262,7 @@ const sendMessage = async () => {
     if (
       sessionSequence !== assistantSessionSequence ||
       requestAssistantId !== props.assistantId ||
+      requestAccountId !== String(props.accountId) ||
       requestSequence !== playgroundRequestSequence
     ) {
       return;
@@ -245,6 +279,7 @@ const sendMessage = async () => {
     if (
       sessionSequence === assistantSessionSequence &&
       requestAssistantId === props.assistantId &&
+      requestAccountId === String(props.accountId) &&
       requestSequence === playgroundRequestSequence
     ) {
       isLoading.value = false;
@@ -262,8 +297,11 @@ onMounted(loadPlaygroundSettings);
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col gap-4">
-    <div class="flex items-start justify-between gap-4 px-1">
+  <div
+    class="flex h-full min-h-0 flex-col gap-4 overflow-y-auto"
+    data-test="playground-layout"
+  >
+    <div class="flex shrink-0 items-start justify-between gap-4 px-1">
       <div>
         <h3 class="text-lg font-medium text-n-slate-12">
           {{ t('CAPTAIN.PLAYGROUND.HEADER') }}
@@ -281,17 +319,21 @@ onMounted(loadPlaygroundSettings);
       />
     </div>
 
-    <div class="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
+    <div
+      class="grid shrink-0 gap-4 lg:min-h-64 lg:flex-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,20rem)]"
+      data-test="playground-panels"
+    >
       <div
-        class="flex min-h-[32rem] flex-col rounded-xl border border-n-weak bg-n-solid-1 py-5"
+        class="flex h-80 min-h-0 min-w-0 flex-col rounded-xl border border-n-weak bg-n-solid-1 py-5 lg:h-auto"
+        data-test="playground-chat"
       >
         <MessageList :messages="messages" :is-loading="isLoading" />
         <div
-          class="mx-5 mt-4 flex items-center rounded-xl bg-n-background p-3 outline outline-1 outline-n-weak"
+          class="mx-5 mt-4 flex shrink-0 items-center rounded-xl bg-n-background p-3 outline outline-1 outline-n-weak"
         >
           <input
             v-model="newMessage"
-            class="mb-0 flex-1 border-none bg-transparent text-sm text-n-slate-12 placeholder:text-n-slate-10 focus:outline-none"
+            class="mb-0 min-w-0 flex-1 border-none bg-transparent text-sm text-n-slate-12 placeholder:text-n-slate-10 focus:outline-none"
             :placeholder="t('CAPTAIN.PLAYGROUND.MESSAGE_PLACEHOLDER')"
             @keydown.enter.exact="handleEnterKey"
           />
@@ -306,7 +348,8 @@ onMounted(loadPlaygroundSettings);
       </div>
 
       <aside
-        class="min-h-0 overflow-y-auto rounded-xl border border-n-weak bg-n-solid-1 p-4"
+        class="max-h-80 min-h-0 min-w-0 overflow-y-auto rounded-xl border border-n-weak bg-n-solid-1 p-4 lg:max-h-none"
+        data-test="playground-trace"
       >
         <h4 class="text-sm font-medium text-n-slate-12">
           {{ t('CAPTAIN.PLAYGROUND.TRACE_TITLE') }}
@@ -386,7 +429,7 @@ onMounted(loadPlaygroundSettings);
 
     <section
       v-if="assistant?.usage_mode !== 'internal_assistant'"
-      class="rounded-xl border border-n-weak bg-n-solid-1 p-4"
+      class="shrink-0 rounded-xl border border-n-weak bg-n-solid-1 p-4"
       data-test="playground-test-settings"
     >
       <h4 class="text-sm font-medium text-n-slate-12">
@@ -476,7 +519,7 @@ onMounted(loadPlaygroundSettings);
       </div>
     </section>
 
-    <p class="text-center text-xs text-n-slate-11">
+    <p class="shrink-0 text-center text-xs text-n-slate-11">
       {{ t('CAPTAIN.PLAYGROUND.CREDIT_NOTE') }}
     </p>
   </div>

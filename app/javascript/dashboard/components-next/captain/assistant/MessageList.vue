@@ -46,7 +46,7 @@ watch(() => props.messages.length, scrollToBottom);
 <template>
   <div
     ref="messageContainer"
-    class="mb-4 flex-1 space-y-6 overflow-y-auto px-6"
+    class="mb-4 min-h-0 flex-1 space-y-6 overflow-y-auto px-6"
   >
     <div
       v-for="(message, index) in messages"

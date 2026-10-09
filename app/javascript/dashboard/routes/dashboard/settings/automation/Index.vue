@@ -257,6 +257,8 @@ const tableHeaders = computed(() => {
       ref="confirmDialog"
       :title="toggleModalTitle"
       :description="toggleModalDescription"
+      :confirm-label="$t('AUTOMATION.TOGGLE.CONFIRMATION_LABEL')"
+      :cancel-label="$t('AUTOMATION.TOGGLE.CANCEL_LABEL')"
     />
   </SettingsLayout>
 </template>

@@ -27,7 +27,15 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     @assistants = account_assistants.ordered
   end
 
-  def show; end
+  def show
+    return if @assistant.internal_assistant?
+
+    model = @assistant.resolved_agent_model
+    metadata = Llm::Models.feature_config(:assistant, account: Current.account, model_names: [model])
+    @playground_model = metadata&.fetch(:models, [])&.first || {
+      id: model, supports_temperature: false, capabilities: [], reasoning_efforts: []
+    }
+  end
 
   def create
     attributes = assistant_create_params
@@ -281,7 +289,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
       return [nil, unsupported_field] if unsupported_field
     end
 
-    effective_model = @assistant.model.to_s.strip.presence || Llm::Config.model_for(feature: :assistant, account: Current.account)
+    effective_model = @assistant.resolved_agent_model
     overrides = {}
 
     if attributes[:test_model].present?
@@ -307,7 +315,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     if attributes[:test_thinking_effort].present?
       effort = attributes[:test_thinking_effort].to_s
       return [nil, 'test_thinking_effort'] unless Llm::RuntimePolicy::THINKING_EFFORTS.include?(effort)
-      return [nil, 'test_thinking_effort'] if effort != 'none' && !Llm::Models.supports_thinking?(effective_model, account: Current.account)
+      return [nil, 'test_thinking_effort'] unless Llm::Models.reasoning_efforts_for(effective_model, account: Current.account).include?(effort)
 
       overrides[:thinking_effort] = effort
     end

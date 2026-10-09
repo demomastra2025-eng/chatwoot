@@ -68,6 +68,32 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         expect(response).to have_http_status(:success)
         expect(json_response.fetch(:config)).not_to include(:handoff_requires_explicit_consent, :handoff_consent_reason)
       end
+
+      it 'returns native metadata for the saved runtime model even outside the curated list' do
+        allow_any_instance_of(Captain::Assistant).to receive(:resolved_agent_model).and_return('vendor/saved-model')
+        metadata = { id: 'vendor/saved-model', supports_temperature: true, reasoning_efforts: %w[low high] }
+        expect(Llm::Models).to receive(:feature_config)
+          .with(:assistant, account: account, model_names: ['vendor/saved-model'])
+          .and_return(models: [metadata])
+
+        get "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}", headers: agent.create_new_auth_token, as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response[:playground_model]).to eq(metadata)
+      end
+
+      it 'does not advertise capabilities when the resolved default has no metadata' do
+        allow_any_instance_of(Captain::Assistant).to receive(:resolved_agent_model).and_return('vendor/default-model')
+        allow(Llm::Models).to receive(:feature_config)
+          .with(:assistant, account: account, model_names: ['vendor/default-model'])
+          .and_return(models: [])
+
+        get "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}", headers: agent.create_new_auth_token, as: :json
+
+        expect(json_response[:playground_model]).to eq(
+          id: 'vendor/default-model', supports_temperature: false, capabilities: [], reasoning_efforts: []
+        )
+      end
     end
   end
 
@@ -1401,6 +1427,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
 
     context 'when it is an authenticated user' do
       before do
+        allow_any_instance_of(Captain::Assistant).to receive(:resolved_agent_model).and_return('openai/gpt-6-luna')
         allow(Captain::Assistant::AgentRunnerService).to receive(:new).with(
           assistant: assistant,
           source: 'playground'
@@ -1513,6 +1540,41 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
 
         expect(response).to have_http_status(:unprocessable_content)
         expect(json_response).to eq(error: 'unsupported_playground_setting', field: 'test_temperature')
+      end
+
+      it 'passes zero and an advertised none override without persisting assistant or workspace settings' do
+        original_config = assistant.config.deep_dup
+        original_runtime = account.captain_runtime.deep_dup
+        overrides = { temperature: 0.0, thinking_effort: 'none' }
+        allow(Llm::Models).to receive(:supports_temperature?).with('openai/gpt-6-luna', account: account).and_return(true)
+        allow(Llm::Models).to receive(:reasoning_efforts_for).with('openai/gpt-6-luna', account: account).and_return(%w[none high])
+        allow(Captain::Assistant::AgentRunnerService).to receive(:new)
+          .with(assistant: assistant, source: 'playground', test_overrides: overrides)
+          .and_return(agent_runner_service)
+
+        post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground",
+             params: valid_params.merge(test_temperature: 0, test_thinking_effort: 'none'),
+             headers: agent.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(Captain::Assistant::AgentRunnerService).to have_received(:new)
+          .with(assistant: assistant, source: 'playground', test_overrides: overrides)
+        expect(assistant.reload.config).to eq(original_config)
+        expect(account.reload.captain_runtime).to eq(original_runtime)
+      end
+
+      it 'rejects none for models that cannot disable reasoning before starting the runtime' do
+        allow(Llm::Models).to receive(:reasoning_efforts_for).with('openai/gpt-6-luna', account: account).and_return(%w[low medium high])
+        expect(Captain::Assistant::AgentRunnerService).not_to receive(:new)
+
+        post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground",
+             params: valid_params.merge(test_thinking_effort: 'none'),
+             headers: agent.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(json_response).to eq(error: 'unsupported_playground_setting', field: 'test_thinking_effort')
       end
 
       it 'rejects reasoning effort when the selected model does not support reasoning' do

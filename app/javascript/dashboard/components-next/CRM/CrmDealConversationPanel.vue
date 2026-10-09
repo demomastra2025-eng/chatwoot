@@ -476,7 +476,7 @@ onBeforeUnmount(() => {
       :class="
         inline
           ? [
-              'relative min-h-0 flex-1 lg:h-full lg:w-[42%] lg:flex-none',
+              'relative min-h-0 flex-1 lg:h-full lg:w-2/3 lg:flex-none',
               active ? 'flex' : 'hidden lg:flex',
             ]
           : 'fixed inset-0 z-[120] md:static md:inset-auto md:z-auto md:h-full md:flex-1'

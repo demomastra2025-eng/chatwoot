@@ -27,6 +27,26 @@ RSpec.describe Llm::RuntimePolicy do
         described_class.thinking_options(feature: :assistant, account: account, model: 'claude-sonnet-4.5')
       ).to eq(effort: 'medium', budget: 4096)
     end
+
+    it 'explicitly disables provider reasoning only for a supported transient override' do
+      allow(Llm::Models).to receive(:supports_thinking?).with('vendor/model', account: account).and_return(true)
+      allow(Llm::Models).to receive(:reasoning_efforts_for).with('vendor/model', account: account).and_return(%w[none low high])
+      allow(Llm::Models).to receive(:provider_for).with('vendor/model', account: account).and_return('openrouter')
+      preferences = { 'assistant_thinking_effort' => 'high' }
+
+      expect(described_class.thinking_options(
+        feature: :assistant, account: account, model: 'vendor/model', preferences: preferences, effort_override: 'none'
+      )).to eq(effort: 'none')
+      expect(preferences).to eq('assistant_thinking_effort' => 'high')
+    end
+
+    it 'rejects an explicit override the current model no longer supports' do
+      allow(Llm::Models).to receive(:reasoning_efforts_for).with('vendor/model', account: account).and_return(%w[low high])
+
+      expect do
+        described_class.thinking_options(feature: :assistant, account: account, model: 'vendor/model', effort_override: 'none')
+      end.to raise_error(ArgumentError, /does not support/)
+    end
   end
 
   describe '.moderation_enabled?' do

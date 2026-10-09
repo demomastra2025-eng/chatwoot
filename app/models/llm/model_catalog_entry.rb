@@ -59,6 +59,7 @@ class Llm::ModelCatalogEntry < ApplicationRecord
       'input_modalities' => string_array(input_modalities),
       'output_modalities' => string_array(output_modalities),
       'supported_parameters' => string_array(supported_parameters),
+      'reasoning' => hash_value(raw_payload)['reasoning'],
       'context_length' => context_length,
       'max_output_tokens' => max_output_tokens,
       'pricing' => hash_value(pricing),

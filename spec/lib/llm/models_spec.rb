@@ -179,6 +179,53 @@ RSpec.describe Llm::Models do
     end
   end
 
+  describe '.reasoning_efforts_for' do
+    let(:model) { 'vendor/reasoning-model' }
+    let(:config) { { 'provider' => 'openrouter', 'reasoning' => reasoning } }
+
+    before do
+      allow(described_class).to receive(:supports_thinking?).with(model, account: nil).and_return(true)
+      allow(described_class).to receive(:model_config).with(model, account: nil).and_return(config)
+    end
+
+    context 'with explicit supported efforts' do
+      let(:reasoning) { { 'supported_efforts' => %w[none low high xhigh], 'mandatory' => false } }
+
+      it 'exposes only efforts implemented by the runtime' do
+        expect(described_class.reasoning_efforts_for(model)).to eq(%w[none low high])
+      end
+
+      it 'does not offer disable for a mandatory reasoning model' do
+        reasoning['mandatory'] = true
+        expect(described_class.reasoning_efforts_for(model)).to eq(%w[low high])
+      end
+    end
+
+    context 'with unrestricted gateway efforts' do
+      let(:reasoning) { { 'supported_efforts' => nil, 'mandatory' => false } }
+
+      it 'accepts the explicitly unrestricted effort metadata' do
+        expect(described_class.reasoning_efforts_for(model)).to eq(%w[none low medium high])
+      end
+    end
+
+    context 'without effort selection' do
+      let(:reasoning) { { 'mandatory' => true } }
+
+      it 'does not invent effort controls from reasoning capability alone' do
+        expect(described_class.reasoning_efforts_for(model)).to eq([])
+      end
+    end
+
+    context 'with an older catalog' do
+      let(:reasoning) { nil }
+
+      it 'keeps existing levels while withholding unverified disable support' do
+        expect(described_class.reasoning_efforts_for(model)).to eq(%w[low medium high])
+      end
+    end
+  end
+
   describe '.supports_temperature?' do
     it 'uses the model registry parameter list for dynamic provider models' do
       allow(described_class).to receive(:model_config).with('vendor/model', account: nil).and_return(
@@ -246,7 +293,8 @@ RSpec.describe Llm::Models do
           'provider' => 'openrouter',
           'display_name' => 'Claude Sonnet 4.6 via OpenRouter',
           'type' => 'chat',
-          'capabilities' => %w[reasoning structured_output tool_calling tool_choice streaming]
+          'capabilities' => %w[reasoning structured_output tool_calling tool_choice streaming],
+          'reasoning' => { 'supported_efforts' => %w[low high], 'mandatory' => true }
         }
       )
 
@@ -255,7 +303,8 @@ RSpec.describe Llm::Models do
 
       expect(claude).to include(
         provider: 'openrouter',
-        type: 'chat'
+        type: 'chat',
+        reasoning_efforts: %w[low high]
       )
       expect(claude[:capabilities]).to include('reasoning', 'structured_output', 'tool_calling')
     end

@@ -796,6 +796,7 @@ class Captain::Assistant::AgentRunnerService
       captain_scheduling_grounding_guard_enabled: @assistant.account.feature_enabled?('captain_scheduling_grounding_guard')
     }
     state[:source] = @source if @source.present?
+    state[:playground_thinking_effort] = @test_overrides[:thinking_effort] if @source == 'playground' && @test_overrides.key?(:thinking_effort)
     state[:captain_control_generation] = @response_fence[:control_generation] if @response_fence.key?(:control_generation)
     state[:captain_response_fence] = @response_fence if @conversation.present? && @response_fence.present?
     state[:runtime_clock] = runtime_clock_state
