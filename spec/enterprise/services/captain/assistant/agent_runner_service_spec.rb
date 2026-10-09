@@ -1963,7 +1963,12 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
           contact: contact,
           conversation: conversation,
           resource: create(:scheduling_resource, account: account),
-          custom_attributes: { visit_room: 'B12' }
+          custom_attributes: {
+            visit_room: 'B12',
+            medelement_reception_code: 'fake-reception',
+            provider_command_id: 'fake-command',
+            payment_reference: 'fake-payment'
+          }
         )
       end
 
@@ -1971,6 +1976,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         create_field_definition(:deal, 'sales_region', 'Sales Region')
         create_field_definition(:task, 'follow_up_channel', 'Follow Up Channel')
         create_field_definition(:appointment, 'visit_room', 'Visit Room')
+        create_field_definition(:appointment, 'provider_command_id', 'Provider Command ID')
+        create_field_definition(:appointment, 'payment_reference', 'Payment Reference')
         account.enable_features!('crm_deals', 'crm_tasks', 'scheduling')
         assistant.update!(
           description: <<~TEXT.squish,
@@ -1990,7 +1997,10 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
               },
               'appointment' => {
                 'enabled' => true,
-                'field_ids' => ['appointment.status', 'appointment.custom_attributes.visit_room']
+                'field_ids' => %w[
+                  appointment.status appointment.custom_attributes.visit_room
+                  appointment.custom_attributes.provider_command_id appointment.custom_attributes.payment_reference
+                ]
               }
             }
           }
@@ -2022,12 +2032,19 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         expect(state.dig(:prompt_context, :visible_fields, :task)).to eq(['status_name'])
         expect(state[:appointment]).to include(
           id: appointment.id,
-          conversation_id: conversation.id,
-          status: appointment.status
+          status: appointment.status,
+          resource_name: appointment.resource.name,
+          custom_attributes: { 'visit_room' => 'B12' }
         )
+        expect(state[:appointment].keys).to match_array(%i[id status resource_name start_date start_time custom_attributes])
+        expect(state[:appointment][:start_date]).to match(/\A\d{2}\.\d{2}\.\d{4}\z/)
+        expect(state[:appointment][:start_time]).to match(/\A\d{2}:\d{2}\z/)
         expect(state.dig(:prompt_context, :appointment)).to eq(
           'status' => appointment.status,
           :custom_attributes => { 'visit_room' => 'B12' }
+        )
+        expect(state.dig(:prompt_context, :appointment).to_json).not_to match(
+          /medelement_|payment|provider|command|conversation_id|contact_id/
         )
         expect(state.dig(:prompt_context, :visible_fields, :appointment)).to eq(['status'])
       end
