@@ -94,6 +94,27 @@ describe('Voice channel setup', () => {
     expect(wrapper.text()).not.toContain('INBOX_MGMT.ADD.VOICE.SIPUNI');
   });
 
+  it('carries explicit Twilio line access selection into the agents step', async () => {
+    routeMock.query = { provider: 'twilio' };
+    const wrapper = buildWrapper();
+    Object.assign(wrapper.vm.twilioState, {
+      phoneNumber: '+15551234567',
+      accountSid: 'AC123',
+      authToken: 'token',
+      apiKeySid: 'SK123',
+      apiKeySecret: 'secret',
+    });
+
+    await wrapper.vm.createTwilioChannel();
+    await flushPromises();
+
+    expect(routerReplaceMock).toHaveBeenCalledWith({
+      name: 'settings_inboxes_add_agents',
+      params: { accountId: 530, inbox_id: 101 },
+      query: { provider: 'twilio' },
+    });
+  });
+
   it('maps the legacy Kazakhstan route to the Wazo setup form', () => {
     routeMock.query = { provider: 'kazakhstan' };
     const wrapper = buildWrapper();

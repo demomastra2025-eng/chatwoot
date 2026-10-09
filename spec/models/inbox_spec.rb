@@ -40,6 +40,44 @@ RSpec.describe Inbox do
     it { is_expected.to have_many(:hooks) }
   end
 
+  describe '#effective_assignment_policy' do
+    let(:account) { create(:account) }
+    let(:inbox) { create(:inbox, account: account) }
+    let(:legacy_policy) { create(:assignment_policy, account: account) }
+    let(:workspace_policy) { create(:assignment_policy, account: account) }
+
+    before do
+      create(:inbox_assignment_policy, inbox: inbox, assignment_policy: legacy_policy)
+    end
+
+    it 'preserves per-inbox policies until a workspace policy is selected' do
+      expect(inbox.effective_assignment_policy).to eq(legacy_policy)
+    end
+
+    it 'uses the selected enabled workspace policy for regular channels' do
+      account.update!(conversation_assignment_policy_id: workspace_policy.id)
+
+      expect(inbox.effective_assignment_policy).to eq(workspace_policy)
+      expect(inbox.workspace_assignment_policy_unavailable?).to be(false)
+    end
+
+    it 'uses the workspace policy for phone line conversations too' do
+      account.update!(conversation_assignment_policy_id: workspace_policy.id)
+      allow(inbox).to receive(:channel_type).and_return('Channel::Voice')
+
+      expect(inbox.effective_assignment_policy).to eq(workspace_policy)
+      expect(inbox.workspace_assignment_policy_applies?).to be(true)
+    end
+
+    it 'does not fall back to a legacy policy when the selected workspace policy is unavailable' do
+      account.update!(conversation_assignment_policy_id: workspace_policy.id)
+      workspace_policy.update!(enabled: false)
+
+      expect(inbox.effective_assignment_policy).to be_nil
+      expect(inbox.workspace_assignment_policy_unavailable?).to be(true)
+    end
+  end
+
   describe 'lock_to_single_conversation defaults' do
     let(:account) { create(:account) }
 

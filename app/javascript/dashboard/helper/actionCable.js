@@ -299,17 +299,19 @@ class ActionCableConnector extends BaseActionCableConnector {
 
   onStatusChange = data => {
     this.app.$store.dispatch('updateConversation', data);
-    this.fetchConversationStats();
+    this.fetchConversationStats({ realtime: true });
   };
 
   onConversationUpdated = data => {
     this.app.$store.dispatch('updateConversation', data);
-    this.fetchConversationStats();
+    this.fetchConversationStats({ realtime: Boolean(data?.status) });
   };
 
   onCommunicationThreadUpdated = data => {
     this.app.$store.dispatch('updateCommunicationThreadRealtime', data);
-    this.fetchConversationStats();
+    this.fetchConversationStats({
+      realtime: data?.source_event === 'conversation.status_changed',
+    });
   };
 
   onTypingOn = ({ conversation, user }) => {
@@ -355,14 +357,17 @@ class ActionCableConnector extends BaseActionCableConnector {
     }, timeoutMs);
   };
 
-  fetchConversationStats = () => {
-    const communicationThreadMode = Boolean(
-      this.app.$store.state?.conversations?.conversationFilters
-        ?.communicationThreadMode
+  fetchConversationStats = ({ realtime = false } = {}) => {
+    const filters =
+      this.app.$store.state?.conversations?.conversationFilters || {};
+    this.app.$store.dispatch(
+      'conversationStats/get',
+      {
+        ...filters,
+        ...(realtime ? { refreshPriority: 'realtime' } : {}),
+      },
+      { root: true }
     );
-    if (!communicationThreadMode) {
-      emitter.emit('fetch_conversation_stats');
-    }
     this.fetchSidebarUnreadCounts();
   };
 

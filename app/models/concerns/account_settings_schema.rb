@@ -15,6 +15,7 @@ module AccountSettingsSchema
         'captain_auto_resolve_mode': { 'type': %w[string null], 'enum': ['evaluated', 'legacy', 'disabled', nil] },
         'scheduling_contact_required': { 'type': %w[boolean null] },
         'scheduling_company_enabled': { 'type': %w[boolean null] },
+        'conversation_assignment_policy_id': { 'type': %w[integer null] },
         'dashboard_sidebar_item_order': {
           'type': %w[array null],
           'items': { 'type': 'string' }

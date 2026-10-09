@@ -33,6 +33,21 @@ RSpec.describe AccountUser do
       expect(membership.reload.role).to eq('agent')
     end
 
+    it 'keeps Voice inbox membership explicit when the line or employee is created' do
+      voice_channel = create(:channel_voice, account: account_user.account)
+      voice_inbox = account_user.account.inboxes.find_by!(channel: voice_channel)
+      new_user = create(:user)
+
+      create(:account_user, account: account_user.account, user: new_user)
+
+      expect(inbox.reload.members.ids).to include(new_user.id)
+      expect(voice_inbox.reload.members.ids).not_to include(new_user.id)
+
+      voice_inbox.add_members([new_user.id])
+
+      expect(voice_inbox.reload.members.ids).to contain_exactly(new_user.id)
+    end
+
     it 'preserves unsaved account feature flags while joining the new employee to inboxes' do
       membership = account_user
       dirty_account = membership.account

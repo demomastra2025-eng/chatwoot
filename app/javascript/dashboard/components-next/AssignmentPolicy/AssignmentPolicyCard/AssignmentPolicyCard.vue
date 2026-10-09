@@ -1,11 +1,9 @@
 <script setup>
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { getInboxIconByType } from 'dashboard/helper/inbox';
 
 import Button from 'dashboard/components-next/button/Button.vue';
 import CardLayout from 'dashboard/components-next/CardLayout.vue';
-import CardPopover from '../components/CardPopover.vue';
 
 const props = defineProps({
   id: { type: Number, required: true },
@@ -13,7 +11,6 @@ const props = defineProps({
   description: { type: String, default: '' },
   assignmentOrder: { type: String, default: '' },
   conversationPriority: { type: String, default: '' },
-  assignedInboxCount: { type: Number, default: 0 },
   assignmentDelayMinutes: { type: Number, default: 0 },
   maxOpenConversations: { type: Number, default: null },
   assignOnlineOnly: { type: Boolean, default: true },
@@ -21,23 +18,11 @@ const props = defineProps({
   monthlyNewClientQuota: { type: Number, default: null },
   stickyOwnerEnabled: { type: Boolean, default: false },
   stickyOwnerDurationDays: { type: Number, default: 30 },
-  inboxes: { type: Array, default: () => [] },
-  isFetchingInboxes: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['edit', 'delete', 'fetchInboxes']);
+const emit = defineEmits(['edit', 'delete']);
 
 const { t } = useI18n();
-
-const inboxes = computed(() => {
-  return props.inboxes.map(inbox => {
-    return {
-      name: inbox.name,
-      id: inbox.id,
-      icon: getInboxIconByType(inbox.channelType, inbox.medium, 'line'),
-    };
-  });
-});
 
 const order = computed(() => {
   if (props.assignmentOrder === 'round_robin') {
@@ -129,31 +114,15 @@ const handleDelete = () => {
   emit('delete', props.id);
 };
 
-const handleFetchInboxes = () => {
-  if (props.inboxes?.length > 0) return;
-  emit('fetchInboxes', props.id);
-};
 </script>
 
 <template>
   <CardLayout class="[&>div]:px-5">
     <div class="flex flex-col gap-2 relative justify-between w-full">
       <div class="flex items-center gap-3 justify-between w-full">
-        <div class="flex items-center gap-3">
-          <h3 class="text-heading-2 text-n-slate-12 line-clamp-1">
-            {{ name }}
-          </h3>
-          <CardPopover
-            :title="
-              t('ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.INDEX.CARD.POPOVER')
-            "
-            icon="i-lucide-inbox"
-            :count="assignedInboxCount"
-            :items="inboxes"
-            :is-fetching="isFetchingInboxes"
-            @fetch="handleFetchInboxes"
-          />
-        </div>
+        <h3 class="text-heading-2 text-n-slate-12 line-clamp-1">
+          {{ name }}
+        </h3>
         <div class="flex items-center gap-2">
           <Button
             :label="

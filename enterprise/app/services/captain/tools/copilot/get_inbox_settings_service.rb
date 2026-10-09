@@ -16,7 +16,7 @@ class Captain::Tools::Copilot::GetInboxSettingsService < Captain::Tools::Copilot
       inbox: inbox_payload(inbox),
       members: member_payloads(inbox),
       working_hours: inbox.weekly_schedule,
-      assignment_policy: assignment_policy_payload(inbox.assignment_policy),
+      assignment_policy: assignment_policy_payload(inbox.effective_assignment_policy),
       captain: captain_inbox_payload(inbox.captain_inbox)
     )
   rescue StandardError => e

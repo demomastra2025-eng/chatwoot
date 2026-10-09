@@ -27,27 +27,7 @@ const allLabels = computed(() =>
   }))
 );
 
-const inboxIdFromQuery = computed(() => {
-  const id = route.query.inboxId;
-  return id ? Number(id) : null;
-});
-
-const breadcrumbItems = computed(() => {
-  if (inboxIdFromQuery.value) {
-    return [
-      {
-        label: t('INBOX_MGMT.SETTINGS'),
-        routeName: 'settings_inbox_show',
-        params: { inboxId: inboxIdFromQuery.value },
-      },
-      {
-        label: t(
-          'ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.CREATE.HEADER.TITLE'
-        ),
-      },
-    ];
-  }
-  return [
+const breadcrumbItems = computed(() => [
     {
       label: t('ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.INDEX.HEADER.TITLE'),
       routeName: 'agent_assignment_policy_index',
@@ -55,23 +35,13 @@ const breadcrumbItems = computed(() => {
     {
       label: t('ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.CREATE.HEADER.TITLE'),
     },
-  ];
-});
+  ]);
 
-const handleBreadcrumbClick = item => {
-  if (item.params) {
-    const accountId = route.params.accountId;
-    const inboxId = item.params.inboxId;
-    // Navigate using explicit path to ensure tab parameter is included
-    router.push(
-      `/app/accounts/${accountId}/settings/inboxes/${inboxId}/collaborators`
-    );
-  } else {
-    router.push({
-      name: item.routeName,
-    });
-  }
-};
+const handleBreadcrumbClick = item =>
+  router.push({
+    name: item.routeName,
+    params: { accountId: route.params.accountId },
+  });
 
 const handleSubmit = async formState => {
   try {
@@ -84,10 +54,9 @@ const handleSubmit = async formState => {
     router.push({
       name: 'agent_assignment_policy_edit',
       params: {
+        accountId: route.params.accountId,
         id: policy.id,
       },
-      // Pass inboxId to edit page to show link prompt
-      query: inboxIdFromQuery.value ? { inboxId: inboxIdFromQuery.value } : {},
     });
   } catch (error) {
     useAlert(

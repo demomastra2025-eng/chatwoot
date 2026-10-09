@@ -507,6 +507,7 @@ async function createTwilioChannel() {
     router.replace({
       name: getInboxFlowRouteName(route, 'agents'),
       params: agentsRouteParams(channel.id),
+      query: { provider: 'twilio' },
     });
   } catch (error) {
     handleCreateError(error);

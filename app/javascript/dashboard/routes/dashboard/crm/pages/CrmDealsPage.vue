@@ -56,6 +56,10 @@ import TagMultiSelectComboBox from 'dashboard/components-next/combobox/TagMultiS
 import CreateCompanyDialog from 'dashboard/components-next/Companies/CompanyForm/CreateCompanyDialog.vue';
 import CreateNewContactDialog from 'dashboard/components-next/Contacts/ContactsForm/CreateNewContactDialog.vue';
 import {
+  defaultStageForNewDeal,
+  dealStageDisplayName,
+} from 'dashboard/components-next/CRM/dealStageSelection';
+import {
   formatDealAmount,
   majorAmountToMinor,
   resolveDealAmountMajor,
@@ -446,10 +450,7 @@ const isPipelineSelectionPending = ref(true);
 
 const loadPipelineReferences = () => referencesStore.loadPipelines();
 
-const stageDisplayName = stage =>
-  stage?.code === 'new'
-    ? t('CRM.SETTINGS.STAGES.SYSTEM.UNSORTED')
-    : stage?.name;
+const stageDisplayName = stage => dealStageDisplayName(stage, t);
 
 const pipelineFilterOptions = computed(() =>
   activePipelines.value.map(pipeline => ({
@@ -1297,13 +1298,7 @@ const upsertCompanyOption = company => {
   return option;
 };
 
-const defaultStageForPipeline = pipeline =>
-  (pipeline?.stages || []).find(stage => stage.default && stage.active) ||
-  (pipeline?.stages || []).find(
-    stage => stage.active && stage.outcome === 'open'
-  ) ||
-  (pipeline?.stages || []).find(stage => stage.active) ||
-  pipeline?.stages?.[0];
+const defaultStageForPipeline = defaultStageForNewDeal;
 
 const resetForm = () => {
   const defaultPipelineId = resolvePipelineFilterId(filters.pipelineId);

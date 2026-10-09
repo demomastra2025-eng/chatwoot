@@ -33,7 +33,11 @@ vi.mock('dashboard/composables', () => ({
   useAlert: alertMock,
 }));
 
-const buildWrapper = ({ agents = [], routeQuery = {} } = {}) =>
+const buildWrapper = ({
+  agents = [],
+  routeQuery = { provider: 'twilio' },
+  inboxDetails = { id: 4690, channel_type: 'Channel::Voice' },
+} = {}) =>
   shallowMount(AddAgents, {
     global: {
       mocks: {
@@ -47,6 +51,7 @@ const buildWrapper = ({ agents = [], routeQuery = {} } = {}) =>
           dispatch: vi.fn(),
           getters: {
             'agents/getAgents': agents,
+            'inboxes/getInbox': () => inboxDetails,
           },
         },
       },
@@ -96,6 +101,32 @@ describe('AddAgents', () => {
       },
       query: {},
     });
+  });
+
+  it('keeps the employee picker available for a Voice inbox without a provider query', async () => {
+    const wrapper = buildWrapper({ routeQuery: {} });
+    await flushPromises();
+
+    expect(routerReplaceMock).not.toHaveBeenCalled();
+    expect(inboxMembersShowMock).toHaveBeenCalledWith('4690');
+    expect(getVirtualPbxStatusMock).toHaveBeenCalledWith('4690');
+  });
+
+  it('skips the employee picker for normal channels even with a telephony query provider', async () => {
+    const wrapper = buildWrapper({
+      routeQuery: { provider: 'twilio' },
+      inboxDetails: { id: 4690, channel_type: 'Channel::WebWidget' },
+    });
+    await flushPromises();
+
+    expect(routerReplaceMock).toHaveBeenCalledWith({
+      name: 'settings_inbox_finish',
+      params: { accountId: '530', inbox_id: '4690' },
+      query: {},
+    });
+    expect(inboxMembersShowMock).not.toHaveBeenCalled();
+    expect(inboxMembersUpdateMock).not.toHaveBeenCalled();
+    expect(getVirtualPbxStatusMock).not.toHaveBeenCalled();
   });
 
   it('saves Virtual PBX Sipuni employee SIP credentials before moving to the finish step', async () => {

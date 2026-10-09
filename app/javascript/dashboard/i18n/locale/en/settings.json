@@ -1348,6 +1348,7 @@
           "SUCCESS_MESSAGE": "Assignment policy updated successfully",
           "ERROR_MESSAGE": "Failed to update assignment policy"
         },
+        "SELECTED_WORKSPACE_POLICY_ERROR": "Choose another workspace assignment policy or return to Conversations settings before disabling this policy.",
         "INBOX_API": {
           "ADD": {
             "SUCCESS_MESSAGE": "Inbox added to policy successfully",
@@ -1467,7 +1468,8 @@
       },
       "DELETE_POLICY": {
         "SUCCESS_MESSAGE": "Assignment policy deleted successfully",
-        "ERROR_MESSAGE": "Failed to delete assignment policy"
+        "ERROR_MESSAGE": "Failed to delete assignment policy",
+        "SELECTED_WORKSPACE_POLICY_ERROR": "Choose another workspace assignment policy or return to Conversations settings before deleting this policy."
       }
     },
     "AGENT_CAPACITY_POLICY": {

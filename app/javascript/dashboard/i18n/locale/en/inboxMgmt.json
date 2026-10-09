@@ -1695,6 +1695,8 @@
       "TITLE": "Conversation Assignment",
       "DESCRIPTION": "Automatically assign incoming conversations to available agents based on assignment policies",
       "ENABLE_AUTO_ASSIGNMENT": "Enable automatic conversation assignment",
+      "WORKSPACE_POLICY_NOTICE": "This inbox keeps its own automatic assignment switch. The assignment policy is selected in Conversations settings for the whole workspace.",
+      "OPEN_WORKSPACE_SETTINGS": "Open Conversations settings",
       "DEFAULT_RULES_TITLE": "Default assignment rules",
       "DEFAULT_RULES_DESCRIPTION": "Using the default assignment behavior for all conversations",
       "DEFAULT_RULE_1": "Earliest created conversations first",

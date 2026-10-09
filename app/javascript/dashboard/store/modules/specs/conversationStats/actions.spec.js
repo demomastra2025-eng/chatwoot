@@ -136,7 +136,7 @@ describe('#actions', () => {
 
       it('still fires within the maximum wait while calls keep arriving', async () => {
         actions.get(context, { status: 'open', inboxId: 4 });
-        for (let second = 1; second <= 4; second += 1) {
+        for (let interval = 1; interval <= 4; interval += 1) {
           // eslint-disable-next-line no-await-in-loop
           await vi.advanceTimersByTimeAsync(1000);
           actions.get(context, { status: 'open', inboxId: 4 });
@@ -168,6 +168,33 @@ describe('#actions', () => {
         expect(axios.get).not.toHaveBeenCalled();
         await vi.advanceTimersByTimeAsync(1);
         expect(axios.get).toHaveBeenCalledOnce();
+      });
+
+      it('coalesces rapid status changes and uses the latest filters within 500ms', async () => {
+        for (let change = 0; change <= 9; change += 1) {
+          if (change > 0) {
+            // eslint-disable-next-line no-await-in-loop
+            await vi.advanceTimersByTimeAsync(50);
+          }
+          actions.get(context, {
+            status: change === 9 ? 'resolved' : 'open',
+            inboxId: change,
+            refreshPriority: 'realtime',
+          });
+        }
+
+        await vi.advanceTimersByTimeAsync(49);
+        expect(axios.get).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
+
+        expect(axios.get).toHaveBeenCalledOnce();
+        expect(axios.get.mock.calls[0][1].params).toMatchObject({
+          status: 'resolved',
+          inbox_id: 9,
+        });
+        expect(axios.get.mock.calls[0][1].params).not.toHaveProperty(
+          'refresh_priority'
+        );
       });
 
       it('does not run a second request while one is in flight and refreshes once afterwards', async () => {

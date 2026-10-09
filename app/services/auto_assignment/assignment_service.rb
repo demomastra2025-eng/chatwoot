@@ -14,6 +14,7 @@ class AutoAssignment::AssignmentService
   def bulk_assignment_enabled?
     inbox.auto_assignment_v2_enabled? &&
       inbox.enable_auto_assignment? &&
+      !inbox.workspace_assignment_policy_unavailable? &&
       active_policy_enabled? &&
       candidate_agent_members.exists?
   end
@@ -229,7 +230,7 @@ class AutoAssignment::AssignmentService
     }.compact
   end
 
-  def active_policy = @active_policy ||= inbox.assignment_policy
+  def active_policy = @active_policy ||= inbox.effective_assignment_policy
 
   def quota_service = @quota_service ||= AutoAssignment::QuotaService.new(inbox: inbox, policy: active_policy)
 

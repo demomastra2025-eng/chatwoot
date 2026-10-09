@@ -37,6 +37,8 @@ export default {
       selectedAgentIds: [],
       virtualPbxStatusPayload: null,
       virtualPbxProfiles: {},
+      inboxChannelType: '',
+      inboxProviderKind: '',
       isCreating: false,
       isLoadingVirtualPbx: false,
     };
@@ -102,9 +104,13 @@ export default {
         this.virtualPbxConfig?.channel?.provider_kind ||
         this.virtualPbxConfig?.connection?.provider_kind ||
         this.virtualPbxStatusPayload?.provider_kind ||
+        this.inboxProviderKind ||
         this.$route.query.provider ||
         ''
       );
+    },
+    isTelephonyInbox() {
+      return this.inboxChannelType === 'Channel::Voice';
     },
     isVirtualPbxProfileAssignmentInbox() {
       return [
@@ -143,11 +149,36 @@ export default {
     },
   },
   async mounted() {
+    const inbox = await this.loadInboxDetails();
+    this.inboxChannelType = inbox?.channel_type || '';
+    this.inboxProviderKind =
+      inbox?.provider_kind || inbox?.channel?.provider_kind || '';
+
+    if (!this.isTelephonyInbox) {
+      await (this.$router || router).replace(this.finishRoute());
+      return;
+    }
+
     this.$store.dispatch('agents/get');
     await Promise.all([this.loadInboxMembers(), this.loadVirtualPbxStatus()]);
     this.ensureVirtualPbxProfilesForSelectedAgents();
   },
   methods: {
+    async loadInboxDetails() {
+      const inboxId = this.$route.params.inbox_id;
+      let inbox = this.$store.getters['inboxes/getInbox']?.(inboxId);
+
+      if (!inbox?.channel_type) {
+        try {
+          await this.$store.dispatch('inboxes/get');
+        } catch {
+          return null;
+        }
+        inbox = this.$store.getters['inboxes/getInbox']?.(inboxId);
+      }
+
+      return inbox;
+    },
     handleAgentAdd({ value }) {
       if (!this.selectedAgentIds.includes(value)) {
         this.selectedAgentIds.push(value);

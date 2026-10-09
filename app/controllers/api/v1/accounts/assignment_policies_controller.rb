@@ -13,12 +13,26 @@ class Api::V1::Accounts::AssignmentPoliciesController < Api::V1::Accounts::BaseC
   end
 
   def update
-    @assignment_policy.update!(assignment_policy_params)
+    account = @assignment_policy.account
+    account.with_lock('FOR NO KEY UPDATE') do
+      if selected_workspace_policy?(account) && disabling_policy?
+        return render json: { error_code: 'selected_workspace_assignment_policy' }, status: :conflict
+      end
+
+      @assignment_policy.update!(assignment_policy_params)
+    end
   end
 
   def destroy
-    @assignment_policy.destroy!
-    head :ok
+    account = @assignment_policy.account
+    account.with_lock('FOR NO KEY UPDATE') do
+      if selected_workspace_policy?(account)
+        return render json: { error_code: 'selected_workspace_assignment_policy' }, status: :conflict
+      end
+
+      @assignment_policy.destroy!
+      head :ok
+    end
   end
 
   private
@@ -37,5 +51,14 @@ class Api::V1::Accounts::AssignmentPoliciesController < Api::V1::Accounts::BaseC
       :sticky_owner_duration_days,
       exclusion_rules: [:exclude_older_than_minutes, { excluded_labels: [] }]
     )
+  end
+
+  def selected_workspace_policy?(account)
+    account.conversation_assignment_policy_id.to_s == @assignment_policy.id.to_s
+  end
+
+  def disabling_policy?
+    assignment_policy_params.key?(:enabled) &&
+      ActiveModel::Type::Boolean.new.cast(assignment_policy_params[:enabled]) == false
   end
 end

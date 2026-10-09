@@ -68,6 +68,7 @@ class Account < ApplicationRecord
   store_accessor :settings, :captain_auto_resolve_mode
   store_accessor :settings, :conversation_status_reason_config
   store_accessor :settings, :scheduling_contact_required, :scheduling_company_enabled
+  store_accessor :settings, :conversation_assignment_policy_id
   include AccountCaptainAutoResolve
 
   has_many :account_users, dependent: :destroy_async
@@ -233,6 +234,20 @@ class Account < ApplicationRecord
     value = settings.to_h['call_transcriptions']
     value = settings.to_h['audio_transcriptions'] if value.nil?
     ActiveModel::Type::Boolean.new.cast(value)
+  end
+
+  def workspace_assignment_policy_selected?
+    conversation_assignment_policy_id.present?
+  end
+
+  def workspace_assignment_policy
+    return unless workspace_assignment_policy_selected?
+
+    assignment_policies.find_by(id: conversation_assignment_policy_id, enabled: true)
+  end
+
+  def workspace_assignment_policy_available?
+    !workspace_assignment_policy_selected? || workspace_assignment_policy.present?
   end
 
   def usage_limits
