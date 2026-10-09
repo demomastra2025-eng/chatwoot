@@ -104,6 +104,17 @@ delete_accounts_job:
 
 # executed every 15 minutes
 # evaluates account-scoped Captain observability alerts and dispatches notifications
+ai_booking_monitor_job:
+  cron: '*/15 * * * *'
+  class: 'Scheduling::AiBookingMonitorJob'
+  queue: scheduled_jobs
+
+# Disabled by default; requires AI_BOOKING_PROVIDER_CHECK_ENABLED=true.
+ai_booking_provider_check_job:
+  cron: '*/15 * * * *'
+  class: 'Scheduling::AiBookingProviderCheckJob'
+  queue: scheduled_jobs
+
 deliver_captain_observability_alerts_job:
   cron: '*/15 * * * *'
   class: 'Internal::DeliverCaptainObservabilityAlertsJob'
