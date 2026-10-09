@@ -61,6 +61,8 @@ class Captain::Assistant < ApplicationRecord
   SYSTEM_TEMPLATE_SLOT_REFERENCE_GLOSSARY = 'reference_glossary_usage'
   MESSAGE_MODE_STATIC = 'static'
   MESSAGE_MODE_AI = 'ai'
+  SAFETY_ACTION_VALUES = %w[disabled flag block].freeze
+  SAFETY_SETTINGS_KEYS = %w[moderation_enabled prompt_injection_action sensitive_info_action].freeze
   MESSAGE_MODES = [MESSAGE_MODE_STATIC, MESSAGE_MODE_AI].freeze
   HANDOFF_TOOL_ID = 'handoff'
   CRM_DEAL_PIPELINE_COMPANION_TOOL_IDS = %w[list_deal_pipelines list_deal_stages].freeze
@@ -417,6 +419,7 @@ class Captain::Assistant < ApplicationRecord
   validate :validate_fish_voice_reference
   validate :validate_conversational_model
   validate :validate_follow_up_settings
+  validate :validate_safety_settings
 
   scope :ordered, -> { order(created_at: :desc) }
 
@@ -833,6 +836,24 @@ class Captain::Assistant < ApplicationRecord
     end
   end
 
+  def validate_safety_settings
+    settings = config.to_h.deep_stringify_keys['safety_settings']
+    return if settings.nil?
+    return errors.add(:config, :invalid_safety_settings) unless settings.is_a?(Hash)
+    return errors.add(:config, :invalid_safety_settings) if (settings.keys - SAFETY_SETTINGS_KEYS).any?
+
+    moderation = settings['moderation_enabled']
+    if !moderation.nil? && moderation != true && moderation != false
+      errors.add(:config, :invalid_safety_settings)
+      return
+    end
+
+    action_values = settings.values_at('prompt_injection_action', 'sensitive_info_action')
+    return if action_values.all? { |value| value.nil? || SAFETY_ACTION_VALUES.include?(value.to_s) }
+
+    errors.add(:config, :invalid_safety_settings)
+  end
+
   def outcome_reason_prompt_context
     Captain::OutcomeReasonConfig.prompt_context_for(self)
   end
@@ -863,7 +884,7 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def normalize_instruction_description
-    self.description = description.to_s.strip
+    self.description = description.to_s
     remove_legacy_config_keys
   end
 

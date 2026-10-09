@@ -1,102 +1,42 @@
-import ApiClient from '../ApiClient';
-import captainAssistantAPI from '../captain/assistant';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import CaptainAssistant from '../captain/assistant';
 
-describe('#CaptainAssistantAPI', () => {
-  it('creates correct instance', () => {
-    expect(captainAssistantAPI).toBeInstanceOf(ApiClient);
-    expect(captainAssistantAPI).toHaveProperty('create');
-    expect(captainAssistantAPI).toHaveProperty('update');
-    expect(captainAssistantAPI).toHaveProperty('promptPreview');
-    expect(captainAssistantAPI).toHaveProperty('voicePreview');
+describe('CaptainAssistant playground API', () => {
+  const originalAxios = window.axios;
+  const axiosMock = {
+    post: vi.fn(),
+  };
+
+  beforeEach(() => {
+    window.axios = axiosMock;
+    axiosMock.post.mockReset();
   });
 
-  describe('assistant payload contract', () => {
-    const originalAxios = window.axios;
-    const originalPathname = window.location.pathname;
-    const axiosMock = {
-      post: vi.fn(() => Promise.resolve()),
-      patch: vi.fn(() => Promise.resolve()),
-    };
+  afterEach(() => {
+    window.axios = originalAxios;
+  });
 
-    beforeEach(() => {
-      window.axios = axiosMock;
-      window.history.pushState({}, '', '/app/accounts/1/captain/12/prompts');
-      axiosMock.post.mockClear();
-      axiosMock.patch.mockClear();
+  it('sends test-only model controls as playground request fields', () => {
+    CaptainAssistant.playground({
+      assistantId: 42,
+      messageContent: 'Check this response',
+      messageHistory: [{ role: 'user', content: 'Earlier question' }],
+      testOptions: {
+        model: 'openai/gpt-5.4',
+        temperature: 0.4,
+        thinkingEffort: 'high',
+      },
     });
 
-    afterEach(() => {
-      window.axios = originalAxios;
-      window.history.pushState({}, '', originalPathname);
-    });
-
-    it('wraps plain create payloads under assistant', () => {
-      captainAssistantAPI.create({
-        name: 'Billing agent',
-        config: { feature_faq: true },
-      });
-
-      expect(axiosMock.post).toHaveBeenCalledWith(
-        '/api/v1/accounts/1/captain/assistants',
-        {
-          assistant: {
-            name: 'Billing agent',
-            config: { feature_faq: true },
-          },
-        }
-      );
-    });
-
-    it('wraps plain update payloads under assistant', () => {
-      captainAssistantAPI.update(42, {
-        config: {
-          rules: [
-            {
-              id: 'response_rule',
-              type: 'response_guideline',
-              group: 'Conversation flow',
-              content: 'Ask one clarifying question before assuming.',
-              enabled: true,
-            },
-          ],
-        },
-      });
-
-      expect(axiosMock.patch).toHaveBeenCalledWith(
-        '/api/v1/accounts/1/captain/assistants/42',
-        {
-          assistant: {
-            config: {
-              rules: [
-                {
-                  id: 'response_rule',
-                  type: 'response_guideline',
-                  group: 'Conversation flow',
-                  content: 'Ask one clarifying question before assuming.',
-                  enabled: true,
-                },
-              ],
-            },
-          },
-        }
-      );
-    });
-
-    it('preserves already wrapped assistant payloads', () => {
-      captainAssistantAPI.update(42, {
-        assistant: {
-          guardrails: ['Never ask for passwords'],
-        },
-      });
-
-      expect(axiosMock.patch).toHaveBeenCalledWith(
-        '/api/v1/accounts/1/captain/assistants/42',
-        {
-          assistant: {
-            guardrails: ['Never ask for passwords'],
-          },
-        }
-      );
-    });
+    expect(axiosMock.post).toHaveBeenCalledWith(
+      '/api/v1/captain/assistants/42/playground',
+      {
+        message_content: 'Check this response',
+        message_history: [{ role: 'user', content: 'Earlier question' }],
+        test_model: 'openai/gpt-5.4',
+        test_temperature: 0.4,
+        test_thinking_effort: 'high',
+      }
+    );
   });
 });

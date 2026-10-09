@@ -1,9 +1,11 @@
 <script setup>
-import { ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import NextButton from 'dashboard/components-next/button/Button.vue';
+import Select from 'dashboard/components-next/select/Select.vue';
 import MessageList from './MessageList.vue';
 import CaptainAssistant from 'dashboard/api/captain/assistant';
+import { useCaptainConfigStore } from 'dashboard/store/captain/preferences';
 
 const props = defineProps({
   assistantId: {
@@ -13,9 +15,93 @@ const props = defineProps({
 });
 
 const { t } = useI18n();
+const captainConfigStore = useCaptainConfigStore();
 const messages = ref([]);
 const newMessage = ref('');
 const isLoading = ref(false);
+const isLoadingSettings = ref(true);
+const settingsFailed = ref(false);
+const assistant = ref(null);
+const selectedModel = ref('');
+const temperatureOverrideEnabled = ref(false);
+const testTemperature = ref(1);
+const thinkingEffort = ref('');
+
+const availableModels = computed(() =>
+  captainConfigStore.getModelsForFeature('assistant')
+);
+const effectiveModel = computed(
+  () =>
+    selectedModel.value ||
+    assistant.value?.config?.model ||
+    captainConfigStore.getSelectedModelForFeature('assistant') ||
+    ''
+);
+const effectiveModelMetadata = computed(() =>
+  availableModels.value.find(model => model.id === effectiveModel.value)
+);
+const supportsTemperature = computed(
+  () => effectiveModelMetadata.value?.supports_temperature === true
+);
+const supportsReasoning = computed(() =>
+  effectiveModelMetadata.value?.capabilities?.includes('reasoning')
+);
+const modelOptions = computed(() => [
+  {
+    value: '',
+    label: t('CAPTAIN.PLAYGROUND.USE_ASSISTANT_MODEL'),
+  },
+  ...availableModels.value
+    .filter(model => !model.current_only || model.id === assistant.value?.config?.model)
+    .map(model => ({
+      value: model.id,
+      label: model.current_only
+        ? t('CAPTAIN.PLAYGROUND.CURRENT_MODEL', {
+            model: model.display_name || model.id,
+          })
+        : model.display_name || model.id,
+    })),
+]);
+const savedTemperature = computed(() => {
+  const value = Number(assistant.value?.config?.temperature);
+  return Number.isFinite(value) ? value : 1;
+});
+const formattedTemperature = computed(() =>
+  Number(testTemperature.value || 0).toFixed(1)
+);
+
+const reasoningEffortOptions = computed(() => [
+  { value: '', label: t('CAPTAIN.PLAYGROUND.USE_WORKSPACE_REASONING') },
+  { value: 'none', label: t('CAPTAIN.PLAYGROUND.REASONING_NONE') },
+  { value: 'low', label: t('CAPTAIN.PLAYGROUND.REASONING_LOW') },
+  { value: 'medium', label: t('CAPTAIN.PLAYGROUND.REASONING_MEDIUM') },
+  { value: 'high', label: t('CAPTAIN.PLAYGROUND.REASONING_HIGH') },
+]);
+
+const loadPlaygroundSettings = async () => {
+  isLoadingSettings.value = true;
+  settingsFailed.value = false;
+  try {
+    const [, response] = await Promise.all([
+      captainConfigStore.fetch({ clientMetadataOnly: true }),
+      CaptainAssistant.show(props.assistantId),
+    ]);
+    assistant.value = response.data;
+    testTemperature.value = savedTemperature.value;
+    settingsFailed.value = captainConfigStore.uiFlags.fetchError === true;
+  } catch (error) {
+    settingsFailed.value = true;
+  } finally {
+    isLoadingSettings.value = false;
+  }
+};
+
+watch(supportsTemperature, supported => {
+  if (!supported) temperatureOverrideEnabled.value = false;
+});
+watch(supportsReasoning, supported => {
+  if (!supported) thinkingEffort.value = '';
+});
 
 const formatMessagesForApi = () =>
   messages.value.map(message => ({
@@ -56,6 +142,15 @@ const sendMessage = async () => {
       assistantId: props.assistantId,
       messageContent: currentMessage,
       messageHistory,
+      testOptions: {
+        ...(selectedModel.value ? { model: selectedModel.value } : {}),
+        ...(temperatureOverrideEnabled.value && supportsTemperature.value
+          ? { temperature: testTemperature.value }
+          : {}),
+        ...(thinkingEffort.value && supportsReasoning.value
+          ? { thinkingEffort: thinkingEffort.value }
+          : {}),
+      },
     });
 
     messages.value.push({
@@ -63,6 +158,8 @@ const sendMessage = async () => {
       sender: 'assistant',
       agentName: data.agent_name,
       reasoning: data.reasoning,
+      responseLatencyMs: data.response_latency_ms,
+      reportedReasoningTokens: data.reported_reasoning_tokens,
       toolTrace: data.tool_trace || [],
       timestamp: new Date().toISOString(),
     });
@@ -84,6 +181,8 @@ const handleEnterKey = event => {
   event.preventDefault();
   sendMessage();
 };
+
+onMounted(loadPlaygroundSettings);
 </script>
 
 <template>
@@ -157,6 +256,22 @@ const handleEnterKey = event => {
           >
             {{ t('CAPTAIN.PLAYGROUND.TRACE_RESPONSE', { number: index + 1 }) }}
           </p>
+          <div v-if="message.responseLatencyMs != null" class="mt-2">
+            <p class="text-xs font-medium text-n-slate-12">
+              {{ t('CAPTAIN.PLAYGROUND.RESPONSE_LATENCY') }}
+            </p>
+            <p class="mt-1 text-xs text-n-slate-11">
+              {{ t('CAPTAIN.PLAYGROUND.RESPONSE_LATENCY_VALUE', { ms: message.responseLatencyMs }) }}
+            </p>
+          </div>
+          <div v-if="message.reportedReasoningTokens" class="mt-2">
+            <p class="text-xs font-medium text-n-slate-12">
+              {{ t('CAPTAIN.PLAYGROUND.REPORTED_REASONING_TOKENS') }}
+            </p>
+            <p class="mt-1 text-xs text-n-slate-11">
+              {{ message.reportedReasoningTokens }}
+            </p>
+          </div>
           <div v-if="message.reasoning" class="mt-2">
             <p class="text-xs font-medium text-n-slate-12">
               {{ t('CAPTAIN.PLAYGROUND.TRACE_REASONING') }}
@@ -188,6 +303,72 @@ const handleEnterKey = event => {
         </div>
       </aside>
     </div>
+
+    <section
+      v-if="assistant?.usage_mode !== 'internal_assistant'"
+      class="rounded-xl border border-n-weak bg-n-solid-1 p-4"
+      data-test="playground-test-settings"
+    >
+      <h4 class="text-sm font-medium text-n-slate-12">
+        {{ t('CAPTAIN.PLAYGROUND.TEST_SETTINGS') }}
+      </h4>
+      <p class="mt-1 text-xs text-n-slate-11">
+        {{ t('CAPTAIN.PLAYGROUND.TEST_SETTINGS_DESCRIPTION') }}
+      </p>
+      <p v-if="settingsFailed" class="mt-2 text-xs text-n-ruby-9" role="alert">
+        {{ t('CAPTAIN.PLAYGROUND.TEST_SETTINGS_ERROR') }}
+      </p>
+      <div class="mt-3 grid gap-4 md:grid-cols-3">
+        <label class="flex min-w-0 flex-col gap-1 text-xs text-n-slate-11">
+          {{ t('CAPTAIN.PLAYGROUND.TEST_MODEL') }}
+          <Select
+            v-model="selectedModel"
+            :options="modelOptions"
+            :disabled="isLoadingSettings || settingsFailed"
+            class="w-full"
+          />
+        </label>
+        <div class="flex min-w-0 flex-col gap-1">
+          <label class="flex items-center justify-between gap-3 text-xs text-n-slate-11">
+            <span>{{ t('CAPTAIN.PLAYGROUND.TEST_TEMPERATURE') }}</span>
+            <input
+              v-model="temperatureOverrideEnabled"
+              type="checkbox"
+              :disabled="isLoadingSettings || settingsFailed || !supportsTemperature"
+            />
+          </label>
+          <div class="flex items-center gap-3">
+            <input
+              v-model.number="testTemperature"
+              type="range"
+              min="0"
+              max="1"
+              step="0.1"
+              class="min-w-0 flex-1 accent-n-brand disabled:cursor-not-allowed"
+              :disabled="!temperatureOverrideEnabled || !supportsTemperature"
+            />
+            <span class="w-10 text-right text-xs tabular-nums text-n-slate-11">
+              {{ temperatureOverrideEnabled ? formattedTemperature : savedTemperature.toFixed(1) }}
+            </span>
+          </div>
+          <p v-if="!supportsTemperature" class="m-0 text-xs text-n-slate-10">
+            {{ t('CAPTAIN.PLAYGROUND.UNSUPPORTED_TEMPERATURE') }}
+          </p>
+        </div>
+        <label class="flex min-w-0 flex-col gap-1 text-xs text-n-slate-11">
+          {{ t('CAPTAIN.PLAYGROUND.TEST_REASONING_EFFORT') }}
+          <Select
+            v-model="thinkingEffort"
+            :options="reasoningEffortOptions"
+            :disabled="isLoadingSettings || settingsFailed || !supportsReasoning"
+            class="w-full"
+          />
+          <span v-if="!supportsReasoning" class="text-xs text-n-slate-10">
+            {{ t('CAPTAIN.PLAYGROUND.UNSUPPORTED_REASONING') }}
+          </span>
+        </label>
+      </div>
+    </section>
 
     <p class="text-center text-xs text-n-slate-11">
       {{ t('CAPTAIN.PLAYGROUND.CREDIT_NOTE') }}

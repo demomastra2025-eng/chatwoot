@@ -43,17 +43,23 @@ class Captain::Assistant::AgentRunnerService
     end
   end
 
-  def initialize(assistant:, conversation: nil, callbacks: {}, source: nil, response_fence: nil)
+  def initialize(assistant:, conversation: nil, callbacks: {}, source: nil, response_fence: nil, test_overrides: {})
     @assistant = assistant
     @conversation = conversation
     @callbacks = callbacks
     @source = source
     @response_fence = response_fence.to_h.symbolize_keys.compact
+    @test_overrides = if source.to_s == 'playground'
+                        test_overrides.to_h.symbolize_keys.slice(:model, :temperature, :thinking_effort)
+                      else
+                        {}
+                      end
     @handoff_tool_called = false
   end
 
   def generate_response(message_history: [])
-    Captain::Mcp::ToolCatalog.with_runtime_cache do
+    started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    response = Captain::Mcp::ToolCatalog.with_runtime_cache do
       with_mcp_discovery_policy do
         Llm::Config.with_runtime_cache do
           with_llm_catalog_snapshots do
@@ -62,6 +68,7 @@ class Captain::Assistant::AgentRunnerService
         end
       end
     end
+    add_playground_latency(response, started_at)
   rescue Captain::Conversation::ControlGenerationStaleError
     raise
   rescue StandardError => e
@@ -70,7 +77,7 @@ class Captain::Assistant::AgentRunnerService
     Rails.logger.error "[Captain V2] AgentRunnerService error: #{e.message}"
     Rails.logger.error e.backtrace.join("\n")
 
-    error_response(e)
+    add_playground_latency(error_response(e), started_at)
   end
 
   private
@@ -266,6 +273,7 @@ class Captain::Assistant::AgentRunnerService
 
     publish_tool_omission_event(response, result.context)
     moderate_output!(response, result.context&.dig(:state, :captain_runtime))
+    add_playground_usage(response, result)
     response
   rescue Llm::SafetyPolicy::UnsafeContentError
     blocked_by_moderation_response('Agent output blocked by moderation policy')
@@ -784,7 +792,7 @@ class Captain::Assistant::AgentRunnerService
       account_id: @assistant.account_id,
       assistant_id: @assistant.id,
       assistant_config: @assistant.config,
-      captain_runtime: @assistant.account.captain_runtime_preferences,
+      captain_runtime: runtime_preferences_for_run,
       captain_scheduling_grounding_guard_enabled: @assistant.account.feature_enabled?('captain_scheduling_grounding_guard')
     }
     state[:source] = @source if @source.present?
@@ -891,8 +899,12 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def build_and_wire_agents
-    assistant_agent = @assistant.agent
-    scenario_agents = enabled_scenarios.map(&:agent)
+    agent_options = {
+      model_override: @test_overrides[:model],
+      temperature_override: @test_overrides[:temperature]
+    }.compact
+    assistant_agent = @assistant.agent(**agent_options)
+    scenario_agents = enabled_scenarios.map { |scenario| scenario.agent(**agent_options) }
 
     assistant_agent.register_handoffs(*scenario_agents) if scenario_agents.any?
     scenario_agents.each do |scenario_agent|
@@ -901,6 +913,37 @@ class Captain::Assistant::AgentRunnerService
     end
 
     [assistant_agent] + scenario_agents
+  end
+
+  def runtime_preferences_for_run
+    preferences = @assistant.account.captain_runtime_preferences.to_h.stringify_keys
+    safety_settings = @assistant.config.to_h.deep_stringify_keys['safety_settings'].to_h
+    {
+      'moderation_enabled' => ['assistant_moderation', [true, false]],
+      'prompt_injection_action' => ['assistant_prompt_injection_guardrail', Llm::RuntimeGuardrailAction::ACTIONS],
+      'sensitive_info_action' => ['assistant_sensitive_info_guardrail', Llm::RuntimeGuardrailAction::ACTIONS]
+    }.each do |setting_key, (runtime_key, allowed_values)|
+      value = safety_settings[setting_key]
+      preferences[runtime_key] = value if allowed_values.include?(value)
+    end
+    return preferences unless @source == 'playground' && @test_overrides.key?(:thinking_effort)
+
+    preferences.merge('assistant_thinking_effort' => @test_overrides[:thinking_effort])
+  end
+
+  def add_playground_latency(response, started_at)
+    return response unless @source == 'playground' && response.is_a?(Hash) && started_at
+
+    elapsed_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
+    response.merge('response_latency_ms' => elapsed_ms)
+  end
+
+  def add_playground_usage(response, result)
+    return unless @source == 'playground' && result.respond_to?(:usage)
+
+    tokens = result.usage.thinking_tokens.to_i if result.usage.respond_to?(:thinking_tokens)
+    tokens ||= 0
+    response['reported_reasoning_tokens'] = tokens if tokens.positive?
   end
 
   def enabled_scenarios

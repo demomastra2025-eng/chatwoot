@@ -11,6 +11,9 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     :use_audio_transcriptions,
     :message_collapse_window_seconds, :history_message_limit
   ].freeze
+  ASSISTANT_SAFETY_SETTINGS_FIELDS = %i[
+    moderation_enabled prompt_injection_action sensitive_info_action
+  ].freeze
   VOICE_SETTINGS_ARRAY_FIELDS = Telephony::AiVoice::VoiceSettingsDefaults::ARRAY_KEYS.index_with { [] }.freeze
   VOICE_SETTINGS_SCALAR_FIELDS = (Telephony::AiVoice::VoiceSettingsDefaults::DEFAULTS.keys - VOICE_SETTINGS_ARRAY_FIELDS.keys).freeze
 
@@ -59,6 +62,11 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   end
 
   def playground
+    @playground_test_overrides, invalid_override = playground_test_overrides
+    if invalid_override
+      return render json: { error: 'unsupported_playground_setting', field: invalid_override }, status: :unprocessable_entity
+    end
+
     response = @assistant.internal_assistant? ? copilot_playground_response : agent_playground_response
 
     render json: response
@@ -133,7 +141,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
       :name,
       :description,
       :usage_mode,
-      config: ASSISTANT_CONFIG_FIELDS
+      config: ASSISTANT_CONFIG_FIELDS + [{ safety_settings: ASSISTANT_SAFETY_SETTINGS_FIELDS }]
     )
 
     merge_optional_array_param!(permitted, :response_guidelines)
@@ -167,6 +175,10 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
       incoming_config['voice_settings'] = normalized_voice_settings(existing_config['voice_settings'], incoming_config['voice_settings'])
     end
     normalize_outcome_reason_settings!(incoming_config, existing_config['outcome_reason_settings'])
+    if incoming_config.key?('safety_settings')
+      incoming_config['safety_settings'] = existing_config['safety_settings'].to_h.deep_stringify_keys
+                                                                          .merge(incoming_config['safety_settings'].to_h.deep_stringify_keys)
+    end
 
     attributes.merge(config: existing_config.merge(incoming_config))
   end
@@ -242,14 +254,67 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   end
 
   def playground_params
-    params.require(:assistant).permit(:message_content, :conversation_id, message_history: [:role, :content, :agent_name])
+    params.require(:assistant).permit(
+      :message_content,
+      :conversation_id,
+      :test_model,
+      :test_temperature,
+      :test_thinking_effort,
+      message_history: [:role, :content, :agent_name]
+    )
   end
 
   def agent_playground_response
     options = { assistant: @assistant, source: 'playground' }
     options[:conversation] = playground_conversation if playground_params[:conversation_id].present?
+    options[:test_overrides] = @playground_test_overrides if @playground_test_overrides.present?
 
     Captain::Assistant::AgentRunnerService.new(**options).generate_response(message_history: playground_message_history)
+  end
+
+  def playground_test_overrides
+    attributes = playground_params
+    if @assistant.internal_assistant?
+      unsupported_field = %i[test_model test_temperature test_thinking_effort].find do |field|
+        attributes[field].present?
+      end
+      return [nil, unsupported_field] if unsupported_field
+    end
+
+    effective_model = @assistant.model.to_s.strip.presence || Llm::Config.model_for(feature: :assistant, account: Current.account)
+    overrides = {}
+
+    if attributes[:test_model].present?
+      requested_model = Llm::Models.canonical_model_name(attributes[:test_model])
+      selectable_models = Llm::Models.curated_model_names_for(:assistant, account: Current.account)
+      selectable_models += [@assistant.model, Llm::Config.model_for(feature: :assistant, account: Current.account)].compact_blank
+      unless selectable_models.include?(requested_model) && Llm::Models.valid_model_for?(:assistant, requested_model, account: Current.account)
+        return [nil, 'test_model']
+      end
+
+      effective_model = requested_model
+      overrides[:model] = requested_model
+    end
+
+    if attributes.key?(:test_temperature)
+      temperature = Float(attributes[:test_temperature])
+      return [nil, 'test_temperature'] unless temperature.finite? && temperature.between?(0.0, 1.0)
+      return [nil, 'test_temperature'] unless Llm::Models.supports_temperature?(effective_model, account: Current.account)
+
+      overrides[:temperature] = temperature
+    end
+
+    if attributes[:test_thinking_effort].present?
+      effort = attributes[:test_thinking_effort].to_s
+      return [nil, 'test_thinking_effort'] unless Llm::RuntimePolicy::THINKING_EFFORTS.include?(effort)
+      return [nil, 'test_thinking_effort'] if effort != 'none' && !Llm::Models.supports_thinking?(effective_model, account: Current.account)
+
+      overrides[:thinking_effort] = effort
+    end
+
+    [overrides, nil]
+  rescue ArgumentError, TypeError
+    [nil, 'test_temperature']
   end
 
   def copilot_playground_response

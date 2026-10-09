@@ -84,6 +84,7 @@ const BASIC_SETTINGS_CONFIG_KEYS = Object.freeze([
   'temperature',
   'message_collapse_window_seconds',
   'history_message_limit',
+  'safety_settings',
 ]);
 
 const CAPABILITY_SETTINGS_CONFIG_KEYS = Object.freeze([

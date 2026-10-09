@@ -493,8 +493,26 @@
       "TRACE_EMPTY": "Send a message to see the trace.",
       "TRACE_RESPONSE": "Response {number}",
       "TRACE_REASONING": "Reasoning",
+      "RESPONSE_LATENCY": "Response time",
+      "RESPONSE_LATENCY_VALUE": "{ms} ms (server measured, end to end)",
+      "REPORTED_REASONING_TOKENS": "Reasoning tokens reported by provider",
       "TRACE_TOOLS": "Tools",
-      "TRACE_NO_TOOLS": "No tools were called"
+      "TRACE_NO_TOOLS": "No tools were called",
+      "TEST_SETTINGS": "Test settings",
+      "TEST_SETTINGS_DESCRIPTION": "These options apply only to playground requests and do not change the saved assistant.",
+      "TEST_SETTINGS_ERROR": "Test settings could not be loaded. Refresh and try again.",
+      "TEST_MODEL": "Model for this test",
+      "USE_ASSISTANT_MODEL": "Use assistant's configured model",
+      "CURRENT_MODEL": "{model} (current model)",
+      "TEST_TEMPERATURE": "Override temperature",
+      "UNSUPPORTED_TEMPERATURE": "The selected model does not expose temperature control.",
+      "TEST_REASONING_EFFORT": "Reasoning effort for this test",
+      "USE_WORKSPACE_REASONING": "Use workspace setting",
+      "REASONING_NONE": "None",
+      "REASONING_LOW": "Low",
+      "REASONING_MEDIUM": "Medium",
+      "REASONING_HIGH": "High",
+      "UNSUPPORTED_REASONING": "The selected model does not support reasoning effort."
     },
     "EVALUATIONS": {
       "TITLE": "Testing",
@@ -777,6 +795,18 @@
         "TEMPERATURE": {
           "LABEL": "Response Temperature",
           "DESCRIPTION": "Adjust how creative or restrictive the AI agent's responses should be. Lower values produce more focused and deterministic responses, while higher values allow for more creative and varied outputs."
+        },
+        "SAFETY_SETTINGS": {
+          "LABEL": "Safety checks",
+          "DESCRIPTION": "Choose the runtime checks for this agent. Inherit keeps the workspace setting; block stops matching requests, flag logs a match and continues, and off skips that check.",
+          "MODERATION": "Provider content moderation",
+          "PROMPT_INJECTION": "Prompt injection",
+          "SENSITIVE_INFO": "Secrets and credentials",
+          "INHERIT": "Use workspace setting",
+          "ENABLED": "On",
+          "DISABLED": "Off",
+          "BLOCK": "Block",
+          "FLAG": "Flag and continue"
         },
         "MESSAGE_COLLAPSE_WINDOW_SECONDS": {
           "LABEL": "Message Collapse Window",

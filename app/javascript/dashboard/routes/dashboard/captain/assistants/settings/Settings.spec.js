@@ -188,6 +188,11 @@ describe('Captain assistant settings page', () => {
         description: 'Updated description',
         config: {
           temperature: 0.4,
+          safety_settings: {
+            moderation_enabled: true,
+            prompt_injection_action: 'flag',
+            sensitive_info_action: 'block',
+          },
         },
       },
     });
@@ -269,6 +274,11 @@ describe('Captain assistant settings page', () => {
           handoff_reasons: expect.any(Array),
         }),
         temperature: 0.4,
+        safety_settings: {
+          moderation_enabled: true,
+          prompt_injection_action: 'flag',
+          sensitive_info_action: 'block',
+        },
         voice_settings: assistantRecord.config.voice_settings,
       }),
     });

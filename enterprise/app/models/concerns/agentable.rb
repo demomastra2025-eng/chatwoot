@@ -1,13 +1,13 @@
 module Concerns::Agentable
   extend ActiveSupport::Concern
 
-  def agent
+  def agent(model_override: nil, temperature_override: nil)
     Captain::Runtime::Agent.new(
       name: agent_name,
       instructions: ->(context) { agent_instructions(context) },
       tools: time_agent_phase('agent_tools') { agent_tools },
-      model: time_agent_phase('agent_model') { agent_model },
-      temperature: time_agent_phase('agent_temperature') { agent_temperature },
+      model: time_agent_phase('agent_model') { model_override.presence || agent_model },
+      temperature: time_agent_phase('agent_temperature') { temperature_override.nil? ? agent_temperature : temperature_override.to_f },
       response_schema: time_agent_phase('agent_response_schema') { agent_response_schema }
     )
   end

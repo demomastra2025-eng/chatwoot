@@ -360,6 +360,47 @@ describe('AssistantBasicSettingsForm', () => {
     expect(capabilitiesPayload.assistant.config).toHaveProperty('tool_access');
   });
 
+  it('round-trips per-agent safety settings and leaves inherited controls unset', async () => {
+    const wrapper = buildWrapper({
+      assistant: {
+        id: 58,
+        name: 'Мөлдір',
+        description: 'Поприветствуй клиента.',
+        usage_mode: 'external_agent',
+        config: {
+          safety_settings: {
+            moderation_enabled: true,
+            prompt_injection_action: 'flag',
+            sensitive_info_action: 'block',
+          },
+        },
+      },
+    });
+    const payload = await wrapper.vm.buildPayload();
+
+    expect(payload.assistant.config.safety_settings).toEqual({
+      moderation_enabled: true,
+      prompt_injection_action: 'flag',
+      sensitive_info_action: 'block',
+    });
+
+    const inheritedPayload = await buildWrapper({
+      assistant: {
+        id: 59,
+        name: 'Талап',
+        description: 'Keep workspace defaults.',
+        usage_mode: 'external_agent',
+        config: {},
+      },
+    }).vm.buildPayload();
+
+    expect(inheritedPayload.assistant.config.safety_settings).toEqual({
+      moderation_enabled: null,
+      prompt_injection_action: null,
+      sensitive_info_action: null,
+    });
+  });
+
   it('shows hand-over to a human as off when the server config turns it off', async () => {
     const wrapper = buildWrapper({
       assistant: {
@@ -586,6 +627,24 @@ describe('AssistantBasicSettingsForm', () => {
     expect(payload.assistant).toEqual({
       description: 'Поприветствуй клиента.',
     });
+  });
+
+  it('round-trips prompt newlines and whitespace without trimming saved instructions', async () => {
+    const description =
+      '\nUse the exact field names below.\n\n- Keep the heading.\n- Keep https://example.com/a-very-long-unbroken-path/unchanged\n';
+    const wrapper = buildWrapper({
+      assistant: {
+        id: 58,
+        name: 'Арманище',
+        description,
+        usage_mode: 'external_agent',
+        config: {},
+      },
+    });
+
+    const payload = await wrapper.vm.buildPayload();
+
+    expect(payload.assistant.description).toBe(description);
   });
 
   it('passes prompt editor height, editability, and line-break settings to the shared editor', () => {

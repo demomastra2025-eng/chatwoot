@@ -1293,17 +1293,6 @@ const menuItems = computed(() => {
               navigationPath: 'captain_assistants_responses_index',
             }),
           },
-          ...(checkPermissions(['administrator'])
-            ? [
-                {
-                  name: 'Settings Captain',
-                  visibilityKey: 'Settings:Captain',
-                  label: t('SIDEBAR.CAPTAIN_SETTINGS'),
-                  activeOn: ['captain_settings_index'],
-                  to: accountScopedRoute('captain_settings_index'),
-                },
-              ]
-            : []),
         ],
       },
       {

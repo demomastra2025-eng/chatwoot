@@ -179,6 +179,53 @@ RSpec.describe Llm::Models do
     end
   end
 
+  describe '.supports_temperature?' do
+    it 'uses the model registry parameter list for dynamic provider models' do
+      allow(described_class).to receive(:model_config).with('vendor/model', account: nil).and_return(
+        { 'supported_parameters' => %w[top_p temperature] }
+      )
+      allow(described_class).to receive(:registry_info_for).with('vendor/model').and_return(
+        double(metadata: { 'temperature' => false })
+      )
+
+      expect(described_class.supports_temperature?('vendor/model')).to be(true)
+    end
+
+    it 'uses the RubyLLM registry metadata for bundled models and fails closed when unknown' do
+      allow(described_class).to receive(:model_config).with('registered/model', account: nil).and_return(nil)
+      allow(described_class).to receive(:registry_info_for).with('registered/model').and_return(
+        double(metadata: { temperature: true })
+      )
+      allow(described_class).to receive(:model_config).with('unknown/model', account: nil).and_return(nil)
+      allow(described_class).to receive(:registry_info_for).with('unknown/model').and_return(nil)
+
+      expect(described_class.supports_temperature?('registered/model')).to be(true)
+      expect(described_class.supports_temperature?('unknown/model')).to be(false)
+    end
+
+    it 'does not fall back to stale provider metadata when the provider lists other parameters' do
+      allow(described_class).to receive(:model_config).with('vendor/model', account: nil).and_return(
+        { 'supported_parameters' => ['top_p'] }
+      )
+      allow(described_class).to receive(:registry_info_for).with('vendor/model').and_return(
+        double(metadata: { temperature: true })
+      )
+
+      expect(described_class.supports_temperature?('vendor/model')).to be(false)
+    end
+
+    it 'treats an explicitly empty provider parameter list as unsupported' do
+      allow(described_class).to receive(:model_config).with('vendor/model', account: nil).and_return(
+        { 'supported_parameters' => [] }
+      )
+      allow(described_class).to receive(:registry_info_for).with('vendor/model').and_return(
+        double(metadata: { temperature: true })
+      )
+
+      expect(described_class.supports_temperature?('vendor/model')).to be(false)
+    end
+  end
+
   describe 'capability helpers' do
     it 'exposes structured output, tool calling, multimodal, streaming, embedding, and transcription support' do
       expect(described_class.supports_structured_output?('gpt-4.1-mini')).to be true

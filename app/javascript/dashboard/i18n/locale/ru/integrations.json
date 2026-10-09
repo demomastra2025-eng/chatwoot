@@ -493,8 +493,26 @@
       "TRACE_EMPTY": "Отправьте сообщение, чтобы увидеть ход выполнения.",
       "TRACE_RESPONSE": "Ответ {number}",
       "TRACE_REASONING": "Рассуждение",
+      "RESPONSE_LATENCY": "Время ответа",
+      "RESPONSE_LATENCY_VALUE": "{ms} мс (полное время на сервере)",
+      "REPORTED_REASONING_TOKENS": "Токены рассуждения по данным провайдера",
       "TRACE_TOOLS": "Инструменты",
-      "TRACE_NO_TOOLS": "Инструменты не вызывались"
+      "TRACE_NO_TOOLS": "Инструменты не вызывались",
+      "TEST_SETTINGS": "Параметры теста",
+      "TEST_SETTINGS_DESCRIPTION": "Эти параметры действуют только для запросов на площадке и не меняют сохранённого ассистента.",
+      "TEST_SETTINGS_ERROR": "Не удалось загрузить параметры теста. Обновите страницу и попробуйте ещё раз.",
+      "TEST_MODEL": "Модель для этого теста",
+      "USE_ASSISTANT_MODEL": "Использовать модель ассистента",
+      "CURRENT_MODEL": "{model} (текущая модель)",
+      "TEST_TEMPERATURE": "Переопределить temperature",
+      "UNSUPPORTED_TEMPERATURE": "Для выбранной модели настройка temperature недоступна.",
+      "TEST_REASONING_EFFORT": "Уровень reasoning для теста",
+      "USE_WORKSPACE_REASONING": "Использовать настройку workspace",
+      "REASONING_NONE": "Нет",
+      "REASONING_LOW": "Низкий",
+      "REASONING_MEDIUM": "Средний",
+      "REASONING_HIGH": "Высокий",
+      "UNSUPPORTED_REASONING": "Выбранная модель не поддерживает настройку reasoning."
     },
     "PAYWALL": {
       "TITLE": "Обновите тарифный план, чтобы использовать AI-агентов",
@@ -564,6 +582,18 @@
         "TEMPERATURE": {
           "LABEL": "Температура ответа",
           "DESCRIPTION": "Настройте уровень креативности ответов: ниже — точнее и предсказуемее, выше — разнообразнее и творчеcки."
+        },
+        "SAFETY_SETTINGS": {
+          "LABEL": "Проверки безопасности",
+          "DESCRIPTION": "Выберите проверки, которые выполняются во время работы агента. «Настройка workspace» сохраняет общее значение; «Блокировать» останавливает запрос, «Помечать» записывает совпадение и продолжает, «Выкл.» пропускает эту проверку.",
+          "MODERATION": "Модерация содержимого провайдером",
+          "PROMPT_INJECTION": "Внедрение инструкций",
+          "SENSITIVE_INFO": "Ключи и учётные данные",
+          "INHERIT": "Настройка workspace",
+          "ENABLED": "Вкл.",
+          "DISABLED": "Выкл.",
+          "BLOCK": "Блокировать",
+          "FLAG": "Помечать и продолжать"
         },
         "MESSAGE_COLLAPSE_WINDOW_SECONDS": {
           "LABEL": "Окно схлопывания сообщений",

@@ -225,7 +225,8 @@ class Captain::Copilot::ChatService < Llm::BaseAiService
       feature: :copilot,
       stage: :input,
       content: input,
-      account: @account
+      account: @account,
+      preferences: runtime_safety_preferences
     )
     nil
   rescue Llm::SafetyPolicy::UnsafeContentError
@@ -239,7 +240,8 @@ class Captain::Copilot::ChatService < Llm::BaseAiService
       feature: :copilot,
       stage: :output,
       content: parsed_response['content'],
-      account: @account
+      account: @account,
+      preferences: runtime_safety_preferences
     )
     parsed_response
   rescue Llm::SafetyPolicy::UnsafeContentError
@@ -250,6 +252,20 @@ class Captain::Copilot::ChatService < Llm::BaseAiService
 
   def blocked_response_payload(reason)
     { 'content' => "I can't help with that request.", 'reasoning' => reason, 'reply_suggestion' => false, 'ui_actions' => [] }
+  end
+
+  def runtime_safety_preferences
+    preferences = @account.captain_runtime_preferences.to_h.stringify_keys
+    safety_settings = @assistant.config.to_h.deep_stringify_keys['safety_settings'].to_h
+    {
+      'moderation_enabled' => ['copilot_moderation', [true, false]],
+      'prompt_injection_action' => ['copilot_prompt_injection_guardrail', Llm::RuntimeGuardrailAction::ACTIONS],
+      'sensitive_info_action' => ['copilot_sensitive_info_guardrail', Llm::RuntimeGuardrailAction::ACTIONS]
+    }.each do |setting_key, (runtime_key, allowed_values)|
+      value = safety_settings[setting_key]
+      preferences[runtime_key] = value if allowed_values.include?(value)
+    end
+    preferences
   end
 
   def request_event_context
