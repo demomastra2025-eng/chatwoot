@@ -55,7 +55,7 @@ RSpec.describe 'Captain playground model controls' do
       )
       runtime_agent = service.send(:build_and_wire_agents).first
       state = service.send(:build_state)
-      context_wrapper = Captain::Runtime::RunContext.new(state: state)
+      context_wrapper = Captain::Runtime::RunContext.new({ state: state })
       chat = Captain::Runtime::ChatFactory.build(
         agent: runtime_agent, context_wrapper: context_wrapper,
         llm_context: llm_context, runtime_headers: {}, runtime_params: {}, account: account
