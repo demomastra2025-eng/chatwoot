@@ -6,6 +6,7 @@ import { resolveChatContactId } from 'dashboard/components-next/CRM/crmConversat
 import SchedulingConversationPatientSelector from 'dashboard/components-next/Scheduling/SchedulingConversationPatientSelector.vue';
 import {
   conversationPatientContextKey,
+  patientContactId,
   useConversationPatientContextStore,
 } from 'dashboard/stores/scheduling/patientContext';
 import { useUISettings } from 'dashboard/composables/useUISettings';
@@ -134,12 +135,35 @@ const patientConversationDisplayId = computed(
 );
 const refreshBoundPatient = async appointment => {
   const key = patientContextKey.value;
-  const owner = chatContactId.value;
-  const patientId =
-    appointment?.patientContextContactId || appointment?.patientContactId;
-  if (!key || !owner) return;
-  if (patientId) patientStore.rememberSelection(key, patientId);
+  const account = patientContactId(currentAccountId.value);
+  const owner = patientContactId(chatContactId.value);
+  const patientId = patientContactId(
+    appointment?.patientContextContactId ||
+      appointment?.patient_context_contact_id ||
+      appointment?.patientContactId ||
+      appointment?.patient_contact_id
+  );
+  const isCurrent = () =>
+    patientContextEnabled.value &&
+    key === patientContextKey.value &&
+    account === patientContactId(currentAccountId.value) &&
+    account === patientContactId(route.params.accountId) &&
+    owner === patientContactId(chatContactId.value);
+  if (
+    !key ||
+    !account ||
+    !owner ||
+    !patientId ||
+    !isCurrent() ||
+    patientContactId(appointment?.accountId ?? appointment?.account_id) !==
+      account ||
+    patientContactId(appointment?.contactId ?? appointment?.contact_id) !==
+      owner
+  )
+    return;
+  patientStore.rememberSelection(key, patientId);
   await patientStore.load(key, owner, { force: true });
+  if (!isCurrent()) return;
 };
 
 const isSmallScreen = computed(

@@ -88,7 +88,9 @@ import {
   fieldDefinitionHasContext,
 } from 'dashboard/stores/crm/fieldContexts';
 import {
+  appointmentFormMutationContext,
   refreshCurrentCalendarProviderAction,
+  runCurrentCalendarProviderAction,
   useSchedulingAppointmentFormStore,
 } from 'dashboard/stores/scheduling/appointmentForm';
 import { useSchedulingCalendarStore } from 'dashboard/stores/scheduling/calendar';
@@ -114,17 +116,27 @@ const route = useRoute();
 const router = useRouter();
 const { updateUISettings } = useUISettings();
 const currentUser = useMapGetter('getCurrentUser');
+let calendarDisposed = false;
+let providerActionGeneration = 0;
+let activeProviderAction = null;
 const calendarPatientContext = () =>
   JSON.stringify([
     route.params.accountId,
     currentUser.value?.id,
-    formStore.isOpen,
-    formStore.recordId,
-    formStore.form.contactId,
-    formStore.form.patientContactId,
+    appointmentFormMutationContext(formStore),
   ]);
 const isCurrentProviderAction = action =>
+  !calendarDisposed &&
+  action?.generation === providerActionGeneration &&
   action.patientContext === calendarPatientContext();
+const captureCalendarFormMutation = () => {
+  const context = calendarPatientContext();
+  const formContext = appointmentFormMutationContext(formStore);
+  return () =>
+    !calendarDisposed &&
+    context === calendarPatientContext() &&
+    formContext === appointmentFormMutationContext(formStore);
+};
 // There is no account-level workspace timezone setting on this base yet, so
 // the calendar is rendered in the default company timezone. A future account
 // setting only has to replace this computed value.
@@ -1507,6 +1519,7 @@ const prepareProviderCommandAction = async (action, command) => {
   patientCandidates.value = [];
   pendingProviderAction.value = { ...action, command };
   const pending = pendingProviderAction.value;
+  activeProviderAction = pending;
   if (providerCommandRequiresPatientSelection(command)) {
     const payload = await providerCommandsStore.loadPatientCandidates(command);
     if (
@@ -1516,7 +1529,9 @@ const prepareProviderCommandAction = async (action, command) => {
       return false;
     patientCandidates.value = payload?.candidates || [];
   }
-  return true;
+  return (
+    isCurrentProviderAction(action) && pendingProviderAction.value === pending
+  );
 };
 
 const refreshAfterProviderCommand = action =>
@@ -1536,8 +1551,8 @@ const showProviderCommandOutcome = async (action, command) => {
     return;
   }
 
-  providerCommandDialogRef.value?.close();
   pendingProviderAction.value = null;
+  providerCommandDialogRef.value?.close();
   if (!(await refreshAfterProviderCommand(action))) return;
 
   if (command.status === 'succeeded') {
@@ -1580,13 +1595,18 @@ const executeProviderCommandAction = async action => {
   const command = action.command
     ? await providerCommandsStore.confirmExisting(
         action.command,
-        action.requestedParams
+        action.requestedParams,
+        () => isCurrentProviderAction(action)
       )
-    : await providerCommandsStore.executeConfirmed(action.params);
+    : await providerCommandsStore.executeConfirmed(action.params, {
+        isCurrent: () => isCurrentProviderAction(action),
+      });
+  if (!isCurrentProviderAction(action) || !command) return;
   await showProviderCommandOutcome(action, command);
 };
 
 const recoverConcurrentProviderCommand = async (action, error) => {
+  if (!isCurrentProviderAction(action)) return true;
   const errorCode = error?.code || error?.response?.data?.code;
   if (errorCode !== 'MEDELEMENT_COMMAND_IN_PROGRESS') return false;
 
@@ -1594,6 +1614,7 @@ const recoverConcurrentProviderCommand = async (action, error) => {
     appointmentId: action.appointment.id,
     provider: action.params.provider,
   });
+  if (!isCurrentProviderAction(action)) return true;
   if (!existing) {
     useAlert(t('SCHEDULING.MEDELEMENT.QUEUED'));
     return true;
@@ -1615,13 +1636,22 @@ const stageProviderCommand = async ({
     closeDrawer,
     params,
     patientContext: calendarPatientContext(),
+    generation: ++providerActionGeneration,
   };
+  activeProviderAction = action;
+  // Replacing a UI action only abandons its client result; an already sent
+  // command retains its server intent and is discovered through findActive.
+  providerCommandsStore.ui.operationId += 1;
+  providerCommandsStore.ui.isExecuting = false;
+  providerCommandsStore.ui.error = null;
   try {
     const existing = await providerCommandsStore.findActive({
       appointmentId: appointment.id,
       provider: params.provider,
     });
+    if (!isCurrentProviderAction(action)) return;
     const stagedAction = buildProviderCommandAction(action, existing);
+    activeProviderAction = stagedAction;
     await executeProviderCommandAction(stagedAction);
   } catch (error) {
     if (!isCurrentProviderAction(action)) return;
@@ -1632,6 +1662,7 @@ const stageProviderCommand = async ({
       useAlert(formatErrorMessage(recoveryError));
       return;
     }
+    if (!isCurrentProviderAction(action)) return;
     useAlert(formatErrorMessage(error));
   }
 };
@@ -1639,6 +1670,15 @@ const stageProviderCommand = async ({
 watch(
   () => calendarPatientContext(),
   () => {
+    if (
+      activeProviderAction &&
+      !isCurrentProviderAction(activeProviderAction)
+    ) {
+      activeProviderAction = null;
+      providerCommandsStore.ui.operationId += 1;
+      providerCommandsStore.ui.isExecuting = false;
+      providerCommandsStore.ui.error = null;
+    }
     if (
       pendingProviderAction.value &&
       !isCurrentProviderAction(pendingProviderAction.value)
@@ -1729,27 +1769,48 @@ const handleProviderCommandConfirm = async () => {
 };
 
 const handleProviderCommandCancel = async () => {
-  const command = pendingProviderAction.value?.command;
+  const action = pendingProviderAction.value;
+  const command = action?.command;
   if (!command || providerCommandsStore.ui.isExecuting) return;
-
-  try {
-    await providerCommandsStore.cancel(command);
-    providerCommandDialogRef.value?.close();
-  } catch (error) {
-    useAlert(formatErrorMessage(error));
-  } finally {
-    pendingProviderAction.value = null;
-  }
+  const isCurrent = () =>
+    pendingProviderAction.value === action && isCurrentProviderAction(action);
+  await runCurrentCalendarProviderAction({
+    run: () => providerCommandsStore.cancel(command, isCurrent),
+    isCurrent,
+    onSuccess: () => providerCommandDialogRef.value?.close(),
+    onError: error => useAlert(formatErrorMessage(error)),
+    onFinally: () => {
+      pendingProviderAction.value = null;
+    },
+  });
 };
 
 const handleProviderCommandDialogClose = () => {
-  if (!providerCommandsStore.ui.isExecuting) {
+  if (pendingProviderAction.value) {
     pendingProviderAction.value = null;
+    activeProviderAction = null;
+    providerActionGeneration += 1;
+    providerCommandsStore.ui.operationId += 1;
+    providerCommandsStore.ui.isExecuting = false;
+    providerCommandsStore.ui.error = null;
+    selectedPatientToken.value = '';
+    patientCandidates.value = [];
   }
 };
 
+const selectProviderPatientCandidate = token => {
+  const action = pendingProviderAction.value;
+  if (
+    providerCommandsStore.ui.isExecuting ||
+    !isCurrentProviderAction(action) ||
+    !patientCandidates.value.some(candidate => candidate.token === token)
+  )
+    return;
+  selectedPatientToken.value = token;
+};
+
 const handleAppointmentSubmit = async () => {
-  if (isSelectedAppointmentProviderOwned.value) return;
+  if (isSelectedAppointmentProviderOwned.value || formStore.ui.isSaving) return;
 
   if (isMedelementCabinetMissing.value) {
     useAlert(t('SCHEDULING.MEDELEMENT.CABINET_REQUIRED'));
@@ -1760,38 +1821,48 @@ const handleAppointmentSubmit = async () => {
     return;
   }
 
-  try {
-    const shouldCreateInMedelement =
-      isSelectedFormResourceMedelement.value &&
-      !isSelectedAppointmentProviderOwned.value;
-    const companyCabinetCode = formStore.form.medelementCabinetCode;
-    const appointment = await formStore.submit(calendarStore);
-    useAlert(t('SCHEDULING.APPOINTMENT_FORM.SUCCESS_SAVE'));
-    handleDrawerClose();
-
-    if (shouldCreateInMedelement) {
-      stageProviderCommand({
-        appointment,
-        params: buildMedelementProviderCommandParams({
+  const shouldCreateInMedelement =
+    isSelectedFormResourceMedelement.value &&
+    !isSelectedAppointmentProviderOwned.value;
+  const companyCabinetCode = formStore.form.medelementCabinetCode;
+  const isCurrent = captureCalendarFormMutation();
+  await runCurrentCalendarProviderAction({
+    run: () =>
+      formStore.submit(calendarStore, { isCurrent, closeOnSuccess: false }),
+    isCurrent,
+    onSuccess: appointment => {
+      if (!appointment) return;
+      useAlert(t('SCHEDULING.APPOINTMENT_FORM.SUCCESS_SAVE'));
+      handleDrawerClose();
+      if (shouldCreateInMedelement) {
+        stageProviderCommand({
           appointment,
-          companyCabinetCode,
-          operation: 'create_reception',
-        }),
-      });
-    }
-  } catch (error) {
-    useAlert(formatErrorMessage(error));
-  }
+          params: buildMedelementProviderCommandParams({
+            appointment,
+            companyCabinetCode,
+            operation: 'create_reception',
+          }),
+        });
+      }
+    },
+    onError: error => useAlert(formatErrorMessage(error)),
+  });
 };
 
 const cancelSelectedAppointment = async () => {
-  try {
-    const appointment = await formStore.cancel(calendarStore);
-    useAlert(appointmentCancellationAlertMessage(appointment, t));
-    handleDrawerClose();
-  } catch (error) {
-    useAlert(formatErrorMessage(error));
-  }
+  if (formStore.ui.isSaving) return;
+  const isCurrent = captureCalendarFormMutation();
+  await runCurrentCalendarProviderAction({
+    run: () =>
+      formStore.cancel(calendarStore, { isCurrent, closeOnSuccess: false }),
+    isCurrent,
+    onSuccess: appointment => {
+      if (!appointment) return;
+      useAlert(appointmentCancellationAlertMessage(appointment, t));
+      handleDrawerClose();
+    },
+    onError: error => useAlert(formatErrorMessage(error)),
+  });
 };
 
 const handleLocalOnlyCancelConfirm = async () => {
@@ -1827,16 +1898,20 @@ const openAppointmentDeleteDialog = () => {
 };
 
 const handleAppointmentDelete = async () => {
-  if (isSelectedAppointmentProviderOwned.value) return;
-
-  try {
-    await formStore.destroy(calendarStore);
-    appointmentDeleteDialogRef.value?.close();
-    useAlert(t('SCHEDULING.APPOINTMENT_FORM.SUCCESS_DELETE'));
-    handleDrawerClose();
-  } catch (error) {
-    useAlert(formatErrorMessage(error));
-  }
+  if (isSelectedAppointmentProviderOwned.value || formStore.ui.isSaving) return;
+  const isCurrent = captureCalendarFormMutation();
+  await runCurrentCalendarProviderAction({
+    run: () =>
+      formStore.destroy(calendarStore, { isCurrent, closeOnSuccess: false }),
+    isCurrent,
+    onSuccess: deletedId => {
+      if (!deletedId) return;
+      appointmentDeleteDialogRef.value?.close();
+      useAlert(t('SCHEDULING.APPOINTMENT_FORM.SUCCESS_DELETE'));
+      handleDrawerClose();
+    },
+    onError: error => useAlert(formatErrorMessage(error)),
+  });
 };
 
 const updateAppointmentMutation = async (
@@ -1969,6 +2044,12 @@ watch(
 );
 
 onBeforeUnmount(() => {
+  calendarDisposed = true;
+  providerActionGeneration += 1;
+  activeProviderAction = null;
+  providerCommandsStore.ui.operationId += 1;
+  providerCommandsStore.ui.isExecuting = false;
+  providerCommandsStore.ui.error = null;
   appointmentConversationDisposed = true;
   appointmentConversationDraft.contextRequestId += 1;
   appointmentConversationCreateRequestId += 1;
@@ -2808,13 +2889,14 @@ onMounted(async () => {
           v-for="candidate in patientCandidates"
           :key="candidate.token"
           type="button"
+          :disabled="providerCommandsStore.ui.isExecuting"
           class="flex flex-col items-start gap-1 p-3 text-start border rounded-lg"
           :class="
             selectedPatientToken === candidate.token
               ? 'border-n-brand bg-n-brand/10'
               : 'border-n-weak hover:border-n-strong'
           "
-          @click="selectedPatientToken = candidate.token"
+          @click="selectProviderPatientCandidate(candidate.token)"
         >
           <span class="text-sm font-medium text-n-slate-12">
             {{

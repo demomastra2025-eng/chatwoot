@@ -441,7 +441,11 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
           provider: 'medelement',
           company_cabinet_code: '501',
           status: 'succeeded',
-          appointment,
+          appointment: {
+            ...appointment,
+            patientContactId: 86,
+            patientContextContactId: 86,
+          },
         },
       },
     });
@@ -462,9 +466,120 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
         token: 'opaque-candidate',
       }
     );
-    expect(wrapper.emitted('patientBound')[0][0].patientContactId).toBe(84);
+    expect(wrapper.emitted('patientBound')[0][0].patientContactId).toBe(86);
     expect(wrapper.props('currentChat').meta.sender.id).toBe(42);
   });
+
+  it.each([
+    ['candidates', 'patient'],
+    ['candidates', 'chat'],
+    ['candidates', 'account'],
+    ['readback', 'patient'],
+    ['readback', 'chat'],
+    ['readback', 'account'],
+  ])(
+    'does not emit an old patient binding after %s finishes in another %s context',
+    async (phase, changedScope) => {
+      configureMedelementResource();
+      const appointment = {
+        ...existingAppointment,
+        accountId: 1,
+        patientContactId: 84,
+      };
+      SchedulingAppointmentsAPI.get.mockResolvedValue({
+        data: { payload: [appointment] },
+      });
+      SchedulingProviderCommandsAPI.list.mockResolvedValue({
+        data: { payload: [patientActionCommand()] },
+      });
+      SchedulingProviderCommandsAPI.patientCandidates.mockResolvedValue({
+        data: { payload: { candidates: [{ token: 'candidate-token' }] } },
+      });
+      const wrapper = mountComponent(
+        defaultCurrentChat(),
+        patientContextProps()
+      );
+      await flushPromises();
+      await wrapper.vm.checkProviderBooking(wrapper.vm.appointments[0]);
+      const entry = wrapper.vm.patientActions['appointment-501'];
+      entry.selectedPatientToken = 'candidate-token';
+      const pending = deferredRequest();
+      const boundAppointment = {
+        ...appointment,
+        patientContactId: 86,
+        patientContextContactId: 86,
+      };
+      SchedulingProviderCommandsAPI.selectPatient.mockResolvedValueOnce({
+        data: {
+          payload: patientActionCommand(
+            phase === 'candidates' ? 'awaiting_patient_selection' : 'succeeded',
+            { appointment: boundAppointment }
+          ),
+        },
+      });
+      if (phase === 'candidates')
+        SchedulingProviderCommandsAPI.patientCandidates.mockReturnValueOnce(
+          pending.promise
+        );
+      else SchedulingAppointmentsAPI.show.mockReturnValueOnce(pending.promise);
+
+      const continuing = wrapper.vm.continuePatientAction(
+        wrapper.vm.appointments[0]
+      );
+      await flushPromises();
+      if (phase === 'candidates')
+        expect(
+          SchedulingProviderCommandsAPI.patientCandidates
+        ).toHaveBeenCalledTimes(2);
+      else expect(SchedulingAppointmentsAPI.show).toHaveBeenCalledWith(501);
+
+      const nextOwner = changedScope === 'chat' ? 77 : 42;
+      SchedulingAppointmentsAPI.get.mockResolvedValue({
+        data: {
+          payload: [
+            {
+              ...existingAppointment,
+              id: 502,
+              accountId: changedScope === 'account' ? 2 : 1,
+              contactId: nextOwner,
+              patientContactId: 85,
+            },
+          ],
+        },
+      });
+      SchedulingProviderCommandsAPI.list.mockResolvedValue({
+        data: { payload: [] },
+      });
+      if (changedScope === 'account') mocks.route.params.accountId = '2';
+      await wrapper.setProps({
+        ...patientContextProps(85),
+        patientContextKey:
+          changedScope === 'account'
+            ? '2:9:conversation:123'
+            : changedScope === 'chat'
+              ? '1:9:conversation:999'
+              : '1:9:conversation:123',
+        ...(changedScope === 'chat'
+          ? { currentChat: { id: 999, meta: { sender: { id: 77 } } } }
+          : {}),
+      });
+      await flushPromises();
+
+      pending.resolve({
+        data: {
+          payload:
+            phase === 'candidates'
+              ? { candidates: [{ token: 'late-candidate' }] }
+              : boundAppointment,
+        },
+      });
+      await continuing;
+      await flushPromises();
+      expect(wrapper.emitted('patientBound')).toBeUndefined();
+      expect(wrapper.props('selectedPatient').id).toBe(85);
+      expect(wrapper.vm.appointments.map(item => item.id)).toEqual([502]);
+    }
+  );
 
   it('links a separate patient card without replacing the chat contact', async () => {
     SchedulingAppointmentsAPI.get.mockResolvedValue({

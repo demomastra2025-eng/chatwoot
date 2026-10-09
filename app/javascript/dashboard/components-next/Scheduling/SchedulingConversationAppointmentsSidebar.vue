@@ -1689,6 +1689,9 @@ async function continuePatientAction(appointment) {
     return;
   }
 
+  const context = entry.context;
+  const isCurrentResult = () =>
+    isCurrentSidebarContext(context) && isCurrentProviderContext(entry.context);
   patientActionRequestId.value += 1;
   const requestId = patientActionRequestId.value;
   beginPatientActionLookup(key);
@@ -1701,25 +1704,25 @@ async function continuePatientAction(appointment) {
         entry.command,
         entry.selectedPatientToken,
         entry.expectedIntent,
-        () => isCurrentProviderContext(entry.context)
+        () => isCurrentProviderContext(context)
       );
     } else if (entry.command.status === 'awaiting_patient_creation') {
       command = await providerCommandsStore.confirmPatientCreation(
         entry.command,
         entry.expectedIntent,
-        () => isCurrentProviderContext(entry.context)
+        () => isCurrentProviderContext(context)
       );
     } else if (entry.command.status === 'awaiting_phone_refresh') {
       command = await providerCommandsStore.retryPhoneMismatch(
         entry.command,
         entry.expectedIntent,
-        () => isCurrentProviderContext(entry.context)
+        () => isCurrentProviderContext(context)
       );
     } else {
       return;
     }
 
-    if (!isCurrentProviderContext(entry.context)) return;
+    if (!isCurrentProviderContext(context)) return;
     if (
       Number(command.id) !== Number(entry.command.id) ||
       (command.appointmentId !== undefined &&
@@ -1740,6 +1743,7 @@ async function continuePatientAction(appointment) {
     }
     if (hasPatientAction(command)) {
       await showPatientAction(appointment, command, entry.context);
+      if (!isCurrentResult()) return;
     } else {
       entry.command = command;
       entry.selectedPatientToken = '';
@@ -1756,6 +1760,7 @@ async function continuePatientAction(appointment) {
           };
         }
         await refreshProviderAppointmentState(appointment, entry.context);
+        if (!isCurrentResult()) return;
       }
     }
     if (boundAppointment) emit('patientBound', boundAppointment);
