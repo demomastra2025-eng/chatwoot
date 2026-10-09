@@ -132,7 +132,7 @@ class Captain::Tools::SearchReplyDocumentationService < RubyLLM::Tool
   end
 
   def tool_safety_preferences
-    @account&.captain_preferences&.dig(:runtime)
+    Captain::AssistantSafetyPreferences.for(assistant: assistant, account: @account, feature: tool_safety_feature)
   end
 
   def tool_runtime_context

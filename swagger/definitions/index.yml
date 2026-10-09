@@ -317,6 +317,12 @@ captain_assistants_response:
   $ref: ./crm_account_apis.yml#/captain_assistants_response
 captain_assistant_payload:
   $ref: ./crm_account_apis.yml#/captain_assistant_payload
+captain_assistant_safety_settings:
+  $ref: ./crm_account_apis.yml#/captain_assistant_safety_settings
+captain_assistant_playground_request:
+  $ref: ./crm_account_apis.yml#/captain_assistant_playground_request
+captain_assistant_playground_response:
+  $ref: ./crm_account_apis.yml#/captain_assistant_playground_response
 
 crm_task_lifecycle_snapshot:
   $ref: ./crm_account_apis.yml#/crm_task_lifecycle_snapshot

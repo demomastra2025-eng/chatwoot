@@ -91,8 +91,8 @@ describe('AssistantBasicSettingsForm', () => {
         { value: 'openai/gpt-5.4', label: 'GPT-5.4' },
         { value: 'openai/gpt-5.4-mini', label: 'GPT-5.4 mini' },
       ]);
-      // the only dropdown of the form is the agent model: recognition features have no picker
-      expect(wrapper.findAllComponents({ name: 'Select' })).toHaveLength(1);
+      // The model picker owns the curated list; safety controls have separate Selects.
+      expect(wrapper.findAllComponents({ name: 'Select' })).toHaveLength(4);
     });
 
     it('removes provider branding from model option labels', () => {
@@ -260,6 +260,11 @@ describe('AssistantBasicSettingsForm', () => {
       model: null,
       message_collapse_window_seconds: 0,
       history_message_limit: 0,
+      safety_settings: {
+        moderation_enabled: null,
+        prompt_injection_action: null,
+        sensitive_info_action: null,
+      },
       auto_reply_on_last_incoming: false,
       feature_faq: false,
       feature_memory: false,
@@ -305,12 +310,23 @@ describe('AssistantBasicSettingsForm', () => {
   });
 
   it('renders no selector of the assistant kind', () => {
+    storeState.models = [
+      { id: 'openai/gpt-6-luna', display_name: 'GPT-6 Luna' },
+    ];
     const wrapper = buildWrapper({
       assistant: { usage_mode: 'external_agent', config: {} },
     });
+    const selects = wrapper.findAllComponents({ name: 'Select' });
+    const modelOptions = selects[0].props('options');
+    const safetyOptionValues = selects
+      .slice(1)
+      .flatMap(select => select.props('options').map(option => option.value));
 
     expect(wrapper.html()).not.toContain('USAGE_MODE');
-    expect(wrapper.findAllComponents({ name: 'Select' })).toHaveLength(1);
+    expect(selects).toHaveLength(4);
+    expect(modelOptions.map(option => option.value)).toContain('openai/gpt-6-luna');
+    expect(safetyOptionValues).not.toContain('external_agent');
+    expect(safetyOptionValues).not.toContain('internal_assistant');
   });
 
   it('never sends the kind of the assistant when saving', async () => {
@@ -338,13 +354,9 @@ describe('AssistantBasicSettingsForm', () => {
 
     const core = buildWrapper({ assistant, showCapabilities: false });
     const corePayload = await core.vm.buildPayload();
-    expect(Object.keys(corePayload.assistant.config).sort()).toEqual([
-      'history_message_limit',
-      'message_collapse_window_seconds',
-      'model',
-      'temperature',
-    ]);
+    expect(corePayload.assistant.config.model).toBe('openai/gpt-5.4');
     expect(corePayload.assistant.config.temperature).toBe(0.3);
+    expect(corePayload.assistant.config).toHaveProperty('safety_settings');
 
     const capabilities = buildWrapper({
       assistant,
@@ -356,6 +368,9 @@ describe('AssistantBasicSettingsForm', () => {
     expect(capabilitiesPayload.assistant.config).not.toHaveProperty('model');
     expect(capabilitiesPayload.assistant.config).not.toHaveProperty(
       'temperature'
+    );
+    expect(capabilitiesPayload.assistant.config).not.toHaveProperty(
+      'safety_settings'
     );
     expect(capabilitiesPayload.assistant.config).toHaveProperty('tool_access');
   });

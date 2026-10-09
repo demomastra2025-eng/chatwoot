@@ -23,7 +23,12 @@ class CaptainAssistant extends ApiClient {
     });
   }
 
-  playground({ assistantId, messageContent, messageHistory, testOptions = {} }) {
+  playground({
+    assistantId,
+    messageContent,
+    messageHistory,
+    testOptions = {},
+  }) {
     return axios.post(`${this.url}/${assistantId}/playground`, {
       message_content: messageContent,
       message_history: messageHistory,

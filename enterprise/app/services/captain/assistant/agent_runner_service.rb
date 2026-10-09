@@ -916,16 +916,7 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def runtime_preferences_for_run
-    preferences = @assistant.account.captain_runtime_preferences.to_h.stringify_keys
-    safety_settings = @assistant.config.to_h.deep_stringify_keys['safety_settings'].to_h
-    {
-      'moderation_enabled' => ['assistant_moderation', [true, false]],
-      'prompt_injection_action' => ['assistant_prompt_injection_guardrail', Llm::RuntimeGuardrailAction::ACTIONS],
-      'sensitive_info_action' => ['assistant_sensitive_info_guardrail', Llm::RuntimeGuardrailAction::ACTIONS]
-    }.each do |setting_key, (runtime_key, allowed_values)|
-      value = safety_settings[setting_key]
-      preferences[runtime_key] = value if allowed_values.include?(value)
-    end
+    preferences = Captain::AssistantSafetyPreferences.for(assistant: @assistant, feature: :assistant)
     return preferences unless @source == 'playground' && @test_overrides.key?(:thinking_effort)
 
     preferences.merge('assistant_thinking_effort' => @test_overrides[:thinking_effort])

@@ -14,8 +14,13 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
-    t: (key, values = {}) =>
-      key.replace(/\{(\w+)\}/g, (_, valueKey) => values[valueKey] ?? ''),
+    t: (key, values = {}) => {
+      if (key === 'CAPTAIN.PLAYGROUND.RESPONSE_LATENCY_VALUE') {
+        return `${values.ms} ms`;
+      }
+
+      return key.replace(/\{(\w+)\}/g, (_, valueKey) => values[valueKey] ?? '');
+    },
   }),
 }));
 
@@ -48,9 +53,9 @@ const selectStub = {
     '<select :value="modelValue" :disabled="disabled" @change="$emit(\'update:modelValue\', $event.target.value)"><option v-for="option in options" :key="option.value" :value="option.value">{{ option.label }}</option></select>',
 };
 
-const mountPlayground = () =>
+const mountPlayground = (assistantId = 4) =>
   mount(AssistantPlayground, {
-    props: { assistantId: 4 },
+    props: { assistantId },
     global: {
       stubs: {
         NextButton: buttonStub,
@@ -71,16 +76,28 @@ const send = async (wrapper, text) => {
   await flushPromises();
 };
 
+const deferred = () => {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+};
+
 describe('AssistantPlayground («Площадка»)', () => {
   beforeEach(() => {
     mocks.playground.mockReset();
-    mocks.show.mockReset().mockResolvedValue({
-      data: {
-        id: 4,
-        usage_mode: 'external_agent',
-        config: { model: 'openai/gpt-6-luna', temperature: 0.7 },
-      },
-    });
+    mocks.show
+      .mockReset()
+      .mockResolvedValue({
+        data: {
+          id: 4,
+          usage_mode: 'external_agent',
+          config: { model: 'openai/gpt-6-luna', temperature: 0.7 },
+        },
+      });
     mocks.fetch.mockReset().mockResolvedValue();
     mocks.getModelsForFeature.mockReset().mockReturnValue([
       {
@@ -186,8 +203,12 @@ describe('AssistantPlayground («Площадка»)', () => {
     expect(wrapper.find('input[type="checkbox"]').element.disabled).toBe(true);
     expect(wrapper.find('input[type="range"]').element.disabled).toBe(true);
     expect(wrapper.findAll('select')[1].element.disabled).toBe(true);
-    expect(wrapper.text()).toContain('CAPTAIN.PLAYGROUND.UNSUPPORTED_TEMPERATURE');
-    expect(wrapper.text()).toContain('CAPTAIN.PLAYGROUND.UNSUPPORTED_REASONING');
+    expect(wrapper.text()).toContain(
+      'CAPTAIN.PLAYGROUND.UNSUPPORTED_TEMPERATURE'
+    );
+    expect(wrapper.text()).toContain(
+      'CAPTAIN.PLAYGROUND.UNSUPPORTED_REASONING'
+    );
   });
 
   it('shows the error answer when the request fails and clears on reset', async () => {
@@ -216,6 +237,150 @@ describe('AssistantPlayground («Площадка»)', () => {
     const wrapper = mountPlayground();
     await flushPromises();
 
-    expect(wrapper.find('[data-test="playground-test-settings"]').exists()).toBe(false);
+    expect(
+      wrapper.find('[data-test="playground-test-settings"]').exists()
+    ).toBe(false);
+  });
+
+  it('retries failed settings metadata with a forced fetch', async () => {
+    mocks.fetch
+      .mockRejectedValueOnce(new Error('temporary network error'))
+      .mockResolvedValueOnce();
+    const wrapper = mountPlayground();
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('CAPTAIN.PLAYGROUND.TEST_SETTINGS_ERROR');
+    const retryButton = wrapper
+      .findAll('button')
+      .find(button => button.text() === 'DESIGN_SYSTEM.STATE.RETRY');
+    expect(retryButton).toBeDefined();
+
+    await retryButton.trigger('click');
+    await flushPromises();
+
+    expect(mocks.fetch).toHaveBeenNthCalledWith(1, {
+      clientMetadataOnly: true,
+    });
+    expect(mocks.fetch).toHaveBeenNthCalledWith(2, {
+      clientMetadataOnly: true,
+      force: true,
+    });
+    expect(wrapper.text()).not.toContain('CAPTAIN.PLAYGROUND.TEST_SETTINGS_ERROR');
+  });
+
+  it('ignores stale settings after route reuse and keeps the new assistant model capabilities', async () => {
+    const oldAssistant = deferred();
+    mocks.show.mockImplementation(assistantId => {
+      if (assistantId === 4) return oldAssistant.promise;
+
+      return Promise.resolve({
+        data: {
+          id: assistantId,
+          usage_mode: 'external_agent',
+          config: { model: 'openai/gpt-5.4-mini', temperature: 0.4 },
+        },
+      });
+    });
+    const wrapper = mountPlayground(4);
+    await flushPromises();
+
+    await wrapper.setProps({ assistantId: 5 });
+    await flushPromises();
+
+    expect(
+      wrapper.find('[data-test="playground-test-settings"]').exists()
+    ).toBe(true);
+    expect(wrapper.find('input[type="checkbox"]').element.disabled).toBe(true);
+    expect(wrapper.find('input[type="range"]').element.disabled).toBe(true);
+    expect(wrapper.findAll('select')[1].element.disabled).toBe(true);
+
+    oldAssistant.resolve({
+      data: {
+        id: 4,
+        usage_mode: 'external_agent',
+        config: { model: 'openai/gpt-6-luna', temperature: 0.8 },
+      },
+    });
+    await flushPromises();
+
+    expect(
+      wrapper.find('[data-test="playground-test-settings"]').exists()
+    ).toBe(true);
+    expect(wrapper.find('input[type="checkbox"]').element.disabled).toBe(true);
+    expect(wrapper.find('input[type="range"]').element.disabled).toBe(true);
+    expect(wrapper.findAll('select')[1].element.disabled).toBe(true);
+  });
+
+  it('keeps internal settings hidden when a previous external assistant load finishes late', async () => {
+    const oldAssistant = deferred();
+    mocks.show.mockImplementation(assistantId => {
+      if (assistantId === 4) return oldAssistant.promise;
+
+      return Promise.resolve({
+        data: { id: assistantId, usage_mode: 'internal_assistant', config: {} },
+      });
+    });
+    const wrapper = mountPlayground(4);
+    await wrapper.setProps({ assistantId: 5 });
+    await flushPromises();
+
+    expect(
+      wrapper.find('[data-test="playground-test-settings"]').exists()
+    ).toBe(false);
+
+    oldAssistant.resolve({
+      data: {
+        id: 4,
+        usage_mode: 'external_agent',
+        config: { model: 'openai/gpt-6-luna', temperature: 0.8 },
+      },
+    });
+    await flushPromises();
+
+    expect(
+      wrapper.find('[data-test="playground-test-settings"]').exists()
+    ).toBe(false);
+  });
+
+  it('does not append a late response to the next assistant session', async () => {
+    const oldResponse = deferred();
+    mocks.show.mockImplementation(assistantId =>
+      Promise.resolve({
+        data: {
+          id: assistantId,
+          usage_mode: 'external_agent',
+          config: { model: 'openai/gpt-6-luna', temperature: 0.7 },
+        },
+      })
+    );
+    mocks.playground.mockImplementation(({ assistantId }) => {
+      if (assistantId === 4) return oldResponse.promise;
+
+      return Promise.resolve({ data: { response: 'New assistant response' } });
+    });
+    const wrapper = mountPlayground(4);
+    await flushPromises();
+
+    await wrapper.find('input').setValue('Old assistant request');
+    await wrapper.find('button[data-icon="i-lucide-send"]').trigger('click');
+    await flushPromises();
+
+    await wrapper.setProps({ assistantId: 5 });
+    await flushPromises();
+    expect(wrapper.findAll('li')).toHaveLength(0);
+
+    await send(wrapper, 'New assistant request');
+    expect(wrapper.findAll('li').map(item => item.text())).toEqual([
+      'New assistant request',
+      'New assistant response',
+    ]);
+
+    oldResponse.resolve({ data: { response: 'Old assistant response' } });
+    await flushPromises();
+
+    expect(wrapper.findAll('li').map(item => item.text())).toEqual([
+      'New assistant request',
+      'New assistant response',
+    ]);
   });
 });

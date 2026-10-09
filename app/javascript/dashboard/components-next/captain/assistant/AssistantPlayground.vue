@@ -26,6 +26,9 @@ const selectedModel = ref('');
 const temperatureOverrideEnabled = ref(false);
 const testTemperature = ref(1);
 const thinkingEffort = ref('');
+let settingsRequestSequence = 0;
+let assistantSessionSequence = 0;
+let playgroundRequestSequence = 0;
 
 const availableModels = computed(() =>
   captainConfigStore.getModelsForFeature('assistant')
@@ -52,7 +55,10 @@ const modelOptions = computed(() => [
     label: t('CAPTAIN.PLAYGROUND.USE_ASSISTANT_MODEL'),
   },
   ...availableModels.value
-    .filter(model => !model.current_only || model.id === assistant.value?.config?.model)
+    .filter(
+      model =>
+        !model.current_only || model.id === assistant.value?.config?.model
+    )
     .map(model => ({
       value: model.id,
       label: model.current_only
@@ -78,21 +84,45 @@ const reasoningEffortOptions = computed(() => [
   { value: 'high', label: t('CAPTAIN.PLAYGROUND.REASONING_HIGH') },
 ]);
 
-const loadPlaygroundSettings = async () => {
+const loadPlaygroundSettings = async (
+  assistantId = props.assistantId,
+  { force = false } = {}
+) => {
+  const requestSequence = ++settingsRequestSequence;
   isLoadingSettings.value = true;
   settingsFailed.value = false;
   try {
     const [, response] = await Promise.all([
-      captainConfigStore.fetch({ clientMetadataOnly: true }),
-      CaptainAssistant.show(props.assistantId),
+      captainConfigStore.fetch({
+        clientMetadataOnly: true,
+        ...(force ? { force: true } : {}),
+      }),
+      CaptainAssistant.show(assistantId),
     ]);
+    if (
+      requestSequence !== settingsRequestSequence ||
+      assistantId !== props.assistantId
+    ) {
+      return;
+    }
+
     assistant.value = response.data;
     testTemperature.value = savedTemperature.value;
     settingsFailed.value = captainConfigStore.uiFlags.fetchError === true;
-  } catch (error) {
-    settingsFailed.value = true;
+  } catch {
+    if (
+      requestSequence === settingsRequestSequence &&
+      assistantId === props.assistantId
+    ) {
+      settingsFailed.value = true;
+    }
   } finally {
-    isLoadingSettings.value = false;
+    if (
+      requestSequence === settingsRequestSequence &&
+      assistantId === props.assistantId
+    ) {
+      isLoadingSettings.value = false;
+    }
   }
 };
 
@@ -117,17 +147,39 @@ const resetConversation = () => {
   newMessage.value = '';
 };
 
+const resetAssistantSession = () => {
+  assistantSessionSequence += 1;
+  playgroundRequestSequence += 1;
+  resetConversation();
+  assistant.value = null;
+  selectedModel.value = '';
+  temperatureOverrideEnabled.value = false;
+  testTemperature.value = 1;
+  thinkingEffort.value = '';
+  isLoading.value = false;
+  isLoadingSettings.value = true;
+  settingsFailed.value = false;
+};
+
 watch(
   () => props.assistantId,
   (newId, oldId) => {
-    if (oldId && newId !== oldId) resetConversation();
-  }
+    if (newId === oldId) return;
+
+    settingsRequestSequence += 1;
+    resetAssistantSession();
+    loadPlaygroundSettings(newId);
+  },
+  { flush: 'sync' }
 );
 
 const sendMessage = async () => {
   if (!newMessage.value.trim() || isLoading.value) return;
 
   const currentMessage = newMessage.value;
+  const requestAssistantId = props.assistantId;
+  const sessionSequence = assistantSessionSequence;
+  const requestSequence = ++playgroundRequestSequence;
   const messageHistory = formatMessagesForApi();
   messages.value.push({
     content: currentMessage,
@@ -139,7 +191,7 @@ const sendMessage = async () => {
   try {
     isLoading.value = true;
     const { data } = await CaptainAssistant.playground({
-      assistantId: props.assistantId,
+      assistantId: requestAssistantId,
       messageContent: currentMessage,
       messageHistory,
       testOptions: {
@@ -153,6 +205,14 @@ const sendMessage = async () => {
       },
     });
 
+    if (
+      sessionSequence !== assistantSessionSequence ||
+      requestAssistantId !== props.assistantId ||
+      requestSequence !== playgroundRequestSequence
+    ) {
+      return;
+    }
+
     messages.value.push({
       content: data.response || t('CAPTAIN.COPILOT.EMPTY_MESSAGE'),
       sender: 'assistant',
@@ -164,6 +224,14 @@ const sendMessage = async () => {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
+    if (
+      sessionSequence !== assistantSessionSequence ||
+      requestAssistantId !== props.assistantId ||
+      requestSequence !== playgroundRequestSequence
+    ) {
+      return;
+    }
+
     // eslint-disable-next-line no-console
     console.error('Error getting assistant response:', error);
     messages.value.push({
@@ -172,7 +240,13 @@ const sendMessage = async () => {
       timestamp: new Date().toISOString(),
     });
   } finally {
-    isLoading.value = false;
+    if (
+      sessionSequence === assistantSessionSequence &&
+      requestAssistantId === props.assistantId &&
+      requestSequence === playgroundRequestSequence
+    ) {
+      isLoading.value = false;
+    }
   }
 };
 
@@ -261,7 +335,11 @@ onMounted(loadPlaygroundSettings);
               {{ t('CAPTAIN.PLAYGROUND.RESPONSE_LATENCY') }}
             </p>
             <p class="mt-1 text-xs text-n-slate-11">
-              {{ t('CAPTAIN.PLAYGROUND.RESPONSE_LATENCY_VALUE', { ms: message.responseLatencyMs }) }}
+              {{
+                t('CAPTAIN.PLAYGROUND.RESPONSE_LATENCY_VALUE', {
+                  ms: message.responseLatencyMs,
+                })
+              }}
             </p>
           </div>
           <div v-if="message.reportedReasoningTokens" class="mt-2">
@@ -315,9 +393,25 @@ onMounted(loadPlaygroundSettings);
       <p class="mt-1 text-xs text-n-slate-11">
         {{ t('CAPTAIN.PLAYGROUND.TEST_SETTINGS_DESCRIPTION') }}
       </p>
-      <p v-if="settingsFailed" class="mt-2 text-xs text-n-ruby-9" role="alert">
-        {{ t('CAPTAIN.PLAYGROUND.TEST_SETTINGS_ERROR') }}
+      <p
+        v-if="isLoadingSettings"
+        class="mt-2 text-xs text-n-slate-11"
+        role="status"
+      >
+        {{ t('CAPTAIN_SETTINGS.LOADING') }}
       </p>
+      <div v-if="settingsFailed" class="mt-2 flex flex-wrap items-center gap-3">
+        <p class="m-0 text-xs text-n-ruby-9" role="alert">
+          {{ t('CAPTAIN.PLAYGROUND.TEST_SETTINGS_ERROR') }}
+        </p>
+        <button
+          type="button"
+          class="text-xs font-medium text-n-brand hover:underline"
+          @click="loadPlaygroundSettings(props.assistantId, { force: true })"
+        >
+          {{ t('DESIGN_SYSTEM.STATE.RETRY') }}
+        </button>
+      </div>
       <div class="mt-3 grid gap-4 md:grid-cols-3">
         <label class="flex min-w-0 flex-col gap-1 text-xs text-n-slate-11">
           {{ t('CAPTAIN.PLAYGROUND.TEST_MODEL') }}
@@ -329,12 +423,16 @@ onMounted(loadPlaygroundSettings);
           />
         </label>
         <div class="flex min-w-0 flex-col gap-1">
-          <label class="flex items-center justify-between gap-3 text-xs text-n-slate-11">
+          <label
+            class="flex items-center justify-between gap-3 text-xs text-n-slate-11"
+          >
             <span>{{ t('CAPTAIN.PLAYGROUND.TEST_TEMPERATURE') }}</span>
             <input
               v-model="temperatureOverrideEnabled"
               type="checkbox"
-              :disabled="isLoadingSettings || settingsFailed || !supportsTemperature"
+              :disabled="
+                isLoadingSettings || settingsFailed || !supportsTemperature
+              "
             />
           </label>
           <div class="flex items-center gap-3">
@@ -348,7 +446,11 @@ onMounted(loadPlaygroundSettings);
               :disabled="!temperatureOverrideEnabled || !supportsTemperature"
             />
             <span class="w-10 text-right text-xs tabular-nums text-n-slate-11">
-              {{ temperatureOverrideEnabled ? formattedTemperature : savedTemperature.toFixed(1) }}
+              {{
+                temperatureOverrideEnabled
+                  ? formattedTemperature
+                  : savedTemperature.toFixed(1)
+              }}
             </span>
           </div>
           <p v-if="!supportsTemperature" class="m-0 text-xs text-n-slate-10">
@@ -360,7 +462,9 @@ onMounted(loadPlaygroundSettings);
           <Select
             v-model="thinkingEffort"
             :options="reasoningEffortOptions"
-            :disabled="isLoadingSettings || settingsFailed || !supportsReasoning"
+            :disabled="
+              isLoadingSettings || settingsFailed || !supportsReasoning
+            "
             class="w-full"
           />
           <span v-if="!supportsReasoning" class="text-xs text-n-slate-10">

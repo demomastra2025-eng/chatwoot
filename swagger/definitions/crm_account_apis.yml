@@ -337,9 +337,10 @@ captain_assistant:
     guardrails: { type: array, nullable: true, items: { type: string } }
     config:
       type: object
-      description: 'Assistant configuration is updated through the existing assistant endpoint. Model, tool access, follow-up settings, and outcome reason settings are account-scoped per assistant.'
+      description: 'Assistant configuration is updated through the existing assistant endpoint. Omitted or null safety settings inherit the workspace runtime policy.'
       properties:
         model: { type: string }
+        safety_settings: { $ref: '#/components/schemas/captain_assistant_safety_settings' }
         tool_access: { type: object, additionalProperties: true }
         follow_up_settings: { type: object, additionalProperties: true }
         outcome_reason_settings: { type: object, additionalProperties: true }
@@ -363,6 +364,53 @@ captain_assistants_response:
         total_count: { type: integer }
         page: { type: integer, description: Pagination structure is reserved; current response reports page 1. }
 
+captain_assistant_safety_settings:
+  type: object
+  description: Per-assistant safety overrides. Omit a setting or pass null to inherit its workspace value.
+  properties:
+    moderation_enabled: { type: boolean, nullable: true, description: Enable or disable provider moderation for this assistant; null inherits the workspace value. }
+    prompt_injection_action: { type: string, nullable: true, enum: [disabled, flag, block], description: Runtime prompt-injection guardrail action; null inherits the workspace value. }
+    sensitive_info_action: { type: string, nullable: true, enum: [disabled, flag, block], description: Runtime sensitive-information guardrail action; null inherits the workspace value. }
+  additionalProperties: false
+
+captain_assistant_playground_request:
+  type: object
+  required: [message_content]
+  properties:
+    message_content: { type: string }
+    message_history:
+      type: array
+      items:
+        type: object
+        required: [role, content]
+        properties:
+          role: { type: string }
+          content: { type: string }
+          agent_name: { type: string }
+    conversation_id: { type: string, description: Optional account-visible conversation used to provide runtime context. }
+    test_model: { type: string, description: Per-request selectable model override. It is validated against the assistant model registry and is not saved to the assistant. }
+    test_temperature: { type: number, minimum: 0, maximum: 1, description: Per-request temperature override; accepted only when the selected model supports temperature. }
+    test_thinking_effort: { type: string, enum: [none, low, medium, high], description: Per-request reasoning effort override; accepted only when supported by the selected model. }
+
+captain_assistant_playground_response:
+  type: object
+  required: [response]
+  properties:
+    response: { type: string }
+    agent_name: { type: string, nullable: true }
+    reasoning: { type: string, nullable: true }
+    response_latency_ms: { type: integer, minimum: 0, description: Measured end-to-end response latency in milliseconds. }
+    reported_reasoning_tokens: { type: integer, minimum: 1, description: Provider-reported reasoning tokens, included only when the provider supplies this usage metric. }
+    tool_trace:
+      type: array
+      items:
+        type: object
+        properties:
+          tool: { type: string }
+          event: { type: string }
+        additionalProperties: true
+  additionalProperties: true
+
 captain_assistant_payload:
   type: object
   required: [assistant]
@@ -380,6 +428,7 @@ captain_assistant_payload:
           type: object
           properties:
             model: { type: string }
+            safety_settings: { $ref: '#/components/schemas/captain_assistant_safety_settings' }
             tool_access: { type: object, additionalProperties: true }
             follow_up_settings: { type: object, additionalProperties: true }
             outcome_reason_settings: { type: object, additionalProperties: true }

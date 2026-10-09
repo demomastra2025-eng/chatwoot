@@ -164,15 +164,30 @@ const isWebProviderConfigured = computed(
   () => captainConfigStore.runtimeMetadata?.web_access?.configured === true
 );
 const safetyModerationOptions = computed(() => [
-  { value: 'inherit', label: t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.INHERIT') },
-  { value: 'enabled', label: t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.ENABLED') },
-  { value: 'disabled', label: t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.DISABLED') },
+  {
+    value: 'inherit',
+    label: t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.INHERIT'),
+  },
+  {
+    value: 'enabled',
+    label: t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.ENABLED'),
+  },
+  {
+    value: 'disabled',
+    label: t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.DISABLED'),
+  },
 ]);
 const safetyActionOptions = computed(() => [
-  { value: 'inherit', label: t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.INHERIT') },
+  {
+    value: 'inherit',
+    label: t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.INHERIT'),
+  },
   { value: 'block', label: t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.BLOCK') },
   { value: 'flag', label: t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.FLAG') },
-  { value: 'disabled', label: t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.DISABLED') },
+  {
+    value: 'disabled',
+    label: t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.DISABLED'),
+  },
 ]);
 const validationRules = {
   name: { required, minLength: minLength(1) },
@@ -334,6 +349,12 @@ const resolveInstructionText = assistant => {
     : '';
 };
 
+const moderationSettingValue = value => {
+  if (value === true) return 'enabled';
+  if (value === false) return 'disabled';
+  return 'inherit';
+};
+
 const updateStateFromAssistant = assistant => {
   const { config = {} } = assistant;
   state.name = assistant.name;
@@ -347,12 +368,7 @@ const updateStateFromAssistant = assistant => {
   state.historyMessageLimit = Number(config.history_message_limit || 0);
   const safetySettings = config.safety_settings || {};
   state.safetySettings = {
-    moderationEnabled:
-      safetySettings.moderation_enabled === true
-        ? 'enabled'
-        : safetySettings.moderation_enabled === false
-          ? 'disabled'
-          : 'inherit',
+    moderationEnabled: moderationSettingValue(safetySettings.moderation_enabled),
     promptInjectionAction: safetySettings.prompt_injection_action || 'inherit',
     sensitiveInfoAction: safetySettings.sensitive_info_action || 'inherit',
   };
@@ -590,7 +606,9 @@ defineExpose({
               />
             </label>
             <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
-              {{ t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.PROMPT_INJECTION') }}
+              {{
+                t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.PROMPT_INJECTION')
+              }}
               <Select
                 v-model="state.safetySettings.promptInjectionAction"
                 :options="safetyActionOptions"

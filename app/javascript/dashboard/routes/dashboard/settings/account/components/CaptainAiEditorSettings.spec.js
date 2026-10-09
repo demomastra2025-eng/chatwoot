@@ -58,10 +58,9 @@ describe('CaptainAiEditorSettings', () => {
   it('persists Text improvement under its own key and renders the saved off state', async () => {
     const wrapper = mountComponent();
     await flushPromises();
-    expect(wrapper.findAll('button').map(button => button.attributes('data-on'))).toEqual([
-      'true',
-      'true',
-    ]);
+    expect(
+      wrapper.findAll('button').map(button => button.attributes('data-on'))
+    ).toEqual(['true', 'true']);
 
     CaptainPreferencesAPI.updatePreferences.mockResolvedValueOnce({
       data: {
@@ -77,10 +76,9 @@ describe('CaptainAiEditorSettings', () => {
     expect(CaptainPreferencesAPI.updatePreferences).toHaveBeenCalledWith({
       captain_features: { text_improvement: false, label_suggestion: true },
     });
-    expect(wrapper.findAll('button').map(button => button.attributes('data-on'))).toEqual([
-      'false',
-      'true',
-    ]);
+    expect(
+      wrapper.findAll('button').map(button => button.attributes('data-on'))
+    ).toEqual(['false', 'true']);
     expect(dispatch).toHaveBeenCalledWith('accounts/get');
   });
 
@@ -102,17 +100,18 @@ describe('CaptainAiEditorSettings', () => {
     expect(CaptainPreferencesAPI.updatePreferences).toHaveBeenCalledWith({
       captain_features: { text_improvement: true, label_suggestion: false },
     });
-    expect(wrapper.findAll('button').map(button => button.attributes('data-on'))).toEqual([
-      'true',
-      'false',
-    ]);
+    expect(
+      wrapper.findAll('button').map(button => button.attributes('data-on'))
+    ).toEqual(['true', 'false']);
   });
 
   it('keeps both feature switches read-only for non-admin workspace users', async () => {
     const wrapper = mountComponent({ disabled: true });
     await flushPromises();
 
-    expect(wrapper.findAll('button').every(button => button.element.disabled)).toBe(true);
+    expect(
+      wrapper.findAll('button').every(button => button.element.disabled)
+    ).toBe(true);
     expect(CaptainPreferencesAPI.updatePreferences).not.toHaveBeenCalled();
   });
 
@@ -120,7 +119,9 @@ describe('CaptainAiEditorSettings', () => {
     const fetch = vi.spyOn(store, 'fetch');
     CaptainPreferencesAPI.get
       .mockRejectedValueOnce(new Error('temporary error'))
-      .mockResolvedValueOnce({ data: { features: { editor: { enabled: true } } } });
+      .mockResolvedValueOnce({
+        data: { features: { editor: { enabled: true } } },
+      });
     const wrapper = mountComponent();
     await flushPromises();
 
@@ -182,9 +183,8 @@ describe('CaptainAiEditorSettings', () => {
     expect(CaptainPreferencesAPI.updatePreferences).toHaveBeenNthCalledWith(2, {
       captain_features: { text_improvement: false, label_suggestion: false },
     });
-    expect(wrapper.findAll('button').map(button => button.attributes('data-on'))).toEqual([
-      'false',
-      'false',
-    ]);
+    expect(
+      wrapper.findAll('button').map(button => button.attributes('data-on'))
+    ).toEqual(['false', 'false']);
   });
 });

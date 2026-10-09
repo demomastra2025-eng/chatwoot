@@ -255,17 +255,7 @@ class Captain::Copilot::ChatService < Llm::BaseAiService
   end
 
   def runtime_safety_preferences
-    preferences = @account.captain_runtime_preferences.to_h.stringify_keys
-    safety_settings = @assistant.config.to_h.deep_stringify_keys['safety_settings'].to_h
-    {
-      'moderation_enabled' => ['copilot_moderation', [true, false]],
-      'prompt_injection_action' => ['copilot_prompt_injection_guardrail', Llm::RuntimeGuardrailAction::ACTIONS],
-      'sensitive_info_action' => ['copilot_sensitive_info_guardrail', Llm::RuntimeGuardrailAction::ACTIONS]
-    }.each do |setting_key, (runtime_key, allowed_values)|
-      value = safety_settings[setting_key]
-      preferences[runtime_key] = value if allowed_values.include?(value)
-    end
-    preferences
+    Captain::AssistantSafetyPreferences.for(assistant: @assistant, feature: :copilot)
   end
 
   def request_event_context
