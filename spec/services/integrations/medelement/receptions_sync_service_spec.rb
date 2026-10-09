@@ -153,6 +153,7 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
       # rubocop:enable Rails/SkipsModelValidations
       travel 7.hours
 
+      account.enable_features!('scheduling')
       hook = create(:integrations_hook, :medelement, account: account)
       invalid_run = Integrations::Medelement::SyncRun.create!(
         account: account, hook: hook, trigger: 'manual', status: 'running'

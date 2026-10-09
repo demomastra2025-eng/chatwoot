@@ -131,7 +131,7 @@ RSpec.describe AutomationRules::TouchActionService do
 
     context 'when duplicate diagnostics fail' do
       let(:duplicate_params) { { body: 'Same automation follow-up', delay_minutes: 10 } }
-      let!(:existing_touch) { service.create_touch(duplicate_params, action_key: 'same-action') }
+      let(:existing_touch) { service.create_touch(duplicate_params, action_key: 'same-action') }
       let(:validation_error) do
         duplicate_touch = existing_touch.dup
         duplicate_touch.errors.add(
@@ -144,6 +144,7 @@ RSpec.describe AutomationRules::TouchActionService do
 
       before do
         allow(service).to receive(:existing_event_touch).and_return(nil)
+        existing_touch
         allow(service).to receive(:create_automation_touch).and_raise(validation_error)
       end
 
@@ -169,6 +170,7 @@ RSpec.describe AutomationRules::TouchActionService do
         }
 
         travel_to(Time.zone.local(2026, 10, 9, 12, 30, 15)) do
+          allow(service).to receive(:create_automation_touch).and_call_original
           existing_relative_touch = service.create_touch(relative_params, action_key: 'first-action')
           allow(OpenSSL::HMAC).to receive(:hexdigest).and_raise(RuntimeError, 'HMAC unavailable')
 

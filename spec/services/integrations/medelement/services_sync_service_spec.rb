@@ -128,7 +128,8 @@ RSpec.describe Integrations::Medelement::ServicesSyncService do
     ).perform
 
     expect(result).to include(imported_count: 0, skipped_count: 1)
-    expect(account.scheduling_services).to be_empty
+    expect(account.scheduling_services.reload).to be_empty
+    expect(Scheduling::Service.where(account_id: account.id).count).to eq(0)
   end
 
   it 'keeps a provider name that exceeds the native display-name limit' do
