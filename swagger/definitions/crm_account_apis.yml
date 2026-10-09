@@ -337,7 +337,7 @@ captain_assistant:
     guardrails: { type: array, nullable: true, items: { type: string } }
     config:
       type: object
-      description: 'Assistant configuration is updated through the existing assistant endpoint. Omitted or null safety settings inherit the workspace runtime policy.'
+      description: 'Assistant configuration is updated through the existing assistant endpoint. Model, tool access, follow-up settings, and outcome reason settings are account-scoped per assistant. Omitted safety fields retain saved overrides during a partial update; explicit null resets a safety field to inheritance from the workspace policy. Unspecified safety fields on a new assistant inherit workspace policy.'
       properties:
         model: { type: string }
         safety_settings: { $ref: '#/components/schemas/captain_assistant_safety_settings' }
@@ -366,7 +366,7 @@ captain_assistants_response:
 
 captain_assistant_safety_settings:
   type: object
-  description: Per-assistant safety overrides. Omit a setting or pass null to inherit its workspace value.
+  description: Omitted safety fields retain saved overrides during a partial update; explicit null resets a safety field to inheritance from the workspace policy. Unspecified safety fields on a new assistant inherit workspace policy.
   properties:
     moderation_enabled: { type: boolean, nullable: true, description: Enable or disable provider moderation for this assistant; null inherits the workspace value. }
     prompt_injection_action: { type: string, nullable: true, enum: [disabled, flag, block], description: Runtime prompt-injection guardrail action; null inherits the workspace value. }
@@ -426,6 +426,7 @@ captain_assistant_payload:
         guardrails: { type: array, items: { type: string } }
         config:
           type: object
+          description: 'Omitted safety fields retain saved overrides during a partial update; explicit null resets a safety field to inheritance from the workspace policy. Unspecified safety fields on a new assistant inherit workspace policy.'
           properties:
             model: { type: string }
             safety_settings: { $ref: '#/components/schemas/captain_assistant_safety_settings' }

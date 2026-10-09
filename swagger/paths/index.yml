@@ -3914,7 +3914,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     tags: [Captain Assistants]
     operationId: update-captain-assistant
     summary: Update an account Captain assistant
-    description: Select model and update tool access, follow-up, outcome reason, and runtime safety settings inside the existing assistant.config object. Omitted or null safety fields inherit workspace policy. Follow-ups use native reminders; disabling them cancels that assistant's open reminders.
+    description: Select model and update tool access, follow-up, outcome reason, and runtime safety settings inside the existing assistant.config object. Omitted safety fields retain saved overrides during a partial update; explicit null resets a safety field to inheritance from the workspace policy. Unspecified safety fields on a new assistant inherit workspace policy. Follow-ups use native reminders; disabling them cancels that assistant's open reminders.
     security: [{ userApiKey: [] }]
     requestBody:
       required: true

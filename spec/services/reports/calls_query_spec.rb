@@ -6,6 +6,17 @@ RSpec.describe Reports::CallsQuery do
   let(:account) { create(:account, reporting_timezone: 'Europe/Berlin') }
 
   def create_call(account:, started_at:, direction: 'inbound', status: 'completed', metadata: {}, **attributes)
+    inbox = attributes[:inbox] || attributes[:conversation]&.inbox
+    if inbox.present?
+      attributes[:number_binding] ||= Telephony::NumberBinding.find_by(inbox_id: inbox.id)
+      attributes[:number_binding] ||= create(
+        :telephony_number_binding,
+        account: account,
+        inbox: inbox,
+        provider: attributes[:provider] || 'sipuni'
+      )
+    end
+
     create(
       :telephony_call_session,
       account: account,
