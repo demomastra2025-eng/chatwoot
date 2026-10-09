@@ -162,12 +162,12 @@ RSpec.describe Reports::CallsQuery do
     expect(next_day.dig(:summary, :logical_call_count)).to eq(0)
   end
 
-  it 'joins explicit-key legs across midnight beyond the nearby-leg window without mixing inboxes or providers' do
+  it 'joins SQL-like explicit keys across midnight beyond the nearby-leg window without mixing inboxes or providers' do
     inbox = create(:inbox, account: account)
     conversation = create(:conversation, account: account, inbox: inbox)
     other_inbox = create(:inbox, account: account)
     other_conversation = create(:conversation, account: account, inbox: other_inbox)
-    logical_key = 'binotel:reused-call-reference'
+    logical_key = "binotel:reused-call-reference' OR 1=1 --"
     metadata = { 'metadata' => { 'logical_call_key' => logical_key } }
     first_leg_started_at = Time.iso8601('2026-03-28T22:57:00Z')
     answered_leg_started_at = Time.iso8601('2026-03-28T23:01:00Z')
@@ -233,6 +233,57 @@ RSpec.describe Reports::CallsQuery do
     expect(first_day.dig(:rows, 0, :started_at)).to eq(first_leg_started_at.iso8601)
     expect(next_day.dig(:summary, :logical_call_count)).to eq(2)
     expect(next_day.dig(:summary, :unanswered_count)).to eq(2)
+  end
+
+  it 'matches canonical siblings with a null inbox across report dates' do
+    logical_key = 'binotel:call-without-inbox'
+    metadata = { 'metadata' => { 'logical_call_key' => logical_key } }
+    first_leg_started_at = Time.iso8601('2026-03-28T22:57:00Z')
+    answered_leg_started_at = Time.iso8601('2026-03-28T23:01:00Z')
+
+    first_leg = create_call(
+      account: account,
+      inbox: nil,
+      conversation: nil,
+      contact: nil,
+      number_binding: nil,
+      provider: 'binotel',
+      started_at: first_leg_started_at,
+      status: 'no_answer',
+      metadata: metadata,
+      answered_at: nil,
+      from_number: '+77012345678',
+      to_number: '+77098765432',
+      ended_at: first_leg_started_at + 30.seconds,
+      duration_seconds: 0
+    )
+    answered_leg = create_call(
+      account: account,
+      inbox: nil,
+      conversation: nil,
+      contact: nil,
+      number_binding: nil,
+      provider: 'binotel',
+      started_at: answered_leg_started_at,
+      status: 'completed',
+      metadata: metadata,
+      answered_at: answered_leg_started_at + 15.seconds,
+      answered_by: 'provider',
+      from_number: '+77012345678',
+      to_number: '+77098765432',
+      ended_at: answered_leg_started_at + 60.seconds,
+      duration_seconds: 45
+    )
+
+    expect([first_leg.inbox_id, answered_leg.inbox_id]).to eq([nil, nil])
+
+    first_day = call_report_for(account: account, date: '2026-03-28')
+    next_day = call_report_for(account: account, date: '2026-03-29')
+
+    expect(first_day.dig(:summary, :logical_call_count)).to eq(1)
+    expect(first_day.dig(:summary, :answered_count)).to eq(1)
+    expect(first_day.dig(:rows, 0, :started_at)).to eq(first_leg_started_at.iso8601)
+    expect(next_day.dig(:summary, :logical_call_count)).to eq(0)
   end
 
   it 'uses the native SIP history group across midnight when the handoff legs are created minutes apart' do

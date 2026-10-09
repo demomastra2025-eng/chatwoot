@@ -2,16 +2,16 @@ class Telephony::LogicalCallHistoryQuery
   BATCH_SIZE = 200
   MAX_BATCH_SIZE = 500
   CANONICAL_GROUP_KEY_PATHS = {
-    history_group_ref: ["BTRIM(metadata #>> '{history_handoff,group_ref}')"],
+    history_group_ref: ['{history_handoff,group_ref}'],
     logical_call_key: [
-      "BTRIM(metadata #>> '{metadata,logical_call_key}')",
-      "BTRIM(metadata #>> '{metadata,logicalCallKey}')",
-      "BTRIM(metadata #>> '{metadata,call_group_key}')",
-      "BTRIM(metadata #>> '{metadata,callGroupKey}')",
-      "BTRIM(metadata #>> '{last_payload,logical_call_key}')",
-      "BTRIM(metadata #>> '{last_payload,logicalCallKey}')",
-      "BTRIM(metadata #>> '{last_payload,call_group_key}')",
-      "BTRIM(metadata #>> '{last_payload,callGroupKey}')"
+      '{metadata,logical_call_key}',
+      '{metadata,logicalCallKey}',
+      '{metadata,call_group_key}',
+      '{metadata,callGroupKey}',
+      '{last_payload,logical_call_key}',
+      '{last_payload,logicalCallKey}',
+      '{last_payload,call_group_key}',
+      '{last_payload,callGroupKey}'
     ]
   }.freeze
 
@@ -142,24 +142,23 @@ class Telephony::LogicalCallHistoryQuery
     return [] if signatures.empty?
 
     scopes = signatures.group_by { |provider, inbox_id, key_type, _logical_key| [provider, inbox_id, key_type] }
-    clauses = []
-    binds = []
-    scopes.each do |(provider, inbox_id, key_type), scoped_signatures|
+    scoped_relations = scopes.map do |(provider, inbox_id, key_type), scoped_signatures|
       keys = scoped_signatures.map(&:last).uniq
-      clause_key_bindings = []
-      key_clauses = CANONICAL_GROUP_KEY_PATHS.fetch(key_type).map do |path|
-        placeholders = Array.new(keys.size, '?').join(', ')
-        clause_key_bindings.concat(keys)
-        "#{path} IN (#{placeholders})"
+
+      key_conditions = CANONICAL_GROUP_KEY_PATHS.fetch(key_type).map do |path|
+        json_key = Arel::Nodes::InfixOperation.new(
+          '#>>', relation.klass.arel_table[:metadata], Arel::Nodes.build_quoted(path)
+        )
+        Arel::Nodes::NamedFunction.new('BTRIM', [json_key]).in(keys)
       end
-      clauses << "(provider = ? AND inbox_id IS NOT DISTINCT FROM ? AND (#{key_clauses.join(' OR ')}))"
-      binds.concat([provider, inbox_id] + clause_key_bindings)
+
+      relation.where(direction: 'inbound', provider: provider, inbox_id: inbox_id)
+              .where(key_conditions.reduce(&:or))
     end
 
-    relation.where(direction: 'inbound')
-            .where(clauses.join(' OR '), *binds)
-            .to_a
-            .select { |session| signatures.include?(canonical_group_signature(session)) }
+    scoped_relations.reduce(&:or)
+                    .to_a
+                    .select { |session| signatures.include?(canonical_group_signature(session)) }
   end
 
   def canonical_group_signature(session)
