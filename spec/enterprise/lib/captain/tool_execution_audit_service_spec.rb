@@ -19,7 +19,8 @@ RSpec.describe Captain::ToolExecutionAuditService do
 
     payload = Enterprise::AuditLog.where(action: 'captain_tool_execute').last.audited_changes
     expect(payload).to include('tool_id' => 'list_my_appointments', 'conversation_id' => 34)
-    expect(payload.to_json).not_to include('Доктор Пример', 'appointments', 'doctor')
+    expect(payload.keys).to match_array(%w[scope tool_id result_success conversation_id])
+    expect(payload.values).not_to include('Доктор Пример')
   end
 
   it 'always audits confirmation-required tool calls with redacted sensitive keys' do
