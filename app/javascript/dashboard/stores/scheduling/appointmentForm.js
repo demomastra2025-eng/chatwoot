@@ -31,6 +31,22 @@ const toFormDateTime = value =>
 const fromFormDateTime = value =>
   fromDateTimeInputValue(value, SCHEDULING_TIMEZONE);
 
+export const refreshCurrentCalendarProviderAction = async ({
+  refresh,
+  isCurrent,
+  onCurrent,
+}) => {
+  if (!isCurrent()) return false;
+  try {
+    await refresh();
+  } catch {
+    // The provider result remains authoritative if the calendar read fails.
+  }
+  if (!isCurrent()) return false;
+  onCurrent();
+  return true;
+};
+
 const BACKEND_MANAGED_CUSTOM_ATTRIBUTE_KEYS = new Set([
   'service_ids',
   'services',

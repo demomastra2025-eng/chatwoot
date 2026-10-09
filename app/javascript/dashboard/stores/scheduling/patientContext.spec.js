@@ -4,6 +4,9 @@ import SchedulingContactsAPI from 'dashboard/api/scheduling/contacts';
 import {
   conversationPatientContextKey,
   formatPatientBirthDate,
+  normalizePatientBirthDate,
+  patientBirthDate,
+  patientBookingContact,
   PATIENT_SELECTION_STORAGE_KEY,
   useConversationPatientContextStore,
 } from './patientContext';
@@ -313,5 +316,58 @@ describe('conversation patient context', () => {
       '02.01.2017'
     );
     expect(formatPatientBirthDate({})).toBe('');
+  });
+
+  it.each([
+    ['20.07.1994', '1994-07-20'],
+    ['1994-07-20', '1994-07-20'],
+    ['1994-07-20T00:00:00.000+05:00', '1994-07-20'],
+    ['2000-02-29T23:59:59Z', '2000-02-29'],
+    ['29.02.2000', '2000-02-29'],
+    ['29.02.1900', ''],
+    ['31.02.1994', ''],
+    ['1994-02-31', ''],
+    ['00.07.1994', ''],
+    ['20.13.1994', ''],
+    ['20.07.0000', ''],
+    ['1994-07-20T25:00:00Z', ''],
+    ['20/07/1994', ''],
+    ['', ''],
+  ])(
+    'normalizes patient DOB %s to %s without Date rollover or timezone parsing',
+    (value, expected) => {
+      expect(normalizePatientBirthDate(value)).toBe(expected);
+    }
+  );
+
+  it('uses the same canonical DOB for patient display and the projected booking DTO', () => {
+    const dto = {
+      ...patient,
+      birth_date: '20.07.1994',
+      gender: '2',
+      custom_attributes: {
+        medelement_patient_code: 'verified-profile',
+        medelement_birth_date: '31.02.1994',
+      },
+    };
+    const original = JSON.parse(JSON.stringify(dto));
+    expect(patientBirthDate(dto)).toBe('1994-07-20');
+    expect(formatPatientBirthDate(dto)).toBe('20.07.1994');
+    expect(patientBookingContact(dto).birthDate).toBe('1994-07-20');
+    expect(dto).toEqual(original);
+  });
+
+  it('preserves an empty authoritative clinical DOB instead of guessing from raw contact attributes', () => {
+    const dto = {
+      ...patient,
+      birth_date: null,
+      custom_attributes: {
+        medelement_patient_code: 'verified-profile',
+        birth_date: '1994-07-20',
+        medelement_birth_date: '31.02.1994',
+      },
+    };
+    expect(patientBirthDate(dto)).toBe('');
+    expect(patientBookingContact(dto).birthDate).toBe('');
   });
 });

@@ -3,7 +3,10 @@ import { createPinia, setActivePinia } from 'pinia';
 
 import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
 import SchedulingContactsAPI from 'dashboard/api/scheduling/contacts';
-import { useSchedulingAppointmentFormStore } from './appointmentForm';
+import {
+  refreshCurrentCalendarProviderAction,
+  useSchedulingAppointmentFormStore,
+} from './appointmentForm';
 
 vi.mock('dashboard/api/scheduling/appointments', () => ({
   default: {
@@ -94,6 +97,58 @@ describe('useSchedulingAppointmentFormStore', () => {
       patient_contact_id: 84,
       conversation_id: 12002,
     });
+  });
+
+  it('keeps patient B open when a previous provider action finishes its calendar refresh', async () => {
+    const store = useSchedulingAppointmentFormStore();
+    store.openEdit(localAppointment);
+    const originalId = store.recordId;
+    const pending = deferred();
+    const closeDrawer = vi.fn(() => {
+      store.close();
+      store.reset();
+    });
+    const refresh = vi.fn(() => pending.promise);
+    const request = refreshCurrentCalendarProviderAction({
+      refresh,
+      isCurrent: () => store.isOpen && store.recordId === originalId,
+      onCurrent: closeDrawer,
+    });
+    store.openEdit({
+      ...localAppointment,
+      id: 12,
+      patientContactId: 85,
+      clientFirstName: 'Other',
+    });
+    pending.resolve();
+    expect(await request).toBe(false);
+    expect(refresh).toHaveBeenCalledOnce();
+    expect(closeDrawer).not.toHaveBeenCalled();
+    expect(store.isOpen).toBe(true);
+    expect(store.recordId).toBe(12);
+    expect(store.form).toMatchObject({
+      patientContactId: 85,
+      clientFirstName: 'Other',
+    });
+  });
+
+  it('allows the current provider result to close its own drawer even if calendar refresh fails', async () => {
+    const store = useSchedulingAppointmentFormStore();
+    store.openEdit(localAppointment);
+    const closeDrawer = vi.fn(() => {
+      store.close();
+      store.reset();
+    });
+    expect(
+      await refreshCurrentCalendarProviderAction({
+        refresh: () => Promise.reject(new Error('Read failed')),
+        isCurrent: () => store.isOpen && store.recordId === 11,
+        onCurrent: closeDrawer,
+      })
+    ).toBe(true);
+    expect(closeDrawer).toHaveBeenCalledOnce();
+    expect(store.isOpen).toBe(false);
+    expect(store.recordId).toBeNull();
   });
 
   it('updates patient details without changing the owner or promoting the family phone', async () => {
@@ -227,6 +282,40 @@ describe('useSchedulingAppointmentFormStore', () => {
     expect(owner).toEqual(original);
     expect(store.selectedContact).toEqual(original);
   });
+
+  it.each([
+    ['20.07.1994', '1994-07-20'],
+    ['1994-07-20', '1994-07-20'],
+    ['29.02.2000', '2000-02-29'],
+    ['31.02.1994', ''],
+    ['29.02.1900', ''],
+  ])(
+    'sends a valid recorded provider DOB %s in canonical form without changing the contact',
+    (recorded, expected) => {
+      const store = useSchedulingAppointmentFormStore();
+      const owner = {
+        id: 42,
+        firstName: 'Messenger',
+        lastName: 'Alias',
+        fullName: 'Messenger Alias',
+        customAttributes: {
+          medelement_patient_code: 'verified-profile',
+          medelement_birth_date: recorded,
+          medelement_first_name: 'Clinical',
+          medelement_last_name: 'Patient',
+        },
+      };
+      const original = JSON.parse(JSON.stringify(owner));
+      store.openCreate();
+      store.applyContact(owner);
+      expect(store.form.clientBirthDate).toBe(expected);
+      if (expected)
+        expect(store.buildPayload().client_birth_date).toBe(expected);
+      else expect(store.buildPayload()).not.toHaveProperty('client_birth_date');
+      expect(store.selectedContact).toEqual(original);
+      expect(owner).toEqual(original);
+    }
+  );
 
   it('retains the authoritative clinical DTO fields instead of reprojecting its provider attributes', () => {
     const store = useSchedulingAppointmentFormStore();

@@ -29,12 +29,33 @@ export const patientDisplayName = patient =>
     .filter(Boolean)
     .join(' ');
 
-export const patientBirthDate = patient =>
-  patient?.birth_date ||
-  patient?.birthDate ||
-  patient?.custom_attributes?.birth_date ||
-  patient?.customAttributes?.birth_date ||
-  '';
+export const normalizePatientBirthDate = value => {
+  const text = String(value || '').trim();
+  const iso = text.match(
+    /^(\d{4})-(\d{2})-(\d{2})(?:T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)?)?$/
+  );
+  const dotted = text.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  if (!iso && !dotted) return '';
+  const parts = iso ? iso.slice(1, 4) : [dotted[3], dotted[2], dotted[1]];
+  const [year, month, day] = parts.map(Number);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (year < 1 || month < 1 || month > 12 || day < 1 || day > days[month - 1])
+    return '';
+  return parts.join('-');
+};
+
+export const patientBirthDate = patient => {
+  const projected =
+    patient?.communication_contact_id || patient?.communicationContactId;
+  const value = projected
+    ? (patient?.birth_date ?? patient?.birthDate)
+    : patient?.birth_date ||
+      patient?.birthDate ||
+      patient?.custom_attributes?.birth_date ||
+      patient?.customAttributes?.birth_date;
+  return normalizePatientBirthDate(value);
+};
 
 export const formatPatientBirthDate = patient => {
   const value = patientBirthDate(patient);
@@ -85,7 +106,11 @@ export const patientBookingContact = contact => {
   // contacts retain messenger aliases, so only their recorded provider profile
   // supplies booking identity; the original Contact object remains unchanged.
   if (contact.communicationContactId || contact.communication_contact_id) {
-    return { ...contact, gender: normalizePatientGender(contact.gender) };
+    return {
+      ...contact,
+      birthDate: patientBirthDate(contact),
+      gender: normalizePatientGender(contact.gender),
+    };
   }
   const attributes =
     contact.customAttributes || contact.custom_attributes || {};
@@ -113,11 +138,12 @@ export const patientBookingContact = contact => {
       : contact.fullName || contact.full_name || '',
     identifier:
       recorded('medelement_iin') || contact.identifier || attributes.iin || '',
-    birthDate:
+    birthDate: normalizePatientBirthDate(
       recorded('medelement_birth_date') ||
-      contact.birthDate ||
-      contact.birth_date ||
-      '',
+        contact.birthDate ||
+        contact.birth_date ||
+        ''
+    ),
     gender: normalizePatientGender(
       recorded('medelement_gender') || contact.gender
     ),

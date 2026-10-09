@@ -87,7 +87,10 @@ import {
   APPOINTMENT_BOOKING_INTAKE_CONTEXT,
   fieldDefinitionHasContext,
 } from 'dashboard/stores/crm/fieldContexts';
-import { useSchedulingAppointmentFormStore } from 'dashboard/stores/scheduling/appointmentForm';
+import {
+  refreshCurrentCalendarProviderAction,
+  useSchedulingAppointmentFormStore,
+} from 'dashboard/stores/scheduling/appointmentForm';
 import { useSchedulingCalendarStore } from 'dashboard/stores/scheduling/calendar';
 import {
   buildProviderCommandAction,
@@ -1516,15 +1519,14 @@ const prepareProviderCommandAction = async (action, command) => {
   return true;
 };
 
-const refreshAfterProviderCommand = async action => {
-  try {
-    await calendarStore.refresh();
-  } catch {
-    // The provider result remains authoritative even if the calendar refresh fails.
-  }
-
-  if (action.closeDrawer) handleDrawerClose();
-};
+const refreshAfterProviderCommand = action =>
+  refreshCurrentCalendarProviderAction({
+    refresh: () => calendarStore.refresh(),
+    isCurrent: () => isCurrentProviderAction(action),
+    onCurrent: () => {
+      if (action.closeDrawer) handleDrawerClose();
+    },
+  });
 
 const showProviderCommandOutcome = async (action, command) => {
   if (!isCurrentProviderAction(action)) return;
@@ -1536,7 +1538,7 @@ const showProviderCommandOutcome = async (action, command) => {
 
   providerCommandDialogRef.value?.close();
   pendingProviderAction.value = null;
-  await refreshAfterProviderCommand(action);
+  if (!(await refreshAfterProviderCommand(action))) return;
 
   if (command.status === 'succeeded') {
     useAlert(t('SCHEDULING.MEDELEMENT.SUCCESS'));
