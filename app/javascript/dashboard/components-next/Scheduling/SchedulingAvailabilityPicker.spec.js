@@ -80,9 +80,7 @@ describe('SchedulingAvailabilityPicker', () => {
     expect(wrapper.find('input[type="date"]').element.value).toBe('2026-10-10');
     const buttons = wrapper.findAll('button');
     expect(buttons).toHaveLength(1);
-    expect(buttons[0].text()).toContain(
-      'SCHEDULING.APPOINTMENT_FORM.AVAILABILITY.SHOW_NEAREST'
-    );
+    expect(buttons[0].text()).toContain('2026-10-12');
     expect(wrapper.emitted('showNearest')).toBeUndefined();
     await buttons[0].trigger('click');
     expect(wrapper.emitted('showNearest')).toEqual([[]]);
