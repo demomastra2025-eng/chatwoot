@@ -204,7 +204,7 @@ describe('CrmDealConversationPanel', () => {
     });
     await flushPromises();
 
-    expect(wrapper.find('[class*="lg:w-[42%]"]').exists()).toBe(true);
+    expect(wrapper.find('[class*="lg:w-2/3"]').exists()).toBe(true);
     expect(wrapper.find('[class*="hidden lg:flex"]').exists()).toBe(true);
     const openButton = wrapper.find('header button');
     expect(openButton.text()).toBe(

@@ -397,7 +397,7 @@ it('keeps a linked dialog beside the card on the deal URL', async () => {
   const card = wrapper.find('[data-testid="crm-deal-card"]');
   const chat = wrapper.find('[data-testid="crm-deal-chat"]');
 
-  expect(card.classes()).toContain('lg:w-[58%]');
+  expect(card.classes()).toContain('lg:w-1/3');
   expect(chat.exists()).toBe(true);
   expect(state.linkedConversationDisplayId).toBe('185');
   expect(runtime.routerPush).not.toHaveBeenCalled();

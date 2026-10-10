@@ -16,7 +16,10 @@ const assistantId = computed(() => Number(route.params.assistantId));
     class="h-full"
   >
     <template #body>
-      <AssistantPlayground :assistant-id="assistantId" />
+      <AssistantPlayground
+        :assistant-id="assistantId"
+        :account-id="route.params.accountId"
+      />
     </template>
   </PageLayout>
 </template>

@@ -4693,11 +4693,11 @@ watch(
           </div>
           <aside
             data-testid="crm-deal-card"
-            class="w-full flex-col overflow-hidden bg-n-solid-2"
+            class="min-w-0 w-full flex-col overflow-hidden bg-n-solid-2"
             :class="{
               'flex h-full md:w-[28rem] md:min-w-[28rem] xl:w-[30rem] xl:min-w-[30rem]':
                 !isDealPage,
-              'min-h-0 flex-1 lg:h-full lg:w-[58%] lg:flex-none lg:border-r lg:border-n-weak':
+              'min-h-0 flex-1 lg:h-full lg:w-1/3 lg:flex-none lg:border-r lg:border-n-weak':
                 isDealPage,
               flex: !isDealPage || dealPageTab === 'deal',
               'hidden lg:flex': isDealPage && dealPageTab === 'chat',

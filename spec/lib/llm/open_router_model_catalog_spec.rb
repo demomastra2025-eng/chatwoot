@@ -31,7 +31,8 @@ RSpec.describe Llm::OpenRouterModelCatalog do
             image: '0',
             request: '0'
           },
-          supported_parameters: %w[temperature tools tool_choice response_format reasoning]
+          supported_parameters: %w[temperature tools tool_choice response_format reasoning],
+          reasoning: { supported_efforts: %w[none low medium high], mandatory: false }
         },
         {
           id: 'image/provider',
@@ -191,7 +192,10 @@ RSpec.describe Llm::OpenRouterModelCatalog do
         max_output_tokens: 321,
         pricing: { 'prompt' => '0.000001', 'completion' => '0.000002' },
         top_provider: { 'max_completion_tokens' => 321, 'latency' => 42, 'throughput' => 99.5 },
-        raw_payload: { 'id' => 'db/model' },
+        raw_payload: {
+          'id' => 'db/model',
+          'reasoning' => { 'supported_efforts' => %w[low high], 'mandatory' => true }
+        },
         source: 'openrouter_api',
         fetched_at: Time.current
       )
@@ -214,6 +218,7 @@ RSpec.describe Llm::OpenRouterModelCatalog do
           'display_name' => 'DB Model',
           'source' => 'openrouter_api',
           'supported_parameters' => %w[tools tool_choice response_format reasoning],
+          'reasoning' => { 'supported_efforts' => %w[low high], 'mandatory' => true },
           'capabilities' => include('tool_calling', 'tool_choice', 'structured_output', 'reasoning'),
           'latency_ms' => 42.0,
           'throughput_tokens_per_second' => 99.5
@@ -323,6 +328,7 @@ RSpec.describe Llm::OpenRouterModelCatalog do
         'output_modalities' => ['text'],
         'context_length' => 8192,
         'max_output_tokens' => 4096,
+        'reasoning' => { 'supported_efforts' => %w[none low medium high], 'mandatory' => false },
         'latency_ms' => 420.0,
         'throughput_tokens_per_second' => 87.5,
         'pricing' => include(
