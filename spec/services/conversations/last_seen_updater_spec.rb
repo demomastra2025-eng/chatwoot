@@ -25,4 +25,25 @@ RSpec.describe Conversations::LastSeenUpdater do
 
     expect(conversation.reload.agent_last_seen_at).to eq(manual_unread_cursor)
   end
+
+  it 'retries the cursor write without broadcasting more than once' do
+    actor = create(:user, account: conversation.account)
+    attempts = 0
+    allow(conversation).to receive(:update_columns).and_wrap_original do |original, attributes|
+      attempts += 1
+      original.call(attributes)
+      raise ActiveRecord::Deadlocked if attempts == 1
+    end
+    expect(conversation).to receive(:dispatch_read_state_update).with(actor: actor).once
+
+    described_class.new(conversation: conversation).perform(
+      last_seen_at: Time.current,
+      broadcast_read_state: true,
+      refresh_communication_thread: false,
+      actor: actor
+    )
+
+    expect(attempts).to eq(2)
+    expect(conversation.reload.agent_last_seen_at).to be > 1.minute.ago
+  end
 end

@@ -80,6 +80,32 @@ RSpec.describe CommunicationThreads::MarkReadService do
       expect(CommunicationThreads::RealtimeUpdateJob).to have_received(:perform_later).once
     end
 
+    it 'does not repeat channel side effects when the aggregate refresh deadlocks' do
+      create(:message, account: account, conversation: conversation, message_type: :incoming, created_at: 1.minute.ago)
+      thread.reload
+      allow(CommunicationThreads::RealtimeUpdateJob).to receive(:perform_later)
+      allow(Conversations::MarkReadService).to receive(:new).and_call_original
+      attempts = 0
+      allow_any_instance_of(Conversations::CommunicationThreadResolver).to receive(:perform).and_wrap_original do |original|
+        attempts += 1
+        raise ActiveRecord::Deadlocked if attempts == 1
+
+        original.call
+      end
+
+      service = described_class.new(
+        communication_thread: thread,
+        current_user: user,
+        current_account: account,
+        accessible_links: links
+      )
+
+      expect(service.perform.unread_count).to eq(0)
+      expect(attempts).to eq(2)
+      expect(Conversations::MarkReadService).to have_received(:new).once
+      expect(CommunicationThreads::RealtimeUpdateJob).to have_received(:perform_later).once
+    end
+
     it 'ignores historical personal cursors and clears shared unread for every reader' do
       create(:message, account: account, conversation: conversation, message_type: :incoming, created_at: 1.minute.ago)
       create(:conversation_user_read_state, account: account, conversation: conversation, user: user, last_seen_at: Time.current)

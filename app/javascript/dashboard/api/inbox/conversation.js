@@ -117,7 +117,9 @@ class ConversationApi extends ApiClient {
   }
 
   markMessageRead({ id }) {
-    return axios.post(`${this.url}/${id}/update_last_seen`);
+    return axios.post(`${this.url}/${id}/update_last_seen`, {
+      response_format: 'compact',
+    });
   }
 
   markMessagesUnread({ id }) {

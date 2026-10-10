@@ -147,6 +147,44 @@ RSpec.describe Conversations::MarkReadService do
         expect(projected_message_ids).to contain_exactly(incoming_message.id)
         expect(projected_message_ids).not_to include(imported_message.id)
       end
+
+      it 'retries an aggregate refresh without replaying the read receipt' do
+        incoming_message
+        channel.account.enable_features!('communication_threads')
+        conversation.reload.refresh_communication_thread!
+        sync_service = instance_double(Whatsapp::MarkMessagesReadService, perform: true)
+        allow(Whatsapp::MarkMessagesReadService).to receive(:new).and_return(sync_service)
+        attempts = 0
+        allow_any_instance_of(Conversations::CommunicationThreadResolver).to receive(:perform).and_wrap_original do |original|
+          attempts += 1
+          expect(sync_service).to have_received(:perform).once
+          raise ActiveRecord::Deadlocked if attempts == 1
+
+          original.call
+        end
+
+        described_class.new(conversation: conversation, user: user).perform
+
+        expect(attempts).to eq(2)
+        expect(sync_service).to have_received(:perform).once
+        expect(conversation.reload.communication_thread.unread_count).to eq(0)
+      end
+
+      it 'delivers the captured receipt once even if the aggregate refresh exhausts its retries' do
+        incoming_message
+        channel.account.enable_features!('communication_threads')
+        conversation.reload.refresh_communication_thread!
+        sync_service = instance_double(Whatsapp::MarkMessagesReadService, perform: true)
+        allow(Whatsapp::MarkMessagesReadService).to receive(:new).and_return(sync_service)
+        allow_any_instance_of(Conversations::CommunicationThreadResolver).to receive(:perform).and_raise(ActiveRecord::Deadlocked)
+
+        expect do
+          described_class.new(conversation: conversation, user: user).perform
+        end.to raise_error(ActiveRecord::Deadlocked)
+
+        expect(sync_service).to have_received(:perform).once
+        expect(conversation.reload.unread_messages_for(user).incoming).to be_empty
+      end
     end
 
     context 'when syncing Telegram Personal read receipts' do

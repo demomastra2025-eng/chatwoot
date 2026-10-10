@@ -170,6 +170,10 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
       user: Current.user
     ).perform
     @conversation.reload
+    if params[:response_format] == 'compact'
+      return render json: { id: @conversation.display_id, agent_last_seen_at: @conversation.agent_last_seen_at&.to_i }
+    end
+
     preload_crm_deal_stages([@conversation])
     preload_scheduling_appointment_statuses([@conversation])
     preload_directional_message_timestamps([@conversation])

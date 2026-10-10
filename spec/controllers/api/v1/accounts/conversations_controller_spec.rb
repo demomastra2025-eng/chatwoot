@@ -1241,6 +1241,24 @@ RSpec.describe 'Conversations API', type: :request do
         expect(response.parsed_body['unread_count']).to eq(conversation.unread_incoming_messages.count)
       end
 
+      it 'returns only the shared read cursor for the opt-in compact response' do
+        conversation.update!(agent_last_seen_at: nil)
+        expect(controller).not_to receive(:preload_crm_deal_stages)
+        expect(controller).not_to receive(:preload_scheduling_appointment_statuses)
+        expect(controller).not_to receive(:preload_directional_message_timestamps)
+
+        post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/update_last_seen",
+             params: { response_format: 'compact' },
+             headers: agent.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body).to eq(
+          'id' => conversation.display_id,
+          'agent_last_seen_at' => conversation.reload.agent_last_seen_at.to_i
+        )
+      end
+
       it 'updates assignee last seen' do
         conversation.update!(assignee_id: agent.id, agent_last_seen_at: nil)
 

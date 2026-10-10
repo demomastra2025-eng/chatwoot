@@ -90,7 +90,10 @@ class CommunicationThreads::MarkReadService
   end
 
   def refresh_communication_thread!
-    latest_accessible_conversation&.refresh_communication_thread!
+    source_conversation = latest_accessible_conversation
+    return if source_conversation.blank?
+
+    Conversations::LastSeenUpdater.new(conversation: source_conversation).refresh_communication_thread!
   end
 
   def latest_accessible_conversation
