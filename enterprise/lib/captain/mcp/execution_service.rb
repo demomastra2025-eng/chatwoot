@@ -6,6 +6,9 @@ class Captain::Mcp::ExecutionService
   end
 
   def call
+    blocked = Captain::Playground::ExternalToolPolicy.failure_if_tainted
+    return blocked if blocked
+
     Captain::Mcp::ClientBuilder.with_client(@mcp_server) do |client|
       tool = client.tool(@tool_name, refresh: true)
       raise ArgumentError, "MCP tool #{@tool_name} is not available" if tool.blank?

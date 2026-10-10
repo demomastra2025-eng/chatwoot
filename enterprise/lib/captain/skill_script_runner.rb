@@ -27,6 +27,9 @@ class Captain::SkillScriptRunner
   end
 
   def call
+    blocked = Captain::Playground::ExternalToolPolicy.failure_if_tainted(state: tool_context&.state)
+    return blocked if blocked
+
     return disabled_result unless enabled?
     return failure('Skill script is not configured') if script.blank?
     return network_disabled_result if network_requested? && !network_enabled?

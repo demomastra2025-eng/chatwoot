@@ -122,6 +122,9 @@ class Captain::Tools::HttpRequestExecutor
   end
 
   def call(params = {})
+    blocked = Captain::Playground::ExternalToolPolicy.failure_if_tainted(state: @state)
+    return blocked if blocked
+
     request_preview = build_request_preview(params)
     execution_url = request_preview.delete(:execution_url)
     execution_headers = request_preview.delete(:execution_headers)
@@ -161,6 +164,9 @@ class Captain::Tools::HttpRequestExecutor
   end
 
   def execute_with_details(params = {}, raise_on_http_error: false)
+    blocked = Captain::Playground::ExternalToolPolicy.failure_if_tainted(state: @state)
+    return playground_blocked_details(blocked) if blocked
+
     request_preview = build_request_preview(params)
     execution_url = request_preview.delete(:execution_url)
     execution_headers = request_preview.delete(:execution_headers)
@@ -217,6 +223,17 @@ class Captain::Tools::HttpRequestExecutor
   end
 
   private
+
+  def playground_blocked_details(result)
+    {
+      preview: {}, tool_result: result,
+      response: {
+        successful: false, blocked: true, delivered: false,
+        reason: Captain::Playground::ExternalToolPolicy::REASON,
+        body: nil, formatted_body: Captain::Playground::ExternalToolPolicy::MESSAGE, headers: {}
+      }
+    }
+  end
 
   def format_response_details(raw_response_body)
     [@custom_tool.format_response(raw_response_body), nil]

@@ -2,7 +2,12 @@ class Captain::Playground::ExecutionBoundary
   def self.execute(tool, tool_context, arguments, &)
     state = tool_context.state.with_indifferent_access
     session = tool_context.context[:playground_session]
-    return yield unless state[:source] == 'playground' || state[:playground].present? || session
+    unless state[:source] == 'playground' || state[:playground].present? || session
+      blocked = Captain::Playground::ExternalToolPolicy.failure_if_tainted(state: state) if opaque_external_tool?(tool)
+      return blocked if blocked
+
+      return yield
+    end
     return failure('A server-owned Playground session is required') unless session.is_a?(Captain::Playground::Session)
 
     session.assert_context!(state)
@@ -15,6 +20,8 @@ class Captain::Playground::ExecutionBoundary
   end
 
   def self.execute_live(tool, session, arguments, &)
+    return Captain::Playground::ExternalToolPolicy.failure if opaque_external_tool?(tool)
+
     reject_trial_handles!(arguments)
     return failure(Outbound::PlaygroundDeliveryPolicy::BLOCKED_MESSAGE) if tool.name.to_s == 'send_notification'
 
@@ -36,5 +43,9 @@ class Captain::Playground::ExecutionBoundary
 
   def self.failure(message)
     Captain::ToolResult.failure(error: message, data: { code: 'playground_policy_blocked', delivered: false }, retryable: false)
+  end
+
+  def self.opaque_external_tool?(tool)
+    tool.is_a?(Captain::Tools::HttpTool) || tool.is_a?(Captain::Tools::McpTool) || tool.is_a?(Captain::Tools::SkillScriptTool)
   end
 end
