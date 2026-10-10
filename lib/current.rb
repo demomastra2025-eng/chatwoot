@@ -6,6 +6,7 @@ module Current
   thread_mattr_accessor :executed_by
   thread_mattr_accessor :contact
   thread_mattr_accessor :suppress_runtime_events
+  thread_mattr_accessor :playground_run_policy
 
   def self.with_runtime_events_suppressed
     previous_value = Current.suppress_runtime_events
@@ -23,5 +24,14 @@ module Current
     Current.executed_by = nil
     Current.contact = nil
     Current.suppress_runtime_events = nil
+    Current.playground_run_policy = nil
+  end
+
+  # A rule can finish while the same event is still executing other rules and listeners.
+  # Clear its actor context without losing the original run's delivery restrictions.
+  def self.reset_preserving_playground_policy!
+    policy = Current.playground_run_policy
+    reset
+    Current.playground_run_policy = policy
   end
 end
