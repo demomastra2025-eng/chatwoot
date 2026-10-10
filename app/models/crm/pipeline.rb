@@ -34,6 +34,7 @@ class Crm::Pipeline < ApplicationRecord
   validates :name, presence: true
   validates :code, presence: true, uniqueness: { scope: :account_id }
   validates :position, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  validate :validate_appointment_automation
 
   scope :ordered, -> { order(:position, :id) }
   scope :active, -> { where(active: true) }
@@ -43,9 +44,37 @@ class Crm::Pipeline < ApplicationRecord
   before_validation :assign_position, on: :create
   before_validation :disable_default_when_inactive
   before_save :clear_other_defaults, if: :reassigning_default?
+  before_save :prepare_appointment_automation_sources, if: :will_save_change_to_appointment_automation?
+  after_update_commit :refresh_appointment_automation, if: :saved_change_to_appointment_automation?
   before_destroy :ensure_stage_visits_detachable, prepend: true
 
   private
+
+  def validate_appointment_automation
+    return unless will_save_change_to_appointment_automation?
+
+    Crm::Appointments::Configuration.validate(self).each { |error| errors.add(:appointment_automation, error) }
+  end
+
+  def prepare_appointment_automation_sources
+    previous = appointment_automation_in_database.to_h
+    self.appointment_automation = appointment_automation.to_h.deep_stringify_keys
+    Crm::Appointments::Configuration::SOURCE_KEYS.each do |key|
+      next unless appointment_automation[key] == true
+
+      appointment_automation["#{key}_enabled_at"] = previous["#{key}_enabled_at"].presence || Time.current.iso8601(6) if previous[key] == true
+      appointment_automation["#{key}_enabled_at"] = Time.current.iso8601(6) unless previous[key] == true
+      account.crm_pipelines.where.not(id: id).where("appointment_automation ->> ? = 'true'", key).find_each do |other|
+        other.update!(appointment_automation: other.appointment_automation.merge(key => false))
+      end
+    end
+  end
+
+  def refresh_appointment_automation
+    Crm::Appointments::RefreshPipelineJob.perform_later(account_id, id)
+  rescue StandardError => e
+    Rails.logger.warn("CRM appointment refresh enqueue failed: pipeline_id=#{id} error=#{e.class.name}")
+  end
 
   def ensure_stage_visits_detachable
     return if ::Crm::StageVisit.references_detachable? || !stage_visits.exists?

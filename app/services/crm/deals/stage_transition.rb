@@ -45,6 +45,9 @@ class Crm::Deals::StageTransition
       closing_reasons: closing_reasons
     )
     clear_waiting_state unless target_stage.outcome_open?
+    if Crm::Appointments::AutomationState.explicit_actor?(actor) && params[:appointment_automation] != true
+      Crm::Appointments::AutomationState.manual_change!(deal)
+    end
     deal.save!
   end
 
@@ -93,7 +96,8 @@ class Crm::Deals::StageTransition
       from_closing_reasons: previous[:closing_reasons],
       closing_reasons: deal.closing_reasons,
       transition_reason: params[:transition_reason],
-      stage_rule_override: params[:stage_rule_override]
+      stage_rule_override: params[:stage_rule_override],
+      appointment_automation: params[:appointment_automation]
     }.compact
   end
 

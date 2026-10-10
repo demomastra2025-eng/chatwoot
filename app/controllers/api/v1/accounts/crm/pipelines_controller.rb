@@ -88,7 +88,7 @@ class Api::V1::Accounts::Crm::PipelinesController < Api::V1::Accounts::Crm::Base
   end
 
   def pipeline_params
-    params.permit(
+    attrs = params.permit(
       :name,
       :code,
       :position,
@@ -97,8 +97,16 @@ class Api::V1::Accounts::Crm::PipelinesController < Api::V1::Accounts::Crm::Base
       :auto_create_deal_on_channel_contact,
       :restrict_stage_skipping,
       :restrict_backward_move,
-      :allow_stage_rule_override
+      :allow_stage_rule_override,
+      appointment_automation: [
+        :enabled, :cardinality, :auto_create_from_calendar, :auto_create_from_medelement, :manual_stage_change, :success_mode,
+        { rules: [:id, :name, :stage_id, :scope, :transition_reason, { conditions: [], closing_reasons: [] }] }
+      ]
     )
+    if attrs.key?(:appointment_automation) && @pipeline
+      attrs[:appointment_automation] = @pipeline.appointment_automation.to_h.merge(attrs[:appointment_automation].to_h)
+    end
+    attrs
   end
 
   def set_auto_create_default_stage!

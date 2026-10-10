@@ -84,6 +84,7 @@ class Scheduling::Appointment < ApplicationRecord
   belongs_to :contact, optional: true
   belongs_to :patient_contact, class_name: 'Contact', optional: true
   belongs_to :conversation, optional: true
+  belongs_to :crm_deal, class_name: 'Crm::Deal', optional: true, inverse_of: :appointments
   belongs_to :created_by, class_name: 'User', optional: true
   belongs_to :owner, class_name: 'User', optional: true
   belongs_to :resource, class_name: 'Scheduling::Resource', inverse_of: :appointments
@@ -99,6 +100,7 @@ class Scheduling::Appointment < ApplicationRecord
   before_validation :assign_duration_min
   before_validation :mark_local_medelement_cancellation, on: :update
   after_update :capture_updated_changes_for_commit
+  after_save :stamp_crm_appointment_delivery_policy
   before_destroy :cancel_deferred_touch_enrollments, prepend: true
   after_create_commit :dispatch_created_event
   after_update_commit :dispatch_updated_events
@@ -310,6 +312,7 @@ class Scheduling::Appointment < ApplicationRecord
       contact: contact,
       patient_contact: patient_contact,
       conversation: conversation,
+      crm_deal: crm_deal,
       created_by: created_by,
       owner: owner,
       service: service
@@ -354,6 +357,12 @@ class Scheduling::Appointment < ApplicationRecord
     return if compensation_percent_snapshot.to_i.between?(0, 100)
 
     errors.add(:compensation_percent_snapshot, 'must be between 0 and 100 for fixed plus percent compensation')
+  end
+
+  def stamp_crm_appointment_delivery_policy
+    return unless crm_deal && crm_deal.account_id == account_id
+
+    Crm::Appointments::DeliveryPolicy.stamp!(crm_deal)
   end
 
   def ends_after_starts

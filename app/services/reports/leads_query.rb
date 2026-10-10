@@ -28,6 +28,7 @@ module Reports
       {
         referrals: referral_summary(referral_scope),
         form_submissions: submission_summary(submission_scope),
+        appointment_conversion: LeadAppointmentsQuery.new(account: account, date_range: date_range).perform,
         processing: processing_summary
       }
     end

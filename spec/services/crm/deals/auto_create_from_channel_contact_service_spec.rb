@@ -12,6 +12,62 @@ RSpec.describe Crm::Deals::AutoCreateFromChannelContactService do
   end
 
   describe '#perform' do
+    let(:conversation) { create(:conversation, account: account, inbox: api_inbox, contact: contact, contact_inbox: contact_inbox) }
+
+    def incoming
+      create(:message, account: account, inbox: api_inbox, conversation: conversation, sender: contact)
+    end
+
+    def check(message)
+      described_class.new(contact_inbox: contact_inbox, conversation: conversation, message: message).perform
+    end
+
+    it 'reuses active deals only in each enabled pipeline and creates again after all are closed' do
+      pipeline = create(:crm_pipeline, account: account, auto_create_deal_on_channel_contact: true)
+      stage = create(:crm_stage, account: account, pipeline: pipeline, default: true)
+      first = check(incoming).first
+      expect(check(incoming)).to eq([])
+      expect(first.stage_id).to eq(stage.id)
+      first.update!(closed_at: Time.current)
+      second = check(incoming).first
+      expect(second.id).not_to eq(first.id)
+      expect(first.reload.closed_at).to be_present
+    end
+
+    it 'deduplicates a previously reused message even when the active deal closes before its retry' do
+      pipeline = create(:crm_pipeline, account: account, auto_create_deal_on_channel_contact: true)
+      create(:crm_stage, account: account, pipeline: pipeline, default: true)
+      first_message = incoming
+      deal = check(first_message).first
+      repeated_message = incoming
+      check(repeated_message)
+      deal.update!(closed_at: Time.current)
+
+      expect { check(first_message); check(repeated_message) }.not_to change(Crm::Deal, :count)
+      expect(check(incoming).first).to be_present
+    end
+
+    it 'does not let a deal in another or disabled pipeline block this enabled pipeline' do
+      enabled = create(:crm_pipeline, account: account, auto_create_deal_on_channel_contact: true)
+      create(:crm_stage, account: account, pipeline: enabled, default: true)
+      disabled = create(:crm_pipeline, account: account)
+      other = create(:crm_deal, account: account, pipeline: disabled)
+      create(:crm_deal_contact, deal: other, account: account, contact: contact, primary: true)
+
+      expect(check(incoming).map(&:pipeline_id)).to eq([enabled.id])
+    end
+
+    it 'ignores outgoing messages and private notes' do
+      pipeline = create(:crm_pipeline, account: account, auto_create_deal_on_channel_contact: true)
+      create(:crm_stage, account: account, pipeline: pipeline, default: true)
+      outgoing = create(:message, account: account, conversation: conversation, inbox: api_inbox, message_type: 'outgoing')
+      note = create(:message, account: account, conversation: conversation, inbox: api_inbox, private: true)
+
+      expect(check(outgoing)).to eq([])
+      expect(check(note)).to eq([])
+      expect(account.crm_deals).not_to exist
+    end
+
     it 'skips the deal and logs only the error code when the default stage requires a field the new deal lacks' do
       pipeline = create(:crm_pipeline, account: account, default: true, auto_create_deal_on_channel_contact: true)
       stage = create(:crm_stage, account: account, pipeline: pipeline, default: true)

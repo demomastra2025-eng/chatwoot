@@ -216,6 +216,13 @@ crm_stage_visit_reconciliation_job:
   queue: scheduled_jobs
   active_job: true
 
+# Only indexed due appointment-linked deals are evaluated; batches are bounded and leased.
+crm_appointment_stage_due_job:
+  cron: '*/1 * * * *'
+  class: 'Crm::Appointments::DueDealsJob'
+  queue: scheduled_jobs
+  active_job: true
+
 accounts_storage_breakdown_refresh_job:
   cron: '0 * * * *'
   class: 'Accounts::StorageBreakdownRefreshJob'
