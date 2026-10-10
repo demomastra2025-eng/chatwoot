@@ -122,7 +122,12 @@ class Captain::Playground::Session
   private
 
   def new_data
-    { 'id' => SecureRandom.uuid, 'mode' => mode, 'scenario' => Captain::Playground::Scenario.default(timezone: account.reporting_timezone), 'history' => [] }
+    initial_scenario = if live?
+                         Captain::Playground::Scenario.live_default(timezone: account.reporting_timezone)
+                       else
+                         Captain::Playground::Scenario.default(timezone: account.reporting_timezone)
+                       end
+    { 'id' => SecureRandom.uuid, 'mode' => mode, 'scenario' => initial_scenario, 'history' => [] }
   end
 
   def administrator?

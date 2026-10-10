@@ -45,6 +45,19 @@ class Captain::Playground::Scenario
     }.deep_stringify_keys
   end
 
+  def self.live_default(timezone: 'Asia/Almaty')
+    profile = default(timezone: timezone)
+    profile['contacts'] = [profile['contacts'].first.except('id', 'identifier')]
+    profile['caller_contact_id'] = nil
+    profile['conversation'] = {}
+    profile['preset'] = 'test_caller'
+    profile['next_id'] = nil
+    %w[resources services pipelines stages deals appointments tasks notes messages confirmations grants].each do |key|
+      profile[key] = []
+    end
+    profile
+  end
+
   def apply(input, mode:)
     raise ArgumentError, 'Scenario must be an object' unless input.is_a?(Hash)
     attributes = input.deep_stringify_keys

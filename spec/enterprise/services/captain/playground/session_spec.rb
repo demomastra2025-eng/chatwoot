@@ -99,6 +99,8 @@ RSpec.describe Captain::Playground::Session do
         expect(live.conversation.contact_inbox.hmac_verified).to be(false)
         expect(live.payload[:scenario].keys).to eq([:contact])
         expect(live.payload[:scenario][:contact]['id']).to eq(live.conversation.contact_id)
+        expect(live.scenario.data.values_at('resources', 'services', 'pipelines', 'stages', 'deals', 'appointments')).to all(eq([]))
+        expect(live.scenario.data['contacts'].map { |record| record['id'] }).to eq([live.conversation.contact_id])
         expect(live.payload[:live_warning]).to eq(described_class::LIVE_WARNING)
         expect(Outbound::PlaygroundDeliveryPolicy.verified(live.run_policy)[:delivery_enabled]).to be(false)
       end

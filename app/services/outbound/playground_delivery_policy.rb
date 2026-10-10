@@ -48,6 +48,15 @@ class Outbound::PlaygroundDeliveryPolicy
       nil
     end
 
+    def for_execution(record)
+      stored = for_record(record)
+      inherited = Current.playground_run_policy
+      return inherited if stored.nil?
+      return {} unless inherited.nil? || inherited == stored
+
+      stored
+    end
+
     def policy_for(conversation: nil, message: nil, reminder: nil)
       policy = [for_record(message), for_record(reminder), Current.playground_run_policy, for_record(conversation)].find { |value| !value.nil? }
       return policy unless policy.nil?
