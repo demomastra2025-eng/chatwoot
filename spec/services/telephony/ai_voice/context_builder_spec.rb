@@ -80,7 +80,7 @@ RSpec.describe Telephony::AiVoice::ContextBuilder do
       child = create(:contact, account: account)
       create(:scheduling_appointment, account: account, contact: conversation.contact, patient_contact: child,
                                       conversation: conversation, starts_at: 10.minutes.from_now, ends_at: 40.minutes.from_now,
-                                      comment: 'Private child clinical comment')
+                                      client_comment: 'Private child clinical comment')
       builder = described_class.new(params: { 'call_ref' => call_session.external_call_ref, 'account_id' => account.id })
 
       state = builder.send(:captain_runtime_state_for_prompt)

@@ -492,7 +492,7 @@ RSpec.describe Telephony::AiVoice::ToolDispatchService do
       child = create(:contact, account: account)
       create(:scheduling_appointment, account: account, contact: conversation.contact, patient_contact: child,
                                       conversation: conversation, starts_at: 10.minutes.from_now, ends_at: 40.minutes.from_now,
-                                      comment: 'Private child clinical comment')
+                                      client_comment: 'Private child clinical comment')
       service = described_class.new(
         tool_name: 'list_my_appointments',
         payload: { account_id: account.id, call_ref: call_session.external_call_ref, arguments: {} }

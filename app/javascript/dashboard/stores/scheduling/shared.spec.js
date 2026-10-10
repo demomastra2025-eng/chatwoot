@@ -39,24 +39,27 @@ describe('scheduling shared helpers', () => {
     ['en', enScheduling],
     ['ru', ruScheduling],
     ['kk', kkScheduling],
-  ])('localizes an unsupported provider duration in %s', (_locale, messages) => {
-    const error = {
-      response: {
-        data: {
-          code: 'INVALID_DURATION',
-          error:
-            'Reception duration must be a whole number of minutes from 5 to 1440',
+  ])(
+    'localizes an unsupported provider duration in %s',
+    (_locale, messages) => {
+      const error = {
+        response: {
+          data: {
+            code: 'INVALID_DURATION',
+            error:
+              'Reception duration must be a whole number of minutes from 5 to 1440',
+          },
+          status: 422,
         },
-        status: 422,
-      },
-    };
-    const t = key => lookupMessage(messages, key) ?? key;
-    const translation =
-      messages.SCHEDULING.APPOINTMENT_FORM.ERRORS.INVALID_DURATION;
+      };
+      const t = key => lookupMessage(messages, key) ?? key;
+      const translation =
+        messages.SCHEDULING.APPOINTMENT_FORM.ERRORS.INVALID_DURATION;
 
-    expect(translation).toEqual(expect.any(String));
-    expect(formatSchedulingErrorMessage(error, t)).toBe(translation);
-  });
+      expect(translation).toEqual(expect.any(String));
+      expect(formatSchedulingErrorMessage(error, t)).toBe(translation);
+    }
+  );
 
   it.each([
     { message: { unexpected: true } },

@@ -878,41 +878,6 @@ const rememberPatientDraft = () => {
   });
 };
 
-const restorePatientDraft = () => {
-  if (!patientContextReady.value || !currentDraftKey.value) return false;
-  const draft = patientContextStore.drafts[currentDraftKey.value];
-  if (!draft) return false;
-  appointments.value.forEach(appointment => {
-    const key = appointmentKey(appointment);
-    const saved = draft.appointmentForms?.[key];
-    if (saved?.fingerprint === appointmentContextFingerprint(appointment)) {
-      appointmentForms[key] = { ...saved.form };
-      if (
-        isAppointmentOpen(appointment) &&
-        !isAppointmentProviderOwned(appointment)
-      ) {
-        loadFormWindows(appointmentForms[key]);
-      }
-    }
-  });
-  if (
-    draft.createForm &&
-    draft.createForm.patientContextContactId ===
-      selectedPatientContextId.value &&
-    draft.createForm.patientContactId === selectedPatientCardId.value
-  ) {
-    Object.assign(createForm, draft.createForm);
-    loadFormWindows(createForm);
-    isCreating.value = true;
-    openAppointmentKeys.value = [
-      NEW_APPOINTMENT_KEY,
-      ...openAppointmentKeys.value,
-    ];
-    return true;
-  }
-  return false;
-};
-
 const selectedServiceForForm = form =>
   activeServices.value.find(
     service => Number(service.id) === Number(form?.serviceId)
@@ -1000,6 +965,41 @@ async function loadFormWindows(form) {
   }
 }
 
+const restorePatientDraft = () => {
+  if (!patientContextReady.value || !currentDraftKey.value) return false;
+  const draft = patientContextStore.drafts[currentDraftKey.value];
+  if (!draft) return false;
+  appointments.value.forEach(appointment => {
+    const key = appointmentKey(appointment);
+    const saved = draft.appointmentForms?.[key];
+    if (saved?.fingerprint === appointmentContextFingerprint(appointment)) {
+      appointmentForms[key] = { ...saved.form };
+      if (
+        isAppointmentOpen(appointment) &&
+        !isAppointmentProviderOwned(appointment)
+      ) {
+        loadFormWindows(appointmentForms[key]);
+      }
+    }
+  });
+  if (
+    draft.createForm &&
+    draft.createForm.patientContextContactId ===
+      selectedPatientContextId.value &&
+    draft.createForm.patientContactId === selectedPatientCardId.value
+  ) {
+    Object.assign(createForm, draft.createForm);
+    loadFormWindows(createForm);
+    isCreating.value = true;
+    openAppointmentKeys.value = [
+      NEW_APPOINTMENT_KEY,
+      ...openAppointmentKeys.value,
+    ];
+    return true;
+  }
+  return false;
+};
+
 const setAppointmentForms = () => {
   Object.keys(appointmentForms).forEach(key => delete appointmentForms[key]);
   Object.keys(availabilityByForm).forEach(
@@ -1010,6 +1010,24 @@ const setAppointmentForms = () => {
       formFromAppointment(appointment);
   });
 };
+
+function updateFormEndFromDuration(form) {
+  if (!form?.startsAt) return;
+  if (Number.isNaN(new Date(form.startsAt).getTime())) return;
+
+  const durationMin = Math.max(
+    Number(form.durationMin) ||
+      Number(selectedServiceForForm(form)?.durationMin) ||
+      Number(selectedResourceForForm(form)?.slotDurationMin) ||
+      30,
+    5
+  );
+  form.endsAt = addMinutesToDateTimeInputValue(
+    form.startsAt,
+    durationMin,
+    SCHEDULING_TIMEZONE
+  );
+}
 
 const changePickerDate = (form, date) => {
   form.availabilityDate = date;
@@ -1044,24 +1062,6 @@ const medelementCabinetOptionsForForm = form =>
       cabinet.code,
     value: cabinet.code,
   }));
-
-function updateFormEndFromDuration(form) {
-  if (!form?.startsAt) return;
-  if (Number.isNaN(new Date(form.startsAt).getTime())) return;
-
-  const durationMin = Math.max(
-    Number(form.durationMin) ||
-      Number(selectedServiceForForm(form)?.durationMin) ||
-      Number(selectedResourceForForm(form)?.slotDurationMin) ||
-      30,
-    5
-  );
-  form.endsAt = addMinutesToDateTimeInputValue(
-    form.startsAt,
-    durationMin,
-    SCHEDULING_TIMEZONE
-  );
-}
 
 const syncFormServiceFields = form => {
   if (selectedServiceForForm(form)) {
