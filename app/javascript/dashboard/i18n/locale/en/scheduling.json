@@ -425,6 +425,9 @@
       }
     },
     "ERRORS": {
+      "CRM_DEAL_SELECTION_REQUIRED": "This contact has several active deals. Choose a deal or create a new one before booking.",
+      "CRM_DEAL_CONTACT_MISMATCH": "Choose an active deal belonging to this communication contact in this workspace.",
+      "CRM_PIPELINE_NO_OPEN_STAGE": "Choose a pipeline with an active open stage.",
       "APPOINTMENT_PAYMENT_REQUIRES_FIELDS": "Fill required fields before marking the appointment as paid: {fields}.",
       "GENERIC": "Something went wrong. Try again.",
       "APPOINTMENT_NOT_FOUND": "Appointment not found.",

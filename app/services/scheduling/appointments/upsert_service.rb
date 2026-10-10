@@ -101,12 +101,20 @@ class Scheduling::Appointments::UpsertService
       validate_medelement_cabinet!
       validate_availability!
       new_record = appointment.new_record?
+      Crm::Appointments::LinkService.new(appointment: appointment, params: params, actor: actor).perform if new_record
+      confirm_attendance!
       appointment.save!
       capture_provider_receipt_service!(new_record)
       notify_assignment!(new_record: new_record)
       sync_or_cancel_related_touches!
       Scheduling::Appointments::FinanceSyncService.new(appointment: appointment, actor: user_actor).sync!
     end
+  end
+
+  def confirm_attendance!
+    return unless params[:status].to_s == 'completed' && (actor.is_a?(User) || actor.is_a?(Captain::Assistant))
+
+    appointment.attendance_confirmed_at = Time.current
   end
 
   def prepare_provider_availability!

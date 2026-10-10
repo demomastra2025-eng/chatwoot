@@ -7,6 +7,9 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
     company_id
     conversation_id
     conversation_display_id
+    crm_deal_id
+    crm_pipeline_id
+    crm_deal_selection
     created_by_id
     owner_id
     starts_at

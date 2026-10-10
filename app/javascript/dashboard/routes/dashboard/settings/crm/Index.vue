@@ -24,6 +24,7 @@ import SchedulingColorPicker from 'dashboard/components-next/Scheduling/Scheduli
 import SchedulingDrawer from 'dashboard/components-next/Scheduling/SchedulingDrawer.vue';
 import SchedulingErrorState from 'dashboard/components-next/Scheduling/SchedulingErrorState.vue';
 import SchedulingPageHeader from 'dashboard/components-next/Scheduling/SchedulingPageHeader.vue';
+import CrmAppointmentAutomationSettings from 'dashboard/components-next/CRM/CrmAppointmentAutomationSettings.vue';
 import SettingsLayout from '../SettingsLayout.vue';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import { formatCrmErrorMessage } from 'dashboard/stores/crm/shared';
@@ -1141,6 +1142,12 @@ onMounted(async () => {
                       </p>
                     </div>
                   </div>
+
+                  <CrmAppointmentAutomationSettings
+                    :key="selectedPipeline.id"
+                    :pipeline="selectedPipeline"
+                    :can-manage="canManage"
+                  />
 
                   <div class="grid gap-4 px-5 py-4">
                     <div class="text-sm font-semibold text-n-slate-12">

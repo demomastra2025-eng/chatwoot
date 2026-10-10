@@ -95,6 +95,9 @@
       "IIN_ERROR_LENGTH": "ЖСН 12 цифрдан тұруы керек"
     },
     "ERRORS": {
+      "CRM_DEAL_SELECTION_REQUIRED": "Контактінің бірнеше белсенді мәмілесі бар. Жазба алдында мәмілені таңдаңыз немесе жаңасын құрыңыз.",
+      "CRM_DEAL_CONTACT_MISMATCH": "Осы жұмыс кеңістігіндегі байланыс контактінің белсенді мәмілесін таңдаңыз.",
+      "CRM_PIPELINE_NO_OPEN_STAGE": "Белсенді ашық кезеңі бар воронканы таңдаңыз.",
       "MEDELEMENT_APPOINTMENT_UNBOOKABLE": "MedElement жүйесінде тек жоспарланған немесе расталған жазбаны жасауға болады.",
       "MEDELEMENT_SERVICE_NOT_AVAILABLE_FOR_SPECIALIST": "Таңдалған қызмет бұл MedElement маманы үшін қолжетімсіз.",
       "MEDELEMENT_SERVICE_REQUIRED": "MedElement каталогынан қызметті таңдаңыз.",

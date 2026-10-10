@@ -280,6 +280,14 @@ Rails.application.routes.draw do
               end
             end
             resources :deals, only: [:index, :show, :create, :update] do
+              collection do
+                get :appointment_options
+              end
+              member do
+                get :appointments
+                patch :appointment_plan
+                post :resume_appointment_automation
+              end
               scope module: :deals do
                 resources :comments, only: [:index, :create, :update, :destroy]
               end

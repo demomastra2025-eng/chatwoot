@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, provide, reactive, ref, watch } from 'vue';
 import { useEventListener, useMediaQuery } from '@vueuse/core';
 import { useI18n } from 'vue-i18n';
 
@@ -12,6 +12,10 @@ import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import { useStore, useMapGetter } from 'dashboard/composables/store';
 
 const props = defineProps({
+  sourceDealId: {
+    type: [Number, String],
+    default: null,
+  },
   communicationThreadDisplayId: {
     type: [Number, String],
     default: '',
@@ -96,6 +100,7 @@ const emit = defineEmits([
 ]);
 
 const { t } = useI18n();
+provide('crmSourceDealId', computed(() => props.sourceDealId));
 const store = useStore();
 const getConversationById = useMapGetter('getConversationById');
 const getAllConversations = useMapGetter('getAllConversations');

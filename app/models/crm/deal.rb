@@ -98,6 +98,7 @@ class Crm::Deal < ApplicationRecord
   has_many :comments, as: :commentable, class_name: '::Crm::Comment', dependent: :destroy_async
   has_many :reminders, as: :remindable, dependent: :nullify
   has_many :touch_plan_enrollments, as: :remindable, dependent: :nullify
+  has_many :appointments, class_name: 'Scheduling::Appointment', foreign_key: :crm_deal_id, dependent: :nullify, inverse_of: :crm_deal
 
   validates :title, presence: true
   validates :external_ref, uniqueness: { scope: :account_id }, allow_blank: true
@@ -114,6 +115,7 @@ class Crm::Deal < ApplicationRecord
 
   scope :ordered, -> { order(expected_close_on: :asc, updated_at: :desc, id: :desc) }
   scope :kept, -> { where(archived_at: nil) }
+  scope :active, -> { kept.where(closed_at: nil).joins(:stage).where(crm_stages: { outcome: 'open' }) }
   scope :archived, -> { where.not(archived_at: nil) }
 
   before_validation :normalize_title

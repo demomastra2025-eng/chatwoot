@@ -35,6 +35,7 @@ import CrmClosingReasonDialog from 'dashboard/components-next/CRM/CrmClosingReas
 import CrmConflictNotice from 'dashboard/components-next/CRM/CrmConflictNotice.vue';
 import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomFieldsSection.vue';
 import CrmDealBoard from 'dashboard/components-next/CRM/CrmDealBoard.vue';
+import CrmDealAppointmentsPanel from 'dashboard/components-next/CRM/CrmDealAppointmentsPanel.vue';
 import CrmDealFilterChips from 'dashboard/components-next/CRM/CrmDealFilterChips.vue';
 import CrmDealLifecycleActions from 'dashboard/components-next/CRM/CrmDealLifecycleActions.vue';
 import CrmDealStageMenu from 'dashboard/components-next/CRM/CrmDealStageMenu.vue';
@@ -5108,6 +5109,10 @@ watch(
                   </div>
                 </div>
 
+                <div v-if="selectedDeal && !pendingStageEntry" class="crm-deal-drawer-section">
+                  <CrmDealAppointmentsPanel :deal="selectedDeal" :can-manage="canManageDeals" @deal-updated="handleDealWaitingUpdated" />
+                </div>
+
                 <div
                   v-if="selectedDeal && !pendingStageEntry"
                   class="crm-deal-drawer-section"
@@ -5195,6 +5200,7 @@ watch(
                 (showLinkedConversationPanel && !canOpenLinkedConversation))
             "
             data-testid="crm-deal-chat"
+            :source-deal-id="selectedDeal.id"
             :communication-thread-id="effectiveLinkedCommunicationThreadId"
             :communication-thread-display-id="
               effectiveLinkedCommunicationThreadDisplayId

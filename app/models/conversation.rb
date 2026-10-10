@@ -138,7 +138,6 @@ class Conversation < ApplicationRecord
   after_create_commit :load_attributes_created_by_db_triggers
   after_create_commit :sync_contact_owner_from_assignee
   after_create_commit :ensure_communication_thread, if: :communication_threads_enabled?
-  after_create_commit :auto_create_crm_deal_from_channel_contact
 
   delegate :auto_resolve_after, to: :account
 
@@ -293,16 +292,6 @@ class Conversation < ApplicationRecord
 
   def ensure_communication_thread
     refresh_communication_thread!
-  end
-
-  def auto_create_crm_deal_from_channel_contact
-    return if runtime_events_suppressed?
-    return if contact_inbox.blank?
-
-    ::Crm::Deals::AutoCreateFromChannelContactService.new(
-      contact_inbox: contact_inbox,
-      conversation: self
-    ).perform
   end
 
   def communication_threads_enabled?

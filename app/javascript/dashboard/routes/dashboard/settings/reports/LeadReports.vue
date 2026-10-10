@@ -8,6 +8,7 @@ import { useAlert } from 'dashboard/composables';
 import ReportHeader from './components/ReportHeader.vue';
 import ReportMetricCard from './components/ReportMetricCard.vue';
 import ReportDateRange from './components/ReportDateRange.vue';
+import LeadAppointmentConversionReport from './components/LeadAppointmentConversionReport.vue';
 
 const { t, te, locale } = useI18n();
 const report = ref({});
@@ -152,6 +153,12 @@ onMounted(() => loadReport());
         @click="loadReport({ fromDate, toDate })"
       />
     </div>
+
+    <LeadAppointmentConversionReport
+      v-if="report.appointment_conversion"
+      :report="report.appointment_conversion"
+      :loading="isLoading"
+    />
 
     <p class="m-0 text-xs text-n-slate-10">
       {{ t('REPORTS.LEADS.EVENTS_NOTE') }}
