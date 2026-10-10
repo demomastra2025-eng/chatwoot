@@ -31,6 +31,11 @@ class SendReplyJob < ApplicationJob
   def perform(message_id)
     message = Message.find(message_id)
     return unless message.outgoing?
+    Outbound::PlaygroundDeliveryPolicy.ensure!(
+      conversation: message.conversation,
+      policy: Outbound::PlaygroundDeliveryPolicy.policy_for(conversation: message.conversation, message: message),
+      private_note: message.private?
+    )
 
     retry_state = follow_up_retry_state(message) if @follow_up_finalizer.nil?
     if retry_state == :confirmed
@@ -49,6 +54,9 @@ class SendReplyJob < ApplicationJob
 
     schedule_captain_follow_up_after_retry(message) if @captain_follow_up_retry
     result
+  rescue Outbound::PlaygroundDeliveryPolicy::Blocked => e
+    message.update!(status: :failed, external_error: e.message)
+    false
   end
 
   private

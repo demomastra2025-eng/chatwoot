@@ -78,6 +78,10 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     response = @assistant.internal_assistant? ? copilot_playground_response : agent_playground_response
 
     render json: response
+  rescue Captain::Playground::SessionStore::Busy, Captain::Playground::SessionStore::Stale => e
+    render json: { error: 'playground_session_conflict', message: e.message }, status: :conflict
+  rescue ArgumentError, ActiveRecord::RecordInvalid => e
+    render json: { error: 'invalid_playground_scenario', message: e.message }, status: :unprocessable_entity
   rescue Rack::Timeout::RequestTimeoutException, Rack::Timeout::RequestTimeoutError => e
     Rails.logger.warn(
       "#{self.class.name} playground timed out for assistant #{@assistant.id}: #{e.class} - #{e.message}"
@@ -268,16 +272,45 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
       :test_model,
       :test_temperature,
       :test_thinking_effort,
+      :playground_mode,
+      :playground_session_id,
+      :playground_action,
+      :live_inbox_id,
+      :external_delivery_enabled,
+      :controlled_test_number,
+      scenario: {},
       message_history: [:role, :content, :agent_name]
     )
   end
 
   def agent_playground_response
-    options = { assistant: @assistant, source: 'playground' }
-    options[:conversation] = playground_conversation if playground_params[:conversation_id].present?
-    options[:test_overrides] = @playground_test_overrides if @playground_test_overrides.present?
+    attributes = playground_params
+    mode = attributes[:playground_mode].presence || 'trial'
+    action = attributes[:playground_action].presence || 'message'
+    raise ArgumentError, 'Invalid Playground action' unless %w[message session reset].include?(action)
+    raise ArgumentError, 'Trial cannot use a real conversation' if mode == 'trial' && attributes[:conversation_id].present?
 
-    Captain::Assistant::AgentRunnerService.new(**options).generate_response(message_history: playground_message_history)
+    session = Captain::Playground::Session.new(
+      assistant: @assistant, account: Current.account, user: Current.user, mode: mode, session_id: attributes[:playground_session_id]
+    )
+    session.with_lock(
+      reset: action == 'reset', scenario_input: attributes[:scenario]&.to_h,
+      inbox_id: attributes[:live_inbox_id], delivery_enabled: attributes[:external_delivery_enabled],
+      delivery_target: attributes[:controlled_test_number]
+    ) do
+      if attributes[:conversation_id].present? && attributes[:conversation_id].to_s != session.conversation&.display_id.to_s
+        raise ArgumentError, 'Live conversation does not match this Playground session'
+      end
+      next { playground: session.payload } unless action == 'message'
+
+      options = { assistant: @assistant, source: 'playground', playground_session: session }
+      options[:test_overrides] = @playground_test_overrides if @playground_test_overrides.present?
+      response = Captain::Assistant::AgentRunnerService.new(**options).generate_response(
+        message_history: session.history_with(attributes[:message_content])
+      )
+      session.record_turn(attributes[:message_content], response)
+      response.merge('playground' => session.payload, 'delivery' => Captain::Playground::ReplyDelivery.new(session).perform(response))
+    end
   end
 
   def playground_test_overrides

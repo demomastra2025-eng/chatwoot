@@ -2,7 +2,9 @@ class ApplicationMailer < ActionMailer::Base
   include ActionView::Helpers::SanitizeHelper
 
   default from: ENV.fetch('MAILER_SENDER_EMAIL', 'Onelink <accounts@one-link.kz>')
+  self.delivery_job = ApplicationMailDeliveryJob
   before_action { ensure_current_account(params.try(:[], :account)) }
+  after_action :prevent_playground_email_delivery
   around_action :switch_locale
   layout 'mailer/base'
   # Fetch template from Database if available
@@ -70,8 +72,15 @@ class ApplicationMailer < ActionMailer::Base
   end
 
   def ensure_current_account(account)
+    playground_policy = Current.playground_run_policy
     Current.reset
     Current.account = account if account.present?
+    Current.playground_run_policy = playground_policy
+  end
+
+  def prevent_playground_email_delivery
+    # Live opt-in only authorizes the signed phone target. Mail to staff/patients is never that target.
+    message.perform_deliveries = false unless Current.playground_run_policy.nil?
   end
 
   def switch_locale(&)

@@ -3,6 +3,7 @@ class CsatSurveyService
 
   def perform
     return unless should_send_csat_survey?
+    Outbound::PlaygroundDeliveryPolicy.ensure!(conversation: conversation)
 
     if whatsapp_channel? && template_available_and_approved?
       send_whatsapp_template_survey
@@ -13,6 +14,8 @@ class CsatSurveyService
     else
       create_csat_not_sent_activity_message
     end
+  rescue Outbound::PlaygroundDeliveryPolicy::Blocked
+    false
   end
 
   private

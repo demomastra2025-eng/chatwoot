@@ -167,6 +167,7 @@ class Message < ApplicationRecord
   has_many :notifications, as: :primary_actor, dependent: :destroy_async
 
   before_create :activate_captain_human_control_for_human_response
+  before_create :stamp_playground_delivery_policy
   after_create_commit :execute_after_create_commit_callbacks
 
   after_update_commit :dispatch_update_event
@@ -528,10 +529,32 @@ class Message < ApplicationRecord
   def send_reply
     return unless outgoing?
     return if skip_send_reply
+    Outbound::PlaygroundDeliveryPolicy.ensure!(
+      conversation: conversation,
+      policy: Outbound::PlaygroundDeliveryPolicy.policy_for(conversation: conversation, message: self),
+      private_note: private?
+    )
 
     # FIXME: Giving it few seconds for the attachment to be uploaded to the service
     # active storage attaches the file only after commit
     attachments.blank? ? ::SendReplyJob.perform_later(id) : ::SendReplyJob.set(wait: 2.seconds).perform_later(id)
+  rescue Outbound::PlaygroundDeliveryPolicy::Blocked => e
+    update_columns(status: Message.statuses.fetch('failed'), external_error: e.message) # rubocop:disable Rails/SkipsModelValidations
+  end
+
+  def stamp_playground_delivery_policy
+    return unless outgoing?
+
+    policy = Outbound::PlaygroundDeliveryPolicy.policy_for(conversation: conversation, message: self)
+    return if policy.nil?
+
+    self.additional_attributes = additional_attributes.to_h.merge(Outbound::PlaygroundDeliveryPolicy::ATTRIBUTE_KEY => policy.deep_dup)
+    return if private?
+    return if Outbound::PlaygroundDeliveryPolicy.allowed?(policy, conversation: conversation)
+
+    self.status = :failed
+    self.external_error = Outbound::PlaygroundDeliveryPolicy::BLOCKED_MESSAGE
+    self.skip_send_reply = true
   end
 
   def reopen_conversation

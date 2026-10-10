@@ -555,6 +555,17 @@ class Captain::ContextFields
       block_ids = field_ids.grep(/\Aappointment\.(?:nearest|last_past|last_cancelled|all)\z/)
       return if block_ids.blank?
 
+      if runtime_state.dig(:playground, :mode) == 'trial'
+        prompt_state[:appointment] ||= {}
+        prompt_state[:appointment_context_blocks] = block_ids.to_h do |field_id|
+          key = field_id.delete_prefix('appointment.')
+          value = runtime_state.fetch(:appointment_context_blocks, {}).with_indifferent_access[key]
+          prompt_state[:appointment][key] = value
+          [key, value]
+        end
+        return
+      end
+
       conversation_id = runtime_state.dig(:conversation, :id)
       conversation = assistant.account.conversations.find_by(id: conversation_id) if conversation_id.present?
       return if conversation.blank?
