@@ -113,10 +113,7 @@ class Scheduling::AvailableSlotSearchService
 
   def integrated_slots(resource)
     range = Scheduling::ResourceHoursPolicy.new(resource: resource).clipped_range(from: @from, to: @to)
-    if range.nil?
-      record_availability(resource_id: resource.id, provider: 'medelement', status: 'outside_horizon')
-      return []
-    end
+    return [] if range.nil?
 
     result = Scheduling::ScheduleDayAvailabilityService.new(
       resource: resource, from: range.first, to: range.last,
@@ -158,8 +155,6 @@ class Scheduling::AvailableSlotSearchService
                'degraded'
              elsif statuses.intersect?(%w[fresh closed_day])
                'fresh'
-             elsif statuses.present? && statuses.all?('outside_horizon')
-               'outside_horizon'
              else
                'local_only'
              end
@@ -168,10 +163,6 @@ class Scheduling::AvailableSlotSearchService
   end
 
   def availability_note
-    if availability_payload[:status] == 'outside_horizon'
-      resource = resources.find { |item| medelement_resource?(item) }
-      return Scheduling::ResourceHoursPolicy.new(resource: resource).horizon_message if resource
-    end
     return unless availability_payload[:status] == 'degraded'
 
     'Не удалось проверить график MedElement; наличие свободного времени неизвестно.'

@@ -2,14 +2,21 @@ class Scheduling::Appointments::CancelService
   PROVIDER_UNAVAILABLE_CODE = 'MEDELEMENT_CANCELLATION_UNAVAILABLE'.freeze
   PROVIDER_SYNC_STATUS_KEY = Integrations::Medelement::AppointmentProviderStatus::ATTRIBUTE_KEY
 
-  def initialize(appointment:, actor:, expected_medelement_cancellation_mode: nil)
+  def initialize(appointment:, actor:, expected_medelement_cancellation_mode: nil, appointment_access: nil)
     @appointment = appointment
     @actor = actor
     @expected_medelement_cancellation_mode = expected_medelement_cancellation_mode
+    @appointment_access = appointment_access
   end
 
   def perform
     appointment.with_lock do
+      Scheduling::Appointments::AppointmentAccessGuard.new(
+        appointment: appointment, actor: actor, context: appointment_access
+      ).validate!
+      if defined?(Captain::Assistant) && actor.is_a?(Captain::Assistant)
+        Scheduling::Appointments::MutationGuard.ensure_editable!(appointment)
+      end
       cancellation_mode = cancellation_mode_for_locked_appointment
       return normalize_cancelled_payment! if appointment.status == 'cancelled'
       return cancel_provider_linked_appointment!(cancellation_mode) if provider_cancellation_policy.provider_related?
@@ -25,7 +32,7 @@ class Scheduling::Appointments::CancelService
 
   private
 
-  attr_reader :actor, :appointment, :expected_medelement_cancellation_mode
+  attr_reader :actor, :appointment, :expected_medelement_cancellation_mode, :appointment_access
 
   def provider_cancellation_policy
     Scheduling::Appointments::ProviderCancellationPolicy.new(appointment: appointment)
@@ -63,7 +70,7 @@ class Scheduling::Appointments::CancelService
   def normalize_cancelled_payment!
     return appointment if appointment.payment_status == 'cancelled'
 
-    appointment.update!(payment_status: 'cancelled')
+    appointment.update!(payment_status: 'cancelled', custom_attributes: stamped_custom_attributes)
     appointment
   end
 
@@ -140,8 +147,13 @@ class Scheduling::Appointments::CancelService
       .appointment_event_snapshot(appointment)
       .merge('status' => 'cancelled')
       .tap do |attributes|
-        attributes['custom_attributes'] = attributes.fetch('custom_attributes', {}).except(PROVIDER_SYNC_STATUS_KEY)
+        attributes['custom_attributes'] = Scheduling::Appointments::PlaygroundRunStamp
+                                          .apply(attributes.fetch('custom_attributes', {})).except(PROVIDER_SYNC_STATUS_KEY)
       end
+  end
+
+  def stamped_custom_attributes
+    Scheduling::Appointments::PlaygroundRunStamp.apply(appointment.custom_attributes)
   end
 
   def provider_cancellation_event_key

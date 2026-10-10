@@ -89,12 +89,50 @@ RSpec.describe Scheduling::ScheduleDayAvailabilityService do
     expect(Time.iso8601(result.slots.first[:starts_at])).to eq(zone.local(2026, 4, 20, 10, 30))
   end
 
-  it 'does not offer days outside the MedElement horizon' do
+  [Date.new(2026, 4, 18), Date.new(2026, 7, 19)].each do |requested_date|
+    it "reads a confirmed provider day on demand for #{requested_date}, outside the background cache" do
+      client = instance_double(Integrations::Medelement::Client)
+      later = zone.local(requested_date.year, requested_date.month, requested_date.day, 9)
+      day_key = requested_date.strftime('%d.%m.%Y')
+      allow(Integrations::Medelement::Client).to receive(:new).and_return(client)
+      allow(client).to receive(:timetable).and_return(
+        day_key => { 'timetable' => [{ 'start' => "#{day_key} 09:00", 'end' => "#{day_key} 10:00", 'working' => true }] }
+      )
+      allow(client).to receive(:get_receptions).and_return([])
+
+      availability = described_class.new(resource: resource, from: later, to: later + 1.hour, duration_min: 45).perform
+
+      expect(availability.state).to eq('ok')
+      expect(availability.last_bookable_date).to be_nil
+      expect(availability.slots.first).to include(starts_at: later.iso8601, ends_at: (later + 45.minutes).iso8601)
+      expect(client).to have_received(:timetable).with(
+        specialist_code: 'specialist-1', starts_on: requested_date, ends_on: requested_date
+      )
+    end
+  end
+
+  it 'does not replace an unconfirmed on-demand day with local work rules' do
     later = zone.local(2026, 7, 19, 9)
+    create(:scheduling_work_rule, account: account, resource: resource, weekday: later.wday,
+                                  start_minute: 9 * 60, end_minute: 12 * 60)
+    client = instance_double(Integrations::Medelement::Client, timetable: { '19.07.2026' => { 'timetable' => [] } })
+    allow(Integrations::Medelement::Client).to receive(:new).and_return(client)
+
     availability = described_class.new(resource: resource, from: later, to: later + 1.hour).perform
-    expect(availability.state).to eq('beyond_horizon')
-    expect(availability.last_bookable_date).to eq(Date.new(2026, 7, 18))
+    expect(availability.state).to eq('schedule_not_confirmed')
+    expect(availability.last_bookable_date).to be_nil
     expect(availability.slots).to be_empty
+  end
+
+  it 'reuses an already confirmed later day without extra provider HTTP' do
+    later = zone.local(2026, 7, 19, 9)
+    stored_day.update!(date: Date.new(2026, 7, 19), windows: [{ start_minute: 540, end_minute: 600 }])
+    expect(Integrations::Medelement::Client).not_to receive(:new)
+
+    availability = described_class.new(resource: resource, from: later, to: later + 1.hour).perform
+
+    expect(availability.state).to eq('ok')
+    expect(availability.slots).to be_present
   end
 
   it 'keeps local scheduling rules for non-integrated resources' do

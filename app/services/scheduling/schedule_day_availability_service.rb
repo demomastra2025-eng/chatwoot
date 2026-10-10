@@ -24,24 +24,27 @@ class Scheduling::ScheduleDayAvailabilityService
 
   def provider_result(policy)
     range = policy.clipped_range(from: @from, to: @to)
-    return result([], 'beyond_horizon', nil, policy) unless range
-    return result([], 'provider_unavailable', nil, policy) unless hook&.feature_allowed? && cabinets.present?
+    return result([], 'schedule_not_confirmed', nil) unless range
+    return result([], 'provider_unavailable', nil) unless hook&.feature_allowed? && cabinets.present?
 
-    provider_days_result(range, policy)
+    days = schedule_days(range.first, range.last)
+    cached = policy.cached_range?(from: range.first, to: range.last)
+    confirmed = days.all? { |day| fresh?(day) && day.status.in?(%w[confirmed empty_confirmed]) }
+    return provider_days_result(range, days) if cached || confirmed
+
+    live_provider_result(range)
   end
 
-  def provider_days_result(range, policy)
-    days = schedule_days(range.first, range.last)
+  def provider_days_result(range, days)
     usable = days.select { |day| fresh?(day) && day.status == 'confirmed' }
     checked_at = days.select { |day| fresh?(day) && day.status.in?(%w[confirmed empty_confirmed]) }
                      .filter_map(&:source_checked_at).min
-    result(slots_for(usable, range), state_for(days, range), checked_at, policy)
+    result(slots_for(usable, range), state_for(days), checked_at)
   end
 
-  def state_for(days, range)
+  def state_for(days)
     return 'schedule_not_confirmed' if days.any? { |day| !fresh?(day) || day.status.in?(%w[empty_unconfirmed unverified]) }
     return 'closed_day' if days.all? { |day| day.status == 'empty_confirmed' }
-    return 'beyond_horizon' if range.last < @to
 
     'ok'
   end
@@ -51,8 +54,28 @@ class Scheduling::ScheduleDayAvailabilityService
     slots = cabinets.flat_map { |code| slots_for_cabinet(code, windows, range) }
     slots.sort_by! { |slot| [slot[:starts_at], slot[:cabinet_code]] }
     slots.uniq! { |slot| [slot[:starts_at], slot[:ends_at]] } unless @cabinet_code
-    slots.reject! { |slot| Time.iso8601(slot[:starts_at]) <= Time.current }
     slots
+  end
+
+  def live_provider_result(range)
+    windows = nil
+    availability = Integrations::Medelement::ResourceAvailabilityService.new(
+      resource: @resource, from: range.first, to: range.last, slots: [], cabinet_code: @cabinet_code,
+      candidate_slots: lambda do |provider_windows|
+        windows = provider_windows
+        cabinets.flat_map { |code| slots_for_cabinet(code, provider_windows, range) }
+      end
+    ).perform
+    unless availability.status == 'fresh'
+      state = availability.reason == 'provider_response_invalid' ? 'schedule_not_confirmed' : 'provider_unavailable'
+      return result([], state, availability.checked_at)
+    end
+
+    slots = availability.slots.map do |slot|
+      slot.merge(cabinet_code: slot[:medelement_cabinet_code])
+    end
+    slots.uniq! { |slot| [slot[:starts_at], slot[:ends_at]] } unless @cabinet_code
+    result(slots, windows.blank? ? 'closed_day' : 'ok', availability.checked_at)
   end
 
   def windows_for_day(day)
@@ -89,9 +112,9 @@ class Scheduling::ScheduleDayAvailabilityService
                source: 'local_rules', last_bookable_date: nil)
   end
 
-  def result(slots, state, checked_at, policy)
+  def result(slots, state, checked_at)
     Result.new(slots: slots, state: state, checked_at: checked_at,
-               source: 'provider_schedule', last_bookable_date: policy.last_date)
+               source: 'provider_schedule', last_bookable_date: nil)
   end
 
   def hook

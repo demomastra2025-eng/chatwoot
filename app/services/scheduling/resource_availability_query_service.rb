@@ -68,10 +68,8 @@ class Scheduling::ResourceAvailabilityQueryService
   end
 
   def duration_for(service:, duration_min:)
-    return service.duration_min if service.present?
-
     numeric = duration_min.to_i
-    return @resource.slot_duration_min if numeric <= 0
+    return service&.duration_min || @resource.slot_duration_min if numeric <= 0
 
     numeric
   end

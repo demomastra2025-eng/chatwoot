@@ -42,7 +42,7 @@ RSpec.describe 'Scheduling Availability API', type: :request do
     payload = request_day
 
     expect(response).to have_http_status(:ok)
-    expect(payload).to include('state' => 'ok', 'source' => 'provider_schedule', 'last_bookable_date' => '2026-07-18')
+    expect(payload).to include('state' => 'ok', 'source' => 'provider_schedule', 'last_bookable_date' => nil)
     expect(payload['checked_at']).to be_present
     expect(payload['windows'].first).to include('cabinet_code' => 'cabinet-1')
   end
@@ -58,10 +58,27 @@ RSpec.describe 'Scheduling Availability API', type: :request do
     expect(request_day['state']).to eq('provider_unavailable')
   end
 
-  it 'returns the horizon code and last bookable date' do
+  it 'reads a later confirmed date on demand without a booking cutoff' do
+    client = instance_double(Integrations::Medelement::Client, get_receptions: [])
+    allow(client).to receive(:timetable).and_return(
+      '19.07.2026' => { 'timetable' => [{ 'start' => '19.07.2026 10:00', 'end' => '19.07.2026 11:00', 'working' => true }] }
+    )
+    allow(Integrations::Medelement::Client).to receive(:new).and_return(client)
     payload = request_day('2026-07-19')
-    expect(payload).to include('state' => 'beyond_horizon', 'code' => 'MEDELEMENT_HORIZON_EXCEEDED',
-                               'last_bookable_date' => '2026-07-18', 'windows' => [])
+    expect(payload).to include('state' => 'ok', 'last_bookable_date' => nil)
+    expect(payload['windows']).to be_present
+    expect(payload).not_to have_key('code')
+  end
+
+  it 'uses an explicitly authored duration even when a service has a different default' do
+    service = create(:scheduling_service, account: account, duration_min: 30)
+    create(:scheduling_service_price, account: account, resource: resource, service: service)
+    create_day
+
+    payload = request_day(service_id: service.id, duration_min: 45)
+    first = payload.fetch('windows').first
+    expect(Time.iso8601(first.fetch('ends_at')) - Time.iso8601(first.fetch('starts_at'))).to eq(45.minutes)
+    expect(request_day(service_id: service.id, duration_min: 75)['windows']).to be_empty
   end
 
   it 'rejects ranges longer than 31 days' do

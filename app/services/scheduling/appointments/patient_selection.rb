@@ -11,7 +11,7 @@ class Scheduling::Appointments::PatientSelection
     return unless params.key?(:patient_contact_id)
 
     conflict!('A patient card must be selected') if params[:patient_contact_id].blank?
-    conflict!('Patient selection requires an account employee') unless actor.is_a?(User) && account.users.exists?(id: actor.id)
+    conflict!('Patient selection requires an authorized account actor') unless authorized_actor?
     Contacts::PhoneIdentityLock.acquire!(account_id: account.id)
     card = account.contacts.lock.find(params[:patient_contact_id])
     conflict!('Select a recorded patient card') unless recorded_card?(card)
@@ -34,6 +34,15 @@ class Scheduling::Appointments::PatientSelection
   attr_reader :account, :appointment, :contact, :params, :actor
 
   def policy = Integrations::Medelement::AppointmentPatientIdentity
+
+  def authorized_actor?
+    return account.users.exists?(id: actor.id) if actor.is_a?(User)
+    return false unless defined?(Captain::Assistant) && actor.is_a?(Captain::Assistant) && actor.account_id == account.id
+
+    Captain::Tools::Agent::AppointmentAccess.valid_patient_selection?(
+      token: params[:patient_selection_token], assistant: actor, contact: contact, patient_id: params[:patient_contact_id]
+    )
+  end
 
   def recorded_card?(card)
     Contacts::SharedPhone.card_identity_recorded?(card) || Scheduling::IinValidator.valid?(card.custom_attributes.to_h['medelement_iin'])

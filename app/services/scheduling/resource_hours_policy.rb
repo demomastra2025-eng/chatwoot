@@ -1,7 +1,4 @@
 class Scheduling::ResourceHoursPolicy
-  HORIZON_DAYS = 90
-  HORIZON_CODE = 'MEDELEMENT_HORIZON_EXCEEDED'.freeze
-
   def initialize(resource:)
     @resource = resource
   end
@@ -17,38 +14,15 @@ class Scheduling::ResourceHoursPolicy
   end
 
   def clipped_range(from:, to:)
-    return [from, to] unless provider_hours?
+    return if to <= from
 
-    clipped_from = [from, first_day_start].max
-    clipped_to = [to, horizon_end].min
-    return if clipped_to <= clipped_from
-
-    [clipped_from, clipped_to]
+    [from, to]
   end
 
-  def validate_booking!(starts_at:, ends_at:)
-    return unless provider_hours?
-
-    if starts_at < first_day_start
-      raise Scheduling::Error.new(
-        code: 'OUTSIDE_WORKING_HOURS', message: 'Запись на прошедшую дату невозможна.', status: :unprocessable_content
-      )
-    end
-    return if starts_at < horizon_end && ends_at <= horizon_end
-
-    raise Scheduling::Error.new(
-      code: HORIZON_CODE,
-      message: horizon_message,
-      status: :unprocessable_content
-    )
-  end
-
-  def horizon_message
-    "График врача открыт до #{last_date.strftime('%d.%m.%Y')}. Запись на более позднюю дату пока невозможна."
-  end
-
-  def last_date
-    today + (HORIZON_DAYS - 1)
+  # This is the background sync's cache window, not a booking permission.
+  # Dates outside it require a confirmed on-demand provider read.
+  def cached_range?(from:, to:)
+    from >= first_day_start && to <= cache_end
   end
 
   private
@@ -61,8 +35,8 @@ class Scheduling::ResourceHoursPolicy
     time_zone.local(today.year, today.month, today.day)
   end
 
-  def horizon_end
-    date = last_date + 1
+  def cache_end
+    date = today + Integrations::Medelement::SchedulesSyncService::SCHEDULE_HORIZON_DAYS
     time_zone.local(date.year, date.month, date.day)
   end
 

@@ -80,17 +80,9 @@ class Integrations::Medelement::ResourceAvailabilityService
              end
     payload = client.public_send(method, specialist_code: specialist_code, starts_on: starts_on, ends_on: ends_on)
 
-    rows = timetable_rows(payload)
-    rows.filter_map do |row|
-      attributes = row.to_h.with_indifferent_access
-      next unless Integrations::Medelement::WorkingFlag.working?(attributes['working'])
-
-      interval(attributes['start'], attributes['end'])
-    end.sort_by(&:first)
-  end
-
-  def timetable_rows(payload)
-    payload.values.flat_map { |day| Array(day.to_h['timetable']) }
+    Integrations::Medelement::ScheduleWindowReader.new(
+      payload: payload, starts_on: starts_on, ends_on: ends_on, time_zone: provider_time_zone
+    ).perform
   end
 
   def provider_receptions(cabinet_code)
@@ -129,10 +121,13 @@ class Integrations::Medelement::ResourceAvailabilityService
     slots.filter_map do |slot|
       starts_at = parse_time(slot.fetch(:starts_at))
       ends_at = parse_time(slot.fetch(:ends_at))
-      next unless fully_covered?(starts_at, ends_at, provider_windows)
-
       cabinet = cabinets.find do |candidate|
-        receptions.fetch(candidate.fetch(:code)).none? { |occupied| overlaps?(starts_at, ends_at, occupied) }
+        code = candidate.fetch(:code)
+        windows = provider_windows.filter_map do |window_start, window_end, window_cabinet|
+          [window_start, window_end] if window_cabinet.blank? || window_cabinet == code
+        end
+        fully_covered?(starts_at, ends_at, windows) &&
+          receptions.fetch(code).none? { |occupied| overlaps?(starts_at, ends_at, occupied) }
       end
       next if cabinet.blank?
 

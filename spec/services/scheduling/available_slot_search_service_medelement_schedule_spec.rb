@@ -81,17 +81,24 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
     expect(search(stale_date)[:slots]).to be_empty
   end
 
-  it 'clips the last day and never calls the provider beyond the horizon' do
+  it 'uses confirmed on-demand hours across the background cache boundary' do
     last_date = Date.new(2026, 7, 18)
     day(last_date, start_minute: 10 * 60, end_minute: 12 * 60)
-    expect(Integrations::Medelement::Client).not_to receive(:new)
+    client = instance_double(Integrations::Medelement::Client, get_receptions: [])
+    allow(Integrations::Medelement::Client).to receive(:new).and_return(client)
+    payload = (last_date..(last_date + 2)).to_h do |date|
+      key = date.strftime('%d.%m.%Y')
+      [key, { 'timetable' => [{ 'start' => "#{key} 10:00", 'end' => "#{key} 12:00", 'working' => true }] }]
+    end
+    allow(client).to receive(:timetable).and_return(payload)
 
     payload = described_class.new(account: account, resource_ids: [resource.id],
                                   from: zone.local(2026, 7, 18, 9), to: zone.local(2026, 7, 20, 9),
                                   duration_min: 30).perform
 
     expect(payload[:slots].pluck(:starts_at)).to include(zone.local(2026, 7, 18, 10).iso8601)
-    expect(search(Date.new(2026, 7, 19))[:slots]).to be_empty
+    expect(search(Date.new(2026, 7, 19))[:slots].pluck(:starts_at)).to include(zone.local(2026, 7, 19, 10).iso8601)
+    expect(payload[:availability][:status]).to eq('fresh')
   end
 
   it 'does not list an unpublished specialist' do
