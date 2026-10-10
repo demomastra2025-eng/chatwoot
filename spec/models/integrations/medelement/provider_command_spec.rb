@@ -24,6 +24,41 @@ RSpec.describe Integrations::Medelement::ProviderCommand, type: :model do
     expect(command.errors[:contact]).to include('must belong to the current account')
   end
 
+  context 'when validating a reception destination' do
+    let(:resource) { create(:scheduling_resource, account: account) }
+    let(:appointment) { create(:scheduling_appointment, account: account, contact: contact, resource: resource) }
+
+    %w[create_reception move_reception].each do |operation|
+      [60, 1441 * 60, 330, 300.1].each do |seconds|
+        it "rejects a new #{operation} interval of #{seconds} seconds" do
+          starts_at = appointment.starts_at
+          command = described_class.new(
+            account: account, hook: hook, contact: contact, appointment: appointment,
+            operation: operation, status: 'awaiting_confirmation', idempotency_key: SecureRandom.uuid,
+            company_cabinet_code: 'cabinet-1', desired_starts_at: starts_at, desired_ends_at: starts_at + seconds
+          )
+
+          expect(command).not_to be_valid
+          expect(command.errors[:desired_ends_at]).to include(
+            Integrations::Medelement::ProviderCommands::RequestSnapshotSchema::DESTINATION_INTERVAL_MESSAGE
+          )
+        end
+      end
+    end
+
+    it 'rejects changing a staged destination to an unsupported interval' do
+      command = described_class.create!(
+        account: account, hook: hook, contact: contact, appointment: appointment,
+        operation: 'move_reception', status: 'awaiting_confirmation', idempotency_key: SecureRandom.uuid,
+        company_cabinet_code: 'cabinet-1', desired_starts_at: appointment.starts_at, desired_ends_at: appointment.ends_at
+      )
+      command.desired_ends_at = command.desired_starts_at + 1.minute
+
+      expect(command).not_to be_valid
+      expect(command.errors[:desired_ends_at]).to be_present
+    end
+  end
+
   it 'enforces one unfinished patient identity command across contact and appointment targets in PostgreSQL' do
     command = described_class.create!(
       account: account,

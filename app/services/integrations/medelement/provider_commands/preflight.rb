@@ -12,6 +12,7 @@ class Integrations::Medelement::ProviderCommands::Preflight
   end
 
   def perform
+    Integrations::Medelement::ProviderCommands::RequestSnapshotSchema.validate_reception_destination!(command.request_snapshot)
     remote_reception = verify_remote_reception! unless command.create_reception?
     verify_timetable! if command.create_reception? || command.move_reception?
     receptions = destination_receptions
