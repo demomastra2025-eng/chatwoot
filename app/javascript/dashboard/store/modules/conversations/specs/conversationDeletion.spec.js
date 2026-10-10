@@ -631,6 +631,98 @@ describe('durable conversation deletion', () => {
   );
 
   it.each(['addMessage', 'updateMessage'])(
+    'preserves current messages and fetch state when a native %s authority read finishes after row replacement',
+    async action => {
+      const context = contextFor();
+      actions.initializeConversationDeletions(context);
+      context.state.deletionOperations = [operation(['deleted'])];
+      const original = {
+        ...thread([13]),
+        dataFetched: false,
+        allMessagesLoaded: false,
+      };
+      context.state.allConversations = [original];
+      let finish;
+      vi.spyOn(CommunicationThreadAPI, 'show').mockImplementation(
+        () =>
+          new Promise(resolve => {
+            finish = resolve;
+          })
+      );
+      const newChildMessage = {
+        id: 200,
+        conversation_id: 14,
+        communication_thread_id: 7,
+        inbox_id: 14,
+        message_type: 0,
+      };
+      const pending = actions[action](context, newChildMessage);
+      const revision = context.state.deletionRevision;
+      context.commit(types.UPDATE_CONVERSATION, {
+        ...thread([13]),
+        dataFetched: true,
+        allMessagesLoaded: true,
+        firstUnreadMessageId: 201,
+      });
+      expect(context.state.allConversations[0]).not.toBe(original);
+      expect(context.state.allConversations[0].messages).not.toBe(
+        original.messages
+      );
+      const knownChildMessage = {
+        id: 201,
+        conversation_id: 13,
+        communication_thread_id: 7,
+        inbox_id: 13,
+        message_type: 0,
+      };
+      await actions.addMessage(context, knownChildMessage);
+      expect(context.state.deletionRevision).toBe(revision);
+      expect(CommunicationThreadAPI.show).toHaveBeenCalledTimes(1);
+      finish({ data: thread([13, 14]) });
+      await pending;
+      const chat = context.state.allConversations[0];
+      expect(chat.conversation_ids).toEqual([13, 14]);
+      expect(chat.messages).toContainEqual(knownChildMessage);
+      expect(chat.messages).toContainEqual(newChildMessage);
+      expect(chat.messages).toContainEqual(thread([13]).messages[0]);
+      expect(chat.dataFetched).toBe(true);
+      expect(chat.allMessagesLoaded).toBe(true);
+      expect(chat.meta.first_unread_message_id).toBe(201);
+    }
+  );
+
+  it.each(['addMessage', 'updateMessage'])(
+    'does not restore a disappeared thread when its native %s authority read finishes',
+    async action => {
+      const context = contextFor();
+      actions.initializeConversationDeletions(context);
+      context.state.deletionOperations = [operation(['deleted'])];
+      context.state.allConversations = [thread([13])];
+      let finish;
+      vi.spyOn(CommunicationThreadAPI, 'show').mockImplementation(
+        () =>
+          new Promise(resolve => {
+            finish = resolve;
+          })
+      );
+      const pending = actions[action](context, {
+        id: 200,
+        conversation_id: 14,
+        communication_thread_id: 7,
+        inbox_id: 14,
+        message_type: 0,
+        attachments: [{ id: 301 }],
+      });
+      context.commit(types.REPLACE_ALL_CONVERSATION, []);
+      context.commit.mockClear();
+      finish({ data: thread([13, 14]) });
+      await pending;
+      expect(context.state.allConversations).toEqual([]);
+      expect(context.commit).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each(['addMessage', 'updateMessage'])(
     'keeps the known-child native %s fast path without another request',
     async action => {
       const context = contextFor();
