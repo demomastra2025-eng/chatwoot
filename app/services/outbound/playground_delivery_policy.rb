@@ -49,16 +49,13 @@ class Outbound::PlaygroundDeliveryPolicy
     end
 
     def for_execution(record)
-      stored = for_record(record)
-      inherited = Current.playground_run_policy
-      return inherited if stored.nil?
-      return {} unless inherited.nil? || inherited == stored
-
-      stored
+      scoped_policy(for_record(record))
     end
 
     def policy_for(conversation: nil, message: nil, reminder: nil)
-      policy = [for_record(message), for_record(reminder), Current.playground_run_policy, for_record(conversation)].find { |value| !value.nil? }
+      stored = [for_record(message), for_record(reminder)].find { |value| !value.nil? }
+      policy = scoped_policy(stored)
+      policy = for_record(conversation) if policy.nil?
       return policy unless policy.nil?
       return {} if test_source?(conversation) || test_source?(conversation&.contact)
 
@@ -120,6 +117,16 @@ class Outbound::PlaygroundDeliveryPolicy
       [conversation, conversation.contact].all? do |record|
         record&.additional_attributes.to_h['captain_playground_source'] == expected
       end
+    end
+
+    private
+
+    def scoped_policy(stored)
+      inherited = Current.playground_run_policy
+      return inherited if stored.nil?
+      return {} unless inherited.nil? || inherited == stored
+
+      stored
     end
   end
 end

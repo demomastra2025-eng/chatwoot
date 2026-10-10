@@ -177,5 +177,23 @@ RSpec.describe Outbound::PlaygroundDeliveryPolicy do
       expect(message.additional_attributes[described_class::ATTRIBUTE_KEY]).to eq(policy)
       expect(message).not_to be_failed
     end
+
+    it 'keeps invalid inherited job context blocked despite an opted-in reminder stamp' do
+      reminder = nil
+      described_class.with(policy) do
+        reminder = create(:reminder, account: account, conversation: conversation, target_conversation: conversation,
+                                     target_contact: contact, target_inbox: inbox, status: :processing)
+      end
+      expect(Reminders::ConversationResolver).not_to receive(:new)
+      inherited = { 'token' => 'invalid' }
+
+      described_class.with(inherited) do
+        Reminders::ExecuteReminderJob.perform_now(reminder.id)
+        expect(Current.playground_run_policy).to eq(inherited)
+      end
+
+      expect(reminder.reload).to be_failed
+      expect(reminder.last_error).to eq(described_class::BLOCKED_MESSAGE)
+    end
   end
 end
