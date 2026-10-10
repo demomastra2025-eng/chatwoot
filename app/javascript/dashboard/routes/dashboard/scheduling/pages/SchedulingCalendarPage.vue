@@ -4,6 +4,7 @@ import {
   onBeforeUnmount,
   onMounted,
   reactive,
+  readonly,
   ref,
   watch,
 } from 'vue';
@@ -12,6 +13,8 @@ import { useRoute, useRouter } from 'vue-router';
 
 import { useAccount } from 'dashboard/composables/useAccount';
 import { useAlert } from 'dashboard/composables';
+import { useUISettings } from 'dashboard/composables/useUISettings';
+import { useMapGetter } from 'dashboard/composables/store';
 import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
@@ -47,6 +50,7 @@ import {
 } from 'dashboard/stores/scheduling/shared';
 import {
   appointmentCancellationAlertMessage,
+  appointmentPatientDialogRoute,
   buildMedelementProviderCommandDetails,
   hasMedelementReceptionIdentity,
   buildMedelementProviderCommandParams,
@@ -84,10 +88,16 @@ import {
   APPOINTMENT_BOOKING_INTAKE_CONTEXT,
   fieldDefinitionHasContext,
 } from 'dashboard/stores/crm/fieldContexts';
-import { useSchedulingAppointmentFormStore } from 'dashboard/stores/scheduling/appointmentForm';
+import {
+  appointmentFormMutationContext,
+  refreshCurrentCalendarProviderAction,
+  runCurrentCalendarProviderAction,
+  useSchedulingAppointmentFormStore,
+} from 'dashboard/stores/scheduling/appointmentForm';
 import { useSchedulingCalendarStore } from 'dashboard/stores/scheduling/calendar';
 import {
   buildProviderCommandAction,
+  providerCommandRequiresPatientSelection,
   useSchedulingProviderCommandsStore,
 } from 'dashboard/stores/scheduling/providerCommands';
 import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/references';
@@ -101,10 +111,34 @@ const calendarStore = useSchedulingCalendarStore();
 const crmReferencesStore = useCrmReferencesStore();
 const referencesStore = useSchedulingReferencesStore();
 const formStore = useSchedulingAppointmentFormStore();
+const appointmentFormControlValues = computed(() => readonly(formStore.form));
 const providerCommandsStore = useSchedulingProviderCommandsStore();
 const { currentAccount } = useAccount();
 const route = useRoute();
 const router = useRouter();
+const { updateUISettings } = useUISettings();
+const currentUser = useMapGetter('getCurrentUser');
+let calendarDisposed = false;
+let providerActionGeneration = 0;
+let activeProviderAction = null;
+const calendarPatientContext = () =>
+  JSON.stringify([
+    route.params.accountId,
+    currentUser.value?.id,
+    appointmentFormMutationContext(formStore),
+  ]);
+const isCurrentProviderAction = action =>
+  !calendarDisposed &&
+  action?.generation === providerActionGeneration &&
+  action.patientContext === calendarPatientContext();
+const captureCalendarFormMutation = () => {
+  const context = calendarPatientContext();
+  const formContext = appointmentFormMutationContext(formStore);
+  return () =>
+    !calendarDisposed &&
+    context === calendarPatientContext() &&
+    formContext === appointmentFormMutationContext(formStore);
+};
 // There is no account-level workspace timezone setting on this base yet, so
 // the calendar is rendered in the default company timezone. A future account
 // setting only has to replace this computed value.
@@ -335,10 +369,17 @@ const patientActionStatuses = new Set([
   'awaiting_patient_selection',
   'awaiting_phone_refresh',
 ]);
+const hasPatientAction = command =>
+  patientActionStatuses.has(command?.status) ||
+  providerCommandRequiresPatientSelection(command);
 
 const providerCommandTitle = computed(() => {
   const status = pendingProviderAction.value?.command?.status;
-  if (status === 'awaiting_patient_selection') {
+  if (
+    providerCommandRequiresPatientSelection(
+      pendingProviderAction.value?.command
+    )
+  ) {
     return t('SCHEDULING.MEDELEMENT.PATIENT_SELECTION_TITLE');
   }
   if (status === 'awaiting_patient_creation') {
@@ -372,7 +413,10 @@ const formatProviderCommandRange = (startsAt, endsAt) => {
 const providerCommandDescription = computed(() => {
   const action = pendingProviderAction.value || {};
   const command = action.command;
-  if (command?.status === 'awaiting_patient_selection') {
+  if (providerCommandRequiresPatientSelection(command)) {
+    if (command.patientAction?.requiresPatientCardConfirmation) {
+      return t('SCHEDULING.PATIENT_CONTEXT.CONFIRM_PATIENT_CARD');
+    }
     return t('SCHEDULING.MEDELEMENT.PATIENT_SELECTION_DESCRIPTION', {
       count:
         command.patientAction?.candidateCount || patientCandidates.value.length,
@@ -434,7 +478,11 @@ const providerCommandDescription = computed(() => {
 
 const providerCommandConfirmLabel = computed(() => {
   const status = pendingProviderAction.value?.command?.status;
-  if (status === 'awaiting_patient_selection') {
+  if (
+    providerCommandRequiresPatientSelection(
+      pendingProviderAction.value?.command
+    )
+  ) {
     return t('SCHEDULING.MEDELEMENT.PATIENT_SELECT_ACTION');
   }
   if (status === 'awaiting_patient_creation') {
@@ -447,7 +495,7 @@ const providerCommandConfirmLabel = computed(() => {
   return t('SCHEDULING.MEDELEMENT.CONFIRM_ACTION');
 });
 const showProviderCommandConfirm = computed(() =>
-  patientActionStatuses.has(pendingProviderAction.value?.command?.status)
+  hasPatientAction(pendingProviderAction.value?.command)
 );
 const disableProviderCommandConfirm = computed(() => {
   if (providerCommandsStore.ui.isExecuting) return true;
@@ -455,7 +503,7 @@ const disableProviderCommandConfirm = computed(() => {
   if (pendingProviderAction.value?.intentMismatch) return true;
 
   const command = pendingProviderAction.value?.command;
-  if (command?.status === 'awaiting_patient_selection') {
+  if (providerCommandRequiresPatientSelection(command)) {
     return !selectedPatientToken.value;
   }
   if (command?.status === 'awaiting_patient_creation') {
@@ -468,8 +516,8 @@ const showProviderCommandCancel = computed(() => {
   const action = pendingProviderAction.value;
   return Boolean(
     action?.command &&
-      (action.intentMismatch ||
-        patientActionStatuses.has(action.command.status))
+      action.command.patientAction?.cancellable !== false &&
+      (action.intentMismatch || hasPatientAction(action.command))
   );
 });
 
@@ -511,6 +559,14 @@ const contactSelectionRequired = computed(
 );
 
 const contactOptions = computed(() => {
+  if (formStore.form.patientContactId) {
+    return [
+      {
+        value: formStore.form.patientContactId,
+        label: formStore.selectedContact?.fullName || appointmentClientName(),
+      },
+    ];
+  }
   const options = formStore.contacts.map(contact => ({
     label: [contact.fullName, contact.phone].filter(Boolean).join(' '),
     value: contact.id,
@@ -568,7 +624,9 @@ const genderOptions = computed(() => [
 const hasSelectedResources = computed(
   () => calendarStore.selectedResourceIds.length > 0
 );
-const isContactEditorOpen = computed(() => !!contactEditorMode.value);
+const isContactEditorOpen = computed(
+  () => !!contactEditorMode.value && !formStore.isProviderPatientIdentity
+);
 const isEditingContact = computed(() => contactEditorMode.value === 'edit');
 const appointmentFieldDefinitions = computed(
   () => crmReferencesStore.appointmentFieldDefinitions
@@ -699,6 +757,21 @@ const appointmentConversationContacts = computed(() => {
 const canOpenAppointmentConversation = computed(
   () => formStore.mode === 'edit'
 );
+const patientDialogRoute = computed(() =>
+  appointmentPatientDialogRoute(
+    formStore.selectedAppointment,
+    route.params.accountId
+  )
+);
+const openPatientDialog = () => {
+  if (!patientDialogRoute.value) return;
+  updateUISettings({
+    is_contact_sidebar_open: false,
+    is_crm_deal_panel_open: false,
+    is_scheduling_appointments_panel_open: true,
+  });
+  router.push(patientDialogRoute.value);
+};
 const canManageAppointmentConversation = computed(
   () =>
     formStore.mode === 'edit' &&
@@ -837,6 +910,8 @@ const inlineContactLastNameMessage = computed(() => {
 });
 const isInlineContactSaveDisabled = computed(
   () =>
+    formStore.ui.isSaving ||
+    formStore.isProviderPatientIdentity ||
     !String(formStore.form.clientFirstName || '').trim() ||
     Boolean(inlineContactLastNameMessage.value) ||
     Boolean(inlineContactIinMessage.value)
@@ -1221,6 +1296,7 @@ const fillInlineContactForm = source => {
 };
 
 const openInlineContactCreate = () => {
+  if (formStore.ui.isSaving) return;
   contactEditorMode.value = 'create';
   if (inlineContactDraftInitialized.value) return;
 
@@ -1234,15 +1310,28 @@ const openInlineContactCreate = () => {
 };
 
 const handleAppointmentConversationAddContact = () => {
-  if (!canManageAppointmentConversation.value) return;
+  if (formStore.ui.isSaving || !canManageAppointmentConversation.value) return;
 
   appointmentConversationContactCreateRequested.value = true;
   showAppointmentConversationPanel.value = false;
   openInlineContactCreate();
 };
 
+const inlineContactEditPayload = () => ({
+  ...inlineContactForm,
+  firstName: formStore.form.clientFirstName,
+  fullName: appointmentClientName(),
+  lastName: formStore.form.clientLastName,
+  middleName: formStore.form.clientMiddleName,
+  phone: formStore.form.clientPhone,
+  resourceId: formStore.form.resourceId,
+});
+
 function openInlineContactEdit() {
-  if (!formStore.form.contactId) {
+  if (formStore.ui.isSaving) return;
+  if (!formStore.form.contactId || formStore.isProviderPatientIdentity) {
+    contactEditorMode.value = null;
+    formStore.inlineContactSnapshot = null;
     return;
   }
 
@@ -1250,9 +1339,10 @@ function openInlineContactEdit() {
   fillInlineContactForm(
     formStore.selectedContact || {
       ...formStore.form,
-      id: formStore.form.contactId,
+      id: formStore.form.patientContactId || formStore.form.contactId,
     }
   );
+  formStore.beginInlineContactEdit(inlineContactEditPayload());
 }
 
 const openEditAppointment = appointment => {
@@ -1268,30 +1358,28 @@ const openEditAppointment = appointment => {
 };
 
 const handleInlineContactSave = async () => {
+  if (formStore.ui.isSaving) return;
   if (isInlineContactSaveDisabled.value) {
     useAlert(inlineContactIinMessage.value);
     return;
   }
 
-  const contactPayload = {
-    ...inlineContactForm,
-    firstName: formStore.form.clientFirstName,
-    fullName: appointmentClientName(),
-    lastName: formStore.form.clientLastName,
-    middleName: formStore.form.clientMiddleName,
-    phone: formStore.form.clientPhone,
-    resourceId: formStore.form.resourceId,
-  };
+  const contactPayload = inlineContactEditPayload();
+  const context = calendarPatientContext();
+  const ownerId = formStore.form.contactId;
+  const patientId = formStore.form.patientContactId;
+  const isCurrent = () => context === calendarPatientContext();
 
   try {
     if (isEditingContact.value) {
-      await formStore.updateInlineContact(
-        formStore.form.contactId,
-        contactPayload
+      const updated = await formStore.updateInlineContact(
+        patientId || ownerId,
+        contactPayload,
+        isCurrent
       );
+      if (!isCurrent() || !updated) return;
       useAlert(t('SCHEDULING.CONTACT.SUCCESS_UPDATE'));
-      contactEditorMode.value = 'edit';
-      fillInlineContactForm(formStore.selectedContact || formStore.form);
+      openInlineContactEdit();
     } else {
       await formStore.createInlineContact(contactPayload);
       useAlert(t('SCHEDULING.CONTACT.SUCCESS_CREATE'));
@@ -1306,7 +1394,7 @@ const handleInlineContactSave = async () => {
       }
     }
   } catch (error) {
-    useAlert(formatErrorMessage(error));
+    if (isCurrent()) useAlert(formatErrorMessage(error));
   }
 };
 
@@ -1315,6 +1403,7 @@ watch(
   definitions => {
     if (
       !formStore.isOpen ||
+      formStore.ui.isSaving ||
       formStore.mode !== 'create' ||
       !pendingCreateCustomFieldDefaultsHydration.value ||
       !definitions.length
@@ -1349,6 +1438,7 @@ watch(
 watch(
   () => inlineContactForm.iin,
   nextValue => {
+    if (formStore.ui.isSaving) return;
     const normalizedIin = normalizeIin(nextValue);
     if (normalizedIin !== nextValue) {
       inlineContactForm.iin = normalizedIin;
@@ -1372,6 +1462,7 @@ watch(
 );
 
 const handleContactSelect = contactId => {
+  if (formStore.ui.isSaving || formStore.form.patientContactId) return;
   const previousContactId = Number(formStore.form.contactId);
   const nextContactId = Number(contactId);
   const contactChanged = previousContactId !== nextContactId;
@@ -1408,7 +1499,7 @@ const handleContactSelect = contactId => {
 };
 
 const handleContactDropdownOpen = async () => {
-  if (formStore.ui.isLoadingContacts) return;
+  if (formStore.ui.isSaving || formStore.ui.isLoadingContacts) return;
 
   try {
     await formStore.searchContacts('');
@@ -1417,7 +1508,16 @@ const handleContactDropdownOpen = async () => {
   }
 };
 
-const openContactSelector = () => contactSelectorFieldRef.value?.open();
+const openContactSelector = () => {
+  if (!formStore.ui.isSaving) contactSelectorFieldRef.value?.open();
+};
+const updateInlineContactField = (field, value) => {
+  if (!formStore.ui.isSaving) inlineContactForm[field] = value;
+};
+const searchAppointmentContacts = query => {
+  if (!formStore.ui.isSaving) return formStore.searchContacts(query);
+  return null;
+};
 
 const resetAppointmentFilters = async () => {
   calendarStore.resetFilters();
@@ -1431,35 +1531,46 @@ const resetAppointmentFilters = async () => {
 };
 
 const prepareProviderCommandAction = async (action, command) => {
+  if (!isCurrentProviderAction(action)) return false;
   selectedPatientToken.value = '';
   patientCandidates.value = [];
   pendingProviderAction.value = { ...action, command };
-  if (command?.status === 'awaiting_patient_selection') {
+  const pending = pendingProviderAction.value;
+  activeProviderAction = pending;
+  if (providerCommandRequiresPatientSelection(command)) {
     const payload = await providerCommandsStore.loadPatientCandidates(command);
+    if (
+      !isCurrentProviderAction(action) ||
+      pendingProviderAction.value !== pending
+    )
+      return false;
     patientCandidates.value = payload?.candidates || [];
   }
+  return (
+    isCurrentProviderAction(action) && pendingProviderAction.value === pending
+  );
 };
 
-const refreshAfterProviderCommand = async action => {
-  try {
-    await calendarStore.refresh();
-  } catch {
-    // The provider result remains authoritative even if the calendar refresh fails.
-  }
-
-  if (action.closeDrawer) handleDrawerClose();
-};
+const refreshAfterProviderCommand = action =>
+  refreshCurrentCalendarProviderAction({
+    refresh: () => calendarStore.refresh(),
+    isCurrent: () => isCurrentProviderAction(action),
+    onCurrent: () => {
+      if (action.closeDrawer) handleDrawerClose();
+    },
+  });
 
 const showProviderCommandOutcome = async (action, command) => {
-  if (patientActionStatuses.has(command.status)) {
-    await prepareProviderCommandAction(action, command);
-    providerCommandDialogRef.value?.open();
+  if (!isCurrentProviderAction(action)) return;
+  if (hasPatientAction(command)) {
+    if (await prepareProviderCommandAction(action, command))
+      providerCommandDialogRef.value?.open();
     return;
   }
 
-  providerCommandDialogRef.value?.close();
   pendingProviderAction.value = null;
-  await refreshAfterProviderCommand(action);
+  providerCommandDialogRef.value?.close();
+  if (!(await refreshAfterProviderCommand(action))) return;
 
   if (command.status === 'succeeded') {
     useAlert(t('SCHEDULING.MEDELEMENT.SUCCESS'));
@@ -1480,15 +1591,16 @@ const showProviderCommandOutcome = async (action, command) => {
 };
 
 const executeProviderCommandAction = async action => {
+  if (!isCurrentProviderAction(action)) return;
   if (action.intentMismatch) {
-    await prepareProviderCommandAction(action, action.command);
-    providerCommandDialogRef.value?.open();
+    if (await prepareProviderCommandAction(action, action.command))
+      providerCommandDialogRef.value?.open();
     return;
   }
 
-  if (patientActionStatuses.has(action.command?.status)) {
-    await prepareProviderCommandAction(action, action.command);
-    providerCommandDialogRef.value?.open();
+  if (hasPatientAction(action.command)) {
+    if (await prepareProviderCommandAction(action, action.command))
+      providerCommandDialogRef.value?.open();
     return;
   }
 
@@ -1500,13 +1612,18 @@ const executeProviderCommandAction = async action => {
   const command = action.command
     ? await providerCommandsStore.confirmExisting(
         action.command,
-        action.requestedParams
+        action.requestedParams,
+        () => isCurrentProviderAction(action)
       )
-    : await providerCommandsStore.executeConfirmed(action.params);
+    : await providerCommandsStore.executeConfirmed(action.params, {
+        isCurrent: () => isCurrentProviderAction(action),
+      });
+  if (!isCurrentProviderAction(action) || !command) return;
   await showProviderCommandOutcome(action, command);
 };
 
 const recoverConcurrentProviderCommand = async (action, error) => {
+  if (!isCurrentProviderAction(action)) return true;
   const errorCode = error?.code || error?.response?.data?.code;
   if (errorCode !== 'MEDELEMENT_COMMAND_IN_PROGRESS') return false;
 
@@ -1514,6 +1631,7 @@ const recoverConcurrentProviderCommand = async (action, error) => {
     appointmentId: action.appointment.id,
     provider: action.params.provider,
   });
+  if (!isCurrentProviderAction(action)) return true;
   if (!existing) {
     useAlert(t('SCHEDULING.MEDELEMENT.QUEUED'));
     return true;
@@ -1530,26 +1648,69 @@ const stageProviderCommand = async ({
   params,
   closeDrawer = false,
 }) => {
-  const action = { appointment, closeDrawer, params };
+  providerActionGeneration += 1;
+  const action = {
+    appointment,
+    closeDrawer,
+    params,
+    patientContext: calendarPatientContext(),
+    generation: providerActionGeneration,
+  };
+  activeProviderAction = action;
+  // Replacing a UI action only abandons its client result; an already sent
+  // command retains its server intent and is discovered through findActive.
+  providerCommandsStore.ui.operationId += 1;
+  providerCommandsStore.ui.isExecuting = false;
+  providerCommandsStore.ui.error = null;
   try {
     const existing = await providerCommandsStore.findActive({
       appointmentId: appointment.id,
       provider: params.provider,
     });
+    if (!isCurrentProviderAction(action)) return;
     const stagedAction = buildProviderCommandAction(action, existing);
+    activeProviderAction = stagedAction;
     await executeProviderCommandAction(stagedAction);
   } catch (error) {
+    if (!isCurrentProviderAction(action)) return;
     try {
       if (await recoverConcurrentProviderCommand(action, error)) return;
     } catch (recoveryError) {
+      if (!isCurrentProviderAction(action)) return;
       useAlert(formatErrorMessage(recoveryError));
       return;
     }
+    if (!isCurrentProviderAction(action)) return;
     useAlert(formatErrorMessage(error));
   }
 };
 
+watch(
+  () => calendarPatientContext(),
+  () => {
+    if (
+      activeProviderAction &&
+      !isCurrentProviderAction(activeProviderAction)
+    ) {
+      activeProviderAction = null;
+      providerCommandsStore.ui.operationId += 1;
+      providerCommandsStore.ui.isExecuting = false;
+      providerCommandsStore.ui.error = null;
+    }
+    if (
+      pendingProviderAction.value &&
+      !isCurrentProviderAction(pendingProviderAction.value)
+    ) {
+      providerCommandDialogRef.value?.close();
+      pendingProviderAction.value = null;
+      selectedPatientToken.value = '';
+      patientCandidates.value = [];
+    }
+  }
+);
+
 const stageCreateMedelementReception = appointment => {
+  if (formStore.ui.isSaving) return;
   const companyCabinetCode = formStore.form.medelementCabinetCode;
   if (!companyCabinetCode) {
     useAlert(t('SCHEDULING.MEDELEMENT.CABINET_REQUIRED'));
@@ -1573,6 +1734,9 @@ const stageCreateMedelementReception = appointment => {
 const handleProviderCommandConfirm = async () => {
   const action = pendingProviderAction.value;
   if (!action || providerCommandsStore.ui.isExecuting) return;
+  const isCurrent = () =>
+    pendingProviderAction.value === action && isCurrentProviderAction(action);
+  if (!isCurrent()) return;
   if (action.intentMismatch) {
     useAlert(t('SCHEDULING.MEDELEMENT.STALE_COMMAND_DESCRIPTION'));
     return;
@@ -1580,55 +1744,97 @@ const handleProviderCommandConfirm = async () => {
 
   try {
     let command;
-    if (action.command?.status === 'awaiting_patient_selection') {
+    if (providerCommandRequiresPatientSelection(action.command)) {
       command = await providerCommandsStore.selectPatient(
         action.command,
         selectedPatientToken.value,
-        action.requestedParams
+        action.requestedParams,
+        isCurrent
       );
     } else if (action.command?.status === 'awaiting_patient_creation') {
       command = await providerCommandsStore.confirmPatientCreation(
         action.command,
-        action.requestedParams
+        action.requestedParams,
+        isCurrent
       );
     } else if (action.command?.status === 'awaiting_phone_refresh') {
       command = await providerCommandsStore.retryPhoneMismatch(
         action.command,
-        action.requestedParams
+        action.requestedParams,
+        isCurrent
       );
     } else {
       return;
     }
 
+    if (!isCurrent()) return;
+    const bound = command.appointment;
+    if (bound && Number(bound.id) === Number(action.appointment.id)) {
+      calendarStore.syncAppointment(bound);
+      if (Number(formStore.recordId) === Number(bound.id)) {
+        formStore.selectedAppointment = bound;
+        formStore.form.patientContactId = bound.patientContactId || '';
+        formStore.selectedContact = null;
+        action.patientContext = calendarPatientContext();
+      }
+      action.appointment = bound;
+    }
     await showProviderCommandOutcome(action, command);
   } catch (error) {
+    if (!isCurrent()) return;
     providerCommandDialogRef.value?.close();
     useAlert(formatErrorMessage(error));
   }
 };
 
 const handleProviderCommandCancel = async () => {
-  const command = pendingProviderAction.value?.command;
+  const action = pendingProviderAction.value;
+  const command = action?.command;
   if (!command || providerCommandsStore.ui.isExecuting) return;
-
-  try {
-    await providerCommandsStore.cancel(command);
-    providerCommandDialogRef.value?.close();
-  } catch (error) {
-    useAlert(formatErrorMessage(error));
-  } finally {
-    pendingProviderAction.value = null;
-  }
+  const isCurrent = () =>
+    pendingProviderAction.value === action && isCurrentProviderAction(action);
+  await runCurrentCalendarProviderAction({
+    run: () => providerCommandsStore.cancel(command, isCurrent),
+    isCurrent,
+    onSuccess: () => providerCommandDialogRef.value?.close(),
+    onError: error => useAlert(formatErrorMessage(error)),
+    onFinally: () => {
+      pendingProviderAction.value = null;
+    },
+  });
 };
 
 const handleProviderCommandDialogClose = () => {
-  if (!providerCommandsStore.ui.isExecuting) {
+  if (pendingProviderAction.value) {
     pendingProviderAction.value = null;
+    activeProviderAction = null;
+    providerActionGeneration += 1;
+    providerCommandsStore.ui.operationId += 1;
+    providerCommandsStore.ui.isExecuting = false;
+    providerCommandsStore.ui.error = null;
+    selectedPatientToken.value = '';
+    patientCandidates.value = [];
   }
 };
 
+const selectProviderPatientCandidate = token => {
+  const action = pendingProviderAction.value;
+  if (
+    providerCommandsStore.ui.isExecuting ||
+    !isCurrentProviderAction(action) ||
+    !patientCandidates.value.some(candidate => candidate.token === token)
+  )
+    return;
+  selectedPatientToken.value = token;
+};
+
 const handleAppointmentSubmit = async () => {
-  if (isSelectedAppointmentProviderOwned.value) return;
+  if (
+    isSelectedAppointmentProviderOwned.value ||
+    formStore.ui.isSaving ||
+    formStore.ui.isCreatingContact
+  )
+    return;
 
   if (isMedelementCabinetMissing.value) {
     useAlert(t('SCHEDULING.MEDELEMENT.CABINET_REQUIRED'));
@@ -1639,38 +1845,48 @@ const handleAppointmentSubmit = async () => {
     return;
   }
 
-  try {
-    const shouldCreateInMedelement =
-      isSelectedFormResourceMedelement.value &&
-      !isSelectedAppointmentProviderOwned.value;
-    const companyCabinetCode = formStore.form.medelementCabinetCode;
-    const appointment = await formStore.submit(calendarStore);
-    useAlert(t('SCHEDULING.APPOINTMENT_FORM.SUCCESS_SAVE'));
-    handleDrawerClose();
-
-    if (shouldCreateInMedelement) {
-      stageProviderCommand({
-        appointment,
-        params: buildMedelementProviderCommandParams({
+  const shouldCreateInMedelement =
+    isSelectedFormResourceMedelement.value &&
+    !isSelectedAppointmentProviderOwned.value;
+  const companyCabinetCode = formStore.form.medelementCabinetCode;
+  const isCurrent = captureCalendarFormMutation();
+  await runCurrentCalendarProviderAction({
+    run: () =>
+      formStore.submit(calendarStore, { isCurrent, closeOnSuccess: false }),
+    isCurrent,
+    onSuccess: appointment => {
+      if (!appointment) return;
+      useAlert(t('SCHEDULING.APPOINTMENT_FORM.SUCCESS_SAVE'));
+      handleDrawerClose();
+      if (shouldCreateInMedelement) {
+        stageProviderCommand({
           appointment,
-          companyCabinetCode,
-          operation: 'create_reception',
-        }),
-      });
-    }
-  } catch (error) {
-    useAlert(formatErrorMessage(error));
-  }
+          params: buildMedelementProviderCommandParams({
+            appointment,
+            companyCabinetCode,
+            operation: 'create_reception',
+          }),
+        });
+      }
+    },
+    onError: error => useAlert(formatErrorMessage(error)),
+  });
 };
 
 const cancelSelectedAppointment = async () => {
-  try {
-    const appointment = await formStore.cancel(calendarStore);
-    useAlert(appointmentCancellationAlertMessage(appointment, t));
-    handleDrawerClose();
-  } catch (error) {
-    useAlert(formatErrorMessage(error));
-  }
+  if (formStore.ui.isSaving) return;
+  const isCurrent = captureCalendarFormMutation();
+  await runCurrentCalendarProviderAction({
+    run: () =>
+      formStore.cancel(calendarStore, { isCurrent, closeOnSuccess: false }),
+    isCurrent,
+    onSuccess: appointment => {
+      if (!appointment) return;
+      useAlert(appointmentCancellationAlertMessage(appointment, t));
+      handleDrawerClose();
+    },
+    onError: error => useAlert(formatErrorMessage(error)),
+  });
 };
 
 const handleLocalOnlyCancelConfirm = async () => {
@@ -1679,6 +1895,7 @@ const handleLocalOnlyCancelConfirm = async () => {
 };
 
 const handleAppointmentCancel = async () => {
+  if (formStore.ui.isSaving) return;
   if (isSelectedAppointmentCancelLocalOnly.value) {
     appointmentLocalCancelDialogRef.value?.open();
     return;
@@ -1700,22 +1917,26 @@ const handleAppointmentCancel = async () => {
 };
 
 const openAppointmentDeleteDialog = () => {
-  if (isSelectedAppointmentProviderOwned.value) return;
+  if (isSelectedAppointmentProviderOwned.value || formStore.ui.isSaving) return;
 
   appointmentDeleteDialogRef.value?.open();
 };
 
 const handleAppointmentDelete = async () => {
-  if (isSelectedAppointmentProviderOwned.value) return;
-
-  try {
-    await formStore.destroy(calendarStore);
-    appointmentDeleteDialogRef.value?.close();
-    useAlert(t('SCHEDULING.APPOINTMENT_FORM.SUCCESS_DELETE'));
-    handleDrawerClose();
-  } catch (error) {
-    useAlert(formatErrorMessage(error));
-  }
+  if (isSelectedAppointmentProviderOwned.value || formStore.ui.isSaving) return;
+  const isCurrent = captureCalendarFormMutation();
+  await runCurrentCalendarProviderAction({
+    run: () =>
+      formStore.destroy(calendarStore, { isCurrent, closeOnSuccess: false }),
+    isCurrent,
+    onSuccess: deletedId => {
+      if (!deletedId) return;
+      appointmentDeleteDialogRef.value?.close();
+      useAlert(t('SCHEDULING.APPOINTMENT_FORM.SUCCESS_DELETE'));
+      handleDrawerClose();
+    },
+    onError: error => useAlert(formatErrorMessage(error)),
+  });
 };
 
 const updateAppointmentMutation = async (
@@ -1848,6 +2069,12 @@ watch(
 );
 
 onBeforeUnmount(() => {
+  calendarDisposed = true;
+  providerActionGeneration += 1;
+  activeProviderAction = null;
+  providerCommandsStore.ui.operationId += 1;
+  providerCommandsStore.ui.isExecuting = false;
+  providerCommandsStore.ui.error = null;
   appointmentConversationDisposed = true;
   appointmentConversationDraft.contextRequestId += 1;
   appointmentConversationCreateRequestId += 1;
@@ -2020,6 +2247,7 @@ onMounted(async () => {
             >
               <input
                 id="scheduling-appointment-drawer-title"
+                :disabled="formStore.ui.isSaving"
                 class="reset-base min-w-0 flex-1 border-none bg-transparent text-base font-semibold text-n-slate-12 outline-none placeholder:text-n-slate-10"
                 :aria-label="
                   $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_FIRST_NAME')
@@ -2031,6 +2259,15 @@ onMounted(async () => {
                 "
               />
 
+              <Button
+                v-if="formStore.mode === 'edit' && patientDialogRoute"
+                size="sm"
+                color="slate"
+                variant="ghost"
+                icon="i-lucide-external-link"
+                :label="$t('SCHEDULING.PATIENT_CONTEXT.OPEN_DIALOG')"
+                @click="openPatientDialog"
+              />
               <Button
                 v-if="
                   canOpenAppointmentConversation &&
@@ -2048,6 +2285,7 @@ onMounted(async () => {
                 :disabled="
                   formStore.isFormInvalid ||
                   formStore.ui.isSaving ||
+                  formStore.ui.isCreatingContact ||
                   isMedelementCabinetMissing ||
                   isMedelementContactMissing ||
                   isSelectedAppointmentProviderOwned
@@ -2065,7 +2303,12 @@ onMounted(async () => {
             </header>
 
             <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-              <div class="appointment-drawer-form">
+              <fieldset
+                class="appointment-drawer-form min-w-0 border-0 p-0"
+                :disabled="formStore.ui.isSaving"
+                :inert="formStore.ui.isSaving ? '' : undefined"
+                data-test="appointment-form-controls"
+              >
                 <div
                   v-if="formStore.ui.error"
                   class="px-4 py-3 text-sm rounded-xl bg-n-ruby-3/70 text-n-ruby-11"
@@ -2080,16 +2323,25 @@ onMounted(async () => {
                     </h3>
                     <div class="relative ltr:ml-auto rtl:mr-auto">
                       <Button
+                        v-if="!formStore.form.patientContactId"
                         size="sm"
                         variant="link"
                         color="blue"
                         :label="$t('SCHEDULING.CONTACT.SELECT_ACTION')"
+                        :disabled="formStore.ui.isSaving"
                         @click.stop="openContactSelector"
                       />
                       <SchedulingSelectField
                         ref="contactSelectorFieldRef"
                         class="pointer-events-none absolute right-0 top-full h-px w-px opacity-0"
-                        :model-value="formStore.form.contactId"
+                        :model-value="
+                          formStore.form.patientContactId ||
+                          formStore.form.contactId
+                        "
+                        :disabled="
+                          formStore.ui.isSaving ||
+                          Boolean(formStore.form.patientContactId)
+                        "
                         :options="contactOptions"
                         use-api-results
                         dropdown-align="end"
@@ -2103,7 +2355,7 @@ onMounted(async () => {
                           $t('SCHEDULING.APPOINTMENT_FORM.CONTACT_EMPTY')
                         "
                         @open="handleContactDropdownOpen"
-                        @search="formStore.searchContacts($event)"
+                        @search="searchAppointmentContacts"
                         @update:model-value="handleContactSelect"
                       />
                     </div>
@@ -2111,12 +2363,36 @@ onMounted(async () => {
 
                   <div class="appointment-contact-accordion">
                     <div
+                      v-if="formStore.isProviderPatientIdentity"
+                      class="grid gap-2 text-sm"
+                      data-test="calendar-patient-provider-source"
+                    >
+                      <p class="m-0 font-medium">
+                        {{ appointmentClientName() }}
+                      </p>
+                      <p
+                        v-if="formStore.form.clientBirthDate"
+                        class="m-0 text-n-slate-11"
+                      >
+                        {{ $t('SCHEDULING.CONTACT.BIRTH_DATE') }}:
+                        {{ formStore.form.clientBirthDate }}
+                      </p>
+                      <p class="m-0 text-xs text-n-slate-10">
+                        {{
+                          $t(
+                            'SCHEDULING.PATIENT_CONTEXT.PROVIDER_IDENTITY_READ_ONLY'
+                          )
+                        }}
+                      </p>
+                    </div>
+                    <div
                       v-if="isContactEditorOpen"
                       class="appointment-contact-accordion-summary"
                     >
                       <div class="grid min-w-0 flex-1 gap-2 md:grid-cols-3">
                         <Input
                           :model-value="formStore.form.clientFirstName"
+                          :disabled="formStore.ui.isSaving"
                           :label="
                             requiredContactLabel(
                               $t(
@@ -2147,6 +2423,7 @@ onMounted(async () => {
                         />
                         <Input
                           :model-value="formStore.form.clientLastName"
+                          :disabled="formStore.ui.isSaving"
                           :label="
                             isInlineContactMedelementContext
                               ? requiredContactLabel(
@@ -2168,6 +2445,7 @@ onMounted(async () => {
                         />
                         <Input
                           :model-value="formStore.form.clientMiddleName"
+                          :disabled="formStore.ui.isSaving"
                           :label="
                             $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_MIDDLE_NAME')
                           "
@@ -2182,7 +2460,8 @@ onMounted(async () => {
                       <div class="grid gap-4 md:grid-cols-2">
                         <div>
                           <PhoneNumberInput
-                            v-model="formStore.form.clientPhone"
+                            :model-value="formStore.form.clientPhone"
+                            :disabled="formStore.ui.isSaving"
                             class="appointment-drawer-phone-control"
                             default-country="KZ"
                             :show-country-flag="false"
@@ -2191,6 +2470,9 @@ onMounted(async () => {
                               $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_PHONE')
                             "
                             size="md"
+                            @update:model-value="
+                              formStore.updateField('clientPhone', $event)
+                            "
                           />
                           <p
                             v-if="formStore.validationErrors.clientPhone"
@@ -2204,7 +2486,8 @@ onMounted(async () => {
                           </p>
                         </div>
                         <Input
-                          v-model="inlineContactForm.iin"
+                          :model-value="inlineContactForm.iin"
+                          :disabled="formStore.ui.isSaving"
                           inputmode="numeric"
                           maxlength="12"
                           custom-input-class="tabular-nums"
@@ -2217,22 +2500,30 @@ onMounted(async () => {
                           :message-type="
                             inlineContactIinMessage ? 'error' : 'info'
                           "
+                          @update:model-value="
+                            updateInlineContactField('iin', $event)
+                          "
                         />
                       </div>
                       <div class="grid gap-4 md:grid-cols-2">
                         <SchedulingDateTimeField
-                          v-model="inlineContactForm.birthDate"
+                          :model-value="inlineContactForm.birthDate"
+                          :disabled="formStore.ui.isSaving"
                           type="date"
                           :label="$t('SCHEDULING.CONTACT.BIRTH_DATE')"
+                          @update:model-value="
+                            updateInlineContactField('birthDate', $event)
+                          "
                         />
                         <SchedulingSelectField
                           class="appointment-drawer-select-control"
                           :model-value="inlineContactForm.gender"
+                          :disabled="formStore.ui.isSaving"
                           :options="genderOptions"
                           :label="$t('SCHEDULING.CONTACT.GENDER_LABEL')"
                           :placeholder="$t('SCHEDULING.CONTACT.GENDER_LABEL')"
                           @update:model-value="
-                            inlineContactForm.gender = $event
+                            updateInlineContactField('gender', $event)
                           "
                         />
                       </div>
@@ -2264,6 +2555,7 @@ onMounted(async () => {
                     <SchedulingSelectField
                       class="appointment-drawer-select-control"
                       :model-value="formStore.form.resourceId"
+                      :disabled="formStore.ui.isSaving"
                       :options="resourceOptions"
                       :label="$t('SCHEDULING.APPOINTMENT_FORM.RESOURCE')"
                       :placeholder="$t('SCHEDULING.APPOINTMENT_FORM.RESOURCE')"
@@ -2283,6 +2575,7 @@ onMounted(async () => {
                       v-if="isSelectedFormResourceMedelement"
                       class="appointment-drawer-select-control"
                       :model-value="formStore.form.medelementCabinetCode"
+                      :disabled="formStore.ui.isSaving"
                       :options="medelementCabinetOptions"
                       :label="$t('SCHEDULING.MEDELEMENT.CABINET')"
                       :placeholder="$t('SCHEDULING.MEDELEMENT.CABINET')"
@@ -2303,7 +2596,8 @@ onMounted(async () => {
                       <TagMultiSelectComboBox
                         v-if="hasServiceOptions"
                         class="appointment-drawer-multi-control"
-                        :model-value="formStore.form.serviceIds"
+                        :model-value="appointmentFormControlValues.serviceIds"
+                        :disabled="formStore.ui.isSaving"
                         :options="serviceOptions"
                         wrap-labels
                         clamp-selected-labels
@@ -2322,6 +2616,7 @@ onMounted(async () => {
                       <Input
                         v-else-if="!isSelectedFormResourceMedelement"
                         :model-value="formStore.form.serviceNameSnapshot"
+                        :disabled="formStore.ui.isSaving"
                         :placeholder="$t('SCHEDULING.APPOINTMENT_FORM.SERVICE')"
                         @update:model-value="
                           value => {
@@ -2350,6 +2645,7 @@ onMounted(async () => {
                       <SchedulingSelectField
                         class="appointment-drawer-select-control"
                         :model-value="formStore.form.status"
+                        :disabled="formStore.ui.isSaving"
                         :options="appointmentStatusOptions"
                         :label="$t('SCHEDULING.APPOINTMENT_FORM.STATUS')"
                         :placeholder="$t('SCHEDULING.APPOINTMENT_FORM.STATUS')"
@@ -2358,11 +2654,15 @@ onMounted(async () => {
                         "
                       />
                       <SchedulingMoneyInput
-                        v-model="formStore.form.serviceAmount"
+                        :model-value="formStore.form.serviceAmount"
+                        :disabled="formStore.ui.isSaving"
                         class="appointment-drawer-money-control"
                         min="0"
                         :label="
                           $t('SCHEDULING.APPOINTMENT_FORM.SERVICE_AMOUNT')
+                        "
+                        @update:model-value="
+                          formStore.updateField('serviceAmount', $event)
                         "
                       />
                     </div>
@@ -2370,6 +2670,7 @@ onMounted(async () => {
                       <SchedulingDateTimeField
                         type="datetime"
                         :model-value="formStore.form.startsAt"
+                        :disabled="formStore.ui.isSaving"
                         :label="$t('SCHEDULING.APPOINTMENT_FORM.STARTS_AT')"
                         :message="
                           formStore.validationErrors.startsAt
@@ -2386,7 +2687,8 @@ onMounted(async () => {
                         "
                       />
                       <SchedulingDateTimeField
-                        v-model="formStore.form.endsAt"
+                        :model-value="formStore.form.endsAt"
+                        :disabled="formStore.ui.isSaving"
                         type="datetime"
                         :label="$t('SCHEDULING.APPOINTMENT_FORM.ENDS_AT')"
                         :message="
@@ -2399,24 +2701,32 @@ onMounted(async () => {
                         :message-type="
                           formStore.validationErrors.endsAt ? 'error' : 'info'
                         "
+                        @update:model-value="
+                          formStore.updateField('endsAt', $event)
+                        "
                       />
                     </div>
                   </div>
                 </SchedulingFormFieldGroup>
 
                 <CrmCustomFieldsSection
-                  v-model="formStore.form.customAttributes"
+                  :model-value="appointmentFormControlValues.customAttributes"
+                  :disabled="formStore.ui.isSaving"
                   :definitions="intakeAppointmentFieldDefinitions"
                   :title="$t('SCHEDULING.APPOINTMENT_FORM.INTAKE_FIELDS_TITLE')"
                   :description="
                     $t('SCHEDULING.APPOINTMENT_FORM.INTAKE_FIELDS_DESCRIPTION')
                   "
                   :framed="false"
+                  @update:model-value="
+                    formStore.updateField('customAttributes', $event)
+                  "
                 />
 
                 <SchedulingFormFieldGroup :framed="false">
                   <TextArea
-                    v-model="formStore.form.clientComment"
+                    :model-value="formStore.form.clientComment"
+                    :disabled="formStore.ui.isSaving"
                     auto-height
                     custom-text-area-wrapper-class="!rounded-md !border-n-weak !bg-n-alpha-black2 !px-2 !py-1"
                     :label="$t('SCHEDULING.APPOINTMENT_FORM.COMMENT')"
@@ -2424,17 +2734,24 @@ onMounted(async () => {
                       $t('SCHEDULING.APPOINTMENT_FORM.COMMENT_PLACEHOLDER')
                     "
                     min-height="3rem"
+                    @update:model-value="
+                      formStore.updateField('clientComment', $event)
+                    "
                   />
                 </SchedulingFormFieldGroup>
 
                 <CrmCustomFieldsSection
-                  v-model="formStore.form.customAttributes"
+                  :model-value="appointmentFormControlValues.customAttributes"
+                  :disabled="formStore.ui.isSaving"
                   :definitions="generalAppointmentFieldDefinitions"
                   :title="$t('SCHEDULING.APPOINTMENT_FORM.CUSTOM_FIELDS_TITLE')"
                   :description="
                     $t('SCHEDULING.APPOINTMENT_FORM.CUSTOM_FIELDS_DESCRIPTION')
                   "
                   :framed="false"
+                  @update:model-value="
+                    formStore.updateField('customAttributes', $event)
+                  "
                 />
 
                 <div
@@ -2501,7 +2818,7 @@ onMounted(async () => {
                     />
                   </div>
                 </div>
-              </div>
+              </fieldset>
             </div>
           </aside>
 
@@ -2528,6 +2845,7 @@ onMounted(async () => {
             @add-contact="handleAppointmentConversationAddContact"
             @close="showAppointmentConversationPanel = false"
             @create-conversation="createAppointmentConversation"
+            @open-full-screen="openPatientDialog"
             @select-contact="loadAppointmentConversationContext"
           />
         </div>
@@ -2639,8 +2957,9 @@ onMounted(async () => {
     >
       <div
         v-if="
-          pendingProviderAction?.command?.status ===
-          'awaiting_patient_selection'
+          providerCommandRequiresPatientSelection(
+            pendingProviderAction?.command
+          )
         "
         class="flex flex-col gap-2"
       >
@@ -2648,13 +2967,14 @@ onMounted(async () => {
           v-for="candidate in patientCandidates"
           :key="candidate.token"
           type="button"
+          :disabled="providerCommandsStore.ui.isExecuting"
           class="flex flex-col items-start gap-1 p-3 text-start border rounded-lg"
           :class="
             selectedPatientToken === candidate.token
               ? 'border-n-brand bg-n-brand/10'
               : 'border-n-weak hover:border-n-strong'
           "
-          @click="selectedPatientToken = candidate.token"
+          @click="selectProviderPatientCandidate(candidate.token)"
         >
           <span class="text-sm font-medium text-n-slate-12">
             {{

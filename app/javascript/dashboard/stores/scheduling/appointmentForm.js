@@ -4,6 +4,10 @@ import SchedulingContactsAPI from 'dashboard/api/scheduling/contacts';
 import { DEFAULT_WORKSPACE_TIMEZONE } from 'dashboard/routes/dashboard/scheduling/constants';
 import { schedulingContactNameParts } from './contactName';
 import {
+  hasProviderPatientIdentity,
+  patientBookingContact,
+} from './patientContext';
+import {
   compactPayload,
   extractSchedulingError,
   normalizePayload,
@@ -16,6 +20,7 @@ import {
   dateTimeInputDurationMinutes,
   fromDateTimeInputValue,
   getServicePriceForResource,
+  isAppointmentProviderOwned,
   toDateTimeInputValue,
 } from 'dashboard/routes/dashboard/scheduling/helpers';
 
@@ -26,6 +31,53 @@ const toFormDateTime = value =>
   toDateTimeInputValue(value, SCHEDULING_TIMEZONE);
 const fromFormDateTime = value =>
   fromDateTimeInputValue(value, SCHEDULING_TIMEZONE);
+
+export const refreshCurrentCalendarProviderAction = async ({
+  refresh,
+  isCurrent,
+  onCurrent,
+}) => {
+  if (!isCurrent()) return false;
+  try {
+    await refresh();
+  } catch {
+    // The provider result remains authoritative if the calendar read fails.
+  }
+  if (!isCurrent()) return false;
+  onCurrent();
+  return true;
+};
+
+export const runCurrentCalendarProviderAction = async ({
+  run,
+  isCurrent,
+  onSuccess,
+  onError,
+  onFinally = () => {},
+}) => {
+  if (!isCurrent()) return null;
+  try {
+    const result = await run();
+    if (!isCurrent()) return null;
+    onSuccess(result);
+    return result;
+  } catch (error) {
+    if (isCurrent()) onError(error);
+    return null;
+  } finally {
+    if (isCurrent()) onFinally();
+  }
+};
+
+export const appointmentFormMutationContext = store =>
+  JSON.stringify([
+    store.formVersion,
+    store.inlineContactEditVersion,
+    store.isOpen,
+    store.mode,
+    store.recordId,
+    store.form,
+  ]);
 
 const BACKEND_MANAGED_CUSTOM_ATTRIBUTE_KEYS = new Set([
   'service_ids',
@@ -78,6 +130,20 @@ const editableCustomAttributes = attributes =>
     })
   );
 
+const inlineContactPayload = (contact, omitPhone = false) =>
+  compactPayload({
+    birth_date: contact.birthDate,
+    company_id: toNumeric(contact.companyId),
+    first_name: contact.firstName,
+    full_name: contact.fullName,
+    gender: contact.gender,
+    iin: contact.iin || undefined,
+    last_name: contact.lastName,
+    middle_name: contact.middleName,
+    ...(omitPhone ? {} : { phone: contact.phone }),
+    resource_id: toNumeric(contact.resourceId),
+  });
+
 const normalizeIdArray = values => {
   const normalizedValues = Array.isArray(values) ? values : [values];
 
@@ -125,6 +191,7 @@ const createDefaultForm = () => ({
   clientPhone: '',
   companyId: '',
   contactId: '',
+  patientContactId: '',
   conversationDisplayId: '',
   conversationId: '',
   customAttributes: {},
@@ -147,6 +214,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
       contacts: [],
       contactsMeta: {},
       form: createDefaultForm(),
+      formVersion: 0,
       isOpen: false,
       mode: 'create',
       requirements: {
@@ -159,15 +227,36 @@ export const useSchedulingAppointmentFormStore = defineStore(
       recordId: null,
       selectedContact: null,
       selectedAppointment: null,
+      inlineContactSnapshot: null,
+      inlineContactEditVersion: 0,
       ui: {
         error: null,
         isCreatingContact: false,
         isLoadingContacts: false,
         isSaving: false,
+        mutationOperationId: 0,
       },
     }),
 
     getters: {
+      isProviderPatientIdentity: state =>
+        hasProviderPatientIdentity(state.selectedContact) ||
+        isAppointmentProviderOwned(state.selectedAppointment) ||
+        Boolean(
+          state.selectedAppointment?.externalRef?.startsWith(
+            'medelement:reception:'
+          )
+        ) ||
+        Boolean(
+          state.selectedAppointment?.customAttributes
+            ?.medelement_reception_code ||
+            state.selectedAppointment?.customAttributes?.medelementReceptionCode
+        ) ||
+        hasProviderPatientIdentity({
+          custom_attributes:
+            state.selectedAppointment?.customAttributes ||
+            state.selectedAppointment?.custom_attributes,
+        }),
       validationErrors: state => ({
         endsAt:
           state.form.endsAt &&
@@ -212,11 +301,17 @@ export const useSchedulingAppointmentFormStore = defineStore(
 
     actions: {
       reset() {
+        this.formVersion += 1;
+        this.ui.mutationOperationId += 1;
+        this.ui.isSaving = false;
         this.form = createDefaultForm();
         this.mode = 'create';
         this.recordId = null;
         this.selectedContact = null;
         this.selectedAppointment = null;
+        this.inlineContactSnapshot = null;
+        this.inlineContactEditVersion += 1;
+        this.ui.isCreatingContact = false;
         this.ui.error = null;
       },
 
@@ -259,6 +354,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
           clientPhone: appointment.clientPhone || '',
           companyId: appointment.companyId || '',
           contactId: appointment.contactId || '',
+          patientContactId: appointment.patientContactId || '',
           conversationDisplayId: appointment.conversationDisplayId || '',
           conversationId: appointment.conversationId || '',
           customAttributes: appointment.customAttributes || {},
@@ -279,9 +375,29 @@ export const useSchedulingAppointmentFormStore = defineStore(
           startsAt: toFormDateTime(appointment.startsAt),
           status: appointment.status || 'scheduled',
         };
+        if (this.form.patientContactId) {
+          this.selectedContact = {
+            id: this.form.patientContactId,
+            birthDate: this.form.clientBirthDate,
+            firstName: this.form.clientFirstName,
+            fullName: appointment.patientContactName || this.form.clientName,
+            gender: this.form.clientGender,
+            identifier: this.form.clientIdentifier,
+            lastName: this.form.clientLastName,
+            middleName: this.form.clientMiddleName,
+            phone: this.form.clientPhone,
+            customAttributes:
+              appointment.customAttributes ||
+              appointment.custom_attributes ||
+              {},
+          };
+        }
       },
 
       close() {
+        this.formVersion += 1;
+        this.ui.mutationOperationId += 1;
+        this.ui.isSaving = false;
         this.isOpen = false;
         this.ui.error = null;
       },
@@ -294,6 +410,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
       },
 
       updateField(field, value) {
+        if (this.ui.isSaving) return;
         const durationMinutes = dateTimeInputDurationMinutes(
           this.form.startsAt,
           this.form.endsAt,
@@ -333,32 +450,55 @@ export const useSchedulingAppointmentFormStore = defineStore(
       },
 
       applyContact(contact) {
+        if (this.ui.isSaving) return;
         const existingPhone = this.form.clientPhone || '';
         const previousContactPhone = this.selectedContact?.phone || '';
         const phoneCameFromPreviousContact =
           previousContactPhone && existingPhone === previousContactPhone;
-        const contactName = schedulingContactNameParts(contact);
+        const patient = patientBookingContact(contact);
+        const contactName = schedulingContactNameParts(patient);
 
         this.selectedContact = contact;
         this.form = {
           ...this.form,
-          clientBirthDate: contact.birthDate || '',
+          clientBirthDate: patient.birthDate || '',
           clientFirstName: contactName.firstName,
-          clientGender: contact.gender || '',
-          clientIdentifier: contact.identifier || '',
+          clientGender: patient.gender || '',
+          clientIdentifier: patient.identifier || '',
           clientLastName: contactName.lastName,
           clientMiddleName: contactName.middleName,
-          clientName: contact.fullName || '',
+          clientName: patient.fullName || '',
           clientNameStructured: true,
           clientPhone:
             contact.phone ||
             (phoneCameFromPreviousContact ? '' : existingPhone),
           companyId: contact.companyId || this.form.companyId || '',
           contactId: contact.id,
+          patientContactId: '',
         };
       },
 
+      applyPatientContact(contact) {
+        if (this.ui.isSaving) return;
+        const ownerId = this.form.contactId;
+        this.applyContact({
+          ...contact,
+          phone: contact.phone || this.form.clientPhone,
+        });
+        this.form.contactId = ownerId;
+        this.form.patientContactId = contact.id;
+      },
+
+      beginInlineContactEdit(contact) {
+        if (this.ui.isSaving) return;
+        this.inlineContactEditVersion += 1;
+        this.inlineContactSnapshot = this.isProviderPatientIdentity
+          ? null
+          : inlineContactPayload(contact, Boolean(this.form.patientContactId));
+      },
+
       syncServicePricing(services) {
+        if (this.ui.isSaving) return;
         const activeServiceIds = normalizeIdArray(this.form.serviceIds);
         const serviceIdsForPricing = activeServiceIds.length
           ? activeServiceIds
@@ -472,38 +612,91 @@ export const useSchedulingAppointmentFormStore = defineStore(
         }
       },
 
-      async updateInlineContact(contactId, contact) {
+      async updateInlineContact(
+        contactId,
+        contact,
+        isCurrentContext = () => true
+      ) {
+        if (
+          this.ui.isSaving ||
+          this.isProviderPatientIdentity ||
+          !isCurrentContext()
+        )
+          return null;
+        const recordId = this.recordId;
+        const patientId = this.form.patientContactId;
+        const ownerId = this.form.contactId;
+        const version = this.inlineContactEditVersion;
+        const accountId =
+          this.selectedContact?.accountId ||
+          this.selectedAppointment?.accountId;
+        if (ownerId && Number(contactId) !== Number(patientId || ownerId))
+          return null;
+        const isPatientCard =
+          this.mode === 'edit' && Number(patientId) === Number(contactId);
+        const isCurrent = () =>
+          isCurrentContext() &&
+          this.recordId === recordId &&
+          this.form.patientContactId === patientId &&
+          this.form.contactId === ownerId &&
+          this.inlineContactEditVersion === version;
+        const values = inlineContactPayload(contact, isPatientCard);
+        const dirtyValues = this.inlineContactSnapshot
+          ? Object.fromEntries(
+              Object.entries(values).filter(
+                ([field, value]) =>
+                  field !== 'resource_id' &&
+                  value !== this.inlineContactSnapshot[field]
+              )
+            )
+          : values;
+        if (!Object.keys(dirtyValues).length) return this.selectedContact;
+        const payload = {
+          ...dirtyValues,
+          ...(values.resource_id ? { resource_id: values.resource_id } : {}),
+        };
         this.ui.isCreatingContact = true;
 
         try {
-          const payload = compactPayload({
-            birth_date: contact.birthDate,
-            company_id: toNumeric(contact.companyId),
-            first_name: contact.firstName,
-            full_name: contact.fullName,
-            gender: contact.gender,
-            iin: contact.iin || undefined,
-            last_name: contact.lastName,
-            middle_name: contact.middleName,
-            phone: contact.phone,
-            resource_id: toNumeric(contact.resourceId),
-          });
           const { data } = await SchedulingContactsAPI.update(
             contactId,
             payload
           );
-          const updatedContact = normalizePayload(data);
+          let updatedContact = normalizePayload(data);
+          if (!isCurrent()) return null;
+          if (Number(updatedContact?.id) !== Number(contactId))
+            throw new Error('patient_context_mismatch');
+          if (
+            accountId &&
+            Number(updatedContact.accountId) !== Number(accountId)
+          )
+            throw new Error('patient_context_mismatch');
+          if (isPatientCard) {
+            const response = await SchedulingContactsAPI.patients(ownerId);
+            if (!isCurrent()) return null;
+            const projection = normalizePayload(response.data);
+            if (Number(projection?.contactId) !== Number(ownerId))
+              throw new Error('patient_context_mismatch');
+            updatedContact = projection.patients?.find(
+              patient =>
+                Number(patient.id) === Number(patientId) &&
+                Number(patient.communicationContactId) === Number(ownerId) &&
+                (!accountId || Number(patient.accountId) === Number(accountId))
+            );
+            if (!updatedContact) throw new Error('patient_context_mismatch');
+          }
           this.contacts = [
             updatedContact,
             ...this.contacts.filter(item => item.id !== updatedContact.id),
           ];
-          this.applyContact(updatedContact);
+          if (isPatientCard) this.applyPatientContact(updatedContact);
+          else this.applyContact(updatedContact);
           return updatedContact;
         } catch (error) {
-          this.ui.error = extractSchedulingError(error);
+          if (isCurrent()) this.ui.error = extractSchedulingError(error);
           throw error;
         } finally {
-          this.ui.isCreatingContact = false;
+          if (isCurrent()) this.ui.isCreatingContact = false;
         }
       },
 
@@ -528,6 +721,9 @@ export const useSchedulingAppointmentFormStore = defineStore(
           client_name: fullPatientName(normalizedForm),
           client_phone: normalizedForm.clientPhone,
           contact_id: toNumeric(normalizedForm.contactId),
+          ...(toNumeric(normalizedForm.patientContactId)
+            ? { patient_contact_id: toNumeric(normalizedForm.patientContactId) }
+            : {}),
           conversation_display_id: toNumeric(
             normalizedForm.conversationId
               ? undefined
@@ -651,7 +847,23 @@ export const useSchedulingAppointmentFormStore = defineStore(
         return appointment;
       },
 
-      async submit(calendarStore) {
+      async submit(
+        calendarStore,
+        { isCurrent: isCurrentContext = () => true, closeOnSuccess = true } = {}
+      ) {
+        if (
+          this.ui.isSaving ||
+          this.ui.isCreatingContact ||
+          !isCurrentContext()
+        )
+          return null;
+        const context = appointmentFormMutationContext(this);
+        this.ui.mutationOperationId += 1;
+        const operationId = this.ui.mutationOperationId;
+        const isCurrent = () =>
+          isCurrentContext() &&
+          this.ui.mutationOperationId === operationId &&
+          appointmentFormMutationContext(this) === context;
         this.ui.isSaving = true;
         this.ui.error = null;
 
@@ -662,22 +874,36 @@ export const useSchedulingAppointmentFormStore = defineStore(
               ? await SchedulingAppointmentsAPI.update(this.recordId, payload)
               : await SchedulingAppointmentsAPI.create(payload);
           const appointment = normalizePayload(response.data);
+          if (!isCurrent()) return null;
           calendarStore.syncAppointment(appointment);
           if (calendarStore.currentView === 'month') {
             await calendarStore.refresh();
           }
-          this.close();
+          if (!isCurrent()) return null;
+          if (closeOnSuccess) this.close();
           return appointment;
         } catch (error) {
-          this.ui.error = extractSchedulingError(error);
+          if (isCurrent()) this.ui.error = extractSchedulingError(error);
           throw error;
         } finally {
-          this.ui.isSaving = false;
+          if (this.ui.mutationOperationId === operationId)
+            this.ui.isSaving = false;
         }
       },
 
-      async cancel(calendarStore) {
-        if (!this.recordId) return null;
+      async cancel(
+        calendarStore,
+        { isCurrent: isCurrentContext = () => true, closeOnSuccess = true } = {}
+      ) {
+        if (this.ui.isSaving || !this.recordId || !isCurrentContext())
+          return null;
+        const context = appointmentFormMutationContext(this);
+        this.ui.mutationOperationId += 1;
+        const operationId = this.ui.mutationOperationId;
+        const isCurrent = () =>
+          isCurrentContext() &&
+          this.ui.mutationOperationId === operationId &&
+          appointmentFormMutationContext(this) === context;
 
         this.ui.isSaving = true;
         this.ui.error = null;
@@ -691,41 +917,60 @@ export const useSchedulingAppointmentFormStore = defineStore(
               })
             : await SchedulingAppointmentsAPI.cancel(this.recordId);
           const appointment = normalizePayload(data);
+          if (!isCurrent()) return null;
           calendarStore.syncAppointment(appointment);
           if (calendarStore.currentView === 'month') {
             await calendarStore.refresh();
           }
-          this.close();
+          if (!isCurrent()) return null;
+          if (closeOnSuccess) this.close();
           return appointment;
         } catch (error) {
-          this.ui.error = extractSchedulingError(error);
+          if (isCurrent()) this.ui.error = extractSchedulingError(error);
           throw error;
         } finally {
-          this.ui.isSaving = false;
+          if (this.ui.mutationOperationId === operationId)
+            this.ui.isSaving = false;
         }
       },
 
-      async destroy(calendarStore) {
-        if (!this.recordId) return null;
+      async destroy(
+        calendarStore,
+        { isCurrent: isCurrentContext = () => true, closeOnSuccess = true } = {}
+      ) {
+        if (this.ui.isSaving || !this.recordId || !isCurrentContext())
+          return null;
+        const deletedAppointmentId = this.recordId;
+        const context = appointmentFormMutationContext(this);
+        this.ui.mutationOperationId += 1;
+        const operationId = this.ui.mutationOperationId;
+        const isCurrent = () =>
+          isCurrentContext() &&
+          this.ui.mutationOperationId === operationId &&
+          appointmentFormMutationContext(this) === context;
 
         this.ui.isSaving = true;
         this.ui.error = null;
 
         try {
-          await SchedulingAppointmentsAPI.delete(this.recordId);
-          calendarStore.removeAppointment(this.recordId);
+          await SchedulingAppointmentsAPI.delete(deletedAppointmentId);
+          if (!isCurrent()) return null;
+          calendarStore.removeAppointment(deletedAppointmentId);
           if (calendarStore.currentView === 'month') {
             await calendarStore.refresh();
           }
-          const deletedAppointmentId = this.recordId;
-          this.close();
-          this.reset();
+          if (!isCurrent()) return null;
+          if (closeOnSuccess) {
+            this.close();
+            this.reset();
+          }
           return deletedAppointmentId;
         } catch (error) {
-          this.ui.error = extractSchedulingError(error);
+          if (isCurrent()) this.ui.error = extractSchedulingError(error);
           throw error;
         } finally {
-          this.ui.isSaving = false;
+          if (this.ui.mutationOperationId === operationId)
+            this.ui.isSaving = false;
         }
       },
     },

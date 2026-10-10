@@ -83,7 +83,12 @@ class Scheduling::Appointments::UpsertService
       verify_provider_before_cancellation!
       verify_provider_removal_not_pending!
       apply_attributes! unless @provider_attributes_prepared
-      Integrations::Medelement::PatientContactBinding.new(appointment: appointment).prepare!(allow_rebind: true)
+      binding = Integrations::Medelement::PatientContactBinding.new(appointment: appointment)
+      if @selected_patient
+        binding.prepare_selected!(contact: @selected_patient, allow_communication_contact: @selected_patient.id == appointment.contact_id)
+      else
+        binding.prepare!(allow_rebind: true)
+      end
       Integrations::Medelement::AppointmentPatientIdentity.ensure_write_target_unchanged!(appointment)
       mark_medelement_provider_confirmation_pending!
       validate_medelement_patient!
@@ -184,6 +189,9 @@ class Scheduling::Appointments::UpsertService
     resource = resolve_resource!
     contact = resolve_optional_record(:contact_id, account.contacts, current: appointment.contact)
     ensure_contact_present!(contact)
+    @selected_patient = Scheduling::Appointments::PatientSelection.new(
+      account: account, appointment: appointment, contact: contact, params: params, actor: actor
+    ).perform
     services = resolve_services(current: current_services)
     primary_service = services.first
     company = resolve_company(contact)
@@ -342,6 +350,13 @@ class Scheduling::Appointments::UpsertService
   end
 
   def resolve_appointment_patient_identity!(contact, resource, identity)
+    if @selected_patient
+      @appointment_identifier_explicit = params.key?(:client_identifier)
+      @appointment_patient_owned = true
+      @separate_patient_transition = false
+      return
+    end
+
     decision = Integrations::Medelement::AppointmentPatientIdentityDecision.new(
       appointment: appointment, contact: contact, params: params, identity: identity, mapped: medelement_resource?(resource)
     ).resolve!

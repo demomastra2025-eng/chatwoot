@@ -1,5 +1,6 @@
 import {
   appointmentCancellationAlertKey,
+  appointmentPatientDialogRoute,
   buildCalendarRange,
   buildMedelementProviderCommandDetails,
   buildMedelementProviderCommandParams,
@@ -37,6 +38,49 @@ import {
 import enScheduling from 'dashboard/i18n/locale/en/scheduling.json';
 import kkScheduling from 'dashboard/i18n/locale/kk/scheduling.json';
 import ruScheduling from 'dashboard/i18n/locale/ru/scheduling.json';
+
+describe('appointment patient dialog route', () => {
+  it('opens the original shared chat with the appointment patient selected', () => {
+    expect(
+      appointmentPatientDialogRoute(
+        {
+          contactId: 42,
+          patientContactId: 84,
+          conversationId: 12002,
+          conversationDisplayId: 123,
+        },
+        74
+      )
+    ).toEqual({
+      name: 'inbox_conversation',
+      params: { accountId: 74, conversation_id: '123' },
+      query: { patientContactId: '84', patientChatContactId: '42' },
+    });
+  });
+  it('prefers the original shared thread display ID', () => {
+    expect(
+      appointmentPatientDialogRoute(
+        {
+          contactId: 42,
+          patientContextContactId: 84,
+          conversationId: 12002,
+          conversationDisplayId: 123,
+          appointmentCommunicationThreadId: 9001,
+          appointmentCommunicationThreadDisplayId: 456,
+        },
+        74
+      )?.params
+    ).toEqual({ accountId: 74, communication_thread_id: '456' });
+  });
+  it('never treats a database ID as a public conversation ID', () => {
+    expect(
+      appointmentPatientDialogRoute(
+        { contactId: 42, patientContactId: 84, conversationId: 12002 },
+        74
+      )
+    ).toBeNull();
+  });
+});
 
 describe.each([
   ['en', enScheduling],

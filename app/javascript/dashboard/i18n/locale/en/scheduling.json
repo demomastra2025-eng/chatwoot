@@ -5,6 +5,19 @@
       "medelement": "MedElement",
       "captain": "AI agent"
     },
+    "PATIENT_CONTEXT": {
+      "SELECT_PATIENT": "Patient",
+      "NO_BIRTH_DATE": "Birth date not provided",
+      "SELECTION_SCOPE": "Your selection is saved for this conversation.",
+      "LOAD_ERROR": "Unable to load patients for this conversation",
+      "NEW_PATIENT": "Add patient",
+      "OWN_PHONE": "Patient's own phone, if different",
+      "CREATE_DESCRIPTION": "Create a separate patient card for this shared number. The conversation will stay the same.",
+      "PROVIDER_ID": "MedElement patient code",
+      "PROVIDER_IDENTITY_READ_ONLY": "Patient details are from MedElement. Edit the patient's card in MedElement to change them.",
+      "CONFIRM_PATIENT_CARD": "Confirm the selected patient for this appointment. The conversation and its recipient will stay the same.",
+      "OPEN_DIALOG": "Open conversation"
+    },
     "NAV": {
       "CALENDAR": "Calendar",
       "RESOURCES": "Specialists",

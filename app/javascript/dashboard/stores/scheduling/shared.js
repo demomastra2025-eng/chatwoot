@@ -155,17 +155,21 @@ export const normalizeMeta = data => {
 
 export const extractSchedulingError = error => {
   const payload = camelcaseKeys(error?.response?.data || {}, { deep: true });
+  const message =
+    [payload.error, parseAPIErrorResponse(error), error?.message].find(
+      value => typeof value === 'string' && value.trim()
+    ) || '';
 
   return {
     code: payload.code || 'UNKNOWN_ERROR',
     details: payload.details || null,
-    message: payload.error || parseAPIErrorResponse(error),
+    message,
     status: error?.response?.status || 500,
   };
 };
 
 const resolveSchedulingErrorPayload = error => {
-  if (error?.code && error?.message && !error?.response) {
+  if (error?.code && !error?.response) {
     return error;
   }
 
@@ -203,7 +207,11 @@ const resolveFieldLabel = (field, t) => {
 };
 
 export const formatSchedulingErrorMessage = (error, t) => {
-  const payload = resolveSchedulingErrorPayload(error);
+  const resolved = resolveSchedulingErrorPayload(error);
+  const payload = {
+    ...resolved,
+    message: typeof resolved.message === 'string' ? resolved.message : '',
+  };
   const missingFields = resolveMissingFieldLabels(payload);
 
   if (payload.code === 'APPOINTMENT_PAYMENT_REQUIRES_FIELDS') {

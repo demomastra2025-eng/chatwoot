@@ -20,6 +20,13 @@ class Integrations::Medelement::AppointmentPatientIdentityDecision
     self
   end
 
+  # Explicit staff selection skips comparison with the communication contact, but must
+  # preserve the same name/IIN fence for an already linked appointment, even on its own card.
+  def validate_selected!
+    ensure_linked_identity_unchanged! if appointment.persisted? && provider_linked?
+    self
+  end
+
   private
 
   attr_reader :appointment, :contact, :params, :identity, :mapped

@@ -1,5 +1,18 @@
 class Api::V1::Accounts::Scheduling::ContactsController < Api::V1::Accounts::Scheduling::BaseController
-  before_action :set_contact, only: [:update]
+  before_action :set_contact, only: [:update, :patients, :create_patient]
+  before_action :ensure_patient_context_employee!, only: [:patients, :create_patient]
+
+  def patients
+    cards = Scheduling::PatientContextQuery.new(account: Current.account, contact: @contact).patients
+    render_payload({ contact_id: @contact.id, patients: cards.map { |card| patient_payload(card) } })
+  end
+
+  def create_patient
+    attrs = params.permit(:first_name, :name, :last_name, :middle_name, :iin, :identifier, :birth_date, :gender,
+                          :phone, :phone_number, :conversation_id, :conversation_display_id, :idempotency_key)
+    card = Scheduling::PatientContactCreationService.new(account: Current.account, contact: @contact, params: attrs).perform
+    render_payload(patient_payload(card), status: :created)
+  end
 
   def index
     contacts = Current.account.contacts.order(created_at: :desc)
@@ -32,6 +45,47 @@ class Api::V1::Accounts::Scheduling::ContactsController < Api::V1::Accounts::Sch
   end
 
   private
+
+  def ensure_patient_context_employee!
+    return if Current.user.is_a?(User) && Current.account.users.exists?(id: Current.user.id)
+
+    raise Scheduling::Error.new(code: 'PATIENT_CONTEXT_EMPLOYEE_REQUIRED', message: 'Patient context requires an account employee', status: :forbidden)
+  end
+
+  def patient_payload(card)
+    selectable = Contacts::SharedPhone.card_identity_recorded?(card) || Scheduling::IinValidator.valid?(card.custom_attributes.to_h['medelement_iin'])
+    owner_patient = card.id == @contact.id && card.custom_attributes.to_h['medelement_patient_code'].present? &&
+                    Scheduling::IinValidator.valid?(card.custom_attributes.to_h['medelement_iin'])
+    phone = card.phone_number.presence || Contacts::SharedPhone.share_of(card)&.phone
+    Scheduling::PayloadBuilder.contact(card).merge(patient_identity_payload(card)).merge(
+      patient_contact_id: selectable && (card.id != @contact.id || owner_patient) ? card.id : nil,
+      selectable_patient: selectable,
+      phone: phone,
+      communication_contact_id: @contact.id
+    )
+  end
+
+  # The patient selector projects the recorded clinical identity; the communication
+  # contact may retain a messenger alias and must not be rewritten to show this data.
+  def patient_identity_payload(card)
+    policy = Integrations::Medelement::AppointmentPatientIdentity
+    attributes = card.custom_attributes.to_h
+    names = policy.contact_names(card)
+    {
+      full_name: policy::NAME_KEYS.filter_map { |key| names[key].presence }.join(' '),
+      first_name: names['first_name'], last_name: names['last_name'], middle_name: names['middle_name'],
+      identifier: policy.contact_iin(card) || card.identifier.presence || attributes['iin'],
+      birth_date: patient_birth_date(attributes),
+      gender: attributes['medelement_gender'].presence || attributes['gender']
+    }
+  end
+
+  def patient_birth_date(attributes)
+    value = attributes['medelement_birth_date'].presence || attributes['birth_date'].presence
+    Date.parse(value.to_s).iso8601 if value
+  rescue Date::Error
+    nil
+  end
 
   def apply_search(scope)
     return scope if params[:search].blank?

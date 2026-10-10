@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import Draggable from 'vuedraggable';
 import { useToggle } from '@vueuse/core';
 import { useRoute } from 'vue-router';
@@ -50,9 +50,9 @@ const attributes = computed(() =>
 
 const contactIdentifier = computed(
   () =>
-    currentChat.value.meta?.sender?.id ||
+    props.contactId ||
     route.params.contactId ||
-    props.contactId
+    currentChat.value.meta?.sender?.id
 );
 
 const contact = computed(() =>
@@ -66,6 +66,17 @@ const customAttributes = computed(() => {
 });
 
 const conversationId = computed(() => currentChat.value.id);
+let disposed = false;
+onBeforeUnmount(() => {
+  disposed = true;
+});
+const mutationContext = () =>
+  JSON.stringify([
+    route.params.accountId,
+    props.attributeType,
+    contactIdentifier.value,
+    conversationId.value,
+  ]);
 
 const toggleButtonText = computed(() =>
   !showAllAttributes.value
@@ -198,6 +209,8 @@ const onClickToggle = () => {
 };
 
 const onUpdate = async (key, value) => {
+  const context = mutationContext();
+  const isCurrent = () => !disposed && context === mutationContext();
   const updatedAttributes = { ...customAttributes.value, [key]: value };
   try {
     if (props.attributeType === 'conversation_attribute') {
@@ -206,13 +219,14 @@ const onUpdate = async (key, value) => {
         customAttributes: updatedAttributes,
       });
     } else {
-      store.dispatch('contacts/update', {
+      await store.dispatch('contacts/update', {
         id: props.contactId,
         customAttributes: updatedAttributes,
       });
     }
-    useAlert(t('CUSTOM_ATTRIBUTES.FORM.UPDATE.SUCCESS'));
+    if (isCurrent()) useAlert(t('CUSTOM_ATTRIBUTES.FORM.UPDATE.SUCCESS'));
   } catch (error) {
+    if (!isCurrent()) return;
     const errorMessage =
       error?.response?.message || t('CUSTOM_ATTRIBUTES.FORM.UPDATE.ERROR');
     useAlert(errorMessage);
@@ -220,6 +234,8 @@ const onUpdate = async (key, value) => {
 };
 
 const onDelete = async key => {
+  const context = mutationContext();
+  const isCurrent = () => !disposed && context === mutationContext();
   try {
     if (props.attributeType === 'conversation_attribute') {
       await store.dispatch('deleteCustomAttributes', {
@@ -227,13 +243,14 @@ const onDelete = async key => {
         customAttributes: [key],
       });
     } else {
-      store.dispatch('contacts/deleteCustomAttributes', {
+      await store.dispatch('contacts/deleteCustomAttributes', {
         id: props.contactId,
         customAttributes: [key],
       });
     }
-    useAlert(t('CUSTOM_ATTRIBUTES.FORM.DELETE.SUCCESS'));
+    if (isCurrent()) useAlert(t('CUSTOM_ATTRIBUTES.FORM.DELETE.SUCCESS'));
   } catch (error) {
+    if (!isCurrent()) return;
     const errorMessage =
       error?.response?.message || t('CUSTOM_ATTRIBUTES.FORM.DELETE.ERROR');
     useAlert(errorMessage);

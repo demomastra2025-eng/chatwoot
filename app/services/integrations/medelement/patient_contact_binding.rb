@@ -2,6 +2,7 @@ class Integrations::Medelement::PatientContactBinding
   CARD_KEY = Contacts::SharedPhone::CARD_KEY
   SHARED_OWNER_KEY = Contacts::SharedPhone::SHARED_OWNER_KEY
   SHARED_PHONE_KEY = Contacts::SharedPhone::SHARED_PHONE_KEY
+  STAFF_OWNER_KEY = 'medelement_patient_context_staff_selected_owner'.freeze
 
   def initialize(appointment:)
     @appointment = appointment
@@ -18,8 +19,27 @@ class Integrations::Medelement::PatientContactBinding
     validate_contact!(contact, code)
     code ||= code_for(contact)
     placeholder = release_replaced_placeholder!(contact)
-    persist_contact!(contact, code, placeholder: placeholder)
+    persist_contact!(contact, code, placeholder: placeholder) unless established_communication_patient?(contact)
     appointment.patient_contact = contact
+    appointment.custom_attributes = appointment.custom_attributes.to_h.merge('medelement_patient_code' => code) if code
+    contact
+  end
+
+  # Only the authenticated, explicitly selected card uses this path. Automatic imports and callbacks
+  # keep prepare!'s reference/IIN lookup rules. The caller fences existing provider writes first.
+  def prepare_selected!(contact:, allow_communication_contact: false)
+    Contacts::PhoneIdentityLock.acquire!(account_id: appointment.account_id)
+    code = code_for(contact)
+    validate_learned_code!(code)
+    validate_contact!(contact, code, allow_communication_contact: allow_communication_contact)
+    placeholder = release_replaced_placeholder!(contact)
+    # A verified existing patient may also own the chat. Staff admission binds the appointment;
+    # it never changes that communication contact's profile, number, share or clinical history.
+    persist_contact!(contact, code, placeholder: placeholder) unless allow_communication_contact && contact.id == appointment.contact_id
+    appointment.patient_contact = contact
+    if allow_communication_contact && contact.id == appointment.contact_id
+      appointment.custom_attributes = appointment.custom_attributes.to_h.merge(STAFF_OWNER_KEY => true)
+    end
     appointment.custom_attributes = appointment.custom_attributes.to_h.merge('medelement_patient_code' => code) if code
     contact
   end
@@ -124,10 +144,11 @@ class Integrations::Medelement::PatientContactBinding
     candidates.first
   end
 
-  def validate_contact!(contact, code)
+  def validate_contact!(contact, code, allow_communication_contact: false)
     validate_authored_name!(contact)
     return unless contact.account_id
-    return unless contact.account_id != appointment.account_id || unbound_communication_owner?(contact) ||
+    forbidden_owner = unbound_communication_owner?(contact) && !allow_communication_contact
+    return unless contact.account_id != appointment.account_id || forbidden_owner ||
                   different_known_value?(code_for(contact), code) || different_known_value?(policy.contact_iin(contact), identifier)
 
     identity_conflict!('The patient card belongs to another patient')
@@ -135,6 +156,13 @@ class Integrations::Medelement::PatientContactBinding
 
   def unbound_communication_owner?(contact)
     contact.id == appointment.contact_id && contact.id != appointment.patient_contact_id
+  end
+
+  def established_communication_patient?(contact)
+    contact.id == appointment.contact_id && contact.id == appointment.patient_contact_id &&
+      appointment.custom_attributes.to_h[STAFF_OWNER_KEY] == true && code_for(contact).present? &&
+      Scheduling::IinValidator.valid?(contact.custom_attributes.to_h['medelement_iin']) &&
+      Scheduling::IinValidator.normalize(contact.custom_attributes.to_h['medelement_iin']) == identifier
   end
 
   def different_known_value?(stored, desired)
@@ -164,6 +192,7 @@ class Integrations::Medelement::PatientContactBinding
   def release_replaced_placeholder!(contact)
     bound = appointment.patient_contact
     return unless bound&.persisted? && bound.id != contact.id
+    return unless replaceable_placeholder?(bound)
 
     Integrations::Medelement::PatientPlaceholderRelease.new(placeholder: bound, phone: booking_phone).perform
   end
