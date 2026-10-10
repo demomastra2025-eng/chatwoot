@@ -22,11 +22,6 @@ import { useStore, useMapGetter } from 'dashboard/composables/store';
 import { useConversationSidepanelAvailability } from 'dashboard/composables/useConversationSidepanelAvailability';
 import { useUISettings } from 'dashboard/composables/useUISettings';
 
-const ConversationSidebar = defineAsyncComponent(
-  () =>
-    import('dashboard/components/widgets/conversation/ConversationSidebar.vue')
-);
-
 const props = defineProps({
   sourceDealId: {
     type: [Number, String],
@@ -114,6 +109,11 @@ const emit = defineEmits([
   'retryContext',
   'selectContact',
 ]);
+
+const ConversationSidebar = defineAsyncComponent(
+  () =>
+    import('dashboard/components/widgets/conversation/ConversationSidebar.vue')
+);
 
 const { t } = useI18n();
 provide(
