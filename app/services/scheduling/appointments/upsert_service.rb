@@ -117,10 +117,12 @@ class Scheduling::Appointments::UpsertService
 
     ensure_resource_available_for_scheduling!(resource)
 
+    services = resolve_services(current: current_services)
+    validate_provider_draft!(resource, services)
     starts_at = resolve_datetime(:starts_at, current: appointment.starts_at)
     duration_min = resolve_duration_min(
       starts_at: starts_at, resource: resource,
-      services: resolve_services(current: current_services), current_duration_min: appointment.duration_min
+      services: services, current_duration_min: appointment.duration_min
     )
     ends_at = resolve_ends_at(starts_at: starts_at, duration_min: duration_min, current: appointment.ends_at)
     incoming = params[:custom_attributes].to_h.with_indifferent_access
@@ -136,6 +138,20 @@ class Scheduling::Appointments::UpsertService
     # a clinical patient acquires transaction locks and stays in apply_attributes!.
     validate_provider_availability!(resource, projected)
     @verified_provider_interval = projected
+  end
+
+  # Deterministic draft errors must not depend on provider availability. These
+  # checks only read explicit values and service mappings; clinical selection
+  # and binding are still validated again under the transaction locks.
+  def validate_provider_draft!(resource, services)
+    name_keys = %i[client_first_name client_last_name]
+    incomplete_medelement_patient! if name_keys.any? { |key| params.key?(key) && params[key].to_s.strip.blank? }
+    validate_medelement_phone!(params[:client_phone]) if params.key?(:client_phone)
+    service_ids = services.map(&:id)
+    return if service_ids.empty?
+
+    validate_medelement_service_mapping!(services, service_ids)
+    validate_medelement_service_availability!(service_ids, resource_id: resource.id)
   end
 
   def provider_interval(resource:, starts_at:, ends_at:, cabinet_code:)
@@ -491,16 +507,18 @@ class Scheduling::Appointments::UpsertService
     return unless medelement_resource?
     return if appointment.status == 'cancelled'
 
-    if appointment.client_first_name.blank? || appointment.client_last_name.blank?
-      raise Scheduling::Error.new(
-        code: 'MEDELEMENT_PATIENT_NAME_INCOMPLETE',
-        message: 'Patient first and last name are required for Medelement',
-        status: :unprocessable_content
-      )
-    end
+    incomplete_medelement_patient! if appointment.client_first_name.blank? || appointment.client_last_name.blank?
 
     validate_medelement_phone!
     validate_medelement_services!
+  end
+
+  def incomplete_medelement_patient!
+    raise Scheduling::Error.new(
+      code: 'MEDELEMENT_PATIENT_NAME_INCOMPLETE',
+      message: 'Patient first and last name are required for Medelement',
+      status: :unprocessable_content
+    )
   end
 
   def validate_medelement_cabinet!
@@ -537,8 +555,8 @@ class Scheduling::Appointments::UpsertService
     appointment.new_record? || params.key?(:resource_id) || params[:custom_attributes].to_h.with_indifferent_access.key?(:medelement_cabinet_code)
   end
 
-  def validate_medelement_phone!
-    return if Integrations::Medelement::PhoneNumber.normalize(appointment.client_phone).present?
+  def validate_medelement_phone!(phone = appointment.client_phone)
+    return if Integrations::Medelement::PhoneNumber.normalize(phone).present?
 
     raise Scheduling::Error.new(
       code: 'MEDELEMENT_PATIENT_PHONE_INVALID',
@@ -575,9 +593,9 @@ class Scheduling::Appointments::UpsertService
     )
   end
 
-  def validate_medelement_service_availability!(service_ids)
+  def validate_medelement_service_availability!(service_ids, resource_id: appointment.resource_id)
     linked_service_ids = account.scheduling_service_prices.active
-                                .where(resource_id: appointment.resource_id)
+                                .where(resource_id: resource_id)
                                 .joins(:service)
                                 .where("NULLIF(scheduling_services.custom_attributes ->> 'medelement_nomenclature_code', '') IS NOT NULL")
                                 .pluck(:service_id)

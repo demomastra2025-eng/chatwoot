@@ -39,6 +39,8 @@ RSpec.describe Scheduling::Appointments::UpsertService do
     create(:scheduling_service_price, account: account, resource: resource, service: service)
     allow(Integrations::Medelement::Client).to receive(:new).and_return(client)
     allow(client).to receive(:timetable) { provider_timetable }
+    # Finish contact factory callbacks before observing the booking boundary.
+    params
   end
 
   def provider_timetable
@@ -87,7 +89,7 @@ RSpec.describe Scheduling::Appointments::UpsertService do
     original = patient.reload.attributes
     original_count = account.scheduling_appointments.count
 
-    expect { perform }.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('APPOINTMENT_SLOT_UNAVAILABLE') }
+    expect { perform }.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('SLOT_CONFLICT') }
 
     expect(account.scheduling_appointments.count).to eq(original_count)
     expect(patient.reload.attributes.except('updated_at')).to eq(original.except('updated_at'))

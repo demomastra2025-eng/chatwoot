@@ -104,7 +104,10 @@ RSpec.describe Scheduling::ScheduleDayAvailabilityService do
 
       expect(availability.state).to eq('ok')
       expect(availability.last_bookable_date).to be_nil
-      expect(availability.slots.first).to include(starts_at: later.iso8601, ends_at: (later + 45.minutes).iso8601)
+      slot = availability.slots.first
+      expect(Time.iso8601(slot.fetch(:starts_at))).to eq(later)
+      expect(Time.iso8601(slot.fetch(:ends_at))).to eq(later + 45.minutes)
+      expect(slot).to include(duration_min: 45, cabinet_code: 'cabinet-1', availability_source: 'medelement')
       expect(client).to have_received(:timetable).with(
         specialist_code: 'specialist-1', starts_on: requested_date, ends_on: requested_date
       )

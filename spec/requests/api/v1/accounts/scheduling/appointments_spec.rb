@@ -93,23 +93,26 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(response_body['code']).to eq('SLOT_CONFLICT')
   end
 
-  it 'rejects creation after the provider horizon with its last bookable date' do
+  it 'creates beyond the background cache when the provider confirms the exact interval' do
     make_provider_resource!
+    stub_medelement_availability
     zone = ActiveSupport::TimeZone['Asia/Almaty']
-    last_date = zone.today + 89
-    later_date = last_date + 1
+    later_date = zone.today + 90
     later = zone.local(later_date.year, later_date.month, later_date.day, 10)
 
     post path, params: provider_booking_params(later), headers: headers, as: :json
 
-    expect(response).to have_http_status(:unprocessable_content)
-    expect(response_body['code']).to eq('MEDELEMENT_HORIZON_EXCEEDED')
-    expect(response_body['error']).to include(last_date.strftime('%d.%m.%Y'))
+    expect(response).to have_http_status(:created)
+    expect(Time.iso8601(response_body.dig('payload', 'starts_at'))).to eq(later)
   end
 
-  it 'rejects moving an appointment beyond the provider horizon' do
-    appointment = create(:scheduling_appointment, account: account, resource: resource, contact: contact)
+  it 'moves beyond the background cache when the provider confirms the exact interval' do
     make_provider_resource!
+    stub_medelement_availability
+    appointment = create(:scheduling_appointment, account: account, resource: resource, contact: contact,
+                                                  starts_at: booking_day, ends_at: booking_day + 30.minutes,
+                                                  client_first_name: 'Test', client_last_name: 'Patient', client_phone: '+77015554433',
+                                                  custom_attributes: { 'medelement_cabinet_code' => 'cabinet-1' })
     zone = ActiveSupport::TimeZone['Asia/Almaty']
     date = zone.today + 90
     later = zone.local(date.year, date.month, date.day, 10)
@@ -117,9 +120,8 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     move_params = { starts_at: later.iso8601, ends_at: (later + 30.minutes).iso8601 }
     patch "#{path}/#{appointment.id}", params: move_params, headers: headers, as: :json
 
-    expect(response).to have_http_status(:unprocessable_content)
-    expect(response_body['code']).to eq('MEDELEMENT_HORIZON_EXCEEDED')
-    expect(appointment.reload.starts_at).not_to eq(later)
+    expect(response).to have_http_status(:ok)
+    expect(appointment.reload).to have_attributes(starts_at: later, ends_at: later + 30.minutes)
   end
 
   def stub_local_availability
@@ -210,6 +212,7 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
   it 'rejects a Medelement appointment without a patient last name before persistence' do
     resource.update!(custom_attributes: { 'medelement_specialist_code' => 'specialist-1' })
     params = base_params.merge(client_first_name: 'Айжан', client_last_name: '', client_phone: '+77000000001')
+    expect(Integrations::Medelement::ResourceAvailabilityService).not_to receive(:new)
 
     expect do
       post path, params: params, headers: headers, as: :json
@@ -249,6 +252,7 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
       client_last_name: 'Касымова',
       client_phone: '+77000000001'
     )
+    expect(Integrations::Medelement::ResourceAvailabilityService).not_to receive(:new)
 
     expect do
       post path, params: params, headers: headers, as: :json
