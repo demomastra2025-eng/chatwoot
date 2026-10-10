@@ -1,6 +1,6 @@
 require 'rails_helper'
 
-RSpec.describe 'Playground context across automation rules' do
+RSpec.describe Current, 'Playground context across automation rules' do
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account, role: :administrator) }
   let(:conversation) { create(:conversation, account: account, status: :resolved) }
