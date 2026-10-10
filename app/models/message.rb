@@ -179,7 +179,12 @@ class Message < ApplicationRecord
   end
 
   def push_event_data(include_communication_thread: true, conversation_unread_count: CONVERSATION_UNREAD_COUNT_UNSET)
-    data = base_push_event_data(conversation_unread_count)
+    data = attributes.symbolize_keys.merge(
+      created_at: created_at.to_i,
+      message_type: message_type_before_type_cast,
+      conversation_id: conversation&.display_id,
+      conversation: conversation.present? ? conversation_push_event_data(conversation_unread_count) : nil
+    )
     data.merge!(communication_thread_push_event_data) if include_communication_thread && communication_threads_enabled?
     data[:echo_id] = echo_id if echo_id.present?
     data[:attachments] = attachments.map(&:push_event_data) if attachments.present?
@@ -194,7 +199,7 @@ class Message < ApplicationRecord
       communication_thread_id: conversation.communication_thread&.display_id,
       inbox_name: inbox&.name,
       channel: inbox&.channel_type,
-      medium: inbox_channel_medium,
+      medium: inbox&.channel.respond_to?(:medium) ? inbox.channel.medium : nil,
       contact_inbox_id: conversation.contact_inbox_id
     }
   end
@@ -327,11 +332,21 @@ class Message < ApplicationRecord
   def content_for_llm
     return content if content.present?
 
-    audio_transcription = llm_audio_transcription
+    audio_transcription = attachments
+                          .where(file_type: :audio)
+                          .filter_map { |att| att.meta&.dig('transcribed_text') }
+                          .join(' ')
+                          .presence
     return "[Voice Message] #{audio_transcription}" if audio_transcription.present?
 
-    document_text = llm_document_text
-    return "[File Attachment] #{document_text}" if document_text.present?
+    if Llm::RuntimePolicy.web_access_enabled?(:document_parse, account: account)
+      document_text = attachments
+                      .where(file_type: :file)
+                      .filter_map { |att| att.meta&.dig('parsed_text').presence || att.meta&.dig('transcribed_text').presence }
+                      .join(' ')
+                      .presence
+      return "[File Attachment] #{document_text}" if document_text.present?
+    end
 
     '[Attachment]' if attachments.any?
   end
@@ -355,33 +370,6 @@ class Message < ApplicationRecord
 
   private
 
-  def base_push_event_data(conversation_unread_count)
-    attributes.symbolize_keys.merge(
-      created_at: created_at.to_i,
-      message_type: message_type_before_type_cast,
-      conversation_id: conversation&.display_id,
-      conversation: conversation.present? ? conversation_push_event_data(conversation_unread_count) : nil
-    )
-  end
-
-  def inbox_channel_medium
-    inbox&.channel.respond_to?(:medium) ? inbox.channel.medium : nil
-  end
-
-  def llm_audio_transcription
-    attachments.where(file_type: :audio)
-               .filter_map { |att| att.meta&.dig('transcribed_text') }
-               .join(' ').presence
-  end
-
-  def llm_document_text
-    return unless Llm::RuntimePolicy.web_access_enabled?(:document_parse, account: account)
-
-    attachments.where(file_type: :file)
-               .filter_map { |att| att.meta&.dig('parsed_text').presence || att.meta&.dig('transcribed_text').presence }
-               .join(' ').presence
-  end
-
   def prevent_message_flooding
     # Added this to cover the validation specs in messages
     # We can revisit and see if we can remove this later
@@ -403,7 +391,7 @@ class Message < ApplicationRecord
   end
 
   def campaign_push_event_data
-    return if conversation.campaign.blank?
+    return unless conversation.campaign.present?
 
     {
       id: conversation.campaign.display_id,
@@ -541,7 +529,6 @@ class Message < ApplicationRecord
   def send_reply
     return unless outgoing?
     return if skip_send_reply
-
     Outbound::PlaygroundDeliveryPolicy.ensure!(
       conversation: conversation,
       policy: Outbound::PlaygroundDeliveryPolicy.policy_for(conversation: conversation, message: self),

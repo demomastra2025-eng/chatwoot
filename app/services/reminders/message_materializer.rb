@@ -12,11 +12,23 @@ class Reminders::MessageMaterializer
     policy = Outbound::PlaygroundDeliveryPolicy.policy_for(conversation: conversation, reminder: reminder)
     Outbound::PlaygroundDeliveryPolicy.ensure!(conversation: conversation, policy: policy)
     Message.transaction do
-      message = materialize_message(conversation: conversation, sender: sender, content: content)
+      message = Messages::MessageBuilder.new(
+        sender,
+        conversation,
+        ActionController::Parameters.new(message_params(content: content)),
+        skip_send_reply: true
+      ).perform
       verify_attachment_materialization!(message)
 
-      attributes = materialized_message_attributes(message, captain_trace: captain_trace, delivery_policy: delivery_policy, playground_policy: policy)
-      message.update!(additional_attributes: attributes)
+      additional_attributes = (message.additional_attributes || {}).merge(
+        'touch_id' => reminder.id,
+        'touch_source' => 'touch'
+      ).merge(automation_provenance)
+      additional_attributes['captain_trace'] = captain_trace if captain_trace.present?
+      additional_attributes['delivery_policy'] = delivery_policy.as_json if delivery_policy.present?
+      additional_attributes[Outbound::PlaygroundDeliveryPolicy::ATTRIBUTE_KEY] = policy.deep_dup unless policy.nil?
+
+      message.update!(additional_attributes: additional_attributes.merge(@additional_attributes))
       confirmation_request&.update!(delivery_message: message)
       reminder.mark_delivery_materialized!(message.id) if reminder.persisted?
       message
@@ -24,26 +36,6 @@ class Reminders::MessageMaterializer
   end
 
   private
-
-  def materialize_message(conversation:, sender:, content:)
-    Messages::MessageBuilder.new(
-      sender,
-      conversation,
-      ActionController::Parameters.new(message_params(content: content)),
-      skip_send_reply: true
-    ).perform
-  end
-
-  def materialized_message_attributes(message, captain_trace:, delivery_policy:, playground_policy:)
-    attributes = (message.additional_attributes || {}).merge(
-      'touch_id' => reminder.id,
-      'touch_source' => 'touch'
-    ).merge(automation_provenance)
-    attributes['captain_trace'] = captain_trace if captain_trace.present?
-    attributes['delivery_policy'] = delivery_policy.as_json if delivery_policy.present?
-    attributes[Outbound::PlaygroundDeliveryPolicy::ATTRIBUTE_KEY] = playground_policy.deep_dup unless playground_policy.nil?
-    attributes.merge(@additional_attributes)
-  end
 
   def message_params(content:)
     {

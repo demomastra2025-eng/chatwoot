@@ -2,7 +2,6 @@ class Messages::MessageBuilder
   include ::FileTypeHelper
   include ::EmailHelper
   include ::DataHelper
-  include ::Messages::MessageBuilderEmail
 
   BLANK_WHATSAPP_OUTBOUND_ERROR = 'WhatsApp message content, attachment, or template is required'.freeze
 
@@ -77,6 +76,35 @@ class Messages::MessageBuilder
     end
   end
 
+  def process_emails
+    return unless @conversation.inbox&.inbox_type == 'Email'
+
+    cc_emails = process_email_string(@params[:cc_emails])
+    bcc_emails = process_email_string(@params[:bcc_emails])
+    to_emails = process_email_string(@params[:to_emails])
+
+    all_email_addresses = cc_emails + bcc_emails + to_emails
+    validate_email_addresses(all_email_addresses)
+
+    @message.content_attributes[:cc_emails] = cc_emails
+    @message.content_attributes[:bcc_emails] = bcc_emails
+    @message.content_attributes[:to_emails] = to_emails
+  end
+
+  def process_email_content
+    return unless should_process_email_content?
+
+    @message.content_attributes ||= {}
+    email_attributes = build_email_attributes
+    @message.content_attributes[:email] = email_attributes
+  end
+
+  def process_email_string(email_string)
+    return [] if email_string.blank?
+
+    email_string.gsub(/\s+/, '').split(',')
+  end
+
   def message_type
     if @conversation.inbox.channel_type != 'Channel::Api' && @message_type == 'incoming'
       raise StandardError, 'Incoming messages are only allowed in Api inboxes'
@@ -87,7 +115,6 @@ class Messages::MessageBuilder
 
   def validate_delivery_policy!
     return unless message_type == 'outgoing'
-
     Outbound::PlaygroundDeliveryPolicy.ensure!(conversation: @conversation, private_note: @private)
     return if @skip_delivery_policy
 
@@ -172,20 +199,15 @@ class Messages::MessageBuilder
   end
 
   def additional_attributes
-    attrs = campaign_attributes
+    attrs = {}
+    attrs[:campaign_id] = campaign_id if campaign_id.present?
+    attrs[:campaign_run_id] = campaign_run_id if campaign_run_id.present?
+    attrs[:campaign_test_send] = true if ActiveModel::Type::Boolean.new.cast(@params[:campaign_test_send])
     attrs[:template_params] = template_params if template_params.present?
     attrs[:delivery_policy] = delivery_policy if delivery_policy.present?
     policy = Outbound::PlaygroundDeliveryPolicy.policy_for(conversation: @conversation)
     attrs[Outbound::PlaygroundDeliveryPolicy::ATTRIBUTE_KEY] = policy.deep_dup unless policy.nil?
     attrs.presence
-  end
-
-  def campaign_attributes
-    attrs = {}
-    attrs[:campaign_id] = campaign_id if campaign_id.present?
-    attrs[:campaign_run_id] = campaign_run_id if campaign_run_id.present?
-    attrs[:campaign_test_send] = true if ActiveModel::Type::Boolean.new.cast(@params[:campaign_test_send])
-    attrs
   end
 
   def message_sender
@@ -213,6 +235,83 @@ class Messages::MessageBuilder
       echo_id: @params[:echo_id],
       source_id: @params[:source_id]
     }.merge(external_created_at).merge(automation_rule_id).merge(additional_attributes_payload)
+  end
+
+  def email_inbox?
+    @conversation.inbox&.inbox_type == 'Email'
+  end
+
+  def should_process_email_content?
+    email_inbox? && !@private && @message.content.present?
+  end
+
+  def build_email_attributes
+    email_attributes = ensure_indifferent_access(@message.content_attributes[:email] || {})
+    normalized_content = normalize_email_body(@message.content)
+
+    # Process liquid templates in normalized content with code block protection
+    processed_content = process_liquid_in_email_body(normalized_content)
+
+    # Use custom HTML content if provided, otherwise generate from message content
+    email_attributes[:html_content] = if custom_email_content_provided?
+                                        build_custom_html_content
+                                      else
+                                        build_html_content(processed_content)
+                                      end
+
+    email_attributes[:text_content] = build_text_content(processed_content)
+    email_attributes
+  end
+
+  def build_html_content(normalized_content)
+    html_content = ensure_indifferent_access(@message.content_attributes.dig(:email, :html_content) || {})
+    rendered_html = render_email_html(normalized_content)
+    html_content[:full] = rendered_html
+    html_content[:reply] = rendered_html
+    html_content
+  end
+
+  def build_text_content(normalized_content)
+    text_content = ensure_indifferent_access(@message.content_attributes.dig(:email, :text_content) || {})
+    text_content[:full] = normalized_content
+    text_content[:reply] = normalized_content
+    text_content
+  end
+
+  def custom_email_content_provided?
+    @params[:email_html_content].present?
+  end
+
+  def build_custom_html_content
+    html_content = ensure_indifferent_access(@message.content_attributes.dig(:email, :html_content) || {})
+
+    html_content[:full] = @params[:email_html_content]
+    html_content[:reply] = @params[:email_html_content]
+
+    html_content
+  end
+
+  # Liquid processing methods for email content
+  def process_liquid_in_email_body(content)
+    return content if content.blank?
+    return content unless should_process_liquid?
+
+    # Protect code blocks from liquid processing
+    modified_content = modified_liquid_content(content)
+    template = Liquid::Template.parse(modified_content)
+    template.render(drops_with_sender)
+  rescue Liquid::Error
+    content
+  end
+
+  def should_process_liquid?
+    @message_type == 'outgoing' || @message_type == 'template'
+  end
+
+  def drops_with_sender
+    message_drops(@conversation).merge({
+                                         'agent' => UserDrop.new(sender)
+                                       })
   end
 end
 
