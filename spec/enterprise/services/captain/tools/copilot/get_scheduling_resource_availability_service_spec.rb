@@ -1,6 +1,10 @@
 require 'rails_helper'
 
 RSpec.describe Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService do
+  include ActiveSupport::Testing::TimeHelpers
+
+  around { |example| travel_to(Time.utc(2026, 4, 19, 12)) { example.run } }
+
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account) }
   let(:assistant) { create(:captain_assistant, account: account) }
@@ -15,7 +19,8 @@ RSpec.describe Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService
     create(:scheduling_work_rule, resource: resource, weekday: 1, start_minute: 9 * 60, end_minute: 18 * 60)
     create(:scheduling_break_rule, resource: resource, weekday: 1, start_minute: 11 * 60, end_minute: (11 * 60) + 30, title: 'Coffee break')
     create(:scheduling_appointment, account: account, resource: resource, service: consultation,
-                                    starts_at: Time.zone.parse('2026-04-20 10:00:00 +0500'), ends_at: Time.zone.parse('2026-04-20 10:45:00 +0500'), duration_min: 45)
+                                    starts_at: Time.zone.parse('2026-04-20 10:00:00 +0500'),
+                                    ends_at: Time.zone.parse('2026-04-20 10:45:00 +0500'), duration_min: 45)
     create(:scheduling_service_price, account: account, service: consultation, resource: resource, active: true)
   end
 
@@ -40,6 +45,7 @@ RSpec.describe Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService
         'ends_at' => '2026-04-20T09:45:00+05:00'
       )
       expect(payload['slots'].map { |slot| slot['starts_at'] }).not_to include('2026-04-20T10:00:00+05:00')
+      expect(payload).not_to have_key('customer_offer_eligible')
     end
 
     it 'falls back to the specialist slot duration when no service or duration is provided' do
@@ -49,15 +55,15 @@ RSpec.describe Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService
       expect(payload['slots'].first['ends_at']).to eq('2026-04-20T09:30:00+05:00')
     end
 
-    it 'labels local rule windows as unverified by MedElement even for a linked resource' do
+    it 'does not return local windows for a provider specialist when provider access is unavailable' do
       resource.update!(custom_attributes: { 'medelement_specialist_code' => 'provider-123' })
 
       payload = JSON.parse(service.execute(resource_id: resource.id, from: from_time.iso8601, to: to_time.iso8601,
                                            service_id: consultation.id, limit: 1))
 
-      expect(payload).to include('availability_source' => 'local_rules', 'provider_checked' => false,
+      expect(payload).to include('availability_source' => 'medelement', 'provider_checked' => false,
                                  'provider_required' => true, 'service_link_status' => 'price_link_unverified')
-      expect(payload['slots']).not_to be_empty
+      expect(payload['slots']).to be_empty
     end
 
     it 'flags diagnostic resources with provider cabinets but no personal specialist code' do
@@ -67,7 +73,7 @@ RSpec.describe Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService
                                            service_id: consultation.id, limit: 1))
 
       expect(payload).to include('provider_required' => true, 'provider_checked' => false,
-                                 'service_link_status' => 'price_link_unverified', 'customer_offer_eligible' => false)
+                                 'service_link_status' => 'price_link_unverified')
     end
 
     it 'treats non-positive and blank service ids as an omitted filter' do

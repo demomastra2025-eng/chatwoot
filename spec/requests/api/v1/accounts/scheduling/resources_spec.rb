@@ -167,6 +167,28 @@ RSpec.describe 'Scheduling Resources API', type: :request do
     expect(imported_resource.reload.name).not_to eq('Changed locally')
   end
 
+  it 'allows only a specialty update on an imported specialist' do
+    imported_resource = create(:scheduling_resource, account: account, specialty: 'Old specialty',
+                                                     custom_attributes: { 'medelement_specialist_code' => 'doctor-1' })
+
+    patch "/api/v1/accounts/#{account.id}/scheduling/resources/#{imported_resource.id}",
+          params: { specialty: 'Кардиолог' }, headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(imported_resource.reload.specialty).to eq('Кардиолог')
+
+    specialty_update = { specialty: 'Невролог' }
+    [{ name: 'Changed' }, { custom_attributes: { medelement_specialist_code: 'doctor-2' } },
+     { custom_attributes: { medelement_cabinets: [] } }].each do |attributes|
+      patch "/api/v1/accounts/#{account.id}/scheduling/resources/#{imported_resource.id}",
+            params: specialty_update.merge(attributes), headers: headers, as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response_body['code']).to eq('RESOURCE_READ_ONLY')
+      expect(imported_resource.reload.specialty).to eq('Кардиолог')
+    end
+  end
+
   it 'rejects deleting imported Medelement specialists' do
     imported_resource = create(
       :scheduling_resource,

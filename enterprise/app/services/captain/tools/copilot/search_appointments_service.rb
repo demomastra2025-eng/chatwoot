@@ -16,17 +16,22 @@ class Captain::Tools::Copilot::SearchAppointmentsService < Captain::Tools::Copil
 
   def execute(client_name: nil, client_identifier: nil, status: nil, payment_status: nil, contact_id: nil, resource_id: nil, from: nil, to: nil,
               limit: nil)
-    contact_id = verified_optional_record_id(contact_id, scope: account.contacts, field_name: 'contact_id')
+    contact_id = if patient_scope
+                   patient_scope.require_contact_filter!(contact_id, tool: 'search_appointments')
+                   patient_scope.contact_id
+                 else
+                   verified_optional_record_id(contact_id, scope: account.contacts, field_name: 'contact_id')
+                 end
     resource_id = verified_optional_record_id(resource_id, scope: account.scheduling_resources, field_name: 'resource_id')
 
-    appointments = account.scheduling_appointments.includes(
+    appointments = (patient_scope ? patient_scope.appointments : account.scheduling_appointments).includes(
       :resource,
       :service,
       :company,
       :contact,
       conversation: [:inbox, :communication_thread]
     )
-    appointments = appointments.where(contact_id: contact_id) if contact_id.present?
+    appointments = appointments.where(contact_id: contact_id) if contact_id.present? && patient_scope.nil?
     appointments = appointments.where(resource_id: resource_id) if resource_id.present?
     appointments = appointments.where(status: status) if status.present?
     appointments = appointments.where(payment_status: payment_status) if payment_status.present?
@@ -37,6 +42,17 @@ class Captain::Tools::Copilot::SearchAppointmentsService < Captain::Tools::Copil
     range_to = parse_datetime(to, field_name: 'to', required: false)
     appointments = appointments.where('starts_at >= ?', range_from) if range_from.present?
     appointments = appointments.where('starts_at < ?', range_to) if range_to.present?
+
+    if patient_scope
+      records = appointments.order(starts_at: :desc, id: :desc).limit(Captain::Tools::Agent::AppointmentResult::MAX_SEARCH_RESULTS + 1).to_a
+      return formatted_payload(
+        success: true,
+        appointments: records.first(Captain::Tools::Agent::AppointmentResult::MAX_SEARCH_RESULTS).map do |appointment|
+          Captain::Tools::Agent::AppointmentResult.appointment(appointment)
+        end,
+        has_more: records.size > Captain::Tools::Agent::AppointmentResult::MAX_SEARCH_RESULTS
+      )
+    end
 
     total_count = appointments.count
     records = appointment_records(appointments, limit: parse_limit(limit), include_client_name: client_name.present?)
@@ -55,8 +71,10 @@ class Captain::Tools::Copilot::SearchAppointmentsService < Captain::Tools::Copil
       total_count: total_count,
       appointments: records
     )
+  rescue Captain::Tools::Agent::PatientScope::Denied
+    formatted_payload(success: false, reason: 'not_found')
   rescue StandardError => e
-    tool_failure(e)
+    patient_scope ? formatted_payload(Captain::Tools::Agent::AppointmentResult.failure(e)) : tool_failure(e)
   end
 
   def active?

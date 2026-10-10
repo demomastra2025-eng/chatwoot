@@ -114,6 +114,13 @@ const resourceCards = computed(() =>
   )
 );
 
+const importedResource = resource =>
+  Boolean(resource?.customAttributes?.medelement_specialist_code);
+
+const editingImportedResource = computed(() =>
+  importedResource(activeResource.value)
+);
+
 const weekDayLabel = weekday => weekDayLabels.value[weekday] || `${weekday}`;
 
 const defaultResourceColor = () =>
@@ -382,11 +389,13 @@ const loadAccountUsers = async () => {
 };
 
 const openCreateResource = () => {
+  activeResource.value = null;
   resetResourceForm();
   resourceDrawerOpen.value = true;
 };
 
 const openEditResource = resource => {
+  activeResource.value = resource;
   Object.assign(resourceForm, {
     active: resource.active,
     color: resource.color || RESOURCE_COLORS[0],
@@ -404,11 +413,22 @@ const openEditResource = resource => {
 
 const closeResourceDrawer = () => {
   resourceDrawerOpen.value = false;
+  activeResource.value = null;
   resetResourceForm();
 };
 
 const saveResource = async () => {
   try {
+    if (editingImportedResource.value) {
+      await referencesStore.saveResource({
+        id: resourceForm.id,
+        specialty: resourceForm.specialty,
+      });
+      closeResourceDrawer();
+      useAlert(t('SCHEDULING.RESOURCES.SUCCESS_SAVE'));
+      return;
+    }
+
     await referencesStore.saveResource({
       active: resourceForm.active,
       color: resourceForm.color,
@@ -700,6 +720,7 @@ onMounted(async () => {
                 @click="openEditResource(resource)"
               />
               <Button
+                v-if="!importedResource(resource)"
                 size="sm"
                 variant="ghost"
                 color="slate"
@@ -709,6 +730,7 @@ onMounted(async () => {
                 @click="openScheduleEditor(resource)"
               />
               <Button
+                v-if="!importedResource(resource)"
                 size="sm"
                 variant="ghost"
                 color="slate"
@@ -726,6 +748,7 @@ onMounted(async () => {
                 @click="toggleResourceActive(resource)"
               />
               <Button
+                v-if="!importedResource(resource)"
                 size="sm"
                 variant="ghost"
                 color="ruby"
@@ -750,7 +773,7 @@ onMounted(async () => {
       "
       :confirm-label="$t('SCHEDULING.GENERAL.SAVE')"
       :is-loading="referencesStore.ui.isSaving"
-      :disable-confirm="!resourceForm.name"
+      :disable-confirm="!editingImportedResource && !resourceForm.name"
       @close="closeResourceDrawer"
       @confirm="saveResource"
     >
@@ -759,7 +782,7 @@ onMounted(async () => {
           :title="$t('SCHEDULING.RESOURCES.BASIC')"
           :description="$t('SCHEDULING.RESOURCES.BASIC_DESCRIPTION')"
         >
-          <template #headerActions>
+          <template v-if="!editingImportedResource" #headerActions>
             <label class="flex items-center gap-2 text-sm text-n-slate-12">
               <Switch v-model="resourceForm.active" />
               <span>{{ $t('SCHEDULING.GENERAL.ACTIVE') }}</span>
@@ -768,6 +791,7 @@ onMounted(async () => {
 
           <div class="grid gap-4 md:grid-cols-2">
             <Input
+              v-if="!editingImportedResource"
               v-model="resourceForm.name"
               :label="$t('SCHEDULING.RESOURCES.NAME')"
             />
@@ -776,6 +800,7 @@ onMounted(async () => {
               :label="$t('SCHEDULING.RESOURCES.SPECIALTY')"
             />
             <SchedulingDurationInput
+              v-if="!editingImportedResource"
               v-model="resourceForm.slotDurationMin"
               min="5"
               :max="MAX_DURATION_MINUTES"
@@ -783,7 +808,7 @@ onMounted(async () => {
             />
           </div>
 
-          <div class="grid gap-2">
+          <div v-if="!editingImportedResource" class="grid gap-2">
             <span class="text-sm font-medium text-n-slate-12">
               {{ $t('SCHEDULING.RESOURCES.LINKED_USER') }}
             </span>
@@ -797,7 +822,7 @@ onMounted(async () => {
             </div>
           </div>
 
-          <div class="grid gap-3">
+          <div v-if="!editingImportedResource" class="grid gap-3">
             <span class="text-sm font-medium text-n-slate-12">
               {{ $t('SCHEDULING.RESOURCES.COLOR') }}
             </span>
@@ -839,7 +864,7 @@ onMounted(async () => {
           </div>
         </SchedulingFormFieldGroup>
 
-        <SchedulingFormFieldGroup>
+        <SchedulingFormFieldGroup v-if="!editingImportedResource">
           <TextArea
             v-model="resourceForm.description"
             auto-height

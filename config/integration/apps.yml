@@ -646,7 +646,7 @@ medelement:
         'label': 'Дней вперёд',
         'type': 'number',
         'name': 'receptions_days_forward',
-        'value': 70,
+        'value': 89,
         'value_type': 'integer',
       },
       {

@@ -1,16 +1,27 @@
 require 'rails_helper'
 
-# Labels of the slot answer (source, service link status, eligibility). The MedElement contract specs that pin the
-# basic behaviour of this service live in available_slot_search_service_spec.rb and are intentionally left untouched.
+# Labels of the slot answer (source and service link status).
 RSpec.describe Scheduling::AvailableSlotSearchService do
+  include ActiveSupport::Testing::TimeHelpers
+
+  around { |example| travel_to(Time.utc(2026, 4, 19, 12)) { example.run } }
+
   let(:account) { create(:account) }
   let(:other_account) { create(:account) }
   let(:time_zone) { ActiveSupport::TimeZone['Asia/Almaty'] }
   let(:from_time) { time_zone.local(2026, 4, 20, 9, 0, 0) }
   let(:to_time) { time_zone.local(2026, 4, 20, 11, 0, 0) }
   let(:service_record) { create(:scheduling_service, account: account, name: 'Consultation', duration_min: 30) }
+  let(:hook) { create(:integrations_hook, :medelement, account: account) }
   let(:local_resource) { create_resource('Local') }
-  let(:provider_resource) { create_resource('Provider', custom_attributes: { 'medelement_specialist_code' => 'provider-1' }) }
+  let(:provider_resource) do
+    create_resource('Provider', custom_attributes: {
+                      'medelement_specialist_code' => 'provider-1',
+                      'medelement_cabinets' => [{ 'companyCabinetCode' => 'room-1' }]
+                    })
+  end
+
+  before { account.enable_features!('scheduling') }
 
   def create_resource(name, **attributes)
     create(:scheduling_resource, account: account, name: name, timezone: 'Asia/Almaty', slot_duration_min: 30, **attributes).tap do |record|
@@ -26,18 +37,13 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
     described_class.new(account: account, from: from_time, to: to_time, **attributes).perform
   end
 
-  def provider_result(status:, slots: [], reason: nil)
-    Integrations::Medelement::ResourceAvailabilityService::Result.new(status: status, checked_at: Time.current, slots: slots, reason: reason)
-  end
-
-  def stub_provider(results_by_resource_id)
-    allow(Integrations::Medelement::ResourceAvailabilityService).to receive(:new) do |resource:, **|
-      instance_double(Integrations::Medelement::ResourceAvailabilityService, perform: results_by_resource_id.fetch(resource.id))
-    end
-  end
-
-  def provider_slot(resource)
-    { starts_at: from_time.iso8601, ends_at: (from_time + 30.minutes).iso8601, resource_id: resource.id }
+  def store_provider_day(resource)
+    Integrations::Medelement::ScheduleDay.create!(
+      account: account, hook: hook, resource: resource,
+      specialist_code: resource.custom_attributes['medelement_specialist_code'],
+      date: Date.new(2026, 4, 20), status: 'confirmed', source_checked_at: Time.current,
+      windows: [{ start_minute: 9 * 60, end_minute: 10 * 60 }]
+    )
   end
 
   describe 'local mode' do
@@ -48,7 +54,7 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
 
       expect(payload).to include(
         total_slots: 1, slot_count_scope: 'returned_only', service_link_status: 'local_configured',
-        availability_scope: 'service_confirmed', customer_offer_eligible: true, candidate_resource_ids: [local_resource.id]
+        availability_scope: 'service_confirmed', candidate_resource_ids: [local_resource.id]
       )
       expect(payload[:availability]).to include(status: 'local_only', resources: [include(resource_id: local_resource.id, status: 'local_only')])
       expect(payload[:slots].first).to include(availability_source: 'local', service_eligibility_status: 'local_configured')
@@ -59,7 +65,7 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
     it 'does not label slots with a service status when no service was requested' do
       payload = perform(resource_ids: [local_resource.id], limit: 1)
 
-      expect(payload).to include(service_link_status: 'not_requested', availability_scope: 'generic', customer_offer_eligible: false)
+      expect(payload).to include(service_link_status: 'not_requested', availability_scope: 'generic')
       expect(payload[:slots].first).not_to have_key(:service_eligibility_status)
     end
 
@@ -67,15 +73,15 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
       payload = described_class.new(account: account, from: time_zone.local(2026, 4, 21, 9, 0, 0), to: time_zone.local(2026, 4, 21, 11, 0, 0),
                                     resource_ids: [local_resource.id], service_id: service_record.id).perform
 
-      expect(payload).to include(slots: [], total_slots: 0, customer_offer_eligible: false, availability_scope: 'service_confirmed')
+      expect(payload).to include(slots: [], total_slots: 0, availability_scope: 'service_confirmed')
     end
   end
 
   describe 'a price link on a MedElement resource' do
     before { link(provider_resource) }
 
-    it 'stays unverified even when the provider returns fresh times' do
-      stub_provider(provider_resource.id => provider_result(status: 'fresh', slots: [provider_slot(provider_resource)]))
+    it 'stays unverified even when the stored schedule is fresh' do
+      store_provider_day(provider_resource)
 
       payload = perform(resource_ids: [provider_resource.id], service_id: service_record.id, limit: 1)
 
@@ -83,7 +89,7 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
       expect(payload[:total_slots]).to eq(1)
       expect(payload[:slots].first[:service_eligibility_status]).to eq('price_link_unverified')
       expect(payload).to include(availability_scope: 'service_unconfirmed', service_link_status: 'price_link_unverified',
-                                 customer_offer_eligible: false, candidate_resource_ids: [provider_resource.id])
+                                 candidate_resource_ids: [provider_resource.id])
       expect(payload[:service_match]).to eq(confirmed: false, service_id: nil, resource_id: nil, resource_ids: [])
     end
 
@@ -92,19 +98,17 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
 
       expect(payload[:slots]).to be_empty
       expect(payload[:availability]).to include(
-        status: 'degraded', resources: [include(provider: 'medelement', status: 'unavailable', reason: 'provider_configuration_missing')]
+        status: 'degraded', resources: [include(provider: 'medelement', status: 'provider_unavailable')]
       )
-      expect(payload).to include(customer_offer_eligible: false)
     end
 
-    it 'does not claim provider confirmation after a provider time-out and never creates an appointment' do
-      stub_provider(provider_resource.id => provider_result(status: 'unavailable', reason: 'provider_unavailable'))
+    it 'does not claim provider confirmation when the stored day is missing and never creates an appointment' do
+      hook
 
       payload = perform(resource_ids: [provider_resource.id], service_id: service_record.id)
 
       expect(payload[:slots]).to be_empty
-      expect(payload[:availability]).to include(status: 'degraded', resources: [include(status: 'unavailable', reason: 'provider_unavailable')])
-      expect(payload).to include(customer_offer_eligible: false)
+      expect(payload[:availability]).to include(status: 'degraded', resources: [include(status: 'schedule_not_confirmed')])
       expect(payload.to_s).not_to include('fresh')
       expect(Scheduling::Appointment.count).to eq(0)
     end
@@ -124,12 +128,12 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
       expect(payload[:availability]).to include(
         status: 'degraded', resources: [include(status: 'unavailable', reason: 'provider_resource_route_unverified')]
       )
-      expect(payload).to include(service_link_status: 'price_link_unverified', customer_offer_eligible: false)
+      expect(payload).to include(service_link_status: 'price_link_unverified')
     end
   end
 
   describe 'two specialists sharing one room' do
-    let(:cabinets) { [{ 'cabinetCode' => 'room-1' }] }
+    let(:cabinets) { [{ 'companyCabinetCode' => 'room-1' }] }
     let(:first_specialist) do
       create_resource('First', custom_attributes: { 'medelement_specialist_code' => 'a', 'medelement_cabinets' => cabinets })
     end
@@ -142,21 +146,19 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
       link(second_specialist)
     end
 
-    it 'keeps the answer of each specialist apart and degrades the whole answer when one provider call fails' do
-      stub_provider(
-        first_specialist.id => provider_result(status: 'fresh', slots: [provider_slot(first_specialist)]),
-        second_specialist.id => provider_result(status: 'unavailable', reason: 'provider_unavailable')
-      )
+    it 'keeps specialists apart and degrades the answer when one schedule day is missing' do
+      store_provider_day(first_specialist)
 
       payload = perform(service_id: service_record.id)
 
-      expect(payload[:slots].pluck(:resource_id)).to eq([first_specialist.id])
+      expect(payload[:slots].pluck(:resource_id).uniq).to eq([first_specialist.id])
+      expect(payload[:slots].pluck(:starts_at).uniq.size).to eq(payload[:slots].size)
       expect(payload[:availability][:status]).to eq('degraded')
       expect(payload[:availability][:resources].pluck(:resource_id, :status)).to contain_exactly(
-        [first_specialist.id, 'fresh'], [second_specialist.id, 'unavailable']
+        [first_specialist.id, 'fresh'], [second_specialist.id, 'schedule_not_confirmed']
       )
       expect(payload[:candidate_resource_ids]).to contain_exactly(first_specialist.id, second_specialist.id)
-      expect(payload).to include(customer_offer_eligible: false, service_link_status: 'price_link_unverified')
+      expect(payload).to include(service_link_status: 'price_link_unverified')
     end
   end
 
@@ -164,7 +166,7 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
     before do
       link(local_resource)
       link(provider_resource)
-      stub_provider(provider_resource.id => provider_result(status: 'fresh', slots: [provider_slot(provider_resource)]))
+      store_provider_day(provider_resource)
     end
 
     it 'labels each slot by its own link while the answer as a whole is not offer-eligible' do
@@ -172,7 +174,7 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
 
       statuses = payload[:slots].to_h { |slot| [slot[:resource_id], slot[:service_eligibility_status]] }
       expect(statuses).to include(local_resource.id => 'local_configured', provider_resource.id => 'price_link_unverified')
-      expect(payload).to include(customer_offer_eligible: false, service_link_status: 'price_link_unverified')
+      expect(payload).to include(service_link_status: 'price_link_unverified')
     end
   end
 
@@ -181,7 +183,7 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
       payload = perform(service_id: service_record.id)
 
       expect(payload).to include(resources: [], slots: [], total_slots: 0, service_link_status: 'no_recorded_link',
-                                 availability_scope: 'service_unconfirmed', customer_offer_eligible: false, candidate_resource_ids: [])
+                                 availability_scope: 'service_unconfirmed', candidate_resource_ids: [])
     end
 
     it 'rejects an explicitly requested resource whose link is inactive with the pinned message and a dedicated error class' do

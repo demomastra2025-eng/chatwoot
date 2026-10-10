@@ -1,6 +1,10 @@
 require 'rails_helper'
 
 RSpec.describe Captain::Tools::Copilot::UpdateAppointmentService do
+  include ActiveSupport::Testing::TimeHelpers
+
+  around { |example| travel_to(Time.utc(2026, 4, 19, 12)) { example.run } }
+
   let(:account) { create(:account) }
   let(:user) { create(:user, :administrator, account: account) }
   let(:assistant) { create(:captain_assistant, account: account) }
@@ -37,6 +41,18 @@ RSpec.describe Captain::Tools::Copilot::UpdateAppointmentService do
   end
 
   describe '#execute' do
+    it 'returns the provider horizon code and last date to the agent on a move' do
+      resource.update!(custom_attributes: { 'medelement_specialist_code' => 'doctor-1' })
+      zone = ActiveSupport::TimeZone['Asia/Almaty']
+      date = zone.today + 90
+      later = zone.local(date.year, date.month, date.day, 10)
+
+      result = execute_confirmed(appointment_id: appointment.id, starts_at: later.iso8601)
+
+      expect(result).to include('MEDELEMENT_HORIZON_EXCEEDED')
+      expect(result).to include((date - 1).strftime('%d.%m.%Y'))
+    end
+
     it 'recomputes ends_at from duration and returns a structured payload' do
       payload = JSON.parse(
         execute_confirmed(
@@ -114,6 +130,8 @@ RSpec.describe Captain::Tools::Copilot::UpdateAppointmentService do
 
   def execute_confirmed(**arguments)
     first_result = service.execute(**arguments)
+    return first_result if first_result.start_with?('ERROR:')
+
     first_payload = JSON.parse(first_result)
     return first_result unless first_payload.dig('data', 'confirmation_required')
 

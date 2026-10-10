@@ -137,6 +137,19 @@ RSpec.describe SchedulingAutomationRuleListener do
       allow(AutomationRules::AppointmentActionService).to receive(:new).and_call_original
     end
 
+    it 'enqueues local appointment-created webhooks immediately' do
+      local_appointment = appointment
+      create(
+        :automation_rule, account: account, event_name: 'appointment_created',
+                          conditions: [{ attribute_key: 'status', filter_operator: 'equal_to', values: ['scheduled'], query_operator: nil }],
+                          actions: [{ action_name: 'send_webhook_event', action_params: ['https://example.com/hooks/appointments'] }]
+      )
+
+      expect do
+        listener.appointment_created(Events::Base.new('appointment_created', Time.zone.now, appointment: local_appointment))
+      end.to have_enqueued_job(WebhookJob)
+    end
+
     it 'applies native appointment status change actions through the listener' do
       create(
         :automation_rule,

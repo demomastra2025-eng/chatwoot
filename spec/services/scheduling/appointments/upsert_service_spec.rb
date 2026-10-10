@@ -9,6 +9,25 @@ RSpec.describe Scheduling::Appointments::UpsertService do
     described_class.new(account: account, appointment: appointment, params: params).perform
   end
 
+  it 'marks new Captain appointments and keeps staff-created appointments manual' do
+    account.enable_features!('scheduling')
+    assistant = create(:captain_assistant, account: account)
+    contact = create(:contact, account: account)
+    starts_at = 2.days.from_now.in_time_zone(resource.timezone).change(hour: 10, min: 0)
+    next_starts_at = starts_at + 1.day
+    [starts_at.wday, next_starts_at.wday].uniq.each do |weekday|
+      create(:scheduling_work_rule, resource: resource, weekday: weekday)
+    end
+    params = { resource_id: resource.id, contact_id: contact.id, starts_at: starts_at, duration_min: 30 }
+
+    captain_appointment = described_class.new(account: account, params: params, actor: assistant).perform
+    staff_appointment = described_class.new(account: account, params: params.merge(starts_at: next_starts_at),
+                                            actor: create(:user, account: account)).perform
+
+    expect(captain_appointment.reload.source).to eq('captain')
+    expect(staff_appointment.reload.source).to eq('manual')
+  end
+
   # Cancellation guards below belong to the removal flow (remove_reception_on_cancel on). The local-only default
   # is proven in spec/services/integrations/medelement/local_status_provider_boundary_spec.rb.
   def medelement_hook_settings(write_enabled: false)
@@ -477,6 +496,11 @@ RSpec.describe Scheduling::Appointments::UpsertService do
 
   context 'when the selected resource belongs to Medelement' do
     let(:valid_phone) { ['+7', '700', '000', '0001'].join }
+    let(:appointment) do
+      starts_at = 2.days.from_now.in_time_zone(resource.timezone).change(hour: 10, min: 0, sec: 0)
+      create(:scheduling_appointment, account: account, resource: resource,
+                                      starts_at: starts_at, ends_at: starts_at + 30.minutes)
+    end
     let(:service) do
       create(
         :scheduling_service,

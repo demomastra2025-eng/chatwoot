@@ -3,7 +3,7 @@ class Scheduling::Appointments::UpsertService
   CLIENT_NAME_PART_KEYS = %i[client_first_name client_last_name client_middle_name].freeze
   DERIVED_SYSTEM_CUSTOM_ATTRIBUTE_KEYS = %w[service_ids services].freeze
   INTAKE_SYSTEM_CUSTOM_ATTRIBUTE_KEYS = %w[medelement_cabinet_code].freeze
-  PRESERVED_SYSTEM_CUSTOM_ATTRIBUTE_KEYS = %w[source_mode].freeze
+  PRESERVED_SYSTEM_CUSTOM_ATTRIBUTE_KEYS = %w[source_mode appointment_created_notification_hold].freeze
   PRESERVED_SYSTEM_CUSTOM_ATTRIBUTE_PREFIXES = %w[medelement_].freeze
 
   def initialize(account:, params:, appointment: nil, actor: nil)
@@ -78,10 +78,11 @@ class Scheduling::Appointments::UpsertService
   end
 
   def persist_appointment!
+    prepare_provider_availability!
     ApplicationRecord.transaction do
       verify_provider_before_cancellation!
       verify_provider_removal_not_pending!
-      apply_attributes!
+      apply_attributes! unless @provider_attributes_prepared
       Integrations::Medelement::PatientContactBinding.new(appointment: appointment).prepare!(allow_rebind: true)
       Integrations::Medelement::AppointmentPatientIdentity.ensure_write_target_unchanged!(appointment)
       mark_medelement_provider_confirmation_pending!
@@ -95,6 +96,27 @@ class Scheduling::Appointments::UpsertService
       sync_or_cancel_related_touches!
       Scheduling::Appointments::FinanceSyncService.new(appointment: appointment, actor: user_actor).sync!
     end
+  end
+
+  def prepare_provider_availability!
+    return if params[:status].to_s == 'cancelled'
+
+    resource = resolve_resource!
+    return unless medelement_resource?(resource)
+
+    ensure_resource_available_for_scheduling!(resource)
+
+    apply_attributes!
+    @provider_attributes_prepared = true
+    return if appointment.status == 'cancelled'
+    return unless availability_validation_required?
+
+    Scheduling::ResourceHoursPolicy.new(resource: appointment.resource).validate_booking!(
+      starts_at: appointment.starts_at, ends_at: appointment.ends_at
+    )
+    validate_medelement_patient!
+    validate_medelement_cabinet!
+    validate_provider_availability!
   end
 
   def verify_provider_before_cancellation!
@@ -223,7 +245,7 @@ class Scheduling::Appointments::UpsertService
       client_birth_date: resolve_client_birth_date(contact),
       client_gender: resolve_client_gender(contact),
       client_comment: resolve_optional_text(:client_comment, current: appointment.client_comment),
-      source: appointment.source.presence || 'manual',
+      source: appointment_source,
       external_ref: resolve_optional_text(:external_ref, current: appointment.external_ref),
       idempotency_key: resolve_optional_text(:idempotency_key, current: appointment.idempotency_key),
       service_name_snapshot: service_snapshot[:service_name_snapshot],
@@ -255,13 +277,21 @@ class Scheduling::Appointments::UpsertService
       'cash'
   end
 
+  def appointment_source
+    return 'captain' if appointment.new_record? && defined?(Captain::Assistant) && actor.is_a?(Captain::Assistant)
+
+    appointment.source.presence || 'manual'
+  end
+
   def availability_service
+    policy = Scheduling::ResourceHoursPolicy.new(resource: appointment.resource)
     Scheduling::AvailabilityService.new(
       resource: appointment.resource,
       from: appointment.starts_at.beginning_of_day - 1.day,
       to: appointment.ends_at.end_of_day + 1.day,
       holidays: account.scheduling_holidays.ordered.to_a,
-      workday_overrides: appointment.resource.workday_overrides.where(date: (appointment.starts_at.to_date - 2)..(appointment.ends_at.to_date + 2)).to_a,
+      workday_overrides: appointment.resource.workday_overrides
+                                    .where(date: (appointment.starts_at.to_date - 2)..(appointment.ends_at.to_date + 2)).to_a,
       time_offs: account.scheduling_time_offs
                         .where(resource_id: [nil, appointment.resource_id])
                         .where('starts_at < ? AND ends_at > ?', appointment.ends_at, appointment.starts_at)
@@ -270,7 +300,8 @@ class Scheduling::Appointments::UpsertService
                            .where(resource_id: appointment.resource_id)
                            .where('starts_at < ? AND ends_at > ?', appointment.ends_at, appointment.starts_at)
                            .to_a,
-      ignore_appointment_id: appointment.id
+      ignore_appointment_id: appointment.id,
+      **policy.availability_options(@provider_working_windows)
     )
   end
 
@@ -1076,11 +1107,14 @@ class Scheduling::Appointments::UpsertService
     return if appointment.status == 'cancelled'
     return unless availability_validation_required?
 
+    ensure_resource_available_for_scheduling!(appointment.resource) if medelement_resource?
+
+    Scheduling::ResourceHoursPolicy.new(resource: appointment.resource).validate_booking!(
+      starts_at: appointment.starts_at, ends_at: appointment.ends_at
+    )
+
     result = availability_service.availability_result(starts_at: appointment.starts_at, ends_at: appointment.ends_at)
-    if result.available?
-      validate_provider_availability!
-      return
-    end
+    return if result.available?
 
     raise Scheduling::Error.new(
       code: result.code,
@@ -1096,11 +1130,18 @@ class Scheduling::Appointments::UpsertService
       resource: appointment.resource,
       from: appointment.starts_at,
       to: appointment.ends_at,
-      slots: [provider_candidate_slot],
+      slots: [],
+      candidate_slots: lambda do |windows|
+        @provider_working_windows = windows
+        [provider_candidate_slot]
+      end,
       cabinet_code: appointment.custom_attributes.to_h['medelement_cabinet_code'],
       exclude_reception_code: medelement_reception_code
     ).perform
-    return if result.status == 'fresh' && result.slots.one?
+    if result.status == 'fresh' && result.slots.one?
+      @provider_working_windows ||= [[appointment.starts_at, appointment.ends_at]]
+      return
+    end
 
     raise provider_availability_error(result)
   end

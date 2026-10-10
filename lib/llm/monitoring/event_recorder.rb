@@ -6,6 +6,7 @@ class Llm::Monitoring::EventRecorder
       llm.agent.handoff
       llm.budget.blocked
       llm.budget.warning
+      llm.captain.tool.denied
       llm.chat.complete
       llm.context_transform.applied
       llm.context_transform.failed

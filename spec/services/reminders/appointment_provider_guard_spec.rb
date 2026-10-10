@@ -37,6 +37,22 @@ RSpec.describe Reminders::AppointmentProviderGuard do
     allow(Integrations::Medelement::AppointmentFreshnessVerifier).to receive(:new).and_return(verifier)
   end
 
+  it 'defers an appointment-created notification until its exact create command succeeds' do
+    resource = appointment.resource
+    resource.update!(custom_attributes: resource.custom_attributes.merge('medelement_specialist_code' => 'specialist-1'))
+    appointment.update!(custom_attributes: appointment.custom_attributes.merge(
+      Integrations::Medelement::AppointmentProviderStatus::ATTRIBUTE_KEY => 'pending'
+    ))
+    rule = create(:automation_rule, account: account, event_name: 'appointment_created', conditions: [],
+                                    actions: [{ action_name: 'create_touch', action_params: { body: 'Запись подтверждена' } }])
+    reminder.mark_automation_provenance!(rule)
+
+    expect(described_class.new(reminder: reminder, phase: :delivery).perform).to eq(described_class::STOP)
+    expect(reminder.reload).to be_pending
+    expect(reminder.last_error).to eq('provider_create_not_succeeded')
+    expect(Integrations::Medelement::AppointmentFreshnessVerifier).not_to have_received(:new)
+  end
+
   it 'defers a reminder when provider freshness is not proven' do
     checked_at = Time.current
     reminder.update!(metadata: reminder.metadata.to_h.merge(Reminder::PROCESSING_CLAIM_KEY => 'stale-claim'))

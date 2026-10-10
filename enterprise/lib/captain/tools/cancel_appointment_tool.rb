@@ -5,9 +5,9 @@ class Captain::Tools::CancelAppointmentTool < Captain::Tools::BasePublicTool
   def perform(tool_context, appointment_id: nil)
     appointment = operations(tool_context.state).cancel_current_appointment(appointment_id: appointment_id)
 
-    JSON.pretty_generate(::Scheduling::ToolPayloadBuilder.appointment_payload(action: 'cancel_appointment', appointment: appointment))
+    JSON.generate(Captain::Tools::Agent::AppointmentResult.success(appointment, action: 'cancel_appointment'))
   rescue StandardError => e
-    tool_failure(e)
+    JSON.generate(Captain::Tools::Agent::AppointmentResult.failure(e))
   end
 
   private

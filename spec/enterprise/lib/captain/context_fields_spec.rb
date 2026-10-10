@@ -355,11 +355,17 @@ RSpec.describe Captain::ContextFields do
   describe '.appointment_state_for' do
     let(:conversation_record) { create(:conversation, account: account) }
     let(:resource) { create(:scheduling_resource, account: account, timezone: 'Asia/Almaty') }
+
+    around do |example|
+      travel_to(Time.zone.parse('2026-03-28 12:00:00')) { example.run }
+    end
+
     let!(:appointment_record) do
       create(
         :scheduling_appointment,
         account: account,
         resource: resource,
+        contact: conversation_record.contact,
         conversation: conversation_record,
         starts_at: '2026-03-29T10:00:00Z',
         ends_at: '2026-03-29T10:30:00Z'
@@ -379,6 +385,20 @@ RSpec.describe Captain::ContextFields do
       end
     end
 
+    it 'keeps the dialog appointment for shared fields and selects the contact future appointment for the agent' do
+      appointment_record.update!(starts_at: 2.days.ago, ends_at: 2.days.ago + 30.minutes, status: 'completed')
+      other_conversation = create(:conversation, account: account, contact: conversation_record.contact)
+      upcoming = create(:scheduling_appointment, account: account, contact: conversation_record.contact,
+                                                 conversation: other_conversation,
+                                                 starts_at: 2.days.from_now, ends_at: 2.days.from_now + 30.minutes)
+
+      shared_state = described_class.appointment_state_for(account: account, conversation: conversation_record)
+      agent_state = described_class.appointment_state_for(account: account, conversation: conversation_record, patient_scope: true)
+
+      expect(shared_state).to include(id: appointment_record.id, status: 'completed')
+      expect(agent_state[:id]).to eq(upcoming.id)
+    end
+
     it 'uses an explicit appointment without a conversation context' do
       appointment_record.update!(conversation: nil)
 
@@ -388,13 +408,58 @@ RSpec.describe Captain::ContextFields do
       expect(state[:start_time]).to eq('15:00')
     end
 
+    it 'keeps selected clinic fields but omits provider and payment data from patient context' do
+      account.enable_features!('scheduling')
+      create(:crm_field_definition, account: account, entity_kind: 'appointment',
+                                    key: 'provider_receipt', label: 'Provider Receipt')
+      create(:crm_field_definition, account: account, entity_kind: 'appointment',
+                                    key: 'payment_reference', label: 'Payment Reference')
+      appointment_record.update!(external_ref: 'medelement:reception:example',
+                                 custom_attributes: {
+                                   'visit_room' => 'B12', 'medelement_reception_code' => 'example',
+                                   'provider_receipt' => 'private-receipt', 'payment_reference' => 'private-payment'
+                                 })
+      assistant = create(:captain_assistant, account: account)
+
+      state = described_class.runtime_state_for(account: account, conversation: conversation_record, assistant: assistant)
+      expect(state.fetch(:appointment)).to include(custom_attributes: { 'visit_room' => 'B12' })
+      expect(state.to_json).not_to include(
+        'medelement_reception_code', 'medelement:reception:example', 'private-receipt', 'private-payment'
+      )
+
+      prompt = described_class.prompt_state_for(
+        assistant: assistant, runtime_state: state,
+        field_ids: %w[
+          appointment.id appointment.external_ref appointment.payment_status appointment.custom_attributes.visit_room
+          appointment.custom_attributes.provider_receipt appointment.custom_attributes.payment_reference
+        ]
+      )
+      expect(prompt.dig(:visible_fields, :appointment)).to include('id')
+      expect(prompt.dig(:visible_fields, :appointment)).not_to include('external_ref', 'payment_status')
+      expect(prompt.dig(:appointment, :custom_attributes)).to eq('visit_room' => 'B12')
+      expect(prompt.to_json).not_to include('medelement', 'payment_status', 'provider_receipt', 'payment_reference')
+
+      assistant.update!(config: {
+        'context_access' => { 'appointment' => { 'enabled' => true, 'field_ids' => %w[
+          appointment.custom_attributes.visit_room appointment.custom_attributes.provider_receipt
+          appointment.custom_attributes.payment_reference
+        ] } }
+      })
+      configured_prompt = described_class.prompt_state_for(assistant: assistant, runtime_state: state)
+      expect(configured_prompt.dig(:appointment, :custom_attributes)).to eq('visit_room' => 'B12')
+    end
+
     it 'exposes the formatted fields in the field definitions picker' do
-      ids = described_class.definitions_for(account).map { |field| field[:id] }
+      definitions = described_class.definitions_for(account)
+      ids = definitions.pluck(:id)
 
       expect(ids).to include(
         'appointment.start_date', 'appointment.start_time',
-        'appointment.end_date', 'appointment.end_time'
+        'appointment.end_date', 'appointment.end_time',
+        'appointment.nearest', 'appointment.last_past', 'appointment.last_cancelled', 'appointment.all'
       )
+      expect(definitions.find { |field| field[:id] == 'appointment.nearest' })
+        .to include(group_name: 'Записи пациента', title: 'Ближайшая запись')
     end
   end
 

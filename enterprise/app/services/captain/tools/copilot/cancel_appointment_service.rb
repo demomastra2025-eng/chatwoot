@@ -8,11 +8,13 @@ class Captain::Tools::Copilot::CancelAppointmentService < Captain::Tools::Copilo
 
   def execute(appointment_id: nil)
     appointment = appointment_operations.cancel_current_appointment(appointment_id: appointment_id)
+    return formatted_payload(Captain::Tools::Agent::AppointmentResult.success(appointment, action: self.class.name)) if patient_scope
+
     formatted_payload(
       ::Scheduling::ToolPayloadBuilder.appointment_payload(action: 'cancel_appointment', appointment: appointment)
     )
   rescue StandardError => e
-    tool_failure(e)
+    patient_scope ? formatted_payload(Captain::Tools::Agent::AppointmentResult.failure(e)) : tool_failure(e)
   end
 
   def active?

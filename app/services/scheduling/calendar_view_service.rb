@@ -87,9 +87,21 @@ class Scheduling::CalendarViewService
   def slots
     return [] unless @include_slots
 
-    resources.flat_map do |resource|
-      availability_for(resource).slots(duration_min: @duration_min || resource.slot_duration_min)
-    end
+    resources.flat_map { |resource| slots_for(resource) }
+  end
+
+  def slots_for(resource)
+    policy = Scheduling::ResourceHoursPolicy.new(resource: resource)
+    return availability_for(resource).slots(duration_min: @duration_min || resource.slot_duration_min) unless policy.provider_hours?
+    return [] unless resource.active?
+
+    range = policy.clipped_range(from: @from, to: @to)
+    return [] if range.nil?
+
+    Scheduling::ScheduleDayAvailabilityService.new(
+      resource: resource, from: range.first, to: range.last,
+      duration_min: @duration_min || resource.slot_duration_min
+    ).perform.slots
   end
 
   def time_offs
@@ -117,15 +129,17 @@ class Scheduling::CalendarViewService
     @appointment_ids ||= appointments.map(&:id)
   end
 
-  def availability_for(resource)
+  def availability_for(resource, from: @from, to: @to, provider_working_windows: nil)
+    policy = Scheduling::ResourceHoursPolicy.new(resource: resource)
     Scheduling::AvailabilityService.new(
       resource: resource,
-      from: @from,
-      to: @to,
+      from: from,
+      to: to,
       holidays: holidays,
       workday_overrides: workday_overrides.select { |item| item.resource_id == resource.id },
       time_offs: time_offs.select { |item| item.resource_id.nil? || item.resource_id == resource.id },
-      appointments: blocking_appointments.select { |item| item.resource_id == resource.id }
+      appointments: blocking_appointments.select { |item| item.resource_id == resource.id },
+      **policy.availability_options(provider_working_windows)
     )
   end
 

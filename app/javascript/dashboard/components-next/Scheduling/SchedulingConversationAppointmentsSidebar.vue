@@ -12,12 +12,13 @@ import { useI18n } from 'vue-i18n';
 import { useRoute } from 'vue-router';
 
 import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
+import SchedulingAvailabilityAPI from 'dashboard/api/scheduling/availability';
 import SchedulingProviderCommandsAPI from 'dashboard/api/scheduling/providerCommands';
 import SidebarActionsHeader from 'dashboard/components-next/SidebarActionsHeader.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
-import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/SchedulingDateTimeField.vue';
+import SchedulingAvailabilityPicker from 'dashboard/components-next/Scheduling/SchedulingAvailabilityPicker.vue';
 import SchedulingErrorState from 'dashboard/components-next/Scheduling/SchedulingErrorState.vue';
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
 import { useAlert } from 'dashboard/composables';
@@ -90,6 +91,8 @@ const providerCommandsStore = useSchedulingProviderCommandsStore();
 
 const appointments = ref([]);
 const appointmentForms = reactive({});
+const availabilityByForm = reactive({});
+let availabilityRequestId = 0;
 const openAppointmentKeys = ref([]);
 const scrollContainer = ref(null);
 const isCreating = ref(false);
@@ -125,6 +128,9 @@ const createForm = reactive({
   serviceId: '',
   serviceNameSnapshot: '',
   startsAt: '',
+  availabilityDate: '',
+  selectedWindowStartsAt: '',
+  rejectedStartsAt: [],
   status: 'scheduled',
 });
 const ui = reactive({
@@ -348,7 +354,7 @@ const resetCreateForm = () => {
     clientName: contactName.value,
     clientNameStructured: true,
     clientPhone: contactPhone.value,
-    endsAt: defaults.endsAt,
+    endsAt: '',
     medelementCabinetCode:
       primaryResourceCabinets.length === 1
         ? primaryResourceCabinets[0].code
@@ -357,7 +363,10 @@ const resetCreateForm = () => {
     serviceAmount: '',
     serviceId: '',
     serviceNameSnapshot: '',
-    startsAt: defaults.startsAt,
+    startsAt: '',
+    availabilityDate: defaults.startsAt.slice(0, 10),
+    selectedWindowStartsAt: '',
+    rejectedStartsAt: [],
     status: 'scheduled',
   });
 };
@@ -712,6 +721,8 @@ const mergeUniqueAppointments = (...collections) => {
 
 const formFromAppointment = appointment => {
   const nameParts = patientNameParts(appointment);
+  const appointmentDate = toClinicDateTime(appointment.startsAt).slice(0, 10);
+  const today = toClinicDateTime(new Date()).slice(0, 10);
   return {
     appointmentType: appointment.appointmentType || 'primary',
     clientIdentifier: appointment.clientIdentifier || '',
@@ -739,16 +750,12 @@ const formFromAppointment = appointment => {
     serviceId: appointment.serviceId || '',
     serviceNameSnapshot: appointment.serviceNameSnapshot || '',
     startsAt: toClinicDateTime(appointment.startsAt),
+    availabilityDate: appointmentDate < today ? today : appointmentDate,
+    selectedWindowStartsAt: '',
+    rejectedStartsAt: [],
     status: appointment.status || 'scheduled',
+    pickerKey: appointmentKey(appointment),
   };
-};
-
-const setAppointmentForms = () => {
-  Object.keys(appointmentForms).forEach(key => delete appointmentForms[key]);
-  appointments.value.forEach(appointment => {
-    appointmentForms[appointmentKey(appointment)] =
-      formFromAppointment(appointment);
-  });
 };
 
 const selectedServiceForForm = form =>
@@ -760,6 +767,106 @@ const selectedResourceForForm = form =>
   activeResources.value.find(
     resource => Number(resource.id) === Number(form?.resourceId)
   );
+
+const pickerKeyForForm = form => form?.pickerKey || NEW_APPOINTMENT_KEY;
+const availabilityForForm = form =>
+  availabilityByForm[pickerKeyForForm(form)] || {
+    state: '',
+    windows: [],
+    maxDate: '',
+  };
+
+const resetSelectedWindow = form => {
+  form.startsAt = '';
+  form.endsAt = '';
+  form.selectedWindowStartsAt = '';
+};
+
+const loadFormWindows = async form => {
+  const key = pickerKeyForForm(form);
+  availabilityRequestId += 1;
+  const requestId = availabilityRequestId;
+  availabilityByForm[key] = {
+    state: 'loading',
+    windows: [],
+    maxDate: availabilityByForm[key]?.maxDate || '',
+    requestId,
+  };
+  if (!form?.resourceId || !form?.availabilityDate) {
+    availabilityByForm[key].state = '';
+    return;
+  }
+
+  try {
+    const response = await SchedulingAvailabilityAPI.show({
+      resource_id: form.resourceId,
+      ...(form.serviceId ? { service_id: form.serviceId } : {}),
+      ...(!form.serviceId
+        ? {
+            duration_min: selectedResourceForForm(form)?.slotDurationMin || 30,
+          }
+        : {}),
+      date: form.availabilityDate,
+      ...(form.medelementCabinetCode
+        ? { cabinet_code: form.medelementCabinetCode }
+        : {}),
+    });
+    if (sidebarDisposed || availabilityByForm[key]?.requestId !== requestId)
+      return;
+    const payload = response.data.payload;
+    availabilityByForm[key] = {
+      state: payload.state,
+      windows: (payload.windows || []).filter(
+        window =>
+          !form.rejectedStartsAt?.some(
+            rejected => Date.parse(rejected) === Date.parse(window.starts_at)
+          )
+      ),
+      maxDate: payload.last_bookable_date || '',
+      requestId,
+    };
+  } catch {
+    if (sidebarDisposed || availabilityByForm[key]?.requestId !== requestId)
+      return;
+    availabilityByForm[key] = {
+      state: 'provider_unavailable',
+      windows: [],
+      maxDate: availabilityByForm[key]?.maxDate || '',
+      requestId,
+    };
+  }
+};
+
+const setAppointmentForms = () => {
+  Object.keys(appointmentForms).forEach(key => delete appointmentForms[key]);
+  appointments.value.forEach(appointment => {
+    appointmentForms[appointmentKey(appointment)] =
+      formFromAppointment(appointment);
+    if (!isAppointmentProviderOwned(appointment)) {
+      loadFormWindows(appointmentForms[appointmentKey(appointment)]);
+    }
+  });
+};
+
+const changePickerDate = (form, date) => {
+  form.availabilityDate = date;
+  form.rejectedStartsAt = [];
+  resetSelectedWindow(form);
+  loadFormWindows(form);
+};
+
+const selectWindow = (form, window) => {
+  form.startsAt = toClinicDateTime(window.starts_at);
+  form.endsAt = toClinicDateTime(window.ends_at);
+  form.selectedWindowStartsAt = window.starts_at;
+};
+
+const changeCabinet = (form, value) => {
+  form.medelementCabinetCode = value;
+  form.rejectedStartsAt = [];
+  resetSelectedWindow(form);
+  loadFormWindows(form);
+};
 
 const medelementCabinetOptionsForForm = form =>
   medelementCabinetsForResource(selectedResourceForForm(form)).map(cabinet => ({
@@ -799,6 +906,7 @@ const syncFormServiceFields = form => {
 
 const handleFormResourceChange = (form, value) => {
   form.resourceId = value;
+  form.rejectedStartsAt = [];
   const cabinets = medelementCabinetsForResource(selectedResourceForForm(form));
   form.medelementCabinetCode = cabinets.length === 1 ? cabinets[0].code : '';
   if (
@@ -810,12 +918,17 @@ const handleFormResourceChange = (form, value) => {
     form.serviceNameSnapshot = '';
   }
   syncFormServiceFields(form);
+  resetSelectedWindow(form);
+  loadFormWindows(form);
 };
 
 const handleFormServiceChange = (form, value) => {
   form.serviceId = value;
+  form.rejectedStartsAt = [];
   form.serviceNameSnapshot = '';
   syncFormServiceFields(form);
+  resetSelectedWindow(form);
+  loadFormWindows(form);
 };
 
 const selectedServiceIdForPayload = serviceId =>
@@ -1387,6 +1500,7 @@ const syncCreateServiceFields = () => {
 
 const handleCreateResourceChange = value => {
   createForm.resourceId = value;
+  createForm.rejectedStartsAt = [];
   const cabinets = medelementCabinetsForResource(selectedCreateResource.value);
   createForm.medelementCabinetCode =
     cabinets.length === 1 ? cabinets[0].code : '';
@@ -1399,16 +1513,22 @@ const handleCreateResourceChange = value => {
     createForm.serviceNameSnapshot = '';
   }
   syncCreateServiceFields();
+  resetSelectedWindow(createForm);
+  loadFormWindows(createForm);
 };
 
 const handleCreateServiceChange = value => {
   createForm.serviceId = value;
+  createForm.rejectedStartsAt = [];
   createForm.serviceNameSnapshot = '';
   syncCreateServiceFields();
+  resetSelectedWindow(createForm);
+  loadFormWindows(createForm);
 };
 
 const startCreateAppointment = async ({ scroll = true } = {}) => {
   resetCreateForm();
+  loadFormWindows(createForm);
   isCreating.value = true;
   if (!openAppointmentKeys.value.includes(NEW_APPOINTMENT_KEY)) {
     openAppointmentKeys.value = [
@@ -1428,10 +1548,6 @@ const cancelCreateAppointment = () => {
   );
 };
 
-const createFormEndsAfterStart = computed(() =>
-  appointmentFormEndsAfterStart(createForm)
-);
-
 const isCreateFormInvalid = computed(() =>
   isAppointmentFormInvalid(createForm)
 );
@@ -1440,6 +1556,33 @@ const refreshDialogAppointments = savedAppointment => {
   upsertAppointment(savedAppointment);
   isCreating.value = false;
   openAppointmentKeys.value = [appointmentKey(savedAppointment)];
+};
+
+const handleSaveAvailabilityError = (error, form) => {
+  const code = error?.response?.data?.code;
+  if (['SLOT_CONFLICT', 'APPOINTMENT_SLOT_UNAVAILABLE'].includes(code)) {
+    useAlert(t('SCHEDULING.APPOINTMENT_FORM.AVAILABILITY.CONFLICT'));
+    form.rejectedStartsAt = [
+      ...(form.rejectedStartsAt || []),
+      form.selectedWindowStartsAt || fromClinicDateTime(form.startsAt),
+    ];
+    resetSelectedWindow(form);
+    loadFormWindows(form);
+    return true;
+  }
+  if (code === 'MEDELEMENT_AVAILABILITY_UNVERIFIED') {
+    useAlert(t('SCHEDULING.APPOINTMENT_FORM.AVAILABILITY.UNAVAILABLE'));
+    resetSelectedWindow(form);
+    availabilityRequestId += 1;
+    availabilityByForm[pickerKeyForForm(form)] = {
+      state: 'provider_unavailable',
+      windows: [],
+      maxDate: availabilityForForm(form).maxDate,
+      requestId: availabilityRequestId,
+    };
+    return true;
+  }
+  return false;
 };
 
 const saveCreateAppointment = async () => {
@@ -1467,7 +1610,10 @@ const saveCreateAppointment = async () => {
     refreshSidebarCounters();
     useAlert(t('SCHEDULING.APPOINTMENT_FORM.SUCCESS_SAVE'));
   } catch (error) {
-    if (isCurrentSidebarContext(context)) {
+    if (
+      isCurrentSidebarContext(context) &&
+      !handleSaveAvailabilityError(error, createForm)
+    ) {
       useAlert(formatSchedulingErrorMessage(error, t));
     }
   } finally {
@@ -1825,7 +1971,10 @@ const saveAppointment = async appointment => {
     refreshSidebarCounters();
     useAlert(t('SCHEDULING.APPOINTMENT_FORM.SUCCESS_SAVE'));
   } catch (error) {
-    if (isCurrentSidebarContext(context)) {
+    if (
+      isCurrentSidebarContext(context) &&
+      !handleSaveAvailabilityError(error, form)
+    ) {
       useAlert(formatSchedulingErrorMessage(error, t));
     }
   } finally {
@@ -2231,9 +2380,7 @@ watch(
                         medelementCabinetError(createForm) ? 'error' : 'info'
                       "
                       dropdown-placement="auto"
-                      @update:model-value="
-                        createForm.medelementCabinetCode = $event
-                      "
+                      @update:model-value="changeCabinet(createForm, $event)"
                     />
                   </div>
 
@@ -2278,48 +2425,15 @@ watch(
                     </p>
                   </div>
 
-                  <div class="scheduling-appointment-drawer-row">
-                    <span class="scheduling-appointment-drawer-label">
-                      {{ $t('SCHEDULING.APPOINTMENT_FORM.STARTS_AT') }}
-                    </span>
-                    <SchedulingDateTimeField
-                      class="scheduling-appointment-drawer-control"
-                      :aria-label="$t('SCHEDULING.APPOINTMENT_FORM.STARTS_AT')"
-                      :model-value="createForm.startsAt"
-                      :placeholder="$t('SCHEDULING.APPOINTMENT_FORM.STARTS_AT')"
-                      @update:model-value="
-                        value => {
-                          createForm.startsAt = value;
-                          updateCreateEndFromDuration();
-                        }
-                      "
-                    />
-                  </div>
-
-                  <div class="scheduling-appointment-drawer-row">
-                    <span class="scheduling-appointment-drawer-label">
-                      {{ $t('SCHEDULING.APPOINTMENT_FORM.ENDS_AT') }}
-                    </span>
-                    <SchedulingDateTimeField
-                      class="scheduling-appointment-drawer-control"
-                      :aria-label="$t('SCHEDULING.APPOINTMENT_FORM.ENDS_AT')"
-                      :model-value="createForm.endsAt"
-                      :placeholder="$t('SCHEDULING.APPOINTMENT_FORM.ENDS_AT')"
-                      :message="
-                        createForm.endsAt && !createFormEndsAfterStart
-                          ? $t(
-                              'SCHEDULING.APPOINTMENT_FORM.ERRORS.END_BEFORE_START'
-                            )
-                          : ''
-                      "
-                      :message-type="
-                        createForm.endsAt && !createFormEndsAfterStart
-                          ? 'error'
-                          : 'info'
-                      "
-                      @update:model-value="createForm.endsAt = $event"
-                    />
-                  </div>
+                  <SchedulingAvailabilityPicker
+                    :date="createForm.availabilityDate"
+                    :max-date="availabilityForForm(createForm).maxDate"
+                    :state="availabilityForForm(createForm).state"
+                    :windows="availabilityForForm(createForm).windows"
+                    :selected-starts-at="createForm.selectedWindowStartsAt"
+                    @update:date="changePickerDate(createForm, $event)"
+                    @select="selectWindow(createForm, $event)"
+                  />
 
                   <div class="scheduling-appointment-drawer-row">
                     <label
@@ -2959,9 +3073,10 @@ watch(
                       "
                       dropdown-placement="auto"
                       @update:model-value="
-                        appointmentForms[
-                          appointmentKey(appointment)
-                        ].medelementCabinetCode = $event
+                        changeCabinet(
+                          appointmentForms[appointmentKey(appointment)],
+                          $event
+                        )
                       "
                     />
                   </div>
@@ -3033,65 +3148,43 @@ watch(
                     </p>
                   </div>
 
-                  <div class="scheduling-appointment-drawer-row">
-                    <span class="scheduling-appointment-drawer-label">
-                      {{ $t('SCHEDULING.APPOINTMENT_FORM.STARTS_AT') }}
-                    </span>
-                    <SchedulingDateTimeField
-                      class="scheduling-appointment-drawer-control"
-                      :aria-label="$t('SCHEDULING.APPOINTMENT_FORM.STARTS_AT')"
-                      :model-value="
-                        appointmentForms[appointmentKey(appointment)].startsAt
-                      "
-                      :placeholder="$t('SCHEDULING.APPOINTMENT_FORM.STARTS_AT')"
-                      @update:model-value="
-                        value => {
-                          appointmentForms[
-                            appointmentKey(appointment)
-                          ].startsAt = value;
-                          updateFormEndFromDuration(
-                            appointmentForms[appointmentKey(appointment)]
-                          );
-                        }
-                      "
-                    />
-                  </div>
-
-                  <div class="scheduling-appointment-drawer-row">
-                    <span class="scheduling-appointment-drawer-label">
-                      {{ $t('SCHEDULING.APPOINTMENT_FORM.ENDS_AT') }}
-                    </span>
-                    <SchedulingDateTimeField
-                      class="scheduling-appointment-drawer-control"
-                      :aria-label="$t('SCHEDULING.APPOINTMENT_FORM.ENDS_AT')"
-                      :model-value="
-                        appointmentForms[appointmentKey(appointment)].endsAt
-                      "
-                      :placeholder="$t('SCHEDULING.APPOINTMENT_FORM.ENDS_AT')"
-                      :message="
-                        appointmentForms[appointmentKey(appointment)].endsAt &&
-                        !appointmentFormEndsAfterStart(
-                          appointmentForms[appointmentKey(appointment)]
-                        )
-                          ? $t(
-                              'SCHEDULING.APPOINTMENT_FORM.ERRORS.END_BEFORE_START'
-                            )
-                          : ''
-                      "
-                      :message-type="
-                        appointmentForms[appointmentKey(appointment)].endsAt &&
-                        !appointmentFormEndsAfterStart(
-                          appointmentForms[appointmentKey(appointment)]
-                        )
-                          ? 'error'
-                          : 'info'
-                      "
-                      @update:model-value="
-                        appointmentForms[appointmentKey(appointment)].endsAt =
-                          $event
-                      "
-                    />
-                  </div>
+                  <SchedulingAvailabilityPicker
+                    :date="
+                      appointmentForms[appointmentKey(appointment)]
+                        .availabilityDate
+                    "
+                    :max-date="
+                      availabilityForForm(
+                        appointmentForms[appointmentKey(appointment)]
+                      ).maxDate
+                    "
+                    :state="
+                      availabilityForForm(
+                        appointmentForms[appointmentKey(appointment)]
+                      ).state
+                    "
+                    :windows="
+                      availabilityForForm(
+                        appointmentForms[appointmentKey(appointment)]
+                      ).windows
+                    "
+                    :selected-starts-at="
+                      appointmentForms[appointmentKey(appointment)]
+                        .selectedWindowStartsAt
+                    "
+                    @update:date="
+                      changePickerDate(
+                        appointmentForms[appointmentKey(appointment)],
+                        $event
+                      )
+                    "
+                    @select="
+                      selectWindow(
+                        appointmentForms[appointmentKey(appointment)],
+                        $event
+                      )
+                    "
+                  />
 
                   <div class="scheduling-appointment-drawer-row">
                     <label

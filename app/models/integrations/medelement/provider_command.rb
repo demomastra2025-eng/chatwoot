@@ -48,6 +48,7 @@ class Integrations::Medelement::ProviderCommand < ApplicationRecord
   before_validation :normalize_execution_state
   before_validation :normalize_provider_patient_code
   after_update_commit :enqueue_ai_booking_outcome, if: :saved_change_to_status?
+  after_update_commit :enqueue_created_notifications, if: :saved_change_to_status?
 
   def terminal?
     status.in?(TERMINAL_STATUSES)
@@ -126,6 +127,12 @@ class Integrations::Medelement::ProviderCommand < ApplicationRecord
   end
 
   private
+
+  def enqueue_created_notifications
+    return unless create_reception? && succeeded?
+
+    AutomationRules::ReleaseAppointmentCreatedNotificationsJob.perform_later(id)
+  end
 
   def enqueue_ai_booking_outcome
     # Create replies stay with the model; only unresolved outcomes need staff review.

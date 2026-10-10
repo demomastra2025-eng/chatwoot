@@ -23,7 +23,9 @@ RSpec.describe Captain::Tools::RequestConfirmationTool do
   end
 
   it 'uses current appointment context when subject_kind is appointment' do
-    appointment = create(:scheduling_appointment, account: account, conversation: conversation, contact: conversation.contact)
+    start_time = 1.day.from_now
+    appointment = create(:scheduling_appointment, account: account, conversation: conversation, contact: conversation.contact,
+                                                  starts_at: start_time, ends_at: start_time + 30.minutes)
     tool_context = Struct.new(:state).new({ conversation: { id: conversation.id }, appointment: { id: appointment.id } })
 
     payload = JSON.parse(tool.perform(

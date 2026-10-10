@@ -7,12 +7,17 @@ class Captain::Tools::Copilot::GetAppointmentProviderStatusService < Captain::To
   param :provider_command_id, type: :number, desc: 'Provider command ID returned by the mutation tool', required: true
 
   def execute(provider_command_id:)
-    command = Integrations::Medelement::ProviderCommand.where(account_id: account.id).find(
+    return formatted_payload(success: false, reason: 'staff_will_help') if patient_scope
+
+    commands = Integrations::Medelement::ProviderCommand.where(account_id: account.id)
+    command = commands.find(
       required_positive_id(provider_command_id, field_name: 'provider_command_id')
     )
     formatted_payload(
       provider_command_receipt: Integrations::Medelement::ProviderCommandReceiptBuilder.build(command: command)
     )
+  rescue ActiveRecord::RecordNotFound => e
+    patient_scope ? Captain::Tools::Agent::PatientScope::FAILURE : tool_failure(e)
   rescue StandardError => e
     tool_failure(e)
   end

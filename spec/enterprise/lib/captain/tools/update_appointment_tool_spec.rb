@@ -1,6 +1,10 @@
 require 'rails_helper'
 
 RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
+  include ActiveSupport::Testing::TimeHelpers
+
+  around { |example| travel_to(Time.utc(2026, 4, 19, 12)) { example.run } }
+
   let(:account) { create(:account) }
   let(:assistant) { create(:captain_assistant, account: account) }
   let(:tool) { described_class.new(assistant) }
@@ -36,18 +40,12 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
                                                     starts_at: Time.zone.parse('2026-04-20 11:00:00 +0500').iso8601,
                                                     custom_attributes: { source: 'agent' }))
 
-    expect(payload).to include(
-      'action' => 'update_appointment',
-      'appointment_id' => appointment.id,
-      'status' => payload.dig('appointment', 'status'),
-      'resource_id' => new_resource.id,
-      'contact_id' => contact.id,
-      'service_id' => new_service.id,
-      'starts_at' => payload.dig('appointment', 'starts_at'),
-      'ends_at' => payload.dig('appointment', 'ends_at')
+    expect(payload).to eq(
+      'success' => true, 'appointment_id' => appointment.id, 'doctor_name' => new_resource.name,
+      'local_date' => '20.04.2026', 'local_time' => '11:00', 'status' => 'updated'
     )
-    expect(payload['appointment']).to include('id' => appointment.id, 'resource_id' => new_resource.id, 'service_id' => new_service.id)
-    expect(payload.dig('appointment', 'custom_attributes')).to include('source' => 'agent')
+    expect(appointment.reload).to have_attributes(resource_id: new_resource.id, service_id: new_service.id)
+    expect(appointment.custom_attributes).to include('source' => 'agent')
   end
 
   it 'exposes custom_attributes as an object parameter' do
@@ -93,7 +91,7 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
 
     result = tool.perform(tool_context, appointment_id: unauthorized.id, client_comment: 'Must not be applied')
 
-    expect(result).to include('ERROR: ArgumentError: Appointment is not available for the current conversation')
+    expect(JSON.parse(result)).to eq('success' => false, 'reason' => 'not_found')
     expect(linked.reload.client_comment).to be_nil
     expect(unauthorized.reload.client_comment).to be_nil
   end
@@ -109,7 +107,7 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
 
     result = tool.perform(tool_context, appointment_id: foreign.id, client_comment: 'Must not be applied')
 
-    expect(result).to include('ERROR: ArgumentError: Appointment is not available for the current conversation')
+    expect(JSON.parse(result)).to eq('success' => false, 'reason' => 'not_found')
     expect(linked.reload.client_comment).to be_nil
     expect(foreign.reload.client_comment).to be_nil
   end
@@ -123,7 +121,7 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
     ['', false, 0, -1, 'invalid', '1.5'].each do |appointment_id|
       result = tool.perform(tool_context, appointment_id: appointment_id, client_comment: 'Must not be applied')
 
-      expect(result).to include('ERROR: ArgumentError: appointment_id is required')
+      expect(JSON.parse(result)).to eq('success' => false, 'reason' => 'validation_error')
     end
 
     expect(appointment.reload.client_comment).to be_nil
@@ -142,7 +140,7 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
       result = tool.perform(tool_context, client_comment: 'Must not be applied')
     end.not_to change(Integrations::Medelement::ProviderCommand, :count)
 
-    expect(result).to include('ERROR: ArgumentError: appointment_id is required when the conversation has multiple appointments')
+      expect(JSON.parse(result)).to eq('success' => false, 'reason' => 'validation_error')
     expect(appointments.map { |appointment| appointment.reload.client_comment }).to all(be_nil)
   end
 
@@ -163,7 +161,7 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
 
     result = tool.perform(tool_context, client_comment: 'Changed by Captain')
 
-    expect(result).to include('ERROR: Scheduling::Error: Imported Medelement appointments are read-only')
+    expect(JSON.parse(result)).to eq('success' => false, 'reason' => 'validation_error')
     expect(appointment.reload.client_comment).to be_nil
   end
 
@@ -214,12 +212,10 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
 
     payload = JSON.parse(result)
 
-    command_payload = payload.dig('provider_command_receipt', 'command')
-    expect(command_payload).to include(
-      'operation' => 'move_reception',
-      'requested_by' => { 'type' => 'Captain::Assistant', 'id' => assistant.id }
-    )
-    expect(Integrations::Medelement::ProviderCommand.find(command_payload.fetch('id')).appointment_id).to eq(appointment.id)
+    expect(payload).to include('success' => true, 'appointment_id' => appointment.id, 'status' => 'updated')
+    expect(payload.keys).to match_array(%w[success appointment_id doctor_name local_date local_time status])
+    command = Integrations::Medelement::ProviderCommand.find_by!(appointment_id: appointment.id, operation: 'move_reception')
+    expect(command.request_snapshot.dig('actor', 'type')).to eq('Captain::Assistant')
     expect(other.reload.starts_at).to eq(other_starts_at)
   end
 
@@ -260,7 +256,7 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
       result = move!
       raise result if result.start_with?('ERROR:')
 
-      command = Integrations::Medelement::ProviderCommand.find(JSON.parse(result).dig('provider_command_receipt', 'command', 'id'))
+      command = Integrations::Medelement::ProviderCommand.find_by!(appointment_id: appointment.id, operation: 'move_reception')
       expect(command.execution_state[Captain::Tools::ProviderBookingHandoffService::FENCE_KEY]).to eq(fence.stringify_keys)
     end
 
@@ -270,7 +266,7 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
       result = move!
 
       expect(result).not_to start_with('ERROR:')
-      expect(JSON.parse(result).dig('provider_command_receipt', 'command', 'operation')).to eq('move_reception')
+      expect(JSON.parse(result)).to include('success' => true, 'appointment_id' => appointment.id, 'status' => 'updated')
     end
   end
 

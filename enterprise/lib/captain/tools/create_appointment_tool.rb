@@ -37,13 +37,11 @@ class Captain::Tools::CreateAppointmentTool < Captain::Tools::BasePublicTool
     )
 
     command = verify_provider_booking!(tool_context, appointment)
-    JSON.pretty_generate(::Scheduling::ToolPayloadBuilder.appointment_payload(
-                           action: 'create_appointment', appointment: appointment, provider_write_acknowledged: command.present?
-                         ))
+    JSON.generate(Captain::Tools::Agent::AppointmentResult.success(appointment, action: 'create_appointment'))
   rescue Scheduling::Error => e
     appointment ||= operation.persisted_creation if operation.respond_to?(:persisted_creation)
     handoff_unconfirmed_booking!(tool_context, appointment, e)
-    Captain::ToolResult.failure(error: e.message, data: { code: e.code }, retryable: false)
+    JSON.generate(Captain::Tools::Agent::AppointmentResult.failure(e))
   rescue StandardError => e
     appointment ||= operation.persisted_creation if operation.respond_to?(:persisted_creation)
     handle_unexpected_booking_error(tool_context, appointment, command, e)
@@ -81,7 +79,7 @@ class Captain::Tools::CreateAppointmentTool < Captain::Tools::BasePublicTool
 
   def handle_unexpected_booking_error(tool_context, appointment, command, error)
     handoff_unconfirmed_booking!(tool_context, appointment, error) if command.nil?
-    Captain::ToolResult.failure(error: error.message, retryable: false)
+    JSON.generate(Captain::Tools::Agent::AppointmentResult.failure(error))
   end
 
   def operations(state)

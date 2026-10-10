@@ -35,11 +35,15 @@ class Captain::Tools::Copilot::UpdateAppointmentService < Captain::Tools::Copilo
       client_comment: client_comment,
       custom_attributes: custom_attributes
     )
+    return formatted_payload(Captain::Tools::Agent::AppointmentResult.success(appointment, action: self.class.name)) if patient_scope
+
     formatted_payload(
       ::Scheduling::ToolPayloadBuilder.appointment_payload(action: 'update_appointment', appointment: appointment)
     )
+  rescue Scheduling::Error => e
+    Captain::ToolResult.failure_output(error: e.message, data: { code: e.code }, retryable: false)
   rescue StandardError => e
-    tool_failure(e)
+    patient_scope ? formatted_payload(Captain::Tools::Agent::AppointmentResult.failure(e)) : tool_failure(e)
   end
 
   def active?

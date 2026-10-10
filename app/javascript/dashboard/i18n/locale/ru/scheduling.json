@@ -1,5 +1,10 @@
 {
   "SCHEDULING": {
+    "APPOINTMENT_SOURCE": {
+      "manual": "Вручную",
+      "medelement": "MedElement",
+      "captain": "ИИ-агент"
+    },
     "NAV": {
       "CALENDAR": "Календарь",
       "RESOURCES": "Специалисты",
@@ -166,6 +171,15 @@
       "TITLE": "Диалог ещё не создан"
     },
     "APPOINTMENT_FORM": {
+      "AVAILABILITY": {
+        "DATE": "Дата приёма",
+        "LOADING": "Загружаем свободное время…",
+        "EMPTY": "Нет свободного времени",
+        "NOT_CONFIRMED": "График врача пока не подтверждён. Выберите другую дату или попробуйте позже.",
+        "UNAVAILABLE": "Не удалось проверить доступность. Попробуйте позже.",
+        "HORIZON": "График врача открыт до {date}",
+        "CONFLICT": "Время уже занято, выберите другое"
+      },
       "PATIENT_CARD": "Карточка пациента",
       "PATIENT_CARD_LINK": "Карточка пациента: {patientName} №{contactId}",
       "APPOINTMENT_DESCRIPTION": "Выберите специалиста, услугу и временной слот для приёма.",

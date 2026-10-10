@@ -33,9 +33,9 @@ class Captain::Tools::UpdateAppointmentTool < Captain::Tools::BasePublicTool
     )
 
     capture_reschedule_fence(tool_context, appointment)
-    JSON.pretty_generate(::Scheduling::ToolPayloadBuilder.appointment_payload(action: 'update_appointment', appointment: appointment))
+    JSON.generate(Captain::Tools::Agent::AppointmentResult.success(appointment, action: 'update_appointment'))
   rescue StandardError => e
-    tool_failure(e)
+    JSON.generate(Captain::Tools::Agent::AppointmentResult.failure(e))
   end
 
   private

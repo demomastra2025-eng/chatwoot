@@ -889,7 +889,9 @@ class Captain::Assistant::AgentRunnerService
     )
     state[:deal] = Captain::ContextFields.deal_state_for(account: @assistant.account, conversation: @conversation)
     state[:task] = Captain::ContextFields.task_state_for(account: @assistant.account, conversation: @conversation)
-    state[:appointment] = Captain::ContextFields.appointment_state_for(account: @assistant.account, conversation: @conversation)
+    state[:appointment] = Captain::ContextFields.appointment_state_for(
+      account: @assistant.account, conversation: @conversation, patient_scope: true
+    )
     state[:campaign] = slice_attrs(@conversation.campaign, CAMPAIGN_STATE_ATTRIBUTES) if @conversation.campaign
     state[:contact_inbox] = slice_attrs(@conversation.contact_inbox, CONTACT_INBOX_STATE_ATTRIBUTES) if @conversation.contact_inbox
   end
@@ -1046,6 +1048,10 @@ class Captain::Assistant::AgentRunnerService
     return appointment_status_evidence(payload) if appointment_status_tool?(tool_name)
     return if canonical_name.blank?
 
+    if canonical_name == 'update_appointment' && payload[:success] && payload[:appointment_id].present?
+      return provider_move_evidence(payload)
+    end
+
     appointment = payload[:appointment].to_h.with_indifferent_access
     receipt = payload[:provider_command_receipt].to_h.with_indifferent_access
     provider_command = receipt[:command].to_h.with_indifferent_access
@@ -1069,6 +1075,23 @@ class Captain::Assistant::AgentRunnerService
       starts_at: payload[:starts_at].presence || appointment[:starts_at],
       ends_at: payload[:ends_at].presence || appointment[:ends_at]
     }.compact
+  end
+
+  def provider_move_evidence(payload)
+    appointment = @assistant.account.scheduling_appointments.find_by(id: payload[:appointment_id])
+    return if appointment.blank?
+
+    command = Integrations::Medelement::ProviderCommand.where(
+      account_id: @assistant.account_id, appointment_id: appointment.id, operation: 'move_reception'
+    ).order(created_at: :desc, id: :desc).first
+    return if command.blank? || command.request_snapshot.dig('actor', 'id').to_s != @assistant.id.to_s
+
+    {
+      action: 'update_appointment', appointment_id: appointment.id,
+      provider_confirmation_required: true, provider_command_receipt_present: true,
+      provider_command_id: command.id, provider_command_operation: command.operation,
+      provider_confirmation_status: command.status
+    }
   end
 
   def appointment_status_tool?(tool_name)

@@ -49,7 +49,7 @@ class Captain::Tools::CreateDealTool < Captain::Tools::BasePublicTool
       closing_reasons: closing_reasons
     )
 
-    JSON.pretty_generate(::Crm::ToolPayloadBuilder.deal_payload(action: 'create_deal', deal: deal))
+    JSON.pretty_generate(patient_scope_for(tool_context.state).deal_tool_payload(action: 'create_deal', deal: deal))
   rescue StandardError => e
     tool_failure(e)
   end

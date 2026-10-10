@@ -80,7 +80,6 @@ RSpec.describe Captain::ToolCatalog do
       expect(agent_tool_ids).not_to include(*restricted_tool_ids)
     end
 
-
     it 'includes enabled custom tools for the requested scope' do
       custom_tool = create(:captain_custom_tool, account: account)
 
@@ -107,7 +106,6 @@ RSpec.describe Captain::ToolCatalog do
       expect(assistant_tool_ids).to include(own_tool.slug)
       expect(assistant_tool_ids).not_to include(other_tool.slug)
     end
-
 
     it 'includes discovered MCP tools for the requested scope' do
       create(:captain_mcp_server, account: account)
@@ -301,7 +299,7 @@ RSpec.describe Captain::ToolCatalog do
 
       expect(tool).to be_a(Captain::Tools::Agent::AccountToolAdapter)
       expect(tool.name).to eq('search_available_slots')
-      expect(tool.description).to include('Search appointment slots')
+      expect(tool.description).to include('Search free appointment slots')
       expect(tool.parameters.keys.map(&:to_s)).to include('from', 'to')
     end
 
@@ -404,6 +402,4 @@ RSpec.describe Captain::ToolCatalog do
       )
     end
   end
-
-
 end

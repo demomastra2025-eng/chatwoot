@@ -118,6 +118,20 @@ describe('useSchedulingReferencesStore', () => {
     expect(store.ui.error).toBe(null);
   });
 
+  it('sends an empty specialty when clearing an imported resource specialty', async () => {
+    const store = useSchedulingReferencesStore();
+    updateResourceMock.mockResolvedValue({
+      data: { payload: { id: 12, name: 'Врач', specialty: '' } },
+    });
+
+    await store.saveResource({ id: 12, specialty: '' });
+
+    expect(updateResourceMock).toHaveBeenCalledWith(12, {
+      id: 12,
+      specialty: '',
+    });
+  });
+
   it('removes a deleted service from the local store state', async () => {
     const store = useSchedulingReferencesStore();
     store.services = [

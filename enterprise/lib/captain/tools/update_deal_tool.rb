@@ -60,7 +60,7 @@ class Captain::Tools::UpdateDealTool < Captain::Tools::BasePublicTool
       transition_reason: transition_reason
     )
 
-    JSON.pretty_generate(::Crm::ToolPayloadBuilder.deal_payload(action: 'update_deal', deal: deal))
+    JSON.pretty_generate(patient_scope_for(tool_context.state).deal_tool_payload(action: 'update_deal', deal: deal))
   rescue StandardError => e
     tool_failure(e)
   end

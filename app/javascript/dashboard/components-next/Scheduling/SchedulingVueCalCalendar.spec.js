@@ -480,6 +480,117 @@ describe('SchedulingVueCalCalendar', () => {
     expect(holidayEvent.backgroundLabel).toBe('Nauryz');
   });
 
+  it('uses provider slots for calendar creation despite local holiday, break and time off', async () => {
+    const wrapper = mountCalendar({
+      view: 'day',
+      workspaceTimezone: 'Asia/Almaty',
+      resources: [
+        {
+          ...baseProps.resources[0],
+          customAttributes: { medelement_specialist_code: 'doctor-1' },
+        },
+      ],
+      holidays: [{ id: 5, date: '2026-03-09', title: 'Nauryz' }],
+      breakRules: [
+        {
+          id: 6,
+          active: true,
+          resourceId: 12,
+          weekday: 1,
+          startMinute: 600,
+          endMinute: 660,
+          title: 'Lunch',
+        },
+      ],
+      timeOffs: [
+        {
+          resourceId: 12,
+          startsAt: '2026-03-09T05:00:00.000Z',
+          endsAt: '2026-03-09T06:00:00.000Z',
+        },
+      ],
+      slots: [
+        {
+          resourceId: 12,
+          startsAt: '2026-03-09T05:00:00.000Z',
+          endsAt: '2026-03-09T05:30:00.000Z',
+        },
+      ],
+    });
+    await nextTick();
+
+    const backgrounds = wrapper.findComponent(VueCal).props('events');
+    expect(backgrounds.some(event => event.backgroundKind === 'holiday')).toBe(
+      false
+    );
+    expect(backgrounds.some(event => event.backgroundKind === 'break')).toBe(
+      false
+    );
+    expect(backgrounds.some(event => event.backgroundKind === 'time-off')).toBe(
+      false
+    );
+
+    wrapper.findComponent(VueCal).vm.$emit('cellClick', {
+      cell: { start: new Date(2026, 2, 9), schedule: 12 },
+      cursor: { date: new Date(2026, 2, 9, 10) },
+      e: {},
+    });
+
+    expect(wrapper.emitted('createAppointment')?.[0]?.[0]).toEqual({
+      resourceId: 12,
+      startsAt: '2026-03-09T05:00:00.000Z',
+      endsAt: '2026-03-09T05:30:00.000Z',
+    });
+
+    wrapper.findComponent(VueCal).vm.$emit('cellClick', {
+      cell: { start: new Date(2026, 2, 9), schedule: 12 },
+      cursor: { date: new Date(2026, 2, 9, 10, 30) },
+      e: {},
+    });
+    expect(wrapper.emitted('createAppointment')).toHaveLength(1);
+  });
+
+  it('does not invent a month appointment for an integrated resource without slots', async () => {
+    const wrapper = mountCalendar({
+      view: 'month',
+      resources: [
+        {
+          ...baseProps.resources[0],
+          customAttributes: { medelement_specialist_code: 'doctor-1' },
+        },
+      ],
+    });
+    await nextTick();
+
+    wrapper.findComponent(VueCal).vm.$emit('cellClick', {
+      cell: { start: new Date(2026, 2, 9) },
+      e: {},
+    });
+
+    expect(wrapper.emitted('createAppointment')).toBeUndefined();
+  });
+
+  it('keeps month fallback on a local resource in a mixed calendar', async () => {
+    const wrapper = mountCalendar({
+      view: 'month',
+      resources: [
+        {
+          ...baseProps.resources[0],
+          customAttributes: { medelement_specialist_code: 'doctor-1' },
+        },
+        { id: 13, name: 'Local doctor', slotDurationMin: 30 },
+      ],
+    });
+    await nextTick();
+
+    wrapper.findComponent(VueCal).vm.$emit('cellClick', {
+      cell: { start: new Date(2026, 2, 9) },
+      e: {},
+    });
+
+    expect(wrapper.emitted('createAppointment')?.[0]?.[0]?.resourceId).toBe(13);
+  });
+
   it('includes managed custom field summary in appointment tooltips', async () => {
     const wrapper = mountCalendar({
       appointments: [

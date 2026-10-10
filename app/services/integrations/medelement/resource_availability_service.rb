@@ -71,8 +71,8 @@ class Integrations::Medelement::ResourceAvailabilityService
   end
 
   def provider_working_windows
-    starts_on = @from.in_time_zone(resource.timezone).to_date
-    ends_on = @to.in_time_zone(resource.timezone).to_date
+    starts_on = @from.in_time_zone(provider_time_zone).to_date
+    ends_on = (@to - 1.second).in_time_zone(provider_time_zone).to_date
     method = if (ends_on - starts_on).to_i >= Integrations::Medelement::Client::MAX_TIMETABLE_DAYS
                :timetable_range
              else
@@ -170,13 +170,17 @@ class Integrations::Medelement::ResourceAvailabilityService
   end
 
   def parse_time(value)
-    return value.in_time_zone(resource.timezone) if value.respond_to?(:in_time_zone)
+    return value.in_time_zone(provider_time_zone) if value.respond_to?(:in_time_zone)
 
-    ActiveSupport::TimeZone[resource.timezone]&.parse(value.to_s)
+    provider_time_zone.parse(value.to_s)
   end
 
   def provider_time(value)
-    value.in_time_zone(resource.timezone).strftime(PROVIDER_TIME_FORMAT)
+    value.in_time_zone(provider_time_zone).strftime(PROVIDER_TIME_FORMAT)
+  end
+
+  def provider_time_zone
+    @provider_time_zone ||= ActiveSupport::TimeZone[@configuration.time_zone] || Time.zone
   end
 
   def client

@@ -176,7 +176,7 @@ RSpec.describe Captain::ToolRegistry do
     it 'marks capability tools that are controlled through assistant settings checkboxes' do
       handoff = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_AGENT).find { |tool| tool[:id] == 'handoff' }
       cancel_response = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_AGENT).find { |tool| tool[:id] == 'cancel_response' }
-      send_notification = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_AGENT).find { |tool| tool[:id] == 'send_notification' }
+      send_notification = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_ASSISTANT).find { |tool| tool[:id] == 'send_notification' }
       add_private_note = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_ASSISTANT).find { |tool| tool[:id] == 'add_private_note' }
 
       expect(handoff).to include(id: 'handoff', capability_tool: true)

@@ -84,10 +84,11 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
 
   def ensure_provider_writable_resource!
     return if @scheduling_resource.custom_attributes['medelement_specialist_code'].blank?
+    return if resource_params.to_h.keys == ['specialty']
 
     raise Scheduling::Error.new(
       code: 'RESOURCE_READ_ONLY',
-      message: 'Imported Medelement specialists cannot be modified because the provider API does not support specialist writes',
+      message: 'Only specialty can be changed for an imported Medelement specialist',
       status: :unprocessable_content
     )
   end

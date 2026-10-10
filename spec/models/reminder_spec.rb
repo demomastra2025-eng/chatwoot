@@ -2,6 +2,24 @@ require 'rails_helper'
 
 RSpec.describe Reminder do
   describe '#renderable_body' do
+    it 'renders a finished appointment from the reminder conversation' do
+      account = create(:account)
+      account.enable_features!('scheduling')
+      contact = create(:contact, account: account)
+      conversation = create(:conversation, account: account, contact: contact)
+      finished = create(:scheduling_appointment, account: account, contact: contact, conversation: conversation,
+                                                 status: 'completed', starts_at: 2.days.ago, ends_at: 2.days.ago + 30.minutes)
+      other_conversation = create(:conversation, account: account, contact: contact)
+      create(:scheduling_appointment, account: account, contact: contact, conversation: other_conversation,
+                                      starts_at: 2.days.from_now, ends_at: 2.days.from_now + 30.minutes)
+      reminder = build(
+        :reminder, account: account, conversation: conversation, remindable: conversation,
+                   body: 'field: [ID](field://appointment.id)'
+      )
+
+      expect(reminder.renderable_body(conversation: conversation)).to eq("field: #{finished.id}")
+    end
+
     it 'renders manual touch field references across contact, conversation, deal, task, appointment, and custom fields' do
       account = create(:account)
       account.enable_features!('crm_deals', 'crm_tasks', 'scheduling', 'communication_threads')

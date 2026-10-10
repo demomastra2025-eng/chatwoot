@@ -1,5 +1,10 @@
 {
   "SCHEDULING": {
+    "APPOINTMENT_SOURCE": {
+      "manual": "Қолмен",
+      "medelement": "MedElement",
+      "captain": "ЖИ агенті"
+    },
     "RESOURCES": {
       "PROVIDER_SCHEDULE_TITLE": "График из MedElement",
       "PROVIDER_NOT_LOADED": "График MedElement пока не загружен.",
@@ -37,6 +42,15 @@
       "LOCAL_CANCEL_HINT": "Тек OneLink-те болдырмау — МедЭлементте қабылдау қалады."
     },
     "APPOINTMENT_FORM": {
+      "AVAILABILITY": {
+        "DATE": "Дата приёма",
+        "LOADING": "Загружаем свободное время…",
+        "EMPTY": "Нет свободного времени",
+        "NOT_CONFIRMED": "График врача пока не подтверждён. Выберите другую дату или попробуйте позже.",
+        "UNAVAILABLE": "Не удалось проверить доступность. Попробуйте позже.",
+        "HORIZON": "График врача открыт до {date}",
+        "CONFLICT": "Время уже занято, выберите другое"
+      },
       "PATIENT_CARD": "Пациент картасы",
       "PATIENT_CARD_LINK": "Науқас картасы: {patientName} №{contactId}",
       "CHECK_PROVIDER_BOOKING": "MedElement жүйесінде тексеру",
