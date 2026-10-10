@@ -49,6 +49,7 @@ import { useEmitter } from 'dashboard/composables/emitter';
 import { useConversationRequiredAttributes } from 'dashboard/composables/useConversationRequiredAttributes';
 import {
   deletionOutcome,
+  latestDeletionOutcome,
   validDeletionId,
 } from 'dashboard/store/modules/conversations/helpers/deletionState';
 
@@ -1951,14 +1952,7 @@ const pendingDeletionCount = computed(() =>
   )
 );
 const lastDeletionOutcome = computed(() => {
-  const operations = deletionOperations.value || [];
-  if (operations.some(operation => deletionOutcome(operation) === 'partial'))
-    return 'partial';
-  if (operations.some(operation => deletionOutcome(operation) === 'failed'))
-    return 'failed';
-  return operations.length
-    ? deletionOutcome(operations[operations.length - 1])
-    : null;
+  return latestDeletionOutcome(deletionOperations.value || []);
 });
 const unacknowledgedDeletion = computed(() =>
   (deletionOperations.value || []).find(

@@ -207,6 +207,41 @@ const addMessageToCommunicationThreads = (commit, state, message) => {
   });
 };
 
+const messageDeletionAuthorityTarget = (state, message) => {
+  return (state?.allConversations || []).find(
+    chat =>
+      isMessageInCommunicationThread(chat, message) &&
+      requiresDeletionAuthority(state, {
+        id: chat.id,
+        is_communication_thread: true,
+        conversation_id: message.conversation_id,
+      })
+  );
+};
+
+const admitMessageDeletionAuthority = async (context, message) => {
+  const target = messageDeletionAuthorityTarget(context.state, message);
+  if (!target) return true;
+  const data = await deletionAuthorityConversation(context, target);
+  if (!data || String(data.id) !== String(target.id)) return false;
+
+  const canonical = buildCommunicationThreadConversation(data);
+  const channelIds = new Set(
+    (canonical.channels || []).map(channel => String(channel.conversation_id))
+  );
+  context.commit(
+    types.SET_CONVERSATION_DELETION_AUTHORITY,
+    preserveConversationState(canonical, {
+      ...target,
+      messages: (target.messages || []).filter(
+        item =>
+          !item.conversation_id || channelIds.has(String(item.conversation_id))
+      ),
+    })
+  );
+  return channelIds.has(String(message.conversation_id));
+};
+
 // A thread that is already in the store keeps its dataFetched flag, so a search hit that jumps to an older message
 // would find the window without that message. Fetch the window of the target when it is not loaded yet.
 const needsMessageWindow = (data, after) =>
@@ -1292,7 +1327,8 @@ const actions = {
     dispatch('sendMessageWithData', pendingMessage);
   },
 
-  sendMessageWithData: async ({ commit }, pendingMessage) => {
+  sendMessageWithData: async (context, pendingMessage) => {
+    const { commit } = context;
     const { conversation_id: conversationId, id } = pendingMessage;
     const communicationThreadId =
       pendingMessage.communication_thread_id ||
@@ -1323,6 +1359,16 @@ const actions = {
       } else {
         response = await MessageApi.create(pendingMessage);
       }
+      const threadMessage = {
+        ...response.data,
+        communication_thread_id: communicationThreadId,
+      };
+      if (
+        communicationThreadId &&
+        messageDeletionAuthorityTarget(context.state, threadMessage) &&
+        !(await admitMessageDeletionAuthority(context, threadMessage))
+      )
+        return;
       addMessage({
         ...response.data,
         status: MESSAGE_STATUS.SENT,
@@ -1346,9 +1392,15 @@ const actions = {
     }
   },
 
-  addMessage({ commit, rootGetters, state }, message) {
+  async addMessage(context, message) {
+    const { commit, rootGetters, state } = context;
     // Hidden timeline events must not move the open conversation or its unread state.
     if (isCaptainToolActivityMessage(message)) return;
+    if (
+      messageDeletionAuthorityTarget(state, message) &&
+      !(await admitMessageDeletionAuthority(context, message))
+    )
+      return;
 
     commit(types.ADD_MESSAGE, message);
     addMessageToCommunicationThreads(commit, state, message);
@@ -1367,8 +1419,14 @@ const actions = {
     handleVoiceCallCreated(message, rootGetters?.getCurrentUserID);
   },
 
-  updateMessage({ commit, rootGetters, state }, message) {
+  async updateMessage(context, message) {
+    const { commit, rootGetters, state } = context;
     if (isCaptainToolActivityMessage(message)) return;
+    if (
+      messageDeletionAuthorityTarget(state, message) &&
+      !(await admitMessageDeletionAuthority(context, message))
+    )
+      return;
 
     commit(types.ADD_MESSAGE, message);
     addMessageToCommunicationThreads(commit, state, message);

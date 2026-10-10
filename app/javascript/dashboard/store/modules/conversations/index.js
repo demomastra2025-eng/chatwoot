@@ -23,6 +23,7 @@ import {
   blockedDeletionIds,
   projectDeletedConversation,
   retainDeletionOperations,
+  requiresDeletionAuthority,
 } from './helpers/deletionState';
 
 const state = {
@@ -736,6 +737,14 @@ export const mutations = {
     if (blockedDeletionIds(_state).has(String(message.conversation_id))) return;
     const chat = getConversationById(_state)(chatId, 'communication_thread');
     if (!chat) return;
+    if (
+      requiresDeletionAuthority(_state, {
+        id: chatId,
+        is_communication_thread: true,
+        conversation_id: message.conversation_id,
+      })
+    )
+      return;
     if (!isMessageInCommunicationThread(chat, message)) return;
 
     chat.messages ||= [];
