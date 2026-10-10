@@ -30,6 +30,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  editable: {
+    type: Boolean,
+    default: false,
+  },
   disabledDate: {
     type: Function,
     default: undefined,
@@ -153,6 +157,7 @@ const handleChange = value => {
       :minute-step="minuteStep"
       :time-picker-variant="timePickerVariant"
       :disabled="disabled"
+      :editable="editable"
       :disabled-date="disabledDate"
       :hide-icon="hideIcon"
       :input-class="resolvedInputClass"

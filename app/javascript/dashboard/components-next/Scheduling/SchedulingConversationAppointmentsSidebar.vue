@@ -1,11 +1,13 @@
 <script setup>
 import {
   computed,
+  inject,
   nextTick,
   onBeforeUnmount,
   onMounted,
   reactive,
   ref,
+  unref,
   watch,
 } from 'vue';
 import { useI18n } from 'vue-i18n';
@@ -14,10 +16,12 @@ import { useRoute } from 'vue-router';
 import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
 import SchedulingAvailabilityAPI from 'dashboard/api/scheduling/availability';
 import SchedulingProviderCommandsAPI from 'dashboard/api/scheduling/providerCommands';
+import AppointmentDealSelector from 'dashboard/components-next/CRM/AppointmentDealSelector.vue';
 import SidebarActionsHeader from 'dashboard/components-next/SidebarActionsHeader.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
+import SchedulingAppointmentTimeFields from 'dashboard/components-next/Scheduling/SchedulingAppointmentTimeFields.vue';
 import SchedulingAvailabilityPicker from 'dashboard/components-next/Scheduling/SchedulingAvailabilityPicker.vue';
 import SchedulingErrorState from 'dashboard/components-next/Scheduling/SchedulingErrorState.vue';
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
@@ -96,6 +100,8 @@ const NEW_APPOINTMENT_KEY = 'new-appointment';
 const { t, locale } = useI18n();
 const store = useStore();
 const route = useRoute();
+const crmSourceDeal = inject('crmSourceDealId', null);
+const sourceDealId = computed(() => unref(crmSourceDeal));
 const schedulingReferencesStore = useSchedulingReferencesStore();
 const providerCommandsStore = useSchedulingProviderCommandsStore();
 const patientContextStore = useConversationPatientContextStore();
@@ -138,6 +144,9 @@ const createForm = reactive({
   patientContactId: null,
   patientContextContactId: null,
   endsAt: '',
+  durationMin: 30,
+  durationEdited: false,
+  dealSelection: {},
   medelementCabinetCode: '',
   resourceId: '',
   serviceAmount: '',
@@ -385,6 +394,7 @@ const resetCreateForm = () => {
   const primaryResourceCabinets =
     medelementCabinetsForResource(primaryResource);
   const defaults = buildDefaultAppointmentTimes();
+  const durationMin = Number(primaryResource?.slotDurationMin) || 30;
   const contactNameParts = schedulingContactNameParts({
     firstName: patient.value?.first_name || patient.value?.firstName,
     fullName: contactName.value,
@@ -405,7 +415,14 @@ const resetCreateForm = () => {
     clientPhone: contactPhone.value,
     patientContactId: selectedPatientCardId.value,
     patientContextContactId: selectedPatientContextId.value,
-    endsAt: '',
+    endsAt: addMinutesToDateTimeInputValue(
+      defaults.startsAt,
+      durationMin,
+      SCHEDULING_TIMEZONE
+    ),
+    durationMin,
+    durationEdited: false,
+    dealSelection: {},
     medelementCabinetCode:
       primaryResourceCabinets.length === 1
         ? primaryResourceCabinets[0].code
@@ -414,7 +431,7 @@ const resetCreateForm = () => {
     serviceAmount: '',
     serviceId: '',
     serviceNameSnapshot: '',
-    startsAt: '',
+    startsAt: defaults.startsAt,
     availabilityDate: defaults.startsAt.slice(0, 10),
     selectedWindowStartsAt: '',
     rejectedStartsAt: [],
@@ -795,7 +812,6 @@ const mergeUniqueAppointments = (...collections) => {
 const formFromAppointment = appointment => {
   const nameParts = patientNameParts(appointment);
   const appointmentDate = toClinicDateTime(appointment.startsAt).slice(0, 10);
-  const today = toClinicDateTime(new Date()).slice(0, 10);
   return {
     appointmentType: appointment.appointmentType || 'primary',
     clientBirthDate: appointment.clientBirthDate || '',
@@ -818,6 +834,12 @@ const formFromAppointment = appointment => {
       '',
     conversationId: appointment.conversationId || '',
     endsAt: toClinicDateTime(appointment.endsAt),
+    durationMin:
+      Number(appointment.durationMin) ||
+      (Date.parse(appointment.endsAt) - Date.parse(appointment.startsAt)) /
+        60000 ||
+      30,
+    durationEdited: true,
     medelementCabinetCode:
       appointment.customAttributes?.medelementCabinetCode ||
       appointment.customAttributes?.medelement_cabinet_code ||
@@ -831,7 +853,7 @@ const formFromAppointment = appointment => {
     serviceId: appointment.serviceId || '',
     serviceNameSnapshot: appointment.serviceNameSnapshot || '',
     startsAt: toClinicDateTime(appointment.startsAt),
-    availabilityDate: appointmentDate < today ? today : appointmentDate,
+    availabilityDate: appointmentDate,
     selectedWindowStartsAt: '',
     rejectedStartsAt: [],
     status: appointment.status || 'scheduled',
@@ -865,6 +887,12 @@ const restorePatientDraft = () => {
     const saved = draft.appointmentForms?.[key];
     if (saved?.fingerprint === appointmentContextFingerprint(appointment)) {
       appointmentForms[key] = { ...saved.form };
+      if (
+        isAppointmentOpen(appointment) &&
+        !isAppointmentProviderOwned(appointment)
+      ) {
+        loadFormWindows(appointmentForms[key]);
+      }
     }
   });
   if (
@@ -874,6 +902,7 @@ const restorePatientDraft = () => {
     draft.createForm.patientContactId === selectedPatientCardId.value
   ) {
     Object.assign(createForm, draft.createForm);
+    loadFormWindows(createForm);
     isCreating.value = true;
     openAppointmentKeys.value = [
       NEW_APPOINTMENT_KEY,
@@ -899,7 +928,6 @@ const availabilityForForm = form =>
   availabilityByForm[pickerKeyForForm(form)] || {
     state: '',
     windows: [],
-    maxDate: '',
   };
 
 const resetSelectedWindow = form => {
@@ -910,15 +938,21 @@ const resetSelectedWindow = form => {
 
 const loadFormWindows = async form => {
   const key = pickerKeyForForm(form);
+  const context = captureSidebarContext();
   availabilityRequestId += 1;
   const requestId = availabilityRequestId;
   availabilityByForm[key] = {
     state: 'loading',
     windows: [],
-    maxDate: availabilityByForm[key]?.maxDate || '',
     requestId,
   };
-  if (!form?.resourceId || !form?.availabilityDate) {
+  if (
+    !form?.resourceId ||
+    !form?.availabilityDate ||
+    !Number.isInteger(Number(form.durationMin)) ||
+    Number(form.durationMin) < 5 ||
+    Number(form.durationMin) > 1440
+  ) {
     availabilityByForm[key].state = '';
     return;
   }
@@ -927,17 +961,19 @@ const loadFormWindows = async form => {
     const response = await SchedulingAvailabilityAPI.show({
       resource_id: form.resourceId,
       ...(form.serviceId ? { service_id: form.serviceId } : {}),
-      ...(!form.serviceId
-        ? {
-            duration_min: selectedResourceForForm(form)?.slotDurationMin || 30,
-          }
-        : {}),
+      duration_min:
+        Number(form.durationMin) ||
+        selectedResourceForForm(form)?.slotDurationMin ||
+        30,
       date: form.availabilityDate,
       ...(form.medelementCabinetCode
         ? { cabinet_code: form.medelementCabinetCode }
         : {}),
     });
-    if (sidebarDisposed || availabilityByForm[key]?.requestId !== requestId)
+    if (
+      !isCurrentSidebarContext(context) ||
+      availabilityByForm[key]?.requestId !== requestId
+    )
       return;
     const payload = response.data.payload;
     availabilityByForm[key] = {
@@ -948,16 +984,17 @@ const loadFormWindows = async form => {
             rejected => Date.parse(rejected) === Date.parse(window.starts_at)
           )
       ),
-      maxDate: payload.last_bookable_date || '',
       requestId,
     };
   } catch {
-    if (sidebarDisposed || availabilityByForm[key]?.requestId !== requestId)
+    if (
+      !isCurrentSidebarContext(context) ||
+      availabilityByForm[key]?.requestId !== requestId
+    )
       return;
     availabilityByForm[key] = {
       state: 'provider_unavailable',
       windows: [],
-      maxDate: availabilityByForm[key]?.maxDate || '',
       requestId,
     };
   }
@@ -965,32 +1002,36 @@ const loadFormWindows = async form => {
 
 const setAppointmentForms = () => {
   Object.keys(appointmentForms).forEach(key => delete appointmentForms[key]);
+  Object.keys(availabilityByForm).forEach(key => delete availabilityByForm[key]);
   appointments.value.forEach(appointment => {
     appointmentForms[appointmentKey(appointment)] =
       formFromAppointment(appointment);
-    if (!isAppointmentProviderOwned(appointment)) {
-      loadFormWindows(appointmentForms[appointmentKey(appointment)]);
-    }
   });
 };
 
 const changePickerDate = (form, date) => {
   form.availabilityDate = date;
   form.rejectedStartsAt = [];
-  resetSelectedWindow(form);
+  if (form.startsAt) {
+    form.startsAt = `${date}T${form.startsAt.slice(11)}`;
+    updateFormEndFromDuration(form);
+  }
+  form.selectedWindowStartsAt = '';
   loadFormWindows(form);
 };
 
 const selectWindow = (form, window) => {
   form.startsAt = toClinicDateTime(window.starts_at);
   form.endsAt = toClinicDateTime(window.ends_at);
+  form.durationMin =
+    (Date.parse(window.ends_at) - Date.parse(window.starts_at)) / 60000;
   form.selectedWindowStartsAt = window.starts_at;
 };
 
 const changeCabinet = (form, value) => {
   form.medelementCabinetCode = value;
   form.rejectedStartsAt = [];
-  resetSelectedWindow(form);
+  form.selectedWindowStartsAt = '';
   loadFormWindows(form);
 };
 
@@ -1007,7 +1048,8 @@ const updateFormEndFromDuration = form => {
   if (Number.isNaN(new Date(form.startsAt).getTime())) return;
 
   const durationMin = Math.max(
-    Number(selectedServiceForForm(form)?.durationMin) ||
+    Number(form.durationMin) ||
+      Number(selectedServiceForForm(form)?.durationMin) ||
       Number(selectedResourceForForm(form)?.slotDurationMin) ||
       30,
     5
@@ -1027,6 +1069,12 @@ const syncFormServiceFields = form => {
     );
     form.serviceAmount = price ? String(price) : form.serviceAmount;
   }
+  if (!form.durationEdited) {
+    form.durationMin =
+      Number(selectedServiceForForm(form)?.durationMin) ||
+      Number(selectedResourceForForm(form)?.slotDurationMin) ||
+      30;
+  }
   updateFormEndFromDuration(form);
 };
 
@@ -1044,7 +1092,7 @@ const handleFormResourceChange = (form, value) => {
     form.serviceNameSnapshot = '';
   }
   syncFormServiceFields(form);
-  resetSelectedWindow(form);
+  form.selectedWindowStartsAt = '';
   loadFormWindows(form);
 };
 
@@ -1053,7 +1101,7 @@ const handleFormServiceChange = (form, value) => {
   form.rejectedStartsAt = [];
   form.serviceNameSnapshot = '';
   syncFormServiceFields(form);
-  resetSelectedWindow(form);
+  form.selectedWindowStartsAt = '';
   loadFormWindows(form);
 };
 
@@ -1087,7 +1135,15 @@ const appendServicePayload = (payload, { serviceId, serviceNameSnapshot }) => {
 const appointmentFormEndsAfterStart = form => {
   if (!form?.startsAt || !form?.endsAt) return false;
 
-  return new Date(form.endsAt) > new Date(form.startsAt);
+  try {
+    const duration =
+      (Date.parse(fromClinicDateTime(form.endsAt)) -
+        Date.parse(fromClinicDateTime(form.startsAt))) /
+      60000;
+    return Number.isInteger(duration) && duration >= 5 && duration <= 1440;
+  } catch {
+    return false;
+  }
 };
 
 const medelementLastNameError = form =>
@@ -1145,6 +1201,9 @@ const isAppointmentFormInvalid = form =>
   !form?.resourceId ||
   !form?.startsAt ||
   !form?.endsAt ||
+  !Number.isInteger(Number(form?.durationMin)) ||
+  Number(form?.durationMin) < 5 ||
+  Number(form?.durationMin) > 1440 ||
   !appointmentFormEndsAfterStart(form);
 
 const buildAppointmentPayload = form =>
@@ -1199,6 +1258,7 @@ const buildCreatePayload = () =>
   appendServicePayload(
     {
       appointment_type: 'primary',
+      ...createForm.dealSelection,
       ...(createForm.clientNameStructured
         ? {
             client_first_name: createForm.clientFirstName,
@@ -1586,6 +1646,9 @@ const loadAppointments = async () => {
     openAppointmentKeys.value = firstEditableAppointment
       ? [appointmentKey(firstEditableAppointment)]
       : [];
+    if (firstEditableAppointment) {
+      loadFormWindows(appointmentForms[appointmentKey(firstEditableAppointment)]);
+    }
   } catch (error) {
     if (!isCurrentRequest()) return false;
     ui.error = error;
@@ -1599,9 +1662,13 @@ const toggleAppointment = appointment => {
   if (isAppointmentProviderOwned(appointment)) return;
 
   const key = appointmentKey(appointment);
-  openAppointmentKeys.value = isAppointmentOpen(appointment)
+  const opening = !isAppointmentOpen(appointment);
+  openAppointmentKeys.value = !opening
     ? openAppointmentKeys.value.filter(item => item !== key)
     : [...openAppointmentKeys.value, key];
+  if (opening && !availabilityByForm[key]) {
+    loadFormWindows(appointmentForms[key]);
+  }
 };
 
 const scrollToTop = async () => {
@@ -1624,7 +1691,8 @@ const updateCreateEndFromDuration = () => {
   if (Number.isNaN(new Date(createForm.startsAt).getTime())) return;
 
   const durationMin = Math.max(
-    Number(selectedCreateService.value?.durationMin) ||
+    Number(createForm.durationMin) ||
+      Number(selectedCreateService.value?.durationMin) ||
       Number(selectedCreateResource.value?.slotDurationMin) ||
       30,
     5
@@ -1644,6 +1712,12 @@ const syncCreateServiceFields = () => {
     );
     createForm.serviceAmount = price ? String(price) : createForm.serviceAmount;
   }
+  if (!createForm.durationEdited) {
+    createForm.durationMin =
+      Number(selectedCreateService.value?.durationMin) ||
+      Number(selectedCreateResource.value?.slotDurationMin) ||
+      30;
+  }
   updateCreateEndFromDuration();
 };
 
@@ -1662,7 +1736,7 @@ const handleCreateResourceChange = value => {
     createForm.serviceNameSnapshot = '';
   }
   syncCreateServiceFields();
-  resetSelectedWindow(createForm);
+  createForm.selectedWindowStartsAt = '';
   loadFormWindows(createForm);
 };
 
@@ -1671,7 +1745,7 @@ const handleCreateServiceChange = value => {
   createForm.rejectedStartsAt = [];
   createForm.serviceNameSnapshot = '';
   syncCreateServiceFields();
-  resetSelectedWindow(createForm);
+  createForm.selectedWindowStartsAt = '';
   loadFormWindows(createForm);
 };
 
@@ -1687,6 +1761,14 @@ const startCreateAppointment = async ({ scroll = true } = {}) => {
     ];
   }
   if (scroll) await scrollToTop();
+};
+
+const manualTimeChanged = (form, field) => {
+  if (field === 'duration' || field === 'end') form.durationEdited = true;
+  form.availabilityDate = form.startsAt?.slice(0, 10) || form.availabilityDate;
+  form.selectedWindowStartsAt = '';
+  form.rejectedStartsAt = [];
+  loadFormWindows(form);
 };
 
 const cancelCreateAppointment = () => {
@@ -2278,6 +2360,7 @@ watch(
     patientActionRequestId.value += 1;
     patientActionBusyKey.value = '';
     Object.keys(patientActions).forEach(key => delete patientActions[key]);
+    Object.keys(availabilityByForm).forEach(key => delete availabilityByForm[key]);
     providerCommandsStore.ui.operationId += 1;
     providerCommandsStore.ui.isExecuting = false;
     providerCommandsStore.ui.error = null;
@@ -2613,9 +2696,24 @@ watch(
                     </p>
                   </div>
 
+                  <SchedulingAppointmentTimeFields
+                    v-model:starts-at="createForm.startsAt"
+                    v-model:ends-at="createForm.endsAt"
+                    v-model:duration-min="createForm.durationMin"
+                    id-prefix="scheduling-conversation-appointment"
+                    :disabled="isSavingCreate"
+                    @change="manualTimeChanged(createForm, $event)"
+                  />
+                  <AppointmentDealSelector
+                    v-model="createForm.dealSelection"
+                    :communication-contact-id="contactId"
+                    :conversation-display-id="createConversationDisplayId"
+                    :source-deal-id="sourceDealId"
+                    :disabled="isSavingCreate"
+                  />
+
                   <SchedulingAvailabilityPicker
                     :date="createForm.availabilityDate"
-                    :max-date="availabilityForForm(createForm).maxDate"
                     :state="availabilityForForm(createForm).state"
                     :windows="availabilityForForm(createForm).windows"
                     :selected-starts-at="createForm.selectedWindowStartsAt"
@@ -3337,15 +3435,33 @@ watch(
                     </p>
                   </div>
 
+                  <SchedulingAppointmentTimeFields
+                    v-model:starts-at="
+                      appointmentForms[appointmentKey(appointment)].startsAt
+                    "
+                    v-model:ends-at="
+                      appointmentForms[appointmentKey(appointment)].endsAt
+                    "
+                    v-model:duration-min="
+                      appointmentForms[appointmentKey(appointment)].durationMin
+                    "
+                    :disabled="
+                      isAppointmentProviderOwned(appointment) ||
+                      savingAppointmentKey === appointmentKey(appointment)
+                    "
+                    :id-prefix="`scheduling-conversation-appointment-${appointment.id}`"
+                    @change="
+                      manualTimeChanged(
+                        appointmentForms[appointmentKey(appointment)],
+                        $event
+                      )
+                    "
+                  />
+
                   <SchedulingAvailabilityPicker
                     :date="
                       appointmentForms[appointmentKey(appointment)]
                         .availabilityDate
-                    "
-                    :max-date="
-                      availabilityForForm(
-                        appointmentForms[appointmentKey(appointment)]
-                      ).maxDate
                     "
                     :state="
                       availabilityForForm(

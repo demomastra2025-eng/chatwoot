@@ -133,7 +133,7 @@
       "RESOURCES": "Specialists",
       "RESOURCES_SELECTED": "{count} selected",
       "RESOURCE_SEARCH": "Search specialists",
-      "SHOW_INACTIVE_APPOINTMENTS": "Show inactive appointments",
+      "SHOW_INACTIVE_APPOINTMENTS": "Show completed, cancelled and missed visits",
       "STATUS": "Appointment status"
     },
     "CALENDAR": {
@@ -229,6 +229,7 @@
       "CUSTOM_FIELDS_TITLE": "Custom fields",
       "EDIT_TITLE": "Edit appointment",
       "ENDS_AT": "Ends at",
+      "DURATION_MIN": "Duration, minutes",
       "INTAKE_FIELDS_DESCRIPTION": "Collect the managed fields that should be captured during booking intake.",
       "INTAKE_FIELDS_TITLE": "Booking intake",
       "NOTES_DESCRIPTION": "Keep any extra instructions or context for the visit.",
@@ -258,6 +259,7 @@
         "CLIENT_LAST_NAME_REQUIRED": "Enter the last name",
         "CONTACT_REQUIRED": "Select a contact",
         "END_BEFORE_START": "End time must be later than the start time",
+        "INVALID_DURATION": "Enter a whole number of minutes from 5 to 1440",
         "MEDELEMENT_LAST_NAME_REQUIRED": "Enter the last name for a MedElement appointment",
         "MEDELEMENT_PHONE_REQUIRED": "Enter a Kazakhstan phone number in +7XXXXXXXXXX format",
         "MEDELEMENT_SERVICE_REQUIRED": "Select a service from the MedElement catalog",

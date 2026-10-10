@@ -133,7 +133,7 @@
       "RESOURCES": "Специалисты",
       "RESOURCES_SELECTED": "Выбрано: {count}",
       "RESOURCE_SEARCH": "Поиск специалиста",
-      "SHOW_INACTIVE_APPOINTMENTS": "Показывать неактуальные записи",
+      "SHOW_INACTIVE_APPOINTMENTS": "Показывать завершённые, отменённые и неявки",
       "STATUS": "Статус записи"
     },
     "CALENDAR": {
@@ -229,6 +229,7 @@
       "CUSTOM_FIELDS_TITLE": "Пользовательские поля",
       "EDIT_TITLE": "Редактировать запись",
       "ENDS_AT": "Окончание",
+      "DURATION_MIN": "Длительность, минуты",
       "INTAKE_FIELDS_DESCRIPTION": "Собирайте управляемые поля, которые должны заполняться прямо во время оформления записи.",
       "INTAKE_FIELDS_TITLE": "Данные при записи",
       "NOTES_DESCRIPTION": "Фиксируйте дополнительные инструкции и контекст по визиту.",
@@ -258,6 +259,7 @@
         "CLIENT_LAST_NAME_REQUIRED": "Укажите фамилию",
         "CONTACT_REQUIRED": "Выберите контакт",
         "END_BEFORE_START": "Время окончания должно быть позже времени начала",
+        "INVALID_DURATION": "Укажите целое число минут от 5 до 1440",
         "MEDELEMENT_LAST_NAME_REQUIRED": "Укажите фамилию для записи MedElement",
         "MEDELEMENT_PHONE_REQUIRED": "Укажите номер Казахстана в формате +7XXXXXXXXXX",
         "MEDELEMENT_SERVICE_REQUIRED": "Выберите услугу из каталога MedElement",

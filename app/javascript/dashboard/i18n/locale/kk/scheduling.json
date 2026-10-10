@@ -37,7 +37,7 @@
       "UNAVAILABLE_TIME_RANGE": "{label} · {start}–{end}"
     },
     "TOOLBAR": {
-      "SHOW_INACTIVE_APPOINTMENTS": "Өзекті емес жазбаларды көрсету"
+      "SHOW_INACTIVE_APPOINTMENTS": "Аяқталған, тоқтатылған және пациент келмеген қабылдауларды көрсету"
     },
     "APPOINTMENT_STATUS": {
       "PROVIDER_REVIEW": "MedElement жүйесінде расталмады — тексеру қажет",
@@ -55,6 +55,9 @@
       "LOCAL_CANCEL_HINT": "Тек OneLink-те болдырмау — МедЭлементте қабылдау қалады."
     },
     "APPOINTMENT_FORM": {
+      "STARTS_AT": "Басталуы",
+      "ENDS_AT": "Аяқталуы",
+      "DURATION_MIN": "Ұзақтығы, минут",
       "AVAILABILITY": {
         "DATE": "Дата приёма",
         "LOADING": "Загружаем свободное время…",
@@ -78,6 +81,7 @@
       "SUCCESS_CANCEL": "Жазба болдырылмады",
       "SUCCESS_CANCEL_LOCAL_ONLY": "Жазба OneLink-те болдырылмады. МедЭлементте қабылдау қалды — дәрігердің уақытын сонда қолмен босатыңыз.",
       "ERRORS": {
+        "INVALID_DURATION": "5 пен 1440 аралығындағы бүтін минут санын көрсетіңіз",
         "CLIENT_LAST_NAME_REQUIRED": "Тегін көрсетіңіз",
         "MEDELEMENT_LAST_NAME_REQUIRED": "MedElement жазбасы үшін тегін көрсетіңіз",
         "MEDELEMENT_SERVICE_REQUIRED": "MedElement каталогынан қызметті таңдаңыз"

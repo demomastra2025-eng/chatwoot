@@ -1,6 +1,6 @@
 import { mount, shallowMount, flushPromises } from '@vue/test-utils';
 import { createPinia } from 'pinia';
-import { reactive as makeReactive } from 'vue';
+import { reactive as makeReactive, ref } from 'vue';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import SchedulingConversationAppointmentsSidebar from './SchedulingConversationAppointmentsSidebar.vue';
@@ -8,6 +8,8 @@ import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
 import SchedulingAvailabilityAPI from 'dashboard/api/scheduling/availability';
 import SchedulingProviderCommandsAPI from 'dashboard/api/scheduling/providerCommands';
 import SchedulingAvailabilityPicker from './SchedulingAvailabilityPicker.vue';
+import SchedulingAppointmentTimeFields from './SchedulingAppointmentTimeFields.vue';
+import AppointmentDealSelector from 'dashboard/components-next/CRM/AppointmentDealSelector.vue';
 
 const existingAppointment = {
   id: 501,
@@ -226,7 +228,8 @@ const defaultCurrentChat = () => ({
 
 const mountComponent = (
   currentChat = defaultCurrentChat(),
-  patientProps = {}
+  patientProps = {},
+  providedContext = {}
 ) => {
   mocks.route = makeReactive({ params: { accountId: '1' } });
   return shallowMount(SchedulingConversationAppointmentsSidebar, {
@@ -236,6 +239,7 @@ const mountComponent = (
     },
     global: {
       plugins: [createPinia()],
+      provide: providedContext,
       stubs: {
         RouterLink: {
           name: 'RouterLink',
@@ -755,7 +759,7 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     });
   });
 
-  it('loads windows and clears the chosen time when the date or service changes', async () => {
+  it('refreshes windows and preserves editable time when the date, service or cabinet changes', async () => {
     const window = {
       starts_at: '2026-06-27T10:00:00+05:00',
       ends_at: '2026-06-27T10:30:00+05:00',
@@ -771,7 +775,7 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     wrapper.vm.selectWindow(wrapper.vm.createForm, window);
     expect(wrapper.vm.createForm.startsAt).toBe('2026-06-27T10:00');
     wrapper.vm.changePickerDate(wrapper.vm.createForm, '2026-06-28');
-    expect(wrapper.vm.createForm.startsAt).toBe('');
+    expect(wrapper.vm.createForm.startsAt).toBe('2026-06-28T10:00');
     await flushPromises();
     expect(SchedulingAvailabilityAPI.show).toHaveBeenCalledWith(
       expect.objectContaining({ date: '2026-06-28', resource_id: 7 })
@@ -779,14 +783,14 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
 
     wrapper.vm.selectWindow(wrapper.vm.createForm, window);
     wrapper.vm.handleCreateServiceChange(9);
-    expect(wrapper.vm.createForm.startsAt).toBe('');
+    expect(wrapper.vm.createForm.startsAt).toBe('2026-06-27T10:00');
     expect(SchedulingAvailabilityAPI.show).toHaveBeenCalledWith(
       expect.objectContaining({ service_id: 9 })
     );
 
     wrapper.vm.selectWindow(wrapper.vm.createForm, window);
     wrapper.vm.handleCreateResourceChange(7);
-    expect(wrapper.vm.createForm.startsAt).toBe('');
+    expect(wrapper.vm.createForm.startsAt).toBe('2026-06-27T10:00');
     wrapper.vm.changeCabinet(wrapper.vm.createForm, 'room-1');
     expect(SchedulingAvailabilityAPI.show).toHaveBeenCalledWith(
       expect.objectContaining({ cabinet_code: 'room-1', resource_id: 7 })
@@ -860,20 +864,15 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     ).toEqual([]);
   });
 
-  it('limits the date input and reports closed and unconfirmed days', async () => {
+  it('keeps staff dates editable and reports closed and unconfirmed days', async () => {
     const picker = mount(SchedulingAvailabilityPicker, {
       props: {
         date: '2026-07-18',
-        maxDate: '2026-07-18',
-        state: 'beyond_horizon',
+        state: 'ok',
       },
     });
-    expect(picker.find('input[type="date"]').attributes('max')).toBe(
-      '2026-07-18'
-    );
-    expect(picker.find('[role="status"]').text()).toContain(
-      'SCHEDULING.APPOINTMENT_FORM.AVAILABILITY.HORIZON'
-    );
+    expect(picker.find('input[type="date"]').attributes('max')).toBeUndefined();
+    expect(picker.find('input[type="date"]').attributes('min')).toBeUndefined();
     await picker.setProps({ state: 'closed_day' });
     expect(picker.find('[role="status"]').text()).toContain(
       'SCHEDULING.APPOINTMENT_FORM.AVAILABILITY.EMPTY'
@@ -882,6 +881,181 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     expect(picker.find('[role="status"]').text()).toContain(
       'SCHEDULING.APPOINTMENT_FORM.AVAILABILITY.NOT_CONFIRMED'
     );
+  });
+
+  it('saves a manually authored interval and preserves its duration across service changes', async () => {
+    const wrapper = mountComponent();
+    await flushPromises();
+    await wrapper.vm.startCreateAppointment();
+    Object.assign(wrapper.vm.createForm, {
+      startsAt: '2026-06-27T10:00',
+      endsAt: '2026-06-27T11:15',
+      durationMin: 75,
+    });
+    await wrapper
+      .findComponent(SchedulingAppointmentTimeFields)
+      .vm.$emit('change', 'end');
+    wrapper.vm.handleCreateServiceChange(9);
+    await flushPromises();
+
+    expect(wrapper.vm.createForm.endsAt).toBe('2026-06-27T11:15');
+    expect(SchedulingAvailabilityAPI.show).toHaveBeenLastCalledWith(
+      expect.objectContaining({ duration_min: 75, service_id: 9 })
+    );
+    await wrapper.vm.saveCreateAppointment();
+    expect(SchedulingAppointmentsAPI.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        starts_at: clinicIso('2026-06-27T10:00'),
+        ends_at: clinicIso('2026-06-27T11:15'),
+        service_id: 9,
+      })
+    );
+  });
+
+  it.each([0, 1, 2000])(
+    'blocks saving an invalid manually authored duration of %i minutes',
+    async durationMin => {
+      const wrapper = mountComponent();
+      await flushPromises();
+      await wrapper.vm.startCreateAppointment();
+      Object.assign(wrapper.vm.createForm, {
+        startsAt: '2026-06-27T10:00',
+        endsAt: '2026-06-27T10:30',
+        durationMin,
+      });
+
+      expect(wrapper.vm.isCreateFormInvalid).toBe(true);
+      await wrapper.vm.saveCreateAppointment();
+      expect(SchedulingAppointmentsAPI.create).not.toHaveBeenCalled();
+    }
+  );
+
+  it('loads windows only for expanded history cards', async () => {
+    const second = {
+      ...existingAppointment,
+      id: 502,
+      startsAt: '2026-06-26T10:00:00.000Z',
+      endsAt: '2026-06-26T10:30:00.000Z',
+    };
+    const third = {
+      ...existingAppointment,
+      id: 503,
+      startsAt: '2026-06-25T10:00:00.000Z',
+      endsAt: '2026-06-25T10:30:00.000Z',
+    };
+    SchedulingAppointmentsAPI.get.mockResolvedValue({
+      data: { payload: [existingAppointment, second, third] },
+    });
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    expect(SchedulingAvailabilityAPI.show).toHaveBeenCalledTimes(1);
+    wrapper.vm.toggleAppointment(second);
+    await flushPromises();
+    expect(SchedulingAvailabilityAPI.show).toHaveBeenCalledTimes(2);
+  });
+
+  it('submits the explicit deal for a new appointment while keeping edit links unchanged', async () => {
+    const wrapper = mountComponent();
+    await flushPromises();
+    await wrapper.vm.startCreateAppointment();
+    const selector = wrapper.findComponent(AppointmentDealSelector);
+    expect(selector.props('communicationContactId')).toBe(42);
+    expect(selector.props('conversationDisplayId')).toBe(123);
+    await selector.vm.$emit('update:modelValue', { crm_deal_id: 88 });
+    Object.assign(wrapper.vm.createForm, {
+      startsAt: '2026-06-27T10:00',
+      endsAt: '2026-06-27T10:30',
+    });
+
+    expect(wrapper.vm.buildCreatePayload()).toEqual(
+      expect.objectContaining({ crm_deal_id: 88, contact_id: 42 })
+    );
+    expect(
+      wrapper.vm.buildAppointmentPayload(
+        wrapper.vm.appointmentForms['appointment-501']
+      )
+    ).not.toHaveProperty('crm_deal_id');
+  });
+
+  it('takes the source deal from the CRM conversation panel context', async () => {
+    const source = ref(88);
+    const wrapper = mountComponent(
+      defaultCurrentChat(),
+      {},
+      { crmSourceDealId: source }
+    );
+    await flushPromises();
+    await wrapper.vm.startCreateAppointment();
+    const selector = wrapper.findComponent(AppointmentDealSelector);
+
+    expect(selector.props('sourceDealId')).toBe(88);
+    source.value = 89;
+    await flushPromises();
+    expect(selector.props('sourceDealId')).toBe(89);
+    expect(selector.props('communicationContactId')).toBe(42);
+  });
+
+  it('ignores a window response from the previous account after navigation', async () => {
+    const wrapper = mountComponent();
+    await flushPromises();
+    await wrapper.vm.startCreateAppointment();
+    await flushPromises();
+    const pending = deferredRequest();
+    SchedulingAvailabilityAPI.show.mockImplementationOnce(() => pending.promise);
+    wrapper.vm.changePickerDate(wrapper.vm.createForm, '2026-06-28');
+
+    mocks.route.params.accountId = '2';
+    await flushPromises();
+    pending.resolve({
+      data: {
+        payload: {
+          state: 'ok',
+          windows: [
+            {
+              starts_at: '2026-06-28T09:00:00+05:00',
+              ends_at: '2026-06-28T10:00:00+05:00',
+            },
+          ],
+        },
+      },
+    });
+    await flushPromises();
+
+    expect(
+      wrapper.vm.availabilityForForm(wrapper.vm.createForm).windows
+    ).toEqual([]);
+  });
+
+  it('ignores a window response after switching the selected family patient', async () => {
+    SchedulingAppointmentsAPI.get.mockResolvedValue({ data: { payload: [] } });
+    const wrapper = mountComponent(defaultCurrentChat(), patientContextProps(84));
+    await flushPromises();
+    const pending = deferredRequest();
+    SchedulingAvailabilityAPI.show.mockImplementationOnce(() => pending.promise);
+    wrapper.vm.changePickerDate(wrapper.vm.createForm, '2026-06-28');
+
+    await wrapper.setProps(patientContextProps(85));
+    await flushPromises();
+    pending.resolve({
+      data: {
+        payload: {
+          state: 'ok',
+          windows: [
+            {
+              starts_at: '2026-06-28T09:00:00+05:00',
+              ends_at: '2026-06-28T10:00:00+05:00',
+            },
+          ],
+        },
+      },
+    });
+    await flushPromises();
+
+    expect(wrapper.vm.createForm.patientContactId).toBe(85);
+    expect(
+      wrapper.vm.availabilityForForm(wrapper.vm.createForm).windows
+    ).toEqual([]);
   });
 
   it('opens the new appointment form inline from the header plus button', async () => {
