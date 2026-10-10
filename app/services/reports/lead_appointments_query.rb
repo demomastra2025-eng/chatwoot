@@ -100,8 +100,7 @@ module Reports
 
     def attended_sql
       "status = 'completed' AND (attendance_confirmed_at IS NOT NULL OR " \
-        "COALESCE(custom_attributes -> 'provider_status_audit' ->> 'reason', '') = 'provider_explicit_completed' OR " \
-        "(source <> 'medelement' AND COALESCE(custom_attributes -> 'provider_status_audit' ->> 'reason', '') = ''))"
+        "COALESCE(custom_attributes -> 'provider_status_audit' ->> 'reason', '') = 'provider_explicit_completed')"
     end
 
     def repeat_contacts_count

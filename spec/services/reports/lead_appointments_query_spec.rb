@@ -66,6 +66,16 @@ RSpec.describe Reports::LeadAppointmentsQuery do
                              cancelled_or_no_show_appointments_count: 1)
   end
 
+  it 'labels locally completed provider bookings without explicit attendance evidence as unknown' do
+    contact = create(:contact, account: account)
+    incoming(contact)
+    create(:scheduling_appointment, account: account, contact: contact, source: 'calendar', status: 'completed', created_at: first_at + 1.hour,
+                                    custom_attributes: { medelement_reception_code: 'booked', medelement_provider_sync_status: 'succeeded' })
+
+    expect(report).to include(leads_count: 1, booked_leads_count: 1, attended_leads_count: 0,
+                             attended_appointments_count: 0, unknown_attendance_appointments_count: 1)
+  end
+
   it 'preserves first-message origin attribution and separates deal results from lead conversion' do
     contact = create(:contact, account: account)
     first_message = incoming(contact)
