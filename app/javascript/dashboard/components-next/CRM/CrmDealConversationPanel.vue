@@ -100,7 +100,10 @@ const emit = defineEmits([
 ]);
 
 const { t } = useI18n();
-provide('crmSourceDealId', computed(() => props.sourceDealId));
+provide(
+  'crmSourceDealId',
+  computed(() => props.sourceDealId)
+);
 const store = useStore();
 const getConversationById = useMapGetter('getConversationById');
 const getAllConversations = useMapGetter('getAllConversations');
