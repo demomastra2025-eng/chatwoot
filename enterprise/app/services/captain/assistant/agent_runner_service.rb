@@ -102,7 +102,8 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def mcp_discovery_required?
-    return false if @playground_session&.trial?
+    return false if @source.to_s == 'playground'
+    return false unless Outbound::PlaygroundDeliveryPolicy.policy_for(conversation: @conversation).nil?
 
     mcp_tool_reference?(
       [

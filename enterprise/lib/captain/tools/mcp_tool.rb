@@ -25,7 +25,10 @@ class Captain::Tools::McpTool < Captain::Tools::BasePublicTool
     @mcp_server.enabled?
   end
 
-  def perform(_tool_context, **params)
+  def perform(tool_context, **params)
+    blocked = Captain::Playground::ExternalToolPolicy.failure_if_tainted(state: tool_context&.state)
+    return blocked if blocked
+
     Captain::Mcp::ExecutionService.new(
       mcp_server: @mcp_server,
       tool_name: @tool_definition[:mcp_tool_name],

@@ -5,6 +5,8 @@ class Captain::Mcp::ClientBuilder
 
   class << self
     def with_client(mcp_server, timeout_seconds: mcp_server.request_timeout)
+      Captain::Playground::ExternalToolPolicy.ensure_allowed!
+
       require 'ruby_llm/mcp'
 
       client = RubyLLM::MCP.client(
