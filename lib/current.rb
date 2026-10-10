@@ -26,4 +26,12 @@ module Current
     Current.suppress_runtime_events = nil
     Current.playground_run_policy = nil
   end
+
+  # A rule can finish while the same event is still executing other rules and listeners.
+  # Clear its actor context without losing the original run's delivery restrictions.
+  def self.reset_preserving_playground_policy!
+    policy = Current.playground_run_policy
+    reset
+    Current.playground_run_policy = policy
+  end
 end

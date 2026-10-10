@@ -104,7 +104,8 @@ const submissionMetrics = computed(() => [
 ]);
 
 const loadReport = async (range = {}) => {
-  const request = ++generation;
+  generation += 1;
+  const request = generation;
   const account = accountId.value;
   isLoading.value = true;
   hasError.value = false;

@@ -87,7 +87,7 @@ onBeforeUnmount(() => { generation += 1; });
       :placeholder="$t('CRM.APPOINTMENT_DEAL.CHOOSE')"
       @update:model-value="select"
     />
-    <p class="m-0 text-xs text-n-slate-10">{{ $t(error ? 'CRM.APPOINTMENT_DEAL.LOAD_ERROR' : 'CRM.APPOINTMENT_DEAL.MULTIPLE') }}</p>
+    <p class="m-0 text-xs text-n-slate-10">{{ error ? $t('CRM.APPOINTMENT_DEAL.LOAD_ERROR') : $t('CRM.APPOINTMENT_DEAL.MULTIPLE') }}</p>
     <Button v-if="error" size="xs" variant="ghost" :label="$t('CRM.GENERAL.RETRY')" @click="load" />
   </div>
 </template>

@@ -17,7 +17,7 @@ class Macros::ExecutionService < ActionService
       end
     end
   ensure
-    Current.reset
+    Current.reset_preserving_playground_policy!
   end
 
   private
