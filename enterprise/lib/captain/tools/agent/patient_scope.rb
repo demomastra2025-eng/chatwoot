@@ -48,7 +48,7 @@ class Captain::Tools::Agent::PatientScope
     scope = @assistant.account.scheduling_appointments
     return scope.none if contact_id.blank?
 
-    scope.where(contact_id: contact_id)
+    scope.where(contact_id: contact_id).where('COALESCE(patient_contact_id, contact_id) = ?', contact_id)
   end
 
   def appointments_with_access(params)

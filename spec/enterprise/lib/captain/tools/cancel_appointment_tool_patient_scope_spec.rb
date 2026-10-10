@@ -82,7 +82,7 @@ RSpec.describe Captain::Tools::CancelAppointmentTool do
     expect(selected.reload.client_comment).to eq('Family request')
   end
 
-  it 'keeps confirmation mandatory for a family appointment already linked to this chat' do
+  it 'requires both task access and confirmation for a family appointment already linked to this chat' do
     patient = create(:contact, account: account)
     selected = create(:scheduling_appointment, account: account, contact: contact,
                                              patient_contact: patient, conversation: conversation)
@@ -91,6 +91,12 @@ RSpec.describe Captain::Tools::CancelAppointmentTool do
     expect(JSON.parse(tool.execute(tool_context, appointment_id: selected.id))).to include('success' => false)
     expect(selected.reload.status).to eq('scheduled')
     expect(JSON.parse(tool.execute(tool_context, appointment_id: selected.id, patient_confirmed: true)))
+      .to include('success' => false)
+    expect(selected.reload.status).to eq('scheduled')
+    token = Captain::Tools::Agent::AppointmentAccess.issue(assistant: assistant, conversation: conversation, appointment: selected)
+    expect(JSON.parse(tool.execute(tool_context, appointment_id: selected.id, appointment_access_token: token)))
+      .to include('success' => false)
+    expect(JSON.parse(tool.execute(tool_context, appointment_id: selected.id, appointment_access_token: token, patient_confirmed: true)))
       .to include('success' => true, 'appointment_id' => selected.id)
     expect(selected.reload.status).to eq('cancelled')
   end

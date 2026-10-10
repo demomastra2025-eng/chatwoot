@@ -57,6 +57,23 @@ RSpec.describe Captain::Tools::Agent::AccountToolAdapter do
     end
   end
 
+  it 'does not expose another clinical patient merely because the same caller booked them' do
+    own = create(:scheduling_appointment, account: account, contact: contact, conversation: conversation)
+    family = create(:scheduling_appointment, account: account, contact: contact, patient_contact: other_contact,
+                                           conversation: conversation, client_name: 'Patient Beta')
+
+    search = JSON.parse(call_tool('search_appointments'))
+    expect(search.fetch('appointments').pluck('appointment_id')).to eq([own.id])
+    expect(JSON.parse(call_tool('get_appointment', appointment_id: family.id)))
+      .to eq('success' => false, 'reason' => 'not_found')
+
+    lookup = JSON.parse(call_tool('search_appointments', client_name: family.client_name, resource_id: family.resource_id,
+                                                       from: family.starts_at.beginning_of_day.iso8601))
+    token = lookup.fetch('appointments').sole.fetch('appointment_access_token')
+    expect(JSON.parse(call_tool('get_appointment', appointment_id: family.id, appointment_access_token: token)))
+      .to include('success' => true, 'appointment_id' => family.id)
+  end
+
   it 'allows a specifically identified family appointment without granting the rest of their history' do
     resource = create(:scheduling_resource, account: account)
     selected = create(:scheduling_appointment, account: account, contact: other_contact, resource: resource,
