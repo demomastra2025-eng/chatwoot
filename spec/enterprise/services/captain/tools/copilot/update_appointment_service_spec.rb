@@ -43,6 +43,7 @@ RSpec.describe Captain::Tools::Copilot::UpdateAppointmentService do
   describe '#execute' do
     it 'refuses an unverified provider move beyond the background cache without changing the visit' do
       contact.update!(last_name: 'Testova')
+      consultation.update!(custom_attributes: { 'medelement_nomenclature_code' => 'consultation-1' })
       original_interval = [appointment.starts_at, appointment.ends_at]
       resource.update!(custom_attributes: { 'medelement_specialist_code' => 'doctor-1' })
       zone = ActiveSupport::TimeZone['Asia/Almaty']

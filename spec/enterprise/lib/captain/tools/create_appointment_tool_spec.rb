@@ -224,6 +224,7 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
   end
 
   it 'books a named child from the mother chat without changing either caller identity or conversation' do
+    allow(Rails).to receive(:cache).and_return(ActiveSupport::Cache::MemoryStore.new)
     resource = create(:scheduling_resource, account: account, timezone: 'Asia/Almaty')
     mother = create(:contact, account: account, name: 'Test Mother', phone_number: '+77010000001')
     conversation = create(:conversation, account: account, contact: mother)

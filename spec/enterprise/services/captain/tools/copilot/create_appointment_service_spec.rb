@@ -34,7 +34,7 @@ RSpec.describe Captain::Tools::Copilot::CreateAppointmentService do
 
       expect(result).to include('MEDELEMENT_AVAILABILITY_UNVERIFIED')
       expect(result).not_to include('MEDELEMENT_HORIZON_EXCEEDED')
-      expect(account.scheduling_appointments).to be_empty
+      expect(account.scheduling_appointments.reload).to be_empty
     end
 
     it 'creates an appointment from the selected service duration and returns a structured payload' do

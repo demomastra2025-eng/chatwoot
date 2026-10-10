@@ -54,7 +54,7 @@ RSpec.describe Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService
     expect(payload.to_s).not_to include('fresh')
   end
 
-  it 'clips integrated availability beyond the provider horizon' do
+  it 'reports unavailable provider evidence beyond the background cache without a fixed date cutoff' do
     resource = create_resource('Provider', custom_attributes: { 'medelement_specialist_code' => 'doctor-1' })
     zone = ActiveSupport::TimeZone['Asia/Almaty']
     date = zone.today + 90
@@ -64,8 +64,9 @@ RSpec.describe Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService
     payload = JSON.parse(tool.execute(resource_id: resource.id, from: from.iso8601, to: (from + 1.hour).iso8601))
 
     expect(payload['slots']).to be_empty
-    expect(payload.dig('availability', 'resources', 0, 'status')).to eq('outside_horizon')
-    expect(payload['availability_note']).to include((date - 1).strftime('%d.%m.%Y'))
+    expect(payload.dig('availability', 'resources', 0, 'status')).to eq('provider_unavailable')
+    expect(payload['availability_note']).to include('наличие свободного времени неизвестно')
+    expect(payload.to_s).not_to include('outside_horizon')
   end
 
   it 'keeps a provider schedule note without claiming a live result' do

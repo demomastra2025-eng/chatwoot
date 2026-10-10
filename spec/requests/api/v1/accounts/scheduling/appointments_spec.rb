@@ -109,7 +109,7 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
   it 'moves beyond the background cache when the provider confirms the exact interval' do
     make_provider_resource!
     stub_medelement_availability
-    appointment = create(:scheduling_appointment, account: account, resource: resource, contact: contact,
+    appointment = create(:scheduling_appointment, account: account, resource: resource, contact: contact, service: nil,
                                                   starts_at: booking_day, ends_at: booking_day + 30.minutes,
                                                   client_first_name: 'Test', client_last_name: 'Patient', client_phone: '+77015554433',
                                                   custom_attributes: { 'medelement_cabinet_code' => 'cabinet-1' })

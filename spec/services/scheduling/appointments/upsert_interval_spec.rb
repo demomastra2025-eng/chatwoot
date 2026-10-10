@@ -101,7 +101,7 @@ RSpec.describe Scheduling::Appointments::UpsertService do
     expect(Contacts::PhoneIdentityLock).not_to receive(:acquire!)
 
     expect { perform }.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_AVAILABILITY_UNVERIFIED') }
-    expect(account.scheduling_appointments).to be_empty
+    expect(account.scheduling_appointments.reload).to be_empty
   end
 
   it 'preserves the authored duration on a later note edit without another provider read' do
