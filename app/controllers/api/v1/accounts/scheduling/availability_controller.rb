@@ -6,7 +6,8 @@ class Api::V1::Accounts::Scheduling::AvailabilityController < Api::V1::Accounts:
     from, to = requested_range(resource)
     result = Scheduling::ScheduleDayAvailabilityService.new(
       resource: resource, from: from, to: to, service: service,
-      duration_min: duration_min(resource, service), cabinet_code: params[:cabinet_code]
+      duration_min: duration_min(resource, service), cabinet_code: params[:cabinet_code],
+      allow_live: !parse_boolean(params[:confirmed_only])
     ).perform
 
     render_payload(availability_payload(result))

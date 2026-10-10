@@ -191,7 +191,12 @@
         "NOT_CONFIRMED": "График врача пока не подтверждён. Выберите другую дату или попробуйте позже.",
         "UNAVAILABLE": "Не удалось проверить доступность. Попробуйте позже.",
         "HORIZON": "График врача открыт до {date}",
-        "CONFLICT": "Время уже занято, выберите другое"
+        "CONFLICT": "Время уже занято, выберите другое",
+        "SEARCHING": "No free time on {date}. Searching confirmed availability through {through}…",
+        "NEAREST_CONFIRMED": "No free time on {date}. Showing the nearest confirmed time on {nearestDate}.",
+        "NO_NEARBY_CONFIRMED": "No free time on {date} or in the verified schedule through {through}.",
+        "NEAREST_NOT_CONFIRMED": "No free time on {date}. None was found through {through}; some dates have unconfirmed schedules.",
+        "NEAREST_UNAVAILABLE": "No free time on {date}. The search for confirmed availability failed. Try again later."
       },
       "PATIENT_CARD": "Patient card",
       "PATIENT_CARD_LINK": "Patient card: {patientName} #{contactId}",

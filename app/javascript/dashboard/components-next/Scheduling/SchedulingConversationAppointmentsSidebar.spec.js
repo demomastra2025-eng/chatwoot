@@ -197,7 +197,11 @@ vi.mock('dashboard/api/scheduling/availability', () => ({
     show: vi.fn(() =>
       Promise.resolve({
         data: {
-          payload: { state: 'ok', windows: [], last_bookable_date: null },
+          payload: {
+            state: 'schedule_not_confirmed',
+            windows: [],
+            last_bookable_date: null,
+          },
         },
       })
     ),
@@ -705,7 +709,13 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     SchedulingAppointmentsAPI.cancel.mockClear();
     SchedulingAvailabilityAPI.show.mockReset();
     SchedulingAvailabilityAPI.show.mockResolvedValue({
-      data: { payload: { state: 'ok', windows: [], last_bookable_date: null } },
+      data: {
+        payload: {
+          state: 'schedule_not_confirmed',
+          windows: [],
+          last_bookable_date: null,
+        },
+      },
     });
     SchedulingProviderCommandsAPI.list.mockReset();
     SchedulingProviderCommandsAPI.confirm.mockReset();
@@ -787,14 +797,16 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     expect(wrapper.vm.createForm.startsAt).toBe('2026-06-28T10:00');
     await flushPromises();
     expect(SchedulingAvailabilityAPI.show).toHaveBeenCalledWith(
-      expect.objectContaining({ date: '2026-06-28', resource_id: 7 })
+      expect.objectContaining({ date: '2026-06-28', resource_id: 7 }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
     );
 
     wrapper.vm.selectWindow(wrapper.vm.createForm, window);
     wrapper.vm.handleCreateServiceChange(9);
     expect(wrapper.vm.createForm.startsAt).toBe('2026-06-27T10:00');
     expect(SchedulingAvailabilityAPI.show).toHaveBeenCalledWith(
-      expect.objectContaining({ service_id: 9 })
+      expect.objectContaining({ service_id: 9 }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
     );
 
     wrapper.vm.selectWindow(wrapper.vm.createForm, window);
@@ -802,8 +814,258 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     expect(wrapper.vm.createForm.startsAt).toBe('2026-06-27T10:00');
     wrapper.vm.changeCabinet(wrapper.vm.createForm, 'room-1');
     expect(SchedulingAvailabilityAPI.show).toHaveBeenCalledWith(
-      expect.objectContaining({ cabinet_code: 'room-1', resource_id: 7 })
+      expect.objectContaining({ cabinet_code: 'room-1', resource_id: 7 }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
     );
+  });
+
+  it('moves an empty day to the nearest confirmed date in one bounded range, preserving manual time and booking criteria', async () => {
+    configureMedelementResource();
+    mocks.services[0].prices = [{ active: true, price: 5000, resourceId: 7 }];
+    const wrapper = mountComponent();
+    await flushPromises();
+    await wrapper.vm.startCreateAppointment({ scroll: false });
+    await flushPromises();
+    Object.assign(wrapper.vm.createForm, {
+      resourceId: 7,
+      serviceId: 9,
+      medelementCabinetCode: '501',
+      durationMin: 75,
+      durationEdited: true,
+      startsAt: '2026-04-20T10:00',
+      endsAt: '2026-04-20T11:15',
+      selectedWindowStartsAt: '2026-04-20T10:00:00+05:00',
+    });
+    const verified = {
+      starts_at: '2026-04-23T10:00:00+05:00',
+      ends_at: '2026-04-23T11:15:00+05:00',
+      cabinet_code: '501',
+    };
+    const later = {
+      starts_at: '2026-04-24T10:00:00+05:00',
+      ends_at: '2026-04-24T11:15:00+05:00',
+      cabinet_code: '501',
+    };
+    SchedulingAvailabilityAPI.show.mockClear();
+    SchedulingAvailabilityAPI.show
+      .mockResolvedValueOnce({
+        data: { payload: { state: 'closed_day', windows: [] } },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          payload: {
+            state: 'schedule_not_confirmed',
+            source: 'provider_schedule',
+            windows: [
+              later,
+              {
+                starts_at: '2026-04-21T09:00:00+05:00',
+                ends_at: '2026-04-21T10:15:00+05:00',
+                cabinet_code: '502',
+              },
+              {
+                starts_at: '2026-04-22T10:00:00+05:00',
+                ends_at: '2026-04-22T10:30:00+05:00',
+                cabinet_code: '501',
+              },
+              verified,
+              {
+                starts_at: '2026-05-22T10:00:00+05:00',
+                ends_at: '2026-05-22T11:15:00+05:00',
+                cabinet_code: '501',
+              },
+            ],
+          },
+        },
+      });
+    wrapper.vm.changePickerDate(wrapper.vm.createForm, '2026-04-20');
+    await flushPromises();
+
+    expect(SchedulingAvailabilityAPI.show).toHaveBeenCalledTimes(2);
+    expect(SchedulingAvailabilityAPI.show).toHaveBeenLastCalledWith(
+      {
+        resource_id: 7,
+        service_id: 9,
+        cabinet_code: '501',
+        duration_min: 75,
+        date_from: '2026-04-21',
+        date_to: '2026-05-21',
+        confirmed_only: true,
+      },
+      expect.objectContaining({
+        signal: expect.any(AbortSignal),
+        timeout: 8000,
+      })
+    );
+    expect(SchedulingAvailabilityAPI.show.mock.calls[0][1]).not.toHaveProperty(
+      'timeout'
+    );
+    expect(wrapper.vm.createForm).toMatchObject({
+      availabilityDate: '2026-04-23',
+      startsAt: '2026-04-20T10:00',
+      endsAt: '2026-04-20T11:15',
+      durationMin: 75,
+      durationEdited: true,
+      medelementCabinetCode: '501',
+      resourceId: 7,
+      serviceId: 9,
+      selectedWindowStartsAt: '',
+    });
+    expect(wrapper.vm.availabilityForForm(wrapper.vm.createForm)).toMatchObject(
+      {
+        state: 'ok',
+        windows: [verified],
+        nearestState: 'found',
+        emptyDate: '2026-04-20',
+        searchThrough: '2026-05-21',
+      }
+    );
+  });
+
+  it.each(['schedule_not_confirmed', 'provider_unavailable'])(
+    'keeps %s distinct from a confirmed empty day and does not search for another date',
+    async state => {
+      const wrapper = mountComponent();
+      await flushPromises();
+      await wrapper.vm.startCreateAppointment({ scroll: false });
+      await flushPromises();
+      SchedulingAvailabilityAPI.show.mockClear();
+      SchedulingAvailabilityAPI.show.mockResolvedValueOnce({
+        data: {
+          payload: {
+            state,
+            windows: [
+              {
+                starts_at: '2026-04-20T10:00:00+05:00',
+                ends_at: '2026-04-20T10:30:00+05:00',
+              },
+            ],
+          },
+        },
+      });
+      wrapper.vm.changePickerDate(wrapper.vm.createForm, '2026-04-20');
+      await flushPromises();
+      expect(SchedulingAvailabilityAPI.show).toHaveBeenCalledTimes(1);
+      expect(wrapper.vm.createForm.availabilityDate).toBe('2026-04-20');
+      expect(
+        wrapper.vm.availabilityForForm(wrapper.vm.createForm)
+      ).toMatchObject({ state, windows: [] });
+      expect(
+        wrapper.vm.availabilityForForm(wrapper.vm.createForm).nearestState
+      ).toBeUndefined();
+    }
+  );
+
+  it.each([
+    ['closed_day', 'none'],
+    ['schedule_not_confirmed', 'schedule_not_confirmed'],
+    ['provider_unavailable', 'provider_unavailable'],
+  ])(
+    'reports %s from the bounded search without moving the date or repeating requests',
+    async (state, nearestState) => {
+      const wrapper = mountComponent();
+      await flushPromises();
+      await wrapper.vm.startCreateAppointment({ scroll: false });
+      await flushPromises();
+      SchedulingAvailabilityAPI.show.mockClear();
+      SchedulingAvailabilityAPI.show
+        .mockResolvedValueOnce({
+          data: { payload: { state: 'closed_day', windows: [] } },
+        })
+        .mockResolvedValueOnce({ data: { payload: { state, windows: [] } } });
+      wrapper.vm.changePickerDate(wrapper.vm.createForm, '2026-04-20');
+      await flushPromises();
+      expect(SchedulingAvailabilityAPI.show).toHaveBeenCalledTimes(2);
+      expect(wrapper.vm.createForm.availabilityDate).toBe('2026-04-20');
+      expect(
+        wrapper.vm.availabilityForForm(wrapper.vm.createForm)
+      ).toMatchObject({
+        state: 'closed_day',
+        windows: [],
+        nearestState,
+      });
+    }
+  );
+
+  it('cancels a pending nearest-date request when duration changes and ignores its stale verified date', async () => {
+    const wrapper = mountComponent();
+    await flushPromises();
+    await wrapper.vm.startCreateAppointment({ scroll: false });
+    await flushPromises();
+    const pending = deferredRequest();
+    SchedulingAvailabilityAPI.show
+      .mockResolvedValueOnce({
+        data: { payload: { state: 'closed_day', windows: [] } },
+      })
+      .mockReturnValueOnce(pending.promise);
+    wrapper.vm.changePickerDate(wrapper.vm.createForm, '2026-04-20');
+    await flushPromises();
+    const rangeRequest = SchedulingAvailabilityAPI.show.mock.calls.at(-1);
+    expect(rangeRequest[0].confirmed_only).toBe(true);
+    expect(rangeRequest[1].signal.aborted).toBe(false);
+    wrapper.vm.createForm.durationMin = 75;
+    wrapper.vm.manualTimeChanged(wrapper.vm.createForm, 'duration');
+    expect(rangeRequest[1].signal.aborted).toBe(true);
+    await flushPromises();
+    pending.resolve({
+      data: {
+        payload: {
+          state: 'ok',
+          windows: [
+            {
+              starts_at: '2026-04-21T10:00:00+05:00',
+              ends_at: '2026-04-21T10:30:00+05:00',
+            },
+          ],
+        },
+      },
+    });
+    await flushPromises();
+    expect(wrapper.vm.createForm.availabilityDate).toBe('2026-04-20');
+    expect(wrapper.vm.createForm.durationMin).toBe(75);
+    expect(wrapper.vm.availabilityForForm(wrapper.vm.createForm)).toMatchObject(
+      { state: 'schedule_not_confirmed', windows: [] }
+    );
+  });
+
+  it('offers only full duration windows, retains the authored duration on selection and clears it on reload', async () => {
+    const wrapper = mountComponent();
+    await flushPromises();
+    await wrapper.vm.startCreateAppointment({ scroll: false });
+    await flushPromises();
+    Object.assign(wrapper.vm.createForm, {
+      durationMin: 75,
+      durationEdited: true,
+    });
+    const long = {
+      starts_at: '2026-04-20T10:00:00+05:00',
+      ends_at: '2026-04-20T11:30:00+05:00',
+    };
+    const short = {
+      starts_at: '2026-04-20T09:00:00+05:00',
+      ends_at: '2026-04-20T09:30:00+05:00',
+    };
+    SchedulingAvailabilityAPI.show.mockResolvedValueOnce({
+      data: { payload: { state: 'ok', windows: [short, long] } },
+    });
+    wrapper.vm.changePickerDate(wrapper.vm.createForm, '2026-04-20');
+    await flushPromises();
+    expect(
+      wrapper.vm.availabilityForForm(wrapper.vm.createForm).windows
+    ).toEqual([long]);
+    wrapper.vm.selectWindow(wrapper.vm.createForm, short);
+    expect(wrapper.vm.createForm.selectedWindowStartsAt).toBe('');
+    wrapper.vm.selectWindow(wrapper.vm.createForm, long);
+    expect(wrapper.vm.createForm).toMatchObject({
+      startsAt: '2026-04-20T10:00',
+      endsAt: '2026-04-20T11:15',
+      durationMin: 75,
+      durationEdited: true,
+    });
+    wrapper.vm.handleCreateServiceChange(9);
+    expect(wrapper.vm.createForm.selectedWindowStartsAt).toBe('');
+    expect(wrapper.vm.createForm.endsAt).toBe('2026-04-20T11:15');
+    await flushPromises();
   });
 
   it('shows loading and unavailable states without offering a window', async () => {
@@ -909,7 +1171,8 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
 
     expect(wrapper.vm.createForm.endsAt).toBe('2026-06-27T11:15');
     expect(SchedulingAvailabilityAPI.show).toHaveBeenLastCalledWith(
-      expect.objectContaining({ duration_min: 75, service_id: 9 })
+      expect.objectContaining({ duration_min: 75, service_id: 9 }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
     );
     await wrapper.vm.saveCreateAppointment();
     expect(SchedulingAppointmentsAPI.create).toHaveBeenCalledWith(
@@ -2523,6 +2786,7 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     const window = {
       starts_at: '2026-06-27T10:00:00+05:00',
       ends_at: '2026-06-27T10:30:00+05:00',
+      cabinet_code: 'cabinet-1',
     };
     SchedulingAvailabilityAPI.show.mockResolvedValue({
       data: { payload: { state: 'ok', windows: [window] } },
@@ -2567,6 +2831,7 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     const window = {
       starts_at: '2026-06-27T10:00:00+05:00',
       ends_at: '2026-06-27T10:30:00+05:00',
+      cabinet_code: '502',
     };
     SchedulingAvailabilityAPI.show.mockResolvedValue({
       data: { payload: { state: 'ok', windows: [window] } },
@@ -2609,7 +2874,8 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     wrapper.vm.changeCabinet(wrapper.vm.createForm, '502');
     await flushPromises();
     expect(SchedulingAvailabilityAPI.show).toHaveBeenCalledWith(
-      expect.objectContaining({ cabinet_code: '502', resource_id: 7 })
+      expect.objectContaining({ cabinet_code: '502', resource_id: 7 }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
     );
     expect(
       wrapper.vm.availabilityForForm(wrapper.vm.createForm).windows

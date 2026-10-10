@@ -6,8 +6,8 @@ class SchedulingAvailabilityAPI extends ApiClient {
     super('scheduling/availability', { accountScoped: true });
   }
 
-  show(params = {}) {
-    return axios.get(this.url, { params });
+  show(params = {}, options = {}) {
+    return axios.get(this.url, { ...options, params });
   }
 }
 

@@ -100,6 +100,8 @@ const fromClinicDateTime = value =>
   fromDateTimeInputValue(value, SCHEDULING_TIMEZONE);
 
 const NEW_APPOINTMENT_KEY = 'new-appointment';
+const AVAILABILITY_LOOKAHEAD_DAYS = 31;
+const NEAREST_AVAILABILITY_TIMEOUT_MS = 8000;
 
 const { t, locale } = useI18n();
 const store = useStore();
@@ -113,6 +115,7 @@ const patientContextStore = useConversationPatientContextStore();
 const appointments = ref([]);
 const appointmentForms = reactive({});
 const availabilityByForm = reactive({});
+const availabilityRequests = new Map();
 let availabilityRequestId = 0;
 const openAppointmentKeys = ref([]);
 const scrollContainer = ref(null);
@@ -890,8 +893,120 @@ const resetSelectedWindow = form => {
   form.selectedWindowStartsAt = '';
 };
 
+const cancelFormWindows = key => {
+  availabilityRequests.get(key)?.abort();
+  availabilityRequests.delete(key);
+};
+const cancelAllFormWindows = () => {
+  availabilityRequests.forEach(controller => controller.abort());
+  availabilityRequests.clear();
+};
+const availabilityParams = form => ({
+  resource_id: form?.resourceId,
+  ...(form?.serviceId ? { service_id: form.serviceId } : {}),
+  duration_min: Number(form?.durationMin),
+  date: form?.availabilityDate,
+  ...(form?.medelementCabinetCode
+    ? { cabinet_code: form.medelementCabinetCode }
+    : {}),
+});
+const usableFormWindows = (form, windows) =>
+  (Array.isArray(windows) ? windows : [])
+    .filter(window => {
+      const startsAt = Date.parse(window.starts_at);
+      const endsAt = Date.parse(window.ends_at);
+      return (
+        Number.isFinite(startsAt) &&
+        Number.isFinite(endsAt) &&
+        endsAt - startsAt >= Number(form.durationMin) * 60000 &&
+        (!form.medelementCabinetCode ||
+          String(window.cabinet_code) === String(form.medelementCabinetCode)) &&
+        !form.rejectedStartsAt?.some(
+          rejected => Date.parse(rejected) === startsAt
+        )
+      );
+    })
+    .sort(
+      (first, second) =>
+        Date.parse(first.starts_at) - Date.parse(second.starts_at)
+    );
+const dateAfter = (date, days) => {
+  const value = new Date(`${date}T12:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+};
+
+async function findNearestFormWindows(form, params, request) {
+  const { key, requestId, controller, isCurrent } = request;
+  const firstDate = dateAfter(params.date, 1);
+  const lastDate = dateAfter(params.date, AVAILABILITY_LOOKAHEAD_DAYS);
+  const empty = {
+    ...availabilityByForm[key],
+    emptyDate: params.date,
+    searchThrough: lastDate,
+    nearestState: 'loading',
+  };
+  availabilityByForm[key] = empty;
+  const { date, ...matchingParams } = params;
+  try {
+    // This one range read uses saved confirmed provider days. It never walks
+    // dates with serial MedElement HTTP requests or expands the booking horizon.
+    const response = await SchedulingAvailabilityAPI.show(
+      {
+        ...matchingParams,
+        date_from: firstDate,
+        date_to: lastDate,
+        confirmed_only: true,
+      },
+      { signal: controller.signal, timeout: NEAREST_AVAILABILITY_TIMEOUT_MS }
+    );
+    if (!isCurrent()) return;
+    const payload = response.data.payload;
+    const windows = ['ok', 'schedule_not_confirmed'].includes(payload.state)
+      ? usableFormWindows(form, payload.windows).filter(window => {
+          const windowDate = toClinicDateTime(window.starts_at).slice(0, 10);
+          return windowDate >= firstDate && windowDate <= lastDate;
+        })
+      : [];
+    if (windows.length) {
+      const nearestDate = toClinicDateTime(windows[0].starts_at).slice(0, 10);
+      form.availabilityDate = nearestDate;
+      availabilityByForm[key] = {
+        state: 'ok',
+        windows: windows.filter(
+          window =>
+            toClinicDateTime(window.starts_at).slice(0, 10) === nearestDate
+        ),
+        emptyDate: date,
+        searchThrough: lastDate,
+        nearestState: 'found',
+        requestId,
+      };
+      return;
+    }
+    availabilityByForm[key] = {
+      ...empty,
+      nearestState:
+        {
+          provider_unavailable: 'provider_unavailable',
+          schedule_not_confirmed: 'schedule_not_confirmed',
+          closed_day: 'none',
+          ok: 'none',
+        }[payload.state] || 'provider_unavailable',
+    };
+  } catch {
+    if (!isCurrent()) return;
+    availabilityByForm[key] = {
+      ...empty,
+      nearestState: 'provider_unavailable',
+    };
+  }
+}
+
 async function loadFormWindows(form) {
   const key = pickerKeyForForm(form);
+  cancelFormWindows(key);
+  if (form) form.selectedWindowStartsAt = '';
   const context = captureSidebarContext();
   availabilityRequestId += 1;
   const requestId = availabilityRequestId;
@@ -910,47 +1025,49 @@ async function loadFormWindows(form) {
     availabilityByForm[key].state = '';
     return;
   }
-
+  const controller = new AbortController();
+  availabilityRequests.set(key, controller);
+  const params = availabilityParams(form);
+  const fingerprint = JSON.stringify(params);
+  const isCurrent = () =>
+    !controller.signal.aborted &&
+    isCurrentSidebarContext(context) &&
+    availabilityByForm[key]?.requestId === requestId &&
+    JSON.stringify(availabilityParams(form)) === fingerprint;
   try {
-    const response = await SchedulingAvailabilityAPI.show({
-      resource_id: form.resourceId,
-      ...(form.serviceId ? { service_id: form.serviceId } : {}),
-      duration_min:
-        Number(form.durationMin) ||
-        selectedResourceForForm(form)?.slotDurationMin ||
-        30,
-      date: form.availabilityDate,
-      ...(form.medelementCabinetCode
-        ? { cabinet_code: form.medelementCabinetCode }
-        : {}),
+    const response = await SchedulingAvailabilityAPI.show(params, {
+      signal: controller.signal,
     });
-    if (
-      !isCurrentSidebarContext(context) ||
-      availabilityByForm[key]?.requestId !== requestId
-    )
-      return;
+    if (!isCurrent()) return;
     const payload = response.data.payload;
+    const windows =
+      payload.state === 'ok' ? usableFormWindows(form, payload.windows) : [];
     availabilityByForm[key] = {
       state: payload.state,
-      windows: (payload.windows || []).filter(
-        window =>
-          !form.rejectedStartsAt?.some(
-            rejected => Date.parse(rejected) === Date.parse(window.starts_at)
-          )
-      ),
+      windows,
       requestId,
     };
-  } catch {
     if (
-      !isCurrentSidebarContext(context) ||
-      availabilityByForm[key]?.requestId !== requestId
-    )
-      return;
+      payload.state === 'closed_day' ||
+      (payload.state === 'ok' && !windows.length)
+    ) {
+      await findNearestFormWindows(form, params, {
+        key,
+        requestId,
+        controller,
+        isCurrent,
+      });
+    }
+  } catch {
+    if (!isCurrent()) return;
     availabilityByForm[key] = {
       state: 'provider_unavailable',
       windows: [],
       requestId,
     };
+  } finally {
+    if (availabilityRequests.get(key) === controller)
+      availabilityRequests.delete(key);
   }
 }
 
@@ -990,6 +1107,7 @@ const restorePatientDraft = () => {
 };
 
 const setAppointmentForms = () => {
+  cancelAllFormWindows();
   Object.keys(appointmentForms).forEach(key => delete appointmentForms[key]);
   Object.keys(availabilityByForm).forEach(
     key => delete availabilityByForm[key]
@@ -1030,10 +1148,18 @@ const changePickerDate = (form, date) => {
 };
 
 const selectWindow = (form, window) => {
+  const availability = availabilityForForm(form);
+  if (
+    availability.state !== 'ok' ||
+    !usableFormWindows(form, availability.windows).some(
+      candidate =>
+        candidate.starts_at === window.starts_at &&
+        candidate.cabinet_code === window.cabinet_code
+    )
+  )
+    return;
   form.startsAt = toClinicDateTime(window.starts_at);
-  form.endsAt = toClinicDateTime(window.ends_at);
-  form.durationMin =
-    (Date.parse(window.ends_at) - Date.parse(window.starts_at)) / 60000;
+  updateFormEndFromDuration(form);
   form.selectedWindowStartsAt = window.starts_at;
 };
 
@@ -1768,6 +1894,7 @@ const cancelCreateAppointment = () => {
   if (!appointments.value.length) return;
 
   isCreating.value = false;
+  cancelFormWindows(NEW_APPOINTMENT_KEY);
   patientContextStore.clearDraft(currentDraftKey.value);
   openAppointmentKeys.value = openAppointmentKeys.value.filter(
     key => key !== NEW_APPOINTMENT_KEY
@@ -1799,6 +1926,7 @@ const handleSaveAvailabilityError = (error, form) => {
   if (code === 'MEDELEMENT_AVAILABILITY_UNVERIFIED') {
     useAlert(t('SCHEDULING.APPOINTMENT_FORM.AVAILABILITY.UNAVAILABLE'));
     resetSelectedWindow(form);
+    cancelFormWindows(pickerKeyForForm(form));
     availabilityRequestId += 1;
     availabilityByForm[pickerKeyForForm(form)] = {
       state: 'provider_unavailable',
@@ -2312,6 +2440,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   rememberPatientDraft();
+  cancelAllFormWindows();
   sidebarDisposed = true;
   loadRequestId += 1;
   providerReviewGeneration += 1;
@@ -2337,6 +2466,7 @@ watch(
   ],
   async () => {
     rememberPatientDraft();
+    cancelAllFormWindows();
     activeDraftKey = currentDraftKey.value;
     providerReviewGeneration += 1;
     appointmentSaveRequestId += 1;
@@ -2711,6 +2841,13 @@ watch(
                     :date="createForm.availabilityDate"
                     :state="availabilityForForm(createForm).state"
                     :windows="availabilityForForm(createForm).windows"
+                    :nearest-state="
+                      availabilityForForm(createForm).nearestState
+                    "
+                    :empty-date="availabilityForForm(createForm).emptyDate"
+                    :search-through="
+                      availabilityForForm(createForm).searchThrough
+                    "
                     :selected-starts-at="createForm.selectedWindowStartsAt"
                     @update:date="changePickerDate(createForm, $event)"
                     @select="selectWindow(createForm, $event)"
@@ -3467,6 +3604,21 @@ watch(
                       availabilityForForm(
                         appointmentForms[appointmentKey(appointment)]
                       ).windows
+                    "
+                    :nearest-state="
+                      availabilityForForm(
+                        appointmentForms[appointmentKey(appointment)]
+                      ).nearestState
+                    "
+                    :empty-date="
+                      availabilityForForm(
+                        appointmentForms[appointmentKey(appointment)]
+                      ).emptyDate
+                    "
+                    :search-through="
+                      availabilityForForm(
+                        appointmentForms[appointmentKey(appointment)]
+                      ).searchThrough
                     "
                     :selected-starts-at="
                       appointmentForms[appointmentKey(appointment)]

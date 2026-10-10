@@ -28,11 +28,11 @@ RSpec.describe 'Scheduling Availability API', type: :request do
     response.parsed_body.fetch('payload')
   end
 
-  def create_day(status: 'confirmed', checked_at: Time.current)
+  def create_day(status: 'confirmed', checked_at: Time.current, on: Date.new(2026, 4, 20), windows: [{ start_minute: 10 * 60, end_minute: 11 * 60 }])
     Integrations::Medelement::ScheduleDay.create!(
       account: account, hook: hook, resource: resource, specialist_code: 'specialist-1',
-      date: Date.new(2026, 4, 20), status: status, source_checked_at: checked_at,
-      windows: status == 'confirmed' ? [{ start_minute: 10 * 60, end_minute: 11 * 60 }] : []
+      date: on, status: status, source_checked_at: checked_at,
+      windows: status == 'confirmed' ? windows : []
     )
   end
 
@@ -64,10 +64,57 @@ RSpec.describe 'Scheduling Availability API', type: :request do
       '19.07.2026' => { 'timetable' => [{ 'start' => '19.07.2026 10:00', 'end' => '19.07.2026 11:00', 'working' => true }] }
     )
     allow(Integrations::Medelement::Client).to receive(:new).and_return(client)
-    payload = request_day('2026-07-19')
+    payload = request_day('2026-07-19', confirmed_only: 'false')
     expect(payload).to include('state' => 'ok', 'last_bookable_date' => nil)
     expect(payload['windows']).to be_present
     expect(payload).not_to have_key('code')
+  end
+
+  it 'returns partial verified slots for the same service, cabinet and full duration without live range reads' do
+    service = create(:scheduling_service, account: account, duration_min: 30)
+    create(:scheduling_service_price, account: account, resource: resource, service: service)
+    resource.update!(custom_attributes: resource.custom_attributes.merge(
+      'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }, { 'companyCabinetCode' => 'cabinet-2' }]
+    ))
+    create_day(status: 'empty_confirmed', on: Date.new(2026, 4, 21))
+    create_day(status: 'unverified', on: Date.new(2026, 4, 22))
+    create_day(on: Date.new(2026, 4, 23), checked_at: 2.days.ago)
+    create_day(on: Date.new(2026, 4, 24), windows: [{ start_minute: 600, end_minute: 690, cabinet_code: 'cabinet-2' }])
+    create_day(on: Date.new(2026, 4, 25), windows: [{ start_minute: 600, end_minute: 660, cabinet_code: 'cabinet-1' }])
+    create_day(on: Date.new(2026, 4, 26), windows: [{ start_minute: 600, end_minute: 690, cabinet_code: 'cabinet-1' }])
+    expect(Integrations::Medelement::Client).not_to receive(:new)
+    expect(Integrations::Medelement::ResourceAvailabilityService).not_to receive(:new)
+
+    get path, params: { resource_id: resource.id, service_id: service.id, duration_min: 75, cabinet_code: 'cabinet-1',
+                        date_from: '2026-04-21', date_to: '2026-05-21', confirmed_only: true }, headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    payload = response.parsed_body.fetch('payload')
+    expect(payload).to include('state' => 'schedule_not_confirmed', 'source' => 'provider_schedule')
+    expect(payload.fetch('windows')).to contain_exactly(
+      include('cabinet_code' => 'cabinet-1', 'starts_at' => '2026-04-26T10:00:00+05:00', 'ends_at' => '2026-04-26T11:15:00+05:00')
+    )
+  end
+
+  it 'keeps a missing future 31-day range unconfirmed in confirmed-only mode' do
+    expect(Integrations::Medelement::Client).not_to receive(:new)
+    expect(Integrations::Medelement::ResourceAvailabilityService).not_to receive(:new)
+    get path, params: { resource_id: resource.id, date_from: '2026-07-20', date_to: '2026-08-19', confirmed_only: true },
+              headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch('payload')).to include('state' => 'schedule_not_confirmed', 'windows' => [])
+  end
+
+  it 'distinguishes a fully confirmed empty range from unknown days and an unavailable provider' do
+    (Date.new(2026, 4, 21)..Date.new(2026, 5, 21)).each { |day| create_day(status: 'empty_confirmed', on: day) }
+    expect(Integrations::Medelement::Client).not_to receive(:new)
+    get path, params: { resource_id: resource.id, date_from: '2026-04-21', date_to: '2026-05-21', confirmed_only: true },
+              headers: headers, as: :json
+    expect(response.parsed_body.fetch('payload')).to include('state' => 'closed_day', 'windows' => [])
+
+    hook.update!(status: Integrations::Hook.statuses['disabled'])
+    expect(request_day('2026-04-21', confirmed_only: true)).to include('state' => 'provider_unavailable', 'windows' => [])
   end
 
   it 'uses an explicitly authored duration even when a service has a different default' do
