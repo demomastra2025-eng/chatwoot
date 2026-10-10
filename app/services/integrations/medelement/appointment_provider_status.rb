@@ -22,6 +22,7 @@ class Integrations::Medelement::AppointmentProviderStatus
 
     def persist!(appointment, status, command: nil)
       return if appointment.blank?
+
       attrs = appointment.custom_attributes.to_h
       return if attrs[ATTRIBUTE_KEY] == status && command_current?(appointment, command) &&
                 (command.blank? || attrs[OPERATION_KEY] == command.operation)
@@ -53,12 +54,11 @@ class Integrations::Medelement::AppointmentProviderStatus
       status = appointment.custom_attributes.to_h[ATTRIBUTE_KEY].presence
       return {} if status.blank?
 
-      confirmed = status == SUCCEEDED && (appointment.status != 'cancelled' || cancellation_confirmed?(appointment))
+      confirmed = provider_confirmed?(appointment, status)
       {
         provider_confirmation_status: status == SUCCEEDED && !confirmed ? 'not_confirmed' : status,
         provider_confirmed: confirmed,
-        provider_confirmation_operation: appointment.status == 'cancelled' ? 'remove_reception' :
-          appointment.custom_attributes.to_h[OPERATION_KEY],
+        provider_confirmation_operation: confirmation_operation(appointment),
         provider_confirmation_scope: 'medelement'
       }
     end
@@ -66,9 +66,9 @@ class Integrations::Medelement::AppointmentProviderStatus
     def cancellation_confirmed?(appointment)
       attrs = appointment.custom_attributes.to_h
       return false if Integrations::Medelement::LocalCancellation.marked?(attrs)
-      return true if attrs.dig('provider_status_audit', 'reason').in?(%w[
-        provider_removed provider_explicit_cancelled missing_from_two_authoritative_snapshots
-      ])
+
+      authoritative_reason = attrs.dig('provider_status_audit', 'reason')
+      return true if authoritative_reason.in?(%w[provider_removed provider_explicit_cancelled missing_from_two_authoritative_snapshots])
 
       attrs[ATTRIBUTE_KEY] == SUCCEEDED && attrs[COMMAND_ID_KEY].present? &&
         attrs[CANCELLATION_COMMAND_ID_KEY].to_s == attrs[COMMAND_ID_KEY].to_s &&
@@ -98,6 +98,16 @@ class Integrations::Medelement::AppointmentProviderStatus
     end
 
     private
+
+    def provider_confirmed?(appointment, status)
+      status == SUCCEEDED && (appointment.status != 'cancelled' || cancellation_confirmed?(appointment))
+    end
+
+    def confirmation_operation(appointment)
+      return 'remove_reception' if appointment.status == 'cancelled'
+
+      appointment.custom_attributes.to_h[OPERATION_KEY]
+    end
 
     def assign!(appointment, status)
       appointment.custom_attributes = attributes(appointment, status)
