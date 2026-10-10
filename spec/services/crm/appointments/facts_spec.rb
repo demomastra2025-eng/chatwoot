@@ -37,6 +37,19 @@ RSpec.describe Crm::Appointments::Facts do
     expect(described_class.attended?(explicit.reload)).to be false
   end
 
+  it 'does not treat a generic automation status action as confirmation of attendance' do
+    account.enable_features!('scheduling')
+    visit = appointment
+    rule = create(:automation_rule, account: account, event_name: 'appointment_updated',
+                                    conditions: [{ attribute_key: 'status', filter_operator: 'equal_to', values: ['scheduled'], query_operator: nil }],
+                                    actions: [{ action_name: 'change_appointment_status', action_params: ['completed'] }])
+    AutomationRules::AppointmentActionService.new(rule, account, visit).perform(raise_errors: true)
+
+    expect(visit.reload.status).to eq('completed')
+    expect(visit.attendance_confirmed_at).to be_nil
+    expect(described_class.attended?(visit)).to be false
+  end
+
   it 'uses the workspace day for today and tomorrow instead of the UTC day' do
     appointment(starts_at: Time.utc(2026, 10, 11, 1), ends_at: Time.utc(2026, 10, 11, 2))
 

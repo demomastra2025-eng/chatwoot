@@ -13,11 +13,8 @@ class Crm::Appointments::Facts
 
     audit = appointment.custom_attributes.to_h['provider_status_audit'].to_h
     return true if audit['reason'] == 'provider_explicit_completed'
-    return true if appointment.attendance_confirmed_at.present?
-    return false if appointment.source == 'medelement' || audit['reason'].present?
 
-    # Existing staff-completed records remain useful evidence. An inactive provider record has an explicit audit reason.
-    true
+    appointment.attendance_confirmed_at.present?
   end
 
   def self.timezone_for(account)
