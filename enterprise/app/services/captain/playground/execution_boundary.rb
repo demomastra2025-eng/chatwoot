@@ -11,10 +11,11 @@ class Captain::Playground::ExecutionBoundary
 
     reject_trial_handles!(arguments)
     return failure(Outbound::PlaygroundDeliveryPolicy::BLOCKED_MESSAGE) if tool.name.to_s == 'send_notification'
+    policy = Outbound::PlaygroundDeliveryPolicy.for_run(session.run_policy)
     if %w[send_message_to_conversation retry_failed_message].include?(tool.name.to_s)
-      Outbound::PlaygroundDeliveryPolicy.ensure!(conversation: session.conversation, policy: session.run_policy)
+      Outbound::PlaygroundDeliveryPolicy.ensure!(conversation: session.conversation, policy: policy)
     end
-    Outbound::PlaygroundDeliveryPolicy.with(session.run_policy) { yield }
+    Outbound::PlaygroundDeliveryPolicy.with(policy) { yield }
   rescue ArgumentError, Outbound::PlaygroundDeliveryPolicy::Blocked => e
     failure(e.message)
   end

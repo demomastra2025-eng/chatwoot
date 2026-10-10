@@ -9,7 +9,8 @@ class Captain::Playground::ReplyDelivery
     content = response.to_h.with_indifferent_access[:response].to_s
     return { enabled: true, status: 'empty', delivered: false } if content.blank?
 
-    message = Outbound::PlaygroundDeliveryPolicy.with(@session.run_policy) do
+    policy = Outbound::PlaygroundDeliveryPolicy.for_run(@session.run_policy)
+    message = Outbound::PlaygroundDeliveryPolicy.with(policy) do
       Messages::MessageBuilder.new(@session.assistant, @session.conversation, { content: content, message_type: 'outgoing' }).perform
     end
     { enabled: true, status: message.failed? ? 'blocked' : 'queued', delivered: false, message_id: message.id }

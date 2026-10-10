@@ -7,6 +7,7 @@ RSpec.describe 'Captain Playground sessions', type: :request do
   let(:assistant) { create(:captain_assistant, account: account) }
   let(:inbox) { create(:inbox, account: account) }
   let(:runner) { instance_double(Captain::Assistant::AgentRunnerService, generate_response: { response: 'Server reply' }) }
+  let(:auth_headers_by_user) { {} }
 
   before do
     allow(Captain::Assistant::AgentRunnerService).to receive(:new).and_return(runner)
@@ -16,8 +17,12 @@ RSpec.describe 'Captain Playground sessions', type: :request do
 
   def request_playground(attributes = nil, user: admin, **fields)
     attributes ||= fields
+    headers = auth_headers_by_user[user.id] ||= user.create_new_auth_token
     post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground",
-         params: attributes, headers: user.create_new_auth_token, as: :json
+         params: attributes, headers: headers, as: :json
+    %w[access-token token-type client expiry uid].each do |key|
+      headers[key] = response.headers[key] if response.headers[key].present?
+    end
     JSON.parse(response.body, symbolize_names: true)
   end
 

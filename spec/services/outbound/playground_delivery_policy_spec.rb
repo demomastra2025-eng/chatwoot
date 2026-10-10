@@ -139,6 +139,40 @@ RSpec.describe Outbound::PlaygroundDeliveryPolicy do
     end
   end
 
+  it 'retains a confirmation causal policy after its appointment stamp is cleared by an ordinary mutation' do
+    appointment = create(:scheduling_appointment, account: account, contact: contact, conversation: conversation,
+                                                 custom_attributes: { described_class::ATTRIBUTE_KEY => policy })
+    request = create(:confirmation_request, account: account, conversation: conversation, subject: appointment)
+    appointment.update_columns(custom_attributes: {}) # rubocop:disable Rails/SkipsModelValidations
+    action = instance_double(Confirmations::ResponseActionService)
+    allow(Confirmations::ResponseActionService).to receive(:new).and_return(action)
+    descendant = nil
+    allow(action).to receive(:perform) do
+      expect(Current.playground_run_policy).to eq(policy)
+      descendant = EventDispatcherJob.new('confirmed', Time.current, {})
+      descendant.send(:capture_playground_run_policy)
+      nil
+    end
+
+    Confirmations::ResolveService.new(account: account, confirmation_request: request, decision: 'confirmed', source: 'system').perform
+
+    expect(request.reload.metadata[described_class::ATTRIBUTE_KEY]).to eq(policy)
+    expect(descendant.serialize['captain_playground']).to eq(policy)
+    expect(Current.playground_run_policy).to be_nil
+    expect(appointment.reload.custom_attributes).not_to have_key(described_class::ATTRIBUTE_KEY)
+  end
+
+  it 'ignores caller-supplied confirmation policy and preserves the original trusted stamp on updates' do
+    ordinary = create(:confirmation_request, account: account, conversation: conversation, metadata: { described_class::ATTRIBUTE_KEY => policy })
+    expect(ordinary.metadata).not_to have_key(described_class::ATTRIBUTE_KEY)
+    request = nil
+    described_class.with(policy) { request = create(:confirmation_request, account: account, conversation: conversation) }
+    request.update!(metadata: { described_class::ATTRIBUTE_KEY => { 'token' => 'forged' }, 'caller_note' => 'Updated' })
+
+    expect(request.reload.metadata).to include(described_class::ATTRIBUTE_KEY => policy, 'caller_note' => 'Updated')
+    expect(described_class.policy_for(conversation: conversation)).to be_nil
+  end
+
   context 'with an opted-in controlled phone source' do
     let(:inbox) { create(:channel_sms, account: account).inbox }
     let(:contact) { create(:contact, account: account, phone_number: '+77015551234') }

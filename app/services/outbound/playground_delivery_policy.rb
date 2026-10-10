@@ -52,10 +52,17 @@ class Outbound::PlaygroundDeliveryPolicy
       scoped_policy(for_record(record))
     end
 
+    def for_run(policy)
+      scoped_policy(policy)
+    end
+
     def policy_for(conversation: nil, message: nil, reminder: nil)
       stored = [for_record(message), for_record(reminder)].find { |value| !value.nil? }
       policy = scoped_policy(stored)
-      policy = for_record(conversation) if policy.nil?
+      conversation_policy = for_record(conversation)
+      return {} if !policy.nil? && !conversation_policy.nil? && policy != conversation_policy
+
+      policy = conversation_policy if policy.nil?
       return policy unless policy.nil?
       return {} if test_source?(conversation) || test_source?(conversation&.contact)
 

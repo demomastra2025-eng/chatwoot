@@ -48,4 +48,21 @@ RSpec.describe Captain::Playground::ReplyDelivery do
       expect(live.conversation.messages.where(content: 'Revoked permission')).not_to exist
     end
   end
+
+  it 'blocks an opted-in fresh reply when it inherits disabled or invalid causal context' do
+    session('live').with_lock(inbox_id: inbox.id, delivery_enabled: true, delivery_target: '+77015551234') do |live|
+      disabled = Outbound::PlaygroundDeliveryPolicy.issue(
+        Outbound::PlaygroundDeliveryPolicy.verified(live.run_policy).merge(run_id: SecureRandom.uuid, delivery_enabled: false)
+      )
+      [disabled, false, {}].each do |inherited|
+        Outbound::PlaygroundDeliveryPolicy.with(inherited) do
+          result = nil
+          expect { result = described_class.new(live).perform(response: 'Nested blocked reply') }.not_to have_enqueued_job(SendReplyJob)
+          expect(result).to include(enabled: true, status: 'blocked', delivered: false)
+          expect(Current.playground_run_policy).to eq(inherited)
+        end
+      end
+      expect(live.conversation.messages.where(content: 'Nested blocked reply')).not_to exist
+    end
+  end
 end

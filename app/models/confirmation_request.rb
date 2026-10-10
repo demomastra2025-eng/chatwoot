@@ -80,6 +80,7 @@ class ConfirmationRequest < ApplicationRecord
   before_validation :generate_token, on: :create
   before_validation :assign_context_from_conversation
   before_validation :normalize_json_attributes
+  before_validation :stamp_playground_delivery_policy
 
   validates :title, :body, :status, :token, presence: true
   validates :status, inclusion: { in: STATUSES }
@@ -125,6 +126,20 @@ class ConfirmationRequest < ApplicationRecord
   def normalize_json_attributes
     self.metadata = metadata.to_h if metadata.blank? || metadata.respond_to?(:to_h)
     self.resolution_metadata = resolution_metadata.to_h if resolution_metadata.blank? || resolution_metadata.respond_to?(:to_h)
+  end
+
+  def stamp_playground_delivery_policy
+    key = Outbound::PlaygroundDeliveryPolicy::ATTRIBUTE_KEY
+    previous = metadata_in_database.to_h
+    self.metadata = metadata.to_h.except(key)
+    if previous.key?(key)
+      self.metadata[key] = previous[key]
+      return
+    end
+
+    policy = Outbound::PlaygroundDeliveryPolicy.for_execution(subject)
+    policy = Outbound::PlaygroundDeliveryPolicy.policy_for(conversation: conversation, reminder: reminder) if policy.nil?
+    self.metadata[key] = policy.deep_dup unless policy.nil?
   end
 
   def associations_belong_to_account
