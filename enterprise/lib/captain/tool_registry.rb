@@ -1092,7 +1092,7 @@ class Captain::ToolRegistry
         definition(
           id: 'search_appointments',
           title: 'Search Appointments',
-          description: 'Search appointments by client, exact normalized IIN, status, payment status, contact, or specialist',
+          description: Captain::Tools::Copilot::SearchAppointmentsService.description,
           group_name: 'Scheduling',
           icon: 'search',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
