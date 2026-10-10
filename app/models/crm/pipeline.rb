@@ -52,8 +52,18 @@ class Crm::Pipeline < ApplicationRecord
 
   def validate_appointment_automation
     return unless will_save_change_to_appointment_automation?
+    return if only_disabling_appointment_automation?
 
     Crm::Appointments::Configuration.validate(self).each { |error| errors.add(:appointment_automation, error) }
+  end
+
+  def only_disabling_appointment_automation?
+    defaults = Crm::Appointments::Configuration::DEFAULTS
+    previous = defaults.deep_dup.merge(appointment_automation_in_database.to_h.deep_stringify_keys)
+    current = defaults.deep_dup.merge(appointment_automation.to_h.deep_stringify_keys)
+    changed = (previous.keys | current.keys).select { |key| previous[key] != current[key] }
+    switches = ['enabled', *Crm::Appointments::Configuration::SOURCE_KEYS]
+    changed.present? && changed.all? { |key| key.in?(switches) && previous[key] == true && current[key] == false }
   end
 
   def prepare_appointment_automation_sources

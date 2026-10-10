@@ -58,6 +58,7 @@ RSpec.describe Crm::Appointments::Facts do
     expect(facts.rule_matches?('scope' => 'nearest', 'conditions' => ['patient_confirmed'])).to be true
     nearest.update!(status: 'no_show')
     expect(facts.rule_matches?('scope' => 'nearest', 'conditions' => ['patient_confirmed'])).to be false
+    expect(facts.rule_matches?('scope' => 'nearest', 'conditions' => ['no_show'])).to be true
   end
 
   it 'cannot close an eight-visit plan after one appointment or a cancelled required visit' do

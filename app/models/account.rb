@@ -170,6 +170,7 @@ class Account < ApplicationRecord
   before_validation :validate_limit_keys
   before_validation :normalize_default_settings
   after_create_commit :notify_creation
+  after_update_commit :refresh_crm_appointment_timezone, if: :saved_change_to_reporting_timezone?
   after_destroy :remove_account_sequences
 
   def agents
@@ -512,6 +513,16 @@ class Account < ApplicationRecord
   # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity, Metrics/MethodLength
 
   private
+
+  def refresh_crm_appointment_timezone
+    return unless feature_enabled?('crm_deals')
+
+    crm_pipelines.active.where("appointment_automation ->> 'enabled' = 'true'").find_each do |pipeline|
+      Crm::Appointments::RefreshPipelineJob.perform_later(id, pipeline.id)
+    end
+  rescue StandardError => e
+    Rails.logger.warn("CRM timezone refresh enqueue failed: account_id=#{id} error=#{e.class.name}")
+  end
 
   # Remembers the enabled features and the agent/inbox limits from before the trial. The first snapshot wins,
   # so repeated activations or expirations never overwrite what the account originally had.

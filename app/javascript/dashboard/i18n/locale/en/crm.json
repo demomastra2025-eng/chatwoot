@@ -37,7 +37,7 @@
       "ANY": "Any appointment",
       "ALL": "All linked appointments",
       "SELECTED": "Selected appointment",
-      "NEAREST": "Nearest active appointment",
+      "NEAREST": "Nearest appointment",
       "PROVIDER_CONFIRMED": "Booking confirmed by the provider",
       "PATIENT_CONFIRMED": "Patient confirmed",
       "SCHEDULED": "Scheduled or confirmed",

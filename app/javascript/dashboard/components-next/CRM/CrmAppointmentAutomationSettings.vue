@@ -1,5 +1,6 @@
 <script setup>
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
@@ -7,12 +8,16 @@ import Switch from 'dashboard/components-next/switch/Switch.vue';
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import { formatCrmErrorMessage } from 'dashboard/stores/crm/shared';
+import CrmPipelinesAPI from 'dashboard/api/crm/pipelines';
 
 const props = defineProps({
   pipeline: { type: Object, required: true },
   canManage: { type: Boolean, default: false },
 });
 const { t } = useI18n();
+const route = useRoute();
+const accountId = computed(() => String(route?.params?.accountId || ''));
+let generation = 0;
 const references = useCrmReferencesStore();
 const saving = ref(false);
 const error = ref('');
@@ -33,7 +38,8 @@ const stages = computed(() => activeStages.value.map(stage => ({ value: stage.id
 const dirty = computed(() => JSON.stringify(draft) !== baseline.value);
 const valid = computed(() => draft.rules?.every(rule => rule.stage_id && rule.conditions.length));
 
-watch(() => props.pipeline, pipeline => {
+watch([accountId, () => props.pipeline], ([, pipeline]) => {
+  generation += 1;
   const config = pipeline.appointmentAutomation || {};
   Object.assign(draft, {
     enabled: config.enabled === true,
@@ -52,7 +58,9 @@ watch(() => props.pipeline, pipeline => {
   });
   baseline.value = JSON.stringify(draft);
   error.value = '';
+  saving.value = false;
 }, { immediate: true });
+onBeforeUnmount(() => { generation += 1; });
 
 const addRule = () => draft.rules.push({ stage_id: stages.value[0]?.value || null, scope: 'any', conditions: ['provider_confirmed'], closing_reasons: [], transition_reason: '' });
 const moveRule = (index, offset) => {
@@ -71,15 +79,18 @@ const toggleReason = (rule, value, checked) => {
 const save = async () => {
   if (!props.canManage || !valid.value || saving.value) return;
   const pipelineId = props.pipeline.id;
+  const request = generation;
+  const account = accountId.value;
   saving.value = true;
   error.value = '';
   try {
-    await references.savePipeline({ id: pipelineId, appointment_automation: JSON.parse(JSON.stringify(draft)) });
+    await CrmPipelinesAPI.update(pipelineId, { appointment_automation: JSON.parse(JSON.stringify(draft)) });
+    if (request !== generation || account !== accountId.value) return;
     await references.loadPipelines({ include_inactive_stages: true });
   } catch (failure) {
-    if (Number(props.pipeline.id) === Number(pipelineId)) error.value = formatCrmErrorMessage(failure, t);
+    if (request === generation && account === accountId.value) error.value = formatCrmErrorMessage(failure, t);
   } finally {
-    saving.value = false;
+    if (request === generation) saving.value = false;
   }
 };
 </script>

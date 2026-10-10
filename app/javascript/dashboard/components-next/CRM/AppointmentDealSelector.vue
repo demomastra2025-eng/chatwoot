@@ -39,17 +39,21 @@ const visible = computed(() => enabled.value && (data.value.requires_selection |
 const select = selection => {
   const [kind, id] = String(selection || '').split(':');
   const deal = data.value.deals.find(item => String(item.id) === id);
-  emit('update:modelValue', kind === 'deal' && deal
-    ? { crm_deal_id: deal.id, crm_pipeline_id: deal.pipeline_id, crm_deal_selection: null }
-    : kind === 'create' && data.value.pipelines.some(item => String(item.id) === id)
-      ? { crm_deal_id: null, crm_pipeline_id: Number(id), crm_deal_selection: 'create' }
-      : emptySelection());
+  let next = emptySelection();
+  if (kind === 'deal' && deal) {
+    next = { crm_deal_id: deal.id, crm_pipeline_id: deal.pipeline_id, crm_deal_selection: null };
+  } else if (kind === 'create' && data.value.pipelines.some(item => String(item.id) === id)) {
+    next = { crm_deal_id: null, crm_pipeline_id: Number(id), crm_deal_selection: 'create' };
+  }
+  emit('update:modelValue', next);
 };
 const load = async () => {
-  const request = ++generation;
+  generation += 1;
+  const request = generation;
   const account = accountId.value;
   data.value = { deals: [], pipelines: [] };
   error.value = false;
+  loading.value = false;
   emit('update:modelValue', emptySelection());
   if (!enabled.value || !props.communicationContactId) return;
   loading.value = true;

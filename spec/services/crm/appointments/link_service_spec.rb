@@ -128,4 +128,29 @@ RSpec.describe Crm::Appointments::LinkService do
     expect(cancelled.reload.status).to eq('cancelled')
     expect(cancelled.crm_deal_id).to eq(deal.id)
   end
+
+  it 'compares SQL and day-month-year provider creation timestamps in the provider timezone at enablement' do
+    travel_to(Time.utc(2026, 10, 10, 7)) do
+      pipeline.update!(appointment_automation: { auto_create_from_medelement: true })
+      resource = create(:scheduling_resource, account: account, timezone: 'Asia/Almaty')
+      fresh_sql = create(:scheduling_appointment, account: account, resource: resource, contact: contact, source: 'medelement',
+                                                 custom_attributes: { medelement_source_created_at: '2026-10-10 12:01:00' })
+      fresh_dmy = create(:scheduling_appointment, account: account, resource: resource, contact: contact, source: 'medelement',
+                                                 custom_attributes: { medelement_source_created_at: '10.10.2026 12:01:00' })
+      old_sql = create(:scheduling_appointment, account: account, resource: resource, contact: contact, source: 'medelement',
+                                               custom_attributes: { medelement_source_created_at: '2026-10-10 11:59:00' })
+
+      expect(link(old_sql, {}, newly_imported: true)).to be_nil
+      expect(link(fresh_sql, {}, newly_imported: true)).to be_present
+      fresh_sql.save!
+      expect(link(fresh_dmy, {}, newly_imported: true).id).to eq(fresh_sql.crm_deal_id)
+    end
+  end
+
+  it 'respects an explicit pipeline when Captain supplies a target without a source deal' do
+    target = create(:crm_pipeline, account: account)
+    create(:crm_stage, account: account, pipeline: target, default: true)
+
+    expect(link(appointment, { crm_pipeline_id: target.id }).pipeline_id).to eq(target.id)
+  end
 end

@@ -28,4 +28,16 @@ RSpec.describe Crm::Appointments::DueDealsJob do
 
     Crm::Appointments::EvaluateDealJob.perform_now(other_account.id, deal.id)
   end
+
+  it 'refreshes only enabled pipelines when the workspace clock changes' do
+    account = create(:account, reporting_timezone: 'UTC')
+    account.enable_features!('crm_deals')
+    enabled = create(:crm_pipeline, account: account, appointment_automation: { enabled: true })
+    create(:crm_pipeline, account: account)
+    allow(Crm::Appointments::RefreshPipelineJob).to receive(:perform_later)
+    account.update!(reporting_timezone: 'Asia/Almaty')
+
+    expect(Crm::Appointments::RefreshPipelineJob).to have_received(:perform_later).with(account.id, enabled.id).once
+    expect(Crm::Appointments::RefreshPipelineJob).to have_received(:perform_later).once
+  end
 end

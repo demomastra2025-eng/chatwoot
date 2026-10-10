@@ -71,8 +71,10 @@ RSpec.describe Reports::LeadAppointmentsQuery do
     first_message = incoming(contact)
     create(:meta_ad_referral, account: account, inbox: inbox, contact: contact, conversation: first_message.conversation,
                               message: first_message, source: 'instagram', attribution_type: 'click_to_whatsapp_ad')
-    won = create(:crm_deal, account: account, created_at: first_at + 1.hour, closed_at: now)
-    won.stage.update!(outcome: 'won')
+    pipeline = create(:crm_pipeline, account: account)
+    create(:crm_stage, account: account, pipeline: pipeline, default: true)
+    stage = create(:crm_stage, account: account, pipeline: pipeline, outcome: 'won', default: false)
+    won = create(:crm_deal, account: account, pipeline: pipeline, stage: stage, created_at: first_at + 1.hour, closed_at: now)
     create(:crm_deal_contact, account: account, deal: won, contact: contact, primary: true)
 
     result = report

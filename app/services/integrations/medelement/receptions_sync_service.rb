@@ -578,6 +578,7 @@ class Integrations::Medelement::ReceptionsSyncService
     {
       starts_at: starts_at,
       ends_at: ends_at,
+      source_timezone: configuration.time_zone,
       specialist_code: reception['specialistCode'],
       snapshot_version: {
         exists: appointment_snapshot_versions.key?(external_ref),

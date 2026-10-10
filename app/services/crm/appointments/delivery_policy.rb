@@ -12,9 +12,9 @@ class Crm::Appointments::DeliveryPolicy
   end
 
   def self.stamp!(deal)
-    return if deal.appointment_automation_state.to_h[KEY] == current
-
     deal.with_lock do
+      return if deal.appointment_automation_state.to_h[KEY] == current
+
       stamp_in_memory!(deal)
       deal.save! if deal.changed?
     end
@@ -24,7 +24,8 @@ class Crm::Appointments::DeliveryPolicy
     return yield unless defined?(Outbound::PlaygroundDeliveryPolicy)
 
     # A causal queued job keeps its original taint. A newly scheduled clock check reads the latest native state.
-    policy = current || deal.appointment_automation_state.to_h[KEY]
+    cause = current
+    policy = cause.nil? ? deal.appointment_automation_state.to_h[KEY] : cause
     Outbound::PlaygroundDeliveryPolicy.with(policy) { yield }
   end
 end

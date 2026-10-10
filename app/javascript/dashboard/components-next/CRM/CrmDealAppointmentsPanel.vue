@@ -16,6 +16,7 @@ const emit = defineEmits(['dealUpdated']);
 const { t, locale } = useI18n();
 const route = useRoute();
 const appointments = ref([]);
+const timezone = ref('UTC');
 const plan = ref([]);
 const selectedId = ref(null);
 const baseline = ref('');
@@ -29,7 +30,7 @@ const dirty = computed(() => baseline.value !== draftValue());
 const paused = computed(() => props.deal.appointmentAutomationState?.pausedAt);
 const automationError = computed(() => props.deal.appointmentAutomationState?.lastError);
 const appointmentLabel = appointment => {
-  const date = new Intl.DateTimeFormat(locale.value, { dateStyle: 'short', timeStyle: 'short' }).format(new Date(appointment.starts_at));
+  const date = new Intl.DateTimeFormat(locale.value, { dateStyle: 'short', timeStyle: 'short', timeZone: timezone.value }).format(new Date(appointment.starts_at));
   return [date, appointment.patient_contact_name || appointment.client_name, appointment.service_name].filter(Boolean).join(' · ');
 };
 const options = computed(() => [
@@ -45,7 +46,8 @@ const syncDraft = () => {
   baseline.value = draftValue();
 };
 const load = async () => {
-  const token = ++generation;
+  generation += 1;
+  const token = generation;
   const account = accountId.value;
   const dealId = props.deal.id;
   loading.value = true;
@@ -55,19 +57,19 @@ const load = async () => {
     const response = await CrmDealsAPI.appointments(dealId);
     if (token !== generation || account !== accountId.value || Number(props.deal.id) !== Number(dealId)) return;
     appointments.value = response.data?.payload || [];
+    timezone.value = response.data?.meta?.timezone || 'UTC';
   } catch (failure) {
     if (token === generation && account === accountId.value) error.value = formatCrmErrorMessage(failure, t);
   } finally {
     if (token === generation) loading.value = false;
   }
 };
-watch(() => [accountId.value, props.deal.id], () => { syncDraft(); load(); }, { immediate: true });
+watch(() => [accountId.value, props.deal.id], () => { saving.value = false; syncDraft(); load(); }, { immediate: true });
 watch(() => props.deal.lockVersion, () => { if (!dirty.value) syncDraft(); load(); });
 onBeforeUnmount(() => { generation += 1; });
 const addVisit = () => plan.value.push({ id: crypto.randomUUID(), label: '', required: true, appointmentId: null });
 const save = async () => {
   if (!props.canManage || saving.value || plan.value.some(entry => !entry.label.trim())) return;
-  const token = generation;
   const account = accountId.value;
   const dealId = props.deal.id;
   saving.value = true;
@@ -78,13 +80,13 @@ const save = async () => {
       selected_appointment_id: selectedId.value || null,
       appointment_plan: plan.value.map(entry => ({ id: entry.id, label: entry.label, required: entry.required !== false, appointment_id: entry.appointmentId || null })),
     });
-    if (token !== generation || account !== accountId.value) return;
+    if (account !== accountId.value || Number(dealId) !== Number(props.deal.id)) return;
     baseline.value = draftValue();
     emit('dealUpdated', normalizePayload(response.data));
   } catch (failure) {
-    if (token === generation && account === accountId.value) error.value = formatCrmErrorMessage(failure, t);
+    if (account === accountId.value && Number(dealId) === Number(props.deal.id)) error.value = formatCrmErrorMessage(failure, t);
   } finally {
-    saving.value = false;
+    if (account === accountId.value && Number(dealId) === Number(props.deal.id)) saving.value = false;
   }
 };
 const resume = async () => {
@@ -95,9 +97,9 @@ const resume = async () => {
     const response = await CrmDealsAPI.resumeAppointmentAutomation(dealId, { lock_version: props.deal.lockVersion });
     if (account === accountId.value && Number(dealId) === Number(props.deal.id)) emit('dealUpdated', normalizePayload(response.data));
   } catch (failure) {
-    if (account === accountId.value) error.value = formatCrmErrorMessage(failure, t);
+    if (account === accountId.value && Number(dealId) === Number(props.deal.id)) error.value = formatCrmErrorMessage(failure, t);
   } finally {
-    saving.value = false;
+    if (account === accountId.value && Number(dealId) === Number(props.deal.id)) saving.value = false;
   }
 };
 const statusLabel = appointment => {
