@@ -8,7 +8,7 @@ RSpec.describe Captain::Tools::AddContactNoteTool, type: :model do
   let(:inbox) { create(:inbox, account: account) }
   let(:contact) { create(:contact, account: account) }
   let(:conversation) { create(:conversation, account: account, inbox: inbox, contact: contact) }
-  let(:tool_context) { Struct.new(:state).new({ contact: { id: contact.id } }) }
+  let(:tool_context) { Struct.new(:state).new({ conversation: { id: conversation.id }, contact: { id: contact.id } }) }
 
   describe '#description' do
     it 'returns the correct description' do
@@ -74,8 +74,8 @@ RSpec.describe Captain::Tools::AddContactNoteTool, type: :model do
       end
     end
 
-    context 'when contact does not exist' do
-      let(:tool_context) { Struct.new(:state).new({ contact: { id: 999_999 } }) }
+    context 'when conversation does not exist' do
+      let(:tool_context) { Struct.new(:state).new({ conversation: { id: 999_999 }, contact: { id: contact.id } }) }
 
       it 'returns error message' do
         result = tool.perform(tool_context, note: 'Some note')
@@ -89,8 +89,8 @@ RSpec.describe Captain::Tools::AddContactNoteTool, type: :model do
       end
     end
 
-    context 'when contact state is missing' do
-      let(:tool_context) { Struct.new(:state).new({}) }
+    context 'when conversation state is missing' do
+      let(:tool_context) { Struct.new(:state).new({ contact: { id: contact.id } }) }
 
       it 'returns error message' do
         result = tool.perform(tool_context, note: 'Some note')
@@ -98,13 +98,22 @@ RSpec.describe Captain::Tools::AddContactNoteTool, type: :model do
       end
     end
 
-    context 'when contact id is nil' do
-      let(:tool_context) { Struct.new(:state).new({ contact: { id: nil } }) }
+    context 'when conversation id is nil' do
+      let(:tool_context) { Struct.new(:state).new({ conversation: { id: nil }, contact: { id: contact.id } }) }
 
       it 'returns error message' do
         result = tool.perform(tool_context, note: 'Some note')
         expect(result).to eq('Contact not found')
       end
+    end
+
+    it 'uses the conversation contact even when contact state names another account contact' do
+      other_contact = create(:contact, account: account)
+      tool_context.state[:contact][:id] = other_contact.id
+
+      tool.perform(tool_context, note: 'Current patient note')
+
+      expect(Note.last.contact).to eq(contact)
     end
   end
 

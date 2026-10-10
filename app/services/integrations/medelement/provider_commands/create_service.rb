@@ -33,6 +33,8 @@ class Integrations::Medelement::ProviderCommands::CreateService
     return resolve_idempotent_duplicate!(existing, intent_fingerprint) if existing.present?
 
     create_new_command!(intent_fingerprint)
+  rescue Integrations::Medelement::ProviderCommands::RequestSnapshotSchema::DestinationIntervalError => e
+    raise Scheduling::Error.new(code: e.code, message: e.message, status: :unprocessable_entity)
   rescue ActiveRecord::RecordInvalid => e
     raise unless idempotency_validation_conflict?(e.record)
 
@@ -73,12 +75,23 @@ class Integrations::Medelement::ProviderCommands::CreateService
         resolve_idempotent_duplicate!(existing, intent_fingerprint)
       else
         validator.validate_request!
+        validate_destination_interval!
         snapshot = request_snapshot
+        Integrations::Medelement::ProviderCommands::RequestSnapshotSchema.validate_reception_destination!(snapshot)
         request_fingerprint = Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder.fingerprint(snapshot)
         validator.validate_runtime!
         persist_command!(snapshot: snapshot, request_fingerprint: request_fingerprint, intent_fingerprint: intent_fingerprint)
       end
     end
+  end
+
+  def validate_destination_interval!
+    return unless %w[create_reception move_reception].include?(operation)
+
+    Integrations::Medelement::ProviderCommands::RequestSnapshotSchema.validate_destination_interval!(
+      starts_at: desired_starts_at || appointment&.starts_at,
+      ends_at: desired_ends_at || appointment&.ends_at
+    )
   end
 
   def acquire_idempotency_lock!
@@ -100,13 +113,20 @@ class Integrations::Medelement::ProviderCommands::CreateService
       company_cabinet_code: company_cabinet_code.presence,
       desired_starts_at: desired_starts_at,
       desired_ends_at: desired_ends_at,
-      execution_state: {
-        'request_snapshot' => snapshot,
-        'request_fingerprint' => request_fingerprint,
-        'idempotency_fingerprint' => intent_fingerprint,
-        'dispatch_identity' => dispatch_identity
-      }
+      execution_state: command_execution_state(snapshot, request_fingerprint, intent_fingerprint)
     }
+  end
+
+  def command_execution_state(snapshot, request_fingerprint, intent_fingerprint)
+    state = {
+      'request_snapshot' => snapshot,
+      'request_fingerprint' => request_fingerprint,
+      'idempotency_fingerprint' => intent_fingerprint,
+      'dispatch_identity' => dispatch_identity
+    }
+    policy = Current.playground_run_policy if Current.respond_to?(:playground_run_policy)
+    state['captain_playground'] = policy.deep_dup unless policy.nil?
+    state
   end
 
   def persist_command!(snapshot:, request_fingerprint:, intent_fingerprint:)

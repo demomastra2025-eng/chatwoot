@@ -32,7 +32,7 @@ class Scheduling::AvailabilityService
     return Result.new(available: false, code: 'OUTSIDE_WORKING_HOURS', message: 'Appointment must fit into one local day') if local_date.nil?
 
     override = workday_overrides.find { |item| item.date == local_date }
-    if holiday_blocks_date?(local_date) && override.blank?
+    if !@replace_work_rules && holiday_blocks_date?(local_date) && override.blank?
       return Result.new(available: false, code: 'BLOCKED_BY_HOLIDAY', message: 'Date is blocked by holiday')
     end
 
@@ -45,11 +45,11 @@ class Scheduling::AvailabilityService
       return Result.new(available: false, code: 'OUTSIDE_WORKING_HOURS', message: 'Appointment is outside working hours')
     end
 
-    if overlaps_intervals?(breaks_for_date(local_date, override), starts_at: starts_at, ends_at: ends_at)
+    if !@replace_work_rules && overlaps_intervals?(breaks_for_date(local_date, override), starts_at: starts_at, ends_at: ends_at)
       return Result.new(available: false, code: 'BLOCKED_BY_BREAK', message: 'Appointment overlaps resource break')
     end
 
-    if overlaps_intervals?(time_off_intervals_for_date(local_date), starts_at: starts_at, ends_at: ends_at)
+    if !@replace_work_rules && overlaps_intervals?(time_off_intervals_for_date(local_date), starts_at: starts_at, ends_at: ends_at)
       return Result.new(available: false, code: 'BLOCKED_BY_VACATION', message: 'Appointment overlaps blocked time')
     end
 
@@ -133,9 +133,13 @@ class Scheduling::AvailabilityService
     base_intervals = working_intervals_for_date(date, override)
     return [] if base_intervals.empty?
 
-    blocked = breaks_for_date(date, override) +
-              time_off_intervals_for_date(date) +
-              appointment_intervals_for_date(date)
+    blocked = if @replace_work_rules
+                appointment_intervals_for_date(date)
+              else
+                breaks_for_date(date, override) +
+                  time_off_intervals_for_date(date) +
+                  appointment_intervals_for_date(date)
+              end
 
     Scheduling::IntervalMath.subtract(base_intervals, blocked).filter_map do |interval|
       Scheduling::IntervalMath.clip(interval, from: from, to: to)
@@ -199,6 +203,13 @@ class Scheduling::AvailabilityService
   end
 
   def working_intervals_for_date(date, override)
+    if @replace_work_rules
+      day_start, day_end = day_bounds(date)
+      return merge_intervals(Array(@provider_working_windows).filter_map do |interval|
+        Scheduling::IntervalMath.clip(interval, from: day_start, to: day_end)
+      end)
+    end
+
     return [] if holiday_blocks_date?(date) && override.blank?
 
     local_intervals = if override.present?

@@ -3,7 +3,14 @@ import { createPinia, setActivePinia } from 'pinia';
 
 import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
 import SchedulingContactsAPI from 'dashboard/api/scheduling/contacts';
-import { useSchedulingAppointmentFormStore } from './appointmentForm';
+import SchedulingProviderCommandsAPI from 'dashboard/api/scheduling/providerCommands';
+import { useSchedulingProviderCommandsStore } from './providerCommands';
+import {
+  appointmentFormMutationContext,
+  refreshCurrentCalendarProviderAction,
+  runCurrentCalendarProviderAction,
+  useSchedulingAppointmentFormStore,
+} from './appointmentForm';
 
 vi.mock('dashboard/api/scheduling/appointments', () => ({
   default: {
@@ -19,14 +26,740 @@ vi.mock('dashboard/api/scheduling/contacts', () => ({
   default: {
     create: vi.fn(),
     get: vi.fn(),
+    patients: vi.fn(),
     update: vi.fn(),
   },
 }));
+
+vi.mock('dashboard/api/scheduling/providerCommands', () => ({
+  default: {
+    create: vi.fn(),
+    confirm: vi.fn(),
+    get: vi.fn(),
+    cancel: vi.fn(),
+  },
+}));
+
+const localPatient = {
+  id: 84,
+  account_id: 74,
+  patient_contact_id: 84,
+  communication_contact_id: 42,
+  full_name: 'Patient Family',
+  first_name: 'Patient',
+  last_name: 'Family',
+  identifier: '090101500000',
+  birth_date: '2009-01-01',
+  gender: 'male',
+  phone: '+77001234567',
+};
+const localAppointment = {
+  id: 11,
+  accountId: 74,
+  contactId: 42,
+  patientContactId: 84,
+  conversationId: 12002,
+  clientFirstName: 'Patient',
+  clientLastName: 'Family',
+  clientName: 'Patient Family',
+  clientIdentifier: '090101500000',
+  clientBirthDate: '2009-01-01',
+  clientGender: 'male',
+  clientPhone: '+77001234567',
+};
+const localEditor = {
+  birthDate: '2009-01-01',
+  firstName: 'Patient',
+  lastName: 'Family',
+  fullName: 'Patient Family',
+  iin: '090101500000',
+  gender: 'male',
+  phone: '+77001234567',
+};
+const patientsResponse = (patients = [localPatient], contactId = 42) => ({
+  data: { payload: { contact_id: contactId, patients } },
+});
+const deferred = () => {
+  let resolve;
+  let reject;
+  const promise = new Promise((callback, rejectPromise) => {
+    resolve = callback;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+};
 
 describe('useSchedulingAppointmentFormStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
+  });
+
+  it('retains the patient card and original chat owner when editing a booking', () => {
+    const store = useSchedulingAppointmentFormStore();
+    store.openEdit({
+      id: 11,
+      contactId: 42,
+      patientContactId: 84,
+      conversationId: 12002,
+      clientFirstName: 'Patient',
+      clientName: 'Patient',
+      clientBirthDate: '2017-01-02',
+    });
+    expect(store.selectedContact.id).toBe(84);
+    expect(store.buildPayload()).toMatchObject({
+      contact_id: 42,
+      patient_contact_id: 84,
+      conversation_id: 12002,
+    });
+  });
+
+  it('submits the selected deal only for a new booking and preserves it when selecting a family patient', () => {
+    const store = useSchedulingAppointmentFormStore();
+    store.openCreate({}, { contactId: 42 });
+    store.updateField('crmDealSelection', {
+      crm_deal_id: 15,
+      crm_pipeline_id: 3,
+    });
+    store.applyPatientContact(localPatient);
+    expect(store.buildPayload()).toMatchObject({
+      contact_id: 42,
+      patient_contact_id: 84,
+      crm_deal_id: 15,
+      crm_pipeline_id: 3,
+    });
+    store.applyContact({ ...localPatient, id: 85 });
+    expect(store.buildPayload()).not.toHaveProperty('crm_deal_id');
+
+    store.openEdit(localAppointment);
+    store.updateField('crmDealSelection', {
+      crm_deal_id: 99,
+      crm_pipeline_id: 3,
+    });
+    expect(store.buildPayload()).not.toHaveProperty('crm_deal_id');
+  });
+
+  it.each([0, 1, 2000, 30.5])(
+    'blocks an invalid manual duration of %s minutes',
+    duration => {
+      const store = useSchedulingAppointmentFormStore();
+      store.openCreate();
+      store.updateField('durationMin', duration);
+      expect(store.validationErrors.durationMin).toBe(
+        'SCHEDULING.APPOINTMENT_FORM.ERRORS.INVALID_DURATION'
+      );
+      expect(store.isFormInvalid).toBe(true);
+    }
+  );
+
+  it('keeps patient B open when a previous provider action finishes its calendar refresh', async () => {
+    const store = useSchedulingAppointmentFormStore();
+    store.openEdit(localAppointment);
+    const originalId = store.recordId;
+    const pending = deferred();
+    const closeDrawer = vi.fn(() => {
+      store.close();
+      store.reset();
+    });
+    const refresh = vi.fn(() => pending.promise);
+    const request = refreshCurrentCalendarProviderAction({
+      refresh,
+      isCurrent: () => store.isOpen && store.recordId === originalId,
+      onCurrent: closeDrawer,
+    });
+    store.openEdit({
+      ...localAppointment,
+      id: 12,
+      patientContactId: 85,
+      clientFirstName: 'Other',
+    });
+    pending.resolve();
+    expect(await request).toBe(false);
+    expect(refresh).toHaveBeenCalledOnce();
+    expect(closeDrawer).not.toHaveBeenCalled();
+    expect(store.isOpen).toBe(true);
+    expect(store.recordId).toBe(12);
+    expect(store.form).toMatchObject({
+      patientContactId: 85,
+      clientFirstName: 'Other',
+    });
+  });
+
+  it('allows the current provider result to close its own drawer even if calendar refresh fails', async () => {
+    const store = useSchedulingAppointmentFormStore();
+    store.openEdit(localAppointment);
+    const closeDrawer = vi.fn(() => {
+      store.close();
+      store.reset();
+    });
+    expect(
+      await refreshCurrentCalendarProviderAction({
+        refresh: () => Promise.reject(new Error('Read failed')),
+        isCurrent: () => store.isOpen && store.recordId === 11,
+        onCurrent: closeDrawer,
+      })
+    ).toBe(true);
+    expect(closeDrawer).toHaveBeenCalledOnce();
+    expect(store.isOpen).toBe(false);
+    expect(store.recordId).toBeNull();
+  });
+
+  it.each([
+    ['submit', 'update'],
+    ['cancel', 'cancel'],
+    ['destroy', 'delete'],
+  ])(
+    'keeps patient B open after a late local %s and sends no dependent provider intent',
+    async (action, endpoint) => {
+      const store = useSchedulingAppointmentFormStore();
+      const providerStore = useSchedulingProviderCommandsStore();
+      store.openEdit(localAppointment);
+      const context = appointmentFormMutationContext(store);
+      const isCurrent = () => context === appointmentFormMutationContext(store);
+      const pending = deferred();
+      SchedulingAppointmentsAPI[endpoint].mockReturnValueOnce(pending.promise);
+      const calendarStore = {
+        currentView: 'day',
+        syncAppointment: vi.fn(),
+        removeAppointment: vi.fn(),
+        refresh: vi.fn(),
+      };
+      const close = vi.fn(() => {
+        store.close();
+        providerStore.executeConfirmed({
+          appointment_id: 11,
+          operation: 'create_reception',
+        });
+      });
+      const alert = vi.fn();
+      const request = runCurrentCalendarProviderAction({
+        run: () =>
+          store[action](calendarStore, { isCurrent, closeOnSuccess: false }),
+        isCurrent,
+        onSuccess: close,
+        onError: alert,
+      });
+      store.openEdit({
+        ...localAppointment,
+        id: 12,
+        patientContactId: 85,
+        clientFirstName: 'Other',
+      });
+      pending.resolve({ data: { payload: { ...localAppointment, id: 11 } } });
+      expect(await request).toBeNull();
+      expect(SchedulingAppointmentsAPI[endpoint]).toHaveBeenCalledOnce();
+      expect(SchedulingAppointmentsAPI[endpoint].mock.calls[0][0]).toBe(11);
+      expect(calendarStore.syncAppointment).not.toHaveBeenCalled();
+      expect(calendarStore.removeAppointment).not.toHaveBeenCalled();
+      expect(calendarStore.refresh).not.toHaveBeenCalled();
+      expect(SchedulingProviderCommandsAPI.create).not.toHaveBeenCalled();
+      expect(close).not.toHaveBeenCalled();
+      expect(alert).not.toHaveBeenCalled();
+      expect(store.isOpen).toBe(true);
+      expect(store.recordId).toBe(12);
+      expect(store.form).toMatchObject({
+        contactId: 42,
+        patientContactId: 85,
+        clientFirstName: 'Other',
+      });
+      expect(store.ui.isSaving).toBe(false);
+    }
+  );
+
+  it('preserves a reopened instance of the same form after its previous save finishes', async () => {
+    const store = useSchedulingAppointmentFormStore();
+    store.openEdit(localAppointment);
+    const pending = deferred();
+    SchedulingAppointmentsAPI.update.mockReturnValueOnce(pending.promise);
+    const calendarStore = { currentView: 'day', syncAppointment: vi.fn() };
+    const request = store.submit(calendarStore);
+    store.close();
+    store.openEdit(localAppointment);
+    pending.resolve({ data: { payload: localAppointment } });
+    expect(await request).toBeNull();
+    expect(store.isOpen).toBe(true);
+    expect(store.form.patientContactId).toBe(84);
+    expect(calendarStore.syncAppointment).not.toHaveBeenCalled();
+  });
+
+  it('locks the submitted form fields until its save is acknowledged', async () => {
+    const store = useSchedulingAppointmentFormStore();
+    store.openEdit(localAppointment);
+    const pending = deferred();
+    SchedulingAppointmentsAPI.update.mockReturnValueOnce(pending.promise);
+    const calendarStore = { currentView: 'day', syncAppointment: vi.fn() };
+    const request = store.submit(calendarStore);
+    store.updateField('clientFirstName', 'Unsaved edit');
+    pending.resolve({ data: { payload: localAppointment } });
+    expect((await request).id).toBe(11);
+    expect(store.isOpen).toBe(false);
+    expect(store.form.clientFirstName).toBe('Patient');
+    expect(store.ui.isSaving).toBe(false);
+    expect(calendarStore.syncAppointment).toHaveBeenCalledOnce();
+  });
+
+  it('keeps one pending local create intent and rejects duplicate submit or field/contact changes', async () => {
+    const store = useSchedulingAppointmentFormStore();
+    store.openCreate({
+      resourceId: 3,
+      startsAt: '2026-03-09T10:00:00Z',
+      endsAt: '2026-03-09T10:30:00Z',
+    });
+    store.applyContact({
+      id: 42,
+      firstName: 'Patient',
+      fullName: 'Patient',
+      phone: '+77001234567',
+    });
+    store.updateField('clientComment', 'Original');
+    const original = JSON.parse(JSON.stringify(store.form));
+    const pending = deferred();
+    SchedulingAppointmentsAPI.create.mockReturnValueOnce(pending.promise);
+    const calendarStore = { currentView: 'day', syncAppointment: vi.fn() };
+    const request = store.submit(calendarStore);
+    store.updateField('startsAt', '2026-03-10T12:00');
+    store.updateField('clientComment', 'Late change');
+    store.updateField('customAttributes', { late: 'change' });
+    store.applyContact({ id: 43, firstName: 'Other' });
+    store.applyPatientContact({ id: 85, firstName: 'Other' });
+    store.beginInlineContactEdit({ firstName: 'Other' });
+    expect(await store.submit(calendarStore)).toBeNull();
+    expect(store.form).toEqual(original);
+    pending.resolve({ data: { payload: { id: 501, contact_id: 42 } } });
+    expect((await request).id).toBe(501);
+    expect(store.isOpen).toBe(false);
+    expect(store.ui.isSaving).toBe(false);
+    expect(SchedulingAppointmentsAPI.create).toHaveBeenCalledOnce();
+    expect(calendarStore.syncAppointment).toHaveBeenCalledOnce();
+  });
+
+  it('checks the captured form again after the month calendar refresh', async () => {
+    const store = useSchedulingAppointmentFormStore();
+    store.openEdit(localAppointment);
+    const pending = deferred();
+    SchedulingAppointmentsAPI.update.mockResolvedValueOnce({
+      data: { payload: localAppointment },
+    });
+    const calendarStore = {
+      currentView: 'month',
+      syncAppointment: vi.fn(),
+      refresh: vi.fn(() => pending.promise),
+    };
+    const context = appointmentFormMutationContext(store);
+    const isCurrent = () => context === appointmentFormMutationContext(store);
+    const close = vi.fn(() => store.close());
+    const request = runCurrentCalendarProviderAction({
+      run: () =>
+        store.submit(calendarStore, { isCurrent, closeOnSuccess: false }),
+      isCurrent,
+      onSuccess: close,
+      onError: vi.fn(),
+    });
+    await Promise.resolve();
+    expect(calendarStore.refresh).toHaveBeenCalledOnce();
+    store.openEdit({ ...localAppointment, id: 12, patientContactId: 85 });
+    pending.resolve();
+    expect(await request).toBeNull();
+    expect(close).not.toHaveBeenCalled();
+    expect(store.isOpen).toBe(true);
+    expect(store.recordId).toBe(12);
+  });
+
+  it('does not project a local save into another account', async () => {
+    const store = useSchedulingAppointmentFormStore();
+    store.openEdit(localAppointment);
+    const pending = deferred();
+    SchedulingAppointmentsAPI.update.mockReturnValueOnce(pending.promise);
+    const calendarStore = { currentView: 'day', syncAppointment: vi.fn() };
+    let accountId = 74;
+    const request = store.submit(calendarStore, {
+      isCurrent: () => accountId === 74,
+    });
+    accountId = 75;
+    pending.resolve({ data: { payload: localAppointment } });
+    expect(await request).toBeNull();
+    expect(calendarStore.syncAppointment).not.toHaveBeenCalled();
+    expect(store.isOpen).toBe(true);
+  });
+
+  it('does not let an old failed save reset the busy state or error of a newer save', async () => {
+    const store = useSchedulingAppointmentFormStore();
+    store.openEdit(localAppointment);
+    const firstSave = deferred();
+    const secondSave = deferred();
+    SchedulingAppointmentsAPI.update
+      .mockReturnValueOnce(firstSave.promise)
+      .mockReturnValueOnce(secondSave.promise);
+    const calendarStore = { currentView: 'day', syncAppointment: vi.fn() };
+    const first = store.submit(calendarStore);
+    const rejection = expect(first).rejects.toThrow('Old save failed');
+    store.openEdit({ ...localAppointment, id: 12, patientContactId: 85 });
+    const second = store.submit(calendarStore, { closeOnSuccess: false });
+    firstSave.reject(new Error('Old save failed'));
+    await rejection;
+    expect(store.ui.isSaving).toBe(true);
+    expect(store.ui.error).toBeNull();
+    expect(store.recordId).toBe(12);
+    secondSave.resolve({
+      data: { payload: { ...localAppointment, id: 12, patientContactId: 85 } },
+    });
+    expect((await second).id).toBe(12);
+    expect(store.ui.isSaving).toBe(false);
+    expect(calendarStore.syncAppointment).toHaveBeenCalledOnce();
+    expect(calendarStore.syncAppointment).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 12 })
+    );
+  });
+
+  it('continues the current saved booking into one provider create and confirmation', async () => {
+    const store = useSchedulingAppointmentFormStore();
+    const providerStore = useSchedulingProviderCommandsStore();
+    store.openEdit(localAppointment);
+    const context = appointmentFormMutationContext(store);
+    const isCurrent = () => context === appointmentFormMutationContext(store);
+    const calendarStore = { currentView: 'day', syncAppointment: vi.fn() };
+    SchedulingAppointmentsAPI.update.mockResolvedValueOnce({
+      data: { payload: localAppointment },
+    });
+    SchedulingProviderCommandsAPI.create.mockResolvedValueOnce({
+      data: { payload: { id: 91, status: 'awaiting_confirmation' } },
+    });
+    SchedulingProviderCommandsAPI.confirm.mockResolvedValueOnce({
+      data: { payload: { id: 91, status: 'succeeded' } },
+    });
+    let providerRequest;
+    const close = vi.fn(appointment => {
+      store.close();
+      providerRequest = providerStore.executeConfirmed(
+        { appointment_id: appointment.id, operation: 'create_reception' },
+        { pollIntervalMs: 0 }
+      );
+    });
+    await runCurrentCalendarProviderAction({
+      run: () =>
+        store.submit(calendarStore, { isCurrent, closeOnSuccess: false }),
+      isCurrent,
+      onSuccess: close,
+      onError: vi.fn(),
+    });
+    await providerRequest;
+    expect(close).toHaveBeenCalledOnce();
+    expect(store.isOpen).toBe(false);
+    expect(store.ui.isSaving).toBe(false);
+    expect(SchedulingAppointmentsAPI.update).toHaveBeenCalledWith(
+      11,
+      expect.objectContaining({ contact_id: 42, patient_contact_id: 84 })
+    );
+    expect(SchedulingProviderCommandsAPI.create).toHaveBeenCalledOnce();
+    expect(SchedulingProviderCommandsAPI.confirm).toHaveBeenCalledOnce();
+    expect(SchedulingProviderCommandsAPI.cancel).not.toHaveBeenCalled();
+  });
+
+  it('updates patient details without changing the owner or promoting the family phone', async () => {
+    const store = useSchedulingAppointmentFormStore();
+    store.openEdit({
+      id: 11,
+      contactId: 42,
+      patientContactId: 84,
+      conversationId: 12002,
+      clientFirstName: 'Patient',
+    });
+    SchedulingContactsAPI.update.mockResolvedValue({
+      data: {
+        payload: {
+          id: 84,
+          full_name: 'Changed Patient',
+          first_name: 'Changed',
+        },
+      },
+    });
+    SchedulingContactsAPI.patients.mockResolvedValue(
+      patientsResponse([
+        {
+          ...localPatient,
+          full_name: 'Changed Patient',
+          first_name: 'Changed',
+        },
+      ])
+    );
+    await store.updateInlineContact(84, {
+      firstName: 'Changed',
+      phone: '+77001234567',
+    });
+    expect(SchedulingContactsAPI.update.mock.calls[0][0]).toBe(84);
+    expect(SchedulingContactsAPI.update.mock.calls[0][1]).not.toHaveProperty(
+      'phone'
+    );
+    expect(store.form).toMatchObject({
+      contactId: 42,
+      patientContactId: 84,
+      clientFirstName: 'Changed',
+    });
+  });
+
+  it.each([42, 84])(
+    'keeps provider patient %s readonly in the calendar contact editor',
+    async patientId => {
+      const store = useSchedulingAppointmentFormStore();
+      const owner = {
+        id: 42,
+        fullName: 'Original chat alias',
+        firstName: 'Original',
+      };
+      store.contacts = [owner];
+      store.openEdit({
+        ...localAppointment,
+        patientContactId: patientId,
+        clientFirstName: 'Clinical',
+        clientName: 'Clinical Patient',
+        customAttributes: { medelement_patient_code: 'verified-profile' },
+      });
+      expect(store.isProviderPatientIdentity).toBe(true);
+      store.beginInlineContactEdit(localEditor);
+      expect(store.inlineContactSnapshot).toBeNull();
+      expect(
+        await store.updateInlineContact(patientId, { birthDate: '2010-02-03' })
+      ).toBeNull();
+      expect(SchedulingContactsAPI.update).not.toHaveBeenCalled();
+      expect(store.contacts[0]).toEqual(owner);
+      expect(store.form).toMatchObject({
+        contactId: 42,
+        patientContactId: patientId,
+        clientFirstName: 'Clinical',
+        clientName: 'Clinical Patient',
+      });
+    }
+  );
+
+  it('keeps an imported provider identity readonly without requiring a new patient-card binding', async () => {
+    const store = useSchedulingAppointmentFormStore();
+    store.openEdit({
+      ...localAppointment,
+      patientContactId: null,
+      source: 'medelement',
+      externalRef: 'medelement:reception:legacy-reception',
+      customAttributes: { medelement_reception_code: 'legacy-reception' },
+    });
+    expect(store.isProviderPatientIdentity).toBe(true);
+    expect(
+      await store.updateInlineContact(42, { birthDate: '2010-02-03' })
+    ).toBeNull();
+    expect(SchedulingContactsAPI.update).not.toHaveBeenCalled();
+    expect(store.selectedContact).toBeNull();
+    expect(store.form.patientContactId).toBe('');
+  });
+
+  it('projects recorded clinical fields for a calendar booking without rewriting a raw chat alias', () => {
+    const store = useSchedulingAppointmentFormStore();
+    const owner = {
+      id: 42,
+      fullName: 'Messenger Alias',
+      firstName: 'Messenger',
+      lastName: 'Alias',
+      identifier: 'raw-chat-identifier',
+      phone: '+77001234567',
+      customAttributes: {
+        medelement_patient_code: 'verified-profile',
+        medelement_first_name: 'Clinical',
+        medelement_last_name: 'Patient',
+        medelement_middle_name: 'Relative',
+        medelement_iin: '090101500000',
+        medelement_birth_date: '2009-01-01',
+        medelement_gender: '2',
+      },
+    };
+    const original = JSON.parse(JSON.stringify(owner));
+    store.openCreate();
+    store.applyContact(owner);
+    expect(store.form).toMatchObject({
+      contactId: 42,
+      clientFirstName: 'Clinical',
+      clientLastName: 'Patient',
+      clientMiddleName: 'Relative',
+      clientIdentifier: '090101500000',
+      clientBirthDate: '2009-01-01',
+      clientGender: 'male',
+    });
+    expect(store.isProviderPatientIdentity).toBe(true);
+    expect(store.buildPayload()).toMatchObject({
+      contact_id: 42,
+      client_first_name: 'Clinical',
+      client_last_name: 'Patient',
+      client_identifier: '090101500000',
+    });
+    expect(owner).toEqual(original);
+    expect(store.selectedContact).toEqual(original);
+  });
+
+  it.each([
+    ['20.07.1994', '1994-07-20'],
+    ['1994-07-20', '1994-07-20'],
+    ['29.02.2000', '2000-02-29'],
+    ['31.02.1994', ''],
+    ['29.02.1900', ''],
+  ])(
+    'sends a valid recorded provider DOB %s in canonical form without changing the contact',
+    (recorded, expected) => {
+      const store = useSchedulingAppointmentFormStore();
+      const owner = {
+        id: 42,
+        firstName: 'Messenger',
+        lastName: 'Alias',
+        fullName: 'Messenger Alias',
+        customAttributes: {
+          medelement_patient_code: 'verified-profile',
+          medelement_birth_date: recorded,
+          medelement_first_name: 'Clinical',
+          medelement_last_name: 'Patient',
+        },
+      };
+      const original = JSON.parse(JSON.stringify(owner));
+      store.openCreate();
+      store.applyContact(owner);
+      expect(store.form.clientBirthDate).toBe(expected);
+      if (expected)
+        expect(store.buildPayload().client_birth_date).toBe(expected);
+      else expect(store.buildPayload()).not.toHaveProperty('client_birth_date');
+      expect(store.selectedContact).toEqual(original);
+      expect(owner).toEqual(original);
+    }
+  );
+
+  it('retains the authoritative clinical DTO fields instead of reprojecting its provider attributes', () => {
+    const store = useSchedulingAppointmentFormStore();
+    store.openEdit(localAppointment);
+    store.applyPatientContact({
+      id: 84,
+      communicationContactId: 42,
+      firstName: 'Server',
+      lastName: 'Projection',
+      fullName: 'Server Projection',
+      identifier: '090101500000',
+      gender: '2',
+      customAttributes: {
+        medelement_patient_code: 'verified-profile',
+        medelement_first_name: 'Old',
+      },
+    });
+    expect(store.form).toMatchObject({
+      contactId: 42,
+      patientContactId: 84,
+      clientFirstName: 'Server',
+      clientLastName: 'Projection',
+      clientGender: 'male',
+    });
+  });
+
+  it('sends only a local DOB change and reloads the scoped patient projection', async () => {
+    const store = useSchedulingAppointmentFormStore();
+    store.openEdit(localAppointment);
+    const owner = { id: 42, accountId: 74, fullName: 'Original chat alias' };
+    store.contacts = [owner];
+    store.beginInlineContactEdit({ ...localEditor, resourceId: 3 });
+    SchedulingContactsAPI.update.mockResolvedValue({
+      data: {
+        payload: {
+          id: 84,
+          account_id: 74,
+          full_name: 'Raw PATCH alias',
+        },
+      },
+    });
+    SchedulingContactsAPI.patients.mockResolvedValue(
+      patientsResponse([{ ...localPatient, birth_date: '2010-02-03' }])
+    );
+    await store.updateInlineContact(84, {
+      ...localEditor,
+      resourceId: 3,
+      birthDate: '2010-02-03',
+    });
+    expect(SchedulingContactsAPI.update).toHaveBeenCalledWith(84, {
+      birth_date: '2010-02-03',
+      resource_id: 3,
+    });
+    expect(SchedulingContactsAPI.patients).toHaveBeenCalledWith(42);
+    expect(store.form).toMatchObject({
+      contactId: 42,
+      patientContactId: 84,
+      clientBirthDate: '2010-02-03',
+      clientFirstName: 'Patient',
+      clientLastName: 'Family',
+    });
+    expect(store.contacts.find(item => item.id === 42)).toEqual(owner);
+    expect(store.selectedContact.fullName).toBe('Patient Family');
+  });
+
+  it.each(['PATCH', 'projection'])(
+    'does not apply a late %s response to another calendar patient',
+    async phase => {
+      const store = useSchedulingAppointmentFormStore();
+      store.openEdit(localAppointment);
+      store.beginInlineContactEdit(localEditor);
+      const pending = deferred();
+      SchedulingContactsAPI.update.mockResolvedValue({
+        data: { payload: { id: 84, account_id: 74 } },
+      });
+      if (phase === 'PATCH')
+        SchedulingContactsAPI.update.mockReturnValueOnce(pending.promise);
+      else SchedulingContactsAPI.patients.mockReturnValueOnce(pending.promise);
+      const request = store.updateInlineContact(84, {
+        ...localEditor,
+        birthDate: '2010-02-03',
+      });
+      await Promise.resolve();
+      store.openEdit({
+        ...localAppointment,
+        id: 12,
+        patientContactId: 85,
+        clientFirstName: 'Other',
+      });
+      pending.resolve(
+        phase === 'PATCH'
+          ? { data: { payload: { id: 84, account_id: 74 } } }
+          : patientsResponse()
+      );
+      expect(await request).toBeNull();
+      expect(store.form).toMatchObject({
+        contactId: 42,
+        patientContactId: 85,
+        clientFirstName: 'Other',
+      });
+      expect(store.ui.isCreatingContact).toBe(false);
+      expect(store.selectedContact.id).toBe(85);
+    }
+  );
+
+  it('ignores an old contact edit after the same appointment has been reopened', async () => {
+    const store = useSchedulingAppointmentFormStore();
+    store.openEdit(localAppointment);
+    store.beginInlineContactEdit(localEditor);
+    const pending = deferred();
+    SchedulingContactsAPI.update.mockReturnValueOnce(pending.promise);
+    const request = store.updateInlineContact(84, {
+      ...localEditor,
+      birthDate: '2010-02-03',
+    });
+    store.openEdit(localAppointment);
+    pending.resolve({ data: { payload: { id: 84, account_id: 74 } } });
+    expect(await request).toBeNull();
+    expect(store.form.clientBirthDate).toBe('2009-01-01');
+    expect(SchedulingContactsAPI.patients).not.toHaveBeenCalled();
+  });
+
+  it('rejects a different account in the refreshed calendar patient projection', async () => {
+    const store = useSchedulingAppointmentFormStore();
+    store.openEdit(localAppointment);
+    store.beginInlineContactEdit(localEditor);
+    SchedulingContactsAPI.update.mockResolvedValue({
+      data: { payload: { id: 84, account_id: 74 } },
+    });
+    SchedulingContactsAPI.patients.mockResolvedValue(
+      patientsResponse([{ ...localPatient, account_id: 75 }])
+    );
+    await expect(
+      store.updateInlineContact(84, { ...localEditor, birthDate: '2010-02-03' })
+    ).rejects.toThrow('patient_context_mismatch');
+    expect(store.form.clientBirthDate).toBe('2009-01-01');
   });
 
   it('sends the cancellation mode shown on the appointment to the cancel endpoint', async () => {

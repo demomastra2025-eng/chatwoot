@@ -19,8 +19,18 @@ import {
   isMessageInCommunicationThread,
 } from 'dashboard/helper/communicationThreadHelper';
 import { timestampInSeconds } from 'dashboard/helper/timestampHelper';
+import {
+  blockedDeletionIds,
+  projectDeletedConversation,
+  retainDeletionOperations,
+  requiresDeletionAuthority,
+} from './helpers/deletionState';
 
 const state = {
+  deletionScope: null,
+  deletionOperations: [],
+  deletionObservedIds: [],
+  deletionRevision: 0,
   allConversations: [],
   attachments: {},
   // Chats whose full attachment load attempt settled; failed refreshes retain
@@ -400,7 +410,62 @@ const refreshCommunicationThreadReplyState = chat => {
 };
 
 // mutations
+const applyDeletionProjection = _state => {
+  const blocked = blockedDeletionIds(_state);
+  if (!blocked.size) return;
+  _state.allConversations = _state.allConversations
+    .map(conversation => {
+      const projected = projectDeletedConversation(conversation, blocked);
+      if (projected && isCommunicationThread(projected))
+        refreshCommunicationThreadReplyState(projected);
+      return projected;
+    })
+    .filter(Boolean);
+  if (
+    _state.selectedChatId != null &&
+    !_state.allConversations.some(conversation =>
+      isSelectedConversation(_state, conversation)
+    )
+  ) {
+    _state.selectedChatId = null;
+    _state.selectedChatType = null;
+  }
+};
+
 export const mutations = {
+  [types.REGISTER_CONVERSATION_DELETION_EVENT](_state, id) {
+    _state.deletionObservedIds = [
+      ...new Set([...(_state.deletionObservedIds || []), id]),
+    ].slice(-10000);
+    _state.deletionRevision = (_state.deletionRevision || 0) + 1;
+    applyDeletionProjection(_state);
+  },
+  [types.SET_CONVERSATION_DELETION_AUTHORITY](_state, conversation) {
+    const index = findConversationIndexByIdAndType(_state, conversation);
+    if (index < 0) _state.allConversations.push(conversation);
+    else _state.allConversations[index] = conversation;
+    applyDeletionProjection(_state);
+  },
+  [types.SET_CONVERSATION_DELETION_SCOPE](
+    _state,
+    { scope, operations, observedIds = [] }
+  ) {
+    _state.deletionScope = scope;
+    _state.deletionOperations = retainDeletionOperations(operations);
+    _state.deletionObservedIds = observedIds;
+    applyDeletionProjection(_state);
+  },
+  [types.SET_CONVERSATION_DELETION_OPERATION](_state, operation) {
+    const operations = _state.deletionOperations || [];
+    const index = operations.findIndex(
+      entry => entry.requestKey === operation.requestKey
+    );
+    if (index < 0) operations.push(operation);
+    else operations[index] = operation;
+    _state.deletionOperations = retainDeletionOperations(operations);
+    _state.deletionRevision = (_state.deletionRevision || 0) + 1;
+    applyDeletionProjection(_state);
+  },
   [types.SET_ALL_CONVERSATION](_state, conversationList) {
     const newAllConversations = [..._state.allConversations];
     conversationList.forEach(conversation => {
@@ -430,8 +495,14 @@ export const mutations = {
       }
     });
     _state.allConversations = newAllConversations;
+    applyDeletionProjection(_state);
   },
   [types.REPLACE_ALL_CONVERSATION](_state, conversationList) {
+    conversationList = conversationList
+      .map(conversation =>
+        projectDeletedConversation(conversation, blockedDeletionIds(_state))
+      )
+      .filter(Boolean);
     const selectedConversation = _state.allConversations.find(conversation =>
       isSelectedConversation(_state, conversation)
     );
@@ -458,6 +529,7 @@ export const mutations = {
       _state.selectedChatId = null;
       _state.selectedChatType = null;
     }
+    applyDeletionProjection(_state);
   },
   [types.EMPTY_ALL_CONVERSATION](_state) {
     _state.allConversations = [];
@@ -490,6 +562,7 @@ export const mutations = {
       if (!chat) return;
 
       chat.messages = mergeMessagesById(chat.messages, data);
+      applyDeletionProjection(_state);
       refreshCommunicationThreadReplyState(chat);
     }
   },
@@ -504,6 +577,7 @@ export const mutations = {
     const chat = getConversationById(_state)(id, conversationType);
     if (!chat) return;
     chat.messages = data;
+    applyDeletionProjection(_state);
     refreshCommunicationThreadReplyState(chat);
   },
 
@@ -660,8 +734,17 @@ export const mutations = {
   },
 
   [types.ADD_MESSAGE_TO_CHAT](_state, { chatId, message }) {
+    if (blockedDeletionIds(_state).has(String(message.conversation_id))) return;
     const chat = getConversationById(_state)(chatId, 'communication_thread');
     if (!chat) return;
+    if (
+      requiresDeletionAuthority(_state, {
+        id: chatId,
+        is_communication_thread: true,
+        conversation_id: message.conversation_id,
+      })
+    )
+      return;
     if (!isMessageInCommunicationThread(chat, message)) return;
 
     chat.messages ||= [];
@@ -746,6 +829,11 @@ export const mutations = {
   },
 
   [types.ADD_CONVERSATION](_state, conversation) {
+    conversation = projectDeletedConversation(
+      conversation,
+      blockedDeletionIds(_state)
+    );
+    if (!conversation) return;
     const exists = _state.allConversations.some(
       existingConversation =>
         conversationIdMatches(existingConversation, conversation.id) &&
@@ -754,6 +842,7 @@ export const mutations = {
     if (!exists) {
       _state.allConversations.push(conversation);
     }
+    applyDeletionProjection(_state);
   },
 
   [types.DELETE_CONVERSATION](_state, conversationId) {
@@ -816,6 +905,11 @@ export const mutations = {
   },
 
   [types.UPDATE_CONVERSATION](_state, conversation) {
+    if (
+      !isCommunicationThread(conversation) &&
+      blockedDeletionIds(_state).has(String(conversation.id))
+    )
+      return;
     const { allConversations } = _state;
     const index = findConversationIndexByIdAndType(_state, conversation);
 
@@ -859,6 +953,7 @@ export const mutations = {
         _state.allConversations.push(conversation);
       }
     }
+    applyDeletionProjection(_state);
   },
 
   [types.SET_LIST_LOADING_STATUS](_state) {

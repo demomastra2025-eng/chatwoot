@@ -276,6 +276,23 @@ module Llm::Models
       supports?(model_name, :reasoning, account: account)
     end
 
+    def reasoning_efforts_for(model_name, account: nil)
+      return [] unless supports_thinking?(model_name, account: account)
+
+      config = model_config(model_name, account: account).to_h
+      reasoning = config['reasoning']
+      # Older catalogs support the existing effort controls but cannot prove
+      # that reasoning can be disabled. Do not offer `none` from that metadata.
+      return Llm::RuntimePolicy::THINKING_EFFORTS - ['none'] unless reasoning.is_a?(Hash)
+      return [] unless reasoning.key?('supported_efforts')
+
+      efforts = reasoning['supported_efforts']
+      efforts = efforts.nil? ? Llm::RuntimePolicy::THINKING_EFFORTS : Array(efforts).map(&:to_s)
+      efforts &= Llm::RuntimePolicy::THINKING_EFFORTS
+      can_disable = config['provider'] == OPENROUTER_PROVIDER && reasoning['mandatory'] != true
+      can_disable ? efforts : efforts - ['none']
+    end
+
     # Temperature is a request parameter rather than a model capability. Use the
     # provider registry's parameter list when available (OpenRouter), then the
     # RubyLLM model metadata for bundled provider models. Unknown support stays
@@ -421,6 +438,7 @@ module Llm::Models
             credit_multiplier: model['credit_multiplier'],
             capabilities: capabilities_for(canonical_name, account: account),
             supports_temperature: supports_temperature?(canonical_name, account: account),
+            reasoning_efforts: reasoning_efforts_for(canonical_name, account: account),
             type: type_for(canonical_name, account: account),
             known_to_registry: registry_known?(canonical_name, account: account),
             source: model['source'],

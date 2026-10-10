@@ -14,6 +14,13 @@ const TERMINAL_STATUSES = new Set([
   'succeeded',
 ]);
 
+export const providerCommandRequiresPatientSelection = command =>
+  command?.status === 'awaiting_patient_selection' ||
+  (command?.status === 'failed' &&
+    command.patientAction?.type === 'patient_selection' &&
+    command.patientAction?.canConfirm === true &&
+    command.patientAction?.requiresPatientCardConfirmation === true);
+
 const pause = milliseconds => {
   if (milliseconds <= 0) return Promise.resolve();
 
@@ -182,8 +189,11 @@ export const useSchedulingProviderCommandsStore = defineStore(
         isCurrent = () => true
       ) {
         assertProviderCommandIntent(command, expectedIntent);
+        if (!isCurrent()) return command;
         this.ui.operationId += 1;
         const operationId = this.ui.operationId;
+        const isCurrentOperation = () =>
+          isCurrent() && this.ui.operationId === operationId;
         this.ui.error = null;
         this.ui.isExecuting = true;
         try {
@@ -192,15 +202,15 @@ export const useSchedulingProviderCommandsStore = defineStore(
           resumedCommand = await pollProviderCommand(resumedCommand, {
             maxPollAttempts: 75,
             pollIntervalMs: 1000,
-            isCurrent,
+            isCurrent: isCurrentOperation,
           });
-          if (isCurrent() && this.ui.operationId === operationId) {
+          if (isCurrentOperation()) {
             this.lastCommand = resumedCommand;
           }
           return resumedCommand;
         } catch (error) {
           const schedulingError = extractSchedulingError(error);
-          if (isCurrent() && this.ui.operationId === operationId) {
+          if (isCurrentOperation()) {
             this.ui.error = schedulingError;
           }
           throw schedulingError;
@@ -253,7 +263,7 @@ export const useSchedulingProviderCommandsStore = defineStore(
         );
       },
 
-      confirmExisting(command, expectedIntent) {
+      confirmExisting(command, expectedIntent, isCurrent) {
         return this.resumePatientAction(
           command,
           () =>
@@ -265,24 +275,50 @@ export const useSchedulingProviderCommandsStore = defineStore(
               : SchedulingProviderCommandsAPI.confirm(command.id, {
                   automatic: true,
                 }),
-          expectedIntent
+          expectedIntent,
+          isCurrent
         );
       },
 
-      async cancel(command) {
-        const response = command.provider
-          ? await SchedulingProviderCommandsAPI.cancel(command.id, {
-              provider: command.provider,
-            })
-          : await SchedulingProviderCommandsAPI.cancel(command.id);
-        this.lastCommand = normalizePayload(response.data);
-        return this.lastCommand;
+      async cancel(command, isCurrent = () => true) {
+        if (!isCurrent()) return command;
+        this.ui.operationId += 1;
+        const operationId = this.ui.operationId;
+        const isCurrentOperation = () =>
+          isCurrent() && this.ui.operationId === operationId;
+        this.ui.error = null;
+        this.ui.isExecuting = true;
+        try {
+          const response = command.provider
+            ? await SchedulingProviderCommandsAPI.cancel(command.id, {
+                provider: command.provider,
+              })
+            : await SchedulingProviderCommandsAPI.cancel(command.id);
+          const cancelled = normalizePayload(response.data);
+          if (isCurrentOperation()) this.lastCommand = cancelled;
+          return cancelled;
+        } catch (error) {
+          const schedulingError = extractSchedulingError(error);
+          if (isCurrentOperation()) this.ui.error = schedulingError;
+          throw schedulingError;
+        } finally {
+          if (this.ui.operationId === operationId) this.ui.isExecuting = false;
+        }
       },
 
       async executeConfirmed(
         commandParams,
-        { maxPollAttempts = 75, pollIntervalMs = 1000 } = {}
+        {
+          maxPollAttempts = 75,
+          pollIntervalMs = 1000,
+          isCurrent = () => true,
+        } = {}
       ) {
+        if (!isCurrent()) return null;
+        this.ui.operationId += 1;
+        const operationId = this.ui.operationId;
+        const isCurrentOperation = () =>
+          isCurrent() && this.ui.operationId === operationId;
         this.ui.error = null;
         this.ui.isExecuting = true;
 
@@ -297,6 +333,7 @@ export const useSchedulingProviderCommandsStore = defineStore(
               ),
           });
           let command = normalizePayload(createResponse.data);
+          if (!isCurrentOperation()) return command;
 
           const confirmResponse = command.provider
             ? await SchedulingProviderCommandsAPI.confirm(command.id, {
@@ -307,20 +344,22 @@ export const useSchedulingProviderCommandsStore = defineStore(
                 automatic: true,
               });
           command = normalizePayload(confirmResponse.data);
-          this.lastCommand = command;
+          if (isCurrentOperation()) this.lastCommand = command;
 
           command = await pollProviderCommand(command, {
             maxPollAttempts,
             pollIntervalMs,
+            isCurrent: isCurrentOperation,
           });
-          this.lastCommand = command;
+          if (isCurrentOperation()) this.lastCommand = command;
 
           return command;
         } catch (error) {
-          this.ui.error = extractSchedulingError(error);
-          throw this.ui.error;
+          const schedulingError = extractSchedulingError(error);
+          if (isCurrentOperation()) this.ui.error = schedulingError;
+          throw schedulingError;
         } finally {
-          this.ui.isExecuting = false;
+          if (this.ui.operationId === operationId) this.ui.isExecuting = false;
         }
       },
     },

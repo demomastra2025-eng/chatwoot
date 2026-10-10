@@ -32,6 +32,7 @@ class Captain::Mcp::ToolCatalog
 
     def available_tools_for(assistant, scope_name)
       return [] if Thread.current[DISCOVERY_DISABLED_KEY]
+      return [] if Captain::Playground::ExternalToolPolicy.tainted?(nil)
 
       runtime_cache = Thread.current[RUNTIME_CACHE_KEY]
       return discover_available_tools(assistant, scope_name) if runtime_cache.nil?
@@ -68,6 +69,8 @@ class Captain::Mcp::ToolCatalog
     end
 
     def tools(refresh: false)
+      Captain::Playground::ExternalToolPolicy.ensure_allowed!
+
       if refresh
         tools = fetch_tools_with_retry
         Rails.cache.delete(failure_cache_key)
@@ -76,6 +79,8 @@ class Captain::Mcp::ToolCatalog
       return [] if Rails.cache.exist?(failure_cache_key)
 
       Rails.cache.fetch(cache_key, expires_in: CACHE_TTL) { fetch_tools_with_retry }
+    rescue Captain::Playground::ExternalToolPolicy::Blocked
+      raise
     rescue StandardError
       Rails.cache.write(failure_cache_key, true, expires_in: FAILURE_CACHE_TTL)
       raise

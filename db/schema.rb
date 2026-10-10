@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_10_09_180000) do
+ActiveRecord::Schema[7.2].define(version: 2026_10_10_061300) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1420,6 +1420,10 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_09_180000) do
     t.text "waiting_reason"
     t.datetime "waiting_started_at"
     t.bigint "waiting_set_by_id"
+    t.jsonb "appointment_plan", default: [], null: false
+    t.bigint "selected_appointment_id"
+    t.jsonb "appointment_automation_state", default: {}, null: false
+    t.datetime "appointment_automation_next_check_at"
     t.index ["account_id", "company_id"], name: "index_crm_deals_on_account_company"
     t.index ["account_id", "expected_close_on", "updated_at", "id"], name: "index_crm_deals_on_active_ordering", order: { updated_at: :desc, id: :desc }, where: "(archived_at IS NULL)"
     t.index ["account_id", "external_ref"], name: "index_crm_deals_on_account_external_ref", unique: true, where: "(external_ref IS NOT NULL)"
@@ -1431,6 +1435,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_09_180000) do
     t.index ["account_id", "team_id"], name: "index_crm_deals_on_account_team"
     t.index ["account_id", "waiting_until"], name: "index_crm_deals_on_active_waiting_until", where: "((waiting_until IS NOT NULL) AND (archived_at IS NULL))"
     t.index ["account_id"], name: "index_crm_deals_on_account_id"
+    t.index ["appointment_automation_next_check_at", "id"], name: "idx_crm_deals_appointment_due", where: "((appointment_automation_next_check_at IS NOT NULL) AND (archived_at IS NULL) AND (closed_at IS NULL))"
     t.index ["company_id"], name: "index_crm_deals_on_company_id"
     t.index ["creator_id"], name: "index_crm_deals_on_creator_id"
     t.index ["custom_attributes"], name: "index_crm_deals_on_custom_attributes", using: :gin
@@ -1441,6 +1446,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_09_180000) do
     t.index ["stage_id"], name: "index_crm_deals_on_stage_id"
     t.index ["team_id"], name: "index_crm_deals_on_team_id"
     t.index ["waiting_set_by_id"], name: "index_crm_deals_on_waiting_set_by_id"
+    t.check_constraint "jsonb_typeof(appointment_plan) = 'array'::text AND jsonb_typeof(appointment_automation_state) = 'object'::text", name: "crm_deal_appointment_config_types"
     t.check_constraint "waiting_until IS NULL AND waiting_reason IS NULL AND waiting_started_at IS NULL OR waiting_until IS NOT NULL AND waiting_reason IS NOT NULL AND length(btrim(waiting_reason)) > 0 AND waiting_started_at IS NOT NULL", name: "crm_deals_waiting_state_complete"
   end
 
@@ -1508,9 +1514,13 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_09_180000) do
     t.boolean "restrict_stage_skipping", default: false, null: false
     t.boolean "restrict_backward_move", default: false, null: false
     t.boolean "allow_stage_rule_override", default: false, null: false
+    t.jsonb "appointment_automation", default: {}, null: false
     t.index ["account_id", "code"], name: "index_crm_pipelines_on_account_id_and_code", unique: true
+    t.index ["account_id"], name: "idx_crm_pipeline_calendar_target", unique: true, where: "(active AND ((appointment_automation ->> 'auto_create_from_calendar'::text) = 'true'::text))"
+    t.index ["account_id"], name: "idx_crm_pipeline_medelement_target", unique: true, where: "(active AND ((appointment_automation ->> 'auto_create_from_medelement'::text) = 'true'::text))"
     t.index ["account_id"], name: "index_crm_pipelines_on_account_default_active", unique: true, where: "((\"default\" = true) AND (active = true))"
     t.index ["account_id"], name: "index_crm_pipelines_on_account_id"
+    t.check_constraint "jsonb_typeof(appointment_automation) = 'object'::text", name: "crm_pipeline_appointment_config_object"
   end
 
   create_table "crm_stage_field_requirements", force: :cascade do |t|
@@ -2254,41 +2264,6 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_09_180000) do
     t.index ["processed_at"], name: "index_medelement_delta_seen_receptions_on_processed_at"
   end
 
-  create_table "medelement_sync_cursors", force: :cascade do |t|
-    t.bigint "hook_id", null: false
-    t.string "name", null: false
-    t.datetime "value"
-    t.datetime "last_poll_at"
-    t.datetime "last_success_at"
-    t.integer "current_interval_seconds"
-    t.datetime "created_at", null: false
-    t.datetime "updated_at", null: false
-    t.index ["hook_id", "name"], name: "index_medelement_sync_cursors_on_hook_id_and_name", unique: true
-    t.index ["hook_id"], name: "index_medelement_sync_cursors_on_hook_id"
-  end
-
-  create_table "medelement_schedule_days", force: :cascade do |t|
-    t.bigint "account_id", null: false
-    t.bigint "hook_id", null: false
-    t.bigint "resource_id", null: false
-    t.string "specialist_code", null: false
-    t.date "date", null: false
-    t.jsonb "windows", default: [], null: false
-    t.string "status", default: "unverified", null: false
-    t.integer "consecutive_empty_count", default: 0, null: false
-    t.datetime "source_checked_at"
-    t.datetime "last_attempted_at"
-    t.string "raw_digest"
-    t.datetime "created_at", null: false
-    t.datetime "updated_at", null: false
-    t.index ["account_id", "resource_id", "date"], name: "idx_medelement_schedule_days_resource_date"
-    t.index ["hook_id", "resource_id", "date"], name: "idx_medelement_schedule_days_hook_resource_date", unique: true
-    t.index ["hook_id", "specialist_code", "date"], name: "idx_medelement_schedule_days_provider_day", unique: true
-    t.index ["account_id"], name: "index_medelement_schedule_days_on_account_id"
-    t.index ["hook_id"], name: "index_medelement_schedule_days_on_hook_id"
-    t.index ["resource_id"], name: "index_medelement_schedule_days_on_resource_id"
-  end
-
   create_table "medelement_provider_commands", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "hook_id"
@@ -2325,6 +2300,28 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_09_180000) do
     t.index ["requested_by_id"], name: "index_medelement_provider_commands_on_requested_by_id"
   end
 
+  create_table "medelement_schedule_days", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "hook_id", null: false
+    t.bigint "resource_id", null: false
+    t.string "specialist_code", null: false
+    t.date "date", null: false
+    t.jsonb "windows", default: [], null: false
+    t.string "status", default: "unverified", null: false
+    t.integer "consecutive_empty_count", default: 0, null: false
+    t.datetime "source_checked_at"
+    t.datetime "last_attempted_at"
+    t.string "raw_digest"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "resource_id", "date"], name: "idx_medelement_schedule_days_resource_date"
+    t.index ["account_id"], name: "index_medelement_schedule_days_on_account_id"
+    t.index ["hook_id", "resource_id", "date"], name: "idx_medelement_schedule_days_hook_resource_date", unique: true
+    t.index ["hook_id", "specialist_code", "date"], name: "idx_medelement_schedule_days_provider_day", unique: true
+    t.index ["hook_id"], name: "index_medelement_schedule_days_on_hook_id"
+    t.index ["resource_id"], name: "index_medelement_schedule_days_on_resource_id"
+  end
+
   create_table "medelement_sync_conflicts", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "hook_id"
@@ -2354,6 +2351,19 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_09_180000) do
     t.index ["hook_id"], name: "index_medelement_sync_conflicts_on_hook_id"
     t.index ["last_sync_run_id"], name: "index_medelement_sync_conflicts_on_last_sync_run_id"
     t.index ["resolved_by_id"], name: "index_medelement_sync_conflicts_on_resolved_by_id"
+  end
+
+  create_table "medelement_sync_cursors", force: :cascade do |t|
+    t.bigint "hook_id", null: false
+    t.string "name", null: false
+    t.datetime "value"
+    t.datetime "last_poll_at"
+    t.datetime "last_success_at"
+    t.integer "current_interval_seconds"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["hook_id", "name"], name: "index_medelement_sync_cursors_on_hook_id_and_name", unique: true
+    t.index ["hook_id"], name: "index_medelement_sync_cursors_on_hook_id"
   end
 
   create_table "medelement_sync_runs", force: :cascade do |t|
@@ -2413,16 +2423,18 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_09_180000) do
     t.jsonb "additional_attributes", default: {}
     t.text "processed_message_content"
     t.jsonb "sentiment", default: {}
-    t.index "(((((((((((COALESCE(processed_message_content, ''::text) || '\n'::text) || COALESCE((\nCASE json_typeof(content_attributes)\n    WHEN 'object'::text THEN content_attributes\n    WHEN 'string'::text THEN CASE\n    WHEN ((content_attributes #>> '{}'::text[])) IS JSON OBJECT THEN ((content_attributes #>> '{}'::text[]))::json\n    ELSE '{}'::json\nEND\n    ELSE '{}'::json\nEND ->> 'text'::text), ''::text)) || '\n'::text) || COALESCE((\nCASE json_typeof(content_attributes)\n    WHEN 'object'::text THEN content_attributes\n    WHEN 'string'::text THEN CASE\n    WHEN ((content_attributes #>> '{}'::text[])) IS JSON OBJECT THEN ((content_attributes #>> '{}'::text[]))::json\n    ELSE '{}'::json\nEND\n    ELSE '{}'::json\nEND ->> 'text_content'::text), ''::text)) || '\n'::text) || COALESCE((\nCASE json_typeof(content_attributes)\n    WHEN 'object'::text THEN content_attributes\n    WHEN 'string'::text THEN CASE\n    WHEN ((content_attributes #>> '{}'::text[])) IS JSON OBJECT THEN ((content_attributes #>> '{}'::text[]))::json\n    ELSE '{}'::json\nEND\n    ELSE '{}'::json\nEND ->> 'transcribed_text'::text), ''::text)) || '\n'::text) || COALESCE(((\nCASE json_typeof(content_attributes)\n    WHEN 'object'::text THEN content_attributes\n    WHEN 'string'::text THEN CASE\n    WHEN ((content_attributes #>> '{}'::text[])) IS JSON OBJECT THEN ((content_attributes #>> '{}'::text[]))::json\n    ELSE '{}'::json\nEND\n    ELSE '{}'::json\nEND -> 'email'::text) ->> 'subject'::text), ''::text)) || '\n'::text) || COALESCE(((\nCASE json_typeof(content_attributes)\n    WHEN 'object'::text THEN content_attributes\n    WHEN 'string'::text THEN CASE\n    WHEN ((content_attributes #>> '{}'::text[])) IS JSON OBJECT THEN ((content_attributes #>> '{}'::text[]))::json\n    ELSE '{}'::json\nEND\n    ELSE '{}'::json\nEND -> 'email'::text) ->> 'text_content'::text), ''::text))) gin_trgm_ops", name: "index_messages_on_transcription_search_text", using: :gin
+    t.index "(((((((((((COALESCE(processed_message_content, ''::text) || '\n'::text) || COALESCE((\nCASE json_typeof(content_attributes)\n    WHEN 'object'::text THEN content_attributes\n    WHEN 'string'::text THEN\n    CASE\n        WHEN ((content_attributes #>> '{}'::text[]) IS JSON OBJECT) THEN ((content_attributes #>> '{}'::text[]))::json\n        ELSE '{}'::json\n    END\n    ELSE '{}'::json\nEND ->> 'text'::text), ''::text)) || '\n'::text) || COALESCE((\nCASE json_typeof(content_attributes)\n    WHEN 'object'::text THEN content_attributes\n    WHEN 'string'::text THEN\n    CASE\n        WHEN ((content_attributes #>> '{}'::text[]) IS JSON OBJECT) THEN ((content_attributes #>> '{}'::text[]))::json\n        ELSE '{}'::json\n    END\n    ELSE '{}'::json\nEND ->> 'text_content'::text), ''::text)) || '\n'::text) || COALESCE((\nCASE json_typeof(content_attributes)\n    WHEN 'object'::text THEN content_attributes\n    WHEN 'string'::text THEN\n    CASE\n        WHEN ((content_attributes #>> '{}'::text[]) IS JSON OBJECT) THEN ((content_attributes #>> '{}'::text[]))::json\n        ELSE '{}'::json\n    END\n    ELSE '{}'::json\nEND ->> 'transcribed_text'::text), ''::text)) || '\n'::text) || COALESCE(((\nCASE json_typeof(content_attributes)\n    WHEN 'object'::text THEN content_attributes\n    WHEN 'string'::text THEN\n    CASE\n        WHEN ((content_attributes #>> '{}'::text[]) IS JSON OBJECT) THEN ((content_attributes #>> '{}'::text[]))::json\n        ELSE '{}'::json\n    END\n    ELSE '{}'::json\nEND -> 'email'::text) ->> 'subject'::text), ''::text)) || '\n'::text) || COALESCE(((\nCASE json_typeof(content_attributes)\n    WHEN 'object'::text THEN content_attributes\n    WHEN 'string'::text THEN\n    CASE\n        WHEN ((content_attributes #>> '{}'::text[]) IS JSON OBJECT) THEN ((content_attributes #>> '{}'::text[]))::json\n        ELSE '{}'::json\n    END\n    ELSE '{}'::json\nEND -> 'email'::text) ->> 'text_content'::text), ''::text))) gin_trgm_ops", name: "index_messages_on_transcription_search_text", using: :gin
     t.index "((additional_attributes -> 'campaign_id'::text))", name: "index_messages_on_additional_attributes_campaign_id", using: :gin
     t.index "to_tsvector('english'::regconfig, COALESCE(content, ''::text))", name: "index_messages_on_english_search_vector", using: :gin
     t.index ["account_id", "content_type", "created_at"], name: "idx_messages_account_content_created"
     t.index ["account_id", "conversation_id", "created_at"], name: "idx_messages_account_conversation_public_chat_time", order: { created_at: :desc }, where: "((private = false) AND (message_type <> 2))"
+    t.index ["account_id", "created_at", "id"], name: "idx_messages_first_inbound_cohort", where: "((message_type = 0) AND (NOT private))"
     t.index ["account_id", "created_at", "message_type"], name: "index_messages_on_account_created_type"
     t.index ["account_id", "inbox_id"], name: "index_messages_on_account_id_and_inbox_id"
     t.index ["account_id"], name: "index_messages_on_account_id"
     t.index ["content"], name: "index_messages_on_content", opclass: :gin_trgm_ops, using: :gin
     t.index ["conversation_id", "account_id", "message_type", "created_at"], name: "index_messages_on_conversation_account_type_created"
+    t.index ["conversation_id", "created_at", "id"], name: "idx_messages_first_inbound_contact", where: "((message_type = 0) AND (NOT private))"
     t.index ["conversation_id"], name: "index_messages_on_conversation_id"
     t.index ["created_at"], name: "index_messages_on_created_at"
     t.index ["inbox_id", "source_id"], name: "idx_messages_unique_inbox_source_id", unique: true, where: "(source_id IS NOT NULL)"
@@ -2782,7 +2794,10 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_09_180000) do
     t.integer "compensation_percent_snapshot", default: 0, null: false
     t.bigint "owner_id"
     t.bigint "patient_contact_id"
+    t.bigint "crm_deal_id"
+    t.datetime "attendance_confirmed_at"
     t.index "account_id, regexp_replace((client_identifier)::text, '[^0-9]'::text, ''::text, 'g'::text)", name: "idx_scheduling_appointments_account_normalized_identifier", where: "(client_identifier IS NOT NULL)"
+    t.index ["account_id", "crm_deal_id", "starts_at"], name: "idx_appointments_crm_deal", where: "(crm_deal_id IS NOT NULL)"
     t.index ["account_id", "external_ref"], name: "idx_scheduling_appointments_on_account_external_ref", unique: true, where: "(external_ref IS NOT NULL)"
     t.index ["account_id", "idempotency_key"], name: "idx_scheduling_appointments_on_account_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["account_id", "resource_id", "starts_at", "ends_at"], name: "idx_scheduling_appointments_on_account_resource_range"
@@ -3809,6 +3824,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_09_180000) do
   add_foreign_key "scheduling_appointments", "contacts"
   add_foreign_key "scheduling_appointments", "contacts", column: "patient_contact_id", on_delete: :nullify
   add_foreign_key "scheduling_appointments", "conversations"
+  add_foreign_key "scheduling_appointments", "crm_deals", name: "fk_appointment_crm_deal", on_delete: :nullify
   add_foreign_key "scheduling_appointments", "scheduling_resources", column: "resource_id"
   add_foreign_key "scheduling_appointments", "scheduling_services", column: "service_id"
   add_foreign_key "scheduling_appointments", "users", column: "created_by_id"

@@ -1,11 +1,15 @@
-import { shallowMount, flushPromises } from '@vue/test-utils';
+import { mount, shallowMount, flushPromises } from '@vue/test-utils';
 import { createPinia } from 'pinia';
-import { reactive as makeReactive } from 'vue';
+import { reactive as makeReactive, ref } from 'vue';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import SchedulingConversationAppointmentsSidebar from './SchedulingConversationAppointmentsSidebar.vue';
 import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
+import SchedulingAvailabilityAPI from 'dashboard/api/scheduling/availability';
 import SchedulingProviderCommandsAPI from 'dashboard/api/scheduling/providerCommands';
+import SchedulingAvailabilityPicker from './SchedulingAvailabilityPicker.vue';
+import SchedulingAppointmentTimeFields from './SchedulingAppointmentTimeFields.vue';
+import AppointmentDealSelector from 'dashboard/components-next/CRM/AppointmentDealSelector.vue';
 
 const existingAppointment = {
   id: 501,
@@ -188,6 +192,18 @@ vi.mock('dashboard/api/scheduling/providerCommands', () => ({
   },
 }));
 
+vi.mock('dashboard/api/scheduling/availability', () => ({
+  default: {
+    show: vi.fn(() =>
+      Promise.resolve({
+        data: {
+          payload: { state: 'ok', windows: [], last_bookable_date: null },
+        },
+      })
+    ),
+  },
+}));
+
 vi.mock('dashboard/stores/scheduling/references', () => ({
   useSchedulingReferencesStore: () => ({
     activeResources: mocks.resources,
@@ -210,14 +226,20 @@ const defaultCurrentChat = () => ({
   },
 });
 
-const mountComponent = (currentChat = defaultCurrentChat()) => {
+const mountComponent = (
+  currentChat = defaultCurrentChat(),
+  patientProps = {},
+  providedContext = {}
+) => {
   mocks.route = makeReactive({ params: { accountId: '1' } });
   return shallowMount(SchedulingConversationAppointmentsSidebar, {
     props: {
       currentChat,
+      ...patientProps,
     },
     global: {
       plugins: [createPinia()],
+      provide: providedContext,
       stubs: {
         RouterLink: {
           name: 'RouterLink',
@@ -239,6 +261,352 @@ const mountComponent = (currentChat = defaultCurrentChat()) => {
 };
 
 describe('SchedulingConversationAppointmentsSidebar', () => {
+  const patientContextProps = (id = 84) => ({
+    patientContextEnabled: true,
+    patientContextKey: '1:9:conversation:123',
+    selectedPatient: {
+      id,
+      patient_contact_id: id,
+      selectable_patient: true,
+      first_name: `Patient ${id}`,
+      last_name: 'Family',
+      full_name: `Family Patient ${id}`,
+      phone: '+77001234567',
+      birth_date: '2017-01-02',
+      gender: 'female',
+    },
+  });
+
+  it('filters by the patient and preserves the original chat owner when creating', async () => {
+    SchedulingAppointmentsAPI.get.mockResolvedValue({ data: { payload: [] } });
+    const chat = defaultCurrentChat();
+    const wrapper = mountComponent(chat, patientContextProps());
+    await flushPromises();
+    expect(SchedulingAppointmentsAPI.get).toHaveBeenCalledWith({
+      patient_contact_ids: 84,
+    });
+    expect(wrapper.vm.createForm.clientFirstName).toBe('Patient 84');
+    expect(wrapper.vm.buildCreatePayload()).toMatchObject({
+      contact_id: 42,
+      patient_contact_id: 84,
+      conversation_display_id: 123,
+      client_first_name: 'Patient 84',
+      client_birth_date: '2017-01-02',
+    });
+    expect(chat.meta.sender.id).toBe(42);
+    expect(chat.meta.sender.name).toBe('Айша');
+  });
+
+  it('omits patient_contact_id for the default owner rather than submitting null', async () => {
+    SchedulingAppointmentsAPI.get.mockResolvedValue({ data: { payload: [] } });
+    const wrapper = mountComponent(defaultCurrentChat(), {
+      ...patientContextProps(),
+      selectedPatient: {
+        id: 42,
+        first_name: 'Owner',
+        patient_contact_id: null,
+        selectable_patient: false,
+      },
+    });
+    await flushPromises();
+    expect(wrapper.vm.buildCreatePayload().contact_id).toBe(42);
+    expect(wrapper.vm.buildCreatePayload()).not.toHaveProperty(
+      'patient_contact_id'
+    );
+  });
+
+  it('can explicitly use a verified original chat owner as the patient', async () => {
+    SchedulingAppointmentsAPI.get.mockResolvedValue({ data: { payload: [] } });
+    const props = patientContextProps(42);
+    const wrapper = mountComponent(defaultCurrentChat(), props);
+    await flushPromises();
+    expect(wrapper.vm.buildCreatePayload()).toMatchObject({
+      contact_id: 42,
+      patient_contact_id: 42,
+    });
+    expect(wrapper.props('currentChat').meta.sender.id).toBe(42);
+  });
+
+  it('does not transfer a draft to another patient and restores it on return', async () => {
+    SchedulingAppointmentsAPI.get.mockResolvedValue({ data: { payload: [] } });
+    const wrapper = mountComponent(defaultCurrentChat(), patientContextProps());
+    await flushPromises();
+    wrapper.vm.createForm.clientFirstName = 'Draft for 84';
+    wrapper.vm.createForm.clientIdentifier = '940720300129';
+    await wrapper.setProps(patientContextProps(85));
+    await flushPromises();
+    expect(wrapper.vm.createForm.clientFirstName).toBe('Patient 85');
+    expect(wrapper.vm.createForm.clientIdentifier).toBe('');
+    expect(wrapper.vm.createForm.patientContactId).toBe(85);
+    await wrapper.setProps(patientContextProps(84));
+    await flushPromises();
+    expect(wrapper.vm.createForm.clientFirstName).toBe('Draft for 84');
+    expect(wrapper.vm.createForm.clientIdentifier).toBe('940720300129');
+    expect(wrapper.vm.createForm.patientContactId).toBe(84);
+  });
+
+  it('ignores the previous patient list after selection changes in the same chat', async () => {
+    const previous = deferredRequest();
+    SchedulingAppointmentsAPI.get.mockReturnValueOnce(previous.promise);
+    const wrapper = mountComponent(defaultCurrentChat(), patientContextProps());
+    await flushPromises();
+    SchedulingAppointmentsAPI.get.mockResolvedValue({
+      data: {
+        payload: [
+          {
+            ...existingAppointment,
+            id: 502,
+            patientContactId: 85,
+          },
+        ],
+      },
+    });
+    await wrapper.setProps(patientContextProps(85));
+    await flushPromises();
+    previous.resolve({
+      data: { payload: [{ ...existingAppointment, patientContactId: 84 }] },
+    });
+    await flushPromises();
+    expect(wrapper.vm.appointments.map(item => item.id)).toEqual([502]);
+  });
+
+  it('does not apply a save response to the next selected patient', async () => {
+    SchedulingAppointmentsAPI.get.mockResolvedValue({ data: { payload: [] } });
+    const previous = deferredRequest();
+    SchedulingAppointmentsAPI.create.mockReturnValueOnce(previous.promise);
+    const wrapper = mountComponent(defaultCurrentChat(), patientContextProps());
+    await flushPromises();
+    await wrapper.vm.startCreateAppointment({ scroll: false });
+    Object.assign(wrapper.vm.createForm, {
+      startsAt: '2026-06-27T15:00',
+      endsAt: '2026-06-27T15:30',
+      durationMin: 30,
+    });
+    await flushPromises();
+    const saving = wrapper.vm.saveCreateAppointment();
+    expect(SchedulingAppointmentsAPI.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contact_id: 42,
+        patient_contact_id: 84,
+        starts_at: clinicIso('2026-06-27T15:00'),
+        ends_at: clinicIso('2026-06-27T15:30'),
+      })
+    );
+    await wrapper.setProps(patientContextProps(85));
+    await flushPromises();
+    previous.resolve({
+      data: { payload: { ...existingAppointment, patientContactId: 84 } },
+    });
+    await saving;
+    expect(wrapper.vm.appointments).toEqual([]);
+    expect(wrapper.vm.createForm.patientContactId).toBe(85);
+    expect(wrapper.emitted('patientBound')).toBeUndefined();
+  });
+
+  it('keeps an existing appointment binding when preparing its update', async () => {
+    SchedulingAppointmentsAPI.get.mockResolvedValue({
+      data: {
+        payload: [
+          {
+            ...existingAppointment,
+            patientContactId: 84,
+          },
+        ],
+      },
+    });
+    const wrapper = mountComponent(defaultCurrentChat(), patientContextProps());
+    await flushPromises();
+    expect(
+      wrapper.vm.buildAppointmentPayload(
+        wrapper.vm.appointmentForms['appointment-501']
+      )
+    ).toMatchObject({
+      contact_id: 42,
+      patient_contact_id: 84,
+      conversation_id: 123,
+    });
+  });
+
+  it('offers failed conflict recovery only after a local command read and explicit patient confirmation', async () => {
+    configureMedelementResource();
+    const appointment = {
+      ...existingAppointment,
+      patientContactId: 84,
+      providerConfirmationStatus: 'failed',
+    };
+    SchedulingAppointmentsAPI.get.mockResolvedValue({
+      data: { payload: [appointment] },
+    });
+    SchedulingProviderCommandsAPI.list.mockResolvedValue({
+      data: {
+        payload: [
+          patientActionCommand('failed', {
+            last_error_code: 'patient_ref_conflict',
+            patient_action: {
+              type: 'patient_selection',
+              can_confirm: true,
+              requires_patient_card_confirmation: true,
+              cancellable: false,
+            },
+          }),
+        ],
+      },
+    });
+    SchedulingProviderCommandsAPI.patientCandidates.mockResolvedValue({
+      data: {
+        payload: {
+          candidates: [{ token: 'opaque-candidate' }],
+        },
+      },
+    });
+    SchedulingProviderCommandsAPI.selectPatient.mockResolvedValueOnce({
+      data: {
+        payload: {
+          id: 66,
+          appointment_id: 501,
+          operation: 'create_reception',
+          provider: 'medelement',
+          company_cabinet_code: '501',
+          status: 'succeeded',
+          appointment: {
+            ...appointment,
+            patientContactId: 86,
+            patientContextContactId: 86,
+          },
+        },
+      },
+    });
+    const wrapper = mountComponent(defaultCurrentChat(), patientContextProps());
+    await flushPromises();
+    expect(SchedulingProviderCommandsAPI.selectPatient).not.toHaveBeenCalled();
+    await wrapper.vm.checkProviderBooking(wrapper.vm.appointments[0]);
+    expect(SchedulingProviderCommandsAPI.selectPatient).not.toHaveBeenCalled();
+    const entry = wrapper.vm.patientActions['appointment-501'];
+    expect(entry.candidates).toEqual([{ token: 'opaque-candidate' }]);
+    entry.selectedPatientToken = 'opaque-candidate';
+    expect(wrapper.vm.canContinuePatientAction(entry)).toBe(true);
+    await wrapper.vm.continuePatientAction(wrapper.vm.appointments[0]);
+    expect(SchedulingProviderCommandsAPI.selectPatient).toHaveBeenCalledWith(
+      66,
+      {
+        provider: 'medelement',
+        token: 'opaque-candidate',
+      }
+    );
+    expect(wrapper.emitted('patientBound')[0][0].patientContactId).toBe(86);
+    expect(wrapper.props('currentChat').meta.sender.id).toBe(42);
+  });
+
+  it.each([
+    ['candidates', 'patient'],
+    ['candidates', 'chat'],
+    ['candidates', 'account'],
+    ['readback', 'patient'],
+    ['readback', 'chat'],
+    ['readback', 'account'],
+  ])(
+    'does not emit an old patient binding after %s finishes in another %s context',
+    async (phase, changedScope) => {
+      configureMedelementResource();
+      const appointment = {
+        ...existingAppointment,
+        accountId: 1,
+        patientContactId: 84,
+      };
+      SchedulingAppointmentsAPI.get.mockResolvedValue({
+        data: { payload: [appointment] },
+      });
+      SchedulingProviderCommandsAPI.list.mockResolvedValue({
+        data: { payload: [patientActionCommand()] },
+      });
+      SchedulingProviderCommandsAPI.patientCandidates.mockResolvedValue({
+        data: { payload: { candidates: [{ token: 'candidate-token' }] } },
+      });
+      const wrapper = mountComponent(
+        defaultCurrentChat(),
+        patientContextProps()
+      );
+      await flushPromises();
+      await wrapper.vm.checkProviderBooking(wrapper.vm.appointments[0]);
+      const entry = wrapper.vm.patientActions['appointment-501'];
+      entry.selectedPatientToken = 'candidate-token';
+      const pending = deferredRequest();
+      const boundAppointment = {
+        ...appointment,
+        patientContactId: 86,
+        patientContextContactId: 86,
+      };
+      SchedulingProviderCommandsAPI.selectPatient.mockResolvedValueOnce({
+        data: {
+          payload: patientActionCommand(
+            phase === 'candidates' ? 'awaiting_patient_selection' : 'succeeded',
+            { appointment: boundAppointment }
+          ),
+        },
+      });
+      if (phase === 'candidates')
+        SchedulingProviderCommandsAPI.patientCandidates.mockReturnValueOnce(
+          pending.promise
+        );
+      else SchedulingAppointmentsAPI.show.mockReturnValueOnce(pending.promise);
+
+      const continuing = wrapper.vm.continuePatientAction(
+        wrapper.vm.appointments[0]
+      );
+      await flushPromises();
+      if (phase === 'candidates')
+        expect(
+          SchedulingProviderCommandsAPI.patientCandidates
+        ).toHaveBeenCalledTimes(2);
+      else expect(SchedulingAppointmentsAPI.show).toHaveBeenCalledWith(501);
+
+      const nextOwner = changedScope === 'chat' ? 77 : 42;
+      SchedulingAppointmentsAPI.get.mockResolvedValue({
+        data: {
+          payload: [
+            {
+              ...existingAppointment,
+              id: 502,
+              accountId: changedScope === 'account' ? 2 : 1,
+              contactId: nextOwner,
+              patientContactId: 85,
+            },
+          ],
+        },
+      });
+      SchedulingProviderCommandsAPI.list.mockResolvedValue({
+        data: { payload: [] },
+      });
+      if (changedScope === 'account') mocks.route.params.accountId = '2';
+      await wrapper.setProps({
+        ...patientContextProps(85),
+        patientContextKey:
+          {
+            account: '2:9:conversation:123',
+            chat: '1:9:conversation:999',
+          }[changedScope] || '1:9:conversation:123',
+        ...(changedScope === 'chat'
+          ? { currentChat: { id: 999, meta: { sender: { id: 77 } } } }
+          : {}),
+      });
+      await flushPromises();
+
+      pending.resolve({
+        data: {
+          payload:
+            phase === 'candidates'
+              ? { candidates: [{ token: 'late-candidate' }] }
+              : boundAppointment,
+        },
+      });
+      await continuing;
+      await flushPromises();
+      expect(wrapper.emitted('patientBound')).toBeUndefined();
+      expect(wrapper.props('selectedPatient').id).toBe(85);
+      expect(wrapper.vm.appointments.map(item => item.id)).toEqual([502]);
+    }
+  );
+
   it('links a separate patient card without replacing the chat contact', async () => {
     SchedulingAppointmentsAPI.get.mockResolvedValue({
       data: {
@@ -335,6 +703,10 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     SchedulingAppointmentsAPI.show.mockClear();
     SchedulingAppointmentsAPI.update.mockClear();
     SchedulingAppointmentsAPI.cancel.mockClear();
+    SchedulingAvailabilityAPI.show.mockReset();
+    SchedulingAvailabilityAPI.show.mockResolvedValue({
+      data: { payload: { state: 'ok', windows: [], last_bookable_date: null } },
+    });
     SchedulingProviderCommandsAPI.list.mockReset();
     SchedulingProviderCommandsAPI.confirm.mockReset();
     SchedulingProviderCommandsAPI.reconcile.mockReset();
@@ -394,6 +766,312 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     SchedulingAppointmentsAPI.get.mockResolvedValue({
       data: { payload: [existingAppointment] },
     });
+  });
+
+  it('refreshes windows and preserves editable time when the date, service or cabinet changes', async () => {
+    const window = {
+      starts_at: '2026-06-27T10:00:00+05:00',
+      ends_at: '2026-06-27T10:30:00+05:00',
+    };
+    SchedulingAvailabilityAPI.show.mockResolvedValue({
+      data: { payload: { state: 'ok', windows: [window] } },
+    });
+    const wrapper = mountComponent();
+    await flushPromises();
+    await wrapper.vm.startCreateAppointment();
+    await flushPromises();
+
+    wrapper.vm.selectWindow(wrapper.vm.createForm, window);
+    expect(wrapper.vm.createForm.startsAt).toBe('2026-06-27T10:00');
+    wrapper.vm.changePickerDate(wrapper.vm.createForm, '2026-06-28');
+    expect(wrapper.vm.createForm.startsAt).toBe('2026-06-28T10:00');
+    await flushPromises();
+    expect(SchedulingAvailabilityAPI.show).toHaveBeenCalledWith(
+      expect.objectContaining({ date: '2026-06-28', resource_id: 7 })
+    );
+
+    wrapper.vm.selectWindow(wrapper.vm.createForm, window);
+    wrapper.vm.handleCreateServiceChange(9);
+    expect(wrapper.vm.createForm.startsAt).toBe('2026-06-27T10:00');
+    expect(SchedulingAvailabilityAPI.show).toHaveBeenCalledWith(
+      expect.objectContaining({ service_id: 9 })
+    );
+
+    wrapper.vm.selectWindow(wrapper.vm.createForm, window);
+    wrapper.vm.handleCreateResourceChange(7);
+    expect(wrapper.vm.createForm.startsAt).toBe('2026-06-27T10:00');
+    wrapper.vm.changeCabinet(wrapper.vm.createForm, 'room-1');
+    expect(SchedulingAvailabilityAPI.show).toHaveBeenCalledWith(
+      expect.objectContaining({ cabinet_code: 'room-1', resource_id: 7 })
+    );
+  });
+
+  it('shows loading and unavailable states without offering a window', async () => {
+    const wrapper = mountComponent();
+    await flushPromises();
+    const pending = deferredRequest();
+    SchedulingAvailabilityAPI.show.mockImplementationOnce(
+      () => pending.promise
+    );
+    wrapper.vm.changePickerDate(
+      wrapper.vm.appointmentForms['appointment-501'],
+      '2026-06-28'
+    );
+    expect(
+      wrapper.vm.availabilityForForm(
+        wrapper.vm.appointmentForms['appointment-501']
+      ).state
+    ).toBe('loading');
+    pending.reject(new Error('unavailable'));
+    await flushPromises();
+    expect(
+      wrapper.vm.availabilityForForm(
+        wrapper.vm.appointmentForms['appointment-501']
+      ).state
+    ).toBe('provider_unavailable');
+  });
+
+  it('refreshes the window list after a live booking conflict', async () => {
+    SchedulingAvailabilityAPI.show.mockResolvedValue({
+      data: {
+        payload: {
+          state: 'ok',
+          windows: [
+            {
+              starts_at: '2026-06-27T10:00:00+05:00',
+              ends_at: '2026-06-27T10:30:00+05:00',
+            },
+          ],
+        },
+      },
+    });
+    const wrapper = mountComponent();
+    await flushPromises();
+    await wrapper.vm.startCreateAppointment();
+    Object.assign(wrapper.vm.createForm, {
+      clientFirstName: 'Айша',
+      endsAt: '2026-06-27T10:30',
+      startsAt: '2026-06-27T10:00',
+    });
+    SchedulingAppointmentsAPI.create.mockRejectedValueOnce({
+      response: { data: { code: 'APPOINTMENT_SLOT_UNAVAILABLE' } },
+    });
+    const requestsBeforeSave = SchedulingAvailabilityAPI.show.mock.calls.length;
+
+    await wrapper.vm.saveCreateAppointment();
+    await flushPromises();
+
+    expect(mocks.alert).toHaveBeenCalledWith(
+      'SCHEDULING.APPOINTMENT_FORM.AVAILABILITY.CONFLICT'
+    );
+    expect(wrapper.vm.createForm.startsAt).toBe('');
+    expect(SchedulingAvailabilityAPI.show.mock.calls.length).toBeGreaterThan(
+      requestsBeforeSave
+    );
+    expect(
+      wrapper.vm.availabilityForForm(wrapper.vm.createForm).windows
+    ).toEqual([]);
+  });
+
+  it('keeps staff dates editable and reports closed and unconfirmed days', async () => {
+    const picker = mount(SchedulingAvailabilityPicker, {
+      props: {
+        date: '2026-07-18',
+        state: 'ok',
+      },
+    });
+    expect(picker.find('input[type="date"]').attributes('max')).toBeUndefined();
+    expect(picker.find('input[type="date"]').attributes('min')).toBeUndefined();
+    await picker.setProps({ state: 'closed_day' });
+    expect(picker.find('[role="status"]').text()).toContain(
+      'SCHEDULING.APPOINTMENT_FORM.AVAILABILITY.EMPTY'
+    );
+    await picker.setProps({ state: 'schedule_not_confirmed' });
+    expect(picker.find('[role="status"]').text()).toContain(
+      'SCHEDULING.APPOINTMENT_FORM.AVAILABILITY.NOT_CONFIRMED'
+    );
+  });
+
+  it('saves a manually authored interval and preserves its duration across service changes', async () => {
+    const wrapper = mountComponent();
+    await flushPromises();
+    await wrapper.vm.startCreateAppointment();
+    Object.assign(wrapper.vm.createForm, {
+      startsAt: '2026-06-27T10:00',
+      endsAt: '2026-06-27T11:15',
+      durationMin: 75,
+    });
+    await wrapper
+      .findComponent(SchedulingAppointmentTimeFields)
+      .vm.$emit('change', 'end');
+    wrapper.vm.handleCreateServiceChange(9);
+    await flushPromises();
+
+    expect(wrapper.vm.createForm.endsAt).toBe('2026-06-27T11:15');
+    expect(SchedulingAvailabilityAPI.show).toHaveBeenLastCalledWith(
+      expect.objectContaining({ duration_min: 75, service_id: 9 })
+    );
+    await wrapper.vm.saveCreateAppointment();
+    expect(SchedulingAppointmentsAPI.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        starts_at: clinicIso('2026-06-27T10:00'),
+        ends_at: clinicIso('2026-06-27T11:15'),
+        service_id: 9,
+      })
+    );
+  });
+
+  it.each([0, 1, 2000])(
+    'blocks saving an invalid manually authored duration of %i minutes',
+    async durationMin => {
+      const wrapper = mountComponent();
+      await flushPromises();
+      await wrapper.vm.startCreateAppointment();
+      Object.assign(wrapper.vm.createForm, {
+        startsAt: '2026-06-27T10:00',
+        endsAt: '2026-06-27T10:30',
+        durationMin,
+      });
+
+      expect(wrapper.vm.isCreateFormInvalid).toBe(true);
+      await wrapper.vm.saveCreateAppointment();
+      expect(SchedulingAppointmentsAPI.create).not.toHaveBeenCalled();
+    }
+  );
+
+  it('loads windows only for expanded history cards', async () => {
+    const second = {
+      ...existingAppointment,
+      id: 502,
+      startsAt: '2026-06-26T10:00:00.000Z',
+      endsAt: '2026-06-26T10:30:00.000Z',
+    };
+    const third = {
+      ...existingAppointment,
+      id: 503,
+      startsAt: '2026-06-25T10:00:00.000Z',
+      endsAt: '2026-06-25T10:30:00.000Z',
+    };
+    SchedulingAppointmentsAPI.get.mockResolvedValue({
+      data: { payload: [existingAppointment, second, third] },
+    });
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    expect(SchedulingAvailabilityAPI.show).toHaveBeenCalledTimes(1);
+    wrapper.vm.toggleAppointment(second);
+    await flushPromises();
+    expect(SchedulingAvailabilityAPI.show).toHaveBeenCalledTimes(2);
+  });
+
+  it('submits the explicit deal for a new appointment while keeping edit links unchanged', async () => {
+    const wrapper = mountComponent();
+    await flushPromises();
+    await wrapper.vm.startCreateAppointment();
+    const selector = wrapper.findComponent(AppointmentDealSelector);
+    expect(selector.props('communicationContactId')).toBe(42);
+    expect(selector.props('conversationDisplayId')).toBe(123);
+    await selector.vm.$emit('update:modelValue', { crm_deal_id: 88 });
+    Object.assign(wrapper.vm.createForm, {
+      startsAt: '2026-06-27T10:00',
+      endsAt: '2026-06-27T10:30',
+    });
+
+    expect(wrapper.vm.buildCreatePayload()).toEqual(
+      expect.objectContaining({ crm_deal_id: 88, contact_id: 42 })
+    );
+    expect(
+      wrapper.vm.buildAppointmentPayload(
+        wrapper.vm.appointmentForms['appointment-501']
+      )
+    ).not.toHaveProperty('crm_deal_id');
+  });
+
+  it('takes the source deal from the CRM conversation panel context', async () => {
+    const source = ref(88);
+    const wrapper = mountComponent(
+      defaultCurrentChat(),
+      {},
+      { crmSourceDealId: source }
+    );
+    await flushPromises();
+    await wrapper.vm.startCreateAppointment();
+    const selector = wrapper.findComponent(AppointmentDealSelector);
+
+    expect(selector.props('sourceDealId')).toBe(88);
+    source.value = 89;
+    await flushPromises();
+    expect(selector.props('sourceDealId')).toBe(89);
+    expect(selector.props('communicationContactId')).toBe(42);
+  });
+
+  it('ignores a window response from the previous account after navigation', async () => {
+    const wrapper = mountComponent();
+    await flushPromises();
+    await wrapper.vm.startCreateAppointment();
+    await flushPromises();
+    const pending = deferredRequest();
+    SchedulingAvailabilityAPI.show.mockImplementationOnce(
+      () => pending.promise
+    );
+    wrapper.vm.changePickerDate(wrapper.vm.createForm, '2026-06-28');
+
+    mocks.route.params.accountId = '2';
+    await flushPromises();
+    pending.resolve({
+      data: {
+        payload: {
+          state: 'ok',
+          windows: [
+            {
+              starts_at: '2026-06-28T09:00:00+05:00',
+              ends_at: '2026-06-28T10:00:00+05:00',
+            },
+          ],
+        },
+      },
+    });
+    await flushPromises();
+
+    expect(
+      wrapper.vm.availabilityForForm(wrapper.vm.createForm).windows
+    ).toEqual([]);
+  });
+
+  it('ignores a window response after switching the selected family patient', async () => {
+    SchedulingAppointmentsAPI.get.mockResolvedValue({ data: { payload: [] } });
+    const wrapper = mountComponent(
+      defaultCurrentChat(),
+      patientContextProps(84)
+    );
+    await flushPromises();
+    const pending = deferredRequest();
+    SchedulingAvailabilityAPI.show.mockImplementationOnce(
+      () => pending.promise
+    );
+    wrapper.vm.changePickerDate(wrapper.vm.createForm, '2026-06-28');
+
+    await wrapper.setProps(patientContextProps(85));
+    await flushPromises();
+    pending.resolve({
+      data: {
+        payload: {
+          state: 'ok',
+          windows: [
+            {
+              starts_at: '2026-06-28T09:00:00+05:00',
+              ends_at: '2026-06-28T10:00:00+05:00',
+            },
+          ],
+        },
+      },
+    });
+    await flushPromises();
+
+    expect(wrapper.vm.createForm.patientContactId).toBe(85);
+    expect(
+      wrapper.vm.availabilityForForm(wrapper.vm.createForm).windows
+    ).toEqual([]);
   });
 
   it('opens the new appointment form inline from the header plus button', async () => {
@@ -1842,6 +2520,13 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
   });
 
   it('requires MedElement patient identity but allows an appointment without a service', async () => {
+    const window = {
+      starts_at: '2026-06-27T10:00:00+05:00',
+      ends_at: '2026-06-27T10:30:00+05:00',
+    };
+    SchedulingAvailabilityAPI.show.mockResolvedValue({
+      data: { payload: { state: 'ok', windows: [window] } },
+    });
     mocks.resources[0].customAttributes = {
       medelement_cabinets: [
         { company_cabinet_code: 'cabinet-1', cabinet_name: 'Кабинет 1' },
@@ -1858,6 +2543,11 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     await wrapper
       .findComponent({ name: 'SidebarActionsHeader' })
       .vm.$emit('click', 'new_appointment');
+    await flushPromises();
+    expect(
+      wrapper.vm.availabilityForForm(wrapper.vm.createForm).windows
+    ).toEqual([window]);
+    wrapper.vm.selectWindow(wrapper.vm.createForm, window);
 
     expect(wrapper.vm.isCreateFormInvalid).toBe(true);
     await wrapper.vm.saveCreateAppointment();
@@ -1869,10 +2559,18 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     });
 
     expect(wrapper.vm.createForm.medelementCabinetCode).toBe('cabinet-1');
+    expect(wrapper.vm.createForm.serviceId).toBe('');
     expect(wrapper.vm.isCreateFormInvalid).toBe(false);
   });
 
   it('requires a cabinet for a MedElement specialist and sends the selected cabinet', async () => {
+    const window = {
+      starts_at: '2026-06-27T10:00:00+05:00',
+      ends_at: '2026-06-27T10:30:00+05:00',
+    };
+    SchedulingAvailabilityAPI.show.mockResolvedValue({
+      data: { payload: { state: 'ok', windows: [window] } },
+    });
     mocks.resources[0].customAttributes = {
       medelement_cabinets: [
         { company_cabinet_code: '501', cabinet_name: 'Главный' },
@@ -1889,6 +2587,7 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     await wrapper
       .findComponent({ name: 'SidebarActionsHeader' })
       .vm.$emit('click', 'new_appointment');
+    await flushPromises();
 
     expect(
       wrapper
@@ -1904,14 +2603,25 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
       clientLastName: 'Касымова',
       clientPhone: ['+7', '700', '000', '0001'].join(''),
     });
+    wrapper.vm.selectWindow(wrapper.vm.createForm, window);
     expect(wrapper.vm.isCreateFormInvalid).toBe(true);
 
-    wrapper.vm.createForm.medelementCabinetCode = '502';
+    wrapper.vm.changeCabinet(wrapper.vm.createForm, '502');
+    await flushPromises();
+    expect(SchedulingAvailabilityAPI.show).toHaveBeenCalledWith(
+      expect.objectContaining({ cabinet_code: '502', resource_id: 7 })
+    );
+    expect(
+      wrapper.vm.availabilityForForm(wrapper.vm.createForm).windows
+    ).toEqual([window]);
+    wrapper.vm.selectWindow(wrapper.vm.createForm, window);
     await wrapper.vm.saveCreateAppointment();
 
     expect(SchedulingAppointmentsAPI.create).toHaveBeenCalledWith(
       expect.objectContaining({
         custom_attributes: { medelement_cabinet_code: '502' },
+        ends_at: clinicIso('2026-06-27T10:30'),
+        starts_at: clinicIso('2026-06-27T10:00'),
       })
     );
   });

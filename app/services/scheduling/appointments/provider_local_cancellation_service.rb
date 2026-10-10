@@ -39,7 +39,7 @@ class Scheduling::Appointments::ProviderLocalCancellationService
   end
 
   def cancel_locally!
-    attributes = appointment.custom_attributes.to_h
+    attributes = Scheduling::Appointments::PlaygroundRunStamp.apply(appointment.custom_attributes)
     attributes = attributes.merge(LOCAL_CANCELLATION::MARKER_KEY => LOCAL_CANCELLATION.marker(appointment, actor))
     # Keeps the MedElement outbound listener away from this change: nothing may be sent for it.
     appointment.mark_medelement_provider_reconciled!

@@ -1,5 +1,23 @@
 {
   "SCHEDULING": {
+    "APPOINTMENT_SOURCE": {
+      "manual": "Вручную",
+      "medelement": "MedElement",
+      "captain": "ИИ-агент"
+    },
+    "PATIENT_CONTEXT": {
+      "SELECT_PATIENT": "Пациент",
+      "NO_BIRTH_DATE": "Дата рождения не указана",
+      "SELECTION_SCOPE": "Выбор сохранён для вас в этом диалоге.",
+      "LOAD_ERROR": "Не удалось загрузить пациентов этого диалога",
+      "NEW_PATIENT": "Добавить пациента",
+      "OWN_PHONE": "Свой телефон пациента, если отличается",
+      "CREATE_DESCRIPTION": "Создайте отдельную карту пациента для этого общего номера. Диалог сохранится.",
+      "PROVIDER_ID": "Код пациента MedElement",
+      "PROVIDER_IDENTITY_READ_ONLY": "Данные пациента получены из MedElement. Для изменения откройте карточку пациента в MedElement.",
+      "CONFIRM_PATIENT_CARD": "Подтвердите выбранного пациента для этого приёма. Диалог и его получатель сохранятся.",
+      "OPEN_DIALOG": "Открыть диалог"
+    },
     "NAV": {
       "CALENDAR": "Календарь",
       "RESOURCES": "Специалисты",
@@ -115,7 +133,7 @@
       "RESOURCES": "Специалисты",
       "RESOURCES_SELECTED": "Выбрано: {count}",
       "RESOURCE_SEARCH": "Поиск специалиста",
-      "SHOW_INACTIVE_APPOINTMENTS": "Показывать неактуальные записи",
+      "SHOW_INACTIVE_APPOINTMENTS": "Показывать завершённые, отменённые и неявки",
       "STATUS": "Статус записи"
     },
     "CALENDAR": {
@@ -166,6 +184,15 @@
       "TITLE": "Диалог ещё не создан"
     },
     "APPOINTMENT_FORM": {
+      "AVAILABILITY": {
+        "DATE": "Дата приёма",
+        "LOADING": "Загружаем свободное время…",
+        "EMPTY": "Нет свободного времени",
+        "NOT_CONFIRMED": "График врача пока не подтверждён. Выберите другую дату или попробуйте позже.",
+        "UNAVAILABLE": "Не удалось проверить доступность. Попробуйте позже.",
+        "HORIZON": "График врача открыт до {date}",
+        "CONFLICT": "Время уже занято, выберите другое"
+      },
       "PATIENT_CARD": "Карточка пациента",
       "PATIENT_CARD_LINK": "Карточка пациента: {patientName} №{contactId}",
       "APPOINTMENT_DESCRIPTION": "Выберите специалиста, услугу и временной слот для приёма.",
@@ -202,6 +229,7 @@
       "CUSTOM_FIELDS_TITLE": "Пользовательские поля",
       "EDIT_TITLE": "Редактировать запись",
       "ENDS_AT": "Окончание",
+      "DURATION_MIN": "Длительность, минуты",
       "INTAKE_FIELDS_DESCRIPTION": "Собирайте управляемые поля, которые должны заполняться прямо во время оформления записи.",
       "INTAKE_FIELDS_TITLE": "Данные при записи",
       "NOTES_DESCRIPTION": "Фиксируйте дополнительные инструкции и контекст по визиту.",
@@ -231,6 +259,7 @@
         "CLIENT_LAST_NAME_REQUIRED": "Укажите фамилию",
         "CONTACT_REQUIRED": "Выберите контакт",
         "END_BEFORE_START": "Время окончания должно быть позже времени начала",
+        "INVALID_DURATION": "Укажите целое число минут от 5 до 1440",
         "MEDELEMENT_LAST_NAME_REQUIRED": "Укажите фамилию для записи MedElement",
         "MEDELEMENT_PHONE_REQUIRED": "Укажите номер Казахстана в формате +7XXXXXXXXXX",
         "MEDELEMENT_SERVICE_REQUIRED": "Выберите услугу из каталога MedElement",
@@ -396,6 +425,9 @@
       }
     },
     "ERRORS": {
+      "CRM_DEAL_SELECTION_REQUIRED": "У контакта несколько активных сделок. Выберите сделку или создайте новую перед записью.",
+      "CRM_DEAL_CONTACT_MISMATCH": "Выберите активную сделку этого контакта общения в текущем кабинете.",
+      "CRM_PIPELINE_NO_OPEN_STAGE": "Выберите воронку с активным открытым этапом.",
       "APPOINTMENT_PAYMENT_REQUIRES_FIELDS": "Заполните обязательные поля перед переводом записи в статус «Оплачено»: {fields}.",
       "GENERIC": "Что-то пошло не так. Попробуйте еще раз.",
       "APPOINTMENT_NOT_FOUND": "Запись не найдена.",

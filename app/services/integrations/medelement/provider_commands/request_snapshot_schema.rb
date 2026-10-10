@@ -3,6 +3,12 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotSchema
   SUPPORTED_VERSIONS = [1, VERSION].freeze
   class Error < StandardError; end
 
+  class DestinationIntervalError < Error
+    def code = 'INVALID_DURATION'
+  end
+
+  DESTINATION_INTERVAL_MESSAGE = 'Reception duration must be a whole number of minutes from 5 to 1440'.freeze
+
   class << self
     def valid?(snapshot)
       validate!(snapshot)
@@ -19,6 +25,7 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotSchema
       validate_appointment_identity!(snapshot)
       validate_phone_numbers!(snapshot['patient_phone_numbers'], field: 'patient_phone_numbers') if snapshot.key?('patient_phone_numbers')
       validate_patient!(snapshot['patient'])
+      validate_reception_destination!(snapshot)
       reception = snapshot['reception']
       return true if reception.nil?
 
@@ -33,6 +40,34 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotSchema
       return [] if reception.nil?
 
       version == 1 ? legacy_service_codes(reception) : current_service_codes(reception)
+    end
+
+    def supported_destination_interval?(starts_at, ends_at)
+      return false unless starts_at.respond_to?(:to_time) && ends_at.respond_to?(:to_time)
+
+      seconds = ends_at.to_time.to_r - starts_at.to_time.to_r
+      seconds.between?(Scheduling::Constants::MIN_DURATION_MINUTES * 60, Scheduling::Constants::MAX_DURATION_MINUTES * 60) &&
+        (seconds % 60).zero?
+    end
+
+    def validate_destination_interval!(starts_at:, ends_at:)
+      return if supported_destination_interval?(starts_at, ends_at)
+
+      raise DestinationIntervalError, DESTINATION_INTERVAL_MESSAGE
+    end
+
+    def validate_reception_destination!(snapshot)
+      return unless snapshot.is_a?(Hash) && %w[create_reception move_reception].include?(snapshot['operation'])
+
+      reception = snapshot['reception']
+      raise DestinationIntervalError, DESTINATION_INTERVAL_MESSAGE unless reception.is_a?(Hash)
+
+      validate_destination_interval!(
+        starts_at: Time.iso8601(reception['destination_starts_at']),
+        ends_at: Time.iso8601(reception['destination_ends_at'])
+      )
+    rescue ArgumentError, TypeError
+      raise DestinationIntervalError, DESTINATION_INTERVAL_MESSAGE
     end
 
     private

@@ -7,7 +7,7 @@ class Api::V1::Accounts::Scheduling::ProviderCommandsController < Api::V1::Accou
   def index
     commands = provider_adapter.command_scope
     commands = commands.where(appointment_id: command_params[:appointment_id]) if command_params[:appointment_id].present?
-    commands = commands.unfinished if ActiveModel::Type::Boolean.new.cast(command_params[:active_only])
+    commands = active_commands(commands) if ActiveModel::Type::Boolean.new.cast(command_params[:active_only])
     commands = commands.order(created_at: :desc).limit(index_limit)
     render_payload(commands.map { |command| provider_adapter.serialize(command) })
   end
@@ -80,7 +80,9 @@ class Api::V1::Accounts::Scheduling::ProviderCommandsController < Api::V1::Accou
       actor: Current.user,
       token: command_params[:patient_token]
     )
-    render_payload(provider_adapter.serialize(command))
+    payload = provider_adapter.serialize(command)
+    payload[:appointment] = Scheduling::PayloadBuilder.appointment(command.appointment.reload) if command.appointment
+    render_payload(payload)
   end
 
   def confirm_patient_creation
@@ -96,6 +98,15 @@ class Api::V1::Accounts::Scheduling::ProviderCommandsController < Api::V1::Accou
   private
 
   attr_reader :provider_adapter
+
+  def active_commands(commands)
+    return commands.unfinished unless commands.respond_to?(:recoverable_patient_selection)
+
+    recoverable_ids = commands.recoverable_patient_selection.order(created_at: :desc).limit(index_limit).select do |command|
+      Integrations::Medelement::ProviderCommands::PatientActionsService.selection_available?(command)
+    end.map(&:id)
+    commands.unfinished.or(commands.where(id: recoverable_ids))
+  end
 
   def set_provider_adapter
     @provider_adapter = Scheduling::ProviderCommands::Registry.resolve!(

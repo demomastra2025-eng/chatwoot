@@ -1,6 +1,10 @@
 module Enterprise::DeleteObjectJob
   private
 
+  def audit_tracked_conversation(object, user, ip, context)
+    create_audit_entry(object, user, ip, context)
+  end
+
   def heavy_associations
     super.merge(
       SlaPolicy => %i[applied_slas]

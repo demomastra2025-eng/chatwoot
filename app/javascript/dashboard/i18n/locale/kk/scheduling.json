@@ -1,5 +1,23 @@
 {
   "SCHEDULING": {
+    "APPOINTMENT_SOURCE": {
+      "manual": "Қолмен",
+      "medelement": "MedElement",
+      "captain": "ЖИ агенті"
+    },
+    "PATIENT_CONTEXT": {
+      "SELECT_PATIENT": "Пациент",
+      "NO_BIRTH_DATE": "Туған күні көрсетілмеген",
+      "SELECTION_SCOPE": "Таңдауыңыз осы диалог үшін сақталған.",
+      "LOAD_ERROR": "Осы диалогтың пациенттерін жүктеу мүмкін болмады",
+      "NEW_PATIENT": "Пациент қосу",
+      "OWN_PHONE": "Пациенттің өз телефоны, басқа болса",
+      "CREATE_DESCRIPTION": "Осы ортақ нөмір үшін жеке пациент картасын жасаңыз. Диалог сақталады.",
+      "PROVIDER_ID": "MedElement пациент коды",
+      "PROVIDER_IDENTITY_READ_ONLY": "Пациент деректері MedElement жүйесінен алынған. Өзгерту үшін MedElement жүйесіндегі пациент картасын ашыңыз.",
+      "CONFIRM_PATIENT_CARD": "Осы қабылдау үшін таңдалған пациентті растаңыз. Диалог пен оның алушысы сақталады.",
+      "OPEN_DIALOG": "Диалогты ашу"
+    },
     "RESOURCES": {
       "PROVIDER_SCHEDULE_TITLE": "График из MedElement",
       "PROVIDER_NOT_LOADED": "График MedElement пока не загружен.",
@@ -19,7 +37,7 @@
       "UNAVAILABLE_TIME_RANGE": "{label} · {start}–{end}"
     },
     "TOOLBAR": {
-      "SHOW_INACTIVE_APPOINTMENTS": "Өзекті емес жазбаларды көрсету"
+      "SHOW_INACTIVE_APPOINTMENTS": "Аяқталған, тоқтатылған және пациент келмеген қабылдауларды көрсету"
     },
     "APPOINTMENT_STATUS": {
       "PROVIDER_REVIEW": "MedElement жүйесінде расталмады — тексеру қажет",
@@ -37,6 +55,18 @@
       "LOCAL_CANCEL_HINT": "Тек OneLink-те болдырмау — МедЭлементте қабылдау қалады."
     },
     "APPOINTMENT_FORM": {
+      "STARTS_AT": "Басталуы",
+      "ENDS_AT": "Аяқталуы",
+      "DURATION_MIN": "Ұзақтығы, минут",
+      "AVAILABILITY": {
+        "DATE": "Дата приёма",
+        "LOADING": "Загружаем свободное время…",
+        "EMPTY": "Нет свободного времени",
+        "NOT_CONFIRMED": "График врача пока не подтверждён. Выберите другую дату или попробуйте позже.",
+        "UNAVAILABLE": "Не удалось проверить доступность. Попробуйте позже.",
+        "HORIZON": "График врача открыт до {date}",
+        "CONFLICT": "Время уже занято, выберите другое"
+      },
       "PATIENT_CARD": "Пациент картасы",
       "PATIENT_CARD_LINK": "Науқас картасы: {patientName} №{contactId}",
       "CHECK_PROVIDER_BOOKING": "MedElement жүйесінде тексеру",
@@ -51,6 +81,7 @@
       "SUCCESS_CANCEL": "Жазба болдырылмады",
       "SUCCESS_CANCEL_LOCAL_ONLY": "Жазба OneLink-те болдырылмады. МедЭлементте қабылдау қалды — дәрігердің уақытын сонда қолмен босатыңыз.",
       "ERRORS": {
+        "INVALID_DURATION": "5 пен 1440 аралығындағы бүтін минут санын көрсетіңіз",
         "CLIENT_LAST_NAME_REQUIRED": "Тегін көрсетіңіз",
         "MEDELEMENT_LAST_NAME_REQUIRED": "MedElement жазбасы үшін тегін көрсетіңіз",
         "MEDELEMENT_SERVICE_REQUIRED": "MedElement каталогынан қызметті таңдаңыз"
@@ -64,6 +95,9 @@
       "IIN_ERROR_LENGTH": "ЖСН 12 цифрдан тұруы керек"
     },
     "ERRORS": {
+      "CRM_DEAL_SELECTION_REQUIRED": "Контактінің бірнеше белсенді мәмілесі бар. Жазба алдында мәмілені таңдаңыз немесе жаңасын құрыңыз.",
+      "CRM_DEAL_CONTACT_MISMATCH": "Осы жұмыс кеңістігіндегі байланыс контактінің белсенді мәмілесін таңдаңыз.",
+      "CRM_PIPELINE_NO_OPEN_STAGE": "Белсенді ашық кезеңі бар воронканы таңдаңыз.",
       "MEDELEMENT_APPOINTMENT_UNBOOKABLE": "MedElement жүйесінде тек жоспарланған немесе расталған жазбаны жасауға болады.",
       "MEDELEMENT_SERVICE_NOT_AVAILABLE_FOR_SPECIALIST": "Таңдалған қызмет бұл MedElement маманы үшін қолжетімсіз.",
       "MEDELEMENT_SERVICE_REQUIRED": "MedElement каталогынан қызметті таңдаңыз.",

@@ -62,6 +62,7 @@ module Concerns::Agentable
           prompt_state: prompt_state
         )
       )
+
     end
 
     if respond_to?(:resolve_runtime_prompt_context, true)
@@ -70,10 +71,23 @@ module Concerns::Agentable
       end
     end
 
+    append_appointment_context_blocks(enhanced_context, prompt_state)
+
     time_agent_phase('prompt_render') { Captain::PromptRenderer.render(template_name, enhanced_context.with_indifferent_access) }
   end
 
   private
+
+  def append_appointment_context_blocks(context, prompt_state)
+    blocks = prompt_state[:appointment_context_blocks].to_h
+    return if blocks.blank?
+
+    lines = Captain::ContextFields::APPOINTMENT_BLOCK_DEFINITIONS.filter_map do |definition|
+      value = blocks[definition[:key]]
+      "#{definition[:title]} (данные): #{value}" if value
+    end
+    context[:current_context_rule] = [context[:current_context_rule], *lines].compact.join("\n")
+  end
 
   def agent_name
     raise NotImplementedError, "#{self.class} must implement agent_name"

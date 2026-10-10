@@ -3,6 +3,7 @@
 // composables and components, useVirtualChatList, useChatlistFilters
 import {
   ref,
+  shallowRef,
   unref,
   provide,
   computed,
@@ -13,6 +14,7 @@ import {
   defineAsyncComponent,
 } from 'vue';
 import { useStore } from 'vuex';
+import { useOnline } from '@vueuse/core';
 import { useRoute, useRouter } from 'vue-router';
 import {
   useMapGetter,
@@ -45,6 +47,11 @@ import {
 } from 'dashboard/composables/useTransformKeys';
 import { useEmitter } from 'dashboard/composables/emitter';
 import { useConversationRequiredAttributes } from 'dashboard/composables/useConversationRequiredAttributes';
+import {
+  deletionOutcome,
+  latestDeletionOutcome,
+  validDeletionId,
+} from 'dashboard/store/modules/conversations/helpers/deletionState';
 
 import { emitter } from 'shared/helpers/mitt';
 
@@ -1883,6 +1890,167 @@ const deleteCommunicationThreadDialogRef = ref(null);
 const selectedConversationId = ref(null);
 const selectedCommunicationThread = ref(null);
 const isDeletingCommunicationThreadChannels = ref(false);
+const isDeletingConversation = ref(false);
+const isReconcilingDeletion = ref(false);
+const retryDeletionDialogRef = ref(null);
+const retryDeletionKey = ref(null);
+const isRetryingDeletion = ref(false);
+const deletionDialogIntent = shallowRef(null);
+let deletionDialogGeneration = 0;
+const deletionDialogScope = () => ({
+  accountId: String(route.params.accountId || currentAccountId.value || ''),
+  userId: String(currentUser.value?.id || ''),
+});
+const isCurrentDeletionIntent = (intent, kind) => {
+  const scope = deletionDialogScope();
+  return (
+    intent &&
+    intent === deletionDialogIntent.value &&
+    intent.generation === deletionDialogGeneration &&
+    intent.kind === kind &&
+    intent.accountId === scope.accountId &&
+    intent.userId === scope.userId &&
+    intent.threadMode === Boolean(props.communicationThreadMode)
+  );
+};
+const abandonDeletionDialogs = () => {
+  deletionDialogGeneration += 1;
+  deletionDialogIntent.value = null;
+  selectedConversationId.value = null;
+  selectedCommunicationThread.value = null;
+  retryDeletionKey.value = null;
+  isDeletingConversation.value = false;
+  isDeletingCommunicationThreadChannels.value = false;
+  isRetryingDeletion.value = false;
+  deleteConversationDialogRef.value?.close();
+  deleteCommunicationThreadDialogRef.value?.close();
+  retryDeletionDialogRef.value?.close();
+};
+const captureDeletionIntent = (kind, conversationIds, extra = {}) => {
+  if (!conversationIds.length || !conversationIds.every(validDeletionId))
+    return null;
+  abandonDeletionDialogs();
+  const intent = Object.freeze({
+    ...deletionDialogScope(),
+    kind,
+    ...extra,
+    threadMode: Boolean(props.communicationThreadMode),
+    generation: deletionDialogGeneration,
+    conversationIds: Object.freeze([...new Set(conversationIds.map(Number))]),
+  });
+  deletionDialogIntent.value = intent;
+  return intent;
+};
+const deletionOperations = useMapGetter('getConversationDeletionOperations');
+const deletionRevision = useMapGetter('getConversationDeletionRevision');
+const pendingDeletionCount = computed(() =>
+  (deletionOperations.value || []).reduce(
+    (count, operation) =>
+      count +
+      operation.targets.filter(target => target.status === 'pending').length,
+    0
+  )
+);
+const lastDeletionOutcome = computed(() => {
+  return latestDeletionOutcome(deletionOperations.value || []);
+});
+const unacknowledgedDeletion = computed(() =>
+  (deletionOperations.value || []).find(
+    operation =>
+      !operation.operationId && deletionOutcome(operation) === 'pending'
+  )
+);
+const retryDeletionIds = computed(
+  () =>
+    (deletionOperations.value || [])
+      .find(operation => operation.requestKey === retryDeletionKey.value)
+      ?.targets.map(target => target.id)
+      .join(', ') || ''
+);
+const online = useOnline();
+
+const reconcileDeletions = async () => {
+  if (isReconcilingDeletion.value) return;
+  isReconcilingDeletion.value = true;
+  try {
+    await store.dispatch('reconcileConversationDeletions');
+  } finally {
+    isReconcilingDeletion.value = false;
+  }
+};
+
+watch(
+  () =>
+    `${route.params.accountId || currentAccountId.value || ''}:${currentUser.value?.id || ''}:${props.communicationThreadMode}`,
+  () => {
+    abandonDeletionDialogs();
+    store.dispatch('initializeConversationDeletions');
+    // Reopening a list checks the receipt; it never sends DELETE again.
+    store.dispatch('reconcileConversationDeletions');
+  },
+  { immediate: true, flush: 'sync' }
+);
+watch(online, isOnline => {
+  if (isOnline) reconcileDeletions();
+});
+watch(deletionRevision, () => {
+  resetAndFetchData({ preserveAppliedFilters: true });
+});
+
+const showDeletionResult = result => {
+  if (result.outcome === 'scope_changed') return;
+  const key = {
+    deleted: 'CONVERSATION.SUCCESS_DELETE_CONVERSATION',
+    partial: 'CONVERSATION.DELETION_STATE.PARTIAL',
+    failed: 'CONVERSATION.FAIL_DELETE_CONVERSATION',
+    pending: 'CONVERSATION.DELETION_STATE.PENDING',
+  }[result.outcome];
+  useAlert(t(key));
+};
+
+const openDeletionRetry = () => {
+  const operation = unacknowledgedDeletion.value;
+  if (!operation) return;
+  const intent = captureDeletionIntent(
+    'retry',
+    operation.targets.map(target => target.id),
+    { requestKey: operation.requestKey }
+  );
+  if (!intent) return;
+  retryDeletionKey.value = intent.requestKey;
+  retryDeletionDialogRef.value?.open();
+};
+const retryDeletionRequest = async () => {
+  const intent = deletionDialogIntent.value;
+  if (
+    !isCurrentDeletionIntent(intent, 'retry') ||
+    retryDeletionKey.value !== intent.requestKey ||
+    isRetryingDeletion.value
+  )
+    return;
+  isRetryingDeletion.value = true;
+  try {
+    const result = await store.dispatch(
+      'retryUnacknowledgedConversationDeletion',
+      { requestKey: intent.requestKey, expectedScope: intent }
+    );
+    if (
+      !isCurrentDeletionIntent(intent, 'retry') ||
+      result.outcome === 'scope_changed'
+    )
+      return;
+    retryDeletionDialogRef.value?.close();
+    showDeletionResult(result);
+  } catch {
+    if (isCurrentDeletionIntent(intent, 'retry'))
+      useAlert(t('CONVERSATION.FAIL_DELETE_CONVERSATION'));
+  } finally {
+    if (isCurrentDeletionIntent(intent, 'retry')) {
+      isRetryingDeletion.value = false;
+      deletionDialogIntent.value = null;
+    }
+  }
+};
 
 const selectedCommunicationThreadChannels = computed(() =>
   (selectedCommunicationThread.value?.channels || [])
@@ -1897,19 +2065,53 @@ const selectedCommunicationThreadChannels = computed(() =>
 );
 
 async function deleteConversation() {
+  const intent = deletionDialogIntent.value;
+  if (
+    !isCurrentDeletionIntent(intent, 'conversation') ||
+    Number(selectedConversationId.value) !== intent.conversationIds[0] ||
+    isDeletingConversation.value
+  )
+    return;
+  const requestedRoute = route.fullPath;
+  isDeletingConversation.value = true;
   try {
-    await store.dispatch('deleteConversation', selectedConversationId.value);
-    redirectToConversationList();
+    const result = await store.dispatch('deleteConversation', {
+      conversationId: intent.conversationIds[0],
+      expectedScope: intent,
+    });
+    if (
+      !isCurrentDeletionIntent(intent, 'conversation') ||
+      result.outcome === 'scope_changed'
+    )
+      return;
+    if (route.fullPath === requestedRoute) redirectToConversationList();
     selectedConversationId.value = null;
-    deleteConversationDialogRef.value.close();
-    useAlert(t('CONVERSATION.SUCCESS_DELETE_CONVERSATION'));
+    deleteConversationDialogRef.value?.close();
+    showDeletionResult(result);
   } catch (error) {
-    useAlert(t('CONVERSATION.FAIL_DELETE_CONVERSATION'));
+    if (isCurrentDeletionIntent(intent, 'conversation'))
+      useAlert(t('CONVERSATION.FAIL_DELETE_CONVERSATION'));
+  } finally {
+    if (isCurrentDeletionIntent(intent, 'conversation')) {
+      isDeletingConversation.value = false;
+      deletionDialogIntent.value = null;
+    }
   }
 }
 
 async function deleteCommunicationThreadConversations(conversationIds) {
-  if (!selectedCommunicationThread.value?.id || !conversationIds.length) return;
+  const intent = deletionDialogIntent.value;
+  if (
+    !isCurrentDeletionIntent(intent, 'communication_thread') ||
+    !selectedCommunicationThread.value?.id ||
+    !Array.isArray(conversationIds) ||
+    !conversationIds.length ||
+    !conversationIds.every(validDeletionId) ||
+    conversationIds.some(id => !intent.conversationIds.includes(Number(id))) ||
+    isDeletingCommunicationThreadChannels.value
+  )
+    return;
+  const requestedRoute = route.fullPath;
 
   const selectedIdSet = new Set(
     conversationIds.map(conversationId => String(conversationId))
@@ -1921,27 +2123,55 @@ async function deleteCommunicationThreadConversations(conversationIds) {
 
   isDeletingCommunicationThreadChannels.value = true;
   try {
-    await store.dispatch('deleteCommunicationThreadConversations', {
-      threadId: selectedCommunicationThread.value.id,
-      conversationIds,
-    });
-    if (!remainingChannelCount) {
+    const result = await store.dispatch(
+      'deleteCommunicationThreadConversations',
+      {
+        threadId: intent.threadId,
+        conversationIds,
+        expectedScope: intent,
+      }
+    );
+    if (
+      !isCurrentDeletionIntent(intent, 'communication_thread') ||
+      result.outcome === 'scope_changed'
+    )
+      return;
+    if (!remainingChannelCount && route.fullPath === requestedRoute) {
       redirectToConversationList();
     }
     selectedCommunicationThread.value = null;
     deleteCommunicationThreadDialogRef.value?.close();
-    useAlert(t('CONVERSATION.SUCCESS_DELETE_CONVERSATION'));
+    showDeletionResult(result);
   } catch (error) {
-    useAlert(t('CONVERSATION.FAIL_DELETE_CONVERSATION'));
+    if (isCurrentDeletionIntent(intent, 'communication_thread'))
+      useAlert(t('CONVERSATION.FAIL_DELETE_CONVERSATION'));
   } finally {
-    isDeletingCommunicationThreadChannels.value = false;
+    if (isCurrentDeletionIntent(intent, 'communication_thread')) {
+      isDeletingCommunicationThreadChannels.value = false;
+      deletionDialogIntent.value = null;
+    }
   }
 }
 
 const openCommunicationThreadDeleteDialog = async communicationThread => {
-  selectedCommunicationThread.value = communicationThread;
+  if (!validDeletionId(communicationThread.id)) return;
+  const channels = (communicationThread.channels || []).filter(channel =>
+    validDeletionId(channel?.conversation_id)
+  );
+  const intent = captureDeletionIntent(
+    'communication_thread',
+    channels.map(channel => channel.conversation_id),
+    { threadId: Number(communicationThread.id) }
+  );
+  if (!intent) return;
+  selectedCommunicationThread.value = {
+    id: intent.threadId,
+    channels: channels.map(channel => ({ ...channel })),
+  };
   await loadCommunicationThreadDeleteDialog();
+  if (!isCurrentDeletionIntent(intent, 'communication_thread')) return;
   await nextTick();
+  if (!isCurrentDeletionIntent(intent, 'communication_thread')) return;
   deleteCommunicationThreadDialogRef.value?.open();
 };
 
@@ -1957,7 +2187,9 @@ const handleDelete = async conversationId => {
     }
   }
 
-  selectedConversationId.value = conversationId;
+  const intent = captureDeletionIntent('conversation', [conversationId]);
+  if (!intent) return;
+  selectedConversationId.value = intent.conversationIds[0];
   deleteConversationDialogRef.value.open();
 };
 
@@ -2186,6 +2418,50 @@ watch(bulkSelectionContextKey, contextKey => setSelectionContext(contextKey), {
     />
 
     <div
+      v-if="
+        pendingDeletionCount ||
+        ['partial', 'failed'].includes(lastDeletionOutcome)
+      "
+      data-test="conversation-deletion-state"
+      class="flex items-center justify-between gap-3 border-b border-n-weak bg-n-amber-2 px-4 py-2 text-xs text-n-slate-12"
+      role="status"
+    >
+      <span v-if="pendingDeletionCount">
+        {{
+          $t('CONVERSATION.DELETION_STATE.PENDING_COUNT', {
+            count: pendingDeletionCount,
+          })
+        }}
+      </span>
+      <span v-else>
+        {{
+          $t(
+            lastDeletionOutcome === 'partial'
+              ? 'CONVERSATION.DELETION_STATE.PARTIAL'
+              : 'CONVERSATION.FAIL_DELETE_CONVERSATION'
+          )
+        }}
+      </span>
+      <button
+        v-if="pendingDeletionCount"
+        type="button"
+        :disabled="isReconcilingDeletion"
+        class="shrink-0 font-medium text-n-brand hover:underline disabled:opacity-50"
+        @click="reconcileDeletions"
+      >
+        {{ $t('CONVERSATION.DELETION_STATE.CHECK') }}
+      </button>
+      <button
+        v-if="unacknowledgedDeletion"
+        type="button"
+        class="shrink-0 font-medium text-n-brand hover:underline"
+        @click="openDeletionRetry"
+      >
+        {{ $t('CONVERSATION.DELETION_STATE.RETRY') }}
+      </button>
+    </div>
+
+    <div
       v-if="crmReferenceLoadFailed"
       data-test="crm-pipelines-load-error"
       class="flex items-center justify-between gap-3 border-b border-n-weak bg-n-amber-2 px-4 py-2 text-xs text-n-slate-12"
@@ -2334,8 +2610,23 @@ watch(bulkSelectionContextKey, contextKey => setSelectionContext(contextKey), {
       "
       :description="$t('CONVERSATION.DELETE_CONVERSATION.DESCRIPTION')"
       :confirm-button-label="$t('CONVERSATION.DELETE_CONVERSATION.CONFIRM')"
+      :is-loading="isDeletingConversation"
       @confirm="deleteConversation"
       @close="selectedConversationId = null"
+    />
+    <Dialog
+      ref="retryDeletionDialogRef"
+      type="alert"
+      :title="$t('CONVERSATION.DELETION_STATE.RETRY_TITLE')"
+      :description="
+        $t('CONVERSATION.DELETION_STATE.RETRY_DESCRIPTION', {
+          ids: retryDeletionIds,
+        })
+      "
+      :confirm-button-label="$t('CONVERSATION.DELETION_STATE.RETRY')"
+      :is-loading="isRetryingDeletion"
+      @confirm="retryDeletionRequest"
+      @close="retryDeletionKey = null"
     />
     <CommunicationThreadDeleteDialog
       ref="deleteCommunicationThreadDialogRef"

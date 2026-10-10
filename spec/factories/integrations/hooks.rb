@@ -49,7 +49,6 @@ FactoryBot.define do
       end
     end
 
-
     trait :medelement do
       app_id { 'medelement' }
       access_token do
@@ -70,7 +69,7 @@ FactoryBot.define do
           'sync_interval_hours' => 0.25,
           'sync_time_of_day' => '06:15',
           'receptions_days_back' => 3,
-          'receptions_days_forward' => 70,
+          'receptions_days_forward' => 89,
           'throttle_ms' => 0
         }
       end

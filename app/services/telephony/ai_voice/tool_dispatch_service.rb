@@ -411,17 +411,17 @@ class Telephony::AiVoice::ToolDispatchService
     captain_assistant&.id
   end
 
-  def with_captain_assistant_assignment_lock(&block)
+  def with_captain_assistant_assignment_lock(&)
     ensure_call_session!
     call_session.reload
-    return with_current_assignment_lock { block.call(captain_assistant&.id) } unless conversation_mutation?
+    return with_current_assignment_lock { yield(captain_assistant&.id) } unless conversation_mutation?
 
-    Conversation.transaction { with_locked_voice_conversations(&block) }
+    Conversation.transaction { with_locked_voice_conversations(&) }
   end
 
   private
 
-  def with_locked_voice_conversations(&block)
+  def with_locked_voice_conversations(&)
     call_session.reload
     Contacts::PhoneIdentityLock.acquire!(account_id: account.id) if tool_name.to_s.split(/--|__/).last == 'merge_contacts'
     conversations = account.conversations.where(id: conversation_mutation_conversation_ids).order(:id).lock.to_a
@@ -432,7 +432,7 @@ class Telephony::AiVoice::ToolDispatchService
     @conversation = current_conversation || conversations.first
     with_captain_control_locks(conversations) do
       lock_voice_assignment_inboxes(conversations, call_session) do
-        with_current_voice_configuration_lock(&block)
+        with_current_voice_configuration_lock(&)
       end
     end
   end
@@ -793,6 +793,7 @@ class Telephony::AiVoice::ToolDispatchService
     {
       account: account,
       conversation: conversation,
+      assistant: captain_assistant,
       channel_type: conversation&.inbox&.channel_type
     }
   end
@@ -1058,11 +1059,11 @@ class Telephony::AiVoice::ToolDispatchService
           .pluck(:conversation_id)
   end
 
-  def with_captain_control_locks(conversations, index = 0, &block)
-    return block.call if index >= conversations.length
+  def with_captain_control_locks(conversations, index = 0, &)
+    return yield if index >= conversations.length
 
     conversations[index].with_captain_control_lock do
-      with_captain_control_locks(conversations, index + 1, &block)
+      with_captain_control_locks(conversations, index + 1, &)
     end
   end
 
@@ -1103,12 +1104,12 @@ class Telephony::AiVoice::ToolDispatchService
     yield
   end
 
-  def with_assignment_inbox_locks(inbox_ids, &block)
-    return block.call if inbox_ids.blank?
+  def with_assignment_inbox_locks(inbox_ids, &)
+    return yield if inbox_ids.blank?
 
     first_id, *remaining_ids = inbox_ids
     Telephony::AiVoice::AssistantAssignmentLock.with_lock!(first_id) do
-      with_assignment_inbox_locks(remaining_ids, &block)
+      with_assignment_inbox_locks(remaining_ids, &)
     end
   end
 

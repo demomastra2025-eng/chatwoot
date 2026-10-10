@@ -3,6 +3,9 @@ import { parseAPIErrorResponse } from 'dashboard/store/utils/api';
 import { preserveCustomAttributeKeys } from 'dashboard/utils/preserveCustomAttributeKeys';
 
 const ERROR_KEY_BY_CODE = {
+  CRM_DEAL_SELECTION_REQUIRED: 'SCHEDULING.ERRORS.CRM_DEAL_SELECTION_REQUIRED',
+  CRM_DEAL_CONTACT_MISMATCH: 'SCHEDULING.ERRORS.CRM_DEAL_CONTACT_MISMATCH',
+  CRM_PIPELINE_NO_OPEN_STAGE: 'SCHEDULING.ERRORS.CRM_PIPELINE_NO_OPEN_STAGE',
   APPOINTMENT_SLOT_UNAVAILABLE:
     'SCHEDULING.ERRORS.APPOINTMENT_SLOT_UNAVAILABLE',
   APPOINTMENT_DELETE_REQUIRES_CANCELLED:
@@ -14,6 +17,7 @@ const ERROR_KEY_BY_CODE = {
   DUPLICATE_EXTERNAL_REF: 'SCHEDULING.ERRORS.DUPLICATE_EXTERNAL_REF',
   DUPLICATE_IDEMPOTENCY_KEY: 'SCHEDULING.ERRORS.DUPLICATE_IDEMPOTENCY_KEY',
   EXPENSE_NOT_FOUND: 'SCHEDULING.ERRORS.EXPENSE_NOT_FOUND',
+  INVALID_DURATION: 'SCHEDULING.APPOINTMENT_FORM.ERRORS.INVALID_DURATION',
   INVALID_IIN: 'SCHEDULING.ERRORS.INVALID_IIN',
   MEDELEMENT_AVAILABILITY_UNVERIFIED:
     'SCHEDULING.ERRORS.MEDELEMENT_AVAILABILITY_UNVERIFIED',
@@ -155,17 +159,21 @@ export const normalizeMeta = data => {
 
 export const extractSchedulingError = error => {
   const payload = camelcaseKeys(error?.response?.data || {}, { deep: true });
+  const message =
+    [payload.error, parseAPIErrorResponse(error), error?.message].find(
+      value => typeof value === 'string' && value.trim()
+    ) || '';
 
   return {
     code: payload.code || 'UNKNOWN_ERROR',
     details: payload.details || null,
-    message: payload.error || parseAPIErrorResponse(error),
+    message,
     status: error?.response?.status || 500,
   };
 };
 
 const resolveSchedulingErrorPayload = error => {
-  if (error?.code && error?.message && !error?.response) {
+  if (error?.code && !error?.response) {
     return error;
   }
 
@@ -203,7 +211,11 @@ const resolveFieldLabel = (field, t) => {
 };
 
 export const formatSchedulingErrorMessage = (error, t) => {
-  const payload = resolveSchedulingErrorPayload(error);
+  const resolved = resolveSchedulingErrorPayload(error);
+  const payload = {
+    ...resolved,
+    message: typeof resolved.message === 'string' ? resolved.message : '',
+  };
   const missingFields = resolveMissingFieldLabels(payload);
 
   if (payload.code === 'APPOINTMENT_PAYMENT_REQUIRES_FIELDS') {

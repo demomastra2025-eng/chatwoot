@@ -2,10 +2,14 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
   APPOINTMENT_PARAM_KEYS = %i[
     resource_id
     contact_id
+    patient_contact_id
     service_id
     company_id
     conversation_id
     conversation_display_id
+    crm_deal_id
+    crm_pipeline_id
+    crm_deal_selection
     created_by_id
     owner_id
     starts_at
@@ -168,6 +172,9 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
   def filter_by_reference_params(scope)
     scope = filter_by_csv(scope, :resource_id, params[:resource_ids])
     scope = filter_by_csv(scope, :contact_id, params[:contact_ids])
+    if params[:patient_contact_ids].present?
+      scope = scope.where('COALESCE(patient_contact_id, contact_id) IN (?)', parse_csv_ids(params[:patient_contact_ids]))
+    end
     scope = filter_by_csv(scope, :conversation_id, params[:conversation_ids])
     filter_by_conversation_display_ids(scope)
   end

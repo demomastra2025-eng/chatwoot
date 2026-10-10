@@ -388,6 +388,14 @@ RSpec.describe Integrations::Medelement::SpecialistsSyncService do
     described_class.new(account: account, client: client, configuration: configuration).perform
 
     expect(resource.reload.specialty).to eq('Manual specialty')
+
+    allow(client).to receive(:specialists).and_return(
+      [{ 'specialistCode' => '27492901726817790', 'userName' => 'Synthetic Doctor',
+         'specialty' => 'Provider specialty', 'isSchedulePublished' => 1 }]
+    )
+    described_class.new(account: account, client: client, configuration: configuration).perform
+
+    expect(resource.reload.specialty).to eq('Provider specialty')
   end
 
   it 'deactivates only imported specialists missing beyond the grace period' do

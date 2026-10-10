@@ -40,6 +40,10 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
     initialize_existing_stage_visit!
     assign_deal_attributes!
     enforce_stage_requirements!
+    if @stage_changing && !@new_record && Crm::Appointments::AutomationState.explicit_actor?(actor)
+      Crm::Appointments::AutomationState.manual_change!(deal)
+    end
+    Crm::Appointments::DeliveryPolicy.stamp_in_memory!(deal)
     deal.save!
     finalize_deal!
   end

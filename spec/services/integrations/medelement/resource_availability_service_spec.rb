@@ -69,11 +69,14 @@ RSpec.describe Integrations::Medelement::ResourceAvailabilityService do
   end
 
   it 'uses split timetable reads for a live search longer than seven calendar days' do
-    allow(client).to receive(:timetable_range).and_return(
+    payload = (Date.new(2026, 9, 7)..Date.new(2026, 9, 15)).to_h do |date|
+      [date.strftime('%d.%m.%Y'), { 'specialistWorkingHours' => 'day off', 'timetable' => [] }]
+    end.merge(
       '07.09.2026' => { 'timetable' => [
         { 'start' => '07.09.2026 09:00', 'end' => '07.09.2026 11:00', 'working' => true }
       ] }
     )
+    allow(client).to receive(:timetable_range).and_return(payload)
     allow(client).to receive(:get_receptions).and_return([])
 
     result = described_class.new(resource: resource, from: from_time, to: to_time + 8.days,
@@ -84,6 +87,69 @@ RSpec.describe Integrations::Medelement::ResourceAvailabilityService do
       specialist_code: 'specialist-1', starts_on: Date.new(2026, 9, 7), ends_on: Date.new(2026, 9, 15)
     )
     expect(client).not_to have_received(:timetable)
+  end
+
+  it 'rejects a manual interval whose tail overlaps a reception in the chosen cabinet' do
+    allow(client).to receive(:get_receptions).and_return(
+      [{ 'STARTTIME' => '07.09.2026 10:00:00', 'ENDTIME' => '07.09.2026 10:30:00', 'REMOVED' => 0 }]
+    )
+    manual = slots.first.merge(ends_at: '2026-09-07T10:15:00+05:00')
+
+    result = described_class.new(resource: resource, from: from_time, to: to_time,
+                                 slots: [manual], cabinet_code: 'cabinet-1', client: client).perform
+
+    expect(result).to have_attributes(status: 'fresh', slots: [])
+  end
+
+  it 'rejects a manual interval spanning a gap in the confirmed doctor graph' do
+    allow(client).to receive(:timetable).and_return(
+      '07.09.2026' => { 'timetable' => [
+        { 'start' => '07.09.2026 09:00', 'end' => '07.09.2026 10:00', 'working' => true },
+        { 'start' => '07.09.2026 10:15', 'end' => '07.09.2026 11:00', 'working' => true }
+      ] }
+    )
+    allow(client).to receive(:get_receptions).and_return([])
+    manual = slots.first.merge(ends_at: '2026-09-07T10:30:00+05:00')
+
+    result = described_class.new(resource: resource, from: from_time, to: to_time,
+                                 slots: [manual], client: client).perform
+
+    expect(result).to have_attributes(status: 'fresh', slots: [])
+  end
+
+  it 'does not use another cabinet graph to justify the chosen cabinet interval' do
+    allow(client).to receive(:timetable).and_return(
+      '07.09.2026' => { 'timetable' => [
+        { 'start' => '07.09.2026 09:00', 'end' => '07.09.2026 11:00', 'working' => true, 'cabinetCode' => 'cabinet-2' }
+      ] }
+    )
+    allow(client).to receive(:get_receptions).and_return([])
+
+    result = described_class.new(resource: resource, from: from_time, to: to_time,
+                                 slots: slots, cabinet_code: 'cabinet-1', client: client).perform
+
+    expect(result).to have_attributes(status: 'fresh', slots: [])
+  end
+
+  it 'reads and parses provider dates in the integration zone when the resource zone differs' do
+    resource.update!(timezone: 'America/New_York')
+    zone = ActiveSupport::TimeZone['Asia/Almaty']
+    from = zone.local(2026, 9, 7, 0, 30)
+    slot = { resource_id: resource.id, starts_at: from.iso8601, ends_at: (from + 30.minutes).iso8601 }
+    allow(client).to receive(:timetable).and_return(
+      '07.09.2026' => { 'timetable' => [
+        { 'start' => '07.09.2026 00:30', 'end' => '07.09.2026 01:00', 'working' => true }
+      ] }
+    )
+    allow(client).to receive(:get_receptions).and_return([])
+
+    result = described_class.new(resource: resource, from: from, to: from + 30.minutes,
+                                 slots: [slot], client: client).perform
+
+    expect(result.slots).to contain_exactly(hash_including(resource_id: resource.id))
+    expect(client).to have_received(:timetable).with(
+      specialist_code: 'specialist-1', starts_on: Date.new(2026, 9, 7), ends_on: Date.new(2026, 9, 7)
+    )
   end
 
   it 'fails closed instead of returning local slots when the provider is unavailable' do

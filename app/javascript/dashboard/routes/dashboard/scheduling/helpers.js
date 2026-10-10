@@ -302,6 +302,42 @@ export const resolveAppointmentConversationTarget = appointment => {
   };
 };
 
+// Routes use public display IDs. A database ID alone cannot identify a chat URL.
+export const appointmentPatientDialogRoute = (appointment, accountId) => {
+  const target = resolveAppointmentConversationTarget(appointment);
+  const ownerId = numericId(appointment?.contactId || appointment?.contact_id);
+  const patientId = numericId(
+    appointment?.patientContextContactId ||
+      appointment?.patient_context_contact_id ||
+      appointment?.patientContactId ||
+      appointment?.patient_contact_id ||
+      ownerId
+  );
+  if (!ownerId || !patientId || !numericId(accountId)) return null;
+  const query = {
+    patientContactId: String(patientId),
+    patientChatContactId: String(ownerId),
+  };
+  if (target.communicationThreadDisplayId) {
+    return {
+      name: 'communication_thread_conversation',
+      params: {
+        accountId,
+        communication_thread_id: target.communicationThreadDisplayId,
+      },
+      query,
+    };
+  }
+  if (target.conversationDisplayId) {
+    return {
+      name: 'inbox_conversation',
+      params: { accountId, conversation_id: target.conversationDisplayId },
+      query,
+    };
+  }
+  return null;
+};
+
 export const toDate = value => {
   if (value instanceof Date) return value;
   if (!value) return new Date();

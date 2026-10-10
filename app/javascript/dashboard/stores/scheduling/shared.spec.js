@@ -29,6 +29,66 @@ describe('scheduling shared helpers', () => {
     expect(formatSchedulingErrorMessage(error, t)).toBe('Нерабочее время');
   });
 
+  it('formats a network error without treating the Error object as text', () => {
+    expect(
+      formatSchedulingErrorMessage(new Error('Network Error'), key => key)
+    ).toBe('Network Error');
+  });
+
+  it.each([
+    ['en', enScheduling],
+    ['ru', ruScheduling],
+    ['kk', kkScheduling],
+  ])('localizes an unsupported provider duration in %s', (_locale, messages) => {
+    const error = {
+      response: {
+        data: {
+          code: 'INVALID_DURATION',
+          error:
+            'Reception duration must be a whole number of minutes from 5 to 1440',
+        },
+        status: 422,
+      },
+    };
+    const t = key => lookupMessage(messages, key) ?? key;
+    const translation =
+      messages.SCHEDULING.APPOINTMENT_FORM.ERRORS.INVALID_DURATION;
+
+    expect(translation).toEqual(expect.any(String));
+    expect(formatSchedulingErrorMessage(error, t)).toBe(translation);
+  });
+
+  it.each([
+    { message: { unexpected: true } },
+    { message: 7 },
+    { error: { unexpected: true } },
+    { errors: [{ message: 'Nested object' }] },
+    { errors: [7] },
+    { errors: { patient: ['invalid'] } },
+  ])('uses a string fallback for malformed API errors: %j', data => {
+    const t = key => (key === 'SCHEDULING.ERRORS.GENERIC' ? 'Try again' : key);
+    expect(formatSchedulingErrorMessage({ response: { data } }, t)).toBe(
+      'Try again'
+    );
+  });
+
+  it('retains a translated code when its normalized message is not a string', () => {
+    const t = key =>
+      key === 'SCHEDULING.ERRORS.INVALID_IIN' ? 'Invalid identifier' : key;
+    expect(
+      formatSchedulingErrorMessage({ code: 'INVALID_IIN', message: {} }, t)
+    ).toBe('Invalid identifier');
+  });
+
+  it('retains a string error in the API errors array', () => {
+    expect(
+      formatSchedulingErrorMessage(
+        { response: { data: { errors: ['Please retry'] } } },
+        key => key
+      )
+    ).toBe('Please retry');
+  });
+
   it.each([
     [
       'MEDELEMENT_SERVICE_REQUIRED',

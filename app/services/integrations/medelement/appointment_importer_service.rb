@@ -321,6 +321,7 @@ class Integrations::Medelement::AppointmentImporterService
       'medelement_cabinet_code' => reception['COMPANY_CABINET_CODE'].to_s.presence,
       'medelement_reception_code' => reception['RECEPTION_CODE'].to_s,
       'medelement_source_created_at' => reception['CREATED_AT'].to_s.presence,
+      'medelement_source_timezone' => import_context[:source_timezone].presence || appointment.resource&.timezone || Scheduling::Constants::DEFAULT_TIMEZONE,
       'medelement_specialist_code' => import_context[:specialist_code].to_s,
       'medelement_list_fingerprint' => import_context[:list_fingerprint],
       'medelement_detail_synced_at' => import_context[:detail_synced_at],

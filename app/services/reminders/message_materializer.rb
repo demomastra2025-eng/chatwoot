@@ -9,6 +9,8 @@ class Reminders::MessageMaterializer
   end
 
   def perform(conversation:, sender:, content:, captain_trace: nil, delivery_policy: nil)
+    policy = Outbound::PlaygroundDeliveryPolicy.policy_for(conversation: conversation, reminder: reminder)
+    Outbound::PlaygroundDeliveryPolicy.ensure!(conversation: conversation, policy: policy)
     Message.transaction do
       message = Messages::MessageBuilder.new(
         sender,
@@ -24,6 +26,7 @@ class Reminders::MessageMaterializer
       ).merge(automation_provenance)
       additional_attributes['captain_trace'] = captain_trace if captain_trace.present?
       additional_attributes['delivery_policy'] = delivery_policy.as_json if delivery_policy.present?
+      additional_attributes[Outbound::PlaygroundDeliveryPolicy::ATTRIBUTE_KEY] = policy.deep_dup unless policy.nil?
 
       message.update!(additional_attributes: additional_attributes.merge(@additional_attributes))
       confirmation_request&.update!(delivery_message: message)

@@ -8,6 +8,13 @@ class ConversationApi extends ApiClient {
     super('conversations', { accountScoped: true });
   }
 
+  show(id, context = null, options = {}) {
+    const url = context ? `${context.baseUrl}/conversations` : this.url;
+    return Object.keys(options).length
+      ? axios.get(`${url}/${id}`, options)
+      : axios.get(`${url}/${id}`);
+  }
+
   // The counts are only needed with the first page, later pages are sent with includeMeta false.
   get({
     inboxId,
@@ -220,8 +227,12 @@ class ConversationApi extends ApiClient {
     return axios.get(`${this.url}/${conversationId}/inbox_assistant`);
   }
 
-  delete(conversationId) {
-    return axios.delete(`${this.url}/${conversationId}`);
+  delete(conversationId, requestKey, context = null) {
+    const url = context ? `${context.baseUrl}/conversations` : this.url;
+    return axios.delete(`${url}/${conversationId}`, {
+      data: { request_key: requestKey },
+      timeout: 10000,
+    });
   }
 }
 

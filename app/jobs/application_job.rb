@@ -1,4 +1,5 @@
 class ApplicationJob < ActiveJob::Base
+  include PlaygroundJobContext
   # https://api.rubyonrails.org/v5.2.1/classes/ActiveJob/Exceptions/ClassMethods.html
   discard_on ActiveJob::DeserializationError do |job, error|
     serialized_arguments = Array.wrap(job.instance_variable_get(:@serialized_arguments))

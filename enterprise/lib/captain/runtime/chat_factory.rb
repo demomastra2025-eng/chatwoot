@@ -154,8 +154,15 @@ class Captain::Runtime::ChatFactory
         feature: :assistant,
         model: agent.model,
         account: account,
-        preferences: context_wrapper.context.dig(:state, :captain_runtime)
+        preferences: context_wrapper.context.dig(:state, :captain_runtime),
+        effort_override: playground_thinking_effort(context_wrapper)
       )
+    end
+
+    def playground_thinking_effort(context_wrapper)
+      return unless context_wrapper.context.dig(:state, :source) == 'playground'
+
+      context_wrapper.context.dig(:state, :playground_thinking_effort)
     end
   end
 end

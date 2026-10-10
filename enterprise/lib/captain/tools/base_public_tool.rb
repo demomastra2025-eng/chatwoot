@@ -17,8 +17,17 @@ class Captain::Tools::BasePublicTool < Captain::Runtime::Tool
   def execute(tool_context, **params)
     ensure_tool_execution_allowed!
     ensure_captain_control_current!(tool_context)
+    patient_scope_for(tool_context.state).authorize_public_tool!(name, params, tool_context.state)
     result = super
     audit_tool_execution(arguments: params, result: result, runtime_context: runtime_context(tool_context))
+    result
+  rescue Captain::Tools::Agent::PatientScope::Denied
+    result = if name.in?(%w[create_appointment update_appointment cancel_appointment])
+               JSON.generate(success: false, reason: 'not_found')
+             else
+               Captain::Tools::Agent::PatientScope::FAILURE
+             end
+    audit_tool_execution(arguments: {}, result: result, runtime_context: runtime_context(tool_context))
     result
   rescue StandardError => e
     audit_tool_execution(arguments: params, error: e, runtime_context: runtime_context(tool_context))
@@ -165,10 +174,7 @@ class Captain::Tools::BasePublicTool < Captain::Runtime::Tool
   end
 
   def find_contact(state)
-    contact_id = state&.dig(:contact, :id)
-    return nil unless contact_id
-
-    account_scoped(::Contact).find_by(id: contact_id)
+    account.contacts.find_by(id: find_conversation(state)&.contact_id)
   end
 
   def current_company(state)
@@ -193,7 +199,11 @@ class Captain::Tools::BasePublicTool < Captain::Runtime::Tool
     appointment_id = state&.dig(:appointment, :id)
     return nil unless appointment_id
 
-    account.scheduling_appointments.find_by(id: appointment_id)
+    patient_scope_for(state).appointments.find_by(id: appointment_id)
+  end
+
+  def patient_scope_for(state)
+    Captain::Tools::Agent::PatientScope.new(assistant: assistant, conversation: find_conversation(state))
   end
 
   def feature_enabled?(feature_name)

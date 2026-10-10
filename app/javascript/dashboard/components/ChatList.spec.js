@@ -1,5 +1,6 @@
 import { flushPromises, shallowMount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { reactive } from 'vue';
 
 import ChatList from './ChatList.vue';
 import { SERVER_SEARCH_DELAY } from 'dashboard/composables/chatlist/useConversationListSearch';
@@ -27,6 +28,10 @@ const ConversationBulkActionsStub = {
 const ACCOUNT_ID = 1;
 
 const mocks = vi.hoisted(() => ({
+  alert: vi.fn(),
+  groupDialogOpen: vi.fn(),
+  groupDialogClose: vi.fn(),
+  deletionOperations: [],
   route: null,
   accountSettings: {},
   router: {
@@ -47,6 +52,26 @@ const mocks = vi.hoisted(() => ({
     selectAllMatching: vi.fn(),
   },
 }));
+
+vi.mock('dashboard/composables', async importOriginal => ({
+  ...(await importOriginal()),
+  useAlert: mocks.alert,
+}));
+
+const DialogStub = {
+  name: 'Dialog',
+  props: ['title', 'description', 'isLoading'],
+  emits: ['confirm', 'close'],
+  methods: { open() {}, close() {} },
+  template: '<div />',
+};
+const ThreadDialogStub = {
+  name: 'CommunicationThreadDeleteDialog',
+  props: ['threadId', 'channels', 'isLoading'],
+  emits: ['confirm', 'close'],
+  methods: { open: mocks.groupDialogOpen, close: mocks.groupDialogClose },
+  template: '<div />',
+};
 
 vi.mock('vue-router', async importOriginal => ({
   ...(await importOriginal()),
@@ -156,7 +181,9 @@ const ASSIGNEE_LISTS_OFF = {
 };
 
 const buildStore = () => ({
-  getters: {
+  getters: reactive({
+    getConversationDeletionOperations: mocks.deletionOperations,
+    getConversationDeletionRevision: 0,
     getCurrentUser: { id: 7, name: 'Employee' },
     getFilteredConversations: [],
     getMineChats: () => [],
@@ -188,7 +215,7 @@ const buildStore = () => ({
     'conversationPage/getCurrentPageFilter': () => 0,
     'conversationPage/getHasEndReached': () => false,
     'attributes/getAttributesByModel': () => [],
-  },
+  }),
   dispatch: vi.fn(() => Promise.resolve()),
 });
 
@@ -202,12 +229,12 @@ const storePlugin = store => ({
 });
 
 const mountChatList = async (query, componentProps = {}) => {
-  mocks.route = {
+  mocks.route = reactive({
     name: 'home',
     path: `/app/accounts/${ACCOUNT_ID}/dashboard`,
     params: { accountId: String(ACCOUNT_ID) },
     query,
-  };
+  });
   if (mocks.bulkSelectedRef) {
     mocks.bulkSelectedRef.value = [...mocks.bulkSelectionIds];
   }
@@ -220,6 +247,8 @@ const mountChatList = async (query, componentProps = {}) => {
     global: {
       plugins: [storePlugin(store)],
       stubs: {
+        Dialog: DialogStub,
+        CommunicationThreadDeleteDialog: ThreadDialogStub,
         ConversationBulkActions: ConversationBulkActionsStub,
       },
     },
@@ -244,6 +273,10 @@ describe('ChatList', () => {
     mocks.accountSettings = {};
     mocks.router.push.mockClear();
     mocks.router.replace.mockClear();
+    mocks.alert.mockClear();
+    mocks.groupDialogOpen.mockClear();
+    mocks.groupDialogClose.mockClear();
+    mocks.deletionOperations = [];
     mocks.crmStore.pipelines = [];
     mocks.crmStore.ui.isLoadingPipelines = false;
     mocks.crmStore.loadPipelines = vi.fn(() => Promise.resolve());
@@ -298,6 +331,231 @@ describe('ChatList', () => {
       expect(lastListFilters(store)).toMatchObject({
         assigneeType: 'all',
         labelsScope: 'any',
+      });
+    });
+  });
+
+  describe('deletion acknowledgement', () => {
+    it.each(['failed', 'partial'])(
+      'keeps an unresolved older %s outcome visible as partial when another target is deleted',
+      async outcome => {
+        mocks.deletionOperations = [
+          {
+            requestKey: 'older',
+            operationId: 90,
+            targets:
+              outcome === 'partial'
+                ? [
+                    { id: 12, status: 'deleted' },
+                    { id: 13, status: 'failed' },
+                  ]
+                : [{ id: 12, status: 'failed' }],
+          },
+          {
+            requestKey: 'newer',
+            operationId: 91,
+            targets: [{ id: 14, status: 'deleted' }],
+          },
+        ];
+        const { wrapper } = await mountChatList({ status: 'open' });
+        const banner = wrapper.find(
+          '[data-test="conversation-deletion-state"]'
+        );
+        expect(banner.exists()).toBe(true);
+        expect(banner.text()).toContain(
+          wrapper.vm.$t('CONVERSATION.DELETION_STATE.PARTIAL')
+        );
+      }
+    );
+
+    it('clears the old failure banner after an explicit retry deletes the same target while retaining both receipts', async () => {
+      const failed = {
+        requestKey: 'failed',
+        operationId: 90,
+        targets: [{ id: 12, status: 'failed' }],
+      };
+      const retry = {
+        requestKey: 'retry',
+        operationId: 91,
+        targets: [{ id: 12, status: 'pending' }],
+      };
+      mocks.deletionOperations = [failed];
+      const { wrapper, store } = await mountChatList({ status: 'open' });
+      const banner = () =>
+        wrapper.find('[data-test="conversation-deletion-state"]');
+      expect(banner().text()).toContain(
+        wrapper.vm.$t('CONVERSATION.FAIL_DELETE_CONVERSATION')
+      );
+      store.dispatch.mockImplementation(type => {
+        if (type === 'deleteConversation') {
+          store.getters.getConversationDeletionOperations = [failed, retry];
+          return Promise.resolve({ outcome: 'pending' });
+        }
+        return Promise.resolve();
+      });
+      await wrapper.vm.$.provides.deleteConversation(12);
+      wrapper.findComponent(DialogStub).vm.$emit('confirm');
+      await flushPromises();
+      expect(store.dispatch).toHaveBeenCalledWith(
+        'deleteConversation',
+        expect.objectContaining({ conversationId: 12 })
+      );
+      expect(banner().text()).toContain(
+        wrapper.vm.$t('CONVERSATION.DELETION_STATE.PENDING_COUNT', { count: 1 })
+      );
+      const deleted = { ...retry, targets: [{ id: 12, status: 'deleted' }] };
+      store.getters.getConversationDeletionOperations = [failed, deleted];
+      await flushPromises();
+      expect(banner().exists()).toBe(false);
+      expect(store.getters.getConversationDeletionOperations).toEqual([
+        failed,
+        deleted,
+      ]);
+      expect(failed.targets[0].status).toBe('failed');
+      expect(deleted.targets[0].status).toBe('deleted');
+    });
+
+    it('shows pending confirmation and checks status without sending DELETE', async () => {
+      mocks.deletionOperations = [
+        {
+          requestKey: 'pending',
+          operationId: 91,
+          targets: [{ id: 12, status: 'pending' }],
+        },
+      ];
+      const { wrapper, store } = await mountChatList({ status: 'open' });
+      const banner = wrapper.find('[data-test="conversation-deletion-state"]');
+      expect(banner.exists()).toBe(true);
+      await banner.find('button').trigger('click');
+      expect(store.dispatch).toHaveBeenCalledWith(
+        'reconcileConversationDeletions'
+      );
+      expect(store.dispatch).not.toHaveBeenCalledWith(
+        'deleteConversation',
+        expect.anything()
+      );
+    });
+
+    it('uses pending feedback for an accepted request and success feedback only for a terminal deleted result', async () => {
+      const { wrapper, store } = await mountChatList({ status: 'open' });
+      store.dispatch.mockImplementation(type =>
+        Promise.resolve(
+          type === 'deleteConversation' ? { outcome: 'pending' } : []
+        )
+      );
+      await wrapper.vm.$.provides.deleteConversation(12);
+      wrapper.findComponent(DialogStub).vm.$emit('confirm');
+      await flushPromises();
+      expect(mocks.alert).toHaveBeenLastCalledWith(
+        wrapper.vm.$t('CONVERSATION.DELETION_STATE.PENDING')
+      );
+      expect(mocks.alert).not.toHaveBeenCalledWith(
+        wrapper.vm.$t('CONVERSATION.SUCCESS_DELETE_CONVERSATION')
+      );
+      store.dispatch.mockImplementation(type =>
+        Promise.resolve(
+          type === 'deleteConversation' ? { outcome: 'deleted' } : []
+        )
+      );
+      await wrapper.vm.$.provides.deleteConversation(12);
+      wrapper.findComponent(DialogStub).vm.$emit('confirm');
+      await flushPromises();
+      expect(mocks.alert).toHaveBeenLastCalledWith(
+        wrapper.vm.$t('CONVERSATION.SUCCESS_DELETE_CONVERSATION')
+      );
+    });
+
+    it.each(['account', 'employee', 'mode'])(
+      'abandons a single deletion confirmation after a %s switch',
+      async kind => {
+        const { wrapper, store } = await mountChatList({ status: 'open' });
+        await wrapper.vm.$.provides.deleteConversation(12);
+        if (kind === 'account') {
+          store.getters.getCurrentAccountId = 2;
+          mocks.route.params.accountId = '2';
+        } else if (kind === 'employee')
+          store.getters.getCurrentUser = { id: 8, name: 'Other employee' };
+        else await wrapper.setProps({ communicationThreadMode: true });
+        wrapper.findComponent(DialogStub).vm.$emit('confirm');
+        await flushPromises();
+        expect(store.dispatch).not.toHaveBeenCalledWith(
+          'deleteConversation',
+          expect.anything()
+        );
+        expect(store.dispatch).not.toHaveBeenCalledWith(
+          'deleteCommunicationThreadConversations',
+          expect.anything()
+        );
+      }
+    );
+
+    it('abandons a group confirmation opened in account A during lazy import before entering cached account B', async () => {
+      const { wrapper, store } = await mountChatList(
+        { status: 'open' },
+        { communicationThreadMode: true }
+      );
+      store.getters.getConversationById = () => ({
+        id: 7,
+        is_communication_thread: true,
+        channels: [{ conversation_id: 12 }],
+      });
+      const opening = wrapper.vm.$.provides.deleteConversation(7);
+      store.getters.getCurrentAccountId = 2;
+      mocks.route.params.accountId = '2';
+      await opening;
+      await flushPromises();
+      wrapper.findComponent(ThreadDialogStub).vm.$emit('confirm', [12]);
+      await flushPromises();
+      expect(mocks.groupDialogOpen).not.toHaveBeenCalled();
+      expect(store.dispatch).not.toHaveBeenCalledWith(
+        'deleteCommunicationThreadConversations',
+        expect.anything()
+      );
+    });
+
+    it('does not let an old deletion finalizer close or change a newly opened confirmation', async () => {
+      const { wrapper, store } = await mountChatList({ status: 'open' });
+      let finish;
+      store.dispatch.mockImplementation(type =>
+        type === 'deleteConversation'
+          ? new Promise(resolve => {
+              finish = resolve;
+            })
+          : Promise.resolve()
+      );
+      const dialog = wrapper.findComponent(DialogStub);
+      const close = vi.spyOn(dialog.vm, 'close');
+      await wrapper.vm.$.provides.deleteConversation(12);
+      dialog.vm.$emit('confirm');
+      await flushPromises();
+      expect(store.dispatch).toHaveBeenCalledWith('deleteConversation', {
+        conversationId: 12,
+        expectedScope: expect.objectContaining({
+          accountId: '1',
+          userId: '7',
+          kind: 'conversation',
+        }),
+      });
+      await wrapper.vm.$.provides.deleteConversation(13);
+      const closeCount = close.mock.calls.length;
+      finish({ outcome: 'deleted' });
+      await flushPromises();
+      expect(close).toHaveBeenCalledTimes(closeCount);
+      expect(mocks.alert).not.toHaveBeenCalled();
+      store.dispatch.mockImplementation(type =>
+        Promise.resolve(
+          type === 'deleteConversation' ? { outcome: 'pending' } : []
+        )
+      );
+      dialog.vm.$emit('confirm');
+      await flushPromises();
+      expect(store.dispatch).toHaveBeenCalledWith('deleteConversation', {
+        conversationId: 13,
+        expectedScope: expect.objectContaining({
+          accountId: '1',
+          userId: '7',
+          kind: 'conversation',
+        }),
       });
     });
   });

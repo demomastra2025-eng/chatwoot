@@ -2,6 +2,7 @@ import { flushPromises, shallowMount } from '@vue/test-utils';
 import { useAlert } from 'dashboard/composables';
 import { useStore, useStoreGetters } from 'dashboard/composables/store';
 import AutomationSettings from './Index.vue';
+import russianAutomation from 'dashboard/i18n/locale/ru/automation.json';
 
 vi.mock('dashboard/composables', () => ({
   useAlert: vi.fn(),
@@ -24,7 +25,10 @@ const mountComponent = ({ dispatch = vi.fn() } = {}) => {
   return shallowMount(AutomationSettings, {
     global: {
       mocks: {
-        $t: key => key,
+        $t: key =>
+          key
+            .split('.')
+            .reduce((value, part) => value?.[part], russianAutomation) || key,
       },
       stubs: {
         AddAutomationRule: {
@@ -39,7 +43,11 @@ const mountComponent = ({ dispatch = vi.fn() } = {}) => {
           template:
             '<div><slot name="header" /><slot name="body" /><slot /></div>',
         },
-        'woot-confirm-modal': true,
+        'woot-confirm-modal': {
+          props: ['confirmLabel', 'cancelLabel'],
+          template:
+            '<div data-test="toggle-confirmation"><button>{{ confirmLabel }}</button><button>{{ cancelLabel }}</button></div>',
+        },
         'woot-delete-modal': true,
       },
     },
@@ -66,5 +74,16 @@ describe('Automation settings', () => {
     await flushPromises();
 
     expect(useAlert).toHaveBeenCalledWith('Stage is archived');
+  });
+
+  it('uses the existing Russian yes and no labels for activation and deactivation', () => {
+    const wrapper = mountComponent();
+
+    expect(
+      wrapper
+        .find('[data-test="toggle-confirmation"]')
+        .findAll('button')
+        .map(button => button.text())
+    ).toEqual(['Да', 'Нет']);
   });
 });

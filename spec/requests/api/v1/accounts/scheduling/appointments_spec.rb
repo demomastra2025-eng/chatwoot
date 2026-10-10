@@ -39,11 +39,89 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
   end
 
   def stub_medelement_availability
+    transaction_depth = ApplicationRecord.connection.open_transactions
     result = Integrations::Medelement::ResourceAvailabilityService::Result.new(
       status: 'fresh', checked_at: Time.current, slots: [{}], reason: nil
     )
     service = instance_double(Integrations::Medelement::ResourceAvailabilityService, perform: result)
-    allow(Integrations::Medelement::ResourceAvailabilityService).to receive(:new).and_return(service)
+    allow(Integrations::Medelement::ResourceAvailabilityService).to receive(:new) do
+      expect(ApplicationRecord.connection.open_transactions).to eq(transaction_depth)
+      service
+    end
+  end
+
+  def make_provider_resource!
+    resource.update!(
+      custom_attributes: {
+        'medelement_specialist_code' => 'specialist-1',
+        'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }]
+      }
+    )
+  end
+
+  def provider_booking_params(starts_at)
+    base_params.except(:service_id).merge(
+      starts_at: starts_at.iso8601,
+      ends_at: (starts_at + 30.minutes).iso8601,
+      client_first_name: 'Тест', client_last_name: 'Пациент',
+      custom_attributes: { medelement_cabinet_code: 'cabinet-1' }
+    )
+  end
+
+  it 'creates a Sunday provider appointment without a local Sunday rule' do
+    make_provider_resource!
+    stub_medelement_availability
+    zone = ActiveSupport::TimeZone['Asia/Almaty']
+    date = zone.today.next_occurring(:sunday)
+    sunday = zone.local(date.year, date.month, date.day, 10)
+
+    post path, params: provider_booking_params(sunday), headers: headers, as: :json
+
+    expect(response).to have_http_status(:created)
+    expect(Time.iso8601(response_body.dig('payload', 'starts_at'))).to eq(sunday)
+  end
+
+  it 'rejects a locally occupied provider slot after the live preflight' do
+    make_provider_resource!
+    stub_medelement_availability
+    create(:scheduling_appointment, account: account, resource: resource,
+                                    starts_at: booking_day, ends_at: booking_day + 30.minutes)
+
+    post path, params: provider_booking_params(booking_day), headers: headers, as: :json
+
+    expect(response).to have_http_status(:conflict)
+    expect(response_body['code']).to eq('SLOT_CONFLICT')
+  end
+
+  it 'creates beyond the background cache when the provider confirms the exact interval' do
+    make_provider_resource!
+    stub_medelement_availability
+    zone = ActiveSupport::TimeZone['Asia/Almaty']
+    later_date = zone.today + 90
+    later = zone.local(later_date.year, later_date.month, later_date.day, 10)
+
+    post path, params: provider_booking_params(later), headers: headers, as: :json
+
+    expect(response).to have_http_status(:created)
+    expect(Time.iso8601(response_body.dig('payload', 'starts_at'))).to eq(later)
+  end
+
+  it 'moves beyond the background cache when the provider confirms the exact interval' do
+    make_provider_resource!
+    stub_medelement_availability
+    appointment = create(:scheduling_appointment, account: account, resource: resource, contact: contact, service: nil,
+                                                  starts_at: booking_day, ends_at: booking_day + 30.minutes,
+                                                  client_first_name: 'Test', client_last_name: 'Patient', client_phone: '+77015554433',
+                                                  custom_attributes: { 'medelement_cabinet_code' => 'cabinet-1' })
+    zone = ActiveSupport::TimeZone['Asia/Almaty']
+    date = zone.today + 90
+    later = zone.local(date.year, date.month, date.day, 10)
+
+    move_params = { starts_at: later.iso8601, ends_at: (later + 30.minutes).iso8601 }
+    patch "#{path}/#{appointment.id}", params: move_params, headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(appointment.reload).to have_attributes(starts_at: later, ends_at: later + 30.minutes)
   end
 
   def stub_local_availability
@@ -89,7 +167,7 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(Scheduling::Appointment.count).to eq(1)
   end
 
-  it 'exposes an account-scoped separate patient card while ignoring a supplied foreign binding ID' do
+  it 'exposes an account-scoped separate patient card and rejects a supplied foreign binding ID' do
     patient = create(:contact, account: account, name: 'Relative', last_name: 'Patient', phone_number: nil)
     appointment = create(:scheduling_appointment, account: account, resource: resource, contact: contact, patient_contact: patient,
                                                   client_name: 'Relative Patient', starts_at: booking_day, ends_at: booking_day + 30.minutes)
@@ -99,7 +177,7 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(response_body.fetch('payload')).to include('patient_contact_id' => patient.id, 'patient_contact_name' => 'Relative Patient',
                                                       'contact_id' => contact.id)
     patch "#{path}/#{appointment.id}", params: { client_comment: 'Comment only', patient_contact_id: foreign_card.id }, headers: headers, as: :json
-    expect(response).to have_http_status(:ok)
+    expect(response).to have_http_status(:not_found)
     expect(appointment.reload).to have_attributes(patient_contact_id: patient.id, contact_id: contact.id)
     foreign_account_path = "/api/v1/accounts/#{foreign_card.account_id}/scheduling/appointments/#{appointment.id}"
     get foreign_account_path, headers: headers, as: :json
@@ -134,6 +212,7 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
   it 'rejects a Medelement appointment without a patient last name before persistence' do
     resource.update!(custom_attributes: { 'medelement_specialist_code' => 'specialist-1' })
     params = base_params.merge(client_first_name: 'Айжан', client_last_name: '', client_phone: '+77000000001')
+    expect(Integrations::Medelement::ResourceAvailabilityService).not_to receive(:new)
 
     expect do
       post path, params: params, headers: headers, as: :json
@@ -173,6 +252,7 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
       client_last_name: 'Касымова',
       client_phone: '+77000000001'
     )
+    expect(Integrations::Medelement::ResourceAvailabilityService).not_to receive(:new)
 
     expect do
       post path, params: params, headers: headers, as: :json

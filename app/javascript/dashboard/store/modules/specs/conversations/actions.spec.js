@@ -79,7 +79,19 @@ describe('#actions', () => {
     });
     it('sends correct actions if API is error', async () => {
       axios.get.mockRejectedValue({ message: 'Incorrect header' });
-      await actions.getConversation({ commit });
+      const result = await actions.getConversation(
+        {
+          commit,
+          state: {
+            allConversations: [],
+            deletionRevision: 0,
+            deletionScope: null,
+          },
+        },
+        1
+      );
+      expect(result).toBeNull();
+      expect(axios.get).toHaveBeenCalled();
       expect(commit.mock.calls).toEqual([]);
     });
   });
@@ -91,7 +103,19 @@ describe('#actions', () => {
     });
     it('sends correct actions if API is error', async () => {
       axios.get.mockRejectedValue({ message: 'Incorrect header' });
-      await actions.getConversation({ commit });
+      const result = await actions.getConversation(
+        {
+          commit,
+          state: {
+            allConversations: [],
+            deletionRevision: 0,
+            deletionScope: null,
+          },
+        },
+        1
+      );
+      expect(result).toBeNull();
+      expect(axios.get).toHaveBeenCalled();
       expect(commit.mock.calls).toEqual([]);
     });
   });
@@ -1487,28 +1511,6 @@ describe('#deleteMessage', () => {
     expect(commit.mock.calls).toEqual([]);
   });
 
-  describe('#deleteConversation', () => {
-    it('send correct actions if API is success', async () => {
-      axios.delete.mockResolvedValue({
-        data: { id: 1 },
-      });
-      await actions.deleteConversation({ commit, dispatch }, 1);
-      expect(commit.mock.calls).toEqual([[types.DELETE_CONVERSATION, 1]]);
-      expect(dispatch.mock.calls).toEqual([
-        ['conversationStats/get', {}, { root: true }],
-      ]);
-    });
-
-    it('send no actions if API is error', async () => {
-      axios.delete.mockRejectedValue({ message: 'Incorrect header' });
-      await expect(
-        actions.deleteConversation({ commit, dispatch }, 1)
-      ).rejects.toThrow(Error);
-      expect(commit.mock.calls).toEqual([]);
-      expect(dispatch.mock.calls).toEqual([]);
-    });
-  });
-
   describe('#updateCustomAttributes', () => {
     it('update conversation custom attributes', async () => {
       axios.post.mockResolvedValue({
@@ -1967,6 +1969,10 @@ describe('#addMentions', () => {
         selectedChatId: null,
         selectedChatType: null,
         allConversations: [chat],
+        deletionScope: null,
+        deletionRevision: 0,
+        deletionOperations: [],
+        deletionObservedIds: [],
       };
       // namespaced metadata commits are not part of this module
       const localCommit = (type, payload) => mutations[type]?.(state, payload);
@@ -1993,8 +1999,9 @@ describe('#addMentions', () => {
 
       expect(localDispatch).toHaveBeenCalledTimes(1);
       expect(axios.get).toHaveBeenCalledTimes(1);
-      expect(chat.dataFetched).toBe(true);
-      expect(chat.meta.first_unread_message_id).toBe(145);
+      const currentChat = state.allConversations[0];
+      expect(currentChat.dataFetched).toBe(true);
+      expect(currentChat.meta.first_unread_message_id).toBe(145);
     });
 
     it('should commit SET_CHAT_DATA_FETCHED by ID, not mutate the data object directly (race condition fix)', async () => {
@@ -2039,7 +2046,6 @@ describe('#addMentions', () => {
 
   describe('#fetchPreviousMessages first unread cursor', () => {
     it('opens a direct conversation with the newest page only and keeps the unread cursor', async () => {
-      const localCommit = vi.fn();
       axios.get.mockReset();
       const chat = {
         id: 1,
@@ -2051,7 +2057,14 @@ describe('#addMentions', () => {
         allConversations: [chat],
         selectedChatId: 1,
         selectedChatType: 'conversation',
+        deletionScope: null,
+        deletionRevision: 0,
+        deletionOperations: [],
+        deletionObservedIds: [],
       };
+      const localCommit = vi.fn((type, payload) =>
+        mutations[type]?.(state, payload)
+      );
       axios.get.mockResolvedValueOnce({
         data: {
           meta: { first_unread_message_id: 10 },
@@ -2065,7 +2078,7 @@ describe('#addMentions', () => {
       );
 
       expect(axios.get).toHaveBeenCalledTimes(1);
-      expect(chat.meta).toEqual({
+      expect(state.allConversations[0].meta).toEqual({
         sender: { id: 5 },
         first_unread_message_id: 10,
       });
@@ -2080,7 +2093,6 @@ describe('#addMentions', () => {
     });
 
     it('opens a communication thread with the newest page only and keeps the unread cursor', async () => {
-      const localCommit = vi.fn();
       axios.get.mockReset();
       const thread = {
         id: 7,
@@ -2094,7 +2106,14 @@ describe('#addMentions', () => {
         allConversations: [thread],
         selectedChatId: 7,
         selectedChatType: 'communication_thread',
+        deletionScope: null,
+        deletionRevision: 0,
+        deletionOperations: [],
+        deletionObservedIds: [],
       };
+      const localCommit = vi.fn((type, payload) =>
+        mutations[type]?.(state, payload)
+      );
       axios.get.mockResolvedValueOnce({
         data: {
           meta: {
@@ -2115,7 +2134,7 @@ describe('#addMentions', () => {
       expect(axios.get.mock.calls[0][1].params).toEqual({
         include_history: true,
       });
-      expect(thread.meta).toEqual({
+      expect(state.allConversations[0].meta).toEqual({
         sender: { id: 1 },
         first_unread_message_id: 100,
       });
@@ -2137,23 +2156,28 @@ describe('#addMentions', () => {
         messages: [],
         meta: { first_unread_message_id: 10 },
       };
+      const state = {
+        allConversations: [chat],
+        selectedChatId: 1,
+        selectedChatType: 'conversation',
+        deletionScope: null,
+        deletionRevision: 0,
+        deletionOperations: [],
+        deletionObservedIds: [],
+      };
+      const localCommit = vi.fn((type, payload) =>
+        mutations[type]?.(state, payload)
+      );
       axios.get.mockResolvedValueOnce({
         data: { meta: {}, payload: [{ id: 30, created_at: 30 }] },
       });
 
       await actions.fetchPreviousMessages(
-        {
-          commit: vi.fn(),
-          state: {
-            allConversations: [chat],
-            selectedChatId: 1,
-            selectedChatType: 'conversation',
-          },
-        },
+        { commit: localCommit, state },
         { conversationId: 1, conversationType: 'conversation' }
       );
 
-      expect(chat.meta.first_unread_message_id).toBeNull();
+      expect(state.allConversations[0].meta.first_unread_message_id).toBeNull();
     });
 
     it('keeps the cursor while loading an older or unread range', async () => {
@@ -2164,19 +2188,24 @@ describe('#addMentions', () => {
         messages: [{ id: 30, created_at: 30 }],
         meta: { first_unread_message_id: 10 },
       };
+      const state = {
+        allConversations: [chat],
+        selectedChatId: 1,
+        selectedChatType: 'conversation',
+        deletionScope: null,
+        deletionRevision: 0,
+        deletionOperations: [],
+        deletionObservedIds: [],
+      };
+      const localCommit = vi.fn((type, payload) =>
+        mutations[type]?.(state, payload)
+      );
       axios.get.mockResolvedValueOnce({
         data: { meta: {}, payload: [{ id: 10, created_at: 10 }] },
       });
 
       await actions.fetchPreviousMessages(
-        {
-          commit: vi.fn(),
-          state: {
-            allConversations: [chat],
-            selectedChatId: 1,
-            selectedChatType: 'conversation',
-          },
-        },
+        { commit: localCommit, state },
         {
           conversationId: 1,
           conversationType: 'conversation',
@@ -2190,7 +2219,7 @@ describe('#addMentions', () => {
         after: 10,
         before: 30,
       });
-      expect(chat.meta.first_unread_message_id).toBe(10);
+      expect(state.allConversations[0].meta.first_unread_message_id).toBe(10);
     });
   });
 });

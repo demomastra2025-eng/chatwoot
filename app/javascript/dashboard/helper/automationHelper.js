@@ -194,6 +194,7 @@ const getManagedFieldDefinitionsForEvent = (
 
 const getManagedConditionFilterMaps = ({
   appointmentPaymentStatusOptions,
+  appointmentSourceOptions,
   appointmentServiceOptions,
   appointmentStatusOptions,
   appointmentTypeOptions,
@@ -210,6 +211,7 @@ const getManagedConditionFilterMaps = ({
     status: appointmentStatusOptions,
     payment_status: appointmentPaymentStatusOptions,
     appointment_type: appointmentTypeOptions,
+    source: appointmentSourceOptions,
     starts_at_weekday: appointmentWeekdayOptions,
     service_id: appointmentServiceOptions,
   },
@@ -280,6 +282,7 @@ export const getConditionOptions = ({
   agents,
   appointmentFieldDefinitions,
   appointmentPaymentStatusOptions,
+  appointmentSourceOptions,
   appointmentServiceOptions,
   appointmentStatusOptions,
   appointmentTypeOptions,
@@ -339,6 +342,7 @@ export const getConditionOptions = ({
 
   const managedConditionFilterMaps = getManagedConditionFilterMaps({
     appointmentPaymentStatusOptions,
+    appointmentSourceOptions,
     appointmentServiceOptions,
     appointmentStatusOptions,
     appointmentTypeOptions,

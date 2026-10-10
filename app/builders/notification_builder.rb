@@ -2,6 +2,8 @@ class NotificationBuilder
   pattr_initialize [:notification_type!, :user!, :account!, :primary_actor!, :secondary_actor]
 
   def perform
+    return if Outbound::PlaygroundDeliveryPolicy.external_notification_blocked?(primary_actor, secondary_actor)
+
     build_notification
   end
 

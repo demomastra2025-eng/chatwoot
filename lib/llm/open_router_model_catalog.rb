@@ -673,6 +673,7 @@ class Llm::OpenRouterModelCatalog
           'input_modalities' => input_modalities_for(model_data),
           'output_modalities' => output_modalities_for(model_data),
           'supported_parameters' => supported_parameters_for(model_data),
+          'reasoning' => model_data['reasoning'].is_a?(Hash) ? model_data['reasoning'].deep_stringify_keys : nil,
           'context_length' => integer_value(model_data['context_length']),
           'max_output_tokens' => integer_value(model_data.dig('top_provider', 'max_completion_tokens')),
           'pricing' => pricing_for(model_data),

@@ -97,6 +97,8 @@ class Captain::ToolResult
     end
 
     def render_error(normalized, fallback_message)
+      return serialize_payload(normalized[:data]) if compact_reason_failure?(normalized[:data])
+
       message = normalized[:error].presence || normalized[:message].presence || fallback_message
       message = message.delete_prefix(ERROR_PREFIX).strip if message.is_a?(String)
       return error_output(message) if unstructured_error?(normalized)
@@ -175,12 +177,23 @@ class Captain::ToolResult
 
       if result.is_a?(String)
         normalized_result = Captain::EncodingNormalizer.string(result)
+        compact_result = JSON.parse(normalized_result) if normalized_result.start_with?('{')
+        return { success: false, data: compact_result, retryable: false } if compact_reason_failure?(compact_result)
+
         return { success: false, error: normalized_result } if error_string?(normalized_result)
 
         return { success: true, message: normalized_result }
       end
 
       { success: true, data: Captain::EncodingNormalizer.utf8(result) }
+    rescue JSON::ParserError
+      { success: true, message: result }
+    end
+
+    def compact_reason_failure?(result)
+      result.is_a?(Hash) && result['success'] == false && result['reason'].in?(%w[
+        time_taken staff_will_help not_found validation_error schedule_not_open
+      ]) && (result.keys - %w[success reason last_available_date]).empty?
     end
 
     def error_string?(result)

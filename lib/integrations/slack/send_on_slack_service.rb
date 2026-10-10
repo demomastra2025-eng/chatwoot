@@ -3,6 +3,7 @@ class Integrations::Slack::SendOnSlackService < Base::SendOnChannelService
   pattr_initialize [:message!, :hook!]
 
   def perform
+    return if Outbound::PlaygroundDeliveryPolicy.external_notification_blocked?(message, conversation)
     # overriding the base class logic since the validations are different in this case.
     # FIXME: for now we will only send messages from widget to slack
     return unless valid_channel_for_slack?

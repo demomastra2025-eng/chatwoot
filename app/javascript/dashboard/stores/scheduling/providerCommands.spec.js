@@ -2,12 +2,46 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 
 import SchedulingProviderCommandsAPI from 'dashboard/api/scheduling/providerCommands';
+import { runCurrentCalendarProviderAction } from './appointmentForm';
 import {
   buildProviderCommandAction,
   buildProviderCommandParamsFromCommand,
   providerCommandIntentMatches,
+  providerCommandRequiresPatientSelection,
   useSchedulingProviderCommandsStore,
 } from './providerCommands';
+
+describe('server-authorized failed patient selection', () => {
+  it('requires explicit confirmation metadata and keeps ordinary failures terminal', () => {
+    const command = {
+      status: 'failed',
+      patientAction: {
+        type: 'patient_selection',
+        canConfirm: true,
+        requiresPatientCardConfirmation: true,
+      },
+    };
+    expect(providerCommandRequiresPatientSelection(command)).toBe(true);
+    expect(providerCommandRequiresPatientSelection({ status: 'failed' })).toBe(
+      false
+    );
+    expect(
+      providerCommandRequiresPatientSelection({
+        ...command,
+        patientAction: { ...command.patientAction, canConfirm: false },
+      })
+    ).toBe(false);
+    expect(
+      providerCommandRequiresPatientSelection({
+        ...command,
+        patientAction: {
+          ...command.patientAction,
+          requiresPatientCardConfirmation: false,
+        },
+      })
+    ).toBe(false);
+  });
+});
 
 vi.mock('dashboard/api/scheduling/providerCommands', () => ({
   default: {
@@ -22,6 +56,24 @@ vi.mock('dashboard/api/scheduling/providerCommands', () => ({
     selectPatient: vi.fn(),
   },
 }));
+
+const deferred = () => {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+};
+const patientCommand = {
+  id: 91,
+  appointmentId: 20,
+  operation: 'create_reception',
+  provider: 'medelement',
+  companyCabinetCode: 'CAB-20',
+  status: 'awaiting_patient_selection',
+};
 
 describe('useSchedulingProviderCommandsStore', () => {
   beforeEach(() => {
@@ -210,6 +262,214 @@ describe('useSchedulingProviderCommandsStore', () => {
     expect(command.status).toBe('queued');
     expect(SchedulingProviderCommandsAPI.get).not.toHaveBeenCalled();
     expect(store.lastCommand).toBeNull();
+    expect(store.ui.isExecuting).toBe(false);
+  });
+
+  it.each(['account', 'patient'])(
+    'does not confirm a newly staged command after the %s changes',
+    async dimension => {
+      const pending = deferred();
+      SchedulingProviderCommandsAPI.create.mockReturnValueOnce(pending.promise);
+      const store = useSchedulingProviderCommandsStore();
+      const original = { account: 74, patient: 84 };
+      const context = { ...original };
+      const request = store.executeConfirmed(
+        {
+          appointment_id: 20,
+          operation: 'create_reception',
+          provider: 'medelement',
+        },
+        {
+          pollIntervalMs: 0,
+          isCurrent: () =>
+            context.account === original.account &&
+            context.patient === original.patient,
+        }
+      );
+      context[dimension] += 1;
+      pending.resolve({
+        data: {
+          payload: { ...patientCommand, status: 'awaiting_confirmation' },
+        },
+      });
+      expect((await request).status).toBe('awaiting_confirmation');
+      expect(SchedulingProviderCommandsAPI.create).toHaveBeenCalledOnce();
+      expect(SchedulingProviderCommandsAPI.confirm).not.toHaveBeenCalled();
+      expect(SchedulingProviderCommandsAPI.get).not.toHaveBeenCalled();
+      expect(SchedulingProviderCommandsAPI.cancel).not.toHaveBeenCalled();
+      expect(store.lastCommand).toBeNull();
+    }
+  );
+
+  it('does not start a stale client intent or clear current UI state', async () => {
+    const store = useSchedulingProviderCommandsStore();
+    store.ui.error = { message: 'Current error' };
+    expect(
+      await store.executeConfirmed(
+        { appointment_id: 20, operation: 'create_reception' },
+        { isCurrent: () => false }
+      )
+    ).toBeNull();
+    expect(
+      await store.confirmExisting(patientCommand, undefined, () => false)
+    ).toEqual(patientCommand);
+    expect(await store.cancel(patientCommand, () => false)).toEqual(
+      patientCommand
+    );
+    expect(SchedulingProviderCommandsAPI.create).not.toHaveBeenCalled();
+    expect(SchedulingProviderCommandsAPI.confirm).not.toHaveBeenCalled();
+    expect(SchedulingProviderCommandsAPI.cancel).not.toHaveBeenCalled();
+    expect(store.ui.error).toEqual({ message: 'Current error' });
+  });
+
+  it('keeps an already sent confirmation intact and stops stale polling after navigation', async () => {
+    SchedulingProviderCommandsAPI.create.mockResolvedValueOnce({
+      data: { payload: { ...patientCommand, status: 'awaiting_confirmation' } },
+    });
+    const pending = deferred();
+    SchedulingProviderCommandsAPI.confirm.mockReturnValueOnce(pending.promise);
+    const store = useSchedulingProviderCommandsStore();
+    let current = true;
+    const request = store.executeConfirmed(
+      { appointment_id: 20, operation: 'create_reception' },
+      { pollIntervalMs: 0, isCurrent: () => current }
+    );
+    await Promise.resolve();
+    expect(SchedulingProviderCommandsAPI.confirm).toHaveBeenCalledOnce();
+    current = false;
+    pending.resolve({
+      data: { payload: { ...patientCommand, status: 'queued' } },
+    });
+    expect((await request).status).toBe('queued');
+    expect(SchedulingProviderCommandsAPI.create).toHaveBeenCalledOnce();
+    expect(SchedulingProviderCommandsAPI.confirm).toHaveBeenCalledOnce();
+    expect(SchedulingProviderCommandsAPI.get).not.toHaveBeenCalled();
+    expect(SchedulingProviderCommandsAPI.cancel).not.toHaveBeenCalled();
+    expect(store.lastCommand).toBeNull();
+  });
+
+  it('forwards the captured context through existing confirmation and ignores its late result', async () => {
+    const pending = deferred();
+    SchedulingProviderCommandsAPI.confirm.mockReturnValueOnce(pending.promise);
+    const store = useSchedulingProviderCommandsStore();
+    let current = true;
+    const request = store.confirmExisting(
+      { ...patientCommand, status: 'awaiting_confirmation' },
+      undefined,
+      () => current
+    );
+    current = false;
+    pending.resolve({
+      data: { payload: { ...patientCommand, status: 'queued' } },
+    });
+    expect((await request).status).toBe('queued');
+    expect(SchedulingProviderCommandsAPI.confirm).toHaveBeenCalledOnce();
+    expect(SchedulingProviderCommandsAPI.get).not.toHaveBeenCalled();
+    expect(store.lastCommand).toBeNull();
+  });
+
+  it('does not let an old create finalizer reset a replacement patient operation', async () => {
+    const creation = deferred();
+    const selection = deferred();
+    SchedulingProviderCommandsAPI.create.mockReturnValueOnce(creation.promise);
+    SchedulingProviderCommandsAPI.selectPatient.mockReturnValueOnce(
+      selection.promise
+    );
+    const store = useSchedulingProviderCommandsStore();
+    const first = store.executeConfirmed(
+      { appointment_id: 20, operation: 'create_reception' },
+      { pollIntervalMs: 0 }
+    );
+    const replacement = store.selectPatient(
+      { ...patientCommand, id: 92 },
+      'new-selection-token'
+    );
+    creation.resolve({
+      data: { payload: { ...patientCommand, status: 'awaiting_confirmation' } },
+    });
+    await first;
+    expect(store.ui.isExecuting).toBe(true);
+    expect(SchedulingProviderCommandsAPI.confirm).not.toHaveBeenCalled();
+    selection.resolve({
+      data: { payload: { ...patientCommand, id: 92, status: 'succeeded' } },
+    });
+    await replacement;
+    expect(store.lastCommand.id).toBe(92);
+    expect(store.ui.isExecuting).toBe(false);
+    expect(SchedulingProviderCommandsAPI.create).toHaveBeenCalledOnce();
+    expect(SchedulingProviderCommandsAPI.selectPatient).toHaveBeenCalledOnce();
+  });
+
+  it.each(['success', 'failure'])(
+    'keeps a replacement provider dialog after a late cancel %s',
+    async outcome => {
+      const pending = deferred();
+      SchedulingProviderCommandsAPI.cancel.mockReturnValueOnce(pending.promise);
+      const store = useSchedulingProviderCommandsStore();
+      const action = { command: patientCommand, account: 74, patient: 84 };
+      let activeAction = action;
+      const isCurrent = () => activeAction === action;
+      const close = vi.fn();
+      const alert = vi.fn();
+      const reset = vi.fn(() => {
+        activeAction = null;
+      });
+      const request = runCurrentCalendarProviderAction({
+        run: () => store.cancel(patientCommand, isCurrent),
+        isCurrent,
+        onSuccess: close,
+        onError: alert,
+        onFinally: reset,
+      });
+      const replacement = {
+        command: { ...patientCommand, id: 92 },
+        account: 75,
+        patient: 85,
+      };
+      activeAction = replacement;
+      store.lastCommand = replacement.command;
+      if (outcome === 'success')
+        pending.resolve({
+          data: { payload: { ...patientCommand, status: 'cancelled' } },
+        });
+      else pending.reject(new Error('Network error'));
+      expect(await request).toBeNull();
+      expect(SchedulingProviderCommandsAPI.cancel).toHaveBeenCalledOnce();
+      expect(close).not.toHaveBeenCalled();
+      expect(alert).not.toHaveBeenCalled();
+      expect(reset).not.toHaveBeenCalled();
+      expect(activeAction).toBe(replacement);
+      expect(store.lastCommand.id).toBe(92);
+    }
+  );
+
+  it('does not let a failed old cancellation reset or publish an error into a newer operation', async () => {
+    const cancellation = deferred();
+    const selection = deferred();
+    SchedulingProviderCommandsAPI.cancel.mockReturnValueOnce(
+      cancellation.promise
+    );
+    SchedulingProviderCommandsAPI.selectPatient.mockReturnValueOnce(
+      selection.promise
+    );
+    const store = useSchedulingProviderCommandsStore();
+    const first = store.cancel(patientCommand);
+    const rejection = expect(first).rejects.toMatchObject({
+      message: 'Old cancel failed',
+    });
+    const replacement = store.selectPatient(
+      { ...patientCommand, id: 92 },
+      'new-selection-token'
+    );
+    cancellation.reject(new Error('Old cancel failed'));
+    await rejection;
+    expect(store.ui.isExecuting).toBe(true);
+    expect(store.ui.error).toBeNull();
+    selection.resolve({
+      data: { payload: { ...patientCommand, id: 92, status: 'succeeded' } },
+    });
+    await replacement;
+    expect(store.lastCommand.id).toBe(92);
     expect(store.ui.isExecuting).toBe(false);
   });
 

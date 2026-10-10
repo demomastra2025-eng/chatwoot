@@ -4,7 +4,11 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
   include HmacConcern
 
   rescue_from Conversations::StatusReasonConfig::Error, with: :render_status_reason_error
+  rescue_from Conversations::DeletionService::InvalidRequest, with: :render_invalid_deletion
+  rescue_from Conversations::DeletionService::KeyConflict, with: :render_deletion_key_conflict
+  rescue_from Conversations::DeletionService::OverlappingRequest, with: :render_deletion_key_conflict
 
+  before_action :recover_deletion, only: :destroy
   before_action :conversation, except: [:index, :meta, :sidebar_unread_counts, :search, :list_search, :create, :filter]
   before_action :inbox, :contact, :contact_inbox, only: [:create]
   around_action :with_list_presence_cache, only: [:index, :filter, :list_search]
@@ -212,11 +216,39 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
 
   def destroy
     authorize @conversation, :destroy?
-    ::DeleteObjectJob.perform_later(@conversation, Current.user, request.ip)
-    head :ok
+    run = deletion_service.create(
+      conversations: [@conversation], request_key: params.key?(:request_key) ? params[:request_key] : SecureRandom.uuid,
+      conversation_ids: [params[:id]], ip: request.ip
+    )
+    render_deletion(run)
   end
 
   private
+
+  def deletion_service
+    @deletion_service ||= Conversations::DeletionService.new(account: Current.account, user: Current.user)
+  end
+
+  def recover_deletion
+    Conversations::DeletionService.identity(params[:id])
+    return unless params.key?(:request_key)
+
+    run = deletion_service.recover(request_key: params[:request_key], conversation_ids: [params[:id]])
+    render_deletion(run) if run
+  end
+
+  def render_deletion(run)
+    enqueue_failed = run.metadata.fetch('targets').any? { |target| target['error_code'] == 'enqueue_failed' }
+    render json: Conversations::DeletionService.response(run), status: enqueue_failed ? :service_unavailable : :accepted
+  end
+
+  def render_invalid_deletion
+    render json: { error: 'conversation_deletion_invalid' }, status: :unprocessable_content
+  end
+
+  def render_deletion_key_conflict
+    render json: { error: 'conversation_deletion_key_conflict' }, status: :conflict
+  end
 
   def with_list_presence_cache(&)
     OnlineStatusTracker.with_presence_cache(&)

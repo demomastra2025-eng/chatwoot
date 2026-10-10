@@ -4,6 +4,7 @@ class Notification::PushNotificationService
   pattr_initialize [:notification!]
 
   def perform
+    return if Outbound::PlaygroundDeliveryPolicy.external_notification_blocked?(notification.primary_actor, notification.secondary_actor)
     return unless user_subscribed_to_notification?
 
     notification_subscriptions.each do |subscription|

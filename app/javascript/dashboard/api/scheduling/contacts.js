@@ -17,6 +17,14 @@ class SchedulingContactsAPI extends ApiClient {
   update(id, data) {
     return axios.patch(`${this.url}/${id}`, data);
   }
+
+  patients(contactId) {
+    return axios.get(`${this.url}/${contactId}/patients`);
+  }
+
+  createPatient(contactId, data) {
+    return axios.post(`${this.url}/${contactId}/patients`, data);
+  }
 }
 
 export default new SchedulingContactsAPI();

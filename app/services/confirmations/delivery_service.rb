@@ -7,6 +7,13 @@ class Confirmations::DeliveryService
   end
 
   def perform
+    policy = Outbound::PlaygroundDeliveryPolicy.for_execution(confirmation_request)
+    Outbound::PlaygroundDeliveryPolicy.with(policy) { perform_with_playground_context }
+  end
+
+  private
+
+  def perform_with_playground_context
     raise ArgumentError, 'conversation is required to deliver confirmation request' if confirmation_request.conversation.blank?
 
     payload = Confirmations::DeliveryPayloadBuilder.new(confirmation_request).message_params
@@ -15,8 +22,6 @@ class Confirmations::DeliveryService
     confirmation_request.update!(delivery_strategy: delivery_strategy, delivery_message: message)
     message
   end
-
-  private
 
   attr_reader :confirmation_request, :sender
 end

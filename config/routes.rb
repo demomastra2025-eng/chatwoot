@@ -64,7 +64,7 @@ Rails.application.routes.draw do
             resource :contact_merge, only: [:create]
           end
           resource :bulk_actions, only: [:create]
-          resources :bulk_action_runs, only: [:show]
+          resources :bulk_action_runs, only: [:show, :index]
           resources :agents, only: [:index, :create, :update, :destroy] do
             post :bulk_create, on: :collection
           end
@@ -206,11 +206,15 @@ Rails.application.routes.draw do
 
           namespace :scheduling do
             resource :calendar, only: [:show], controller: 'calendar'
+            resource :availability, only: [:show], controller: 'availability'
             resources :resources, only: [:index, :show, :create, :update, :destroy] do
               resource :work_rules, only: [:show, :update], controller: 'resource_work_rules'
               resource :break_rules, only: [:show, :update], controller: 'resource_break_rules'
             end
-            resources :contacts, only: [:index, :create, :update]
+            resources :contacts, only: [:index, :create, :update] do
+              get :patients, on: :member
+              post :patients, action: :create_patient, on: :member
+            end
             resources :services, only: [:index, :show, :create, :update, :destroy]
             resources :appointments, only: [:index, :show, :create, :update, :destroy] do
               post :cancel, on: :member
@@ -276,6 +280,14 @@ Rails.application.routes.draw do
               end
             end
             resources :deals, only: [:index, :show, :create, :update] do
+              collection do
+                get :appointment_options
+              end
+              member do
+                get :appointments
+                patch :appointment_plan
+                post :resume_appointment_automation
+              end
               scope module: :deals do
                 resources :comments, only: [:index, :create, :update, :destroy]
               end

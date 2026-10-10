@@ -59,6 +59,14 @@ class Captain::ToolExecutionAuditService
 
   def payload
     normalized_result = Captain::ToolResult.normalize(@result, error: error)
+    if tool_id == 'list_my_appointments'
+      return {
+        scope: scope_name,
+        tool_id: tool_id,
+        result_success: normalized_result[:success],
+        conversation_id: @runtime_context[:conversation_id]
+      }.compact
+    end
 
     {
       scope: scope_name,

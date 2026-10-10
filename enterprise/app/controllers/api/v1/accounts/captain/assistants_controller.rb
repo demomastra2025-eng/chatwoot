@@ -27,7 +27,15 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     @assistants = account_assistants.ordered
   end
 
-  def show; end
+  def show
+    return if @assistant.internal_assistant?
+
+    model = @assistant.resolved_agent_model
+    metadata = Llm::Models.feature_config(:assistant, account: Current.account, model_names: [model])
+    @playground_model = metadata&.fetch(:models, [])&.first || {
+      id: model, supports_temperature: false, capabilities: [], reasoning_efforts: []
+    }
+  end
 
   def create
     attributes = assistant_create_params
@@ -63,13 +71,17 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
 
   def playground
     @playground_test_overrides, invalid_override = playground_test_overrides
-    if invalid_override
-      return render json: { error: 'unsupported_playground_setting', field: invalid_override }, status: :unprocessable_entity
-    end
+    return render json: { error: 'unsupported_playground_setting', field: invalid_override }, status: :unprocessable_entity if invalid_override
 
     response = @assistant.internal_assistant? ? copilot_playground_response : agent_playground_response
 
     render json: response
+  rescue Captain::Playground::SessionStore::Busy, Captain::Playground::SessionStore::Stale => e
+    render json: { error: 'playground_session_conflict', message: e.message }, status: :conflict
+  rescue Pundit::NotAuthorizedError
+    render json: { error: 'playground_live_forbidden' }, status: :forbidden
+  rescue ArgumentError, ActiveRecord::RecordInvalid => e
+    render json: { error: 'invalid_playground_scenario', message: e.message }, status: :unprocessable_entity
   rescue Rack::Timeout::RequestTimeoutException, Rack::Timeout::RequestTimeoutError => e
     Rails.logger.warn(
       "#{self.class.name} playground timed out for assistant #{@assistant.id}: #{e.class} - #{e.message}"
@@ -177,7 +189,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     normalize_outcome_reason_settings!(incoming_config, existing_config['outcome_reason_settings'])
     if incoming_config.key?('safety_settings')
       incoming_config['safety_settings'] = existing_config['safety_settings'].to_h.deep_stringify_keys
-                                                                          .merge(incoming_config['safety_settings'].to_h.deep_stringify_keys)
+                                                                             .merge(incoming_config['safety_settings'].to_h.deep_stringify_keys)
     end
 
     attributes.merge(config: existing_config.merge(incoming_config))
@@ -260,16 +272,45 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
       :test_model,
       :test_temperature,
       :test_thinking_effort,
+      :playground_mode,
+      :playground_session_id,
+      :playground_action,
+      :live_inbox_id,
+      :external_delivery_enabled,
+      :controlled_test_number,
+      scenario: {},
       message_history: [:role, :content, :agent_name]
     )
   end
 
   def agent_playground_response
-    options = { assistant: @assistant, source: 'playground' }
-    options[:conversation] = playground_conversation if playground_params[:conversation_id].present?
-    options[:test_overrides] = @playground_test_overrides if @playground_test_overrides.present?
+    attributes = playground_params
+    mode = attributes[:playground_mode].presence || 'trial'
+    action = attributes[:playground_action].presence || 'message'
+    raise ArgumentError, 'Invalid Playground action' unless %w[message session reset].include?(action)
+    raise ArgumentError, 'Trial cannot use a real conversation' if mode == 'trial' && attributes[:conversation_id].present?
 
-    Captain::Assistant::AgentRunnerService.new(**options).generate_response(message_history: playground_message_history)
+    session = Captain::Playground::Session.new(
+      assistant: @assistant, account: Current.account, user: Current.user, mode: mode, session_id: attributes[:playground_session_id]
+    )
+    session.with_lock(
+      reset: action == 'reset', scenario_input: attributes[:scenario]&.to_h,
+      inbox_id: attributes[:live_inbox_id], delivery_enabled: attributes[:external_delivery_enabled],
+      delivery_target: attributes[:controlled_test_number]
+    ) do
+      if attributes[:conversation_id].present? && attributes[:conversation_id].to_s != session.conversation&.display_id.to_s
+        raise ArgumentError, 'Live conversation does not match this Playground session'
+      end
+      next { playground: session.payload } unless action == 'message'
+
+      options = { assistant: @assistant, source: 'playground', playground_session: session }
+      options[:test_overrides] = @playground_test_overrides if @playground_test_overrides.present?
+      response = Captain::Assistant::AgentRunnerService.new(**options).generate_response(
+        message_history: session.history_with(attributes[:message_content])
+      )
+      session.record_turn(attributes[:message_content], response)
+      response.merge('playground' => session.payload, 'delivery' => Captain::Playground::ReplyDelivery.new(session).perform(response))
+    end
   end
 
   def playground_test_overrides
@@ -281,7 +322,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
       return [nil, unsupported_field] if unsupported_field
     end
 
-    effective_model = @assistant.model.to_s.strip.presence || Llm::Config.model_for(feature: :assistant, account: Current.account)
+    effective_model = @assistant.resolved_agent_model
     overrides = {}
 
     if attributes[:test_model].present?
@@ -307,7 +348,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     if attributes[:test_thinking_effort].present?
       effort = attributes[:test_thinking_effort].to_s
       return [nil, 'test_thinking_effort'] unless Llm::RuntimePolicy::THINKING_EFFORTS.include?(effort)
-      return [nil, 'test_thinking_effort'] if effort != 'none' && !Llm::Models.supports_thinking?(effective_model, account: Current.account)
+      return [nil, 'test_thinking_effort'] unless Llm::Models.reasoning_efforts_for(effective_model, account: Current.account).include?(effort)
 
       overrides[:thinking_effort] = effort
     end

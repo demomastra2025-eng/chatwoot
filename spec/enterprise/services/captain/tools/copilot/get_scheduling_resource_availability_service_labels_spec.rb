@@ -1,7 +1,11 @@
 require 'rails_helper'
 
-# The local-rules availability tool never asks MedElement and must say so, also for a provider-linked resource.
+# Integrated resources require a confirmed stored schedule day before windows are returned.
 RSpec.describe Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService do
+  include ActiveSupport::Testing::TimeHelpers
+
+  around { |example| travel_to(Time.utc(2026, 4, 19, 12)) { example.run } }
+
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account) }
   let(:assistant) { create(:captain_assistant, account: account) }
@@ -33,23 +37,39 @@ RSpec.describe Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService
     payload = windows(resource, service_id: service_record.id, limit: 2)
 
     expect(payload).to include('availability_source' => 'local_rules', 'provider_checked' => false, 'provider_required' => false,
-                               'service_link_status' => 'local_configured', 'customer_offer_eligible' => true)
+                               'service_link_status' => 'local_configured')
     expect(payload.dig('service', 'prices')).to eq([])
   end
 
-  it 'never calls the provider and never claims a provider answer, also for a MedElement resource' do
+  it 'returns no local windows when provider access is unavailable' do
     resource = create_resource('Provider', custom_attributes: { 'medelement_specialist_code' => 'code-1' })
     link(resource)
-    expect(Integrations::Medelement::ResourceAvailabilityService).not_to receive(:new)
+    expect(Integrations::Medelement::Client).not_to receive(:new)
 
     payload = windows(resource, service_id: service_record.id)
 
-    expect(payload).to include('availability_source' => 'local_rules', 'provider_checked' => false, 'provider_required' => true,
-                               'customer_offer_eligible' => false)
+    expect(payload).to include('availability_source' => 'medelement', 'provider_checked' => false, 'provider_required' => true)
+    expect(payload['slots']).to be_empty
+    expect(payload).not_to have_key('customer_offer_eligible')
     expect(payload.to_s).not_to include('fresh')
   end
 
-  it 'labels an existing confirmed snapshot while retaining local-only availability' do
+  it 'reports unavailable provider evidence beyond the background cache without a fixed date cutoff' do
+    resource = create_resource('Provider', custom_attributes: { 'medelement_specialist_code' => 'doctor-1' })
+    zone = ActiveSupport::TimeZone['Asia/Almaty']
+    date = zone.today + 90
+    from = zone.local(date.year, date.month, date.day, 9)
+    expect(Integrations::Medelement::Client).not_to receive(:new)
+
+    payload = JSON.parse(tool.execute(resource_id: resource.id, from: from.iso8601, to: (from + 1.hour).iso8601))
+
+    expect(payload['slots']).to be_empty
+    expect(payload.dig('availability', 'resources', 0, 'status')).to eq('provider_unavailable')
+    expect(payload['availability_note']).to include('наличие свободного времени неизвестно')
+    expect(payload.to_s).not_to include('outside_horizon')
+  end
+
+  it 'keeps a provider schedule note without claiming a live result' do
     resource = create_resource('Provider', custom_attributes: { 'medelement_specialist_code' => 'doctor-1' })
     hook = create(:integrations_hook, :medelement, account: account)
     Integrations::Medelement::ScheduleDay.create!(
@@ -61,14 +81,14 @@ RSpec.describe Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService
     payload = windows(resource)
 
     expect(payload['provider_schedule_note']).to include('по данным MedElement на', '10:00–12:00')
-    expect(payload).to include('availability_source' => 'local_rules', 'provider_checked' => false)
+    expect(payload).to include('availability_source' => 'medelement', 'provider_checked' => false)
   end
 
   it 'marks no service as not requested and an inactive link as an explicit error' do
     resource = create_resource('Local')
     link(resource, active: false)
 
-    expect(windows(resource)).to include('service_link_status' => 'not_requested', 'customer_offer_eligible' => false)
+    expect(windows(resource)).to include('service_link_status' => 'not_requested')
     expect(tool.execute(resource_id: resource.id, from: from_time.iso8601, to: to_time.iso8601, service_id: service_record.id))
       .to start_with('ERROR:').and(include('No recorded service-price link'))
   end

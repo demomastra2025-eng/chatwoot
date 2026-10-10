@@ -3,7 +3,8 @@ class Captain::Tools::Copilot::CreateAppointmentService < Captain::Tools::Copilo
     'create_appointment'
   end
 
-  description 'Create an appointment for the current conversation contact using a selected specialist and confirmed time details. ' \
+  description 'Create an appointment using a selected specialist and confirmed time details. ' \
+              'For a named relative or another patient, pass explicit patient details; the communication chat stays unchanged. ' \
               'For provider-backed appointments, pending_provider_confirmation is not a confirmed booking; do not tell the patient ' \
               'they are booked until provider_confirmed is true.'
   param :resource_id, type: :number, desc: 'Specialist resource ID', required: true
@@ -16,6 +17,11 @@ class Captain::Tools::Copilot::CreateAppointmentService < Captain::Tools::Copilo
         desc: 'Appointment type: primary, secondary, or other. Do not pass a specialty, service, or cabinet name.',
         required: false
   param :client_comment, type: :string, desc: 'Client comment', required: false
+  param :crm_deal_id, type: :number, desc: 'Optional verified existing deal ID for this communication contact', required: false
+  param :crm_pipeline_id, type: :number, desc: 'Optional pipeline ID when creating a deal according to its appointment settings', required: false
+  param :patient, type: :object, required: false,
+                  desc: 'Optional explicitly named patient: first_name and last_name required; middle_name, iin, birth_date (YYYY-MM-DD), ' \
+                        'gender and phone optional. Ask for missing details; do not copy the caller identity to another patient.'
   param :custom_attributes,
         type: :object,
         desc: 'Optional scheduling custom attributes object. For Medelement, pass the selected ' \
@@ -24,8 +30,9 @@ class Captain::Tools::Copilot::CreateAppointmentService < Captain::Tools::Copilo
         required: false
 
   def execute(resource_id:, starts_at:, ends_at: nil, duration_min: nil, service_id: nil, appointment_type: nil, client_comment: nil,
-              custom_attributes: nil)
-    appointment = appointment_operations.create_appointment(
+              custom_attributes: nil, patient: nil, crm_deal_id: nil, crm_pipeline_id: nil)
+    operation = appointment_operations
+    appointment = operation.create_appointment(
       resource_id: resource_id,
       service_id: service_id,
       starts_at: starts_at,
@@ -33,13 +40,29 @@ class Captain::Tools::Copilot::CreateAppointmentService < Captain::Tools::Copilo
       duration_min: duration_min,
       appointment_type: appointment_type,
       client_comment: client_comment,
-      custom_attributes: custom_attributes
+      custom_attributes: custom_attributes,
+      patient: patient,
+      crm_deal_id: crm_deal_id,
+      crm_pipeline_id: crm_pipeline_id
     )
+    if patient_scope
+      Captain::Tools::ProviderBookingOutcomeService.new(
+        appointment: appointment, assistant: assistant, response_fence: response_fence
+      ).perform
+      return formatted_payload(Captain::Tools::Agent::AppointmentResult.success(appointment, action: self.class.name))
+    end
+
     formatted_payload(
       ::Scheduling::ToolPayloadBuilder.appointment_payload(action: 'create_appointment', appointment: appointment)
     )
+  rescue Scheduling::Error => e
+    Captain::ToolResult.failure_output(error: e.message, data: { code: e.code }, retryable: false)
   rescue StandardError => e
-    tool_failure(e)
+    if patient_scope
+      appointment ||= operation.persisted_creation if operation.respond_to?(:persisted_creation)
+      handoff_unconfirmed_booking(appointment, e)
+    end
+    patient_scope ? formatted_payload(Captain::Tools::Agent::AppointmentResult.failure(e)) : tool_failure(e)
   end
 
   def active?
@@ -47,6 +70,20 @@ class Captain::Tools::Copilot::CreateAppointmentService < Captain::Tools::Copilo
   end
 
   private
+
+  def handoff_unconfirmed_booking(appointment, error)
+    return if appointment.blank?
+    provider_failure = error.is_a?(Scheduling::Error) && error.code.in?(%w[
+      MEDELEMENT_COMMAND_RECEIPT_UNAVAILABLE MEDELEMENT_BOOKING_UNKNOWN MEDELEMENT_BOOKING_FAILED MEDELEMENT_BOOKING_SUPERSEDED
+    ])
+    return unless provider_failure || appointment.custom_attributes.to_h[Integrations::Medelement::AppointmentProviderStatus::ATTRIBUTE_KEY].present?
+
+    Captain::Tools::ProviderBookingHandoffService.new(
+      assistant: assistant, conversation: current_conversation, appointment: appointment,
+      command: appointment.medelement_provider_command_receipt, fence: response_fence,
+      orphaned_write: error.is_a?(Scheduling::Error) && error.code == 'MEDELEMENT_BOOKING_SUPERSEDED'
+    ).perform
+  end
 
   def appointment_operations
     Captain::Tools::Operations::AppointmentOperations.new(

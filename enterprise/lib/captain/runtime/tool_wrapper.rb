@@ -163,7 +163,9 @@ class Captain::Runtime::ToolWrapper
   end
 
   def execute_tool(tool_context, normalized_args)
-    result = @tool.execute(tool_context, **normalized_args)
+    result = Captain::Playground::ExecutionBoundary.execute(@tool, tool_context, normalized_args) do
+      @tool.execute(tool_context, **normalized_args)
+    end
     result_error = tool_safety_error_for(:tool_results, safety_checked_result(result))
     final_result = result_error || result
     cache_successful_mutating_tool_result(normalized_args, final_result)

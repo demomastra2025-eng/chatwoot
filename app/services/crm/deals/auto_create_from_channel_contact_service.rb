@@ -1,11 +1,13 @@
 class Crm::Deals::AutoCreateFromChannelContactService
   AUTO_IDEMPOTENCY_KEY_PREFIX = 'auto_channel_contact'.freeze
 
-  pattr_initialize [:contact_inbox!, { conversation: nil }]
+  pattr_initialize [:contact_inbox!, { conversation: nil, message: nil }]
 
   def perform
     return [] unless account.feature_enabled?('crm_deals')
-    return [] if contact.blank?
+    return [] if contact.blank? || contact.account_id != account.id
+    return [] if conversation && (conversation.account_id != account.id || conversation.contact_id != contact.id)
+    return [] if message.present? && (!message.incoming? || message.private? || message.account_id != account.id || message.conversation_id != conversation&.id)
 
     contact.with_lock do
       auto_create_pipelines.filter_map do |pipeline|
@@ -29,17 +31,12 @@ class Crm::Deals::AutoCreateFromChannelContactService
   end
 
   def create_deal_for_pipeline(pipeline)
-    return if existing_deal_for_pipeline?(pipeline)
-
-    stage = default_stage_for(pipeline)
-    return if stage.blank?
+    return if processed_event?(pipeline)
 
     ApplicationRecord.transaction(requires_new: true) do
-      ::Crm::Deals::UpsertService.new(
-        account: account,
-        params: deal_params(pipeline: pipeline, stage: stage),
-        actor: nil
-      ).perform
+      deal = create_when_no_active_deal(pipeline)
+      record_processed_event!(pipeline)
+      deal
     end
   rescue ActiveRecord::RecordNotUnique
     raise unless account.crm_deals.exists?(idempotency_key: idempotency_key_for(pipeline))
@@ -48,11 +45,34 @@ class Crm::Deals::AutoCreateFromChannelContactService
   rescue ActiveRecord::RecordInvalid
     nil
   rescue ::Crm::Error => e
-    # This runs from Conversation#after_create_commit: the conversation is already saved, so a CRM rule (for example a
-    # required field of the default stage that a brand new deal cannot have yet) may only skip the deal. Letting it
-    # escape would fail the first-message ingestion of the channel. The log carries codes and ids, no customer data.
+    # Inbound delivery has already committed. A required field can skip CRM creation; logs carry only codes and ids.
     log_skipped_deal(pipeline, e)
     nil
+  end
+
+  def create_when_no_active_deal(pipeline)
+    return if existing_deal_for_pipeline?(pipeline)
+    return if superseded_message?(pipeline)
+
+    stage = default_stage_for(pipeline)
+    return if stage.blank?
+
+    ::Crm::Deals::UpsertService.new(account: account, params: deal_params(pipeline: pipeline, stage: stage), actor: nil).perform
+  end
+
+  def processed_event?(pipeline)
+    return false if message.blank?
+
+    account.crm_events.exists?(eventable: contact, event_type: 'channel_contact_checked', command_key: idempotency_key_for(pipeline))
+  end
+
+  def record_processed_event!(pipeline)
+    return if message.blank?
+
+    Crm::Events::Writer.record!(
+      account: account, eventable: contact, actor: nil, event_type: 'channel_contact_checked',
+      command_key: idempotency_key_for(pipeline), meta: { pipeline_id: pipeline.id, message_id: message.id }
+    )
   end
 
   def log_skipped_deal(pipeline, error)
@@ -65,15 +85,23 @@ class Crm::Deals::AutoCreateFromChannelContactService
   def existing_deal_for_pipeline?(pipeline)
     account.crm_deals
            .kept
-           .joins(:deal_contacts)
+           .where(closed_at: nil)
+           .joins(:deal_contacts, :stage)
            .where(pipeline_id: pipeline.id)
-           .exists?(crm_deal_contacts: { contact_id: contact.id })
+           .exists?(crm_deal_contacts: { contact_id: contact.id, primary: true }, crm_stages: { outcome: 'open' })
+  end
+
+  def superseded_message?(pipeline)
+    return false if message.blank?
+
+    account.crm_deals.joins(:deal_contacts).where(pipeline_id: pipeline.id)
+           .where(crm_deal_contacts: { contact_id: contact.id, primary: true })
+           .where('crm_deals.closed_at >= :event_at OR crm_deals.archived_at >= :event_at', event_at: message.created_at).exists?
   end
 
   def default_stage_for(pipeline)
-    pipeline.stages.active.find_by(default: true) ||
-      pipeline.stages.active.find_by(outcome: 'open') ||
-      pipeline.stages.active.ordered.first
+    pipeline.stages.active.where(outcome: 'open').find_by(default: true) ||
+      pipeline.stages.active.where(outcome: 'open').ordered.first
   end
 
   def deal_params(pipeline:, stage:)
@@ -94,8 +122,9 @@ class Crm::Deals::AutoCreateFromChannelContactService
   end
 
   def idempotency_key_for(pipeline)
-    return "#{AUTO_IDEMPOTENCY_KEY_PREFIX}:pipeline:#{pipeline.id}:conversation:#{conversation.id}" if conversation.present?
+    return "#{AUTO_IDEMPOTENCY_KEY_PREFIX}:pipeline:#{pipeline.id}:message:#{message.id}" if message.present?
 
-    "#{AUTO_IDEMPOTENCY_KEY_PREFIX}:pipeline:#{pipeline.id}:contact:#{contact.id}"
+    @invocation_key ||= SecureRandom.uuid
+    "#{AUTO_IDEMPOTENCY_KEY_PREFIX}:pipeline:#{pipeline.id}:invocation:#{@invocation_key}"
   end
 end

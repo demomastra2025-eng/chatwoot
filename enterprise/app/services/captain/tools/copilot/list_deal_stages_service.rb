@@ -14,6 +14,8 @@ class Captain::Tools::Copilot::ListDealStagesService < Captain::Tools::Copilot::
   def execute(**arguments)
     context = stage_context(arguments)
     formatted_payload(stage_list_payload(arguments, context))
+  rescue ActiveRecord::RecordNotFound => e
+    patient_scope ? Captain::Tools::Agent::PatientScope::FAILURE : tool_failure(e)
   rescue StandardError => e
     tool_failure(e)
   end
@@ -58,7 +60,7 @@ class Captain::Tools::Copilot::ListDealStagesService < Captain::Tools::Copilot::
       action: 'list_deal_stages',
       filters: stage_filters(context),
       ignored_filters: ignored_filters(arguments, context[:selector]),
-      pipeline: ::Crm::PayloadBuilder.pipeline(pipeline, include_stages: false).except(:deal_count),
+      pipeline: pipeline_payload(pipeline),
       current_deal: current_deal_payload(deal),
       current_stage: stage_payload(current_stage),
       previous_stage: stage_payload(previous_stage),
@@ -74,6 +76,12 @@ class Captain::Tools::Copilot::ListDealStagesService < Captain::Tools::Copilot::
       current_deal: context[:effective_current_deal],
       include_inactive: context[:include_inactive]
     ).compact
+  end
+
+  def pipeline_payload(pipeline)
+    return ::Crm::PayloadBuilder.pipeline_attributes(pipeline) if patient_scope
+
+    ::Crm::PayloadBuilder.pipeline(pipeline, include_stages: false).except(:deal_count)
   end
 
   def ignored_filters(arguments, selector)
@@ -92,7 +100,9 @@ class Captain::Tools::Copilot::ListDealStagesService < Captain::Tools::Copilot::
   end
 
   def resolve_deal(deal_id:, use_current_deal:)
-    return account.crm_deals.includes(:pipeline, :stage).find(deal_id) if deal_id.present?
+    deals = patient_scope ? patient_scope.deals : account.crm_deals
+    return deals.includes(:pipeline, :stage).find(deal_id) if deal_id.present?
+    return deals.find_by(id: current_deal&.id) if use_current_deal && patient_scope
     return current_deal if use_current_deal
 
     nil

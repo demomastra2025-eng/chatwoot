@@ -36,6 +36,7 @@ module Crm::PayloadBuilder
       active: pipeline.active,
       default: pipeline.default,
       auto_create_deal_on_channel_contact: pipeline.auto_create_deal_on_channel_contact,
+      appointment_automation: Crm::Appointments::Configuration.for(pipeline),
       restrict_stage_skipping: pipeline.restrict_stage_skipping,
       restrict_backward_move: pipeline.restrict_backward_move,
       allow_stage_rule_override: pipeline.allow_stage_rule_override,
@@ -217,6 +218,9 @@ module Crm::PayloadBuilder
       idempotency_key: deal.idempotency_key,
       lock_version: deal.lock_version,
       custom_attributes: deal.custom_attributes,
+      appointment_plan: deal.appointment_plan,
+      selected_appointment_id: deal.selected_appointment_id,
+      appointment_automation_state: deal.appointment_automation_state.to_h.except(Crm::Appointments::DeliveryPolicy::KEY),
       archived_at: deal.archived_at&.iso8601,
       company: compact_company(deal.company),
       deal_contacts: deal.deal_contacts.map do |deal_contact|

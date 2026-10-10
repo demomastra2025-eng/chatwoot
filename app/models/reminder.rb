@@ -137,7 +137,8 @@ class Reminder < ApplicationRecord
       AUTOMATION_TRIGGER_MESSAGE_ID_KEY,
       AUTOMATION_ACTION_KEY,
       AUTOMATION_ACTION_SIGNATURE_KEY,
-      ROUTE_ERROR_CODE_KEY
+      ROUTE_ERROR_CODE_KEY,
+      'captain_playground'
     ]
   ).freeze
   RELATIVE_TIME_MODE_INHERIT_ANCHOR_TIME = 'inherit_anchor_time'.freeze
@@ -240,6 +241,7 @@ class Reminder < ApplicationRecord
 
   before_validation :normalize_json_fields
   before_validation :preserve_internal_metadata
+  before_validation :stamp_playground_delivery_policy, on: :create
   before_validation :normalize_text_mode
   before_validation :sync_account_from_associations
   before_validation :hydrate_target_defaults
@@ -794,6 +796,13 @@ class Reminder < ApplicationRecord
     self.template_params = (template_params || {}).to_h
     self.metadata = (metadata || {}).to_h
     self.post_delivery_action = post_delivery_action.presence
+  end
+
+  def stamp_playground_delivery_policy
+    policy = Outbound::PlaygroundDeliveryPolicy.policy_for(reminder: remindable)
+    return if policy.nil?
+
+    self.metadata = metadata.to_h.merge(Outbound::PlaygroundDeliveryPolicy::ATTRIBUTE_KEY => policy.deep_dup)
   end
 
   def preserve_internal_metadata

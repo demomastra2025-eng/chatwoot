@@ -1,5 +1,23 @@
 {
   "SCHEDULING": {
+    "APPOINTMENT_SOURCE": {
+      "manual": "Manual",
+      "medelement": "MedElement",
+      "captain": "AI agent"
+    },
+    "PATIENT_CONTEXT": {
+      "SELECT_PATIENT": "Patient",
+      "NO_BIRTH_DATE": "Birth date not provided",
+      "SELECTION_SCOPE": "Your selection is saved for this conversation.",
+      "LOAD_ERROR": "Unable to load patients for this conversation",
+      "NEW_PATIENT": "Add patient",
+      "OWN_PHONE": "Patient's own phone, if different",
+      "CREATE_DESCRIPTION": "Create a separate patient card for this shared number. The conversation will stay the same.",
+      "PROVIDER_ID": "MedElement patient code",
+      "PROVIDER_IDENTITY_READ_ONLY": "Patient details are from MedElement. Edit the patient's card in MedElement to change them.",
+      "CONFIRM_PATIENT_CARD": "Confirm the selected patient for this appointment. The conversation and its recipient will stay the same.",
+      "OPEN_DIALOG": "Open conversation"
+    },
     "NAV": {
       "CALENDAR": "Calendar",
       "RESOURCES": "Specialists",
@@ -115,7 +133,7 @@
       "RESOURCES": "Specialists",
       "RESOURCES_SELECTED": "{count} selected",
       "RESOURCE_SEARCH": "Search specialists",
-      "SHOW_INACTIVE_APPOINTMENTS": "Show inactive appointments",
+      "SHOW_INACTIVE_APPOINTMENTS": "Show completed, cancelled and missed visits",
       "STATUS": "Appointment status"
     },
     "CALENDAR": {
@@ -166,6 +184,15 @@
       "TITLE": "No dialog created yet"
     },
     "APPOINTMENT_FORM": {
+      "AVAILABILITY": {
+        "DATE": "Дата приёма",
+        "LOADING": "Загружаем свободное время…",
+        "EMPTY": "Нет свободного времени",
+        "NOT_CONFIRMED": "График врача пока не подтверждён. Выберите другую дату или попробуйте позже.",
+        "UNAVAILABLE": "Не удалось проверить доступность. Попробуйте позже.",
+        "HORIZON": "График врача открыт до {date}",
+        "CONFLICT": "Время уже занято, выберите другое"
+      },
       "PATIENT_CARD": "Patient card",
       "PATIENT_CARD_LINK": "Patient card: {patientName} #{contactId}",
       "APPOINTMENT_DESCRIPTION": "Choose the specialist, service, and time slot for the visit.",
@@ -202,6 +229,7 @@
       "CUSTOM_FIELDS_TITLE": "Custom fields",
       "EDIT_TITLE": "Edit appointment",
       "ENDS_AT": "Ends at",
+      "DURATION_MIN": "Duration, minutes",
       "INTAKE_FIELDS_DESCRIPTION": "Collect the managed fields that should be captured during booking intake.",
       "INTAKE_FIELDS_TITLE": "Booking intake",
       "NOTES_DESCRIPTION": "Keep any extra instructions or context for the visit.",
@@ -231,6 +259,7 @@
         "CLIENT_LAST_NAME_REQUIRED": "Enter the last name",
         "CONTACT_REQUIRED": "Select a contact",
         "END_BEFORE_START": "End time must be later than the start time",
+        "INVALID_DURATION": "Enter a whole number of minutes from 5 to 1440",
         "MEDELEMENT_LAST_NAME_REQUIRED": "Enter the last name for a MedElement appointment",
         "MEDELEMENT_PHONE_REQUIRED": "Enter a Kazakhstan phone number in +7XXXXXXXXXX format",
         "MEDELEMENT_SERVICE_REQUIRED": "Select a service from the MedElement catalog",
@@ -396,6 +425,9 @@
       }
     },
     "ERRORS": {
+      "CRM_DEAL_SELECTION_REQUIRED": "This contact has several active deals. Choose a deal or create a new one before booking.",
+      "CRM_DEAL_CONTACT_MISMATCH": "Choose an active deal belonging to this communication contact in this workspace.",
+      "CRM_PIPELINE_NO_OPEN_STAGE": "Choose a pipeline with an active open stage.",
       "APPOINTMENT_PAYMENT_REQUIRES_FIELDS": "Fill required fields before marking the appointment as paid: {fields}.",
       "GENERIC": "Something went wrong. Try again.",
       "APPOINTMENT_NOT_FOUND": "Appointment not found.",

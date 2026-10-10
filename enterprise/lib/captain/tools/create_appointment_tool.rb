@@ -1,5 +1,6 @@
 class Captain::Tools::CreateAppointmentTool < Captain::Tools::BasePublicTool
-  description 'Create an appointment for the current conversation contact using a selected specialist and confirmed time details. ' \
+  description 'Create an appointment using a selected specialist and confirmed time details. ' \
+              'For a named relative or another patient, pass their explicit patient details; the communication chat stays unchanged. ' \
               'A successful result for a Medelement-linked specialist includes a reception ID from this booking command: ' \
               'confirm the booking to the patient in your reply. For a local-only booking, the local calendar save is sufficient. ' \
               'If the tool reports failure or an unknown outcome, do not claim success or repeat the create call; ' \
@@ -14,6 +15,11 @@ class Captain::Tools::CreateAppointmentTool < Captain::Tools::BasePublicTool
         desc: 'Appointment type: primary, secondary, or other. Do not pass a specialty, service, or cabinet name.',
         required: false
   param :client_comment, type: 'string', desc: 'Client comment', required: false
+  param :crm_deal_id, type: 'number', desc: 'Optional existing deal ID returned by search_deals for this conversation contact', required: false
+  param :crm_pipeline_id, type: 'number', desc: 'Optional pipeline ID when a new deal should be created according to its appointment settings', required: false
+  param :patient, type: 'object', required: false,
+                  desc: 'Optional explicitly named patient: first_name and last_name required; middle_name, iin, birth_date (YYYY-MM-DD), ' \
+                        'gender and phone optional. Ask for missing details; do not copy the caller identity to another patient.'
   param :custom_attributes,
         type: 'object',
         desc: 'Optional scheduling custom attributes object. For Medelement, pass the selected ' \
@@ -23,7 +29,7 @@ class Captain::Tools::CreateAppointmentTool < Captain::Tools::BasePublicTool
 
   # rubocop:disable Metrics/MethodLength, Metrics/ParameterLists
   def perform(tool_context, resource_id:, starts_at:, ends_at: nil, duration_min: nil, service_id: nil, appointment_type: nil, client_comment: nil,
-              custom_attributes: nil)
+              custom_attributes: nil, patient: nil, crm_deal_id: nil, crm_pipeline_id: nil)
     operation = operations(tool_context.state)
     appointment = operation.create_appointment(
       resource_id: resource_id,
@@ -33,17 +39,18 @@ class Captain::Tools::CreateAppointmentTool < Captain::Tools::BasePublicTool
       duration_min: duration_min,
       appointment_type: appointment_type,
       client_comment: client_comment,
-      custom_attributes: custom_attributes
+      custom_attributes: custom_attributes,
+      patient: patient,
+      crm_deal_id: crm_deal_id,
+      crm_pipeline_id: crm_pipeline_id
     )
 
     command = verify_provider_booking!(tool_context, appointment)
-    JSON.pretty_generate(::Scheduling::ToolPayloadBuilder.appointment_payload(
-                           action: 'create_appointment', appointment: appointment, provider_write_acknowledged: command.present?
-                         ))
+    JSON.generate(Captain::Tools::Agent::AppointmentResult.success(appointment, action: 'create_appointment'))
   rescue Scheduling::Error => e
     appointment ||= operation.persisted_creation if operation.respond_to?(:persisted_creation)
     handoff_unconfirmed_booking!(tool_context, appointment, e)
-    Captain::ToolResult.failure(error: e.message, data: { code: e.code }, retryable: false)
+    JSON.generate(Captain::Tools::Agent::AppointmentResult.failure(e))
   rescue StandardError => e
     appointment ||= operation.persisted_creation if operation.respond_to?(:persisted_creation)
     handle_unexpected_booking_error(tool_context, appointment, command, e)
@@ -81,7 +88,7 @@ class Captain::Tools::CreateAppointmentTool < Captain::Tools::BasePublicTool
 
   def handle_unexpected_booking_error(tool_context, appointment, command, error)
     handoff_unconfirmed_booking!(tool_context, appointment, error) if command.nil?
-    Captain::ToolResult.failure(error: error.message, retryable: false)
+    JSON.generate(Captain::Tools::Agent::AppointmentResult.failure(error))
   end
 
   def operations(state)

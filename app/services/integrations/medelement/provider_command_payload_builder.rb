@@ -69,6 +69,9 @@ class Integrations::Medelement::ProviderCommandPayloadBuilder
     end
 
     def patient_action_payload(command)
+      if command.failed? && Integrations::Medelement::ProviderCommands::PatientActionsService.selection_available?(command)
+        return { 'type' => 'patient_selection', 'cancellable' => false, 'can_confirm' => true, 'requires_patient_card_confirmation' => true }
+      end
       return unless command.logical_status.in?(Integrations::Medelement::ProviderCommands::PatientActionRequired::STATUSES)
 
       command.execution_state.to_h['patient_action'].to_h.merge(

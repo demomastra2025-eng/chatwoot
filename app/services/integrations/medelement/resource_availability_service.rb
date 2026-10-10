@@ -71,8 +71,8 @@ class Integrations::Medelement::ResourceAvailabilityService
   end
 
   def provider_working_windows
-    starts_on = @from.in_time_zone(resource.timezone).to_date
-    ends_on = @to.in_time_zone(resource.timezone).to_date
+    starts_on = @from.in_time_zone(provider_time_zone).to_date
+    ends_on = (@to - 1.second).in_time_zone(provider_time_zone).to_date
     method = if (ends_on - starts_on).to_i >= Integrations::Medelement::Client::MAX_TIMETABLE_DAYS
                :timetable_range
              else
@@ -80,17 +80,9 @@ class Integrations::Medelement::ResourceAvailabilityService
              end
     payload = client.public_send(method, specialist_code: specialist_code, starts_on: starts_on, ends_on: ends_on)
 
-    rows = timetable_rows(payload)
-    rows.filter_map do |row|
-      attributes = row.to_h.with_indifferent_access
-      next unless Integrations::Medelement::WorkingFlag.working?(attributes['working'])
-
-      interval(attributes['start'], attributes['end'])
-    end.sort_by(&:first)
-  end
-
-  def timetable_rows(payload)
-    payload.values.flat_map { |day| Array(day.to_h['timetable']) }
+    Integrations::Medelement::ScheduleWindowReader.new(
+      payload: payload, starts_on: starts_on, ends_on: ends_on, time_zone: provider_time_zone
+    ).perform
   end
 
   def provider_receptions(cabinet_code)
@@ -129,10 +121,13 @@ class Integrations::Medelement::ResourceAvailabilityService
     slots.filter_map do |slot|
       starts_at = parse_time(slot.fetch(:starts_at))
       ends_at = parse_time(slot.fetch(:ends_at))
-      next unless fully_covered?(starts_at, ends_at, provider_windows)
-
       cabinet = cabinets.find do |candidate|
-        receptions.fetch(candidate.fetch(:code)).none? { |occupied| overlaps?(starts_at, ends_at, occupied) }
+        code = candidate.fetch(:code)
+        windows = provider_windows.filter_map do |window_start, window_end, window_cabinet|
+          [window_start, window_end] if window_cabinet.blank? || window_cabinet == code
+        end
+        fully_covered?(starts_at, ends_at, windows) &&
+          receptions.fetch(code).none? { |occupied| overlaps?(starts_at, ends_at, occupied) }
       end
       next if cabinet.blank?
 
@@ -170,13 +165,17 @@ class Integrations::Medelement::ResourceAvailabilityService
   end
 
   def parse_time(value)
-    return value.in_time_zone(resource.timezone) if value.respond_to?(:in_time_zone)
+    return value.in_time_zone(provider_time_zone) if value.respond_to?(:in_time_zone)
 
-    ActiveSupport::TimeZone[resource.timezone]&.parse(value.to_s)
+    provider_time_zone.parse(value.to_s)
   end
 
   def provider_time(value)
-    value.in_time_zone(resource.timezone).strftime(PROVIDER_TIME_FORMAT)
+    value.in_time_zone(provider_time_zone).strftime(PROVIDER_TIME_FORMAT)
+  end
+
+  def provider_time_zone
+    @provider_time_zone ||= ActiveSupport::TimeZone[@configuration.time_zone] || Time.zone
   end
 
   def client

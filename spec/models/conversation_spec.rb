@@ -1175,7 +1175,7 @@ RSpec.describe Conversation do
 
         expect(Rails.configuration.dispatcher).to have_received(:dispatch).with(described_class::CONVERSATION_CREATED, kind_of(Time), any_args)
         expect(Rails.configuration.dispatcher).to have_received(:dispatch).with(described_class::ASSIGNEE_CHANGED, kind_of(Time), any_args)
-        expect(Crm::Deals::AutoCreateFromChannelContactService).to have_received(:new)
+        expect(Crm::Deals::AutoCreateFromChannelContactService).not_to have_received(:new)
       end
     end
   end

@@ -1,16 +1,18 @@
 class Scheduling::Appointments::UpsertService
+  ProviderInterval = Data.define(:resource_id, :resource_updated_at, :starts_at, :ends_at, :cabinet_code, :reception_code)
   APPOINTMENT_BOOKING_INTAKE_CONTEXT = 'booking_intake'.freeze
   CLIENT_NAME_PART_KEYS = %i[client_first_name client_last_name client_middle_name].freeze
   DERIVED_SYSTEM_CUSTOM_ATTRIBUTE_KEYS = %w[service_ids services].freeze
   INTAKE_SYSTEM_CUSTOM_ATTRIBUTE_KEYS = %w[medelement_cabinet_code].freeze
-  PRESERVED_SYSTEM_CUSTOM_ATTRIBUTE_KEYS = %w[source_mode].freeze
+  PRESERVED_SYSTEM_CUSTOM_ATTRIBUTE_KEYS = %w[source_mode appointment_created_notification_hold captain_playground].freeze
   PRESERVED_SYSTEM_CUSTOM_ATTRIBUTE_PREFIXES = %w[medelement_].freeze
 
-  def initialize(account:, params:, appointment: nil, actor: nil)
+  def initialize(account:, params:, appointment: nil, actor: nil, appointment_access: nil)
     @account = account
     @params = params.to_h.deep_symbolize_keys
     @appointment = appointment || account.scheduling_appointments.new
     @actor = actor
+    @appointment_access = appointment_access
   end
 
   attr_reader :persisted_appointment
@@ -36,7 +38,7 @@ class Scheduling::Appointments::UpsertService
 
   private
 
-  attr_reader :account, :actor, :appointment, :params
+  attr_reader :account, :actor, :appointment, :params, :appointment_access
 
   def provider_confirmation_pending?
     status = Integrations::Medelement::AppointmentProviderStatus
@@ -78,23 +80,117 @@ class Scheduling::Appointments::UpsertService
   end
 
   def persist_appointment!
+    prepare_provider_availability!
     ApplicationRecord.transaction do
       verify_provider_before_cancellation!
       verify_provider_removal_not_pending!
+      Scheduling::Appointments::AppointmentAccessGuard.new(
+        appointment: appointment, actor: actor, context: appointment_access
+      ).validate!
+      Scheduling::Appointments::MutationGuard.ensure_editable!(appointment)
       apply_attributes!
-      Integrations::Medelement::PatientContactBinding.new(appointment: appointment).prepare!(allow_rebind: true)
+      binding = Integrations::Medelement::PatientContactBinding.new(appointment: appointment)
+      if @selected_patient
+        binding.prepare_selected!(contact: @selected_patient, allow_communication_contact: @selected_patient.id == appointment.contact_id)
+      else
+        binding.prepare!(allow_rebind: true)
+      end
       Integrations::Medelement::AppointmentPatientIdentity.ensure_write_target_unchanged!(appointment)
       mark_medelement_provider_confirmation_pending!
       validate_medelement_patient!
       validate_medelement_cabinet!
       validate_availability!
       new_record = appointment.new_record?
+      Crm::Appointments::LinkService.new(appointment: appointment, params: params, actor: actor).perform if new_record
+      confirm_attendance!
       appointment.save!
       capture_provider_receipt_service!(new_record)
       notify_assignment!(new_record: new_record)
       sync_or_cancel_related_touches!
       Scheduling::Appointments::FinanceSyncService.new(appointment: appointment, actor: user_actor).sync!
     end
+  end
+
+  def confirm_attendance!
+    return unless params[:status].to_s == 'completed' && attendance_confirmation_actor?
+
+    appointment.attendance_confirmed_at = Time.current
+  end
+
+  def attendance_confirmation_actor?
+    return account.users.exists?(id: actor.id) if actor.is_a?(User)
+
+    defined?(Captain::Assistant) && actor.is_a?(Captain::Assistant) && actor.account_id == account.id
+  end
+
+  def prepare_provider_availability!
+    return if resolve_string(:status, current: appointment.status.presence || 'scheduled') == 'cancelled'
+
+    resource = resolve_resource!
+    return unless medelement_resource?(resource)
+
+    ensure_resource_available_for_scheduling!(resource)
+
+    services = resolve_services(current: current_services)
+    validate_provider_draft!(resource, services)
+    starts_at = resolve_datetime(:starts_at, current: appointment.starts_at)
+    duration_min = resolve_duration_min(
+      starts_at: starts_at, resource: resource,
+      services: services, current_duration_min: appointment.duration_min
+    )
+    ends_at = resolve_ends_at(starts_at: starts_at, duration_min: duration_min, current: appointment.ends_at)
+    incoming = params[:custom_attributes].to_h.with_indifferent_access
+    cabinet_code = if incoming.key?(:medelement_cabinet_code)
+                     incoming[:medelement_cabinet_code].to_s.strip.presence
+                   else
+                     appointment.custom_attributes.to_h['medelement_cabinet_code'].to_s.presence
+                   end
+    projected = provider_interval(resource: resource, starts_at: starts_at, ends_at: ends_at, cabinet_code: cabinet_code)
+    return unless provider_interval_changed?(projected)
+
+    # Only interval evidence is read before the transaction. Selecting and binding
+    # a clinical patient acquires transaction locks and stays in apply_attributes!.
+    validate_provider_availability!(resource, projected)
+    @verified_provider_interval = projected
+  end
+
+  # Deterministic draft errors must not depend on provider availability. These
+  # checks only read explicit values and service mappings; clinical selection
+  # and binding are still validated again under the transaction locks.
+  def validate_provider_draft!(resource, services)
+    name_keys = %i[client_first_name client_last_name]
+    incomplete_medelement_patient! if name_keys.any? { |key| params.key?(key) && params[key].to_s.strip.blank? }
+    validate_medelement_phone!(params[:client_phone]) if params.key?(:client_phone)
+    service_ids = services.map(&:id)
+    return if service_ids.empty?
+
+    validate_medelement_service_mapping!(services, service_ids)
+    validate_medelement_service_availability!(service_ids, resource_id: resource.id)
+  end
+
+  def provider_interval(resource:, starts_at:, ends_at:, cabinet_code:)
+    ProviderInterval.new(resource_id: resource.id, resource_updated_at: resource.updated_at,
+                         starts_at: starts_at, ends_at: ends_at, cabinet_code: cabinet_code.to_s.presence,
+                         reception_code: medelement_reception_code.to_s.presence)
+  end
+
+  def current_provider_interval
+    provider_interval(resource: appointment.resource, starts_at: appointment.starts_at, ends_at: appointment.ends_at,
+                      cabinet_code: appointment.custom_attributes.to_h['medelement_cabinet_code'])
+  end
+
+  def provider_interval_changed?(projected)
+    appointment.new_record? || appointment.status == 'cancelled' || projected != current_provider_interval
+  end
+
+  def ensure_provider_interval_verified!
+    return unless medelement_resource?
+    return if @verified_provider_interval == current_provider_interval
+
+    raise Scheduling::Error.new(
+      code: 'MEDELEMENT_AVAILABILITY_UNVERIFIED', message: 'Medelement availability must be verified for the current interval',
+      status: :conflict, details: { provider_reason: 'booking_changed_during_verification' }
+    )
   end
 
   def verify_provider_before_cancellation!
@@ -138,6 +234,7 @@ class Scheduling::Appointments::UpsertService
     Scheduling::Appointments::CancelService.new(
       appointment: appointment,
       actor: actor,
+      appointment_access: appointment_access,
       expected_medelement_cancellation_mode: Integrations::Medelement::LocalCancellation::MODE_LOCAL_ONLY
     ).perform
   end
@@ -162,6 +259,9 @@ class Scheduling::Appointments::UpsertService
     resource = resolve_resource!
     contact = resolve_optional_record(:contact_id, account.contacts, current: appointment.contact)
     ensure_contact_present!(contact)
+    @selected_patient = Scheduling::Appointments::PatientSelection.new(
+      account: account, appointment: appointment, contact: contact, params: params, actor: actor
+    ).perform
     services = resolve_services(current: current_services)
     primary_service = services.first
     company = resolve_company(contact)
@@ -223,7 +323,7 @@ class Scheduling::Appointments::UpsertService
       client_birth_date: resolve_client_birth_date(contact),
       client_gender: resolve_client_gender(contact),
       client_comment: resolve_optional_text(:client_comment, current: appointment.client_comment),
-      source: appointment.source.presence || 'manual',
+      source: appointment_source,
       external_ref: resolve_optional_text(:external_ref, current: appointment.external_ref),
       idempotency_key: resolve_optional_text(:idempotency_key, current: appointment.idempotency_key),
       service_name_snapshot: service_snapshot[:service_name_snapshot],
@@ -255,13 +355,21 @@ class Scheduling::Appointments::UpsertService
       'cash'
   end
 
+  def appointment_source
+    return 'captain' if appointment.new_record? && defined?(Captain::Assistant) && actor.is_a?(Captain::Assistant)
+
+    appointment.source.presence || 'manual'
+  end
+
   def availability_service
+    policy = Scheduling::ResourceHoursPolicy.new(resource: appointment.resource)
     Scheduling::AvailabilityService.new(
       resource: appointment.resource,
       from: appointment.starts_at.beginning_of_day - 1.day,
       to: appointment.ends_at.end_of_day + 1.day,
       holidays: account.scheduling_holidays.ordered.to_a,
-      workday_overrides: appointment.resource.workday_overrides.where(date: (appointment.starts_at.to_date - 2)..(appointment.ends_at.to_date + 2)).to_a,
+      workday_overrides: appointment.resource.workday_overrides
+                                    .where(date: (appointment.starts_at.to_date - 2)..(appointment.ends_at.to_date + 2)).to_a,
       time_offs: account.scheduling_time_offs
                         .where(resource_id: [nil, appointment.resource_id])
                         .where('starts_at < ? AND ends_at > ?', appointment.ends_at, appointment.starts_at)
@@ -270,7 +378,8 @@ class Scheduling::Appointments::UpsertService
                            .where(resource_id: appointment.resource_id)
                            .where('starts_at < ? AND ends_at > ?', appointment.ends_at, appointment.starts_at)
                            .to_a,
-      ignore_appointment_id: appointment.id
+      ignore_appointment_id: appointment.id,
+      **policy.availability_options(@provider_working_windows)
     )
   end
 
@@ -311,6 +420,13 @@ class Scheduling::Appointments::UpsertService
   end
 
   def resolve_appointment_patient_identity!(contact, resource, identity)
+    if @selected_patient
+      @appointment_identifier_explicit = params.key?(:client_identifier)
+      @appointment_patient_owned = true
+      @separate_patient_transition = false
+      return
+    end
+
     decision = Integrations::Medelement::AppointmentPatientIdentityDecision.new(
       appointment: appointment, contact: contact, params: params, identity: identity, mapped: medelement_resource?(resource)
     ).resolve!
@@ -405,16 +521,18 @@ class Scheduling::Appointments::UpsertService
     return unless medelement_resource?
     return if appointment.status == 'cancelled'
 
-    if appointment.client_first_name.blank? || appointment.client_last_name.blank?
-      raise Scheduling::Error.new(
-        code: 'MEDELEMENT_PATIENT_NAME_INCOMPLETE',
-        message: 'Patient first and last name are required for Medelement',
-        status: :unprocessable_content
-      )
-    end
+    incomplete_medelement_patient! if appointment.client_first_name.blank? || appointment.client_last_name.blank?
 
     validate_medelement_phone!
     validate_medelement_services!
+  end
+
+  def incomplete_medelement_patient!
+    raise Scheduling::Error.new(
+      code: 'MEDELEMENT_PATIENT_NAME_INCOMPLETE',
+      message: 'Patient first and last name are required for Medelement',
+      status: :unprocessable_content
+    )
   end
 
   def validate_medelement_cabinet!
@@ -451,8 +569,8 @@ class Scheduling::Appointments::UpsertService
     appointment.new_record? || params.key?(:resource_id) || params[:custom_attributes].to_h.with_indifferent_access.key?(:medelement_cabinet_code)
   end
 
-  def validate_medelement_phone!
-    return if Integrations::Medelement::PhoneNumber.normalize(appointment.client_phone).present?
+  def validate_medelement_phone!(phone = appointment.client_phone)
+    return if Integrations::Medelement::PhoneNumber.normalize(phone).present?
 
     raise Scheduling::Error.new(
       code: 'MEDELEMENT_PATIENT_PHONE_INVALID',
@@ -489,9 +607,9 @@ class Scheduling::Appointments::UpsertService
     )
   end
 
-  def validate_medelement_service_availability!(service_ids)
+  def validate_medelement_service_availability!(service_ids, resource_id: appointment.resource_id)
     linked_service_ids = account.scheduling_service_prices.active
-                                .where(resource_id: appointment.resource_id)
+                                .where(resource_id: resource_id)
                                 .joins(:service)
                                 .where("NULLIF(scheduling_services.custom_attributes ->> 'medelement_nomenclature_code', '') IS NOT NULL")
                                 .pluck(:service_id)
@@ -576,6 +694,7 @@ class Scheduling::Appointments::UpsertService
     attributes[patient_identity_policy::OWNED_IDENTITY_KEY] = true if @appointment_patient_owned
     attributes = attributes.except('medelement_patient_code') if @separate_patient_transition
     attributes = clear_local_service_binding(attributes) if explicit_service_selection?
+    attributes = Scheduling::Appointments::PlaygroundRunStamp.apply(attributes)
     attributes.merge(service_custom_attributes(services))
               .merge(local_service_binding_attributes(resource, services))
   end
@@ -759,6 +878,13 @@ class Scheduling::Appointments::UpsertService
 
     return explicit_duration if explicit_duration.present?
     return [((explicit_ends_at - starts_at) / 60).round, Scheduling::Constants::MIN_DURATION_MINUTES].max if explicit_ends_at.present?
+
+    # An unrelated edit preserves an authored interval instead of restoring the
+    # selected service's default length.
+    if appointment.persisted? && current_duration_min.to_i.positive? && !explicit_service_selection? &&
+       (!params.key?(:resource_id) || params[:resource_id].to_i == appointment.resource_id)
+      return current_duration_min.to_i
+    end
 
     service_duration = services.sum { |service| service.duration_min.to_i }
     return service_duration if service_duration.positive?
@@ -1076,11 +1202,14 @@ class Scheduling::Appointments::UpsertService
     return if appointment.status == 'cancelled'
     return unless availability_validation_required?
 
+    ensure_resource_available_for_scheduling!(appointment.resource) if medelement_resource?
+
+    appointment.resource.lock!
+    ensure_resource_available_for_scheduling!(appointment.resource) if medelement_resource?
+    ensure_provider_interval_verified!
+
     result = availability_service.availability_result(starts_at: appointment.starts_at, ends_at: appointment.ends_at)
-    if result.available?
-      validate_provider_availability!
-      return
-    end
+    return if result.available?
 
     raise Scheduling::Error.new(
       code: result.code,
@@ -1089,28 +1218,26 @@ class Scheduling::Appointments::UpsertService
     )
   end
 
-  def validate_provider_availability!
-    return unless medelement_resource?
-
+  def validate_provider_availability!(resource, projected)
     result = Integrations::Medelement::ResourceAvailabilityService.new(
-      resource: appointment.resource,
-      from: appointment.starts_at,
-      to: appointment.ends_at,
-      slots: [provider_candidate_slot],
-      cabinet_code: appointment.custom_attributes.to_h['medelement_cabinet_code'],
-      exclude_reception_code: medelement_reception_code
+      resource: resource,
+      from: projected.starts_at,
+      to: projected.ends_at,
+      slots: [],
+      candidate_slots: lambda do |windows|
+        @provider_working_windows = windows
+        [{ resource_id: projected.resource_id, starts_at: projected.starts_at.iso8601, ends_at: projected.ends_at.iso8601 }]
+      end,
+      cabinet_code: projected.cabinet_code,
+      exclude_reception_code: projected.reception_code
     ).perform
-    return if result.status == 'fresh' && result.slots.one?
+    if result.status == 'fresh' && result.slots.one?
+      # The fresh provider response confirms this exact interval.
+      @provider_working_windows ||= [[projected.starts_at, projected.ends_at]]
+      return
+    end
 
     raise provider_availability_error(result)
-  end
-
-  def provider_candidate_slot
-    {
-      resource_id: appointment.resource_id,
-      starts_at: appointment.starts_at.iso8601,
-      ends_at: appointment.ends_at.iso8601
-    }
   end
 
   def provider_availability_error(result)

@@ -35,6 +35,7 @@ import CrmClosingReasonDialog from 'dashboard/components-next/CRM/CrmClosingReas
 import CrmConflictNotice from 'dashboard/components-next/CRM/CrmConflictNotice.vue';
 import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomFieldsSection.vue';
 import CrmDealBoard from 'dashboard/components-next/CRM/CrmDealBoard.vue';
+import CrmDealAppointmentsPanel from 'dashboard/components-next/CRM/CrmDealAppointmentsPanel.vue';
 import CrmDealFilterChips from 'dashboard/components-next/CRM/CrmDealFilterChips.vue';
 import CrmDealLifecycleActions from 'dashboard/components-next/CRM/CrmDealLifecycleActions.vue';
 import CrmDealStageMenu from 'dashboard/components-next/CRM/CrmDealStageMenu.vue';
@@ -4693,11 +4694,11 @@ watch(
           </div>
           <aside
             data-testid="crm-deal-card"
-            class="w-full flex-col overflow-hidden bg-n-solid-2"
+            class="min-w-0 w-full flex-col overflow-hidden bg-n-solid-2"
             :class="{
               'flex h-full md:w-[28rem] md:min-w-[28rem] xl:w-[30rem] xl:min-w-[30rem]':
                 !isDealPage,
-              'min-h-0 flex-1 lg:h-full lg:w-[58%] lg:flex-none lg:border-r lg:border-n-weak':
+              'min-h-0 flex-1 lg:h-full lg:w-1/3 lg:flex-none lg:border-r lg:border-n-weak':
                 isDealPage,
               flex: !isDealPage || dealPageTab === 'deal',
               'hidden lg:flex': isDealPage && dealPageTab === 'chat',
@@ -5112,6 +5113,17 @@ watch(
                   v-if="selectedDeal && !pendingStageEntry"
                   class="crm-deal-drawer-section"
                 >
+                  <CrmDealAppointmentsPanel
+                    :deal="selectedDeal"
+                    :can-manage="canManageDeals"
+                    @deal-updated="handleDealWaitingUpdated"
+                  />
+                </div>
+
+                <div
+                  v-if="selectedDeal && !pendingStageEntry"
+                  class="crm-deal-drawer-section"
+                >
                   <div
                     class="grid grid-cols-2 rounded-xl bg-n-alpha-black2 p-1"
                     role="tablist"
@@ -5195,6 +5207,7 @@ watch(
                 (showLinkedConversationPanel && !canOpenLinkedConversation))
             "
             data-testid="crm-deal-chat"
+            :source-deal-id="selectedDeal.id"
             :communication-thread-id="effectiveLinkedCommunicationThreadId"
             :communication-thread-display-id="
               effectiveLinkedCommunicationThreadDisplayId

@@ -6,6 +6,7 @@ class Notification::TelegramNotificationService
   pattr_initialize [:notification!]
 
   def perform
+    return if Outbound::PlaygroundDeliveryPolicy.external_notification_blocked?(notification.primary_actor, notification.secondary_actor)
     return unless user_subscribed_to_notification?
     return unless binding&.connected?
     return unless TelegramNotification::BotClient.configured?

@@ -1832,6 +1832,36 @@
           "type": "integer",
           "nullable": true
         },
+        "patient_contact_id": {
+          "type": "integer",
+          "nullable": true,
+          "description": "Clinical patient; separate from the communication contact."
+        },
+        "patient_context_contact_id": {
+          "type": "integer",
+          "nullable": true
+        },
+        "patient_contact_name": {
+          "type": "string",
+          "nullable": true
+        },
+        "crm_deal_id": {
+          "type": "integer",
+          "nullable": true
+        },
+        "attendance_confirmed_at": {
+          "type": "string",
+          "format": "date-time",
+          "nullable": true
+        },
+        "actual_attended": {
+          "type": "boolean"
+        },
+        "provider_command_receipt": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Current provider operation receipt; queued and failed operations must not be reported as confirmed."
+        },
         "service_id": {
           "type": "integer",
           "nullable": true
@@ -2637,6 +2667,36 @@
                               "contact_id": {
                                 "type": "integer",
                                 "nullable": true
+                              },
+                              "patient_contact_id": {
+                                "type": "integer",
+                                "nullable": true,
+                                "description": "Clinical patient; separate from the communication contact."
+                              },
+                              "patient_context_contact_id": {
+                                "type": "integer",
+                                "nullable": true
+                              },
+                              "patient_contact_name": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "crm_deal_id": {
+                                "type": "integer",
+                                "nullable": true
+                              },
+                              "attendance_confirmed_at": {
+                                "type": "string",
+                                "format": "date-time",
+                                "nullable": true
+                              },
+                              "actual_attended": {
+                                "type": "boolean"
+                              },
+                              "provider_command_receipt": {
+                                "type": "object",
+                                "additionalProperties": true,
+                                "description": "Current provider operation receipt; queued and failed operations must not be reported as confirmed."
                               },
                               "service_id": {
                                 "type": "integer",
@@ -7172,6 +7232,36 @@
           },
           {
             "in": "query",
+            "name": "contact_ids",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated communication contact IDs."
+          },
+          {
+            "in": "query",
+            "name": "patient_contact_ids",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated clinical patient IDs; legacy appointments fall back to contact_id."
+          },
+          {
+            "in": "query",
+            "name": "conversation_ids",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "conversation_display_ids",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
             "name": "status",
             "schema": {
               "type": "string"
@@ -7221,6 +7311,36 @@
                           "contact_id": {
                             "type": "integer",
                             "nullable": true
+                          },
+                          "patient_contact_id": {
+                            "type": "integer",
+                            "nullable": true,
+                            "description": "Clinical patient; separate from the communication contact."
+                          },
+                          "patient_context_contact_id": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "patient_contact_name": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "crm_deal_id": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "attendance_confirmed_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "nullable": true
+                          },
+                          "actual_attended": {
+                            "type": "boolean"
+                          },
+                          "provider_command_receipt": {
+                            "type": "object",
+                            "additionalProperties": true,
+                            "description": "Current provider operation receipt; queued and failed operations must not be reported as confirmed."
                           },
                           "service_id": {
                             "type": "integer",
@@ -7397,7 +7517,7 @@
         ],
         "operationId": "create-scheduling-appointment",
         "summary": "Create a scheduling appointment",
-        "description": "Supports true idempotency via `idempotency_key`. Replaying the same key returns the existing appointment with HTTP 200.",
+        "description": "Supports true idempotency via `idempotency_key`. Replaying the same key returns the existing appointment with HTTP 200. A selected clinical patient is separate from the communication contact. CRM selection is required only when active candidates are ambiguous; an explicit new-deal choice uses crm_deal_selection=create and crm_pipeline_id. The complete manual interval must be free and confirmed by the provider availability policy.",
         "security": [
           {
             "userApiKey": []
@@ -7411,9 +7531,7 @@
                 "type": "object",
                 "required": [
                   "resource_id",
-                  "starts_at",
-                  "ends_at",
-                  "client_name"
+                  "starts_at"
                 ],
                 "properties": {
                   "resource_id": {
@@ -7422,13 +7540,37 @@
                   "contact_id": {
                     "type": "integer"
                   },
+                  "patient_contact_id": {
+                    "type": "integer"
+                  },
+                  "crm_deal_id": {
+                    "type": "integer"
+                  },
+                  "crm_pipeline_id": {
+                    "type": "integer"
+                  },
+                  "crm_deal_selection": {
+                    "type": "string",
+                    "enum": [
+                      "create"
+                    ]
+                  },
                   "service_id": {
                     "type": "integer"
+                  },
+                  "service_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    }
                   },
                   "company_id": {
                     "type": "integer"
                   },
                   "conversation_id": {
+                    "type": "integer"
+                  },
+                  "conversation_display_id": {
                     "type": "integer"
                   },
                   "created_by_id": {
@@ -7443,7 +7585,10 @@
                     "format": "date-time"
                   },
                   "duration_min": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 5,
+                    "maximum": 1440,
+                    "description": "Optional manual duration; ends_at or the service duration supplies the alternative end time."
                   },
                   "status": {
                     "type": "string"
@@ -7452,6 +7597,15 @@
                     "type": "string"
                   },
                   "client_name": {
+                    "type": "string"
+                  },
+                  "client_first_name": {
+                    "type": "string"
+                  },
+                  "client_last_name": {
+                    "type": "string"
+                  },
+                  "client_middle_name": {
                     "type": "string"
                   },
                   "client_phone": {
@@ -7531,6 +7685,36 @@
                         "contact_id": {
                           "type": "integer",
                           "nullable": true
+                        },
+                        "patient_contact_id": {
+                          "type": "integer",
+                          "nullable": true,
+                          "description": "Clinical patient; separate from the communication contact."
+                        },
+                        "patient_context_contact_id": {
+                          "type": "integer",
+                          "nullable": true
+                        },
+                        "patient_contact_name": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "crm_deal_id": {
+                          "type": "integer",
+                          "nullable": true
+                        },
+                        "attendance_confirmed_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "nullable": true
+                        },
+                        "actual_attended": {
+                          "type": "boolean"
+                        },
+                        "provider_command_receipt": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "description": "Current provider operation receipt; queued and failed operations must not be reported as confirmed."
                         },
                         "service_id": {
                           "type": "integer",
@@ -7669,6 +7853,36 @@
                         "contact_id": {
                           "type": "integer",
                           "nullable": true
+                        },
+                        "patient_contact_id": {
+                          "type": "integer",
+                          "nullable": true,
+                          "description": "Clinical patient; separate from the communication contact."
+                        },
+                        "patient_context_contact_id": {
+                          "type": "integer",
+                          "nullable": true
+                        },
+                        "patient_contact_name": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "crm_deal_id": {
+                          "type": "integer",
+                          "nullable": true
+                        },
+                        "attendance_confirmed_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "nullable": true
+                        },
+                        "actual_attended": {
+                          "type": "boolean"
+                        },
+                        "provider_command_receipt": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "description": "Current provider operation receipt; queued and failed operations must not be reported as confirmed."
                         },
                         "service_id": {
                           "type": "integer",
@@ -7966,6 +8180,36 @@
                           "type": "integer",
                           "nullable": true
                         },
+                        "patient_contact_id": {
+                          "type": "integer",
+                          "nullable": true,
+                          "description": "Clinical patient; separate from the communication contact."
+                        },
+                        "patient_context_contact_id": {
+                          "type": "integer",
+                          "nullable": true
+                        },
+                        "patient_contact_name": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "crm_deal_id": {
+                          "type": "integer",
+                          "nullable": true
+                        },
+                        "attendance_confirmed_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "nullable": true
+                        },
+                        "actual_attended": {
+                          "type": "boolean"
+                        },
+                        "provider_command_receipt": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "description": "Current provider operation receipt; queued and failed operations must not be reported as confirmed."
+                        },
                         "service_id": {
                           "type": "integer",
                           "nullable": true
@@ -8175,6 +8419,7 @@
         ],
         "operationId": "update-scheduling-appointment",
         "summary": "Update a scheduling appointment",
+        "description": "Retains the existing CRM link when rescheduling. The entire requested interval must be free. Imported provider appointments use their existing provider command operations rather than direct local rewriting.",
         "security": [
           {
             "userApiKey": []
@@ -8191,6 +8436,9 @@
                     "type": "integer"
                   },
                   "contact_id": {
+                    "type": "integer"
+                  },
+                  "patient_contact_id": {
                     "type": "integer"
                   },
                   "service_id": {
@@ -8214,7 +8462,9 @@
                     "format": "date-time"
                   },
                   "duration_min": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 5,
+                    "maximum": 1440
                   },
                   "status": {
                     "type": "string"
@@ -8223,6 +8473,15 @@
                     "type": "string"
                   },
                   "client_name": {
+                    "type": "string"
+                  },
+                  "client_first_name": {
+                    "type": "string"
+                  },
+                  "client_last_name": {
+                    "type": "string"
+                  },
+                  "client_middle_name": {
                     "type": "string"
                   },
                   "client_phone": {
@@ -8297,6 +8556,36 @@
                         "contact_id": {
                           "type": "integer",
                           "nullable": true
+                        },
+                        "patient_contact_id": {
+                          "type": "integer",
+                          "nullable": true,
+                          "description": "Clinical patient; separate from the communication contact."
+                        },
+                        "patient_context_contact_id": {
+                          "type": "integer",
+                          "nullable": true
+                        },
+                        "patient_contact_name": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "crm_deal_id": {
+                          "type": "integer",
+                          "nullable": true
+                        },
+                        "attendance_confirmed_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "nullable": true
+                        },
+                        "actual_attended": {
+                          "type": "boolean"
+                        },
+                        "provider_command_receipt": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "description": "Current provider operation receipt; queued and failed operations must not be reported as confirmed."
                         },
                         "service_id": {
                           "type": "integer",
@@ -8637,6 +8926,36 @@
                           "type": "integer",
                           "nullable": true
                         },
+                        "patient_contact_id": {
+                          "type": "integer",
+                          "nullable": true,
+                          "description": "Clinical patient; separate from the communication contact."
+                        },
+                        "patient_context_contact_id": {
+                          "type": "integer",
+                          "nullable": true
+                        },
+                        "patient_contact_name": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "crm_deal_id": {
+                          "type": "integer",
+                          "nullable": true
+                        },
+                        "attendance_confirmed_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "nullable": true
+                        },
+                        "actual_attended": {
+                          "type": "boolean"
+                        },
+                        "provider_command_receipt": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "description": "Current provider operation receipt; queued and failed operations must not be reported as confirmed."
+                        },
                         "service_id": {
                           "type": "integer",
                           "nullable": true
@@ -8907,6 +9226,36 @@
                         "contact_id": {
                           "type": "integer",
                           "nullable": true
+                        },
+                        "patient_contact_id": {
+                          "type": "integer",
+                          "nullable": true,
+                          "description": "Clinical patient; separate from the communication contact."
+                        },
+                        "patient_context_contact_id": {
+                          "type": "integer",
+                          "nullable": true
+                        },
+                        "patient_contact_name": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "crm_deal_id": {
+                          "type": "integer",
+                          "nullable": true
+                        },
+                        "attendance_confirmed_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "nullable": true
+                        },
+                        "actual_attended": {
+                          "type": "boolean"
+                        },
+                        "provider_command_receipt": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "description": "Current provider operation receipt; queued and failed operations must not be reported as confirmed."
                         },
                         "service_id": {
                           "type": "integer",
@@ -9203,6 +9552,36 @@
                         "contact_id": {
                           "type": "integer",
                           "nullable": true
+                        },
+                        "patient_contact_id": {
+                          "type": "integer",
+                          "nullable": true,
+                          "description": "Clinical patient; separate from the communication contact."
+                        },
+                        "patient_context_contact_id": {
+                          "type": "integer",
+                          "nullable": true
+                        },
+                        "patient_contact_name": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "crm_deal_id": {
+                          "type": "integer",
+                          "nullable": true
+                        },
+                        "attendance_confirmed_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "nullable": true
+                        },
+                        "actual_attended": {
+                          "type": "boolean"
+                        },
+                        "provider_command_receipt": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "description": "Current provider operation receipt; queued and failed operations must not be reported as confirmed."
                         },
                         "service_id": {
                           "type": "integer",
@@ -19151,6 +19530,9 @@
                     "payload": {
                       "type": "object",
                       "properties": {
+                        "appointment_conversion": {
+                          "$ref": "#/components/schemas/lead_appointment_conversion"
+                        },
                         "referrals": {
                           "type": "object",
                           "description": "Event totals, linked unique contacts, ad attribution totals, and capped attribution breakdown with omitted-event count.",
@@ -20131,6 +20513,9 @@
                   "auto_create_deal_on_channel_contact": {
                     "type": "boolean"
                   },
+                  "appointment_automation": {
+                    "$ref": "#/components/schemas/crm_appointment_automation"
+                  },
                   "restrict_stage_skipping": {
                     "type": "boolean"
                   },
@@ -20258,6 +20643,9 @@
                   },
                   "auto_create_deal_on_channel_contact": {
                     "type": "boolean"
+                  },
+                  "appointment_automation": {
+                    "$ref": "#/components/schemas/crm_appointment_automation"
                   },
                   "restrict_stage_skipping": {
                     "type": "boolean"
@@ -21505,6 +21893,503 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/accounts/{account_id}/crm/deals/appointment_options": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/account_id"
+        }
+      ],
+      "get": {
+        "tags": [
+          "CRM"
+        ],
+        "operationId": "get-crm-appointment-deal-options",
+        "summary": "Resolve active deal choices for a communication contact",
+        "description": "Candidates are scoped to the account and contact. A single candidate or an eligible source deal is automatic; multiple candidates require a choice. Clinical patient changes do not change the communication contact or the conversation.",
+        "security": [
+          {
+            "userApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "contact_id",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "conversation_display_id",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source_deal_id",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active candidates and available pipelines",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "payload": {
+                      "type": "object",
+                      "properties": {
+                        "automatic_deal_id": {
+                          "type": "integer",
+                          "nullable": true
+                        },
+                        "requires_selection": {
+                          "type": "boolean"
+                        },
+                        "deals": {
+                          "type": "array",
+                          "maxItems": 100,
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "integer"
+                              },
+                              "title": {
+                                "type": "string"
+                              },
+                              "pipeline_id": {
+                                "type": "integer"
+                              },
+                              "pipeline_name": {
+                                "type": "string"
+                              },
+                              "cardinality": {
+                                "type": "string",
+                                "enum": [
+                                  "request",
+                                  "appointment"
+                                ]
+                              }
+                            }
+                          }
+                        },
+                        "pipelines": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "integer"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "auto_create": {
+                                "type": "boolean"
+                              },
+                              "default": {
+                                "type": "boolean"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller lacks CRM deal visibility"
+          },
+          "404": {
+            "description": "Account contact or conversation not found"
+          },
+          "422": {
+            "description": "Conversation and contact do not match"
+          }
+        }
+      }
+    },
+    "/api/v1/accounts/{account_id}/crm/deals/{id}/appointments": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/account_id"
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "CRM"
+        ],
+        "operationId": "get-crm-deal-appointments",
+        "summary": "List appointments explicitly linked to a deal",
+        "security": [
+          {
+            "userApiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Linked appointments and reporting timezone",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "payload": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "integer"
+                          },
+                          "account_id": {
+                            "type": "integer"
+                          },
+                          "resource_id": {
+                            "type": "integer"
+                          },
+                          "contact_id": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "patient_contact_id": {
+                            "type": "integer",
+                            "nullable": true,
+                            "description": "Clinical patient; separate from the communication contact."
+                          },
+                          "patient_context_contact_id": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "patient_contact_name": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "crm_deal_id": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "attendance_confirmed_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "nullable": true
+                          },
+                          "actual_attended": {
+                            "type": "boolean"
+                          },
+                          "provider_command_receipt": {
+                            "type": "object",
+                            "additionalProperties": true,
+                            "description": "Current provider operation receipt; queued and failed operations must not be reported as confirmed."
+                          },
+                          "service_id": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "company_id": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "conversation_id": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "created_by_id": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "starts_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "ends_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "duration_min": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "appointment_type": {
+                            "type": "string"
+                          },
+                          "client_name": {
+                            "type": "string"
+                          },
+                          "client_phone": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "client_identifier": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "client_birth_date": {
+                            "type": "string",
+                            "format": "date",
+                            "nullable": true
+                          },
+                          "client_gender": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "payment_status": {
+                            "type": "string"
+                          },
+                          "service_amount": {
+                            "type": "integer"
+                          },
+                          "prepaid_amount": {
+                            "type": "integer"
+                          },
+                          "settlement_amount": {
+                            "type": "integer"
+                          },
+                          "external_ref": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "idempotency_key": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "payments": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "integer"
+                                },
+                                "amount": {
+                                  "type": "integer"
+                                },
+                                "payment_method": {
+                                  "type": "string"
+                                },
+                                "payment_kind": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          },
+                          "expense": {
+                            "type": "object",
+                            "nullable": true,
+                            "properties": {
+                              "id": {
+                                "type": "integer"
+                              },
+                              "amount": {
+                                "type": "integer"
+                              },
+                              "status": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "timezone": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller lacks access to the deal"
+          },
+          "404": {
+            "description": "Deal not found"
+          }
+        }
+      }
+    },
+    "/api/v1/accounts/{account_id}/crm/deals/{id}/appointment_plan": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/account_id"
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "patch": {
+        "tags": [
+          "CRM"
+        ],
+        "operationId": "update-crm-deal-appointment-plan",
+        "summary": "Set required visits and the selected target appointment",
+        "description": "Accepts only appointments already linked to this deal. Omitting a plan preserves it; an empty array clears it. An ordinary new booking after cancellation does not infer a replacement.",
+        "security": [
+          {
+            "userApiKey": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "lock_version"
+                ],
+                "properties": {
+                  "lock_version": {
+                    "type": "integer"
+                  },
+                  "selected_appointment_id": {
+                    "type": "integer",
+                    "nullable": true
+                  },
+                  "appointment_plan": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                      "$ref": "#/components/schemas/crm_appointment_plan_item"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated deal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "payload": {
+                      "$ref": "#/components/schemas/crm_deal"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller lacks permission to update the deal"
+          },
+          "404": {
+            "description": "Deal not found"
+          },
+          "409": {
+            "description": "Stale lock version"
+          },
+          "422": {
+            "description": "Invalid plan or unrelated appointment"
+          }
+        }
+      }
+    },
+    "/api/v1/accounts/{account_id}/crm/deals/{id}/resume_appointment_automation": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/account_id"
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "CRM"
+        ],
+        "operationId": "resume-crm-deal-appointment-automation",
+        "summary": "Resume a manually paused deal's appointment automation",
+        "security": [
+          {
+            "userApiKey": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "lock_version"
+                ],
+                "properties": {
+                  "lock_version": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resumed deal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "payload": {
+                      "$ref": "#/components/schemas/crm_deal"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller lacks permission to update the deal"
+          },
+          "404": {
+            "description": "Deal not found"
+          },
+          "409": {
+            "description": "Missing or stale lock version"
           }
         }
       }
@@ -25574,7 +26459,7 @@
         ],
         "operationId": "test-captain-assistant-playground",
         "summary": "Run one assistant playground request",
-        "description": "Per-request model, temperature, and reasoning-effort overrides are validated against the existing model registry and are never persisted. The internal assistant playground is feature-gated and, when enabled, rejects these controls. Response latency is measured end-to-end; reasoning-token usage is returned only if reported by the provider.",
+        "description": "External agents use server-owned Trial or Live sessions. Live requires an account administrator and uses real clinic operations with a synthetic caller; external delivery is disabled by default. Session and reset actions do not generate a message. Per-request model, temperature, and reasoning-effort overrides are validated against the model registry and never saved. The internal assistant playground is feature-gated and rejects these controls. Response latency is measured end-to-end; reasoning-token usage is returned only if reported by the provider.",
         "security": [
           {
             "userApiKey": []
@@ -25823,6 +26708,9 @@
           "auto_create_deal_on_channel_contact": {
             "type": "boolean"
           },
+          "appointment_automation": {
+            "$ref": "#/components/schemas/crm_appointment_automation"
+          },
           "restrict_stage_skipping": {
             "type": "boolean"
           },
@@ -25851,6 +26739,357 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "crm_appointment_automation": {
+        "type": "object",
+        "description": "Prospective, per-pipeline configuration. Stage automation is disabled until explicitly enabled; historical appointment links and existing channel autodeal settings are retained.",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "default": false
+          },
+          "cardinality": {
+            "type": "string",
+            "enum": [
+              "request",
+              "appointment"
+            ],
+            "default": "request"
+          },
+          "auto_create_from_calendar": {
+            "type": "boolean",
+            "default": false
+          },
+          "auto_create_from_medelement": {
+            "type": "boolean",
+            "default": false
+          },
+          "manual_stage_change": {
+            "type": "string",
+            "enum": [
+              "continue",
+              "pause"
+            ],
+            "default": "continue"
+          },
+          "success_mode": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "any_attended",
+              "selected_attended",
+              "all_required_attended"
+            ],
+            "default": "manual"
+          },
+          "rules": {
+            "type": "array",
+            "maxItems": 50,
+            "description": "Evaluated in array order; the first matching rule wins. Closed deals are not automatically reopened.",
+            "items": {
+              "type": "object",
+              "required": [
+                "stage_id",
+                "scope",
+                "conditions"
+              ],
+              "properties": {
+                "stage_id": {
+                  "type": "integer"
+                },
+                "scope": {
+                  "type": "string",
+                  "enum": [
+                    "any",
+                    "all",
+                    "selected",
+                    "nearest"
+                  ]
+                },
+                "conditions": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "provider_confirmed",
+                      "patient_confirmed",
+                      "scheduled",
+                      "attended",
+                      "cancelled",
+                      "no_show",
+                      "today",
+                      "tomorrow",
+                      "past",
+                      "future"
+                    ]
+                  }
+                },
+                "closing_reasons": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "transition_reason": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "crm_appointment_plan_item": {
+        "type": "object",
+        "required": [
+          "label"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable plan item identifier; generated when omitted."
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "required": {
+            "type": "boolean",
+            "default": true
+          },
+          "appointment_id": {
+            "type": "integer",
+            "nullable": true,
+            "description": "An appointment linked to this deal; one appointment may fulfill only one plan item."
+          }
+        }
+      },
+      "lead_appointment_conversion": {
+        "type": "object",
+        "description": "First inbound communication contacts in the selected period; appointment outcomes observed until observed_at. A caller booking two patients is one lead and two appointments.",
+        "properties": {
+          "leads_count": {
+            "type": "integer"
+          },
+          "booked_leads_count": {
+            "type": "integer"
+          },
+          "attended_leads_count": {
+            "type": "integer"
+          },
+          "booking_conversion_percent": {
+            "type": "number"
+          },
+          "attendance_conversion_percent": {
+            "type": "number"
+          },
+          "repeat_contacts_count": {
+            "type": "integer"
+          },
+          "appointments_count": {
+            "type": "integer"
+          },
+          "provider_booked_appointments_count": {
+            "type": "integer"
+          },
+          "attended_appointments_count": {
+            "type": "integer"
+          },
+          "cancelled_or_no_show_appointments_count": {
+            "type": "integer"
+          },
+          "unknown_attendance_appointments_count": {
+            "type": "integer"
+          },
+          "appointments_without_contact_count": {
+            "type": "integer"
+          },
+          "deals_count": {
+            "type": "integer"
+          },
+          "won_deals_count": {
+            "type": "integer"
+          },
+          "attribution_breakdown": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "cohort": {
+            "type": "string",
+            "enum": [
+              "first_inbound_communication_contact"
+            ]
+          },
+          "outcomes": {
+            "type": "string",
+            "enum": [
+              "observed_to_now"
+            ]
+          },
+          "scheduling_enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "captain_assistant_playground_parameters": {
+        "type": "object",
+        "properties": {
+          "message_content": {
+            "type": "string",
+            "description": "Required for the default message action."
+          },
+          "playground_mode": {
+            "type": "string",
+            "enum": [
+              "trial",
+              "live"
+            ],
+            "default": "trial",
+            "description": "Live requires an account administrator and uses real clinic operations with a synthetic caller."
+          },
+          "playground_action": {
+            "type": "string",
+            "enum": [
+              "message",
+              "session",
+              "reset"
+            ],
+            "default": "message"
+          },
+          "playground_session_id": {
+            "type": "string",
+            "description": "Server-owned session identifier scoped to this account",
+            "user": null,
+            "assistant and mode.": null
+          },
+          "scenario": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Trial accepts synthetic business data; Live accepts only the synthetic caller profile."
+          },
+          "live_inbox_id": {
+            "type": "integer"
+          },
+          "external_delivery_enabled": {
+            "type": "boolean",
+            "default": false
+          },
+          "controlled_test_number": {
+            "type": "string",
+            "description": "Explicit controlled delivery target for Live mode."
+          },
+          "message_history": {
+            "type": "array",
+            "description": "External-agent sessions use server-owned history and ignore client history. Reserved for the enabled internal assistant playground.",
+            "items": {
+              "type": "object",
+              "required": [
+                "role",
+                "content"
+              ],
+              "properties": {
+                "role": {
+                  "type": "string"
+                },
+                "content": {
+                  "type": "string"
+                },
+                "agent_name": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "conversation_id": {
+            "type": "string",
+            "description": "Trial rejects real conversations; Live accepts only its own dedicated session conversation display ID."
+          },
+          "test_model": {
+            "type": "string",
+            "description": "Per-request selectable model override. It is validated against the assistant model registry and is not saved to the assistant."
+          },
+          "test_temperature": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Per-request temperature override; accepted only when the selected model supports temperature."
+          },
+          "test_thinking_effort": {
+            "type": "string",
+            "description": "Per-request reasoning effort override; validated against the selected model's supported capabilities."
+          }
+        }
+      },
+      "captain_playground_session": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "trial",
+              "live"
+            ]
+          },
+          "scenario": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "message_history": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "live_available": {
+            "type": "boolean"
+          },
+          "live_warning": {
+            "type": "string"
+          },
+          "conversation_id": {
+            "type": "integer",
+            "description": "Dedicated Live conversation display ID."
+          },
+          "inbox_id": {
+            "type": "integer"
+          },
+          "delivery_enabled": {
+            "type": "boolean"
+          },
+          "delivery_target": {
+            "type": "string"
+          },
+          "inboxes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "channel_type": {
+                  "type": "string"
+                }
+              }
+            }
           }
         }
       },
@@ -26121,6 +27360,22 @@
           },
           "lock_version": {
             "type": "integer"
+          },
+          "appointment_plan": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/crm_appointment_plan_item"
+            }
+          },
+          "selected_appointment_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "appointment_automation_state": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Public automation state; signed delivery policies are excluded."
           },
           "custom_attributes": {
             "type": "object",
@@ -32607,67 +33862,29 @@
       "captain_assistant_playground_request": {
         "type": "object",
         "required": [
-          "message_content"
+          "assistant"
         ],
         "properties": {
-          "message_content": {
-            "type": "string"
-          },
-          "message_history": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "required": [
-                "role",
-                "content"
-              ],
-              "properties": {
-                "role": {
-                  "type": "string"
-                },
-                "content": {
-                  "type": "string"
-                },
-                "agent_name": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "conversation_id": {
-            "type": "string",
-            "description": "Optional account-visible conversation used to provide runtime context."
-          },
-          "test_model": {
-            "type": "string",
-            "description": "Per-request selectable model override. It is validated against the assistant model registry and is not saved to the assistant."
-          },
-          "test_temperature": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1,
-            "description": "Per-request temperature override; accepted only when the selected model supports temperature."
-          },
-          "test_thinking_effort": {
-            "type": "string",
-            "enum": [
-              "none",
-              "low",
-              "medium",
-              "high"
-            ],
-            "description": "Per-request reasoning effort override; accepted only when supported by the selected model."
+          "assistant": {
+            "$ref": "#/components/schemas/captain_assistant_playground_parameters"
           }
         }
       },
       "captain_assistant_playground_response": {
         "type": "object",
-        "required": [
-          "response"
-        ],
         "properties": {
           "response": {
-            "type": "string"
+            "type": "string",
+            "nullable": true,
+            "description": "Present for a message action; session and reset actions return session state without a generated reply."
+          },
+          "playground": {
+            "$ref": "#/components/schemas/captain_playground_session"
+          },
+          "delivery": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Actual delivery result; a queued message is not confirmed delivery."
           },
           "agent_name": {
             "type": [

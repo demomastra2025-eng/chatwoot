@@ -15,6 +15,15 @@ RSpec.describe 'Captain scheduling tool registry' do
     )
   end
 
+  it 'lists the patient appointment lookup in the agent catalog' do
+    definition = Captain::ToolRegistry.definition_for('list_my_appointments')
+
+    expect(definition.title).to eq('Мои записи')
+    expect(definition.allowed_scopes).to eq(Captain::ToolAccess::SCOPE_ORDER)
+    expect(definition.tool_class_for(Captain::ToolAccess::SCOPE_AGENT))
+      .to eq(Captain::Tools::Agent::AccountToolAdapter)
+  end
+
   it 'keeps appointment mutation tools available to ordered scopes' do
     ordered_scope_ids = Captain::ToolAccess::SCOPE_ORDER.flat_map do |scope|
       Captain::ToolRegistry.tools_for_scope(scope).pluck(:id)

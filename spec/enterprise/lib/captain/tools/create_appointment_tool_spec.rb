@@ -1,6 +1,10 @@
 require 'rails_helper'
 
 RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
+  include ActiveSupport::Testing::TimeHelpers
+
+  around { |example| travel_to(Time.utc(2026, 4, 19, 12)) { example.run } }
+
   let(:account) { create(:account) }
   let(:assistant) { create(:captain_assistant, account: account) }
   let(:tool) { described_class.new(assistant) }
@@ -51,7 +55,7 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
 
     result = Captain::ToolResult.normalize(tool.perform(Struct.new(:state).new(state), resource_id: 1, starts_at: Time.current.iso8601))
 
-    expect(result).to include(success: false, retryable: false, data: { code: 'MEDELEMENT_BOOKING_UNKNOWN' })
+    expect(result).to include(success: false, retryable: false, data: { 'success' => false, 'reason' => 'staff_will_help' })
     expect(conversation.messages.outgoing.where(private: false)).to be_empty
     expect(conversation.reload.status).to eq('open')
     expect(conversation.current_captain_control_state).to eq('human')
@@ -117,7 +121,7 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
     first = Captain::ToolResult.normalize(tool.perform(context, **input))
     second = Captain::ToolResult.normalize(tool.perform(context, **input))
 
-    expect(first).to include(success: false, retryable: false, data: { code: 'MEDELEMENT_COMMAND_RECEIPT_UNAVAILABLE' })
+    expect(first).to include(success: false, retryable: false, data: { 'success' => false, 'reason' => 'staff_will_help' })
     expect(second).to include(success: false, retryable: false)
     expect(conversation.reload.status).to eq('open')
     expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
@@ -171,7 +175,7 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
     expect(Integrations::Medelement::ProviderCommandJob).not_to receive(:perform_later)
     result = Captain::ToolResult.normalize(tool.perform(context, resource_id: resource.id, starts_at: appointment.starts_at.iso8601))
 
-    expect(result).to include(success: false, retryable: false, data: { code: 'MEDELEMENT_BOOKING_SUPERSEDED' })
+    expect(result).to include(success: false, retryable: false, data: { 'success' => false, 'reason' => 'staff_will_help' })
     expect(conversation.reload.status).to eq('open')
     expect(conversation.messages.outgoing.where(private: false)).to be_empty
     expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
@@ -190,12 +194,12 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
 
     result = Captain::ToolResult.normalize(tool.perform(context, resource_id: 1, starts_at: Time.current.iso8601))
 
-    expect(result).to include(success: false, data: { code: 'RESOURCE_UNAVAILABLE' })
+    expect(result).to include(success: false, data: { 'success' => false, 'reason' => 'validation_error' })
     expect(conversation.reload.status).to eq('pending')
     expect(conversation.messages.outgoing).to be_empty
   end
 
-  it 'returns normalized create_appointment payload' do
+  it 'returns only patient booking fields in the doctors local time and marks the source' do
     resource = create(:scheduling_resource, account: account, timezone: 'Asia/Almaty', slot_duration_min: 30)
     contact = create(:contact, account: account)
     conversation = create(:conversation, account: account, contact: contact)
@@ -208,30 +212,50 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
                                                     starts_at: Time.zone.parse('2026-04-20 09:00:00 +0500').iso8601,
                                                     duration_min: 30, custom_attributes: { source: 'agent' }))
 
-    expect(payload).to include(
-      'action' => 'create_appointment',
-      'appointment_id' => payload.dig('appointment', 'id'),
-      'status' => payload.dig('appointment', 'status'),
-      'provider_confirmation_required' => false,
-      'resource_id' => resource.id,
-      'contact_id' => contact.id,
-      'service_id' => scheduling_service.id,
-      'starts_at' => payload.dig('appointment', 'starts_at'),
-      'ends_at' => payload.dig('appointment', 'ends_at')
+    expect(payload).to eq(
+      'success' => true, 'appointment_id' => payload.fetch('appointment_id'),
+      'doctor_name' => resource.name, 'local_date' => '20.04.2026', 'local_time' => '09:00', 'status' => 'created'
     )
-    expect(payload['appointment']).to include('resource_id' => resource.id, 'contact_id' => contact.id, 'service_id' => scheduling_service.id)
-    expect(payload.dig('appointment', 'custom_attributes')).to include('source' => 'agent')
+    expect(account.scheduling_appointments.find(payload.fetch('appointment_id'))).to have_attributes(source: 'captain')
   end
 
   it 'exposes custom_attributes as an object parameter' do
     expect(described_class.parameters[:custom_attributes].type).to eq('object')
   end
 
+  it 'books a named child from the mother chat without changing either caller identity or conversation' do
+    allow(Rails).to receive(:cache).and_return(ActiveSupport::Cache::MemoryStore.new)
+    resource = create(:scheduling_resource, account: account, timezone: 'Asia/Almaty')
+    mother = create(:contact, account: account, name: 'Test Mother', phone_number: '+77010000001')
+    conversation = create(:conversation, account: account, contact: mother)
+    create(:scheduling_work_rule, resource: resource, weekday: 1)
+    context = Struct.new(:state, :context).new({ conversation: { id: conversation.id } }, {})
+    arguments = {
+      resource_id: resource.id, starts_at: '2026-04-20T10:00:00+05:00', duration_min: 45,
+      patient: { first_name: 'Test', last_name: 'Son', iin: '940720300129', birth_date: '1994-07-20', phone: '+77010000002' }
+    }
+
+    result = JSON.parse(tool.execute(context, **arguments))
+    expect(result).to include('success' => true)
+    appointment = account.scheduling_appointments.find(result.fetch('appointment_id'))
+    patient = appointment.patient_contact
+    expect(patient.id).not_to eq(mother.id)
+    expect(patient.phone_number).to eq('+77010000002')
+    expect(appointment).to have_attributes(contact_id: mother.id, conversation_id: conversation.id, duration_min: 45)
+    expect(appointment.client_name).to include('Test', 'Son')
+    expect(conversation.reload.contact_id).to eq(mother.id)
+    expect(mother.reload).to have_attributes(name: 'Test Mother', phone_number: '+77010000001')
+
+    repeated = JSON.parse(tool.execute(context, **arguments))
+    expect(repeated.fetch('appointment_id')).to eq(appointment.id)
+    expect(account.scheduling_appointments.where(patient_contact_id: patient.id).count).to eq(1)
+  end
+
   it 'instructs the agent to confirm only a successful booking tool result' do
     expect(tool.description).to include('reception ID', 'do not claim success or repeat the create call')
   end
 
-  it 'returns the exact provider command receipt with the Captain actor descriptor' do
+  it 'keeps the provider command internally while showing only the booking result' do
     stub_provider_availability
     hook_settings = attributes_for(:integrations_hook, :medelement)[:settings].merge('write_enabled' => true)
     create(:integrations_hook, :medelement, account: account, settings: hook_settings)
@@ -269,18 +293,13 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
     appointment = account.scheduling_appointments.find(payload.fetch('appointment_id'))
     allow(Captain::ToolExecutionIdempotency).to receive(:fetch_record).and_return(appointment.reload)
     replay_payload = JSON.parse(tool.perform(tool_context, **arguments))
-    expect(payload.fetch('provider_command_receipt')).to include(
-      'appointment_id' => payload.fetch('appointment_id'),
-      'expected_operation' => 'create_reception',
-      'linked' => true
+    expect(payload).to eq(
+      'success' => true, 'appointment_id' => appointment.id, 'doctor_name' => resource.name,
+      'local_date' => '20.04.2026', 'local_time' => '09:00', 'status' => 'created'
     )
-    expect(payload['provider_confirmation_required']).to be(true)
-    expect(payload).to include('provider_write_acknowledged' => true, 'provider_confirmation_status' => 'acknowledged')
-    expect(payload.dig('provider_command_receipt', 'command')).to include(
-      'operation' => 'create_reception',
-      'requested_by' => { 'type' => 'Captain::Assistant', 'id' => assistant.id }
-    )
-    expect(replay_payload.fetch('provider_command_receipt')).to eq(payload.fetch('provider_command_receipt'))
+    expect(replay_payload).to eq(payload)
+    command = Integrations::Medelement::ProviderCommand.find_by!(appointment_id: appointment.id, operation: 'create_reception')
+    expect(command.request_snapshot.dig('actor', 'type')).to eq('Captain::Assistant')
     expect(Integrations::Medelement::ProviderCommand.where(account_id: account.id, operation: 'create_reception').count).to eq(1)
     expect(conversation.messages.outgoing.where(private: false)).to be_empty
   end

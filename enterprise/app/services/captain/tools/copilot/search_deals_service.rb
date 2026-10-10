@@ -24,14 +24,19 @@ class Captain::Tools::Copilot::SearchDealsService < Captain::Tools::Copilot::Bas
   def execute(query: nil, contact_id: nil, pipeline_id: nil, pipeline_code: nil, stage_id: nil, stage_name: nil, stage_code: nil,
               owner_id: nil, company_id: nil, archived: nil, limit: nil)
     query = query.to_s.strip.presence
-    contact_id = verified_optional_record_id(contact_id, scope: account.contacts, field_name: 'contact_id')
+    contact_id = if patient_scope
+                   patient_scope.require_contact_filter!(contact_id, tool: 'search_deals')
+                   patient_scope.contact_id
+                 else
+                   verified_optional_record_id(contact_id, scope: account.contacts, field_name: 'contact_id')
+                 end
     pipeline = resolve_pipeline(pipeline_id: pipeline_id, pipeline_code: pipeline_code)
     stage = resolve_stage(stage_id: stage_id, stage_name: stage_name, stage_code: stage_code, pipeline: pipeline)
     owner_id = verified_optional_record_id(owner_id, scope: account.users, field_name: 'owner_id')
     company_id = verified_optional_record_id(company_id, scope: account.companies, field_name: 'company_id')
     scoped_contact_id = contact_id || (current_contact&.id if query.blank?)
 
-    deals = account.crm_deals.includes(:pipeline, :stage, :owner, :team, :company, :deal_contacts)
+    deals = (patient_scope ? patient_scope.deals : account.crm_deals).includes(:pipeline, :stage, :owner, :team, :company, :deal_contacts)
     deals = cast_boolean(archived) ? deals.archived : deals.kept
     deals = apply_contact_filter(deals, scoped_contact_id)
     deals = deals.where(pipeline_id: pipeline.id) if pipeline.present?
@@ -41,7 +46,9 @@ class Captain::Tools::Copilot::SearchDealsService < Captain::Tools::Copilot::Bas
     deals = deals.where('crm_deals.title ILIKE :query OR crm_deals.external_ref ILIKE :query', query: "%#{query}%") if query.present?
 
     total_count = deals.count
-    records = deals.ordered.limit(parse_limit(limit)).map { |deal| Crm::PayloadBuilder.ai_deal(deal) }
+    records = deals.ordered.limit(parse_limit(limit)).map do |deal|
+      patient_scope ? patient_scope.deal_payload(deal) : Crm::PayloadBuilder.ai_deal(deal)
+    end
 
     formatted_payload(
       filters: {
@@ -60,6 +67,8 @@ class Captain::Tools::Copilot::SearchDealsService < Captain::Tools::Copilot::Bas
       total_count: total_count,
       deals: records
     )
+  rescue Captain::Tools::Agent::PatientScope::Denied
+    Captain::Tools::Agent::PatientScope::FAILURE
   rescue StandardError => e
     tool_failure(e)
   end

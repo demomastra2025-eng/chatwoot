@@ -149,6 +149,13 @@ export default function useAutomationValues() {
     })
   );
 
+  const appointmentSourceOptions = computed(() =>
+    ['manual', 'medelement', 'captain'].map(source => ({
+      id: source,
+      name: t(`SCHEDULING.APPOINTMENT_SOURCE.${source}`),
+    }))
+  );
+
   const appointmentServiceOptions = computed(() =>
     (schedulingReferencesStore.services || []).map(service => ({
       id: service.id,
@@ -225,6 +232,7 @@ export default function useAutomationValues() {
       agents: agents.value,
       appointmentFieldDefinitions: appointmentFieldDefinitions.value,
       appointmentPaymentStatusOptions: appointmentPaymentStatusOptions.value,
+      appointmentSourceOptions: appointmentSourceOptions.value,
       appointmentServiceOptions: appointmentServiceOptions.value,
       appointmentStatusOptions: appointmentStatusOptions.value,
       appointmentTypeOptions: appointmentTypeOptions.value,

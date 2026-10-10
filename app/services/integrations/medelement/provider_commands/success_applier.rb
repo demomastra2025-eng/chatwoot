@@ -63,7 +63,8 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
       appointment.update!(
         starts_at: snapshot_time('destination_starts_at'),
         ends_at: snapshot_time('destination_ends_at'),
-        custom_attributes: appointment.custom_attributes.to_h.merge(
+        duration_min: confirmed_duration_min,
+        custom_attributes: stamped_custom_attributes.merge(
           'medelement_cabinet_code' => command.request_snapshot.fetch('company_cabinet_code'),
           'medelement_provider_sync_status' => 'succeeded'
         )
@@ -78,7 +79,7 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
       appointment.update!(
         status: 'cancelled',
         payment_status: 'cancelled',
-        custom_attributes: appointment.custom_attributes.to_h.merge(
+        custom_attributes: stamped_custom_attributes.merge(
           Integrations::Medelement::AppointmentProviderStatus::ATTRIBUTE_KEY =>
             Integrations::Medelement::AppointmentProviderStatus::SUCCEEDED,
           Integrations::Medelement::AppointmentProviderStatus::CANCELLATION_COMMAND_ID_KEY => command.id
@@ -106,24 +107,39 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
   end
 
   def with_owned_command
-    command.with_lock do
-      command.reload
-      next false unless command.processing?
-      next false unless reconciliation_claim_owned?
+    with_command_delivery_policy do
+      command.with_lock do
+        command.reload
+        next false unless command.processing?
+        next false unless reconciliation_claim_owned?
 
-      yield
-      true
+        yield
+        true
+      end
     end
   end
 
   def with_reconcilable_command
-    command.with_lock do
-      command.reload
-      next false unless command.processing? || command.reconcilable?
+    with_command_delivery_policy do
+      command.with_lock do
+        command.reload
+        next false unless command.processing? || command.reconcilable?
 
-      yield
-      true
+        yield
+        true
+      end
     end
+  end
+
+  def with_command_delivery_policy(&block)
+    return yield unless defined?(Outbound::PlaygroundDeliveryPolicy)
+
+    policy = Outbound::PlaygroundDeliveryPolicy.for_execution(command)
+    Outbound::PlaygroundDeliveryPolicy.with(policy, &block)
+  end
+
+  def stamped_custom_attributes
+    Scheduling::Appointments::PlaygroundRunStamp.apply(appointment.custom_attributes)
   end
 
   def apply_reception_created!(reception_code:, patient_code:)
@@ -137,8 +153,9 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
     appointment.update!(
       starts_at: snapshot_time('destination_starts_at'),
       ends_at: snapshot_time('destination_ends_at'),
+      duration_min: confirmed_duration_min,
       external_ref: "medelement:reception:#{reception_code}",
-      custom_attributes: appointment.custom_attributes.to_h.except('medelement_patient_code').merge(
+      custom_attributes: stamped_custom_attributes.except('medelement_patient_code').merge(
         'medelement_reception_code' => reception_code,
         'medelement_cabinet_code' => command.request_snapshot.fetch('company_cabinet_code'),
         'medelement_provider_sync_status' => 'succeeded'
@@ -164,10 +181,16 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
     Time.iso8601(command.request_snapshot.fetch('reception').fetch(key))
   end
 
+  def confirmed_duration_min
+    starts_at = snapshot_time('destination_starts_at')
+    ends_at = snapshot_time('destination_ends_at')
+    ((ends_at - starts_at) / 60).round
+  end
+
   def link_contact_patient_ref!(patient_code)
     if appointment_patient_owned?
       Integrations::Medelement::PatientContactBinding.new(appointment: appointment).prepare!(patient_code: patient_code)
-      appointment.update!(custom_attributes: appointment.custom_attributes.to_h.merge(appointment_patient_attributes(patient_code)))
+      appointment.update!(custom_attributes: stamped_custom_attributes.merge(appointment_patient_attributes(patient_code)))
       return
     end
     return if command.contact.blank?
@@ -189,7 +212,8 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
     return unless appointment
 
     appointment.lock!
-    return if Integrations::Medelement::AppointmentPatientIdentity.current?(command)
+    return if Scheduling::Appointments::ImportedProviderMutationService.current_source?(command) &&
+              Integrations::Medelement::AppointmentPatientIdentity.current?(command)
 
     raise Scheduling::Error.new(
       code: 'MEDELEMENT_RECEPTION_COMMAND_STALE_LOCAL',

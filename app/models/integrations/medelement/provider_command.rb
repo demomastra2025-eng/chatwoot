@@ -39,15 +39,23 @@ class Integrations::Medelement::ProviderCommand < ApplicationRecord
   validate :hook_is_medelement
   validate :contact_matches_appointment
   validate :desired_range_for_move
+  validate :supported_reception_destination
   validate :company_cabinet_for_reception_write
 
   scope :executable, -> { where(status: execution_statuses('queued')) }
   scope :unfinished, -> { where(status: UNFINISHED_STATUSES) }
+  scope :recoverable_patient_selection, lambda {
+    where(status: 'failed', operation: 'create_reception', last_error_code: 'patient_ref_conflict', provider_reception_code: [nil, ''])
+      .where("NULLIF(execution_state ->> 'write_phase', '') IS NULL")
+      .where("NULLIF(execution_state ->> 'write_provider_patient_code', '') IS NULL")
+      .where("NULLIF(execution_state ->> 'write_provider_reception_code', '') IS NULL")
+  }
   scope :patient_identity_writes, -> { where(PATIENT_IDENTITY_WRITE_PREDICATE) }
 
   before_validation :normalize_execution_state
   before_validation :normalize_provider_patient_code
   after_update_commit :enqueue_ai_booking_outcome, if: :saved_change_to_status?
+  after_update_commit :enqueue_created_notifications, if: :saved_change_to_status?
 
   def terminal?
     status.in?(TERMINAL_STATUSES)
@@ -126,6 +134,12 @@ class Integrations::Medelement::ProviderCommand < ApplicationRecord
   end
 
   private
+
+  def enqueue_created_notifications
+    return unless create_reception? && succeeded?
+
+    AutomationRules::ReleaseAppointmentCreatedNotificationsJob.perform_later(id)
+  end
 
   def enqueue_ai_booking_outcome
     # Create replies stay with the model; only unresolved outcomes need staff review.
@@ -210,6 +224,18 @@ class Integrations::Medelement::ProviderCommand < ApplicationRecord
     return if desired_starts_at.present? && desired_ends_at.present? && desired_ends_at > desired_starts_at
 
     errors.add(:desired_ends_at, 'must be after desired_starts_at for move_reception')
+  end
+
+  def supported_reception_destination
+    return unless create_reception? || move_reception?
+    return unless new_record? || will_save_change_to_operation? || will_save_change_to_desired_starts_at? || will_save_change_to_desired_ends_at?
+
+    schema = Integrations::Medelement::ProviderCommands::RequestSnapshotSchema
+    starts_at = desired_starts_at || appointment&.starts_at
+    ends_at = desired_ends_at || appointment&.ends_at
+    return if schema.supported_destination_interval?(starts_at, ends_at)
+
+    errors.add(:desired_ends_at, schema::DESTINATION_INTERVAL_MESSAGE)
   end
 
   def company_cabinet_for_reception_write

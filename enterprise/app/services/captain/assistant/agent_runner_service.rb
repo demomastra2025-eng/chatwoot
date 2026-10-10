@@ -43,11 +43,13 @@ class Captain::Assistant::AgentRunnerService
     end
   end
 
-  def initialize(assistant:, conversation: nil, callbacks: {}, source: nil, response_fence: nil, test_overrides: {})
+  def initialize(assistant:, conversation: nil, callbacks: {}, source: nil, response_fence: nil, test_overrides: {}, playground_session: nil)
     @assistant = assistant
     @conversation = conversation
     @callbacks = callbacks
     @source = source
+    @playground_session = source.to_s == 'playground' ? playground_session : nil
+    @conversation = @playground_session.conversation if @playground_session
     @response_fence = response_fence.to_h.symbolize_keys.compact
     @test_overrides = if source.to_s == 'playground'
                         test_overrides.to_h.symbolize_keys.slice(:model, :temperature, :thinking_effort)
@@ -59,14 +61,13 @@ class Captain::Assistant::AgentRunnerService
 
   def generate_response(message_history: [])
     started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    response = Captain::Mcp::ToolCatalog.with_runtime_cache do
-      with_mcp_discovery_policy do
-        Llm::Config.with_runtime_cache do
-          with_llm_catalog_snapshots do
-            generate_response_with_runtime_cache(message_history)
-          end
-        end
-      end
+    policy = if @playground_session
+               Outbound::PlaygroundDeliveryPolicy.for_run(@playground_session.run_policy)
+             else
+               Outbound::PlaygroundDeliveryPolicy.policy_for(conversation: @conversation)
+             end
+    response = Outbound::PlaygroundDeliveryPolicy.with(policy) do
+      generate_response_in_runtime_cache(message_history)
     end
     add_playground_latency(response, started_at)
   rescue Captain::Conversation::ControlGenerationStaleError
@@ -82,6 +83,18 @@ class Captain::Assistant::AgentRunnerService
 
   private
 
+  def generate_response_in_runtime_cache(message_history)
+    Captain::Mcp::ToolCatalog.with_runtime_cache do
+      with_mcp_discovery_policy do
+        Llm::Config.with_runtime_cache do
+          with_llm_catalog_snapshots do
+            generate_response_with_runtime_cache(message_history)
+          end
+        end
+      end
+    end
+  end
+
   def with_mcp_discovery_policy(&)
     return yield if mcp_discovery_required?
 
@@ -89,6 +102,9 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def mcp_discovery_required?
+    return false if @source.to_s == 'playground'
+    return false unless Outbound::PlaygroundDeliveryPolicy.policy_for(conversation: @conversation).nil?
+
     mcp_tool_reference?(
       [
         @assistant.config,
@@ -796,11 +812,17 @@ class Captain::Assistant::AgentRunnerService
       captain_scheduling_grounding_guard_enabled: @assistant.account.feature_enabled?('captain_scheduling_grounding_guard')
     }
     state[:source] = @source if @source.present?
+    state[:playground_thinking_effort] = @test_overrides[:thinking_effort] if @source == 'playground' && @test_overrides.key?(:thinking_effort)
     state[:captain_control_generation] = @response_fence[:control_generation] if @response_fence.key?(:control_generation)
     state[:captain_response_fence] = @response_fence if @conversation.present? && @response_fence.present?
     state[:runtime_clock] = runtime_clock_state
 
-    time_phase('build_conversation_state') { build_conversation_state(state) } if @conversation
+    if @playground_session&.trial?
+      state.merge!(@playground_session.state)
+    else
+      time_phase('build_conversation_state') { build_conversation_state(state) } if @conversation
+      state.merge!(@playground_session.state) if @playground_session
+    end
     state[:prompt_context] = time_phase('prompt_context_state') { @assistant.prompt_context_state(state) }
     state
   end
@@ -820,6 +842,8 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def runtime_timezone
+    return @playground_session.scenario.data['timezone'] if @playground_session&.trial?
+
     configured_timezone = @conversation&.inbox&.timezone.presence || Time.zone.name
     return configured_timezone if Time.find_zone(configured_timezone).present?
 
@@ -889,7 +913,9 @@ class Captain::Assistant::AgentRunnerService
     )
     state[:deal] = Captain::ContextFields.deal_state_for(account: @assistant.account, conversation: @conversation)
     state[:task] = Captain::ContextFields.task_state_for(account: @assistant.account, conversation: @conversation)
-    state[:appointment] = Captain::ContextFields.appointment_state_for(account: @assistant.account, conversation: @conversation)
+    state[:appointment] = Captain::ContextFields.appointment_state_for(
+      account: @assistant.account, conversation: @conversation, patient_scope: true
+    )
     state[:campaign] = slice_attrs(@conversation.campaign, CAMPAIGN_STATE_ATTRIBUTES) if @conversation.campaign
     state[:contact_inbox] = slice_attrs(@conversation.contact_inbox, CONTACT_INBOX_STATE_ATTRIBUTES) if @conversation.contact_inbox
   end
@@ -1046,6 +1072,10 @@ class Captain::Assistant::AgentRunnerService
     return appointment_status_evidence(payload) if appointment_status_tool?(tool_name)
     return if canonical_name.blank?
 
+    if !@playground_session&.trial? && canonical_name == 'update_appointment' && payload[:success] && payload[:appointment_id].present?
+      return provider_move_evidence(payload)
+    end
+
     appointment = payload[:appointment].to_h.with_indifferent_access
     receipt = payload[:provider_command_receipt].to_h.with_indifferent_access
     provider_command = receipt[:command].to_h.with_indifferent_access
@@ -1069,6 +1099,23 @@ class Captain::Assistant::AgentRunnerService
       starts_at: payload[:starts_at].presence || appointment[:starts_at],
       ends_at: payload[:ends_at].presence || appointment[:ends_at]
     }.compact
+  end
+
+  def provider_move_evidence(payload)
+    appointment = @assistant.account.scheduling_appointments.find_by(id: payload[:appointment_id])
+    return if appointment.blank?
+
+    command = Integrations::Medelement::ProviderCommand.where(
+      account_id: @assistant.account_id, appointment_id: appointment.id, operation: 'move_reception'
+    ).order(created_at: :desc, id: :desc).first
+    return if command.blank? || command.request_snapshot.dig('actor', 'id').to_s != @assistant.id.to_s
+
+    {
+      action: 'update_appointment', appointment_id: appointment.id,
+      provider_confirmation_required: true, provider_command_receipt_present: true,
+      provider_command_id: command.id, provider_command_operation: command.operation,
+      provider_confirmation_status: command.status
+    }
   end
 
   def appointment_status_tool?(tool_name)
@@ -1200,6 +1247,10 @@ class Captain::Assistant::AgentRunnerService
   def run_payload(message_history)
     message_to_process = extract_last_user_message(message_history)
     context = build_context(message_history_without_last_user_message(message_history))
+    if @playground_session
+      context[:session_id] = "playground_#{@playground_session.id}"
+      context[:playground_session] = @playground_session
+    end
     context[:captain_v2_current_input] = message_to_process
     enrich_context_with_trace_payload!(context, message_history, message_to_process)
     [message_to_process, context]

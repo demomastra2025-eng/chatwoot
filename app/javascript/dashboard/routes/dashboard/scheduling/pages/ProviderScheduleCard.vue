@@ -81,9 +81,6 @@ const nextWorkingDay = computed(() =>
           </span>
         </p>
       </template>
-      <p v-if="schedule.differsFromTemplate" class="mb-0 mt-1 text-n-amber-11">
-        {{ t('SCHEDULING.RESOURCES.PROVIDER_DIFFERS') }}
-      </p>
       <Button
         v-if="formattedDays.length"
         type="button"

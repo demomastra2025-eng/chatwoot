@@ -1,6 +1,7 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useRoute } from 'vue-router';
 
 import ReportsAPI from 'dashboard/api/standaloneReports';
 import Button from 'dashboard/components-next/button/Button.vue';
@@ -8,8 +9,12 @@ import { useAlert } from 'dashboard/composables';
 import ReportHeader from './components/ReportHeader.vue';
 import ReportMetricCard from './components/ReportMetricCard.vue';
 import ReportDateRange from './components/ReportDateRange.vue';
+import LeadAppointmentConversionReport from './components/LeadAppointmentConversionReport.vue';
 
 const { t, te, locale } = useI18n();
+const route = useRoute();
+const accountId = computed(() => String(route?.params?.accountId || ''));
+let generation = 0;
 const report = ref({});
 const fromDate = ref('');
 const toDate = ref('');
@@ -99,11 +104,15 @@ const submissionMetrics = computed(() => [
 ]);
 
 const loadReport = async (range = {}) => {
+  generation += 1;
+  const request = generation;
+  const account = accountId.value;
   isLoading.value = true;
   hasError.value = false;
 
   try {
     const response = await ReportsAPI.getLeads(range);
+    if (request !== generation || account !== accountId.value) return;
     report.value = response.data?.payload || {};
     const meta = response.data?.meta || {};
     fromDate.value = meta.from_date || range.fromDate || '';
@@ -111,17 +120,28 @@ const loadReport = async (range = {}) => {
     timezone.value = meta.timezone || timezone.value;
     maxRangeDays.value = meta.max_range_days || maxRangeDays.value;
   } catch {
+    if (request !== generation || account !== accountId.value) return;
     report.value = {};
     hasError.value = true;
     useAlert(t('REPORTS.LEADS.ERROR'));
   } finally {
-    isLoading.value = false;
+    if (request === generation) isLoading.value = false;
   }
 };
 
 const applyRange = range => loadReport(range);
 
-onMounted(() => loadReport());
+watch(
+  accountId,
+  () => {
+    report.value = {};
+    loadReport();
+  },
+  { immediate: true }
+);
+onBeforeUnmount(() => {
+  generation += 1;
+});
 </script>
 
 <template>
@@ -152,6 +172,12 @@ onMounted(() => loadReport());
         @click="loadReport({ fromDate, toDate })"
       />
     </div>
+
+    <LeadAppointmentConversionReport
+      v-if="report.appointment_conversion"
+      :report="report.appointment_conversion"
+      :loading="isLoading"
+    />
 
     <p class="m-0 text-xs text-n-slate-10">
       {{ t('REPORTS.LEADS.EVENTS_NOTE') }}

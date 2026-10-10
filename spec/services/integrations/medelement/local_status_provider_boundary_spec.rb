@@ -566,7 +566,18 @@ RSpec.describe 'MedElement boundary for local appointment statuses' do
       service = Scheduling::Appointments::UpsertService.new(
         account: account, appointment: appointment, params: { status: 'scheduled' }, actor: actor
       )
-      # Reopening only exercises payment and expense restoration; this fixture has no working-hours rules.
+      allow(client).to receive(:timetable).with(
+        specialist_code: 'specialist-1', starts_on: starts_at.to_date, ends_on: starts_at.to_date
+      ).and_return(
+        starts_at.strftime('%d.%m.%Y') => {
+          'timetable' => [{ 'start' => provider_time(starts_at), 'end' => provider_time(ends_at), 'working' => true }]
+        }
+      )
+      allow(client).to receive(:get_receptions).with(
+        company_cabinet_code: 'cabinet-1', specialist_code: 'specialist-1',
+        begin_datetime: provider_time(starts_at), end_datetime: provider_time(ends_at), skip: 0
+      ).and_return([listed_reception(active: 1, removed: 0)])
+      # The provider slot is checked when the cancelled appointment is reopened.
       allow(service).to receive(:validate_availability!)
 
       result = service.perform
@@ -574,6 +585,8 @@ RSpec.describe 'MedElement boundary for local appointment statuses' do
       expect(result.reload).to have_attributes(status: 'scheduled', payment_status: 'paid')
       expect(result.custom_attributes).not_to have_key(marker_key)
       expect(result.expense).to have_attributes(status: 'unpaid', amount: 6_000)
+      expect(client).to have_received(:timetable).once
+      expect(client).to have_received(:get_receptions).once
     end
 
     it 'uses only this account integration toggle when cancelling a linked appointment' do

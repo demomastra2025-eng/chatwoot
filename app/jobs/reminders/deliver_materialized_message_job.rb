@@ -27,6 +27,11 @@ class Reminders::DeliverMaterializedMessageJob < MutexApplicationJob
 
   def dispatch!(reminder_id, message_id, processing_claim, renew_lock)
     reminder = Reminder.find(reminder_id)
+    policy = Outbound::PlaygroundDeliveryPolicy.policy_for(reminder: reminder)
+    unless policy.nil?
+      outgoing = Message.outgoing.find_by!(id: message_id, account_id: reminder.account_id)
+      Outbound::PlaygroundDeliveryPolicy.ensure!(conversation: outgoing.conversation, policy: policy)
+    end
     provider_guard = Reminders::AppointmentProviderGuard.new(reminder: reminder, phase: :delivery)
     provider_check = [provider_guard, provider_guard.verify]
     raise LockAcquisitionError, 'Lost reminder delivery mutex before provider dispatch' unless renew_lock.call
@@ -43,6 +48,10 @@ class Reminders::DeliverMaterializedMessageJob < MutexApplicationJob
 
     SendReplyJob.perform_now(message.id)
     finalize_dispatch(reminder, message, processing_claim)
+  rescue Outbound::PlaygroundDeliveryPolicy::Blocked => e
+    outgoing&.update!(status: :failed, external_error: e.message)
+    reminder.with_lock { reminder.fail!(e.message, delivery_stage: 'failed') }
+    false
   end
 
   def prepare_dispatch(reminder, message_id, processing_claim, provider_check)
@@ -210,7 +219,10 @@ class Reminders::DeliverMaterializedMessageJob < MutexApplicationJob
       error = message.external_error.presence || UNCONFIRMED_PROVIDER_DELIVERY
       reminder.with_lock do
         reminder.reload
-        reminder.fail!(error, delivery_stage: error.match?(/template|шаблон/i) ? 'template_rejected' : 'failed') if reminder.delivery_dispatched_for?(message.id)
+        if reminder.delivery_dispatched_for?(message.id)
+          reminder.fail!(error,
+                         delivery_stage: error.match?(/template|шаблон/i) ? 'template_rejected' : 'failed')
+        end
       end
       return
     end
