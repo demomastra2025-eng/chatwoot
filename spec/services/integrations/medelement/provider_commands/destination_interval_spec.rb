@@ -101,7 +101,11 @@ RSpec.describe 'Medelement reception destination intervals' do
     expect(command.execution_state['write_phase']).to eq('reception_move')
     Integrations::Medelement::ProviderCommands::ReconciliationService.new(command: command).perform
     expect(command.reload).to be_provider_status_unknown
-    expect(command.last_error_code).to eq('reconciliation_invalid_request_snapshot')
+    expect(command.last_error_code).to eq('provider_status_unknown')
+    expect(command.execution_state).to include(
+      'provider_status_unknown_reason' => 'reconciliation_invalid_request_snapshot',
+      'write_phase' => 'reception_move'
+    )
     expect(appointment.reload).to have_attributes(starts_at: starts_at, ends_at: starts_at + 30.minutes, duration_min: 30)
   end
 
