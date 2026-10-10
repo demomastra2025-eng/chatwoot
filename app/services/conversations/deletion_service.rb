@@ -136,9 +136,11 @@ class Conversations::DeletionService
   def ensure_no_overlap!(targets)
     pending = @account.bulk_action_runs.where(resource_type: 'Conversation', action_name: 'delete', status: [:queued, :processing])
                       .where("metadata->>'operation_kind' = ?", KIND)
-    conditions = Array.new(targets.size, "metadata->'targets' @> ?").join(' OR ')
-    values = targets.map { |target| [{ record_id: target['record_id'], status: 'pending' }].to_json }
-    raise OverlappingRequest if pending.where(conditions, *values).exists?
+    overlapping = targets.reduce(pending.none) do |scope, target|
+      value = [{ record_id: target['record_id'], status: 'pending' }].to_json
+      scope.or(pending.where("metadata->'targets' @> ?", value))
+    end
+    raise OverlappingRequest if overlapping.exists?
   end
 
   def runs
