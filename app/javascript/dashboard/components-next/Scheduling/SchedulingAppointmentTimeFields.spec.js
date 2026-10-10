@@ -52,14 +52,24 @@ describe('SchedulingAppointmentTimeFields', () => {
     expect(wrapper.vm.durationMin).toBe(70);
   });
 
-  it('does not silently change the interval to accept an invalid duration', async () => {
-    const wrapper = mountFields();
-    const fields = wrapper.findComponent(SchedulingAppointmentTimeFields);
-    await fields
-      .findComponent({ name: 'Input' })
-      .vm.$emit('update:modelValue', '1500');
+  it.each(['0', '1', '2000'])(
+    'keeps invalid duration %s visible after editing the start',
+    async duration => {
+      const wrapper = mountFields();
+      const fields = wrapper.findComponent(SchedulingAppointmentTimeFields);
+      await fields
+        .findComponent({ name: 'Input' })
+        .vm.$emit('update:modelValue', duration);
 
-    expect(wrapper.vm.endsAt).toBe('2026-06-27T10:30');
-    expect(wrapper.vm.durationMin).toBe('1500');
-  });
+      expect(wrapper.vm.endsAt).toBe('2026-06-27T10:30');
+      expect(wrapper.vm.durationMin).toBe(duration);
+
+      await fields
+        .findAllComponents({ name: 'SchedulingDateTimeField' })[0]
+        .vm.$emit('update:modelValue', '2026-06-27T09:00');
+
+      expect(wrapper.vm.endsAt).toBe('2026-06-27T10:30');
+      expect(wrapper.vm.durationMin).toBe(duration);
+    }
+  );
 });

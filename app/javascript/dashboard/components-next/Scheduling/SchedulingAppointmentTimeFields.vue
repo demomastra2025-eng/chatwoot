@@ -75,7 +75,9 @@ const updateDuration = value => {
   emit('change', 'duration');
 };
 
-watch([startsAt, endsAt], safeSynchronizeDuration);
+watch([startsAt, endsAt], () => {
+  if (validDuration(durationMin.value)) safeSynchronizeDuration();
+});
 </script>
 
 <template>
