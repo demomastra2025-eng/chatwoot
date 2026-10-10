@@ -4,8 +4,9 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
   def cancel_current_appointment(appointment_id: nil, appointment_access_token: nil, patient_confirmed: false)
     ensure_feature_enabled!('scheduling', 'Scheduling is not enabled for this account')
     appointment = target_appointment(appointment_id, appointment_access_token: appointment_access_token, patient_confirmed: patient_confirmed)
-    # Imported MedElement receptions stay read-only for Captain.
-    ::Scheduling::Appointments::MutationGuard.ensure_editable!(appointment)
+    if imported_appointment?(appointment)
+      return mutate_imported_appointment(appointment, 'remove_reception', {}, appointment_access_token, patient_confirmed)
+    end
 
     # The same provider-aware path as staff: a verified MedElement booking is
     # removed through a remove command, an unverified one fails with a typed error.
@@ -31,7 +32,7 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
       contact_id: current_contact&.id,
       company_id: current_company&.id,
       conversation_id: conversation&.id,
-      crm_deal_id: crm_deal_id.presence || (current_deal&.id if crm_pipeline_id.blank?),
+      crm_deal_id: crm_deal_id.presence || (active_current_deal_id if crm_pipeline_id.blank?),
       crm_pipeline_id: crm_pipeline_id,
       created_by_id: (actor.id if actor.is_a?(User)),
       custom_attributes: parsed_hash(custom_attributes, field_name: 'custom_attributes')
@@ -62,6 +63,10 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
     params[:client_comment] = client_comment unless client_comment.nil?
     params[:custom_attributes] = parsed_hash(custom_attributes, field_name: 'custom_attributes') if custom_attributes.present?
 
+    if imported_appointment?(appointment)
+      return mutate_imported_appointment(appointment, 'move_reception', params, appointment_access_token, patient_confirmed)
+    end
+
     ::Scheduling::Appointments::UpsertService.new(
       account: account,
       params: params,
@@ -87,6 +92,25 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
   end
 
   private
+
+  def imported_appointment?(appointment)
+    appointment.source == ::Scheduling::Appointments::MutationGuard::PROVIDER_SOURCE
+  end
+
+  def mutate_imported_appointment(appointment, operation, params, token, confirmed)
+    ::Scheduling::Appointments::ImportedProviderMutationService.new(
+      appointment: appointment, actor: actor, operation: operation, params: params,
+      appointment_access: mutation_access(appointment, token, confirmed)
+    ).perform
+  end
+
+  def active_current_deal_id
+    deal = current_deal
+    return if deal.blank?
+
+    scope = ::Crm::Appointments::CandidateScope.resolve(account: account, contact: current_contact)
+    deal.id if scope.exists?(id: deal.id)
+  end
 
   def mutation_access(appointment, token, confirmed)
     return unless actor.is_a?(Captain::Assistant)

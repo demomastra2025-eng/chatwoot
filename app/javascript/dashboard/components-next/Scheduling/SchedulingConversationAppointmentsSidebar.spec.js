@@ -376,11 +376,20 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     SchedulingAppointmentsAPI.create.mockReturnValueOnce(previous.promise);
     const wrapper = mountComponent(defaultCurrentChat(), patientContextProps());
     await flushPromises();
+    await wrapper.vm.startCreateAppointment({ scroll: false });
+    Object.assign(wrapper.vm.createForm, {
+      startsAt: '2026-06-27T15:00',
+      endsAt: '2026-06-27T15:30',
+      durationMin: 30,
+    });
+    await flushPromises();
     const saving = wrapper.vm.saveCreateAppointment();
     expect(SchedulingAppointmentsAPI.create).toHaveBeenCalledWith(
       expect.objectContaining({
         contact_id: 42,
         patient_contact_id: 84,
+        starts_at: clinicIso('2026-06-27T15:00'),
+        ends_at: clinicIso('2026-06-27T15:30'),
       })
     );
     await wrapper.setProps(patientContextProps(85));
