@@ -183,7 +183,7 @@ describe('CrmDealConversationPanel', () => {
     conversations = ref([]);
     currentUser = ref({
       id: 9,
-      accounts: [{ id: 1, permissions: ['scheduling_manage'] }],
+      accounts: [{ id: 1, permissions: ['agent'] }],
     });
     schedulingEnabled = ref(true);
     uiSettings = ref({ is_contact_sidebar_open: true });
