@@ -943,13 +943,21 @@ describe('SchedulingVueCalCalendar', () => {
       await nextTick();
 
       const events = wrapper.findComponent(VueCal).props('events');
-      expect(events.filter(event => !event.background).map(event => event.id))
-        .toEqual(expect.arrayContaining(appointments.map(appointment => String(appointment.id))));
+      expect(
+        events.filter(event => !event.background).map(event => event.id)
+      ).toEqual(
+        expect.arrayContaining(
+          appointments.map(appointment => String(appointment.id))
+        )
+      );
       const cards = wrapper.findAll('.scheduling-vue-cal__event-card');
       expect(cards).toHaveLength(32);
       appointments.forEach(appointment => {
-        expect(cards.some(card => card.attributes('title')?.includes(appointment.clientName)))
-          .toBe(true);
+        expect(
+          cards.some(card =>
+            card.attributes('title')?.includes(appointment.clientName)
+          )
+        ).toBe(true);
       });
       cards.forEach(card => {
         const width = card.element.closest('.vuecal__event').style.width;

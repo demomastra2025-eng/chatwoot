@@ -710,9 +710,14 @@ const appointmentEndsAt = computed({
   set: value => formStore.updateField('endsAt', value),
 });
 const appointmentDurationMin = computed({
-  get: () => formStore.form.durationMin !== ''
-    ? formStore.form.durationMin
-    : dateTimeInputDurationMinutes(formStore.form.startsAt, formStore.form.endsAt, DEFAULT_WORKSPACE_TIMEZONE) || 30,
+  get: () =>
+    formStore.form.durationMin !== ''
+      ? formStore.form.durationMin
+      : dateTimeInputDurationMinutes(
+          formStore.form.startsAt,
+          formStore.form.endsAt,
+          DEFAULT_WORKSPACE_TIMEZONE
+        ) || 30,
   set: value => formStore.updateField('durationMin', value),
 });
 
@@ -2578,7 +2583,9 @@ onMounted(async () => {
                     v-if="formStore.mode === 'create'"
                     v-model="appointmentDealSelection"
                     :communication-contact-id="formStore.form.contactId"
-                    :conversation-display-id="formStore.form.conversationDisplayId"
+                    :conversation-display-id="
+                      formStore.form.conversationDisplayId
+                    "
                     :disabled="formStore.ui.isSaving"
                     class="mb-4"
                   />
@@ -2704,10 +2711,25 @@ onMounted(async () => {
                       id-prefix="calendar-appointment"
                       class="md:col-span-2"
                       :disabled="formStore.ui.isSaving"
-                      :starts-at-message="formStore.validationErrors.startsAt ? validationErrorMessage(formStore.validationErrors.startsAt) : ''"
-                      :ends-at-message="formStore.validationErrors.endsAt ? validationErrorMessage(formStore.validationErrors.endsAt) : ''"
+                      :starts-at-message="
+                        formStore.validationErrors.startsAt
+                          ? validationErrorMessage(
+                              formStore.validationErrors.startsAt
+                            )
+                          : ''
+                      "
+                      :ends-at-message="
+                        formStore.validationErrors.endsAt
+                          ? validationErrorMessage(
+                              formStore.validationErrors.endsAt
+                            )
+                          : ''
+                      "
                     />
-                    <p v-if="formStore.validationErrors.durationMin" class="m-0 text-xs text-n-ruby-9 md:col-span-2">
+                    <p
+                      v-if="formStore.validationErrors.durationMin"
+                      class="m-0 text-xs text-n-ruby-9 md:col-span-2"
+                    >
                       {{ $t(formStore.validationErrors.durationMin) }}
                     </p>
                   </div>

@@ -1011,7 +1011,9 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     await wrapper.vm.startCreateAppointment();
     await flushPromises();
     const pending = deferredRequest();
-    SchedulingAvailabilityAPI.show.mockImplementationOnce(() => pending.promise);
+    SchedulingAvailabilityAPI.show.mockImplementationOnce(
+      () => pending.promise
+    );
     wrapper.vm.changePickerDate(wrapper.vm.createForm, '2026-06-28');
 
     mocks.route.params.accountId = '2';
@@ -1038,10 +1040,15 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
 
   it('ignores a window response after switching the selected family patient', async () => {
     SchedulingAppointmentsAPI.get.mockResolvedValue({ data: { payload: [] } });
-    const wrapper = mountComponent(defaultCurrentChat(), patientContextProps(84));
+    const wrapper = mountComponent(
+      defaultCurrentChat(),
+      patientContextProps(84)
+    );
     await flushPromises();
     const pending = deferredRequest();
-    SchedulingAvailabilityAPI.show.mockImplementationOnce(() => pending.promise);
+    SchedulingAvailabilityAPI.show.mockImplementationOnce(
+      () => pending.promise
+    );
     wrapper.vm.changePickerDate(wrapper.vm.createForm, '2026-06-28');
 
     await wrapper.setProps(patientContextProps(85));

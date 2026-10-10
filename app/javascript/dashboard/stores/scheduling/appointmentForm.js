@@ -746,9 +746,15 @@ export const useSchedulingAppointmentFormStore = defineStore(
           conversation_id: toNumeric(normalizedForm.conversationId),
           ...(this.mode === 'create'
             ? {
-                crm_deal_id: toNumeric(normalizedForm.crmDealSelection?.crm_deal_id),
-                crm_pipeline_id: toNumeric(normalizedForm.crmDealSelection?.crm_pipeline_id),
-                crm_deal_selection: normalizedForm.crmDealSelection?.crm_deal_selection || undefined,
+                crm_deal_id: toNumeric(
+                  normalizedForm.crmDealSelection?.crm_deal_id
+                ),
+                crm_pipeline_id: toNumeric(
+                  normalizedForm.crmDealSelection?.crm_pipeline_id
+                ),
+                crm_deal_selection:
+                  normalizedForm.crmDealSelection?.crm_deal_selection ||
+                  undefined,
               }
             : {}),
           custom_attributes: {

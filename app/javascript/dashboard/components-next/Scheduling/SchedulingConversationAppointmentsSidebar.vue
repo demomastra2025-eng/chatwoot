@@ -936,7 +936,7 @@ const resetSelectedWindow = form => {
   form.selectedWindowStartsAt = '';
 };
 
-const loadFormWindows = async form => {
+async function loadFormWindows(form) {
   const key = pickerKeyForForm(form);
   const context = captureSidebarContext();
   availabilityRequestId += 1;
@@ -998,11 +998,13 @@ const loadFormWindows = async form => {
       requestId,
     };
   }
-};
+}
 
 const setAppointmentForms = () => {
   Object.keys(appointmentForms).forEach(key => delete appointmentForms[key]);
-  Object.keys(availabilityByForm).forEach(key => delete availabilityByForm[key]);
+  Object.keys(availabilityByForm).forEach(
+    key => delete availabilityByForm[key]
+  );
   appointments.value.forEach(appointment => {
     appointmentForms[appointmentKey(appointment)] =
       formFromAppointment(appointment);
@@ -1043,7 +1045,7 @@ const medelementCabinetOptionsForForm = form =>
     value: cabinet.code,
   }));
 
-const updateFormEndFromDuration = form => {
+function updateFormEndFromDuration(form) {
   if (!form?.startsAt) return;
   if (Number.isNaN(new Date(form.startsAt).getTime())) return;
 
@@ -1059,7 +1061,7 @@ const updateFormEndFromDuration = form => {
     durationMin,
     SCHEDULING_TIMEZONE
   );
-};
+}
 
 const syncFormServiceFields = form => {
   if (selectedServiceForForm(form)) {
@@ -1647,7 +1649,9 @@ const loadAppointments = async () => {
       ? [appointmentKey(firstEditableAppointment)]
       : [];
     if (firstEditableAppointment) {
-      loadFormWindows(appointmentForms[appointmentKey(firstEditableAppointment)]);
+      loadFormWindows(
+        appointmentForms[appointmentKey(firstEditableAppointment)]
+      );
     }
   } catch (error) {
     if (!isCurrentRequest()) return false;
@@ -2360,7 +2364,9 @@ watch(
     patientActionRequestId.value += 1;
     patientActionBusyKey.value = '';
     Object.keys(patientActions).forEach(key => delete patientActions[key]);
-    Object.keys(availabilityByForm).forEach(key => delete availabilityByForm[key]);
+    Object.keys(availabilityByForm).forEach(
+      key => delete availabilityByForm[key]
+    );
     providerCommandsStore.ui.operationId += 1;
     providerCommandsStore.ui.isExecuting = false;
     providerCommandsStore.ui.error = null;

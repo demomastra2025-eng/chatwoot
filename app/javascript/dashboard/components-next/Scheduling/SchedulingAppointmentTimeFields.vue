@@ -23,7 +23,9 @@ const durationMin = defineModel('durationMin', {
 });
 
 const validDuration = value =>
-  Number.isInteger(Number(value)) && Number(value) >= 5 && Number(value) <= 1440;
+  Number.isInteger(Number(value)) &&
+  Number(value) >= 5 &&
+  Number(value) <= 1440;
 
 const synchronizeDuration = () => {
   const from = Date.parse(

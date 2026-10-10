@@ -78,6 +78,8 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     render json: response
   rescue Captain::Playground::SessionStore::Busy, Captain::Playground::SessionStore::Stale => e
     render json: { error: 'playground_session_conflict', message: e.message }, status: :conflict
+  rescue Pundit::NotAuthorizedError
+    render json: { error: 'playground_live_forbidden' }, status: :forbidden
   rescue ArgumentError, ActiveRecord::RecordInvalid => e
     render json: { error: 'invalid_playground_scenario', message: e.message }, status: :unprocessable_entity
   rescue Rack::Timeout::RequestTimeoutException, Rack::Timeout::RequestTimeoutError => e

@@ -1,6 +1,5 @@
 # Imported receptions keep provider-owned fields. Captain and Copilot may only
 # request a move or cancellation through the ordinary confirmed command flow.
-# rubocop:disable Metrics/ClassLength
 class Scheduling::Appointments::ImportedProviderMutationService
   OPERATIONS = %w[move_reception remove_reception].freeze
   TIME_KEYS = %i[starts_at ends_at duration_min].freeze
@@ -215,4 +214,3 @@ class Scheduling::Appointments::ImportedProviderMutationService
     raise Scheduling::Error.new(code: 'APPOINTMENT_ACCESS_CHANGED', message: 'Record is not available', status: :conflict)
   end
 end
-# rubocop:enable Metrics/ClassLength
