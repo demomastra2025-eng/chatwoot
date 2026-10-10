@@ -60,6 +60,8 @@ const sortConversations = (conversations, sortKey) => {
 };
 
 const getters = {
+  getConversationDeletionOperations: _state => _state.deletionOperations || [],
+  getConversationDeletionRevision: _state => _state.deletionRevision || 0,
   getAllConversations: ({ allConversations, chatSortFilter: sortKey }) => {
     return sortConversations(allConversations, sortKey);
   },

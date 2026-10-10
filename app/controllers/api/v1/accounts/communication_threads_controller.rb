@@ -20,8 +20,12 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   rescue_from CommunicationThreads::MessageCreateService::Error, with: :render_communication_thread_parameter_error
   rescue_from Conversations::StatusReasonConfig::Error, with: :render_status_reason_error
   rescue_from ArgumentError, with: :render_communication_thread_parameter_error
+  rescue_from Conversations::DeletionService::InvalidRequest, with: :render_invalid_deletion
+  rescue_from Conversations::DeletionService::KeyConflict, with: :render_deletion_key_conflict
+  rescue_from Conversations::DeletionService::OverlappingRequest, with: :render_deletion_key_conflict
 
   before_action :ensure_communication_threads_feature_enabled!
+  before_action :recover_deletion, only: :destroy_conversations
   before_action :communication_thread, only: MEMBER_THREAD_ACTIONS
   before_action :ensure_thread_accessible!, only: MEMBER_THREAD_ACTIONS
   before_action :ensure_full_thread_accessible_for_update!, only: [:update]
@@ -155,12 +159,11 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   def destroy_conversations
     conversations = selected_delete_conversations
     authorize_delete_conversations!(conversations)
-    enqueue_delete_conversations(conversations)
-
-    render json: {
-      thread_id: @communication_thread.display_id,
-      deleted_conversation_ids: conversations.map(&:display_id)
-    }, status: :accepted
+    run = deletion_service.create(
+      conversations: conversations, request_key: params.key?(:request_key) ? params[:request_key] : SecureRandom.uuid,
+      conversation_ids: permitted_delete_conversation_ids, thread_id: params[:id], ip: request.ip
+    )
+    render_deletion(run)
   end
 
   def create_message
@@ -209,6 +212,35 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   end
 
   private
+
+  def deletion_service
+    @deletion_service ||= Conversations::DeletionService.new(account: Current.account, user: Current.user)
+  end
+
+  def recover_deletion
+    Conversations::DeletionService.identity(params[:id])
+    permitted_delete_conversation_ids
+    return unless params.key?(:request_key)
+
+    run = deletion_service.recover(
+      request_key: params[:request_key], conversation_ids: permitted_delete_conversation_ids, thread_id: params[:id]
+    )
+    render_deletion(run) if run
+  end
+
+  def render_deletion(run)
+    enqueue_failed = run.metadata.fetch('targets').any? { |target| target['error_code'] == 'enqueue_failed' }
+    render json: Conversations::DeletionService.response(run).merge(thread_id: params[:id].to_i),
+           status: enqueue_failed ? :service_unavailable : :accepted
+  end
+
+  def render_invalid_deletion
+    render json: { error: 'conversation_deletion_invalid' }, status: :unprocessable_content
+  end
+
+  def render_deletion_key_conflict
+    render json: { error: 'conversation_deletion_key_conflict' }, status: :conflict
+  end
 
   def communication_thread
     @communication_thread = CommunicationThread.find_by!(account_id: Current.account.id, display_id: params[:id])
@@ -260,10 +292,14 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   end
 
   def permitted_delete_conversation_ids
-    raw_ids = Array(params[:conversation_ids])
+    raw_ids = params[:conversation_ids]
+    raise Conversations::DeletionService::InvalidRequest unless raw_ids.is_a?(Array) && raw_ids.size.between?(1, Conversations::DeletionService::MAX_TARGETS)
     raise ArgumentError, 'Select at least one communication thread conversation' if raw_ids.blank?
 
-    raw_ids.map { |conversation_id| Integer(conversation_id) }.uniq
+    ids = raw_ids.map { |conversation_id| Conversations::DeletionService.identity(conversation_id) }
+    raise Conversations::DeletionService::InvalidRequest unless ids.uniq.size == ids.size
+
+    ids
   rescue ArgumentError, TypeError
     raise ArgumentError, 'Invalid communication thread conversation_ids'
   end
@@ -281,10 +317,6 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
 
   def authorize_delete_conversations!(conversations)
     conversations.each { |conversation| authorize conversation, :destroy? }
-  end
-
-  def enqueue_delete_conversations(conversations)
-    conversations.each { |conversation| DeleteObjectJob.perform_later(conversation, Current.user, request.ip) }
   end
 
   def thread_label_list

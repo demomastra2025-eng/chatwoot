@@ -1,3 +1,5 @@
+require 'digest'
+
 class DeleteObjectJob < ApplicationJob # rubocop:disable Metrics/ClassLength -- keep this job's deletion lifecycle and retry contract together
   queue_as :low
 
@@ -17,7 +19,43 @@ class DeleteObjectJob < ApplicationJob # rubocop:disable Metrics/ClassLength -- 
     cleanup_empty_communication_threads(deletion_context[:communication_thread_ids])
   end
 
+  def destroy_tracked_conversation(conversation)
+    raise ArgumentError, 'Expected a conversation' unless conversation.is_a?(Conversation)
+
+    deletion_context = build_post_deletion_context(conversation)
+    deletion_context[:inbox_id] = conversation.inbox_id
+    deletion_context[:team_id] = conversation.team_id
+    deletion_context[:assignee_id] = conversation.assignee_id
+    Conversation.transaction do
+      prepare_telephony_dependencies(conversation)
+      conversation.destroy!
+      yield deletion_context
+    end
+  end
+
+  def finish_tracked_conversation(conversation, user, ip, context)
+    audit_tracked_conversation(conversation, user, ip, context)
+  end
+
+  def cleanup_tracked_conversation(account, thread_ids)
+    Array(thread_ids).compact.uniq.each_slice(BATCH_SIZE) do |ids|
+      CommunicationThread.where(account_id: account.id, id: ids).find_each do |thread|
+        CommunicationThread.transaction do
+          # Incoming attachment uses this same contact lock in the native
+          # resolver. Recheck emptiness only after that attachment has settled.
+          identity = "communication-thread:#{account.id}:#{thread.contact_id}"
+          lock_id = Digest::SHA256.digest(identity).unpack1('q>')
+          ActiveRecord::Base.connection.execute("SELECT pg_advisory_xact_lock(#{lock_id})")
+          current = CommunicationThread.lock.find_by(id: thread.id, account_id: account.id, contact_id: thread.contact_id)
+          cleanup_empty_communication_threads([current.id], account_id: account.id) if current
+        end
+      end
+    end
+  end
+
   private
+
+  def audit_tracked_conversation(_conversation, _user, _ip, _context); end
 
   # rubocop:disable Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity -- keep generation checks adjacent to the destructive boundary.
   def perform_inbox_deletion(inbox, user, ip, requested_attempt_id)
@@ -247,9 +285,11 @@ class DeleteObjectJob < ApplicationJob # rubocop:disable Metrics/ClassLength -- 
     ids.presence
   end
 
-  def cleanup_empty_communication_threads(thread_ids)
+  def cleanup_empty_communication_threads(thread_ids, account_id: nil)
     Array(thread_ids).compact.each_slice(BATCH_SIZE) do |ids|
-      CommunicationThread.where(id: ids).find_each do |thread|
+      scope = CommunicationThread.where(id: ids)
+      scope = scope.where(account_id: account_id) if account_id
+      scope.find_each do |thread|
         next if thread.communication_thread_conversations.exists?
 
         nullify_records(

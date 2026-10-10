@@ -15,6 +15,7 @@ module Events::Types
 
   # conversation events
   CONVERSATION_CREATED = 'conversation.created'
+  CONVERSATION_DELETED = 'conversation.deleted'
   CONVERSATION_UPDATED = 'conversation.updated'
   CONVERSATION_READ = 'conversation.read'
   CONVERSATION_BOT_HANDOFF = 'conversation.bot_handoff'

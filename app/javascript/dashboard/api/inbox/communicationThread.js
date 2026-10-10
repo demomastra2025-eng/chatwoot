@@ -23,6 +23,13 @@ class CommunicationThreadApi extends ApiClient {
     super('communication_threads', { accountScoped: true });
   }
 
+  show(id, context = null, options = {}) {
+    const url = context ? `${context.baseUrl}/communication_threads` : this.url;
+    return Object.keys(options).length
+      ? axios.get(`${url}/${id}`, options)
+      : axios.get(`${url}/${id}`);
+  }
+
   // eslint-disable-next-line class-methods-use-this
   invalidateListRequests() {
     inFlightListRequests.clear();
@@ -207,9 +214,11 @@ class CommunicationThreadApi extends ApiClient {
     return axios.post(`${this.url}/${id}/labels`, { labels });
   }
 
-  deleteConversations(id, conversationIds) {
-    return axios.delete(`${this.url}/${id}/conversations`, {
-      data: { conversation_ids: conversationIds },
+  deleteConversations(id, conversationIds, requestKey, context = null) {
+    const url = context ? `${context.baseUrl}/communication_threads` : this.url;
+    return axios.delete(`${url}/${id}/conversations`, {
+      data: { conversation_ids: conversationIds, request_key: requestKey },
+      timeout: 10000,
     });
   }
 
