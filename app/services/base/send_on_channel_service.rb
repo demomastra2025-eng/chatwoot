@@ -15,7 +15,13 @@ class Base::SendOnChannelService
     return unless outgoing_message?
     return if invalid_message?
 
+    Outbound::PlaygroundDeliveryPolicy.ensure!(
+      conversation: conversation, policy: Outbound::PlaygroundDeliveryPolicy.policy_for(conversation: conversation, message: message)
+    )
     perform_reply
+  rescue Outbound::PlaygroundDeliveryPolicy::Blocked => e
+    message.update!(status: :failed, external_error: e.message) if message.persisted?
+    false
   end
 
   private

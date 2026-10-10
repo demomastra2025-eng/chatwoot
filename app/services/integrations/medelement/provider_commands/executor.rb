@@ -10,9 +10,14 @@ class Integrations::Medelement::ProviderCommands::Executor
     @client = client
   end
 
+  def perform
+    policy = Outbound::PlaygroundDeliveryPolicy.for_execution(command)
+    Outbound::PlaygroundDeliveryPolicy.with(policy) { perform_with_playground_context }
+  end
+
   # The ordered rescue map is the public command outcome contract.
   # rubocop:disable Metrics/MethodLength
-  def perform
+  def perform_with_playground_context
     return unless claim!
 
     validate_execution_gate!
@@ -43,6 +48,8 @@ class Integrations::Medelement::ProviderCommands::Executor
   # rubocop:enable Metrics/MethodLength
 
   private
+
+  private :perform_with_playground_context
 
   attr_reader :command
 
@@ -309,8 +316,20 @@ class Integrations::Medelement::ProviderCommands::Executor
 
   def mark_write_phase!(phase, preflight_reception_codes: nil, provider_patient_code: nil)
     with_patient_identity_write_fence do
+      validate_current_imported_source!
       publish_write_phase!(phase, preflight_reception_codes: preflight_reception_codes, provider_patient_code: provider_patient_code)
     end
+  end
+
+  def validate_current_imported_source!
+    return unless command.execution_state.to_h.key?('imported_appointment_source_snapshot')
+    if defined?(Scheduling::Appointments::ImportedProviderMutationService) &&
+       Scheduling::Appointments::ImportedProviderMutationService.respond_to?(:current_source?) &&
+       Scheduling::Appointments::ImportedProviderMutationService.current_source?(command)
+      return
+    end
+
+    raise execution_error('appointment_superseded', 'Imported appointment changed after confirmation')
   end
 
   def with_patient_identity_write_fence
@@ -517,7 +536,7 @@ class Integrations::Medelement::ProviderCommands::Executor
         last_error_status: status,
         executed_at: Time.current
       )
-      project_failed_appointment_status! unless reconciliation
+      project_failed_appointment_status! unless reconciliation || code == 'appointment_superseded'
       reconciliation_enqueued = reconciliation
     end
     Integrations::Medelement::ProviderCommandReconciliationJob.perform_later(command.id) if reconciliation_enqueued

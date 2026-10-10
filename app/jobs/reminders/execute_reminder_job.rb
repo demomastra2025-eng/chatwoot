@@ -9,7 +9,10 @@ class Reminders::ExecuteReminderJob < ApplicationJob
     return unless reminder.processing?
     return unless current_claim?(reminder, processing_claim)
 
-    Reminders::ExecuteService.new(reminder: reminder, processing_claim: processing_claim).perform
+    policy = Outbound::PlaygroundDeliveryPolicy.for_execution(reminder)
+    Outbound::PlaygroundDeliveryPolicy.with(policy) do
+      Reminders::ExecuteService.new(reminder: reminder, processing_claim: processing_claim).perform
+    end
   end
 
   private

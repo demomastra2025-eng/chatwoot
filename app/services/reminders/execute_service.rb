@@ -20,6 +20,7 @@ class Reminders::ExecuteService
     reload_reminder
     return complete_dispatched_execution if dispatched_before_completion?
     return reminder if execution_ineligible?
+    return reminder if playground_delivery_blocked?
     return reminder if Reminders::MissedAutomationTouchPolicy.new(reminder: reminder).cancel_if_missed!
     return reminder if appointment_provider_blocked?(:materialization)
     return finish_execution if reminder.delivery_materialized?
@@ -42,6 +43,17 @@ class Reminders::ExecuteService
   end
 
   private
+
+  def playground_delivery_blocked?
+    policy = Outbound::PlaygroundDeliveryPolicy.policy_for(reminder: reminder)
+    return false if policy.nil?
+
+    payload = Outbound::PlaygroundDeliveryPolicy.verified(policy)
+    return false if payload && payload[:delivery_enabled] == true && payload[:account_id].to_s == reminder.account_id.to_s
+
+    fail_reminder!(Outbound::PlaygroundDeliveryPolicy::BLOCKED_MESSAGE)
+    true
+  end
 
   def execution_ineligible?
     return true if reminder.cancelled? || reminder.completed? || reminder.failed?
@@ -513,6 +525,10 @@ class Reminders::ExecuteService
   end
 
   def ensure_delivery_allowed!(conversation, content_kind:, template_params:, attachments:)
+    Outbound::PlaygroundDeliveryPolicy.ensure!(
+      conversation: conversation,
+      policy: Outbound::PlaygroundDeliveryPolicy.policy_for(conversation: conversation, reminder: reminder)
+    )
     ::Outbound::DeliveryPolicy.ensure!(
       conversation: conversation,
       content_kind: content_kind,

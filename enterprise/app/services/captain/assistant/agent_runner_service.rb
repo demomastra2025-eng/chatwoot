@@ -43,11 +43,13 @@ class Captain::Assistant::AgentRunnerService
     end
   end
 
-  def initialize(assistant:, conversation: nil, callbacks: {}, source: nil, response_fence: nil, test_overrides: {})
+  def initialize(assistant:, conversation: nil, callbacks: {}, source: nil, response_fence: nil, test_overrides: {}, playground_session: nil)
     @assistant = assistant
     @conversation = conversation
     @callbacks = callbacks
     @source = source
+    @playground_session = source.to_s == 'playground' ? playground_session : nil
+    @conversation = @playground_session.conversation if @playground_session
     @response_fence = response_fence.to_h.symbolize_keys.compact
     @test_overrides = if source.to_s == 'playground'
                         test_overrides.to_h.symbolize_keys.slice(:model, :temperature, :thinking_effort)
@@ -59,14 +61,8 @@ class Captain::Assistant::AgentRunnerService
 
   def generate_response(message_history: [])
     started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    response = Captain::Mcp::ToolCatalog.with_runtime_cache do
-      with_mcp_discovery_policy do
-        Llm::Config.with_runtime_cache do
-          with_llm_catalog_snapshots do
-            generate_response_with_runtime_cache(message_history)
-          end
-        end
-      end
+    response = Outbound::PlaygroundDeliveryPolicy.with(@playground_session&.run_policy || Current.playground_run_policy) do
+      generate_response_in_runtime_cache(message_history)
     end
     add_playground_latency(response, started_at)
   rescue Captain::Conversation::ControlGenerationStaleError
@@ -82,6 +78,18 @@ class Captain::Assistant::AgentRunnerService
 
   private
 
+  def generate_response_in_runtime_cache(message_history)
+    Captain::Mcp::ToolCatalog.with_runtime_cache do
+      with_mcp_discovery_policy do
+        Llm::Config.with_runtime_cache do
+          with_llm_catalog_snapshots do
+            generate_response_with_runtime_cache(message_history)
+          end
+        end
+      end
+    end
+  end
+
   def with_mcp_discovery_policy(&)
     return yield if mcp_discovery_required?
 
@@ -89,6 +97,8 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def mcp_discovery_required?
+    return false if @playground_session&.trial?
+
     mcp_tool_reference?(
       [
         @assistant.config,
@@ -801,7 +811,12 @@ class Captain::Assistant::AgentRunnerService
     state[:captain_response_fence] = @response_fence if @conversation.present? && @response_fence.present?
     state[:runtime_clock] = runtime_clock_state
 
-    time_phase('build_conversation_state') { build_conversation_state(state) } if @conversation
+    if @playground_session&.trial?
+      state.merge!(@playground_session.state)
+    else
+      time_phase('build_conversation_state') { build_conversation_state(state) } if @conversation
+      state.merge!(@playground_session.state) if @playground_session
+    end
     state[:prompt_context] = time_phase('prompt_context_state') { @assistant.prompt_context_state(state) }
     state
   end
@@ -821,6 +836,8 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def runtime_timezone
+    return @playground_session.scenario.data['timezone'] if @playground_session&.trial?
+
     configured_timezone = @conversation&.inbox&.timezone.presence || Time.zone.name
     return configured_timezone if Time.find_zone(configured_timezone).present?
 
@@ -1049,7 +1066,7 @@ class Captain::Assistant::AgentRunnerService
     return appointment_status_evidence(payload) if appointment_status_tool?(tool_name)
     return if canonical_name.blank?
 
-    if canonical_name == 'update_appointment' && payload[:success] && payload[:appointment_id].present?
+    if !@playground_session&.trial? && canonical_name == 'update_appointment' && payload[:success] && payload[:appointment_id].present?
       return provider_move_evidence(payload)
     end
 
@@ -1224,6 +1241,10 @@ class Captain::Assistant::AgentRunnerService
   def run_payload(message_history)
     message_to_process = extract_last_user_message(message_history)
     context = build_context(message_history_without_last_user_message(message_history))
+    if @playground_session
+      context[:session_id] = "playground_#{@playground_session.id}"
+      context[:playground_session] = @playground_session
+    end
     context[:captain_v2_current_input] = message_to_process
     enrich_context_with_trace_payload!(context, message_history, message_to_process)
     [message_to_process, context]

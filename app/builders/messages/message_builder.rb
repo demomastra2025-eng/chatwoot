@@ -115,6 +115,7 @@ class Messages::MessageBuilder
 
   def validate_delivery_policy!
     return unless message_type == 'outgoing'
+    Outbound::PlaygroundDeliveryPolicy.ensure!(conversation: @conversation, private_note: @private)
     return if @skip_delivery_policy
 
     Outbound::DeliveryPolicy.ensure!(
@@ -204,6 +205,8 @@ class Messages::MessageBuilder
     attrs[:campaign_test_send] = true if ActiveModel::Type::Boolean.new.cast(@params[:campaign_test_send])
     attrs[:template_params] = template_params if template_params.present?
     attrs[:delivery_policy] = delivery_policy if delivery_policy.present?
+    policy = Outbound::PlaygroundDeliveryPolicy.policy_for(conversation: @conversation)
+    attrs[Outbound::PlaygroundDeliveryPolicy::ATTRIBUTE_KEY] = policy.deep_dup unless policy.nil?
     attrs.presence
   end
 

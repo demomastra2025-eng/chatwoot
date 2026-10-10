@@ -91,6 +91,100 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
     allow(client).to receive(:search_patients_by_codes).and_return([])
   end
 
+  context 'when executing with a captured Playground policy' do
+    after { Current.reset }
+
+    it 'restores the signed command policy for execution and queued descendants' do
+      captured = Outbound::PlaygroundDeliveryPolicy.issue(mode: 'live', run_id: SecureRandom.uuid, delivery_enabled: false)
+      command.update!(execution_state: command.execution_state.merge('captain_playground' => captured))
+      descendant = nil
+      allow(executor).to receive(:execute_operation!) do
+        expect(Current.playground_run_policy).to eq(captured)
+        descendant = Integrations::Medelement::ProviderCommandReconciliationJob.new(command.id)
+        descendant.send(:capture_playground_run_policy)
+      end
+
+      perform
+
+      expect(descendant.serialize['captain_playground']).to eq(captured)
+      expect(Current.playground_run_policy).to be_nil
+      expect(Integrations::Medelement::Client).not_to have_received(:new)
+    end
+
+    it 'keeps malformed command policy blocking instead of restoring ordinary execution context' do
+      command.update!(execution_state: command.execution_state.merge('captain_playground' => nil))
+      allow(executor).to receive(:execute_operation!) do
+        expect(Current.playground_run_policy).to eq({})
+        expect { Outbound::PlaygroundDeliveryPolicy.ensure!(conversation: nil) }.to raise_error(Outbound::PlaygroundDeliveryPolicy::Blocked)
+      end
+
+      perform
+
+      expect(Current.playground_run_policy).to be_nil
+      expect(Integrations::Medelement::Client).not_to have_received(:new)
+    end
+
+    it 'keeps an invalid inherited policy blocking even when the command has a signed policy' do
+      captured = Outbound::PlaygroundDeliveryPolicy.issue(mode: 'live', run_id: SecureRandom.uuid, delivery_enabled: true)
+      command.update!(execution_state: command.execution_state.merge('captain_playground' => captured))
+      inherited = { 'token' => 'invalid' }
+      allow(executor).to receive(:execute_operation!) { expect(Current.playground_run_policy).to eq({}) }
+
+      Outbound::PlaygroundDeliveryPolicy.with(inherited) do
+        perform
+        expect(Current.playground_run_policy).to eq(inherited)
+      end
+
+      expect(Current.playground_run_policy).to be_nil
+      expect(Integrations::Medelement::Client).not_to have_received(:new)
+    end
+
+    it 'retains an inherited causal policy when an ordinary command has no stored stamp' do
+      inherited = { 'token' => 'invalid' }
+      allow(executor).to receive(:execute_operation!) { expect(Current.playground_run_policy).to eq(inherited) }
+
+      Outbound::PlaygroundDeliveryPolicy.with(inherited) { perform }
+
+      expect(Current.playground_run_policy).to be_nil
+      expect(Integrations::Medelement::Client).not_to have_received(:new)
+    end
+  end
+
+  context 'when publishing a captured imported appointment mutation' do
+    let(:appointment) { create(:scheduling_appointment, account: account, contact: contact, resource: resource) }
+
+    before do
+      command.update!(execution_state: command.execution_state.merge('imported_appointment_source_snapshot' => {}))
+      allow(executor).to receive(:execute_operation!) { executor.send(:mark_write_phase!, 'reception_move') }
+    end
+
+    it 'fails closed if the source validation helper is unavailable' do
+      hide_const('Scheduling::Appointments::ImportedProviderMutationService')
+
+      perform
+
+      expect(command.reload).to have_attributes(status: 'failed', last_error_code: 'appointment_superseded')
+      expect(command.execution_state['write_phase']).to be_nil
+      expect(Integrations::Medelement::Client).not_to have_received(:new)
+    end
+
+    it 'checks the current appointment source before publishing a provider write phase' do
+      helper = Class.new
+      helper.define_singleton_method(:current_source?) { |_command| false }
+      stub_const('Scheduling::Appointments::ImportedProviderMutationService', helper)
+      allow(helper).to receive(:current_source?).with(command).and_return(false)
+      original_attributes = appointment.attributes
+
+      perform
+
+      expect(helper).to have_received(:current_source?).with(command)
+      expect(command.reload).to have_attributes(status: 'failed', last_error_code: 'appointment_superseded')
+      expect(command.execution_state['write_phase']).to be_nil
+      expect(appointment.reload.attributes).to eq(original_attributes)
+      expect(Integrations::Medelement::Client).not_to have_received(:new)
+    end
+  end
+
   context 'when confirmation is no longer confirmed' do
     let(:confirmation_status) { 'pending' }
 

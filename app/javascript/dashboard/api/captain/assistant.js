@@ -28,16 +28,50 @@ class CaptainAssistant extends ApiClient {
     messageContent,
     messageHistory,
     testOptions = {},
+    mode,
+    sessionId,
+    conversationId,
+    liveOptions = {},
   }) {
     return axios.post(`${this.url}/${assistantId}/playground`, {
       message_content: messageContent,
       message_history: messageHistory,
+      ...(mode ? { playground_mode: mode } : {}),
+      ...(sessionId ? { playground_session_id: sessionId } : {}),
+      ...(conversationId ? { conversation_id: conversationId } : {}),
+      ...(liveOptions.inboxId ? { live_inbox_id: liveOptions.inboxId } : {}),
+      ...(mode === 'live'
+        ? {
+            external_delivery_enabled: liveOptions.deliveryEnabled === true,
+            ...(liveOptions.deliveryEnabled && liveOptions.testNumber
+              ? { controlled_test_number: liveOptions.testNumber }
+              : {}),
+          }
+        : {}),
       ...(testOptions.model ? { test_model: testOptions.model } : {}),
       ...(testOptions.temperature !== undefined
         ? { test_temperature: testOptions.temperature }
         : {}),
       ...(testOptions.thinkingEffort
         ? { test_thinking_effort: testOptions.thinkingEffort }
+        : {}),
+    });
+  }
+
+  playgroundSession({ assistantId, mode = 'trial', sessionId, reset = false, scenario, liveOptions = {} }) {
+    return axios.post(`${this.url}/${assistantId}/playground`, {
+      playground_action: reset ? 'reset' : 'session',
+      playground_mode: mode,
+      ...(sessionId ? { playground_session_id: sessionId } : {}),
+      ...(scenario ? { scenario } : {}),
+      ...(liveOptions.inboxId ? { live_inbox_id: liveOptions.inboxId } : {}),
+      ...(mode === 'live'
+        ? {
+            external_delivery_enabled: liveOptions.deliveryEnabled === true,
+            ...(liveOptions.deliveryEnabled && liveOptions.testNumber
+              ? { controlled_test_number: liveOptions.testNumber }
+              : {}),
+          }
         : {}),
     });
   }
