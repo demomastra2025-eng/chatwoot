@@ -17,13 +17,15 @@ import CrmDealConversationPanel from './CrmDealConversationPanel.vue';
 vi.mock('dashboard/composables/store');
 vi.mock('dashboard/composables/useUISettings');
 vi.mock('dashboard/composables', () => ({ useAlert: vi.fn() }));
-vi.mock('vue-i18n', () => ({
+vi.mock('vue-i18n', async importOriginal => ({
+  ...(await importOriginal()),
   useI18n: () => ({
     t: key => key,
     locale: { value: 'en' },
   }),
 }));
-vi.mock('vue-router', () => ({
+vi.mock('vue-router', async importOriginal => ({
+  ...(await importOriginal()),
   useRoute: () => ({ params: { accountId: '1' }, query: {} }),
   useRouter: () => ({ replace: vi.fn() }),
 }));
