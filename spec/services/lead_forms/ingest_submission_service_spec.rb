@@ -32,7 +32,7 @@ RSpec.describe LeadForms::IngestSubmissionService do
     expect(submission.utm).to include('utm_source' => 'meta')
   end
 
-  it 'lets the existing conversation auto-create pipeline setting create the deal when enabled' do
+  it 'lets the incoming form message create a CRM deal through the enabled pipeline and native jobs' do
     pipeline = create(
       :crm_pipeline,
       account: account,
@@ -41,12 +41,22 @@ RSpec.describe LeadForms::IngestSubmissionService do
     )
     create(:crm_stage, account: account, pipeline: pipeline, default: true)
 
-    submission = described_class.new(lead_form: lead_form, params: payload).perform
+    submission = nil
+    inbound_jobs = lambda do |job|
+      job.is_a?(Crm::Appointments::InboundDealJob) ||
+        (job.is_a?(EventDispatcherJob) && job.arguments.first == 'message.created')
+    end
+    perform_enqueued_jobs(only: inbound_jobs) do
+      submission = described_class.new(lead_form: lead_form, params: payload).perform
+    end
 
+    message = submission.conversation.messages.find_by!(source_id: "lead_submission:#{submission.id}")
+    expect(message).to have_attributes(message_type: 'incoming', content_type: 'form', private: false)
     deal = account.crm_deals.find_by!(pipeline: pipeline)
     expect(deal.originating_conversation_id).to eq(submission.conversation_id)
     expect(deal.primary_contact_id).to eq(submission.contact_id)
-    expect(deal.idempotency_key).to eq("auto_channel_contact:pipeline:#{pipeline.id}:conversation:#{submission.conversation_id}")
+    expect(deal.idempotency_key).to eq("auto_channel_contact:pipeline:#{pipeline.id}:message:#{message.id}")
+    expect(account.crm_events.where(eventable: submission.contact, event_type: 'channel_contact_checked', command_key: deal.idempotency_key)).to exist
   end
 
   it 'is idempotent by idempotency key' do

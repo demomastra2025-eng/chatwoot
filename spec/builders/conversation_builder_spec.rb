@@ -10,6 +10,18 @@ describe ConversationBuilder do
   let(:contact_sms_inbox) { create(:contact_inbox, contact: contact, inbox: sms_inbox) }
   let(:contact_api_inbox) { create(:contact_inbox, contact: contact, inbox: api_inbox) }
 
+  def receive_incoming(conversation)
+    message = nil
+    inbound_jobs = lambda do |job|
+      job.is_a?(Crm::Appointments::InboundDealJob) ||
+        (job.is_a?(EventDispatcherJob) && job.arguments.first == 'message.created')
+    end
+    perform_enqueued_jobs(only: inbound_jobs) do
+      message = create(:message, account: account, inbox: conversation.inbox, conversation: conversation, sender: conversation.contact)
+    end
+    message
+  end
+
   describe '#perform' do
     it 'creates sms conversation' do
       conversation = described_class.new(
@@ -29,7 +41,7 @@ describe ConversationBuilder do
       expect(conversation.contact_inbox_id).to eq(contact_api_inbox.id)
     end
 
-    it 'auto-creates a CRM deal for a new conversation when the channel toggle is enabled' do
+    it 'auto-creates a CRM deal only after a new conversation receives an incoming message when enabled' do
       account.enable_features!('crm_deals')
       pipeline = create(
         :crm_pipeline,
@@ -44,12 +56,15 @@ describe ConversationBuilder do
         params: {}
       ).perform
 
+      expect(account.crm_deals.where(pipeline: pipeline)).not_to exist
+      message = receive_incoming(conversation)
       deal = account.crm_deals.find_by!(pipeline: pipeline)
 
       expect(deal.stage_id).to eq(stage.id)
       expect(deal.originating_conversation_id).to eq(conversation.id)
       expect(deal.primary_contact_id).to eq(contact.id)
-      expect(deal.idempotency_key).to eq("auto_channel_contact:pipeline:#{pipeline.id}:conversation:#{conversation.id}")
+      expect(deal.idempotency_key).to eq("auto_channel_contact:pipeline:#{pipeline.id}:message:#{message.id}")
+      expect(account.crm_events.where(eventable: contact, event_type: 'channel_contact_checked', command_key: deal.idempotency_key)).to exist
     end
 
     it 'recovers a database idempotency collision without aborting the caller transaction' do
@@ -63,18 +78,39 @@ describe ConversationBuilder do
       account.enable_features!('crm_deals')
       pipeline = create(:crm_pipeline, account: account, default: true, auto_create_deal_on_channel_contact: true)
       stage = create(:crm_stage, account: account, pipeline: pipeline, default: true)
-      idempotency_key = "auto_channel_contact:pipeline:#{pipeline.id}:conversation:#{conversation.id}"
+      message = create(:message, account: account, inbox: api_inbox, conversation: conversation, sender: contact)
+      idempotency_key = "auto_channel_contact:pipeline:#{pipeline.id}:message:#{message.id}"
       create(:crm_deal, account: account, pipeline: pipeline, stage: stage, idempotency_key: idempotency_key)
-      allow_any_instance_of(Crm::Deals::UpsertService).to receive(:ensure_unique_reference!)
-      allow_any_instance_of(Crm::Deal).to receive(:valid?).and_return(true)
+      uniqueness_validator = Crm::Deal.validators_on(:idempotency_key).find { |validator| validator.kind == :uniqueness }
+      allow(uniqueness_validator).to receive(:validate_each).and_call_original
+      allow(uniqueness_validator).to receive(:validate_each).with(kind_of(Crm::Deal), :idempotency_key, idempotency_key)
+                                                         .and_return(nil)
+      collision = nil
+      allow(Crm::Deals::UpsertService).to receive(:new).and_wrap_original do |method, **arguments|
+        upsert = method.call(**arguments)
+        # Simulate this key racing past the two application uniqueness checks; all other validation still runs.
+        allow(upsert).to receive(:ensure_unique_reference!).and_call_original
+        allow(upsert).to receive(:ensure_unique_reference!).with(
+          scope: account.crm_deals, attribute: :idempotency_key, value: idempotency_key, code: 'DUPLICATE_IDEMPOTENCY_KEY'
+        ).and_return(nil)
+        allow(upsert).to receive(:perform).and_wrap_original do |perform|
+          perform.call
+        rescue ActiveRecord::RecordNotUnique => error
+          collision = error
+          raise
+        end
+        upsert
+      end
 
       ActiveRecord::Base.transaction do
         expect(
           Crm::Deals::AutoCreateFromChannelContactService.new(
             contact_inbox: contact_api_inbox,
-            conversation: conversation
+            conversation: conversation,
+            message: message
           ).perform
         ).to be_empty
+        expect(collision).to be_a(ActiveRecord::RecordNotUnique)
         expect(account.crm_deals.count).to eq(1)
         expect(ActiveRecord::Base.connection.select_value('SELECT 1')).to eq(1)
       end
@@ -89,6 +125,7 @@ describe ConversationBuilder do
 
       expect do
         conversation = described_class.new(contact_inbox: contact_api_inbox, params: {}).perform
+        expect(receive_incoming(conversation)).to be_persisted
       end.not_to raise_error
 
       expect(conversation).to be_persisted
@@ -102,13 +139,17 @@ describe ConversationBuilder do
       upsert = instance_double(Crm::Deals::UpsertService)
       allow(Crm::Deals::UpsertService).to receive(:new).and_return(upsert)
       allow(upsert).to receive(:perform).and_raise(ActiveRecord::RecordNotUnique)
+      conversation = described_class.new(contact_inbox: contact_api_inbox, params: {}).perform
+      message = create(:message, account: account, inbox: api_inbox, conversation: conversation, sender: contact)
 
       expect do
-        Crm::Deals::AutoCreateFromChannelContactService.new(contact_inbox: contact_api_inbox).perform
+        Crm::Deals::AutoCreateFromChannelContactService.new(
+          contact_inbox: contact_api_inbox, conversation: conversation, message: message
+        ).perform
       end.to raise_error(ActiveRecord::RecordNotUnique)
     end
 
-    it 'auto-creates a CRM deal for an existing contact that starts a new channel conversation' do
+    it 'auto-creates a CRM deal when an existing contact sends an incoming message in a new channel conversation' do
       account.enable_features!('crm_deals')
       pipeline = create(
         :crm_pipeline,
@@ -122,6 +163,7 @@ describe ConversationBuilder do
         contact_inbox: contact_sms_inbox,
         params: {}
       ).perform
+      receive_incoming(conversation)
 
       expect(account.crm_deals.find_by!(pipeline: pipeline)).to have_attributes(
         originating_conversation_id: conversation.id,
@@ -152,12 +194,14 @@ describe ConversationBuilder do
         contact_inbox: contact_api_inbox,
         params: {}
       ).perform
+      message = receive_incoming(conversation)
 
       new_deal = account.crm_deals.kept.find_by!(pipeline: pipeline)
       expect(new_deal.id).not_to eq(archived_deal.id)
       expect(new_deal.originating_conversation_id).to eq(conversation.id)
       expect(new_deal.primary_contact_id).to eq(contact.id)
-      expect(new_deal.idempotency_key).to eq("auto_channel_contact:pipeline:#{pipeline.id}:conversation:#{conversation.id}")
+      expect(new_deal.idempotency_key).to eq("auto_channel_contact:pipeline:#{pipeline.id}:message:#{message.id}")
+      expect(archived_deal.reload.archived_at).to be_present
     end
 
     it 'does not auto-create a duplicate CRM deal when the contact has an active deal in the pipeline' do
@@ -172,13 +216,47 @@ describe ConversationBuilder do
       active_deal = create(:crm_deal, account: account, pipeline: pipeline, stage: stage)
       create(:crm_deal_contact, account: account, deal: active_deal, contact: contact, primary: true)
 
-      described_class.new(
+      conversation = described_class.new(
         contact_inbox: contact_api_inbox,
         params: {}
       ).perform
+      receive_incoming(conversation)
 
       expect(account.crm_deals.kept.where(pipeline: pipeline).count).to eq(1)
       expect(account.crm_deals.kept.find_by!(pipeline: pipeline)).to eq(active_deal)
+    end
+
+    it 'reuses the same pipeline deal on each incoming message and creates a new deal after it closes' do
+      account.enable_features!('crm_deals')
+      pipeline = create(:crm_pipeline, account: account, default: true, auto_create_deal_on_channel_contact: true)
+      stage = create(:crm_stage, account: account, pipeline: pipeline, default: true)
+      conversation = described_class.new(contact_inbox: contact_api_inbox, params: {}).perform
+      first_message = receive_incoming(conversation)
+      first_deal = account.crm_deals.find_by!(pipeline: pipeline)
+      repeated_message = receive_incoming(conversation)
+
+      expect(account.crm_deals.where(pipeline: pipeline).pluck(:id)).to eq([first_deal.id])
+      first_deal.update!(closed_at: Time.current)
+      next_message = nil
+      travel_to(first_deal.closed_at + 1.second) { next_message = receive_incoming(conversation) }
+
+      new_deal = account.crm_deals.active.find_by!(pipeline: pipeline)
+      expect(new_deal).to have_attributes(
+        stage_id: stage.id, originating_conversation_id: conversation.id,
+        idempotency_key: "auto_channel_contact:pipeline:#{pipeline.id}:message:#{next_message.id}"
+      )
+      expect(new_deal.primary_contact_id).to eq(contact.id)
+      expect(new_deal.id).not_to eq(first_deal.id)
+      expect(first_deal.reload.closed_at).to be_present
+      expect(account.crm_deals.kept.where(pipeline: pipeline).count).to eq(2)
+      expect(pipeline.reload.auto_create_deal_on_channel_contact).to be(true)
+      keys = [first_message, repeated_message, next_message].map { |message| "auto_channel_contact:pipeline:#{pipeline.id}:message:#{message.id}" }
+      expect(account.crm_events.where(eventable: contact, event_type: 'channel_contact_checked').pluck(:command_key)).to match_array(keys)
+      expect do
+        Crm::Appointments::InboundDealJob.perform_now(account.id, first_message.id)
+        Crm::Appointments::InboundDealJob.perform_now(account.id, repeated_message.id)
+      end.not_to change(Crm::Deal, :count)
+      expect(account.crm_events.where(eventable: contact, event_type: 'channel_contact_checked').count).to eq(3)
     end
 
     it 'auto-creates CRM deals in active pipelines with the auto-create toggle enabled' do
@@ -197,10 +275,11 @@ describe ConversationBuilder do
       create(:crm_stage, account: account, pipeline: disabled_default_pipeline, default: true)
       create(:crm_stage, account: account, pipeline: enabled_pipeline, default: true)
 
-      described_class.new(
+      conversation = described_class.new(
         contact_inbox: contact_api_inbox,
         params: {}
       ).perform
+      receive_incoming(conversation)
 
       expect(account.crm_deals.where(pipeline: disabled_default_pipeline)).not_to exist
       expect(account.crm_deals.where(pipeline: enabled_pipeline)).to exist
