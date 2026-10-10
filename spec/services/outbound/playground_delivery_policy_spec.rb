@@ -173,6 +173,19 @@ RSpec.describe Outbound::PlaygroundDeliveryPolicy do
     expect(described_class.policy_for(conversation: conversation)).to be_nil
   end
 
+  it 'restores a confirmation causal policy for direct redelivery after its appointment stamp is cleared' do
+    appointment = create(:scheduling_appointment, account: account, contact: contact, conversation: conversation,
+                                                 custom_attributes: { described_class::ATTRIBUTE_KEY => policy })
+    request = create(:confirmation_request, account: account, conversation: conversation, subject: appointment)
+    appointment.update_columns(custom_attributes: {}) # rubocop:disable Rails/SkipsModelValidations
+
+    expect do
+      Confirmations::DeliveryService.new(confirmation_request: request, sender: user).perform
+    end.to raise_error(described_class::Blocked)
+    expect(conversation.messages).not_to exist
+    expect(Current.playground_run_policy).to be_nil
+  end
+
   context 'with an opted-in controlled phone source' do
     let(:inbox) { create(:channel_sms, account: account).inbox }
     let(:contact) { create(:contact, account: account, phone_number: '+77015551234') }
@@ -228,6 +241,22 @@ RSpec.describe Outbound::PlaygroundDeliveryPolicy do
 
       expect(reminder.reload).to be_failed
       expect(reminder.last_error).to eq(described_class::BLOCKED_MESSAGE)
+    end
+
+    it 'does not let an opted-in nested perform_now replace invalid inherited context' do
+      message = nil
+      described_class.with(policy) do
+        message = Messages::MessageBuilder.new(user, conversation, { content: 'Nested job reply' }).perform
+      end
+      payload = SendReplyJob.new(message.id).serialize.merge('captain_playground' => policy)
+      job = ActiveJob::Base.deserialize(payload)
+      expect(HTTParty).not_to receive(:post)
+
+      described_class.with(false) do
+        expect(job.perform_now).to be(false)
+        expect(Current.playground_run_policy).to be(false)
+      end
+      expect(message.reload).to be_failed
     end
   end
 end

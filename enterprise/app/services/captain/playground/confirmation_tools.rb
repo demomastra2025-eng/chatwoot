@@ -54,7 +54,7 @@ module Captain::Playground::ConfirmationTools
     [type, kind == 'conversation' ? @data['conversation']['id'] : @context.state.dig(kind.to_sym, :id)]
   end
 
-  def get_confirmation_request
+  def confirmation_details
     record = @args['confirmation_request_id'] ? record!('confirmations', @args['confirmation_request_id']) : @data['confirmations'].last
     raise ArgumentError, 'Confirmation request not found' unless record
 

@@ -25,8 +25,8 @@ module PlaygroundJobContext
     @playground_run_policy = Current.playground_run_policy&.deep_dup if @playground_run_policy.nil?
   end
 
-  def restore_playground_run_policy
-    policy = @playground_run_policy.nil? ? Current.playground_run_policy : @playground_run_policy
-    Outbound::PlaygroundDeliveryPolicy.with(policy) { yield }
+  def restore_playground_run_policy(&block)
+    policy = Outbound::PlaygroundDeliveryPolicy.for_run(@playground_run_policy)
+    Outbound::PlaygroundDeliveryPolicy.with(policy, &block)
   end
 end

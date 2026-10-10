@@ -1,23 +1,28 @@
 class Captain::Playground::ExecutionBoundary
-  def self.execute(tool, tool_context, arguments)
+  def self.execute(tool, tool_context, arguments, &block)
     state = tool_context.state.with_indifferent_access
     session = tool_context.context[:playground_session]
-    return yield unless state[:source] == 'playground' || state[:playground].present? || session
+    return block.call unless state[:source] == 'playground' || state[:playground].present? || session
     return failure('A server-owned Playground session is required') unless session.is_a?(Captain::Playground::Session)
 
     session.assert_context!(state)
-    return yield if tool.is_a?(Captain::Runtime::HandoffTool)
+    return block.call if tool.is_a?(Captain::Runtime::HandoffTool)
     return Captain::Playground::ToolExecutor.new(session).execute(tool.name, arguments, context: tool_context) if session.trial?
 
+    execute_live(tool, session, arguments, &block)
+  rescue ArgumentError, Outbound::PlaygroundDeliveryPolicy::Blocked => e
+    failure(e.message)
+  end
+
+  def self.execute_live(tool, session, arguments, &block)
     reject_trial_handles!(arguments)
     return failure(Outbound::PlaygroundDeliveryPolicy::BLOCKED_MESSAGE) if tool.name.to_s == 'send_notification'
+
     policy = Outbound::PlaygroundDeliveryPolicy.for_run(session.run_policy)
     if %w[send_message_to_conversation retry_failed_message].include?(tool.name.to_s)
       Outbound::PlaygroundDeliveryPolicy.ensure!(conversation: session.conversation, policy: policy)
     end
-    Outbound::PlaygroundDeliveryPolicy.with(policy) { yield }
-  rescue ArgumentError, Outbound::PlaygroundDeliveryPolicy::Blocked => e
-    failure(e.message)
+    Outbound::PlaygroundDeliveryPolicy.with(policy, &block)
   end
 
   def self.reject_trial_handles!(value)

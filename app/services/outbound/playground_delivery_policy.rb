@@ -17,8 +17,7 @@ class Outbound::PlaygroundDeliveryPolicy
 
       token = policy.with_indifferent_access[:token]
       payload = verifier.verified(token, purpose: PURPOSE) if token.is_a?(String)
-      return unless payload.is_a?(Hash) && payload['version'] == 1 && payload['expires_at'].to_i > Time.current.to_i
-      return unless payload['mode'] == 'live' && payload['run_id'].to_s.match?(/\A[0-9a-f-]{36}\z/)
+      return unless valid_signed_payload?(payload)
 
       payload.with_indifferent_access
     rescue ArgumentError, TypeError, ActiveSupport::MessageVerifier::InvalidSignature
@@ -73,7 +72,7 @@ class Outbound::PlaygroundDeliveryPolicy
       return true if private_note
 
       policy = policy_for(conversation: conversation) if policy.nil?
-      policies = [policy, Current.playground_run_policy, for_record(conversation)].reject(&:nil?).uniq
+      policies = [policy, Current.playground_run_policy, for_record(conversation)].compact.uniq
       return true if policies.empty?
       raise Blocked, BLOCKED_MESSAGE unless policies.all? { |value| allowed?(value, conversation: conversation) }
 
@@ -83,17 +82,9 @@ class Outbound::PlaygroundDeliveryPolicy
     def allowed?(policy, conversation:)
       payload = verified(policy)
       return false unless payload && payload[:delivery_enabled] == true && conversation
-      return false unless payload[:account_id].to_s == conversation.account_id.to_s
-      return false unless payload[:conversation_id].to_s == conversation.id.to_s && payload[:caller_contact_id].to_s == conversation.contact_id.to_s
-      return false unless payload[:inbox_id].to_s == conversation.inbox_id.to_s && PHONE_CHANNELS.include?(conversation.inbox.channel_type)
-      return false unless AccountUser.find_by(account_id: conversation.account_id, user_id: payload[:user_id])&.administrator?
-      return false unless valid_source?(payload, conversation)
 
-      target = normalize_phone(payload[:delivery_target])
-      return false if target.blank? || target != normalize_phone(conversation.contact&.phone_number)
-
-      source = conversation.contact_inbox&.source_id.to_s.delete_prefix('whatsapp:')
-      target == normalize_phone(source)
+      valid_scope?(payload, conversation) && authorized_administrator?(payload, conversation) &&
+        valid_source?(payload, conversation) && valid_phone_target?(payload, conversation)
     end
 
     def normalize_phone(value)
@@ -127,6 +118,31 @@ class Outbound::PlaygroundDeliveryPolicy
     end
 
     private
+
+    def valid_signed_payload?(payload)
+      return false unless payload.is_a?(Hash)
+
+      payload['version'] == 1 && payload['expires_at'].to_i > Time.current.to_i &&
+        payload['mode'] == 'live' && payload['run_id'].to_s.match?(/\A[0-9a-f-]{36}\z/)
+    end
+
+    def valid_scope?(payload, conversation)
+      bindings = { account_id: conversation.account_id, conversation_id: conversation.id,
+                   caller_contact_id: conversation.contact_id, inbox_id: conversation.inbox_id }
+      bindings.all? { |key, value| payload[key].to_s == value.to_s } && PHONE_CHANNELS.include?(conversation.inbox.channel_type)
+    end
+
+    def authorized_administrator?(payload, conversation)
+      AccountUser.find_by(account_id: conversation.account_id, user_id: payload[:user_id])&.administrator? == true
+    end
+
+    def valid_phone_target?(payload, conversation)
+      target = normalize_phone(payload[:delivery_target])
+      return false if target.blank? || target != normalize_phone(conversation.contact&.phone_number)
+
+      source = conversation.contact_inbox&.source_id.to_s.delete_prefix('whatsapp:')
+      target == normalize_phone(source)
+    end
 
     def scoped_policy(stored)
       inherited = Current.playground_run_policy
