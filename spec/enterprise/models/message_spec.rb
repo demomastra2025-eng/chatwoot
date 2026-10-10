@@ -83,7 +83,7 @@ RSpec.describe Message do
       expect(conversation.reload).to have_attributes(status: 'open', captain_control_generation: 1, captain_control_state: 'human')
     end
 
-    it 'cancels captured runs across its own thread without opening the sibling or cancelling another account' do
+    it 'cancels each conversation run on thread takeover without opening the sibling or cancelling another account' do
       thread = create(:communication_thread, account: conversation.account, contact: conversation.contact)
       sibling = create(:conversation, account: conversation.account, contact: conversation.contact, status: :pending)
       create(:captain_inbox, inbox: sibling.inbox, captain_assistant: captain_assistant)
@@ -93,19 +93,25 @@ RSpec.describe Message do
         candidate.association(:communication_thread).reset
       end
       incoming = create(:message, conversation: conversation, message_type: :incoming)
+      sibling_incoming = create(:message, conversation: sibling, message_type: :incoming)
       foreign_conversation = create(:conversation, status: :pending)
       foreign_key = format(Redis::Alfred::CAPTAIN_RESPONSE_CANCELLATION_STATE, conversation_id: foreign_conversation.id)
 
       create(:message, message_type: :outgoing, conversation: conversation)
 
-      [conversation, sibling].each do |candidate|
+      [[conversation, incoming], [sibling, sibling_incoming]].each do |candidate, candidate_incoming|
         service = Captain::Conversation::ResponseCancellationService.new(conversation: candidate, assistant: captain_assistant)
-        expect(service.cancelled?(expected_last_message_id: incoming.id, expected_control_generation: 0, expected_status_transition_id: 0)).to be true
-        expect(service.cancelled?(expected_last_message_id: incoming.id, expected_control_generation: 1, expected_status_transition_id: 0))
+        expect(service.cancelled?(expected_last_message_id: candidate_incoming.id, expected_control_generation: 0,
+                                  expected_status_transition_id: 0)).to be true
+        other_incoming = candidate == conversation ? sibling_incoming : incoming
+        expect(service.cancelled?(expected_last_message_id: other_incoming.id, expected_control_generation: 0,
+                                  expected_status_transition_id: 0)).to be false
+        expect(service.cancelled?(expected_last_message_id: candidate_incoming.id, expected_control_generation: 1,
+                                  expected_status_transition_id: 0))
           .to be false
       end
       expect(sibling.reload).to be_pending
-      expect(thread.reload.captain_control_state).to eq('human')
+      expect(thread.reload).to have_attributes(captain_control_state: 'human', captain_control_generation: 1)
       expect(Redis::Alfred.get(foreign_key)).to be_nil
     ensure
       [conversation, sibling].compact.each do |candidate|
