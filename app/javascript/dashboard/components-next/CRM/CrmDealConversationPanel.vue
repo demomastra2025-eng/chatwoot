@@ -1,5 +1,14 @@
 <script setup>
-import { computed, onBeforeUnmount, provide, reactive, ref, watch } from 'vue';
+import {
+  computed,
+  defineAsyncComponent,
+  onBeforeUnmount,
+  provide,
+  reactive,
+  ref,
+  useId,
+  watch,
+} from 'vue';
 import { useEventListener, useMediaQuery } from '@vueuse/core';
 import { useI18n } from 'vue-i18n';
 
@@ -10,6 +19,13 @@ import SchedulingErrorState from 'dashboard/components-next/Scheduling/Schedulin
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import { useStore, useMapGetter } from 'dashboard/composables/store';
+import { useConversationSidepanelAvailability } from 'dashboard/composables/useConversationSidepanelAvailability';
+import { useUISettings } from 'dashboard/composables/useUISettings';
+
+const ConversationSidebar = defineAsyncComponent(
+  () =>
+    import('dashboard/components/widgets/conversation/ConversationSidebar.vue')
+);
 
 const props = defineProps({
   sourceDealId: {
@@ -108,6 +124,11 @@ const store = useStore();
 const getConversationById = useMapGetter('getConversationById');
 const getAllConversations = useMapGetter('getAllConversations');
 const currentChat = useMapGetter('getSelectedChat');
+const { activePanel, appointmentsAvailable } =
+  useConversationSidepanelAvailability();
+const { updateUISettings } = useUISettings();
+const appointmentsSidebarId = `crm-deal-appointments-${useId()}`;
+const appointmentsOpened = ref(false);
 
 const translateDynamicKey = key => {
   // eslint-disable-next-line @intlify/vue-i18n/no-dynamic-keys
@@ -276,6 +297,42 @@ const isConversationReady = computed(() => {
   return !currentChat.value?.is_communication_thread && matchesTarget;
 });
 
+const canOpenAppointments = computed(
+  () =>
+    appointmentsAvailable.value &&
+    isChatDisplayed.value &&
+    hasLinkedChat.value &&
+    isConversationReady.value &&
+    !ui.isLoading &&
+    !ui.error
+);
+// A saved Communications sidebar preference must not cover the embedded chat
+// until the user opens it here. The shared sidebar still owns patient context.
+const showAppointmentsSidebar = computed(
+  () =>
+    appointmentsOpened.value &&
+    canOpenAppointments.value &&
+    activePanel.value === 'appointments'
+);
+const closeAppointmentsSidebar = () => {
+  appointmentsOpened.value = false;
+  updateUISettings({ is_scheduling_appointments_panel_open: false });
+};
+const toggleAppointmentsSidebar = () => {
+  if (!canOpenAppointments.value) return;
+  if (showAppointmentsSidebar.value) {
+    closeAppointmentsSidebar();
+    return;
+  }
+
+  appointmentsOpened.value = true;
+  updateUISettings({
+    is_contact_sidebar_open: false,
+    is_crm_deal_panel_open: false,
+    is_scheduling_appointments_panel_open: true,
+  });
+};
+
 const clearConversationState = () => {
   store.dispatch('clearSelectedState');
 };
@@ -334,6 +391,7 @@ const invalidateActivation = () => {
 const resetPanelState = () => {
   ui.error = null;
   ui.isLoading = false;
+  appointmentsOpened.value = false;
 };
 
 const activateConversation = async () => {
@@ -455,6 +513,10 @@ watch(
 );
 
 useEventListener(document, 'keydown', event => {
+  if (event.key === 'Escape' && showAppointmentsSidebar.value) {
+    closeAppointmentsSidebar();
+    return;
+  }
   // The inline panel sits beside the deal card instead of covering it, so an
   // Escape meant for the composer, a menu or a dialog must not leave the page.
   if (event.key === 'Escape' && props.visible && !props.inline) {
@@ -495,10 +557,22 @@ onBeforeUnmount(() => {
           class="flex h-full w-full flex-col overflow-hidden bg-n-solid-2 md:min-w-0 md:flex-1 md:bg-transparent"
         >
           <header
-            v-if="showOpenFullScreen && hasLinkedChat"
-            class="flex justify-end border-b border-n-weak bg-n-surface-1 px-4 py-2"
+            v-if="hasLinkedChat && (showOpenFullScreen || canOpenAppointments)"
+            class="flex flex-wrap justify-end gap-2 border-b border-n-weak bg-n-surface-1 px-4 py-2"
           >
             <Button
+              v-if="canOpenAppointments"
+              size="sm"
+              color="slate"
+              variant="ghost"
+              icon="i-lucide-calendar-clock"
+              :label="$t('SCHEDULING.DIALOGS.PANEL_TITLE')"
+              :aria-controls="appointmentsSidebarId"
+              :aria-expanded="showAppointmentsSidebar"
+              @click="toggleAppointmentsSidebar"
+            />
+            <Button
+              v-if="showOpenFullScreen"
               size="sm"
               color="slate"
               variant="ghost"
@@ -594,11 +668,19 @@ onBeforeUnmount(() => {
             <Spinner class="!h-8 !w-8" />
           </div>
 
-          <div v-else-if="isChatDisplayed" class="flex min-h-0 flex-1">
+          <div v-else-if="isChatDisplayed" class="relative flex min-h-0 flex-1">
             <ConversationBox
               class="flex-1"
               :inbox-id="currentChat.inbox_id"
               :is-on-expanded-layout="false"
+            />
+            <ConversationSidebar
+              v-if="showAppointmentsSidebar"
+              :id="appointmentsSidebarId"
+              class="!absolute inset-y-0 !z-30 !max-w-full"
+              role="dialog"
+              :aria-label="$t('SCHEDULING.DIALOGS.PANEL_TITLE')"
+              :current-chat="currentChat"
             />
           </div>
         </aside>
