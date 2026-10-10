@@ -1,6 +1,8 @@
 module Captain::Playground::ScenarioContext
   def state
-    appointments = data['appointments'].select { |record| (record['patient_contact_id'] || record['contact_id']) == contact['id'] }
+    appointments = data['appointments'].select do |record|
+      record['contact_id'] == contact['id'] && (record['patient_contact_id'] || record['contact_id']) == contact['id']
+    end
     {
       contact: contact.deep_symbolize_keys, conversation: data['conversation'].deep_symbolize_keys,
       contact_inbox: { id: 301, hmac_verified: false }, channel_type: 'Channel::Api',
@@ -33,11 +35,13 @@ module Captain::Playground::ScenarioContext
   end
 
   def business_state(appointments)
-    nearest = appointments.reject { |record| record['status'] == 'cancelled' }.min_by { |record| record['starts_at'].to_s }
+    nearest = appointments.select { |record| record['status'] != 'cancelled' && Time.iso8601(record['ends_at']) > Time.current }
+                          .min_by { |record| [Time.iso8601(record['starts_at']) <= Time.current ? 0 : 1, record['starts_at'].to_s, record['id']] }
     {
-      deal: data['deals'].find { |record| record['contact_id'] == contact['id'] }&.deep_symbolize_keys,
+      deal: { summary: deals_summary },
       task: data['tasks'].find { |record| record['contact_id'] == contact['id'] }&.deep_symbolize_keys,
-      appointment: appointment_state(nearest), appointment_context_blocks: appointment_blocks(appointments)
+      appointment: (appointment_state(nearest) || {}).merge(summary: compact_appointments_summary(appointments)),
+      appointment_context_blocks: appointment_blocks(appointments)
     }
   end
 
@@ -46,6 +50,23 @@ module Captain::Playground::ScenarioContext
 
     card = appointment_card(record)
     record.deep_symbolize_keys.merge(resource_name: card[:doctor], start_date: card[:date], start_time: card[:time])
+  end
+
+  def deals_summary
+    records = data['deals'].map do |record|
+      stage = data['stages'].find { |item| item['id'] == record['stage_id'] }
+      record.merge('stage_outcome' => stage&.fetch('outcome', 'open'))
+    end
+    Captain::ContextSummary.from_snapshots(kind: 'deals', records: records, contact_id: contact['id']) do |record|
+      Captain::ContextSummary.deal_card(record)
+    end
+  end
+
+  def compact_appointments_summary(records)
+    Captain::ContextSummary.from_snapshots(kind: 'appointments', records: records, contact_id: contact['id']) do |record|
+      card = appointment_card(record)
+      card.merge(title: [card[:service], card[:doctor]].compact.join(' — '), starts_at: record[:starts_at], ends_at: record[:ends_at])
+    end
   end
 
   def appointment_blocks(records)

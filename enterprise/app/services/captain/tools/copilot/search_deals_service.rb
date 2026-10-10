@@ -19,10 +19,12 @@ class Captain::Tools::Copilot::SearchDealsService < Captain::Tools::Copilot::Bas
   param :owner_id, type: :integer, desc: 'Positive owner user ID. Omit when unknown.', required: false
   param :company_id, type: :integer, desc: 'Positive company ID. Omit when unknown.', required: false
   param :archived, type: :boolean, desc: 'Whether to search archived deals', required: false
-  param :limit, type: :number, desc: 'Maximum number of deals to return', required: false
+  param :status, type: :string, desc: 'active, closed, archived, or any; omit to preserve the archived filter', required: false
+  param :limit, type: :number, desc: 'Page size, maximum 50', required: false
+  param :offset, type: :integer, desc: 'Zero-based page offset; use next_offset to continue', required: false
 
   def execute(query: nil, contact_id: nil, pipeline_id: nil, pipeline_code: nil, stage_id: nil, stage_name: nil, stage_code: nil,
-              owner_id: nil, company_id: nil, archived: nil, limit: nil)
+              owner_id: nil, company_id: nil, archived: nil, status: nil, limit: nil, offset: nil)
     query = query.to_s.strip.presence
     contact_id = if patient_scope
                    patient_scope.require_contact_filter!(contact_id, tool: 'search_deals')
@@ -37,7 +39,7 @@ class Captain::Tools::Copilot::SearchDealsService < Captain::Tools::Copilot::Bas
     scoped_contact_id = contact_id || (current_contact&.id if query.blank?)
 
     deals = (patient_scope ? patient_scope.deals : account.crm_deals).includes(:pipeline, :stage, :owner, :team, :company, :deal_contacts)
-    deals = cast_boolean(archived) ? deals.archived : deals.kept
+    deals = apply_status_filter(deals, status: status, archived: archived)
     deals = apply_contact_filter(deals, scoped_contact_id)
     deals = deals.where(pipeline_id: pipeline.id) if pipeline.present?
     deals = deals.where(stage_id: stage.id) if stage.present?
@@ -46,7 +48,9 @@ class Captain::Tools::Copilot::SearchDealsService < Captain::Tools::Copilot::Bas
     deals = deals.where('crm_deals.title ILIKE :query OR crm_deals.external_ref ILIKE :query', query: "%#{query}%") if query.present?
 
     total_count = deals.count
-    records = deals.ordered.limit(parse_limit(limit)).map do |deal|
+    page_limit = parse_limit(limit)
+    page_offset = parse_offset(offset)
+    records = deals.reorder(updated_at: :desc, id: :desc).offset(page_offset).limit(page_limit).map do |deal|
       patient_scope ? patient_scope.deal_payload(deal) : Crm::PayloadBuilder.ai_deal(deal)
     end
 
@@ -62,9 +66,16 @@ class Captain::Tools::Copilot::SearchDealsService < Captain::Tools::Copilot::Bas
         stage_code: stage&.code,
         owner_id: owner_id,
         company_id: company_id,
-        archived: cast_boolean(archived)
+        archived: status.present? ? nil : cast_boolean(archived),
+        status: status
       }.compact,
       total_count: total_count,
+      shown: records.size,
+      limit: page_limit,
+      offset: page_offset,
+      has_more: page_offset + records.size < total_count,
+      next_offset: page_offset + records.size < total_count ? page_offset + records.size : nil,
+      sort: ['updated_at DESC', 'id DESC'],
       deals: records
     )
   rescue Captain::Tools::Agent::PatientScope::Denied
@@ -79,10 +90,22 @@ class Captain::Tools::Copilot::SearchDealsService < Captain::Tools::Copilot::Bas
 
   private
 
+  def apply_status_filter(deals, status:, archived:)
+    return cast_boolean(archived) ? deals.archived : deals.kept if status.blank?
+
+    case status
+    when 'active' then deals.joins(:stage).where(Captain::DealContext::ACTIVE_SQL)
+    when 'closed' then deals.kept.joins(:stage).where("NOT (#{Captain::DealContext::ACTIVE_SQL})")
+    when 'archived' then deals.archived
+    when 'any' then deals
+    else raise ArgumentError, 'status must be active, closed, archived, or any'
+    end
+  end
+
   def apply_contact_filter(deals, contact_id)
     return deals if contact_id.blank?
 
-    deals.where(id: ::Crm::DealContact.where(contact_id: contact_id).select(:deal_id))
+    deals.where(id: ::Crm::DealContact.where(account_id: account.id, contact_id: contact_id).select(:deal_id))
   end
 
   def resolve_pipeline(pipeline_id:, pipeline_code:)

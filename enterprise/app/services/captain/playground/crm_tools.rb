@@ -20,7 +20,49 @@ module Captain::Playground::CrmTools
     query = @args['query'].presence || @args['title'].presence
     records = records.select { |deal| deal['title'].downcase.include?(query.downcase) } if query
     records = filter_deal_fields(records)
-    { deals: records.map { |record| deal_payload(record)[:deal] }, total_count: records.size, simulated: true }
+    records = filter_deal_status(records)
+    total = records.size
+    limit = @args['limit'].to_i
+    limit = limit.positive? ? [limit, 50].min : 50
+    offset = deal_search_offset
+    records = records.sort_by do |record|
+      [-Time.iso8601(record['updated_at'] || record['created_at'] || '1970-01-01T00:00:00Z').to_f, -record['id'].to_i]
+    end.drop(offset).first(limit)
+    has_more = offset + records.size < total
+    {
+      deals: records.map { |record| deal_payload(record)[:deal] }, total_count: total, shown: records.size,
+      limit: limit, offset: offset, has_more: has_more, next_offset: has_more ? offset + records.size : nil,
+      sort: ['updated_at DESC', 'id DESC'], simulated: true
+    }
+  end
+
+  def filter_deal_status(records)
+    status = @args['status'].presence
+    unless status
+      archived = !!ActiveModel::Type::Boolean.new.cast(@args['archived'])
+      return records.select { |record| record['archived_at'].present? == archived }
+    end
+    raise ArgumentError, 'status must be active, closed, archived, or any' unless %w[active closed archived any].include?(status)
+
+    records.select do |record|
+      stage = @data['stages'].find { |item| item['id'] == record['stage_id'] }
+      active = record['archived_at'].blank? && record['closed_at'].blank? && stage&.fetch('outcome', 'open') == 'open'
+      case status
+      when 'active' then active
+      when 'closed' then !active && record['archived_at'].blank?
+      when 'archived' then record['archived_at'].present?
+      when 'any' then true
+      else raise ArgumentError, 'status must be active, closed, archived, or any'
+      end
+    end
+  end
+
+  def deal_search_offset
+    value = @args['offset']
+    return 0 if value.nil? || value.to_s.strip.empty?
+    raise ArgumentError, 'offset must be a non-negative integer of at most 9 digits' unless value.to_s.match?(/\A\d{1,9}\z/)
+
+    value.to_i
   end
 
   def filter_deal_fields(records)

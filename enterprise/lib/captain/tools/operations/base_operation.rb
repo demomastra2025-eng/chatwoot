@@ -1,9 +1,10 @@
 class Captain::Tools::Operations::BaseOperation
-  def initialize(assistant:, conversation: nil, actor: nil, selection_context: nil)
+  def initialize(assistant:, conversation: nil, actor: nil, selection_context: nil, deal_id: nil)
     @assistant = assistant
     @conversation = conversation
     @actor = actor
     @selection_context = selection_context
+    @deal_id = deal_id
   end
 
   private
@@ -23,9 +24,9 @@ class Captain::Tools::Operations::BaseOperation
   end
 
   def current_deal
-    return nil unless conversation
+    return nil if @deal_id.blank?
 
-    Captain::ContextFields.deal_for(account: account, conversation: conversation)
+    Captain::ContextFields.deal_for(account: account, conversation: conversation, deal_id: @deal_id)
   end
 
   def current_task

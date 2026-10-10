@@ -23,7 +23,7 @@ RSpec.describe Captain::Tools::Copilot::ListDealStagesService do
                                         color: '#555555')
     deal = create(:crm_deal, account: account, pipeline: pipeline, stage: current_stage, originating_conversation_id: conversation.id)
 
-    payload = JSON.parse(service.execute(current_deal: true))
+    payload = JSON.parse(service.execute(deal_id: deal.id))
 
     expect(payload['action']).to eq('list_deal_stages')
     expect(payload['pipeline']).to include('id' => pipeline.id, 'code' => 'andalusiya2')
@@ -37,6 +37,12 @@ RSpec.describe Captain::Tools::Copilot::ListDealStagesService do
     expect(payload['stages'].second).not_to have_key('deal_count')
     expect(payload['previous_stage']).to include('id' => first_stage.id, 'position' => 1)
     expect(payload['next_stage']).to include('id' => next_stage.id, 'position' => 3)
+  end
+
+  it 'does not silently select a current deal from a conversation' do
+    create(:crm_deal, account: account, originating_conversation: conversation)
+
+    expect(service.execute(current_deal: true)).to include('deal_id is required')
   end
 
   it 'filters by pipeline_code without mixing duplicate stage names from another pipeline' do

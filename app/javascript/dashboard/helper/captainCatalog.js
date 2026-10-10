@@ -109,7 +109,7 @@ const fieldGroupTranslationKey = field => {
 };
 
 const fieldBaseTranslationKey = field => {
-  if (field?.field_type !== 'field') {
+  if (field?.field_type !== 'field' && field?.field_key !== 'summary') {
     return null;
   }
 
@@ -184,6 +184,21 @@ export const localizeCatalogField = (field, i18n) => {
   const titleKey = fieldTitleTranslationKey(field);
   const descriptionKey = fieldDescriptionTranslationKey(field);
 
+  const description = descriptionKey
+    ? translateCatalogValue(
+        i18n,
+        descriptionKey,
+        fieldFallbackDescription(field, i18n)
+      )
+    : fieldFallbackDescription(field, i18n);
+  const legacyWarning = field.deprecated
+    ? translateCatalogValue(
+        i18n,
+        'CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.LEGACY_WARNING',
+        'Saved legacy field. Switch to Summary explicitly; a deal requires an explicit record or event.'
+      )
+    : '';
+
   return {
     ...field,
     original_title: field.title,
@@ -191,13 +206,7 @@ export const localizeCatalogField = (field, i18n) => {
     title: titleKey
       ? translateCatalogValue(i18n, titleKey, field.title)
       : field.title,
-    description: descriptionKey
-      ? translateCatalogValue(
-          i18n,
-          descriptionKey,
-          fieldFallbackDescription(field, i18n)
-        )
-      : fieldFallbackDescription(field, i18n),
+    description: [description, legacyWarning].filter(Boolean).join(' '),
     group_label: groupKey
       ? translateCatalogValue(
           i18n,
@@ -304,8 +313,10 @@ export const filterAndSortCatalogItems = (
   { search = '', groupOrder = [] } = {}
 ) =>
   sortCatalogItems(
-    (Array.isArray(items) ? items : []).filter(item =>
-      matchesCatalogSearch(item, search)
+    (Array.isArray(items) ? items : []).filter(
+      item =>
+        (item?.selectable !== false || item?.selected || item?.isUsed) &&
+        matchesCatalogSearch(item, search)
     ),
     { groupOrder }
   );

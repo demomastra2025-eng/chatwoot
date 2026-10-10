@@ -8,7 +8,7 @@ class Captain::Tools::Copilot::ListDealStagesService < Captain::Tools::Copilot::
   param :pipeline_code, type: :string, desc: 'Verified pipeline code to list stages for', required: false
   param :pipeline_name, type: :string, desc: 'Exact user-provided pipeline name, for example Продажи. Prefer it over guessing an ID.', required: false
   param :deal_id, type: :number, desc: 'Verified deal ID for pipeline/current stage lookup. Omit it when asking about a pipeline.', required: false
-  param :current_deal, type: :boolean, desc: 'Use the deal linked to the current conversation', required: false
+  param :current_deal, type: :boolean, desc: 'Deprecated; pass an explicit deal_id instead', required: false
   param :include_inactive, type: :boolean, desc: 'Include inactive stages; default false', required: false
 
   def execute(**arguments)
@@ -102,8 +102,7 @@ class Captain::Tools::Copilot::ListDealStagesService < Captain::Tools::Copilot::
   def resolve_deal(deal_id:, use_current_deal:)
     deals = patient_scope ? patient_scope.deals : account.crm_deals
     return deals.includes(:pipeline, :stage).find(deal_id) if deal_id.present?
-    return deals.find_by(id: current_deal&.id) if use_current_deal && patient_scope
-    return current_deal if use_current_deal
+    raise ArgumentError, 'deal_id is required; a current deal is never selected implicitly' if use_current_deal
 
     nil
   end

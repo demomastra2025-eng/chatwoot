@@ -1,20 +1,22 @@
 class Captain::AppointmentContext
-  BLOCK_KEYS = %w[nearest last_past last_cancelled all].freeze
+  BLOCK_KEYS = %w[nearest last_past last_cancelled all summary].freeze
   STATUSES = %w[scheduled completed cancelled no_show any].freeze
   DEFAULT_LIMIT = 10
   MAX_LIMIT = 20
 
-  def initialize(account:, conversation:)
+  def initialize(account:, conversation: nil, contact_id: nil)
     @account = account
     @conversation = conversation
+    @contact_id = contact_id || conversation&.contact_id
   end
 
   def appointments
     scope = @account.scheduling_appointments
-    return scope.none if @conversation.blank? || @conversation.account_id != @account.id || @conversation.contact_id.blank?
+    return scope.none if @conversation && @conversation.account_id != @account.id
+    return scope.none unless @account.contacts.exists?(id: @contact_id)
 
-    scope.where(contact_id: @conversation.contact_id)
-         .where('COALESCE(patient_contact_id, contact_id) = ?', @conversation.contact_id)
+    scope.where(contact_id: @contact_id)
+         .where('COALESCE(patient_contact_id, contact_id) = ?', @contact_id)
   end
 
   def nearest(now: Time.current)
@@ -37,6 +39,7 @@ class Captain::AppointmentContext
             when 'last_past' then card(last_past(now: now))
             when 'last_cancelled' then card(last_cancelled)
             when 'all' then summary(now: now)
+            when 'summary' then compact_summary(now: now)
             end
     JSON.generate(value)
   end
@@ -73,6 +76,28 @@ class Captain::AppointmentContext
       doctor: appointment.resource&.name,
       service: appointment.service_name_snapshot.presence || appointment.service&.name
     }
+  end
+
+  def compact_summary(now: Time.current)
+    scopes = { upcoming: upcoming(now), past: past(now), cancelled: cancelled }
+    groups = Captain::ContextSummary::APPOINTMENT_GROUPS.map do |key, config|
+      scope = scopes.fetch(key)
+      total = scope.count
+      order = if key == :upcoming
+                sql = Scheduling::Appointment.sanitize_sql_array(['CASE WHEN starts_at <= ? THEN 0 ELSE 1 END, starts_at ASC, id ASC', now])
+                Arel.sql(sql)
+              elsif key == :past
+                { ends_at: :desc, id: :desc }
+              else
+                { starts_at: :desc, id: :desc }
+              end
+      items = scope.reorder(order).limit(config[:limit]).includes(:resource, :service).map do |record|
+        data = card(record)
+        data.merge(title: [data[:service], data[:doctor]].compact.join(' — '), starts_at: record.starts_at.iso8601, ends_at: record.ends_at.iso8601)
+      end
+      Captain::ContextSummary.group(key: key, total: total, items: items, config: config)
+    end
+    Captain::ContextSummary.build(kind: 'appointments', groups: groups, contact_id: @contact_id)
   end
 
   private

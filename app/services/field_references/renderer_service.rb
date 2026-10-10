@@ -13,7 +13,7 @@ class FieldReferences::RendererService
   ACCOUNT_STATE_ATTRIBUTES = %i[id name custom_attributes].freeze
   AGENT_STATE_ATTRIBUTES = %i[id name email available_name custom_attributes].freeze
 
-  def initialize(message: nil, conversation: nil, contact: nil, inbox: nil, account: nil, sender: nil, appointment: nil)
+  def initialize(message: nil, conversation: nil, contact: nil, inbox: nil, account: nil, sender: nil, appointment: nil, deal: nil)
     @message = message
     @conversation = conversation
     @contact = contact
@@ -21,6 +21,7 @@ class FieldReferences::RendererService
     @account = account
     @sender = sender
     @appointment = appointment
+    @deal = deal
   end
 
   def render(text)
@@ -36,7 +37,7 @@ class FieldReferences::RendererService
 
   private
 
-  attr_reader :message, :contact, :account, :appointment
+  attr_reader :message, :contact, :account, :appointment, :deal
 
   def conversation
     @conversation || message&.conversation
@@ -54,21 +55,28 @@ class FieldReferences::RendererService
     scope, path = normalize_field_id(field_id).split('.', 2)
     return '' if scope.blank? || path.blank?
 
-    value = value_for(runtime_state[scope], path)
+    state = runtime_state(scope)
+    if scope == 'appointment' && defined?(Captain::AppointmentContext) && Captain::AppointmentContext::BLOCK_KEYS.excluding('summary').include?(path)
+      state = state.to_h.merge(path => legacy_appointment_block(path))
+    end
+    value = value_for(state, path)
     format_value(value)
   end
 
-  def runtime_state
-    @runtime_state ||= {
-      'contact' => contact_state,
-      'conversation' => conversation_state,
-      'inbox' => inbox_state,
-      'account' => account_state,
-      'agent' => agent_state,
-      'deal' => deal_state,
-      'task' => task_state,
-      'appointment' => appointment_state
-    }.compact
+  def runtime_state(scope)
+    @runtime_state ||= {}
+    return @runtime_state[scope] if @runtime_state.key?(scope)
+
+    @runtime_state[scope] = case scope
+                            when 'contact' then contact_state
+                            when 'conversation' then conversation_state
+                            when 'inbox' then inbox_state
+                            when 'account' then account_state
+                            when 'agent' then agent_state
+                            when 'deal' then deal_state
+                            when 'task' then task_state
+                            when 'appointment' then appointment_state
+                            end
   end
 
   def contact_state
@@ -110,16 +118,20 @@ class FieldReferences::RendererService
 
   def deal_state
     return unless defined?(Captain::ContextFields)
-    return if conversation.blank?
+    context_account = account || deal&.account || conversation&.account
+    return if context_account.blank?
     return unless Captain::ContextFields.scope_visible_for_user?(
       scope: :deal,
-      account: conversation.account,
+      account: context_account,
       user: sender_user
     )
 
     Captain::ContextFields.deal_state_for(
-      account: conversation.account,
-      conversation: conversation
+      account: context_account,
+      conversation: conversation,
+      contact_id: contact&.id,
+      deal: deal,
+      actor: sender_user
     )
   end
 
@@ -152,8 +164,16 @@ class FieldReferences::RendererService
     Captain::ContextFields.appointment_state_for(
       account: context_account,
       conversation: conversation,
-      appointment: appointment
+      appointment: appointment,
+      contact_id: contact&.id
     )
+  end
+
+  def legacy_appointment_block(key)
+    context_account = appointment_context_account
+    return unless context_account && Captain::ContextFields.scope_visible_for_user?(scope: :appointment, account: context_account, user: sender_user)
+
+    Captain::AppointmentContext.new(account: context_account, conversation: conversation, contact_id: contact&.id).block(key)
   end
 
   def appointment_context_account

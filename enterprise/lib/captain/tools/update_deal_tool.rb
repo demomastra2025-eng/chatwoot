@@ -71,6 +71,7 @@ class Captain::Tools::UpdateDealTool < Captain::Tools::BasePublicTool
     Captain::Tools::Operations::DealOperations.new(
       assistant: assistant,
       conversation: current_conversation(state),
+      deal_id: state&.dig(:deal, :id),
       selection_context: state[:selected_deal_context] || state['selected_deal_context']
     )
   end

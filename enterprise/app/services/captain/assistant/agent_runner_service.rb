@@ -43,11 +43,13 @@ class Captain::Assistant::AgentRunnerService
     end
   end
 
-  def initialize(assistant:, conversation: nil, callbacks: {}, source: nil, response_fence: nil, test_overrides: {}, playground_session: nil)
+  def initialize(assistant:, conversation: nil, callbacks: {}, source: nil, response_fence: nil, test_overrides: {}, playground_session: nil,
+                 deal: nil)
     @assistant = assistant
     @conversation = conversation
     @callbacks = callbacks
     @source = source
+    @event_deal = deal
     @playground_session = source.to_s == 'playground' ? playground_session : nil
     @conversation = @playground_session.conversation if @playground_session
     @response_fence = response_fence.to_h.symbolize_keys.compact
@@ -911,13 +913,20 @@ class Captain::Assistant::AgentRunnerService
       conversation: @conversation,
       assistant: @assistant
     )
-    state[:deal] = Captain::ContextFields.deal_state_for(account: @assistant.account, conversation: @conversation)
+    state[:deal] = Captain::ContextFields.deal_state_for(account: @assistant.account, conversation: @conversation, deal: scoped_event_deal)
     state[:task] = Captain::ContextFields.task_state_for(account: @assistant.account, conversation: @conversation)
     state[:appointment] = Captain::ContextFields.appointment_state_for(
       account: @assistant.account, conversation: @conversation, patient_scope: true
     )
     state[:campaign] = slice_attrs(@conversation.campaign, CAMPAIGN_STATE_ATTRIBUTES) if @conversation.campaign
     state[:contact_inbox] = slice_attrs(@conversation.contact_inbox, CONTACT_INBOX_STATE_ATTRIBUTES) if @conversation.contact_inbox
+  end
+
+  def scoped_event_deal
+    return unless @event_deal&.account_id == @assistant.account_id
+    return unless Captain::DealContext.new(account: @assistant.account, conversation: @conversation).deals.exists?(id: @event_deal.id)
+
+    @event_deal
   end
 
   def slice_attrs(record, keys)

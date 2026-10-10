@@ -192,7 +192,7 @@ class Captain::Tools::Agent::PatientScope
   end
 
   def authorize_task_creation!(tool, params)
-    deal_id = params[:deal_id].presence || Captain::ContextFields.deal_for(account: @assistant.account, conversation: conversation)&.id
+    deal_id = params[:deal_id].presence
     require_id!(deals, deal_id, tool: tool, kind: 'deal') if deal_id.present?
     return if params[:originating_conversation_id].blank?
 
@@ -224,8 +224,7 @@ class Captain::Tools::Agent::PatientScope
   end
 
   def authorize_deal_write!(tool, params, state)
-    current_deal_id = Captain::ContextFields.deal_for(account: @assistant.account, conversation: conversation)&.id
-    deal_id = tool == 'update_deal' ? params[:deal_id].presence || current_deal_id : current_deal_id
+    deal_id = params[:deal_id].presence || state&.dig(:deal, :id)
     require_id!(deals, deal_id, tool: tool, kind: 'deal')
 
     state_deal_id = state&.dig(:deal, :id)

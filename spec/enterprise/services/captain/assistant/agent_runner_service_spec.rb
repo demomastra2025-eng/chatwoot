@@ -1976,6 +1976,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       end
 
       before do
+        create(:crm_deal_contact, account: account, deal: deal, contact: contact)
         create_field_definition(:deal, 'sales_region', 'Sales Region')
         create_field_definition(:task, 'follow_up_channel', 'Follow Up Channel')
         create_field_definition(:appointment, 'visit_room', 'Visit Room')
@@ -2010,8 +2011,9 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         )
       end
 
-      it 'includes appointment state and prompt context', :aggregate_failures do
-        state = service.send(:build_state)
+      it 'preserves explicit event deal scalars with appointment state and prompt context', :aggregate_failures do
+        event_service = described_class.new(assistant: assistant, conversation: conversation, deal: deal, source: 'touch_agent')
+        state = event_service.send(:build_state)
 
         expect(state[:deal]).to include(
           id: deal.id,
@@ -2039,7 +2041,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
           resource_name: appointment.resource.name,
           custom_attributes: { 'visit_room' => 'B12' }
         )
-        expect(state[:appointment].keys).to match_array(%i[id status resource_name start_date start_time custom_attributes])
+        expect(state[:appointment].keys).to match_array(%i[id status resource_name start_date start_time custom_attributes summary])
         expect(state[:appointment][:start_date]).to match(/\A\d{2}\.\d{2}\.\d{4}\z/)
         expect(state[:appointment][:start_time]).to match(/\A\d{2}:\d{2}\z/)
         expect(state.dig(:prompt_context, :appointment)).to eq(
@@ -2050,6 +2052,24 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
           /medelement_|payment|provider|command|conversation_id|contact_id/
         )
         expect(state.dig(:prompt_context, :visible_fields, :appointment)).to eq(['status'])
+      end
+
+      it 'does not select an implicit deal for a generic chat or reinterpret old scalar references as summaries' do
+        state = service.send(:build_state)
+
+        expect(state[:deal].keys).to eq([:summary])
+        expect(state[:deal][:summary]).to include(shown: 1, total: 1)
+        expect(state.dig(:prompt_context, :deal)).to be_blank
+        expect(state.dig(:prompt_context, :context_warnings)).to include(include(field_id: 'deal.stage_name', replacement_field_id: 'deal.summary'))
+      end
+
+      it 'rejects another patient deal even when an event caller supplied its exact ID' do
+        other_contact = create(:contact, account: account, phone_number: contact.phone_number)
+        other_deal = create(:crm_deal, account: account, originating_conversation: conversation)
+        create(:crm_deal_contact, account: account, deal: other_deal, contact: other_contact)
+        event_service = described_class.new(assistant: assistant, conversation: conversation, deal: other_deal, source: 'touch_agent')
+
+        expect(event_service.send(:build_state)[:deal].keys).to eq([:summary])
       end
     end
 

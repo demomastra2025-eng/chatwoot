@@ -19,6 +19,7 @@ import Button from 'dashboard/components-next/button/Button.vue';
 import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import CaptainContextFieldsAPI from 'dashboard/api/captain/contextFields';
+import { localizeCatalogField } from 'dashboard/helper/captainCatalog';
 import ParamRow from './ParamRow.vue';
 import AuthConfig from './AuthConfig.vue';
 import HttpOptions from './HttpOptions.vue';
@@ -47,7 +48,7 @@ const emit = defineEmits(['submit', 'cancel']);
 let cachedContextFieldOptions = null;
 let contextFieldsRequest = null;
 
-const { t } = useI18n();
+const { t, te } = useI18n();
 const contextFieldOptions = shallowRef([]);
 const hasLoadedContextFields = ref(false);
 const isSyncingFormState = ref(false);
@@ -429,6 +430,12 @@ const authTypeOptions = computed(() => [
 
 const toContextFieldOptions = fields =>
   fields
+    .filter(
+      field =>
+        field.selectable !== false ||
+        state.param_schema.some(param => param.context_path === field.id)
+    )
+    .map(field => localizeCatalogField(field, { t, te }))
     .slice()
     .sort((leftField, rightField) => {
       const groupComparison = (leftField.group_name || '').localeCompare(
@@ -442,9 +449,13 @@ const toContextFieldOptions = fields =>
     })
     .map(field => ({
       value: field.id,
-      label: field.group_name
-        ? `${field.group_name} - ${field.title}`
-        : field.title,
+      label:
+        (field.group_name
+          ? `${field.group_name} - ${field.title}`
+          : field.title) +
+        (field.deprecated
+          ? ` · ${t('CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.LEGACY_FIELD')}`
+          : ''),
     }));
 
 const v$ = useVuelidate(validationRules, state);

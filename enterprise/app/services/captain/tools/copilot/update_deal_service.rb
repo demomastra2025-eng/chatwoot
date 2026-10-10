@@ -68,7 +68,7 @@ class Captain::Tools::Copilot::UpdateDealService < Captain::Tools::Copilot::Base
   end
 
   def active?
-    current_deal.present? && feature_enabled?('crm_deals') && user_has_permission('crm_deal_manage')
+    feature_enabled?('crm_deals') && user_has_permission('crm_deal_manage')
   end
 
   private

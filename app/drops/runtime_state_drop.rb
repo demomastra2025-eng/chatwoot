@@ -19,6 +19,12 @@ class RuntimeStateDrop < Liquid::Drop
     wrap(@state[method])
   end
 
+  def to_s
+    return super unless @state[:version] == 1 && %w[deals appointments].include?(@state[:kind]) && @state[:groups].is_a?(Array)
+
+    JSON.generate(@state)
+  end
+
   private
 
   def wrap(value)

@@ -315,8 +315,16 @@ RSpec.describe Captain::ContextFields do
       )
     end
 
-    it 'prefers the most recently updated open kept deal' do
+    it 'does not select a current deal from the conversation' do
       state = described_class.deal_state_for(account: account, conversation: conversation_record)
+
+      expect(state).not_to include(:id, :title, :amount)
+      expect(state[:summary][:selection][:current_record]).to be_nil
+      expect(described_class.deal_for(account: account, conversation: conversation_record)).to be_nil
+    end
+
+    it 'preserves scalar types for an explicitly supplied deal and reports legacy references' do
+      state = described_class.deal_state_for(account: account, conversation: conversation_record, deal: latest_open_deal)
 
       expect(state[:id]).to eq(latest_open_deal.id)
       expect(state[:stage_name]).to eq(latest_open_deal.stage.name)
@@ -324,7 +332,7 @@ RSpec.describe Captain::ContextFields do
       expect(state).not_to have_key(:amount_minor)
     end
 
-    it 'resolves deals linked through the current communication thread' do
+    it 'keeps a thread deal scalar only when explicitly supplied' do
       communication_thread = create(:communication_thread, account: account, contact: conversation_record.contact)
       create(
         :communication_thread_conversation,
@@ -344,11 +352,30 @@ RSpec.describe Captain::ContextFields do
         updated_at: Time.current
       )
 
-      state = described_class.deal_state_for(account: account, conversation: conversation_record)
+      state = described_class.deal_state_for(account: account, conversation: conversation_record, deal: thread_deal)
 
       expect(state[:id]).to eq(thread_deal.id)
       expect(state[:amount]).to eq('1500')
       expect(state[:currency]).to eq('KZT')
+    end
+
+    it 'marks old catalog entries without substituting JSON into a saved scalar reference' do
+      definition = described_class.definitions_for(account).find { |field| field[:id] == 'deal.title' }
+      expect(definition).to include(deprecated: true, selectable: false, replacement_field_id: 'deal.summary')
+      state = { deal: { title: 'Exact event title' } }
+      prompt = described_class.prompt_state_for(assistant: assistant, runtime_state: state, field_ids: ['deal.title'])
+      rendered = described_class.render_references('[Title](field://deal.title)', prompt_state: prompt, allowed_fields: [definition])
+
+      expect(rendered).to eq('Title (deal.title: Exact event title)')
+      expect(prompt[:context_warnings]).to include(include(field_id: 'deal.title', replacement_field_id: 'deal.summary'))
+      expect(prompt.dig(:deal, 'summary')).to be_nil
+    end
+
+    it 'keeps a saved enabled scope without field IDs on its old scalar whitelist' do
+      assistant.update!(config: { context_access: { deal: { enabled: true } } })
+      access = described_class.normalized_access_for(assistant)[:deal]
+      expect(access[:field_ids]).to include('deal.id', 'deal.title')
+      expect(access[:field_ids]).not_to include('deal.summary')
     end
   end
 
@@ -504,6 +531,50 @@ RSpec.describe Captain::ContextFields do
 
     before do
       account.enable_features!('communication_threads')
+    end
+
+    it 'renders the two summaries with identical envelopes and no global current deal ID' do
+      deal = create(:crm_deal, account: account, title: 'Own deal')
+      create(:crm_deal_contact, account: account, deal: deal, contact: conversation_record.contact)
+      own = create(:scheduling_appointment, account: account, contact: conversation_record.contact, starts_at: 1.hour.from_now)
+      child = create(:contact, account: account)
+      create(:scheduling_appointment, account: account, contact: conversation_record.contact, patient_contact: child, starts_at: 2.hours.from_now)
+      state = described_class.runtime_state_for(account: account, conversation: conversation_record, assistant: assistant)
+      prompt = described_class.prompt_state_for(assistant: assistant, runtime_state: state, field_ids: %w[deal.summary appointment.summary])
+
+      expect(state[:deal]).not_to include(:id, :title)
+      expect(prompt[:deal].keys).to eq(['summary'])
+      expect(prompt[:appointment].keys).to eq(['summary'])
+      expect(prompt[:context_summaries].keys).to contain_exactly(:deal, :appointment)
+      expect(prompt[:context_summaries][:deal][:groups].first[:items].pluck(:id)).to eq([deal.id])
+      expect(prompt[:context_summaries][:appointment][:groups].first[:items].pluck(:id)).to eq([own.id])
+    end
+
+    it 'uses precomputed trial envelopes without fetching a conversation or patient records' do
+      summary = Captain::ContextSummary.from_snapshots(kind: 'deals', records: [{ id: 501, contact_id: 101, title: 'Synthetic deal' }],
+                                                     contact_id: 101) { |record| Captain::ContextSummary.deal_card(record) }
+      state = { deal: { summary: summary }, conversation: { id: -201 }, playground: { mode: 'trial' } }
+      expect(account).not_to receive(:conversations)
+      prompt = described_class.prompt_state_for(assistant: assistant, runtime_state: state, field_ids: ['deal.summary'])
+
+      expect(prompt[:context_summaries][:deal]).to eq(summary)
+    end
+
+    it 'uses synthetic workspace blocks and summaries with negative session IDs without fetching a real conversation' do
+      summary = Captain::ContextSummary.from_snapshots(
+        kind: 'appointments', records: [{ id: -601, contact_id: -101, starts_at: 1.hour.from_now.iso8601, ends_at: 2.hours.from_now.iso8601 }],
+        contact_id: -101
+      ) { |record| record.slice(:id, :starts_at, :ends_at) }
+      nearest = JSON.generate(id: -601, doctor: 'Synthetic doctor')
+      state = { appointment: { summary: summary }, appointment_context_blocks: { nearest: nearest },
+                conversation: { id: -201 }, playground: { mode: 'workspace' } }
+      expect(account).not_to receive(:conversations)
+      expect(account).not_to receive(:scheduling_appointments)
+
+      prompt = described_class.prompt_state_for(assistant: assistant, runtime_state: state, field_ids: %w[appointment.summary appointment.nearest])
+
+      expect(prompt[:context_summaries][:appointment]).to eq(summary)
+      expect(prompt[:appointment_context_blocks]['nearest']).to eq(nearest)
     end
 
     it 'builds reusable Captain runtime state from a conversation' do

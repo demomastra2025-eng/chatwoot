@@ -34,7 +34,7 @@ class Captain::Runtime::ToolWrapper
     'search_articles' => %i[limit].freeze,
     'search_available_slots' => %i[limit].freeze,
     'search_conversations' => %i[limit].freeze,
-    'search_deals' => %i[limit].freeze,
+    'search_deals' => %i[limit offset].freeze,
 
     'search_scheduling_resources' => %i[limit].freeze,
     'search_tasks' => %i[limit].freeze

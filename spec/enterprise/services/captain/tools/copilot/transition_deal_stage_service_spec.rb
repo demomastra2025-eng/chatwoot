@@ -18,7 +18,7 @@ RSpec.describe Captain::Tools::Copilot::TransitionDealStageService do
     new_stage = create(:crm_stage, account: account, pipeline: pipeline, name: 'Qualified', code: 'qualified', color: '#222222')
     deal = create(:crm_deal, account: account, pipeline: pipeline, stage: old_stage, originating_conversation_id: conversation.id)
 
-    payload = JSON.parse(execute_confirmed(stage_code: 'Qualified'))
+    payload = JSON.parse(execute_confirmed(deal_id: deal.id, stage_code: 'Qualified'))
 
     expect(payload).to include('action' => 'transition_deal_stage', 'deal_id' => deal.id, 'pipeline_id' => pipeline.id, 'stage_id' => new_stage.id)
     expect(payload['deal']).to include(
@@ -38,7 +38,7 @@ RSpec.describe Captain::Tools::Copilot::TransitionDealStageService do
     target_stage = create(:crm_stage, account: account, pipeline: target_pipeline, name: 'В работе', code: 'work', position: 2, color: '#333333')
     deal = create(:crm_deal, account: account, pipeline: target_pipeline, stage: current_stage, originating_conversation_id: conversation.id)
 
-    payload = JSON.parse(execute_confirmed(stage_name: 'В работе'))
+    payload = JSON.parse(execute_confirmed(deal_id: deal.id, stage_name: 'В работе'))
 
     expect(payload['deal']).to include('id' => deal.id, 'stage_id' => target_stage.id, 'pipeline_id' => target_pipeline.id)
     expect(payload['deal']['stage_id']).not_to eq(other_stage.id)
@@ -53,6 +53,7 @@ RSpec.describe Captain::Tools::Copilot::TransitionDealStageService do
     deal = create(:crm_deal, account: account, pipeline: requested_pipeline, stage: current_stage, originating_conversation_id: conversation.id)
 
     payload = JSON.parse(execute_confirmed(
+                           deal_id: deal.id,
                            pipeline_code: requested_pipeline.code,
                            pipeline_id: conflicting_pipeline.id,
                            stage_name: requested_stage.name,
@@ -70,7 +71,7 @@ RSpec.describe Captain::Tools::Copilot::TransitionDealStageService do
     create(:crm_stage, account: account, pipeline: pipeline, name: 'Проиграно', code: 'lost', position: 3, outcome: 'lost', color: '#333333')
     deal = create(:crm_deal, account: account, pipeline: pipeline, stage: current_stage, originating_conversation_id: conversation.id)
 
-    payload = JSON.parse(execute_confirmed(stage_action: 'next'))
+    payload = JSON.parse(execute_confirmed(deal_id: deal.id, stage_action: 'next'))
 
     expect(payload['deal']).to include('id' => deal.id, 'stage_id' => next_stage.id, 'pipeline_id' => pipeline.id)
   end
@@ -92,7 +93,7 @@ RSpec.describe Captain::Tools::Copilot::TransitionDealStageService do
     )
     deal = create(:crm_deal, account: account, pipeline: pipeline, stage: current_stage, originating_conversation_id: conversation.id)
 
-    payload = JSON.parse(execute_confirmed(stage_code: 'lost', closing_reasons: ['competitor']))
+    payload = JSON.parse(execute_confirmed(deal_id: deal.id, stage_code: 'lost', closing_reasons: ['competitor']))
 
     expect(payload['deal']).to include('id' => deal.id, 'stage_id' => lost_stage.id, 'closing_reasons' => ['Competitor'])
     expect(deal.reload.closing_reasons).to eq(['Competitor'])
@@ -114,7 +115,7 @@ RSpec.describe Captain::Tools::Copilot::TransitionDealStageService do
     )
     deal = create(:crm_deal, account: account, pipeline: pipeline, stage: current_stage, originating_conversation_id: conversation.id)
 
-    payload = JSON.parse(execute_confirmed(stage_code: 'work', transition_reason: 'waiting payment'))
+    payload = JSON.parse(execute_confirmed(deal_id: deal.id, stage_code: 'work', transition_reason: 'waiting payment'))
     event = deal.reload.events.where(event_type: 'deal_stage_changed').last
 
     expect(payload['deal']).to include('id' => deal.id, 'stage_id' => target_stage.id)
@@ -127,10 +128,19 @@ RSpec.describe Captain::Tools::Copilot::TransitionDealStageService do
     target_stage = create(:crm_stage, account: account, pipeline: pipeline, name: 'В работе', code: 'work', position: 2, color: '#222222')
     deal = create(:crm_deal, account: account, pipeline: pipeline, stage: current_stage, originating_conversation_id: conversation.id)
 
-    result = execute_confirmed(stage_action: 'next', stage_id: target_stage.id)
+    result = execute_confirmed(deal_id: deal.id, stage_action: 'next', stage_id: target_stage.id)
 
     expect(result).to include('ERROR: ArgumentError: stage_action cannot be combined')
     expect(deal.reload.stage_id).to eq(current_stage.id)
+  end
+
+  it 'does not choose the most recently updated deal when no deal ID is provided' do
+    linked = create(:crm_deal, account: account, originating_conversation: conversation)
+    old_stage_id = linked.stage_id
+    result = service.execute(stage_action: 'next')
+
+    expect(result).to include('deal_id is required')
+    expect(linked.reload.stage_id).to eq(old_stage_id)
   end
 
   def execute_confirmed(**arguments)

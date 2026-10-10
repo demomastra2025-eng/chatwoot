@@ -40,6 +40,10 @@ class Captain::ContextFields
     { key: 'last_cancelled', title: 'Последняя отменённая запись' },
     { key: 'all', title: 'Все записи, сжато' }
   ].freeze
+  SUMMARY_FIELD_DEFINITIONS = {
+    deal: { key: 'summary', title: 'Сводка', description: 'До 8 активных и 4 закрытых/архивных сделок. Показано X из Y в каждой группе.' },
+    appointment: { key: 'summary', title: 'Сводка', description: 'До 6 будущих/текущих, 3 прошлых и 3 отменённых записей. Показано X из Y в каждой группе.' }
+  }.freeze
   PATIENT_APPOINTMENT_SYSTEM_KEY = Regexp.union(
     /\Amedelement_/,
     /(?:\A|_)(?:provider|command|receipt|reception|payment|prepaid|settlement|idempotency|external)(?:_|\z)/
@@ -220,7 +224,7 @@ class Captain::ContextFields
       definitions_for(account).map { |field| field[:id] }
     end
 
-    def appointment_state_for(account:, conversation: nil, appointment: nil, patient_scope: false)
+    def appointment_state_for(account:, conversation: nil, appointment: nil, patient_scope: false, contact_id: nil)
       return if account.blank? || !appointment_context_enabled?(account)
 
       appointment ||= if patient_scope
@@ -228,9 +232,9 @@ class Captain::ContextFields
                       else
                         appointment_for(account: account, conversation: conversation)
                       end
-      return if appointment.blank? || appointment.account_id != account.id
-
-      state = build_appointment_state(appointment, account)
+      context = Captain::AppointmentContext.new(account: account, conversation: conversation, contact_id: contact_id)
+      appointment = nil if patient_scope && appointment.present? && !context.appointments.exists?(id: appointment.id)
+      state = appointment.present? && appointment.account_id == account.id ? build_appointment_state(appointment, account) : {}
       if patient_scope
         patient_state = state.slice(:id, :resource_name, :start_date, :start_time, :status)
         field_keys = appointment_custom_attribute_fields(account)
@@ -238,15 +242,18 @@ class Captain::ContextFields
                      .map { |field| field[:field_key].to_s }
         custom_attributes = state[:custom_attributes].to_h.stringify_keys.slice(*field_keys)
         patient_state[:custom_attributes] = custom_attributes if custom_attributes.present?
-        return patient_state
+        return patient_state.merge(summary: context.compact_summary)
       end
 
-      state
+      state.merge(summary: context.compact_summary)
     end
 
-    def deal_state_for(account:, conversation:)
-      deal = deal_for(account: account, conversation: conversation)
-      return if deal.blank?
+    def deal_state_for(account:, conversation: nil, deal: nil, contact_id: nil, actor: nil)
+      return if account.blank? || !deal_context_enabled?(account)
+      return if actor.present? && !scope_visible_for_user?(scope: :deal, account: account, user: actor)
+
+      summary = Captain::DealContext.new(account: account, conversation: conversation, contact_id: contact_id).summary
+      return { summary: summary } unless deal.present? && deal.account_id == account.id
 
       deal.attributes.symbolize_keys.slice(*DEAL_STATE_ATTRIBUTES).merge(
         amount: Crm::AmountFormatter.major_from_minor(deal.amount_minor),
@@ -256,7 +263,7 @@ class Captain::ContextFields
         creator_name: deal.creator&.name,
         team_name: deal.team&.name,
         company_name: deal.company&.name
-      ).slice(*DEAL_STATE_ATTRIBUTES)
+      ).slice(*DEAL_STATE_ATTRIBUTES).merge(summary: summary)
     end
 
     def task_state_for(account:, conversation:)
@@ -289,23 +296,12 @@ class Captain::ContextFields
       Captain::AppointmentContext.new(account: account, conversation: conversation).nearest
     end
 
-    def deal_for(account:, conversation:)
-      return if account.blank? || conversation.blank?
+    def deal_for(account:, conversation: nil, deal_id: nil)
+      return if account.blank? || deal_id.blank?
       return unless deal_context_enabled?(account)
+      return if conversation && conversation.account_id != account.id
 
-      deals = deals_for_conversation_context(account: account, conversation: conversation)
-
-      deals.kept.where(closed_at: nil).order(updated_at: :desc, id: :desc).first ||
-        deals.kept.order(updated_at: :desc, id: :desc).first ||
-        deals.order(updated_at: :desc, id: :desc).first
-    end
-
-    def deals_for_conversation_context(account:, conversation:)
-      deals = account.crm_deals.where(originating_conversation_id: conversation.id)
-      thread = conversation.communication_thread || conversation.reload.communication_thread
-      return deals if thread.blank? || thread.account_id != account.id
-
-      deals.or(account.crm_deals.where(originating_communication_thread_id: thread.id))
+      account.crm_deals.find_by(id: deal_id)
     end
 
     def task_for(account:, conversation:)
@@ -320,7 +316,7 @@ class Captain::ContextFields
     end
 
     def runtime_state_for(account:, conversation:, channel_type: nil, assistant: nil, actor: nil, accessible_inboxes: nil)
-      return {} if conversation.blank?
+      return {} if conversation.blank? || conversation.account_id != account.id
 
       runtime_state = {
         conversation: slice_record_attributes(conversation, CONVERSATION_STATE_ATTRIBUTES),
@@ -337,7 +333,7 @@ class Captain::ContextFields
       )
       runtime_state[:communication_thread] = communication_thread_state if communication_thread_state.present?
 
-      deal_state = deal_state_for(account: account, conversation: conversation)
+      deal_state = deal_state_for(account: account, conversation: conversation, actor: actor)
       runtime_state[:deal] = deal_state if deal_state.present?
 
       task_state = task_state_for(account: account, conversation: conversation)
@@ -432,7 +428,8 @@ class Captain::ContextFields
       raw_access = assistant.config&.with_indifferent_access&.dig(:context_access) || {}
 
       SCOPES.index_with do |scope|
-        normalize_scope_access(scope, raw_access[scope], available_ids_by_scope[scope] || [])
+        default_ids = definitions.select { |field| field[:table_name].to_sym == scope && field[:selectable] != false }.pluck(:id)
+        normalize_scope_access(scope, raw_access[scope], available_ids_by_scope[scope] || [], default_ids)
       end
     end
 
@@ -467,6 +464,8 @@ class Captain::ContextFields
       end
 
       add_appointment_context_blocks(prompt_state, assistant, runtime_state, explicit_field_ids)
+      add_context_summaries(prompt_state)
+      add_legacy_context_warnings(prompt_state, definitions, explicit_field_ids)
 
       prompt_state[:visible_fields] = visible_fields if visible_fields.present?
       prompt_state[:communication_thread] = runtime_state[:communication_thread] if runtime_state[:communication_thread].present?
@@ -551,11 +550,31 @@ class Captain::ContextFields
 
     private
 
+    def add_context_summaries(prompt_state)
+      summaries = %i[deal appointment].filter_map do |scope|
+        summary = prompt_state.dig(scope, 'summary')
+        [scope, summary] if summary
+      end.to_h
+      prompt_state[:context_summaries] = summaries if summaries.present?
+    end
+
+    def add_legacy_context_warnings(prompt_state, definitions, field_ids)
+      warnings = definitions.select { |field| field[:deprecated] && field_ids.include?(field[:id]) }.map do |field|
+        {
+          field_id: field[:id], replacement_field_id: field[:replacement_field_id],
+          message: field[:table_name] == 'deal' ?
+            'Legacy scalar deal field requires an explicit deal or CRM event. No deal is selected from the summary.' :
+            'Legacy appointment field is preserved. Select appointment.summary to adopt the grouped summary explicitly.'
+        }
+      end
+      prompt_state[:context_warnings] = warnings if warnings.present?
+    end
+
     def add_appointment_context_blocks(prompt_state, assistant, runtime_state, field_ids)
       block_ids = field_ids.grep(/\Aappointment\.(?:nearest|last_past|last_cancelled|all)\z/)
       return if block_ids.blank?
 
-      if runtime_state.dig(:playground, :mode) == 'trial'
+      if %w[trial workspace].include?(runtime_state.dig(:playground, :mode))
         prompt_state[:appointment] ||= {}
         prompt_state[:appointment_context_blocks] = block_ids.to_h do |field_id|
           key = field_id.delete_prefix('appointment.')
@@ -673,7 +692,7 @@ class Captain::ContextFields
     def deal_fields(account)
       return [] unless deal_context_enabled?(account)
 
-      build_field_group('deal', DEAL_FIELD_DEFINITIONS)
+      [summary_field('deal')] + legacy_fields(build_field_group('deal', DEAL_FIELD_DEFINITIONS), 'deal')
     end
 
     def task_fields(account)
@@ -685,12 +704,28 @@ class Captain::ContextFields
     def appointment_fields(account)
       return [] unless appointment_context_enabled?(account)
 
-      build_field_group('appointment', APPOINTMENT_FIELD_DEFINITIONS) + APPOINTMENT_BLOCK_DEFINITIONS.map do |definition|
+      blocks = APPOINTMENT_BLOCK_DEFINITIONS.map do |definition|
         {
           id: "appointment.#{definition[:key]}", title: definition[:title],
           description: 'Компактные данные записей текущего пациента', group_name: 'Записи пациента',
           table_name: 'appointment', field_type: 'computed', field_key: definition[:key]
         }
+      end
+      [summary_field('appointment')] + legacy_fields(build_field_group('appointment', APPOINTMENT_FIELD_DEFINITIONS) + blocks, 'appointment')
+    end
+
+    def summary_field(scope)
+      definition = SUMMARY_FIELD_DEFINITIONS.fetch(scope.to_sym)
+      {
+        id: "#{scope}.summary", title: definition[:title], description: definition[:description],
+        group_name: GROUP_NAMES.fetch(scope), table_name: scope, field_type: 'computed', field_key: 'summary',
+        value_type: 'json', summary_version: Captain::ContextSummary::VERSION, selectable: true
+      }
+    end
+
+    def legacy_fields(fields, scope)
+      fields.map do |field|
+        field.merge(deprecated: true, selectable: false, replacement_field_id: "#{scope}.summary")
       end
     end
 
@@ -756,7 +791,7 @@ class Captain::ContextFields
           rules: definition.rules.presence,
           crm_managed: true
         }
-      end
+      end.then { |fields| %w[deal appointment].include?(scope) ? legacy_fields(fields, scope) : fields }
     end
 
     def managed_custom_attribute_options(definition)
@@ -779,25 +814,29 @@ class Captain::ContextFields
       when 'conversation'
         CONVERSATION_FIELD_DEFINITIONS
       when 'deal'
-        DEAL_FIELD_DEFINITIONS
+        DEAL_FIELD_DEFINITIONS + [SUMMARY_FIELD_DEFINITIONS[:deal]]
       when 'task'
         TASK_FIELD_DEFINITIONS
       when 'appointment'
-        APPOINTMENT_FIELD_DEFINITIONS
+        APPOINTMENT_FIELD_DEFINITIONS + [SUMMARY_FIELD_DEFINITIONS[:appointment]]
       else
         []
       end
     end
 
-    def normalize_scope_access(scope, raw_scope, available_field_ids)
+    def normalize_scope_access(scope, raw_scope, available_field_ids, default_field_ids = available_field_ids)
       raw_scope = raw_scope.to_h.with_indifferent_access if raw_scope.respond_to?(:to_h)
       raw_scope ||= {}
 
       field_ids =
         if raw_scope.key?(:field_ids)
           Array(raw_scope[:field_ids]).map { |field_id| normalize_field_id(field_id) }
+        elsif raw_scope.key?(:enabled)
+          # Saved scopes without a whitelist used to mean every scalar field.
+          # Keep that meaning until the profile explicitly selects the summary.
+          available_field_ids.reject { |id| id.end_with?('.summary') }
         else
-          available_field_ids
+          default_field_ids
         end
 
       {

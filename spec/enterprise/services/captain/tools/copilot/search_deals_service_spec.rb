@@ -19,6 +19,43 @@ RSpec.describe Captain::Tools::Copilot::SearchDealsService do
   end
 
   describe '#execute' do
+    it 'pages every matching deal with deterministic order and preserves the existing result keys' do
+      53.times { |index| create(:crm_deal, account: account, pipeline: pipeline, stage: stage, title: "Paged #{index}", updated_at: 1.day.ago) }
+      first = JSON.parse(service.execute(query: 'Paged', limit: 50, offset: 0))
+      second = JSON.parse(service.execute(query: 'Paged', limit: 50, offset: first['next_offset']))
+
+      expect(first).to include('total_count' => 53, 'shown' => 50, 'has_more' => true, 'next_offset' => 50)
+      expect(second).to include('total_count' => 53, 'shown' => 3, 'has_more' => false, 'next_offset' => nil)
+      expect(first['deals'].pluck('id') & second['deals'].pluck('id')).to be_empty
+      expect((first['deals'] + second['deals']).pluck('id')).to eq(account.crm_deals.where('title LIKE ?', 'Paged%').order(id: :desc).pluck(:id))
+      expect(service.execute(offset: -1)).to include('offset must be a non-negative integer')
+    end
+
+    it 'filters active, closed and archived deals without requiring a page-wide history load' do
+      closed = create(:crm_deal, account: account, pipeline: pipeline, stage: stage, closed_at: 1.day.ago)
+      archived = create(:crm_deal, account: account, pipeline: pipeline, stage: stage, archived_at: 1.day.ago)
+
+      expect(JSON.parse(service.execute(status: 'active'))['deals'].pluck('id')).to contain_exactly(deal1.id, deal2.id)
+      expect(JSON.parse(service.execute(status: 'closed'))['deals'].pluck('id')).to eq([closed.id])
+      expect(JSON.parse(service.execute(status: 'archived'))['deals'].pluck('id')).to eq([archived.id])
+      expect(JSON.parse(service.execute(status: 'any'))['total_count']).to eq(4)
+      expect(service.execute(status: 'unknown')).to include('status must be active')
+    end
+
+    it 'keeps patient title searches and pages restricted to the same exact contact as the summary' do
+      own = create(:crm_deal, account: account, pipeline: pipeline, stage: stage, title: 'Shared title')
+      other = create(:crm_deal, account: account, pipeline: pipeline, stage: stage, title: 'Shared title')
+      create(:crm_deal_contact, account: account, deal: own, contact: conversation.contact)
+      create(:crm_deal_contact, account: account, deal: other)
+      conversation_service.patient_scope = Captain::Tools::Agent::PatientScope.new(assistant: assistant, conversation: conversation)
+      payload = JSON.parse(conversation_service.execute(query: 'Shared title', status: 'any', offset: 0))
+
+      expect(payload['deals'].pluck('id')).to eq([own.id])
+      expect(payload['total_count']).to eq(1)
+      expect(JSON.parse(conversation_service.execute(query: 'Shared title', offset: 1))['deals']).to be_empty
+      expect(conversation_service.execute(contact_id: create(:contact, account: account).id)).to eq(Captain::Tools::Agent::PatientScope::FAILURE)
+    end
+
     it 'returns normalized deals with filters and total_count before limit' do
       payload = JSON.parse(service.execute(query: 'renewal', company_id: company.id, limit: 1))
 

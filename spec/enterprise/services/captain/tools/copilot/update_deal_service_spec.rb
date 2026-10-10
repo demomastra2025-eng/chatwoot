@@ -24,8 +24,8 @@ RSpec.describe Captain::Tools::Copilot::UpdateDealService do
   end
 
   describe '#execute' do
-    it 'updates the current deal using JSON custom_attributes' do
-      execute_confirmed(title: 'Renewal won', custom_attributes: { lead_source: 'captain', segment: 'enterprise' }.to_json)
+    it 'updates an explicit deal using JSON custom_attributes' do
+      execute_confirmed(deal_id: deal.id, title: 'Renewal won', custom_attributes: { lead_source: 'captain', segment: 'enterprise' }.to_json)
 
       deal.reload
 
@@ -37,7 +37,7 @@ RSpec.describe Captain::Tools::Copilot::UpdateDealService do
     end
 
     it 'updates the current deal from an AI-facing major-unit amount without exposing trailing zero decimals' do
-      payload = JSON.parse(execute_confirmed(amount: '200.00', currency: 'USD'))
+      payload = JSON.parse(execute_confirmed(deal_id: deal.id, amount: '200.00', currency: 'USD'))
 
       deal.reload
 
@@ -52,7 +52,7 @@ RSpec.describe Captain::Tools::Copilot::UpdateDealService do
       target_stage = create(:crm_stage, account: account, pipeline: target_pipeline, name: 'В работе', code: 'work', position: 1, color: '#111111')
       create(:crm_stage, account: account, pipeline: deal.pipeline, name: 'В работе', code: 'work', position: 2, color: '#222222')
 
-      execute_confirmed(title: 'Moved renewal', pipeline_code: 'Expansion', stage_code: 'Work')
+      execute_confirmed(deal_id: deal.id, title: 'Moved renewal', pipeline_code: 'Expansion', stage_code: 'Work')
 
       deal.reload
       expect(deal.title).to eq('Moved renewal')
@@ -76,7 +76,7 @@ RSpec.describe Captain::Tools::Copilot::UpdateDealService do
         color: '#222222'
       )
 
-      payload = JSON.parse(execute_confirmed(title: 'Reasoned renewal', stage_code: 'Work', transition_reason: 'waiting payment'))
+      payload = JSON.parse(execute_confirmed(deal_id: deal.id, title: 'Reasoned renewal', stage_code: 'Work', transition_reason: 'waiting payment'))
       event = deal.reload.events.where(event_type: 'deal_stage_changed').last
 
       expect(deal.title).to eq('Reasoned renewal')
@@ -144,7 +144,7 @@ RSpec.describe Captain::Tools::Copilot::UpdateDealService do
       pipeline = deal.pipeline
       won_stage = create(:crm_stage, account: account, pipeline: pipeline, outcome: 'won', code: 'won', color: '#333333')
 
-      payload = JSON.parse(execute_confirmed(stage_id: won_stage.id, custom_attributes: { decision_maker: 'Aruzhan' }.to_json))
+      payload = JSON.parse(execute_confirmed(deal_id: deal.id, stage_id: won_stage.id, custom_attributes: { decision_maker: 'Aruzhan' }.to_json))
 
       deal.reload
       expect(deal.stage_id).to eq(won_stage.id)

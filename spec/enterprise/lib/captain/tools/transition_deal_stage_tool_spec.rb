@@ -15,6 +15,7 @@ RSpec.describe Captain::Tools::TransitionDealStageTool, type: :model do
     new_stage = create(:crm_stage, account: account, pipeline: pipeline, code: 'qualified', color: '#222222')
     conversation = create(:conversation, account: account)
     deal = create(:crm_deal, account: account, pipeline: pipeline, stage: old_stage, originating_conversation_id: conversation.id)
+    create(:crm_deal_contact, account: account, deal: deal, contact: conversation.contact)
     tool_context = Struct.new(:state).new({ conversation: { id: conversation.id }, deal: { id: deal.id } })
 
     payload = JSON.parse(tool.perform(tool_context, stage_code: 'qualified'))
@@ -31,6 +32,7 @@ RSpec.describe Captain::Tools::TransitionDealStageTool, type: :model do
     next_stage = create(:crm_stage, account: account, pipeline: pipeline, code: 'work', position: 2, color: '#222222')
     conversation = create(:conversation, account: account)
     deal = create(:crm_deal, account: account, pipeline: pipeline, stage: current_stage, originating_conversation_id: conversation.id)
+    create(:crm_deal_contact, account: account, deal: deal, contact: conversation.contact)
     tool_context = Struct.new(:state).new({ conversation: { id: conversation.id }, deal: { id: deal.id } })
 
     payload = JSON.parse(tool.perform(tool_context, stage_action: 'next'))
@@ -54,6 +56,7 @@ RSpec.describe Captain::Tools::TransitionDealStageTool, type: :model do
     )
     conversation = create(:conversation, account: account)
     deal = create(:crm_deal, account: account, pipeline: pipeline, stage: current_stage, originating_conversation_id: conversation.id)
+    create(:crm_deal_contact, account: account, deal: deal, contact: conversation.contact)
     tool_context = Struct.new(:state).new({ conversation: { id: conversation.id }, deal: { id: deal.id } })
 
     payload = JSON.parse(tool.perform(tool_context, stage_code: 'lost', closing_reasons: ['competitor']))
@@ -77,6 +80,7 @@ RSpec.describe Captain::Tools::TransitionDealStageTool, type: :model do
     )
     conversation = create(:conversation, account: account)
     deal = create(:crm_deal, account: account, pipeline: pipeline, stage: current_stage, originating_conversation_id: conversation.id)
+    create(:crm_deal_contact, account: account, deal: deal, contact: conversation.contact)
     tool_context = Struct.new(:state).new({ conversation: { id: conversation.id }, deal: { id: deal.id } })
 
     payload = JSON.parse(tool.perform(tool_context, stage_code: 'work', transition_reason: 'waiting payment'))
@@ -91,6 +95,7 @@ RSpec.describe Captain::Tools::TransitionDealStageTool, type: :model do
     current_stage = create(:crm_stage, account: account, pipeline: pipeline, code: 'new', position: 1, color: '#111111')
     conversation = create(:conversation, account: account)
     deal = create(:crm_deal, account: account, pipeline: pipeline, stage: current_stage, originating_conversation_id: conversation.id)
+    create(:crm_deal_contact, account: account, deal: deal, contact: conversation.contact)
     tool_context = Struct.new(:state).new({ conversation: { id: conversation.id }, deal: { id: deal.id } })
 
     result = tool.perform(tool_context, stage_id: 0, pipeline_id: '0')

@@ -14,6 +14,19 @@ RSpec.describe Captain::AppointmentContext do
 
   before { account.enable_features!('scheduling') }
 
+  it 'uses the shared envelope with six upcoming, three past and three planned cancellation slots' do
+    ongoing = appointment(starts_at: 10.minutes.ago)
+    7.times { |index| appointment(starts_at: (index + 1).days.from_now) }
+    4.times { |index| appointment(starts_at: (index + 1).days.ago) }
+    5.times { |index| appointment(starts_at: (index + 1).days.from_now, status: 'cancelled') }
+    summary = context.compact_summary
+
+    expect(summary).to include(total: 17, shown: 12, display: 'Показано 12 из 17')
+    expect(summary[:groups].map { |group| [group[:shown], group[:total]] }).to eq([[6, 8], [3, 4], [3, 5]])
+    expect(summary[:groups].first[:items].first[:id]).to eq(ongoing.id)
+    expect(JSON.parse(context.block('summary'))['shown']).to eq(12)
+  end
+
   def appointment(starts_at:, status: 'scheduled', **attributes)
     create(:scheduling_appointment, account: account, contact: contact, resource: resource,
                                     starts_at: starts_at, ends_at: starts_at + 30.minutes, status: status, **attributes)

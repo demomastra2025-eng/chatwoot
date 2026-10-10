@@ -72,11 +72,24 @@ module Concerns::Agentable
     end
 
     append_appointment_context_blocks(enhanced_context, prompt_state)
+    append_context_summaries(enhanced_context, prompt_state)
 
     time_agent_phase('prompt_render') { Captain::PromptRenderer.render(template_name, enhanced_context.with_indifferent_access) }
   end
 
   private
+
+  def append_context_summaries(context, prompt_state)
+    lines = prompt_state[:context_summaries].to_h.map do |scope, summary|
+      "#{scope}.summary (данные): #{JSON.generate(Captain::EncodingNormalizer.utf8(summary))}"
+    end
+    lines += Array(prompt_state[:context_warnings]).map do |warning|
+      "Context migration: #{warning[:field_id]} — #{warning[:message]}"
+    end
+    return if lines.empty?
+
+    context[:current_context_rule] = [context[:current_context_rule], *lines].compact.join("\n")
+  end
 
   def append_appointment_context_blocks(context, prompt_state)
     blocks = prompt_state[:appointment_context_blocks].to_h

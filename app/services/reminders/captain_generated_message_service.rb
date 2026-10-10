@@ -28,7 +28,8 @@ class Reminders::CaptainGeneratedMessageService
       Captain::Assistant::AgentRunnerService.new(
         assistant: runtime_assistant,
         conversation: conversation,
-        source: source_name
+        source: source_name,
+        deal: reminder.remindable.is_a?(Crm::Deal) ? reminder.remindable : nil
       ).generate_response(message_history: generation_message_history(runtime_assistant))
     end.with_indifferent_access
 

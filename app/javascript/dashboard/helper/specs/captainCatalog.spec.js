@@ -9,6 +9,29 @@ import {
 } from '../captainCatalog';
 
 describe('captainCatalog helper', () => {
+  it('offers only summaries for new choices and retains used legacy fields with migration guidance', () => {
+    const fields = [
+      { id: 'deal.summary', field_type: 'computed', field_key: 'summary', table_name: 'deal', title: 'Сводка', selectable: true },
+      { id: 'deal.title', title: 'Title', deprecated: true, selectable: false },
+      { id: 'appointment.nearest', title: 'Nearest', deprecated: true, selectable: false, isUsed: true },
+    ];
+    const results = filterAndSortCatalogItems(fields);
+    expect(results.map(field => field.id)).toEqual(['appointment.nearest', 'deal.summary']);
+    expect(localizeCatalogField(fields[1], { te: () => false, t: key => key }).description).toContain('Saved legacy field');
+  });
+
+  it('localizes computed Summary titles and descriptions through their stable IDs', () => {
+    const translations = {
+      'CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.FIELDS.DEAL.SUMMARY.TITLE': 'Summary',
+      'CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.FIELDS.DEAL.SUMMARY.DESCRIPTION': 'Shown X of Y in each group',
+    };
+    const field = localizeCatalogField(
+      { id: 'deal.summary', table_name: 'deal', field_type: 'computed', field_key: 'summary', title: 'Сводка', description: 'Fallback' },
+      { te: key => key in translations, t: key => translations[key] }
+    );
+    expect(field).toMatchObject({ title: 'Summary', description: 'Shown X of Y in each group' });
+  });
+
   it('localizes the patient appointments group and tool', () => {
     const translations = {
       'CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.GROUPS.PATIENT_APPOINTMENTS':

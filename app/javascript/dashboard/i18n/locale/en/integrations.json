@@ -1103,6 +1103,8 @@
           "TITLE": "Default data",
           "DESCRIPTION": "Choose which fields are available by default.",
           "HINT": "Fields referenced explicitly with field:// in instructions are added automatically.",
+          "LEGACY_FIELD": "Legacy field",
+          "LEGACY_WARNING": "Saved legacy field. Switch to Summary explicitly. Deal fields require an explicit record or CRM event.",
           "VARIABLE": "Variable",
           "LOADING": "Loading available fields...",
           "EMPTY": "No fields are available for this section yet.",
@@ -1194,6 +1196,10 @@
             "DEAL": {
               "ID": {
                 "TITLE": "Deal ID"
+              },
+              "SUMMARY": {
+                "TITLE": "Summary",
+                "DESCRIPTION": "Up to 8 active and 4 closed or archived deals. Each group shows X of Y; no current deal is selected."
               },
               "TITLE": {
                 "TITLE": "Title"
@@ -1321,6 +1327,10 @@
             "APPOINTMENT": {
               "ID": {
                 "TITLE": "Appointment ID"
+              },
+              "SUMMARY": {
+                "TITLE": "Summary",
+                "DESCRIPTION": "Up to 6 upcoming or ongoing, 3 past and 3 cancelled appointments. Each group shows X of Y."
               },
               "RESOURCE_ID": {
                 "TITLE": "Specialist ID"

@@ -691,12 +691,17 @@ class Reminder < ApplicationRecord
       inbox: target_inbox,
       account: account,
       sender: sender || message_sender,
-      appointment: appointment_context
+      appointment: appointment_context,
+      deal: deal_context
     ).render
   end
 
   def appointment_context
     remindable if remindable.is_a?(Scheduling::Appointment)
+  end
+
+  def deal_context
+    remindable if remindable.is_a?(Crm::Deal)
   end
 
   def approve_unsaved!

@@ -1,9 +1,9 @@
 class Outbound::RenderedTextService
   RAW_CODE_REGEX = /`(.*?)`/m.freeze
 
-  attr_reader :content, :conversation, :contact, :inbox, :account, :sender, :appointment
+  attr_reader :content, :conversation, :contact, :inbox, :account, :sender, :appointment, :deal
 
-  def initialize(content:, conversation: nil, contact: nil, inbox: nil, account: nil, sender: nil, appointment: nil)
+  def initialize(content:, conversation: nil, contact: nil, inbox: nil, account: nil, sender: nil, appointment: nil, deal: nil)
     @content = content.to_s
     @conversation = conversation
     @contact = contact
@@ -11,6 +11,7 @@ class Outbound::RenderedTextService
     @account = account
     @sender = sender
     @appointment = appointment
+    @deal = deal
   end
 
   def render
@@ -26,6 +27,7 @@ class Outbound::RenderedTextService
 
   def process_liquid_string(text)
     return text if text.blank?
+    return text unless text.include?('{{') || text.include?('{%')
 
     template = Liquid::Template.parse(text)
     template.render(message_drops)
@@ -47,11 +49,14 @@ class Outbound::RenderedTextService
     }
 
     if defined?(Captain::ContextFields)
-      if resolved_conversation.present?
+      if resolved_account.present?
         drops['deal'] = build_runtime_state_drop(
           Captain::ContextFields.deal_state_for(
             account: resolved_account,
-            conversation: resolved_conversation
+            conversation: resolved_conversation,
+            contact_id: resolved_contact&.id,
+            deal: deal,
+            actor: sender.is_a?(User) ? sender : nil
           )
         )
         drops['task'] = build_runtime_state_drop(
@@ -65,7 +70,8 @@ class Outbound::RenderedTextService
         Captain::ContextFields.appointment_state_for(
           account: resolved_account,
           conversation: resolved_conversation,
-          appointment: appointment
+          appointment: appointment,
+          contact_id: resolved_contact&.id
         )
       )
     end
@@ -106,7 +112,8 @@ class Outbound::RenderedTextService
       inbox: resolved_inbox,
       account: resolved_account,
       sender: sender,
-      appointment: appointment
+      appointment: appointment,
+      deal: deal
     )
   end
 
