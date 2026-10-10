@@ -59,13 +59,13 @@ describe('SchedulingAvailabilityPicker', () => {
     );
   });
 
-  it('explains a move to a verified date without declaring unknown dates empty', () => {
+  it('offers a button for a verified date while keeping the original empty day selected', async () => {
     const wrapper = mount(SchedulingAvailabilityPicker, {
       props: {
-        date: '2026-10-12',
-        state: 'ok',
-        windows: [first],
+        date: '2026-10-10',
+        state: 'closed_day',
         nearestState: 'found',
+        nearestDate: '2026-10-12',
         emptyDate: '2026-10-10',
         searchThrough: '2026-11-10',
       },
@@ -77,5 +77,27 @@ describe('SchedulingAvailabilityPicker', () => {
       'SCHEDULING.APPOINTMENT_FORM.AVAILABILITY.NEAREST_CONFIRMED',
       { date: '2026-10-10', nearestDate: '2026-10-12', through: '2026-11-10' }
     );
+    expect(wrapper.find('input[type="date"]').element.value).toBe('2026-10-10');
+    const buttons = wrapper.findAll('button');
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0].text()).toContain(
+      'SCHEDULING.APPOINTMENT_FORM.AVAILABILITY.SHOW_NEAREST'
+    );
+    expect(wrapper.emitted('showNearest')).toBeUndefined();
+    await buttons[0].trigger('click');
+    expect(wrapper.emitted('showNearest')).toEqual([[]]);
+    expect(wrapper.emitted('update:date')).toBeUndefined();
+    expect(wrapper.emitted('select')).toBeUndefined();
+    expect(wrapper.find('input[type="date"]').element.value).toBe('2026-10-10');
+    await wrapper.setProps({
+      date: '2026-10-12',
+      state: 'ok',
+      windows: [first],
+      nearestState: '',
+      nearestDate: '',
+    });
+    expect(wrapper.findAll('button').map(button => button.text())).toEqual([
+      '09:00',
+    ]);
   });
 });

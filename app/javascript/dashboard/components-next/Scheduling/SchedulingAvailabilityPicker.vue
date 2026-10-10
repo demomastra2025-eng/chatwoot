@@ -9,10 +9,11 @@ const props = defineProps({
   windows: { type: Array, default: () => [] },
   selectedStartsAt: { type: String, default: '' },
   nearestState: { type: String, default: '' },
+  nearestDate: { type: String, default: '' },
   emptyDate: { type: String, default: '' },
   searchThrough: { type: String, default: '' },
 });
-const emit = defineEmits(['update:date', 'select']);
+const emit = defineEmits(['update:date', 'select', 'showNearest']);
 const { t } = useI18n();
 const formatTime = value =>
   new Intl.DateTimeFormat('ru', {
@@ -41,7 +42,7 @@ const message = computed(() => {
   if (nearestMessage)
     return t(`SCHEDULING.APPOINTMENT_FORM.AVAILABILITY.${nearestMessage}`, {
       date: props.emptyDate,
-      nearestDate: props.date,
+      nearestDate: props.nearestDate,
       through: props.searchThrough,
     });
   if (props.state === 'loading')
@@ -74,6 +75,18 @@ const message = computed(() => {
     <p v-if="message" role="status" class="m-0 text-sm text-n-slate-10">
       {{ message }}
     </p>
+    <button
+      v-if="nearestState === 'found' && nearestDate"
+      type="button"
+      class="rounded-md border border-n-brand bg-n-brand/10 px-3 py-2 text-sm font-medium text-n-slate-12 hover:bg-n-brand/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-n-brand"
+      @click="emit('showNearest')"
+    >
+      {{
+        $t('SCHEDULING.APPOINTMENT_FORM.AVAILABILITY.SHOW_NEAREST', {
+          date: nearestDate,
+        })
+      }}
+    </button>
     <div
       v-if="state === 'ok' && sortedWindows.length"
       class="grid grid-cols-[repeat(auto-fit,minmax(4.25rem,1fr))] gap-2"

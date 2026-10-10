@@ -819,7 +819,7 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     );
   });
 
-  it('moves an empty day to the nearest confirmed date in one bounded range, preserving manual time and booking criteria', async () => {
+  it('offers the nearest confirmed date in one bounded range and moves only after the button, preserving manual time and booking criteria until slot selection', async () => {
     configureMedelementResource();
     mocks.services[0].prices = [{ active: true, price: 5000, resourceId: 7 }];
     const wrapper = mountComponent();
@@ -901,7 +901,7 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
       'timeout'
     );
     expect(wrapper.vm.createForm).toMatchObject({
-      availabilityDate: '2026-04-23',
+      availabilityDate: '2026-04-20',
       startsAt: '2026-04-20T10:00',
       endsAt: '2026-04-20T11:15',
       durationMin: 75,
@@ -913,13 +913,89 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     });
     expect(wrapper.vm.availabilityForForm(wrapper.vm.createForm)).toMatchObject(
       {
-        state: 'ok',
-        windows: [verified],
+        state: 'closed_day',
+        windows: [],
         nearestState: 'found',
+        nearestDate: '2026-04-23',
+        nearestWindows: [verified],
         emptyDate: '2026-04-20',
         searchThrough: '2026-05-21',
       }
     );
+    wrapper.vm.selectWindow(wrapper.vm.createForm, verified);
+    expect(wrapper.vm.createForm.startsAt).toBe('2026-04-20T10:00');
+    const picker = wrapper
+      .findAllComponents(SchedulingAvailabilityPicker)
+      .find(component => component.props('nearestState') === 'found');
+    expect(picker.props('date')).toBe('2026-04-20');
+    expect(picker.props('nearestDate')).toBe('2026-04-23');
+    picker.vm.$emit('showNearest');
+    await flushPromises();
+    expect(SchedulingAvailabilityAPI.show).toHaveBeenCalledTimes(2);
+    expect(wrapper.vm.createForm).toMatchObject({
+      availabilityDate: '2026-04-23',
+      startsAt: '2026-04-20T10:00',
+      endsAt: '2026-04-20T11:15',
+      durationMin: 75,
+      durationEdited: true,
+      medelementCabinetCode: '501',
+      resourceId: 7,
+      serviceId: 9,
+      selectedWindowStartsAt: '',
+    });
+    expect(wrapper.vm.availabilityForForm(wrapper.vm.createForm)).toMatchObject(
+      { state: 'ok', windows: [verified] }
+    );
+    expect(picker.props('nearestState')).not.toBe('found');
+    picker.vm.$emit('select', verified);
+    await flushPromises();
+    expect(wrapper.vm.createForm).toMatchObject({
+      startsAt: '2026-04-23T10:00',
+      endsAt: '2026-04-23T11:15',
+      durationMin: 75,
+      selectedWindowStartsAt: verified.starts_at,
+    });
+  });
+
+  it('keeps an existing appointment unchanged and rejects a found date after its criteria change', async () => {
+    const wrapper = mountComponent();
+    await flushPromises();
+    const form = wrapper.vm.appointmentForms['appointment-501'];
+    const originalTimes = { startsAt: form.startsAt, endsAt: form.endsAt };
+    const verified = {
+      starts_at: '2026-06-28T10:00:00+05:00',
+      ends_at: '2026-06-28T10:30:00+05:00',
+    };
+    SchedulingAvailabilityAPI.show
+      .mockResolvedValueOnce({
+        data: { payload: { state: 'closed_day', windows: [] } },
+      })
+      .mockResolvedValueOnce({
+        data: { payload: { state: 'ok', windows: [verified] } },
+      });
+    await wrapper.vm.loadFormWindows(form);
+    await flushPromises();
+    expect(form).toMatchObject({
+      ...originalTimes,
+      availabilityDate: '2026-06-27',
+    });
+    const picker = wrapper.findComponent(SchedulingAvailabilityPicker);
+    expect(picker.props('nearestDate')).toBe('2026-06-28');
+
+    form.medelementCabinetCode = 'different-room';
+    picker.vm.$emit('showNearest');
+    await flushPromises();
+    expect(form).toMatchObject({
+      ...originalTimes,
+      availabilityDate: '2026-06-27',
+    });
+    wrapper.vm.changeCabinet(form, '');
+    await flushPromises();
+    expect(picker.props('nearestState')).not.toBe('found');
+    picker.vm.$emit('showNearest');
+    await flushPromises();
+    expect(form.availabilityDate).toBe('2026-06-27');
+    expect(form).toMatchObject(originalTimes);
   });
 
   it.each(['schedule_not_confirmed', 'provider_unavailable'])(

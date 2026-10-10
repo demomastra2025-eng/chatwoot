@@ -970,16 +970,17 @@ async function findNearestFormWindows(form, params, request) {
       : [];
     if (windows.length) {
       const nearestDate = toClinicDateTime(windows[0].starts_at).slice(0, 10);
-      form.availabilityDate = nearestDate;
       availabilityByForm[key] = {
-        state: 'ok',
-        windows: windows.filter(
+        ...empty,
+        nearestDate,
+        nearestWindows: windows.filter(
           window =>
             toClinicDateTime(window.starts_at).slice(0, 10) === nearestDate
         ),
         emptyDate: date,
         searchThrough: lastDate,
         nearestState: 'found',
+        nearestCriteriaFingerprint: JSON.stringify(params),
         requestId,
       };
       return;
@@ -1145,6 +1146,33 @@ const changePickerDate = (form, date) => {
   }
   form.selectedWindowStartsAt = '';
   loadFormWindows(form);
+};
+
+const showNearestFormWindows = form => {
+  const availability = availabilityForForm(form);
+  if (
+    availability.nearestState !== 'found' ||
+    !availability.nearestDate ||
+    availability.nearestCriteriaFingerprint !==
+      JSON.stringify(availabilityParams(form))
+  )
+    return;
+  const windows = usableFormWindows(form, availability.nearestWindows).filter(
+    window =>
+      toClinicDateTime(window.starts_at).slice(0, 10) ===
+      availability.nearestDate
+  );
+  if (!windows.length) return;
+
+  cancelFormWindows(pickerKeyForForm(form));
+  form.availabilityDate = availability.nearestDate;
+  form.rejectedStartsAt = [];
+  form.selectedWindowStartsAt = '';
+  availabilityByForm[pickerKeyForForm(form)] = {
+    state: 'ok',
+    windows,
+    requestId: availability.requestId,
+  };
 };
 
 const selectWindow = (form, window) => {
@@ -2844,12 +2872,14 @@ watch(
                     :nearest-state="
                       availabilityForForm(createForm).nearestState
                     "
+                    :nearest-date="availabilityForForm(createForm).nearestDate"
                     :empty-date="availabilityForForm(createForm).emptyDate"
                     :search-through="
                       availabilityForForm(createForm).searchThrough
                     "
                     :selected-starts-at="createForm.selectedWindowStartsAt"
                     @update:date="changePickerDate(createForm, $event)"
+                    @show-nearest="showNearestFormWindows(createForm)"
                     @select="selectWindow(createForm, $event)"
                   />
 
@@ -3610,6 +3640,11 @@ watch(
                         appointmentForms[appointmentKey(appointment)]
                       ).nearestState
                     "
+                    :nearest-date="
+                      availabilityForForm(
+                        appointmentForms[appointmentKey(appointment)]
+                      ).nearestDate
+                    "
                     :empty-date="
                       availabilityForForm(
                         appointmentForms[appointmentKey(appointment)]
@@ -3628,6 +3663,11 @@ watch(
                       changePickerDate(
                         appointmentForms[appointmentKey(appointment)],
                         $event
+                      )
+                    "
+                    @show-nearest="
+                      showNearestFormWindows(
+                        appointmentForms[appointmentKey(appointment)]
                       )
                     "
                     @select="
