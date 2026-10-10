@@ -41,7 +41,9 @@ RSpec.describe Captain::Tools::Copilot::UpdateAppointmentService do
   end
 
   describe '#execute' do
-    it 'returns the provider horizon code and last date to the agent on a move' do
+    it 'refuses an unverified provider move beyond the background cache without changing the visit' do
+      contact.update!(last_name: 'Testova')
+      original_interval = [appointment.starts_at, appointment.ends_at]
       resource.update!(custom_attributes: { 'medelement_specialist_code' => 'doctor-1' })
       zone = ActiveSupport::TimeZone['Asia/Almaty']
       date = zone.today + 90
@@ -49,8 +51,9 @@ RSpec.describe Captain::Tools::Copilot::UpdateAppointmentService do
 
       result = execute_confirmed(appointment_id: appointment.id, starts_at: later.iso8601)
 
-      expect(result).to include('MEDELEMENT_HORIZON_EXCEEDED')
-      expect(result).to include((date - 1).strftime('%d.%m.%Y'))
+      expect(result).to include('MEDELEMENT_AVAILABILITY_UNVERIFIED')
+      expect(result).not_to include('MEDELEMENT_HORIZON_EXCEEDED')
+      expect([appointment.reload.starts_at, appointment.ends_at]).to eq(original_interval)
     end
 
     it 'recomputes ends_at from duration and returns a structured payload' do

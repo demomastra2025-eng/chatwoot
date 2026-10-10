@@ -923,6 +923,42 @@ describe('SchedulingVueCalCalendar', () => {
     ...overrides,
   });
 
+  it.each(['day', 'week'])(
+    'keeps appointments for all 32 selected specialists in the %s view',
+    async view => {
+      const resources = Array.from({ length: 32 }, (_, index) => ({
+        ...baseProps.resources[0],
+        id: index + 1,
+        name: `Doctor ${index + 1}`,
+      }));
+      const appointments = resources.map(resource =>
+        visit(resource.id, {
+          resourceId: resource.id,
+          clientName: `Patient for doctor ${resource.id}`,
+          status: resource.id === 32 ? 'completed' : 'scheduled',
+        })
+      );
+      const wrapper = mountCalendar({ resources, appointments, view });
+      await nextTick();
+      await nextTick();
+
+      const events = wrapper.findComponent(VueCal).props('events');
+      expect(events.filter(event => !event.background).map(event => event.id))
+        .toEqual(expect.arrayContaining(appointments.map(appointment => String(appointment.id))));
+      const cards = wrapper.findAll('.scheduling-vue-cal__event-card');
+      expect(cards).toHaveLength(32);
+      appointments.forEach(appointment => {
+        expect(cards.some(card => card.attributes('title')?.includes(appointment.clientName)))
+          .toBe(true);
+      });
+      cards.forEach(card => {
+        const width = card.element.closest('.vuecal__event').style.width;
+        expect(width === '' || Number.parseFloat(width) > 0).toBe(true);
+      });
+    },
+    30000
+  );
+
   const cardFor = (wrapper, name) =>
     wrapper
       .findAll('.scheduling-vue-cal__event-card')

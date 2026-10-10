@@ -40,10 +40,25 @@ class Captain::Tools::Agent::AppointmentResult
 
     provider = Integrations::Medelement::AppointmentProviderStatus
     state = appointment.custom_attributes.to_h[provider::ATTRIBUTE_KEY]
+    receipt = appointment.medelement_provider_command_receipt
+    if receipt.present? && !receipt.succeeded?
+      state = if receipt.provider_status_unknown?
+                provider::UNKNOWN
+              elsif receipt.terminal?
+                provider::FAILED
+              else
+                provider::PENDING
+              end
+    end
     return result if state.blank? || state == provider::SUCCEEDED
 
     reason = state == provider::PENDING ? 'pending_provider_confirmation' : 'staff_will_help'
-    result.merge(success: false, reason: reason, status: provider.public_status(appointment), provider_confirmed: false)
+    status = case state
+             when provider::PENDING then 'pending_provider_confirmation'
+             when provider::UNKNOWN then provider::UNKNOWN
+             else 'provider_confirmation_failed'
+             end
+    result.merge(success: false, reason: reason, status: status, provider_confirmed: false)
   end
 
   def self.failure(error)

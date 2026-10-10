@@ -5,12 +5,18 @@ describe V2::ReportBuilder do
   let_it_be(:account) { create(:account) }
   let_it_be(:label_1) { create(:label, title: 'Label_1', account: account) }
   let_it_be(:label_2) { create(:label, title: 'Label_2', account: account) }
+  let_it_be(:report_date) { Date.current }
+
+  # Shared fixtures and assertions must use the same day even if a long shard
+  # crosses midnight after before_all creates its records.
+  before { travel_to(report_date) }
+  after { travel_back }
 
   describe '#timeseries' do
     # Use before_all to share expensive setup across all tests in this describe block
     # This runs once instead of 21 times, dramatically speeding up the suite
     before_all do
-      travel_to(Time.zone.today) do
+      travel_to(report_date) do
         user = create(:user, account: account)
         inbox = create(:inbox, account: account)
         create(:inbox_member, user: user, inbox: inbox)

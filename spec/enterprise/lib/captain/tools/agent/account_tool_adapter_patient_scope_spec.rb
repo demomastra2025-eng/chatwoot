@@ -72,8 +72,7 @@ RSpec.describe Captain::Tools::Agent::AccountToolAdapter do
       .to include('success' => true, 'appointment_id' => selected.id)
     expect(JSON.parse(call_tool('get_appointment', appointment_id: historical.id, appointment_access_token: token)))
       .to eq('success' => false, 'reason' => 'not_found')
-    expect(JSON.parse(call_tool('get_contact', contact_id: other_contact.id)))
-      .to include('error' => 'Record is not available')
+    expect(call_tool('get_contact', contact_id: other_contact.id)).to eq(neutral_failure)
   end
 
   it 'restricts conversation search to the current contact' do

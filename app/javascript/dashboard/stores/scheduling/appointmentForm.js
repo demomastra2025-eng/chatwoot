@@ -194,6 +194,8 @@ const createDefaultForm = () => ({
   patientContactId: '',
   conversationDisplayId: '',
   conversationId: '',
+  crmDealSelection: {},
+  durationMin: '',
   customAttributes: {},
   endsAt: '',
   medelementCabinetCode: '',
@@ -258,6 +260,13 @@ export const useSchedulingAppointmentFormStore = defineStore(
             state.selectedAppointment?.custom_attributes,
         }),
       validationErrors: state => ({
+        durationMin:
+          state.form.durationMin !== '' &&
+          (!Number.isInteger(Number(state.form.durationMin)) ||
+            Number(state.form.durationMin) < 5 ||
+            Number(state.form.durationMin) > 1440)
+            ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.INVALID_DURATION'
+            : '',
         endsAt:
           state.form.endsAt &&
           state.form.startsAt &&
@@ -357,6 +366,8 @@ export const useSchedulingAppointmentFormStore = defineStore(
           patientContactId: appointment.patientContactId || '',
           conversationDisplayId: appointment.conversationDisplayId || '',
           conversationId: appointment.conversationId || '',
+          crmDealSelection: {},
+          durationMin: appointment.durationMin || '',
           customAttributes: appointment.customAttributes || {},
           endsAt: toFormDateTime(appointment.endsAt),
           medelementCabinetCode:
@@ -474,6 +485,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
             (phoneCameFromPreviousContact ? '' : existingPhone),
           companyId: contact.companyId || this.form.companyId || '',
           contactId: contact.id,
+          crmDealSelection: {},
           patientContactId: '',
         };
       },
@@ -481,12 +493,14 @@ export const useSchedulingAppointmentFormStore = defineStore(
       applyPatientContact(contact) {
         if (this.ui.isSaving) return;
         const ownerId = this.form.contactId;
+        const dealSelection = this.form.crmDealSelection;
         this.applyContact({
           ...contact,
           phone: contact.phone || this.form.clientPhone,
         });
         this.form.contactId = ownerId;
         this.form.patientContactId = contact.id;
+        this.form.crmDealSelection = dealSelection;
       },
 
       beginInlineContactEdit(contact) {
@@ -730,6 +744,13 @@ export const useSchedulingAppointmentFormStore = defineStore(
               : normalizedForm.conversationDisplayId
           ),
           conversation_id: toNumeric(normalizedForm.conversationId),
+          ...(this.mode === 'create'
+            ? {
+                crm_deal_id: toNumeric(normalizedForm.crmDealSelection?.crm_deal_id),
+                crm_pipeline_id: toNumeric(normalizedForm.crmDealSelection?.crm_pipeline_id),
+                crm_deal_selection: normalizedForm.crmDealSelection?.crm_deal_selection || undefined,
+              }
+            : {}),
           custom_attributes: {
             ...editableCustomAttributes(normalizedForm.customAttributes),
             ...(normalizedForm.medelementCabinetCode

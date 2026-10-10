@@ -12,7 +12,7 @@ RSpec.describe Captain::Tools::Agent::PatientBookingContext do
   end
 
   it 'creates a distinct patient with another phone, preserves the caller and reuses the same card on retry' do
-    original = mother.attributes
+    original = mother.reload.attributes
     result = resolve
     card = account.contacts.find(result[:patient_contact_id])
     expect(card.id).not_to eq(mother.id)
@@ -30,7 +30,7 @@ RSpec.describe Captain::Tools::Agent::PatientBookingContext do
                             identifier: '940720300129', custom_attributes: {
                               Contacts::SharedPhone::CARD_KEY => true, 'iin' => '940720300129', 'birth_date' => '1994-07-20'
                             })
-    original = card.attributes
+    original = card.reload.attributes
     expect(resolve[:patient_contact_id]).to eq(card.id)
     expect(card.reload.attributes).to eq(original)
     expect { resolve(details.merge(last_name: 'Other')) }.to raise_error(ArgumentError, /name/)

@@ -212,8 +212,9 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
 
     payload = JSON.parse(result)
 
-    expect(payload).to include('success' => true, 'appointment_id' => appointment.id, 'status' => 'updated')
-    expect(payload.keys).to match_array(%w[success appointment_id doctor_name local_date local_time status])
+    expect(payload).to include('success' => false, 'appointment_id' => appointment.id, 'status' => 'pending_provider_confirmation',
+                              'provider_confirmed' => false, 'reason' => 'pending_provider_confirmation')
+    expect(payload.keys).to match_array(%w[success appointment_id doctor_name local_date local_time status reason provider_confirmed])
     command = Integrations::Medelement::ProviderCommand.find_by!(appointment_id: appointment.id, operation: 'move_reception')
     expect(command.request_snapshot.dig('actor', 'type')).to eq('Captain::Assistant')
     expect(other.reload.starts_at).to eq(other_starts_at)
@@ -260,13 +261,13 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
       expect(command.execution_state[Captain::Tools::ProviderBookingHandoffService::FENCE_KEY]).to eq(fence.stringify_keys)
     end
 
-    it 'keeps a saved reschedule successful when the fence cannot be recorded' do
+    it 'keeps the queued reschedule pending when the response fence cannot be recorded' do
       allow(Captain::Tools::ProviderBookingHandoffService).to receive(:capture_fence!).and_raise(ActiveRecord::StatementInvalid, 'lock timeout')
 
       result = move!
 
       expect(result).not_to start_with('ERROR:')
-      expect(JSON.parse(result)).to include('success' => true, 'appointment_id' => appointment.id, 'status' => 'updated')
+      expect(JSON.parse(result)).to include('success' => false, 'appointment_id' => appointment.id, 'status' => 'pending_provider_confirmation')
     end
   end
 

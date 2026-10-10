@@ -22,7 +22,7 @@ class Captain::Tools::Copilot::SearchAppointmentsService < Captain::Tools::Copil
       patient_scope.require_contact_filter!(contact_id, tool: 'search_appointments')
       verified_optional_record_id(resource_id, scope: account.scheduling_resources, field_name: 'resource_id')
       return formatted_payload(Captain::Tools::Agent::AppointmentLookup.new(
-        assistant: assistant, conversation: current_conversation,
+        assistant: assistant, conversation: patient_scope.conversation,
         params: { client_name: client_name, client_identifier: client_identifier, resource_id: resource_id,
                   status: status, from: from, to: to }
       ).perform)
@@ -62,7 +62,7 @@ class Captain::Tools::Copilot::SearchAppointmentsService < Captain::Tools::Copil
           Captain::Tools::Agent::AppointmentResult.appointment(appointment).merge(
             patient_name: appointment.client_name,
             appointment_access_token: Captain::Tools::Agent::AppointmentAccess.issue(
-              assistant: assistant, conversation: current_conversation, appointment: appointment
+              assistant: assistant, conversation: patient_scope.conversation, appointment: appointment
             )
           )
         end,

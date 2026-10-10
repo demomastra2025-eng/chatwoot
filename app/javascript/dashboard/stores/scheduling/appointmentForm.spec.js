@@ -114,6 +114,33 @@ describe('useSchedulingAppointmentFormStore', () => {
     });
   });
 
+  it('submits the selected deal only for a new booking and preserves it when selecting a family patient', () => {
+    const store = useSchedulingAppointmentFormStore();
+    store.openCreate({}, { contactId: 42 });
+    store.updateField('crmDealSelection', { crm_deal_id: 15, crm_pipeline_id: 3 });
+    store.applyPatientContact(localPatient);
+    expect(store.buildPayload()).toMatchObject({
+      contact_id: 42,
+      patient_contact_id: 84,
+      crm_deal_id: 15,
+      crm_pipeline_id: 3,
+    });
+    store.applyContact({ ...localPatient, id: 85 });
+    expect(store.buildPayload()).not.toHaveProperty('crm_deal_id');
+
+    store.openEdit(localAppointment);
+    store.updateField('crmDealSelection', { crm_deal_id: 99, crm_pipeline_id: 3 });
+    expect(store.buildPayload()).not.toHaveProperty('crm_deal_id');
+  });
+
+  it.each([0, 1, 2000, 30.5])('blocks an invalid manual duration of %s minutes', duration => {
+    const store = useSchedulingAppointmentFormStore();
+    store.openCreate();
+    store.updateField('durationMin', duration);
+    expect(store.validationErrors.durationMin).toBe('SCHEDULING.APPOINTMENT_FORM.ERRORS.INVALID_DURATION');
+    expect(store.isFormInvalid).toBe(true);
+  });
+
   it('keeps patient B open when a previous provider action finishes its calendar refresh', async () => {
     const store = useSchedulingAppointmentFormStore();
     store.openEdit(localAppointment);

@@ -19,6 +19,27 @@ RSpec.describe Captain::Tools::Agent::AppointmentResult do
     )
   end
 
+  it 'uses the exact queued command receipt instead of an older successful appointment status' do
+    appointment = create(:scheduling_appointment, source: 'medelement', custom_attributes: { 'medelement_provider_sync_status' => 'succeeded' })
+    appointment.medelement_provider_command_receipt = instance_double(
+      Integrations::Medelement::ProviderCommand, succeeded?: false, provider_status_unknown?: false, terminal?: false
+    )
+    expect(described_class.success(appointment, action: 'update_appointment')).to include(
+      success: false, status: 'pending_provider_confirmation', reason: 'pending_provider_confirmation', provider_confirmed: false
+    )
+    expect(appointment.custom_attributes['medelement_provider_sync_status']).to eq('succeeded')
+  end
+
+  it 'does not turn a failed exact receipt into success after an earlier provider operation' do
+    appointment = create(:scheduling_appointment, custom_attributes: { 'medelement_provider_sync_status' => 'succeeded' })
+    appointment.medelement_provider_command_receipt = instance_double(
+      Integrations::Medelement::ProviderCommand, succeeded?: false, provider_status_unknown?: false, terminal?: true
+    )
+    expect(described_class.success(appointment, action: 'cancel_appointment')).to include(
+      success: false, status: 'provider_confirmation_failed', reason: 'staff_will_help', provider_confirmed: false
+    )
+  end
+
   it 'maps only verified slot conflicts to time_taken' do
     conflict = Scheduling::Error.new(code: 'APPOINTMENT_SLOT_UNAVAILABLE', message: 'Unavailable', status: :conflict)
     unknown = Scheduling::Error.new(code: 'MEDELEMENT_AVAILABILITY_UNVERIFIED', message: 'Unknown', status: :service_unavailable)

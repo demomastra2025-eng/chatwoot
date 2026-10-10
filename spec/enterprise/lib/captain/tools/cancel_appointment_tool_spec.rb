@@ -27,8 +27,10 @@ RSpec.describe Captain::Tools::CancelAppointmentTool, type: :model do
   it 're-reads the explicitly selected cancelled appointment without cancelling another active appointment' do
     resource = create(:scheduling_resource, account: account)
     conversation = create(:conversation, account: account)
-    selected = create(:scheduling_appointment, account: account, resource: resource, conversation: conversation, status: 'cancelled')
-    other = create(:scheduling_appointment, account: account, resource: resource, conversation: conversation, status: 'scheduled')
+    selected = create(:scheduling_appointment, account: account, resource: resource, conversation: conversation,
+                                             contact: conversation.contact, status: 'cancelled')
+    other = create(:scheduling_appointment, account: account, resource: resource, conversation: conversation,
+                                          contact: conversation.contact, status: 'scheduled')
     tool_context = Struct.new(:state).new({ conversation: { id: conversation.id } })
 
     payload = JSON.parse(tool.perform(tool_context, appointment_id: selected.id))
@@ -113,8 +115,9 @@ RSpec.describe Captain::Tools::CancelAppointmentTool, type: :model do
 
     payload = JSON.parse(result)
 
-    expect(payload).to include('success' => true, 'appointment_id' => appointment.id, 'status' => 'cancelled')
-    expect(payload.keys).to match_array(%w[success appointment_id doctor_name local_date local_time status])
+    expect(payload).to include('success' => false, 'appointment_id' => appointment.id, 'status' => 'pending_provider_confirmation',
+                              'provider_confirmed' => false, 'reason' => 'pending_provider_confirmation')
+    expect(payload.keys).to match_array(%w[success appointment_id doctor_name local_date local_time status reason provider_confirmed])
     command = Integrations::Medelement::ProviderCommand.find_by!(appointment_id: appointment.id, operation: 'remove_reception')
     expect(command.request_snapshot.dig('actor', 'type')).to eq('Captain::Assistant')
     expect(other.reload.status).to eq('scheduled')
@@ -142,8 +145,9 @@ RSpec.describe Captain::Tools::CancelAppointmentTool, type: :model do
 
     payload = JSON.parse(tool.perform(tool_context, appointment_id: appointment.id))
 
-    expect(payload).to include('appointment_id' => appointment.id, 'status' => 'cancelled')
-    expect(payload.keys).to match_array(%w[success appointment_id doctor_name local_date local_time status])
+    expect(payload).to include('appointment_id' => appointment.id, 'status' => 'cancelled_local_only',
+                              'cancellation_scope' => 'onelink_only', 'provider_reception_active' => true)
+    expect(payload.keys).to match_array(%w[success appointment_id doctor_name local_date local_time status cancellation_scope provider_reception_active])
     expect(appointment.reload.custom_attributes[Integrations::Medelement::LocalCancellation::MARKER_KEY]).to include(
       'actor' => { 'type' => 'Captain::Assistant', 'id' => assistant.id }
     )

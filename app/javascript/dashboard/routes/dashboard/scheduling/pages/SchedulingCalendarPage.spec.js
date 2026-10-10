@@ -242,6 +242,7 @@ const stubs = {
   TagMultiSelectComboBox: true,
   Checkbox: true,
   CrmDealConversationPanel: true,
+  AppointmentDealSelector: true,
   Dialog: DialogStub,
   SchedulingCalendarGrid: true,
   SchedulingCustomFieldAdvancedFilter: true,

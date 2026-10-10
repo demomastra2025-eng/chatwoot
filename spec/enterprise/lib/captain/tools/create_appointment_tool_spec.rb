@@ -228,7 +228,7 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
     mother = create(:contact, account: account, name: 'Test Mother', phone_number: '+77010000001')
     conversation = create(:conversation, account: account, contact: mother)
     create(:scheduling_work_rule, resource: resource, weekday: 1)
-    context = Struct.new(:state).new({ conversation: { id: conversation.id } })
+    context = Struct.new(:state, :context).new({ conversation: { id: conversation.id } }, {})
     arguments = {
       resource_id: resource.id, starts_at: '2026-04-20T10:00:00+05:00', duration_min: 45,
       patient: { first_name: 'Test', last_name: 'Son', iin: '940720300129', birth_date: '1994-07-20', phone: '+77010000002' }

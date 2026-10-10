@@ -23,7 +23,8 @@ RSpec.describe Captain::Tools::Copilot::CreateAppointmentService do
   end
 
   describe '#execute' do
-    it 'returns the provider horizon code and last date to the agent' do
+    it 'refuses an unverified provider interval beyond the background cache without claiming a fixed date limit' do
+      contact.update!(last_name: 'Testova')
       resource.update!(custom_attributes: { 'medelement_specialist_code' => 'doctor-1' })
       zone = ActiveSupport::TimeZone['Asia/Almaty']
       date = zone.today + 90
@@ -31,8 +32,9 @@ RSpec.describe Captain::Tools::Copilot::CreateAppointmentService do
 
       result = execute_confirmed(resource_id: resource.id, starts_at: later.iso8601)
 
-      expect(result).to include('MEDELEMENT_HORIZON_EXCEEDED')
-      expect(result).to include((date - 1).strftime('%d.%m.%Y'))
+      expect(result).to include('MEDELEMENT_AVAILABILITY_UNVERIFIED')
+      expect(result).not_to include('MEDELEMENT_HORIZON_EXCEEDED')
+      expect(account.scheduling_appointments).to be_empty
     end
 
     it 'creates an appointment from the selected service duration and returns a structured payload' do

@@ -21,6 +21,7 @@ import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import TagMultiSelectComboBox from 'dashboard/components-next/combobox/TagMultiSelectComboBox.vue';
 import CrmDealConversationPanel from 'dashboard/components-next/CRM/CrmDealConversationPanel.vue';
 import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomFieldsSection.vue';
+import AppointmentDealSelector from 'dashboard/components-next/CRM/AppointmentDealSelector.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import PhoneNumberInput from 'dashboard/components-next/phonenumberinput/PhoneNumberInput.vue';
@@ -29,6 +30,7 @@ import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
 import SchedulingCalendarGrid from 'dashboard/components-next/Scheduling/SchedulingCalendarGrid.vue';
 import SchedulingCustomFieldAdvancedFilter from 'dashboard/components-next/Scheduling/SchedulingCustomFieldAdvancedFilter.vue';
 import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/SchedulingDateTimeField.vue';
+import SchedulingAppointmentTimeFields from 'dashboard/components-next/Scheduling/SchedulingAppointmentTimeFields.vue';
 import SchedulingErrorState from 'dashboard/components-next/Scheduling/SchedulingErrorState.vue';
 import SchedulingFormFieldGroup from 'dashboard/components-next/Scheduling/SchedulingFormFieldGroup.vue';
 import SchedulingMoneyInput from 'dashboard/components-next/Scheduling/SchedulingMoneyInput.vue';
@@ -56,6 +58,7 @@ import {
   buildMedelementProviderCommandParams,
   calendarDayAnchor,
   calendarTodayAnchor,
+  dateTimeInputDurationMinutes,
   canCreateAppointmentConversation,
   formatCalendarTitle,
   formatSchedulingDateTime,
@@ -692,6 +695,26 @@ const drawerTitle = computed(() =>
     ? t('SCHEDULING.APPOINTMENT_FORM.EDIT_TITLE')
     : t('SCHEDULING.APPOINTMENT_FORM.CREATE_TITLE')
 );
+
+const appointmentDealSelection = computed({
+  get: () => formStore.form.crmDealSelection || {},
+  set: value => formStore.updateField('crmDealSelection', value),
+});
+
+const appointmentStartsAt = computed({
+  get: () => formStore.form.startsAt,
+  set: value => formStore.updateField('startsAt', value),
+});
+const appointmentEndsAt = computed({
+  get: () => formStore.form.endsAt,
+  set: value => formStore.updateField('endsAt', value),
+});
+const appointmentDurationMin = computed({
+  get: () => formStore.form.durationMin !== ''
+    ? formStore.form.durationMin
+    : dateTimeInputDurationMinutes(formStore.form.startsAt, formStore.form.endsAt, DEFAULT_WORKSPACE_TIMEZONE) || 30,
+  set: value => formStore.updateField('durationMin', value),
+});
 
 const drawerConfirmLabel = computed(() =>
   formStore.mode === 'edit'
@@ -2551,6 +2574,14 @@ onMounted(async () => {
                     $t('SCHEDULING.APPOINTMENT_FORM.APPOINTMENT_DESCRIPTION')
                   "
                 >
+                  <AppointmentDealSelector
+                    v-if="formStore.mode === 'create'"
+                    v-model="appointmentDealSelection"
+                    :communication-contact-id="formStore.form.contactId"
+                    :conversation-display-id="formStore.form.conversationDisplayId"
+                    :disabled="formStore.ui.isSaving"
+                    class="mb-4"
+                  />
                   <div class="grid gap-4 md:grid-cols-2">
                     <SchedulingSelectField
                       class="appointment-drawer-select-control"
@@ -2666,46 +2697,19 @@ onMounted(async () => {
                         "
                       />
                     </div>
-                    <div class="grid gap-4 md:col-span-2 md:grid-cols-2">
-                      <SchedulingDateTimeField
-                        type="datetime"
-                        :model-value="formStore.form.startsAt"
-                        :disabled="formStore.ui.isSaving"
-                        :label="$t('SCHEDULING.APPOINTMENT_FORM.STARTS_AT')"
-                        :message="
-                          formStore.validationErrors.startsAt
-                            ? validationErrorMessage(
-                                formStore.validationErrors.startsAt
-                              )
-                            : ''
-                        "
-                        :message-type="
-                          formStore.validationErrors.startsAt ? 'error' : 'info'
-                        "
-                        @update:model-value="
-                          formStore.updateField('startsAt', $event)
-                        "
-                      />
-                      <SchedulingDateTimeField
-                        :model-value="formStore.form.endsAt"
-                        :disabled="formStore.ui.isSaving"
-                        type="datetime"
-                        :label="$t('SCHEDULING.APPOINTMENT_FORM.ENDS_AT')"
-                        :message="
-                          formStore.validationErrors.endsAt
-                            ? validationErrorMessage(
-                                formStore.validationErrors.endsAt
-                              )
-                            : ''
-                        "
-                        :message-type="
-                          formStore.validationErrors.endsAt ? 'error' : 'info'
-                        "
-                        @update:model-value="
-                          formStore.updateField('endsAt', $event)
-                        "
-                      />
-                    </div>
+                    <SchedulingAppointmentTimeFields
+                      v-model:starts-at="appointmentStartsAt"
+                      v-model:ends-at="appointmentEndsAt"
+                      v-model:duration-min="appointmentDurationMin"
+                      id-prefix="calendar-appointment"
+                      class="md:col-span-2"
+                      :disabled="formStore.ui.isSaving"
+                      :starts-at-message="formStore.validationErrors.startsAt ? validationErrorMessage(formStore.validationErrors.startsAt) : ''"
+                      :ends-at-message="formStore.validationErrors.endsAt ? validationErrorMessage(formStore.validationErrors.endsAt) : ''"
+                    />
+                    <p v-if="formStore.validationErrors.durationMin" class="m-0 text-xs text-n-ruby-9 md:col-span-2">
+                      {{ $t(formStore.validationErrors.durationMin) }}
+                    </p>
                   </div>
                 </SchedulingFormFieldGroup>
 
