@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount } from '@vue/test-utils';
-import { reactive, ref } from 'vue';
+import { nextTick, reactive, ref } from 'vue';
 import CrmDealsAPI from 'dashboard/api/crm/deals';
 import CrmDealAppointmentsPanel from './CrmDealAppointmentsPanel.vue';
 
@@ -95,13 +95,17 @@ describe('deal appointment plan', () => {
     const target = wrapper.findAllComponents({
       name: 'SchedulingSelectField',
     })[0];
-    target.vm.$emit('update:modelValue', 42);
-    await wrapper
+    const save = wrapper
       .findAll('button')
-      .find(button => button.text() === 'CRM.GENERAL.SAVE')
-      .trigger('click');
+      .find(button => button.text() === 'CRM.GENERAL.SAVE');
+    expect(save.element.disabled).toBe(true);
+    target.vm.$emit('update:modelValue', 42);
+    await nextTick();
+    expect(save.element.disabled).toBe(false);
+    await save.trigger('click');
     await flushPromises();
 
+    expect(CrmDealsAPI.appointmentPlan).toHaveBeenCalledTimes(1);
     const [, payload] = CrmDealsAPI.appointmentPlan.mock.calls[0];
     expect(payload.selected_appointment_id).toBe(42);
     expect(payload.appointment_plan).toHaveLength(8);
