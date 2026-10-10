@@ -6,8 +6,8 @@ RSpec.describe Captain::Playground::Session do
   let(:assistant) { create(:captain_assistant, account: account) }
   let(:inbox) { create(:inbox, account: account) }
 
-  def session(**options)
-    described_class.new(assistant: assistant, account: account, user: user, **options)
+  def session(**)
+    described_class.new(assistant: assistant, account: account, user: user, **)
   end
 
   after { Current.reset }
@@ -35,9 +35,10 @@ RSpec.describe Captain::Playground::Session do
     other_user = create(:user, account: account)
     other_account = create(:account)
     other_assistant = create(:captain_assistant, account: account)
-    expect { session(user: other_user, session_id: id).with_lock {} }.to raise_error(Captain::Playground::SessionStore::Stale)
-    expect { session(assistant: other_assistant, session_id: id).with_lock {} }.to raise_error(Captain::Playground::SessionStore::Stale)
-    expect { session(mode: 'live', session_id: id).with_lock(inbox_id: inbox.id) {} }.to raise_error(Captain::Playground::SessionStore::Stale)
+    expect { session(user: other_user, session_id: id).with_lock { |trial| trial.id } }.to raise_error(Captain::Playground::SessionStore::Stale)
+    expect { session(assistant: other_assistant, session_id: id).with_lock { |trial| trial.id } }.to raise_error(Captain::Playground::SessionStore::Stale)
+    expect { session(mode: 'live', session_id: id).with_lock(inbox_id: inbox.id) { |live| live.id } }
+      .to raise_error(Captain::Playground::SessionStore::Stale)
     expect { session(account: other_account, session_id: id) }.to raise_error(ArgumentError)
   end
 
@@ -53,7 +54,7 @@ RSpec.describe Captain::Playground::Session do
       expect(trial.scenario.contact['name']).to eq('Айгуль Садыкова')
       expect(trial.data['history']).to eq([])
     end
-    expect { session(session_id: id).with_lock {} }.to raise_error(Captain::Playground::SessionStore::Stale)
+    expect { session(session_id: id).with_lock { |trial| trial.id } }.to raise_error(Captain::Playground::SessionStore::Stale)
   end
 
   it 'persists completed synthetic actions even when a later part of the turn raises' do
@@ -73,7 +74,7 @@ RSpec.describe Captain::Playground::Session do
   it 'rejects overlapping turns and keeps a bounded expiring cache entry' do
     store = Captain::Playground::SessionStore.new(account: account, user: user, assistant: assistant, mode: 'trial')
     store.with_lock do
-      expect { store.with_lock {} }.to raise_error(Captain::Playground::SessionStore::Busy)
+      expect { store.with_lock { true } }.to raise_error(Captain::Playground::SessionStore::Busy)
     end
     expect { store.write('value' => 'x' * Captain::Playground::SessionStore::MAX_BYTES) }.to raise_error(ArgumentError)
     expect(Redis::Alfred).to receive(:set).with(anything, anything, ex: Captain::Playground::SessionStore::TTL).and_call_original
@@ -97,11 +98,6 @@ RSpec.describe Captain::Playground::Session do
         expect(live.conversation.id).not_to eq(original_conversation.id)
         expect(live.conversation.contact_id).not_to eq(original.id)
         expect(live.conversation.contact_inbox.hmac_verified).to be(false)
-        expect(live.payload[:scenario].keys).to eq([:contact])
-        expect(live.payload[:scenario][:contact]['id']).to eq(live.conversation.contact_id)
-        expect(live.scenario.data.values_at('resources', 'services', 'pipelines', 'stages', 'deals', 'appointments')).to all(eq([]))
-        expect(live.scenario.data['contacts'].map { |record| record['id'] }).to eq([live.conversation.contact_id])
-        expect(live.payload[:live_warning]).to eq(described_class::LIVE_WARNING)
         expect(Outbound::PlaygroundDeliveryPolicy.verified(live.run_policy)[:delivery_enabled]).to be(false)
       end
     end.to change(Contact, :count).by(1).and change(Conversation, :count).by(1)
@@ -109,12 +105,22 @@ RSpec.describe Captain::Playground::Session do
     expect(original.reload.name).to eq('Real patient')
   end
 
+  it 'keeps only the actual caller profile and no synthetic business catalogues in a Live session' do
+    session(mode: 'live').with_lock(inbox_id: inbox.id) do |live|
+      expect(live.payload[:scenario].keys).to eq([:contact])
+      expect(live.payload[:scenario][:contact]['id']).to eq(live.conversation.contact_id)
+      expect(live.scenario.data.values_at('resources', 'services', 'pipelines', 'stages', 'deals', 'appointments')).to all(eq([]))
+      expect(live.scenario.data['contacts'].pluck('id')).to eq([live.conversation.contact_id])
+      expect(live.payload[:live_warning]).to eq(described_class::LIVE_WARNING)
+    end
+  end
+
   it 'rejects synthetic business scenario records and uncontrolled delivery opt-in in Live' do
     expect do
-      session(mode: 'live').with_lock(inbox_id: inbox.id, scenario_input: { deal: { title: 'Synthetic deal' } }) {}
+      session(mode: 'live').with_lock(inbox_id: inbox.id, scenario_input: { deal: { title: 'Synthetic deal' } }) { |live| live.id }
     end.to raise_error(ArgumentError, 'Live only accepts the test caller profile')
     expect do
-      session(mode: 'live').with_lock(inbox_id: inbox.id, delivery_enabled: true) {}
+      session(mode: 'live').with_lock(inbox_id: inbox.id, delivery_enabled: true) { |live| live.id }
     end.to raise_error(ArgumentError, 'A controlled test phone number is required')
   end
 end

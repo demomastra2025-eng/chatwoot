@@ -7,7 +7,7 @@ module Captain::Playground::ConversationTools
     raise ArgumentError, 'Record is not available'
   end
 
-  def get_conversation
+  def conversation_details
     record = require_conversation!(@args.fetch('conversation_id'))
     raise ArgumentError, 'Private messages are not available to this agent profile' if @args['include_private'] == true
 

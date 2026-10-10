@@ -13,7 +13,7 @@ module Captain::Playground::TaskTools
     record
   end
 
-  def get_task
+  def task_details
     { task: task!(@args.fetch('task_id')).deep_dup, simulated: true }
   end
 

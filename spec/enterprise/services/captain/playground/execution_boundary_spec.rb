@@ -51,7 +51,7 @@ RSpec.describe Captain::Playground::ExecutionBoundary do
     end
   end
 
-  context 'in Live' do
+  context 'with Live mode' do
     let(:mode) { 'live' }
 
     it 'uses the dedicated actual caller consistently and executes the ordinary contact service with the signed run policy' do
