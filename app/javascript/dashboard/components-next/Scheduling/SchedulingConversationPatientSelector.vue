@@ -6,6 +6,11 @@ import Input from 'dashboard/components-next/input/Input.vue';
 import Select from 'dashboard/components-next/select/Select.vue';
 import { formatSchedulingErrorMessage } from 'dashboard/stores/scheduling/shared';
 import {
+  isValidPatientIin,
+  normalizePatientIin,
+  parseIinMetadata,
+} from 'dashboard/stores/scheduling/iin';
+import {
   formatPatientBirthDate,
   patientDisplayName,
   useConversationPatientContextStore,
@@ -54,13 +59,47 @@ const genderOptions = computed(() =>
     label: t(`SCHEDULING.CONTACT.GENDER.${value.toUpperCase()}`),
   }))
 );
+const iinState = computed(() => parseIinMetadata(form.iin));
+const iinError = computed(() => {
+  if (!form.iin) return '';
+  if (iinState.value.reason === 'length')
+    return t('SCHEDULING.CONTACT.IIN_ERROR_LENGTH');
+  return iinState.value.valid && isValidPatientIin(form.iin)
+    ? ''
+    : t('SCHEDULING.CONTACT.IIN_ERROR_INVALID');
+});
 const isInvalid = computed(
   () =>
-    !form.first_name.trim() ||
-    !form.last_name.trim() ||
-    (form.iin && !/^\d{12}$/.test(form.iin))
+    !form.first_name.trim() || !form.last_name.trim() || Boolean(iinError.value)
+);
+let inferredMetadata = null;
+watch(
+  () => form.iin,
+  value => {
+    if (!isCreating.value || props.entry?.saving) return;
+    const normalized = normalizePatientIin(value);
+    if (normalized !== value) {
+      form.iin = normalized;
+      return;
+    }
+    const metadata = iinState.value;
+    if (normalized && metadata.valid && isValidPatientIin(normalized)) {
+      form.birth_date = metadata.birthDate;
+      form.gender = metadata.gender;
+      inferredMetadata = metadata;
+      return;
+    }
+    if (inferredMetadata) {
+      if (form.birth_date === inferredMetadata.birthDate) form.birth_date = '';
+      if (form.gender === inferredMetadata.gender) form.gender = 'unknown';
+      inferredMetadata = null;
+    }
+  },
+  { flush: 'sync' }
 );
 const resetForm = () => {
+  isCreating.value = false;
+  inferredMetadata = null;
   Object.assign(form, {
     first_name: '',
     last_name: '',
@@ -70,7 +109,6 @@ const resetForm = () => {
     gender: 'unknown',
     phone: '',
   });
-  isCreating.value = false;
   error.value = '';
   idempotencyKey.value = '';
 };
@@ -178,6 +216,10 @@ const savePatient = async () => {
       <Input
         v-model="form.iin"
         :label="t('SCHEDULING.CONTACT.IIN')"
+        :message="iinError"
+        :message-type="iinError ? 'error' : 'info'"
+        inputmode="numeric"
+        maxlength="12"
         :disabled="entry?.saving"
       />
       <Input

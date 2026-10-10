@@ -47,6 +47,10 @@ import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/refere
 import { isKazakhstanE164Phone } from 'dashboard/stores/scheduling/appointmentForm';
 import { schedulingContactNameParts } from 'dashboard/stores/scheduling/contactName';
 import {
+  isValidPatientIin,
+  normalizePatientIin,
+} from 'dashboard/stores/scheduling/iin';
+import {
   patientBirthDate,
   patientContactId,
   useConversationPatientContextStore,
@@ -302,21 +306,6 @@ const contactPhone = computed(
     ''
 );
 
-const normalizePatientIin = value => String(value || '').replace(/\D/g, '');
-const isValidPatientIin = value => {
-  const iin = normalizePatientIin(value);
-  if (!/^\d{12}$/.test(iin)) return false;
-
-  const digits = [...iin].map(Number);
-  const checksum = weights =>
-    weights.reduce((sum, weight, index) => sum + weight * digits[index], 0) %
-    11;
-  // Keep the same two-pass checksum as Scheduling::IinValidator.
-  const first = checksum([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
-  const result =
-    first === 10 ? checksum([3, 4, 5, 6, 7, 8, 9, 10, 11, 1, 2]) : first;
-  return (result === 10 ? 0 : result) === digits[11];
-};
 const contactIin = computed(() => {
   const attributes =
     patient.value?.custom_attributes || patient.value?.customAttributes || {};

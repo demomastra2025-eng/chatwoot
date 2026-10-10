@@ -57,6 +57,118 @@ describe('conversation patient selector', () => {
     expect(wrapper.vm.isCreating).toBe(true);
   });
 
+  it('autofills only the new patient from a valid IIN and keeps the mother and separated names intact', async () => {
+    const mother = {
+      ...owner,
+      first_name: 'Mother',
+      last_name: 'Family',
+      identifier: '940720300129',
+      birth_date: '1994-07-20',
+      gender: 'female',
+    };
+    SchedulingContactsAPI.patients.mockResolvedValueOnce({
+      data: { payload: { contact_id: 42, patients: [mother] } },
+    });
+    SchedulingContactsAPI.createPatient.mockResolvedValueOnce({
+      data: { payload: patient },
+    });
+    const wrapper = await mountLoaded();
+    expect(wrapper.vm.form).toMatchObject({
+      iin: '',
+      birth_date: '',
+      gender: 'unknown',
+    });
+    wrapper.vm.startCreate();
+    Object.assign(wrapper.vm.form, {
+      first_name: ' Child ',
+      last_name: ' Family ',
+      middle_name: ' Middle ',
+      iin: '170102500010',
+    });
+    expect(wrapper.vm.form).toMatchObject({
+      birth_date: '2017-01-02',
+      gender: 'male',
+      first_name: ' Child ',
+      last_name: ' Family ',
+      middle_name: ' Middle ',
+    });
+    await wrapper.vm.savePatient();
+    expect(SchedulingContactsAPI.createPatient).toHaveBeenCalledWith(
+      42,
+      expect.objectContaining({
+        iin: '170102500010',
+        birth_date: '2017-01-02',
+        gender: 'male',
+        first_name: 'Child',
+        last_name: 'Family',
+        middle_name: 'Middle',
+        conversation_display_id: 123,
+      })
+    );
+    expect(mother).toMatchObject({
+      identifier: '940720300129',
+      birth_date: '1994-07-20',
+      gender: 'female',
+    });
+    expect(wrapper.vm.form).toMatchObject({
+      iin: '',
+      birth_date: '',
+      gender: 'unknown',
+    });
+  });
+
+  it.each([
+    '170102500011',
+    '991332500010',
+    '170102700010',
+    '1701025000101',
+    '170102',
+  ])(
+    'rejects invalid IIN %s without inferring patient data or sending a request',
+    async iin => {
+      const wrapper = await mountLoaded();
+      wrapper.vm.startCreate();
+      Object.assign(wrapper.vm.form, {
+        first_name: 'Child',
+        last_name: 'Family',
+        iin,
+      });
+      expect(wrapper.vm.isInvalid).toBe(true);
+      expect(wrapper.vm.form).toMatchObject({
+        birth_date: '',
+        gender: 'unknown',
+      });
+      await wrapper.vm.savePatient();
+      expect(SchedulingContactsAPI.createPatient).not.toHaveBeenCalled();
+    }
+  );
+
+  it('clears previous inferred values after an invalid IIN but preserves manual birth date and gender', async () => {
+    const wrapper = await mountLoaded();
+    wrapper.vm.startCreate();
+    wrapper.vm.form.iin = '170102500010';
+    wrapper.vm.form.iin = '170102500011';
+    expect(wrapper.vm.form).toMatchObject({
+      birth_date: '',
+      gender: 'unknown',
+    });
+    wrapper.vm.form.iin = '170102500010';
+    wrapper.vm.form.birth_date = '2017-01-03';
+    wrapper.vm.form.gender = 'other';
+    wrapper.vm.form.iin = '';
+    expect(wrapper.vm.form).toMatchObject({
+      birth_date: '2017-01-03',
+      gender: 'other',
+    });
+    await wrapper.setProps({ contextKey: '74:9:conversation:124' });
+    expect(wrapper.vm.form).toMatchObject({
+      iin: '',
+      birth_date: '',
+      gender: 'unknown',
+    });
+    expect(wrapper.vm.isCreating).toBe(false);
+  });
+
   it('reuses the same creation key after a network error and sends the original dialog display ID', async () => {
     const wrapper = await mountLoaded();
     wrapper.vm.startCreate();

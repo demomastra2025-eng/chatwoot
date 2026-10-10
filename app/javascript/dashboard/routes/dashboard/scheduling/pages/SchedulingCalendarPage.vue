@@ -105,6 +105,7 @@ import {
   useSchedulingProviderCommandsStore,
 } from 'dashboard/stores/scheduling/providerCommands';
 import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/references';
+import { parseIinMetadata } from 'dashboard/stores/scheduling/iin';
 import {
   buildContactableInboxesList,
   fetchContactableInboxes,
@@ -848,57 +849,6 @@ const normalizeIin = value =>
   String(value || '')
     .replace(/\D/g, '')
     .slice(0, 12);
-
-const parseIinMetadata = iinValue => {
-  const normalizedIin = normalizeIin(iinValue);
-  if (!normalizedIin) {
-    return { reason: '', valid: true };
-  }
-
-  if (normalizedIin.length !== 12) {
-    return { reason: 'length', valid: false };
-  }
-
-  const centuryCode = Number(normalizedIin[6]);
-  const centuryMap = {
-    1: { century: 1800, gender: 'male' },
-    2: { century: 1800, gender: 'female' },
-    3: { century: 1900, gender: 'male' },
-    4: { century: 1900, gender: 'female' },
-    5: { century: 2000, gender: 'male' },
-    6: { century: 2000, gender: 'female' },
-  };
-
-  if (centuryCode === 0) {
-    return { reason: 'foreign', valid: false };
-  }
-
-  const metadata = centuryMap[centuryCode];
-  if (!metadata) {
-    return { reason: 'format', valid: false };
-  }
-
-  const year = metadata.century + Number(normalizedIin.slice(0, 2));
-  const month = Number(normalizedIin.slice(2, 4));
-  const day = Number(normalizedIin.slice(4, 6));
-  const parsedDate = new Date(year, month - 1, day);
-
-  if (
-    Number.isNaN(parsedDate.getTime()) ||
-    parsedDate.getFullYear() !== year ||
-    parsedDate.getMonth() !== month - 1 ||
-    parsedDate.getDate() !== day
-  ) {
-    return { reason: 'date', valid: false };
-  }
-
-  return {
-    birthDate: `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
-    gender: metadata.gender,
-    reason: '',
-    valid: true,
-  };
-};
 
 const inlineContactIinState = computed(() =>
   parseIinMetadata(inlineContactForm.iin)
