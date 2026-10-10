@@ -542,7 +542,7 @@ onBeforeUnmount(() => {
   >
     <div
       v-if="visible"
-      class="bg-n-solid-2 md:min-w-0 md:bg-transparent"
+      class="min-w-0 bg-n-solid-2 md:bg-transparent"
       :class="
         inline
           ? [
@@ -552,9 +552,9 @@ onBeforeUnmount(() => {
           : 'fixed inset-0 z-[120] md:static md:inset-auto md:z-auto md:h-full md:flex-1'
       "
     >
-      <div class="flex h-full w-full justify-end">
+      <div class="flex h-full min-w-0 w-full justify-end">
         <aside
-          class="flex h-full w-full flex-col overflow-hidden bg-n-solid-2 md:min-w-0 md:flex-1 md:bg-transparent"
+          class="flex h-full min-w-0 w-full flex-col overflow-hidden bg-n-solid-2 md:flex-1 md:bg-transparent"
         >
           <header
             v-if="hasLinkedChat && (showOpenFullScreen || canOpenAppointments)"
@@ -668,7 +668,10 @@ onBeforeUnmount(() => {
             <Spinner class="!h-8 !w-8" />
           </div>
 
-          <div v-else-if="isChatDisplayed" class="relative flex min-h-0 flex-1">
+          <div
+            v-else-if="isChatDisplayed"
+            class="relative flex min-h-0 min-w-0 flex-1"
+          >
             <ConversationBox
               class="flex-1"
               :inbox-id="currentChat.inbox_id"

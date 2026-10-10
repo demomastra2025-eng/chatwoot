@@ -524,7 +524,7 @@ const shouldShowTeamField = computed(
 
 const drawerModalClass = computed(() => {
   if (isDealPage.value) {
-    return 'flex h-full w-full min-h-0 flex-col overflow-hidden bg-n-solid-2 lg:flex-row';
+    return 'flex h-full w-full min-h-0 min-w-0 flex-col overflow-hidden bg-n-solid-2 lg:flex-row';
   }
 
   return [
@@ -4651,7 +4651,7 @@ watch(
         v-if="drawerOpen"
         :class="
           isDealPage
-            ? 'flex min-h-0 flex-1'
+            ? 'flex min-h-0 min-w-0 flex-1'
             : 'modal-mask fixed inset-0 z-[110] bg-black/35 p-3 backdrop-blur-[4px]'
         "
       >
