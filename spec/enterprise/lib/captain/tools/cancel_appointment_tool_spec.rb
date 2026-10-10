@@ -63,7 +63,7 @@ RSpec.describe Captain::Tools::CancelAppointmentTool, type: :model do
     expect(appointments.map { |appointment| appointment.reload.status }).to all(eq('scheduled'))
   end
 
-  it 'does not cancel an imported Medelement appointment' do
+  it 'cancels an imported visit only locally while provider removal is disabled' do
     resource = create(:scheduling_resource, account: account)
     contact = create(:contact, account: account)
     conversation = create(:conversation, account: account, contact: contact)
@@ -80,8 +80,10 @@ RSpec.describe Captain::Tools::CancelAppointmentTool, type: :model do
 
     result = tool.perform(tool_context)
 
-    expect(JSON.parse(result)).to eq('success' => false, 'reason' => 'validation_error')
-    expect(appointment.reload.status).to eq('scheduled')
+    expect(JSON.parse(result)).to include('success' => true, 'status' => 'cancelled_local_only', 'provider_reception_active' => true)
+    expect(appointment.reload.status).to eq('cancelled')
+    expect(appointment.external_ref).to eq('medelement:reception:captain-cancel')
+    expect(Integrations::Medelement::ProviderCommand.where(appointment_id: appointment.id)).to be_empty
   end
 
   it 'returns the exact remove command receipt for a provider-backed appointment' do
