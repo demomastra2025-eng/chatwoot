@@ -15,6 +15,70 @@ RSpec.describe 'Medelement Provider Commands API', type: :request do
     allow(Integrations::Medelement::CronScheduleService).to receive(:new).and_return(schedule_service)
   end
 
+  context 'when staging a manual reception move' do
+    let(:resource) do
+      create(:scheduling_resource, account: account, custom_attributes: {
+        'medelement_specialist_code' => 'specialist-1',
+        'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }]
+      })
+    end
+    let(:appointment) do
+      create(:scheduling_appointment, account: account, resource: resource, contact: contact, source: 'medelement',
+                                      external_ref: 'medelement:reception:71')
+    end
+    let(:destination_start) { Time.current.change(sec: 0) + 1.day }
+
+    before do
+      contact.update!(custom_attributes: contact.custom_attributes.merge('medelement_patient_code' => 'patient-1'))
+      expect(Integrations::Medelement::Client).not_to receive(:new)
+    end
+
+    def stage_move(duration_seconds)
+      post path, params: {
+        hook_id: hook.id, appointment_id: appointment.id, operation: 'move_reception',
+        idempotency_key: SecureRandom.uuid, company_cabinet_code: 'cabinet-1',
+        desired_starts_at: destination_start.iso8601(6),
+        desired_ends_at: (destination_start + duration_seconds).iso8601(6)
+      }, headers: headers, as: :json
+    end
+
+    [60, 1441 * 60, 330, 300.1].each do |seconds|
+      it "rejects #{seconds} seconds before staging a command or confirmation" do
+        appointment
+        hook
+
+        expect { stage_move(seconds) }.to(
+          not_change(Integrations::Medelement::ProviderCommand, :count).and(not_change(ConfirmationRequest, :count))
+        )
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body['code']).to eq('INVALID_DURATION')
+      end
+    end
+
+    [5, 1440].each do |minutes|
+      it "stages exactly #{minutes} minutes without changing the requested interval" do
+        stage_move(minutes * 60)
+
+        expect(response).to have_http_status(:created)
+        expect(Integrations::Medelement::ProviderCommand.last).to have_attributes(
+          desired_starts_at: destination_start, desired_ends_at: destination_start + minutes.minutes
+        )
+      end
+    end
+
+    context 'when the authorized staff destination is in the past' do
+      let(:destination_start) { Time.current.change(sec: 0) - 1.day }
+
+      it 'preserves the existing retrospective staging behavior' do
+        stage_move(5 * 60)
+
+        expect(response).to have_http_status(:created)
+        expect(Integrations::Medelement::ProviderCommand.last.desired_starts_at).to eq(destination_start)
+      end
+    end
+  end
+
   it 'creates only an awaiting-confirmation proposal' do
     post path,
          params: {

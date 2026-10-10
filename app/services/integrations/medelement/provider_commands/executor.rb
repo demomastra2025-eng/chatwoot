@@ -28,6 +28,8 @@ class Integrations::Medelement::ProviderCommands::Executor
     fail_command!(code: 'provider_http_error', status: e.status, reconciliation: e.ambiguous?)
   rescue Integrations::Medelement::ProviderCommands::ExecutionError => e
     fail_command!(code: e.code, reconciliation: e.reconciliation?)
+  rescue Integrations::Medelement::ProviderCommands::RequestSnapshotSchema::DestinationIntervalError => e
+    fail_command!(code: e.code, reconciliation: write_started?)
   rescue Integrations::Medelement::ProviderCommands::Preflight::SlotConflict
     fail_command!(code: 'slot_conflict')
   rescue Integrations::Medelement::ProviderCommands::Preflight::SlotUnavailable
@@ -92,6 +94,7 @@ class Integrations::Medelement::ProviderCommands::Executor
       raise execution_error('confirmation_snapshot_invalid', 'Medelement confirmation does not match the request snapshot')
     end
 
+    Integrations::Medelement::ProviderCommands::RequestSnapshotSchema.validate_reception_destination!(command.request_snapshot)
     if command.request_snapshot_valid?
       validate_provider_scope_snapshot!
       return
