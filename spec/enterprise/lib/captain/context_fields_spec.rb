@@ -557,7 +557,7 @@ RSpec.describe Captain::ContextFields do
       expect(account).not_to receive(:conversations)
       prompt = described_class.prompt_state_for(assistant: assistant, runtime_state: state, field_ids: ['deal.summary'])
 
-      expect(prompt[:context_summaries][:deal]).to eq(summary)
+      expect(prompt[:context_summaries][:deal]).to eq(summary.deep_stringify_keys)
     end
 
     it 'uses synthetic workspace blocks and summaries with negative session IDs without fetching a real conversation' do
@@ -573,7 +573,7 @@ RSpec.describe Captain::ContextFields do
 
       prompt = described_class.prompt_state_for(assistant: assistant, runtime_state: state, field_ids: %w[appointment.summary appointment.nearest])
 
-      expect(prompt[:context_summaries][:appointment]).to eq(summary)
+      expect(prompt[:context_summaries][:appointment]).to eq(summary.deep_stringify_keys)
       expect(prompt[:appointment_context_blocks]['nearest']).to eq(nearest)
     end
 

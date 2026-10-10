@@ -910,6 +910,7 @@ class Captain::ContextFields
       allowed_field_ids.each do |field_id|
         _, *path = field_id.split('.')
         next if path.blank?
+        next unless scope_state.key?(path.first)
 
         case path.first
         when 'custom_attributes'

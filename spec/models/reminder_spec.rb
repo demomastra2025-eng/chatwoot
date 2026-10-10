@@ -99,6 +99,7 @@ RSpec.describe Reminder do
         originating_communication_thread: communication_thread,
         custom_attributes: { 'sales_region' => 'Almaty' }
       )
+      create(:crm_deal_contact, account: account, deal: deal, contact: contact, primary: true)
       status = create(:crm_task_status, account: account, name: 'In Progress')
       task = create(
         :crm_task,
@@ -268,7 +269,7 @@ RSpec.describe Reminder do
         owner: owner,
         touch_conversation: conversation,
         conversation: conversation,
-        remindable: conversation,
+        remindable: deal,
         body: body
       )
 

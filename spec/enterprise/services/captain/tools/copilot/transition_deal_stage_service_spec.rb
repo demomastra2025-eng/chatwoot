@@ -135,9 +135,10 @@ RSpec.describe Captain::Tools::Copilot::TransitionDealStageService do
   end
 
   it 'does not choose the most recently updated deal when no deal ID is provided' do
+    expect(service.params_schema.deep_stringify_keys.fetch('required')).to include('deal_id')
     linked = create(:crm_deal, account: account, originating_conversation: conversation)
     old_stage_id = linked.stage_id
-    result = service.execute(stage_action: 'next')
+    result = execute_confirmed(stage_action: 'next')
 
     expect(result).to include('deal_id is required')
     expect(linked.reload.stage_id).to eq(old_stage_id)
@@ -159,5 +160,7 @@ RSpec.describe Captain::Tools::Copilot::TransitionDealStageService do
     )
 
     service.execute(**arguments)
+  rescue JSON::ParserError
+    first_result
   end
 end

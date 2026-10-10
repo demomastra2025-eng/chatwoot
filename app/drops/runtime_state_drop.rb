@@ -1,5 +1,6 @@
 class RuntimeStateDrop < Liquid::Drop
   def initialize(state)
+    super()
     @state = state.is_a?(Hash) ? state.with_indifferent_access : {}
   end
 

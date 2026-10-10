@@ -3,7 +3,7 @@ require 'rails_helper'
 RSpec.describe Outbound::RenderedTextService do
   describe '#render' do
     let(:account) { create(:account) }
-    let(:agent) { create(:user, account: account, name: 'Agent Smith') }
+    let(:agent) { create(:user, :administrator, account: account, name: 'Agent Smith') }
     let(:contact) do
       create(
         :contact,
@@ -98,6 +98,21 @@ RSpec.describe Outbound::RenderedTextService do
                                     contact: contact, sender: agent).render
 
       expect(rendered).to eq('Exact event deal / Exact event deal')
+    end
+
+    it 'keeps deal summaries and explicit legacy fields hidden from a sender without CRM permissions' do
+      account.enable_features!('crm_deals')
+      unauthorized = create(:user, account: account)
+      conversation = create(:conversation, account: account, contact: contact)
+      deal = create(:crm_deal, account: account, title: 'Private deal')
+      create(:crm_deal_contact, account: account, deal: deal, contact: contact)
+
+      rendered = described_class.new(
+        content: '[Summary](field://deal.summary)|[Title](field://deal.title)|{{ deal.summary }}|{{ deal.title }}',
+        conversation: conversation, deal: deal, sender: unauthorized
+      ).render
+
+      expect(rendered).to eq('|||')
     end
 
     it 'renders an explicit deal reminder without selecting a newer conversation deal' do
