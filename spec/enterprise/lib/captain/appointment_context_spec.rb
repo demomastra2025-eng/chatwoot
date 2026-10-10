@@ -44,13 +44,28 @@ RSpec.describe Captain::AppointmentContext do
                                     resource: resource, starts_at: 1.hour.from_now)
     create(:scheduling_appointment, account: account, contact: other_contact, patient_contact: contact,
                                     resource: resource, starts_at: 2.hours.from_now)
+    appointment(starts_at: 10.minutes.from_now, patient_contact: other_contact)
+    appointment(starts_at: 1.hour.ago, status: 'completed', patient_contact: other_contact)
+    appointment(starts_at: 1.day.from_now, status: 'cancelled', patient_contact: other_contact)
     foreign_account = create(:account)
     create(:scheduling_appointment, account: foreign_account, contact: create(:contact, account: foreign_account),
                                     starts_at: 3.hours.from_now)
 
     expect(context.appointments.count).to eq(0)
     expect(context.nearest).to be_nil
-    expect(JSON.parse(context.block('nearest'))).to be_nil
+    expect(context.last_past).to be_nil
+    expect(context.last_cancelled).to be_nil
+    %w[nearest last_past last_cancelled].each { |key| expect(JSON.parse(context.block(key))).to be_nil }
+    expect(JSON.parse(context.block('all'))).to include('total' => 0, 'appointments' => [])
+    expect(context.list).to include(total: 0, appointments: [])
+  end
+
+  it 'keeps legacy and explicitly selected own visits across conversations' do
+    legacy = appointment(starts_at: 1.hour.from_now, patient_contact: nil)
+    selected = appointment(starts_at: 2.hours.from_now, patient_contact: contact, conversation: other_conversation)
+
+    expect(context.appointments.pluck(:id)).to contain_exactly(legacy.id, selected.id)
+    expect(context.list.fetch(:appointments).pluck(:id)).to contain_exactly(legacy.id, selected.id)
   end
 
   it 'renders empty, single, and capped many-appointment blocks without system data' do

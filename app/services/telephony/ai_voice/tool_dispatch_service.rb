@@ -793,6 +793,7 @@ class Telephony::AiVoice::ToolDispatchService
     {
       account: account,
       conversation: conversation,
+      assistant: captain_assistant,
       channel_type: conversation&.inbox&.channel_type
     }
   end

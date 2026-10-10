@@ -446,6 +446,7 @@ class Telephony::AiVoice::ContextBuilder
           Captain::ContextFields.runtime_state_for(
             account: account,
             conversation: session_for_prompt.conversation,
+            assistant: captain_assistant,
             channel_type: session_for_prompt.conversation.inbox&.channel_type
           )
         )

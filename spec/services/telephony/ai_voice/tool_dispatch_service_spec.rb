@@ -483,6 +483,27 @@ RSpec.describe Telephony::AiVoice::ToolDispatchService do
       expect(state[:conversation]).to include(id: conversation.id, display_id: conversation.display_id)
       expect(state).not_to have_key(:prompt_context)
     end
+
+    it 'keeps another clinical patient out of the eager state for native Captain tools' do
+      account.enable_features!('scheduling')
+      assistant.update!(usage_mode: 'external_agent')
+      own = create(:scheduling_appointment, account: account, contact: conversation.contact,
+                                            starts_at: 2.hours.from_now, ends_at: 150.minutes.from_now)
+      child = create(:contact, account: account)
+      create(:scheduling_appointment, account: account, contact: conversation.contact, patient_contact: child,
+                                      conversation: conversation, starts_at: 10.minutes.from_now, ends_at: 40.minutes.from_now,
+                                      comment: 'Private child clinical comment')
+      service = described_class.new(
+        tool_name: 'list_my_appointments',
+        payload: { account_id: account.id, call_ref: call_session.external_call_ref, arguments: {} }
+      )
+
+      state = service.send(:captain_runtime_state)
+
+      expect(state.dig(:appointment, :id)).to eq(own.id)
+      expect(state.fetch(:appointment).keys).to contain_exactly(:id, :resource_name, :start_date, :start_time, :status)
+      expect(state.to_json).not_to include('Private child clinical comment')
+    end
   end
 
   describe '#with_captain_assistant_assignment_lock' do

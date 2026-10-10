@@ -14,6 +14,7 @@ class Captain::AppointmentContext
     return scope.none if @conversation.blank? || @conversation.account_id != @account.id || @conversation.contact_id.blank?
 
     scope.where(contact_id: @conversation.contact_id)
+         .where('COALESCE(patient_contact_id, contact_id) = ?', @conversation.contact_id)
   end
 
   def nearest(now: Time.current)

@@ -71,5 +71,23 @@ RSpec.describe Telephony::AiVoice::ContextBuilder do
 
       expect(state[:captain_runtime]['assistant_thinking_effort']).to eq('low')
     end
+
+    it 'keeps another clinical patient out of the voice prompt state' do
+      account.enable_features!('scheduling')
+      assistant.update!(usage_mode: 'external_agent')
+      own = create(:scheduling_appointment, account: account, contact: conversation.contact,
+                                            starts_at: 2.hours.from_now, ends_at: 150.minutes.from_now)
+      child = create(:contact, account: account)
+      create(:scheduling_appointment, account: account, contact: conversation.contact, patient_contact: child,
+                                      conversation: conversation, starts_at: 10.minutes.from_now, ends_at: 40.minutes.from_now,
+                                      comment: 'Private child clinical comment')
+      builder = described_class.new(params: { 'call_ref' => call_session.external_call_ref, 'account_id' => account.id })
+
+      state = builder.send(:captain_runtime_state_for_prompt)
+
+      expect(state.dig(:appointment, :id)).to eq(own.id)
+      expect(state.fetch(:appointment).keys).to contain_exactly(:id, :resource_name, :start_date, :start_time, :status)
+      expect(state.to_json).not_to include('Private child clinical comment')
+    end
   end
 end

@@ -17,10 +17,12 @@ RSpec.describe Captain::Tools::Copilot::ListMyAppointmentsService do
   it 'returns only the current contact appointments across conversations' do
     own = create(:scheduling_appointment, account: account, contact: contact, external_ref: 'private-command')
     another_channel = create(:conversation, account: account, contact: contact)
-    other_own = create(:scheduling_appointment, account: account, contact: contact, conversation: another_channel)
+    other_own = create(:scheduling_appointment, account: account, contact: contact, patient_contact: contact,
+                                              conversation: another_channel)
     other_contact = create(:contact, account: account)
     create(:scheduling_appointment, account: account, contact: other_contact, conversation: conversation)
     create(:scheduling_appointment, account: account, contact: other_contact, patient_contact: contact)
+    create(:scheduling_appointment, account: account, contact: contact, patient_contact: other_contact, conversation: conversation)
     create(:scheduling_appointment, account: create(:account))
 
     payload = call_tool
