@@ -1,10 +1,10 @@
 class Captain::Tools::UpdateDealTool < Captain::Tools::BasePublicTool
-  description 'Update a CRM deal by deal_id or the deal linked to the current conversation. ' \
+  description 'Update a specific CRM deal by its verified deal_id, or an explicitly supplied CRM-event deal. ' \
               'Use list_deal_pipelines/list_deal_stages before changing pipeline or stage.'
   param :deal_id,
         type: 'integer',
-        desc: 'Optional CRM deal ID to update. Use the ID returned by get_deal/search_deals when updating a specific deal; ' \
-              'omit for the current conversation deal.',
+        desc: 'Specific CRM deal ID from get_deal/search_deals. Omit only when an explicit CRM event already supplies the deal ID; ' \
+              'a deal is never selected implicitly from the conversation or summary.',
         required: false
   param :title, type: 'string', desc: 'Updated deal title', required: false
   param :description, type: 'string', desc: 'Updated deal description', required: false

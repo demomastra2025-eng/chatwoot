@@ -24,6 +24,15 @@ RSpec.describe Captain::Tools::Copilot::UpdateDealService do
   end
 
   describe '#execute' do
+    it 'requires a verified deal ID in both the tool schema and execution' do
+      expect(service.params_schema.deep_stringify_keys.fetch('required')).to include('deal_id')
+      result = nil
+
+      expect { result = execute_confirmed(title: 'Must not infer a deal') }.not_to change { deal.reload.title }
+
+      expect(result).to include('deal_id is required')
+    end
+
     it 'updates an explicit deal using JSON custom_attributes' do
       execute_confirmed(deal_id: deal.id, title: 'Renewal won', custom_attributes: { lead_source: 'captain', segment: 'enterprise' }.to_json)
 

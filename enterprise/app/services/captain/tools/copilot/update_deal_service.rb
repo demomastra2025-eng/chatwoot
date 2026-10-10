@@ -3,13 +3,12 @@ class Captain::Tools::Copilot::UpdateDealService < Captain::Tools::Copilot::Base
     'update_deal'
   end
 
-  description 'Update a CRM deal by deal_id or the deal linked to the current conversation. ' \
+  description 'Update a specific CRM deal by its verified deal_id. A deal is never selected implicitly. ' \
               'Use list_deal_pipelines/list_deal_stages before changing pipeline or stage.'
   param :deal_id,
         type: :integer,
-        desc: 'Optional CRM deal ID to update. Use the ID returned by get_deal/search_deals when updating a specific deal; ' \
-              'omit for the current conversation deal.',
-        required: false
+        desc: 'Specific CRM deal ID returned by get_deal/search_deals; required for every update.',
+        required: true
   param :title, type: :string, desc: 'Updated deal title', required: false
   param :description, type: :string, desc: 'Updated deal description', required: false
   param :pipeline_id,
@@ -45,6 +44,7 @@ class Captain::Tools::Copilot::UpdateDealService < Captain::Tools::Copilot::Base
   def execute(deal_id: nil, title: nil, description: nil, amount: nil, currency: nil, expected_close_on: nil,
               win_probability: nil, custom_attributes: nil, pipeline_id: nil, pipeline_code: nil, stage_id: nil,
               stage_name: nil, stage_code: nil, closing_reasons: nil, transition_reason: nil)
+    deal_id = required_positive_id(deal_id, field_name: 'deal_id')
     deal = deal_operations.update_current_deal(
       deal_id: deal_id,
       title: title,

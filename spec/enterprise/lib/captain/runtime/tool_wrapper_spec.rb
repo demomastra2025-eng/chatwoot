@@ -595,6 +595,28 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     end
   end
 
+  it 'executes a corrected search_deals offset after a backend pagination failure' do
+    account = create(:account)
+    account.enable_features!('crm_deals')
+    assistant = create(:captain_assistant, account: account)
+    conversation = create(:conversation, account: account)
+    deal = create(:crm_deal, account: account)
+    create(:crm_deal_contact, account: account, deal: deal, contact: conversation.contact)
+    context_wrapper.context[:state] = { account_id: account.id, assistant_id: assistant.id, conversation: { id: conversation.id } }
+    search_tool = Captain::Tools::Agent::AccountToolAdapter.new(assistant, tool_id: 'search_deals')
+    search_wrapper = described_class.new(search_tool, context_wrapper)
+
+    failed_result = search_wrapper.call(offset: -1, limit: 1)
+    expect(Captain::ToolResult.error?(failed_result)).to be(true)
+    expect(failed_result).to include('offset must be a non-negative integer')
+    corrected_result = search_wrapper.call(offset: 0, limit: 1)
+
+    expect(corrected_result).not_to be_a(RubyLLM::Tool::Halt)
+    expect(JSON.parse(corrected_result)).to include('shown' => 1, 'offset' => 0, 'total_count' => 1)
+    expect(JSON.parse(corrected_result).fetch('deals').pluck('id')).to eq([deal.id])
+    expect(events.count { |event| event.first == :start && event[1] == 'search_deals' }).to eq(2)
+  end
+
   it 'does not suppress a changed limit for unrelated read-only tools' do
     read_only_tool = ToolWrapperSpecReadOnlyTool.new
     read_only_wrapper = described_class.new(read_only_tool, context_wrapper)
