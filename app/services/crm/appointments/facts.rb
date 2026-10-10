@@ -20,10 +20,14 @@ class Crm::Appointments::Facts
     true
   end
 
+  def self.timezone_for(account)
+    ActiveSupport::TimeZone[account.reporting_timezone.presence || Time.zone&.name || 'UTC']
+  end
+
   def initialize(deal:, now: Time.current)
     @deal = deal
     @now = now
-    @timezone = ActiveSupport::TimeZone[deal.account.reporting_timezone.presence || Time.zone&.name || 'UTC']
+    @timezone = self.class.timezone_for(deal.account)
     @appointments = deal.appointments.where(account_id: deal.account_id).ordered.to_a
   end
 
@@ -94,9 +98,8 @@ class Crm::Appointments::Facts
     case scope
     when 'selected' then selected
     when 'nearest'
-      relevant = appointments.reject { |appointment| appointment.status.in?(%w[cancelled no_show completed]) }
-      upcoming = relevant.select { |appointment| appointment.ends_at >= now }
-      [upcoming.min_by(&:starts_at) || relevant.max_by(&:starts_at)].compact
+      upcoming = appointments.select { |appointment| appointment.ends_at >= now }
+      [upcoming.min_by(&:starts_at) || appointments.max_by(&:starts_at)].compact
     else appointments
     end
   end

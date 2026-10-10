@@ -94,10 +94,8 @@ class Crm::Appointments::LinkService
     enabled_at = Time.iso8601(pipeline.appointment_automation.fetch("#{key}_enabled_at"))
     return true unless newly_imported
 
-    source_created = appointment.custom_attributes.to_h['medelement_source_created_at']
-    return false if source_created.blank?
-
-    Time.iso8601(source_created) >= enabled_at && appointment.created_at >= enabled_at
+    source_created = Crm::Appointments::SourceCreationTime.for(appointment)
+    source_created.present? && source_created >= enabled_at && appointment.created_at >= enabled_at
   rescue ArgumentError, KeyError
     false
   end

@@ -52,16 +52,16 @@ RSpec.describe Crm::Deals::AutoCreateFromChannelContactService do
   end
 
   def cleanup_test_account(account)
-    account.crm_events.delete_all
+    Crm::Event.where(account_id: account.id).delete_all
     Crm::StageVisit.where(account_id: account.id).delete_all
     Crm::DealContact.where(account_id: account.id).delete_all
-    account.crm_deals.delete_all
+    Crm::Deal.where(account_id: account.id).delete_all
     Crm::Stage.where(account_id: account.id).delete_all
-    account.crm_pipelines.delete_all
-    account.messages.delete_all
-    account.conversations.delete_all
+    Crm::Pipeline.where(account_id: account.id).delete_all
+    Message.where(account_id: account.id).delete_all
+    Conversation.where(account_id: account.id).delete_all
     ContactInbox.where(inbox_id: account.inboxes.select(:id)).delete_all
-    account.contacts.delete_all
+    Contact.where(account_id: account.id).delete_all
     account.inboxes.destroy_all
     account.destroy!
   end
