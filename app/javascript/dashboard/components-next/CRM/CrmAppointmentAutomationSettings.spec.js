@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount } from '@vue/test-utils';
-import { reactive } from 'vue';
+import { nextTick, reactive } from 'vue';
 import CrmPipelinesAPI from 'dashboard/api/crm/pipelines';
 import CrmAppointmentAutomationSettings from './CrmAppointmentAutomationSettings.vue';
 
@@ -108,13 +108,17 @@ describe('appointment automation settings', () => {
         })
     );
     const wrapper = mountSettings();
+    const save = wrapper
+      .findAll('button')
+      .find(button => button.text() === 'CRM.GENERAL.SAVE');
+    expect(save.element.disabled).toBe(true);
     wrapper
       .findAllComponents({ name: 'Switch' })[0]
       .vm.$emit('update:modelValue', true);
-    await wrapper
-      .findAll('button')
-      .find(button => button.text() === 'CRM.GENERAL.SAVE')
-      .trigger('click');
+    await nextTick();
+    expect(save.element.disabled).toBe(false);
+    await save.trigger('click');
+    expect(CrmPipelinesAPI.update).toHaveBeenCalledTimes(1);
     state.route.params.accountId = '2';
     await flushPromises();
     release({ data: { payload: { id: 3 } } });
