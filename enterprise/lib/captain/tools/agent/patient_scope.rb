@@ -51,6 +51,17 @@ class Captain::Tools::Agent::PatientScope
     scope.where(contact_id: contact_id)
   end
 
+  def appointments_with_access(params)
+    return appointments if params[:appointment_access_token].blank?
+
+    appointment = Captain::Tools::Agent::AppointmentAccess.resolve(
+      token: params[:appointment_access_token], assistant: @assistant,
+      conversation: conversation, appointment_id: params[:appointment_id]
+    )
+    deny!(tool: 'appointment', kind: 'appointment') unless appointment
+    appointments.or(@assistant.account.scheduling_appointments.where(id: appointment.id))
+  end
+
   def deals
     scope = @assistant.account.crm_deals
     return scope.none if contact_id.blank?
@@ -75,7 +86,8 @@ class Captain::Tools::Agent::PatientScope
     if ADAPTER_ID_TOOLS.key?(tool)
       scope_name, argument_name, kind = ADAPTER_ID_TOOLS.fetch(tool)
       id = params[argument_name]
-      require_id!(public_send(scope_name), id, tool: tool, kind: kind) if tool != 'list_deal_stages' || id.present?
+      scope = scope_name == :appointments ? appointments_with_access(params) : public_send(scope_name)
+      require_id!(scope, id, tool: tool, kind: kind) if tool != 'list_deal_stages' || id.present?
     elsif FILTER_TOOLS.include?(tool)
       require_contact_filter!(params[:contact_id], tool: tool)
     elsif %w[send_message_to_conversation assign_conversation remove_label_from_conversation].include?(tool)
@@ -90,8 +102,16 @@ class Captain::Tools::Agent::PatientScope
     ensure_current_contact!(tool)
 
     case tool
+    when 'create_appointment'
+      require_id!(deals, params[:crm_deal_id], tool: tool, kind: 'deal') if params[:crm_deal_id].present?
+      if params[:crm_pipeline_id].present?
+        require_id!(@assistant.account.crm_pipelines, params[:crm_pipeline_id], tool: tool, kind: 'pipeline')
+      end
     when 'update_appointment', 'cancel_appointment'
-      require_id!(appointments, params[:appointment_id], tool: tool, kind: 'appointment') if params[:appointment_id].present?
+      if params[:appointment_id].present?
+        scope = appointments_with_access(params)
+        require_id!(scope, params[:appointment_id], tool: tool, kind: 'appointment')
+      end
     when 'update_deal', 'transition_deal_stage'
       authorize_deal_write!(tool, params, state)
     when 'request_confirmation'

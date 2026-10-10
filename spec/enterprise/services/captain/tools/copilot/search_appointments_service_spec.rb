@@ -30,7 +30,9 @@ RSpec.describe Captain::Tools::Copilot::SearchAppointmentsService do
       expect(patient_payload.keys).to match_array(%w[success appointments has_more])
       expect(patient_payload['appointments'].length).to eq(Captain::Tools::Agent::AppointmentResult::MAX_SEARCH_RESULTS)
       expect(patient_payload['has_more']).to be(true)
-      expect(patient_payload['appointments'].first.keys).to match_array(%w[appointment_id doctor_name local_date local_time status])
+      expect(patient_payload['appointments'].first.keys).to match_array(
+        %w[appointment_id doctor_name local_date local_time status patient_name appointment_access_token]
+      )
 
       service.patient_scope = nil
       expect(JSON.parse(service.execute(limit: 1))).to include('total_count' => 23)

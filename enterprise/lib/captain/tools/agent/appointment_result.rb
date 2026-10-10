@@ -10,8 +10,10 @@ class Captain::Tools::Agent::AppointmentResult
   MAX_SEARCH_RESULTS = 20
 
   def self.appointment(appointment, action: nil)
-    timezone = ActiveSupport::TimeZone[appointment.resource&.timezone] ||
-               ActiveSupport::TimeZone[appointment.account.reporting_timezone] || Time.zone
+    resource_timezone = appointment.resource&.timezone.presence
+    account_timezone = appointment.account.reporting_timezone.presence
+    timezone = (ActiveSupport::TimeZone[resource_timezone] if resource_timezone) ||
+               (ActiveSupport::TimeZone[account_timezone] if account_timezone) || Time.zone
     local_time = appointment.starts_at&.in_time_zone(timezone)
     status = case action
              when 'create_appointment' then 'created'
@@ -29,7 +31,19 @@ class Captain::Tools::Agent::AppointmentResult
   end
 
   def self.success(appointment, action: nil)
-    { success: true }.merge(self.appointment(appointment, action: action))
+    result = { success: true }.merge(self.appointment(appointment, action: action))
+    return result unless action.in?(%w[update_appointment cancel_appointment])
+
+    if action == 'cancel_appointment' && Integrations::Medelement::LocalCancellation.marked?(appointment)
+      return result.merge(status: 'cancelled_local_only', cancellation_scope: 'onelink_only', provider_reception_active: true)
+    end
+
+    provider = Integrations::Medelement::AppointmentProviderStatus
+    state = appointment.custom_attributes.to_h[provider::ATTRIBUTE_KEY]
+    return result if state.blank? || state == provider::SUCCEEDED
+
+    reason = state == provider::PENDING ? 'pending_provider_confirmation' : 'staff_will_help'
+    result.merge(success: false, reason: reason, status: provider.public_status(appointment), provider_confirmed: false)
   end
 
   def self.failure(error)

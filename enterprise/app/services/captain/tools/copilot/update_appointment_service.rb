@@ -3,8 +3,12 @@ class Captain::Tools::Copilot::UpdateAppointmentService < Captain::Tools::Copilo
     'update_appointment'
   end
 
-  description 'Update the appointment linked to the current conversation with a new specialist, service, or confirmed time details'
+  description 'Update the selected appointment with a new specialist, service, or confirmed time details. ' \
+              'For another patient, use the search token and first confirm their exact appointment with the caller. ' \
+              'A pending provider result does not mean the change has been applied.'
   param :appointment_id, type: :number, desc: 'Exact appointment ID returned by get_appointment or a previous appointment mutation', required: false
+  param :appointment_access_token, type: :string, desc: 'Opaque token from search_appointments for a specifically identified other patient appointment', required: false
+  param :patient_confirmed, type: :boolean, desc: 'True only after the caller confirms the specific patient, doctor, time and requested change', required: false
   param :resource_id, type: :number, desc: 'Updated specialist resource ID', required: false
   param :service_id, type: :number, desc: 'Updated local service ID returned by search_scheduling_services', required: false
   param :starts_at, type: :string, desc: 'Updated appointment start datetime in ISO 8601 format', required: false
@@ -23,9 +27,11 @@ class Captain::Tools::Copilot::UpdateAppointmentService < Captain::Tools::Copilo
         required: false
 
   def execute(appointment_id: nil, resource_id: nil, service_id: nil, starts_at: nil, ends_at: nil, duration_min: nil, appointment_type: nil,
-              client_comment: nil, custom_attributes: nil)
+              client_comment: nil, custom_attributes: nil, appointment_access_token: nil, patient_confirmed: false)
     appointment = appointment_operations.update_current_appointment(
       appointment_id: appointment_id,
+      appointment_access_token: appointment_access_token,
+      patient_confirmed: patient_confirmed,
       resource_id: resource_id,
       service_id: service_id,
       starts_at: starts_at,
@@ -47,7 +53,7 @@ class Captain::Tools::Copilot::UpdateAppointmentService < Captain::Tools::Copilo
   end
 
   def active?
-    current_appointment.present? && @user.present? && assistant.account.feature_enabled?('scheduling')
+    @user.present? && assistant.account.feature_enabled?('scheduling')
   end
 
   private

@@ -57,6 +57,25 @@ RSpec.describe Captain::Tools::Agent::AccountToolAdapter do
     end
   end
 
+  it 'allows a specifically identified family appointment without granting the rest of their history' do
+    resource = create(:scheduling_resource, account: account)
+    selected = create(:scheduling_appointment, account: account, contact: other_contact, resource: resource,
+                                             client_name: 'Patient Beta', starts_at: 1.day.from_now.change(hour: 10))
+    historical = create(:scheduling_appointment, account: account, contact: other_contact,
+                                               client_name: 'Patient Beta', starts_at: 2.days.ago)
+    lookup = JSON.parse(call_tool('search_appointments', client_name: 'Patient Beta', resource_id: resource.id,
+                                                       from: selected.starts_at.beginning_of_day.iso8601))
+    expect(lookup.fetch('appointments').pluck('appointment_id')).to eq([selected.id])
+    token = lookup.fetch('appointments').first.fetch('appointment_access_token')
+
+    expect(JSON.parse(call_tool('get_appointment', appointment_id: selected.id, appointment_access_token: token)))
+      .to include('success' => true, 'appointment_id' => selected.id)
+    expect(JSON.parse(call_tool('get_appointment', appointment_id: historical.id, appointment_access_token: token)))
+      .to eq('success' => false, 'reason' => 'not_found')
+    expect(JSON.parse(call_tool('get_contact', contact_id: other_contact.id)))
+      .to include('error' => 'Record is not available')
+  end
+
   it 'restricts conversation search to the current contact' do
     foreign_conversation = create(:conversation, account: account, contact: other_contact)
 

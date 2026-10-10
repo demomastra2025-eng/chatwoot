@@ -1,6 +1,10 @@
 class Captain::Tools::UpdateAppointmentTool < Captain::Tools::BasePublicTool
-  description 'Update the appointment linked to the current conversation with a new specialist, service, or confirmed time details'
+  description 'Update a specifically identified appointment. For another patient use the task token returned by search_appointments, ' \
+              'confirm the patient, doctor, date/time and requested change, then set patient_confirmed. ' \
+              'Do not claim completion while provider confirmation is pending; do not repeat an uncertain provider write.'
   param :appointment_id, type: 'number', desc: 'Exact appointment ID returned by get_appointment or a previous appointment mutation', required: false
+  param :appointment_access_token, type: 'string', desc: 'Opaque token from search_appointments for a specifically identified other patient appointment', required: false
+  param :patient_confirmed, type: 'boolean', desc: 'True only after the caller confirms the specific patient, doctor, time and requested change', required: false
   param :resource_id, type: 'number', desc: 'Updated specialist resource ID', required: false
   param :service_id, type: 'number', desc: 'Updated local service ID returned by search_scheduling_services', required: false
   param :starts_at, type: 'string', desc: 'Updated appointment start datetime in ISO 8601 format', required: false
@@ -19,9 +23,11 @@ class Captain::Tools::UpdateAppointmentTool < Captain::Tools::BasePublicTool
         required: false
 
   def perform(tool_context, appointment_id: nil, resource_id: nil, service_id: nil, starts_at: nil, ends_at: nil, duration_min: nil,
-              appointment_type: nil, client_comment: nil, custom_attributes: nil)
+              appointment_type: nil, client_comment: nil, custom_attributes: nil, appointment_access_token: nil, patient_confirmed: false)
     appointment = operations(tool_context.state).update_current_appointment(
       appointment_id: appointment_id,
+      appointment_access_token: appointment_access_token,
+      patient_confirmed: patient_confirmed,
       resource_id: resource_id,
       service_id: service_id,
       starts_at: starts_at,

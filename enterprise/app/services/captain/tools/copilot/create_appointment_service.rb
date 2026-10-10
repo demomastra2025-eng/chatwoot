@@ -3,7 +3,8 @@ class Captain::Tools::Copilot::CreateAppointmentService < Captain::Tools::Copilo
     'create_appointment'
   end
 
-  description 'Create an appointment for the current conversation contact using a selected specialist and confirmed time details. ' \
+  description 'Create an appointment using a selected specialist and confirmed time details. ' \
+              'For a named relative or another patient, pass explicit patient details; the communication chat stays unchanged. ' \
               'For provider-backed appointments, pending_provider_confirmation is not a confirmed booking; do not tell the patient ' \
               'they are booked until provider_confirmed is true.'
   param :resource_id, type: :number, desc: 'Specialist resource ID', required: true
@@ -16,6 +17,11 @@ class Captain::Tools::Copilot::CreateAppointmentService < Captain::Tools::Copilo
         desc: 'Appointment type: primary, secondary, or other. Do not pass a specialty, service, or cabinet name.',
         required: false
   param :client_comment, type: :string, desc: 'Client comment', required: false
+  param :crm_deal_id, type: :number, desc: 'Optional verified existing deal ID for this communication contact', required: false
+  param :crm_pipeline_id, type: :number, desc: 'Optional pipeline ID when creating a deal according to its appointment settings', required: false
+  param :patient, type: :object, required: false,
+                  desc: 'Optional explicitly named patient: first_name and last_name required; middle_name, iin, birth_date (YYYY-MM-DD), ' \
+                        'gender and phone optional. Ask for missing details; do not copy the caller identity to another patient.'
   param :custom_attributes,
         type: :object,
         desc: 'Optional scheduling custom attributes object. For Medelement, pass the selected ' \
@@ -24,7 +30,7 @@ class Captain::Tools::Copilot::CreateAppointmentService < Captain::Tools::Copilo
         required: false
 
   def execute(resource_id:, starts_at:, ends_at: nil, duration_min: nil, service_id: nil, appointment_type: nil, client_comment: nil,
-              custom_attributes: nil)
+              custom_attributes: nil, patient: nil, crm_deal_id: nil, crm_pipeline_id: nil)
     operation = appointment_operations
     appointment = operation.create_appointment(
       resource_id: resource_id,
@@ -34,7 +40,10 @@ class Captain::Tools::Copilot::CreateAppointmentService < Captain::Tools::Copilo
       duration_min: duration_min,
       appointment_type: appointment_type,
       client_comment: client_comment,
-      custom_attributes: custom_attributes
+      custom_attributes: custom_attributes,
+      patient: patient,
+      crm_deal_id: crm_deal_id,
+      crm_pipeline_id: crm_pipeline_id
     )
     if patient_scope
       Captain::Tools::ProviderBookingOutcomeService.new(
