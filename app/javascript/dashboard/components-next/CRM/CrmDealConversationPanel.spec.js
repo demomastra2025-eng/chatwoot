@@ -200,6 +200,7 @@ describe('CrmDealConversationPanel', () => {
           {
             id: 501,
             contact_id: 42,
+            patient_contact_id: 84,
             resource_id: 7,
             starts_at: '2026-10-10T10:00:00.000Z',
             ends_at: '2026-10-10T10:30:00.000Z',
