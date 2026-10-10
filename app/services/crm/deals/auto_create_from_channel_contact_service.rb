@@ -52,6 +52,7 @@ class Crm::Deals::AutoCreateFromChannelContactService
 
   def create_when_no_active_deal(pipeline)
     return if existing_deal_for_pipeline?(pipeline)
+    return if superseded_message?(pipeline)
 
     stage = default_stage_for(pipeline)
     return if stage.blank?
@@ -88,6 +89,14 @@ class Crm::Deals::AutoCreateFromChannelContactService
            .joins(:deal_contacts, :stage)
            .where(pipeline_id: pipeline.id)
            .exists?(crm_deal_contacts: { contact_id: contact.id, primary: true }, crm_stages: { outcome: 'open' })
+  end
+
+  def superseded_message?(pipeline)
+    return false if message.blank?
+
+    account.crm_deals.joins(:deal_contacts).where(pipeline_id: pipeline.id)
+           .where(crm_deal_contacts: { contact_id: contact.id, primary: true })
+           .where('crm_deals.closed_at >= :event_at OR crm_deals.archived_at >= :event_at', event_at: message.created_at).exists?
   end
 
   def default_stage_for(pipeline)

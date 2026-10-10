@@ -47,6 +47,20 @@ RSpec.describe Crm::Deals::AutoCreateFromChannelContactService do
       expect(check(incoming).first).to be_present
     end
 
+    it 'does not undo a newer close through a previously unprocessed queued inbound event' do
+      pipeline = create(:crm_pipeline, account: account, auto_create_deal_on_channel_contact: true)
+      create(:crm_stage, account: account, pipeline: pipeline, default: true)
+      first = check(incoming).first
+      pending = incoming
+      first.update!(closed_at: pending.created_at + 1.second)
+
+      expect { check(pending) }.not_to change(Crm::Deal, :count)
+      expect(account.crm_events.where(event_type: 'channel_contact_checked', command_key: "auto_channel_contact:pipeline:#{pipeline.id}:message:#{pending.id}")).to exist
+      travel_to(first.closed_at + 1.second) do
+        expect(check(incoming).first).to be_present
+      end
+    end
+
     it 'does not let a deal in another or disabled pipeline block this enabled pipeline' do
       enabled = create(:crm_pipeline, account: account, auto_create_deal_on_channel_contact: true)
       create(:crm_stage, account: account, pipeline: enabled, default: true)
