@@ -131,8 +131,17 @@ const loadReport = async (range = {}) => {
 
 const applyRange = range => loadReport(range);
 
-watch(accountId, () => { report.value = {}; loadReport(); }, { immediate: true });
-onBeforeUnmount(() => { generation += 1; });
+watch(
+  accountId,
+  () => {
+    report.value = {};
+    loadReport();
+  },
+  { immediate: true }
+);
+onBeforeUnmount(() => {
+  generation += 1;
+});
 </script>
 
 <template>

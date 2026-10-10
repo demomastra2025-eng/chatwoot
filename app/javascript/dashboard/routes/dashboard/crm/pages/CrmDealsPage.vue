@@ -5109,8 +5109,15 @@ watch(
                   </div>
                 </div>
 
-                <div v-if="selectedDeal && !pendingStageEntry" class="crm-deal-drawer-section">
-                  <CrmDealAppointmentsPanel :deal="selectedDeal" :can-manage="canManageDeals" @deal-updated="handleDealWaitingUpdated" />
+                <div
+                  v-if="selectedDeal && !pendingStageEntry"
+                  class="crm-deal-drawer-section"
+                >
+                  <CrmDealAppointmentsPanel
+                    :deal="selectedDeal"
+                    :can-manage="canManageDeals"
+                    @deal-updated="handleDealWaitingUpdated"
+                  />
                 </div>
 
                 <div
