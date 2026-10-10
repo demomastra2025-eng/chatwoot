@@ -61,7 +61,12 @@ class Captain::Assistant::AgentRunnerService
 
   def generate_response(message_history: [])
     started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    response = Outbound::PlaygroundDeliveryPolicy.with(@playground_session&.run_policy || Current.playground_run_policy) do
+    policy = if @playground_session
+               Outbound::PlaygroundDeliveryPolicy.for_run(@playground_session.run_policy)
+             else
+               Outbound::PlaygroundDeliveryPolicy.policy_for(conversation: @conversation)
+             end
+    response = Outbound::PlaygroundDeliveryPolicy.with(policy) do
       generate_response_in_runtime_cache(message_history)
     end
     add_playground_latency(response, started_at)

@@ -26,6 +26,13 @@ class Confirmations::ResolveService
   # rubocop:enable Metrics/ParameterLists
 
   def perform
+    policy = Outbound::PlaygroundDeliveryPolicy.for_execution(confirmation_request)
+    Outbound::PlaygroundDeliveryPolicy.with(policy) { perform_with_playground_context }
+  end
+
+  private
+
+  def perform_with_playground_context
     validate_input!
 
     resolved_request, expired, enqueue_claimed = scoped_request.with_lock do
@@ -38,8 +45,6 @@ class Confirmations::ResolveService
     enqueue_provider_command_resolution(resolved_request) if enqueue_claimed
     resolved_request
   end
-
-  private
 
   attr_reader :account, :confirmation_request, :decision, :source, :actor, :message, :confidence, :metadata
 

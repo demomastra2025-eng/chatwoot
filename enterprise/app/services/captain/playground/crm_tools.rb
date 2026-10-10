@@ -25,35 +25,6 @@ module Captain::Playground::CrmTools
     { deals: records.map { |record| deal_payload(record)[:deal] }, total_count: records.size, simulated: true }
   end
 
-  def deal_stages
-    pipeline_id = @args['pipeline_id'] || (@args['deal_id'] && deal!(@args['deal_id'])['pipeline_id']) || @data['pipelines'].first['id']
-    record!('pipelines', pipeline_id)
-    { stages: @data['stages'].select { |stage| stage['pipeline_id'].to_s == pipeline_id.to_s }.deep_dup, simulated: true }
-  end
-
-  def selected_pipeline_and_stage(record = nil)
-    pipeline = if @args['pipeline_id']
-                 record!('pipelines', @args['pipeline_id'])
-               elsif @args['pipeline_code']
-                 @data['pipelines'].find { |item| item['code'] == @args['pipeline_code'] }
-               else
-                 record ? record!('pipelines', record['pipeline_id']) : @data['pipelines'].first
-               end
-    raise ArgumentError, 'Pipeline is not available' unless pipeline
-
-    stages = @data['stages'].select { |stage| stage['pipeline_id'] == pipeline['id'] }
-    stage = if @args['stage_id']
-              stages.find { |item| item['id'].to_s == @args['stage_id'].to_s }
-            elsif @args['stage_name'] || @args['stage_code']
-              stages.find { |item| item['name'] == @args['stage_name'] || item['code'] == @args['stage_code'] }
-            else
-              stages.find { |item| item['id'] == record&.fetch('stage_id', nil) } || stages.first
-            end
-    raise ArgumentError, 'Stage is not available for this pipeline' unless stage
-
-    [pipeline, stage]
-  end
-
   def deal_attributes(record = nil)
     attrs = @args.slice(*Captain::Playground::Scenario::DEAL_FIELDS).except('custom_attributes')
     raise ArgumentError, 'Deal title is required' if attrs.key?('title') && attrs['title'].blank?
@@ -86,27 +57,15 @@ module Captain::Playground::CrmTools
 
   def update_deal
     record = deal!(@args['deal_id'])
+    previous = record!('stages', record['stage_id']).deep_dup
     record.merge!(deal_attributes(record))
-    deal_payload(record, action: @tool_id)
+    result = deal_payload(record, action: @tool_id)
+    return result unless @tool_id == 'transition_deal_stage'
+
+    result.merge(previous_stage: previous, current_stage: record!('stages', record['stage_id']).deep_dup)
   end
 
-  def create_task
-    raise ArgumentError, 'Task title is required' if @args['title'].blank?
-    deal = deal!(@args['deal_id']) if @args['deal_id']
-    parse_time(@args['due_at']) if @args['due_at']
-    record = @args.slice('title', 'description', 'due_at', 'priority', 'activity_type').merge(
-      'id' => @scenario.next_id!, 'contact_id' => caller['id'], 'deal_id' => deal&.fetch('id', nil), 'status_id' => 1, 'status_name' => 'Открыта',
-      'originating_conversation_id' => @data['conversation']['id'], 'custom_attributes' => json_object(@args['custom_attributes'])
-    )
-    @data['tasks'] << record
-    { action: 'create_task', task: record.deep_dup, task_id: record['id'], simulated: true }
-  end
-
-  def update_task
-    record = record!('tasks', @args.fetch('task_id'))
-    raise ArgumentError, 'Record is not available' unless record['contact_id'] == caller['id']
-    parse_time(@args['due_at']) if @args['due_at']
-    record.merge!(@args.slice('title', 'description', 'due_at', 'priority', 'status_id', 'status_name', 'outcome'))
-    { action: @tool_id, task: record.deep_dup, simulated: true }
+  def get_deal
+    { deal: deal!(@args.fetch('deal_id')).deep_dup, simulated: true }
   end
 end

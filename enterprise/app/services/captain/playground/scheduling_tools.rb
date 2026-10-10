@@ -107,38 +107,13 @@ module Captain::Playground::SchedulingTools
     appointment = {
       'id' => @scenario.next_id!, 'resource_id' => resource['id'], 'service_id' => @args['service_id'],
       'contact_id' => caller['id'], 'patient_contact_id' => patient['id'], 'conversation_id' => @data['conversation']['id'],
-      'client_name' => patient['name'], 'client_phone' => patient['phone_number'], 'client_identifier' => patient['identifier'],
+      'client_name' => patient['name'], 'client_phone' => patient_phone(patient), 'client_identifier' => patient['identifier'],
       'client_birth_date' => patient['custom_attributes'].to_h['birth_date'], 'starts_at' => start.iso8601, 'ends_at' => ending.iso8601,
       'duration_min' => ((ending - start) / 60).to_i, 'status' => 'scheduled', 'appointment_type' => appointment_type,
       'client_comment' => @args['client_comment'], 'custom_attributes' => json_object(@args['custom_attributes'])
     }.compact
     @data['appointments'] << appointment
     appointment_result(appointment, action: 'create_appointment')
-  end
-
-  def resolve_patient
-    return caller unless @args['patient'].present?
-
-    patient = @args['patient'].to_h
-    raise ArgumentError, 'Patient first and last names are required' if patient['first_name'].blank? || patient['last_name'].blank?
-    iin = normalized_iin(patient['iin']) if patient['iin'].present?
-    birth_date = Date.iso8601(patient['birth_date']).iso8601 if patient['birth_date'].present?
-    name = [patient['last_name'], patient['first_name'], patient['middle_name']].compact_blank.join(' ')
-    existing = @data['contacts'].select { |contact| iin ? contact['identifier'] == iin : contact['name'] == name && contact.dig('custom_attributes', 'birth_date') == birth_date }
-    raise ArgumentError, 'Patient identity is ambiguous' if existing.size > 1
-    return existing.first if existing.size == 1
-
-    record = { 'id' => @scenario.next_id!, 'name' => name, 'identifier' => iin, 'phone_number' => patient['phone'],
-               'custom_attributes' => { 'birth_date' => birth_date, 'iin' => iin }.compact, 'additional_attributes' => {} }.compact
-    @data['contacts'] << record
-    record
-  end
-
-  def normalized_iin(value)
-    normalized = Scheduling::IinValidator.normalize(value)
-    raise ArgumentError, 'Invalid IIN' unless Scheduling::IinValidator.valid?(normalized)
-
-    normalized
   end
 
   def appointment_type

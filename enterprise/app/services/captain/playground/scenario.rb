@@ -19,7 +19,8 @@ class Captain::Playground::Scenario
                email: 'aigul@example.test', contact_type: 'customer', custom_attributes: { birth_date: '1990-01-01', iin: '900101400013' },
                additional_attributes: {} }
     son = { id: 102, name: 'Тимур Садыков', phone_number: '+77010000002', identifier: '150101500011',
-            contact_type: 'customer', custom_attributes: { birth_date: '2015-01-01', iin: '150101500011' }, additional_attributes: {} }
+            contact_type: 'customer', custom_attributes: { birth_date: '2015-01-01', iin: '150101500011', medelement_patient_card: true,
+                                                         medelement_first_name: 'Тимур', medelement_last_name: 'Садыков' }, additional_attributes: {} }
     {
       preset: 'mother_and_son', timezone: zone.name, caller_contact_id: 101,
       contacts: [mother, son],
@@ -142,6 +143,12 @@ class Captain::Playground::Scenario
 
   def refresh_patient_snapshots!
     data['contacts'].each { |record| record['custom_attributes']['iin'] = record['identifier'] if record['identifier'].present? }
+    patient = data['contacts'].find { |record| record['id'] == 102 }
+    if patient
+      first, last, *middle = patient['name'].to_s.squish.split(' ')
+      patient['custom_attributes'].merge!('medelement_first_name' => first, 'medelement_last_name' => last,
+                                         'medelement_middle_name' => middle.join(' ').presence)
+    end
     data['deals'].each do |record|
       stage = data['stages'].find { |item| item['id'] == record['stage_id'] && item['pipeline_id'] == record['pipeline_id'] }
       raise ArgumentError, 'Stage is not available for this pipeline' unless stage
@@ -152,7 +159,9 @@ class Captain::Playground::Scenario
       patient = data['contacts'].find { |item| item['id'] == record['patient_contact_id'] }
       next unless patient
 
-      record.merge!('client_name' => patient['name'], 'client_phone' => patient['phone_number'], 'client_identifier' => patient['identifier'])
+      phone = patient['phone_number'].presence || Array(patient.dig('custom_attributes', 'secondary_phones')).first
+      record.merge!('client_name' => patient['name'], 'client_phone' => phone, 'client_identifier' => patient['identifier'],
+                    'client_birth_date' => patient.dig('custom_attributes', 'birth_date'))
     end
   end
 

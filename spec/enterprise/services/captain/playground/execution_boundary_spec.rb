@@ -85,5 +85,73 @@ RSpec.describe Captain::Playground::ExecutionBoundary do
         expect(result).to include(success: false, data: include(delivered: false))
       end
     end
+
+    it 'restores the dedicated caller policy in a later ordinary runner without changing the tool set' do
+      session.with_lock(inbox_id: inbox.id) do |live|
+        runner = Captain::Assistant::AgentRunnerService.new(assistant: assistant, conversation: live.conversation)
+        allow(runner).to receive(:generate_response_in_runtime_cache) do
+          expect(Current.playground_run_policy).to eq(live.run_policy)
+          { 'response' => 'Caller reply' }
+        end
+
+        expect(runner.generate_response['response']).to eq('Caller reply')
+        expect(Current.playground_run_policy).to be_nil
+      end
+    end
+
+    it 'retains invalid caller policy and leaves an unrelated ordinary runner without Playground context' do
+      session.with_lock(inbox_id: inbox.id) do |live|
+        live.conversation.update_columns( # rubocop:disable Rails/SkipsModelValidations
+          additional_attributes: live.conversation.additional_attributes.merge('captain_playground' => false)
+        )
+        runner = Captain::Assistant::AgentRunnerService.new(assistant: assistant, conversation: live.conversation)
+        allow(runner).to receive(:generate_response_in_runtime_cache) do
+          expect(Current.playground_run_policy).to be(false)
+          { 'response' => 'Blocked delivery' }
+        end
+        runner.generate_response
+      end
+      ordinary = create(:conversation, account: account, inbox: inbox)
+      runner = Captain::Assistant::AgentRunnerService.new(assistant: assistant, conversation: ordinary)
+      allow(runner).to receive(:generate_response_in_runtime_cache) do
+        expect(Current.playground_run_policy).to be_nil
+        { 'response' => 'Ordinary reply' }
+      end
+
+      expect(runner.generate_response['response']).to eq('Ordinary reply')
+    end
+
+    it 'keeps a conflicting inherited run blocked in an explicit Live runner and restores the outer policy' do
+      session.with_lock(inbox_id: inbox.id) do |live|
+        runner = Captain::Assistant::AgentRunnerService.new(assistant: assistant, source: 'playground', playground_session: live)
+        inherited = Outbound::PlaygroundDeliveryPolicy.issue(Outbound::PlaygroundDeliveryPolicy.verified(live.run_policy).merge(run_id: SecureRandom.uuid))
+        allow(runner).to receive(:generate_response_in_runtime_cache) do
+          expect(Current.playground_run_policy).to eq({})
+          { 'response' => 'Nested reply' }
+        end
+        Outbound::PlaygroundDeliveryPolicy.with(inherited) do
+          expect(runner.generate_response['response']).to eq('Nested reply')
+          expect(Current.playground_run_policy).to eq(inherited)
+        end
+      end
+    end
+
+    it 'keeps invalid inherited run context blocked while executing a Live business mutation' do
+      session.with_lock(inbox_id: inbox.id) do |live|
+        context = tool_context(live)
+        tool = Captain::Tools::UpdateContactTool.new(assistant)
+        [false, {}, { 'token' => 'invalid' }].each do |inherited|
+          Outbound::PlaygroundDeliveryPolicy.with(inherited) do
+            described_class.execute(tool, context, { name: 'Nested caller' }) do
+              expect(Current.playground_run_policy).to eq({})
+              descendant = EventDispatcherJob.new('nested mutation', Time.current, {})
+              descendant.send(:capture_playground_run_policy)
+              expect(descendant.serialize['captain_playground']).to eq({})
+            end
+            expect(Current.playground_run_policy).to eq(inherited)
+          end
+        end
+      end
+    end
   end
 end
