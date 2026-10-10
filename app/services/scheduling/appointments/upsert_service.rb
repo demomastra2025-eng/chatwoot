@@ -112,9 +112,15 @@ class Scheduling::Appointments::UpsertService
   end
 
   def confirm_attendance!
-    return unless params[:status].to_s == 'completed' && (actor.is_a?(User) || actor.is_a?(Captain::Assistant))
+    return unless params[:status].to_s == 'completed' && attendance_confirmation_actor?
 
     appointment.attendance_confirmed_at = Time.current
+  end
+
+  def attendance_confirmation_actor?
+    return account.users.exists?(id: actor.id) if actor.is_a?(User)
+
+    defined?(Captain::Assistant) && actor.is_a?(Captain::Assistant) && actor.account_id == account.id
   end
 
   def prepare_provider_availability!
