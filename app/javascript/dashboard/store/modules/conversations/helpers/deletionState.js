@@ -22,6 +22,16 @@ export const deletionOutcome = operation => {
   return statuses.includes('deleted') ? 'partial' : 'failed';
 };
 
+export const latestDeletionOutcome = operations => {
+  const targets = new Map();
+  operations.forEach(operation => {
+    operation.targets.forEach(target => targets.set(String(target.id), target));
+  });
+  return targets.size
+    ? deletionOutcome({ targets: [...targets.values()] })
+    : null;
+};
+
 // The receipt contains only operation/target identities and states. Never store
 // conversation snapshots: a failed deletion must reload the current server row.
 export const validateDeletionOperation = operation => {

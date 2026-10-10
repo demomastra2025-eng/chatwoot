@@ -4,8 +4,10 @@ import types from '../../../mutation-types';
 import BulkActionsAPI from 'dashboard/api/bulkActions';
 import ConversationAPI from 'dashboard/api/inbox/conversation';
 import CommunicationThreadAPI from 'dashboard/api/inbox/communicationThread';
+import * as VoiceHelper from 'dashboard/helper/voice';
 import {
   deletionOutcome,
+  latestDeletionOutcome,
   deletionReceipt,
   deletionStorageKey,
   deletionEventStorageKey,
@@ -556,6 +558,201 @@ describe('durable conversation deletion', () => {
         message => message.conversation_id === 100
       )
     ).toBe(false);
+  });
+
+  it.each(['addMessage', 'updateMessage'])(
+    'rejects a compacted deleted child from a native %s event and direct mutation',
+    async action => {
+      const context = contextFor();
+      actions.initializeConversationDeletions(context);
+      context.state.deletionOperations = [
+        {
+          ...operation(['deleted']),
+          targets: [{ id: 100, status: 'deleted' }],
+        },
+      ];
+      context.state.allConversations = [thread([13])];
+      vi.spyOn(CommunicationThreadAPI, 'show').mockResolvedValue({
+        data: thread([13]),
+      });
+      const message = {
+        id: 200,
+        conversation_id: 12,
+        communication_thread_id: 7,
+        inbox_id: 12,
+        message_type: 0,
+        attachments: [{ id: 301 }],
+      };
+      await actions[action](context, message);
+      context.commit(types.ADD_MESSAGE_TO_CHAT, { chatId: 7, message });
+      expect(context.state.allConversations[0].conversation_ids).toEqual([13]);
+      expect(context.state.allConversations[0].messages).toEqual(
+        thread([13]).messages
+      );
+      expect(context.commit).not.toHaveBeenCalledWith(
+        types.ADD_MESSAGE,
+        message
+      );
+      expect(context.commit).not.toHaveBeenCalledWith(
+        types.ADD_CONVERSATION_ATTACHMENTS,
+        message
+      );
+      expect(CommunicationThreadAPI.show).toHaveBeenCalledWith(
+        7,
+        { accountId: '74', baseUrl: '/api/v1/accounts/74' },
+        { timeout: 5000 }
+      );
+    }
+  );
+
+  it.each(['addMessage', 'updateMessage'])(
+    'admits a genuine new child from a native %s event after canonical verification',
+    async action => {
+      const context = contextFor();
+      actions.initializeConversationDeletions(context);
+      context.state.deletionOperations = [operation(['deleted'])];
+      context.state.allConversations = [thread([13])];
+      vi.spyOn(CommunicationThreadAPI, 'show').mockResolvedValue({
+        data: thread([13, 14]),
+      });
+      const message = {
+        id: 200,
+        conversation_id: 14,
+        communication_thread_id: 7,
+        inbox_id: 14,
+        message_type: 0,
+      };
+      await actions[action](context, message);
+      const chat = context.state.allConversations[0];
+      expect(chat.conversation_ids).toEqual([13, 14]);
+      expect(chat.messages).toEqual([...thread([13]).messages, message]);
+      expect(CommunicationThreadAPI.show).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it.each(['addMessage', 'updateMessage'])(
+    'keeps the known-child native %s fast path without another request',
+    async action => {
+      const context = contextFor();
+      actions.initializeConversationDeletions(context);
+      context.state.deletionOperations = [operation(['deleted'])];
+      context.state.allConversations = [thread([13])];
+      vi.spyOn(CommunicationThreadAPI, 'show');
+      const message = {
+        id: 200,
+        conversation_id: 13,
+        communication_thread_id: 7,
+        inbox_id: 13,
+        message_type: 0,
+      };
+      await actions[action](context, message);
+      expect(context.state.allConversations[0].messages).toContainEqual(
+        message
+      );
+      expect(CommunicationThreadAPI.show).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each(['addMessage', 'updateMessage'])(
+    'drops a deferred native %s event and its side effects after an account/employee switch',
+    async action => {
+      const context = contextFor();
+      actions.initializeConversationDeletions(context);
+      context.state.deletionOperations = [operation(['deleted'])];
+      context.state.allConversations = [thread([13])];
+      let finish;
+      vi.spyOn(CommunicationThreadAPI, 'show').mockImplementation(
+        () =>
+          new Promise(resolve => {
+            finish = resolve;
+          })
+      );
+      vi.spyOn(VoiceHelper, 'handleVoiceCallCreated').mockImplementation(
+        () => {}
+      );
+      vi.spyOn(VoiceHelper, 'handleVoiceCallUpdated').mockImplementation(
+        () => {}
+      );
+      const message = {
+        id: 200,
+        conversation_id: 14,
+        communication_thread_id: 7,
+        inbox_id: 14,
+        message_type: 0,
+        attachments: [{ id: 301 }],
+      };
+      const pending = actions[action](context, message);
+      accountId = '75';
+      context.rootGetters.getCurrentUser = { id: 9 };
+      actions.initializeConversationDeletions(context);
+      context.state.allConversations = [thread([13])];
+      context.commit.mockClear();
+      finish({ data: thread([13, 14]) });
+      await pending;
+      expect(context.commit).not.toHaveBeenCalled();
+      expect(VoiceHelper.handleVoiceCallCreated).not.toHaveBeenCalled();
+      expect(VoiceHelper.handleVoiceCallUpdated).not.toHaveBeenCalled();
+      expect(context.state.allConversations[0].conversation_ids).toEqual([13]);
+    }
+  );
+
+  it('keeps the optimistic send and admits its genuine new channel from the server response without a thread ID', async () => {
+    const context = contextFor();
+    actions.initializeConversationDeletions(context);
+    context.state.deletionOperations = [operation(['deleted'])];
+    context.state.allConversations = [thread([13])];
+    const pendingMessage = {
+      id: 'echo-new-channel',
+      communication_thread_id: 7,
+      inbox_id: 14,
+      message_type: 1,
+      content: 'Hello',
+    };
+    const sentMessage = {
+      id: 200,
+      echo_id: pendingMessage.id,
+      conversation_id: 14,
+      inbox_id: 14,
+      message_type: 1,
+      content: 'Hello',
+    };
+    vi.spyOn(CommunicationThreadAPI, 'createMessage').mockResolvedValue({
+      data: sentMessage,
+    });
+    vi.spyOn(CommunicationThreadAPI, 'show').mockResolvedValue({
+      data: thread([13, 14]),
+    });
+    const pending = actions.sendMessageWithData(context, pendingMessage);
+    expect(context.state.allConversations[0].messages).toContainEqual({
+      ...pendingMessage,
+      status: 'progress',
+    });
+    await pending;
+    const chat = context.state.allConversations[0];
+    expect(chat.conversation_ids).toEqual([13, 14]);
+    expect(chat.messages).toContainEqual({ ...sentMessage, status: 'sent' });
+    expect(chat.messages.some(item => item.id === pendingMessage.id)).toBe(
+      false
+    );
+    expect(CommunicationThreadAPI.show).toHaveBeenCalledTimes(1);
+  });
+
+  it('resolves the old failure banner only after the same target succeeds without removing its deletion receipt', () => {
+    const failed = operation(['failed']);
+    const retry = { ...operation(['pending']), requestKey: 'retry' };
+    expect(latestDeletionOutcome([failed])).toBe('failed');
+    expect(latestDeletionOutcome([failed, retry])).toBe('pending');
+    const deleted = { ...retry, targets: [{ id: 12, status: 'deleted' }] };
+    expect(latestDeletionOutcome([failed, deleted])).toBe('deleted');
+    expect(failed.targets[0].status).toBe('failed');
+    expect(deleted.targets[0].status).toBe('deleted');
+  });
+
+  it('keeps another target failure visible after a successful retry of the first target', () => {
+    const failed = operation(['failed', 'failed']);
+    const deleted = { ...operation(['deleted']), requestKey: 'retry' };
+    expect(latestDeletionOutcome([failed, deleted])).toBe('partial');
+    expect(latestDeletionOutcome([failed])).toBe('failed');
   });
 
   it('applies a recipient deletion event without an actor operation and rejects stale HTTP/WS while allowing a new ID', async () => {
