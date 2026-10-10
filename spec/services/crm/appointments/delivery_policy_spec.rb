@@ -13,6 +13,13 @@ RSpec.describe Crm::Appointments::DeliveryPolicy do
     expect(deal.reload.appointment_automation_state).not_to have_key('playground_run_policy')
   end
 
+  it 'removes a persisted null policy on an ordinary mutation while preserving other automation state' do
+    deal.update!(appointment_automation_state: { 'playground_run_policy' => nil, 'last_evaluated_on' => '2026-10-10' })
+    described_class.stamp!(deal)
+
+    expect(deal.reload.appointment_automation_state).to eq('last_evaluated_on' => '2026-10-10')
+  end
+
   it 'stamps a trusted current policy on linked appointment mutations and omits it from public deal data' do
     policy = { 'token' => 'signed-or-tainted-token' }
     allow(described_class).to receive(:current).and_return(policy)
@@ -49,5 +56,19 @@ RSpec.describe Crm::Appointments::DeliveryPolicy do
     described_class.with(deal) { true }
 
     expect(helper).to have_received(:with).with(policy)
+  end
+
+  it 'keeps a persisted null causal stamp guarded during a newly scheduled day check' do
+    deal.update!(appointment_automation_state: { 'playground_run_policy' => nil })
+    helper = Class.new do
+      def self.with(_policy)
+        yield
+      end
+    end
+    stub_const('Outbound::PlaygroundDeliveryPolicy', helper)
+    allow(helper).to receive(:with).and_yield
+    described_class.with(deal) { true }
+
+    expect(helper).to have_received(:with).with({})
   end
 end
