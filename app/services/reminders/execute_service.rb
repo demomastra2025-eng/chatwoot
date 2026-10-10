@@ -18,14 +18,8 @@ class Reminders::ExecuteService
 
   def perform
     reload_reminder
-    return complete_dispatched_execution if dispatched_before_completion?
-    return reminder if execution_ineligible?
-    return reminder if playground_delivery_blocked?
-    return reminder if Reminders::MissedAutomationTouchPolicy.new(reminder: reminder).cancel_if_missed!
-    return reminder if appointment_provider_blocked?(:materialization)
-    return finish_execution if reminder.delivery_materialized?
 
-    execute_action
+    execute_current_reminder
   rescue *TRANSIENT_DATABASE_ERRORS => e
     release_claim_for_retry!(e)
     reminder
@@ -43,6 +37,17 @@ class Reminders::ExecuteService
   end
 
   private
+
+  def execute_current_reminder
+    return complete_dispatched_execution if dispatched_before_completion?
+    return reminder if execution_ineligible?
+    return reminder if playground_delivery_blocked?
+    return reminder if Reminders::MissedAutomationTouchPolicy.new(reminder: reminder).cancel_if_missed!
+    return reminder if appointment_provider_blocked?(:materialization)
+    return finish_execution if reminder.delivery_materialized?
+
+    execute_action
+  end
 
   def playground_delivery_blocked?
     policy = Outbound::PlaygroundDeliveryPolicy.policy_for(reminder: reminder)
