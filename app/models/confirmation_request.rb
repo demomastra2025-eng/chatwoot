@@ -133,13 +133,13 @@ class ConfirmationRequest < ApplicationRecord
     previous = metadata_in_database.to_h
     self.metadata = metadata.to_h.except(key)
     if previous.key?(key)
-      self.metadata[key] = previous[key]
+      metadata[key] = previous[key]
       return
     end
 
     policy = Outbound::PlaygroundDeliveryPolicy.for_execution(subject)
     policy = Outbound::PlaygroundDeliveryPolicy.policy_for(conversation: conversation, reminder: reminder) if policy.nil?
-    self.metadata[key] = policy.deep_dup unless policy.nil?
+    metadata[key] = policy.deep_dup unless policy.nil?
   end
 
   def associations_belong_to_account

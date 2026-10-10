@@ -33,6 +33,7 @@ module Captain::Playground::ConfirmationTools
     return if type.blank? && id.blank?
 
     raise ArgumentError, 'Confirmation subject ID is required' if id.blank?
+
     if type == 'Conversation'
       record = require_conversation!(id)
     else
@@ -70,6 +71,7 @@ module Captain::Playground::ConfirmationTools
 
     return { action: @tool_id, confirmation_request: record.deep_dup, simulated: true } if record['status'] == decision
     raise ArgumentError, 'Confirmation has already been resolved' unless record['status'] == 'pending'
+
     if record['expires_at'] && parse_time(record['expires_at']) <= Time.current
       record['status'] = 'expired'
       return Captain::ToolResult.failure(error: 'Confirmation request expired', retryable: false)

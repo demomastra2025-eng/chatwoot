@@ -30,9 +30,7 @@ module Captain::Playground::LiveSession
   def validate_live_source!
     marker = conversation.additional_attributes.to_h['captain_playground_source'].to_h
     contact_marker = conversation.contact.additional_attributes.to_h['captain_playground_source'].to_h
-    unless marker == source_marker && contact_marker == source_marker
-      raise ArgumentError, 'Live Playground requires its dedicated test caller source'
-    end
+    raise ArgumentError, 'Live Playground requires its dedicated test caller source' unless marker == source_marker && contact_marker == source_marker
     raise ArgumentError, 'Live caller inbox changed' unless conversation.inbox_id == data['inbox_id']
   end
 

@@ -5,7 +5,7 @@ module Captain::Playground::AppointmentQueryTools
     require_caller_filter!
     family_lookup = @args['client_identifier'].present? || bounded_name_lookup?
     records = filter_search_appointments(scoped_search_appointments(family_lookup))
-    limited = records.sort_by { |record| record['starts_at'] }.reverse.first(20)
+    limited = records.sort_by { |record| record['starts_at'] }.last(20).reverse
     { success: true, appointments: limited.map { |record| appointment_result(record, family_lookup: family_lookup).except(:success, :simulated) },
       has_more: records.size > 20, simulated: true }
   end
@@ -19,7 +19,11 @@ module Captain::Playground::AppointmentQueryTools
       records = records.select { |record| record['client_name'].to_s.squish.casecmp?(@args['client_name'].to_s.squish) }
     else
       records = records.select { |record| record['patient_contact_id'] == caller['id'] }
-      records = records.select { |record| record['client_name'].to_s.downcase.include?(@args['client_name'].downcase) } if @args['client_name'].present?
+      if @args['client_name'].present?
+        records = records.select do |record|
+          record['client_name'].to_s.downcase.include?(@args['client_name'].downcase)
+        end
+      end
     end
     records
   end
@@ -52,6 +56,7 @@ module Captain::Playground::AppointmentQueryTools
     records = @data['appointments'].select { |record| record['patient_contact_id'] == caller['id'] }
     status = @args['status'].presence || 'any'
     raise ArgumentError, 'Invalid status' unless %w[scheduled completed cancelled no_show any].include?(status)
+
     records = records.select { |record| appointment_status_matches?(record, status) }
     records = filter_patient_appointment_dates(records)
     offset = Integer(@args['offset'] || 0)

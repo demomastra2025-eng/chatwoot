@@ -6,8 +6,10 @@ module Captain::Playground::AppointmentAccessTools
     record = record!('appointments', id)
     return record if record['patient_contact_id'] == caller['id']
 
-    grant = @data['grants'].find { |item| item['token'] == @args['appointment_access_token'] && item['appointment_id'] == record['id'] &&
-                                        item['snapshot'] == appointment_snapshot(record) && item['expires_at'] > Time.current.to_i }
+    grant = @data['grants'].find do |item|
+      item['token'] == @args['appointment_access_token'] && item['appointment_id'] == record['id'] &&
+        item['snapshot'] == appointment_snapshot(record) && item['expires_at'] > Time.current.to_i
+    end
     raise ArgumentError, 'Record is not available' unless grant
     raise ArgumentError, 'Confirm the exact patient, appointment, and requested change first' if write && @args['patient_confirmed'] != true
 
@@ -30,7 +32,8 @@ module Captain::Playground::AppointmentAccessTools
     if family_lookup || record['patient_contact_id'] != caller['id']
       token = "trial_#{@session.id}_#{SecureRandom.hex(20)}"
       @data['grants'] = @data['grants'].select { |grant| grant['expires_at'] > Time.current.to_i }.last(20)
-      @data['grants'] << { 'token' => token, 'appointment_id' => record['id'], 'snapshot' => appointment_snapshot(record), 'expires_at' => 20.minutes.from_now.to_i }
+      @data['grants'] << { 'token' => token, 'appointment_id' => record['id'], 'snapshot' => appointment_snapshot(record),
+                           'expires_at' => 20.minutes.from_now.to_i }
       result.merge!(patient_name: record['client_name'], appointment_access_token: token)
     end
     result

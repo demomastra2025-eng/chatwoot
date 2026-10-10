@@ -31,6 +31,7 @@ class SendReplyJob < ApplicationJob
   def perform(message_id)
     message = Message.find(message_id)
     return unless message.outgoing?
+
     Outbound::PlaygroundDeliveryPolicy.ensure!(
       conversation: message.conversation,
       policy: Outbound::PlaygroundDeliveryPolicy.policy_for(conversation: message.conversation, message: message),

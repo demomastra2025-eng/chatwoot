@@ -26,6 +26,7 @@ module Captain::Playground::TaskTools
   def create_task
     raise ArgumentError, 'Task title is required' if @args['title'].blank?
     raise ArgumentError, 'No staff assignment exists in this Trial scenario' if @args['assignee_id'].present? || @args['team_id'].present?
+
     require_conversation!(@args['originating_conversation_id'])
     deal = deal!(@args['deal_id']) if @args['deal_id']
     record = { 'id' => @scenario.next_id!, 'contact_id' => caller['id'], 'deal_id' => deal&.fetch('id', nil),
@@ -39,6 +40,7 @@ module Captain::Playground::TaskTools
   def task_attributes(record = nil)
     attributes = @args.slice(*TASK_FIELDS)
     raise ArgumentError, 'Task title is required' if attributes.key?('title') && attributes['title'].blank?
+
     %w[activity_type priority outcome].each do |field|
       allowed = { 'activity_type' => Crm::Task::ACTIVITY_TYPES, 'priority' => Crm::Task::PRIORITIES, 'outcome' => Crm::Task::OUTCOMES }[field]
       raise ArgumentError, "Invalid task #{field}" if attributes[field].present? && !allowed.include?(attributes[field])
@@ -48,7 +50,10 @@ module Captain::Playground::TaskTools
     due = parse_time(times['due_at']) if times['due_at'].present?
     raise ArgumentError, 'Task end must not be before its start' if start && due && due < start
 
-    attributes['custom_attributes'] = record.to_h.fetch('custom_attributes', {}).merge(json_object(@args['custom_attributes'])) if @args['custom_attributes']
+    if @args['custom_attributes']
+      attributes['custom_attributes'] =
+        record.to_h.fetch('custom_attributes', {}).merge(json_object(@args['custom_attributes']))
+    end
     attributes
   end
 
@@ -94,7 +99,11 @@ module Captain::Playground::TaskTools
       records = records.select { |task| task[field].to_s == @args[field].to_s } if @args[field]
     end
     records = records.select { |task| task['status_name'].casecmp?(@args['status_name']) } if @args['status_name'].present?
-    records = records.select { |task| [task['title'], task['description']].join(' ').downcase.include?(@args['query'].downcase) } if @args['query'].present?
+    if @args['query'].present?
+      records = records.select do |task|
+        [task['title'], task['description']].join(' ').downcase.include?(@args['query'].downcase)
+      end
+    end
     { tasks: records.last(Integer(@args['limit'] || 20).clamp(1, 50)).deep_dup, total_count: records.size, simulated: true }
   end
 end

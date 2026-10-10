@@ -31,9 +31,8 @@ module Captain::Playground::SchedulingTools
     duration = duration_for(resource, service_id, inputs['duration_min'])
     start = parse_time(inputs.fetch('starts_at'))
     ending = @args['ends_at'] ? parse_time(@args['ends_at']) : start + duration.minutes
-    unless start >= Time.current && ending > start
-      raise ArgumentError, 'Appointment must start in the future and end after its start'
-    end
+    raise ArgumentError, 'Appointment must start in the future and end after its start' unless start >= Time.current && ending > start
+
     { resource: resource, service_id: service_id, start: start, ending: ending }
   end
 
