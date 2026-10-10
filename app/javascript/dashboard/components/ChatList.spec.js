@@ -337,7 +337,7 @@ describe('ChatList', () => {
 
   describe('deletion acknowledgement', () => {
     it.each(['failed', 'partial'])(
-      'keeps an older %s outcome visible when the most recent deletion succeeded',
+      'keeps an unresolved older %s outcome visible as partial when another target is deleted',
       async outcome => {
         mocks.deletionOperations = [
           {
@@ -363,14 +363,57 @@ describe('ChatList', () => {
         );
         expect(banner.exists()).toBe(true);
         expect(banner.text()).toContain(
-          wrapper.vm.$t(
-            outcome === 'partial'
-              ? 'CONVERSATION.DELETION_STATE.PARTIAL'
-              : 'CONVERSATION.FAIL_DELETE_CONVERSATION'
-          )
+          wrapper.vm.$t('CONVERSATION.DELETION_STATE.PARTIAL')
         );
       }
     );
+
+    it('clears the old failure banner after an explicit retry deletes the same target while retaining both receipts', async () => {
+      const failed = {
+        requestKey: 'failed',
+        operationId: 90,
+        targets: [{ id: 12, status: 'failed' }],
+      };
+      const retry = {
+        requestKey: 'retry',
+        operationId: 91,
+        targets: [{ id: 12, status: 'pending' }],
+      };
+      mocks.deletionOperations = [failed];
+      const { wrapper, store } = await mountChatList({ status: 'open' });
+      const banner = () =>
+        wrapper.find('[data-test="conversation-deletion-state"]');
+      expect(banner().text()).toContain(
+        wrapper.vm.$t('CONVERSATION.FAIL_DELETE_CONVERSATION')
+      );
+      store.dispatch.mockImplementation(type => {
+        if (type === 'deleteConversation') {
+          store.getters.getConversationDeletionOperations = [failed, retry];
+          return Promise.resolve({ outcome: 'pending' });
+        }
+        return Promise.resolve();
+      });
+      await wrapper.vm.$.provides.deleteConversation(12);
+      wrapper.findComponent(DialogStub).vm.$emit('confirm');
+      await flushPromises();
+      expect(store.dispatch).toHaveBeenCalledWith(
+        'deleteConversation',
+        expect.objectContaining({ conversationId: 12 })
+      );
+      expect(banner().text()).toContain(
+        wrapper.vm.$t('CONVERSATION.DELETION_STATE.PENDING_COUNT', { count: 1 })
+      );
+      const deleted = { ...retry, targets: [{ id: 12, status: 'deleted' }] };
+      store.getters.getConversationDeletionOperations = [failed, deleted];
+      await flushPromises();
+      expect(banner().exists()).toBe(false);
+      expect(store.getters.getConversationDeletionOperations).toEqual([
+        failed,
+        deleted,
+      ]);
+      expect(failed.targets[0].status).toBe('failed');
+      expect(deleted.targets[0].status).toBe('deleted');
+    });
 
     it('shows pending confirmation and checks status without sending DELETE', async () => {
       mocks.deletionOperations = [
