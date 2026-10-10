@@ -326,6 +326,13 @@ x-scheduling-appointment-schema: &scheduling_appointment_schema
     account_id: { type: integer }
     resource_id: { type: integer }
     contact_id: { type: integer, nullable: true }
+    patient_contact_id: { type: integer, nullable: true, description: Clinical patient; separate from the communication contact. }
+    patient_context_contact_id: { type: integer, nullable: true }
+    patient_contact_name: { type: string, nullable: true }
+    crm_deal_id: { type: integer, nullable: true }
+    attendance_confirmed_at: { type: string, format: date-time, nullable: true }
+    actual_attended: { type: boolean }
+    provider_command_receipt: { type: object, additionalProperties: true, description: Current provider operation receipt; queued and failed operations must not be reported as confirmed. }
     service_id: { type: integer, nullable: true }
     company_id: { type: integer, nullable: true }
     conversation_id: { type: integer, nullable: true }
@@ -1494,6 +1501,20 @@ x-scheduling-expense-schema: &scheduling_expense_schema
         name: resource_ids
         schema: { type: string }
       - in: query
+        name: contact_ids
+        schema: { type: string }
+        description: Comma-separated communication contact IDs.
+      - in: query
+        name: patient_contact_ids
+        schema: { type: string }
+        description: Comma-separated clinical patient IDs; legacy appointments fall back to contact_id.
+      - in: query
+        name: conversation_ids
+        schema: { type: string }
+      - in: query
+        name: conversation_display_ids
+        schema: { type: string }
+      - in: query
         name: status
         schema: { type: string }
       - in: query
@@ -1528,7 +1549,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     tags: [Scheduling]
     operationId: create-scheduling-appointment
     summary: Create a scheduling appointment
-    description: Supports true idempotency via `idempotency_key`. Replaying the same key returns the existing appointment with HTTP 200.
+    description: Supports true idempotency via `idempotency_key`. Replaying the same key returns the existing appointment with HTTP 200. A selected clinical patient is separate from the communication contact. CRM selection is required only when active candidates are ambiguous; an explicit new-deal choice uses crm_deal_selection=create and crm_pipeline_id. The complete manual interval must be free and confirmed by the provider availability policy.
     security:
       - userApiKey: []
     requestBody:
@@ -1537,20 +1558,29 @@ x-scheduling-expense-schema: &scheduling_expense_schema
         application/json:
           schema:
             type: object
-            required: [resource_id, starts_at, ends_at, client_name]
+            required: [resource_id, starts_at]
             properties:
               resource_id: { type: integer }
               contact_id: { type: integer }
+              patient_contact_id: { type: integer }
+              crm_deal_id: { type: integer }
+              crm_pipeline_id: { type: integer }
+              crm_deal_selection: { type: string, enum: [create] }
               service_id: { type: integer }
+              service_ids: { type: array, items: { type: integer } }
               company_id: { type: integer }
               conversation_id: { type: integer }
+              conversation_display_id: { type: integer }
               created_by_id: { type: integer }
               starts_at: { type: string, format: date-time }
               ends_at: { type: string, format: date-time }
-              duration_min: { type: integer }
+              duration_min: { type: integer, minimum: 5, maximum: 1440, description: Optional manual duration; ends_at or the service duration supplies the alternative end time. }
               status: { type: string }
               appointment_type: { type: string }
               client_name: { type: string }
+              client_first_name: { type: string }
+              client_last_name: { type: string }
+              client_middle_name: { type: string }
               client_phone: { type: string }
               client_identifier: { type: string, description: Validates checksum when it looks like a 12-digit IIN }
               client_birth_date: { type: string, format: date }
@@ -1638,6 +1668,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     tags: [Scheduling]
     operationId: update-scheduling-appointment
     summary: Update a scheduling appointment
+    description: Retains the existing CRM link when rescheduling. The entire requested interval must be free. Imported provider appointments use their existing provider command operations rather than direct local rewriting.
     security:
       - userApiKey: []
     requestBody:
@@ -1649,16 +1680,20 @@ x-scheduling-expense-schema: &scheduling_expense_schema
             properties:
               resource_id: { type: integer }
               contact_id: { type: integer }
+              patient_contact_id: { type: integer }
               service_id: { type: integer }
               company_id: { type: integer }
               conversation_id: { type: integer }
               created_by_id: { type: integer }
               starts_at: { type: string, format: date-time }
               ends_at: { type: string, format: date-time }
-              duration_min: { type: integer }
+              duration_min: { type: integer, minimum: 5, maximum: 1440 }
               status: { type: string }
               appointment_type: { type: string }
               client_name: { type: string }
+              client_first_name: { type: string }
+              client_last_name: { type: string }
+              client_middle_name: { type: string }
               client_phone: { type: string }
               client_identifier: { type: string }
               client_birth_date: { type: string, format: date }
@@ -2965,6 +3000,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
                 payload:
                   type: object
                   properties:
+                    appointment_conversion: { $ref: '#/components/schemas/lead_appointment_conversion' }
                     referrals:
                       type: object
                       description: Event totals, linked unique contacts, ad attribution totals, and capped attribution breakdown with omitted-event count.
@@ -3261,7 +3297,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     operationId: create-crm-pipeline
     summary: Create a CRM pipeline
     security: [{ userApiKey: [] }]
-    requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { name: { type: string }, code: { type: string }, position: { type: integer }, active: { type: boolean }, default: { type: boolean }, auto_create_deal_on_channel_contact: { type: boolean }, restrict_stage_skipping: { type: boolean }, restrict_backward_move: { type: boolean }, allow_stage_rule_override: { type: boolean }, stages: { type: array, items: { type: object } } } } } } }
+    requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { name: { type: string }, code: { type: string }, position: { type: integer }, active: { type: boolean }, default: { type: boolean }, auto_create_deal_on_channel_contact: { type: boolean }, appointment_automation: { $ref: '#/components/schemas/crm_appointment_automation' }, restrict_stage_skipping: { type: boolean }, restrict_backward_move: { type: boolean }, allow_stage_rule_override: { type: boolean }, stages: { type: array, items: { type: object } } } } } } }
     responses: { '201': { description: Created, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_pipeline' } } } } } }, '422': { description: Invalid pipeline, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } } }
 /api/v1/accounts/{account_id}/crm/pipelines/{id}:
   parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
@@ -3276,7 +3312,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     operationId: update-crm-pipeline
     summary: Update a CRM pipeline
     security: [{ userApiKey: [] }]
-    requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { name: { type: string }, code: { type: string }, position: { type: integer }, active: { type: boolean }, default: { type: boolean }, auto_create_deal_on_channel_contact: { type: boolean }, restrict_stage_skipping: { type: boolean }, restrict_backward_move: { type: boolean }, allow_stage_rule_override: { type: boolean } } } } } }
+    requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { name: { type: string }, code: { type: string }, position: { type: integer }, active: { type: boolean }, default: { type: boolean }, auto_create_deal_on_channel_contact: { type: boolean }, appointment_automation: { $ref: '#/components/schemas/crm_appointment_automation' }, restrict_stage_skipping: { type: boolean }, restrict_backward_move: { type: boolean }, allow_stage_rule_override: { type: boolean } } } } } }
     responses: { '200': { description: Updated, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_pipeline' } } } } } }, '422': { description: Invalid update, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } } }
   delete:
     tags: [CRM]
@@ -3430,6 +3466,115 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     summary: Delete a CRM task outcome
     security: [{ userApiKey: [] }]
     responses: { '204': { description: Deleted }, '422': { description: Outcome cannot be deleted, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}
+
+/api/v1/accounts/{account_id}/crm/deals/appointment_options:
+  parameters: [{ $ref: '#/components/parameters/account_id' }]
+  get:
+    tags: [CRM]
+    operationId: get-crm-appointment-deal-options
+    summary: Resolve active deal choices for a communication contact
+    description: Candidates are scoped to the account and contact. A single candidate or an eligible source deal is automatic; multiple candidates require a choice. Clinical patient changes do not change the communication contact or the conversation.
+    security: [{ userApiKey: [] }]
+    parameters:
+      - { in: query, name: contact_id, schema: { type: integer } }
+      - { in: query, name: conversation_display_id, schema: { type: integer } }
+      - { in: query, name: source_deal_id, schema: { type: integer } }
+    responses:
+      '200':
+        description: Active candidates and available pipelines
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                payload:
+                  type: object
+                  properties:
+                    automatic_deal_id: { type: integer, nullable: true }
+                    requires_selection: { type: boolean }
+                    deals:
+                      type: array
+                      maxItems: 100
+                      items:
+                        type: object
+                        properties:
+                          id: { type: integer }
+                          title: { type: string }
+                          pipeline_id: { type: integer }
+                          pipeline_name: { type: string }
+                          cardinality: { type: string, enum: [request, appointment] }
+                    pipelines:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          id: { type: integer }
+                          name: { type: string }
+                          auto_create: { type: boolean }
+                          default: { type: boolean }
+      '403': { description: Caller lacks CRM deal visibility }
+      '404': { description: Account contact or conversation not found }
+      '422': { description: Conversation and contact do not match }
+
+/api/v1/accounts/{account_id}/crm/deals/{id}/appointments:
+  parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
+  get:
+    tags: [CRM]
+    operationId: get-crm-deal-appointments
+    summary: List appointments explicitly linked to a deal
+    security: [{ userApiKey: [] }]
+    responses:
+      '200':
+        description: Linked appointments and reporting timezone
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                payload: { type: array, items: *scheduling_appointment_schema }
+                meta: { type: object, properties: { timezone: { type: string } } }
+      '403': { description: Caller lacks access to the deal }
+      '404': { description: Deal not found }
+
+/api/v1/accounts/{account_id}/crm/deals/{id}/appointment_plan:
+  parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
+  patch:
+    tags: [CRM]
+    operationId: update-crm-deal-appointment-plan
+    summary: Set required visits and the selected target appointment
+    description: Accepts only appointments already linked to this deal. Omitting a plan preserves it; an empty array clears it. An ordinary new booking after cancellation does not infer a replacement.
+    security: [{ userApiKey: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [lock_version]
+            properties:
+              lock_version: { type: integer }
+              selected_appointment_id: { type: integer, nullable: true }
+              appointment_plan: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/crm_appointment_plan_item' } }
+    responses:
+      '200': { description: Updated deal, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_deal' } } } } } }
+      '403': { description: Caller lacks permission to update the deal }
+      '404': { description: Deal not found }
+      '409': { description: Stale lock version }
+      '422': { description: Invalid plan or unrelated appointment }
+
+/api/v1/accounts/{account_id}/crm/deals/{id}/resume_appointment_automation:
+  parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
+  post:
+    tags: [CRM]
+    operationId: resume-crm-deal-appointment-automation
+    summary: Resume a manually paused deal's appointment automation
+    security: [{ userApiKey: [] }]
+    requestBody: { required: true, content: { application/json: { schema: { type: object, required: [lock_version], properties: { lock_version: { type: integer } } } } } }
+    responses:
+      '200': { description: Resumed deal, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_deal' } } } } } }
+      '403': { description: Caller lacks permission to update the deal }
+      '404': { description: Deal not found }
+      '409': { description: Missing or stale lock version }
 
 /api/v1/accounts/{account_id}/crm/deals:
   parameters: [{ $ref: '#/components/parameters/account_id' }]
@@ -3966,7 +4111,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     tags: [Captain Assistants]
     operationId: test-captain-assistant-playground
     summary: Run one assistant playground request
-    description: Per-request model, temperature, and reasoning-effort overrides are validated against the existing model registry and are never persisted. The internal assistant playground is feature-gated and, when enabled, rejects these controls. Response latency is measured end-to-end; reasoning-token usage is returned only if reported by the provider.
+    description: External agents use server-owned Trial or Live sessions. Live requires an account administrator and uses real clinic operations with a synthetic caller; external delivery is disabled by default. Session and reset actions do not generate a message. Per-request model, temperature, and reasoning-effort overrides are validated against the model registry and never saved. The internal assistant playground is feature-gated and rejects these controls. Response latency is measured end-to-end; reasoning-token usage is returned only if reported by the provider.
     security: [{ userApiKey: [] }]
     requestBody:
       required: true

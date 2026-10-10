@@ -821,6 +821,9 @@
           "auto_create_deal_on_channel_contact": {
             "type": "boolean"
           },
+          "appointment_automation": {
+            "$ref": "#/components/schemas/crm_appointment_automation"
+          },
           "restrict_stage_skipping": {
             "type": "boolean"
           },
@@ -849,6 +852,357 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "crm_appointment_automation": {
+        "type": "object",
+        "description": "Prospective, per-pipeline configuration. Stage automation is disabled until explicitly enabled; historical appointment links and existing channel autodeal settings are retained.",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "default": false
+          },
+          "cardinality": {
+            "type": "string",
+            "enum": [
+              "request",
+              "appointment"
+            ],
+            "default": "request"
+          },
+          "auto_create_from_calendar": {
+            "type": "boolean",
+            "default": false
+          },
+          "auto_create_from_medelement": {
+            "type": "boolean",
+            "default": false
+          },
+          "manual_stage_change": {
+            "type": "string",
+            "enum": [
+              "continue",
+              "pause"
+            ],
+            "default": "continue"
+          },
+          "success_mode": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "any_attended",
+              "selected_attended",
+              "all_required_attended"
+            ],
+            "default": "manual"
+          },
+          "rules": {
+            "type": "array",
+            "maxItems": 50,
+            "description": "Evaluated in array order; the first matching rule wins. Closed deals are not automatically reopened.",
+            "items": {
+              "type": "object",
+              "required": [
+                "stage_id",
+                "scope",
+                "conditions"
+              ],
+              "properties": {
+                "stage_id": {
+                  "type": "integer"
+                },
+                "scope": {
+                  "type": "string",
+                  "enum": [
+                    "any",
+                    "all",
+                    "selected",
+                    "nearest"
+                  ]
+                },
+                "conditions": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "provider_confirmed",
+                      "patient_confirmed",
+                      "scheduled",
+                      "attended",
+                      "cancelled",
+                      "no_show",
+                      "today",
+                      "tomorrow",
+                      "past",
+                      "future"
+                    ]
+                  }
+                },
+                "closing_reasons": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "transition_reason": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "crm_appointment_plan_item": {
+        "type": "object",
+        "required": [
+          "label"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable plan item identifier; generated when omitted."
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "required": {
+            "type": "boolean",
+            "default": true
+          },
+          "appointment_id": {
+            "type": "integer",
+            "nullable": true,
+            "description": "An appointment linked to this deal; one appointment may fulfill only one plan item."
+          }
+        }
+      },
+      "lead_appointment_conversion": {
+        "type": "object",
+        "description": "First inbound communication contacts in the selected period; appointment outcomes observed until observed_at. A caller booking two patients is one lead and two appointments.",
+        "properties": {
+          "leads_count": {
+            "type": "integer"
+          },
+          "booked_leads_count": {
+            "type": "integer"
+          },
+          "attended_leads_count": {
+            "type": "integer"
+          },
+          "booking_conversion_percent": {
+            "type": "number"
+          },
+          "attendance_conversion_percent": {
+            "type": "number"
+          },
+          "repeat_contacts_count": {
+            "type": "integer"
+          },
+          "appointments_count": {
+            "type": "integer"
+          },
+          "provider_booked_appointments_count": {
+            "type": "integer"
+          },
+          "attended_appointments_count": {
+            "type": "integer"
+          },
+          "cancelled_or_no_show_appointments_count": {
+            "type": "integer"
+          },
+          "unknown_attendance_appointments_count": {
+            "type": "integer"
+          },
+          "appointments_without_contact_count": {
+            "type": "integer"
+          },
+          "deals_count": {
+            "type": "integer"
+          },
+          "won_deals_count": {
+            "type": "integer"
+          },
+          "attribution_breakdown": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "cohort": {
+            "type": "string",
+            "enum": [
+              "first_inbound_communication_contact"
+            ]
+          },
+          "outcomes": {
+            "type": "string",
+            "enum": [
+              "observed_to_now"
+            ]
+          },
+          "scheduling_enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "captain_assistant_playground_parameters": {
+        "type": "object",
+        "properties": {
+          "message_content": {
+            "type": "string",
+            "description": "Required for the default message action."
+          },
+          "playground_mode": {
+            "type": "string",
+            "enum": [
+              "trial",
+              "live"
+            ],
+            "default": "trial",
+            "description": "Live requires an account administrator and uses real clinic operations with a synthetic caller."
+          },
+          "playground_action": {
+            "type": "string",
+            "enum": [
+              "message",
+              "session",
+              "reset"
+            ],
+            "default": "message"
+          },
+          "playground_session_id": {
+            "type": "string",
+            "description": "Server-owned session identifier scoped to this account",
+            "user": null,
+            "assistant and mode.": null
+          },
+          "scenario": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Trial accepts synthetic business data; Live accepts only the synthetic caller profile."
+          },
+          "live_inbox_id": {
+            "type": "integer"
+          },
+          "external_delivery_enabled": {
+            "type": "boolean",
+            "default": false
+          },
+          "controlled_test_number": {
+            "type": "string",
+            "description": "Explicit controlled delivery target for Live mode."
+          },
+          "message_history": {
+            "type": "array",
+            "description": "External-agent sessions use server-owned history and ignore client history. Reserved for the enabled internal assistant playground.",
+            "items": {
+              "type": "object",
+              "required": [
+                "role",
+                "content"
+              ],
+              "properties": {
+                "role": {
+                  "type": "string"
+                },
+                "content": {
+                  "type": "string"
+                },
+                "agent_name": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "conversation_id": {
+            "type": "string",
+            "description": "Trial rejects real conversations; Live accepts only its own dedicated session conversation display ID."
+          },
+          "test_model": {
+            "type": "string",
+            "description": "Per-request selectable model override. It is validated against the assistant model registry and is not saved to the assistant."
+          },
+          "test_temperature": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Per-request temperature override; accepted only when the selected model supports temperature."
+          },
+          "test_thinking_effort": {
+            "type": "string",
+            "description": "Per-request reasoning effort override; validated against the selected model's supported capabilities."
+          }
+        }
+      },
+      "captain_playground_session": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "trial",
+              "live"
+            ]
+          },
+          "scenario": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "message_history": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "live_available": {
+            "type": "boolean"
+          },
+          "live_warning": {
+            "type": "string"
+          },
+          "conversation_id": {
+            "type": "integer",
+            "description": "Dedicated Live conversation display ID."
+          },
+          "inbox_id": {
+            "type": "integer"
+          },
+          "delivery_enabled": {
+            "type": "boolean"
+          },
+          "delivery_target": {
+            "type": "string"
+          },
+          "inboxes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "channel_type": {
+                  "type": "string"
+                }
+              }
+            }
           }
         }
       },
@@ -1119,6 +1473,22 @@
           },
           "lock_version": {
             "type": "integer"
+          },
+          "appointment_plan": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/crm_appointment_plan_item"
+            }
+          },
+          "selected_appointment_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "appointment_automation_state": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Public automation state; signed delivery policies are excluded."
           },
           "custom_attributes": {
             "type": "object",
@@ -7605,67 +7975,29 @@
       "captain_assistant_playground_request": {
         "type": "object",
         "required": [
-          "message_content"
+          "assistant"
         ],
         "properties": {
-          "message_content": {
-            "type": "string"
-          },
-          "message_history": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "required": [
-                "role",
-                "content"
-              ],
-              "properties": {
-                "role": {
-                  "type": "string"
-                },
-                "content": {
-                  "type": "string"
-                },
-                "agent_name": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "conversation_id": {
-            "type": "string",
-            "description": "Optional account-visible conversation used to provide runtime context."
-          },
-          "test_model": {
-            "type": "string",
-            "description": "Per-request selectable model override. It is validated against the assistant model registry and is not saved to the assistant."
-          },
-          "test_temperature": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1,
-            "description": "Per-request temperature override; accepted only when the selected model supports temperature."
-          },
-          "test_thinking_effort": {
-            "type": "string",
-            "enum": [
-              "none",
-              "low",
-              "medium",
-              "high"
-            ],
-            "description": "Per-request reasoning effort override; accepted only when supported by the selected model."
+          "assistant": {
+            "$ref": "#/components/schemas/captain_assistant_playground_parameters"
           }
         }
       },
       "captain_assistant_playground_response": {
         "type": "object",
-        "required": [
-          "response"
-        ],
         "properties": {
           "response": {
-            "type": "string"
+            "type": "string",
+            "nullable": true,
+            "description": "Present for a message action; session and reset actions return session state without a generated reply."
+          },
+          "playground": {
+            "$ref": "#/components/schemas/captain_playground_session"
+          },
+          "delivery": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Actual delivery result; a queued message is not confirmed delivery."
           },
           "agent_name": {
             "type": [

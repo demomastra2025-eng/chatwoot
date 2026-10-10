@@ -14,6 +14,16 @@ crm_stage:
   $ref: ./crm_account_apis.yml#/crm_stage
 crm_pipeline:
   $ref: ./crm_account_apis.yml#/crm_pipeline
+crm_appointment_automation:
+  $ref: ./crm_account_apis.yml#/crm_appointment_automation
+crm_appointment_plan_item:
+  $ref: ./crm_account_apis.yml#/crm_appointment_plan_item
+lead_appointment_conversion:
+  $ref: ./crm_account_apis.yml#/lead_appointment_conversion
+captain_assistant_playground_parameters:
+  $ref: ./crm_account_apis.yml#/captain_assistant_playground_parameters
+captain_playground_session:
+  $ref: ./crm_account_apis.yml#/captain_playground_session
 crm_task_status:
   $ref: ./crm_account_apis.yml#/crm_task_status
 crm_task_outcome:
