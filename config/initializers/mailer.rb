@@ -31,7 +31,7 @@ Rails.application.configure do
   config.action_mailer.smtp_settings = smtp_settings
 
   # Use sendmail if using postfix for email
-  config.action_mailer.delivery_method = :sendmail if ENV['SMTP_ADDRESS'].blank?
+  config.action_mailer.delivery_method = :sendmail if ENV['SMTP_ADDRESS'].blank? && !Rails.env.test?
 
   # You can use letter opener for your local development by setting the environment variable.
   # By default we keep previews on disk without auto-opening browser tabs, which is much less noisy
