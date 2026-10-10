@@ -54,11 +54,11 @@ RSpec.describe Concerns::Agentable do
       dummy_instance.agent
     end
 
-    it 'defaults missing temperature to 1.0' do
+    it 'leaves missing temperature unset so the provider uses its own default' do
       dummy_instance.temperature = nil
 
       expect(Captain::Runtime::Agent).to receive(:new).with(
-        hash_including(temperature: 1.0)
+        hash_including(temperature: nil)
       )
 
       dummy_instance.agent

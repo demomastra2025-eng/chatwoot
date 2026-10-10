@@ -69,8 +69,6 @@ class Captain::Assistant < ApplicationRecord
   CRM_DEAL_READ_COMPANION_TOOL_IDS = %w[get_deal search_deals].freeze
   CRM_DEAL_PIPELINE_AWARE_TOOL_IDS = %w[get_deal search_deals create_deal update_deal transition_deal_stage].freeze
   CRM_DEAL_WRITE_TOOL_IDS = %w[create_deal update_deal transition_deal_stage].freeze
-  APPOINTMENT_PROVIDER_STATUS_COMPANION_TOOL_IDS = %w[get_appointment_provider_status].freeze
-  APPOINTMENT_PROVIDER_MUTATION_TOOL_IDS = %w[create_appointment update_appointment cancel_appointment].freeze
   SCHEDULING_CONTEXT_TOOL_IDS = %w[
     get_appointment list_my_appointments search_appointments create_appointment update_appointment cancel_appointment
   ].freeze
@@ -381,7 +379,7 @@ class Captain::Assistant < ApplicationRecord
   has_many :copilot_threads, dependent: :destroy_async
   has_many :scenarios, class_name: 'Captain::Scenario', dependent: :destroy_async
 
-  store_accessor :config, :temperature, :feature_faq, :feature_memory,
+  store_accessor :config, :temperature, :thinking_effort, :feature_faq, :feature_memory,
                  :message_collapse_window_seconds, :history_message_limit,
                  :auto_reply_on_last_incoming, :use_audio_transcriptions,
                  :context_access, :tool_access, :model, :feature_image_understanding
@@ -556,11 +554,11 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def allowed_agent_tools
-    select_tools_by_ids(available_agent_tools, allowed_agent_tool_ids - APPOINTMENT_PROVIDER_STATUS_COMPANION_TOOL_IDS)
+    select_tools_by_ids(available_agent_tools, allowed_agent_tool_ids)
   end
 
   def direct_agent_tools
-    select_tools_by_ids(available_agent_tools, direct_agent_tool_ids - APPOINTMENT_PROVIDER_STATUS_COMPANION_TOOL_IDS)
+    select_tools_by_ids(available_agent_tools, direct_agent_tool_ids)
   end
 
   def prompt_runtime_agent_tools
@@ -1021,7 +1019,7 @@ class Captain::Assistant < ApplicationRecord
 
     config['context_access']['appointment'] = {
       'enabled' => true,
-      'field_ids' => %w[appointment.nearest appointment.last_past appointment.last_cancelled]
+      'field_ids' => %w[appointment.summary]
     }
   end
 
@@ -1391,8 +1389,6 @@ class Captain::Assistant < ApplicationRecord
     end
 
     expanded_tool_ids.concat(DOCUMENT_ATTACHMENT_COMPANION_TOOL_IDS) if normalized_tool_ids.intersect?(DOCUMENT_ATTACHMENT_AWARE_TOOL_IDS)
-    expanded_tool_ids.concat(APPOINTMENT_PROVIDER_STATUS_COMPANION_TOOL_IDS) if
-      normalized_tool_ids.intersect?(APPOINTMENT_PROVIDER_MUTATION_TOOL_IDS)
 
     expanded_tool_ids.uniq
   end

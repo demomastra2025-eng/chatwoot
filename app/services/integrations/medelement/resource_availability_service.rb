@@ -189,8 +189,9 @@ class Integrations::Medelement::ResourceAvailabilityService
   def unavailable_reason(error)
     return 'provider_response_invalid' if error.is_a?(Integrations::Medelement::Client::InvalidTimetableError)
     return 'provider_unavailable' if error.is_a?(Integrations::Medelement::Client::ApiError)
+    return 'provider_response_invalid' if error.is_a?(ArgumentError) || error.is_a?(KeyError) || error.is_a?(TypeError)
 
-    'provider_response_invalid'
+    'internal_failure'
   end
 
   def log_unavailable(error)

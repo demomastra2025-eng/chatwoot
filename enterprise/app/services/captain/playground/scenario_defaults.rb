@@ -9,7 +9,10 @@ module Captain::Playground::ScenarioDefaults
       preset: 'mother_and_son', timezone: zone.name, caller_contact_id: 101, contacts: [mother, son],
       conversation: { id: 201, display_id: 1, inbox_id: 401, contact_id: 101, status: 'open', priority: nil,
                       label_list: [], custom_attributes: {}, additional_attributes: {} },
-      appointments: [default_appointment(starts, son)], tasks: [], notes: [], messages: [], confirmations: [], grants: [], next_id: 1001
+      appointments: [default_appointment(starts, son)], tasks: [], notes: [], messages: [], confirmations: [], grants: [], custom_fields: [],
+      companies: [], touches: [], timelines: [], channel_templates: [], labels: [{ id: 951, title: 'priority' }],
+      staff: [{ id: 961, name: 'Сотрудник сценария', type: 'User' }], teams: [{ id: 971, name: 'Команда сценария' }], touch_plans: [],
+      knowledge_documents: [], knowledge_chunks: [], faq_responses: [], articles: [], categories: [], canned_responses: [], next_id: 1001
     }.merge(default_clinic(zone)).merge(default_deals).deep_stringify_keys
   end
 
@@ -38,7 +41,10 @@ module Captain::Playground::ScenarioDefaults
   def default_clinic(zone)
     {
       resources: [{ id: 701, name: 'Елена Иванова', timezone: zone.name, active: true, specialty: 'Педиатр', service_ids: [801] },
-                  { id: 702, name: 'Алексей Петров', timezone: zone.name, active: true, specialty: 'Терапевт', service_ids: [802] }],
+                  { id: 702, name: 'Алексей Петров', timezone: zone.name, active: true, specialty: 'Терапевт', service_ids: [802] }].map do |resource|
+        resource.merge(work_rules: (0..6).map { |weekday| { weekday: weekday, start_minute: 540, end_minute: 1080 } },
+                       break_rules: [], holidays: [], workday_overrides: [], time_offs: [])
+      end,
       services: [{ id: 801, name: 'Приём педиатра', duration_min: 30, amount: 10_000, active: true },
                  { id: 802, name: 'Приём терапевта', duration_min: 30, amount: 12_000, active: true }]
     }

@@ -181,7 +181,7 @@ RSpec.describe Llm::Models do
 
   describe '.reasoning_efforts_for' do
     let(:model) { 'vendor/reasoning-model' }
-    let(:config) { { 'provider' => 'openrouter', 'reasoning' => reasoning } }
+    let(:config) { { 'provider' => 'openrouter', 'supported_parameters' => ['reasoning'], 'reasoning' => reasoning } }
 
     before do
       allow(described_class).to receive(:supports_thinking?).with(model, account: nil).and_return(true)
@@ -192,12 +192,12 @@ RSpec.describe Llm::Models do
       let(:reasoning) { { 'supported_efforts' => %w[none low high xhigh], 'mandatory' => false } }
 
       it 'exposes only efforts implemented by the runtime' do
-        expect(described_class.reasoning_efforts_for(model)).to eq(%w[none low high])
+        expect(described_class.reasoning_efforts_for(model)).to eq(%w[none low high xhigh])
       end
 
       it 'does not offer disable for a mandatory reasoning model' do
         reasoning['mandatory'] = true
-        expect(described_class.reasoning_efforts_for(model)).to eq(%w[low high])
+        expect(described_class.reasoning_efforts_for(model)).to eq(%w[low high xhigh])
       end
     end
 
@@ -205,7 +205,7 @@ RSpec.describe Llm::Models do
       let(:reasoning) { { 'supported_efforts' => nil, 'mandatory' => false } }
 
       it 'accepts the explicitly unrestricted effort metadata' do
-        expect(described_class.reasoning_efforts_for(model)).to eq(%w[none low medium high])
+        expect(described_class.reasoning_efforts_for(model)).to eq(Llm::RuntimePolicy::THINKING_EFFORTS)
       end
     end
 
@@ -220,8 +220,8 @@ RSpec.describe Llm::Models do
     context 'with an older catalog' do
       let(:reasoning) { nil }
 
-      it 'keeps existing levels while withholding unverified disable support' do
-        expect(described_class.reasoning_efforts_for(model)).to eq(%w[low medium high])
+      it 'withholds all unverified effort controls' do
+        expect(described_class.reasoning_efforts_for(model)).to eq([])
       end
     end
   end
@@ -240,11 +240,11 @@ RSpec.describe Llm::Models do
 
     it 'uses the RubyLLM registry metadata for bundled models and fails closed when unknown' do
       allow(described_class).to receive(:model_config).with('registered/model', account: nil).and_return(nil)
-      allow(described_class).to receive(:registry_info_for).with('registered/model').and_return(
+      allow(RubyLLM.models).to receive(:find).with('registered/model').and_return(
         double(metadata: { temperature: true })
       )
       allow(described_class).to receive(:model_config).with('unknown/model', account: nil).and_return(nil)
-      allow(described_class).to receive(:registry_info_for).with('unknown/model').and_return(nil)
+      allow(RubyLLM.models).to receive(:find).with('unknown/model').and_return(nil)
 
       expect(described_class.supports_temperature?('registered/model')).to be(true)
       expect(described_class.supports_temperature?('unknown/model')).to be(false)

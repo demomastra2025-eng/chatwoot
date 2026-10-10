@@ -625,18 +625,18 @@ RSpec.describe Captain::Assistant, type: :model do
         'create_task',
         'list_task_custom_fields',
         'create_appointment',
-        'list_appointment_custom_fields',
-        'get_appointment_provider_status'
+        'list_appointment_custom_fields'
       )
       expect(assistant.prompt_runtime_agent_tools.pluck(:id)).to include('create_task', 'list_task_custom_fields')
+      expect(assistant.allowed_agent_tool_ids).not_to include('get_appointment_provider_status')
       expect(assistant.allowed_agent_tools.pluck(:id)).not_to include('get_appointment_provider_status')
       expect(assistant.prompt_runtime_agent_tools.pluck(:id)).not_to include('get_appointment_provider_status')
     end
 
-    it 'keeps saved provider-status references without offering the tool to patients' do
+    it 'keeps already saved provider-status references without offering the tool to patients' do
       account.enable_features!('scheduling')
       description = 'Use [Provider Status](tool://get_appointment_provider_status) when needed.'
-      assistant.update!(description: description)
+      assistant.update_column(:description, description)
 
       expect(assistant.reload.description).to eq(description)
       expect(assistant.prompt_runtime_agent_tools.pluck(:id)).not_to include('get_appointment_provider_status')

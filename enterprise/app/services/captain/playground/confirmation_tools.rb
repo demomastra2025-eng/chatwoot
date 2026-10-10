@@ -52,7 +52,7 @@ module Captain::Playground::ConfirmationTools
     type = Captain::Tools::Operations::ConfirmationOperations::SUBJECT_TYPES_BY_KIND[kind]
     raise ArgumentError, 'Unsupported confirmation subject kind' unless type
 
-    [type, kind == 'conversation' ? @data['conversation']['id'] : @context.state.dig(kind.to_sym, :id)]
+    [type, kind == 'conversation' ? @data['conversation']['id'] : @data['selection']["#{kind}_id"] || @context.state.dig(kind.to_sym, :id)]
   end
 
   def confirmation_details

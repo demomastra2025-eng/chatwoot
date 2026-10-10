@@ -94,8 +94,8 @@ class Captain::Conversation::ResponseCancellationService
   end
 
   def last_incoming_message_id
-    @last_incoming_message_id ||= Captain::Conversation::ControlService.messages_scope(@conversation)
-                                                                       .incoming.reorder(created_at: :desc, id: :desc).pick(:id)
+    @last_incoming_message_id ||= Captain::Conversation::ControlService.incoming_messages_scope(@conversation)
+                                                                       .reorder(created_at: :desc, id: :desc).pick(:id)
   end
 
   def cancellation_state

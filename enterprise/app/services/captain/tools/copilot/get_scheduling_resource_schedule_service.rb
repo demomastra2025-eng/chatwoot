@@ -1,4 +1,5 @@
 class Captain::Tools::Copilot::GetSchedulingResourceScheduleService < Captain::Tools::Copilot::BaseAccountTool
+  include Captain::Tools::Copilot::SchedulingQueryValidation
   MAX_RANGE_DAYS = Scheduling::RangeValidator::MAX_RANGE_DAYS
 
   def self.name
@@ -14,9 +15,9 @@ class Captain::Tools::Copilot::GetSchedulingResourceScheduleService < Captain::T
   param :include_time_offs, type: :boolean, desc: 'Whether to include time-off intervals', required: false
 
   def execute(resource_id:, from:, to:, include_breaks: true, include_holidays: true, include_time_offs: true)
-    range_from = parse_datetime(from, field_name: 'from', required: true)
-    range_to = parse_datetime(to, field_name: 'to', required: true)
-    validate_range!(range_from, range_to)
+    range_from = scheduling_datetime(from, field_name: 'from')
+    range_to = scheduling_datetime(to, field_name: 'to')
+    scheduling_range!(range_from, range_to)
 
     resource = find_resource!(resource_id)
     payload = Scheduling::ResourceScheduleService.new(
@@ -33,7 +34,7 @@ class Captain::Tools::Copilot::GetSchedulingResourceScheduleService < Captain::T
     payload[:provider_schedule_note] = note if note
     formatted_payload(payload)
   rescue StandardError => e
-    tool_failure(e)
+    scheduling_tool_failure(e)
   end
 
   def active?
@@ -59,11 +60,10 @@ class Captain::Tools::Copilot::GetSchedulingResourceScheduleService < Captain::T
 
   def find_resource!(resource_id)
     account.scheduling_resources.not_deleted_from_scheduling.find_by(id: resource_id).tap do |resource|
-      raise ActiveRecord::RecordNotFound, 'Specialist not found' if resource.blank?
+      if resource.blank?
+        raise Scheduling::Error.new(code: 'RESOURCE_NOT_FOUND', message: 'Specialist not found', status: :not_found,
+                                    details: { reason: 'unknown_resource' })
+      end
     end
-  end
-
-  def validate_range!(range_from, range_to)
-    Scheduling::RangeValidator.validate!(from: range_from, to: range_to, max_days: MAX_RANGE_DAYS)
   end
 end

@@ -6,6 +6,10 @@ RSpec.describe Llm::RuntimePolicy do
   let(:account) { create(:account) }
 
   describe '.thinking_options' do
+    before do
+      allow(Llm::Models).to receive(:reasoning_efforts_for).with('gpt-5.1', account: account).and_return(%w[none low medium high])
+      allow(Llm::Models).to receive(:reasoning_efforts_for).with('claude-sonnet-4.5', account: account).and_return(%w[low medium high])
+    end
     it 'returns nil when thinking is disabled' do
       expect(
         described_class.thinking_options(feature: :assistant, account: account, model: 'gpt-5.1')
@@ -20,12 +24,12 @@ RSpec.describe Llm::RuntimePolicy do
       ).to eq(effort: 'high')
     end
 
-    it 'adds a budget for anthropic models' do
+    it 'sends only the confirmed effort without inventing a provider token budget' do
       account.update!(captain_runtime: { 'assistant_thinking_effort' => 'medium' })
 
       expect(
         described_class.thinking_options(feature: :assistant, account: account, model: 'claude-sonnet-4.5')
-      ).to eq(effort: 'medium', budget: 4096)
+      ).to eq(effort: 'medium')
     end
 
     it 'explicitly disables provider reasoning only for a supported transient override' do

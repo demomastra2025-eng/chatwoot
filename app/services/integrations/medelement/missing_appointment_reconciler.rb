@@ -1,9 +1,10 @@
 class Integrations::Medelement::MissingAppointmentReconciler
   MISSING_CONFIRMATIONS_REQUIRED = 2
 
-  def initialize(appointment:, snapshot_version:)
+  def initialize(appointment:, snapshot_version:, provider_removal_confirmed: false)
     @appointment = appointment
     @snapshot_version = snapshot_version
+    @provider_removal_confirmed = provider_removal_confirmed
   end
 
   def perform
@@ -12,15 +13,24 @@ class Integrations::Medelement::MissingAppointmentReconciler
 
   private
 
-  attr_reader :appointment, :snapshot_version
+  attr_reader :appointment, :snapshot_version, :provider_removal_confirmed
 
   def snapshot_current?
     snapshot_version.present? && appointment.updated_at == snapshot_version
   end
 
   def reconcile!
+    if !provider_removal_confirmed &&
+       Integrations::Medelement::ProviderCommands::ReceptionReceiptVerificationService.unmaterialized_current_create?(appointment)
+      return :awaiting_provider_materialization
+    end
+
     attributes = missing_attributes
-    missing_confirmed?(attributes) ? tombstone!(attributes) : appointment.custom_attributes = attributes
+    if provider_removal_confirmed || missing_confirmed?(attributes)
+      tombstone!(attributes)
+    else
+      appointment.custom_attributes = attributes
+    end
     return unless appointment.changed?
 
     appointment.mark_medelement_provider_reconciled!
@@ -47,7 +57,7 @@ class Integrations::Medelement::MissingAppointmentReconciler
       'source' => 'medelement_missing_reconciliation',
       'previous_status' => appointment.status,
       'status' => 'cancelled',
-      'reason' => 'missing_from_two_authoritative_snapshots',
+      'reason' => provider_removal_confirmed ? 'provider_removed' : 'missing_from_two_authoritative_snapshots',
       'observed_at' => Time.current.iso8601
     }
     appointment.assign_attributes(

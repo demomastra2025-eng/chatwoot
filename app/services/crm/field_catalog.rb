@@ -1,10 +1,11 @@
 class Crm::FieldCatalog
   attr_reader :account, :context, :entity_kind
 
-  def initialize(account:, entity_kind:, context: nil)
+  def initialize(account:, entity_kind:, context: nil, definitions: nil)
     @account = account
     @entity_kind = entity_kind.to_s
     @context = context
+    @definitions = definitions&.select { |definition| applicable_to_context?(definition) }
   end
 
   def definitions

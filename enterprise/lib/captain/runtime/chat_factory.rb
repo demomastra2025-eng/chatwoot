@@ -28,17 +28,19 @@ class Captain::Runtime::ChatFactory
     private
 
     def chat_build_kwargs(agent:, context_wrapper:, llm_context:, runtime_headers:, runtime_params:, account: nil)
+      parameters = Llm::ModelParameters.for(agent.model, account: account).compile(
+        temperature: agent.temperature,
+        params: merged_params(agent, runtime_params),
+        thinking: thinking_options(agent, context_wrapper, account: account)
+      )
       {
         feature: :captain_agent,
         account: account,
         model: agent.model,
         options: {
           context: llm_context,
-          temperature: agent.temperature,
-          params: merged_params(agent, runtime_params),
-          headers: merged_headers(agent, runtime_headers),
-          thinking: thinking_options(agent, context_wrapper, account: account)
-        }
+          headers: merged_headers(agent, runtime_headers)
+        }.merge(parameters)
       }
     end
 
@@ -150,12 +152,21 @@ class Captain::Runtime::ChatFactory
     end
 
     def thinking_options(agent, context_wrapper, account: nil)
+      override = playground_thinking_effort(context_wrapper)
+      saved = context_wrapper.context.dig(:state, :assistant_config, 'thinking_effort') ||
+              context_wrapper.context.dig(:state, :assistant_config, :thinking_effort)
+      contract = Llm::ModelParameters.for(agent.model, account: account)
+      if override.present?
+        return contract.thinking(override) || raise(ArgumentError, 'The model does not support the requested reasoning effort.')
+      end
+      return contract.thinking(saved) if saved.present?
+
       Llm::RuntimePolicy.thinking_options(
         feature: :assistant,
         model: agent.model,
         account: account,
         preferences: context_wrapper.context.dig(:state, :captain_runtime),
-        effort_override: playground_thinking_effort(context_wrapper)
+        effort_override: nil
       )
     end
 

@@ -16,7 +16,7 @@ class RuntimeStateDrop < Liquid::Drop
     wrap(@state[:additional_attributes] || {})
   end
 
-  def before_method(method)
+  def liquid_method_missing(method)
     wrap(@state[method])
   end
 

@@ -29,14 +29,44 @@ module Captain::Playground::DealStageTools
     pipeline = selected_pipeline(record)
     raise ArgumentError, 'Pipeline is not available' unless pipeline
 
-    stages = @data['stages'].select { |stage| stage['pipeline_id'] == pipeline['id'] }
+    stages = @data['stages'].select { |stage| stage['pipeline_id'] == pipeline['id'] && stage['active'] != false }
     stage = selected_stage(stages, record)
     raise ArgumentError, 'Stage is not available for this pipeline' unless stage
-    if @args['closing_reasons'].present? || @args['transition_reason'].present?
-      raise ArgumentError, 'No transition reasons are configured in this Trial pipeline'
-    end
-
     [pipeline, stage]
+  end
+
+  def validated_stage_attributes(pipeline, stage, attributes, record)
+    pipeline_projection = native_snapshot(Crm::Pipeline, pipeline)
+    stages = @data['stages'].select { |item| item['pipeline_id'] == pipeline['id'] }.map do |item|
+      projection = native_snapshot(Crm::Stage, item.merge('outcome' => item['outcome'] || item['stage_type'] || 'open'))
+      load_snapshot_association(projection, :pipeline, pipeline_projection)
+      projection
+    end
+    scope = Captain::Playground::RecordSnapshots::SnapshotScope.new(stages)
+    pipeline_projection.define_singleton_method(:stages) { scope }
+    target_stage = stages.find { |item| item.id == stage['id'] }
+    deal = native_snapshot(Crm::Deal, record.to_h.merge(attributes).merge('stage_id' => record.to_h['stage_id'], 'primary_contact_id' => caller['id']))
+    service = Crm::Deals::TransitionService.new(account: @session.account, deal: deal, params: @args, actor: @session.user)
+    changing = record.to_h['stage_id'] != stage['id']
+    closing_reasons = service.send(:resolve_closing_reasons!, target_stage: target_stage,
+      current_reasons: record.to_h.fetch('closing_reasons', []), require_input: changing)
+    transition_reason = service.send(:resolve_transition_reason!, target_stage: target_stage, require_input: changing)
+    if changing
+      requirements = Array(stage['field_requirements']).map do |item|
+        definition = @data['custom_fields'].find { |field| field['entity_kind'] == 'deal' && field['key'] == item['field_key'] }
+        projection = Crm::StageFieldRequirement.new(item.slice('field_key', 'required', 'validation', 'role_exemptions'))
+        load_snapshot_association(projection, :field_definition, definition && Crm::FieldDefinition.new(definition.except('id')))
+        projection
+      end
+      inspector = Crm::RequiredFieldsInspector.new(account: @session.account, entity_kind: :deal, record: deal,
+        custom_attributes: deal.custom_attributes, context: 'deal_stage_transition', actor: @session.user, requirements: requirements)
+      inspector.instance_variable_set(:@catalog, field_catalog('deal', context: 'deal_stage_transition'))
+      policy = Crm::Deals::StageEntryPolicy.new(deal: deal, target_stage: target_stage, account: @session.account, actor: @session.user)
+      policy.define_singleton_method(:required_field_issues) { inspector.missing_field_details }
+      policy.enforce!
+    end
+    { 'closing_reasons' => closing_reasons, 'transition_reason' => transition_reason,
+      'closed_at' => target_stage.terminal_outcome? ? record.to_h['closed_at'] || Time.current.iso8601 : nil }
   end
 
   def selected_stage(stages, record)

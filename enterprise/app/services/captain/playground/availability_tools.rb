@@ -12,37 +12,52 @@ module Captain::Playground::AvailabilityTools
   def duration_for(resource, service_id, duration_min)
     service = service!(service_id, resource: resource) if service_id.present?
     duration = Integer(duration_min || service&.fetch('duration_min', nil) || 30)
-    raise ArgumentError, 'Duration must be between 5 and 240 minutes' unless duration.between?(5, 240)
+    unless duration.between?(Scheduling::Constants::MIN_DURATION_MINUTES, Scheduling::Constants::MAX_DURATION_MINUTES)
+      raise ArgumentError, 'Duration is outside the supported scheduling range'
+    end
 
     duration
   end
 
   def slot_available?(resource, starts_at, ends_at, exclude_id: nil)
-    return false unless within_clinic_hours?(starts_at, ends_at)
-
-    @data['appointments'].none? do |record|
-      record['id'] != exclude_id && record['resource_id'] == resource['id'] && record['status'] != 'cancelled' &&
-        parse_time(record['starts_at']) < ends_at && parse_time(record['ends_at']) > starts_at
-    end
+    availability_service(resource, from: starts_at, to: ends_at, exclude_id: exclude_id).available?(starts_at: starts_at, ends_at: ends_at)
   end
 
-  def within_clinic_hours?(starts_at, ends_at)
-    local_start = starts_at.in_time_zone(@data['timezone'])
-    local_end = ends_at.in_time_zone(@data['timezone'])
-    local_start.to_date == local_end.to_date && local_start.hour >= 9 && local_end.hour <= 18 &&
-      (local_end.hour < 18 || local_end.min.zero?)
+  def availability_service(resource, from:, to:, exclude_id: nil)
+    Captain::Playground::AvailabilitySnapshot.build(resource: resource, appointments: @data['appointments'], from: from, to: to,
+                                                   ignore_appointment_id: exclude_id)
   end
 
   def available_slots
     from = parse_time(@args.fetch('from'))
     to = parse_time(@args.fetch('to'))
-    raise ArgumentError, 'Availability range must be positive and at most 14 days' unless to > from && to - from <= 14.days
+    Scheduling::AvailableSlotSearchService.new(
+      account: @session.account, from: from, to: to, snapshots: scheduling_snapshots,
+      **@args.slice('resource_ids', 'service_id', 'duration_min', 'limit').symbolize_keys
+    ).perform.merge(simulated: true)
+  end
 
-    resources = availability_resources
-    window = { from: from, to: to, limit: Integer(@args['limit'] || 20).clamp(1, 100) }
-    slots = []
-    resources.each { |resource| append_resource_slots(slots, resource, window) }
-    { slots: slots.sort_by { |slot| slot[:starts_at] }, total_slots: slots.size, requested_service_id: @args['service_id'],
-      service_match: { confirmed: @args['service_id'].present?, resource_ids: resources.map { |resource| resource['id'] } }, simulated: true }
+  def resource_schedule
+    scheduling_snapshots.schedule(resource_id: @args.fetch('resource_id'), from: parse_time(@args.fetch('from')), to: parse_time(@args.fetch('to')),
+                                  **@args.slice('include_breaks', 'include_holidays', 'include_time_offs').symbolize_keys).merge(simulated: true)
+  end
+
+  def resource_availability
+    resource = scheduling_snapshots.resources.find { |item| item.id == @args.fetch('resource_id') }
+    raise ArgumentError, 'Record is not available' unless resource
+
+    service = scheduling_snapshots.service(@args['service_id'])
+    if service && !scheduling_snapshots.linked_resource_ids(service.id).include?(resource.id)
+      raise ArgumentError, 'No recorded service-price link for this resource; provider eligibility is unverified'
+    end
+    scheduling_snapshots.availability(resource: resource, from: parse_time(@args.fetch('from')), to: parse_time(@args.fetch('to')), service: service,
+                                     **@args.slice('duration_min', 'limit').symbolize_keys).merge(
+                                       simulated: true, availability_source: 'local_rules', provider_checked: false, provider_required: false,
+                                       service_link_status: service ? 'local_configured' : 'not_requested'
+                                     )
+  end
+
+  def scheduling_snapshots
+    @scheduling_snapshots ||= Captain::Playground::SchedulingSnapshots.new(@data)
   end
 end

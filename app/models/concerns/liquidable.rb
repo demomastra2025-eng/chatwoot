@@ -19,15 +19,15 @@ module Liquidable
 
     if defined?(Captain::ContextFields)
       account = conversation.account
-      drops['deal'] = build_runtime_state_drop(
-        Captain::ContextFields.deal_state_for(account: account, conversation: conversation)
-      )
-      drops['task'] = build_runtime_state_drop(
+      drops['deal'] = build_runtime_state_drop(:deal) do
+        Captain::ContextFields.deal_state_for(account: account, conversation: conversation, actor: sender.is_a?(User) ? sender : nil)
+      end
+      drops['task'] = build_runtime_state_drop(:task) do
         Captain::ContextFields.task_state_for(account: account, conversation: conversation)
-      )
-      drops['appointment'] = build_runtime_state_drop(
+      end
+      drops['appointment'] = build_runtime_state_drop(:appointment) do
         Captain::ContextFields.appointment_state_for(account: account, conversation: conversation)
-      )
+      end
     end
 
     drops.compact
@@ -109,7 +109,12 @@ module Liquidable
     string
   end
 
-  def build_runtime_state_drop(state)
+  def build_runtime_state_drop(scope)
+    return unless Captain::ContextFields.scope_visible_for_user?(
+      scope: scope, account: conversation.account, user: sender.is_a?(User) ? sender : nil
+    )
+
+    state = yield
     return if state.blank?
 
     RuntimeStateDrop.new(state)

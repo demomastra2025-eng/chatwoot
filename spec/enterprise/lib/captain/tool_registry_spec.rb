@@ -110,6 +110,7 @@ RSpec.describe Captain::ToolRegistry do
 
       expect(agent_tool_ids).to include(*expected_agent_business_tool_ids)
       expect(agent_tool_ids).not_to include(*assistant_only_admin_tool_ids)
+      expect(agent_tool_ids).not_to include('get_appointment_provider_status')
       expect(agent_tool_ids.size).to eq(expected_agent_business_tool_ids.size)
     end
 
@@ -254,6 +255,7 @@ RSpec.describe Captain::ToolRegistry do
       set_captain_custom_tool_status
       delete_captain_custom_tool
       add_appointment_payment
+      get_appointment_provider_status
 
       create_canned_response
       get_canned_response

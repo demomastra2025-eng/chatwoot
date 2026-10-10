@@ -8,7 +8,7 @@ module Captain::Playground::SchedulingTools
     patient = resolve_patient
     appointment = appointment_identity_attributes(patient).merge(slot_attributes(slot)).merge(
       'status' => 'scheduled', 'appointment_type' => appointment_type,
-      'client_comment' => @args['client_comment'], 'custom_attributes' => json_object(@args['custom_attributes'])
+      'client_comment' => @args['client_comment'], 'custom_attributes' => custom_attributes_for('appointment')
     ).compact
     @data['appointments'] << appointment
     appointment_result(appointment, action: 'create_appointment')
@@ -64,7 +64,7 @@ module Captain::Playground::SchedulingTools
   def apply_appointment_extras!(record)
     record['appointment_type'] = appointment_type if @args['appointment_type']
     record['client_comment'] = @args['client_comment'] if @args.key?('client_comment')
-    record['custom_attributes'] = record['custom_attributes'].to_h.merge(json_object(@args['custom_attributes'])) if @args['custom_attributes']
+    record['custom_attributes'] = custom_attributes_for('appointment', record: record) if @args['custom_attributes']
   end
 
   def cancel_appointment

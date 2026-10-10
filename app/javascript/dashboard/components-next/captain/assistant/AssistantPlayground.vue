@@ -1,864 +1,652 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import NextButton from 'dashboard/components-next/button/Button.vue';
-import Select from 'dashboard/components-next/select/Select.vue';
+import Button from 'dashboard/components-next/button/Button.vue';
 import MessageList from './MessageList.vue';
+import ModelSettings from './ModelSettings.vue';
 import PlaygroundScenarioEditor from './PlaygroundScenarioEditor.vue';
 import CaptainAssistant from 'dashboard/api/captain/assistant';
 import { useCaptainConfigStore } from 'dashboard/store/captain/preferences';
 
 const props = defineProps({
-  assistantId: {
-    type: Number,
-    required: true,
-  },
-  accountId: {
-    type: [String, Number],
-    default: '',
-  },
+  assistantId: { type: Number, required: true },
+  accountId: { type: [String, Number], default: '' },
 });
-
 const { t } = useI18n();
-const captainConfigStore = useCaptainConfigStore();
+const configStore = useCaptainConfigStore();
+const assistant = ref(null);
+const session = ref(null);
 const messages = ref([]);
 const newMessage = ref('');
-const isLoading = ref(false);
-const isLoadingSettings = ref(true);
-const settingsFailed = ref(false);
-const assistant = ref(null);
-const selectedModel = ref('');
-const temperatureOverrideEnabled = ref(false);
-const testTemperature = ref(1);
-const thinkingEffort = ref('');
-const playgroundMode = ref('trial');
-const playgroundSessions = ref({ trial: null, live: null });
-const modeMessages = ref({ trial: [], live: [] });
 const scenarioDraft = ref({});
 const scenarioExpanded = ref(false);
+const selectedModel = ref('');
+const temperature = ref(null);
+const thinkingEffort = ref('');
+const realRead = ref(false);
+const realWrite = ref(false);
+const isLoading = ref(false);
 const isLoadingSession = ref(false);
-const sessionError = ref('');
-const liveInboxId = ref('');
-const externalDeliveryEnabled = ref(false);
-const controlledTestNumber = ref('');
-let sessionRequestSequence = 0;
-let settingsRequestSequence = 0;
-let assistantSessionSequence = 0;
-let playgroundRequestSequence = 0;
-const pendingPlaygroundRuns = { trial: null, live: null };
+const isLoadingSettings = ref(false);
+const isUpdatingPermissions = ref(false);
+const permissionsUnresolved = ref(false);
+const error = ref('');
+let identity = 0;
+let turnSequence = 0;
+let sessionSequence = 0;
+let permissionEpoch = 0;
+let pendingTurn = null;
 
-const availableModels = computed(() =>
-  captainConfigStore.getModelsForFeature('assistant')
-);
-const assistantModelMetadata = computed(
-  () => assistant.value?.playground_model
-);
-const assistantModel = computed(
+const models = computed(() => configStore.getModelsForFeature('assistant'));
+const profileModel = computed(
   () =>
-    assistantModelMetadata.value?.id ||
+    assistant.value?.playground_model?.id ||
     assistant.value?.config?.model ||
-    captainConfigStore.getSelectedModelForFeature('assistant') ||
+    configStore.getSelectedModelForFeature('assistant') ||
     ''
 );
 const effectiveModel = computed(
-  () => selectedModel.value || assistantModel.value
+  () => selectedModel.value || profileModel.value
 );
-const effectiveModelMetadata = computed(() => {
-  if (assistantModelMetadata.value?.id === effectiveModel.value) {
-    return assistantModelMetadata.value;
-  }
-
-  return availableModels.value.find(model => model.id === effectiveModel.value);
-});
-const supportsTemperature = computed(
-  () => effectiveModelMetadata.value?.supports_temperature === true
+const metadata = computed(
+  () =>
+    models.value.find(model => model.id === effectiveModel.value) ||
+    (assistant.value?.playground_model?.id === effectiveModel.value
+      ? assistant.value.playground_model
+      : {})
 );
-const supportedReasoningEfforts = computed(
-  () => effectiveModelMetadata.value?.reasoning_efforts || []
-);
-const supportsReasoning = computed(
-  () => supportedReasoningEfforts.value.length > 0
-);
-const selectableModels = computed(() => {
-  const models = availableModels.value.filter(
-    model => !model.current_only || model.id === assistantModel.value
-  );
-  const current = assistantModelMetadata.value;
-  if (current?.id && !models.some(model => model.id === current.id)) {
-    return [...models, { ...current, current_only: true }];
-  }
-
-  return models;
-});
 const modelOptions = computed(() => [
-  {
-    value: '',
-    label: t('CAPTAIN.PLAYGROUND.USE_ASSISTANT_MODEL'),
-  },
-  ...selectableModels.value.map(model => ({
-    value: model.id,
-    label: model.current_only
-      ? t('CAPTAIN.PLAYGROUND.CURRENT_MODEL', {
-          model: model.display_name || model.id,
-        })
-      : model.display_name || model.id,
-  })),
+  { value: '', label: t('CAPTAIN.PLAYGROUND.USE_ASSISTANT_MODEL') },
+  ...models.value
+    .filter(model => !model.current_only || model.id === profileModel.value)
+    .map(model => ({ value: model.id, label: model.display_name || model.id })),
 ]);
-const savedTemperature = computed(() => {
-  const value = Number(assistant.value?.config?.temperature ?? 1);
-  return Number.isFinite(value) ? value : 1;
-});
-const formattedTemperature = computed(() =>
-  Number(testTemperature.value || 0).toFixed(1)
-);
-const activeSession = computed(
-  () => playgroundSessions.value[playgroundMode.value]
-);
-const liveAvailable = computed(
-  () => playgroundSessions.value.trial?.live_available === true
-);
-const liveInboxes = computed(
-  () => playgroundSessions.value.trial?.inboxes || []
-);
-const liveOptions = computed(() => ({
-  inboxId: liveInboxId.value,
-  deliveryEnabled: externalDeliveryEnabled.value,
-  testNumber: controlledTestNumber.value,
-}));
 const messageDisabled = computed(
   () =>
     isLoading.value ||
     isLoadingSession.value ||
-    (assistant.value?.usage_mode !== 'internal_assistant' &&
-      !activeSession.value)
+    isLoadingSettings.value ||
+    isUpdatingPermissions.value ||
+    permissionsUnresolved.value ||
+    !session.value ||
+    assistant.value?.usage_mode === 'internal_assistant'
 );
-
-const acceptSession = payload => {
-  if (!payload || payload.mode !== playgroundMode.value) return;
-  playgroundSessions.value[payload.mode] = payload;
-  scenarioDraft.value = JSON.parse(JSON.stringify(payload.scenario || {}));
-  if (
-    payload.mode === 'trial' &&
-    !liveInboxId.value &&
-    payload.inboxes?.length
-  ) {
-    liveInboxId.value = String(payload.inboxes[0].id);
+const previews = computed(() =>
+  realRead.value && realWrite.value ? session.value?.action_previews || [] : []
+);
+const describe = value => JSON.stringify(value, null, 2);
+const actionTitle = approval => {
+  const key = `CAPTAIN.PLAYGROUND.ACTIONS.${approval.tool.toUpperCase()}`;
+  const label = t(key);
+  return label === key
+    ? approval.title || approval.tool.replaceAll('_', ' ')
+    : label;
+};
+const targetName = record => {
+  const patient = record.clinical_identity;
+  return patient?.iin
+    ? [patient.first_name, patient.last_name, patient.middle_name]
+        .filter(Boolean)
+        .join(' ')
+    : record.name || `#${record.id}`;
+};
+const fieldLabel = key => {
+  const field = scenarioDraft.value.custom_fields?.find(
+    item => item.key === key
+  );
+  if (field) return field.label;
+  const translation = `CAPTAIN.PLAYGROUND.CHANGES.${key.toUpperCase()}`;
+  const label = t(translation);
+  return label === translation ? key.replaceAll('_', ' ') : label;
+};
+const displayValue = (key, value, approval) => {
+  if (value === null) return t('CAPTAIN.PLAYGROUND.FIELD_EMPTY');
+  if (key.endsWith('_id') && approval.target?.[key])
+    return targetName(approval.target[key]);
+  return Array.isArray(value)
+    ? value.join(', ')
+    : String(value).replace('T', ' ');
+};
+const actionChanges = approval =>
+  Object.entries(approval.arguments || {}).flatMap(([key, value]) => {
+    if (
+      key === 'patient' ||
+      key === 'appointment_access_token' ||
+      key === 'patient_confirmed'
+    )
+      return [];
+    const entries =
+      key === 'custom_attributes'
+        ? Object.entries(value || {})
+        : [[key, value]];
+    return entries.map(([field, after]) => ({
+      field,
+      after: displayValue(field, after, approval),
+      before: Object.values(approval.target || {})
+        .map(record => record.appointment?.[field] ?? record[field])
+        .find(item => item !== undefined),
+    }));
+  });
+const showError = failure => {
+  error.value =
+    failure.response?.data?.message || t('CAPTAIN.PLAYGROUND.SESSION_ERROR');
+};
+const failedActionText = result => {
+  if (typeof result === 'string') {
+    try {
+      return failedActionText(JSON.parse(result));
+    } catch {
+      return result || t('CAPTAIN.PLAYGROUND.ACTION_FAILED');
+    }
+  }
+  const detail = result?.error || result?.message;
+  return typeof detail === 'string' && detail
+    ? detail
+    : t('CAPTAIN.PLAYGROUND.ACTION_FAILED');
+};
+const acceptSession = (payload, { restoreHistory = false } = {}) => {
+  if (!payload || payload.mode !== 'workspace') return;
+  session.value = { ...session.value, ...payload };
+  if (payload.scenario)
+    scenarioDraft.value = JSON.parse(JSON.stringify(payload.scenario));
+  realRead.value = payload.real_data_read === true;
+  realWrite.value = realRead.value && payload.real_data_write === true;
+  if (restoreHistory && payload.message_history) {
+    messages.value = payload.message_history.map(item => ({
+      sender: item.role,
+      content: item.content,
+      agentName: item.agent_name,
+    }));
   }
 };
-
-const loadPlaygroundSession = async ({ reset = false, scenario } = {}) => {
-  if (!assistant.value || assistant.value?.usage_mode === 'internal_assistant')
-    return;
-  const mode = playgroundMode.value;
-  const assistantId = props.assistantId;
-  const accountId = String(props.accountId);
-  sessionRequestSequence += 1;
-  const sequence = sessionRequestSequence;
+const loadSession = async ({
+  reset = false,
+  scenario,
+  restoreHistory = false,
+} = {}) => {
+  const current = identity;
+  const epoch = permissionEpoch;
+  sessionSequence += 1;
+  const request = sessionSequence;
   isLoadingSession.value = true;
-  sessionError.value = '';
+  error.value = '';
   try {
     const { data } = await CaptainAssistant.playgroundSession({
-      assistantId,
-      mode,
-      sessionId: playgroundSessions.value[mode]?.session_id,
+      assistantId: props.assistantId,
+      sessionId: session.value?.session_id,
       reset,
-      ...(scenario ? { scenario } : {}),
-      liveOptions: mode === 'live' ? liveOptions.value : {},
+      scenario,
     });
     if (
-      sequence !== sessionRequestSequence ||
-      mode !== playgroundMode.value ||
-      assistantId !== props.assistantId ||
-      accountId !== String(props.accountId)
+      current === identity &&
+      request === sessionSequence &&
+      epoch === permissionEpoch
+    )
+      acceptSession(data.playground, { restoreHistory });
+  } catch (failure) {
+    if (
+      current === identity &&
+      request === sessionSequence &&
+      epoch === permissionEpoch
+    )
+      showError(failure);
+  } finally {
+    if (current === identity && request === sessionSequence)
+      isLoadingSession.value = false;
+  }
+};
+const setPermissions = async (read, write = false) => {
+  if (!session.value || isUpdatingPermissions.value) return false;
+  const current = identity;
+  permissionEpoch += 1;
+  const epoch = permissionEpoch;
+  realRead.value = read;
+  realWrite.value = read && write;
+  // Hide pending actions immediately while the server revokes their generation.
+  if (!realWrite.value) session.value.action_previews = [];
+  isUpdatingPermissions.value = true;
+  error.value = '';
+  try {
+    const { data } = await CaptainAssistant.playgroundPermissions({
+      assistantId: props.assistantId,
+      sessionId: session.value.session_id,
+      read: realRead.value,
+      write: realWrite.value,
+    });
+    if (current === identity && epoch === permissionEpoch) {
+      acceptSession(data.playground);
+      permissionsUnresolved.value = false;
+      return true;
+    }
+  } catch (failure) {
+    if (current === identity) {
+      realRead.value = false;
+      realWrite.value = false;
+      session.value.action_previews = [];
+      permissionsUnresolved.value = true;
+      showError(failure);
+    }
+  } finally {
+    if (current === identity) isUpdatingPermissions.value = false;
+  }
+  return false;
+};
+const saveScenario = () => {
+  return loadSession({ scenario: scenarioDraft.value });
+};
+const resetConversation = async () => {
+  const current = identity;
+  turnSequence += 1;
+  realRead.value = false;
+  realWrite.value = false;
+  if (session.value) {
+    session.value.action_previews = [];
+    if (!(await setPermissions(false, false))) return;
+  }
+  if (current !== identity) return;
+  isLoadingSession.value = true;
+  if (pendingTurn) await pendingTurn.catch(() => {});
+  if (current !== identity) return;
+  messages.value = [];
+  newMessage.value = '';
+  isLoading.value = false;
+  await loadSession({ reset: true });
+};
+const sendMessage = async () => {
+  if (!newMessage.value.trim() || messageDisabled.value) return;
+  const current = identity;
+  const epoch = permissionEpoch;
+  turnSequence += 1;
+  const request = turnSequence;
+  const content = newMessage.value;
+  messages.value.push({ sender: 'user', content });
+  newMessage.value = '';
+  isLoading.value = true;
+  error.value = '';
+  const flight = CaptainAssistant.playground({
+    assistantId: props.assistantId,
+    sessionId: session.value.session_id,
+    messageContent: content,
+    testOptions: {
+      model: selectedModel.value,
+      temperature:
+        metadata.value?.supports_temperature === true
+          ? temperature.value
+          : null,
+      thinkingEffort: metadata.value?.reasoning_efforts?.includes(
+        thinkingEffort.value
+      )
+        ? thinkingEffort.value
+        : '',
+    },
+  });
+  pendingTurn = flight;
+  try {
+    const { data } = await flight;
+    if (
+      current !== identity ||
+      request !== turnSequence ||
+      epoch !== permissionEpoch
+    )
+      return;
+    const replyContent =
+      data.error_class ||
+      data.error_message ||
+      data.response === 'conversation_handoff_due_to_provider_error'
+        ? t('CAPTAIN.PLAYGROUND.PROVIDER_ERROR')
+        : data.response || t('CAPTAIN.COPILOT.EMPTY_MESSAGE');
+    messages.value.push({
+      sender: 'assistant',
+      content: replyContent,
+      agentName: data.agent_name,
+      reasoning: data.reasoning,
+      toolTrace: data.tool_trace || [],
+    });
+    acceptSession(data.playground);
+  } catch (failure) {
+    if (
+      current === identity &&
+      request === turnSequence &&
+      epoch === permissionEpoch
+    )
+      showError(failure);
+  } finally {
+    if (pendingTurn === flight) pendingTurn = null;
+    if (current === identity && request === turnSequence)
+      isLoading.value = false;
+  }
+};
+const completedActionText = result => {
+  let value = result;
+  if (typeof value === 'string') {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      value = {};
+    }
+  }
+  value = value?.data || value || {};
+  const receipt = value.provider_command_receipt;
+  if (receipt?.command?.status === 'failed')
+    return t('CAPTAIN.PLAYGROUND.ACTION_FAILED');
+  if (
+    (receipt && receipt.command?.status !== 'succeeded') ||
+    (value.provider_confirmation_required === true &&
+      value.provider_confirmed !== true) ||
+    [
+      'pending_provider_confirmation',
+      'awaiting_confirmation',
+      'provider_status_unknown',
+    ].includes(value.status)
+  )
+    return t('CAPTAIN.PLAYGROUND.ACTION_PENDING');
+  return t('CAPTAIN.PLAYGROUND.ACTION_COMPLETED');
+};
+const confirmAction = async approval => {
+  if (messageDisabled.value || !realWrite.value) return;
+  const current = identity;
+  const epoch = permissionEpoch;
+  turnSequence += 1;
+  const request = turnSequence;
+  isLoading.value = true;
+  error.value = '';
+  const flight = CaptainAssistant.confirmPlaygroundAction({
+    assistantId: props.assistantId,
+    sessionId: session.value.session_id,
+    approval,
+  });
+  pendingTurn = flight;
+  try {
+    const { data } = await flight;
+    if (
+      current !== identity ||
+      request !== turnSequence ||
+      epoch !== permissionEpoch
     )
       return;
     acceptSession(data.playground);
-    if (reset) {
-      messages.value = [];
-      modeMessages.value[mode] = [];
-    } else if (
-      !messages.value.length &&
-      data.playground?.message_history?.length
-    ) {
-      messages.value = data.playground.message_history.map(message => ({
-        sender: message.role,
-        content: message.content,
-        agentName: message.agent_name,
-        timestamp: new Date().toISOString(),
-      }));
-    }
-  } catch (error) {
-    if (
-      sequence === sessionRequestSequence &&
-      mode === playgroundMode.value &&
-      assistantId === props.assistantId &&
-      accountId === String(props.accountId)
-    ) {
-      sessionError.value =
-        error.response?.data?.message || t('CAPTAIN.PLAYGROUND.SESSION_ERROR');
-    }
-  } finally {
-    if (sequence === sessionRequestSequence) isLoadingSession.value = false;
-  }
-};
-
-const saveScenario = () => {
-  const { contact, patient, deal, appointment } = scenarioDraft.value;
-  return loadPlaygroundSession({
-    scenario:
-      playgroundMode.value === 'live'
-        ? { contact }
-        : { contact, patient, deal, appointment },
-  });
-};
-
-const reasoningEffortOptions = computed(() => [
-  { value: '', label: t('CAPTAIN.PLAYGROUND.USE_WORKSPACE_REASONING') },
-  ...['none', 'low', 'medium', 'high']
-    .filter(effort => supportedReasoningEfforts.value.includes(effort))
-    .map(effort => ({
-      value: effort,
-      label: t(`CAPTAIN.PLAYGROUND.REASONING_${effort.toUpperCase()}`),
-    })),
-]);
-
-const loadPlaygroundSettings = async (
-  assistantId = props.assistantId,
-  { force = false } = {}
-) => {
-  settingsRequestSequence += 1;
-  const requestSequence = settingsRequestSequence;
-  const requestAccountId = String(props.accountId);
-  isLoadingSettings.value = true;
-  settingsFailed.value = false;
-  try {
-    const [, response] = await Promise.all([
-      captainConfigStore.fetch({
-        clientMetadataOnly: true,
-        ...(force ? { force: true } : {}),
-      }),
-      CaptainAssistant.show(assistantId),
-    ]);
-    if (
-      requestSequence !== settingsRequestSequence ||
-      assistantId !== props.assistantId ||
-      requestAccountId !== String(props.accountId)
-    ) {
-      return;
-    }
-
-    assistant.value = response.data;
-    testTemperature.value = savedTemperature.value;
-    settingsFailed.value = captainConfigStore.uiFlags.fetchError === true;
-  } catch {
-    if (
-      requestSequence === settingsRequestSequence &&
-      assistantId === props.assistantId &&
-      requestAccountId === String(props.accountId)
-    ) {
-      settingsFailed.value = true;
-    }
-  } finally {
-    if (
-      requestSequence === settingsRequestSequence &&
-      assistantId === props.assistantId &&
-      requestAccountId === String(props.accountId)
-    ) {
-      isLoadingSettings.value = false;
-    }
-  }
-};
-
-watch(supportsTemperature, supported => {
-  if (!supported) temperatureOverrideEnabled.value = false;
-});
-watch(supportedReasoningEfforts, efforts => {
-  if (!efforts.includes(thinkingEffort.value)) thinkingEffort.value = '';
-});
-
-const formatMessagesForApi = () =>
-  messages.value.map(message => ({
-    role: message.sender,
-    content: message.content,
-    ...(message.sender === 'assistant' && message.agentName
-      ? { agent_name: message.agentName }
-      : {}),
-  }));
-
-const resetConversation = async () => {
-  const mode = playgroundMode.value;
-  const sessionSequence = assistantSessionSequence;
-  const pending = pendingPlaygroundRuns[mode];
-  playgroundRequestSequence += 1;
-  messages.value = [];
-  modeMessages.value[mode] = [];
-  newMessage.value = '';
-  isLoading.value = false;
-  if (assistant.value?.usage_mode === 'internal_assistant') return;
-  isLoadingSession.value = true;
-  // The server serializes turns. Reset after the current turn releases its session lock.
-  if (pending) await pending.catch(() => {});
-  if (
-    sessionSequence !== assistantSessionSequence ||
-    mode !== playgroundMode.value
-  )
-    return;
-  await loadPlaygroundSession({ reset: true });
-};
-
-const resetAssistantSession = () => {
-  assistantSessionSequence += 1;
-  playgroundRequestSequence += 1;
-  sessionRequestSequence += 1;
-  messages.value = [];
-  newMessage.value = '';
-  playgroundMode.value = 'trial';
-  playgroundSessions.value = { trial: null, live: null };
-  modeMessages.value = { trial: [], live: [] };
-  scenarioDraft.value = {};
-  scenarioExpanded.value = false;
-  liveInboxId.value = '';
-  externalDeliveryEnabled.value = false;
-  controlledTestNumber.value = '';
-  sessionError.value = '';
-  isLoadingSession.value = false;
-  assistant.value = null;
-  selectedModel.value = '';
-  temperatureOverrideEnabled.value = false;
-  testTemperature.value = 1;
-  thinkingEffort.value = '';
-  isLoading.value = false;
-  isLoadingSettings.value = true;
-  settingsFailed.value = false;
-};
-
-watch(
-  () => [String(props.accountId), props.assistantId],
-  ([newAccountId, newId], [oldAccountId, oldId]) => {
-    if (newId === oldId && newAccountId === oldAccountId) return;
-
-    settingsRequestSequence += 1;
-    resetAssistantSession();
-    loadPlaygroundSettings(newId).then(() => loadPlaygroundSession());
-  },
-  { flush: 'sync' }
-);
-
-watch(playgroundMode, (mode, previous) => {
-  playgroundRequestSequence += 1;
-  sessionRequestSequence += 1;
-  modeMessages.value[previous] = [...messages.value];
-  messages.value = [...modeMessages.value[mode]];
-  newMessage.value = '';
-  isLoading.value = false;
-  sessionError.value = '';
-  scenarioDraft.value = JSON.parse(
-    JSON.stringify(playgroundSessions.value[mode]?.scenario || {})
-  );
-  if (assistant.value) loadPlaygroundSession();
-});
-
-const sendMessage = async () => {
-  if (!newMessage.value.trim() || messageDisabled.value) return;
-
-  const currentMessage = newMessage.value;
-  const requestAssistantId = props.assistantId;
-  const requestAccountId = String(props.accountId);
-  const sessionSequence = assistantSessionSequence;
-  const requestMode = playgroundMode.value;
-  playgroundRequestSequence += 1;
-  const requestSequence = playgroundRequestSequence;
-  const messageHistory = formatMessagesForApi();
-  messages.value.push({
-    content: currentMessage,
-    sender: 'user',
-    timestamp: new Date().toISOString(),
-  });
-  newMessage.value = '';
-
-  let pendingRequest;
-  try {
-    isLoading.value = true;
-    const request = CaptainAssistant.playground({
-      assistantId: requestAssistantId,
-      messageContent: currentMessage,
-      messageHistory,
-      ...(assistant.value?.usage_mode !== 'internal_assistant'
-        ? {
-            mode: requestMode,
-            sessionId: activeSession.value?.session_id,
-            ...(requestMode === 'live'
-              ? {
-                  conversationId: activeSession.value?.conversation_id,
-                  liveOptions: liveOptions.value,
-                }
-              : {}),
-          }
-        : {}),
-      testOptions: {
-        ...(selectedModel.value ? { model: selectedModel.value } : {}),
-        ...(temperatureOverrideEnabled.value && supportsTemperature.value
-          ? { temperature: testTemperature.value }
-          : {}),
-        ...(thinkingEffort.value && supportsReasoning.value
-          ? { thinkingEffort: thinkingEffort.value }
-          : {}),
-      },
-    });
-    pendingRequest = request;
-    pendingPlaygroundRuns[requestMode] = request;
-    const { data } = await request;
-
-    if (
-      sessionSequence !== assistantSessionSequence ||
-      requestAssistantId !== props.assistantId ||
-      requestAccountId !== String(props.accountId) ||
-      requestSequence !== playgroundRequestSequence
-    ) {
-      return;
-    }
-
     messages.value.push({
-      content: data.response || t('CAPTAIN.COPILOT.EMPTY_MESSAGE'),
       sender: 'assistant',
-      agentName: data.agent_name,
-      reasoning: data.reasoning,
-      responseLatencyMs: data.response_latency_ms,
-      reportedReasoningTokens: data.reported_reasoning_tokens,
-      toolTrace: data.tool_trace || [],
-      timestamp: new Date().toISOString(),
+      content:
+        data.success === false
+          ? failedActionText(data.result)
+          : completedActionText(data.result),
     });
-    acceptSession(data.playground);
-  } catch (error) {
+  } catch (failure) {
     if (
-      sessionSequence !== assistantSessionSequence ||
-      requestAssistantId !== props.assistantId ||
-      requestAccountId !== String(props.accountId) ||
-      requestSequence !== playgroundRequestSequence
+      current === identity &&
+      request === turnSequence &&
+      epoch === permissionEpoch
     ) {
-      return;
+      showError(failure);
+      await loadSession();
     }
-
-    // eslint-disable-next-line no-console
-    console.error('Error getting assistant response:', error);
-    messages.value.push({
-      content: t('CAPTAIN.COPILOT.EMPTY_MESSAGE'),
-      sender: 'assistant',
-      timestamp: new Date().toISOString(),
-    });
   } finally {
-    if (pendingPlaygroundRuns[requestMode] === pendingRequest)
-      pendingPlaygroundRuns[requestMode] = null;
-    if (
-      sessionSequence === assistantSessionSequence &&
-      requestAssistantId === props.assistantId &&
-      requestAccountId === String(props.accountId) &&
-      requestSequence === playgroundRequestSequence
-    ) {
+    if (pendingTurn === flight) pendingTurn = null;
+    if (current === identity && request === turnSequence)
       isLoading.value = false;
-    }
   }
 };
-
-const handleEnterKey = event => {
-  if (event.isComposing) return;
+const enter = event => {
+  if (event.isComposing || event.shiftKey) return;
   event.preventDefault();
   sendMessage();
 };
+watch(
+  () => [String(props.accountId), props.assistantId],
+  async () => {
+    identity += 1;
+    const current = identity;
+    turnSequence += 1;
+    sessionSequence += 1;
+    permissionEpoch += 1;
+    assistant.value = null;
+    session.value = null;
+    messages.value = [];
+    newMessage.value = '';
+    scenarioDraft.value = {};
+    selectedModel.value = '';
+    temperature.value = null;
+    thinkingEffort.value = '';
+    realRead.value = false;
+    realWrite.value = false;
+    error.value = '';
+    isLoading.value = false;
+    isLoadingSession.value = false;
+    isUpdatingPermissions.value = false;
+    permissionsUnresolved.value = false;
+    isLoadingSettings.value = true;
+    try {
+      const [, response] = await Promise.all([
+        configStore.fetch({ clientMetadataOnly: true }),
+        CaptainAssistant.show(props.assistantId),
+      ]);
+      if (current !== identity) return;
+      assistant.value = response.data;
+      if (configStore.uiFlags.fetchError) throw new Error('metadata');
+      await loadSession({ restoreHistory: true });
+    } catch (failure) {
+      if (current === identity) showError(failure);
+    } finally {
+      if (current === identity) isLoadingSettings.value = false;
+    }
+  },
+  { immediate: true, flush: 'sync' }
+);
 
-onMounted(async () => {
-  await loadPlaygroundSettings();
-  await loadPlaygroundSession();
+defineExpose({
+  loadSession,
+  sendMessage,
+  setPermissions,
+  resetConversation,
+  confirmAction,
 });
 </script>
 
 <template>
-  <div
-    class="flex h-full min-h-0 flex-col gap-4 overflow-y-auto"
-    data-test="playground-layout"
-  >
-    <div class="flex shrink-0 items-start justify-between gap-4 px-1">
-      <div>
-        <h3 class="text-lg font-medium text-n-slate-12">
-          {{ t('CAPTAIN.PLAYGROUND.HEADER') }}
-        </h3>
-        <p class="mt-1 text-sm text-n-slate-11">
-          {{ t('CAPTAIN.PLAYGROUND.DESCRIPTION') }}
-        </p>
-      </div>
-      <NextButton
-        ghost
-        sm
-        slate
+  <div class="flex h-full min-h-0 flex-col gap-3" data-test="playground-layout">
+    <div class="flex shrink-0 flex-wrap items-start justify-between gap-3">
+      <ModelSettings
+        v-model:model="selectedModel"
+        v-model:temperature="temperature"
+        v-model:effort="thinkingEffort"
+        :models="modelOptions"
+        :metadata="metadata"
+        :disabled="isLoadingSettings"
+        :default-label="t('CAPTAIN.PLAYGROUND.USE_PROFILE_SETTINGS')"
+      />
+      <Button
         icon="i-lucide-rotate-ccw"
-        :disabled="isLoadingSession"
-        :aria-label="t('CAPTAIN.PLAYGROUND.RESET_TRIAL')"
+        variant="ghost"
+        color="slate"
+        size="sm"
+        :label="t('CAPTAIN.PLAYGROUND.RESET_SESSION')"
+        :disabled="isLoadingSession || isUpdatingPermissions"
+        data-test="playground-reset"
         @click="resetConversation"
       />
     </div>
-
     <section
-      v-if="assistant?.usage_mode !== 'internal_assistant'"
-      class="shrink-0 rounded-xl border border-n-weak bg-n-solid-1 p-3"
+      class="shrink-0 rounded-lg border border-n-weak p-3"
+      data-test="playground-permissions"
+    >
+      <div class="flex flex-wrap items-center gap-4">
+        <label class="flex items-center gap-2 text-sm text-n-slate-12">
+          <input
+            type="checkbox"
+            :checked="realRead"
+            :disabled="!session || isUpdatingPermissions"
+            data-test="playground-real-read"
+            @change="setPermissions($event.target.checked, false)"
+          />
+          {{ t('CAPTAIN.PLAYGROUND.REAL_READ') }}
+        </label>
+        <label
+          v-if="realRead"
+          class="flex items-center gap-2 text-sm text-n-slate-12"
+        >
+          <input
+            type="checkbox"
+            :checked="realWrite"
+            :disabled="!session || isUpdatingPermissions"
+            data-test="playground-real-write"
+            @change="setPermissions(true, $event.target.checked)"
+          />
+          {{ t('CAPTAIN.PLAYGROUND.REAL_WRITE') }}
+        </label>
+      </div>
+      <p
+        v-if="realWrite"
+        class="mb-0 mt-2 text-xs font-medium text-n-amber-11"
+        role="status"
+        data-test="playground-write-warning"
+      >
+        {{ t('CAPTAIN.PLAYGROUND.WRITE_WARNING') }}
+      </p>
+      <p v-else class="mb-0 mt-2 text-xs text-n-slate-11">
+        {{ t('CAPTAIN.PLAYGROUND.SYNTHETIC_NOTICE') }}
+      </p>
+      <div
+        v-if="permissionsUnresolved"
+        class="mt-2 flex flex-wrap items-center gap-2"
+        role="alert"
+      >
+        <span class="text-xs text-n-ruby-11">{{
+          t('CAPTAIN.PLAYGROUND.REVOCATION_UNCONFIRMED')
+        }}</span>
+        <Button
+          size="sm"
+          color="slate"
+          variant="outline"
+          :label="t('CAPTAIN.PLAYGROUND.REVOKE_RETRY')"
+          :disabled="isUpdatingPermissions"
+          data-test="playground-revoke-retry"
+          @click="setPermissions(false, false)"
+        />
+      </div>
+    </section>
+    <section
+      class="shrink-0 rounded-lg border border-n-weak p-3"
       data-test="playground-scenario"
     >
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div
-          class="flex gap-1 rounded-lg bg-n-alpha-1 p-1"
-          role="group"
-          :aria-label="t('CAPTAIN.PLAYGROUND.MODE')"
-        >
-          <button
-            v-for="mode in ['trial', 'live']"
-            :key="mode"
-            type="button"
-            class="rounded-md px-3 py-1.5 text-xs font-medium"
-            :class="
-              playgroundMode === mode
-                ? 'bg-n-solid-2 text-n-slate-12 shadow-sm'
-                : 'text-n-slate-11'
-            "
-            :data-test="`playground-mode-${mode}`"
-            :aria-pressed="playgroundMode === mode"
-            :disabled="mode === 'live' && !liveAvailable"
-            @click="playgroundMode = mode"
-          >
-            {{ t(`CAPTAIN.PLAYGROUND.MODE_${mode.toUpperCase()}`) }}
-          </button>
-        </div>
-        <button
-          type="button"
-          class="flex items-center gap-2 text-xs font-medium text-n-slate-11"
-          data-test="playground-scenario-toggle"
-          :aria-expanded="scenarioExpanded"
-          @click="scenarioExpanded = !scenarioExpanded"
-        >
-          {{ t('CAPTAIN.PLAYGROUND.SCENARIO_DATA') }}
-          <span
-            :class="
-              scenarioExpanded ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'
-            "
-          />
-        </button>
-      </div>
-      <p
-        v-if="playgroundMode === 'live'"
-        class="mb-0 mt-2 rounded-lg bg-n-amber-3 px-3 py-2 text-xs text-n-amber-11"
-        role="status"
-        data-test="playground-live-warning"
-      >
-        {{ t('CAPTAIN.PLAYGROUND.LIVE_WARNING') }}
-      </p>
-      <p v-else class="mb-0 mt-2 text-xs text-n-slate-10">
-        {{ t('CAPTAIN.PLAYGROUND.TRIAL_DESCRIPTION') }}
-      </p>
+      <Button
+        variant="ghost"
+        color="slate"
+        size="sm"
+        icon="i-lucide-users"
+        :label="t('CAPTAIN.PLAYGROUND.SCENARIO_EDITOR')"
+        :aria-expanded="scenarioExpanded"
+        data-test="playground-scenario-toggle"
+        @click="scenarioExpanded = !scenarioExpanded"
+      />
       <div
-        v-if="playgroundMode === 'live'"
-        class="mt-3 flex flex-wrap items-center gap-3"
+        v-if="scenarioExpanded && session"
+        class="mt-3 max-h-[min(42vh,28rem)] space-y-3 overflow-y-auto overscroll-contain pr-1"
       >
-        <label
-          class="flex min-w-0 flex-1 flex-col gap-1 text-xs text-n-slate-11"
-        >
-          {{ t('CAPTAIN.PLAYGROUND.LIVE_INBOX') }}
-          <select
-            v-model="liveInboxId"
-            class="mb-0 rounded-lg border border-n-weak bg-n-background text-sm text-n-slate-12"
-            :disabled="isLoading || isLoadingSession || !!activeSession"
-            data-test="playground-live-inbox"
-          >
-            <option
-              v-for="inbox in liveInboxes"
-              :key="inbox.id"
-              :value="String(inbox.id)"
-            >
-              {{ inbox.name }}
-            </option>
-          </select>
-        </label>
-        <label class="flex items-center gap-2 text-xs text-n-slate-11">
-          <input
-            v-model="externalDeliveryEnabled"
-            type="checkbox"
-            :disabled="isLoading || isLoadingSession"
-            data-test="playground-external-delivery"
-          />
-          {{ t('CAPTAIN.PLAYGROUND.EXTERNAL_DELIVERY') }}
-        </label>
-        <label
-          v-if="externalDeliveryEnabled"
-          class="flex min-w-0 flex-col gap-1 text-xs text-n-slate-11"
-        >
-          {{ t('CAPTAIN.PLAYGROUND.CONTROLLED_NUMBER') }}
-          <input
-            v-model="controlledTestNumber"
-            type="tel"
-            class="mb-0 rounded-lg border border-n-weak bg-n-background text-sm text-n-slate-12"
-            data-test="playground-controlled-number"
-          />
-        </label>
-      </div>
-      <p
-        v-if="isLoadingSession"
-        class="mb-0 mt-2 text-xs text-n-slate-11"
-        role="status"
-      >
-        {{ t('CAPTAIN_SETTINGS.LOADING') }}
-      </p>
-      <div v-if="sessionError" class="mt-2 flex flex-wrap items-center gap-3">
-        <p class="mb-0 text-xs text-n-ruby-9" role="alert">
-          {{ sessionError }}
-        </p>
-        <button
-          type="button"
-          class="text-xs font-medium text-n-brand hover:underline"
-          data-test="playground-session-retry"
-          @click="loadPlaygroundSession()"
-        >
-          {{ t('DESIGN_SYSTEM.STATE.RETRY') }}
-        </button>
-      </div>
-      <div v-if="scenarioExpanded && activeSession" class="mt-3">
-        <p class="mb-3 text-xs text-n-slate-10">
-          {{
-            t(
-              playgroundMode === 'trial'
-                ? 'CAPTAIN.PLAYGROUND.MOTHER_SON_PRESET'
-                : 'CAPTAIN.PLAYGROUND.LIVE_CALLER_DESCRIPTION'
-            )
-          }}
-        </p>
         <PlaygroundScenarioEditor
           v-model="scenarioDraft"
-          :mode="playgroundMode"
           :disabled="isLoading || isLoadingSession"
         />
-        <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
-          <button
-            type="button"
-            class="text-xs font-medium text-n-brand hover:underline"
-            :disabled="isLoading || isLoadingSession"
-            data-test="playground-scenario-save"
-            @click="saveScenario"
-          >
-            {{ t('CAPTAIN.PLAYGROUND.SCENARIO_SAVE') }}
-          </button>
-          <button
-            v-if="playgroundMode === 'trial'"
-            type="button"
-            class="text-xs text-n-slate-11 hover:underline"
-            :disabled="isLoading || isLoadingSession"
-            data-test="playground-trial-reset"
-            @click="resetConversation"
-          >
-            {{ t('CAPTAIN.PLAYGROUND.RESET_TRIAL') }}
-          </button>
-        </div>
+        <Button
+          :label="t('CAPTAIN.PLAYGROUND.SCENARIO_APPLY')"
+          size="sm"
+          :disabled="isLoading || isLoadingSession"
+          data-test="playground-scenario-save"
+          @click="saveScenario"
+        />
       </div>
     </section>
-
-    <div
-      class="grid shrink-0 gap-4 lg:min-h-64 lg:flex-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,20rem)]"
-      data-test="playground-panels"
-    >
-      <div
-        class="flex h-80 min-h-0 min-w-0 flex-col rounded-xl border border-n-weak bg-n-solid-1 py-5 lg:h-auto"
-        data-test="playground-chat"
-      >
-        <MessageList :messages="messages" :is-loading="isLoading" />
-        <div
-          class="mx-5 mt-4 flex shrink-0 items-center rounded-xl bg-n-background p-3 outline outline-1 outline-n-weak"
-        >
-          <input
-            v-model="newMessage"
-            data-test="playground-message-input"
-            class="mb-0 min-w-0 flex-1 border-none bg-transparent text-sm text-n-slate-12 placeholder:text-n-slate-10 focus:outline-none"
-            :placeholder="t('CAPTAIN.PLAYGROUND.MESSAGE_PLACEHOLDER')"
-            @keydown.enter.exact="handleEnterKey"
-          />
-          <NextButton
-            ghost
-            sm
-            :disabled="!newMessage.trim() || messageDisabled"
-            icon="i-lucide-send"
-            @click="sendMessage"
-          />
-        </div>
-      </div>
-
-      <aside
-        class="max-h-80 min-h-0 min-w-0 overflow-y-auto rounded-xl border border-n-weak bg-n-solid-1 p-4 lg:max-h-none"
-        data-test="playground-trace"
-      >
-        <h4 class="text-sm font-medium text-n-slate-12">
-          {{ t('CAPTAIN.PLAYGROUND.TRACE_TITLE') }}
-        </h4>
-        <p class="mt-1 text-xs text-n-slate-11">
-          {{ t('CAPTAIN.PLAYGROUND.TRACE_DESCRIPTION') }}
-        </p>
-        <div
-          v-if="!messages.some(message => message.sender === 'assistant')"
-          class="mt-6 text-sm text-n-slate-10"
-        >
-          {{ t('CAPTAIN.PLAYGROUND.TRACE_EMPTY') }}
-        </div>
-        <div
-          v-for="(message, index) in messages.filter(
-            item => item.sender === 'assistant'
-          )"
-          :key="`${message.timestamp}-${index}`"
-          class="mt-4 border-t border-n-weak/50 pt-4 first:border-0 first:pt-0"
-        >
-          <p
-            class="text-xs font-medium uppercase tracking-wide text-n-slate-10"
-          >
-            {{ t('CAPTAIN.PLAYGROUND.TRACE_RESPONSE', { number: index + 1 }) }}
-          </p>
-          <div v-if="message.responseLatencyMs != null" class="mt-2">
-            <p class="text-xs font-medium text-n-slate-12">
-              {{ t('CAPTAIN.PLAYGROUND.RESPONSE_LATENCY') }}
-            </p>
-            <p class="mt-1 text-xs text-n-slate-11">
-              {{
-                t('CAPTAIN.PLAYGROUND.RESPONSE_LATENCY_VALUE', {
-                  ms: message.responseLatencyMs,
-                })
-              }}
-            </p>
-          </div>
-          <div v-if="message.reportedReasoningTokens" class="mt-2">
-            <p class="text-xs font-medium text-n-slate-12">
-              {{ t('CAPTAIN.PLAYGROUND.REPORTED_REASONING_TOKENS') }}
-            </p>
-            <p class="mt-1 text-xs text-n-slate-11">
-              {{ message.reportedReasoningTokens }}
-            </p>
-          </div>
-          <div v-if="message.reasoning" class="mt-2">
-            <p class="text-xs font-medium text-n-slate-12">
-              {{ t('CAPTAIN.PLAYGROUND.TRACE_REASONING') }}
-            </p>
-            <p class="mt-1 whitespace-pre-wrap text-xs text-n-slate-11">
-              {{ message.reasoning }}
-            </p>
-          </div>
-          <div v-if="message.toolTrace?.length" class="mt-3">
-            <p class="text-xs font-medium text-n-slate-12">
-              {{ t('CAPTAIN.PLAYGROUND.TRACE_TOOLS') }}
-            </p>
-            <div
-              v-for="(trace, traceIndex) in message.toolTrace"
-              :key="`${trace.event}-${traceIndex}`"
-              class="mt-1 flex items-center gap-2 rounded-lg bg-n-alpha-1 px-2 py-1.5 text-xs"
-            >
-              <span
-                class="size-2 rounded-full"
-                :class="trace.event === 'error' ? 'bg-n-ruby-9' : 'bg-n-teal-9'"
-              />
-              <span class="font-medium text-n-slate-12">{{ trace.tool }}</span>
-              <span class="text-n-slate-10">{{ trace.event }}</span>
-            </div>
-          </div>
-          <p v-else class="mt-2 text-xs text-n-slate-10">
-            {{ t('CAPTAIN.PLAYGROUND.TRACE_NO_TOOLS') }}
-          </p>
-        </div>
-      </aside>
-    </div>
-
-    <section
-      v-if="assistant?.usage_mode !== 'internal_assistant'"
-      class="shrink-0 rounded-xl border border-n-weak bg-n-solid-1 p-4"
-      data-test="playground-test-settings"
-    >
-      <h4 class="text-sm font-medium text-n-slate-12">
-        {{ t('CAPTAIN.PLAYGROUND.TEST_SETTINGS') }}
-      </h4>
-      <p class="mt-1 text-xs text-n-slate-11">
-        {{ t('CAPTAIN.PLAYGROUND.TEST_SETTINGS_DESCRIPTION') }}
-      </p>
-      <p
-        v-if="isLoadingSettings"
-        class="mt-2 text-xs text-n-slate-11"
-        role="status"
-      >
-        {{ t('CAPTAIN_SETTINGS.LOADING') }}
-      </p>
-      <div v-if="settingsFailed" class="mt-2 flex flex-wrap items-center gap-3">
-        <p class="m-0 text-xs text-n-ruby-9" role="alert">
-          {{ t('CAPTAIN.PLAYGROUND.TEST_SETTINGS_ERROR') }}
-        </p>
-        <button
-          type="button"
-          class="text-xs font-medium text-n-brand hover:underline"
-          @click="loadPlaygroundSettings(props.assistantId, { force: true })"
-        >
-          {{ t('DESIGN_SYSTEM.STATE.RETRY') }}
-        </button>
-      </div>
-      <div class="mt-3 grid gap-4 md:grid-cols-3">
-        <label class="flex min-w-0 flex-col gap-1 text-xs text-n-slate-11">
-          {{ t('CAPTAIN.PLAYGROUND.TEST_MODEL') }}
-          <Select
-            v-model="selectedModel"
-            :options="modelOptions"
-            :disabled="isLoadingSettings || settingsFailed"
-            class="w-full"
-          />
-        </label>
-        <div class="flex min-w-0 flex-col gap-1">
-          <label
-            class="flex items-center justify-between gap-3 text-xs text-n-slate-11"
-          >
-            <span>{{ t('CAPTAIN.PLAYGROUND.TEST_TEMPERATURE') }}</span>
-            <input
-              v-model="temperatureOverrideEnabled"
-              type="checkbox"
-              :disabled="
-                isLoadingSettings || settingsFailed || !supportsTemperature
-              "
-            />
-          </label>
-          <div class="flex items-center gap-3">
-            <input
-              v-model.number="testTemperature"
-              type="range"
-              min="0"
-              max="1"
-              step="0.1"
-              class="min-w-0 flex-1 accent-n-brand disabled:cursor-not-allowed"
-              :disabled="!temperatureOverrideEnabled || !supportsTemperature"
-            />
-            <span class="w-10 text-right text-xs tabular-nums text-n-slate-11">
-              {{
-                temperatureOverrideEnabled
-                  ? formattedTemperature
-                  : savedTemperature.toFixed(1)
-              }}
-            </span>
-          </div>
-          <p v-if="!supportsTemperature" class="m-0 text-xs text-n-slate-10">
-            {{ t('CAPTAIN.PLAYGROUND.UNSUPPORTED_TEMPERATURE') }}
-          </p>
-        </div>
-        <label class="flex min-w-0 flex-col gap-1 text-xs text-n-slate-11">
-          {{ t('CAPTAIN.PLAYGROUND.TEST_REASONING_EFFORT') }}
-          <Select
-            v-model="thinkingEffort"
-            :options="reasoningEffortOptions"
-            :disabled="
-              isLoadingSettings || settingsFailed || !supportsReasoning
-            "
-            class="w-full"
-          />
-          <span v-if="!supportsReasoning" class="text-xs text-n-slate-10">
-            {{ t('CAPTAIN.PLAYGROUND.UNSUPPORTED_REASONING') }}
-          </span>
-        </label>
-      </div>
-    </section>
-
-    <p class="shrink-0 text-center text-xs text-n-slate-11">
-      {{ t('CAPTAIN.PLAYGROUND.CREDIT_NOTE') }}
+    <p v-if="error" class="mb-0 shrink-0 text-sm text-n-ruby-11" role="alert">
+      {{ error }}
     </p>
+    <section
+      v-if="previews.length"
+      class="max-h-[min(38vh,24rem)] shrink-0 space-y-3 overflow-y-auto rounded-lg border border-n-amber-6 p-3"
+      data-test="playground-action-previews"
+    >
+      <div v-for="approval in previews" :key="approval.id">
+        <h4 class="mb-2 text-sm font-medium">{{ actionTitle(approval) }}</h4>
+        <p
+          v-for="(record, key) in approval.target"
+          :key="key"
+          class="mb-1 break-words text-sm"
+        >
+          {{ targetName(record) }}
+          <span class="text-xs text-n-slate-11">#{{ record.id }}</span>
+          <template v-if="record.clinical_identity?.iin">
+            <span class="ml-2 text-xs">
+              {{ t('CAPTAIN.PLAYGROUND.SCENARIO_IIN') }}:
+              {{ record.clinical_identity.iin }}
+            </span>
+          </template>
+          <template v-if="record.appointment">
+            <span class="block text-xs text-n-slate-11">
+              {{ record.appointment.starts_at.replace('T', ' ') }} —
+              {{ record.appointment.ends_at.replace('T', ' ') }}
+            </span>
+          </template>
+        </p>
+        <dl class="my-2 space-y-1 text-xs">
+          <div
+            v-for="change in actionChanges(approval)"
+            :key="change.field"
+            class="flex flex-wrap gap-x-2"
+          >
+            <dt class="text-n-slate-11">{{ fieldLabel(change.field) }}:</dt>
+            <dd class="m-0 break-words">
+              <template v-if="change.before !== undefined">
+                <span class="text-n-slate-11">
+                  {{ displayValue(change.field, change.before, approval) }}
+                  {{ '→' }}
+                </span>
+              </template>
+              {{ change.after }}
+            </dd>
+          </div>
+        </dl>
+        <details class="rounded bg-n-alpha-1 p-2">
+          <summary class="cursor-pointer text-xs text-n-slate-11">
+            {{ t('CAPTAIN.PLAYGROUND.ACTION_DETAILS') }}
+          </summary>
+          <pre class="m-0 mt-2 max-h-40 overflow-auto text-xs">{{
+            describe({ target: approval.target, arguments: approval.arguments })
+          }}</pre>
+        </details>
+        <Button
+          class="mt-2"
+          size="sm"
+          :label="t('CAPTAIN.PLAYGROUND.CONFIRM_ACTION')"
+          :disabled="messageDisabled"
+          data-test="playground-confirm-action"
+          @click="confirmAction(approval)"
+        />
+      </div>
+    </section>
+    <MessageList
+      :messages="messages"
+      :is-loading="isLoading || isLoadingSession || isLoadingSettings"
+    />
+    <form
+      class="flex shrink-0 items-end gap-2 rounded-xl border border-n-weak bg-n-solid-1 p-3"
+      @submit.prevent="sendMessage"
+    >
+      <textarea
+        v-model="newMessage"
+        rows="2"
+        class="mb-0 min-w-0 flex-1 resize-none border-0 bg-transparent text-sm"
+        :placeholder="t('CAPTAIN.PLAYGROUND.PLACEHOLDER')"
+        :disabled="messageDisabled"
+        data-test="playground-message-input"
+        @keydown.enter="enter"
+      />
+      <Button
+        type="submit"
+        icon="i-lucide-send"
+        size="sm"
+        :label="t('CAPTAIN.PLAYGROUND.SEND')"
+        :disabled="messageDisabled || !newMessage.trim()"
+        data-test="playground-send"
+      />
+    </form>
   </div>
 </template>

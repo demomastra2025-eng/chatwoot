@@ -146,6 +146,7 @@ watch(
 
 <template>
   <PageLayout
+    :header-title="t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.PROMPTS.LABEL')"
     :is-fetching="isFetching && !assistant?.id"
     :show-pagination-footer="false"
     :show-know-more="false"

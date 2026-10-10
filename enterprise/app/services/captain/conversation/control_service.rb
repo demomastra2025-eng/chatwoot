@@ -18,6 +18,12 @@ class Captain::Conversation::ControlService
     Message.where(account_id: conversation.account_id, conversation_id: conversations.select(:id))
   end
 
+  # Incoming buffers and response fences belong to one delivery conversation.
+  # Thread history and human takeover remain shared across linked channels.
+  def self.incoming_messages_scope(conversation)
+    conversation.messages.where(account_id: conversation.account_id).incoming
+  end
+
   def initialize(conversation, fresh_control_owner: false)
     @conversation = conversation
     @fresh_control_owner = fresh_control_owner
@@ -227,8 +233,15 @@ class Captain::Conversation::ControlService
     return true unless conversation_allows_captain_response?
     return true if status_epoch_stale?(expected)
     return true if expected[:control_generation].present? && control_owner.captain_control_generation.to_i != expected[:control_generation].to_i
+    return true if incoming_request_stale?(expected)
 
     self.class.human_response_after?(conversation, expected[:last_message_id])
+  end
+
+  def incoming_request_stale?(expected)
+    return false unless expected[:require_current_incoming] == true
+
+    self.class.incoming_messages_scope(conversation).reorder(created_at: :desc, id: :desc).pick(:id).to_i != expected[:last_message_id].to_i
   end
 
   def status_epoch_stale?(expected)

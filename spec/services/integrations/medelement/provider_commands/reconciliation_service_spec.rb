@@ -1,6 +1,7 @@
 require 'rails_helper'
 
 RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService do
+  include ActiveSupport::Testing::TimeHelpers
   subject(:perform) { described_class.new(command: command).perform }
 
   let(:account) { create(:account).tap { |record| record.enable_features!('scheduling') } }
@@ -345,6 +346,90 @@ RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService
       }
     end
 
+    context 'when a successful POST has already been applied with its exact ID' do
+      let(:verification_key) { Integrations::Medelement::ProviderCommands::ReceptionReceiptVerificationService::STATE_KEY }
+
+      before do
+        command.update!(status: 'succeeded', provider_reception_code: 'created-1', execution_state: command.execution_state.merge(
+          'write_provider_reception_code' => 'created-1'
+        ))
+        appointment.mark_medelement_provider_reconciled!
+        appointment.update!(external_ref: 'medelement:reception:created-1', custom_attributes: appointment.custom_attributes.merge(
+          'medelement_provider_sync_status' => 'succeeded', 'medelement_reception_code' => 'created-1'
+        ))
+        allow(client).to receive(:create_reception)
+        allow(client).to receive(:move_reception)
+        allow(client).to receive(:remove_reception)
+      end
+
+      it 'keeps success on a delayed 404 and later verifies without replaying or updating the appointment' do
+        allow(client).to receive(:get_reception).and_raise(Integrations::Medelement::Client::ApiError.new('not materialized', status: 404))
+        original = appointment.attributes
+
+        perform
+
+        expect(command.reload).to be_succeeded
+        expect(command.execution_state[verification_key]).to include('status' => 'pending', 'attempts' => 1, 'reason' => 'provider_unavailable')
+        expect(Integrations::Medelement::ProviderCommandReconciliationJob).to have_been_enqueued.with(command.id)
+        expect(appointment.reload.attributes).to eq(original)
+
+        allow(client).to receive(:get_reception).and_return(reception('created-1'))
+        travel_to(Time.current + 61.seconds) { described_class.new(command: command.reload).perform }
+
+        expect(command.reload).to be_succeeded
+        expect(command.execution_state[verification_key]).to include('status' => 'verified', 'attempts' => 2)
+        expect(appointment.reload.attributes).to eq(original)
+        expect(client).to have_received(:get_reception).with(reception_code: 'created-1', version: :v2).twice
+        expect(client).not_to have_received(:create_reception)
+        expect(client).not_to have_received(:move_reception)
+        expect(client).not_to have_received(:remove_reception)
+      end
+
+      it 'bounds read checks and keeps acknowledgement successful after the last unavailable read' do
+        command.update!(execution_state: command.execution_state.merge(verification_key => { 'status' => 'pending', 'attempts' => 5 }))
+        allow(client).to receive(:get_reception).and_raise(Integrations::Medelement::Client::ApiError.new('unavailable', status: 503))
+        clear_enqueued_jobs
+
+        perform
+        described_class.new(command: command.reload).perform
+
+        expect(command.reload).to be_succeeded
+        expect(command.execution_state[verification_key]).to include('status' => 'pending', 'attempts' => 6)
+        expect(client).to have_received(:get_reception).once
+        expect(Integrations::Medelement::ProviderCommandReconciliationJob).not_to have_been_enqueued
+        expect(client).not_to have_received(:create_reception)
+      end
+
+      it 'leases an active read so a duplicate reconciliation cannot drain the attempt budget' do
+        allow(client).to receive(:get_reception) do
+          duplicate = Integrations::Medelement::ProviderCommand.find(command.id)
+          described_class.new(command: duplicate, client: client).perform
+          reception('created-1')
+        end
+        clear_enqueued_jobs
+
+        perform
+
+        expect(command.reload).to be_succeeded
+        expect(command.execution_state[verification_key]).to include('status' => 'verified', 'attempts' => 1)
+        expect(client).to have_received(:get_reception).once
+        expect(Integrations::Medelement::ProviderCommandReconciliationJob).not_to have_been_enqueued
+        expect(client).not_to have_received(:create_reception)
+      end
+
+      it 'does not use another patient or cabinet as materialization evidence' do
+        wrong = reception('created-1').merge('PATIENT_CODE' => 'other-patient', 'COMPANY_CABINET_CODE' => 'other-cabinet')
+        allow(client).to receive(:get_reception).and_return(wrong)
+        allow(client).to receive(:get_receptions).and_return([wrong])
+
+        perform
+
+        expect(command.reload).to be_succeeded
+        expect(command.execution_state[verification_key]['status']).to eq('pending')
+        expect(client).not_to have_received(:create_reception)
+      end
+    end
+
     it 'keeps the appointment provider status unknown after bounded read reconciliation' do
       command.update!(
         execution_state: command.execution_state.merge(
@@ -359,11 +444,16 @@ RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService
       expect(appointment.reload.custom_attributes['medelement_provider_sync_status']).to eq('provider_status_unknown')
     end
 
-    it 'adopts the exact reception returned by the write before falling back to timetable search' do
+    it 'adopts the exact written reception and releases the pending ACK guard before later complete empty snapshots' do
+      verification = Integrations::Medelement::ProviderCommands::ReceptionReceiptVerificationService
       command.update!(
         provider_reception_code: 'created-1',
-        execution_state: command.execution_state.merge('write_provider_reception_code' => 'created-1')
+        execution_state: command.execution_state.merge(
+          'write_provider_reception_code' => 'created-1',
+          verification::STATE_KEY => { 'status' => 'pending', 'attempts' => 0, 'reason' => 'apply_interrupted' }
+        )
       )
+      expect(command).to be_reconciliation_required
       allow(client).to receive(:get_reception)
         .with(reception_code: 'created-1', version: :v2)
         .and_return(reception('created-1'))
@@ -377,7 +467,63 @@ RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService
         source: 'manual'
       )
       expect(appointment.custom_attributes['medelement_provider_sync_status']).to eq('succeeded')
+      expect(command.execution_state[verification::STATE_KEY]).to include('status' => 'verified', 'attempts' => 0)
+      expect(command.execution_state[verification::STATE_KEY]).not_to include('reason', 'next_at')
+      expect(verification.unmaterialized_current_create?(appointment)).to be(false)
       expect(client).not_to have_received(:get_receptions)
+
+      configuration = Integrations::Medelement::Configuration.new(hook: hook)
+      allow(configuration).to receive(:throttle_ms).and_return(0)
+      allow(client).to receive(:get_receptions).and_return([])
+      full_sync = Integrations::Medelement::ReceptionsSyncService.new(account: account, client: client, configuration: configuration)
+      full_sync.perform
+      expect(appointment.reload.status).to eq('scheduled')
+      expect(appointment.custom_attributes['medelement_missing_syncs']).to eq(1)
+      full_sync.perform
+
+      expect(appointment.reload.status).to eq('cancelled')
+      expect(appointment.custom_attributes.dig('provider_status_audit', 'reason')).to eq('missing_from_two_authoritative_snapshots')
+      expect(Integrations::Medelement::LocalCancellation.provider_occupied?(appointment)).to be(false)
+    end
+
+    it 'does not adopt a different identical reception when the written ID read is unavailable' do
+      verification = Integrations::Medelement::ProviderCommands::ReceptionReceiptVerificationService
+      command.update!(status: 'provider_status_unknown', provider_reception_code: 'created-A', execution_state: command.execution_state.merge(
+        'write_provider_reception_code' => 'created-A',
+        'reconciliation_attempts' => Integrations::Medelement::ProviderCommand::RECONCILIATION_MAX_ATTEMPTS,
+        verification::STATE_KEY => { 'status' => 'pending', 'attempts' => 0 }
+      ))
+      allow(client).to receive(:get_reception).with(reception_code: 'created-A', version: :v2)
+        .and_raise(Integrations::Medelement::Client::ApiError.new('not materialized', status: 404))
+      allow(client).to receive(:get_receptions).and_return([reception('created-B')])
+      expect(client).not_to receive(:create_reception)
+      original = appointment.attributes
+
+      perform
+
+      expect(command.reload).to have_attributes(status: 'provider_status_unknown', provider_reception_code: 'created-A')
+      expect(command.execution_state[verification::STATE_KEY]['status']).to eq('pending')
+      expect(appointment.reload.attributes.except('custom_attributes', 'updated_at')).to eq(original.except('custom_attributes', 'updated_at'))
+      expect(appointment.custom_attributes).to eq(original.fetch('custom_attributes').merge(
+        Integrations::Medelement::AppointmentProviderStatus::ATTRIBUTE_KEY => Integrations::Medelement::AppointmentProviderStatus::UNKNOWN
+      ))
+    end
+
+    it 'adopts only the exact written ID from a scoped list when the direct read is unavailable' do
+      verification = Integrations::Medelement::ProviderCommands::ReceptionReceiptVerificationService
+      command.update!(provider_reception_code: 'created-A', execution_state: command.execution_state.merge(
+        'write_provider_reception_code' => 'created-A', verification::STATE_KEY => { 'status' => 'pending', 'attempts' => 0 }
+      ))
+      allow(client).to receive(:get_reception).with(reception_code: 'created-A', version: :v2)
+        .and_raise(Integrations::Medelement::Client::ApiError.new('not materialized', status: 404))
+      allow(client).to receive(:get_receptions).and_return([reception('created-A'), reception('created-B')])
+      expect(client).not_to receive(:create_reception)
+
+      perform
+
+      expect(command.reload).to have_attributes(status: 'succeeded', provider_reception_code: 'created-A')
+      expect(command.execution_state[verification::STATE_KEY]['status']).to eq('verified')
+      expect(appointment.reload.external_ref).to eq('medelement:reception:created-A')
     end
 
     it 'finds the remote reception on an employee-requested read-only check before a separate cancellation' do

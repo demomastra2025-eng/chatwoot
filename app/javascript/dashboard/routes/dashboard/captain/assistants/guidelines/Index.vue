@@ -11,7 +11,6 @@ import Input from 'dashboard/components-next/input/Input.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 
 import PageLayout from 'dashboard/components-next/captain/PageLayout.vue';
-import SettingsHeader from 'dashboard/components-next/captain/pageComponents/settings/SettingsHeader.vue';
 import SuggestedRules from 'dashboard/components-next/captain/assistant/SuggestedRules.vue';
 import AddNewRulesInput from 'dashboard/components-next/captain/assistant/AddNewRulesInput.vue';
 import AddNewRulesDialog from 'dashboard/components-next/captain/assistant/AddNewRulesDialog.vue';
@@ -186,13 +185,9 @@ const addAllExample = async () => {
     :back-url="backUrl"
     :show-know-more="false"
     :show-pagination-footer="false"
-    :show-assistant-switcher="false"
+    show-assistant-switcher
   >
     <template #body>
-      <SettingsHeader
-        :heading="t('CAPTAIN.ASSISTANTS.RESPONSE_GUIDELINES.TITLE')"
-        :description="t('CAPTAIN.ASSISTANTS.RESPONSE_GUIDELINES.DESCRIPTION')"
-      />
       <div v-if="shouldShowSuggestedRules" class="flex mt-7 flex-col gap-4">
         <SuggestedRules
           :title="t('CAPTAIN.ASSISTANTS.RESPONSE_GUIDELINES.TITLE')"

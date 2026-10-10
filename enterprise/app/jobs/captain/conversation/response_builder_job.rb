@@ -1100,8 +1100,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     return false unless control_generation_current?
 
     current_last_incoming_message_id = Captain::Conversation::ControlService
-                                       .messages_scope(@conversation)
-                                       .incoming
+                                       .incoming_messages_scope(@conversation)
                                        .reorder(created_at: :desc, id: :desc)
                                        .pick(:id)
     return bufferless_state_valid?(current_last_incoming_message_id) if @buffer_token.blank?

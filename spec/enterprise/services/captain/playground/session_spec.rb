@@ -4,7 +4,6 @@ RSpec.describe Captain::Playground::Session do
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account, role: :administrator) }
   let(:assistant) { create(:captain_assistant, account: account) }
-  let(:inbox) { create(:inbox, account: account) }
 
   def session(**)
     described_class.new(assistant: assistant, account: account, user: user, **)
@@ -12,115 +11,94 @@ RSpec.describe Captain::Playground::Session do
 
   after { Current.reset }
 
-  it 'keeps Trial state and history in a server session without creating business records' do
+  it 'persists synthetic JSON and server history without creating any business records' do
+    assistant
+    user
+    counts = [Contact, Conversation, Message, Scheduling::Appointment, Crm::Deal].map(&:count)
     id = nil
-    expect do
-      session.with_lock do |trial|
-        id = trial.id
-        trial.scenario.apply({ contact: { name: 'Изменённое имя' } }, mode: 'trial')
-        trial.record_turn('Hello', { 'response' => 'Reply' })
-      end
-    end.not_to change(Contact, :count)
-
-    session(session_id: id).with_lock do |trial|
-      expect(trial.scenario.contact['name']).to eq('Изменённое имя')
-      expect(trial.data['history'].map { |message| message['content'] }).to eq(%w[Hello Reply])
-      expect(trial.payload[:scenario][:patient]['phone_number']).not_to eq(trial.scenario.contact['phone_number'])
+    session.with_lock do |workspace|
+      id = workspace.id
+      workspace.scenario.apply({ contact: { name: 'Changed caller' }, patients: [{ name: 'Second synthetic patient', identifier: '' }] }, mode: 'workspace')
+      workspace.record_turn('Hello', { 'response' => 'Reply' })
     end
+    session(session_id: id).with_lock do |workspace|
+      expect(workspace.scenario.contact['name']).to eq('Changed caller')
+      expect(workspace.scenario.data['contacts'].size).to eq(3)
+      expect(workspace.data['history'].pluck('content')).to eq(%w[Hello Reply])
+      expect(workspace.payload.dig(:scenario, :contact, 'id')).to be_negative
+      expect(workspace.conversation).to be_nil
+    end
+    expect([Contact, Conversation, Message, Scheduling::Appointment, Crm::Deal].map(&:count)).to eq(counts)
   end
 
-  it 'rejects session references from another user, account, assistant, or mode' do
+  it 'rejects session references belonging to a different operator, account or profile and rejects legacy Live' do
     id = nil
-    session.with_lock { |trial| id = trial.id }
+    session.with_lock { |workspace| id = workspace.id }
     other_user = create(:user, account: account)
     other_account = create(:account)
     other_assistant = create(:captain_assistant, account: account)
-    expect { session(user: other_user, session_id: id).with_lock { |trial| trial.id } }.to raise_error(Captain::Playground::SessionStore::Stale)
-    expect { session(assistant: other_assistant, session_id: id).with_lock { |trial| trial.id } }.to raise_error(Captain::Playground::SessionStore::Stale)
-    expect { session(mode: 'live', session_id: id).with_lock(inbox_id: inbox.id) { |live| live.id } }
-      .to raise_error(Captain::Playground::SessionStore::Stale)
+    expect { session(user: other_user, session_id: id).with_lock { true } }.to raise_error(Captain::Playground::SessionStore::Stale)
+    expect { session(assistant: other_assistant, session_id: id).with_lock { true } }.to raise_error(Captain::Playground::SessionStore::Stale)
     expect { session(account: other_account, session_id: id) }.to raise_error(ArgumentError)
+    expect { session(mode: 'live', session_id: id) }.to raise_error(ArgumentError, /Legacy Live/)
   end
 
-  it 'resets the Trial scenario and history and invalidates the previous handle' do
+  it 'defaults writes off, requires reads, and revokes the generation immediately while the model turn lock is held' do
+    session.with_lock do |workspace|
+      expect(workspace.payload).to include(mode: 'workspace', real_data_read: false, real_data_write: false, delivery_enabled: false)
+      expect(workspace.set_permissions!(read: false, write: true)).to include('read' => false, 'write' => false)
+      permitted = workspace.set_permissions!(read: true, write: true)
+      workspace.data['action_previews'] << { 'id' => SecureRandom.uuid, 'status' => 'pending', 'generation' => permitted['generation'],
+                                            'expires_at' => 10.minutes.from_now.to_i }
+      expect(workspace.payload[:action_previews].size).to eq(1)
+      revoker = session(session_id: workspace.id)
+      revoked = revoker.set_permissions!(read: false, write: true)
+      expect(revoked).to include('read' => false, 'write' => false)
+      expect(revoked['generation']).not_to eq(permitted['generation'])
+      expect(workspace.write_enabled?).to be(false)
+      expect(workspace.payload[:action_previews]).to eq([])
+      expect(workspace.conversation).to be_nil
+    end
+  end
+
+  it 'resets history, scenario and permissions and invalidates the former session handle' do
     id = nil
-    session.with_lock do |trial|
-      id = trial.id
-      trial.scenario.apply({ contact: { name: 'Changed' } }, mode: 'trial')
-      trial.record_turn('Change', { 'response' => 'Changed' })
+    session.with_lock do |workspace|
+      id = workspace.id
+      workspace.set_permissions!(read: true, write: true)
+      workspace.scenario.apply({ contact: { name: 'Changed' } }, mode: 'workspace')
+      workspace.record_turn('Change', { 'response' => 'Changed' })
     end
-    session(session_id: id).with_lock(reset: true) do |trial|
-      expect(trial.id).not_to eq(id)
-      expect(trial.scenario.contact['name']).to eq('Айгуль Садыкова')
-      expect(trial.data['history']).to eq([])
+    session(session_id: id).with_lock(reset: true) do |workspace|
+      expect(workspace.id).not_to eq(id)
+      expect(workspace.scenario.contact['name']).to eq('Айгуль Садыкова')
+      expect(workspace.data['history']).to eq([])
+      expect(workspace.payload).to include(real_data_read: false, real_data_write: false, action_previews: [])
     end
-    expect { session(session_id: id).with_lock { |trial| trial.id } }.to raise_error(Captain::Playground::SessionStore::Stale)
+    expect { session(session_id: id).with_lock { true } }.to raise_error(Captain::Playground::SessionStore::Stale)
   end
 
-  it 'persists completed synthetic actions even when a later part of the turn raises' do
+  it 'preserves completed synthetic edits after a model timeout' do
     expect do
-      session.with_lock do |trial|
-        trial.scenario.apply({ contact: { name: 'Saved before timeout' } }, mode: 'trial')
+      session.with_lock do |workspace|
+        workspace.scenario.apply({ contact: { name: 'Saved before timeout' } }, mode: 'workspace')
         raise Timeout::Error, 'provider timeout'
       end
     end.to raise_error(Timeout::Error)
-    session.with_lock { |trial| expect(trial.scenario.contact['name']).to eq('Saved before timeout') }
+    session.with_lock { |workspace| expect(workspace.scenario.contact['name']).to eq('Saved before timeout') }
   end
 
-  it 'allows an explicit reset after the cached session has expired' do
-    session(session_id: SecureRandom.uuid).with_lock(reset: true) { |trial| expect(trial.payload[:mode]).to eq('trial') }
-  end
-
-  it 'rejects overlapping turns and keeps a bounded expiring cache entry' do
-    store = Captain::Playground::SessionStore.new(account: account, user: user, assistant: assistant, mode: 'trial')
-    store.with_lock do
-      expect { store.with_lock { true } }.to raise_error(Captain::Playground::SessionStore::Busy)
+  it 'allows an explicit reset of an expired handle but starts with all real permissions off' do
+    session(session_id: SecureRandom.uuid).with_lock(reset: true) do |workspace|
+      expect(workspace.payload).to include(mode: 'workspace', real_data_read: false, real_data_write: false)
     end
+  end
+
+  it 'rejects overlapping turns and bounds the expiring Redis entry' do
+    store = Captain::Playground::SessionStore.new(account: account, user: user, assistant: assistant)
+    store.with_lock { expect { store.with_lock { true } }.to raise_error(Captain::Playground::SessionStore::Busy) }
     expect { store.write('value' => 'x' * Captain::Playground::SessionStore::MAX_BYTES) }.to raise_error(ArgumentError)
     expect(Redis::Alfred).to receive(:set).with(anything, anything, ex: Captain::Playground::SessionStore::TTL).and_call_original
     store.write('id' => SecureRandom.uuid)
-  end
-
-  it 'requires an administrator for Live without granting a new agent tool set' do
-    regular_user = create(:user, account: account, role: :agent)
-    expect { session(user: regular_user, mode: 'live') }.to raise_error(Pundit::NotAuthorizedError)
-    original = assistant.config.deep_dup
-    session(mode: 'live').with_lock(inbox_id: inbox.id) { |live| expect(live.payload[:delivery_enabled]).to be(false) }
-    expect(assistant.reload.config).to eq(original)
-  end
-
-  it 'creates only a dedicated actual caller and conversation and never borrows an existing patient identity' do
-    original = create(:contact, account: account, name: 'Real patient')
-    original_conversation = create(:conversation, account: account, inbox: inbox, contact: original)
-    before_counts = [Scheduling::Appointment.count, Crm::Deal.count, Message.count]
-    expect do
-      session(mode: 'live').with_lock(inbox_id: inbox.id) do |live|
-        expect(live.conversation.id).not_to eq(original_conversation.id)
-        expect(live.conversation.contact_id).not_to eq(original.id)
-        expect(live.conversation.contact_inbox.hmac_verified).to be(false)
-        expect(Outbound::PlaygroundDeliveryPolicy.verified(live.run_policy)[:delivery_enabled]).to be(false)
-      end
-    end.to change(Contact, :count).by(1).and change(Conversation, :count).by(1)
-    expect([Scheduling::Appointment.count, Crm::Deal.count, Message.count]).to eq(before_counts)
-    expect(original.reload.name).to eq('Real patient')
-  end
-
-  it 'keeps only the actual caller profile and no synthetic business catalogues in a Live session' do
-    session(mode: 'live').with_lock(inbox_id: inbox.id) do |live|
-      expect(live.payload[:scenario].keys).to eq([:contact])
-      expect(live.payload[:scenario][:contact]['id']).to eq(live.conversation.contact_id)
-      expect(live.scenario.data.values_at('resources', 'services', 'pipelines', 'stages', 'deals', 'appointments')).to all(eq([]))
-      expect(live.scenario.data['contacts'].pluck('id')).to eq([live.conversation.contact_id])
-      expect(live.payload[:live_warning]).to eq(described_class::LIVE_WARNING)
-    end
-  end
-
-  it 'rejects synthetic business scenario records and uncontrolled delivery opt-in in Live' do
-    expect do
-      session(mode: 'live').with_lock(inbox_id: inbox.id, scenario_input: { deal: { title: 'Synthetic deal' } }) { |live| live.id }
-    end.to raise_error(ArgumentError, 'Live only accepts the test caller profile')
-    expect do
-      session(mode: 'live').with_lock(inbox_id: inbox.id, delivery_enabled: true) { |live| live.id }
-    end.to raise_error(ArgumentError, 'A controlled test phone number is required')
   end
 end

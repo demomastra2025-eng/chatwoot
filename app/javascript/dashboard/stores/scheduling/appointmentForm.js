@@ -195,6 +195,7 @@ const createDefaultForm = () => ({
   conversationDisplayId: '',
   conversationId: '',
   crmDealSelection: {},
+  durationEdited: false,
   durationMin: '',
   customAttributes: {},
   endsAt: '',
@@ -330,6 +331,11 @@ export const useSchedulingAppointmentFormStore = defineStore(
         this.form = {
           ...this.form,
           ...defaults,
+          durationEdited: Boolean(
+            slot.durationEdited ||
+              defaults.durationEdited ||
+              Number(defaults.durationMin) > 0
+          ),
           endsAt: toFormDateTime(slot.endsAt),
           resourceId: slot.resourceId || defaults.resourceId || '',
           startsAt: toFormDateTime(slot.startsAt),
@@ -367,6 +373,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
           conversationDisplayId: appointment.conversationDisplayId || '',
           conversationId: appointment.conversationId || '',
           crmDealSelection: {},
+          durationEdited: true,
           durationMin: appointment.durationMin || '',
           customAttributes: appointment.customAttributes || {},
           endsAt: toFormDateTime(appointment.endsAt),
@@ -460,6 +467,11 @@ export const useSchedulingAppointmentFormStore = defineStore(
         this.form = updatedForm;
       },
 
+      markDurationEdited() {
+        if (this.ui.isSaving) return;
+        this.form.durationEdited = true;
+      },
+
       applyContact(contact) {
         if (this.ui.isSaving) return;
         const existingPhone = this.form.clientPhone || '';
@@ -551,6 +563,52 @@ export const useSchedulingAppointmentFormStore = defineStore(
           ...this.form,
           serviceAmount: nextServiceAmount,
         };
+      },
+
+      syncServiceDuration(services) {
+        if (
+          this.ui.isSaving ||
+          this.mode !== 'create' ||
+          this.form.durationEdited
+        ) {
+          return;
+        }
+        const activeServiceIds = normalizeIdArray(this.form.serviceIds);
+        const selectedServiceIds = activeServiceIds.length
+          ? activeServiceIds
+          : normalizeIdArray([this.form.serviceId]);
+        const selectedServices = selectedServiceIds.map(serviceId =>
+          services.find(service => Number(service.id) === serviceId)
+        );
+        if (
+          !selectedServices.length ||
+          selectedServices.some(
+            service =>
+              !Number.isInteger(Number(service?.durationMin)) ||
+              Number(service.durationMin) <= 0
+          )
+        ) {
+          return;
+        }
+        // Match UpsertService#resolve_duration_min for multiple services.
+        const durationMin = selectedServices.reduce(
+          (sum, service) => sum + Number(service.durationMin),
+          0
+        );
+        const endsAt = this.form.startsAt
+          ? addMinutesToDateTimeInputValue(
+              this.form.startsAt,
+              durationMin,
+              SCHEDULING_TIMEZONE
+            )
+          : this.form.endsAt;
+        if (
+          Number(this.form.durationMin) === durationMin &&
+          this.form.endsAt === endsAt
+        ) {
+          return;
+        }
+        this.form = { ...this.form, durationMin, endsAt };
       },
 
       async searchContacts(query) {

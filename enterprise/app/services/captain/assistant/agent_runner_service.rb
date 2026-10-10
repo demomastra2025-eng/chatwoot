@@ -952,6 +952,8 @@ class Captain::Assistant::AgentRunnerService
 
   def runtime_preferences_for_run
     preferences = Captain::AssistantSafetyPreferences.for(assistant: @assistant, feature: :assistant)
+    saved_effort = @assistant.config.to_h['thinking_effort'].presence
+    preferences = preferences.merge('assistant_thinking_effort' => saved_effort) if saved_effort
     return preferences unless @source == 'playground' && @test_overrides.key?(:thinking_effort)
 
     preferences.merge('assistant_thinking_effort' => @test_overrides[:thinking_effort])

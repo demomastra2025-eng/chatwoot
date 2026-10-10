@@ -273,13 +273,33 @@ class Captain::Runtime::ToolWrapper
       append_optional_argument_description!(property_schema)
     end
     if positive_id_schema?(name, property_schema)
-      property_schema['minimum'] = [property_schema['minimum'].to_i, 1].max
+      constrain_reference_schema!(property_schema)
       append_verified_id_description!(property_schema)
     elsif id_array_schema?(name, property_schema)
       item_schema = property_schema['items']
-      item_schema['minimum'] = [item_schema['minimum'].to_i, 1].max if Array(item_schema['type']).intersect?(%w[integer number])
+      constrain_reference_schema!(item_schema) if Array(item_schema['type']).intersect?(%w[integer number])
       append_verified_id_description!(property_schema)
     end
+  end
+
+  def constrain_reference_schema!(schema)
+    unless playground_session
+      schema['minimum'] = [schema['minimum'].to_i, 1].max
+      return
+    end
+
+    # Keep the production tool shape and integer type. Only a server-bound
+    # Playground can additionally use negative references, checked before call.
+    schema.delete('minimum')
+    schema['anyOf'] = [{ 'minimum' => 1 }, { 'maximum' => -1 }]
+  end
+
+  def playground_session
+    session = context_wrapper_context[:playground_session]
+    return unless session.is_a?(Captain::Playground::Session)
+
+    session.assert_context!(context_wrapper_context[:state])
+    session
   end
 
   def allow_explicit_null!(property_schema)
@@ -332,6 +352,7 @@ class Captain::Runtime::ToolWrapper
   end
 
   def validate_normalized_args!(args)
+    playground_session&.namespace&.decode(args)
     schema = params_schema
     return unless schema.is_a?(Hash)
 
@@ -374,7 +395,11 @@ class Captain::Runtime::ToolWrapper
   end
 
   def positive_service_id?(value)
-    value.present? && value.to_i.positive?
+    return true if value.present? && value.to_i.positive?
+    return false unless value.present? && value.to_i.negative? && playground_session
+
+    local_id = playground_session.namespace.decode({ service_id: value }).fetch(:service_id)
+    playground_session.scenario.data['services'].any? { |item| item['id'] == local_id && item['active'] }
   end
 
   def remember_service_specific_scheduling!

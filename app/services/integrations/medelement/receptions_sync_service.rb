@@ -73,7 +73,7 @@ class Integrations::Medelement::ReceptionsSyncService
     return :absent unless appointment
 
     Integrations::Medelement::MissingAppointmentReconciler.new(
-      appointment: appointment, snapshot_version: appointment.updated_at
+      appointment: appointment, snapshot_version: appointment.updated_at, provider_removal_confirmed: true
     ).perform
   end
 

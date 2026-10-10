@@ -8,7 +8,11 @@ RSpec.describe 'Playground external tool isolation' do
   let(:user) { create(:user, account: account, role: :administrator) }
   let(:assistant) { create(:captain_assistant, account: account) }
   let(:inbox) { create(:channel_sms, account: account).inbox }
-  let(:session) { Captain::Playground::Session.new(account: account, user: user, assistant: assistant, mode: 'live') }
+  let(:session) { Captain::Playground::Session.new(account: account, user: user, assistant: assistant) }
+  let(:legacy_policy) { Outbound::PlaygroundDeliveryPolicy.issue(mode: 'live', run_id: SecureRandom.uuid, delivery_enabled: true) }
+  let(:legacy_conversation) do
+    create(:conversation, account: account, inbox: inbox, additional_attributes: { 'captain_playground' => legacy_policy })
+  end
   let(:custom_tool) do
     create(:captain_custom_tool, :with_post, account: account, slug: 'custom_playground_external_send',
                                            endpoint_url: 'https://example.com/outbound', request_template: '{}')
@@ -87,12 +91,12 @@ RSpec.describe 'Playground external tool isolation' do
     ]
   end
 
-  [false, true].each do |delivery_enabled|
-    context "with Live delivery #{delivery_enabled ? 'explicitly enabled' : 'disabled by default'}" do
-      let(:live_options) { { inbox_id: inbox.id, delivery_enabled: delivery_enabled, delivery_target: '+77015551234' } }
+  [false, true].each do |real_access|
+    context "with real-data permissions #{real_access ? 'enabled' : 'disabled'}" do
 
       it 'blocks dynamically built HTTP, MCP and script tools in the actual chat wrapper before their executors' do
-        session.with_lock(**live_options) do |live|
+        session.with_lock do |live|
+          live.set_permissions!(read: real_access, write: real_access)
           block_transports!
           expect(Captain::Tools::HttpRequestExecutor).not_to receive(:new)
           expect(Captain::Mcp::ExecutionService).not_to receive(:new)
@@ -106,12 +110,12 @@ RSpec.describe 'Playground external tool isolation' do
         end
       end
 
-      it 'blocks a later ordinary runner for the dedicated caller without a Playground session' do
-        session.with_lock(**live_options) do |live|
+      it 'blocks a later ordinary runner for a captured legacy conversation without a Playground session' do
+        session.with_lock do
           block_transports!
-          runner = Captain::Assistant::AgentRunnerService.new(assistant: assistant, conversation: live.conversation)
+          runner = Captain::Assistant::AgentRunnerService.new(assistant: assistant, conversation: legacy_conversation)
           allow(runner).to receive(:generate_response_in_runtime_cache) do
-            expect(Current.playground_run_policy).to eq(live.run_policy)
+            expect(Current.playground_run_policy).to eq(legacy_policy)
             wrappers, context = wrappers_for(runner)
             expect(context.context).not_to have_key(:playground_session)
             expect(context.context[:state]).not_to have_key(:playground)
@@ -128,7 +132,8 @@ RSpec.describe 'Playground external tool isolation' do
       end
 
       it 'blocks the shared HTTP/MCP/subprocess transport entrypoints with the captured signed policy' do
-        session.with_lock(**live_options) do |live|
+        session.with_lock do |live|
+          live.set_permissions!(read: real_access, write: real_access)
           block_transports!
           Outbound::PlaygroundDeliveryPolicy.with(live.run_policy) do
             execute_transports.each { |result| expect_blocked(result) }
@@ -138,8 +143,9 @@ RSpec.describe 'Playground external tool isolation' do
         end
       end
 
-      it 'does not discover MCP tools for a Live source even before Current has been installed' do
-        session.with_lock(**live_options) do |live|
+      it 'does not discover MCP tools for a workspace source even before Current has been installed' do
+        session.with_lock do |live|
+          live.set_permissions!(read: real_access, write: real_access)
           block_transports!
           expect(Captain::Mcp::ToolCatalog::DiscoveryService).not_to receive(:new)
           runner = Captain::Assistant::AgentRunnerService.new(assistant: assistant, source: 'playground', playground_session: live)
@@ -165,9 +171,9 @@ RSpec.describe 'Playground external tool isolation' do
   end
 
   it 'blocks direct tool execution from a persisted test caller context even without Current or a session' do
-    session.with_lock(inbox_id: inbox.id) do |live|
+    session.with_lock do
       block_transports!
-      runner = Captain::Assistant::AgentRunnerService.new(assistant: assistant, conversation: live.conversation)
+      runner = Captain::Assistant::AgentRunnerService.new(assistant: assistant, conversation: legacy_conversation)
       context = Captain::Runtime::ToolContext.new(run_context: Captain::Runtime::RunContext.new({ state: runner.send(:build_state) }))
 
       expect(Current.playground_run_policy).to be_nil

@@ -11,6 +11,8 @@ module Scheduling::ToolPayloadBuilder
       status: provider_write_acknowledged ? appointment.status : Integrations::Medelement::AppointmentProviderStatus.public_status(appointment),
       provider_confirmation_status: appointment_data[:provider_confirmation_status],
       provider_confirmed: appointment_data[:provider_confirmed],
+      provider_confirmation_operation: appointment_data[:provider_confirmation_operation],
+      provider_confirmation_scope: appointment_data[:provider_confirmation_scope],
       provider_write_acknowledged: provider_write_acknowledged ? true : nil,
       provider_confirmation_required: provider_confirmation_required?(appointment),
       resource_id: appointment_data[:resource_id],
@@ -36,6 +38,8 @@ module Scheduling::ToolPayloadBuilder
   end
 
   def provider_confirmation_required?(appointment)
+    return false if appointment.status == 'cancelled' && Integrations::Medelement::LocalCancellation.marked?(appointment)
+
     appointment.resource&.custom_attributes.to_h['medelement_specialist_code'].present? &&
       appointment.custom_attributes.to_h[Integrations::Medelement::AppointmentProviderStatus::ATTRIBUTE_KEY].present?
   end

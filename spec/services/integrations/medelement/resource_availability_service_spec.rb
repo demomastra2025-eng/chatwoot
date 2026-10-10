@@ -41,6 +41,14 @@ RSpec.describe Integrations::Medelement::ResourceAvailabilityService do
     )
   end
 
+  it 'distinguishes an internal failure from a provider outage without offering slots' do
+    allow(client).to receive(:timetable).and_raise(StandardError, 'PRIVATE internal details')
+
+    result = described_class.new(resource: resource, from: from_time, to: to_time, slots: slots, client: client).perform
+
+    expect(result).to have_attributes(status: 'unavailable', reason: 'internal_failure', slots: [])
+  end
+
   it 'keeps only provider-working slots and chooses a cabinet without an active reception' do
     allow(client).to receive(:get_receptions).with(hash_including(company_cabinet_code: 'cabinet-1')).and_return(
       [{ 'STARTTIME' => '07.09.2026 09:00:00', 'ENDTIME' => '07.09.2026 10:00:00', 'REMOVED' => 0 }]

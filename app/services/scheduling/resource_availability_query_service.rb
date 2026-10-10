@@ -13,6 +13,7 @@ class Scheduling::ResourceAvailabilityQueryService
     @provider_working_windows = options[:provider_working_windows]
     @replace_work_rules = options.fetch(:replace_work_rules, false)
     @uncapped = options.fetch(:uncapped, false)
+    @availability_service = options[:availability_service]
   end
 
   def perform

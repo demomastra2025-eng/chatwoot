@@ -20,6 +20,7 @@ class Scheduling::Appointments::ProviderLocalCancellationService
         Scheduling::Appointments::FinanceSyncService.new(appointment: appointment, actor: user_actor).sync!
       end
     end
+    appointment.medelement_provider_command_receipt = nil
     appointment.reload
   end
 

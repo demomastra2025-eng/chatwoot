@@ -547,6 +547,50 @@ RSpec.describe Integrations::Medelement::AppointmentImporterService do
     )
   end
 
+  it 'keeps the native pending resolver bound to the known written ID when another identical reception appears' do
+    account.enable_features!('scheduling')
+    zone = ActiveSupport::TimeZone['Asia/Almaty']
+    starts_at = zone.local(2026, 3, 21, 9)
+    ends_at = starts_at + 20.minutes
+    contact = create(:contact, account: account, phone_number: '+77000000002',
+                               custom_attributes: { 'medelement_patient_code' => reception['PATIENT_CODE'] })
+    resource.update!(custom_attributes: {
+      'medelement_specialist_code' => import_context[:specialist_code],
+      'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }]
+    })
+    appointment = create(:scheduling_appointment, account: account, contact: contact, resource: resource, source: 'manual',
+                                                starts_at: starts_at, ends_at: ends_at, custom_attributes: {
+                                                  'medelement_cabinet_code' => 'cabinet-1',
+                                                  'medelement_provider_sync_status' => 'provider_status_unknown'
+                                                })
+    command = create_unknown_outbound_command(appointment: appointment, contact: contact, starts_at: starts_at, ends_at: ends_at)
+    verification = Integrations::Medelement::ProviderCommands::ReceptionReceiptVerificationService
+    command.update!(provider_reception_code: 'created-A', execution_state: command.execution_state.merge(
+      'write_provider_reception_code' => 'created-A', verification::STATE_KEY => { 'status' => 'pending', 'attempts' => 0 }
+    ))
+    provider_reception = reception.merge(
+      'RECEPTION_CODE' => 'created-B', 'SPECIALIST_CODE' => import_context[:specialist_code], 'COMPANY_CABINET_CODE' => 'cabinet-1',
+      'STARTTIME' => starts_at.in_time_zone(zone).strftime('%d.%m.%Y %H:%M:%S'),
+      'ENDTIME' => ends_at.in_time_zone(zone).strftime('%d.%m.%Y %H:%M:%S'), 'REMOVED' => 0, 'SERVICES' => []
+    )
+    context = import_context.merge(starts_at: starts_at, ends_at: ends_at)
+    resolver = Integrations::Medelement::ProviderCommands::PendingReceptionResolver.new(account: account)
+    expect(Integrations::Medelement::Client).not_to receive(:new)
+    original = appointment.attributes
+
+    expect(resolver.resolve(reception: provider_reception, resource: resource, import_context: context)).to be_nil
+    expect(command.reload).to have_attributes(status: 'provider_status_unknown', provider_reception_code: 'created-A')
+    expect(command.execution_state[verification::STATE_KEY]['status']).to eq('pending')
+    expect(appointment.reload.attributes).to eq(original)
+
+    result = resolver.resolve(reception: provider_reception.merge('RECEPTION_CODE' => 'created-A'), resource: resource, import_context: context)
+
+    expect(result.id).to eq(appointment.id)
+    expect(command.reload).to have_attributes(status: 'succeeded', provider_reception_code: 'created-A')
+    expect(command.execution_state[verification::STATE_KEY]['status']).to eq('verified')
+    expect(appointment.reload.external_ref).to eq('medelement:reception:created-A')
+  end
+
   it 'requires manual resolution when the local appointment changed after the provider write' do
     account.enable_features!('scheduling')
     zone = ActiveSupport::TimeZone['Asia/Almaty']

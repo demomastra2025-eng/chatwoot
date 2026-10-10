@@ -1979,10 +1979,15 @@ const updateAppointmentMutation = async (
 };
 
 watch(
-  [() => formStore.form.serviceIds, () => formStore.form.resourceId],
+  [
+    () => formStore.form.serviceIds,
+    () => formStore.form.resourceId,
+    () => referencesStore.services,
+  ],
   ([serviceIds, resourceId]) => {
-    if (!serviceIds?.length || !resourceId) return;
-    formStore.syncServicePricing(referencesStore.services);
+    if (!serviceIds?.length) return;
+    if (resourceId) formStore.syncServicePricing(referencesStore.services);
+    formStore.syncServiceDuration(referencesStore.services);
   },
   { deep: true }
 );
@@ -2676,6 +2681,7 @@ onMounted(async () => {
                             )
                           : ''
                       "
+                      @change="formStore.markDurationEdited()"
                     />
                     <p
                       v-if="formStore.validationErrors.durationMin"

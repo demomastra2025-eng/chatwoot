@@ -68,7 +68,11 @@ class Scheduling::ScheduleDayAvailabilityService
       end
     ).perform
     unless availability.status == 'fresh'
-      state = availability.reason == 'provider_response_invalid' ? 'schedule_not_confirmed' : 'provider_unavailable'
+      state = case availability.reason
+              when 'provider_response_invalid' then 'schedule_not_confirmed'
+              when 'internal_failure' then 'internal_failure'
+              else 'provider_unavailable'
+              end
       return result([], state, availability.checked_at)
     end
 

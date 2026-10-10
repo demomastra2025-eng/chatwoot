@@ -94,32 +94,25 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
   context 'when executing with a captured Playground policy' do
     after { Current.reset }
 
-    it 'restores the signed command policy for execution and queued descendants' do
+    it 'denies an unsent legacy command and restores the ordinary context without creating descendants' do
       captured = Outbound::PlaygroundDeliveryPolicy.issue(mode: 'live', run_id: SecureRandom.uuid, delivery_enabled: false)
       command.update!(execution_state: command.execution_state.merge('captain_playground' => captured))
-      descendant = nil
-      allow(executor).to receive(:execute_operation!) do
-        expect(Current.playground_run_policy).to eq(captured)
-        descendant = Integrations::Medelement::ProviderCommandReconciliationJob.new(command.id)
-        descendant.send(:capture_playground_run_policy)
-      end
+      expect(executor).not_to receive(:execute_operation!)
 
       perform
 
-      expect(descendant.serialize['captain_playground']).to eq(captured)
+      expect(command.reload).to have_attributes(status: 'failed', last_error_code: 'playground_confirmation_required')
       expect(Current.playground_run_policy).to be_nil
       expect(Integrations::Medelement::Client).not_to have_received(:new)
     end
 
     it 'keeps malformed command policy blocking instead of restoring ordinary execution context' do
       command.update!(execution_state: command.execution_state.merge('captain_playground' => nil))
-      allow(executor).to receive(:execute_operation!) do
-        expect(Current.playground_run_policy).to eq({})
-        expect { Outbound::PlaygroundDeliveryPolicy.ensure!(conversation: nil) }.to raise_error(Outbound::PlaygroundDeliveryPolicy::Blocked)
-      end
+      expect(executor).not_to receive(:execute_operation!)
 
       perform
 
+      expect(command.reload).to have_attributes(status: 'failed', last_error_code: 'playground_confirmation_required')
       expect(Current.playground_run_policy).to be_nil
       expect(Integrations::Medelement::Client).not_to have_received(:new)
     end
@@ -128,24 +121,65 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
       captured = Outbound::PlaygroundDeliveryPolicy.issue(mode: 'live', run_id: SecureRandom.uuid, delivery_enabled: true)
       command.update!(execution_state: command.execution_state.merge('captain_playground' => captured))
       inherited = { 'token' => 'invalid' }
-      allow(executor).to receive(:execute_operation!) { expect(Current.playground_run_policy).to eq({}) }
+      expect(executor).not_to receive(:execute_operation!)
 
       Outbound::PlaygroundDeliveryPolicy.with(inherited) do
         perform
         expect(Current.playground_run_policy).to eq(inherited)
       end
 
+      expect(command.reload).to have_attributes(status: 'failed', last_error_code: 'playground_confirmation_required')
       expect(Current.playground_run_policy).to be_nil
       expect(Integrations::Medelement::Client).not_to have_received(:new)
     end
 
     it 'retains an inherited causal policy when an ordinary command has no stored stamp' do
       inherited = { 'token' => 'invalid' }
-      allow(executor).to receive(:execute_operation!) { expect(Current.playground_run_policy).to eq(inherited) }
+      expect(executor).not_to receive(:execute_operation!)
 
       Outbound::PlaygroundDeliveryPolicy.with(inherited) { perform }
 
+      expect(command.reload).to have_attributes(status: 'failed', last_error_code: 'playground_confirmation_required')
       expect(Current.playground_run_policy).to be_nil
+      expect(Integrations::Medelement::Client).not_to have_received(:new)
+    end
+
+    it 'reconciles a genuinely started legacy patient write once with read-only lookup and never resends it' do
+      captured = Outbound::PlaygroundDeliveryPolicy.issue(mode: 'live', run_id: SecureRandom.uuid, delivery_enabled: true)
+      command.update!(execution_state: command.execution_state.merge('captain_playground' => captured, 'write_phase' => 'patient_create'))
+      expect(executor).not_to receive(:execute_operation!)
+      expect(client).not_to receive(:create_patient)
+      allow(client).to receive(:search_patients_by_phone).and_return([
+        { 'PROFILE_CODE' => 'legacy-patient-1', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov', 'PATIENT_PHONE_2' => contact.phone_number }
+      ])
+
+      perform
+
+      expect(command.reload.status).to eq('reconciliation_required')
+      reconciliation = Integrations::Medelement::ProviderCommands::ReconciliationService.new(command: command)
+      reconciliation.perform
+      expect(command.reload).to have_attributes(status: 'succeeded', provider_patient_code: 'legacy-patient-1')
+      reconciliation.perform
+      expect(client).to have_received(:search_patients_by_phone).once
+      expect(contact.reload.custom_attributes['medelement_patient_code']).to eq('legacy-patient-1')
+      expect(Current.playground_run_policy).to be_nil
+    end
+
+    it 'rechecks a revoked approval inside the write fence before publishing a phase or constructing a client' do
+      allowed = true
+      allow(Outbound::PlaygroundMutationPolicy).to receive(:allowed_command?) { allowed }
+      allow(executor).to receive(:with_patient_identity_write_fence).and_wrap_original do |original, &block|
+        allowed = false # Simulate OFF arriving while the row-lock fence is waiting.
+        original.call(&block)
+      end
+      allow(executor).to receive(:execute_operation!) { executor.send(:mark_write_phase!, 'patient_create') }
+      expect(executor).not_to receive(:publish_write_phase!)
+
+      perform
+
+      expect(Outbound::PlaygroundMutationPolicy).to have_received(:allowed_command?).twice
+      expect(command.reload).to have_attributes(status: 'failed', last_error_code: 'playground_confirmation_required')
+      expect(command.execution_state['write_phase']).to be_nil
       expect(Integrations::Medelement::Client).not_to have_received(:new)
     end
   end
@@ -962,6 +996,28 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
       expect(client).not_to have_received(:get_receptions)
       expect(command.reload).to be_reconciliation_required
       expect(command.last_error_code).to eq('reception_create_requires_verification')
+    end
+
+    it 'accepts a successful create ID without waiting for a delayed provider read or repeating create' do
+      allow_available_destination
+      allow(client).to receive(:create_reception).and_return('RECEPTION_CODE' => 'reception-1')
+      allow(client).to receive(:get_reception).and_raise(Integrations::Medelement::Client::ApiError.new('not materialized', status: 404))
+      allow(Integrations::Medelement::ProviderCommandReconciliationJob).to receive(:perform_later)
+
+      perform
+      described_class.new(command: command.reload).perform
+
+      expect(command.reload).to have_attributes(status: 'succeeded', provider_reception_code: 'reception-1')
+      expect(command.execution_state[Integrations::Medelement::ProviderCommands::ReceptionReceiptVerificationService::STATE_KEY]).to include(
+        'status' => 'pending', 'attempts' => 0
+      )
+      expect(appointment.reload.external_ref).to eq('medelement:reception:reception-1')
+      expect(Integrations::Medelement::AppointmentProviderStatus.payload(appointment)).to include(
+        provider_confirmed: true, provider_confirmation_operation: 'create_reception'
+      )
+      expect(client).to have_received(:create_reception).once
+      expect(client).not_to have_received(:get_reception)
+      expect(Integrations::Medelement::ProviderCommandReconciliationJob).to have_received(:perform_later).once.with(command.id)
     end
 
     it 'does not POST if the local appointment acquired a reception reference after confirmation' do

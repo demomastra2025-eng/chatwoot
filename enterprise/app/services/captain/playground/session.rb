@@ -1,53 +1,53 @@
 require 'digest'
 
 class Captain::Playground::Session
-  include Captain::Playground::LiveCallerSource
-  include Captain::Playground::LiveSession
-
   MAX_HISTORY = 40
   MAX_MESSAGE_LENGTH = 12_000
-  LIVE_WARNING = 'Боевой режим: данные клиента тестовые, действия в выбранной клинике — реальные.'.freeze
+  LIVE_WARNING = 'Разрешены изменения реальных данных. Каждое действие требует отдельного подтверждения.'.freeze
 
-  attr_reader :assistant, :account, :user, :mode, :data, :scenario
+  attr_reader :assistant, :account, :user, :data, :scenario, :namespace, :store
 
-  def initialize(assistant:, account:, user:, mode: 'trial', session_id: nil)
-    @assistant = assistant
-    @account = account
-    @user = user
-    @mode = mode.to_s
+  def initialize(assistant:, account:, user:, mode: 'workspace', session_id: nil)
+    raise ArgumentError, 'Legacy Live Playground is unavailable; reset the session' if mode.to_s == 'live'
+
+    @assistant, @account, @user = assistant, account, user
     @requested_id = session_id.presence
-    @store = Captain::Playground::SessionStore.new(account: account, user: user, assistant: assistant, mode: @mode)
-    authorize_live! if live?
+    @store = Captain::Playground::SessionStore.new(account: account, user: user, assistant: assistant, mode: mode)
   end
 
-  def with_lock(reset: false, scenario_input: nil, inbox_id: nil, delivery_enabled: false, delivery_target: nil)
-    @store.with_lock do
+  def mode = 'workspace'
+  def trial? = true
+  def live? = false
+  def conversation = nil
+
+  def with_lock(reset: false, scenario_input: nil, **)
+    store.with_lock do
       load_data!(reset: reset, scenario_input: scenario_input)
-      prepare_live!(inbox_id: inbox_id, delivery_enabled: delivery_enabled, delivery_target: delivery_target) if live?
       begin
         yield self
       ensure
-        # Completed synthetic actions must survive a provider timeout later in the same turn.
         save!
       end
     end
   end
 
-  def trial?
-    mode == 'trial'
-  end
-
-  def live?
-    mode == 'live'
-  end
-
-  def id
-    data.fetch('id')
-  end
+  def id = data.fetch('id')
 
   def save!
     data['scenario'] = scenario.data
-    @store.write(data)
+    store.write(data)
+  end
+
+  def permissions
+    store.permissions(session_id: id)
+  end
+
+  def read_enabled? = permissions['read'] == true
+  def write_enabled? = read_enabled? && permissions['write'] == true
+
+  def set_permissions!(read:, write:)
+    ensure_membership!
+    store.set_permissions(session_id: @requested_id || id, read: read, write: write)
   end
 
   def context_reference
@@ -55,38 +55,23 @@ class Captain::Playground::Session
   end
 
   def state
-    return scenario.state.merge(playground: context_reference) if trial?
-
-    { playground: context_reference }
-  end
-
-  def conversation
-    return if trial?
-
-    @conversation ||= account.conversations.find_by!(id: data['conversation_id'], contact_id: data['caller_contact_id'])
+    namespace.encode(scenario.state).merge(playground: context_reference, playground_permissions: permissions.slice('read', 'write'))
   end
 
   def assert_context!(state)
     reference = state.to_h.with_indifferent_access[:playground].to_h.with_indifferent_access
-    expected = context_reference.with_indifferent_access
-    unless expected.all? { |key, value| reference[key] == value }
+    unless context_reference.all? { |key, value| reference[key] == value }
       raise ArgumentError, 'Playground execution context does not match the server session'
     end
     raise ArgumentError, 'Playground source is required' unless state.to_h.with_indifferent_access[:source] == 'playground'
 
-    return if trial?
-
-    assert_live_caller!(state.to_h.with_indifferent_access)
-    validate_live_source!
+    ensure_membership!
   end
 
   def run_policy
-    return unless live?
-
     @run_policy ||= Outbound::PlaygroundDeliveryPolicy.issue(
-      mode: mode, run_id: SecureRandom.uuid, session_id: id, account_id: account.id, user_id: user.id, assistant_id: assistant.id,
-      caller_contact_id: conversation.contact_id, conversation_id: conversation.id, inbox_id: conversation.inbox_id,
-      delivery_enabled: data['delivery_enabled'] == true, delivery_target: data['delivery_target']
+      mode: mode, run_id: SecureRandom.uuid, session_id: id, account_id: account.id,
+      user_id: user.id, assistant_id: assistant.id, delivery_enabled: false
     )
   end
 
@@ -107,56 +92,46 @@ class Captain::Playground::Session
   end
 
   def payload
-    {
-      session_id: id, mode: mode, scenario: scenario.public_data(mode: mode), message_history: data['history'],
-      live_available: administrator?,
-      inboxes: accessible_inboxes.map { |inbox| { id: inbox.id, name: inbox.name, channel_type: inbox.channel_type } }
-    }.merge(live_payload).compact
+    current = permissions
+    pending = Array(data['action_previews']).select do |preview|
+      preview['status'] == 'pending' && current['write'] == true && preview['generation'] == current['generation'] &&
+        preview['expires_at'].to_i > Time.current.to_i
+    end
+    { session_id: id, mode: mode, scenario: namespace.encode(scenario.public_data(mode: mode)),
+      message_history: data['history'], real_data_read: current['read'] == true, real_data_write: current['write'] == true,
+      delivery_enabled: false, action_previews: pending.map { |preview| preview.except('generation') },
+      expires_in: Captain::Playground::SessionStore::TTL }
   end
 
   private
 
   def load_data!(reset:, scenario_input:)
-    @data = @store.read(session_id: reset ? nil : @requested_id)
-    @data = new_data if reset || @data.nil?
-    @scenario = Captain::Playground::Scenario.new(@data['scenario'])
-    @scenario.apply(scenario_input, mode: mode) if scenario_input.present?
-    @profile_phone_edited = scenario_input.to_h.with_indifferent_access.dig(:contact, :phone_number).present?
-  end
-
-  def assert_live_caller!(state)
-    return if state.dig(:conversation, :id) == conversation.id && state.dig(:contact, :id) == conversation.contact_id
-
-    raise ArgumentError, 'Playground caller does not match the selected source'
+    @data = store.read(session_id: reset ? nil : @requested_id)
+    fresh = reset || @data.nil?
+    @data = new_data if fresh
+    @namespace = Captain::Playground::SyntheticNamespace.new(id)
+    @scenario = Captain::Playground::Scenario.new(data['scenario'])
+    scenario.apply(namespace.decode(scenario_input), mode: mode) if scenario_input.present?
+    if scenario_input.present?
+      Array(data['action_previews']).each { |preview| preview['status'] = 'revoked' if preview['status'] == 'pending' }
+    end
+    if fresh
+      save!
+      store.set_permissions(session_id: id, read: false, write: false)
+    end
   end
 
   def new_data
-    initial_scenario = if live?
-                         Captain::Playground::Scenario.live_default(timezone: account.reporting_timezone)
-                       else
-                         Captain::Playground::Scenario.default(timezone: account.reporting_timezone)
-                       end
-    { 'id' => SecureRandom.uuid, 'mode' => mode, 'scenario' => initial_scenario, 'history' => [] }
+    configuration = account.crm_field_definitions.active.ordered.map do |definition|
+      definition.attributes.slice('entity_kind', 'key', 'label', 'field_type', 'required', 'default_value', 'description', 'options', 'rules', 'active', 'position')
+    end
+    { 'id' => SecureRandom.uuid, 'version' => 2, 'mode' => mode,
+      'scenario' => Captain::Playground::Scenario.default(timezone: account.reporting_timezone).merge('custom_fields' => configuration),
+      'history' => [], 'action_previews' => [] }
   end
 
-  def administrator?
-    account.account_users.find_by(user_id: user.id)&.administrator? == true
-  end
-
-  def authorize_live!
-    raise Pundit::NotAuthorizedError, 'Account administrator permission is required for Live Playground' unless administrator?
-  end
-
-  def accessible_inboxes
-    @accessible_inboxes ||= if administrator?
-                              account.inboxes.order(:id).to_a
-                            else
-                              account.inboxes.where(id: user.assigned_inboxes.select(:id)).order(:id).to_a
-                            end
-  end
-
-  def selected_inbox(inbox_id)
-    id = inbox_id.presence || data['inbox_id']
-    accessible_inboxes.find { |inbox| inbox.id.to_s == id.to_s } || raise(ArgumentError, 'Select a workspace inbox for Live Playground')
+  def ensure_membership!
+    raise Pundit::NotAuthorizedError, 'Workspace membership is required' unless account.account_users.exists?(user_id: user.id)
+    raise Pundit::NotAuthorizedError, 'Assistant belongs to another workspace' unless assistant.account_id == account.id
   end
 end

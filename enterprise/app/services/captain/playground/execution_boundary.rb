@@ -2,6 +2,8 @@ class Captain::Playground::ExecutionBoundary
   def self.execute(tool, tool_context, arguments, &)
     state = tool_context.state.with_indifferent_access
     session = tool_context.context[:playground_session]
+    tainted = Captain::Playground::ExternalToolPolicy.tainted?(state)
+    return failure('Legacy Playground execution is blocked; reset the session') if tainted && !session && !opaque_external_tool?(tool)
     unless state[:source] == 'playground' || state[:playground].present? || session
       blocked = Captain::Playground::ExternalToolPolicy.failure_if_tainted(state: state) if opaque_external_tool?(tool)
       return blocked if blocked
@@ -12,24 +14,20 @@ class Captain::Playground::ExecutionBoundary
 
     session.assert_context!(state)
     return yield if tool.is_a?(Captain::Runtime::HandoffTool)
-    return Captain::Playground::ToolExecutor.new(session).execute(tool.name, arguments, context: tool_context) if session.trial?
-
-    execute_live(tool, session, arguments, &)
-  rescue ArgumentError, Outbound::PlaygroundDeliveryPolicy::Blocked => e
-    failure(e.message)
-  end
-
-  def self.execute_live(tool, session, arguments, &)
     return Captain::Playground::ExternalToolPolicy.failure if opaque_external_tool?(tool)
+    return Captain::Playground::ToolSupport.failure(tool.name) if Captain::Playground::ToolSupport::EXTERNAL_TOOLS.include?(tool.name.to_s)
 
-    reject_trial_handles!(arguments)
-    return failure(Outbound::PlaygroundDeliveryPolicy::BLOCKED_MESSAGE) if tool.name.to_s == 'send_notification'
-
-    policy = Outbound::PlaygroundDeliveryPolicy.for_run(session.run_policy)
-    if %w[send_message_to_conversation retry_failed_message].include?(tool.name.to_s)
-      Outbound::PlaygroundDeliveryPolicy.ensure!(conversation: session.conversation, policy: policy)
+    executor = Captain::Playground::RealToolExecutor.new(session)
+    if executor.synthetic?(tool.name.to_s, arguments)
+      return Captain::Playground::ToolExecutor.new(session).execute(tool.name, arguments, context: tool_context)
     end
-    Outbound::PlaygroundDeliveryPolicy.with(policy, &)
+    return executor.execute(tool.name.to_s, arguments) if executor.read?(tool.name.to_s)
+
+    preview = Captain::Playground::ActionApproval.new(session).preview(tool.name.to_s, arguments)
+    Captain::ToolResult.failure(error: 'Review and confirm this exact real action in Playground', retryable: false,
+                                data: { code: 'playground_confirmation_required', action_id: preview['id'], delivered: false })
+  rescue ArgumentError, Pundit::NotAuthorizedError, ActiveRecord::RecordNotFound, Outbound::PlaygroundDeliveryPolicy::Blocked => e
+    failure(e.message)
   end
 
   def self.reject_trial_handles!(value)

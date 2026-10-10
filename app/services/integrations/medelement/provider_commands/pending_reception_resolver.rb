@@ -79,10 +79,12 @@ class Integrations::Medelement::ProviderCommands::PendingReceptionResolver
     return false unless command.request_snapshot.dig('reception', 'resource_id').to_i == resource.id
     return false if preflight_reception_codes(command).include?(reception['RECEPTION_CODE'].to_s)
 
+    written_code = command.execution_state.to_h['write_provider_reception_code'].presence || command.provider_reception_code
+    expected_code = written_code if Integrations::Medelement::ProviderCommands::ReceptionVerifier.valid_reception_code?(written_code)
     Integrations::Medelement::ProviderCommands::ReceptionVerifier.new(
       command: command,
       provider_patient_code: command.execution_state.to_h['write_provider_patient_code']
-    ).destination_match?(reception)
+    ).destination_match?(reception, expected_reception_code: expected_code)
   rescue KeyError, Integrations::Medelement::ReceptionServiceRows::InvalidSnapshotError
     false
   end

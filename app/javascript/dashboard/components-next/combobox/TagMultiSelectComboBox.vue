@@ -83,7 +83,7 @@ defineOptions({
   inheritAttrs: false,
 });
 
-const selectedValues = ref(props.modelValue);
+const selectedValues = ref([...props.modelValue]);
 const open = ref(false);
 const search = ref('');
 const dropdownRef = ref(null);
@@ -223,7 +223,7 @@ const toggleDropdown = () => {
 watch(
   () => props.modelValue,
   newValue => {
-    selectedValues.value = newValue;
+    selectedValues.value = [...newValue];
   }
 );
 

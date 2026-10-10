@@ -125,7 +125,7 @@ class Integrations::Medelement::ProviderCommands::CreateService
       'dispatch_identity' => dispatch_identity
     }
     policy = Current.playground_run_policy if Current.respond_to?(:playground_run_policy)
-    state['captain_playground'] = policy.deep_dup unless policy.nil?
+    state['captain_playground'] = Outbound::PlaygroundMutationPolicy.for_command(policy, snapshot) unless policy.nil?
     state
   end
 

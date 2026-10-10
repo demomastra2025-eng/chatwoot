@@ -1,10 +1,11 @@
 class Captain::Tools::CrmCustomFieldCatalog
   SELECT_FIELD_TYPES = %w[select multiselect].freeze
 
-  def initialize(account:, entity_kind:, context: nil)
+  def initialize(account:, entity_kind:, context: nil, catalog: nil)
     @account = account
     @entity_kind = entity_kind.to_s
     @context = context
+    @catalog = catalog
   end
 
   def fields

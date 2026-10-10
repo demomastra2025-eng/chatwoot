@@ -786,6 +786,93 @@ describe('useSchedulingAppointmentFormStore', () => {
     });
   });
 
+  describe('service duration defaults', () => {
+    const services = [
+      { id: 5, durationMin: 75 },
+      { id: 6, durationMin: 15 },
+    ];
+    const slot = {
+      resourceId: 3,
+      startsAt: '2026-10-10T05:00:00Z',
+      endsAt: '2026-10-10T05:30:00Z',
+    };
+
+    it('uses the total service duration in untouched click drafts and submits the matching interval', () => {
+      const store = useSchedulingAppointmentFormStore();
+      store.openCreate(slot);
+      store.updateField('serviceIds', [5]);
+      store.syncServiceDuration(services);
+      expect(store.form).toMatchObject({
+        durationEdited: false,
+        durationMin: 75,
+        startsAt: '2026-10-10T10:00',
+        endsAt: '2026-10-10T11:15',
+      });
+
+      store.updateField('serviceIds', [5, 6]);
+      store.syncServiceDuration(services);
+      expect(store.form.durationMin).toBe(90);
+      expect(store.buildPayload()).toMatchObject({
+        service_ids: [5, 6],
+        starts_at: '2026-10-10T05:00:00.000Z',
+        ends_at: '2026-10-10T06:30:00.000Z',
+      });
+    });
+
+    it('preserves a manually authored 90-minute interval across service changes', () => {
+      const store = useSchedulingAppointmentFormStore();
+      store.openCreate(slot);
+      store.updateField('serviceIds', [5]);
+      store.syncServiceDuration(services);
+      store.markDurationEdited();
+      store.updateField('durationMin', 90);
+      store.updateField('endsAt', '2026-10-10T11:30');
+      store.updateField('serviceIds', [6]);
+      store.syncServiceDuration(services);
+
+      expect(store.form).toMatchObject({
+        durationMin: 90,
+        endsAt: '2026-10-10T11:30',
+      });
+    });
+
+    it('does not resize an existing appointment when selecting another service', () => {
+      const store = useSchedulingAppointmentFormStore();
+      store.openEdit({
+        ...slot,
+        id: 11,
+        durationMin: 90,
+        endsAt: '2026-10-10T06:30:00Z',
+        serviceIds: [5],
+      });
+      store.updateField('serviceIds', [6]);
+      store.syncServiceDuration(services);
+
+      expect(store.form).toMatchObject({
+        durationMin: 90,
+        endsAt: '2026-10-10T11:30',
+      });
+    });
+
+    it('preserves explicit drag ranges and resets that protection for the next click draft', () => {
+      const store = useSchedulingAppointmentFormStore();
+      store.openCreate({
+        ...slot,
+        endsAt: '2026-10-10T05:45:00Z',
+        durationEdited: true,
+      });
+      store.updateField('serviceIds', [5]);
+      store.syncServiceDuration(services);
+      expect(store.form.endsAt).toBe('2026-10-10T10:45');
+
+      store.openCreate(slot);
+      store.updateField('serviceIds', [5]);
+      store.syncServiceDuration(services);
+      expect(store.form.durationMin).toBe(75);
+      expect(store.form.endsAt).toBe('2026-10-10T11:15');
+    });
+  });
+
   it('keeps the saved price when editing an appointment without changing service/resource', () => {
     const store = useSchedulingAppointmentFormStore();
 

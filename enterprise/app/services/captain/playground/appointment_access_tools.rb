@@ -28,7 +28,7 @@ module Captain::Playground::AppointmentAccessTools
     card = @scenario.appointment_card(record)
     result = { success: true, appointment_id: record['id'], doctor_name: card[:doctor], local_date: card[:date], local_time: card[:time],
                status: { 'create_appointment' => 'created', 'update_appointment' => 'updated', 'cancel_appointment' => 'cancelled' }.fetch(action, card[:status]),
-               simulated: true }
+               appointment: record.deep_dup, simulated: true }
     if family_lookup || record['patient_contact_id'] != caller['id']
       token = "trial_#{@session.id}_#{SecureRandom.hex(20)}"
       @data['grants'] = @data['grants'].select { |grant| grant['expires_at'] > Time.current.to_i }.last(20)

@@ -93,7 +93,7 @@ class Captain::Conversation::RunFenceService
   end
 
   def latest_incoming_message_id
-    Captain::Conversation::ControlService.messages_scope(conversation).incoming.reorder(created_at: :desc, id: :desc).pick(:id)
+    Captain::Conversation::ControlService.incoming_messages_scope(conversation).reorder(created_at: :desc, id: :desc).pick(:id)
   end
 
   def buffer_state_current?

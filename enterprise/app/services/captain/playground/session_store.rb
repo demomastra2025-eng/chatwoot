@@ -8,11 +8,11 @@ class Captain::Playground::SessionStore
   class Busy < StandardError; end
   class Stale < StandardError; end
 
-  def initialize(account:, user:, assistant:, mode:)
-    raise ArgumentError, 'Invalid Playground mode' unless %w[trial live].include?(mode.to_s)
+  def initialize(account:, user:, assistant:, mode: 'workspace')
+    raise ArgumentError, 'Legacy Playground sessions must be reset' unless %w[workspace trial].include?(mode.to_s)
     raise ArgumentError, 'Assistant belongs to another workspace' unless assistant.account_id == account.id
 
-    @key = "captain:playground:v1:#{account.id}:#{user.id}:#{assistant.id}:#{mode}"
+    @key = "captain:playground:v2:#{account.id}:#{user.id}:#{assistant.id}"
   end
 
   def with_lock
@@ -39,6 +39,32 @@ class Captain::Playground::SessionStore
     raise ArgumentError, 'Playground scenario is too large' if json.bytesize > MAX_BYTES
 
     Redis::Alfred.set(@key, json, ex: TTL)
+  end
+
+  def permissions(session_id:)
+    raw = Redis::Alfred.get("#{@key}:permissions")
+    payload = JSON.parse(raw) if raw.present?
+    return { 'read' => false, 'write' => false, 'generation' => nil } unless payload&.fetch('session_id', nil) == session_id
+
+    payload
+  rescue JSON::ParserError
+    { 'read' => false, 'write' => false, 'generation' => nil }
+  end
+
+  # Kept outside the long model-turn lock so OFF revokes authority immediately,
+  # even while a request is waiting on its model provider.
+  def set_permissions(session_id:, read:, write:)
+    current = self.read(session_id: session_id)
+    raise Stale, 'Playground session has expired or changed' unless current
+
+    read_enabled = ActiveModel::Type::Boolean.new.cast(read) == true
+    write_enabled = read_enabled && ActiveModel::Type::Boolean.new.cast(write) == true
+    previous = permissions(session_id: session_id)
+    generation = previous['generation']
+    generation = SecureRandom.uuid if !write_enabled || previous['write'] != write_enabled || previous['read'] != read_enabled
+    payload = { 'session_id' => session_id, 'read' => read_enabled, 'write' => write_enabled, 'generation' => generation }
+    Redis::Alfred.set("#{@key}:permissions", JSON.generate(payload), ex: TTL)
+    payload
   end
 
   private

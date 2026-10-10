@@ -115,7 +115,9 @@ module Concerns::Agentable
   end
 
   def agent_temperature
-    (temperature.presence || 1).to_f
+    owner = respond_to?(:assistant) && assistant.present? ? assistant : self
+    value = owner.respond_to?(:temperature) ? owner.temperature : nil
+    Llm::ModelParameters.for(agent_model, account: respond_to?(:account) ? account : nil).temperature(value)
   end
 
   def agent_model

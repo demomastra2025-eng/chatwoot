@@ -79,6 +79,13 @@ class Integrations::Medelement::ProviderCommands::Executor
   end
 
   def validate_execution_gate!
+    policy = Outbound::PlaygroundDeliveryPolicy.for_execution(command)
+    unless Outbound::PlaygroundMutationPolicy.allowed_command?(command, policy)
+      if write_started?
+        raise reconciliation_error('playground_write_requires_verification')
+      end
+      raise execution_error('playground_confirmation_required', 'A new provider write requires an exact confirmed Playground action')
+    end
     # The hook can change after a removal command is queued or confirmed. Reload before evaluating the final write gate.
     command.hook.reload
     if command.operation == 'remove_reception' && !configuration.remove_reception_on_cancel?
@@ -161,14 +168,10 @@ class Integrations::Medelement::ProviderCommands::Executor
     patient_code = patient_resolver.resolve!(allow_create: true)
     preflight_result = preflight.perform
     reception_code = create_remote_reception!(patient_code: patient_code, preflight_result: preflight_result)
-    remote = bounded_readback do
-      candidate = read_reception_after_write(reception_code)
-      candidate = merged_destination_readback(candidate, reception_code) unless created_reception_matches?(candidate, patient_code)
-      candidate if created_reception_matches?(candidate, patient_code)
-    end
-    raise reconciliation_error('reception_create_pending_materialization') unless remote
-
-    success_applier.reception_created!(reception_code: reception_code, patient_code: patient_code)
+    # A successful POST with a valid ID is the receipt for this create. Provider reads may lag;
+    # verify them in the integration without withholding success or repeating the POST.
+    applied = success_applier.reception_created!(reception_code: reception_code, patient_code: patient_code)
+    Integrations::Medelement::ProviderCommandReconciliationJob.perform_later(command.id) if applied
   end
 
   def validate_bookable_appointment!
@@ -320,6 +323,10 @@ class Integrations::Medelement::ProviderCommands::Executor
   def mark_write_phase!(phase, preflight_reception_codes: nil, provider_patient_code: nil)
     with_patient_identity_write_fence do
       validate_current_imported_source!
+      policy = Outbound::PlaygroundDeliveryPolicy.for_execution(command)
+      unless Outbound::PlaygroundMutationPolicy.allowed_command?(command, policy)
+        raise execution_error('playground_confirmation_required', 'Playground approval was revoked before the provider write')
+      end
       publish_write_phase!(phase, preflight_reception_codes: preflight_reception_codes, provider_patient_code: provider_patient_code)
     end
   end
@@ -362,7 +369,10 @@ class Integrations::Medelement::ProviderCommands::Executor
   end
 
   def record_write_reference!(provider_reception_code:)
-    state = command.execution_state.merge('write_provider_reception_code' => provider_reception_code)
+    state = command.execution_state.merge(
+      'write_provider_reception_code' => provider_reception_code,
+      Integrations::Medelement::ProviderCommands::ReceptionReceiptVerificationService::STATE_KEY => { 'status' => 'pending', 'attempts' => 0 }
+    )
     updated = Integrations::Medelement::ProviderCommand
               .where(id: command.id, status: command.status_for_transition('processing'))
               .where("execution_state ->> 'claim_token' = ?", claim_token)
@@ -452,13 +462,6 @@ class Integrations::Medelement::ProviderCommands::Executor
     end
   rescue Integrations::Medelement::Client::ApiError
     nil
-  end
-
-  def created_reception_matches?(remote, patient_code)
-    reception_verifier(patient_code).destination_match?(
-      remote,
-      expected_reception_code: command.provider_reception_code
-    )
   end
 
   def moved_reception_matches?(remote, patient_code)

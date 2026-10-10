@@ -11,7 +11,6 @@ import Button from 'dashboard/components-next/button/Button.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 
 import PageLayout from 'dashboard/components-next/captain/PageLayout.vue';
-import SettingsHeader from 'dashboard/components-next/captain/pageComponents/settings/SettingsHeader.vue';
 import InlineScenarioComposer from 'dashboard/components-next/captain/assistant/InlineScenarioComposer.vue';
 import SuggestedScenarios from 'dashboard/components-next/captain/assistant/SuggestedRules.vue';
 import ScenariosCard from 'dashboard/components-next/captain/assistant/ScenariosCard.vue';
@@ -291,10 +290,6 @@ onMounted(() => {
     :show-pagination-footer="false"
   >
     <template #body>
-      <SettingsHeader
-        :heading="$t('CAPTAIN.ASSISTANTS.SCENARIOS.TITLE')"
-        :description="$t('CAPTAIN.ASSISTANTS.SCENARIOS.DESCRIPTION')"
-      />
       <div v-if="shouldShowSuggestedRules" class="flex mt-7 flex-col gap-4">
         <SuggestedScenarios
           :title="$t('CAPTAIN.ASSISTANTS.SCENARIOS.ADD.SUGGESTED.TITLE')"

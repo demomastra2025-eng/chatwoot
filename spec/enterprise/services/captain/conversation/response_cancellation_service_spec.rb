@@ -33,6 +33,23 @@ RSpec.describe Captain::Conversation::ResponseCancellationService do
     expect(service.cancelled?(expected_last_message_id: incoming.id, expected_control_generation: 0, expected_status_transition_id: 1)).to be false
   end
 
+  it 'captures and cancels only its own incoming message when a sibling receives a newer request' do
+    thread = create(:communication_thread, account: account, contact: conversation.contact)
+    sibling = create(:conversation, account: account, contact: conversation.contact, status: :pending)
+    [conversation, sibling].each do |candidate|
+      create(:communication_thread_conversation, communication_thread: thread, conversation: candidate)
+      candidate.association(:communication_thread_conversation).reset
+      candidate.association(:communication_thread).reset
+    end
+    sibling_message = create(:message, conversation: sibling, message_type: :incoming, skip_runtime_events: true)
+
+    expect(service.snapshot[:last_message_id]).to eq(incoming.id)
+    service.perform
+    expect(service.cancelled?(expected_last_message_id: incoming.id)).to be true
+    expect(service.cancelled?(expected_last_message_id: sibling_message.id)).to be false
+    expect(Redis::Alfred.get(format(Redis::Alfred::CAPTAIN_RESPONSE_CANCELLATION_STATE, conversation_id: sibling.id))).to be_nil
+  end
+
   it 'captures a buffered run by token and message rather than cancelling a newer buffer' do
     Redis::Alfred.set(buffer_key, { token: 'old', last_message_id: incoming.id, control_generation: 0, assistant_id: assistant.id }.to_json, ex: 60)
     snapshot = service.snapshot

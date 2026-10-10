@@ -125,4 +125,16 @@ RSpec.describe Llm::OpenRouterServerToolsPatch do
     expect(provider.payload[:stream]).to be(true)
     expect(provider.payload[:tools]).to eq(function_tools + server_tools)
   end
+
+  it 'carries the unknown-model capability omission through the compiler and final wire without RubyLLM default temperature' do
+    model = 'unverified/model'
+    allow(Llm::Models).to receive(:model_config).with(model, account: nil).and_return({})
+    allow(RubyLLM.models).to receive(:find).with(model).and_return(nil)
+    options = Llm::ModelParameters.for(model).compile(temperature: 0.7, thinking: { effort: 'high' }, params: { top_p: 0.5 })
+    compiled = Llm::OpenRouterRequestCompiler.call(model: model, base_params: options.fetch(:params), feature: 'captain_agent')
+    provider = provider_class.new
+    provider.complete([], tools: [], temperature: 0.7, model: model, params: compiled.params, thinking: options[:thinking])
+
+    expect(provider.payload).not_to include(:temperature, :thinking, :top_p, described_class::OMIT_TEMPERATURE_PARAM)
+  end
 end

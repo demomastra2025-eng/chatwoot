@@ -1515,10 +1515,10 @@ const handleEventCreate = ({ event, resolve }) => {
   const endsAt = new Date(event.end);
 
   if (supportsUnscheduledCreate.value) {
-    emit(
-      'createAppointment',
-      buildUnscheduledCreatePayload({ endsAt, startsAt })
-    );
+    emit('createAppointment', {
+      ...buildUnscheduledCreatePayload({ endsAt, startsAt }),
+      durationEdited: true,
+    });
     resolve(false);
     return;
   }
@@ -1541,6 +1541,7 @@ const handleEventCreate = ({ event, resolve }) => {
   }
 
   emit('createAppointment', {
+    durationEdited: true,
     endsAt: toApiIso(endsAt),
     resourceId,
     startsAt: toApiIso(startsAt),

@@ -28,7 +28,7 @@ RSpec.describe Captain::Tools::Copilot::UpdateDealService do
       expect(service.params_schema.deep_stringify_keys.fetch('required')).to include('deal_id')
       result = nil
 
-      expect { result = execute_confirmed(title: 'Must not infer a deal') }.not_to change { deal.reload.title }
+      expect { result = execute_confirmed(title: 'Must not infer a deal') }.not_to(change { deal.reload.title })
 
       expect(result).to include('deal_id is required')
     end

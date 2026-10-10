@@ -1,4 +1,5 @@
 class Captain::Tools::Copilot::SearchAvailableSlotsService < Captain::Tools::Copilot::BaseAccountTool
+  include Captain::Tools::Copilot::SchedulingQueryValidation
   def self.name
     'search_available_slots'
   end
@@ -14,12 +15,16 @@ class Captain::Tools::Copilot::SearchAvailableSlotsService < Captain::Tools::Cop
   param :limit, type: :number, desc: 'Maximum number of slots to return', required: false
 
   def execute(from:, to:, resource_ids: nil, service_id: nil, duration_min: nil, limit: nil)
-    service_id = optional_positive_id(service_id)
+    range_from = scheduling_datetime(from, field_name: 'from')
+    range_to = scheduling_datetime(to, field_name: 'to')
+    scheduling_range!(range_from, range_to)
+    service_id = scheduling_service_id(service_id)
+    scheduling_service!(service_id)
     payload = Scheduling::AvailableSlotSearchService.new(
       account: account,
-      from: parse_datetime(from, field_name: 'from', required: true),
-      to: parse_datetime(to, field_name: 'to', required: true),
-      resource_ids: parse_id_list(resource_ids, field_name: 'resource_ids'),
+      from: range_from,
+      to: range_to,
+      resource_ids: scheduling_resource_ids(resource_ids),
       service_id: service_id,
       duration_min: duration_min,
       limit: limit
@@ -28,9 +33,16 @@ class Captain::Tools::Copilot::SearchAvailableSlotsService < Captain::Tools::Cop
 
     formatted_payload(payload)
   rescue Scheduling::AvailableSlotSearchService::MissingServiceLinkError => e
-    tool_failure(ArgumentError.new("#{e.message}: no recorded service-price link for these resources; provider eligibility is unverified"))
+    scheduling_tool_failure(Scheduling::Error.new(
+      code: 'SERVICE_NOT_AVAILABLE_FOR_RESOURCE', status: :unprocessable_content,
+      message: "#{e.message}: no recorded service-price link for these resources; provider eligibility is unverified",
+      details: { reason: 'service_not_linked' }
+    ))
+  rescue ActiveRecord::RecordNotFound => e
+    scheduling_tool_failure(Scheduling::Error.new(code: 'RESOURCE_NOT_FOUND', message: e.message, status: :not_found,
+                                                details: { reason: 'unknown_resource' }))
   rescue StandardError => e
-    tool_failure(e)
+    scheduling_tool_failure(e)
   end
 
   def active?

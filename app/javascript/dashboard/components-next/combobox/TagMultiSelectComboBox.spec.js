@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { mount } from '@vue/test-utils';
+import { readonly } from 'vue';
 
 import TagMultiSelectComboBox from './TagMultiSelectComboBox.vue';
 
@@ -12,6 +13,45 @@ const options = [
 describe('TagMultiSelectComboBox', () => {
   afterEach(() => {
     document.body.innerHTML = '';
+  });
+
+  it('selects services from a readonly parent array without mutating it, including after a parent update', async () => {
+    const initialValues = readonly([]);
+    const wrapper = mount(TagMultiSelectComboBox, {
+      attachTo: document.body,
+      props: { modelValue: initialValues, options },
+      global: {
+        stubs: {
+          OnClickOutside: {
+            template: '<div><slot /></div>',
+          },
+        },
+      },
+    });
+
+    await wrapper.get('button').trigger('click');
+    const firstOption = document.querySelector('[role="option"]');
+    firstOption.click();
+    await wrapper.vm.$nextTick();
+
+    const firstSelection = wrapper.emitted('update:modelValue')[0][0];
+    expect(firstSelection).toEqual([1]);
+    expect(firstSelection).not.toBe(initialValues);
+    expect(initialValues).toEqual([]);
+    expect(firstOption.getAttribute('aria-selected')).toBe('true');
+
+    const updatedValues = readonly([2]);
+    await wrapper.setProps({ modelValue: updatedValues });
+    firstOption.click();
+    await wrapper.vm.$nextTick();
+
+    const nextSelection = wrapper.emitted('update:modelValue')[1][0];
+    expect(nextSelection).toEqual([2, 1]);
+    expect(nextSelection).not.toBe(updatedValues);
+    expect(updatedValues).toEqual([2]);
+    expect(firstOption.getAttribute('aria-selected')).toBe('true');
+
+    wrapper.unmount();
   });
 
   it('filters local options immediately while typing', async () => {

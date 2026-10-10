@@ -10,10 +10,8 @@ module Captain::Playground::ScenarioContext
     }.merge(business_state(appointments)).compact
   end
 
-  def public_data(mode:)
+  def public_data(**)
     result = { contact: contact.deep_dup }
-    return result if mode == 'live'
-
     result.merge(patient: data['contacts'].find { |record| record['id'] == 102 }, deal: data['deals'].find { |record| record['id'] == 501 },
                  appointment: data['appointments'].find { |record| record['id'] == 601 }).merge(trial_collections)
   end
@@ -31,7 +29,9 @@ module Captain::Playground::ScenarioContext
   private
 
   def trial_collections
-    data.slice('resources', 'services', 'stages', 'contacts', 'deals', 'appointments').symbolize_keys
+    data.slice('resources', 'services', 'pipelines', 'stages', 'contacts', 'deals', 'appointments', 'custom_fields',
+               *Captain::Playground::Scenario::FIXTURE_COLLECTIONS, 'touches', 'timelines', 'inbox', 'selection').symbolize_keys
+        .merge(patients: data['contacts'].reject { |item| item['id'] == contact['id'] }.deep_dup)
   end
 
   def business_state(appointments)

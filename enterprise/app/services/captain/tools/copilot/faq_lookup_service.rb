@@ -114,8 +114,8 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
 
   def lookup_responses(query, fallback_query = nil, semantic: true)
     if semantic
-      responses, relevance_check = semantic_responses(query)
-      return [responses, 'semantic_faq', nil, relevance_check] if responses.any?
+      responses, relevance_check, strategy = semantic_responses(query, fallback_query)
+      return [responses, strategy, nil, relevance_check] if responses.any?
 
       if relevance_check[:candidate_count].zero?
         responses = lexical_fallback_responses(query, fallback_query)
@@ -215,7 +215,7 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
     end
   end
 
-  def semantic_responses(query)
+  def semantic_responses(query, original_query = nil)
     Timeout.timeout(SEMANTIC_LOOKUP_TIMEOUT_SECONDS) do
       candidates = Captain::AssistantResponse.search(
         query,
@@ -224,7 +224,13 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
         limit: SEMANTIC_RESULT_LIMIT
       ).to_a
       responses = candidates.select { |response| semantic_distance_acceptable?(response) }
-      [responses, semantic_relevance_check(candidates, responses)]
+      relevance_check = semantic_relevance_check(candidates, responses)
+      return [responses, relevance_check, 'semantic_faq'] if responses.any?
+
+      selection = Captain::Knowledge::FaqRelevance.select(candidates, query: original_query || query, translated_query: query)
+      relevance_check[:corroboration] = selection[:check]
+      relevance_check[:selection_passed] = selection[:response].present?
+      [[selection[:response]].compact, relevance_check, 'corroborated_faq']
     end
   end
 
@@ -335,7 +341,11 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
       score: score,
       relevance_threshold: SEMANTIC_SIMILARITY_THRESHOLD,
       relevance_threshold_passed: score >= SEMANTIC_SIMILARITY_THRESHOLD
-    }
+    }.tap do |payload|
+      next unless lookup_strategy == 'corroborated_faq'
+
+      payload.merge!(question_corroboration_passed: true, relevance_selected: true, relevance_selection: 'question_corroboration')
+    end
   end
 
   def semantic_similarity_score(response)

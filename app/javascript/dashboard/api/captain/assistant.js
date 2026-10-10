@@ -23,33 +23,14 @@ class CaptainAssistant extends ApiClient {
     });
   }
 
-  playground({
-    assistantId,
-    messageContent,
-    messageHistory,
-    testOptions = {},
-    mode,
-    sessionId,
-    conversationId,
-    liveOptions = {},
-  }) {
+  playground({ assistantId, messageContent, testOptions = {}, sessionId }) {
     return axios.post(`${this.url}/${assistantId}/playground`, {
+      playground_mode: 'workspace',
       message_content: messageContent,
-      message_history: messageHistory,
-      ...(mode ? { playground_mode: mode } : {}),
-      ...(sessionId ? { playground_session_id: sessionId } : {}),
-      ...(conversationId ? { conversation_id: conversationId } : {}),
-      ...(liveOptions.inboxId ? { live_inbox_id: liveOptions.inboxId } : {}),
-      ...(mode === 'live'
-        ? {
-            external_delivery_enabled: liveOptions.deliveryEnabled === true,
-            ...(liveOptions.deliveryEnabled && liveOptions.testNumber
-              ? { controlled_test_number: liveOptions.testNumber }
-              : {}),
-          }
-        : {}),
+      playground_session_id: sessionId,
       ...(testOptions.model ? { test_model: testOptions.model } : {}),
-      ...(testOptions.temperature !== undefined
+      ...(testOptions.temperature !== null &&
+      testOptions.temperature !== undefined
         ? { test_temperature: testOptions.temperature }
         : {}),
       ...(testOptions.thinkingEffort
@@ -58,28 +39,32 @@ class CaptainAssistant extends ApiClient {
     });
   }
 
-  playgroundSession({
-    assistantId,
-    mode = 'trial',
-    sessionId,
-    reset = false,
-    scenario,
-    liveOptions = {},
-  }) {
+  playgroundSession({ assistantId, sessionId, reset = false, scenario }) {
     return axios.post(`${this.url}/${assistantId}/playground`, {
+      playground_mode: 'workspace',
       playground_action: reset ? 'reset' : 'session',
-      playground_mode: mode,
       ...(sessionId ? { playground_session_id: sessionId } : {}),
       ...(scenario ? { scenario } : {}),
-      ...(liveOptions.inboxId ? { live_inbox_id: liveOptions.inboxId } : {}),
-      ...(mode === 'live'
-        ? {
-            external_delivery_enabled: liveOptions.deliveryEnabled === true,
-            ...(liveOptions.deliveryEnabled && liveOptions.testNumber
-              ? { controlled_test_number: liveOptions.testNumber }
-              : {}),
-          }
-        : {}),
+    });
+  }
+
+  playgroundPermissions({ assistantId, sessionId, read, write }) {
+    return axios.post(`${this.url}/${assistantId}/playground`, {
+      playground_mode: 'workspace',
+      playground_action: 'permissions',
+      playground_session_id: sessionId,
+      real_data_read: read === true,
+      real_data_write: read === true && write === true,
+    });
+  }
+
+  confirmPlaygroundAction({ assistantId, sessionId, approval }) {
+    return axios.post(`${this.url}/${assistantId}/playground`, {
+      playground_mode: 'workspace',
+      playground_action: 'confirm',
+      playground_session_id: sessionId,
+      approval_id: approval.id,
+      approval_digest: approval.digest,
     });
   }
 

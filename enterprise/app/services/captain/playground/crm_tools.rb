@@ -79,9 +79,10 @@ module Captain::Playground::CrmTools
     attrs['amount'] = deal_amount(attrs['amount']) if attrs.key?('amount')
     pipeline, stage = selected_pipeline_and_stage(record)
     attrs.merge!('pipeline_id' => pipeline['id'], 'pipeline_name' => pipeline['name'], 'stage_id' => stage['id'], 'stage_name' => stage['name'])
-    if @args['custom_attributes']
-      attrs['custom_attributes'] = record.to_h.fetch('custom_attributes', {}).merge(json_object(@args['custom_attributes']))
+    if @args['custom_attributes'] || record.nil?
+      attrs['custom_attributes'] = custom_attributes_for('deal', record: record)
     end
+    attrs.merge!(validated_stage_attributes(pipeline, stage, attrs, record))
     attrs
   end
 
@@ -110,8 +111,10 @@ module Captain::Playground::CrmTools
     raise ArgumentError, 'Deal title is required' if @args['title'].blank?
 
     record = { 'id' => @scenario.next_id!, 'contact_id' => caller['id'], 'currency' => 'KZT', 'amount' => 0,
-               'originating_conversation_id' => @data['conversation']['id'], 'custom_attributes' => {} }.merge(deal_attributes)
+               'originating_conversation_id' => @data['conversation']['id'], 'custom_attributes' => {},
+               'created_at' => Time.current.iso8601, 'updated_at' => Time.current.iso8601 }.merge(deal_attributes)
     @data['deals'] << record
+    record_timeline('deal', record, @tool_id)
     deal_payload(record, action: 'create_deal')
   end
 
@@ -119,6 +122,8 @@ module Captain::Playground::CrmTools
     record = deal!(@args['deal_id'])
     previous = record!('stages', record['stage_id']).deep_dup
     record.merge!(deal_attributes(record))
+    record['updated_at'] = Time.current.iso8601
+    record_timeline('deal', record, @tool_id)
     result = deal_payload(record, action: @tool_id)
     return result unless @tool_id == 'transition_deal_stage'
 

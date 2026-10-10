@@ -14,6 +14,10 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
   end
 
   def perform
+    if Integrations::Medelement::ProviderCommands::ReceptionReceiptVerificationService.applicable?(command)
+      return Integrations::Medelement::ProviderCommands::ReceptionReceiptVerificationService.new(command: command, client: @client).perform
+    end
+
     return unless command.reconcilable?
     return unless valid_for_reconciliation?
 
@@ -119,9 +123,10 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
     return known_result if known_result
     return if cancelled_booking_with_unverifiable_written_reference?
 
+    expected_code = written_reception_code if Integrations::Medelement::ProviderCommands::ReceptionVerifier.valid_reception_code?(written_reception_code)
     candidates = destination_receptions.reject do |reception|
       preflight_reception_codes.include?(reception['RECEPTION_CODE'].to_s) ||
-        !reception_verifier.destination_match?(reception)
+        !reception_verifier.destination_match?(reception, expected_reception_code: expected_code)
     end
     return unless candidates.one?
 
@@ -154,7 +159,7 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
       return false
     end
 
-    success_applier.reception_created!(reception_code: reception_code, patient_code: patient_code)
+    success_applier.reception_created!(reception_code: reception_code, patient_code: patient_code, read_verified: true)
   end
 
   def cancelled_booking_with_unverifiable_written_reference?

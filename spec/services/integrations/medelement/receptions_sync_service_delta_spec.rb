@@ -45,7 +45,7 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
     service.import_reported_reception!('RECEPTION_CODE' => 'reception-1', 'REMOVED' => 1)
 
     expect(Integrations::Medelement::MissingAppointmentReconciler).to have_received(:new).with(
-      appointment: appointment, snapshot_version: appointment.updated_at
+      appointment: appointment, snapshot_version: appointment.updated_at, provider_removal_confirmed: true
     )
     expect(reconciler).to have_received(:perform).once
     expect(importer).not_to have_received(:upsert!)

@@ -65,8 +65,8 @@ describe('AssistantBasicSettingsForm', () => {
       { id: 'openai/gpt-5.4', display_name: 'GPT-5.4' },
       { id: 'openai/gpt-5.4-mini', display_name: 'GPT-5.4 mini' },
     ];
-    const modelSelect = wrapper =>
-      wrapper.findAllComponents({ name: 'Select' })[0];
+    const modelSettings = wrapper =>
+      wrapper.findComponent({ name: 'ModelSettings' });
 
     const platformDefaultOption = {
       value: '',
@@ -84,15 +84,15 @@ describe('AssistantBasicSettingsForm', () => {
         },
       });
 
-      expect(modelSelect(wrapper).props('options')).toEqual([
+      expect(modelSettings(wrapper).props('models')).toEqual([
         platformDefaultOption,
         { value: 'openai/gpt-6-luna', label: 'GPT-6 Luna' },
         { value: 'openai/gpt-5.6-luna', label: 'GPT-5.6 Luna' },
         { value: 'openai/gpt-5.4', label: 'GPT-5.4' },
         { value: 'openai/gpt-5.4-mini', label: 'GPT-5.4 mini' },
       ]);
-      // The model picker owns the curated list; safety controls have separate Selects.
-      expect(wrapper.findAllComponents({ name: 'Select' })).toHaveLength(4);
+      expect(wrapper.findAllComponents({ name: 'Select' })).toHaveLength(3);
+      expect(wrapper.html()).not.toContain('type="range"');
     });
 
     it('removes provider branding from model option labels', () => {
@@ -106,7 +106,7 @@ describe('AssistantBasicSettingsForm', () => {
         assistant: { usage_mode: 'external_agent', config: {} },
       });
 
-      expect(modelSelect(wrapper).props('options')[1].label).toBe(
+      expect(modelSettings(wrapper).props('models')[1].label).toBe(
         'GPT 5.4 via поставщик моделей'
       );
     });
@@ -123,14 +123,14 @@ describe('AssistantBasicSettingsForm', () => {
         },
       });
 
-      expect(modelSelect(wrapper).props('options')[0]).toEqual(
+      expect(modelSettings(wrapper).props('models')[0]).toEqual(
         platformDefaultOption
       );
-      expect(modelSelect(wrapper).props('options')[1]).toEqual({
+      expect(modelSettings(wrapper).props('models')[1]).toEqual({
         value: 'legacy/old-model',
         label: 'legacy/old-model (CAPTAIN.ASSISTANTS.FORM.MODEL.CURRENT_MODEL)',
       });
-      expect(modelSelect(wrapper).props('options')).toHaveLength(6);
+      expect(modelSettings(wrapper).props('models')).toHaveLength(6);
 
       const payload = await wrapper.vm.buildPayload();
       expect(payload.assistant.config.model).toBe('legacy/old-model');
@@ -151,7 +151,7 @@ describe('AssistantBasicSettingsForm', () => {
       await flushPromises();
 
       // the platform model is only named in the label of the empty option
-      expect(modelSelect(wrapper).props('options')[0]).toEqual({
+      expect(modelSettings(wrapper).props('models')[0]).toEqual({
         value: '',
         label: 'CAPTAIN.ASSISTANTS.FORM.MODEL.PLATFORM_DEFAULT_WITH_MODEL',
       });
@@ -175,7 +175,7 @@ describe('AssistantBasicSettingsForm', () => {
       expect((await wrapper.vm.buildPayload()).assistant.config.model).toBe(
         'openai/gpt-6-luna'
       );
-      modelSelect(wrapper).vm.$emit('update:modelValue', '');
+      modelSettings(wrapper).vm.$emit('update:model', '');
       await wrapper.vm.$nextTick();
 
       const cleared = await wrapper.vm.buildPayload();
@@ -203,7 +203,7 @@ describe('AssistantBasicSettingsForm', () => {
       });
       await flushPromises();
 
-      expect(modelSelect(wrapper).props('options')).toHaveLength(5);
+      expect(modelSettings(wrapper).props('models')).toHaveLength(5);
       const payload = await wrapper.vm.buildPayload();
       expect(payload.assistant.config.model).toBeNull();
     });
@@ -256,7 +256,8 @@ describe('AssistantBasicSettingsForm', () => {
     await flushPromises();
 
     expect(payload.assistant.config).toEqual({
-      temperature: 1,
+      temperature: null,
+      thinking_effort: null,
       model: null,
       message_collapse_window_seconds: 0,
       history_message_limit: 0,
@@ -317,13 +318,15 @@ describe('AssistantBasicSettingsForm', () => {
       assistant: { usage_mode: 'external_agent', config: {} },
     });
     const selects = wrapper.findAllComponents({ name: 'Select' });
-    const modelOptions = selects[0].props('options');
-    const safetyOptionValues = selects
-      .slice(1)
-      .flatMap(select => select.props('options').map(option => option.value));
+    const modelOptions = wrapper
+      .findComponent({ name: 'ModelSettings' })
+      .props('models');
+    const safetyOptionValues = selects.flatMap(select =>
+      select.props('options').map(option => option.value)
+    );
 
     expect(wrapper.html()).not.toContain('USAGE_MODE');
-    expect(selects).toHaveLength(4);
+    expect(selects).toHaveLength(3);
     expect(modelOptions.map(option => option.value)).toContain(
       'openai/gpt-6-luna'
     );
@@ -346,6 +349,14 @@ describe('AssistantBasicSettingsForm', () => {
   });
 
   it('keeps the model and the temperature apart from the capabilities', async () => {
+    storeState.models = [
+      {
+        id: 'openai/gpt-5.4',
+        display_name: 'GPT-5.4',
+        supports_temperature: true,
+        reasoning_efforts: ['low', 'high'],
+      },
+    ];
     const assistant = {
       id: 58,
       name: 'Мөлдір',

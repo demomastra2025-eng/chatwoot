@@ -88,6 +88,13 @@ RSpec.describe Outbound::RenderedTextService do
       expect(JSON.parse(deal_json)).to eq(JSON.parse(Captain::DealContext.new(account: account, conversation: conversation).summary.to_json))
       liquid_json = described_class.new(content: '{{ deal.summary }}', conversation: conversation, sender: agent).render
       expect(JSON.parse(liquid_json)).to eq(JSON.parse(deal_json))
+      appointment_liquid_json = described_class.new(content: '{{ appointment.summary }}', conversation: conversation, sender: agent).render
+      expect(JSON.parse(appointment_liquid_json)).to eq(JSON.parse(appointment_json))
+      nested_values = described_class.new(
+        content: '{{ deal.summary.shown }} / {{ appointment.summary.shown }} / {{ appointment.summary.groups.first.items.first.client_identifier }}',
+        conversation: conversation, sender: agent
+      ).render
+      expect(nested_values).to eq('1 / 1 / ')
       expect(described_class.new(content: '[ID](field://deal.id)', conversation: conversation, sender: agent).render).to eq('')
     end
 
@@ -100,16 +107,34 @@ RSpec.describe Outbound::RenderedTextService do
       expect(rendered).to eq('Exact event deal / Exact event deal')
     end
 
-    it 'keeps deal summaries and explicit legacy fields hidden from a sender without CRM permissions' do
-      account.enable_features!('crm_deals')
+    it 'keeps deal and task data hidden from a sender without CRM permissions' do
+      account.enable_features!('crm_deals', 'crm_tasks')
       unauthorized = create(:user, account: account)
       conversation = create(:conversation, account: account, contact: contact)
       deal = create(:crm_deal, account: account, title: 'Private deal')
       create(:crm_deal_contact, account: account, deal: deal, contact: contact)
+      create(:crm_task, account: account, originating_conversation: conversation, custom_attributes: { secret: 'Private task value' })
 
       rendered = described_class.new(
-        content: '[Summary](field://deal.summary)|[Title](field://deal.title)|{{ deal.summary }}|{{ deal.title }}',
+        content: [
+          '[Summary](field://deal.summary)', '[Title](field://deal.title)', '{{ deal.summary }}', '{{ deal.title }}',
+          '[Task](field://task.custom_attributes.secret)', '{{ task.custom_attributes.secret }}'
+        ].join('|'),
         conversation: conversation, deal: deal, sender: unauthorized
+      ).render
+
+      expect(rendered).to eq('|||||')
+    end
+
+    it 'keeps appointment fields hidden when scheduling is disabled' do
+      account.disable_features!('scheduling')
+      appointment = create(:scheduling_appointment, account: account, contact: contact, custom_attributes: { secret: 'Private appointment value' })
+      rendered = described_class.new(
+        content: [
+          '[Summary](field://appointment.summary)', '{{ appointment.summary }}',
+          '[Value](field://appointment.custom_attributes.secret)', '{{ appointment.custom_attributes.secret }}'
+        ].join('|'),
+        appointment: appointment, contact: contact, account: account, sender: agent
       ).render
 
       expect(rendered).to eq('|||')

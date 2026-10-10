@@ -82,6 +82,7 @@ const activeSettingsTabIndex = computed(() =>
 const BASIC_SETTINGS_CONFIG_KEYS = Object.freeze([
   'model',
   'temperature',
+  'thinking_effort',
   'message_collapse_window_seconds',
   'history_message_limit',
   'safety_settings',

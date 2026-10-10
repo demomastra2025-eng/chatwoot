@@ -198,8 +198,8 @@ RSpec.describe Outbound::PlaygroundDeliveryPolicy do
       conversation.update!(additional_attributes: { 'captain_playground_source' => marker, described_class::ATTRIBUTE_KEY => policy })
     end
 
-    it 'permits only the exact account, inbox, dedicated conversation, caller, and test number' do
-      expect { described_class.ensure!(conversation: conversation, policy: policy) }.not_to raise_error
+    it 'blocks legacy opted-in tokens even for their original controlled source' do
+      expect { described_class.ensure!(conversation: conversation, policy: policy) }.to raise_error(described_class::Blocked)
       other = create(:conversation, account: account, inbox: inbox)
       expect { described_class.ensure!(conversation: other, policy: policy) }.to raise_error(described_class::Blocked)
       contact.update!(phone_number: '+77015559876')
@@ -214,15 +214,17 @@ RSpec.describe Outbound::PlaygroundDeliveryPolicy do
       expect { described_class.ensure!(conversation: conversation, policy: policy) }.to raise_error(described_class::Blocked)
     end
 
-    it 'queues the native caller reply without claiming that it has been delivered' do
+    it 'rejects new replies and prevents dispatch of an unsent legacy outgoing record' do
       described_class.with(policy) do
         expect do
           Messages::MessageBuilder.new(user, conversation, { content: 'Controlled test reply' }).perform
-        end.to have_enqueued_job(SendReplyJob)
+        end.to raise_error(described_class::Blocked)
       end
-      message = conversation.messages.find_by!(content: 'Controlled test reply')
-      expect(message.additional_attributes[described_class::ATTRIBUTE_KEY]).to eq(policy)
-      expect(message).not_to be_failed
+      message = create(:message, conversation: conversation, account: account, inbox: inbox, message_type: :outgoing,
+                                 additional_attributes: { described_class::ATTRIBUTE_KEY => policy })
+      expect(Messages::SendEmailNotificationService).not_to receive(:new)
+      expect(SendReplyJob.perform_now(message.id)).to be(false)
+      expect(message.reload).to be_failed
     end
 
     it 'keeps invalid inherited job context blocked despite an opted-in reminder stamp' do
@@ -246,7 +248,9 @@ RSpec.describe Outbound::PlaygroundDeliveryPolicy do
     it 'does not let an opted-in nested perform_now replace invalid inherited context' do
       message = nil
       described_class.with(policy) do
-        message = Messages::MessageBuilder.new(user, conversation, { content: 'Nested job reply' }).perform
+        expect { Messages::MessageBuilder.new(user, conversation, { content: 'Nested job reply' }).perform }
+          .to raise_error(described_class::Blocked)
+        message = create(:message, :outgoing, account: account, inbox: inbox, conversation: conversation, content: 'Previously queued reply')
       end
       payload = SendReplyJob.new(message.id).serialize.merge('captain_playground' => policy)
       job = ActiveJob::Base.deserialize(payload)

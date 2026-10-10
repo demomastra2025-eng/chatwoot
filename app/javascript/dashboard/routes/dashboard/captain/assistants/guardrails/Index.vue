@@ -11,7 +11,6 @@ import Input from 'dashboard/components-next/input/Input.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 
 import PageLayout from 'dashboard/components-next/captain/PageLayout.vue';
-import SettingsHeader from 'dashboard/components-next/captain/pageComponents/settings/SettingsHeader.vue';
 import SuggestedRules from 'dashboard/components-next/captain/assistant/SuggestedRules.vue';
 import AddNewRulesDialog from 'dashboard/components-next/captain/assistant/AddNewRulesDialog.vue';
 import RuleCard from 'dashboard/components-next/captain/assistant/RuleCard.vue';
@@ -184,10 +183,6 @@ watch(
   >
     <template #body>
       <div class="flex flex-col gap-4 pb-8">
-        <SettingsHeader
-          :heading="$t('CAPTAIN.ASSISTANTS.GUARDRAILS.TITLE')"
-          :description="$t('CAPTAIN.ASSISTANTS.GUARDRAILS.DESCRIPTION')"
-        />
         <div v-if="shouldShowSuggestedRules" class="flex mt-3 flex-col gap-4">
           <SuggestedRules
             :title="$t('CAPTAIN.ASSISTANTS.GUARDRAILS.ADD.SUGGESTED.TITLE')"

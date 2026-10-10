@@ -94,6 +94,16 @@ const slot = {
   startsAt: '2026-10-10T05:00:00Z',
   endsAt: '2026-10-10T05:30:00Z',
 };
+const durationServices = [
+  {
+    id: 5,
+    active: true,
+    name: 'Full consultation',
+    durationMin: 75,
+    basePrice: 15000,
+  },
+  { id: 6, active: true, name: 'Follow-up', durationMin: 15, basePrice: 5000 },
+];
 const fieldDefinitions = [
   {
     id: 99,
@@ -258,7 +268,7 @@ const stubs = {
   Spinner: true,
 };
 let wrapper;
-const mountPage = async () => {
+const mountPage = async (createSlot = slot) => {
   const pinia = createPinia();
   const vuex = createStore({ getters: { getCurrentUser: () => ({ id: 9 }) } });
   setActivePinia(pinia);
@@ -276,7 +286,7 @@ const mountPage = async () => {
   store.contacts = [owner];
   const grid = wrapper.findComponent({ name: 'SchedulingCalendarGrid' });
   // eslint-disable-next-line vue/custom-event-name-casing -- Preserve the existing calendar grid event contract.
-  grid.vm.$emit('create-appointment', slot);
+  grid.vm.$emit('create-appointment', createSlot);
   await flushPromises();
   const contact = wrapper
     .findAllComponents(SelectStub)
@@ -403,6 +413,78 @@ describe('SchedulingCalendarPage pending local booking', () => {
     expect(mocks.references.resources[1].customAttributes).toEqual({
       deleted_from_scheduling: true,
     });
+  });
+
+  it('autofills the selected service duration and preserves a manual interval on service change', async () => {
+    mocks.references.services = durationServices;
+    mocks.references.activeServices = durationServices;
+    const { store } = await mountPage();
+    const services = wrapper.findComponent({ name: 'TagMultiSelectComboBox' });
+    services.vm.$emit('update:modelValue', [5]);
+    await flushPromises();
+    const duration = wrapper.get(
+      'input[data-label="SCHEDULING.APPOINTMENT_FORM.DURATION_MIN"]'
+    );
+    expect(duration.element.value).toBe('75');
+    expect(store.form.endsAt).toBe('2026-10-10T11:15');
+    expect(store.form.serviceAmount).toBe(15000);
+    expect(store.form.durationEdited).toBe(false);
+
+    await duration.setValue('90');
+    services.vm.$emit('update:modelValue', [6]);
+    await flushPromises();
+    expect(duration.element.value).toBe('90');
+    expect(store.form.endsAt).toBe('2026-10-10T11:30');
+    expect(store.form.serviceAmount).toBe(5000);
+    expect(store.form.durationEdited).toBe(true);
+  });
+
+  it.each([
+    ['STARTS_AT', '2026-10-10T10:15', '2026-10-10T11:30', 75],
+    ['ENDS_AT', '2026-10-10T11:30', '2026-10-10T11:30', 90],
+  ])(
+    'preserves an explicitly edited %s across service changes',
+    async (field, value, endsAt, durationMin) => {
+      mocks.references.services = durationServices;
+      mocks.references.activeServices = durationServices;
+      const { store } = await mountPage();
+      const services = wrapper.findComponent({
+        name: 'TagMultiSelectComboBox',
+      });
+      services.vm.$emit('update:modelValue', [5]);
+      await flushPromises();
+      const date = wrapper
+        .findAllComponents(SchedulingDateTimeField)
+        .find(
+          component =>
+            component.props('label') === `SCHEDULING.APPOINTMENT_FORM.${field}`
+        );
+      date.vm.$emit('update:modelValue', value);
+      await flushPromises();
+      services.vm.$emit('update:modelValue', [6]);
+      await flushPromises();
+
+      expect(Number(store.form.durationMin)).toBe(durationMin);
+      expect(store.form.endsAt).toBe(endsAt);
+      expect(store.form.durationEdited).toBe(true);
+    }
+  );
+
+  it('retains a dragged range when selecting a service', async () => {
+    mocks.references.services = durationServices;
+    mocks.references.activeServices = durationServices;
+    const { store } = await mountPage({
+      ...slot,
+      endsAt: '2026-10-10T05:45:00Z',
+      durationEdited: true,
+    });
+    wrapper
+      .findComponent({ name: 'TagMultiSelectComboBox' })
+      .vm.$emit('update:modelValue', [5]);
+    await flushPromises();
+
+    expect(store.form.endsAt).toBe('2026-10-10T10:45');
+    expect(store.form.serviceAmount).toBe(15000);
   });
 
   it('locks DOM fields and late popup callbacks until one created booking is acknowledged', async () => {

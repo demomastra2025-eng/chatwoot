@@ -20,6 +20,8 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
                          custom_attributes: nil, patient: nil, crm_deal_id: nil, crm_pipeline_id: nil)
     @persisted_creation = nil
     ensure_feature_enabled!('scheduling', 'Scheduling is not enabled for this account')
+    validated_service = validate_booking_inputs!(starts_at: starts_at, ends_at: ends_at, duration_min: duration_min, service_id: service_id)
+    service_id = validated_service.id if validated_service
 
     create_params = {
       resource_id: resource_id,
@@ -52,6 +54,10 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
                                  appointment_access_token: nil, patient_confirmed: false)
     ensure_feature_enabled!('scheduling', 'Scheduling is not enabled for this account')
     appointment = target_appointment(appointment_id, appointment_access_token: appointment_access_token, patient_confirmed: patient_confirmed)
+
+    validated_service = validate_booking_inputs!(starts_at: starts_at, ends_at: ends_at, duration_min: duration_min,
+                                                 service_id: service_id, appointment: appointment)
+    service_id = validated_service.id if validated_service
 
     params = {}
     params[:resource_id] = resource_id unless resource_id.nil?
@@ -92,6 +98,18 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
   end
 
   private
+
+  def validate_booking_inputs!(starts_at:, ends_at:, duration_min:, service_id:, appointment: nil)
+    start_time = starts_at.nil? && appointment ? appointment.starts_at : Scheduling::InputValidation.datetime(starts_at, field_name: 'starts_at')
+    if !ends_at.nil?
+      end_time = Scheduling::InputValidation.datetime(ends_at, field_name: 'ends_at')
+      Scheduling::InputValidation.interval!(starts_at: start_time, ends_at: end_time)
+    elsif !duration_min.nil?
+      duration = Scheduling::IntegerNumericNormalizer.normalize_or_zero(duration_min, field_name: 'duration_min')
+      Scheduling::InputValidation.interval!(starts_at: start_time, ends_at: start_time + duration.minutes)
+    end
+    Scheduling::InputValidation.service!(account: account, value: service_id) unless service_id.nil?
+  end
 
   def imported_appointment?(appointment)
     appointment.source == ::Scheduling::Appointments::MutationGuard::PROVIDER_SOURCE

@@ -6,6 +6,7 @@ import { required, minLength } from '@vuelidate/validators';
 
 import Input from 'dashboard/components-next/input/Input.vue';
 import Select from 'dashboard/components-next/select/Select.vue';
+import ModelSettings from 'dashboard/components-next/captain/assistant/ModelSettings.vue';
 import { useCaptainConfigStore } from 'dashboard/store/captain/preferences';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Editor from 'dashboard/components-next/Editor/Editor.vue';
@@ -88,7 +89,8 @@ const initialState = {
   name: '',
   description: '',
   model: '',
-  temperature: 1,
+  temperature: null,
+  thinkingEffort: '',
   autoReplyOnLastIncoming: false,
   messageCollapseWindowSeconds: 0,
   historyMessageLimit: 0,
@@ -307,11 +309,18 @@ const audioTranscriptionsLabel = computed(() =>
     : t('CAPTAIN.ASSISTANTS.FORM.FEATURES.USE_AUDIO_TRANSCRIPTIONS_DISABLED')
 );
 
-const formattedTemperature = computed(() =>
-  Number(state.temperature || 0).toFixed(1)
-);
-const temperatureOrDefault = value =>
-  value === null || value === undefined || value === '' ? 1 : Number(value);
+const modelMetadata = computed(() => {
+  const id =
+    state.model || captainConfigStore.getSelectedModelForFeature('assistant');
+  return (
+    captainConfigStore
+      .getModelsForFeature('assistant')
+      .find(model => model.id === id) ||
+    (props.assistant.playground_model?.id === id
+      ? props.assistant.playground_model
+      : {})
+  );
+});
 const normalizeNonNegativeInteger = value => {
   const normalizedValue = Number(value);
   return Number.isFinite(normalizedValue) && normalizedValue > 0
@@ -360,7 +369,11 @@ const updateStateFromAssistant = assistant => {
   state.name = assistant.name;
   state.model = config.model || '';
   state.description = resolveInstructionText(assistant);
-  state.temperature = temperatureOrDefault(config.temperature);
+  state.temperature =
+    config.temperature === null || config.temperature === undefined
+      ? null
+      : Number(config.temperature);
+  state.thinkingEffort = config.thinking_effort || '';
   state.autoReplyOnLastIncoming = Boolean(config.auto_reply_on_last_incoming);
   state.messageCollapseWindowSeconds = Number(
     config.message_collapse_window_seconds || 0
@@ -441,7 +454,15 @@ const buildPayload = async () => {
 
   if (props.showFeatureFlags && props.showCoreSettings) {
     assistantPayload.config = {
-      temperature: temperatureOrDefault(state.temperature),
+      temperature:
+        modelMetadata.value?.supports_temperature === true
+          ? state.temperature
+          : null,
+      thinking_effort: modelMetadata.value?.reasoning_efforts?.includes(
+        state.thinkingEffort
+      )
+        ? state.thinkingEffort
+        : null,
       model: state.model || null,
       message_collapse_window_seconds: normalizeNonNegativeInteger(
         state.messageCollapseWindowSeconds
@@ -551,45 +572,13 @@ defineExpose({
         v-if="showFeatureFlags && showCoreSettings"
         class="flex flex-col gap-5"
       >
-        <div class="flex flex-col gap-2">
-          <label class="text-sm font-medium text-n-slate-12">
-            {{ t('CAPTAIN.ASSISTANTS.FORM.MODEL.LABEL') }}
-          </label>
-          <Select
-            v-model="state.model"
-            :options="assistantModelOptions"
-            class="w-full"
-          />
-          <p class="m-0 text-xs text-n-slate-11">
-            {{ t('CAPTAIN.ASSISTANTS.FORM.MODEL.DESCRIPTION') }}
-          </p>
-        </div>
-
-        <div class="flex items-center justify-between gap-6">
-          <div class="min-w-0">
-            <label class="text-sm font-medium text-n-slate-12">
-              {{ t('CAPTAIN.ASSISTANTS.FORM.TEMPERATURE.LABEL') }}
-            </label>
-            <p class="mt-1 text-xs text-n-slate-11">
-              {{ t('CAPTAIN.ASSISTANTS.FORM.TEMPERATURE.DESCRIPTION') }}
-            </p>
-          </div>
-          <div class="flex w-72 shrink-0 items-center gap-3">
-            <input
-              v-model.number="state.temperature"
-              type="range"
-              min="0"
-              max="1"
-              step="0.1"
-              class="min-w-0 flex-1 cursor-pointer accent-n-brand"
-            />
-            <span
-              class="inline-flex w-12 shrink-0 justify-center rounded-full bg-n-alpha-2 px-2 py-1 text-sm font-medium tabular-nums text-n-slate-12"
-            >
-              {{ formattedTemperature }}
-            </span>
-          </div>
-        </div>
+        <ModelSettings
+          v-model:model="state.model"
+          v-model:temperature="state.temperature"
+          v-model:effort="state.thinkingEffort"
+          :metadata="modelMetadata"
+          :models="assistantModelOptions"
+        />
 
         <div class="rounded-xl border border-n-weak bg-n-solid-1 p-4">
           <h4 class="text-sm font-medium text-n-slate-12">

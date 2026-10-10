@@ -200,6 +200,25 @@ RSpec.describe Scheduling::Appointments::CancelService do
   context 'when the hook keeps MedElement receptions on cancel (default)' do
     let(:marker_key) { Integrations::Medelement::LocalCancellation::MARKER_KEY }
 
+    it 'clears a previous move receipt and reports local cancellation without confirming removal' do
+      create_medelement_hook(remove_reception_on_cancel: false)
+      status = Integrations::Medelement::AppointmentProviderStatus
+      appointment.update!(custom_attributes: appointment.custom_attributes.merge(
+        status::ATTRIBUTE_KEY => 'succeeded', status::OPERATION_KEY => 'move_reception',
+        status::COMMAND_ID_KEY => 40, status::CANCELLATION_COMMAND_ID_KEY => 41
+      ))
+      appointment.medelement_provider_command_receipt = instance_double(Integrations::Medelement::ProviderCommand)
+
+      result = described_class.new(appointment: appointment, actor: actor).perform
+      payload = Scheduling::ToolPayloadBuilder.appointment_payload(action: 'cancel_appointment', appointment: result)
+
+      expect(result.medelement_provider_command_receipt).to be_nil
+      expect(payload).to include(provider_confirmed: false, provider_confirmation_required: false,
+                                 provider_confirmation_operation: 'remove_reception', provider_confirmation_scope: 'onelink')
+      expect(payload).not_to have_key(:provider_command_receipt)
+      expect(Integrations::Medelement::ProviderCommand.where(appointment: appointment)).to be_empty
+    end
+
     it 'cancels a provider appointment only in OneLink, even with writes enabled' do
       create_medelement_hook(remove_reception_on_cancel: false)
 

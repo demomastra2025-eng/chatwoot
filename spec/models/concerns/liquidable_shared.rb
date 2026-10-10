@@ -196,7 +196,7 @@ shared_examples_for 'liqudable' do
         expect(message.content).to eq 'Hello john `example [Name](field://contact.name)`'
       end
 
-      it 'resolves enterprise field references in template params' do
+      it 'resolves scoped summaries and authorized enterprise fields in template params without inferring a deal' do
         skip 'Captain context fields are not available' unless defined?(Captain::ContextFields)
 
         account = conversation.account
@@ -217,6 +217,7 @@ shared_examples_for 'liqudable' do
           originating_conversation_id: conversation.id,
           custom_attributes: { 'deal-stage.v2' => 'proposal' }
         )
+        create(:crm_deal_contact, account: account, deal: deal, contact: contact)
         task = create(
           :crm_task,
           account: account,
@@ -240,7 +241,10 @@ shared_examples_for 'liqudable' do
               'body' => {
                 'deal_title' => '[Deal Title](field://deal.title)',
                 'deal_stage' => '[Deal Stage](field://deal.custom_attributes.deal-stage.v2)',
+                'deal_summary' => '[Deal Summary](field://deal.summary)',
+                'deal_summary_liquid' => '{{ deal.summary }}',
                 'task_title' => '[Task Title](field://task.title)',
+                'task_title_liquid' => '{{ task.title }}',
                 'task_kind' => '[Task Kind](field://task.custom_attributes.task-kind.v2)',
                 'appointment_name' => '[Client Name](field://appointment.client_name)',
                 'appointment_kind' => '[Visit Kind](field://appointment.custom_attributes.visit-kind.v2)'
@@ -252,26 +256,32 @@ shared_examples_for 'liqudable' do
         message.save!
 
         body_params = message.additional_attributes['template_params']['processed_params']['body']
-        expect(body_params['deal_title']).to eq deal.title
-        expect(body_params['deal_stage']).to eq 'proposal'
+        expect(body_params['deal_title']).to eq ''
+        expect(body_params['deal_stage']).to eq ''
+        summary = JSON.parse(body_params['deal_summary'])
+        expect(summary).to include('shown' => 1, 'total' => 1)
+        expect(summary['groups'].flat_map { |group| group['items'].pluck('id') }).to eq([deal.id])
+        expect(JSON.parse(body_params['deal_summary_liquid'])).to eq(summary)
         expect(body_params['task_title']).to eq task.title
+        expect(body_params['task_title_liquid']).to eq task.title
         expect(body_params['task_kind']).to eq 'callback'
         expect(body_params['appointment_name']).to eq appointment.client_name
         expect(body_params['appointment_kind']).to eq 'follow_up'
       end
 
-      it 'does not resolve unauthorized crm field references' do
+      it 'does not resolve unauthorized CRM field references or Liquid fields in template params' do
         skip 'Captain context fields are not available' unless defined?(Captain::ContextFields)
 
         account = conversation.account
         account.enable_features!('crm_deals', 'crm_tasks')
 
-        create(
+        deal = create(
           :crm_deal,
           account: account,
           title: 'Expansion',
           originating_conversation_id: conversation.id
         )
+        create(:crm_deal_contact, account: account, deal: deal, contact: contact)
         create(
           :crm_task,
           account: account,
@@ -285,7 +295,10 @@ shared_examples_for 'liqudable' do
             'processed_params' => {
               'body' => {
                 'deal_title' => '[Deal Title](field://deal.title)',
-                'task_title' => '[Task Title](field://task.title)'
+                'deal_summary' => '[Summary](field://deal.summary)',
+                'deal_summary_liquid' => '{{ deal.summary }}',
+                'task_title' => '[Task Title](field://task.title)',
+                'task_title_liquid' => '{{ task.title }}'
               }
             }
           }
@@ -294,8 +307,7 @@ shared_examples_for 'liqudable' do
         message.save!
 
         body_params = message.additional_attributes['template_params']['processed_params']['body']
-        expect(body_params['deal_title']).to eq ''
-        expect(body_params['task_title']).to eq ''
+        expect(body_params.values).to all(eq(''))
       end
 
       it 'handles missing email with default filter in template_params' do

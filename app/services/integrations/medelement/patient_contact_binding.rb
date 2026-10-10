@@ -69,6 +69,19 @@ class Integrations::Medelement::PatientContactBinding
                                 status: :conflict)
   end
 
+  def self.recorded_contact_by_iin(account:, iin:)
+    identifier = Scheduling::IinValidator.normalize(iin)
+    return unless Scheduling::IinValidator.valid?(identifier)
+
+    candidates = account.contacts.where(
+      "identifier = :iin OR custom_attributes ->> 'iin' = :iin OR custom_attributes ->> 'medelement_iin' = :iin", iin: identifier
+    ).order(:id).to_a.select { |contact| Contacts::SharedPhone.recorded_patient_identity?(contact, identifier) }
+    if candidates.many?
+      raise Scheduling::Error.new(code: 'MEDELEMENT_PATIENT_IDENTITY_CONFLICT', message: 'Patient identity has several local cards', status: :conflict)
+    end
+    candidates.first
+  end
+
   private
 
   attr_reader :appointment
@@ -135,13 +148,7 @@ class Integrations::Medelement::PatientContactBinding
   # been self-declared by a widget visitor or public API client (no HMAC): such a contact never decides the patient and
   # never turns a booking into "several local cards" or a name-mismatch conflict.
   def contact_by_iin
-    return unless Scheduling::IinValidator.valid?(identifier)
-
-    candidates = appointment.account.contacts.where(
-      "identifier = :iin OR custom_attributes ->> 'iin' = :iin OR custom_attributes ->> 'medelement_iin' = :iin", iin: identifier
-    ).order(:id).to_a.select { |contact| Contacts::SharedPhone.recorded_patient_identity?(contact, identifier) }
-    identity_conflict!('Patient identity has several local cards') if candidates.many?
-    candidates.first
+    self.class.recorded_contact_by_iin(account: appointment.account, iin: identifier)
   end
 
   def validate_contact!(contact, code, allow_communication_contact: false)

@@ -11,7 +11,7 @@ class Scheduling::AvailableSlotSearchService
     attrs['medelement_specialist_code'].present? || attrs['medelement_cabinets'].present?
   end
 
-  def initialize(account:, from:, to:, resource_ids: nil, service_id: nil, duration_min: nil, limit: nil)
+  def initialize(account:, from:, to:, resource_ids: nil, service_id: nil, duration_min: nil, limit: nil, snapshots: nil)
     @account = account
     @from = from
     @to = to
@@ -19,6 +19,7 @@ class Scheduling::AvailableSlotSearchService
     @service_id = Scheduling::IntegerNumericNormalizer.optional_positive_id(service_id)
     @requested_duration_min = duration_min.presence&.to_i
     @limit = normalize_limit(limit)
+    @snapshots = snapshots
   end
 
   def perform
@@ -44,10 +45,14 @@ class Scheduling::AvailableSlotSearchService
   private
 
   def service
+    return @snapshots.service(@service_id) if @snapshots
+
     @service ||= @service_id.present? ? @account.scheduling_services.active.find(@service_id) : nil
   end
 
   def resources
+    return @resources ||= snapshot_resources if @snapshots
+
     @resources ||= begin
       scope = @account.scheduling_resources.available_for_scheduling
       scope = scope.where(id: @resource_ids) if @resource_ids.present?
@@ -63,6 +68,22 @@ class Scheduling::AvailableSlotSearchService
 
       resolved
     end
+  end
+
+  def snapshot_resources
+    resolved = @snapshots.resources
+    resolved = resolved.select { |resource| @resource_ids.include?(resource.id) } if @resource_ids.present?
+    if @resource_ids.present?
+      missing_ids = @resource_ids - resolved.map(&:id)
+      raise ActiveRecord::RecordNotFound, "Specialists not found: #{missing_ids.join(', ')}" if missing_ids.present?
+    end
+    if service.present?
+      linked_ids = @snapshots.linked_resource_ids(service.id)
+      raise MissingServiceLinkError, MISSING_LINK_ERROR if @resource_ids.present? && (resolved.map(&:id) - linked_ids).present?
+
+      resolved = resolved.select { |resource| linked_ids.include?(resource.id) }
+    end
+    resolved
   end
 
   def active_price_links
@@ -84,6 +105,13 @@ class Scheduling::AvailableSlotSearchService
   end
 
   def local_slots(resource, from: @from, to: @to, provider_working_windows: nil, uncapped: false)
+    if @snapshots
+      return @snapshots.availability(resource: resource, from: from, to: to, service: service, duration_min: @requested_duration_min,
+                                     limit: @limit, uncapped: uncapped).fetch(:slots).map do |slot|
+        slot.merge(resource_name: resource.name, timezone: resource.timezone, availability_source: 'local')
+      end
+    end
+
     policy = Scheduling::ResourceHoursPolicy.new(resource: resource)
     payload = Scheduling::ResourceAvailabilityQueryService.new(
       resource: resource,
@@ -151,7 +179,7 @@ class Scheduling::AvailableSlotSearchService
   def availability_payload
     normalized_slots
     statuses = availability_resources.pluck(:status)
-    status = if statuses.intersect?(%w[unavailable schedule_not_confirmed provider_unavailable])
+    status = if statuses.intersect?(%w[unavailable schedule_not_confirmed provider_unavailable internal_failure])
                'degraded'
              elsif statuses.intersect?(%w[fresh closed_day])
                'fresh'
@@ -159,7 +187,14 @@ class Scheduling::AvailableSlotSearchService
                'local_only'
              end
 
-    { status: status, resources: availability_resources }
+    code = if statuses.include?('internal_failure')
+             'INTERNAL_FAILURE'
+           elsif statuses.intersect?(%w[unavailable provider_unavailable])
+             'PROVIDER_UNAVAILABLE'
+           elsif statuses.include?('schedule_not_confirmed')
+             'SCHEDULE_NOT_CONFIRMED'
+           end
+    { status: status, resources: availability_resources, code: code, reason: code&.downcase }.compact
   end
 
   def availability_note

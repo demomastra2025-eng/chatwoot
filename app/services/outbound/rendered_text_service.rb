@@ -50,7 +50,7 @@ class Outbound::RenderedTextService
 
     if defined?(Captain::ContextFields)
       if resolved_account.present?
-        drops['deal'] = build_runtime_state_drop(
+        drops['deal'] = build_runtime_state_drop(:deal) do
           Captain::ContextFields.deal_state_for(
             account: resolved_account,
             conversation: resolved_conversation,
@@ -58,22 +58,22 @@ class Outbound::RenderedTextService
             deal: deal,
             actor: sender.is_a?(User) ? sender : nil
           )
-        )
-        drops['task'] = build_runtime_state_drop(
+        end
+        drops['task'] = build_runtime_state_drop(:task) do
           Captain::ContextFields.task_state_for(
             account: resolved_account,
             conversation: resolved_conversation
           )
-        )
+        end
       end
-      drops['appointment'] = build_runtime_state_drop(
+      drops['appointment'] = build_runtime_state_drop(:appointment) do
         Captain::ContextFields.appointment_state_for(
           account: resolved_account,
           conversation: resolved_conversation,
           appointment: appointment,
           contact_id: resolved_contact&.id
         )
-      )
+      end
     end
 
     drops.compact
@@ -99,7 +99,13 @@ class Outbound::RenderedTextService
     AccountDrop.new(resolved_account) if resolved_account.present?
   end
 
-  def build_runtime_state_drop(state)
+  def build_runtime_state_drop(scope)
+    return if resolved_account.blank?
+    return unless Captain::ContextFields.scope_visible_for_user?(
+      scope: scope, account: resolved_account, user: sender.is_a?(User) ? sender : nil
+    )
+
+    state = yield
     return if state.blank?
 
     RuntimeStateDrop.new(state)

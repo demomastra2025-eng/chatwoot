@@ -22,6 +22,9 @@ RSpec.describe Captain::Runtime::ChatFactory do
 
     before do
       allow(chat).to receive(:after_message).and_return(chat)
+      allow(Llm::Models).to receive(:model_config).with('openai/gpt-5.4-mini', account: nil).and_return(
+        'supported_parameters' => %w[temperature top_p max_tokens]
+      )
     end
 
     it 'constructs Captain chats through the LLM runtime facade' do

@@ -718,6 +718,44 @@ describe('SchedulingVueCalCalendar', () => {
     ]);
   });
 
+  it.each([false, true])(
+    'marks a drag-created range as authored (unscheduled: %s)',
+    async unscheduled => {
+      const wrapper = mountCalendar({
+        allowCreateWithoutResources: unscheduled,
+        resources: unscheduled ? [] : baseProps.resources,
+        view: 'day',
+        workRules: [
+          {
+            id: 1,
+            active: true,
+            resourceId: 12,
+            startMinute: 540,
+            endMinute: 1020,
+            weekday: 1,
+          },
+        ],
+      });
+      await nextTick();
+      const resolve = vi.fn();
+      wrapper.findComponent(VueCal).vm.$emit('eventCreate', {
+        event: {
+          start: new Date(2026, 2, 9, 10, 0),
+          end: new Date(2026, 2, 9, 10, 45),
+          schedule: 12,
+        },
+        resolve,
+      });
+
+      const [[payload]] = wrapper.emitted('createAppointment');
+      expect(payload.durationEdited).toBe(true);
+      expect(new Date(payload.endsAt) - new Date(payload.startsAt)).toBe(
+        45 * 60000
+      );
+      expect(resolve).toHaveBeenCalledWith(false);
+    }
+  );
+
   it('starts a click-created unscheduled item at the clicked five-minute mark', async () => {
     const wrapper = mountCalendar({
       allowCreateWithoutResources: true,

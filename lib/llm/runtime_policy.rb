@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class Llm::RuntimePolicy
-  THINKING_EFFORTS = %w[none low medium high].freeze
+  THINKING_EFFORTS = %w[none minimal low medium high xhigh max].freeze
   MODERATION_FAILURE_MODES = %w[fail_open fail_closed].freeze
   GUARDRAIL_ACTIONS = Llm::RuntimeGuardrailAction::ACTIONS
   RELEASE_GATE_KEYS = %w[
@@ -44,11 +44,9 @@ class Llm::RuntimePolicy
       if effort_override.present? && !Llm::Models.reasoning_efforts_for(model, account: account).include?(effort)
         raise ArgumentError, 'The model does not support the requested reasoning effort.'
       end
-      return nil unless Llm::Models.supports_thinking?(model, account: account)
+      return nil unless Llm::Models.reasoning_efforts_for(model, account: account).include?(effort)
 
-      options = { effort: effort }
-      options[:budget] = budget_for(model, effort) if budget_required?(model, account: account)
-      options
+      { effort: effort }
     end
 
     def moderation_enabled?(feature:, account: nil, preferences: nil)
@@ -216,14 +214,6 @@ class Llm::RuntimePolicy
       return account.captain_preferences[:runtime].to_h.stringify_keys if account.respond_to?(:captain_preferences)
 
       {}
-    end
-
-    def budget_required?(model, account: nil)
-      Llm::Config.provider_for_model(model, account: account) == 'anthropic'
-    end
-
-    def budget_for(_model, effort)
-      THINKING_BUDGETS.fetch(effort.to_s, THINKING_BUDGETS['medium'])
     end
 
     def normalize_string_list(value)

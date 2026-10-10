@@ -39,6 +39,16 @@ module Integrations::Medelement::LocalCancellation
     attributes.to_h[MARKER_KEY].present?
   end
 
+  # A local status change cannot free a reception still held by the provider. This also protects
+  # older linked cancellations without a marker until an authoritative removal is observed.
+  def provider_occupied?(appointment)
+    return false unless %i[source custom_attributes external_ref].all? { |key| appointment.respond_to?(key) }
+    return false unless linked?(appointment)
+    return true if marked?(appointment)
+
+    !Integrations::Medelement::AppointmentProviderStatus.cancellation_confirmed?(appointment)
+  end
+
   def reception_code(appointment)
     attributes = appointment.custom_attributes.to_h
     return attributes['medelement_reception_code'].to_s if attributes['medelement_reception_code'].present?

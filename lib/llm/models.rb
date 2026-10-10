@@ -277,20 +277,7 @@ module Llm::Models
     end
 
     def reasoning_efforts_for(model_name, account: nil)
-      return [] unless supports_thinking?(model_name, account: account)
-
-      config = model_config(model_name, account: account).to_h
-      reasoning = config['reasoning']
-      # Older catalogs support the existing effort controls but cannot prove
-      # that reasoning can be disabled. Do not offer `none` from that metadata.
-      return Llm::RuntimePolicy::THINKING_EFFORTS - ['none'] unless reasoning.is_a?(Hash)
-      return [] unless reasoning.key?('supported_efforts')
-
-      efforts = reasoning['supported_efforts']
-      efforts = efforts.nil? ? Llm::RuntimePolicy::THINKING_EFFORTS : Array(efforts).map(&:to_s)
-      efforts &= Llm::RuntimePolicy::THINKING_EFFORTS
-      can_disable = config['provider'] == OPENROUTER_PROVIDER && reasoning['mandatory'] != true
-      can_disable ? efforts : efforts - ['none']
+      Llm::ModelParameters.for(model_name, account: account).reasoning_efforts
     end
 
     # Temperature is a request parameter rather than a model capability. Use the
@@ -298,18 +285,7 @@ module Llm::Models
     # RubyLLM model metadata for bundled provider models. Unknown support stays
     # disabled so the UI never promises a control the provider cannot honor.
     def supports_temperature?(model_name, account: nil)
-      canonical_name = canonical_model_name(model_name)
-      resolved_config = model_config(canonical_name, account: account).to_h
-      supported_parameters = resolved_config['supported_parameters'] || resolved_config[:supported_parameters]
-      if resolved_config.key?('supported_parameters') || resolved_config.key?(:supported_parameters)
-        return Array(supported_parameters).map(&:to_s).include?('temperature')
-      end
-
-      registry_info = registry_info_for(canonical_name)
-      metadata = registry_info.respond_to?(:metadata) ? registry_info.metadata : nil
-      metadata = metadata.to_h if metadata.respond_to?(:to_h)
-      metadata = metadata.with_indifferent_access if metadata.respond_to?(:with_indifferent_access)
-      metadata&.[](:temperature) == true
+      Llm::ModelParameters.for(model_name, account: account).temperature?
     rescue StandardError
       false
     end

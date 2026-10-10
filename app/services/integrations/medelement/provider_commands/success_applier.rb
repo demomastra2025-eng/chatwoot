@@ -27,13 +27,13 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
     end
   end
 
-  def reception_created!(reception_code:, patient_code:)
+  def reception_created!(reception_code:, patient_code:, read_verified: false)
     with_owned_command do
       validate_patient_identity!
       if command.create_reception? && (appointment.reload.status == 'cancelled' || captain_create_reception? || frozen_appointment_identity?)
         Integrations::Medelement::ProviderCommands::ReceptionDiscoveryGuard.new(command: command).validate!
       end
-      apply_reception_created!(reception_code: reception_code, patient_code: patient_code)
+      apply_reception_created!(reception_code: reception_code, patient_code: patient_code, read_verified: read_verified)
     end
   end
 
@@ -53,7 +53,7 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
   def reception_discovered!(reception_code:, patient_code:)
     with_reconcilable_command do
       Integrations::Medelement::ProviderCommands::ReceptionDiscoveryGuard.new(command: command).validate!
-      apply_reception_created!(reception_code: reception_code, patient_code: patient_code)
+      apply_reception_created!(reception_code: reception_code, patient_code: patient_code, read_verified: true)
     end
   end
 
@@ -76,10 +76,11 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
   def reception_removed!
     with_owned_command do
       validate_patient_identity!
+      appointment.mark_medelement_provider_reconciled!
       appointment.update!(
         status: 'cancelled',
         payment_status: 'cancelled',
-        custom_attributes: stamped_custom_attributes.merge(
+        custom_attributes: stamped_custom_attributes.except(Integrations::Medelement::LocalCancellation::MARKER_KEY).merge(
           Integrations::Medelement::AppointmentProviderStatus::ATTRIBUTE_KEY =>
             Integrations::Medelement::AppointmentProviderStatus::SUCCEEDED,
           Integrations::Medelement::AppointmentProviderStatus::CANCELLATION_COMMAND_ID_KEY => command.id
@@ -139,10 +140,12 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
   end
 
   def stamped_custom_attributes
-    Scheduling::Appointments::PlaygroundRunStamp.apply(appointment.custom_attributes)
+    Scheduling::Appointments::PlaygroundRunStamp.apply(appointment.custom_attributes).merge(
+      Integrations::Medelement::AppointmentProviderStatus.command_attributes(command)
+    )
   end
 
-  def apply_reception_created!(reception_code:, patient_code:)
+  def apply_reception_created!(reception_code:, patient_code:, read_verified:)
     unless Integrations::Medelement::ProviderCommands::ReceptionVerifier.valid_reception_code?(reception_code)
       raise Scheduling::Error.new(
         code: 'MEDELEMENT_INVALID_RECEPTION_REFERENCE', message: 'Provider reception ID requires reconciliation', status: :conflict
@@ -162,7 +165,20 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
       ).merge(appointment_patient_attributes(patient_code)).merge(local_service_binding_attributes)
     )
     link_contact_patient_ref!(patient_code)
+    mark_create_read_verified! if read_verified
     complete_command!(provider_reception_code: reception_code, provider_patient_code: patient_code)
+  end
+
+  # Persist proof with the succeeded transition under the same command lock/transaction as the
+  # appointment apply. A plain POST acknowledgement keeps its pending read state.
+  def mark_create_read_verified!
+    key = Integrations::Medelement::ProviderCommands::ReceptionReceiptVerificationService::STATE_KEY
+    state = command.execution_state.to_h[key]
+    return unless state.is_a?(Hash)
+
+    command.execution_state = command.execution_state.to_h.merge(key => state.except('reason', 'next_at').merge(
+      'status' => 'verified', 'checked_at' => Time.current.iso8601
+    ))
   end
 
   def reconciliation_claim_owned?

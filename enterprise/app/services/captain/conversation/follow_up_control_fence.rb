@@ -79,7 +79,7 @@ class Captain::Conversation::FollowUpControlFence
   end
 
   def prior_incoming_message
-    Captain::Conversation::ControlService.messages_scope(conversation).incoming
+    Captain::Conversation::ControlService.incoming_messages_scope(conversation)
                                          .where('messages.id < ?', anchor_message.id)
                                          .order(id: :desc).first
   end

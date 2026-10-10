@@ -157,7 +157,11 @@ class Llm::OpenRouterRequestCompiler
     set_param_if_present(params, :tool_choice, request_value(:tool_choice))
     set_param_if_present(params, :reasoning, request_value(:reasoning)) if reasoning_request?
     set_param_if_present(params, :max_tokens, request_value(:max_tokens))
-    unless suppress_unsupported_endpoint_param!(params, :temperature, request_value(:temperature), provider_params: provider_params, models: models)
+    omit_temperature = params[Llm::OpenRouterServerToolsPatch::OMIT_TEMPERATURE_PARAM] ||
+                       params[Llm::OpenRouterServerToolsPatch::OMIT_TEMPERATURE_PARAM.to_s]
+    if omit_temperature
+      omit_request_param!(params, :temperature)
+    elsif !suppress_unsupported_endpoint_param!(params, :temperature, request_value(:temperature), provider_params: provider_params, models: models)
       set_param_if_present(params, :temperature, request_value(:temperature))
     end
     set_param_if_present(params, :user, request_value(:user_id))

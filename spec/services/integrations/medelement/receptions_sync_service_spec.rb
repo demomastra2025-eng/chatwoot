@@ -478,6 +478,49 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
     end
   end
 
+  it 'keeps a new acknowledged create occupied through empty reads and releases the guard after native materialization' do
+    travel_to(Time.zone.parse('2026-03-20 10:00:00')) do
+      verification = Integrations::Medelement::ProviderCommands::ReceptionReceiptVerificationService
+      provider = Integrations::Medelement::AppointmentProviderStatus
+      outbound = create_trusted_outbound_appointment
+      command = Integrations::Medelement::ProviderCommand.find_by!(appointment: outbound, operation: 'create_reception')
+      patient_code = reception_payload.first['PATIENT_CODE']
+      outbound.contact.update!(custom_attributes: outbound.contact.custom_attributes.merge('medelement_patient_code' => patient_code))
+      command.update!(provider_patient_code: patient_code, execution_state: {
+        'write_provider_reception_code' => 'outbound-removed',
+        verification::STATE_KEY => { 'status' => 'pending', 'attempts' => 0 }
+      })
+      outbound.mark_medelement_provider_reconciled!
+      outbound.update!(custom_attributes: outbound.custom_attributes.merge(provider.command_attributes(command)))
+      allow(client).to receive(:get_receptions).and_return([])
+
+      3.times { service.perform }
+
+      expect(outbound.reload).to have_attributes(status: 'scheduled', payment_status: 'awaiting_payment')
+      expect(outbound.custom_attributes).not_to include('medelement_missing_syncs', 'medelement_removed_at')
+      expect(command.reload).to be_succeeded
+
+      appeared = reception_payload.first.merge(
+        'RECEPTION_CODE' => 'outbound-removed', 'STARTTIME' => '2026-03-22 09:00:00', 'ENDTIME' => '2026-03-22 09:20:00'
+      )
+      allow(client).to receive(:get_receptions).and_return([appeared])
+      allow(client).to receive(:get_reception).and_return(appeared.merge(
+        'PROFILE_CODE' => patient_code, 'COMPANY_CODE' => 'company-1', 'SERVICES' => [],
+        'SPECIALIST_CODE' => resource.custom_attributes['medelement_specialist_code']
+      ))
+      service.perform
+
+      expect(outbound.reload.custom_attributes[verification::MATERIALIZED_COMMAND_KEY]).to eq(command.id)
+      expect(verification.unmaterialized_current_create?(outbound)).to be(false)
+
+      allow(client).to receive(:get_receptions).and_return([])
+      service.perform
+      expect(outbound.reload.status).to eq('scheduled')
+      service.perform
+      expect(outbound.reload.status).to eq('cancelled')
+    end
+  end
+
   it 'restores a provider-tombstoned outbound appointment when it reappears' do
     travel_to(Time.zone.parse('2026-03-20 10:00:00')) do
       outbound = create_trusted_outbound_appointment

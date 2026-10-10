@@ -1,4 +1,5 @@
 class Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService < Captain::Tools::Copilot::BaseAccountTool
+  include Captain::Tools::Copilot::SchedulingQueryValidation
   MAX_RANGE_DAYS = Scheduling::RangeValidator::MAX_RANGE_DAYS
 
   def self.name
@@ -15,10 +16,10 @@ class Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService < Captai
   param :limit, type: :number, desc: 'Maximum number of slots to return', required: false
 
   def execute(resource_id:, from:, to:, service_id: nil, duration_min: nil, limit: nil)
-    service_id = optional_positive_id(service_id)
-    range_from = parse_datetime(from, field_name: 'from', required: true)
-    range_to = parse_datetime(to, field_name: 'to', required: true)
-    validate_range!(range_from, range_to)
+    service_id = scheduling_service_id(service_id)
+    range_from = scheduling_datetime(from, field_name: 'from')
+    range_to = scheduling_datetime(to, field_name: 'to')
+    scheduling_range!(range_from, range_to)
 
     resource = find_resource!(resource_id)
     service_record = resolve_service_for_resource(resource: resource, service_id: service_id)
@@ -26,7 +27,7 @@ class Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService < Captai
 
     formatted_payload(with_provider_note(resource, range_from, range_to, payload.merge(availability_metadata(resource, service_record))))
   rescue StandardError => e
-    tool_failure(e)
+    scheduling_tool_failure(e)
   end
 
   def active?
@@ -81,23 +82,25 @@ class Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService < Captai
 
   def find_resource!(resource_id)
     account.scheduling_resources.available_for_scheduling.find_by(id: resource_id).tap do |resource|
-      raise ActiveRecord::RecordNotFound, 'Scheduling resource not found' if resource.blank?
+      if resource.blank?
+        raise Scheduling::Error.new(code: 'RESOURCE_NOT_FOUND', message: 'Scheduling resource not found', status: :not_found,
+                                    details: { reason: 'unknown_resource' })
+      end
     end
   end
 
   def resolve_service_for_resource(resource:, service_id:)
     return nil if service_id.blank?
 
-    service_record = account.scheduling_services.active.find_by(id: service_id)
-    raise ActiveRecord::RecordNotFound, 'Service not found' if service_record.blank?
+    service_record = scheduling_service!(service_id)
 
     active_price = resource.service_prices.active.find_by(account_id: account.id, service_id: service_record.id)
-    raise ArgumentError, 'No recorded service-price link for this resource; provider eligibility is unverified' if active_price.blank?
+    if active_price.blank?
+      raise Scheduling::Error.new(code: 'SERVICE_NOT_AVAILABLE_FOR_RESOURCE',
+                                  message: 'No recorded service-price link for this resource; provider eligibility is unverified',
+                                  status: :unprocessable_content, details: { reason: 'service_not_linked' })
+    end
 
     service_record
-  end
-
-  def validate_range!(range_from, range_to)
-    Scheduling::RangeValidator.validate!(from: range_from, to: range_to, max_days: MAX_RANGE_DAYS)
   end
 end

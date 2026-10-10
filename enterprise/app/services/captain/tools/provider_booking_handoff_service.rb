@@ -1,6 +1,7 @@
 class Captain::Tools::ProviderBookingHandoffService
   FENCE_KEY = 'ai_booking_response_fence'.freeze
   STAFF_NOTE_ID_KEY = Integrations::Medelement::AiBookingOutcomeJob::STAFF_NOTE_ID_KEY
+  CUSTOMER_MESSAGE_ID_KEY = Integrations::Medelement::AiBookingOutcomeJob::CUSTOMER_MESSAGE_ID_KEY
   FENCE_KEYS = %w[control_generation status_transition_id last_message_id].freeze
 
   # rubocop:disable Metrics/ParameterLists
@@ -118,7 +119,12 @@ class Captain::Tools::ProviderBookingHandoffService
 
   def handoff!
     note = nil
-    result = conversation.bot_handoff!(source: 'system', actor: assistant, fence: response_fence) do
+    customer_message = nil
+    return :stale_request if slot_conflict? && !current_incoming_request?
+
+    handoff_fence = slot_conflict? ? response_fence.merge('require_current_incoming' => true) : response_fence
+    result = conversation.bot_handoff!(source: 'system', actor: assistant, fence: handoff_fence) do
+      customer_message = existing_conflict_message || create_conflict_message! if slot_conflict? && current_incoming_request?
       note = existing_staff_note || create_staff_note!
     end
     if result.in?([:stale, :already_applied])
@@ -128,8 +134,37 @@ class Captain::Tools::ProviderBookingHandoffService
         end
       end
     end
-    record_note!(note) if note && command
+    record_note!(note, customer_message: customer_message) if note && command
     result
+  end
+
+  def slot_conflict?
+    command&.failed? && command.last_error_code == 'slot_conflict' && !orphaned_write
+  end
+
+  def current_incoming_request?
+    Captain::Conversation::ControlService.incoming_messages_scope(conversation)
+                                         .reorder(created_at: :desc, id: :desc).pick(:id).to_i == response_fence['last_message_id'].to_i
+  end
+
+  def existing_conflict_message
+    conversation.messages.outgoing.where(private: false)
+                .where("additional_attributes ->> 'medelement_provider_command_id' = ?", command.id.to_s).first
+  end
+
+  # This notice commits with the accepted handoff under the conversation/control
+  # locks. A later stale model reply is still rejected by its original fence.
+  def create_conflict_message!
+    key = command.move_reception? ? 'conversations.captain.ai_booking_move_conflict' : 'conversations.captain.ai_booking_slot_conflict'
+    conversation.messages.create!(
+      account_id: conversation.account_id, inbox_id: conversation.inbox_id,
+      message_type: :outgoing, private: false, sender: assistant,
+      content: I18n.with_locale(assistant.account.locale) { I18n.t(key) },
+      additional_attributes: {
+        medelement_provider_command_id: command.id, scheduling_appointment_id: appointment.id,
+        captain_ai_reply: { assistant_id: assistant.id }
+      }
+    )
   end
 
   # The fenced conversation was taken over by a human of the original run when
@@ -235,8 +270,9 @@ class Captain::Tools::ProviderBookingHandoffService
     )
   end
 
-  def record_note!(note)
+  def record_note!(note, customer_message: nil)
     state = command.execution_state.to_h.merge(STAFF_NOTE_ID_KEY => note.id)
+    state[CUSTOMER_MESSAGE_ID_KEY] = customer_message.id if customer_message
     if orphaned_write && command.contact_id != appointment.contact_id
       # An acknowledged orphan still belongs to the original contact. The command
       # association validator rejects metadata updates after the local slot moves.

@@ -212,6 +212,7 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
     {
       'time_zone' => configuration.time_zone,
       'resource_id' => appointment_resource_id,
+      'service_id' => appointment_attribute('service_id'),
       'specialist_code' => specialist_code,
       'source_starts_at' => timestamp(source_appointment_attribute('starts_at')),
       'source_ends_at' => timestamp(source_appointment_attribute('ends_at')),

@@ -31,6 +31,7 @@ RSpec.describe Integrations::Medelement::AppointmentProviderStatus do
     command = instance_double(
       Integrations::Medelement::ProviderCommand,
       id: 42,
+      operation: 'remove_reception',
       idempotency_key: 'remove-command',
       execution_state: { 'request_fingerprint' => 'f' * 64, 'dispatch_identity' => 'onelink-event:remove:42' },
       remove_reception?: true
@@ -46,5 +47,29 @@ RSpec.describe Integrations::Medelement::AppointmentProviderStatus do
       described_class::COMMAND_DISPATCH_IDENTITY_KEY => 'onelink-event:remove:42',
       described_class::CANCELLATION_COMMAND_ID_KEY => command.id
     )
+  end
+
+  it 'does not use a successful move as confirmation of a later local cancellation' do
+    appointment.update!(custom_attributes: appointment.custom_attributes.merge(
+      described_class::OPERATION_KEY => 'move_reception',
+      Integrations::Medelement::LocalCancellation::MARKER_KEY => { 'reception_code' => 'reception-1' }
+    ))
+
+    expect(described_class.payload(appointment)).to include(
+      provider_confirmed: false, provider_confirmation_status: 'not_requested',
+      provider_confirmation_operation: 'remove_reception', provider_confirmation_scope: 'onelink'
+    )
+    expect(described_class.cancellation_confirmed?(appointment)).to be(false)
+  end
+
+  it 'requires the cancellation receipt to match the current operation even for an older unmarked cancellation' do
+    expect(described_class.payload(appointment)[:provider_confirmed]).to be(false)
+    appointment.update!(custom_attributes: appointment.custom_attributes.merge(
+      described_class::OPERATION_KEY => 'move_reception', described_class::CANCELLATION_COMMAND_ID_KEY => 40
+    ))
+    expect(described_class.payload(appointment)[:provider_confirmed]).to be(false)
+
+    appointment.update!(custom_attributes: appointment.custom_attributes.merge(described_class::OPERATION_KEY => 'remove_reception'))
+    expect(described_class.payload(appointment)).to include(provider_confirmed: true, provider_confirmation_operation: 'remove_reception')
   end
 end

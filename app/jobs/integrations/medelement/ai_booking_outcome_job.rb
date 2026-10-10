@@ -103,7 +103,10 @@ class Integrations::Medelement::AiBookingOutcomeJob < ApplicationJob
   end
 
   def failed_create_needs_review?(command)
-    failed_or_unknown?(command) || command.reconciliation_required? || (command.succeeded? && !provider_acknowledged?(command))
+    return true if command.failed? || command.declined? || command.cancelled?
+    return false if provider_acknowledged?(command)
+
+    command.provider_status_unknown? || command.reconciliation_required? || command.succeeded?
   end
 
   def current_failed_booking?(command, appointment, conversation)
@@ -144,7 +147,7 @@ class Integrations::Medelement::AiBookingOutcomeJob < ApplicationJob
     return command.succeeded? && command.provider_reception_code.present? if command.move_reception?
 
     reference = command.execution_state.to_h['write_provider_reception_code'].presence
-    return false if reference.blank?
+    return false unless Integrations::Medelement::ProviderCommands::ReceptionVerifier.valid_reception_code?(reference)
 
     command.provider_reception_code.to_s == reference.to_s
   end

@@ -317,7 +317,8 @@ class Integrations::Medelement::AppointmentImporterService
     unresolved_service_codes = service_data.fetch(:unresolved_service_codes)
     service_binding = service_data.fetch(:service_binding)
     status_resolution = service_data.fetch(:status_resolution)
-    attributes = appointment.custom_attributes.except(*RECONCILIATION_ATTRIBUTE_KEYS).merge(
+    materialization = Integrations::Medelement::ProviderCommands::ReceptionReceiptVerificationService.materialization_attributes(appointment, reception)
+    attributes = appointment.custom_attributes.except(*RECONCILIATION_ATTRIBUTE_KEYS).merge(materialization).merge(
       'medelement_cabinet_code' => reception['COMPANY_CABINET_CODE'].to_s.presence,
       'medelement_reception_code' => reception['RECEPTION_CODE'].to_s,
       'medelement_source_created_at' => reception['CREATED_AT'].to_s.presence,

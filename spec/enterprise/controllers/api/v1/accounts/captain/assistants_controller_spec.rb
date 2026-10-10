@@ -9,6 +9,16 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
     JSON.parse(response.body, symbolize_names: true)
   end
 
+  def stub_temperature_supported_assistant_model
+    model_name = 'openai/gpt-5.4-mini'
+    metadata = Llm::Models.model_config(model_name, account: account).to_h
+    allow(Llm::Config).to receive(:model_for).and_call_original
+    allow(Llm::Config).to receive(:model_for).with(hash_including(feature: :assistant, account: account)).and_return(model_name)
+    allow(Llm::Models).to receive(:model_config).and_call_original
+    allow(Llm::Models).to receive(:model_config).with(model_name, account: account)
+      .and_return(metadata.merge('supported_parameters' => ['temperature']))
+  end
+
   describe 'GET /api/v1/accounts/{account.id}/captain/assistants' do
     context 'when it is an un-authenticated user' do
       it 'does not fetch assistants' do
@@ -1022,6 +1032,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
       end
 
       it 'preserves tool and rules config when patching system settings only' do
+        stub_temperature_supported_assistant_model
         assistant.update!(
           config: {
             'temperature' => 1.0,
@@ -1081,6 +1092,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
       end
 
       it 'persists assistant safety selections while retaining omitted checks and unrelated config' do
+        stub_temperature_supported_assistant_model
         assistant.update!(
           config: {
             'temperature' => 0.6,
@@ -1586,6 +1598,8 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
           .and_return(true)
         allow(Llm::Models).to receive(:supports_thinking?).with('openai/gpt-5.4', account: account)
           .and_return(true)
+        allow(Llm::Models).to receive(:reasoning_efforts_for).with('openai/gpt-5.4', account: account)
+          .and_return(['high'])
         allow(Captain::Assistant::AgentRunnerService).to receive(:new).with(
           assistant: assistant,
           source: 'playground',

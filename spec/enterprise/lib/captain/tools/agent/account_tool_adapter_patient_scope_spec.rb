@@ -45,16 +45,19 @@ RSpec.describe Captain::Tools::Agent::AccountToolAdapter do
     expect(other.id).not_to eq(own.id)
   end
 
-  it 'keeps provider status neutral even for an own command' do
+  it 'keeps provider status unavailable to the customer agent even for an own command' do
     own = create(:scheduling_appointment, account: account, contact: contact, conversation: conversation)
     foreign = create(:scheduling_appointment, account: account, contact: other_contact)
     own_command = provider_command_for(own)
     foreign_command = provider_command_for(foreign)
 
     [own_command.id, foreign_command.id, missing_id].each do |id|
-      expect(JSON.parse(call_tool('get_appointment_provider_status', provider_command_id: id)))
-        .to eq('success' => false, 'reason' => 'staff_will_help')
+      expect { call_tool('get_appointment_provider_status', provider_command_id: id) }
+        .to raise_error(ArgumentError, 'Tool is not available for the current runtime scope')
     end
+    definition = Captain::ToolRegistry.definition_for('get_appointment_provider_status')
+    expect(definition.allowed_scopes).to eq([Captain::ToolAccess::SCOPE_ASSISTANT])
+    expect(definition.assistant_tool_class).to eq(Captain::Tools::Copilot::GetAppointmentProviderStatusService)
   end
 
   it 'does not expose another clinical patient merely because the same caller booked them' do

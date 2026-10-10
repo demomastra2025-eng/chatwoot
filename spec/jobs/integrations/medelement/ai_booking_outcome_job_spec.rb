@@ -94,6 +94,18 @@ RSpec.describe Integrations::Medelement::AiBookingOutcomeJob do
     expect(conversation.messages.outgoing).to be_empty
   end
 
+  it 'does not hand off a current acknowledged create only because its read-back remains delayed' do
+    bind_provider_status!('pending')
+    capture_booking_fence!
+    command.update!(provider_patient_code: 'patient-1', status: 'reconciliation_required',
+                    execution_state: command.execution_state.merge('write_provider_reception_code' => 'reception-1'))
+
+    described_class.perform_now(command.id)
+
+    expect(conversation.reload.status).to eq('pending')
+    expect(conversation.messages.outgoing).to be_empty
+  end
+
   %w[failed provider_status_unknown].each do |outcome|
     it "hands off #{outcome} create once with a staff note, but never confirms it to the customer" do
       bind_provider_status!(outcome)
@@ -119,6 +131,72 @@ RSpec.describe Integrations::Medelement::AiBookingOutcomeJob do
     described_class.perform_now(command.id)
     expect(conversation.reload.status).to eq('open')
     expect(conversation.messages.outgoing.where(private: false)).to be_empty
+  end
+
+  context 'when the provider rejects the selected interval' do
+    before do
+      bind_provider_status!('failed')
+      capture_booking_fence!
+      command.update!(status: 'failed', last_error_code: 'slot_conflict')
+    end
+
+    it 'commits one public explanation with the handoff and preserves it on retries' do
+      2.times { described_class.perform_now(command.id) }
+
+      reply = conversation.messages.outgoing.where(private: false).sole
+      expect(reply.content).to eq('Это время уже занято, поэтому запись не оформлена. Поможем подобрать другое время.')
+      expect(reply.additional_attributes['medelement_provider_command_id']).to eq(command.id)
+      expect(conversation.reload).to be_open
+      expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
+      expect(command.reload.execution_state[described_class::CUSTOMER_MESSAGE_ID_KEY]).to eq(reply.id)
+    end
+
+    it 'does not send an old conflict explanation or take over a newer request' do
+      create(:message, conversation: conversation, message_type: :incoming, skip_runtime_events: true)
+
+      described_class.perform_now(command.id)
+
+      expect(conversation.messages.outgoing).to be_empty
+      expect(conversation.reload).to be_pending
+    end
+
+    it 'rechecks the incoming request under the handoff locks before changing status or generation' do
+      generation = conversation.current_captain_control_generation
+      # Inject the competing commit after the early request check, before the
+      # real handoff acquires its conversation and control-owner locks.
+      # rubocop:disable RSpec/AnyInstance
+      allow_any_instance_of(Captain::Tools::ProviderBookingHandoffService).to receive(:current_incoming_request?).and_wrap_original do |method|
+        result = method.call
+        create(:message, conversation: conversation, message_type: :incoming, skip_runtime_events: true) if result
+        result
+      end
+      # rubocop:enable RSpec/AnyInstance
+
+      described_class.perform_now(command.id)
+
+      expect(conversation.reload).to be_pending
+      expect(conversation.current_captain_control_generation).to eq(generation)
+      expect(conversation.messages.outgoing).to be_empty
+    end
+
+    it 'does not send a second explanation after a staff reply' do
+      create(:message, conversation: conversation, message_type: :outgoing, sender: create(:user, account: account), content: 'Подберём время')
+
+      described_class.perform_now(command.id)
+
+      expect(conversation.messages.outgoing.where(private: false).pluck(:content)).to eq(['Подберём время'])
+    end
+
+    context 'when the failed operation was a move' do
+      let(:operation) { 'move_reception' }
+
+      it 'describes the failed move without claiming the original appointment was cancelled' do
+        2.times { described_class.perform_now(command.id) }
+
+        expect(conversation.messages.outgoing.where(private: false).sole.content)
+          .to eq('Это время уже занято, поэтому перенести запись не удалось. Поможем подобрать другое время.')
+      end
+    end
   end
 
   it 'hands off an acknowledged create orphan once without touching a replacement booking' do

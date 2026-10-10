@@ -38,12 +38,6 @@ class Captain::Tools::Agent::AccountToolAdapter < Captain::Runtime::Tool
   end
 
   def execute(tool_context, **params)
-    if tool_id == 'get_appointment_provider_status'
-      result = JSON.generate(success: false, reason: 'staff_will_help')
-      audit_tool_execution(arguments: {}, result: result, runtime_context: runtime_context(tool_context))
-      return result
-    end
-
     ensure_tool_execution_allowed!
     scope = patient_scope(tool_context)
     scope.authorize_adapter_tool!(tool_id, params)

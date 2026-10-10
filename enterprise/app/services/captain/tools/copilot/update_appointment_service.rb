@@ -1,4 +1,5 @@
 class Captain::Tools::Copilot::UpdateAppointmentService < Captain::Tools::Copilot::BaseAccountTool
+  include Captain::Tools::Copilot::SchedulingQueryValidation
   def self.name
     'update_appointment'
   end
@@ -47,9 +48,13 @@ class Captain::Tools::Copilot::UpdateAppointmentService < Captain::Tools::Copilo
       ::Scheduling::ToolPayloadBuilder.appointment_payload(action: 'update_appointment', appointment: appointment)
     )
   rescue Scheduling::Error => e
-    Captain::ToolResult.failure_output(error: e.message, data: { code: e.code }, retryable: false)
+    return formatted_payload(Captain::Tools::Agent::AppointmentResult.failure(e)) if patient_scope
+
+    Captain::ToolResult.failure_output(error: e.message, data: { code: e.code, reason: e.details.to_h[:reason] }.compact, retryable: false)
   rescue StandardError => e
-    patient_scope ? formatted_payload(Captain::Tools::Agent::AppointmentResult.failure(e)) : tool_failure(e)
+    return formatted_payload(Captain::Tools::Agent::AppointmentResult.failure(e)) if patient_scope
+
+    e.is_a?(ArgumentError) || e.is_a?(ActiveRecord::RecordInvalid) || e.is_a?(ActiveRecord::RecordNotFound) ? tool_failure(e) : scheduling_tool_failure(e)
   end
 
   def active?

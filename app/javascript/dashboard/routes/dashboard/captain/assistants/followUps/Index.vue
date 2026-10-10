@@ -6,7 +6,6 @@ import { useStore } from 'dashboard/composables/store';
 import { useAlert } from 'dashboard/composables';
 import CaptainAssistantAPI from 'dashboard/api/captain/assistant';
 import PageLayout from 'dashboard/components-next/captain/PageLayout.vue';
-import SettingsHeader from 'dashboard/components-next/captain/pageComponents/settings/SettingsHeader.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
 
@@ -221,6 +220,7 @@ const save = async () => {
 
 <template>
   <PageLayout
+    :header-title="t('CAPTAIN.ASSISTANTS.FOLLOW_UPS.HEADER')"
     show-assistant-switcher
     :show-pagination-footer="false"
     :show-know-more="false"
@@ -229,11 +229,9 @@ const save = async () => {
       <div class="flex max-w-4xl flex-col gap-6">
         <div class="rounded-2xl bg-n-solid-1 p-5 md:p-6">
           <div class="flex items-center justify-between gap-6">
-            <SettingsHeader
-              class="min-w-0 flex-1"
-              :heading="t('CAPTAIN.ASSISTANTS.FOLLOW_UPS.HEADER')"
-              :description="t('CAPTAIN.ASSISTANTS.FOLLOW_UPS.DESCRIPTION')"
-            />
+            <span class="text-sm text-n-slate-11">{{
+              t('CAPTAIN.ASSISTANTS.FOLLOW_UPS.ENABLE_LABEL')
+            }}</span>
             <Switch v-model="state.enabled" />
           </div>
 

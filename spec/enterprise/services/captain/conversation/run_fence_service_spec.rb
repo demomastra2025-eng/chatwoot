@@ -56,6 +56,19 @@ RSpec.describe Captain::Conversation::RunFenceService do
     expect(Llm::EventBus).to have_received(:publish).with('captain.run.fenced', hash_including(reason: 'last_message_changed'))
   end
 
+  it 'does not fence an independent channel when a sibling receives a newer message' do
+    thread = create(:communication_thread, account: account, contact: conversation.contact)
+    sibling = create(:conversation, account: account, contact: conversation.contact, status: :pending)
+    [conversation, sibling].each do |candidate|
+      create(:communication_thread_conversation, communication_thread: thread, conversation: candidate)
+      candidate.association(:communication_thread_conversation).reset
+      candidate.association(:communication_thread).reset
+    end
+    create(:message, conversation: sibling, message_type: :incoming, skip_runtime_events: true)
+
+    expect { described_class.new(assistant: assistant, state: state).ensure_current! }.not_to raise_error
+  end
+
   it 'fences the run when the Redis buffer token changes' do
     Redis::Alfred.set(
       state_key,

@@ -6,7 +6,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     :welcome_message, :handoff_message, :resolution_message,
     :handoff_message_enabled, :handoff_message_mode,
     :resolution_message_enabled, :resolution_message_mode,
-    :temperature,
+    :temperature, :thinking_effort,
     :auto_reply_on_last_incoming,
     :use_audio_transcriptions,
     :message_collapse_window_seconds, :history_message_limit
@@ -184,6 +184,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     existing_config = attributes[:config].is_a?(Hash) ? attributes[:config].deep_stringify_keys : {}
     existing_config['voice_settings'] = normalized_voice_settings(existing_config['voice_settings'])
     normalize_outcome_reason_settings!(existing_config)
+    existing_config = normalized_model_config(existing_config)
 
     attributes.merge(config: existing_config)
   end
@@ -203,7 +204,12 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
                                                                              .merge(incoming_config['safety_settings'].to_h.deep_stringify_keys)
     end
 
-    attributes.merge(config: existing_config.merge(incoming_config))
+    attributes.merge(config: normalized_model_config(existing_config.merge(incoming_config)))
+  end
+
+  def normalized_model_config(config)
+    model = config['model'].presence || Llm::Config.model_for(feature: :assistant, account: Current.account)
+    Llm::ModelParameters.for(model, account: Current.account).normalize_config(config)
   end
 
   def cancel_captain_follow_ups_if_disabled!
@@ -286,6 +292,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
       :playground_mode,
       :playground_session_id,
       :playground_action,
+      :real_data_read, :real_data_write, :approval_id, :approval_digest,
       :live_inbox_id,
       :external_delivery_enabled,
       :controlled_test_number,
@@ -296,21 +303,30 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
 
   def agent_playground_response
     attributes = playground_params
-    mode = attributes[:playground_mode].presence || 'trial'
+    mode = attributes[:playground_mode].presence || 'workspace'
     action = attributes[:playground_action].presence || 'message'
-    raise ArgumentError, 'Invalid Playground action' unless %w[message session reset].include?(action)
-    raise ArgumentError, 'Trial cannot use a real conversation' if mode == 'trial' && attributes[:conversation_id].present?
+    raise ArgumentError, 'Invalid Playground action' unless %w[message session reset permissions confirm].include?(action)
+    raise ArgumentError, 'The Playground caller always stays synthetic' if attributes[:conversation_id].present?
+    raise ArgumentError, 'External delivery is unavailable in Playground' if ActiveModel::Type::Boolean.new.cast(attributes[:external_delivery_enabled])
 
     session = Captain::Playground::Session.new(
       assistant: @assistant, account: Current.account, user: Current.user, mode: mode, session_id: attributes[:playground_session_id]
     )
+    if action == 'permissions'
+      raise ArgumentError, 'A Playground session is required' if attributes[:playground_session_id].blank?
+
+      permissions = session.set_permissions!(read: attributes[:real_data_read], write: attributes[:real_data_write])
+      return { playground: { session_id: attributes[:playground_session_id], mode: 'workspace',
+                             real_data_read: permissions['read'], real_data_write: permissions['write'], action_previews: [] } }
+    end
     session.with_lock(
       reset: action == 'reset', scenario_input: attributes[:scenario]&.to_h,
       inbox_id: attributes[:live_inbox_id], delivery_enabled: attributes[:external_delivery_enabled],
       delivery_target: attributes[:controlled_test_number]
     ) do
-      if attributes[:conversation_id].present? && attributes[:conversation_id].to_s != session.conversation&.display_id.to_s
-        raise ArgumentError, 'Live conversation does not match this Playground session'
+      if action == 'confirm'
+        result = Captain::Playground::ActionApproval.new(session).confirm(id: attributes[:approval_id], digest: attributes[:approval_digest])
+        next result.merge(playground: session.payload)
       end
       next { playground: session.payload } unless action == 'message'
 

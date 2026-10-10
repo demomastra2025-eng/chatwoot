@@ -191,9 +191,23 @@ class Captain::ToolResult
     end
 
     def compact_reason_failure?(result)
+      return true if compact_appointment_failure?(result)
+
       result.is_a?(Hash) && result['success'] == false && result['reason'].in?(%w[
         time_taken staff_will_help not_found validation_error schedule_not_open
-      ]) && (result.keys - %w[success reason last_available_date]).empty?
+        invalid_date invalid_date_range invalid_service_id unknown_service provider_unavailable internal_failure
+      ]) && (result.keys - %w[success reason last_available_date code correction]).empty?
+    end
+
+    def compact_appointment_failure?(result)
+      result.is_a?(Hash) && result['success'] == false && result['provider_confirmed'] == false &&
+        result['appointment_id'].present? && result['reason'].in?(%w[pending_provider_confirmation staff_will_help]) &&
+        result['provider_confirmation_operation'].in?(%w[create_reception move_reception remove_reception]) &&
+        result['provider_confirmation_scope'].in?(%w[medelement onelink]) &&
+        (result.keys - %w[
+          success reason appointment_id doctor_name local_date local_time status provider_confirmed
+          provider_confirmation_status provider_confirmation_operation provider_confirmation_scope
+        ]).empty?
     end
 
     def error_string?(result)

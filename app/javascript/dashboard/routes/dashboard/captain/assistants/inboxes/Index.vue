@@ -8,7 +8,6 @@ import { useI18n } from 'vue-i18n';
 
 import PageLayout from 'dashboard/components-next/captain/PageLayout.vue';
 import CardLayout from 'dashboard/components-next/CardLayout.vue';
-import SettingsHeader from 'dashboard/components-next/captain/pageComponents/settings/SettingsHeader.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
 import Select from 'dashboard/components-next/select/Select.vue';
 import Policy from 'dashboard/components/policy.vue';
@@ -218,13 +217,6 @@ const autoReplyModeDisabled = inbox => {
 
     <template #body>
       <div class="flex flex-col gap-4">
-        <SettingsHeader
-          :heading="t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.CHANNELS.LABEL')"
-          :description="
-            t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.CHANNELS.DESCRIPTION')
-          "
-        />
-
         <CardLayout v-for="inbox in sortedInboxes" :key="inbox.id">
           <div class="flex justify-between items-center w-full gap-4">
             <div class="min-w-0">

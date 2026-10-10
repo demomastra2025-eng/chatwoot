@@ -7,7 +7,7 @@ RSpec.describe Captain::Assistant, type: :model do
 
   before { account.enable_features!('scheduling') }
 
-  it 'recommends three blocks only on creation with scheduling tools' do
+  it 'recommends the appointment summary only on new profiles with scheduling tools' do
     config = {
       'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['list_my_appointments'] } },
       'context_access' => {}
@@ -15,7 +15,7 @@ RSpec.describe Captain::Assistant, type: :model do
     assistant = create(:captain_assistant, account: account, config: config)
     expect(assistant.config.dig('context_access', 'appointment')).to eq(
       'enabled' => true,
-      'field_ids' => %w[appointment.nearest appointment.last_past appointment.last_cancelled]
+      'field_ids' => %w[appointment.summary]
     )
 
     existing = create(:captain_assistant, account: account, config: { 'context_access' => {} })

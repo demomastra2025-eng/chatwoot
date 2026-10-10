@@ -1,7 +1,7 @@
 class Scheduling::ResourceScheduleService
   MAX_RANGE_DAYS = Scheduling::RangeValidator::MAX_RANGE_DAYS
 
-  def initialize(resource:, from:, to:, include_breaks: true, include_holidays: true, include_time_offs: true)
+  def initialize(resource:, from:, to:, include_breaks: true, include_holidays: true, include_time_offs: true, snapshots: nil, resource_payload: nil)
     @resource = resource
     @account = resource.account
     @from = from
@@ -9,13 +9,19 @@ class Scheduling::ResourceScheduleService
     @include_breaks = ActiveModel::Type::Boolean.new.cast(include_breaks)
     @include_holidays = ActiveModel::Type::Boolean.new.cast(include_holidays)
     @include_time_offs = ActiveModel::Type::Boolean.new.cast(include_time_offs)
+    @resource_payload = resource_payload
+    if snapshots
+      @holidays = snapshots.fetch(:holidays)
+      @workday_overrides = snapshots.fetch(:workday_overrides)
+      @time_offs = snapshots.fetch(:time_offs)
+    end
   end
 
   def perform
     validate_range!
 
     {
-      resource: Scheduling::PayloadBuilder.resource(@resource),
+      resource: @resource_payload || Scheduling::PayloadBuilder.resource(@resource),
       timezone: time_zone.tzinfo.name,
       range: {
         from: @from.iso8601,

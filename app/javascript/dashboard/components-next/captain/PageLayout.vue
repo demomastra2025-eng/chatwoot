@@ -170,9 +170,11 @@ watch(
     <header class="sticky top-0 z-10 px-6">
       <div class="w-full max-w-5xl mx-auto">
         <div
-          class="flex items-start lg:items-center justify-between w-full py-6 lg:py-0 lg:h-20 gap-4 lg:gap-2 flex-col lg:flex-row"
+          class="flex items-start lg:items-center justify-between w-full py-3 lg:py-0 lg:h-14 gap-4 lg:gap-2 flex-col lg:flex-row"
         >
-          <div class="flex gap-3 items-center">
+          <div
+            class="flex w-full min-w-0 flex-wrap gap-3 items-center lg:w-auto"
+          >
             <BackButton v-if="backUrl" :back-url="backUrl" />
             <div
               v-if="showAssistantSwitcher && !showPaywall"
@@ -183,7 +185,7 @@ watch(
               >
                 <span
                   v-if="!isFetchingAssistants"
-                  class="min-w-0 text-xl font-medium truncate text-n-slate-12"
+                  class="min-w-0 text-sm font-medium truncate text-n-slate-12"
                 >
                   {{ activeAssistantName }}
                 </span>
@@ -229,7 +231,7 @@ watch(
               />
               <span
                 v-if="headerTitle"
-                class="text-xl font-medium text-n-slate-12"
+                class="text-sm font-medium text-n-slate-12"
               >
                 {{ headerTitle }}
               </span>

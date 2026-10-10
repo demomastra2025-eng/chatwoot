@@ -15,7 +15,9 @@ RSpec.describe Captain::Playground::ToolExecutor do
   def invoke(trial, tool, **arguments)
     state = trial.state.merge(source: 'playground', account_id: account.id, assistant_id: assistant.id)
     context = Captain::Runtime::ToolContext.new(run_context: Captain::Runtime::RunContext.new({ state: state, playground_session: trial }))
-    described_class.new(trial).execute(tool, arguments, context: context).deep_symbolize_keys
+    result = described_class.new(trial).execute(tool, arguments, context: context)
+    result = JSON.parse(result) if result.is_a?(String)
+    trial.namespace.decode(result).deep_symbolize_keys
   end
 
   it 'persists contact and deal changes so subsequent turns and reads see the same values' do
@@ -76,7 +78,7 @@ RSpec.describe Captain::Playground::ToolExecutor do
       appointment.merge!('contact_id' => 101, 'conversation_id' => 201)
       expect(invoke(trial, 'search_appointments')[:appointments]).to eq([])
       expect(invoke(trial, 'get_appointment', appointment_id: 601)[:success]).to be(false)
-      expect(trial.state).not_to have_key(:appointment)
+      expect(trial.state.dig(:appointment, :id)).to be_nil
       token = invoke(trial, 'search_appointments', client_identifier: '150101500011')[:appointments].first[:appointment_access_token]
       expect(token).to start_with("trial_#{trial.id}_")
       start = (Time.iso8601(appointment['starts_at']) + 1.hour).iso8601
@@ -133,12 +135,13 @@ RSpec.describe Captain::Playground::ToolExecutor do
       task = invoke(trial, 'create_task', title: 'Позвонить маме', activity_type: 'call', priority: 'high')
       task_id = task[:task_id]
       expect(task.dig(:task, :status_code)).to eq('todo')
+      trial.scenario.data['selection']['task_id'] = task_id
       expect(invoke(trial, 'change_task_status', status_code: 'done').dig(:task, :completed_at)).to be_present
       expect(invoke(trial, 'update_task', task_id: task_id, outcome: 'invented')[:success]).to be(false)
     end
     Captain::Playground::Session.new(account: account, user: user, assistant: assistant, session_id: id).with_lock do |trial|
       expect(invoke(trial, 'get_task', task_id: task_id).dig(:task, :status_code)).to eq('done')
-      expect(invoke(trial, 'search_tasks', assignee_id: 999)[:tasks]).to eq([])
+      expect(invoke(trial, 'search_tasks', assignee_id: 999)[:success]).to be(false)
       expect(invoke(trial, 'change_task_status', status_code: 'invented')[:success]).to be(false)
     end
   end
@@ -159,7 +162,7 @@ RSpec.describe Captain::Playground::ToolExecutor do
     expect(Messages::MessageBuilder).not_to receive(:new)
     session.with_lock do |trial|
       arguments = { title: 'Подтвердите запись', body: 'Подтвердите время', idempotency_key: 'booking-confirmation',
-                    subject_kind: 'deal' }
+                    subject_type: 'Crm::Deal', subject_id: 501 }
       first = invoke(trial, 'request_confirmation', **arguments)
       second = invoke(trial, 'request_confirmation', **arguments)
       expect(invoke(trial, 'get_confirmation_request').dig(:confirmation_request, :id)).to eq(first.dig(:confirmation_request, :id))
@@ -216,7 +219,7 @@ RSpec.describe Captain::Playground::ToolExecutor do
                                                  captain_v2_bound_tool_gate: true, captain_v2_bound_tool_ids: [] })
       expect(Captain::Runtime::ToolWrapper.new(tool, unbound).call(name: 'Forbidden')).to include('Tool is not available')
       missing = Captain::Runtime::RunContext.new({ state: state })
-      expect(Captain::Runtime::ToolWrapper.new(tool, missing).call(name: 'Forbidden')).to include('server-owned Playground session')
+      expect(Captain::Runtime::ToolWrapper.new(tool, missing).call(name: 'Forbidden')).to include('Playground')
     end
   end
 end

@@ -94,7 +94,8 @@ class Scheduling::AvailabilityService
 
   def blocking_appointments
     appointments.select do |appointment|
-      appointment.id != ignore_appointment_id && appointment.status != 'cancelled'
+      appointment.id != ignore_appointment_id &&
+        (appointment.status != 'cancelled' || Integrations::Medelement::LocalCancellation.provider_occupied?(appointment))
     end
   end
 

@@ -96,4 +96,23 @@ RSpec.describe Integrations::Medelement::ProviderCommands::SuccessApplier do
       end
     end
   end
+
+  it 'frees a locally cancelled reception only after the exact remove command succeeds' do
+    hook.update!(settings: hook.settings.merge('remove_reception_on_cancel' => true))
+    appointment.mark_medelement_provider_reconciled!
+    appointment.update!(status: 'cancelled', custom_attributes: appointment.custom_attributes.merge(
+      Integrations::Medelement::LocalCancellation::MARKER_KEY => true
+    ))
+    expect(Integrations::Medelement::LocalCancellation.provider_occupied?(appointment)).to be(true)
+    command = stage_command(operation: 'remove_reception', destination_start: nil, destination_end: nil)
+    expect(Scheduling::Appointments::ImportedProviderMutationService.current_source?(command)).to be(true)
+
+    expect(described_class.new(command: command).reception_removed!).to be(true)
+
+    expect(appointment.reload.custom_attributes).not_to have_key(Integrations::Medelement::LocalCancellation::MARKER_KEY)
+    expect(Integrations::Medelement::LocalCancellation.provider_occupied?(appointment)).to be(false)
+    expect(Integrations::Medelement::AppointmentProviderStatus.payload(appointment)).to include(
+      provider_confirmed: true, provider_confirmation_operation: 'remove_reception', provider_confirmation_scope: 'medelement'
+    )
+  end
 end

@@ -229,6 +229,32 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       described_class.perform_now(conversation.reload, assistant)
     end
 
+    it 'answers all three independent channels of a contact without sibling requests cancelling their replies' do
+      thread = create(:communication_thread, account: account, contact: conversation.contact)
+      channels = [conversation] + Array.new(2) do
+        sibling_inbox = create(:inbox, account: account)
+        create(:captain_inbox, inbox: sibling_inbox, captain_assistant: assistant)
+        create(:conversation, account: account, inbox: sibling_inbox, contact: conversation.contact, status: :pending)
+      end
+      channels.each do |candidate|
+        create(:communication_thread_conversation, communication_thread: thread, conversation: candidate)
+        candidate.association(:communication_thread_conversation).reset
+        candidate.association(:communication_thread).reset
+      end
+      triggers = channels.each_with_index.map do |candidate, index|
+        create(:message, conversation: candidate, message_type: :incoming, content: "Request #{index}", skip_runtime_events: true)
+      end
+
+      channels.zip(triggers).each do |candidate, trigger|
+        described_class.perform_now(candidate.reload, assistant, expected_last_message_id: trigger.id)
+      end
+
+      channels.each do |candidate|
+        expect(candidate.messages.outgoing.where(private: false).pluck(:content)).to eq(['Hey, welcome to Captain V2'])
+      end
+      expect(agent_runner_service).to have_received(:generate_response).exactly(3).times
+    end
+
     it 'builds a second-turn history after trace-free legacy and static follow-up replies' do
       conversation.messages.destroy_all
       create(:message, conversation: conversation, content: 'Original question', message_type: :incoming)
@@ -1938,7 +1964,9 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
       it 'continues after the document parsing wait timeout' do
         job = described_class.new(conversation, assistant)
-        expect(job).to receive(:sleep).at_least(:once)
+        # The pending-state database probe can consume the short deadline before
+        # the first sleep. The fallback response must still be generated.
+        allow(job).to receive(:sleep)
         expect(agent_runner_service).to receive(:generate_response) do |message_history:|
           expect(message_history.last[:content]).to eq('User has shared file attachment(s): contract.pdf')
           { 'response' => 'Please confirm the document details.' }

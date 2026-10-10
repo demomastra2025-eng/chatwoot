@@ -73,4 +73,36 @@ RSpec.describe Scheduling::AvailabilityService do
     expect(result.available?).to be(false)
     expect(result.code).to eq('OUTSIDE_WORKING_HOURS')
   end
+
+  it 'keeps a locally cancelled provider reception occupied until its provider removal is confirmed' do
+    status = Integrations::Medelement::AppointmentProviderStatus
+    appointment = create(:scheduling_appointment, account: account, resource: resource, status: 'cancelled', source: 'medelement',
+                                                starts_at: booking_day, ends_at: booking_day + 1.hour,
+                                                external_ref: 'medelement:reception:reception-1', custom_attributes: {
+                                                  Integrations::Medelement::LocalCancellation::MARKER_KEY => true,
+                                                  status::ATTRIBUTE_KEY => 'succeeded', status::OPERATION_KEY => 'move_reception'
+                                                })
+    appointments << appointment
+
+    expect(service.availability_result(starts_at: booking_day, ends_at: booking_day + 30.minutes).code).to eq('SLOT_CONFLICT')
+    expect(service.slots(duration_min: 30)).not_to include(include(starts_at: booking_day.iso8601))
+
+    appointment.mark_medelement_provider_reconciled!
+    appointment.update!(custom_attributes: {
+      status::ATTRIBUTE_KEY => 'succeeded', status::OPERATION_KEY => 'remove_reception',
+      status::COMMAND_ID_KEY => 42, status::CANCELLATION_COMMAND_ID_KEY => 42
+    })
+    expect(service.availability_result(starts_at: booking_day, ends_at: booking_day + 30.minutes)).to be_available
+  end
+
+  it 'keeps older unmarked provider cancellations blocked but frees ordinary local cancellations' do
+    appointments << build(:scheduling_appointment, id: 41, resource: resource, account: account, status: 'cancelled', source: 'medelement',
+                                                 external_ref: 'medelement:reception:legacy', starts_at: booking_day, ends_at: booking_day + 1.hour)
+    expect(service.availability_result(starts_at: booking_day, ends_at: booking_day + 30.minutes).code).to eq('SLOT_CONFLICT')
+
+    appointments.clear
+    appointments << build(:scheduling_appointment, id: 42, resource: resource, account: account, status: 'cancelled',
+                                                 starts_at: booking_day, ends_at: booking_day + 1.hour)
+    expect(service.availability_result(starts_at: booking_day, ends_at: booking_day + 30.minutes)).to be_available
+  end
 end

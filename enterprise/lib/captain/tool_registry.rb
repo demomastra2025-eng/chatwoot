@@ -78,7 +78,8 @@ class Captain::ToolRegistry
         requires_confirmation: requires_confirmation,
         idempotent: idempotent,
         selected_by_default: selected_by_default,
-        custom: false
+        custom: false,
+        playground_support: Captain::Playground::ToolSupport.for_tool(id)
       }
     end
   end
@@ -1230,8 +1231,7 @@ class Captain::ToolRegistry
           description: 'Get the concrete MedElement command and terminal outcome for a prior appointment operation',
           group_name: 'Scheduling',
           icon: 'calendar-check',
-          allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
-          agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
           assistant_tool_class: Captain::Tools::Copilot::GetAppointmentProviderStatusService,
           required_features: %w[scheduling],
           risk_level: 'low',

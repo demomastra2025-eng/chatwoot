@@ -8,7 +8,8 @@ class Outbound::PlaygroundDeliveryPolicy
 
   class << self
     def issue(attributes)
-      payload = attributes.to_h.deep_stringify_keys.merge('version' => 1, 'expires_at' => 24.hours.from_now.to_i)
+      payload = attributes.to_h.deep_stringify_keys
+      payload.merge!('version' => payload['mode'] == 'workspace' ? 2 : 1, 'expires_at' => 24.hours.from_now.to_i)
       { 'token' => verifier.generate(payload, purpose: PURPOSE) }
     end
 
@@ -79,12 +80,10 @@ class Outbound::PlaygroundDeliveryPolicy
       true
     end
 
-    def allowed?(policy, conversation:)
-      payload = verified(policy)
-      return false unless payload && payload[:delivery_enabled] == true && conversation
-
-      valid_scope?(payload, conversation) && authorized_administrator?(payload, conversation) &&
-        valid_source?(payload, conversation) && valid_phone_target?(payload, conversation)
+    def allowed?(_policy, **)
+      # Delivery is outside the two real-data permissions. Old Live tokens are
+      # retained for identifying/reconciling accepted commands, never for sends.
+      false
     end
 
     def normalize_phone(value)
@@ -122,8 +121,8 @@ class Outbound::PlaygroundDeliveryPolicy
     def valid_signed_payload?(payload)
       return false unless payload.is_a?(Hash)
 
-      payload['version'] == 1 && payload['expires_at'].to_i > Time.current.to_i &&
-        payload['mode'] == 'live' && payload['run_id'].to_s.match?(/\A[0-9a-f-]{36}\z/)
+      version_matches_mode = (payload['version'] == 1 && payload['mode'] == 'live') || (payload['version'] == 2 && payload['mode'] == 'workspace')
+      version_matches_mode && payload['expires_at'].to_i > Time.current.to_i && payload['run_id'].to_s.match?(/\A[0-9a-f-]{36}\z/)
     end
 
     def valid_scope?(payload, conversation)

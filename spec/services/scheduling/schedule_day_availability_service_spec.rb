@@ -118,6 +118,19 @@ RSpec.describe Scheduling::ScheduleDayAvailabilityService do
     )
   end
 
+  it 'does not offer a locally cancelled MedElement reception from cached confirmed hours' do
+    stored_day
+    create(:scheduling_appointment, account: account, resource: resource, source: 'medelement', status: 'cancelled',
+                                    external_ref: 'medelement:reception:still-active',
+                                    starts_at: zone.local(2026, 4, 20, 10), ends_at: zone.local(2026, 4, 20, 11),
+                                    custom_attributes: { Integrations::Medelement::LocalCancellation::MARKER_KEY => true })
+    expect(Integrations::Medelement::Client).not_to receive(:new)
+
+    availability = result(allow_live: false)
+    expect(availability.state).to eq('ok')
+    expect(availability.slots).to be_empty
+  end
+
   [Date.new(2026, 4, 18), Date.new(2026, 7, 19)].each do |requested_date|
     it "reads a confirmed provider day on demand for #{requested_date}, outside the background cache" do
       client = instance_double(Integrations::Medelement::Client)

@@ -26,7 +26,10 @@ class Integrations::Medelement::ProviderCommandPayloadBuilder
         desired_starts_at: command.desired_starts_at&.iso8601,
         desired_ends_at: command.desired_ends_at&.iso8601,
         attempt_count: command.attempt_count
-      }
+      }.tap do |payload|
+        state = command.execution_state.to_h['create_receipt_verification']
+        payload[:create_receipt_verification] = state if state.present?
+      end
     end
 
     def reconciliation_payload(command)
