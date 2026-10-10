@@ -5,6 +5,7 @@ import { createStore } from 'vuex';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
+import SchedulingResourcesAPI from 'dashboard/api/scheduling/resources';
 import { useSchedulingAppointmentFormStore } from 'dashboard/stores/scheduling/appointmentForm';
 import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomFieldsSection.vue';
 import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/SchedulingDateTimeField.vue';
@@ -58,6 +59,9 @@ vi.mock('dashboard/api/scheduling/appointments', () => ({
     cancel: vi.fn(),
     delete: vi.fn(),
   },
+}));
+vi.mock('dashboard/api/scheduling/resources', () => ({
+  default: { get: vi.fn() },
 }));
 vi.mock('dashboard/api/scheduling/contacts', () => ({
   default: {
@@ -333,6 +337,72 @@ describe('SchedulingCalendarPage pending local booking', () => {
   afterEach(() => {
     wrapper?.unmount();
     wrapper = null;
+  });
+
+  it('selects all nonarchived resources from the raw API, including inactive specialists', async () => {
+    SchedulingResourcesAPI.get.mockResolvedValue({
+      data: {
+        payload: [
+          { id: 3, active: true, name: 'Doctor', custom_attributes: {} },
+          {
+            id: 4,
+            active: false,
+            name: 'Archived doctor',
+            custom_attributes: { deleted_from_scheduling: true },
+          },
+          {
+            id: 5,
+            active: false,
+            name: 'Inactive doctor',
+            custom_attributes: { deleted_from_scheduling: false },
+          },
+        ],
+      },
+    });
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const { useSchedulingReferencesStore } = await vi.importActual(
+      'dashboard/stores/scheduling/references'
+    );
+    mocks.references = useSchedulingReferencesStore();
+    vi.spyOn(mocks.references, 'loadServices').mockResolvedValue([]);
+    const vuex = createStore({
+      getters: { getCurrentUser: () => ({ id: 9 }) },
+    });
+    wrapper = mount(SchedulingCalendarPage, {
+      global: {
+        plugins: [pinia, vuex],
+        stubs: {
+          ...stubs,
+          SchedulingToolbar: {
+            template: '<div><slot name="actions" /></div>',
+          },
+          SchedulingResourceFilter: false,
+          Avatar: true,
+          teleport: true,
+        },
+        mocks: { $t: key => key },
+      },
+    });
+    await flushPromises();
+    expect(SchedulingResourcesAPI.get).toHaveBeenCalledWith({
+      include_inactive: true,
+    });
+    const filter = wrapper.findComponent({ name: 'SchedulingResourceFilter' });
+    expect(filter.props('resources').map(item => item.id)).toEqual([3, 5]);
+    await filter.get('button').trigger('click');
+    await filter
+      .get('button[data-label="SCHEDULING.GENERAL.SELECT_ALL"]')
+      .trigger('click');
+    await flushPromises();
+
+    expect(mocks.calendar.setSelectedResources).toHaveBeenLastCalledWith([
+      3, 5,
+    ]);
+    expect(mocks.calendar.fetchCalendar).toHaveBeenCalled();
+    expect(mocks.references.resources[1].customAttributes).toEqual({
+      deleted_from_scheduling: true,
+    });
   });
 
   it('locks DOM fields and late popup callbacks until one created booking is acknowledged', async () => {

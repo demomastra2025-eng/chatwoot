@@ -3,12 +3,37 @@ import { describe, expect, it } from 'vitest';
 import enScheduling from '../../i18n/locale/en/scheduling.json';
 import kkScheduling from '../../i18n/locale/kk/scheduling.json';
 import ruScheduling from '../../i18n/locale/ru/scheduling.json';
-import { formatSchedulingErrorMessage, toIntegerNumeric } from './shared';
+import {
+  formatSchedulingErrorMessage,
+  isDeletedFromScheduling,
+  normalizePayload,
+  toIntegerNumeric,
+} from './shared';
 
 const lookupMessage = (messages, key) =>
   key.split('.').reduce((node, part) => node?.[part], messages);
 
 describe('scheduling shared helpers', () => {
+  it.each(['deleted_from_scheduling', 'deletedFromScheduling'])(
+    'recognizes the %s archive flag without changing custom attribute keys',
+    key => {
+      const [resource] = normalizePayload({
+        payload: [
+          {
+            id: 7,
+            custom_attributes: { [key]: true, specialist_note: 'Retained' },
+          },
+        ],
+      });
+
+      expect(isDeletedFromScheduling(resource)).toBe(true);
+      expect(resource.customAttributes).toEqual({
+        [key]: true,
+        specialist_note: 'Retained',
+      });
+    }
+  );
+
   it('formats the outside-working-hours API response for the user', () => {
     const error = {
       code: 'ERR_BAD_REQUEST',
