@@ -225,6 +225,11 @@ const admitMessageDeletionAuthority = async (context, message) => {
   const data = await deletionAuthorityConversation(context, target);
   if (!data || String(data.id) !== String(target.id)) return false;
 
+  // A normal list/message refresh may replace this row while the read is pending.
+  const current = (context.state.allConversations || []).find(
+    chat => isCommunicationThread(chat) && String(chat.id) === String(target.id)
+  );
+  if (!current) return false;
   const canonical = buildCommunicationThreadConversation(data);
   const channelIds = new Set(
     (canonical.channels || []).map(channel => String(channel.conversation_id))
@@ -232,8 +237,8 @@ const admitMessageDeletionAuthority = async (context, message) => {
   context.commit(
     types.SET_CONVERSATION_DELETION_AUTHORITY,
     preserveConversationState(canonical, {
-      ...target,
-      messages: (target.messages || []).filter(
+      ...current,
+      messages: (current.messages || []).filter(
         item =>
           !item.conversation_id || channelIds.has(String(item.conversation_id))
       ),
