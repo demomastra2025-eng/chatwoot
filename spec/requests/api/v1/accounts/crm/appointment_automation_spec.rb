@@ -72,4 +72,23 @@ RSpec.describe 'CRM appointment automation API', type: :request do
     expect(pipeline.reload.auto_create_deal_on_channel_contact).to be true
     expect(pipeline.appointment_automation['auto_create_from_calendar_enabled_at']).to be_present
   end
+
+  it 'moves the source target and permits disabling automation despite a historical rule for an inactive stage' do
+    original = deal.pipeline
+    rule_stage = create(:crm_stage, account: account, pipeline: original, default: false)
+    rules = [{ stage_id: rule_stage.id, scope: 'any', conditions: ['scheduled'] }]
+    original.update!(appointment_automation: { enabled: true, auto_create_from_calendar: true, rules: rules })
+    rule_stage.update!(active: false)
+    target = create(:crm_pipeline, account: account)
+    patch "/api/v1/accounts/#{account.id}/crm/pipelines/#{target.id}",
+          params: { appointment_automation: { auto_create_from_calendar: true } }, headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(original.reload.appointment_automation['auto_create_from_calendar']).to be false
+    expect(original.appointment_automation['rules']).to eq(rules.as_json)
+    patch "/api/v1/accounts/#{account.id}/crm/pipelines/#{original.id}",
+          params: { appointment_automation: { enabled: false } }, headers: headers, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(original.reload.appointment_automation['enabled']).to be false
+  end
 end
