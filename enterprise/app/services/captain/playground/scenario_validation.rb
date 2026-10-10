@@ -23,15 +23,14 @@ module Captain::Playground::ScenarioValidation
 
   def validate_deal!(record)
     amount = BigDecimal(record['amount'].to_s)
-    unless amount.finite? && amount >= 0 && amount.frac.zero?
-      raise ArgumentError, 'Deal amount must be a nonnegative whole number'
-    end
+    return if amount.finite? && amount >= 0 && amount.frac.zero?
+
+    raise ArgumentError, 'Deal amount must be a nonnegative whole number'
   end
 
   def validate_appointment!(record)
-    unless Time.iso8601(record['ends_at']) > Time.iso8601(record['starts_at'])
-      raise ArgumentError, 'Appointment end must be after its start'
-    end
+    raise ArgumentError, 'Appointment end must be after its start' unless Time.iso8601(record['ends_at']) > Time.iso8601(record['starts_at'])
+
     resource = data['resources'].find { |item| item['id'] == record['resource_id'] }
     raise ArgumentError, 'Unknown appointment resource' unless resource
     return if record['service_id'].blank?

@@ -32,7 +32,7 @@ module Captain::Playground::ScenarioDefaults
   def default_patient
     { id: 102, name: 'Тимур Садыков', phone_number: '+77010000002', identifier: '150101500011',
       contact_type: 'customer', custom_attributes: { birth_date: '2015-01-01', iin: '150101500011', medelement_patient_card: true,
-                                                   medelement_first_name: 'Тимур', medelement_last_name: 'Садыков' }, additional_attributes: {} }
+                                                     medelement_first_name: 'Тимур', medelement_last_name: 'Садыков' }, additional_attributes: {} }
   end
 
   def default_clinic(zone)

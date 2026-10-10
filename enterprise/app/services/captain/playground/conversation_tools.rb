@@ -69,7 +69,8 @@ module Captain::Playground::ConversationTools
     require_conversation!
     content = @args['content'].presence || raise(ArgumentError, 'Message content is required')
     message = simulated_message(content)
-    { action: @tool_id, message: message, message_id: message['id'], conversation_id: @data['conversation']['display_id'], simulated: true, delivered: false }
+    { action: @tool_id, message: message, message_id: message['id'], conversation_id: @data['conversation']['display_id'], simulated: true,
+      delivered: false }
   end
 
   def simulated_message(content)

@@ -48,13 +48,13 @@ module Captain::Playground::CrmTools
     unless decimal.finite? && decimal >= 0 && decimal.frac.zero?
       raise ArgumentError, 'Deal amount must be a nonnegative whole number in major currency units'
     end
+
     decimal.to_i
   end
 
   def validate_deal_timeline!(attrs)
-    if attrs['win_probability'] && !Float(attrs['win_probability']).between?(0, 100)
-      raise ArgumentError, 'Win probability must be between 0 and 100'
-    end
+    raise ArgumentError, 'Win probability must be between 0 and 100' if attrs['win_probability'] && !Float(attrs['win_probability']).between?(0, 100)
+
     Date.iso8601(attrs['expected_close_on']) if attrs['expected_close_on']
   end
 

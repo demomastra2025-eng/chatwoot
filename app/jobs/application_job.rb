@@ -9,5 +9,4 @@ class ApplicationJob < ActiveJob::Base
       "(#{error.message}); serialized_argument_count=#{serialized_arguments.size}"
     )
   end
-
 end

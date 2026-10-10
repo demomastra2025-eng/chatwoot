@@ -71,9 +71,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
 
   def playground
     @playground_test_overrides, invalid_override = playground_test_overrides
-    if invalid_override
-      return render json: { error: 'unsupported_playground_setting', field: invalid_override }, status: :unprocessable_entity
-    end
+    return render json: { error: 'unsupported_playground_setting', field: invalid_override }, status: :unprocessable_entity if invalid_override
 
     response = @assistant.internal_assistant? ? copilot_playground_response : agent_playground_response
 
@@ -189,7 +187,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     normalize_outcome_reason_settings!(incoming_config, existing_config['outcome_reason_settings'])
     if incoming_config.key?('safety_settings')
       incoming_config['safety_settings'] = existing_config['safety_settings'].to_h.deep_stringify_keys
-                                                                          .merge(incoming_config['safety_settings'].to_h.deep_stringify_keys)
+                                                                             .merge(incoming_config['safety_settings'].to_h.deep_stringify_keys)
     end
 
     attributes.merge(config: existing_config.merge(incoming_config))

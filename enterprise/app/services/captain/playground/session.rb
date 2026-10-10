@@ -149,15 +149,14 @@ class Captain::Playground::Session
 
   def accessible_inboxes
     @accessible_inboxes ||= if administrator?
-                             account.inboxes.order(:id).to_a
-                           else
-                             account.inboxes.where(id: user.assigned_inboxes.select(:id)).order(:id).to_a
-                           end
+                              account.inboxes.order(:id).to_a
+                            else
+                              account.inboxes.where(id: user.assigned_inboxes.select(:id)).order(:id).to_a
+                            end
   end
 
   def selected_inbox(inbox_id)
     id = inbox_id.presence || data['inbox_id']
     accessible_inboxes.find { |inbox| inbox.id.to_s == id.to_s } || raise(ArgumentError, 'Select a workspace inbox for Live Playground')
   end
-
 end

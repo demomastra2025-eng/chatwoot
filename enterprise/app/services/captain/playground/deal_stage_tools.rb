@@ -2,7 +2,11 @@ module Captain::Playground::DealStageTools
   private
 
   def deal_pipelines
-    records = @data['pipelines'].map { |pipeline| pipeline.merge('stages' => @data['stages'].select { |stage| stage['pipeline_id'] == pipeline['id'] }) }
+    records = @data['pipelines'].map do |pipeline|
+      pipeline.merge('stages' => @data['stages'].select do |stage|
+        stage['pipeline_id'] == pipeline['id']
+      end)
+    end
     { pipelines: records, simulated: true }
   end
 
@@ -48,7 +52,9 @@ module Captain::Playground::DealStageTools
   def relative_stage(stages, record)
     action = @args['stage_action']
     raise ArgumentError, 'Stage action must be next or previous' unless %w[next previous].include?(action)
-    raise ArgumentError, 'Stage action cannot be combined with an exact stage' if %w[stage_id stage_name stage_code].any? { |field| @args[field].present? }
+    raise ArgumentError, 'Stage action cannot be combined with an exact stage' if %w[stage_id stage_name stage_code].any? do |field|
+      @args[field].present?
+    end
 
     index = stages.index { |stage| stage['id'] == record&.fetch('stage_id', nil) }
     raise ArgumentError, 'Current deal stage is unavailable in this pipeline' unless index

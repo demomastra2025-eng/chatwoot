@@ -97,17 +97,37 @@ const deferred = () => {
 describe('AssistantPlayground («Площадка»)', () => {
   beforeEach(() => {
     mocks.playground.mockReset();
-    mocks.playgroundSession.mockReset().mockImplementation(({ mode, reset, liveOptions }) => Promise.resolve({
-      data: { playground: {
-        session_id: `${mode}-${reset ? 'reset' : 'session'}`,
-        mode,
-        live_available: true,
-        scenario: { contact: { name: 'Caller', phone_number: '+77010000001', custom_attributes: {} } },
-        inboxes: [{ id: 7, name: 'Test inbox', channel_type: 'Channel::Sms' }],
-        message_history: [],
-        ...(mode === 'live' ? { conversation_id: 42, inbox_id: 7, delivery_enabled: liveOptions?.deliveryEnabled === true } : {}),
-      } },
-    }));
+    mocks.playgroundSession
+      .mockReset()
+      .mockImplementation(({ mode, reset, liveOptions }) =>
+        Promise.resolve({
+          data: {
+            playground: {
+              session_id: `${mode}-${reset ? 'reset' : 'session'}`,
+              mode,
+              live_available: true,
+              scenario: {
+                contact: {
+                  name: 'Caller',
+                  phone_number: '+77010000001',
+                  custom_attributes: {},
+                },
+              },
+              inboxes: [
+                { id: 7, name: 'Test inbox', channel_type: 'Channel::Sms' },
+              ],
+              message_history: [],
+              ...(mode === 'live'
+                ? {
+                    conversation_id: 42,
+                    inbox_id: 7,
+                    delivery_enabled: liveOptions?.deliveryEnabled === true,
+                  }
+                : {}),
+            },
+          },
+        })
+      );
     mocks.update.mockReset();
     mocks.show.mockReset().mockResolvedValue({
       data: {
@@ -647,23 +667,40 @@ describe('AssistantPlayground («Площадка»)', () => {
     await flushPromises();
 
     expect(wrapper.findAll('li')).toHaveLength(0);
-    expect(wrapper.find('[data-test="playground-live-warning"]').exists()).toBe(true);
-    expect(wrapper.find('[data-test="playground-external-delivery"]').element.checked).toBe(false);
+    expect(wrapper.find('[data-test="playground-live-warning"]').exists()).toBe(
+      true
+    );
+    expect(
+      wrapper.find('[data-test="playground-external-delivery"]').element.checked
+    ).toBe(false);
     expect(mocks.playgroundSession).toHaveBeenLastCalledWith({
-      assistantId: 4, mode: 'live', sessionId: undefined, reset: false,
+      assistantId: 4,
+      mode: 'live',
+      sessionId: undefined,
+      reset: false,
       liveOptions: { inboxId: '7', deliveryEnabled: false, testNumber: '' },
     });
-    mocks.playground.mockResolvedValueOnce({ data: { response: 'Live answer' } });
+    mocks.playground.mockResolvedValueOnce({
+      data: { response: 'Live answer' },
+    });
     await send(wrapper, 'Live question');
     expect(mocks.playground.mock.lastCall[0]).toMatchObject({
-      mode: 'live', sessionId: 'live-session', conversationId: 42, messageHistory: [],
+      mode: 'live',
+      sessionId: 'live-session',
+      conversationId: 42,
+      messageHistory: [],
       liveOptions: { deliveryEnabled: false },
     });
 
     await wrapper.find('[data-test="playground-mode-trial"]').trigger('click');
     await flushPromises();
-    expect(wrapper.findAll('li').map(item => item.text())).toEqual(['Trial question', 'Trial answer']);
-    expect(wrapper.find('[data-test="playground-live-warning"]').exists()).toBe(false);
+    expect(wrapper.findAll('li').map(item => item.text())).toEqual([
+      'Trial question',
+      'Trial answer',
+    ]);
+    expect(wrapper.find('[data-test="playground-live-warning"]').exists()).toBe(
+      false
+    );
   });
 
   it('does not put a late Trial answer into Live or send Trial references to Live', async () => {
@@ -671,7 +708,9 @@ describe('AssistantPlayground («Площадка»)', () => {
     mocks.playground.mockReturnValueOnce(oldResponse.promise);
     const wrapper = mountPlayground();
     await flushPromises();
-    await wrapper.find('[data-test="playground-message-input"]').setValue('Pending trial');
+    await wrapper
+      .find('[data-test="playground-message-input"]')
+      .setValue('Pending trial');
     await wrapper.find('button[data-icon="i-lucide-send"]').trigger('click');
     await wrapper.find('[data-test="playground-mode-live"]').trigger('click');
     await flushPromises();
@@ -679,9 +718,15 @@ describe('AssistantPlayground («Площадка»)', () => {
     await flushPromises();
     expect(wrapper.findAll('li')).toHaveLength(0);
 
-    mocks.playground.mockResolvedValueOnce({ data: { response: 'Live response' } });
+    mocks.playground.mockResolvedValueOnce({
+      data: { response: 'Live response' },
+    });
     await send(wrapper, 'Live request');
-    expect(mocks.playground.mock.lastCall[0]).toMatchObject({ mode: 'live', sessionId: 'live-session', conversationId: 42 });
+    expect(mocks.playground.mock.lastCall[0]).toMatchObject({
+      mode: 'live',
+      sessionId: 'live-session',
+      conversationId: 42,
+    });
     expect(wrapper.text()).not.toContain('Late trial response');
   });
 
@@ -690,30 +735,52 @@ describe('AssistantPlayground («Площадка»)', () => {
     await flushPromises();
     await wrapper.find('[data-test="playground-mode-live"]').trigger('click');
     await flushPromises();
-    await wrapper.find('[data-test="playground-external-delivery"]').setValue(true);
-    await wrapper.find('[data-test="playground-controlled-number"]').setValue('+77015551234');
+    await wrapper
+      .find('[data-test="playground-external-delivery"]')
+      .setValue(true);
+    await wrapper
+      .find('[data-test="playground-controlled-number"]')
+      .setValue('+77015551234');
     mocks.playground.mockResolvedValueOnce({ data: { response: 'Reply' } });
     await send(wrapper, 'Controlled delivery');
     expect(mocks.playground.mock.lastCall[0].liveOptions).toEqual({
-      inboxId: '7', deliveryEnabled: true, testNumber: '+77015551234',
+      inboxId: '7',
+      deliveryEnabled: true,
+      testNumber: '+77015551234',
     });
   });
 
   it('keeps scenario data collapsed and resets its server state without changing model controls', async () => {
     const wrapper = mountPlayground();
     await flushPromises();
-    expect(wrapper.find('[data-test="playground-scenario-editor"]').exists()).toBe(false);
+    expect(
+      wrapper.find('[data-test="playground-scenario-editor"]').exists()
+    ).toBe(false);
     await wrapper.findAll('select')[0].setValue('openai/gpt-6-luna');
-    await wrapper.find('[data-test="playground-scenario-toggle"]').trigger('click');
-    await wrapper.find('[data-test="scenario-contact-name"]').setValue('Edited caller');
-    await wrapper.find('[data-test="playground-scenario-save"]').trigger('click');
+    await wrapper
+      .find('[data-test="playground-scenario-toggle"]')
+      .trigger('click');
+    await wrapper
+      .find('[data-test="scenario-contact-name"]')
+      .setValue('Edited caller');
+    await wrapper
+      .find('[data-test="playground-scenario-save"]')
+      .trigger('click');
     await flushPromises();
-    expect(mocks.playgroundSession.mock.lastCall[0].scenario.contact.name).toBe('Edited caller');
+    expect(mocks.playgroundSession.mock.lastCall[0].scenario.contact.name).toBe(
+      'Edited caller'
+    );
 
     await wrapper.find('[data-test="playground-trial-reset"]').trigger('click');
     await flushPromises();
-    expect(mocks.playgroundSession.mock.lastCall[0]).toMatchObject({ reset: true, mode: 'trial', sessionId: 'trial-session' });
-    expect(wrapper.findAll('select')[0].element.value).toBe('openai/gpt-6-luna');
+    expect(mocks.playgroundSession.mock.lastCall[0]).toMatchObject({
+      reset: true,
+      mode: 'trial',
+      sessionId: 'trial-session',
+    });
+    expect(wrapper.findAll('select')[0].element.value).toBe(
+      'openai/gpt-6-luna'
+    );
     expect(mocks.update).not.toHaveBeenCalled();
   });
 
@@ -722,9 +789,13 @@ describe('AssistantPlayground («Площадка»)', () => {
     mocks.playground.mockReturnValueOnce(pending.promise);
     const wrapper = mountPlayground();
     await flushPromises();
-    await wrapper.find('[data-test="playground-message-input"]').setValue('Pending');
+    await wrapper
+      .find('[data-test="playground-message-input"]')
+      .setValue('Pending');
     await wrapper.find('button[data-icon="i-lucide-send"]').trigger('click');
-    await wrapper.find('button[data-icon="i-lucide-rotate-ccw"]').trigger('click');
+    await wrapper
+      .find('button[data-icon="i-lucide-rotate-ccw"]')
+      .trigger('click');
     expect(mocks.playgroundSession).toHaveBeenCalledTimes(1);
     pending.resolve({ data: { response: 'Old answer' } });
     await flushPromises();
@@ -736,11 +807,19 @@ describe('AssistantPlayground («Площадка»)', () => {
     mocks.playgroundSession.mockRejectedValueOnce(new Error('Unavailable'));
     const wrapper = mountPlayground();
     await flushPromises();
-    await wrapper.find('[data-test="playground-message-input"]').setValue('Cannot send yet');
-    expect(wrapper.find('button[data-icon="i-lucide-send"]').element.disabled).toBe(true);
-    await wrapper.find('[data-test="playground-session-retry"]').trigger('click');
+    await wrapper
+      .find('[data-test="playground-message-input"]')
+      .setValue('Cannot send yet');
+    expect(
+      wrapper.find('button[data-icon="i-lucide-send"]').element.disabled
+    ).toBe(true);
+    await wrapper
+      .find('[data-test="playground-session-retry"]')
+      .trigger('click');
     await flushPromises();
-    expect(wrapper.find('button[data-icon="i-lucide-send"]').element.disabled).toBe(false);
+    expect(
+      wrapper.find('button[data-icon="i-lucide-send"]').element.disabled
+    ).toBe(false);
     expect(mocks.playground).not.toHaveBeenCalled();
   });
 });

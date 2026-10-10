@@ -111,34 +111,49 @@ const savedTemperature = computed(() => {
 const formattedTemperature = computed(() =>
   Number(testTemperature.value || 0).toFixed(1)
 );
-const activeSession = computed(() => playgroundSessions.value[playgroundMode.value]);
-const liveAvailable = computed(() => playgroundSessions.value.trial?.live_available === true);
-const liveInboxes = computed(() => playgroundSessions.value.trial?.inboxes || []);
+const activeSession = computed(
+  () => playgroundSessions.value[playgroundMode.value]
+);
+const liveAvailable = computed(
+  () => playgroundSessions.value.trial?.live_available === true
+);
+const liveInboxes = computed(
+  () => playgroundSessions.value.trial?.inboxes || []
+);
 const liveOptions = computed(() => ({
   inboxId: liveInboxId.value,
   deliveryEnabled: externalDeliveryEnabled.value,
   testNumber: controlledTestNumber.value,
 }));
-const messageDisabled = computed(() =>
-  isLoading.value || isLoadingSession.value ||
-  (assistant.value?.usage_mode !== 'internal_assistant' && !activeSession.value)
+const messageDisabled = computed(
+  () =>
+    isLoading.value ||
+    isLoadingSession.value ||
+    (assistant.value?.usage_mode !== 'internal_assistant' &&
+      !activeSession.value)
 );
 
 const acceptSession = payload => {
   if (!payload || payload.mode !== playgroundMode.value) return;
   playgroundSessions.value[payload.mode] = payload;
   scenarioDraft.value = JSON.parse(JSON.stringify(payload.scenario || {}));
-  if (payload.mode === 'trial' && !liveInboxId.value && payload.inboxes?.length) {
+  if (
+    payload.mode === 'trial' &&
+    !liveInboxId.value &&
+    payload.inboxes?.length
+  ) {
     liveInboxId.value = String(payload.inboxes[0].id);
   }
 };
 
 const loadPlaygroundSession = async ({ reset = false, scenario } = {}) => {
-  if (!assistant.value || assistant.value?.usage_mode === 'internal_assistant') return;
+  if (!assistant.value || assistant.value?.usage_mode === 'internal_assistant')
+    return;
   const mode = playgroundMode.value;
   const assistantId = props.assistantId;
   const accountId = String(props.accountId);
-  const sequence = ++sessionRequestSequence;
+  sessionRequestSequence += 1;
+  const sequence = sessionRequestSequence;
   isLoadingSession.value = true;
   sessionError.value = '';
   try {
@@ -150,12 +165,21 @@ const loadPlaygroundSession = async ({ reset = false, scenario } = {}) => {
       ...(scenario ? { scenario } : {}),
       liveOptions: mode === 'live' ? liveOptions.value : {},
     });
-    if (sequence !== sessionRequestSequence || mode !== playgroundMode.value || assistantId !== props.assistantId || accountId !== String(props.accountId)) return;
+    if (
+      sequence !== sessionRequestSequence ||
+      mode !== playgroundMode.value ||
+      assistantId !== props.assistantId ||
+      accountId !== String(props.accountId)
+    )
+      return;
     acceptSession(data.playground);
     if (reset) {
       messages.value = [];
       modeMessages.value[mode] = [];
-    } else if (!messages.value.length && data.playground?.message_history?.length) {
+    } else if (
+      !messages.value.length &&
+      data.playground?.message_history?.length
+    ) {
       messages.value = data.playground.message_history.map(message => ({
         sender: message.role,
         content: message.content,
@@ -164,8 +188,14 @@ const loadPlaygroundSession = async ({ reset = false, scenario } = {}) => {
       }));
     }
   } catch (error) {
-    if (sequence === sessionRequestSequence && mode === playgroundMode.value && assistantId === props.assistantId && accountId === String(props.accountId)) {
-      sessionError.value = error.response?.data?.message || t('CAPTAIN.PLAYGROUND.SESSION_ERROR');
+    if (
+      sequence === sessionRequestSequence &&
+      mode === playgroundMode.value &&
+      assistantId === props.assistantId &&
+      accountId === String(props.accountId)
+    ) {
+      sessionError.value =
+        error.response?.data?.message || t('CAPTAIN.PLAYGROUND.SESSION_ERROR');
     }
   } finally {
     if (sequence === sessionRequestSequence) isLoadingSession.value = false;
@@ -175,7 +205,10 @@ const loadPlaygroundSession = async ({ reset = false, scenario } = {}) => {
 const saveScenario = () => {
   const { contact, patient, deal, appointment } = scenarioDraft.value;
   return loadPlaygroundSession({
-    scenario: playgroundMode.value === 'live' ? { contact } : { contact, patient, deal, appointment },
+    scenario:
+      playgroundMode.value === 'live'
+        ? { contact }
+        : { contact, patient, deal, appointment },
   });
 };
 
@@ -265,7 +298,11 @@ const resetConversation = async () => {
   isLoadingSession.value = true;
   // The server serializes turns. Reset after the current turn releases its session lock.
   if (pending) await pending.catch(() => {});
-  if (sessionSequence !== assistantSessionSequence || mode !== playgroundMode.value) return;
+  if (
+    sessionSequence !== assistantSessionSequence ||
+    mode !== playgroundMode.value
+  )
+    return;
   await loadPlaygroundSession({ reset: true });
 };
 
@@ -315,7 +352,9 @@ watch(playgroundMode, (mode, previous) => {
   newMessage.value = '';
   isLoading.value = false;
   sessionError.value = '';
-  scenarioDraft.value = JSON.parse(JSON.stringify(playgroundSessions.value[mode]?.scenario || {}));
+  scenarioDraft.value = JSON.parse(
+    JSON.stringify(playgroundSessions.value[mode]?.scenario || {})
+  );
   if (assistant.value) loadPlaygroundSession();
 });
 
@@ -349,7 +388,10 @@ const sendMessage = async () => {
             mode: requestMode,
             sessionId: activeSession.value?.session_id,
             ...(requestMode === 'live'
-              ? { conversationId: activeSession.value?.conversation_id, liveOptions: liveOptions.value }
+              ? {
+                  conversationId: activeSession.value?.conversation_id,
+                  liveOptions: liveOptions.value,
+                }
               : {}),
           }
         : {}),
@@ -405,7 +447,8 @@ const sendMessage = async () => {
       timestamp: new Date().toISOString(),
     });
   } finally {
-    if (pendingPlaygroundRuns[requestMode] === pendingRequest) pendingPlaygroundRuns[requestMode] = null;
+    if (pendingPlaygroundRuns[requestMode] === pendingRequest)
+      pendingPlaygroundRuns[requestMode] = null;
     if (
       sessionSequence === assistantSessionSequence &&
       requestAssistantId === props.assistantId &&
@@ -460,59 +503,153 @@ onMounted(async () => {
       data-test="playground-scenario"
     >
       <div class="flex flex-wrap items-center justify-between gap-3">
-        <div class="flex gap-1 rounded-lg bg-n-alpha-1 p-1" role="group" :aria-label="t('CAPTAIN.PLAYGROUND.MODE')">
-          <button v-for="mode in ['trial', 'live']" :key="mode" type="button"
+        <div
+          class="flex gap-1 rounded-lg bg-n-alpha-1 p-1"
+          role="group"
+          :aria-label="t('CAPTAIN.PLAYGROUND.MODE')"
+        >
+          <button
+            v-for="mode in ['trial', 'live']"
+            :key="mode"
+            type="button"
             class="rounded-md px-3 py-1.5 text-xs font-medium"
-            :class="playgroundMode === mode ? 'bg-n-solid-2 text-n-slate-12 shadow-sm' : 'text-n-slate-11'"
+            :class="
+              playgroundMode === mode
+                ? 'bg-n-solid-2 text-n-slate-12 shadow-sm'
+                : 'text-n-slate-11'
+            "
             :data-test="`playground-mode-${mode}`"
             :aria-pressed="playgroundMode === mode"
             :disabled="mode === 'live' && !liveAvailable"
-            @click="playgroundMode = mode">
+            @click="playgroundMode = mode"
+          >
             {{ t(`CAPTAIN.PLAYGROUND.MODE_${mode.toUpperCase()}`) }}
           </button>
         </div>
-        <button type="button" class="flex items-center gap-2 text-xs font-medium text-n-slate-11"
-          data-test="playground-scenario-toggle" :aria-expanded="scenarioExpanded" @click="scenarioExpanded = !scenarioExpanded">
+        <button
+          type="button"
+          class="flex items-center gap-2 text-xs font-medium text-n-slate-11"
+          data-test="playground-scenario-toggle"
+          :aria-expanded="scenarioExpanded"
+          @click="scenarioExpanded = !scenarioExpanded"
+        >
           {{ t('CAPTAIN.PLAYGROUND.SCENARIO_DATA') }}
-          <span :class="scenarioExpanded ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'" />
+          <span
+            :class="
+              scenarioExpanded ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'
+            "
+          />
         </button>
       </div>
-      <p v-if="playgroundMode === 'live'" class="mb-0 mt-2 rounded-lg bg-n-amber-3 px-3 py-2 text-xs text-n-amber-11" role="status" data-test="playground-live-warning">
+      <p
+        v-if="playgroundMode === 'live'"
+        class="mb-0 mt-2 rounded-lg bg-n-amber-3 px-3 py-2 text-xs text-n-amber-11"
+        role="status"
+        data-test="playground-live-warning"
+      >
         {{ t('CAPTAIN.PLAYGROUND.LIVE_WARNING') }}
       </p>
-      <p v-else class="mb-0 mt-2 text-xs text-n-slate-10">{{ t('CAPTAIN.PLAYGROUND.TRIAL_DESCRIPTION') }}</p>
-      <div v-if="playgroundMode === 'live'" class="mt-3 flex flex-wrap items-center gap-3">
-        <label class="flex min-w-0 flex-1 flex-col gap-1 text-xs text-n-slate-11">
+      <p v-else class="mb-0 mt-2 text-xs text-n-slate-10">
+        {{ t('CAPTAIN.PLAYGROUND.TRIAL_DESCRIPTION') }}
+      </p>
+      <div
+        v-if="playgroundMode === 'live'"
+        class="mt-3 flex flex-wrap items-center gap-3"
+      >
+        <label
+          class="flex min-w-0 flex-1 flex-col gap-1 text-xs text-n-slate-11"
+        >
           {{ t('CAPTAIN.PLAYGROUND.LIVE_INBOX') }}
-          <select v-model="liveInboxId" class="mb-0 rounded-lg border border-n-weak bg-n-background text-sm text-n-slate-12"
-            :disabled="isLoading || isLoadingSession || !!activeSession" data-test="playground-live-inbox">
-            <option v-for="inbox in liveInboxes" :key="inbox.id" :value="String(inbox.id)">{{ inbox.name }}</option>
+          <select
+            v-model="liveInboxId"
+            class="mb-0 rounded-lg border border-n-weak bg-n-background text-sm text-n-slate-12"
+            :disabled="isLoading || isLoadingSession || !!activeSession"
+            data-test="playground-live-inbox"
+          >
+            <option
+              v-for="inbox in liveInboxes"
+              :key="inbox.id"
+              :value="String(inbox.id)"
+            >
+              {{ inbox.name }}
+            </option>
           </select>
         </label>
         <label class="flex items-center gap-2 text-xs text-n-slate-11">
-          <input v-model="externalDeliveryEnabled" type="checkbox" :disabled="isLoading || isLoadingSession" data-test="playground-external-delivery" />
+          <input
+            v-model="externalDeliveryEnabled"
+            type="checkbox"
+            :disabled="isLoading || isLoadingSession"
+            data-test="playground-external-delivery"
+          />
           {{ t('CAPTAIN.PLAYGROUND.EXTERNAL_DELIVERY') }}
         </label>
-        <label v-if="externalDeliveryEnabled" class="flex min-w-0 flex-col gap-1 text-xs text-n-slate-11">
+        <label
+          v-if="externalDeliveryEnabled"
+          class="flex min-w-0 flex-col gap-1 text-xs text-n-slate-11"
+        >
           {{ t('CAPTAIN.PLAYGROUND.CONTROLLED_NUMBER') }}
-          <input v-model="controlledTestNumber" type="tel" class="mb-0 rounded-lg border border-n-weak bg-n-background text-sm text-n-slate-12" data-test="playground-controlled-number" />
+          <input
+            v-model="controlledTestNumber"
+            type="tel"
+            class="mb-0 rounded-lg border border-n-weak bg-n-background text-sm text-n-slate-12"
+            data-test="playground-controlled-number"
+          />
         </label>
       </div>
-      <p v-if="isLoadingSession" class="mb-0 mt-2 text-xs text-n-slate-11" role="status">{{ t('CAPTAIN_SETTINGS.LOADING') }}</p>
+      <p
+        v-if="isLoadingSession"
+        class="mb-0 mt-2 text-xs text-n-slate-11"
+        role="status"
+      >
+        {{ t('CAPTAIN_SETTINGS.LOADING') }}
+      </p>
       <div v-if="sessionError" class="mt-2 flex flex-wrap items-center gap-3">
-        <p class="mb-0 text-xs text-n-ruby-9" role="alert">{{ sessionError }}</p>
-        <button type="button" class="text-xs font-medium text-n-brand hover:underline" data-test="playground-session-retry" @click="loadPlaygroundSession()">
+        <p class="mb-0 text-xs text-n-ruby-9" role="alert">
+          {{ sessionError }}
+        </p>
+        <button
+          type="button"
+          class="text-xs font-medium text-n-brand hover:underline"
+          data-test="playground-session-retry"
+          @click="loadPlaygroundSession()"
+        >
           {{ t('DESIGN_SYSTEM.STATE.RETRY') }}
         </button>
       </div>
       <div v-if="scenarioExpanded && activeSession" class="mt-3">
-        <p class="mb-3 text-xs text-n-slate-10">{{ t(playgroundMode === 'trial' ? 'CAPTAIN.PLAYGROUND.MOTHER_SON_PRESET' : 'CAPTAIN.PLAYGROUND.LIVE_CALLER_DESCRIPTION') }}</p>
-        <PlaygroundScenarioEditor v-model="scenarioDraft" :mode="playgroundMode" :disabled="isLoading || isLoadingSession" />
+        <p class="mb-3 text-xs text-n-slate-10">
+          {{
+            t(
+              playgroundMode === 'trial'
+                ? 'CAPTAIN.PLAYGROUND.MOTHER_SON_PRESET'
+                : 'CAPTAIN.PLAYGROUND.LIVE_CALLER_DESCRIPTION'
+            )
+          }}
+        </p>
+        <PlaygroundScenarioEditor
+          v-model="scenarioDraft"
+          :mode="playgroundMode"
+          :disabled="isLoading || isLoadingSession"
+        />
         <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
-          <button type="button" class="text-xs font-medium text-n-brand hover:underline" :disabled="isLoading || isLoadingSession" data-test="playground-scenario-save" @click="saveScenario">
+          <button
+            type="button"
+            class="text-xs font-medium text-n-brand hover:underline"
+            :disabled="isLoading || isLoadingSession"
+            data-test="playground-scenario-save"
+            @click="saveScenario"
+          >
             {{ t('CAPTAIN.PLAYGROUND.SCENARIO_SAVE') }}
           </button>
-          <button v-if="playgroundMode === 'trial'" type="button" class="text-xs text-n-slate-11 hover:underline" :disabled="isLoading || isLoadingSession" data-test="playground-trial-reset" @click="resetConversation">
+          <button
+            v-if="playgroundMode === 'trial'"
+            type="button"
+            class="text-xs text-n-slate-11 hover:underline"
+            :disabled="isLoading || isLoadingSession"
+            data-test="playground-trial-reset"
+            @click="resetConversation"
+          >
             {{ t('CAPTAIN.PLAYGROUND.RESET_TRIAL') }}
           </button>
         </div>

@@ -58,7 +58,14 @@ class CaptainAssistant extends ApiClient {
     });
   }
 
-  playgroundSession({ assistantId, mode = 'trial', sessionId, reset = false, scenario, liveOptions = {} }) {
+  playgroundSession({
+    assistantId,
+    mode = 'trial',
+    sessionId,
+    reset = false,
+    scenario,
+    liveOptions = {},
+  }) {
     return axios.post(`${this.url}/${assistantId}/playground`, {
       playground_action: reset ? 'reset' : 'session',
       playground_mode: mode,

@@ -100,24 +100,27 @@ class Captain::Playground::ToolExecutor
     fields = @args.slice(*Captain::Playground::Scenario::CONTACT_FIELDS)
     validate_contact_fields!(fields)
     caller.merge!(fields.except('custom_attributes', 'additional_attributes'))
-    if fields.key?('custom_attributes')
-      caller['custom_attributes'] = caller['custom_attributes'].to_h.merge(json_object(fields['custom_attributes']))
-    end
+    caller['custom_attributes'] = caller['custom_attributes'].to_h.merge(json_object(fields['custom_attributes'])) if fields.key?('custom_attributes')
     { action: 'update_contact', contact: caller.deep_dup, simulated: true }
   end
 
   def validate_contact_fields!(fields)
-    raise ArgumentError, 'Contact phone must use E.164 format' if fields['phone_number'].present? && !fields['phone_number'].match?(/\A\+[1-9]\d{7,14}\z/)
-    raise ArgumentError, 'Contact name is required' if fields.key?('name') && fields['name'].blank?
-    if fields['email'].present? && !fields['email'].match?(Devise.email_regexp)
-      raise ArgumentError, 'Contact email is invalid'
+    if fields['phone_number'].present? && !fields['phone_number'].match?(/\A\+[1-9]\d{7,14}\z/)
+      raise ArgumentError,
+            'Contact phone must use E.164 format'
     end
+    raise ArgumentError, 'Contact name is required' if fields.key?('name') && fields['name'].blank?
+    return unless fields['email'].present? && !fields['email'].match?(Devise.email_regexp)
+
+    raise ArgumentError, 'Contact email is invalid'
   end
 
   def json_object(value)
     value = JSON.parse(value) if value.is_a?(String)
     raise ArgumentError, 'Custom attributes must be an object' unless value.nil? || value.is_a?(Hash)
-    raise ArgumentError, 'Unknown custom field; use the custom field catalogue first' if value.to_h.keys.any? { |key| !caller['custom_attributes'].to_h.key?(key) }
+    raise ArgumentError, 'Unknown custom field; use the custom field catalogue first' if value.to_h.keys.any? do |key|
+      !caller['custom_attributes'].to_h.key?(key)
+    end
 
     value.to_h
   rescue JSON::ParserError
