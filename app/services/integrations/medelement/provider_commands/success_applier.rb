@@ -63,6 +63,7 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
       appointment.update!(
         starts_at: snapshot_time('destination_starts_at'),
         ends_at: snapshot_time('destination_ends_at'),
+        duration_min: confirmed_duration_min,
         custom_attributes: stamped_custom_attributes.merge(
           'medelement_cabinet_code' => command.request_snapshot.fetch('company_cabinet_code'),
           'medelement_provider_sync_status' => 'succeeded'
@@ -152,6 +153,7 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
     appointment.update!(
       starts_at: snapshot_time('destination_starts_at'),
       ends_at: snapshot_time('destination_ends_at'),
+      duration_min: confirmed_duration_min,
       external_ref: "medelement:reception:#{reception_code}",
       custom_attributes: stamped_custom_attributes.except('medelement_patient_code').merge(
         'medelement_reception_code' => reception_code,
@@ -177,6 +179,12 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
 
   def snapshot_time(key)
     Time.iso8601(command.request_snapshot.fetch('reception').fetch(key))
+  end
+
+  def confirmed_duration_min
+    starts_at = snapshot_time('destination_starts_at')
+    ends_at = snapshot_time('destination_ends_at')
+    ((ends_at - starts_at) / 60).round
   end
 
   def link_contact_patient_ref!(patient_code)
