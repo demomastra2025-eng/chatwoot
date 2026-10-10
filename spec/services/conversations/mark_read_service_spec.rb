@@ -185,6 +185,34 @@ RSpec.describe Conversations::MarkReadService do
         expect(sync_service).to have_received(:perform).once
         expect(conversation.reload.unread_messages_for(user).incoming).to be_empty
       end
+
+      it 'creates a missing thread before broadcasting and delivers the captured receipt first' do
+        incoming_message
+        channel.account.enable_features!('communication_threads')
+        expect(conversation.reload.communication_thread).to be_nil
+        sync_service = instance_double(Whatsapp::MarkMessagesReadService, perform: true)
+        allow(Whatsapp::MarkMessagesReadService).to receive(:new).and_return(sync_service)
+        expect(conversation).to receive(:dispatch_read_state_update).with(actor: user).once do
+          expect(sync_service).to have_received(:perform).once
+          expect(conversation.reload.communication_thread.unread_count).to eq(0)
+        end
+
+        described_class.new(conversation: conversation, user: user).perform
+      end
+
+      it 'does not lose the captured receipt if a synchronous read-state listener fails' do
+        incoming_message
+        sync_service = instance_double(Whatsapp::MarkMessagesReadService, perform: true)
+        allow(Whatsapp::MarkMessagesReadService).to receive(:new).and_return(sync_service)
+        allow(conversation).to receive(:dispatch_read_state_update).and_raise(ActiveRecord::Deadlocked)
+
+        expect do
+          described_class.new(conversation: conversation, user: user).perform
+        end.to raise_error(ActiveRecord::Deadlocked)
+
+        expect(sync_service).to have_received(:perform).once
+        expect(conversation.reload.unread_messages_for(user).incoming).to be_empty
+      end
     end
 
     context 'when syncing Telegram Personal read receipts' do

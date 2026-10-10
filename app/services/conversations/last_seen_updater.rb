@@ -21,8 +21,8 @@ class Conversations::LastSeenUpdater
       end
     end
 
-    conversation.dispatch_read_state_update(actor: actor) if broadcast_read_state
     refresh_communication_thread! if refresh_communication_thread
+    conversation.dispatch_read_state_update(actor: actor) if broadcast_read_state
   end
 
   def refresh_communication_thread!

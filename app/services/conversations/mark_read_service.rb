@@ -12,14 +12,14 @@ class Conversations::MarkReadService
       sync_payload = unread_message_sync_payload(user_unread_messages)
       update_last_seen(Time.current.utc)
       sync_mark_read_receipts(sync_payload)
-      refresh_communication_thread!
+      finish_read_state!
       return
     end
 
     return unless should_update_last_seen?
 
     update_last_seen(Time.current.utc)
-    refresh_communication_thread!
+    finish_read_state!
   end
 
   private
@@ -29,13 +29,14 @@ class Conversations::MarkReadService
       last_seen_at: last_seen_at,
       update_assignee: assignee?,
       refresh_communication_thread: false,
-      broadcast_read_state: @broadcast_read_state,
+      broadcast_read_state: false,
       actor: @user
     )
   end
 
-  def refresh_communication_thread!
+  def finish_read_state!
     last_seen_updater.refresh_communication_thread! if @refresh_communication_thread
+    @conversation.dispatch_read_state_update(actor: @user) if @broadcast_read_state
   end
 
   def should_update_last_seen?
