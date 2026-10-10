@@ -63,16 +63,55 @@ RSpec.describe Scheduling::CalendarViewService do
     end
   end
 
-  it 'does not ask MedElement for calendar slots beyond its horizon' do
+  it 'retains appointments for 32 integrated specialists on a past day without fetching provider availability' do
+    travel_to(Time.utc(2026, 10, 10, 3)) do
+      account.enable_features!('scheduling')
+      create(:integrations_hook, :medelement, account: account)
+      zone = ActiveSupport::TimeZone['Asia/Almaty']
+      from = zone.local(2026, 10, 5)
+      resources = Array.new(32) do |index|
+        create(:scheduling_resource, account: account, timezone: 'Asia/Almaty',
+                                     custom_attributes: {
+                                       'medelement_specialist_code' => "doctor-#{index}",
+                                       'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }]
+                                     })
+      end
+      contact = create(:contact, account: account)
+      appointments = resources.map do |resource|
+        create(:scheduling_appointment, account: account, resource: resource, contact: contact, service: nil,
+                                        starts_at: from + 10.hours, ends_at: from + 10.hours + 30.minutes)
+      end
+      create(:scheduling_work_rule, account: account, resource: resources.first, weekday: from.wday)
+      expect(Integrations::Medelement::ResourceAvailabilityService).not_to receive(:new)
+      expect(Integrations::Medelement::Client).not_to receive(:new)
+
+      payload = Scheduling::PayloadBuilder.calendar(
+        described_class.new(account: account, view: 'day', from: from, to: from + 1.day,
+                            resource_ids: resources.map(&:id), include_slots: true).perform
+      )
+
+      expect(payload[:resources].pluck(:id)).to match_array(resources.map(&:id))
+      expect(payload[:appointments].pluck(:id)).to match_array(appointments.map(&:id))
+      expect(payload[:slots]).to be_empty
+    end
+  end
+
+  it 'does not fetch live MedElement slots for an eligible specialist beyond the background cache' do
+    account.enable_features!('scheduling')
+    create(:integrations_hook, :medelement, account: account)
     resource = create(
       :scheduling_resource,
       account: account,
-      custom_attributes: { 'medelement_specialist_code' => 'doctor-1' }
+      custom_attributes: {
+        'medelement_specialist_code' => 'doctor-1',
+        'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }]
+      }
     )
     zone = ActiveSupport::TimeZone['Asia/Almaty']
     date = zone.today + 90
     from = zone.local(date.year, date.month, date.day, 9)
     expect(Integrations::Medelement::ResourceAvailabilityService).not_to receive(:new)
+    expect(Integrations::Medelement::Client).not_to receive(:new)
 
     payload = described_class.new(account: account, view: 'day', from: from, to: from + 2.hours,
                                   resource_ids: [resource.id], include_slots: true).perform

@@ -24,10 +24,10 @@ RSpec.describe Scheduling::ScheduleDayAvailabilityService do
     hook
   end
 
-  def stored_day(status: 'confirmed', checked_at: Time.current, windows: [{ start_minute: 10 * 60, end_minute: 11 * 60 }])
+  def stored_day(status: 'confirmed', checked_at: Time.current, windows: [{ start_minute: 10 * 60, end_minute: 11 * 60 }], on: date)
     Integrations::Medelement::ScheduleDay.create!(
       account: account, hook: hook, resource: resource, specialist_code: 'specialist-1',
-      date: date, status: status, source_checked_at: checked_at, windows: windows
+      date: on, status: status, source_checked_at: checked_at, windows: windows
     )
   end
 
@@ -87,6 +87,35 @@ RSpec.describe Scheduling::ScheduleDayAvailabilityService do
     create(:scheduling_appointment, account: account, resource: resource, status: 'cancelled',
                                     starts_at: zone.local(2026, 4, 20, 10, 30), ends_at: zone.local(2026, 4, 20, 11))
     expect(Time.iso8601(result.slots.first[:starts_at])).to eq(zone.local(2026, 4, 20, 10, 30))
+  end
+
+  it 'uses only fresh confirmed stored windows for a partial past range when live reads are disabled' do
+    first_date = Date.new(2026, 4, 15)
+    stored_day(on: first_date)
+    stored_day(on: first_date + 1, status: 'empty_confirmed', windows: [])
+    stored_day(on: first_date + 2, status: 'unverified')
+    stored_day(on: first_date + 3, checked_at: 2.hours.ago)
+    (first_date...date).each do |day|
+      create(:scheduling_work_rule, account: account, resource: resource, weekday: day.wday,
+                                    start_minute: 9 * 60, end_minute: 12 * 60)
+    end
+    expect(Integrations::Medelement::ResourceAvailabilityService).not_to receive(:new)
+    expect(Integrations::Medelement::Client).not_to receive(:new)
+
+    availability = described_class.new(
+      resource: resource, from: zone.local(2026, 4, 15), to: zone.local(2026, 4, 20),
+      duration_min: 60, allow_live: false
+    ).perform
+
+    expect(availability.state).to eq('schedule_not_confirmed')
+    expect(availability.source).to eq('provider_schedule')
+    expect(availability.checked_at).to eq(Time.current)
+    expect(availability.last_bookable_date).to be_nil
+    expect(availability.slots).to contain_exactly(
+      include(resource_id: resource.id, cabinet_code: 'cabinet-1', duration_min: 60,
+              starts_at: zone.local(2026, 4, 15, 10).in_time_zone(resource.timezone).iso8601,
+              ends_at: zone.local(2026, 4, 15, 11).in_time_zone(resource.timezone).iso8601)
+    )
   end
 
   [Date.new(2026, 4, 18), Date.new(2026, 7, 19)].each do |requested_date|

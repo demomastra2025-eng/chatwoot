@@ -100,7 +100,7 @@ class Scheduling::CalendarViewService
 
     Scheduling::ScheduleDayAvailabilityService.new(
       resource: resource, from: range.first, to: range.last,
-      duration_min: @duration_min || resource.slot_duration_min
+      duration_min: @duration_min || resource.slot_duration_min, allow_live: false
     ).perform.slots
   end
 

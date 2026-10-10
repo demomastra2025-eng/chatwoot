@@ -11,6 +11,7 @@ class Scheduling::ScheduleDayAvailabilityService
     @service = options[:service]
     @duration_min = options[:duration_min]
     @cabinet_code = options[:cabinet_code].to_s.presence
+    @allow_live = options.fetch(:allow_live, true)
   end
 
   def perform
@@ -30,7 +31,7 @@ class Scheduling::ScheduleDayAvailabilityService
     days = schedule_days(range.first, range.last)
     cached = policy.cached_range?(from: range.first, to: range.last)
     confirmed = days.all? { |day| fresh?(day) && day.status.in?(%w[confirmed empty_confirmed]) }
-    return provider_days_result(range, days) if cached || confirmed
+    return provider_days_result(range, days) if !@allow_live || cached || confirmed
 
     live_provider_result(range)
   end
