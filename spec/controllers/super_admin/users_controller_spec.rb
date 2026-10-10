@@ -125,30 +125,24 @@ RSpec.describe 'Super Admin Users API', type: :request do
     before { sign_in(super_admin, scope: :super_admin) }
 
     it 'skips reconfirmation when confirmed_at is provided' do
-      ActiveJob::Base.queue_adapter.enqueued_jobs.clear
-      patch request_path, params: { user: { email: 'updated@example.com', confirmed_at: Time.current } }
+      expect do
+        patch request_path, params: { user: { email: 'updated@example.com', confirmed_at: Time.current } }
+      end.not_to have_enqueued_mail(Devise::Mailer, :confirmation_instructions)
 
       expect(response).to have_http_status(:redirect)
       expect(user.reload.email).to eq('updated@example.com')
       expect(user.reload.unconfirmed_email).to be_nil
-
-      mail_jobs = ActiveJob::Base.queue_adapter.enqueued_jobs.select do |job|
-        job[:job].to_s == 'ActionMailer::MailDeliveryJob'
-      end
-      expect(mail_jobs.count).to eq(0)
     end
 
     it 'does not skip reconfirmation when confirmed_at is blank' do
-      ActiveJob::Base.queue_adapter.enqueued_jobs.clear
-      patch request_path, params: { user: { email: 'updated-again@example.com' } }
+      original_email = user.email
+      expect do
+        patch request_path, params: { user: { email: 'updated-again@example.com' } }
+      end.to have_enqueued_mail(Devise::Mailer, :confirmation_instructions)
 
       expect(response).to have_http_status(:redirect)
       expect(user.reload.unconfirmed_email).to eq('updated-again@example.com')
-
-      mail_jobs = ActiveJob::Base.queue_adapter.enqueued_jobs.select do |job|
-        job[:job].to_s == 'ActionMailer::MailDeliveryJob'
-      end
-      expect(mail_jobs.count).to be >= 1
+      expect(user.email).to eq(original_email)
     end
   end
 
