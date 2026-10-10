@@ -5,13 +5,11 @@ import SchedulingServicesAPI from 'dashboard/api/scheduling/services';
 import {
   compactPayload,
   extractSchedulingError,
+  isDeletedFromScheduling,
   normalizePayload,
   removeRecord,
   upsertRecord,
 } from './shared';
-
-const isDeletedFromScheduling = resource =>
-  !!resource?.customAttributes?.deletedFromScheduling;
 
 export const useSchedulingReferencesStore = defineStore(
   'schedulingReferences',

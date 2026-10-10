@@ -48,6 +48,7 @@ import {
 } from '../constants';
 import {
   formatSchedulingErrorMessage,
+  isDeletedFromScheduling,
   normalizePayload,
 } from 'dashboard/stores/scheduling/shared';
 import {
@@ -316,7 +317,7 @@ const isSelectedAppointmentLocallyCancelled = computed(
 
 const filterableResources = computed(() =>
   referencesStore.resources.filter(
-    resource => !resource.customAttributes?.deletedFromScheduling
+    resource => !isDeletedFromScheduling(resource)
   )
 );
 

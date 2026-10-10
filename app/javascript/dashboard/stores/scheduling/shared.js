@@ -146,6 +146,12 @@ const ERROR_FIELD_KEY_BY_NAME = {
   starts_at: 'SCHEDULING.APPOINTMENT_FORM.STARTS_AT',
 };
 
+export const isDeletedFromScheduling = resource =>
+  !!(
+    resource?.customAttributes?.deleted_from_scheduling ||
+    resource?.customAttributes?.deletedFromScheduling
+  );
+
 export const normalizePayload = data => {
   return preserveCustomAttributeKeys(
     data?.payload || [],

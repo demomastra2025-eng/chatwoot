@@ -39,6 +39,8 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
 
     context 'when it is an un-authenticated user' do
       it 'does not fetch the assistant' do
+        expect(Llm::OpenRouterModelCatalog).not_to receive(:model_configs)
+
         get "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
             as: :json
         expect(response).to have_http_status(:unauthorized)
@@ -93,6 +95,87 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         expect(json_response[:playground_model]).to eq(
           id: 'vendor/default-model', supports_temperature: false, capabilities: [], reasoning_efforts: []
         )
+      end
+
+      it 'does not load model metadata for an internal assistant' do
+        assistant.update!(usage_mode: 'internal_assistant')
+        expect(Llm::OpenRouterModelCatalog).not_to receive(:model_configs)
+        expect(Llm::OpenRouterEndpointCatalog).not_to receive(:endpoint_configs)
+
+        get "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}", headers: agent.create_new_auth_token, as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response).not_to have_key(:playground_model)
+      end
+
+      context 'with a cold persisted model catalog' do
+        let(:assistant) { create(:captain_assistant, account: account, config: { 'model' => 'openai/gpt-5.4-mini' }) }
+        let(:supported_parameters) { %w[tools tool_choice response_format temperature reasoning] }
+        let(:saved_model) { Llm::ModelCatalogEntry.find_by!(model_id: 'openai/gpt-5.4-mini') }
+        let(:saved_endpoint) { Llm::ModelEndpointEntry.find_by!(model_id: saved_model.model_id) }
+
+        before do
+          upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', 'catalog-test-key')
+          upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', '["openai/gpt-5.4-mini"]')
+          25.times do |index|
+            Llm::ModelCatalogEntry.create!(
+              provider_platform: 'openrouter', model_id: index.zero? ? 'openai/gpt-5.4-mini' : "vendor/model-#{index}",
+              display_name: "Model #{index}", model_type: 'chat', fetched_at: Time.current,
+              capabilities: %w[text_input text_output streaming], supported_parameters: supported_parameters,
+              raw_payload: { 'reasoning' => { 'supported_efforts' => %w[low high] } }
+            )
+          end
+          Llm::ModelEndpointEntry.create!(
+            provider_platform: 'openrouter', model_id: saved_model.model_id, endpoint_slug: 'test-endpoint',
+            endpoint_provider_name: 'Test Provider', fetched_at: Time.current, supported_parameters: supported_parameters
+          )
+          allow(Llm::OpenRouterModelCatalog).to receive(:cached_model_configs).and_return({})
+          allow(Llm::OpenRouterEndpointCatalog).to receive(:cached_endpoint_configs).and_return({})
+        end
+
+        it 'materializes each catalog and reads the provider config once while returning native model metadata' do
+          path = "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}"
+          headers = agent.create_new_auth_token
+          allow(Llm::OpenRouterModelCatalog).to receive(:db_model_configs).and_call_original
+          allow(Llm::OpenRouterEndpointCatalog).to receive(:db_endpoint_configs).and_call_original
+          allow(InstallationConfig).to receive(:find_by).and_call_original
+
+          get path, headers: headers, as: :json
+
+          expect(response).to have_http_status(:success)
+          expect(json_response[:playground_model]).to include(
+            id: saved_model.model_id, provider: 'openrouter', supports_temperature: true, reasoning_efforts: %w[low high],
+            capabilities: include('structured_output', 'tool_calling', 'tool_choice', 'reasoning'),
+            diagnostics: include(allowed: true, endpoint_count: 1, endpoint_providers: ['Test Provider'])
+          )
+          expect(Llm::OpenRouterModelCatalog).to have_received(:db_model_configs).once
+          expect(Llm::OpenRouterEndpointCatalog).to have_received(:db_endpoint_configs).once
+          expect(InstallationConfig).to have_received(:find_by).with(name: 'CAPTAIN_OPENROUTER_API_KEY').once
+        end
+
+        it 'observes changed model and endpoint metadata on the next request' do
+          path = "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}"
+          headers = agent.create_new_auth_token
+          allow(Llm::OpenRouterModelCatalog).to receive(:db_model_configs).and_call_original
+          allow(Llm::OpenRouterEndpointCatalog).to receive(:db_endpoint_configs).and_call_original
+          allow(InstallationConfig).to receive(:find_by).and_call_original
+
+          get path, headers: headers, as: :json
+          expect(json_response[:playground_model]).to include(supports_temperature: true, reasoning_efforts: %w[low high])
+
+          saved_model.update!(supported_parameters: %w[tools tool_choice response_format])
+          saved_endpoint.update!(endpoint_provider_name: 'Updated Provider')
+          get path, headers: headers, as: :json
+
+          expect(response).to have_http_status(:success)
+          expect(json_response[:playground_model]).to include(
+            id: saved_model.model_id, supports_temperature: false, reasoning_efforts: [],
+            diagnostics: include(allowed: true, endpoint_count: 1, endpoint_providers: ['Updated Provider'])
+          )
+          expect(Llm::OpenRouterModelCatalog).to have_received(:db_model_configs).twice
+          expect(Llm::OpenRouterEndpointCatalog).to have_received(:db_endpoint_configs).twice
+          expect(InstallationConfig).to have_received(:find_by).with(name: 'CAPTAIN_OPENROUTER_API_KEY').twice
+        end
       end
     end
   end

@@ -1,15 +1,66 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount } from '@vue/test-utils';
 import { ref } from 'vue';
+import { createPinia } from 'pinia';
 import { useMediaQuery } from '@vueuse/core';
 import { useMapGetter, useStore } from 'dashboard/composables/store';
+import { useUISettings } from 'dashboard/composables/useUISettings';
+import CrmDealsAPI from 'dashboard/api/crm/deals';
+import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
+import SchedulingContactsAPI from 'dashboard/api/scheduling/contacts';
+import AppointmentDealSelector from './AppointmentDealSelector.vue';
+import SchedulingConversationAppointmentsSidebar from 'dashboard/components-next/Scheduling/SchedulingConversationAppointmentsSidebar.vue';
+import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 
 import CrmDealConversationPanel from './CrmDealConversationPanel.vue';
 
 vi.mock('dashboard/composables/store');
+vi.mock('dashboard/composables/useUISettings');
+vi.mock('dashboard/composables', () => ({ useAlert: vi.fn() }));
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
     t: key => key,
+    locale: { value: 'en' },
+  }),
+}));
+vi.mock('vue-router', () => ({
+  useRoute: () => ({ params: { accountId: '1' }, query: {} }),
+  useRouter: () => ({ replace: vi.fn() }),
+}));
+vi.mock('dashboard/api/crm/deals', () => ({
+  default: { appointmentOptions: vi.fn() },
+}));
+vi.mock('dashboard/api/scheduling/appointments', () => ({
+  default: {
+    get: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    cancel: vi.fn(),
+  },
+}));
+vi.mock('dashboard/api/scheduling/contacts', () => ({
+  default: { patients: vi.fn(), createPatient: vi.fn() },
+}));
+vi.mock('dashboard/api/scheduling/availability', () => ({
+  default: {
+    show: vi.fn(() =>
+      Promise.resolve({
+        data: {
+          payload: { state: 'ok', windows: [], last_bookable_date: null },
+        },
+      })
+    ),
+  },
+}));
+vi.mock('dashboard/api/scheduling/providerCommands', () => ({
+  default: { list: vi.fn(), create: vi.fn(), confirm: vi.fn() },
+}));
+vi.mock('dashboard/stores/scheduling/references', () => ({
+  useSchedulingReferencesStore: () => ({
+    activeResources: [{ id: 7, name: 'Specialist', slotDurationMin: 30 }],
+    activeServices: [{ id: 9, name: 'Consultation', durationMin: 30 }],
+    loadResources: vi.fn(() => Promise.resolve()),
+    loadServices: vi.fn(() => Promise.resolve()),
   }),
 }));
 // The breakpoint is driven by the test; VueUse's own ref lives in another copy
@@ -17,6 +68,7 @@ vi.mock('vue-i18n', () => ({
 vi.mock('@vueuse/core', async importOriginal => ({
   ...(await importOriginal()),
   useMediaQuery: vi.fn(),
+  useWindowSize: () => ({ width: { value: 390 } }),
 }));
 
 const mountPanel = ({
@@ -31,6 +83,7 @@ const mountPanel = ({
   conversationDisplayId = 185,
   placeholderI18nPrefix = 'CRM.DEALS.CONVERSATION_PLACEHOLDER',
   selectedContactId = '',
+  sourceDealId = null,
   showOpenFullScreen = false,
   inline = false,
 } = {}) =>
@@ -47,21 +100,46 @@ const mountPanel = ({
       conversationId,
       placeholderI18nPrefix,
       selectedContactId,
+      sourceDealId,
       showOpenFullScreen,
       inline,
       visible: true,
     },
     global: {
+      plugins: [createPinia()],
       mocks: { $t: key => key },
       stubs: {
         Button: {
-          props: ['disabled', 'label'],
+          props: ['disabled', 'label', 'icon'],
           emits: ['click'],
           template:
-            '<button type="button" :disabled="disabled" @click="$emit(\'click\')">{{ label }}</button>',
+            '<button type="button" :disabled="disabled" :aria-label="label || icon" @click="$emit(\'click\')">{{ label }}</button>',
         },
         ConversationBox: true,
         Icon: true,
+        Input: {
+          props: ['modelValue', 'disabled'],
+          emits: ['update:modelValue'],
+          template:
+            '<input :value="modelValue" :disabled="disabled" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+        },
+        Select: {
+          props: ['modelValue', 'options', 'disabled'],
+          emits: ['update:modelValue'],
+          template: `
+            <select
+              :value="modelValue"
+              :disabled="disabled"
+              @change="$emit('update:modelValue', $event.target.value)"
+            >
+              <option v-for="option in options" :key="option.value" :value="option.value">
+                {{ option.label }}
+              </option>
+            </select>
+          `,
+        },
+        SchedulingAppointmentTimeFields: true,
+        SchedulingAvailabilityPicker: true,
         SchedulingErrorState: true,
         SchedulingSelectField: {
           props: ['label', 'modelValue', 'options'],
@@ -95,10 +173,79 @@ describe('CrmDealConversationPanel', () => {
   let conversations;
   let dispatch;
   let isWideScreen;
+  let currentUser;
+  let schedulingEnabled;
+  let uiSettings;
+  let updateUISettings;
 
   beforeEach(() => {
     currentChat = ref({});
     conversations = ref([]);
+    currentUser = ref({
+      id: 9,
+      accounts: [{ id: 1, permissions: ['agent'] }],
+    });
+    schedulingEnabled = ref(true);
+    uiSettings = ref({ is_contact_sidebar_open: true });
+    updateUISettings = vi.fn(settings => {
+      uiSettings.value = { ...uiSettings.value, ...settings };
+    });
+    useUISettings.mockReturnValue({ uiSettings, updateUISettings });
+    window.localStorage.clear();
+    SchedulingAppointmentsAPI.get.mockResolvedValue({
+      data: {
+        payload: [
+          {
+            id: 501,
+            contact_id: 42,
+            resource_id: 7,
+            starts_at: '2026-10-10T10:00:00.000Z',
+            ends_at: '2026-10-10T10:30:00.000Z',
+            status: 'scheduled',
+          },
+        ],
+      },
+    });
+    SchedulingContactsAPI.patients.mockResolvedValue({
+      data: {
+        payload: {
+          contact_id: 42,
+          patients: [
+            {
+              id: 42,
+              account_id: 1,
+              communication_contact_id: 42,
+              first_name: 'Communication',
+              last_name: 'Contact',
+              full_name: 'Communication Contact',
+            },
+            {
+              id: 84,
+              account_id: 1,
+              communication_contact_id: 42,
+              patient_contact_id: 84,
+              selectable_patient: true,
+              first_name: 'Child',
+              last_name: 'Patient',
+              full_name: 'Child Patient',
+            },
+          ],
+        },
+      },
+    });
+    CrmDealsAPI.appointmentOptions.mockImplementation(async params => ({
+      data: {
+        payload: {
+          automatic_deal_id: params.source_deal_id,
+          deals: [377, 378].map(id => ({
+            id,
+            title: `Deal ${id}`,
+            pipeline_id: 10,
+          })),
+          pipelines: [],
+        },
+      },
+    }));
     isWideScreen = ref(false);
     useMediaQuery.mockReturnValue(isWideScreen);
 
@@ -121,6 +268,9 @@ describe('CrmDealConversationPanel', () => {
           inbox_id: 7,
           is_communication_thread: true,
           messages: [{ id: 2 }],
+          meta: { sender: { id: 42, name: 'Communication Contact' } },
+          active_reply_channel: { conversation_id: 185, inbox_id: 7 },
+          conversation_ids: [185],
         };
         conversations.value = [thread];
         return thread;
@@ -162,6 +312,15 @@ describe('CrmDealConversationPanel', () => {
         return conversations;
       }
 
+      if (getter === 'getCurrentUser') return currentUser;
+      if (getter === 'getCurrentAccountId') return ref(1);
+      if (getter === 'accounts/isFeatureEnabledonAccount') {
+        return ref(
+          (_accountId, feature) =>
+            feature !== FEATURE_FLAGS.SCHEDULING || schedulingEnabled.value
+        );
+      }
+
       return ref(undefined);
     });
   });
@@ -194,6 +353,186 @@ describe('CrmDealConversationPanel', () => {
     });
     expect(wrapper.find('conversation-box-stub').exists()).toBe(true);
     expect(wrapper.find('spinner-stub').exists()).toBe(false);
+  });
+
+  describe('appointments from the embedded deal chat', () => {
+    const mountDealChat = (options = {}) =>
+      mountPanel({
+        communicationThreadDisplayId: 41,
+        communicationThreadId: 9001,
+        conversationDisplayId: '',
+        conversationId: '',
+        inline: true,
+        sourceDealId: 377,
+        ...options,
+      });
+    const appointmentButton = wrapper =>
+      wrapper.find('header button[aria-controls]');
+    const openAppointments = async wrapper => {
+      await flushPromises();
+      await appointmentButton(wrapper).trigger('click');
+      await vi.waitFor(() => {
+        expect(
+          wrapper
+            .findComponent(SchedulingConversationAppointmentsSidebar)
+            .exists()
+        ).toBe(true);
+      });
+      await flushPromises();
+    };
+
+    it('opens the shared patient and booking form with the current deal preselected', async () => {
+      const wrapper = mountDealChat();
+      await flushPromises();
+      const chatBox = wrapper.findComponent({ name: 'ConversationBox' }).vm;
+      const chat = currentChat.value;
+      expect(wrapper.find('[role="dialog"]').exists()).toBe(false);
+      expect(appointmentButton(wrapper).text()).toBe(
+        'SCHEDULING.DIALOGS.PANEL_TITLE'
+      );
+      expect(appointmentButton(wrapper).attributes('aria-expanded')).toBe(
+        'false'
+      );
+
+      await openAppointments(wrapper);
+      const drawer = wrapper.find('[role="dialog"]');
+      expect(drawer.attributes('id')).toBe(
+        appointmentButton(wrapper).attributes('aria-controls')
+      );
+      expect(drawer.classes()).toContain('!absolute');
+      expect(wrapper.find('[class*="lg:w-2/3"]').exists()).toBe(true);
+      await wrapper
+        .find('[data-test="patient-selector"] select')
+        .setValue('84');
+      await flushPromises();
+      await drawer.find('button[aria-label="i-lucide-plus"]').trigger('click');
+      await flushPromises();
+
+      const sidebar = wrapper.findComponent(
+        SchedulingConversationAppointmentsSidebar
+      );
+      expect(sidebar.props('selectedPatient').id).toBe(84);
+      expect(sidebar.vm.createForm.clientFirstName).toBe('Child');
+      expect(sidebar.vm.createForm.patientContextContactId).toBe(84);
+      expect(
+        sidebar.find('scheduling-appointment-time-fields-stub').exists()
+      ).toBe(true);
+      expect(sidebar.find('scheduling-availability-picker-stub').exists()).toBe(
+        true
+      );
+      expect(CrmDealsAPI.appointmentOptions).toHaveBeenCalledWith({
+        contact_id: 42,
+        conversation_display_id: 185,
+        source_deal_id: 377,
+      });
+      expect(
+        sidebar.findComponent(AppointmentDealSelector).props('modelValue')
+      ).toMatchObject({ crm_deal_id: 377, crm_pipeline_id: 10 });
+      expect(sidebar.vm.buildCreatePayload()).toMatchObject({
+        contact_id: 42,
+        patient_contact_id: 84,
+        crm_deal_id: 377,
+      });
+
+      await wrapper.setProps({ sourceDealId: 378 });
+      await flushPromises();
+      expect(CrmDealsAPI.appointmentOptions).toHaveBeenLastCalledWith({
+        contact_id: 42,
+        conversation_display_id: 185,
+        source_deal_id: 378,
+      });
+      expect(sidebar.vm.buildCreatePayload().crm_deal_id).toBe(378);
+      expect(currentChat.value).toBe(chat);
+      expect(currentChat.value.meta.sender.id).toBe(42);
+      expect(wrapper.findComponent({ name: 'ConversationBox' }).vm).toBe(
+        chatBox
+      );
+      expect(dispatch).not.toHaveBeenCalledWith('clearSelectedState');
+      expect(SchedulingAppointmentsAPI.create).not.toHaveBeenCalled();
+      wrapper.unmount();
+    });
+
+    it('reopens after shared close with the same patient, draft and chat', async () => {
+      const wrapper = mountDealChat();
+      await openAppointments(wrapper);
+      await wrapper
+        .find('[data-test="patient-selector"] select')
+        .setValue('84');
+      await flushPromises();
+      await wrapper
+        .find('[role="dialog"] button[aria-label="i-lucide-plus"]')
+        .trigger('click');
+      await flushPromises();
+      await wrapper
+        .find('#scheduling-conversation-appointment-client-first-name')
+        .setValue('Reviewed child');
+      const chatBox = wrapper.findComponent({ name: 'ConversationBox' }).vm;
+
+      await wrapper
+        .find('[role="dialog"] button[aria-label="i-lucide-x"]')
+        .trigger('click');
+      await flushPromises();
+      expect(wrapper.find('[role="dialog"]').exists()).toBe(false);
+      expect(appointmentButton(wrapper).attributes('aria-expanded')).toBe(
+        'false'
+      );
+      await openAppointments(wrapper);
+      const sidebar = wrapper.findComponent(
+        SchedulingConversationAppointmentsSidebar
+      );
+      expect(sidebar.props('selectedPatient').id).toBe(84);
+      expect(sidebar.vm.createForm.clientFirstName).toBe('Reviewed child');
+      expect(sidebar.vm.isCreating).toBe(true);
+      expect(wrapper.findComponent({ name: 'ConversationBox' }).vm).toBe(
+        chatBox
+      );
+      expect(dispatch).not.toHaveBeenCalledWith('clearSelectedState');
+      wrapper.unmount();
+    });
+
+    it('requires a local open even when Communications saved the panel as open', async () => {
+      uiSettings.value = { is_scheduling_appointments_panel_open: true };
+      const wrapper = mountDealChat();
+      await flushPromises();
+
+      expect(wrapper.find('[role="dialog"]').exists()).toBe(false);
+      await openAppointments(wrapper);
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      await flushPromises();
+      expect(wrapper.find('[role="dialog"]').exists()).toBe(false);
+      expect(wrapper.emitted('close')).toBeUndefined();
+      expect(currentChat.value.id).toBe(41);
+      wrapper.unmount();
+    });
+
+    it.each(['feature disabled', 'permission missing'])(
+      'hides booking access when %s despite a saved open preference',
+      async condition => {
+        uiSettings.value = { is_scheduling_appointments_panel_open: true };
+        if (condition === 'feature disabled') schedulingEnabled.value = false;
+        else currentUser.value.accounts[0].permissions = ['crm_deal_manage'];
+        const wrapper = mountDealChat();
+        await flushPromises();
+
+        expect(appointmentButton(wrapper).exists()).toBe(false);
+        expect(wrapper.find('[role="dialog"]').exists()).toBe(false);
+        expect(SchedulingContactsAPI.patients).not.toHaveBeenCalled();
+        expect(SchedulingAppointmentsAPI.get).not.toHaveBeenCalled();
+        wrapper.unmount();
+      }
+    );
+
+    it('closes an open drawer when scheduling access is removed', async () => {
+      const wrapper = mountDealChat({ canManage: false });
+      await openAppointments(wrapper);
+      currentUser.value.accounts[0].permissions = ['crm_deal_manage'];
+      await flushPromises();
+
+      expect(appointmentButton(wrapper).exists()).toBe(false);
+      expect(wrapper.find('[role="dialog"]').exists()).toBe(false);
+      expect(currentChat.value.id).toBe(41);
+      wrapper.unmount();
+    });
   });
 
   it('keeps the inline chat mounted for mobile tabs and exposes the full screen action', async () => {

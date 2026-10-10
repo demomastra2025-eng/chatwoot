@@ -96,6 +96,36 @@ describe('useSchedulingReferencesStore', () => {
     vi.clearAllMocks();
   });
 
+  it('excludes raw API archive flags from active resources after loading', async () => {
+    getResourcesMock.mockResolvedValue({
+      data: {
+        payload: [
+          { id: 12, active: true, custom_attributes: {} },
+          {
+            id: 13,
+            active: true,
+            custom_attributes: { deleted_from_scheduling: true },
+          },
+          {
+            id: 14,
+            active: false,
+            custom_attributes: { deleted_from_scheduling: false },
+          },
+        ],
+      },
+    });
+    const store = useSchedulingReferencesStore();
+
+    await store.loadResources();
+
+    expect(getResourcesMock).toHaveBeenCalledWith({ include_inactive: true });
+    expect(store.activeResources.map(resource => resource.id)).toEqual([12]);
+    expect(store.resources.map(resource => resource.id)).toEqual([12, 13, 14]);
+    expect(store.resources[1].customAttributes).toEqual({
+      deleted_from_scheduling: true,
+    });
+  });
+
   it('clears stale errors when saving a resource succeeds', async () => {
     const store = useSchedulingReferencesStore();
     store.ui.error = { code: 'RESOURCE_HAS_APPOINTMENTS', message: 'stale' };

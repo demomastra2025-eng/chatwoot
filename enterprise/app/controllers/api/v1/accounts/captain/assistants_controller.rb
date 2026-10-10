@@ -22,6 +22,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
 
   before_action :set_assistant, only: [:show, :update, :destroy, :playground, :avatar, :prompt_preview, :voice_preview]
   before_action :ensure_internal_playground_available, only: :playground
+  around_action :with_model_metadata_snapshot, only: :show
 
   def index
     @assistants = account_assistants.ordered
@@ -130,6 +131,16 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   end
 
   private
+
+  def with_model_metadata_snapshot
+    return yield if @assistant.internal_assistant?
+
+    Llm::Config.with_runtime_cache do
+      Llm::OpenRouterModelCatalog.with_model_configs_snapshot do
+        Llm::OpenRouterEndpointCatalog.with_endpoint_configs_snapshot { yield }
+      end
+    end
+  end
 
   def set_assistant
     @assistant = account_assistants.find(params[:id])
