@@ -219,7 +219,10 @@ class Reminders::DeliverMaterializedMessageJob < MutexApplicationJob
       error = message.external_error.presence || UNCONFIRMED_PROVIDER_DELIVERY
       reminder.with_lock do
         reminder.reload
-        reminder.fail!(error, delivery_stage: error.match?(/template|шаблон/i) ? 'template_rejected' : 'failed') if reminder.delivery_dispatched_for?(message.id)
+        if reminder.delivery_dispatched_for?(message.id)
+          reminder.fail!(error,
+                         delivery_stage: error.match?(/template|шаблон/i) ? 'template_rejected' : 'failed')
+        end
       end
       return
     end

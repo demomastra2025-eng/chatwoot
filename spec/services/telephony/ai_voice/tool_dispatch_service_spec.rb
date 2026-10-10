@@ -572,7 +572,7 @@ RSpec.describe Telephony::AiVoice::ToolDispatchService do
         }
       )
 
-      expect(service.send(:conversation_mutation_conversation_ids)).to match_array([conversation.id, target_conversation.id])
+      expect(service.send(:conversation_mutation_conversation_ids)).to contain_exactly(conversation.id, target_conversation.id)
     end
 
     it 'resolves a colliding conversation display ID before a primary key like native Captain tools' do

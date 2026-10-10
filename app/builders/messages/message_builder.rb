@@ -115,6 +115,7 @@ class Messages::MessageBuilder
 
   def validate_delivery_policy!
     return unless message_type == 'outgoing'
+
     Outbound::PlaygroundDeliveryPolicy.ensure!(conversation: @conversation, private_note: @private)
     return if @skip_delivery_policy
 

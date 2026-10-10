@@ -529,6 +529,7 @@ class Message < ApplicationRecord
   def send_reply
     return unless outgoing?
     return if skip_send_reply
+
     Outbound::PlaygroundDeliveryPolicy.ensure!(
       conversation: conversation,
       policy: Outbound::PlaygroundDeliveryPolicy.policy_for(conversation: conversation, message: self),
