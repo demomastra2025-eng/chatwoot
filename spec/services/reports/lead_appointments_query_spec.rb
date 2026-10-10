@@ -45,6 +45,30 @@ RSpec.describe Reports::LeadAppointmentsQuery do
     expect(report).to include(leads_count: 1, booked_leads_count: 0, appointments_count: 0, repeat_contacts_count: 1)
   end
 
+  it 'preserves local-day and observation boundaries with microsecond precision' do
+    account.update!(reporting_timezone: 'Asia/Almaty')
+    microsecond = Rational(1, 1_000_000)
+    observed_at = now.change(usec: 123_456).in_time_zone('Asia/Almaty')
+    incoming(create(:contact, account: account), at: range.from_at - microsecond)
+    incoming(create(:contact, account: account), at: range.from_at)
+    last_contact = create(:contact, account: account)
+    last_at = range.until_at - microsecond
+    incoming(last_contact, at: last_at)
+    incoming(create(:contact, account: account), at: range.until_at)
+    repeat = create(:contact, account: account)
+    incoming(repeat, at: range.from_at - microsecond)
+    incoming(repeat, at: range.from_at)
+    provider_visit(last_contact, created_at: last_at - microsecond)
+    provider_visit(last_contact, created_at: last_at)
+    provider_visit(last_contact, created_at: observed_at)
+    provider_visit(last_contact, created_at: observed_at + microsecond)
+
+    result = described_class.new(account: account, date_range: range, now: observed_at).perform
+
+    expect(result).to include(leads_count: 2, repeat_contacts_count: 1, booked_leads_count: 1, appointments_count: 2,
+                             provider_booked_appointments_count: 2)
+  end
+
   it 'ignores outgoing messages and notes when determining the first inbound cohort' do
     contact = create(:contact, account: account)
     incoming(contact, at: first_at - 1.day, message_type: 'outgoing', sender: create(:user, account: account))

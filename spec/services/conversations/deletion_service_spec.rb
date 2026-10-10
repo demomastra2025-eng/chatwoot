@@ -39,16 +39,31 @@ RSpec.describe Conversations::DeletionService do
       .to raise_error(described_class::KeyConflict)
   end
 
-  it 'rejects another single/group/actor request overlapping a still pending exact record' do
+  it 'rejects another group/actor request overlapping only a later still pending target' do
+    unrelated = create(:conversation, account: account)
     enroll
     other_user = create(:user, account: account, role: :administrator)
     expect do
       described_class.new(account: account, user: other_user).create(
-        conversations: [conversation], request_key: SecureRandom.uuid,
-        conversation_ids: [conversation.display_id], thread_id: 1
+        conversations: [unrelated, conversation], request_key: SecureRandom.uuid,
+        conversation_ids: [unrelated.display_id, conversation.display_id], thread_id: 1
       )
     end.to raise_error(described_class::OverlappingRequest)
     expect(account.bulk_action_runs.count).to eq(1)
+  end
+
+  it 'allows a terminal target while the same processing run still blocks its pending target' do
+    second = create(:conversation, account: account)
+    run = enroll(ids: [conversation.display_id, second.display_id], conversations: [conversation, second])
+    described_class.record_target!(run, conversation.id, status: 'failed', error_code: 'destroy_failed')
+
+    accepted = enroll(request_key: SecureRandom.uuid)
+
+    expect(run.reload.status).to eq('processing')
+    expect(accepted.status).to eq('queued')
+    expect do
+      enroll(request_key: SecureRandom.uuid, ids: [second.display_id], conversations: [second])
+    end.to raise_error(described_class::OverlappingRequest)
   end
 
   it 'records queue failure as terminal and does not let a late worker delete' do

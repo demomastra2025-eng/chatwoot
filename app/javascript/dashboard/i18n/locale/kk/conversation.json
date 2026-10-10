@@ -172,7 +172,7 @@
       "TITLE": "Delete thread channels #{threadId}",
       "DESCRIPTION": "Select the exact channels/conversations to delete. Other channels in this thread will remain available.",
       "CONFIRM": "Delete selected",
-        "SELECTED_COUNT": "Жойылатын арна саны: {count}",
+      "SELECTED_COUNT": "Жойылатын арна саны: {count}",
       "SELECT_ALL": "Select all channels",
       "CHANNEL_ID": "Conversation #{conversationId}",
       "EMPTY": "This thread has no accessible channels to delete.",
@@ -299,6 +299,15 @@
     "BOT": "Robot",
     "NATIVE_APP": "Native app",
     "NATIVE_APP_ADVISORY": "This message was sent from the {platform} native app. Reply from {installationName} to maintain the message window.",
+    "DELETION_STATE": {
+      "PENDING": "Диалогты жою әлі орындалып жатыр. Нәтижесі әзірге расталмаған.",
+      "PENDING_COUNT": "Жоюды растауды күтіп тұрған диалогтар: {count}. Таңдалған диалогтар өңдеу кезінде жасырылған.",
+      "PARTIAL": "Кейбір диалогтар жойылды. Қалғандарын жою мүмкін болмады. Тізім жаңартылып жатыр.",
+      "CHECK": "Күйін тексеру",
+      "RETRY": "Сұрауды қайталау",
+      "RETRY_TITLE": "Жою сұрауын қайталау керек пе?",
+      "RETRY_DESCRIPTION": "Сервер мына диалогтарды жою сұрауының қабылданғанын растамады: {ids}. Сол сұрау қайталанады; бар операция қайта пайдаланылады."
+    },
     "COMMUNICATION_THREAD": {
       "ALL_CHANNELS": "Барлық арналар",
       "REPLY_VIA": "Жауап беру арнасы",

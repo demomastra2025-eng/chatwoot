@@ -146,13 +146,16 @@ RSpec.describe Conversations::DeletionJob do
     lock_id = Digest::SHA256.digest("communication-thread:#{account.id}:#{conversation.contact_id}").unpack1('q>')
     incoming = nil
     attaching = false
-    allow(ActiveRecord::Base.connection).to receive(:execute).and_wrap_original do |method, sql, *args|
-      if sql == "SELECT pg_advisory_xact_lock(#{lock_id})" && !attaching
+    connection = ActiveRecord::Base.connection
+    allow(connection).to receive(:exec_query).and_wrap_original do |method, sql, *args, **options|
+      if sql == 'SELECT pg_advisory_xact_lock($1)' && args.first == 'DeleteObjectJob' && !attaching
+        expect(args.second.first.value_for_database).to eq(lock_id)
+        expect(connection.transaction_open?).to be(true)
         attaching = true
         incoming = create(:conversation, account: account, contact: conversation.contact, inbox: conversation.inbox)
         Conversations::CommunicationThreadResolver.new(conversation: incoming).perform
       end
-      method.call(sql, *args)
+      method.call(sql, *args, **options)
     end
     expect_any_instance_of(DeleteObjectJob).not_to receive(:destroy_tracked_conversation)
     described_class.perform_now(run.id)
@@ -160,6 +163,19 @@ RSpec.describe Conversations::DeletionJob do
     expect(CommunicationThread.exists?(thread.id)).to be(true)
     expect(thread.communication_thread_conversations.exists?(conversation_id: incoming.id)).to be(true)
     expect(run.reload.metadata['targets'].first.dig('cleanup', 'status')).to eq('completed')
+  end
+
+  it 'accepts both signed 64-bit advisory lock endpoints during empty-thread cleanup' do
+    threads = create_list(:communication_thread, 2, account: account)
+    allow(Digest::SHA256).to receive(:digest).and_call_original
+    [-(2**63), (2**63) - 1].zip(threads).each do |lock_id, thread|
+      identity = "communication-thread:#{account.id}:#{thread.contact_id}"
+      allow(Digest::SHA256).to receive(:digest).with(identity).and_return([lock_id].pack('q>'))
+    end
+
+    DeleteObjectJob.new.cleanup_tracked_conversation(account, threads.map(&:id))
+
+    expect(CommunicationThread.where(id: threads.map(&:id))).not_to exist
   end
 
   it 'keeps an audit warning durable when housekeeping fails and later succeeds' do

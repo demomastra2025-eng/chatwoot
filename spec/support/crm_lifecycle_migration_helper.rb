@@ -114,13 +114,14 @@ module CrmLifecycleMigrationHelper
     SQL
   end
 
-  # Column order, definitions, indexes and constraints (with their validity) of every table the series touches.
+  # Logical column definitions, indexes and constraints (with their validity) of every table the series touches.
+  # Additive migrations retain physical column positions, which need not match a schema.rb rebuild.
   def crm_schema_snapshot(table_names = CRM_TABLES)
     tables = table_names.map { |table| db.quote(table) }.join(', ')
     {
       columns: db.select_rows(<<~SQL.squish),
         SELECT table_name, column_name, data_type, is_nullable, column_default FROM information_schema.columns
-        WHERE table_schema = current_schema() AND table_name IN (#{tables}) ORDER BY table_name, ordinal_position
+        WHERE table_schema = current_schema() AND table_name IN (#{tables}) ORDER BY table_name, column_name
       SQL
       indexes: db.select_rows(<<~SQL.squish),
         SELECT tablename, indexname, indexdef FROM pg_indexes
