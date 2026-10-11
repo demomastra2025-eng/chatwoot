@@ -31,11 +31,13 @@ class ActionCableBroadcastJob < ApplicationJob
   # caused by out-of-order events during high-traffic periods. This prevents
   # the conversation job from processing outdated data.
   def prepare_broadcast_data(event_name, data)
-    return data unless CONVERSATION_UPDATE_EVENTS.include?(event_name)
+    external_payload = data[:external_payload]
+    return data.except(:external_payload) unless CONVERSATION_UPDATE_EVENTS.include?(event_name)
 
     account = Account.find(data[:account_id])
     conversation = account.conversations.find_by!(display_id: data[:id])
-    conversation.push_event_data.merge(account_id: data[:account_id])
+    event_data = external_payload ? conversation.external_push_event_data : conversation.push_event_data
+    event_data.merge(account_id: data[:account_id])
   end
 
   def broadcast_to_members(members, event_name, broadcast_data)

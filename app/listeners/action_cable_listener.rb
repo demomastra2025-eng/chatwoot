@@ -53,7 +53,7 @@ class ActionCableListener < BaseListener # rubocop:disable Metrics/ClassLength
     customer_tokens = contact_tokens(conversation.contact_inbox, message)
 
     broadcast(account, dashboard_tokens, MESSAGE_CREATED, message.push_event_data)
-    broadcast(account, customer_tokens, MESSAGE_CREATED, message.push_event_data(include_communication_thread: false))
+    broadcast(account, customer_tokens, MESSAGE_CREATED, message.external_push_event_data(include_communication_thread: false))
     broadcast_communication_thread_update(conversation, MESSAGE_CREATED, message: message)
   end
 
@@ -69,7 +69,9 @@ class ActionCableListener < BaseListener # rubocop:disable Metrics/ClassLength
       account,
       customer_tokens,
       MESSAGE_UPDATED,
-      message.push_event_data(include_communication_thread: false).merge(previous_changes: event.data[:previous_changes])
+      message.external_push_event_data(include_communication_thread: false).merge(
+        previous_changes: message.external_previous_changes(event.data[:previous_changes])
+      )
     )
     broadcast_communication_thread_update(conversation, MESSAGE_UPDATED, message: message)
   end
@@ -85,9 +87,7 @@ class ActionCableListener < BaseListener # rubocop:disable Metrics/ClassLength
 
   def conversation_created(event)
     conversation, account = extract_conversation_and_account(event)
-    tokens = user_tokens(account, conversation.inbox.members) + contact_inbox_tokens(conversation.contact_inbox)
-
-    broadcast(account, tokens, CONVERSATION_CREATED, conversation.push_event_data)
+    broadcast_conversation_to_dashboard_and_contact(account, conversation, CONVERSATION_CREATED)
     broadcast_communication_thread_update(conversation, CONVERSATION_CREATED)
   end
 
@@ -101,50 +101,22 @@ class ActionCableListener < BaseListener # rubocop:disable Metrics/ClassLength
 
   def conversation_status_changed(event)
     conversation, account = extract_conversation_and_account(event)
-    tokens = user_tokens(account, conversation.inbox.members) + contact_inbox_tokens(conversation.contact_inbox)
-
-    broadcast(account, tokens, CONVERSATION_STATUS_CHANGED, conversation.push_event_data)
+    broadcast_conversation_to_dashboard_and_contact(account, conversation, CONVERSATION_STATUS_CHANGED)
     broadcast_communication_thread_update(conversation, CONVERSATION_STATUS_CHANGED)
   end
 
   def conversation_updated(event)
     conversation, account = extract_conversation_and_account(event)
-    tokens = user_tokens(account, conversation.inbox.members) + contact_inbox_tokens(conversation.contact_inbox)
-
-    broadcast(account, tokens, CONVERSATION_UPDATED, conversation.push_event_data)
+    broadcast_conversation_to_dashboard_and_contact(account, conversation, CONVERSATION_UPDATED)
     broadcast_communication_thread_update(conversation, CONVERSATION_UPDATED)
   end
 
   def conversation_typing_on(event)
-    conversation = event.data[:conversation]
-    account = conversation.account
-    user = event.data[:user]
-    tokens = typing_event_listener_tokens(account, conversation, user)
-
-    broadcast(
-      account,
-      tokens,
-      CONVERSATION_TYPING_ON,
-      conversation: conversation.push_event_data,
-      user: user.push_event_data,
-      is_private: event.data[:is_private] || false
-    )
+    broadcast_typing_event(event, CONVERSATION_TYPING_ON)
   end
 
   def conversation_typing_off(event)
-    conversation = event.data[:conversation]
-    account = conversation.account
-    user = event.data[:user]
-    tokens = typing_event_listener_tokens(account, conversation, user)
-
-    broadcast(
-      account,
-      tokens,
-      CONVERSATION_TYPING_OFF,
-      conversation: conversation.push_event_data,
-      user: user.push_event_data,
-      is_private: event.data[:is_private] || false
-    )
+    broadcast_typing_event(event, CONVERSATION_TYPING_OFF)
   end
 
   def assignee_changed(event)
@@ -238,6 +210,30 @@ class ActionCableListener < BaseListener # rubocop:disable Metrics/ClassLength
   end
 
   private
+
+  def broadcast_conversation_to_dashboard_and_contact(account, conversation, event_name)
+    broadcast(account, user_tokens(account, conversation.inbox.members), event_name, conversation.push_event_data)
+    broadcast(
+      account,
+      contact_inbox_tokens(conversation.contact_inbox),
+      event_name,
+      conversation.external_push_event_data,
+      external_payload: true
+    )
+  end
+
+  def broadcast_typing_event(event, event_name)
+    conversation = event.data[:conversation]
+    account = conversation.account
+    user = event.data[:user]
+    tokens = typing_event_listener_tokens(account, conversation, user)
+    data = { user: user.push_event_data, is_private: event.data[:is_private] || false }
+
+    broadcast(account, tokens & user_tokens(account, conversation.inbox.members), event_name,
+              data.merge(conversation: conversation.push_event_data))
+    broadcast(account, tokens & contact_inbox_tokens(conversation.contact_inbox), event_name,
+              data.merge(conversation: conversation.external_push_event_data))
+  end
 
   def inbox_notification_enabled?(notification)
     setting = notification.user.notification_settings.find_by(account_id: notification.account_id)

@@ -21,6 +21,30 @@ describe ActionCableListener do
     end
     let!(:event) { Events::Base.new(event_name, Time.zone.now, message: message) }
 
+    it 'keeps AI traces for dashboard users and removes them from contact broadcasts' do
+      assistant = create(:captain_assistant, account: account, description: 'Private agent instructions')
+      trace = { 'tool_steps' => [{ 'result' => 'Private tool result' }] }
+      message.update!(sender: assistant, additional_attributes: { 'captain_trace' => trace })
+      allow(ActionCableBroadcastJob).to receive(:perform_later)
+
+      listener.message_created(event)
+
+      expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
+        a_collection_containing_exactly(*dashboard_tokens(conversation)),
+        'message.created',
+        hash_including(additional_attributes: hash_including('captain_trace' => trace))
+      )
+      expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
+        [conversation.contact_inbox.pubsub_token],
+        'message.created',
+        satisfy do |payload|
+          payload[:content] == message.content &&
+            payload[:additional_attributes].exclude?('captain_trace') &&
+            payload[:sender].keys == %i[id name avatar_url created_at type]
+        end
+      )
+    end
+
     it 'sends message to account admins, inbox agents and the contact' do
       # HACK: to reload conversation inbox members
       expect(conversation.inbox.reload.members).to contain_exactly(admin, agent, message.sender)
@@ -395,6 +419,31 @@ describe ActionCableListener do
       Events::Base.new(event_name, Time.zone.now, message: message, previous_changes: { content: %w[old new] })
     end
 
+    it 'removes AI traces from the contact update and previous changes' do
+      trace = { 'reasoning' => 'Private reasoning' }
+      message.update!(additional_attributes: { 'captain_trace' => trace })
+      update_event = Events::Base.new(
+        event_name,
+        Time.zone.now,
+        message: message,
+        previous_changes: { additional_attributes: [{}, { 'captain_trace' => trace }] }
+      )
+      allow(ActionCableBroadcastJob).to receive(:perform_later)
+
+      listener.message_updated(update_event)
+
+      expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
+        [conversation.contact_inbox.pubsub_token],
+        'message.updated',
+        hash_including(additional_attributes: {}, previous_changes: { additional_attributes: [{}, {}] })
+      )
+      expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
+        a_collection_containing_exactly(*dashboard_tokens(conversation)),
+        'message.updated',
+        hash_including(additional_attributes: hash_including('captain_trace' => trace))
+      )
+    end
+
     it 'keeps communication thread metadata dashboard-only on message updates' do
       account.enable_features!('communication_threads')
       allow(ActionCableBroadcastJob).to receive(:perform_later)
@@ -443,6 +492,30 @@ describe ActionCableListener do
   describe '#conversation_created' do
     let(:event_name) { :'conversation.created' }
     let!(:event) { Events::Base.new(event_name, Time.zone.now, conversation: conversation) }
+
+    it 'keeps the latest AI trace in the dashboard and removes it from the contact event' do
+      assistant = create(:captain_assistant, account: account, description: 'Private agent instructions')
+      trace = { 'reasoning' => 'Private reasoning' }
+      create(:message, account: account, inbox: inbox, conversation: conversation, sender: assistant,
+                       message_type: :outgoing, additional_attributes: { 'captain_trace' => trace })
+      allow(ActionCableBroadcastJob).to receive(:perform_later)
+
+      listener.conversation_created(event)
+
+      expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
+        a_collection_containing_exactly(*dashboard_tokens(conversation)),
+        'conversation.created',
+        hash_including(messages: [hash_including(additional_attributes: hash_including('captain_trace' => trace))])
+      )
+      expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
+        [conversation.contact_inbox.pubsub_token],
+        'conversation.created',
+        satisfy do |payload|
+          payload.dig(:messages, 0, :additional_attributes).exclude?('captain_trace') &&
+            payload.dig(:messages, 0, :sender).exclude?(:description)
+        end
+      )
+    end
 
     it 'broadcasts a communication thread refresh so new linked channels appear without waiting for a message' do
       account.enable_features!('communication_threads')
@@ -494,10 +567,15 @@ describe ActionCableListener do
       # HACK: to reload conversation inbox members
       expect(conversation.inbox.reload.members).to contain_exactly(admin, agent)
       expect(ActionCableBroadcastJob).to receive(:perform_later).with(
-        a_collection_containing_exactly(
-          admin.pubsub_token, conversation.contact_inbox.pubsub_token
-        ),
+        [admin.pubsub_token],
         'conversation.typing_on', { conversation: conversation.push_event_data,
+                                    user: agent.push_event_data,
+                                    account_id: account.id,
+                                    is_private: false }
+      )
+      expect(ActionCableBroadcastJob).to receive(:perform_later).with(
+        [conversation.contact_inbox.pubsub_token],
+        'conversation.typing_on', { conversation: conversation.external_push_event_data,
                                     user: agent.push_event_data,
                                     account_id: account.id,
                                     is_private: false }
@@ -534,10 +612,15 @@ describe ActionCableListener do
     it 'sends message to account admins, inbox agents and the contact' do
       expect(conversation.inbox.reload.members).to contain_exactly(admin, agent)
       expect(ActionCableBroadcastJob).to receive(:perform_later).with(
-        a_collection_containing_exactly(
-          admin.pubsub_token, agent.pubsub_token, conversation.contact_inbox.pubsub_token
-        ),
+        a_collection_containing_exactly(admin.pubsub_token, agent.pubsub_token),
         'conversation.typing_on', { conversation: conversation.push_event_data,
+                                    user: agent_bot.push_event_data,
+                                    account_id: account.id,
+                                    is_private: false }
+      )
+      expect(ActionCableBroadcastJob).to receive(:perform_later).with(
+        [conversation.contact_inbox.pubsub_token],
+        'conversation.typing_on', { conversation: conversation.external_push_event_data,
                                     user: agent_bot.push_event_data,
                                     account_id: account.id,
                                     is_private: false }
@@ -554,10 +637,15 @@ describe ActionCableListener do
       # HACK: to reload conversation inbox members
       expect(conversation.inbox.reload.members).to contain_exactly(admin, agent)
       expect(ActionCableBroadcastJob).to receive(:perform_later).with(
-        a_collection_containing_exactly(
-          admin.pubsub_token, conversation.contact_inbox.pubsub_token
-        ),
+        [admin.pubsub_token],
         'conversation.typing_off', { conversation: conversation.push_event_data,
+                                     user: agent.push_event_data,
+                                     account_id: account.id,
+                                     is_private: false }
+      )
+      expect(ActionCableBroadcastJob).to receive(:perform_later).with(
+        [conversation.contact_inbox.pubsub_token],
+        'conversation.typing_off', { conversation: conversation.external_push_event_data,
                                      user: agent.push_event_data,
                                      account_id: account.id,
                                      is_private: false }
@@ -759,9 +847,14 @@ describe ActionCableListener do
       expect(conversation.inbox.reload.members).to contain_exactly(admin, agent)
 
       expect(ActionCableBroadcastJob).to receive(:perform_later).with(
-        a_collection_containing_exactly(*dashboard_tokens(conversation), conversation.contact_inbox.pubsub_token),
+        a_collection_containing_exactly(*dashboard_tokens(conversation)),
         'conversation.updated',
         conversation.push_event_data.merge(account_id: account.id)
+      )
+      expect(ActionCableBroadcastJob).to receive(:perform_later).with(
+        [conversation.contact_inbox.pubsub_token],
+        'conversation.updated',
+        conversation.external_push_event_data.merge(account_id: account.id, external_payload: true)
       )
       listener.conversation_updated(event)
     end
@@ -770,9 +863,14 @@ describe ActionCableListener do
       expect(conversation.reload.push_event_data[:labels]).to eq(conversation.labels.pluck(:name))
 
       expect(ActionCableBroadcastJob).to receive(:perform_later).with(
-        a_collection_containing_exactly(*dashboard_tokens(conversation), conversation.contact_inbox.pubsub_token),
+        a_collection_containing_exactly(*dashboard_tokens(conversation)),
         'conversation.updated',
         conversation.push_event_data.merge(account_id: account.id)
+      )
+      expect(ActionCableBroadcastJob).to receive(:perform_later).with(
+        [conversation.contact_inbox.pubsub_token],
+        'conversation.updated',
+        conversation.external_push_event_data.merge(account_id: account.id, external_payload: true)
       )
       listener.conversation_updated(event)
     end
