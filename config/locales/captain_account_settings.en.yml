@@ -1,0 +1,17 @@
+en:
+  captain:
+    account_settings:
+      errors:
+        invalid_type: Invalid value type
+        invalid_section: Settings section cannot be changed
+        unknown_field: Unknown setting field
+        invalid_value: Invalid value
+        invalid_reason: Reason is invalid or duplicated
+        too_many: Too many entries
+        unknown_fields: Unsupported fields are present
+        required: Required field
+        invalid_id: Invalid identifier
+        duplicate_id: Identifier is duplicated
+        blank: Field cannot be blank
+        too_long: Maximum length exceeded
+        output_only: Action is allowed only for outbound messages

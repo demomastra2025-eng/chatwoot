@@ -1,0 +1,17 @@
+kk:
+  captain:
+    account_settings:
+      errors:
+        invalid_type: Мән түрі қате
+        invalid_section: Баптау бөлімін өзгертуге болмайды
+        unknown_field: Белгісіз баптау өрісі
+        invalid_value: Мән қате
+        invalid_reason: Себеп қате толтырылған немесе қайталанған
+        too_many: Рұқсат етілген саннан артық
+        unknown_fields: Қолдау көрсетілмейтін өрістер бар
+        required: Міндетті өріс
+        invalid_id: Идентификатор қате
+        duplicate_id: Идентификатор қайталанады
+        blank: Өріс бос болмауы керек
+        too_long: Ұзындығы шектен асты
+        output_only: Әрекет тек шығыс хабарламаларға рұқсат етілген

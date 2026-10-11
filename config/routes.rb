@@ -70,6 +70,7 @@ Rails.application.routes.draw do
           end
           namespace :captain do
             resource :channel_matrix, only: [:show, :update], controller: 'channel_matrix'
+            resource :settings, only: [:show, :update]
             resources :fish_voices, only: [:index, :show, :create, :destroy]
             resource :observability, only: [:show], controller: 'observability' do
               get :metrics
