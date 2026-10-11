@@ -21,7 +21,7 @@ RSpec.describe Captain::Documents::ResponseBuilderJob, type: :job do
   describe '#perform' do
     context 'when processing a document' do
       it 'deletes previous responses' do
-        existing_response = create(:captain_assistant_response, documentable: document)
+        existing_response = create(:captain_assistant_response, assistant: assistant, documentable: document)
 
         described_class.new.perform(document)
 
@@ -30,7 +30,7 @@ RSpec.describe Captain::Documents::ResponseBuilderJob, type: :job do
 
       it 'skips generation without deleting existing responses when FAQ generation is disabled' do
         document.update!(faq_generation_enabled: false)
-        existing_response = create(:captain_assistant_response, documentable: document)
+        existing_response = create(:captain_assistant_response, assistant: assistant, documentable: document)
 
         described_class.new.perform(document)
 

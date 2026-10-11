@@ -171,15 +171,22 @@ RSpec.describe 'Captain tool schema metadata' do
 
     expect(resolve_public[:reason].required).to be(false)
     expect(resolve_assistant[:reason].required).to be(false)
-    expect(resolve_public[:status_reason].required).to be(false)
-    expect(resolve_assistant[:status_reason].required).to be(false)
+    expect(handoff_public[:reason].required).to be(false)
+    expect(handoff_assistant[:reason].required).to be(false)
     expect(resolve_public[:reason].description).to eq('Optional reason for resolving the conversation')
     expect(resolve_assistant[:reason].description).to eq('Optional reason for resolving the conversation')
-    expect(resolve_public[:status_reason].description).to include('Configured conversation status reason')
-    expect(resolve_assistant[:status_reason].description).to include('Configured conversation status reason')
     expect(handoff_public[:reason].description).to eq('Optional handoff reason for the human team')
     expect(handoff_assistant[:reason].description).to eq('Optional handoff reason for the human team')
-    expect(handoff_public[:status_reason].description).to include('Configured conversation status reason')
+
+    # Customer-facing agents no longer pick a status or outcome reason: the outcome job classifies
+    # the transition afterwards, so the agent-scope tools expose only the free-text reason.
+    [resolve_public, handoff_public].each do |public_params|
+      expect(public_params).not_to have_key(:status_reason)
+      expect(public_params).not_to have_key(:outcome_reason_id)
+    end
+    expect(resolve_assistant[:status_reason].required).to be(false)
+    expect(handoff_assistant[:status_reason].required).to be(false)
+    expect(resolve_assistant[:status_reason].description).to include('Configured conversation status reason')
     expect(handoff_assistant[:status_reason].description).to include('Configured conversation status reason')
   end
 end

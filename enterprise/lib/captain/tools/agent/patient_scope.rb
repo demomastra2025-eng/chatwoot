@@ -212,9 +212,11 @@ class Captain::Tools::Agent::PatientScope
     deny!(tool: tool, kind: 'contact') if PUBLIC_RECORD_TOOLS.include?(tool) && contact_id.blank?
   end
 
+  # The full name is explicit: the event bus no longer prefixes captain.* events with llm., and
+  # the persisted audit event (Llm::Monitoring::EventRecorder) is llm.captain.tool.denied.
   def publish_denial(tool, kind)
     Llm::EventBus.publish(
-      'captain.tool.denied',
+      'llm.captain.tool.denied',
       feature: 'assistant', tool_name: tool, account_id: @assistant.account_id,
       conversation_id: conversation&.id, contact_id: contact_id,
       id_kind: kind, outcome: 'denied'

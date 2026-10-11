@@ -60,10 +60,12 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
     Redis::Alfred.delete(buffer_key) if defined?(buffer_key)
   end
 
-  it 'uses the final specialist handoff settings and sender' do
-    entry.update!(config: entry.config.merge('handoff_enabled' => false, 'handoff_message' => 'Entry notice'))
-    actor.update!(config: actor.config.merge('handoff_enabled' => true, 'handoff_message_enabled' => true,
-                                            'handoff_message_mode' => 'static', 'handoff_message' => 'Specialist notice'))
+  # Handoff and its message are one account-level setting; the final specialist
+  # still owns the handoff and sends the notice.
+  it 'uses the account handoff settings with the final specialist as sender' do
+    Captain::AccountSettings.new(account).update!(
+      'handoff' => { 'handoff_message' => { 'enabled' => true, 'mode' => 'fixed', 'text' => 'Specialist notice' } }
+    )
     response_from(actor, 'response' => 'conversation_handoff', 'handoff_tool_called' => true, 'handoff_authorized' => true)
 
     described_class.perform_now(conversation, entry)

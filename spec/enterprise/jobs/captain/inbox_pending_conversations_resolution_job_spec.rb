@@ -14,6 +14,14 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
     inbox.reload
   end
 
+  # Completion and handoff texts are account-wide Captain settings, shared by
+  # every agent of the account.
+  def configure_account_message(field, enabled:, mode:, text:)
+    Captain::AccountSettings.new(inbox.account).update!(
+      'handoff' => { field => { 'enabled' => enabled, 'mode' => mode, 'text' => text } }
+    )
+  end
+
   it 'queues the job' do
     expect { described_class.perform_later(inbox) }
       .to have_enqueued_job.on_queue('low')
@@ -126,26 +134,17 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
 
     it 'creates resolution message with configured static content' do
       custom_message = 'This is a custom resolution message.'
-      captain_assistant.update!(config: {
-                                  'resolution_message_enabled' => true,
-                                  'resolution_message_mode' => 'static',
-                                  'resolution_message' => custom_message
-                                })
-      inbox.reload
+      configure_account_message('resolution_message', enabled: true, mode: 'fixed', text: custom_message)
 
       described_class.perform_now(inbox)
 
       public_message = resolvable_pending_conversation.messages.where(private: false).outgoing.last
       expect(public_message.content).to eq(custom_message)
+      expect(public_message.sender).to eq(captain_assistant)
     end
 
     it 'does not create resolution message when disabled' do
-      captain_assistant.update!(config: {
-                                  'resolution_message_enabled' => false,
-                                  'resolution_message_mode' => 'static',
-                                  'resolution_message' => ''
-                                })
-      inbox.reload
+      configure_account_message('resolution_message', enabled: false, mode: 'fixed', text: 'This text must not be sent.')
 
       expect do
         described_class.perform_now(inbox)
@@ -153,12 +152,7 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
     end
 
     it 'does not fall back to default public text when static resolution message is blank' do
-      captain_assistant.update!(config: {
-                                  'resolution_message_enabled' => true,
-                                  'resolution_message_mode' => 'static',
-                                  'resolution_message' => ''
-                                })
-      inbox.reload
+      configure_account_message('resolution_message', enabled: true, mode: 'fixed', text: '')
 
       expect do
         described_class.perform_now(inbox)
@@ -171,14 +165,7 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
         { complete: true, reason: 'Customer question was answered', message: 'I’m closing this because your question has been answered.' }
       )
       allow(Captain::ConversationCompletionService).to receive(:new).and_return(mock_service)
-      captain_assistant.update!(config: {
-                                  'resolution_message_enabled' => true,
-                                  'resolution_message_mode' => 'ai',
-                                  'resolution_message' => ''
-                                })
-      inbox.reload
-      allow(inbox.account).to receive(:feature_enabled?).and_call_original
-      allow(inbox.account).to receive(:feature_enabled?).with('captain_tasks').and_return(true)
+      configure_account_message('resolution_message', enabled: true, mode: 'generated', text: '')
 
       described_class.perform_now(inbox)
 
@@ -274,14 +261,7 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
 
     it 'creates handoff message with configured static content' do
       handoff_message = 'Connecting you to a human agent...'
-      captain_assistant.update!(config: {
-                                  'handoff_message_enabled' => true,
-                                  'handoff_message_mode' => 'static',
-                                  'handoff_message' => handoff_message
-                                })
-      inbox.reload
-      allow(inbox.account).to receive(:feature_enabled?).and_call_original
-      allow(inbox.account).to receive(:feature_enabled?).with('captain_tasks').and_return(true)
+      configure_account_message('handoff_message', enabled: true, mode: 'fixed', text: handoff_message)
 
       described_class.perform_now(inbox)
 
@@ -296,14 +276,7 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
         { complete: false, reason: handoff_reason, message: 'A specialist will continue with your request.' }
       )
       allow(Captain::ConversationCompletionService).to receive(:new).and_return(mock_service)
-      captain_assistant.update!(config: {
-                                  'handoff_message_enabled' => true,
-                                  'handoff_message_mode' => 'ai',
-                                  'handoff_message' => ''
-                                })
-      inbox.reload
-      allow(inbox.account).to receive(:feature_enabled?).and_call_original
-      allow(inbox.account).to receive(:feature_enabled?).with('captain_tasks').and_return(true)
+      configure_account_message('handoff_message', enabled: true, mode: 'generated', text: '')
 
       described_class.perform_now(inbox)
 
@@ -315,19 +288,13 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
       handoff_message = 'Connecting you to a human agent...'
       original_waiting_since = 3.hours.ago
 
-      captain_assistant.update!(config: {
-                                  'handoff_message_enabled' => true,
-                                  'handoff_message_mode' => 'static',
-                                  'handoff_message' => handoff_message
-                                })
+      configure_account_message('handoff_message', enabled: true, mode: 'fixed', text: handoff_message)
       resolvable_pending_conversation.update!(waiting_since: original_waiting_since)
       allow(MessageTemplates::Template::OutOfOffice).to receive(:perform_if_applicable)
-      inbox.reload
-      allow(inbox.account).to receive(:feature_enabled?).and_call_original
-      allow(inbox.account).to receive(:feature_enabled?).with('captain_tasks').and_return(true)
 
       described_class.perform_now(inbox)
 
+      expect(resolvable_pending_conversation.messages.where(private: false).outgoing.last.content).to eq(handoff_message)
       expect(resolvable_pending_conversation.reload.waiting_since).to be_within(1.second).of(original_waiting_since)
     end
 

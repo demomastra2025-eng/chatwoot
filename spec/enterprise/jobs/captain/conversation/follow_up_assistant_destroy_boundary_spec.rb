@@ -136,9 +136,15 @@ RSpec.describe 'Captain follow-up assistant deletion boundary', type: :job do
       destroy_lock_attempted << inbox_id if Thread.current[:assistant_destroying]
       original.call(inbox_id)
     end
+    # A main agent of a channel with AI enabled cannot be deleted (channel rules),
+    # so the deletion switches AI off on its channel in the same transaction. That
+    # write takes the same inbox assignment lock as the destroy itself.
     destroy_thread = in_thread do
       Thread.current[:assistant_destroying] = true
-      Captain::Assistant.find(assistant.id).destroy!
+      Captain::Assistant.transaction do
+        CaptainInbox.find_by!(captain_assistant_id: assistant.id).update!(ai_enabled: false)
+        Captain::Assistant.find(assistant.id).destroy!
+      end
       destroy_finished << true
     end
     Timeout.timeout(10) { destroy_lock_attempted.pop }

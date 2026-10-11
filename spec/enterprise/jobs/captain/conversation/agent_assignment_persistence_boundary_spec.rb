@@ -9,13 +9,7 @@ RSpec.describe 'Captain final persistence assignment boundary', type: :job do
   let(:account) { create(:account, auto_resolve_after: 60, custom_attributes: { plan_name: 'startups' }) }
   let(:inbox) { create(:inbox, account: account) }
   let(:entry) { create(:captain_assistant, account: account) }
-  let(:actor) do
-    create(:captain_assistant, account: account, config: {
-             'resolution_message_enabled' => true, 'resolution_message_mode' => 'static', 'resolution_message' => 'Specialist closure',
-             'handoff_enabled' => true, 'handoff_message_enabled' => true,
-             'handoff_message_mode' => 'static', 'handoff_message' => 'Specialist transfer'
-           })
-  end
+  let(:actor) { create(:captain_assistant, account: account) }
   let(:conversation) { create(:conversation, account: account, inbox: inbox, status: :pending) }
 
   around do |example|
@@ -29,6 +23,13 @@ RSpec.describe 'Captain final persistence assignment boundary', type: :job do
 
   before do
     account.enable_features!('captain_integration', 'captain_tasks')
+    # Resolution and handoff messages are account-level settings; the specialist sends them.
+    Captain::AccountSettings.new(account).update!(
+      'handoff' => {
+        'resolution_message' => { 'enabled' => true, 'mode' => 'fixed', 'text' => 'Specialist closure' },
+        'handoff_message' => { 'enabled' => true, 'mode' => 'fixed', 'text' => 'Specialist transfer' }
+      }
+    )
     create(:captain_inbox, inbox: inbox, captain_assistant: entry)
     entry.update!(handoff_agent_ids: [actor.id])
     create(:message, conversation: conversation, sender: conversation.contact,

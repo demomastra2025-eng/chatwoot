@@ -500,7 +500,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     metadata = @response[CUSTOM_GUARDRAIL_KEY]
     return unless metadata.is_a?(Hash) && metadata['rule_id'].present?
 
-    rules = response_assistant.config.to_h.dig('safety_settings', 'custom_rules')
+    rules = custom_guardrail_rules
     return unless Captain::Safety::CustomRulesConfig.errors(rules).empty?
 
     rule = rules.find do |item|
@@ -514,6 +514,16 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
       preferences: { 'sensitive_info_guardrail' => 'block' }
     )
     @custom_guardrail_message = text unless matches.any?(&:blocking?)
+  end
+
+  # The message comes from the account-wide safety profile the check used
+  # (Captain::Safety::CustomRulesEvaluator), never from the legacy agent config.
+  # The conversation, and so its account, is reloaded after generation, so this
+  # is the latest saved profile.
+  def custom_guardrail_rules
+    Captain::AccountSettings.new(account).runtime_rules
+  rescue KeyError
+    nil
   end
 
   # A turn the safety policy blocked, or could not check, has no reply to send.

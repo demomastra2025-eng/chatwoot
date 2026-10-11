@@ -31,10 +31,16 @@ class Captain::Safety::ResponseRewriteEngine
   private
 
   def rewrite_rule(assistant, rule_id)
-    return unless rule_id.is_a?(String) && assistant.config.is_a?(Hash)
+    return unless rule_id.is_a?(String)
 
-    rules = assistant.config.deep_stringify_keys.dig('safety_settings', 'custom_rules')
-    return unless Captain::Safety::CustomRulesConfig.errors(rules).empty?
+    # Custom rules live in the workspace AI settings (one set for all agents),
+    # the same source CustomRulesRuntime and CustomRulesEvaluator match against.
+    rules = begin
+      assistant.account_settings.runtime_rules
+    rescue KeyError
+      nil
+    end
+    return unless rules.is_a?(Array) && Captain::Safety::CustomRulesConfig.errors(rules).empty?
 
     rules.find { |rule| rule['id'] == rule_id && rule['enabled'] && rule['direction'] == 'output' && rule['action'] == 'rewrite' }
   end

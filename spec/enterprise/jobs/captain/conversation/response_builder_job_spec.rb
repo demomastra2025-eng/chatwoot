@@ -5,6 +5,13 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
   let(:inbox) { create(:inbox, account: account) }
   let(:assistant) { create(:captain_assistant, account: account) }
 
+  # The handoff message is one account-level Captain setting shared by every agent.
+  def save_account_handoff_message(enabled: true, mode: 'fixed', text: '')
+    Captain::AccountSettings.new(account).update!(
+      'handoff' => { 'handoff_message' => { 'enabled' => enabled, 'mode' => mode, 'text' => text } }
+    )
+  end
+
   describe '#perform' do
     let(:conversation) { create(:conversation, inbox: inbox, account: account, status: :pending) }
     let(:agent_runner_service) { instance_double(Captain::Assistant::AgentRunnerService) }
@@ -1044,11 +1051,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
     end
 
     it 'does not duplicate a public handoff message when another run already applied the handoff' do
-      assistant.update!(config: {
-                          'handoff_message_enabled' => true,
-                          'handoff_message_mode' => 'static',
-                          'handoff_message' => 'Connecting you to a human agent.'
-                        })
+      save_account_handoff_message(text: 'Connecting you to a human agent.')
       allow(agent_runner_service).to receive(:generate_response) do
         conversation.bot_handoff!
         { 'response' => '', 'handoff_tool_called' => true }
@@ -1083,11 +1086,8 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
     end
 
     it 'applies an authorized strict handoff with one public message and one private note' do
-      assistant.update!(config: assistant.config.merge(
-        'handoff_requires_explicit_consent' => true,
-        'handoff_message_enabled' => true,
-        'handoff_message_mode' => 'ai'
-      ))
+      assistant.update!(config: assistant.config.merge('handoff_requires_explicit_consent' => true))
+      save_account_handoff_message(mode: 'generated')
       allow(agent_runner_service).to receive(:generate_response).and_return(
         {
           'response' => 'conversation_handoff',
@@ -1115,11 +1115,8 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
     context 'without phrase-based emergency handoff' do
       before do
-        assistant.update!(config: assistant.config.merge(
-          'handoff_requires_explicit_consent' => true,
-          'handoff_message_enabled' => true,
-          'handoff_message_mode' => 'ai'
-        ))
+        assistant.update!(config: assistant.config.merge('handoff_requires_explicit_consent' => true))
+        save_account_handoff_message(mode: 'generated')
       end
 
       it 'does not synthesize a handoff for a symptom phrase without a tool call' do
@@ -1259,16 +1256,20 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       end
 
       before do
-        save_custom_handoff_rules(assistant, saved_rule)
+        save_custom_handoff_rules(saved_rule)
         allow(agent_runner_service).to receive(:generate_response).and_return(guardrail_response)
       end
 
-      def save_custom_handoff_rules(actor, *rules)
-        actor.update!(
-          config: actor.config.to_h.deep_merge(
-            'handoff_enabled' => false, 'handoff_message_enabled' => false,
-            'safety_settings' => { 'custom_rules' => rules }
-          )
+      # Custom checks and the ordinary handoff message live in the one account-level
+      # settings object (API format: inbound/outbound directions).
+      def save_custom_handoff_rules(*rules)
+        api_rules = rules.map do |rule|
+          rule.merge('direction' => Captain::AccountSettings::RULE_DIRECTION_TO_API.fetch(rule['direction']),
+                     'action' => Captain::AccountSettings::RULE_ACTION_TO_API.fetch(rule['action']))
+        end
+        Captain::AccountSettings.new(account).update!(
+          'handoff' => { 'handoff_message' => { 'enabled' => false } },
+          'safety' => { 'custom_rules' => api_rules }
         )
       end
 
@@ -1278,8 +1279,9 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         expect(conversation.messages.outgoing.where(sender: assistant)).to be_empty
       end
 
-      it 'sends the saved static message once even when ordinary handoff and its message are disabled' do
-        expect(assistant.handoff_enabled?).to be(false)
+      # The handoff tool is always available to external agents (owner decision);
+      # only the ordinary handoff message can be switched off.
+      it 'sends the saved static message once even when the ordinary handoff message is disabled' do
         expect(assistant.handoff_message_enabled?).to be(false)
 
         2.times { described_class.perform_now(conversation, assistant) }
@@ -1296,7 +1298,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       it 'loads the latest saved message instead of trusting text in the response payload' do
         updated_message = 'Staff will handle the request recorded in this conversation.'
         allow(agent_runner_service).to receive(:generate_response) do
-          save_custom_handoff_rules(assistant, saved_rule.merge('message' => updated_message))
+          save_custom_handoff_rules(saved_rule.merge('message' => updated_message))
           guardrail_response
         end
 
@@ -1307,7 +1309,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       end
 
       it 'does not send payload text when the saved rule has no message' do
-        save_custom_handoff_rules(assistant, saved_rule.except('message'))
+        save_custom_handoff_rules(saved_rule.except('message'))
 
         described_class.perform_now(conversation, assistant)
 
@@ -1323,7 +1325,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
                   when 'deleted' then []
                   when 'direction_changed' then [saved_rule.merge('direction' => 'output')]
                   end
-          save_custom_handoff_rules(assistant, *rules)
+          save_custom_handoff_rules(*rules)
 
           described_class.perform_now(conversation, assistant)
 
@@ -1337,7 +1339,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         routed_assistant = create(:captain_assistant, account: account)
         assistant.update!(handoff_agent_ids: [routed_assistant.id])
         routed_message = 'The specialist has transferred your request to staff.'
-        save_custom_handoff_rules(routed_assistant, saved_rule.merge('message' => routed_message))
+        save_custom_handoff_rules(saved_rule.merge('message' => routed_message))
         Captain::Conversation::AgentSession.new(entry: assistant, conversation: conversation).update_routing(actor_id: routed_assistant.id)
         allow(agent_runner_service).to receive(:generate_response).and_return(guardrail_response.merge('agent_id' => routed_assistant.id))
 
@@ -1351,7 +1353,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
       it 'blocks a secret-shaped string in the saved static message' do
         fake_secret_message = 'api_key=FAKE_CUSTOM_GUARDRAIL_SECRET_NOT_REAL_123456'
-        save_custom_handoff_rules(assistant, saved_rule.merge('message' => fake_secret_message))
+        save_custom_handoff_rules(saved_rule.merge('message' => fake_secret_message))
 
         described_class.perform_now(conversation, assistant)
 
@@ -1569,11 +1571,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       end
 
       it 'keeps captain trace on the configured static handoff message' do
-        assistant.update!(config: {
-                            'handoff_message_enabled' => true,
-                            'handoff_message_mode' => 'static',
-                            'handoff_message' => 'Connecting you to a human agent.'
-                          })
+        save_account_handoff_message(text: 'Connecting you to a human agent.')
         trace_payload = Captain::ToolTraceBuilder.payload([
                                                             Captain::ToolTraceBuilder.step(
                                                               tool_name: 'search_documentation',
@@ -1596,11 +1594,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       end
 
       it 'creates a private note but no public notice when handoff message is disabled' do
-        assistant.update!(config: {
-                            'handoff_message_enabled' => false,
-                            'handoff_message_mode' => 'static',
-                            'handoff_message' => ''
-                          })
+        save_account_handoff_message(enabled: false)
 
         public_message = change { conversation.messages.outgoing.where(private: false).count }.by(0)
         private_note = change { conversation.messages.outgoing.where(private: true).count }.by(1)
@@ -1613,11 +1607,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       end
 
       it 'uses localized default public text when static handoff message is blank' do
-        assistant.update!(config: {
-                            'handoff_message_enabled' => true,
-                            'handoff_message_mode' => 'static',
-                            'handoff_message' => ''
-                          })
+        save_account_handoff_message(text: '')
 
         expect do
           described_class.perform_now(conversation, assistant)
@@ -1629,11 +1619,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       end
 
       it 'uses generated handoff text when AI handoff message mode is enabled' do
-        assistant.update!(config: {
-                            'handoff_message_enabled' => true,
-                            'handoff_message_mode' => 'ai',
-                            'handoff_message' => ''
-                          })
+        save_account_handoff_message(mode: 'generated')
         allow(agent_runner_service).to receive(:generate_response).and_return(
           {
             'response' => 'conversation_handoff',
@@ -1723,11 +1709,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       it 'does not regenerate or duplicate handoff effects when the same fenced job is retried' do
         trigger_message = conversation.messages.incoming.last
         expected_generation = conversation.captain_control_generation
-        assistant.update!(config: {
-                            'handoff_message_enabled' => true,
-                            'handoff_message_mode' => 'ai',
-                            'handoff_message' => ''
-                          })
+        save_account_handoff_message(mode: 'generated')
         allow(agent_runner_service).to receive(:generate_response).and_return(
           {
             'response' => 'conversation_handoff',
@@ -1865,10 +1847,8 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         expect(conversation.messages.where(private: true).last.content).to eq(described_class::FAILED_TURN_HANDOFF_NOTE)
       end
 
-      it 'sends only the assistant own handoff message, once, when it is configured' do
-        assistant.update!(config: assistant.config.merge(
-          'handoff_message_enabled' => true, 'handoff_message_mode' => 'static', 'handoff_message' => 'Передаю администратору.'
-        ))
+      it 'sends only the configured handoff message, once, when it is configured' do
+        save_account_handoff_message(text: 'Передаю администратору.')
 
         2.times { described_class.perform_now(conversation, assistant, expected_last_message_id: conversation.messages.incoming.last.id) }
 
@@ -2091,7 +2071,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       end
 
       it 'does not wait or include transcription when the AI agent capability is disabled' do
-        assistant.update!(config: assistant.config.merge('use_audio_transcriptions' => false))
+        Captain::AccountSettings.new(account).update!('understanding' => { 'voice_messages' => false })
         audio_attachment.update!(meta: { 'transcribed_text' => 'Hidden transcript' })
 
         job = described_class.new(conversation, assistant)
@@ -2175,8 +2155,9 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       create(:captain_inbox, captain_assistant: assistant, inbox: inbox)
       create(:message, conversation: conversation, content: 'Hello with image', message_type: :incoming)
       allow(Captain::Assistant::AgentRunnerService).to receive(:new).and_return(agent_runner_service)
+      # History content is built against the shared history budget (history preset).
       allow(Captain::OpenAiMessageBuilderService).to receive(:new)
-        .with(message: anything, assistant: assistant)
+        .with(message: anything, assistant: assistant, budget: kind_of(Captain::Conversation::HistoryBudget))
         .and_return(mock_message_builder)
       allow(mock_message_builder).to receive(:generate_content).and_return('Hello with image')
       allow(agent_runner_service).to receive(:generate_response).and_return({ 'response' => 'Test response' })

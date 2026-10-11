@@ -10,10 +10,13 @@ RSpec.describe 'Public appointment input error contracts' do
   let(:context) { Struct.new(:state).new({ conversation: { id: conversation.id } }) }
   let(:starts_at) { '2026-10-12T09:00:00+05:00' }
 
+  # An argument failure is a structured tool result: its data is the compact payload for the
+  # model and its audit proves that no appointment or provider mutation started.
   def failure_payload(result)
-    payload = JSON.parse(result)
-    expect(Captain::ToolResult.normalize(result)).to include(success: false, retryable: false)
-    payload
+    normalized = Captain::ToolResult.normalize(result)
+    expect(normalized).to include(success: false, retryable: false)
+    expect(normalized[:audit]).to include(mutation_executed: false, failure_stage: 'tool_arguments')
+    normalized.fetch(:data).deep_stringify_keys
   end
 
   [Captain::Tools::CreateAppointmentTool, Captain::Tools::UpdateAppointmentTool].each do |tool_class|
@@ -43,10 +46,11 @@ RSpec.describe 'Public appointment input error contracts' do
         other_service = create(:scheduling_service, name: 'PRIVATE service')
         args
         expect(Integrations::Medelement::Client).not_to receive(:new)
-        payload = failure_payload(tool.perform(context, **args.merge(service_id: other_service.id)))
+        result = tool.perform(context, **args.merge(service_id: other_service.id))
+        payload = failure_payload(result)
 
         expect(payload).to include('code' => 'UNKNOWN_SERVICE', 'reason' => 'unknown_service')
-        expect(payload.to_json).not_to include('PRIVATE')
+        expect(result.to_json).not_to include('PRIVATE')
       end
 
       it 'rejects a nonpositive calculated interval before any provider call or write' do

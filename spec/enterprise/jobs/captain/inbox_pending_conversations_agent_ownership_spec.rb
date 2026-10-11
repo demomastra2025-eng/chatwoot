@@ -3,6 +3,8 @@ require 'rails_helper'
 RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
   let(:account) { create(:account, auto_resolve_after: 60) }
   let(:inbox) { create(:inbox, account: account) }
+  # Legacy per-agent message settings stay in the config for rollback but are
+  # no longer read: completion and handoff texts come from the account settings.
   let(:entry) do
     create(:captain_assistant, account: account, config: {
              'resolution_message_enabled' => true, 'resolution_message_mode' => 'static', 'resolution_message' => 'Entry closure',
@@ -20,6 +22,12 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
   let(:completion_service) { instance_double(Captain::ConversationCompletionService, perform: evaluation) }
 
   before do
+    Captain::AccountSettings.new(account).update!(
+      'handoff' => {
+        'resolution_message' => { 'enabled' => true, 'mode' => 'fixed', 'text' => 'Account closure' },
+        'handoff_message' => { 'enabled' => true, 'mode' => 'fixed', 'text' => 'Account transfer' }
+      }
+    )
     create(:captain_inbox, inbox: inbox, captain_assistant: entry)
     entry.update!(handoff_agent_ids: [specialist.id])
     specialist.update!(handoff_agent_ids: [entry.id])
@@ -34,6 +42,10 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
     Captain::Conversation::AgentSession.new(entry: entry, conversation: conversation).update_routing(actor_id: assistant.id)
   end
 
+  def disable_account_auto_completion
+    Captain::AccountSettings.new(account).update!('handoff' => { 'auto_completion_enabled' => false })
+  end
+
   def expect_no_auto_action
     described_class.perform_now(inbox)
 
@@ -42,35 +54,36 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
     expect(conversation.status_transitions).to be_empty
   end
 
-  it 'uses the current specialist for resolution text, private notes and status attribution' do
+  it 'sends the account resolution text as the current specialist and attributes the note and status to it' do
     described_class.perform_now(inbox)
 
     expect(conversation.reload).to be_resolved
-    expect(conversation.messages.outgoing.where(private: false).last).to have_attributes(content: 'Specialist closure', sender: specialist)
+    expect(conversation.messages.outgoing.where(private: false).last).to have_attributes(content: 'Account closure', sender: specialist)
     expect(conversation.messages.where(private: true).last).to have_attributes(content: 'Auto-resolved: Answered', sender: specialist)
     expect(conversation.status_transitions.last).to have_attributes(actor: specialist, source: 'system')
   end
 
-  it 'uses the specialist configuration for a time-based resolution' do
+  it 'uses the account resolution text and the specialist identity for a time-based resolution' do
     inbox.account.update!(captain_auto_resolve_mode: 'legacy')
 
     described_class.perform_now(inbox)
 
     expect(Captain::ConversationCompletionService).not_to have_received(:new)
     expect(conversation.reload).to be_resolved
-    expect(conversation.messages.outgoing.where(private: false).last).to have_attributes(content: 'Specialist closure', sender: specialist)
+    expect(conversation.messages.outgoing.where(private: false).last).to have_attributes(content: 'Account closure', sender: specialist)
     expect(conversation.status_transitions.last.actor).to eq(specialist)
   end
 
-  it 'honors the specialist completion opt-out even when the entry allows completion' do
-    specialist.update!(config: specialist.config.merge('auto_completion_enabled' => false))
+  it 'honors the account completion opt-out for a specialist conversation' do
+    disable_account_auto_completion
 
     expect_no_auto_action
     expect(Captain::ConversationCompletionService).not_to have_received(:new)
   end
 
-  it 'allows specialist completion when the entry has opted out' do
+  it 'ignores legacy per-agent completion opt-outs while the account allows completion' do
     entry.update!(config: entry.config.merge('auto_completion_enabled' => false))
+    specialist.update!(config: specialist.config.merge('auto_completion_enabled' => false))
 
     described_class.perform_now(inbox)
 
@@ -118,9 +131,9 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
     expect_no_auto_action
   end
 
-  it 'rechecks completion settings after evaluation' do
+  it 'rechecks the account completion setting after evaluation' do
     allow(completion_service).to receive(:perform) do
-      specialist.update!(config: specialist.config.merge('auto_completion_enabled' => false))
+      disable_account_auto_completion
       evaluation
     end
 
@@ -148,11 +161,11 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
   context 'when evaluation requires a human handoff' do
     let(:evaluation) { { complete: false, reason: 'Needs clarification' } }
 
-    it 'uses the specialist handoff message and identity' do
+    it 'sends the account handoff message with the specialist identity' do
       described_class.perform_now(inbox)
 
       expect(conversation.reload).to be_open
-      expect(conversation.messages.outgoing.where(private: false).last).to have_attributes(content: 'Specialist transfer', sender: specialist)
+      expect(conversation.messages.outgoing.where(private: false).last).to have_attributes(content: 'Account transfer', sender: specialist)
       expect(conversation.messages.where(private: true).last).to have_attributes(content: 'Auto-handoff: Needs clarification', sender: specialist)
       expect(conversation.status_transitions.last.actor).to eq(specialist)
     end

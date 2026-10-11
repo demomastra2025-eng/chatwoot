@@ -450,11 +450,19 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
           selected: true,
           title: 'FAQ Lookup'
         ),
+        # Handoff is always available to customer-facing agents (account-level settings), even when
+        # the saved per-agent tool list does not name it.
         hash_including(
           id: 'handoff',
           scope_name: 'agent',
-          selected: false,
+          selected: true,
           title: 'Handoff to Human'
+        ),
+        hash_including(
+          id: 'search_documentation',
+          scope_name: 'agent',
+          selected: false,
+          title: 'Search documentation'
         ),
         hash_including(
           id: 'faq_lookup',
@@ -1111,10 +1119,12 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
 
       it 'does not allow switching a connected assistant to internal mode' do
         link = create(:captain_inbox, captain_assistant: assistant, inbox: create(:inbox, account: account))
+        # One session for both requests: a second fresh token for the same user is rejected as a replaced session.
+        auth_headers = admin.create_new_auth_token
 
         patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
               params: { assistant: { usage_mode: 'internal_assistant' } },
-              headers: admin.create_new_auth_token,
+              headers: auth_headers,
               as: :json
 
         expect(response).to have_http_status(:unprocessable_content)
@@ -1125,7 +1135,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
 
         patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
               params: { assistant: { usage_mode: 'internal_assistant' } },
-              headers: admin.create_new_auth_token,
+              headers: auth_headers,
               as: :json
 
         expect(response).to have_http_status(:unprocessable_content)

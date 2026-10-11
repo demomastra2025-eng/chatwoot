@@ -46,7 +46,10 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
         end
 
         it 'does not execute a disabled tool even when a prompt mentions handoff' do
+          # Customer-facing agents always have handoff (owner decision); only an internal
+          # assistant has it disabled, whatever its legacy per-agent switch says.
           assistant.update!(
+            usage_mode: 'internal_assistant',
             description: 'Mention handoff as a concept, but do not enable its tool.',
             config: assistant.config.deep_merge('handoff_enabled' => false,
                                                  'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['faq_lookup'] } })
@@ -103,11 +106,20 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
       end
 
       it 'does not hand off when the assistant permission is disabled' do
-        assistant.update!(config: assistant.config.to_h.deep_merge('handoff_enabled' => false))
+        # The handoff permission is no longer a per-agent switch: customer-facing agents always
+        # have it, and an internal assistant never does.
+        assistant.update!(usage_mode: 'internal_assistant', config: assistant.config.to_h.deep_merge('handoff_enabled' => false))
 
         expect { tool.execute(tool_context, reason: 'The model tried to transfer') }
           .to raise_error(ArgumentError, 'Tool is not available for the current runtime policy')
         expect(run_context.context).not_to have_key(:pending_human_handoff)
+      end
+
+      it 'keeps handoff for a customer-facing agent even when its legacy per-agent switch is off' do
+        assistant.update!(config: assistant.config.to_h.deep_merge('handoff_enabled' => false))
+
+        expect(tool.execute(tool_context, reason: 'The customer asked for a person')).to be_a(RubyLLM::Tool::Halt)
+        expect(run_context.context[:pending_human_handoff]).to include(reason: 'The customer asked for a person')
       end
 
       it 'carries a proven FAQ miss only from the current agent, and distinguishes a retrieval outage' do

@@ -71,15 +71,14 @@ RSpec.describe Captain::Tools::ResolveConversationTool do
     end
 
     it 'captures allowed reasons without accepting a primary-model classification' do
-      assistant.update!(
-        config: assistant.config.to_h.deep_merge(
-          'outcome_reason_settings' => {
-            'completion_reasons' => [
-              { 'id' => 'billing', 'label' => 'support', 'active' => true },
-              { 'id' => 'support', 'label' => 'Technical', 'active' => true }
-            ]
-          }
-        )
+      # Completion reasons are account-level settings shared by every agent.
+      Captain::AccountSettings.new(account).update!(
+        'handoff' => {
+          'completion_reasons' => [
+            { 'id' => 'billing', 'label' => 'support', 'enabled' => true, 'builtin' => false },
+            { 'id' => 'support', 'label' => 'Technical', 'enabled' => true, 'builtin' => false }
+          ]
+        }
       )
       account.update!(
         conversation_status_reason_config: {
@@ -134,7 +133,8 @@ RSpec.describe Captain::Tools::ResolveConversationTool do
     end
 
     it 'does not resolve when automatic completion is disabled for this assistant' do
-      assistant.update!(config: assistant.config.to_h.deep_merge('auto_completion_enabled' => false))
+      # Automatic completion is an account-level setting shared by every agent.
+      Captain::AccountSettings.new(account).update!('handoff' => { 'auto_completion_enabled' => false })
 
       expect(tool.perform(tool_context, reason: 'Resolved by the customer')).to eq(
         'Automatic completion is disabled for this assistant'

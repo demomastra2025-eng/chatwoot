@@ -170,10 +170,12 @@ RSpec.describe Captain::Tools::Operations::TouchOperations do
       create(:crm_deal_contact, deal: deal, contact: conversation.contact, account: account)
       allow(Captain::ContextFields).to receive(:deal_for).and_return(deal)
 
+      # The deal context is explicit: operations no longer guess a current deal from the conversation.
       touch = described_class.new(
         assistant: assistant,
         conversation: conversation,
-        actor: user
+        actor: user,
+        deal_id: deal.id
       ).create_touch(
         body: 'Close date follow-up',
         remindable_kind: 'deal',
@@ -181,6 +183,7 @@ RSpec.describe Captain::Tools::Operations::TouchOperations do
         relative_offset_minutes: 60
       )
 
+      expect(Captain::ContextFields).to have_received(:deal_for).with(hash_including(deal_id: deal.id))
       expect(touch.remindable).to eq(deal)
       expect(touch.timing_mode).to eq('relative')
       expect(touch.relative_anchor).to eq('deal.expected_close_on')
