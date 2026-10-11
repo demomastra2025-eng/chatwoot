@@ -20,6 +20,7 @@ module Concerns::Agentable
     state = context&.context&.[](:state) || {}
     prompt_state = state[:prompt_context] || {}
     enhanced_context = time_agent_phase('prompt_context') { prompt_context_for_runtime_state(state) }.merge(default_prompt_runtime_context)
+    enhanced_context[:scenarios] = [] if state[:mesh_routing]
 
     if state.present?
       explicit_prompt_context = state.key?(:prompt_context)

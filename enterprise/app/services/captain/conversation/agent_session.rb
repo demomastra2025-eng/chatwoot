@@ -101,11 +101,20 @@ class Captain::Conversation::AgentSession
           raise Captain::Conversation::ControlGenerationStaleError, 'Agent task is no longer active for this actor'
         end
       end
+      if scope.to_s.start_with?('part:')
+        part_id, version = scope.to_s.match(/\Apart:([^:]+):v(\d+)\z/)&.captures
+        part = Array(data['parts']).find { |item| item['id'] == part_id }
+        unless part && part['version'].to_i == version.to_i && part['executor_agent_id'] == actor_id &&
+               data['current_assistant_id'] == actor_id && part['cancelled'] != true
+          raise Captain::Conversation::ControlGenerationStaleError, 'Request part is no longer executable'
+        end
+      end
       operations = data['operations'] ||= {}
       prior = operations[key]
       next [:existing, prior.deep_dup] if prior
 
-      retained_scopes = Array(data['tasks']).map { |item| "task:#{item['id']}" } + [scope]
+      retained_scopes = Array(data['tasks']).map { |item| "task:#{item['id']}" } +
+                        Array(data['parts']).map { |item| "part:#{item['id']}:v#{item['version']}" } + [scope]
       operations.delete_if { |_id, operation| operation['status'] == 'finished' && !retained_scopes.include?(operation['scope']) }
       raise ArgumentError, 'Too many actions in this conversation session' if operations.size >= MAX_OPERATIONS
 
@@ -158,7 +167,7 @@ class Captain::Conversation::AgentSession
 
   def fresh
     { 'entry_assistant_id' => @entry.id, 'current_assistant_id' => legacy_actor_id || @entry.id, 'routing_revision' => 0, 'task_revision' => 0,
-      'epoch' => epoch, 'tasks' => [], 'operations' => {} }
+      'epoch' => epoch, 'tasks' => [], 'parts' => [], 'operations' => {} }
   end
 
   def legacy_actor_id
@@ -171,7 +180,7 @@ class Captain::Conversation::AgentSession
     key = last_reply.additional_attributes.to_h['agent_name']
     return unless key.to_s.start_with?('scenario_')
 
-    Captain::AgentGraph.new(@entry).resolve(key)&.id
+    Captain::AgentGraph.new(@entry, inbox: @conversation.inbox).resolve(key)&.id
   end
 
   def epoch

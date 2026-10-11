@@ -3,7 +3,7 @@
 class Captain::AgentRunContext
   def initialize(entry:, conversation: nil, playground: nil, fence: {})
     @entry, @conversation, @playground = entry, conversation, playground
-    @graph = Captain::AgentGraph.new(entry)
+    @graph = Captain::AgentGraph.new(entry, inbox: conversation&.inbox || playground&.routing_inbox)
     @session = Captain::Conversation::AgentSession.new(entry: entry, conversation: conversation, playground: playground, fence: fence)
   end
 
@@ -25,8 +25,12 @@ class Captain::AgentRunContext
     end
 
     context[:agent_graph] = graph.payload
+    context[:agent_graph_object] = graph
+    context[:agent_run_context_object] = self
+    context[:agent_inbox_id] = graph.inbox&.id
     context[:agent_session] = @session
     context[:agent_tasks] = saved['tasks'] || []
+    context[:parts] = saved['parts'] || []
     context[:agent_tasks].each do |task|
       next if Captain::Runtime::TaskQueue::TERMINAL.include?(task['status']) || graph.find(task['assistant_id'])
 
@@ -44,6 +48,7 @@ class Captain::AgentRunContext
     state = context[:state] ||= {}
     previous_id = state[:assistant_id]
     state[:assistant_id] = actor.id
+    state[:mesh_routing] = true
     state[:assistant_config] = actor.config
     prior_runtime = state[:captain_runtime]
     state[:captain_runtime] = Captain::AssistantSafetyPreferences.for(assistant: actor, feature: :assistant)
@@ -74,15 +79,12 @@ class Captain::AgentRunContext
     registry = graph.agents.index_with do |actor|
       # Playground model controls affect the selected agent only.
       options = actor.id == @entry.id ? overrides : {}
-      actor.agent(**options).tap do |runtime_agent|
+      Captain::Runtime::LazyAgent.new(actor, options: options).tap do |runtime_agent|
         runtime_agent.context_preparer = ->(wrapper) { activate(actor, wrapper.context) }
-        runtime_agent.assistant_id = actor.id
       end
     end
     registry.each do |actor, runtime_agent|
-      actor.handoff_targets.each do |target|
-        runtime_agent.register_handoffs(registry[target]) if registry[target]
-      end
+      runtime_agent.register_handoffs(*(registry.except(actor).values))
     end
     registry.values
   end

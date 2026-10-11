@@ -13,7 +13,7 @@ RSpec.describe AddCaptainChannelMembership, type: :model do
     entry.update!(handoff_agent_ids: [middle.id])
     middle.update!(handoff_agent_ids: [leaf.id, excluded.id])
     excluded.update!(active: false)
-    expected_ids = Captain::AgentGraph.new(entry).agents.map(&:id).sort
+    expected_ids = [entry.id, middle.id, leaf.id].sort
 
     described_class.new.backfill_membership!
     described_class.new.backfill_membership!

@@ -43,7 +43,7 @@ class Outbound::PlaygroundMutationPolicy
       return false unless account && user && assistant && account.account_users.exists?(user_id: user.id)
       entry_id = payload[:entry_assistant_id].presence || assistant.id
       entry = Captain::Assistant.find_by(id: entry_id, account_id: account.id)
-      return false unless entry && Captain::AgentGraph.new(entry).find(assistant.id)
+      return false unless entry
       return false unless Captain::Playground::ToolSelection.include?(assistant, payload[:tool])
       return false unless operator_authorized?(account, user, assistant, payload)
 
@@ -53,6 +53,9 @@ class Outbound::PlaygroundMutationPolicy
 
       session = store.read(session_id: payload[:session_id])
       return false unless session && (session['active_assistant_id'].presence || entry.id).to_i == assistant.id
+      inbox = account.inboxes.find_by(id: session['inbox_id']) if session['inbox_id'].present?
+      return false if session['inbox_id'].present? && inbox.blank?
+      return false unless Captain::AgentGraph.new(entry, inbox: inbox).find(assistant.id)
       action = Array(session&.dig('action_previews')).find { |item| item['id'] == payload[:action_id] }
       binding = { 'session_id' => payload[:session_id], 'mode' => 'workspace', 'account_id' => account.id,
                   'user_id' => user.id, 'entry_assistant_id' => entry.id, 'assistant_id' => assistant.id }

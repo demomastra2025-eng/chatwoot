@@ -11,7 +11,8 @@ class Captain::Runtime::OperationGuard
 
   def reserve
     return unless @session && Llm::ToolRiskPolicy.mutating?(@tool)
-    return if @tool.is_a?(Captain::Runtime::HandoffTool) || @tool.is_a?(Captain::Runtime::TaskQueueTool)
+    return if @tool.is_a?(Captain::Runtime::HandoffTool) || @tool.is_a?(Captain::Runtime::TaskQueueTool) ||
+              @tool.is_a?(Captain::Runtime::PartPlanTool)
     # These tools already atomically change conversation ownership/status. They
     # must remain available after all business tasks finish or need staff help.
     return if @tool.is_a?(Captain::Tools::HandoffTool) || @tool.is_a?(Captain::Tools::ResolveConversationTool)

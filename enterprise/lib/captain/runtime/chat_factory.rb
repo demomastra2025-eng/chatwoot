@@ -66,27 +66,42 @@ class Captain::Runtime::ChatFactory
     end
 
     def build_agent_tools(agent, context_wrapper)
-      handoff_tools = agent.handoff_agents.map do |target_agent|
+      return [] if context_wrapper.context[:transfer_guarded]
+
+      consult = context_wrapper.context[:consult_mode]
+      handoff_tools = (consult ? [] : agent.handoff_agents).map do |target_agent|
         Captain::Runtime::ToolWrapper.new(Captain::Runtime::HandoffTool.new(target_agent), context_wrapper)
       end
 
-      regular_tools = agent.tools.map do |tool|
+      regular_tools = agent.tools.select { |tool| !consult || Captain::Runtime::ConsultTools.allowed?(tool) }.map do |tool|
         Captain::Runtime::ToolWrapper.new(tool, context_wrapper)
       end
 
-      queue_tools = if context_wrapper.context[:agent_graph].present?
-                      [Captain::Runtime::ToolWrapper.new(Captain::Runtime::TaskQueueTool.new, context_wrapper)]
-                    else
-                      []
-                    end
-      handoff_tools + regular_tools + queue_tools
+      coordination_tools = if !consult && Captain::Runtime::TaskQueue.in_flight?(context_wrapper.context[:agent_tasks])
+                             [Captain::Runtime::TaskQueueTool.new]
+                           elsif !consult && context_wrapper.context[:agent_graph].present? &&
+                                 !context_wrapper.context[:part_plan_accepted]
+                             [Captain::Runtime::PartPlanTool.new]
+                           else
+                             []
+                           end
+      handoff_tools + regular_tools + coordination_tools.map do |tool|
+        Captain::Runtime::ToolWrapper.new(tool, context_wrapper)
+      end
     end
 
     def system_prompt_for(agent, context_wrapper, finalization_only: false)
       prompts = []
       prompt = agent.get_system_prompt(context_wrapper)
       prompts << prompt if prompt.present?
-      if context_wrapper.context[:agent_graph].present?
+      if context_wrapper.context[:consult_mode]
+        prompts << <<~PROMPT
+          Consult on only the assigned request part. Do not speak to the customer or perform an action.
+          Return JSON with fragment, facts (each with source), missing_fields (patient, field, purpose),
+          proposed_operation (type and exact params) or null, status (ok, needs_information,
+          out_of_scope, unavailable), contradictions, and suggested_agent_id when out of scope.
+        PROMPT
+      elsif context_wrapper.context[:agent_graph].present?
         prompts << Captain::Runtime::CoordinationPrompt.render(context_wrapper.context)
       end
       prompts << FINALIZATION_ONLY_INSTRUCTIONS if finalization_only
@@ -133,8 +148,20 @@ class Captain::Runtime::ChatFactory
     end
 
     def record_bound_agent_tools(agent, context_wrapper, finalization_only: false)
-      bound_tool_names = finalization_only ? [] : (handoff_tool_names(agent) + regular_tool_names(agent)).uniq
-      bound_tool_names << 'manage_agent_tasks' if !finalization_only && context_wrapper.context[:agent_graph].present?
+      consult = context_wrapper.context[:consult_mode]
+      bound_tool_names = if finalization_only
+                           []
+                         elsif consult
+                           agent.tools.select { |tool| Captain::Runtime::ConsultTools.allowed?(tool) }.map(&:name)
+                         else
+                           (handoff_tool_names(agent) + regular_tool_names(agent)).uniq
+                         end
+      bound_tool_names << 'manage_agent_tasks' if !finalization_only && !consult &&
+                                                   Captain::Runtime::TaskQueue.in_flight?(context_wrapper.context[:agent_tasks])
+      bound_tool_names << 'plan_request' if !finalization_only && !consult && context_wrapper.context[:agent_graph].present? &&
+                                             !Captain::Runtime::TaskQueue.in_flight?(context_wrapper.context[:agent_tasks]) &&
+                                             !context_wrapper.context[:part_plan_accepted]
+      bound_tool_names = [] if context_wrapper.context[:transfer_guarded]
 
       context_wrapper.context[:current_agent] = agent.name
       context_wrapper.context[:captain_v2_bound_tool_ids_by_agent] ||= {}

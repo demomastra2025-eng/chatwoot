@@ -59,7 +59,7 @@ class Captain::Conversation::RunFenceService
     return true if entry.blank? || entry.id != entry_assistant_id || !entry.active?
     return false if assistant.id == entry_assistant_id
 
-    Captain::Assistant.uncached { !Captain::AgentGraph.new(entry).find(assistant.id) }
+    Captain::Assistant.uncached { !Captain::AgentGraph.new(entry, inbox: conversation.inbox).find(assistant.id) }
   end
 
   def entry_assistant_id

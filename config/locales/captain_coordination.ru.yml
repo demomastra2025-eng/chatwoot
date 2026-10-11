@@ -1,0 +1,13 @@
+ru:
+  captain:
+    coordination:
+      unfinished: Не удалось завершить обработку запроса.
+      open_parts: 'Остаётся открытым: %{parts}.'
+      cancelled: Запрос отменён.
+      action_unavailable: 'Действие не выполнено: исполнитель или параметры недоступны.'
+      action_failed: Действие не выполнено.
+      action_pending: Результат действия проверяется.
+      action_done: Действие выполнено.
+      confirm_action: 'Подтвердите действие по запросу «%{request}»?'
+      missing_fields: 'Уточните: %{fields}.'
+      needs_review: Часть запроса требует дополнительной проверки.

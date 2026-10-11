@@ -1,30 +1,31 @@
 # frozen_string_literal: true
 
-# A channel has one entry agent. Only explicitly reachable agents may participate
-# in its conversation; being in the workspace alone never grants that access.
+# A channel has one entry agent. Its active members form a direct mesh.
 class Captain::AgentGraph
   MAX_AGENTS = 100
 
-  def initialize(entry)
+  def initialize(entry, inbox: nil)
     @entry = entry
+    @inbox = inbox
   end
 
-  attr_reader :entry
+  attr_reader :entry, :inbox
 
   def agents
     @agents ||= begin
-      found = {}
-      pending = [entry]
-      until pending.empty?
-        actor = pending.shift
-        next if actor.nil? || found.key?(actor.id) || !eligible?(actor)
+      raise ArgumentError, 'The entry agent is disabled' unless entry.active?
 
-        raise ArgumentError, 'Agent routing graph is too large' if found.size >= MAX_AGENTS
+      members = if entry.external_agent?
+                  Captain::Assistant.entry_eligible.where(account_id: entry.account_id).order(:id).select do |actor|
+                    inbox.nil? || actor.works_on_inbox?(inbox)
+                  end
+                else
+                  [entry]
+                end
+      members = [entry] + members.reject { |actor| actor.id == entry.id }
+      raise ArgumentError, 'Agent routing graph is too large' if members.size > MAX_AGENTS
 
-        found[actor.id] = actor
-        pending.concat(actor.handoff_targets.to_a) if actor.external_agent?
-      end
-      found.values
+      members
     end
   end
 
@@ -43,22 +44,13 @@ class Captain::AgentGraph
   end
 
   def allows?(source, target)
-    return false unless source && target && eligible?(source) && eligible?(target)
-
-    source.handoff_targets.exists?(id: target.id)
+    !!(source && target && source.id != target.id && find(source.id) && find(target.id))
   end
 
   def payload
     agents.map do |actor|
       { id: actor.id, key: "assistant_#{actor.id}", name: actor.name,
-        description: actor.routing_description.to_s,
-        target_ids: actor.handoff_targets.pluck(:id) & agents.map(&:id) }
+        description: actor.routing_description.to_s }
     end
-  end
-
-  private
-
-  def eligible?(actor)
-    actor.account_id == entry.account_id && actor.active? && (actor.external_agent? || actor.id == entry.id)
   end
 end

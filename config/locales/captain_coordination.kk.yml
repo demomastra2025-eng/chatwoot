@@ -1,0 +1,13 @@
+kk:
+  captain:
+    coordination:
+      unfinished: Сұрауды өңдеу аяқталмады.
+      open_parts: 'Ашық қалғаны: %{parts}.'
+      cancelled: Сұрау тоқтатылды.
+      action_unavailable: 'Әрекет орындалмады: орындаушы немесе параметрлер қолжетімсіз.'
+      action_failed: Әрекет орындалмады.
+      action_pending: Әрекет нәтижесі тексеріліп жатыр.
+      action_done: Әрекет орындалды.
+      confirm_action: '«%{request}» сұрауы бойынша әрекетті растайсыз ба?'
+      missing_fields: 'Нақтылаңыз: %{fields}.'
+      needs_review: Сұраудың бір бөлігін қосымша тексеру қажет.

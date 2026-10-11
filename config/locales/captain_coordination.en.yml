@@ -1,0 +1,13 @@
+en:
+  captain:
+    coordination:
+      unfinished: The request could not be completed.
+      open_parts: 'Still open: %{parts}.'
+      cancelled: The request was cancelled.
+      action_unavailable: 'The action was not completed: the agent or parameters are unavailable.'
+      action_failed: The action was not completed.
+      action_pending: The action result is being checked.
+      action_done: The action was completed.
+      confirm_action: 'Confirm the action for “%{request}”?'
+      missing_fields: 'Please clarify: %{fields}.'
+      needs_review: Part of the request needs further verification.

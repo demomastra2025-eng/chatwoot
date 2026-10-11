@@ -377,8 +377,21 @@ class Captain::Runtime::ToolWrapper
 
   def pre_execution_error(normalized_args)
     bound_tool_error_for_current_agent ||
+      part_plan_error ||
       tool_safety_error_for(:tool_arguments, normalized_args) ||
       scheduling_context_error(normalized_args)
+  end
+
+  def part_plan_error
+    context = context_wrapper_context
+    if context[:consult_mode] && !Captain::Runtime::ConsultTools.allowed?(@tool)
+      return Captain::ToolResult.failure(error: 'Tool is unavailable in consult mode', retryable: false)
+    end
+    return unless context[:agent_session] && !Captain::Runtime::TaskQueue.in_flight?(context[:agent_tasks]) && mutating_tool?
+    return if context[:part_plan_accepted]
+
+    Captain::ToolResult.failure(error: 'Plan the request before taking an action', retryable: false,
+                                audit: { failure_reason: 'part_plan_required', mutation_executed: false })
   end
 
   def scheduling_context_error(normalized_args)
@@ -754,7 +767,8 @@ class Captain::Runtime::ToolWrapper
   end
 
   def coordination_tool?
-    @tool.is_a?(Captain::Runtime::HandoffTool) || @tool.is_a?(Captain::Runtime::TaskQueueTool)
+    @tool.is_a?(Captain::Runtime::HandoffTool) || @tool.is_a?(Captain::Runtime::TaskQueueTool) ||
+      @tool.is_a?(Captain::Runtime::PartPlanTool)
   end
 
   def terminal_control_tool?

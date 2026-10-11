@@ -6,7 +6,9 @@ class Captain::Runtime::HandoffTool < Captain::Runtime::Tool
   def initialize(target_agent)
     @target_agent = target_agent
     @tool_name = Captain::HandoffNaming.tool_name_for(target_agent.name)
-    @tool_description = "Transfer conversation to #{target_agent.name}"
+    display_name = target_agent.respond_to?(:display_name) ? target_agent.display_name : target_agent.name
+    description = target_agent.respond_to?(:routing_description) ? target_agent.routing_description : ''
+    @tool_description = "#{display_name}: #{description}"
     super()
   end
 
@@ -20,26 +22,38 @@ class Captain::Runtime::HandoffTool < Captain::Runtime::Tool
 
   def perform(tool_context, **_params)
     context = tool_context.run_context.context
+    if context[:agent_session] && !Captain::Runtime::TaskQueue.in_flight?(context[:agent_tasks]) &&
+       !context[:part_plan_accepted]
+      return Captain::ToolResult.failure(error: 'Plan the request before handing it to another agent', retryable: false)
+    end
+
     if context[:agent_graph].present?
       source_id = context.dig(:state, :assistant_id)
       source = context[:agent_graph].find { |actor| actor[:id] == source_id }
-      unless source && source[:target_ids].include?(@target_agent.assistant_id)
+      unless source && source[:id] != @target_agent.assistant_id &&
+             context[:agent_graph].any? { |actor| actor[:id] == @target_agent.assistant_id }
         record_guard(context, 'target_not_allowed')
         return Captain::ToolResult.failure(error: 'This agent handoff is not allowed', retryable: false)
       end
       entry = Captain::Assistant.find_by(id: context.dig(:state, :entry_assistant_id), account_id: context.dig(:state, :account_id))
-      graph = Captain::AgentGraph.new(entry) if entry
+      inbox = Inbox.find_by(id: context[:agent_inbox_id], account_id: context.dig(:state, :account_id)) if context[:agent_inbox_id]
+      graph = Captain::AgentGraph.new(entry, inbox: inbox) if entry
       unless graph && graph.allows?(graph.find(source_id), graph.find(@target_agent.assistant_id))
         record_guard(context, 'routing_changed')
         return Captain::ToolResult.failure(error: 'Agent routing changed; this handoff is no longer available', retryable: false)
       end
+    end
+    if context[:handoff_count].to_i >= 2 || context[:previous_handoff_source_id] == @target_agent.assistant_id
+      record_guard(context, 'handoff_limit')
+      context[:transfer_guard_active] = true
+      return halt('')
     end
     tool_context.run_context.context[:pending_handoff] = {
       target_agent: @target_agent,
       timestamp: Time.current
     }
 
-    halt("I'll transfer you to #{@target_agent.name} who can better assist you with this.")
+    halt('')
   end
 
   private

@@ -214,7 +214,7 @@ class Captain::Assistant::AgentRunnerService
       runner.run(
         message_to_process,
         context: context,
-        max_turns: (context[:agent_session] ? MAX_GRAPH_RUNTIME_TURNS : MAX_RUNTIME_TURNS),
+        max_turns: (Captain::Runtime::TaskQueue.in_flight?(context[:agent_tasks]) ? MAX_GRAPH_RUNTIME_TURNS : MAX_RUNTIME_TURNS),
         runtime_options: {
           llm_context: llm_context_for_run,
           account: @assistant.account
@@ -310,6 +310,10 @@ class Captain::Assistant::AgentRunnerService
     response['agent_name'] = result.context&.dig(:current_agent)
     response['agent_id'] = @acting_assistant_id
     response['agent_tasks'] = @agent_tasks if @agent_tasks.present?
+    response['council_contributors'] = result.context[:council_contributors] if result.context&.dig(:council_contributors).present?
+    if result.context&.dig(:part_plan, :parts).present?
+      response['part_refs'] = result.context[:part_plan][:parts].map { |part| part.slice('id', 'version') }
+    end
     response['handoff_tool_called'] = handoff_tool_called
     sanitize_response_artifact_ids!(response, result.context)
     return suppressed_response(response) if provider_booking_notification_deferred?(result.context)

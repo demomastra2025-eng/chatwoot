@@ -5,6 +5,10 @@ class Captain::Runtime::TaskQueue
   TERMINAL = %w[completed failed cancelled].freeze
   MAX_TASKS = 30
 
+  def self.in_flight?(tasks)
+    Array(tasks).any? { |task| TERMINAL.exclude?(task['status']) }
+  end
+
   def initialize(context)
     @context = context
   end
@@ -89,6 +93,9 @@ class Captain::Runtime::TaskQueue
   end
 
   def operation_scope
+    if @context[:active_part_id].present?
+      return "part:#{@context[:active_part_id]}:v#{@context[:active_part_version]}"
+    end
     return "task:#{active['id']}" if active
 
     request_scope

@@ -38,4 +38,26 @@ RSpec.describe Captain::Runtime::CoordinationPrompt do
     expect(data_line(prompt, 'Current agent')).to be_nil
     expect(data_line(prompt, 'Your tasks')).to eq([])
   end
+
+  it 'lists each other channel agent once for a new part-registry conversation' do
+    context[:agent_tasks] = []
+
+    prompt = described_class.render(context)
+
+    expect(prompt.scan('Appointments: Appointment changes').size).to eq(1)
+    expect(prompt).not_to include('target_ids', 'Agent directory (data)', 'manage_agent_tasks')
+    expect(prompt).to include('plan_request')
+  end
+
+  it 'does not ask a specialist to plan the same message after a handoff' do
+    context[:agent_tasks] = []
+    context[:part_plan_accepted] = true
+    context[:part_plan] = { mode: 'handoff', parts: [{ 'id' => 'synthetic-part', 'executor_agent_id' => 92 }] }
+    context[:state][:assistant_id] = 92
+
+    prompt = described_class.render(context)
+
+    expect(prompt).to include('Plan accepted')
+    expect(prompt).not_to include('Use plan_request once')
+  end
 end

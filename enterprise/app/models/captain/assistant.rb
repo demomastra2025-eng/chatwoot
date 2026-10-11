@@ -212,7 +212,7 @@ class Captain::Assistant < ApplicationRecord
       id: 'assistant_identity',
       group: RULE_GROUP_ASSISTANT_STRUCTURE,
       slot: SYSTEM_TEMPLATE_SLOT_ASSISTANT_IDENTITY,
-      content: 'Act as the main orchestrator for this conversation: help directly when you can, use enabled scenario handoffs when they clearly fit, and use only the approved tools and context available in this prompt.',
+      content: 'Handle this conversation directly in your scope. Hand it to another channel agent when that agent is responsible, and use only the approved tools and context available in this prompt.',
       editable: true,
       deletable: false
     },
@@ -259,7 +259,7 @@ class Captain::Assistant < ApplicationRecord
       id: 'scenario_return_to_orchestrator',
       group: RULE_GROUP_SCENARIO_STRUCTURE,
       slot: SYSTEM_TEMPLATE_SLOT_SCENARIO_RETURN,
-      content: 'If the request is outside this scenario scope, return the conversation to the orchestrator using the dedicated handoff tool shown below.',
+      content: 'If the request is outside your scope, hand the conversation directly to the responsible channel agent.',
       editable: true,
       deletable: false
     },

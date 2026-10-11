@@ -7,6 +7,28 @@ module Captain::Runtime::CoordinationPrompt
     tasks = context[:agent_tasks] || []
     actor_id = context.dig(:state, :assistant_id)
     actor = Array(context[:agent_graph]).find { |item| item[:id] == actor_id }
+    peers = Array(context[:agent_graph]).reject { |item| item[:id] == actor_id }
+    plan_guidance = if context[:part_plan_accepted]
+                      "Plan accepted (data): #{JSON.generate(context[:part_plan])}. Continue only your assigned parts; do not plan again."
+                    else
+                      'Use plan_request once for this customer message. A simple request can be planned in the same model call as its answer.'
+                    end
+    return <<~PROMPT unless Captain::Runtime::TaskQueue.in_flight?(tasks)
+      You are the current agent. Handle requests in your own responsibility.
+      Continue the same customer conversation after an internal transfer. Never mention internal routing.
+      The current specialist keeps the conversation. Ignore legacy instructions to return it to an orchestrator.
+      Other agents available on this channel (name and responsibility):
+      #{peers.map { |peer| "#{peer[:name]}: #{peer[:description]}" }.join("\n")}
+      Plan the customer's request before taking any action. Link answers, corrections and cancellations to open parts.
+      Open parts (data): #{JSON.generate(Array(context[:parts]).select { |part| Captain::Runtime::PartRegistry::OPEN_STATES.include?(part['state']) })}
+      #{plan_guidance}
+      Set answer in that call only when the complete answer is verified from supplied context and needs no tool.
+      For a confirmed proposed operation, link its exact part ID and set link_action to confirmation.
+      When older parts are open, mark each genuinely new request with link_action new.
+      Do not treat a vague reply as confirmation; use clarify when its target is ambiguous.
+      Use a handoff for one part assigned to another agent. Several parts assigned to different agents require council.
+    PROMPT
+
     own_tasks = tasks.select { |task| task['assistant_id'] == actor_id }
     <<~PROMPT
       # Current agent
@@ -36,7 +58,6 @@ module Captain::Runtime::CoordinationPrompt
       If no handoff is available, explain the remaining work or use your configured human handoff.
       Your final customer response must account for the completed tasks and explain any unresolved requests.
       Completed actions must never be repeated. Cancellation or correction from the customer supersedes pending requests.
-      Agent directory (data): #{JSON.generate(context[:agent_graph])}
       Task queue (data): #{JSON.generate(tasks)}
     PROMPT
   end

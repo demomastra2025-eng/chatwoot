@@ -19,6 +19,10 @@ class Captain::Runtime::Runner
     session = build_session(starting_agent, input, options)
     process_session(session)
   rescue MaxTurnsExceeded => e
+    if part_run?(session)
+      return finalize_run(session[:chat], session[:context_wrapper], session[:current_agent], output: open_parts_response(session))
+    end
+
     finalize_run(session&.dig(:chat), session&.dig(:context_wrapper), session&.dig(:current_agent),
                  output: "Conversation ended: #{e.message}", error: e)
   rescue Captain::Conversation::ControlGenerationStaleError
@@ -28,6 +32,21 @@ class Captain::Runtime::Runner
   end
 
   private
+
+  def part_run?(session)
+    context = session&.dig(:context_wrapper)&.context
+    context && context[:agent_session] && !Captain::Runtime::TaskQueue.in_flight?(context[:agent_tasks])
+  end
+
+  def open_parts_response(session)
+    parts = Array(session[:context_wrapper].context[:parts]).select do |part|
+      Captain::Runtime::PartRegistry::OPEN_STATES.include?(part['state'])
+    end
+    fragments = parts.map { |part| part['fragment'].to_s.first(160) }.reject(&:blank?)
+    text = I18n.t('captain.coordination.unfinished', locale: :ru)
+    text += " #{I18n.t('captain.coordination.open_parts', parts: fragments.join('; '), locale: :ru)}" if fragments.any?
+    { response: text, reasoning: '' }
+  end
 
   def build_session(starting_agent, input, options)
     {
@@ -123,10 +142,18 @@ class Captain::Runtime::Runner
 
   def resolve_response(session, response)
     return terminal_tool_stop_result(session) if terminal_tool_stop?(session, response)
+    return continue_after_transfer_guard(session) if session[:context_wrapper].context.delete(:transfer_guard_active)
     return handle_handoff(session) if handoff_requested?(session, response)
+    plan_result = handle_plan(session)
+    return plan_result if plan_result
     return finalize_run(session[:chat], session[:context_wrapper], session[:current_agent], output: response.content) if halt_response?(response)
     return if response.tool_call?
     return if continue_unresolved_tasks?(session, response)
+    plan_state = ensure_part_plan(session, response)
+    return if plan_state == :retry
+    if plan_state == :unavailable
+      return finalize_run(session[:chat], session[:context_wrapper], session[:current_agent], output: open_parts_response(session))
+    end
 
     finalize_run(
       session[:chat],
@@ -134,6 +161,74 @@ class Captain::Runtime::Runner
       session[:current_agent],
       output: response.content
     )
+  end
+
+  def handle_plan(session)
+    context = session[:context_wrapper].context
+    plan = context[:part_plan]
+    return if plan.blank? || context[:part_plan_processed]
+
+    context[:part_plan_processed] = true
+    if plan[:parts].all? { |part| part['link_action'] == 'cancellation' }
+      return finalize_run(session[:chat], session[:context_wrapper], session[:current_agent],
+                          output: { response: I18n.t('captain.coordination.cancelled', locale: :ru), reasoning: '' })
+    end
+    if plan[:parts].all? { |part| part['link_action'] == 'confirmation' }
+      answer = Captain::Runtime::ConfirmedOperations.new(context: context, graph: context[:agent_graph_object]).run(plan[:parts])
+      session[:current_agent] = session[:registry]["assistant_#{context.dig(:state, :assistant_id)}"] || session[:current_agent]
+      return finalize_run(session[:chat], session[:context_wrapper], session[:current_agent],
+                          output: { response: answer, reasoning: '' })
+    end
+
+    case plan[:mode]
+    when 'council'
+      answer = Captain::Runtime::Council.new(context: context, graph: context[:agent_graph_object],
+                                             account: session[:account], llm_context: session[:llm_context]).run(plan[:parts])
+      finalize_run(session[:chat], session[:context_wrapper], session[:current_agent],
+                   output: { response: answer, reasoning: '' })
+    when 'handoff'
+      target_id = plan[:parts].first['executor_agent_id']
+      context[:pending_handoff] = { target_agent: "assistant_#{target_id}" }
+      handle_handoff(session)
+    when 'clarify'
+      registry = Captain::Runtime::PartRegistry.new(context)
+      plan[:parts].each do |part|
+        registry.update!(part['id'], state: 'waiting_customer')
+      end
+      finalize_run(session[:chat], session[:context_wrapper], session[:current_agent],
+                   output: { response: plan[:clarification], reasoning: '' })
+    when 'answer_myself'
+      if plan[:answer].present?
+        Captain::Runtime::PartRegistry.new(context).update!(plan[:parts].first['id'], state: 'answered')
+        finalize_run(session[:chat], session[:context_wrapper], session[:current_agent],
+                     output: { response: plan[:answer], reasoning: '' })
+      end
+    end
+  end
+
+  def ensure_part_plan(session, response)
+    context = session[:context_wrapper].context
+    return true if context[:agent_graph].blank? || Captain::Runtime::TaskQueue.in_flight?(context[:agent_tasks]) ||
+                   context[:part_plan_accepted]
+    return true if context[:consult_mode]
+
+    if session[:plan_repairs].to_i.zero?
+      session[:plan_repairs] = 1
+      discard_unpublished_draft(session[:chat], response)
+      session[:chat].add_message(role: :system, content: 'Call plan_request for this message before replying.')
+      return :retry
+    end
+    :unavailable
+  end
+
+  def continue_after_transfer_guard(session)
+    session[:context_wrapper].context[:transfer_guarded] = true
+    rebuild_chat!(session)
+    session[:chat].add_message(role: :system, content: <<~PROMPT)
+      Internal routing is unavailable for this message. Answer from verified facts already available.
+      State what remains open. Do not ask a new question or transfer to staff.
+    PROMPT
+    nil
   end
 
   def continue_unresolved_tasks?(session, response)
@@ -173,6 +268,10 @@ class Captain::Runtime::Runner
   end
 
   def terminal_tool_stop_result(session)
+    if part_run?(session)
+      return finalize_run(session[:chat], session[:context_wrapper], session[:current_agent], output: open_parts_response(session))
+    end
+
     terminal_state = terminal_tool_stop_state(session).to_h.with_indifferent_access
     message = terminal_state.dig(:result, :error).presence || 'Captain stopped a repeated tool-call loop'
     error = ToolLoopStopped.new(message)
@@ -197,6 +296,11 @@ class Captain::Runtime::Runner
     next_agent, target_name = handoff_target(session)
     return missing_agent_result(session, target_name) unless next_agent
     return self_handoff_result(session, next_agent) if self_handoff?(session, next_agent)
+    context = session[:context_wrapper].context
+    if context[:handoff_count].to_i >= 2 || context[:previous_handoff_source_id] == next_agent.assistant_id
+      record_transfer_guard(session, 'handoff_limit', next_agent)
+      return continue_after_transfer_guard(session)
+    end
 
     persist_handoff_state(session, next_agent)
     reset_session_for_handoff!(session, next_agent)
@@ -219,6 +323,8 @@ class Captain::Runtime::Runner
 
   def missing_agent_result(session, target_name)
     record_transfer_guard(session, 'target_missing')
+    return continue_after_transfer_guard(session) if part_run?(session)
+
     message = target_name.present? ? "Handoff failed: Agent '#{target_name}' not found in registry" : 'Handoff failed: target agent is missing'
     error = AgentNotFoundError.new(message)
     finalize_run(session[:chat], session[:context_wrapper], session[:current_agent], output: nil, error: error)
@@ -231,6 +337,8 @@ class Captain::Runtime::Runner
 
   def self_handoff_result(session, next_agent)
     record_transfer_guard(session, 'self_transfer', next_agent)
+    return continue_after_transfer_guard(session) if part_run?(session)
+
     error = SelfHandoffError.new("Agent #{next_agent.name} attempted to hand off to itself")
     finalize_run(session[:chat], session[:context_wrapper], session[:current_agent], output: nil, error: error)
   end
@@ -243,6 +351,9 @@ class Captain::Runtime::Runner
   end
 
   def persist_handoff_state(session, next_agent)
+    context = session[:context_wrapper].context
+    context[:handoff_count] = context[:handoff_count].to_i + 1
+    context[:previous_handoff_source_id] = session[:current_agent].assistant_id
     save_conversation_state(session[:chat], session[:context_wrapper], session[:current_agent])
     callback_manager(session).emit_agent_complete(session[:current_agent].name, nil, nil, session[:context_wrapper])
     callback_manager(session).emit_agent_handoff(

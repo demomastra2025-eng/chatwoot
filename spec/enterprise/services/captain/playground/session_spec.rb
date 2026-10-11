@@ -121,7 +121,7 @@ RSpec.describe Captain::Playground::Session do
     end
   end
 
-  it 'rejects a disabled, foreign or no longer reachable acting agent using the current graph' do
+  it 'rejects a disabled, foreign or internal acting agent using the current graph' do
     destination = create(:captain_assistant, account: account)
     assistant.update!(handoff_agent_ids: [destination.id])
     session.with_lock do |workspace|
@@ -130,8 +130,20 @@ RSpec.describe Captain::Playground::Session do
       destination.update!(active: false)
       expect { workspace.validate_active_agent! }.to raise_error(Pundit::NotAuthorizedError, /disabled or no longer reachable/)
       destination.update!(active: true)
-      assistant.update!(handoff_agent_ids: [])
+      destination.update!(usage_mode: 'internal_assistant')
       expect { workspace.validate_active_agent! }.to raise_error(Pundit::NotAuthorizedError, /disabled or no longer reachable/)
+    end
+  end
+
+  it 'uses a selected real inbox for Playground routing when one is recorded' do
+    inbox = create(:inbox, account: account)
+    member = create(:captain_assistant, account: account, channel_scope: 'selected')
+    session.with_lock do |workspace|
+      workspace.data['inbox_id'] = inbox.id
+      expect(workspace.routing_inbox).to eq(inbox)
+      expect { workspace.activate_agent!(member) }.to raise_error(Pundit::NotAuthorizedError)
+      Captain::AgentChannel.create!(account: account, inbox: inbox, assistant: member)
+      expect(workspace.activate_agent!(member)).to eq(member)
     end
   end
 end

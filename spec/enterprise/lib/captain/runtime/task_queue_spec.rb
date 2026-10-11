@@ -1,6 +1,11 @@
 require 'rails_helper'
 
 RSpec.describe Captain::Runtime::TaskQueue do
+  it 'offers the legacy queue only while it has unfinished work' do
+    expect(described_class.in_flight?([{ 'status' => 'waiting' }])).to be(true)
+    expect(described_class.in_flight?([{ 'status' => 'completed' }])).to be(false)
+  end
+
   let(:entry) { create(:captain_assistant) }
   let(:session) { Captain::Conversation::AgentSession.new(entry: entry) }
   let(:context) do

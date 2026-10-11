@@ -8,7 +8,7 @@ RSpec.describe Captain::Runtime::HandoffTool do
     target.assistant_id = 2
     context = { agent_request_id: 'synthetic-request', state: { account_id: 1, assistant_id: 1, source: 'benchmark',
                                                                 conversation: { id: 3 } },
-                agent_graph: [{ id: 1, target_ids: [] }] }
+                agent_graph: [{ id: 1 }] }
     tool_context = Captain::Runtime::ToolContext.new(run_context: Captain::Runtime::RunContext.new(context))
     events = []
     subscriber = ActiveSupport::Notifications.subscribe('captain.agent.transfer_guard') do |*args|
@@ -23,6 +23,41 @@ RSpec.describe Captain::Runtime::HandoffTool do
                                            'request_id' => 'synthetic-request')
   ensure
     ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+  end
+
+  it 'halts neutrally after two transfers without requesting staff or a customer question' do
+    entry = create(:captain_assistant)
+    specialist = create(:captain_assistant, account: entry.account)
+    target = Captain::Runtime::Agent.new(name: "assistant_#{specialist.id}")
+    target.assistant_id = specialist.id
+    context = { state: { account_id: entry.account_id, assistant_id: entry.id, entry_assistant_id: entry.id },
+                agent_graph: Captain::AgentGraph.new(entry).payload, handoff_count: 2 }
+    tool_context = Captain::Runtime::ToolContext.new(run_context: Captain::Runtime::RunContext.new(context))
+
+    result = described_class.new(target).perform(tool_context)
+
+    expect(result).to be_a(RubyLLM::Tool::Halt)
+    expect(result.content).to be_blank
+    expect(context[:transfer_guard_active]).to be(true)
+    expect(context).not_to have_key(:pending_handoff)
+    expect(context).not_to have_key(:pending_human_handoff)
+  end
+
+  it 'prevents an immediate return to the agent that just handed off' do
+    entry = create(:captain_assistant)
+    specialist = create(:captain_assistant, account: entry.account)
+    target = Captain::Runtime::Agent.new(name: "assistant_#{entry.id}")
+    target.assistant_id = entry.id
+    context = { state: { account_id: entry.account_id, assistant_id: specialist.id,
+                         entry_assistant_id: entry.id }, agent_graph: Captain::AgentGraph.new(entry).payload,
+                handoff_count: 1, previous_handoff_source_id: entry.id }
+    tool_context = Captain::Runtime::ToolContext.new(run_context: Captain::Runtime::RunContext.new(context))
+
+    result = described_class.new(target).perform(tool_context)
+
+    expect(result.content).to be_blank
+    expect(context[:transfer_guard_active]).to be(true)
+    expect(context).not_to have_key(:pending_handoff)
   end
 end
 

@@ -22,6 +22,12 @@ class Captain::Playground::Session
   def conversation = nil
   def deep_dup = self
 
+  def routing_inbox
+    return if data.to_h['inbox_id'].blank?
+
+    account.inboxes.find(data['inbox_id'])
+  end
+
   def with_lock(reset: false, scenario_input: nil, **)
     store.with_lock do
       load_data!(reset: reset, scenario_input: scenario_input)
@@ -62,7 +68,7 @@ class Captain::Playground::Session
     raise Pundit::NotAuthorizedError, 'Agent belongs to another workspace' unless actor.account_id == account.id
 
     entry_assistant.reload
-    unless Captain::AgentGraph.new(entry_assistant).find(actor.id)
+    unless Captain::AgentGraph.new(entry_assistant, inbox: routing_inbox).find(actor.id)
       raise Pundit::NotAuthorizedError, 'Agent is disabled or no longer reachable from the Playground entry agent'
     end
     @assistant = actor
@@ -76,7 +82,7 @@ class Captain::Playground::Session
     entry_assistant.reload
     assistant.reload unless assistant.equal?(entry_assistant)
     unless data.fetch('active_assistant_id', entry_assistant.id).to_i == assistant.id &&
-           Captain::AgentGraph.new(entry_assistant).find(assistant.id)
+           Captain::AgentGraph.new(entry_assistant, inbox: routing_inbox).find(assistant.id)
       raise Pundit::NotAuthorizedError, 'Agent is disabled or no longer reachable from the Playground entry agent'
     end
     assistant

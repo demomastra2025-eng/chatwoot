@@ -2,13 +2,15 @@
 
 class Captain::Runtime::CoordinationEvents
   class << self
-    def council_started(context:, participant_ids:)
-      publish('council.started', context: context, participants: Array(participant_ids).map(&:to_i).uniq)
+    def council_started(context:, participant_ids:, part_ids: [])
+      publish('council.started', context: context, participants: Array(participant_ids).map(&:to_i).uniq,
+                                 parts: Array(part_ids))
     end
 
-    def council_finished(context:, participant_ids:, outcome:)
+    def council_finished(context:, participant_ids:, outcome:, part_ids: [])
       publish('council.finished', context: context,
-                                  participants: Array(participant_ids).map(&:to_i).uniq, outcome: outcome.to_s)
+                                  participants: Array(participant_ids).map(&:to_i).uniq,
+                                  parts: Array(part_ids), outcome: outcome.to_s)
     end
 
     def publish(name, context:, **details)

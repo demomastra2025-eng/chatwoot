@@ -3,11 +3,12 @@ require 'rails_helper'
 RSpec.describe Captain::AgentRunContext do
   let(:account) { create(:account) }
   let(:entry) { create(:captain_assistant, account: account, description: 'ENTRY PRIVATE PROMPT') }
-  let(:specialist) { create(:captain_assistant, account: account, description: 'SPECIALIST OWN PROMPT') }
+  let(:specialist) do
+    create(:captain_assistant, account: account, description: 'SPECIALIST OWN PROMPT', routing_description: 'Запись на приём')
+  end
   let(:conversation) { create(:conversation, account: account) }
   let(:context) { { state: { account_id: account.id, assistant_id: entry.id }, conversation_history: [] } }
 
-  before { entry.update!(handoff_agent_ids: [specialist.id]) }
   after { Current.executed_by = nil }
 
   it 'does not repeat input checks when an agent is activated' do
@@ -19,17 +20,30 @@ RSpec.describe Captain::AgentRunContext do
     runtime.activate(entry, context)
   end
 
-  it 'builds only explicit directed edges and preserves each agent own prompt' do
+  it 'builds direct routes in both directions and preserves each agent own prompt' do
     runtime = described_class.new(entry: entry)
     agents = runtime.runtime_agents
     expect(agents.map(&:name)).to contain_exactly("assistant_#{entry.id}", "assistant_#{specialist.id}")
     expect(agents.first.handoff_agents.map(&:assistant_id)).to eq([specialist.id])
-    expect(agents.last.handoff_agents).to be_empty
+    expect(agents.last.handoff_agents.map(&:assistant_id)).to eq([entry.id])
+    description = Captain::Runtime::HandoffTool.new(agents.last).description
+    expect(description).to include(specialist.name, specialist.routing_description.to_s)
+    expect(description).not_to include("assistant_#{specialist.id}")
     runtime.prepare(context)
     runtime.activate(specialist, context)
     prompt = specialist.agent_instructions(Captain::Runtime::RunContext.new(context))
     expect(prompt).to include('SPECIALIST OWN PROMPT')
     expect(prompt).not_to include('ENTRY PRIVATE PROMPT')
+  end
+
+  it 'materializes only the acting agent when building the runtime' do
+    runtime = described_class.new(entry: entry, conversation: conversation)
+    agents = runtime.runtime_agents
+    expect(agents).to all(be_a(Captain::Runtime::LazyAgent))
+    expect(agents.any? { |agent| agent.instance_variable_defined?(:@materialized) }).to be(false)
+    agents.first.tools
+    expect(agents.first.instance_variable_defined?(:@materialized)).to be(true)
+    expect(agents.last.instance_variable_defined?(:@materialized)).to be(false)
   end
 
   it 'continues with the last actor on the next message in the same physical conversation' do
