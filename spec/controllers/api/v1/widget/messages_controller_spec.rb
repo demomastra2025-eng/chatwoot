@@ -15,6 +15,24 @@ RSpec.describe '/api/v1/widget/messages', type: :request do
 
   describe 'GET /api/v1/widget/messages' do
     context 'when get request is made' do
+      it 'omits internal AI content attributes from the widget response' do
+        assistant = create(:captain_assistant, account: account, description: 'Private agent instructions')
+        message = create(
+          :message, account: account, inbox: web_widget.inbox, conversation: conversation,
+                    message_type: :outgoing, sender: assistant,
+                    content_attributes: { 'prompt' => 'Private prompt', 'visible' => 'value' }
+        )
+
+        get api_v1_widget_messages_url,
+            params: { website_token: web_widget.website_token },
+            headers: { 'X-Auth-Token' => token },
+            as: :json
+
+        payload = response.parsed_body['payload'].find { |item| item['id'] == message.id }
+        expect(payload['content_attributes']).to eq('visible' => 'value')
+        expect(payload['sender']).not_to have_key('description')
+      end
+
       it 'returns messages in conversation' do
         get api_v1_widget_messages_url,
             params: { website_token: web_widget.website_token },

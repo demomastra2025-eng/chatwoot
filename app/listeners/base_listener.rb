@@ -49,6 +49,13 @@ class BaseListener
 
     return if changed_attributes.blank?
 
-    changed_attributes.map { |k, v| { k => { previous_value: v[0], current_value: v[1] } } }
+    changed_attributes.map do |key, values|
+      previous_value, current_value = values
+      if key.to_s == 'additional_attributes'
+        previous_value = Conversations::EventDataPresenter.external_additional_attributes(previous_value)
+        current_value = Conversations::EventDataPresenter.external_additional_attributes(current_value)
+      end
+      { key => { previous_value: previous_value, current_value: current_value } }
+    end
   end
 end

@@ -41,6 +41,13 @@
 
 class Message < ApplicationRecord
   CONVERSATION_UNREAD_COUNT_UNSET = Object.new.freeze
+  INTERNAL_AI_ATTRIBUTE_KEYS = %w[
+    captain_trace captainTrace captain_ai_reply agent_name agentName
+    reasoning native_reasoning structured_reasoning thinking
+    tool_steps tool_calls tool_results handoff_text prompt
+    captain_follow_up captain_control_generation captain_status_transition_id
+    captain_playground
+  ].freeze
   # How many of a notification conversation's latest messages are looked at to find where the unanswered automated messages begin.
   UNANSWERED_AUTOMATED_LOOKBACK = 100
   NOT_IMPORTED_HISTORY_SQL_TEMPLATE = <<~'SQL'.squish.freeze
@@ -191,6 +198,31 @@ class Message < ApplicationRecord
     merge_sender_attributes(data)
   end
 
+  def external_push_event_data(**)
+    push_event_data(**).merge(
+      additional_attributes: external_additional_attributes,
+      content_attributes: external_content_attributes
+    )
+  end
+
+  def external_additional_attributes
+    external_attributes(additional_attributes)
+  end
+
+  def external_content_attributes
+    external_attributes(content_attributes)
+  end
+
+  def external_previous_changes(changes)
+    changes.to_h.each_with_object({}) do |(key, values), filtered|
+      filtered[key] = if %w[additional_attributes content_attributes].include?(key.to_s)
+                        Array(values).map { |value| external_attributes(value) }
+                      else
+                        values
+                      end
+    end
+  end
+
   def communication_thread_push_event_data
     return {} unless communication_threads_enabled?
     return {} if conversation.blank?
@@ -229,7 +261,7 @@ class Message < ApplicationRecord
   end
 
   def webhook_push_event_data
-    push_event_data.merge(
+    external_push_event_data.merge(
       content: Messages::WebhookContentNormalizer.normalize(content),
       processed_message_content: Messages::WebhookContentNormalizer.normalize(processed_message_content)
     )
@@ -238,8 +270,8 @@ class Message < ApplicationRecord
   def webhook_data
     data = {
       account: account.webhook_data,
-      additional_attributes: additional_attributes,
-      content_attributes: content_attributes,
+      additional_attributes: external_additional_attributes,
+      content_attributes: external_content_attributes,
       content_type: content_type,
       content: webhook_content,
       conversation: conversation.webhook_data,
@@ -264,6 +296,12 @@ class Message < ApplicationRecord
   # Raw content with survey URL (no markdown rendering) for webhook consumers
   def webhook_content
     MessageContentPresenter.new(self).webhook_content
+  end
+
+  def external_attributes(value)
+    return value unless value.is_a?(Hash)
+
+    value.except(*INTERNAL_AI_ATTRIBUTE_KEYS, *INTERNAL_AI_ATTRIBUTE_KEYS.map(&:to_sym))
   end
 
   def email_notifiable_message?

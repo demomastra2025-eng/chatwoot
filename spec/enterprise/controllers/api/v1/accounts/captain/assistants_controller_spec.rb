@@ -65,6 +65,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(json_response[:id]).to eq(assistant.id)
+        expect(json_response[:description]).to eq(assistant.description)
       end
 
       it 'does not expose historical handoff consent settings' do

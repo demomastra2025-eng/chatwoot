@@ -1,4 +1,12 @@
 class Conversations::EventDataPresenter < SimpleDelegator
+  INTERNAL_AI_ATTRIBUTE_KEYS = %w[captain_agent_session captain_playground_source].freeze
+
+  def self.external_additional_attributes(value)
+    return value unless value.is_a?(Hash)
+
+    value.except(*INTERNAL_AI_ATTRIBUTE_KEYS, *INTERNAL_AI_ATTRIBUTE_KEYS.map(&:to_sym))
+  end
+
   def push_data
     {
       additional_attributes: additional_attributes,
@@ -25,7 +33,11 @@ class Conversations::EventDataPresenter < SimpleDelegator
 
   # Like #push_data but with message text normalized for external integrations (webhooks).
   def webhook_data
-    push_data.merge(messages: webhook_push_messages)
+    push_data.merge(additional_attributes: external_additional_attributes, messages: webhook_push_messages)
+  end
+
+  def external_push_data
+    push_data.merge(additional_attributes: external_additional_attributes, messages: external_push_messages)
   end
 
   private
@@ -36,6 +48,14 @@ class Conversations::EventDataPresenter < SimpleDelegator
 
   def webhook_push_messages
     [messages.where(account_id: account_id).chat.last&.webhook_push_event_data].compact
+  end
+
+  def external_push_messages
+    [messages.where(account_id: account_id).chat.last&.external_push_event_data].compact
+  end
+
+  def external_additional_attributes
+    self.class.external_additional_attributes(additional_attributes.to_h)
   end
 
   def push_meta

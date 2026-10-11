@@ -657,7 +657,6 @@ class Captain::Assistant < ApplicationRecord
       id: id,
       name: name,
       avatar_url: avatar_url,
-      description: description,
       created_at: created_at,
       type: 'captain_assistant'
     }
@@ -668,7 +667,6 @@ class Captain::Assistant < ApplicationRecord
       id: id,
       name: name,
       avatar_url: avatar_url,
-      description: description,
       created_at: created_at,
       type: 'captain_assistant'
     }

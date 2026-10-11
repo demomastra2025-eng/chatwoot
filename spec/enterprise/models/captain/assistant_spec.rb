@@ -1,6 +1,22 @@
 require 'rails_helper'
 
 RSpec.describe Captain::Assistant, type: :model do
+  describe 'message sender payloads' do
+    it 'exposes only public identity fields in events and webhooks' do
+      assistant = build(:captain_assistant, description: 'Private agent instructions', config: { 'model' => 'private-model' })
+      expected = {
+        id: assistant.id,
+        name: assistant.name,
+        avatar_url: assistant.avatar_url,
+        created_at: assistant.created_at,
+        type: 'captain_assistant'
+      }
+
+      expect(assistant.push_event_data).to eq(expected)
+      expect(assistant.webhook_data).to eq(expected)
+    end
+  end
+
   describe '#use_audio_transcriptions?' do
     it 'defaults to enabled for existing assistants' do
       expect(build(:captain_assistant, config: {}).use_audio_transcriptions?).to be(true)

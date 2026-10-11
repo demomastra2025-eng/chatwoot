@@ -232,6 +232,63 @@ RSpec.describe Message do
     end
   end
 
+  describe 'external AI payloads' do
+    let(:account) { create(:account) }
+    let(:conversation) { create(:conversation, account: account) }
+    let(:assistant) { create(:captain_assistant, account: account, description: 'Private agent instructions') }
+    let(:trace) { { 'tool_steps' => [{ 'result' => 'Private tool result' }], 'reasoning' => 'Private reasoning' } }
+    let(:message) do
+      create(
+        :message,
+        account: account,
+        inbox: conversation.inbox,
+        conversation: conversation,
+        sender: assistant,
+        message_type: :outgoing,
+        content: 'Здравствуйте',
+        additional_attributes: { 'captain_trace' => trace, 'agent_name' => 'internal_agent', 'source' => 'campaign' },
+        content_attributes: { 'prompt' => 'Private prompt', 'visible' => 'value' }
+      )
+    end
+
+    it 'keeps the trace in dashboard events and removes internal data from external events' do
+      expect(message.push_event_data.dig(:additional_attributes, 'captain_trace')).to eq(trace)
+
+      payload = message.external_push_event_data
+      expect(payload[:content]).to eq('Здравствуйте')
+      expect(payload[:sender]).not_to have_key(:description)
+      expect(payload[:additional_attributes]).to eq('source' => 'campaign')
+      expect(payload[:content_attributes]).to eq('visible' => 'value')
+    end
+
+    it 'removes internal data from message and nested conversation webhooks' do
+      conversation.update!(additional_attributes: {
+                             'captain_agent_session' => { 'operations' => { 'result' => 'Private tool result' } },
+                             'referer' => 'https://example.test'
+                           })
+
+      expect(message.webhook_data[:additional_attributes]).to eq('source' => 'campaign')
+      expect(message.webhook_data[:content_attributes]).to eq('visible' => 'value')
+      expect(message.webhook_data[:sender]).not_to have_key(:description)
+      expect(conversation.webhook_data[:messages].last[:additional_attributes]).to eq('source' => 'campaign')
+      expect(conversation.webhook_data[:additional_attributes]).to eq('referer' => 'https://example.test')
+      expect(conversation.external_push_event_data[:additional_attributes]).to eq('referer' => 'https://example.test')
+      expect(conversation.push_event_data[:additional_attributes]).to have_key('captain_agent_session')
+    end
+
+    it 'removes old and new internal attributes from customer update changes' do
+      changes = { additional_attributes: [{ 'captain_trace' => trace }, { 'captain_trace' => trace, 'source' => 'campaign' }],
+                  content_attributes: [{ 'prompt' => 'old' }, { 'prompt' => 'new', 'in_reply_to' => 42 }],
+                  content: %w[old new] }
+
+      expect(message.external_previous_changes(changes)).to eq(
+        additional_attributes: [{}, { 'source' => 'campaign' }],
+        content_attributes: [{}, { 'in_reply_to' => 42 }],
+        content: %w[old new]
+      )
+    end
+  end
+
   describe 'message create event' do
     let!(:conversation) { create(:conversation) }
 

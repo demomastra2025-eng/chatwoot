@@ -34,6 +34,26 @@ describe WebhookListener do
         ).once
         listener.message_created(message_created_event)
       end
+
+      it 'excludes the agent prompt and execution trace from account webhooks' do
+        webhook = create(:webhook, inbox: inbox, account: account)
+        assistant = create(:captain_assistant, account: account, description: 'Private agent instructions')
+        message.update!(sender: assistant, additional_attributes: { 'captain_trace' => { 'reasoning' => 'Private reasoning' } })
+
+        expect(WebhookJob).to receive(:perform_later).with(
+          webhook.url,
+          satisfy do |payload|
+            payload[:content] == message.webhook_content &&
+              payload[:additional_attributes].exclude?('captain_trace') &&
+              payload[:sender].keys == %i[id name avatar_url created_at type] &&
+              payload.dig(:conversation, :messages)&.last&.dig(:additional_attributes)&.exclude?('captain_trace')
+          end,
+          :account_webhook,
+          secret: webhook.secret, delivery_id: instance_of(String)
+        )
+
+        listener.message_created(message_created_event)
+      end
     end
 
     context 'when webhook is configured and event is not subscribed' do
@@ -61,6 +81,30 @@ describe WebhookListener do
           channel_api.webhook_url, api_message.webhook_data.merge(event: 'message_created'),
           :api_inbox_webhook, secret: channel_api.secret, delivery_id: instance_of(String)
         ).once
+        listener.message_created(api_event)
+      end
+
+      it 'excludes the agent prompt and execution trace from API channel webhooks' do
+        channel_api = create(:channel_api, account: account)
+        assistant = create(:captain_assistant, account: account, description: 'Private agent instructions')
+        api_conversation = create(:conversation, account: account, inbox: channel_api.inbox, assignee: user)
+        api_message = create(
+          :message, message_type: 'outgoing', account: account, inbox: channel_api.inbox,
+                    conversation: api_conversation, sender: assistant,
+                    additional_attributes: { 'captain_trace' => { 'tool_steps' => ['Private tool result'] } }
+        )
+        api_event = Events::Base.new(event_name, Time.zone.now, message: api_message)
+
+        expect(WebhookJob).to receive(:perform_later).with(
+          channel_api.webhook_url,
+          satisfy do |payload|
+            payload[:additional_attributes].exclude?('captain_trace') &&
+              payload[:sender].keys == %i[id name avatar_url created_at type]
+          end,
+          :api_inbox_webhook,
+          secret: channel_api.secret, delivery_id: instance_of(String)
+        )
+
         listener.message_created(api_event)
       end
 
@@ -129,6 +173,31 @@ describe WebhookListener do
   end
 
   describe '#conversation_updated' do
+    it 'omits AI session data from old and new conversation attributes' do
+      webhook = create(:webhook, inbox: inbox, account: account, subscriptions: ['conversation_updated'])
+      old_attributes = { 'captain_agent_session' => { 'operations' => { 'result' => 'Private old result' } } }
+      new_attributes = old_attributes.merge('referer' => 'https://example.test')
+      event = Events::Base.new(
+        :'conversation.updated',
+        Time.zone.now,
+        conversation: conversation,
+        changed_attributes: { additional_attributes: [old_attributes, new_attributes] }
+      )
+
+      expect(WebhookJob).to receive(:perform_later).with(
+        webhook.url,
+        hash_including(changed_attributes: [
+                         { additional_attributes: {
+                           previous_value: {}, current_value: { 'referer' => 'https://example.test' }
+                         } }
+                       ]),
+        :account_webhook,
+        secret: webhook.secret, delivery_id: instance_of(String)
+      )
+
+      listener.conversation_updated(event)
+    end
+
     let(:custom_attributes) { { test: nil } }
     let!(:conversation_updated_event) do
       Events::Base.new(

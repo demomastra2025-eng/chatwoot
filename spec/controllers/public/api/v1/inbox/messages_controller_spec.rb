@@ -16,6 +16,21 @@ RSpec.describe 'Public Inbox Contact Conversation Messages API', type: :request 
   end
 
   describe 'GET /public/api/v1/inboxes/{identifier}/contact/{source_id}/conversations/{conversation_id}/messages' do
+    it 'omits internal AI content attributes from the public response' do
+      assistant = create(:captain_assistant, account: account, description: 'Private agent instructions')
+      message = create(
+        :message, account: account, inbox: api_channel.inbox, conversation: conversation,
+                  message_type: :outgoing, sender: assistant,
+                  content_attributes: { 'prompt' => 'Private prompt', 'visible' => 'value' }
+      )
+
+      get "/public/api/v1/inboxes/#{api_channel.identifier}/contacts/#{contact_inbox.source_id}/conversations/#{conversation.display_id}/messages"
+
+      payload = response.parsed_body.find { |item| item['id'] == message.id }
+      expect(payload['content_attributes']).to eq('visible' => 'value')
+      expect(payload['sender']).not_to have_key('description')
+    end
+
     it 'return the messages for that conversation' do
       2.times.each { create(:message, account: conversation.account, inbox: conversation.inbox, conversation: conversation) }
 
