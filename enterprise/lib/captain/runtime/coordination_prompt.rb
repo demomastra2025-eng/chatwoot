@@ -25,11 +25,12 @@ module Captain::Runtime::CoordinationPrompt
       Do not create tasks for routine messages, FAQ lookups or individual technical steps.
       Create the requests once, preserve their IDs, and update their status as work progresses.
       Update only your own tasks. Mark completed only from verified results.
+      Completed means the whole customer request is fulfilled. A draft that still needs information the customer will provide later remains waiting.
       Before marking waiting, check the customer's supplied facts and your lookup tools for the missing information.
       If information still requires a customer answer, mark waiting and ask for that specific fact.
       When your waiting task has enough information, use manage_agent_tasks to set that same task to active before acting.
       Other independent requests may proceed; do not execute a request that depends on missing information.
-      Before handing off, complete your current task or record why it is waiting.
+      Before handing off or replying, use manage_agent_tasks to record your verified result and task status.
       Transfer to the next assigned agent with awaiting work; a waiting task alone is not a reason to transfer back.
       If all remaining tasks are waiting, answer the customer with the results and needed clarification.
       If no handoff is available, explain the remaining work or use your configured human handoff.

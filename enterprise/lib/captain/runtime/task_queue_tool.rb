@@ -8,7 +8,9 @@ class Captain::Runtime::TaskQueueTool < Captain::Runtime::Tool
   param :status, type: 'string',
         desc: 'active, waiting, completed, failed, or cancelled. Update your own task. Resume a waiting task with active only when its missing ' \
               'information is available, before performing the action. Keep the same task_id. Completed tasks cannot be repeated.', required: false
-  param :result, type: 'string', desc: 'Brief verified result or needed clarification; never private knowledge excerpts', required: false
+  param :result, type: 'string',
+        desc: 'Brief verified result or needed clarification; never private knowledge excerpts. A partial draft awaiting customer information ' \
+              'must remain waiting. Mark completed only when the whole customer request is fulfilled, before replying or handing off.', required: false
 
   def name = 'manage_agent_tasks'
 

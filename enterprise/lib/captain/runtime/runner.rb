@@ -2,11 +2,13 @@
 
 class Captain::Runtime::Runner
   DEFAULT_MAX_TURNS = 10
+  MAX_TASK_FINALIZATION_REPAIRS = 2
 
   class MaxTurnsExceeded < StandardError; end
   class ToolLoopStopped < StandardError; end
   class AgentNotFoundError < StandardError; end
   class SelfHandoffError < StandardError; end
+  class UnresolvedTasksError < StandardError; end
 
   def self.with_agents(*agents)
     Captain::Runtime::AgentRunner.new(agents)
@@ -124,6 +126,7 @@ class Captain::Runtime::Runner
     return handle_handoff(session) if handoff_requested?(session, response)
     return finalize_run(session[:chat], session[:context_wrapper], session[:current_agent], output: response.content) if halt_response?(response)
     return if response.tool_call?
+    return if continue_unresolved_tasks?(session, response)
 
     finalize_run(
       session[:chat],
@@ -131,6 +134,38 @@ class Captain::Runtime::Runner
       session[:current_agent],
       output: response.content
     )
+  end
+
+  def continue_unresolved_tasks?(session, response)
+    return false if session[:finalization_only]
+
+    context = session[:context_wrapper].context
+    tasks = context[:agent_tasks] || []
+    return false unless tasks.any? { |task| %w[active awaiting].include?(task['status']) }
+
+    discard_unpublished_draft(session[:chat], response)
+    repairs = session[:task_finalization_repairs].to_i
+    raise UnresolvedTasksError, 'Independent customer requests still need an outcome before replying' if repairs >= MAX_TASK_FINALIZATION_REPAIRS
+
+    session[:task_finalization_repairs] = repairs + 1
+    session[:chat].add_message(role: :system, content: <<~PROMPT)
+      The draft reply has not been sent. The request queue still contains active or awaiting work.
+      Record the verified outcome of your own task with manage_agent_tasks: completed, waiting for a specific customer fact, failed, or cancelled.
+      A partial draft that still needs customer information remains waiting, not completed.
+      Use completed tool results already in this conversation; do not repeat completed business actions.
+      If another agent has awaiting work, transfer to that assigned agent using an available handoff.
+      Do not change another agent's task. Once no active or awaiting work remains, give one customer reply covering the results and what is waiting.
+      Current agent ID (data): #{JSON.generate(context.dig(:state, :assistant_id))}
+      Current request queue (data): #{JSON.generate(tasks)}
+    PROMPT
+    true
+  end
+
+  def discard_unpublished_draft(chat, response)
+    last = chat.messages.last
+    return unless last&.role == :assistant && !last.tool_call? && last.content == response.content
+
+    chat.messages.pop
   end
 
   def terminal_tool_stop?(session, response)
