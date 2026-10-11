@@ -21,6 +21,7 @@ describe CaptainListener do
       before do
         assistant.config['feature_memory'] = true
         assistant.config['feature_faq'] = false
+        assistant.config['tool_access'] = { 'agent' => { 'enabled' => true, 'tool_ids' => ['faq_lookup'] } }
         assistant.save!
       end
 
@@ -39,6 +40,7 @@ describe CaptainListener do
       before do
         assistant.config['feature_faq'] = true
         assistant.config['feature_memory'] = false
+        assistant.config['tool_access'] = { 'agent' => { 'enabled' => true, 'tool_ids' => [] } }
         assistant.save!
       end
 

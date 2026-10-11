@@ -531,7 +531,6 @@ class Captain::Assistant < ApplicationRecord
       fallback_ids: fallback_ids
     )
     selected_ids -= ['handoff'] unless handoff_enabled?
-    selected_ids -= ['faq_lookup'] if config.to_h.key?('feature_faq') && !config_boolean_value('feature_faq', default: false)
     selected_ids -= ['resolve_conversation'] unless auto_completion_enabled?
     selected_ids
   end
@@ -704,7 +703,7 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def faq_enabled?
-    config_boolean_value('feature_faq', default: false) && selected_agent_tool_ids.include?('faq_lookup')
+    selected_agent_tool_ids.include?('faq_lookup')
   end
 
   def handoff_enabled?

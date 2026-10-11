@@ -83,11 +83,18 @@ RSpec.describe Captain::OutcomeReasonConfig do
     end
 
     it 'forces FAQ miss on only when both FAQ and human handoff are available' do
-      assistant.update!(config: { 'feature_faq' => true, 'handoff_enabled' => true,
-                                  'outcome_reason_settings' => { 'handoff_reasons' => [{ 'id' => 'faq_no_answer', 'label' => 'FAQ', 'active' => false }] } })
+      assistant.update!(
+        config: {
+          'feature_faq' => false,
+          'handoff_enabled' => true,
+          'outcome_reason_settings' => {
+            'handoff_reasons' => [{ 'id' => 'faq_no_answer', 'label' => 'FAQ', 'active' => false }]
+          }
+        }
+      )
       reason = -> { described_class.new(assistant).normalized_settings['handoff_reasons'].find { |entry| entry['id'] == 'faq_no_answer' } }
       expect(reason.call).to include('active' => true, 'locked' => true, 'removable' => false)
-      assistant.update!(config: assistant.config.merge('feature_faq' => false))
+      assistant.update!(config: assistant.config.merge('tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['handoff'] } }))
       expect(reason.call).to include('active' => false, 'locked' => false, 'removable' => false)
     end
   end

@@ -401,6 +401,34 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(assistant.direct_agent_tool_ids).to contain_exactly('faq_lookup', 'handoff')
     end
 
+    it 'keeps selected FAQ lookup available when FAQ generation is disabled' do
+      assistant.update!(config: { 'feature_faq' => false,
+                                  'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['faq_lookup'] } } })
+
+      expect(assistant.selected_agent_tool_ids).to eq(['faq_lookup'])
+      expect(assistant.allowed_agent_tool_ids).to include('faq_lookup')
+      expect(assistant.prompt_runtime_agent_tools.pluck(:id)).to include('faq_lookup')
+      expect(assistant.faq_enabled?).to be(true)
+    end
+
+    it 'does not expose FAQ lookup when it is not selected' do
+      assistant.update!(config: { 'feature_faq' => false,
+                                  'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['handoff'] } } })
+
+      expect(assistant.selected_agent_tool_ids).not_to include('faq_lookup')
+      expect(assistant.allowed_agent_tool_ids).not_to include('faq_lookup')
+      expect(assistant.faq_enabled?).to be(false)
+    end
+
+    it 'does not select FAQ lookup from FAQ generation alone' do
+      assistant.update!(config: { 'feature_faq' => true,
+                                  'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => [] } } })
+
+      expect(assistant.selected_agent_tool_ids).not_to include('faq_lookup')
+      expect(assistant.allowed_agent_tool_ids).not_to include('faq_lookup')
+      expect(assistant.faq_enabled?).to be(false)
+    end
+
     it 'keeps scenario default runtime limited to human handoff' do
       expect(assistant.send(:scenario_default_tool_ids)).to eq(['handoff'])
       expect(assistant.scenario_agent_tool_ids).to eq(['handoff'])
@@ -781,7 +809,7 @@ RSpec.describe Captain::Assistant, type: :model do
     end
 
     it 'checks configured facts before FAQ and requires human handoff for an unanswered business question only when enabled' do
-      assistant.update!(config: assistant.config.merge('feature_faq' => true))
+      assistant.update!(config: assistant.config.merge('feature_faq' => false))
       rendered = assistant.agent_instructions
       expect(rendered).to include('Use the configured instructions, current conversation facts and verified live records',
                                  'If a business answer is missing, use the enabled FAQ lookup.',
