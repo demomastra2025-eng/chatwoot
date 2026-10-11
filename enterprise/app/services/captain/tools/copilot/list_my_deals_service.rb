@@ -71,7 +71,7 @@ class Captain::Tools::Copilot::ListMyDealsService < Captain::Tools::Copilot::Bas
   end
 
   def card(deal)
-    zone = ActiveSupport::TimeZone[account.reporting_timezone] || Time.zone
+    zone = Time.find_zone(account.reporting_timezone) || Time.zone
     status = if %w[won lost].include?(deal.stage.outcome)
                deal.stage.outcome
              elsif deal.archived_at.present?

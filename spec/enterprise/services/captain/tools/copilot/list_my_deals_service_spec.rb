@@ -42,6 +42,15 @@ RSpec.describe Captain::Tools::Copilot::ListMyDealsService do
     expect(payload.to_json).not_to include('Private', 'amount_minor', 'deal_contacts')
   end
 
+  it 'uses the application time zone when the account has no reporting time zone' do
+    deal = linked_deal(stage: open_stage)
+
+    payload = call_tool(status: 'open', limit: '1', offset: '0')
+
+    expect(payload).to include('success' => true, 'total' => 1)
+    expect(payload.fetch('deals').first.fetch('updated_at')).to eq(deal.updated_at.in_time_zone(Time.zone).iso8601)
+  end
+
   it 'filters by status and pipeline' do
     open_deal = linked_deal(stage: open_stage, updated_at: 1.hour.ago)
     won = linked_deal(stage: won_stage, closed_at: 1.day.ago, updated_at: 2.hours.ago)
