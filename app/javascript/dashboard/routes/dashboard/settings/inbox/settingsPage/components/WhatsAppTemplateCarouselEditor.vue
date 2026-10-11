@@ -186,7 +186,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="space-y-4 rounded-2xl border border-n-weak bg-n-surface-1 p-4">
+  <div class="space-y-4 border-t border-n-weak pt-6">
     <div class="flex items-center justify-between gap-3">
       <div class="space-y-1">
         <p class="mb-0 text-sm font-medium text-n-slate-12">
@@ -210,7 +210,7 @@ onBeforeUnmount(() => {
     <div
       v-for="(card, cardIndex) in cards"
       :key="`carousel-card-${cardIndex}`"
-      class="space-y-4 rounded-xl border border-n-weak bg-n-alpha-black2 p-4"
+      class="space-y-4 border-t border-n-weak pt-4"
     >
       <div class="flex items-center justify-between gap-3">
         <p class="mb-0 text-sm font-medium text-n-slate-12">
@@ -331,7 +331,7 @@ onBeforeUnmount(() => {
       <div
         v-for="(button, buttonIndex) in card.buttons"
         :key="`card-${cardIndex}-button-${buttonIndex}`"
-        class="space-y-3 rounded-xl border border-n-weak bg-n-surface-1 p-3"
+        class="space-y-3"
       >
         <div class="flex items-center justify-between gap-3">
           <div class="flex flex-1 flex-col gap-1">

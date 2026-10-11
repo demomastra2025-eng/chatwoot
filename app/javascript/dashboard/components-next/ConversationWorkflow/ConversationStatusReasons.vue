@@ -168,19 +168,19 @@ const save = async () => {
               $t('CONVERSATION_WORKFLOW.STATUS_REASONS.OPTIONS_PLACEHOLDER')
             "
           />
-          <div class="flex items-center gap-3">
-            <Switch
-              :model-value="configDraft[status.key].required"
-              @update:model-value="configDraft[status.key].required = $event"
-            />
-            <div class="grid gap-1">
+          <div class="grid gap-1">
+            <div class="flex items-center justify-between gap-3">
               <span class="text-sm font-medium text-n-slate-12">
                 {{ $t('CONVERSATION_WORKFLOW.STATUS_REASONS.REQUIRED') }}
               </span>
-              <span class="text-xs leading-5 text-n-slate-11">
-                {{ $t('CONVERSATION_WORKFLOW.STATUS_REASONS.REQUIRED_HELP') }}
-              </span>
+              <Switch
+                :model-value="configDraft[status.key].required"
+                @update:model-value="configDraft[status.key].required = $event"
+              />
             </div>
+            <span class="text-xs leading-5 text-n-slate-11">
+              {{ $t('CONVERSATION_WORKFLOW.STATUS_REASONS.REQUIRED_HELP') }}
+            </span>
           </div>
           <p
             v-if="

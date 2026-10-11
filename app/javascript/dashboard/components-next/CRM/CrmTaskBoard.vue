@@ -87,31 +87,31 @@ watch(
 
 const bucketDisplayMeta = computed(() => ({
   future: {
-    color: '#E7E8EA',
+    colorClass: 'bg-n-slate-5',
     label: t('CRM.TASKS.BOARD.TIME_BUCKETS.FUTURE'),
   },
   nextWeek: {
-    color: '#E7E8EA',
+    colorClass: 'bg-n-slate-5',
     label: t('CRM.TASKS.BOARD.TIME_BUCKETS.NEXT_WEEK'),
   },
   overdue: {
-    color: '#FF8F93',
+    colorClass: 'bg-n-ruby-7',
     label: t('CRM.TASKS.BOARD.TIME_BUCKETS.OVERDUE'),
   },
   today: {
-    color: '#87F1C0',
+    colorClass: 'bg-n-teal-7',
     label: t('CRM.TASKS.BOARD.TIME_BUCKETS.TODAY'),
   },
   tomorrow: {
-    color: '#E7E8EA',
+    colorClass: 'bg-n-slate-5',
     label: t('CRM.TASKS.BOARD.TIME_BUCKETS.TOMORROW'),
   },
   thisMonth: {
-    color: '#E7E8EA',
+    colorClass: 'bg-n-slate-5',
     label: t('CRM.TASKS.BOARD.TIME_BUCKETS.THIS_MONTH'),
   },
   unscheduled: {
-    color: '#F2F3F5',
+    colorClass: 'bg-n-slate-4',
     label: t('CRM.TASKS.BOARD.TIME_BUCKETS.UNSCHEDULED'),
   },
 }));
@@ -183,7 +183,7 @@ const activityTypeMeta = task =>
           </div>
           <div
             class="crm-task-board-bucket-color mt-3 h-1 overflow-hidden rounded-full"
-            :style="{ backgroundColor: column.color }"
+            :class="column.colorClass"
           />
         </header>
 
@@ -199,14 +199,14 @@ const activityTypeMeta = task =>
         >
           <template #item="{ element: task }">
             <article
-              class="cursor-grab rounded-md border border-n-weak bg-n-surface-1 px-2.5 py-2 shadow-sm transition-shadow hover:shadow-md active:cursor-grabbing motion-reduce:transition-none"
+              class="cursor-grab rounded-xl bg-n-solid-2 px-2.5 py-2 outline outline-1 -outline-offset-1 outline-n-weak transition-colors hover:outline-n-strong active:cursor-grabbing motion-reduce:transition-none"
               @click="emit('selectTask', task)"
             >
               <div class="flex items-start justify-between gap-2">
                 <button
                   type="button"
                   data-test="open-task"
-                  class="min-w-0 text-left focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-n-brand"
+                  class="min-w-0 rounded-none p-0 text-left focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-n-brand"
                 >
                   <h4
                     class="mb-0 truncate text-xs font-semibold text-n-slate-12"
@@ -222,7 +222,7 @@ const activityTypeMeta = task =>
                 </button>
 
                 <span
-                  class="max-w-[8.5rem] truncate rounded-md bg-n-alpha-black2 px-1.5 py-1 text-[9px] font-medium text-n-slate-12"
+                  class="max-w-[8.5rem] truncate rounded-full bg-n-alpha-black2 px-2 py-1 text-[9px] font-medium text-n-slate-12"
                 >
                   {{
                     assigneeNameById[task.assigneeId] ||

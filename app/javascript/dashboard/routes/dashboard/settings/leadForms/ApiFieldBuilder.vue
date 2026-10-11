@@ -5,6 +5,7 @@ import Draggable from 'vuedraggable';
 
 import Button from 'dashboard/components-next/button/Button.vue';
 import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
+import Input from 'dashboard/components-next/input/Input.vue';
 import ToggleSwitch from 'dashboard/components-next/switch/Switch.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 
@@ -151,7 +152,7 @@ watch(
 <template>
   <div class="space-y-3">
     <div
-      class="overflow-x-auto rounded-2xl border border-n-weak bg-n-background"
+      class="overflow-x-auto rounded-xl outline outline-1 -outline-offset-1 outline-n-weak"
     >
       <table class="min-w-full table-auto">
         <thead>
@@ -202,12 +203,11 @@ watch(
                 />
               </td>
               <td class="px-3 py-3 align-middle">
-                <input
-                  :value="field.name"
-                  type="text"
-                  class="h-9 w-full rounded-lg border border-n-weak bg-n-solid-1 px-2 text-sm text-n-slate-12 disabled:text-n-slate-10"
+                <Input
+                  :model-value="field.name"
+                  size="sm"
                   :disabled="!field.enabled || isPhoneField(field)"
-                  @input="updateField(index, 'name', $event.target.value)"
+                  @update:model-value="updateField(index, 'name', $event)"
                 />
               </td>
               <td class="px-3 py-3 align-middle">
@@ -229,22 +229,20 @@ watch(
                 />
               </td>
               <td class="px-3 py-3 align-middle">
-                <input
-                  :value="field.label"
-                  type="text"
-                  class="h-9 w-full rounded-lg border border-n-weak bg-n-solid-1 px-2 text-sm text-n-slate-12 disabled:text-n-slate-10"
+                <Input
+                  :model-value="field.label"
+                  size="sm"
                   :disabled="!field.enabled || isPhoneField(field)"
-                  @input="updateField(index, 'label', $event.target.value)"
+                  @update:model-value="updateField(index, 'label', $event)"
                 />
               </td>
               <td class="px-3 py-3 align-middle">
-                <input
-                  :value="field.placeholder"
-                  type="text"
-                  class="h-9 w-full rounded-lg border border-n-weak bg-n-solid-1 px-2 text-sm text-n-slate-12 disabled:text-n-slate-10"
+                <Input
+                  :model-value="field.placeholder"
+                  size="sm"
                   :disabled="!field.enabled || isPhoneField(field)"
-                  @input="
-                    updateField(index, 'placeholder', $event.target.value)
+                  @update:model-value="
+                    updateField(index, 'placeholder', $event)
                   "
                 />
               </td>

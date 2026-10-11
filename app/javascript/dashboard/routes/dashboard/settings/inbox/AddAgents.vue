@@ -10,6 +10,7 @@ import {
   virtualPbxRequestErrorText,
 } from 'dashboard/api/channel/voice/virtualPbxErrors';
 import NextButton from 'dashboard/components-next/button/Button.vue';
+import NextInput from 'dashboard/components-next/input/Input.vue';
 import TagInput from 'dashboard/components-next/taginput/TagInput.vue';
 import router from '../../../index';
 import PageHeader from '../SettingsSubPageHeader.vue';
@@ -20,6 +21,7 @@ export default {
   components: {
     PageHeader,
     NextButton,
+    NextInput,
     TagInput,
   },
   validations: {
@@ -461,15 +463,15 @@ export default {
             isVirtualPbxProfileAssignmentInbox &&
             selectedVirtualPbxAgents.length
           "
-          class="w-full mb-4 rounded-xl border border-n-weak p-4"
+          class="w-full mb-4 rounded-xl outline outline-1 -outline-offset-1 outline-n-weak p-4"
         >
-          <div class="mb-3 space-y-1">
+          <div class="mb-4 space-y-1">
             <h3 class="text-sm font-medium text-n-slate-12">
               {{
                 $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.TITLE')
               }}
             </h3>
-            <p class="text-sm text-n-slate-11">
+            <p class="mb-0 text-sm text-n-slate-11">
               {{
                 $t(
                   'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.CREATE_HINT'
@@ -478,11 +480,11 @@ export default {
             </p>
           </div>
 
-          <div class="flex flex-col gap-3">
+          <div class="flex flex-col divide-y divide-n-weak">
             <div
               v-for="agent in selectedVirtualPbxAgents"
               :key="agent.id"
-              class="grid grid-cols-1 gap-3 rounded-lg border border-n-weak p-3 md:grid-cols-4"
+              class="grid grid-cols-1 gap-3 py-4 first:pt-0 last:pb-0 md:grid-cols-4"
             >
               <div class="flex flex-col gap-1 text-sm text-n-slate-12">
                 <span class="font-medium">
@@ -492,7 +494,7 @@ export default {
                     )
                   }}
                 </span>
-                <span class="min-h-[38px] rounded-lg bg-n-slate-2 px-3 py-2">
+                <span class="flex items-center min-h-10 break-words">
                   {{ agent.name }}
                 </span>
               </div>
@@ -503,9 +505,8 @@ export default {
                     'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INTERNAL_EXTENSION.LABEL'
                   )
                 }}
-                <input
+                <NextInput
                   v-model="virtualPbxProfiles[agent.id].internalExtension"
-                  class="rounded-lg border border-n-weak px-3 py-2 text-sm"
                   :disabled="isCreating || isLoadingVirtualPbx"
                   type="text"
                   :placeholder="
@@ -525,9 +526,8 @@ export default {
                     'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_USERNAME.LABEL'
                   )
                 }}
-                <input
+                <NextInput
                   v-model="virtualPbxProfiles[agent.id].sipUsername"
-                  class="rounded-lg border border-n-weak px-3 py-2 text-sm"
                   :disabled="isCreating || isLoadingVirtualPbx"
                   type="text"
                   :placeholder="
@@ -547,9 +547,8 @@ export default {
                     'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_PASSWORD.LABEL'
                   )
                 }}
-                <input
+                <NextInput
                   v-model="virtualPbxProfiles[agent.id].sipPassword"
-                  class="rounded-lg border border-n-weak px-3 py-2 text-sm"
                   :disabled="isCreating || isLoadingVirtualPbx"
                   type="password"
                   autocomplete="new-password"

@@ -182,11 +182,11 @@ defineExpose({ open, close });
         </div>
       </div>
 
-      <div class="grid gap-3 md:grid-cols-2">
+      <div class="grid gap-x-6 md:grid-cols-2">
         <div
           v-for="stat in stats"
           :key="stat.key"
-          class="rounded-2xl bg-n-solid-2 px-4 py-3 outline outline-1 outline-n-container"
+          class="border-t border-n-weak py-3"
         >
           <div
             class="mb-1 text-xs font-medium uppercase tracking-wide text-n-slate-10"
@@ -199,15 +199,15 @@ defineExpose({ open, close });
         </div>
       </div>
 
-      <div class="grid gap-3">
+      <div class="grid gap-1">
         <div class="text-sm font-semibold text-n-slate-12">
           {{ $t('OUTBOUND_WORKSPACE.TOUCHES.ANALYTICS.SECTIONS.TIMELINE') }}
         </div>
-        <div class="grid gap-2">
+        <div class="flex flex-col divide-y divide-n-weak">
           <div
             v-for="item in timeline"
             :key="item.key"
-            class="flex items-center justify-between gap-3 rounded-xl bg-n-alpha-1 px-4 py-3"
+            class="flex items-center justify-between gap-3 py-3"
           >
             <span class="text-sm text-n-slate-11">
               {{ item.label }}
@@ -221,7 +221,7 @@ defineExpose({ open, close });
 
       <div
         v-if="lastErrorText"
-        class="rounded-2xl bg-n-ruby-3 px-4 py-3 text-sm text-n-ruby-11"
+        class="rounded-xl bg-n-ruby-3 px-4 py-3 text-sm text-n-ruby-11"
       >
         <div class="mb-1 text-xs font-medium uppercase tracking-wide">
           {{ $t('OUTBOUND_WORKSPACE.TOUCHES.ANALYTICS.ERROR') }}

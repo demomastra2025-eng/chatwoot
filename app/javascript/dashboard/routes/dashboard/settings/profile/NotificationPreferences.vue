@@ -10,6 +10,7 @@ import {
 } from 'dashboard/helper/pushHelper.js';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import ToggleSwitch from 'dashboard/components-next/switch/Switch.vue';
+import NextButton from 'dashboard/components-next/button/Button.vue';
 import { NOTIFICATION_CHANNELS, NOTIFICATION_TYPES } from './constants';
 import AudioNotifications from './AudioNotifications.vue';
 
@@ -19,6 +20,7 @@ export default {
     ToggleSwitch,
     CheckBox,
     AudioNotifications,
+    NextButton,
   },
   data() {
     return {
@@ -408,14 +410,14 @@ export default {
     </div>
 
     <div
-      class="flex flex-col gap-3 p-4 border border-solid border-n-weak rounded-xl"
+      class="flex flex-col gap-3 rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
     >
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="flex flex-col gap-1">
           <span class="text-heading-3 text-n-slate-12">
             {{ $t('PROFILE_SETTINGS.FORM.NOTIFICATIONS.TELEGRAM_SETUP_TITLE') }}
           </span>
-          <span class="text-sm font-medium text-n-slate-11">
+          <span class="text-body-main text-n-slate-11">
             <template v-if="isTelegramConnected">
               {{
                 $t('PROFILE_SETTINGS.FORM.NOTIFICATIONS.TELEGRAM_CONNECTED_AS')
@@ -438,28 +440,32 @@ export default {
             :href="telegramBotLink"
             target="_blank"
             rel="noopener noreferrer"
-            class="px-3 py-2 text-sm font-medium rounded-lg text-n-brand bg-n-brand/10 hover:bg-n-brand/20"
+            class="text-sm font-medium text-n-brand underline-offset-2 hover:underline"
           >
             {{ $t('PROFILE_SETTINGS.FORM.NOTIFICATIONS.TELEGRAM_OPEN_BOT') }}
           </a>
-          <button
+          <NextButton
             v-if="!isTelegramConnected"
             type="button"
-            class="px-3 py-2 text-sm font-medium rounded-lg border border-solid border-n-weak text-n-slate-12 hover:bg-n-slate-3"
-            @click="refreshTelegramConnection"
-          >
-            {{
+            variant="outline"
+            color="slate"
+            size="sm"
+            :label="
               $t('PROFILE_SETTINGS.FORM.NOTIFICATIONS.TELEGRAM_CHECK_STATUS')
-            }}
-          </button>
-          <button
+            "
+            @click="refreshTelegramConnection"
+          />
+          <NextButton
             v-if="isTelegramConnected"
             type="button"
-            class="px-3 py-2 text-sm font-medium rounded-lg border border-solid border-n-weak text-n-ruby-11 hover:bg-n-ruby-3"
+            variant="outline"
+            color="ruby"
+            size="sm"
+            :label="
+              $t('PROFILE_SETTINGS.FORM.NOTIFICATIONS.TELEGRAM_DISCONNECT')
+            "
             @click="disconnectTelegram"
-          >
-            {{ $t('PROFILE_SETTINGS.FORM.NOTIFICATIONS.TELEGRAM_DISCONNECT') }}
-          </button>
+          />
         </div>
       </div>
 
@@ -471,7 +477,7 @@ export default {
     </div>
 
     <div
-      class="flex items-center justify-between w-full gap-2 p-4 border border-solid border-n-weak rounded-xl"
+      class="flex w-full items-center justify-between gap-2 rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
     >
       <div class="flex flex-row items-center gap-2">
         <fluent-icon

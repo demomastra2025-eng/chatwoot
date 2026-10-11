@@ -1126,10 +1126,10 @@ const onFilterChange = payload => {
                 class="overflow-x-auto rounded-b-xl border-t border-n-weak"
               >
                 <table class="w-full min-w-[108rem] text-left text-sm">
-                  <thead class="bg-n-alpha-1 text-xs text-n-slate-10">
+                  <thead class="bg-n-background text-xs text-n-slate-10">
                     <tr>
                       <th
-                        class="sticky left-0 z-10 bg-n-alpha-1 px-5 py-3 font-medium"
+                        class="sticky left-0 z-10 bg-n-background px-5 py-3 font-medium"
                       >
                         {{
                           $t(
@@ -1216,10 +1216,10 @@ const onFilterChange = payload => {
                     </tr>
                   </tbody>
                   <tfoot
-                    class="border-t border-n-container bg-n-alpha-1 font-semibold text-n-slate-12"
+                    class="border-t border-n-container bg-n-background font-semibold text-n-slate-12"
                   >
                     <tr>
-                      <td class="sticky left-0 z-10 bg-n-alpha-1 px-5 py-3">
+                      <td class="sticky left-0 z-10 bg-n-background px-5 py-3">
                         {{ $t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.TOTAL') }}
                       </td>
                       <td

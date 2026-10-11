@@ -65,9 +65,11 @@ const handleHeaderSort = column => {
 
 <template>
   <div
-    class="overflow-hidden rounded-2xl bg-n-solid-2"
+    class="overflow-hidden rounded-xl bg-n-solid-2"
     :class="
-      props.borderless ? '' : 'outline outline-1 outline-n-container shadow-sm'
+      props.borderless
+        ? ''
+        : 'outline outline-1 -outline-offset-1 outline-n-container'
     "
   >
     <div

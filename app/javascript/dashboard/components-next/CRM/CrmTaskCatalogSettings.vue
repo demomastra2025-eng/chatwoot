@@ -143,11 +143,11 @@ const toggleTaskType = async taskType => {
       />
     </div>
 
-    <div class="grid gap-3">
+    <div class="grid gap-4">
       <article
         v-for="taskType in taskTypes"
         :key="taskType.id"
-        class="rounded-xl border border-n-weak bg-n-alpha-white1 p-4"
+        class="rounded-xl bg-n-solid-2 px-4 py-3 outline outline-1 -outline-offset-1 outline-n-weak"
       >
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div class="flex min-w-0 items-center gap-3">
@@ -256,7 +256,7 @@ const toggleTaskType = async taskType => {
               v-for="(icon, index) in CRM_TASK_TYPE_ICONS"
               :key="icon"
               type="button"
-              class="relative flex size-10 items-center justify-center rounded-lg border text-n-slate-11 transition-colors hover:bg-n-alpha-2"
+              class="relative flex size-10 items-center justify-center rounded-lg border p-0 text-n-slate-11 transition-colors hover:bg-n-alpha-2"
               :class="
                 typeForm.icon === icon
                   ? 'border-n-brand bg-n-brand-alpha-2 text-n-brand'
@@ -279,11 +279,15 @@ const toggleTaskType = async taskType => {
             </button>
           </div>
         </fieldset>
-        <label class="flex items-center gap-3 text-sm text-n-slate-12">
+        <label
+          class="flex items-center gap-2 text-sm font-normal text-n-slate-12"
+        >
           <Switch v-model="typeForm.default" />
           {{ t('CRM.SETTINGS.TASK_CATALOGS.DEFAULT') }}
         </label>
-        <label class="flex items-center gap-3 text-sm text-n-slate-12">
+        <label
+          class="flex items-center gap-2 text-sm font-normal text-n-slate-12"
+        >
           <Switch v-model="typeForm.active" />
           {{ t('CRM.SETTINGS.TASK_CATALOGS.ACTIVE') }}
         </label>
@@ -309,15 +313,21 @@ const toggleTaskType = async taskType => {
           :model-value="outcomeForm.name"
           @update:model-value="outcomeForm.name = $event"
         />
-        <label class="flex items-center gap-3 text-sm text-n-slate-12">
+        <label
+          class="flex items-center gap-2 text-sm font-normal text-n-slate-12"
+        >
           <Switch v-model="outcomeForm.default" />
           {{ t('CRM.SETTINGS.TASK_CATALOGS.DEFAULT') }}
         </label>
-        <label class="flex items-center gap-3 text-sm text-n-slate-12">
+        <label
+          class="flex items-center gap-2 text-sm font-normal text-n-slate-12"
+        >
           <Switch v-model="outcomeForm.requiresNote" />
           {{ t('CRM.SETTINGS.TASK_CATALOGS.REQUIRES_NOTE') }}
         </label>
-        <label class="flex items-center gap-3 text-sm text-n-slate-12">
+        <label
+          class="flex items-center gap-2 text-sm font-normal text-n-slate-12"
+        >
           <Switch v-model="outcomeForm.active" />
           {{ t('CRM.SETTINGS.TASK_CATALOGS.ACTIVE') }}
         </label>

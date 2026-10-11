@@ -840,14 +840,11 @@ onBeforeRouteLeave(() => {
       <Spinner class="!h-8 !w-8" />
     </div>
     <div v-else class="grid gap-4">
-      <div
-        v-if="linkedSourceCard"
-        class="rounded-2xl bg-n-alpha-black2 px-4 py-3 outline outline-1 outline-n-weak"
-      >
-        <p class="mb-1 text-sm font-medium text-n-slate-12">
+      <div v-if="linkedSourceCard" class="flex flex-col gap-1">
+        <p class="mb-0 text-heading-3 text-n-slate-12">
           {{ linkedSourceCard.label }}
         </p>
-        <p class="mb-0 text-sm text-n-slate-11">
+        <p class="mb-0 text-body-main text-n-slate-11">
           {{ [linkedSourceCard.title, linkedSourceCard.source].join(' · ') }}
         </p>
       </div>
@@ -905,7 +902,10 @@ onBeforeRouteLeave(() => {
         </div>
       </SchedulingFormFieldGroup>
 
-      <SchedulingFormFieldGroup :framed="false">
+      <SchedulingFormFieldGroup
+        :framed="false"
+        class="border-t border-n-weak pt-6"
+      >
         <div class="grid gap-4">
           <div class="grid gap-1">
             <div class="mb-0.5 flex items-center justify-between gap-3">
@@ -978,11 +978,15 @@ onBeforeRouteLeave(() => {
       <CrmCustomFieldsSection
         :definitions="dealFieldDefinitions"
         :framed="false"
+        class="border-t border-n-weak pt-6"
         :model-value="form.customAttributes"
         @update:model-value="form.customAttributes = $event"
       />
 
-      <SchedulingFormFieldGroup :framed="false">
+      <SchedulingFormFieldGroup
+        :framed="false"
+        class="border-t border-n-weak pt-6"
+      >
         <TextArea
           :label="$t('CRM.DEALS.FORM.DESCRIPTION')"
           :model-value="form.description"

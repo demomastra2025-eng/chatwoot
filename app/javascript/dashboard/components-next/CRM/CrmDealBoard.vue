@@ -392,7 +392,7 @@ const handleColumnChange = (event, stageId) => {
               <button
                 v-if="showSortToggle"
                 type="button"
-                class="flex size-8 shrink-0 items-center justify-center rounded-md border border-transparent bg-transparent text-n-slate-11 transition-colors hover:bg-n-alpha-black2 hover:text-n-slate-12"
+                class="flex size-8 shrink-0 items-center justify-center rounded-md border border-transparent bg-transparent p-0 text-n-slate-11 transition-colors hover:bg-n-alpha-black2 hover:text-n-slate-12"
                 :aria-label="sortDirectionLabel(column.stageId)"
                 :title="sortDirectionLabel(column.stageId)"
                 @click.stop="emit('toggleSortDirection', column.stageId)"
@@ -432,14 +432,14 @@ const handleColumnChange = (event, stageId) => {
         >
           <template #item="{ element }">
             <article
-              class="rounded-md border border-n-weak bg-n-surface-1 px-2.5 py-2 shadow-sm transition-shadow hover:shadow-md motion-reduce:transition-none"
+              class="rounded-xl bg-n-solid-2 px-2.5 py-2 outline outline-1 -outline-offset-1 outline-n-weak transition-colors hover:outline-n-strong motion-reduce:transition-none"
               @click="emit('selectDeal', element)"
             >
               <div class="flex items-start justify-between gap-2">
                 <button
                   type="button"
                   data-test="open-deal"
-                  class="min-w-0 flex-1 overflow-hidden text-left focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-n-brand"
+                  class="min-w-0 flex-1 overflow-hidden rounded-none p-0 text-left focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-n-brand"
                 >
                   <div class="flex min-w-0 items-center gap-1.5">
                     <h4

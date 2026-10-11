@@ -175,7 +175,7 @@ useEventListener(window, 'scroll', updateDropdownPosition, {
       <Teleport :to="teleportTarget">
         <div
           v-if="isOpen"
-          class="scheduling-resource-filter-dropdown fixed z-50 flex min-w-72 flex-col gap-3 rounded-2xl border border-n-weak bg-n-solid-2/95 p-3 shadow-xl outline outline-1 outline-n-container backdrop-blur-[16px]"
+          class="scheduling-resource-filter-dropdown fixed z-50 flex min-w-72 flex-col gap-3 rounded-xl bg-n-solid-2/95 p-3 shadow-xl outline outline-1 -outline-offset-1 outline-n-weak backdrop-blur-[16px]"
           :style="dropdownStyle"
         >
           <Input

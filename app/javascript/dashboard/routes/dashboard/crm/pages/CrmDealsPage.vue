@@ -4325,8 +4325,8 @@ watch(
         <div
           :class="
             shouldRenderBoard && !ui.isLoading && !ui.error
-              ? 'flex h-full min-h-0 flex-col px-5 pb-5 pt-3'
-              : 'flex flex-col gap-4 px-5 pb-5 pt-3'
+              ? 'flex h-full min-h-0 flex-col px-6 pb-5 pt-3'
+              : 'flex flex-col gap-4 px-6 pb-5 pt-3'
           "
         >
           <CrmPageSkeleton
@@ -4398,7 +4398,7 @@ watch(
 
           <div
             v-else-if="currentPresentation === 'list'"
-            class="mt-3 overflow-hidden rounded-xl outline outline-1 outline-n-container"
+            class="overflow-hidden rounded-xl bg-n-solid-2 outline outline-1 -outline-offset-1 outline-n-container"
           >
             <SchedulingRecordTable
               borderless
@@ -5113,7 +5113,11 @@ watch(
                     </button>
                   </div>
 
-                  <div v-show="dealActivityTab === 'history'" role="tabpanel">
+                  <div
+                    v-show="dealActivityTab === 'history'"
+                    class="crm-deal-drawer-activity-panel"
+                    role="tabpanel"
+                  >
                     <CrmTimelineFeed
                       :items="timelineItems"
                       :error="ui.timelineError"
@@ -5132,6 +5136,7 @@ watch(
                   <div
                     v-if="shouldRenderDealTasksPanel"
                     v-show="dealActivityTab === 'tasks'"
+                    class="crm-deal-drawer-activity-panel"
                     role="tabpanel"
                   >
                     <CrmDealTasksPanel
@@ -5439,6 +5444,16 @@ watch(
 
 .crm-deal-drawer-status-grid {
   @apply grid gap-2 md:grid-cols-3;
+}
+
+/* The drawer is already the frame: show the history and task panels as
+   unframed full-bleed lists instead of a block inside the drawer. */
+.crm-deal-drawer-activity-panel {
+  @apply -mx-4;
+}
+
+.crm-deal-drawer-activity-panel > :deep(section) {
+  @apply rounded-none bg-transparent outline-0;
 }
 
 .crm-deal-drawer-status-grid :deep(button) {

@@ -145,7 +145,7 @@ useEventListener(document, 'keydown', event => {
             :class="mobileWidthClass"
           >
             <header
-              class="flex items-start justify-between gap-4 border-b border-n-weak bg-n-surface-1 px-6 py-4"
+              class="flex items-start justify-between gap-4 border-b border-n-weak bg-n-surface-1 px-4 py-4"
             >
               <div class="flex flex-col gap-1">
                 <h3 class="mb-0 text-lg font-semibold text-n-slate-12">
@@ -165,13 +165,13 @@ useEventListener(document, 'keydown', event => {
             </header>
 
             <div class="min-h-0 flex-1 overflow-y-auto">
-              <div class="px-6 py-5">
+              <div class="px-4 py-5">
                 <slot />
               </div>
             </div>
 
             <footer
-              class="flex items-center justify-between gap-3 border-t border-n-weak bg-n-surface-1 px-6 py-4"
+              class="flex items-center justify-between gap-3 border-t border-n-weak bg-n-surface-1 px-4 py-4"
             >
               <slot name="footer">
                 <Button
@@ -210,7 +210,7 @@ useEventListener(document, 'keydown', event => {
       :class="[desktopWidthClass, desktopChromeClass]"
     >
       <header
-        class="flex items-start justify-between gap-4 border-b border-n-weak bg-n-surface-1 px-6 py-4"
+        class="flex items-start justify-between gap-4 border-b border-n-weak bg-n-surface-1 px-4 py-4"
       >
         <div class="flex flex-col gap-1">
           <h3 class="mb-0 text-lg font-semibold text-n-slate-12">
@@ -230,13 +230,13 @@ useEventListener(document, 'keydown', event => {
       </header>
 
       <div class="min-h-0 flex-1 overflow-y-auto">
-        <div class="px-6 py-5">
+        <div class="px-4 py-5">
           <slot />
         </div>
       </div>
 
       <footer
-        class="flex items-center justify-between gap-3 border-t border-n-weak bg-n-surface-1 px-6 py-4"
+        class="flex items-center justify-between gap-3 border-t border-n-weak bg-n-surface-1 px-4 py-4"
       >
         <slot name="footer">
           <Button

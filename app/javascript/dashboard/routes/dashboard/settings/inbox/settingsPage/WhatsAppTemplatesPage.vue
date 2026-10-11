@@ -218,7 +218,7 @@ const getTemplateCarouselCards = template => {
     >
       <div class="space-y-3">
         <div
-          class="flex flex-col gap-2 rounded-xl border border-n-weak bg-n-surface-1 p-3 md:flex-row md:items-center md:justify-between"
+          class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between"
         >
           <div class="min-w-0 space-y-1">
             <p class="mb-0 text-sm font-medium text-n-slate-12">
@@ -263,10 +263,7 @@ const getTemplateCarouselCards = template => {
           :placeholder="t('WHATSAPP_TEMPLATES.MANAGEMENT.SEARCH_PLACEHOLDER')"
         />
 
-        <div
-          v-if="!templateGroups.length"
-          class="rounded-xl border border-dashed border-n-weak bg-n-surface-1 p-6 text-center"
-        >
+        <div v-if="!templateGroups.length" class="p-6 text-center">
           <p class="mb-1 text-sm font-medium text-n-slate-12">
             {{ t('WHATSAPP_TEMPLATES.MANAGEMENT.EMPTY_TITLE') }}
           </p>
@@ -275,10 +272,7 @@ const getTemplateCarouselCards = template => {
           </p>
         </div>
 
-        <div
-          v-else-if="!filteredTemplates.length"
-          class="rounded-xl border border-dashed border-n-weak bg-n-surface-1 p-6 text-center"
-        >
+        <div v-else-if="!filteredTemplates.length" class="p-6 text-center">
           <p class="mb-1 text-sm font-medium text-n-slate-12">
             {{ t('WHATSAPP_TEMPLATES.MANAGEMENT.NO_RESULTS_TITLE') }}
           </p>
@@ -291,7 +285,7 @@ const getTemplateCarouselCards = template => {
           <div
             v-for="templateGroup in filteredTemplates"
             :key="templateGroup.name"
-            class="space-y-2 rounded-xl border border-n-weak bg-n-surface-1 p-3"
+            class="space-y-2 rounded-xl bg-n-solid-2 p-4 outline outline-1 -outline-offset-1 outline-n-weak"
             data-test="whatsapp-template-card"
           >
             <div class="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
@@ -350,13 +344,8 @@ const getTemplateCarouselCards = template => {
 
               <div class="flex shrink-0 items-center gap-1.5">
                 <label
-                  class="flex max-w-28 cursor-pointer items-center gap-1.5 text-[11px] font-medium leading-4 text-n-slate-11"
+                  class="flex max-w-36 cursor-pointer items-center gap-2 text-xs font-normal leading-4 text-n-slate-11"
                 >
-                  <span class="line-clamp-2">
-                    {{
-                      t('WHATSAPP_TEMPLATES.MANAGEMENT.SHOW_IN_CONVERSATIONS')
-                    }}
-                  </span>
                   <Switch
                     :model-value="isVisibleInConversations(templateGroup)"
                     :aria-label="
@@ -367,6 +356,11 @@ const getTemplateCarouselCards = template => {
                       updateTemplateVisibility(templateGroup, $event)
                     "
                   />
+                  <span class="line-clamp-2">
+                    {{
+                      t('WHATSAPP_TEMPLATES.MANAGEMENT.SHOW_IN_CONVERSATIONS')
+                    }}
+                  </span>
                 </label>
                 <Button
                   v-if="canDeleteTemplate(templateGroup)"
@@ -464,7 +458,7 @@ const getTemplateCarouselCards = template => {
                     <div
                       v-for="(card, index) in getTemplateCarouselCards(variant)"
                       :key="`${variant.language}-carousel-${index}`"
-                      class="mt-1 rounded-md border border-n-weak p-2"
+                      class="mt-1 border-t border-n-weak pt-2"
                       data-test="template-carousel-card"
                     >
                       <p class="mb-1 text-xs font-medium text-n-slate-12">
@@ -521,9 +515,8 @@ const getTemplateCarouselCards = template => {
                       variant.rejected_reason &&
                       variant.rejected_reason !== 'NONE'
                     "
-                    class="rounded-md bg-n-ruby-9/10 px-2 py-1"
                   >
-                    <p class="mb-0 text-[10px] font-medium text-n-ruby-11">
+                    <p class="mb-0 text-xs font-medium text-n-ruby-11">
                       {{
                         t('WHATSAPP_TEMPLATES.MANAGEMENT.REJECTION_REASON', {
                           language: variant.language || 'en',

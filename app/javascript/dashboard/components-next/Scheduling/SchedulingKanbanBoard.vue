@@ -201,8 +201,8 @@ const canMoveAppointment = event =>
 
 <template>
   <div class="flex h-full min-h-0 flex-col">
-    <div class="min-h-0 flex-1 overflow-x-auto overflow-y-hidden px-1 pb-2">
-      <div class="flex h-full min-w-max items-stretch gap-4 py-1">
+    <div class="min-h-0 flex-1 overflow-x-auto overflow-y-hidden pb-2">
+      <div class="flex h-full min-w-max items-stretch gap-4">
         <section
           v-for="column in kanbanColumns"
           :key="column.value"
@@ -240,7 +240,7 @@ const canMoveAppointment = event =>
           >
             <template #item="{ element }">
               <article
-                class="rounded-2xl border border-n-weak bg-n-surface-1 p-3 shadow-sm transition-shadow hover:shadow-md"
+                class="rounded-xl bg-n-solid-2 p-3 outline outline-1 -outline-offset-1 outline-n-weak transition-colors hover:outline-n-strong"
                 @click="emit('selectAppointment', element)"
               >
                 <div class="flex items-start justify-between gap-3">

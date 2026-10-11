@@ -592,7 +592,7 @@ const getFileTypeName = type => {
     <template #body>
       <div
         v-if="!isLoading && storageData?.calculating"
-        class="rounded-xl border border-n-weak bg-n-surface-1 p-6 text-n-slate-12"
+        class="rounded-xl bg-n-solid-2 px-5 py-4 text-body-main text-n-slate-12 outline outline-1 -outline-offset-1 outline-n-container"
         role="status"
       >
         {{
@@ -606,7 +606,7 @@ const getFileTypeName = type => {
       <div v-else-if="!isLoading && storageData" class="space-y-6">
         <p
           v-if="storageData.refresh_pending || storageData.stale"
-          class="text-xs text-n-slate-11"
+          class="mb-0 text-xs text-n-slate-11"
           role="status"
         >
           {{
@@ -620,19 +620,19 @@ const getFileTypeName = type => {
         <!-- Storage Threshold Alert Banner (80% / 95%) -->
         <div
           v-if="shouldShowStorageAlert"
-          class="rounded-xl border p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 transition-all"
+          class="flex flex-col items-start justify-between gap-4 rounded-xl p-4 outline outline-1 -outline-offset-1 transition-all sm:flex-row sm:items-center"
           :class="
             usagePercent >= 95
-              ? 'bg-n-ruby-3 border-n-ruby-5 text-n-ruby-11 shadow-sm'
-              : 'bg-n-amber-3 border-n-amber-5 text-n-amber-11 shadow-sm'
+              ? 'bg-n-ruby-3 outline-n-ruby-5 text-n-ruby-11'
+              : 'bg-n-amber-3 outline-n-amber-5 text-n-amber-11'
           "
         >
-          <div class="flex items-start gap-3.5">
+          <div class="flex items-start gap-3">
             <span class="text-2xl flex-shrink-0 mt-0.5">
               {{ usagePercent >= 95 ? '🚨' : '⚠️' }}
             </span>
             <div>
-              <h4 class="text-sm font-bold">
+              <h4 class="text-heading-3">
                 {{
                   usagePercent >= 95
                     ? $t('STORAGE.ALERTS.CRITICAL_TITLE', {
@@ -644,7 +644,7 @@ const getFileTypeName = type => {
                 }}
               </h4>
               <p
-                class="text-xs mt-1"
+                class="mt-1 mb-0 text-body-main"
                 :class="
                   usagePercent >= 95 ? 'text-n-ruby-11' : 'text-n-amber-11'
                 "
@@ -687,16 +687,16 @@ const getFileTypeName = type => {
 
         <!-- Storage Quota Bar Card -->
         <div
-          class="p-5 sm:p-6 bg-n-surface-1 rounded-xl border border-n-weak shadow-sm"
+          class="rounded-xl bg-n-solid-2 px-5 py-4 outline outline-1 -outline-offset-1 outline-n-container"
         >
           <div
             class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4"
           >
             <div>
-              <h3 class="text-base font-bold text-n-slate-12">
+              <h3 class="text-heading-2 text-n-slate-12">
                 {{ $t('STORAGE.OVERVIEW.TITLE') }}
               </h3>
-              <p class="text-xs text-n-slate-11 mt-0.5">
+              <p class="mt-0.5 mb-0 text-xs text-n-slate-11">
                 {{
                   `${$t('STORAGE.OVERVIEW.LAST_UPDATED')}: ${formatDate(storageData.last_updated_at)}`
                 }}
@@ -727,7 +727,7 @@ const getFileTypeName = type => {
 
           <!-- Progress Bar -->
           <div
-            class="w-full bg-n-alpha-2 rounded-full h-3 overflow-hidden p-0.5 border border-n-weak"
+            class="h-3 w-full overflow-hidden rounded-full bg-n-alpha-2 p-0.5"
           >
             <div
               class="h-2 rounded-full transition-all duration-500"
@@ -749,7 +749,7 @@ const getFileTypeName = type => {
         <!-- Navigation Tabs -->
         <div class="flex items-center gap-2 border-b border-n-weak">
           <button
-            class="px-4 py-2.5 text-sm font-semibold border-b-2 transition -mb-px flex items-center gap-1.5"
+            class="-mb-px flex items-center gap-1.5 rounded-none border-b-2 border-solid px-4 py-2.5 text-sm font-semibold transition"
             :class="
               activeTab === 'overview'
                 ? 'border-n-brand text-n-blue-11'
@@ -761,7 +761,7 @@ const getFileTypeName = type => {
             <span>{{ $t('STORAGE.TABS.OVERVIEW') }}</span>
           </button>
           <button
-            class="px-4 py-2.5 text-sm font-semibold border-b-2 transition -mb-px flex items-center gap-2"
+            class="-mb-px flex items-center gap-2 rounded-none border-b-2 border-solid px-4 py-2.5 text-sm font-semibold transition"
             :class="
               activeTab === 'cleaner'
                 ? 'border-n-brand text-n-blue-11'
@@ -784,18 +784,16 @@ const getFileTypeName = type => {
         <div v-if="activeTab === 'overview'" class="space-y-6">
           <!-- File Types Breakdown Grid -->
           <div>
-            <h4
-              class="text-sm font-bold text-n-slate-12 uppercase tracking-wider mb-3"
-            >
+            <h4 class="mb-3 text-heading-2 text-n-slate-12">
               {{ $t('STORAGE.TYPES.TITLE') }}
             </h4>
             <div
-              class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3"
+              class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-4"
             >
               <div
                 v-for="card in typeCards"
                 :key="card.key"
-                class="p-4 bg-n-surface-1 rounded-xl border border-n-weak shadow-sm flex flex-col justify-between"
+                class="flex flex-col justify-between rounded-xl bg-n-solid-2 px-4 py-3 outline outline-1 -outline-offset-1 outline-n-container"
               >
                 <div>
                   <div
@@ -806,7 +804,9 @@ const getFileTypeName = type => {
                       `${card.percent}%`
                     }}</span>
                   </div>
-                  <p class="text-xs font-medium text-n-slate-11 mt-2 truncate">
+                  <p
+                    class="mt-2 mb-0 truncate text-xs font-medium text-n-slate-11"
+                  >
                     {{ card.title }}
                   </p>
                 </div>
@@ -823,22 +823,20 @@ const getFileTypeName = type => {
 
           <!-- Inboxes Storage Consumption Grid -->
           <div v-if="inboxesList.length > 0">
-            <h4
-              class="text-sm font-bold text-n-slate-12 uppercase tracking-wider mb-3"
-            >
+            <h4 class="mb-3 text-heading-2 text-n-slate-12">
               {{ $t('STORAGE.INBOXES.TITLE') }}
             </h4>
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <div
                 v-for="inbox in inboxesList"
                 :key="inbox.id"
-                class="p-4 bg-n-surface-1 rounded-xl border border-n-weak shadow-sm flex items-center justify-between"
+                class="flex items-center justify-between rounded-xl bg-n-solid-2 px-4 py-3 outline outline-1 -outline-offset-1 outline-n-container"
               >
                 <div class="min-w-0 pr-3">
-                  <p class="text-sm font-semibold text-n-slate-12 truncate">
+                  <p class="mb-0 truncate text-heading-3 text-n-slate-12">
                     {{ inbox.name }}
                   </p>
-                  <p class="text-xs text-n-slate-11 mt-0.5">
+                  <p class="mt-0.5 mb-0 text-xs text-n-slate-11">
                     {{
                       `${inbox.files_count} ${$t('STORAGE.INBOXES.FILES_COUNT')}`
                     }}
@@ -857,120 +855,121 @@ const getFileTypeName = type => {
         <!-- TAB 2: CLEANER & TRASH -->
         <div v-else-if="activeTab === 'cleaner'" class="space-y-6">
           <!-- Smart Cleaner Form Card -->
-          <div class="space-y-4">
-            <div class="border-b border-n-weak pb-4 mb-4">
+          <div
+            class="flex flex-col divide-y divide-n-weak overflow-hidden rounded-xl bg-n-solid-2 outline outline-1 -outline-offset-1 outline-n-container"
+          >
+            <div class="px-5 py-4">
               <h3
-                class="text-base font-bold text-n-slate-12 flex items-center gap-2"
+                class="flex items-center gap-2 text-heading-2 text-n-slate-12"
               >
                 <span>{{ '🧹' }}</span>
                 <span>{{ $t('STORAGE.CLEANER.TITLE') }}</span>
               </h3>
-              <p class="text-xs text-n-slate-11 mt-1">
+              <p class="mt-1 mb-0 text-body-para text-n-slate-11">
                 {{ $t('STORAGE.CLEANER.SUBTITLE') }}
               </p>
             </div>
 
-            <!-- Cleaner Filters Form -->
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-              <div>
-                <label class="block text-xs font-semibold text-n-slate-12 mb-1">
-                  {{ $t('STORAGE.CLEANER.FILE_TYPE') }}
-                </label>
-                <select
-                  v-model="cleanerFileType"
-                  class="w-full text-xs border border-n-weak rounded-lg px-3 py-2 bg-n-surface-1 text-n-slate-12 focus:outline-none focus:ring-1 focus:ring-n-brand"
-                >
-                  <option value="all">
-                    {{ $t('STORAGE.CLEANER.ALL_TYPES') }}
-                  </option>
-                  <option value="recordings">
-                    {{ $t('STORAGE.TYPES.RECORDINGS') }}
-                  </option>
-                  <option value="audio">
-                    {{ $t('STORAGE.TYPES.AUDIO') }}
-                  </option>
-                  <option value="image">
-                    {{ $t('STORAGE.TYPES.IMAGES') }}
-                  </option>
-                  <option value="video">
-                    {{ $t('STORAGE.TYPES.VIDEOS') }}
-                  </option>
-                  <option value="file">
-                    {{ $t('STORAGE.TYPES.DOCUMENTS') }}
-                  </option>
-                </select>
-              </div>
-
-              <div>
-                <label class="block text-xs font-semibold text-n-slate-12 mb-1">
-                  {{ $t('STORAGE.CLEANER.OLDER_THAN') }}
-                </label>
-                <select
-                  v-model="cleanerMonths"
-                  class="w-full text-xs border border-n-weak rounded-lg px-3 py-2 bg-n-surface-1 text-n-slate-12 focus:outline-none focus:ring-1 focus:ring-n-brand"
-                >
-                  <option :value="1">
-                    {{ $t('STORAGE.CLEANER.OLDER_1_MONTH') }}
-                  </option>
-                  <option :value="3">
-                    {{ $t('STORAGE.CLEANER.OLDER_3_MONTHS') }}
-                  </option>
-                  <option :value="6">
-                    {{ $t('STORAGE.CLEANER.OLDER_6_MONTHS') }}
-                  </option>
-                  <option :value="12">
-                    {{ $t('STORAGE.CLEANER.OLDER_1_YEAR') }}
-                  </option>
-                </select>
-              </div>
-
-              <div>
-                <label class="block text-xs font-semibold text-n-slate-12 mb-1">
-                  {{ $t('STORAGE.HEAVY_FILES.COLUMNS.INBOX') }}
-                </label>
-                <select
-                  v-model="cleanerInboxId"
-                  class="w-full text-xs border border-n-weak rounded-lg px-3 py-2 bg-n-surface-1 text-n-slate-12 focus:outline-none focus:ring-1 focus:ring-n-brand truncate"
-                >
-                  <option value="">
-                    {{ $t('STORAGE.HEAVY_FILES.ALL_INBOXES') }}
-                  </option>
-                  <option
-                    v-for="inbox in inboxesList"
-                    :key="inbox.id"
-                    :value="inbox.id"
+            <div class="grid gap-5 px-5 py-4">
+              <!-- Cleaner Filters Form -->
+              <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <div class="flex flex-col gap-1">
+                  <label class="text-heading-3 text-n-slate-12">
+                    {{ $t('STORAGE.CLEANER.FILE_TYPE') }}
+                  </label>
+                  <select
+                    v-model="cleanerFileType"
+                    class="w-full !mb-0 rounded-lg bg-n-alpha-black2 text-sm text-n-slate-12 outline outline-1 -outline-offset-1 outline-n-weak"
                   >
-                    {{ inbox.name }}
-                  </option>
-                </select>
+                    <option value="all">
+                      {{ $t('STORAGE.CLEANER.ALL_TYPES') }}
+                    </option>
+                    <option value="recordings">
+                      {{ $t('STORAGE.TYPES.RECORDINGS') }}
+                    </option>
+                    <option value="audio">
+                      {{ $t('STORAGE.TYPES.AUDIO') }}
+                    </option>
+                    <option value="image">
+                      {{ $t('STORAGE.TYPES.IMAGES') }}
+                    </option>
+                    <option value="video">
+                      {{ $t('STORAGE.TYPES.VIDEOS') }}
+                    </option>
+                    <option value="file">
+                      {{ $t('STORAGE.TYPES.DOCUMENTS') }}
+                    </option>
+                  </select>
+                </div>
+
+                <div class="flex flex-col gap-1">
+                  <label class="text-heading-3 text-n-slate-12">
+                    {{ $t('STORAGE.CLEANER.OLDER_THAN') }}
+                  </label>
+                  <select
+                    v-model="cleanerMonths"
+                    class="w-full !mb-0 rounded-lg bg-n-alpha-black2 text-sm text-n-slate-12 outline outline-1 -outline-offset-1 outline-n-weak"
+                  >
+                    <option :value="1">
+                      {{ $t('STORAGE.CLEANER.OLDER_1_MONTH') }}
+                    </option>
+                    <option :value="3">
+                      {{ $t('STORAGE.CLEANER.OLDER_3_MONTHS') }}
+                    </option>
+                    <option :value="6">
+                      {{ $t('STORAGE.CLEANER.OLDER_6_MONTHS') }}
+                    </option>
+                    <option :value="12">
+                      {{ $t('STORAGE.CLEANER.OLDER_1_YEAR') }}
+                    </option>
+                  </select>
+                </div>
+
+                <div class="flex flex-col gap-1">
+                  <label class="text-heading-3 text-n-slate-12">
+                    {{ $t('STORAGE.HEAVY_FILES.COLUMNS.INBOX') }}
+                  </label>
+                  <select
+                    v-model="cleanerInboxId"
+                    class="w-full !mb-0 truncate rounded-lg bg-n-alpha-black2 text-sm text-n-slate-12 outline outline-1 -outline-offset-1 outline-n-weak"
+                  >
+                    <option value="">
+                      {{ $t('STORAGE.HEAVY_FILES.ALL_INBOXES') }}
+                    </option>
+                    <option
+                      v-for="inbox in inboxesList"
+                      :key="inbox.id"
+                      :value="inbox.id"
+                    >
+                      {{ inbox.name }}
+                    </option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Preview action button -->
+              <div class="flex items-center gap-3">
+                <Button
+                  type="button"
+                  color="blue"
+                  size="sm"
+                  :disabled="isPreviewing"
+                  :is-loading="isPreviewing"
+                  @click="runPreview"
+                >
+                  <span>{{
+                    isPreviewing
+                      ? $t('STORAGE.CLEANER.PREVIEWING')
+                      : $t('STORAGE.CLEANER.PREVIEW_BUTTON')
+                  }}</span>
+                </Button>
               </div>
             </div>
 
-            <!-- Preview action button -->
-            <div class="flex items-center gap-3">
-              <Button
-                type="button"
-                color="blue"
-                size="sm"
-                :disabled="isPreviewing"
-                :is-loading="isPreviewing"
-                @click="runPreview"
-              >
-                <span>{{
-                  isPreviewing
-                    ? $t('STORAGE.CLEANER.PREVIEWING')
-                    : $t('STORAGE.CLEANER.PREVIEW_BUTTON')
-                }}</span>
-              </Button>
-            </div>
-
-            <!-- Preview Results Box -->
-            <div
-              v-if="previewData"
-              class="mt-5 p-4 rounded-xl border border-n-blue-5 bg-n-blue-3/50 space-y-4"
-            >
+            <!-- Preview Results: tinted sub-area of the Cleaner card -->
+            <div v-if="previewData" class="grid gap-4 bg-n-blue-2 px-5 py-4">
               <div class="flex items-center justify-between">
-                <h4 class="text-sm font-bold text-n-blue-12">
+                <h4 class="text-heading-3 text-n-blue-12">
                   {{ $t('STORAGE.CLEANER.PREVIEW_TITLE') }}
                 </h4>
                 <span class="text-xs font-mono font-bold text-n-blue-11">
@@ -1025,7 +1024,7 @@ const getFileTypeName = type => {
                 </div>
 
                 <!-- Retention notice -->
-                <p class="text-xs text-n-blue-11">
+                <p class="mb-0 text-xs text-n-blue-11">
                   {{ 'ℹ️ ' + $t('STORAGE.CLEANER.RETENTION_NOTICE') }}
                 </p>
 
@@ -1050,25 +1049,25 @@ const getFileTypeName = type => {
 
           <!-- Heavy Files Table -->
           <div
-            class="bg-n-surface-1 rounded-xl border border-n-weak shadow-sm overflow-hidden"
+            class="overflow-hidden rounded-xl bg-n-solid-2 outline outline-1 -outline-offset-1 outline-n-container"
           >
             <div
-              class="p-4 sm:p-5 border-b border-n-weak flex flex-col md:flex-row md:items-center justify-between gap-4"
+              class="flex flex-col justify-between gap-4 border-b border-n-weak px-5 py-4 md:flex-row md:items-center"
             >
               <div>
-                <h4 class="text-base font-bold text-n-slate-12">
+                <h4 class="text-heading-2 text-n-slate-12">
                   {{ $t('STORAGE.HEAVY_FILES.TITLE') }}
                 </h4>
-                <p class="text-xs text-n-slate-11 mt-0.5">
+                <p class="mt-0.5 mb-0 text-body-para text-n-slate-11">
                   {{ $t('STORAGE.HEAVY_FILES.SUBTITLE') }}
                 </p>
               </div>
 
               <!-- Filters -->
-              <div class="flex flex-wrap items-center gap-2.5">
+              <div class="flex flex-wrap items-center gap-2">
                 <select
                   v-model="selectedFileType"
-                  class="text-xs border border-n-weak rounded-lg px-2.5 py-1.5 bg-n-surface-1 text-n-slate-12 focus:outline-none focus:ring-1 focus:ring-n-brand"
+                  class="h-8 w-auto !mb-0 rounded-lg bg-n-alpha-black2 py-1 text-sm text-n-slate-12 outline outline-1 -outline-offset-1 outline-n-weak"
                   @change="onFilterChange"
                 >
                   <option value="all">
@@ -1094,7 +1093,7 @@ const getFileTypeName = type => {
                 <select
                   v-if="inboxesList.length > 0"
                   v-model="selectedInboxId"
-                  class="text-xs border border-n-weak rounded-lg px-2.5 py-1.5 bg-n-surface-1 text-n-slate-12 focus:outline-none focus:ring-1 focus:ring-n-brand max-w-[160px] truncate"
+                  class="h-8 w-auto max-w-[160px] !mb-0 truncate rounded-lg bg-n-alpha-black2 py-1 text-sm text-n-slate-12 outline outline-1 -outline-offset-1 outline-n-weak"
                   @change="onFilterChange"
                 >
                   <option value="">
@@ -1112,7 +1111,7 @@ const getFileTypeName = type => {
                   v-model="selectedConversationId"
                   type="number"
                   min="1"
-                  class="w-28 text-xs border border-n-weak rounded-lg px-2.5 py-1.5"
+                  class="reset-base h-8 w-28 rounded-lg border-0 bg-n-alpha-black2 px-3 text-sm text-n-slate-12 outline outline-1 -outline-offset-1 outline-n-weak placeholder:text-n-slate-10 hover:outline-n-slate-6 focus:outline-n-brand"
                   :aria-label="$t('STORAGE.HEAVY_FILES.CONVERSATION_ID')"
                   :placeholder="$t('STORAGE.HEAVY_FILES.CONVERSATION_ID')"
                   @change="onFilterChange"
@@ -1120,14 +1119,14 @@ const getFileTypeName = type => {
                 <input
                   v-model="selectedDateFrom"
                   type="date"
-                  class="text-xs border border-n-weak rounded-lg px-2.5 py-1.5"
+                  class="reset-base h-8 rounded-lg border-0 bg-n-alpha-black2 px-3 text-sm text-n-slate-12 outline outline-1 -outline-offset-1 outline-n-weak hover:outline-n-slate-6 focus:outline-n-brand"
                   :aria-label="$t('STORAGE.HEAVY_FILES.DATE_FROM')"
                   @change="onFilterChange"
                 />
                 <input
                   v-model="selectedDateTo"
                   type="date"
-                  class="text-xs border border-n-weak rounded-lg px-2.5 py-1.5"
+                  class="reset-base h-8 rounded-lg border-0 bg-n-alpha-black2 px-3 text-sm text-n-slate-12 outline outline-1 -outline-offset-1 outline-n-weak hover:outline-n-slate-6 focus:outline-n-brand"
                   :aria-label="$t('STORAGE.HEAVY_FILES.DATE_TO')"
                   @change="onFilterChange"
                 />
@@ -1136,7 +1135,7 @@ const getFileTypeName = type => {
 
             <p
               v-if="recordingsPending && !isLoadingFiles"
-              class="px-4 pt-4 text-xs text-n-slate-11"
+              class="mb-0 px-5 pt-4 text-xs text-n-slate-11"
               role="status"
             >
               {{
@@ -1173,22 +1172,22 @@ const getFileTypeName = type => {
                   class="bg-n-slate-2 text-n-slate-11 uppercase font-semibold border-b border-n-weak"
                 >
                   <tr>
-                    <th class="px-4 py-3">
+                    <th class="px-5 py-3">
                       {{ $t('STORAGE.HEAVY_FILES.COLUMNS.NAME') }}
                     </th>
-                    <th class="px-4 py-3">
+                    <th class="px-5 py-3">
                       {{ $t('STORAGE.HEAVY_FILES.COLUMNS.TYPE') }}
                     </th>
-                    <th class="px-4 py-3">
+                    <th class="px-5 py-3">
                       {{ $t('STORAGE.HEAVY_FILES.COLUMNS.INBOX') }}
                     </th>
-                    <th class="px-4 py-3">
+                    <th class="px-5 py-3">
                       {{ $t('STORAGE.HEAVY_FILES.COLUMNS.SIZE') }}
                     </th>
-                    <th class="px-4 py-3">
+                    <th class="px-5 py-3">
                       {{ $t('STORAGE.HEAVY_FILES.COLUMNS.DATE') }}
                     </th>
-                    <th class="px-4 py-3 text-right">
+                    <th class="px-5 py-3 text-right">
                       {{ $t('STORAGE.HEAVY_FILES.COLUMNS.ACTIONS') }}
                     </th>
                   </tr>
@@ -1199,7 +1198,7 @@ const getFileTypeName = type => {
                     :key="file.id"
                     class="hover:bg-n-slate-2/80 transition"
                   >
-                    <td class="px-4 py-3">
+                    <td class="px-5 py-3">
                       <div
                         class="flex items-center gap-2 max-w-[280px] sm:max-w-[360px]"
                       >
@@ -1214,25 +1213,25 @@ const getFileTypeName = type => {
                         </span>
                       </div>
                     </td>
-                    <td class="px-4 py-3 whitespace-nowrap">
+                    <td class="px-5 py-3 whitespace-nowrap">
                       <span
-                        class="px-2 py-0.5 text-[10px] font-semibold rounded bg-n-alpha-2 text-n-slate-12"
+                        class="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-n-alpha-2 text-n-slate-12"
                       >
                         {{ getFileTypeName(file.file_type) }}
                       </span>
                     </td>
-                    <td class="px-4 py-3 text-n-slate-11 whitespace-nowrap">
+                    <td class="px-5 py-3 text-n-slate-11 whitespace-nowrap">
                       {{ file.inbox_name }}
                     </td>
                     <td
-                      class="px-4 py-3 font-semibold text-n-slate-12 whitespace-nowrap"
+                      class="px-5 py-3 font-semibold text-n-slate-12 whitespace-nowrap"
                     >
                       {{ file.human_size }}
                     </td>
-                    <td class="px-4 py-3 text-n-slate-11 whitespace-nowrap">
+                    <td class="px-5 py-3 text-n-slate-11 whitespace-nowrap">
                       {{ formatDate(file.created_at) }}
                     </td>
-                    <td class="px-4 py-3 text-right whitespace-nowrap">
+                    <td class="px-5 py-3 text-right whitespace-nowrap">
                       <div class="inline-flex items-center gap-2">
                         <router-link
                           v-if="file.conversation_id"
@@ -1267,19 +1266,19 @@ const getFileTypeName = type => {
 
           <!-- Trash List Card -->
           <div
-            class="bg-n-surface-1 rounded-xl border border-n-weak shadow-sm overflow-hidden"
+            class="overflow-hidden rounded-xl bg-n-solid-2 outline outline-1 -outline-offset-1 outline-n-container"
           >
             <div
-              class="p-4 sm:p-5 border-b border-n-weak flex flex-col md:flex-row md:items-center justify-between gap-4"
+              class="flex flex-col justify-between gap-4 border-b border-n-weak px-5 py-4 md:flex-row md:items-center"
             >
               <div>
                 <h4
-                  class="text-base font-bold text-n-slate-12 flex items-center gap-2"
+                  class="flex items-center gap-2 text-heading-2 text-n-slate-12"
                 >
                   <span>{{ '🗑️' }}</span>
                   <span>{{ $t('STORAGE.TRASH.TITLE') }}</span>
                 </h4>
-                <p class="text-xs text-n-slate-11 mt-0.5">
+                <p class="mt-0.5 mb-0 text-body-para text-n-slate-11">
                   {{
                     `${$t('STORAGE.TRASH.TOTAL_IN_TRASH')} ${trashTotalCount} (${formatBytes(trashTotalBytes)})`
                   }}
@@ -1331,25 +1330,25 @@ const getFileTypeName = type => {
                   class="bg-n-slate-2 text-n-slate-11 uppercase font-semibold border-b border-n-weak"
                 >
                   <tr>
-                    <th class="px-4 py-3">
+                    <th class="px-5 py-3">
                       {{ $t('STORAGE.TRASH.COLUMNS.NAME') }}
                     </th>
-                    <th class="px-4 py-3">
+                    <th class="px-5 py-3">
                       {{ $t('STORAGE.TRASH.COLUMNS.TYPE') }}
                     </th>
-                    <th class="px-4 py-3">
+                    <th class="px-5 py-3">
                       {{ $t('STORAGE.TRASH.COLUMNS.INBOX') }}
                     </th>
-                    <th class="px-4 py-3">
+                    <th class="px-5 py-3">
                       {{ $t('STORAGE.TRASH.COLUMNS.SIZE') }}
                     </th>
-                    <th class="px-4 py-3">
+                    <th class="px-5 py-3">
                       {{ $t('STORAGE.TRASH.COLUMNS.DELETED_AT') }}
                     </th>
-                    <th class="px-4 py-3">
+                    <th class="px-5 py-3">
                       {{ $t('STORAGE.TRASH.COLUMNS.EXPIRES_IN') }}
                     </th>
-                    <th class="px-4 py-3 text-right">
+                    <th class="px-5 py-3 text-right">
                       {{ $t('STORAGE.TRASH.COLUMNS.ACTIONS') }}
                     </th>
                   </tr>
@@ -1360,7 +1359,7 @@ const getFileTypeName = type => {
                     :key="`${item.item_type}_${item.id}`"
                     class="hover:bg-n-slate-2/80 transition"
                   >
-                    <td class="px-4 py-3">
+                    <td class="px-5 py-3">
                       <div
                         class="flex items-center gap-2 max-w-[240px] sm:max-w-[320px]"
                       >
@@ -1375,27 +1374,27 @@ const getFileTypeName = type => {
                         </span>
                       </div>
                     </td>
-                    <td class="px-4 py-3 whitespace-nowrap">
+                    <td class="px-5 py-3 whitespace-nowrap">
                       <span
-                        class="px-2 py-0.5 text-[10px] font-semibold rounded bg-n-alpha-2 text-n-slate-12"
+                        class="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-n-alpha-2 text-n-slate-12"
                       >
                         {{ getFileTypeName(item.file_type) }}
                       </span>
                     </td>
-                    <td class="px-4 py-3 text-n-slate-11 whitespace-nowrap">
+                    <td class="px-5 py-3 text-n-slate-11 whitespace-nowrap">
                       {{ item.inbox_name || '—' }}
                     </td>
                     <td
-                      class="px-4 py-3 font-semibold text-n-slate-12 whitespace-nowrap"
+                      class="px-5 py-3 font-semibold text-n-slate-12 whitespace-nowrap"
                     >
                       {{ formatBytes(item.byte_size) }}
                     </td>
-                    <td class="px-4 py-3 text-n-slate-11 whitespace-nowrap">
+                    <td class="px-5 py-3 text-n-slate-11 whitespace-nowrap">
                       {{ formatDate(item.deleted_at) }}
                     </td>
-                    <td class="px-4 py-3 whitespace-nowrap">
+                    <td class="px-5 py-3 whitespace-nowrap">
                       <span
-                        class="px-2 py-0.5 text-[10px] font-bold rounded"
+                        class="px-2 py-0.5 text-[10px] font-bold rounded-full"
                         :class="
                           item.days_remaining <= 3
                             ? 'bg-n-ruby-3 text-n-ruby-11'
@@ -1411,7 +1410,7 @@ const getFileTypeName = type => {
                         }}
                       </span>
                     </td>
-                    <td class="px-4 py-3 text-right whitespace-nowrap">
+                    <td class="px-5 py-3 text-right whitespace-nowrap">
                       <div class="inline-flex items-center gap-2">
                         <Button
                           type="button"

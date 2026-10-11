@@ -203,22 +203,24 @@ const statusLabel = appointment => {
     >
       {{ $t('CRM.DEAL_APPOINTMENTS.EMPTY') }}
     </p>
-    <div
-      v-for="appointment in appointments"
-      :key="appointment.id"
-      class="grid gap-1 rounded-lg border border-n-weak p-3 text-xs"
-    >
-      <span class="font-medium text-n-slate-12">{{
-        appointmentLabel(appointment)
-      }}</span>
-      <span class="text-n-slate-11">{{ statusLabel(appointment) }}</span>
-      <span
-        v-if="
-          appointment.status === 'completed' && !appointment.actual_attended
-        "
-        class="text-n-slate-10"
-        >{{ $t('CRM.DEAL_APPOINTMENTS.ATTENDANCE_UNKNOWN') }}</span
+    <div v-if="appointments.length" class="divide-y divide-n-weak">
+      <div
+        v-for="appointment in appointments"
+        :key="appointment.id"
+        class="grid gap-1 py-2 text-xs"
       >
+        <span class="font-medium text-n-slate-12">{{
+          appointmentLabel(appointment)
+        }}</span>
+        <span class="text-n-slate-11">{{ statusLabel(appointment) }}</span>
+        <span
+          v-if="
+            appointment.status === 'completed' && !appointment.actual_attended
+          "
+          class="text-n-slate-10"
+          >{{ $t('CRM.DEAL_APPOINTMENTS.ATTENDANCE_UNKNOWN') }}</span
+        >
+      </div>
     </div>
     <p v-if="paused" class="m-0 text-xs text-n-slate-11">
       {{ $t('CRM.DEAL_APPOINTMENTS.PAUSED') }}
@@ -263,7 +265,7 @@ const statusLabel = appointment => {
         <div
           v-for="(entry, index) in plan"
           :key="entry.id"
-          class="grid gap-2 rounded-lg border border-n-weak p-3"
+          class="grid gap-2 border-t border-n-weak pt-3"
         >
           <Input
             v-model="entry.label"

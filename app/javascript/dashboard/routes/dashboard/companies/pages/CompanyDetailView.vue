@@ -223,12 +223,12 @@ onBeforeUnmount(() => {
 
     <div
       v-else-if="!hasCompany"
-      class="flex flex-col items-center justify-center gap-3 px-6 py-24 text-center rounded-2xl border border-n-weak bg-n-solid-2"
+      class="flex flex-col items-center justify-center gap-3 px-6 py-24 text-center"
     >
       <span class="text-lg font-medium text-n-slate-12">
         {{ t('COMPANIES.DETAIL.EMPTY_STATE.TITLE') }}
       </span>
-      <p class="max-w-md text-sm text-n-slate-11">
+      <p class="mb-0 max-w-md text-sm text-n-slate-11">
         {{ t('COMPANIES.DETAIL.EMPTY_STATE.SUBTITLE') }}
       </p>
     </div>
@@ -238,7 +238,7 @@ onBeforeUnmount(() => {
 
       <Policy :permissions="['administrator']">
         <section
-          class="flex flex-col items-start w-full gap-4 pt-6 border-t border-n-strong"
+          class="flex flex-col items-start w-full gap-4 pt-6 border-t border-n-weak"
         >
           <div class="flex flex-col gap-2">
             <h6 class="text-base font-medium text-n-slate-12">

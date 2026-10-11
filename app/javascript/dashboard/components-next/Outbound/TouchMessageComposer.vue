@@ -339,7 +339,7 @@ defineExpose({
 
 <template>
   <div class="grid gap-4">
-    <div v-if="hasContentTabs" class="rounded-xl bg-n-alpha-black2 p-1">
+    <div v-if="hasContentTabs">
       <TabBar
         :key="
           contentModeTabId || `touch-message-content-${activeContentTabIndex}`
@@ -403,11 +403,8 @@ defineExpose({
         />
       </div>
 
-      <div
-        v-else
-        class="rounded-xl border border-dashed border-n-weak bg-n-solid-1 px-4 py-5"
-      >
-        <p class="mb-1 text-sm font-medium text-n-slate-12">
+      <div v-else class="grid gap-1">
+        <p class="mb-0 text-sm font-medium text-n-slate-12">
           {{ templateEmptyTitleText }}
         </p>
         <p class="mb-0 text-sm text-n-slate-11">
@@ -589,11 +586,14 @@ defineExpose({
         {{ $t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.ATTACHMENTS.DESCRIPTION') }}
       </p>
 
-      <div v-if="attachments.length" class="grid gap-2">
+      <div
+        v-if="attachments.length"
+        class="flex flex-col divide-y divide-n-weak"
+      >
         <div
           v-for="attachment in attachments"
           :key="attachment.blobId"
-          class="flex items-center gap-3 rounded-xl border border-n-weak bg-n-solid-1 px-3 py-2"
+          class="flex items-center gap-3 py-2"
         >
           <span class="i-lucide-file-check-2 size-4 shrink-0 text-n-slate-11" />
           <div class="min-w-0 flex-1">

@@ -1082,7 +1082,7 @@ onMounted(async () => {
 
         <div
           v-if="crmFieldContextOptions.length"
-          class="grid gap-2 rounded-xl bg-n-alpha-black2 px-4 py-3 outline outline-1 outline-n-weak"
+          class="grid gap-2 border-t border-n-weak pt-4"
         >
           <span class="text-sm font-medium text-n-slate-12">
             {{ $t('CRM.SETTINGS.FIELDS.FORM.CONTEXTS') }}
@@ -1090,7 +1090,7 @@ onMounted(async () => {
           <label
             v-for="contextOption in crmFieldContextOptions"
             :key="contextOption.value"
-            class="flex items-center gap-3 text-sm text-n-slate-12"
+            class="flex items-center gap-2 text-sm font-normal text-n-slate-12"
           >
             <Checkbox
               v-model="crmFieldForm.contexts"
@@ -1100,15 +1100,17 @@ onMounted(async () => {
           </label>
         </div>
 
-        <div
-          class="grid gap-3 rounded-xl bg-n-alpha-black2 px-4 py-3 outline outline-1 outline-n-weak"
-        >
-          <label class="flex items-center gap-3 text-sm text-n-slate-12">
+        <div class="grid gap-2 border-t border-n-weak pt-4">
+          <label
+            class="flex items-center gap-2 text-sm font-normal text-n-slate-12"
+          >
             <Checkbox v-model="crmFieldForm.required" />
             <span>{{ $t('CRM.SETTINGS.FIELDS.FORM.REQUIRED') }}</span>
           </label>
 
-          <label class="flex items-center gap-3 text-sm text-n-slate-12">
+          <label
+            class="flex items-center gap-2 text-sm font-normal text-n-slate-12"
+          >
             <Checkbox v-model="crmFieldForm.active" />
             <span>{{ $t('CRM.SETTINGS.FIELDS.FORM.ACTIVE') }}</span>
           </label>

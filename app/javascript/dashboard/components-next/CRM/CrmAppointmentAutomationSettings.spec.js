@@ -5,6 +5,16 @@ import { appointmentAutomationDraft } from './appointmentAutomation';
 import CrmAppointmentAutomationSettings from './CrmAppointmentAutomationSettings.vue';
 
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: key => key }) }));
+// The toggle-block headers render Switch.vue through SettingsToggleSection,
+// which imports it as ToggleSwitch, while the source rows import it as Switch.
+// Stub both names with the same switch-like button so every switch is found
+// by role and by its own row, independent of the render order.
+const SwitchStub = {
+  name: 'Switch',
+  props: ['modelValue', 'disabled'],
+  emits: ['update:modelValue'],
+  template: `<button type="button" role="switch" class="switch-stub" :aria-checked="String(Boolean(modelValue))" :disabled="disabled" @click="$emit('update:modelValue', !modelValue)" />`,
+};
 const pipeline = () => ({
   id: 3,
   name: 'Appointments',
@@ -40,7 +50,8 @@ const mountSettings = (props = {}) => {
     global: {
       mocks: { $t: key => key },
       stubs: {
-        Switch: true,
+        Switch: SwitchStub,
+        ToggleSwitch: SwitchStub,
         SchedulingSelectField: true,
         Button: {
           props: ['label', 'disabled'],
@@ -70,9 +81,13 @@ describe('appointment automation settings draft', () => {
       .findComponent('[data-testid="appointment-auto-create-deals"]')
       .vm.$emit('update:modelValue', true);
     await nextTick();
-    wrapper
-      .findAllComponents({ name: 'Switch' })[1]
-      .vm.$emit('update:modelValue', true);
+    const calendarSource = wrapper
+      .findAll('label')
+      .find(label =>
+        label.text().includes('CRM.APPOINTMENT_AUTOMATION.CALENDAR_SOURCE')
+      );
+    expect(calendarSource.find('[role="switch"]').exists()).toBe(true);
+    await calendarSource.find('[role="switch"]').trigger('click');
     await nextTick();
     expect(
       wrapper
@@ -236,11 +251,10 @@ describe('appointment automation settings draft', () => {
         .every(field => field.attributes('disabled') !== undefined)
     ).toBe(true);
     await wrapper.setProps({ canManage: true, saving: true });
-    expect(
-      wrapper
-        .findAllComponents({ name: 'Switch' })
-        .every(control => control.props('disabled'))
-    ).toBe(true);
+    // Both toggle blocks (auto-create deals, rules) render their header switch.
+    const switches = wrapper.findAll('[role="switch"]');
+    expect(switches.length).toBeGreaterThanOrEqual(2);
+    expect(switches.every(control => control.element.disabled)).toBe(true);
     expect(
       wrapper.findAll('button').every(button => button.element.disabled)
     ).toBe(true);

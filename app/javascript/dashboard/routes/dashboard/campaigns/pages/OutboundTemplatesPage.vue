@@ -124,10 +124,7 @@ watch(
     </div>
 
     <div v-else class="grid gap-4 pt-2">
-      <div
-        v-if="!whatsAppInboxes.length"
-        class="rounded-2xl border border-dashed border-n-weak bg-n-surface-1 p-8 text-center"
-      >
+      <div v-if="!whatsAppInboxes.length" class="py-12 text-center">
         <p class="mb-1 text-base font-medium text-n-slate-12">
           {{ $t('OUTBOUND_WORKSPACE.TEMPLATES.WHATSAPP.EMPTY_TITLE') }}
         </p>

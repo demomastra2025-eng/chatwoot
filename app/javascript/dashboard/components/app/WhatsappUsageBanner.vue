@@ -577,7 +577,7 @@ onUnmounted(() => {
     v-if="shouldShowBanner"
     role="status"
     aria-live="polite"
-    class="flex items-center justify-between gap-2 border-y border-[#f0c8c1] bg-[#fff2ef] px-3 py-0 text-[#783a34] dark:border-[#70443f] dark:bg-[#332421] dark:text-[#f4c3bb]"
+    class="flex items-center justify-between gap-2 border-y border-n-ruby-4 bg-n-ruby-2 px-3 py-0 text-n-ruby-12"
     @keydown.esc.stop.prevent="closeCategoryBreakdown"
   >
     <div class="min-w-0 flex-1">
@@ -592,7 +592,7 @@ onUnmounted(() => {
       >
         <button
           type="button"
-          class="flex w-full min-w-0 items-center gap-1 rounded text-left text-[11px] font-medium leading-4 hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#bd6e63] sm:text-xs"
+          class="flex w-full min-w-0 items-center gap-1 rounded px-2.5 py-1 text-left text-[11px] font-medium leading-4 hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-n-ruby-8 sm:text-xs"
           :aria-label="breakdownTriggerLabel"
           :aria-expanded="isCategoryBreakdownOpen"
           aria-controls="whatsapp-usage-breakdown"
@@ -606,7 +606,7 @@ onUnmounted(() => {
             {{ compactSummary }}
           </span>
           <i
-            class="i-lucide-info mt-0.5 size-3.5 shrink-0 self-start text-[#a34840] dark:text-[#f0aaa1]"
+            class="i-lucide-info mt-0.5 size-3.5 shrink-0 self-start text-n-ruby-10"
             aria-hidden="true"
           />
         </button>
@@ -674,7 +674,7 @@ onUnmounted(() => {
     </div>
     <button
       type="button"
-      class="grid size-7 shrink-0 place-items-center rounded-md text-[#a34840] hover:bg-[#f7ded9] dark:text-[#f0aaa1] dark:hover:bg-[#52312d] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#bd6e63]"
+      class="grid size-7 shrink-0 place-items-center rounded-md p-0 text-n-ruby-10 hover:bg-n-ruby-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-n-ruby-8"
       :aria-label="t('WHATSAPP_USAGE.DISMISS')"
       :title="t('WHATSAPP_USAGE.DISMISS')"
       @click="dismissBanner"

@@ -191,7 +191,7 @@ const handleStatusChange = payload => {
   <div class="flex h-full min-h-0 flex-col gap-4">
     <div
       v-if="!resources.length"
-      class="px-4 py-10 text-sm text-center rounded-2xl outline outline-1 outline-dashed outline-n-strong text-n-slate-11 bg-n-alpha-black2"
+      class="px-4 py-10 text-center text-sm text-n-slate-11"
     >
       {{ emptyMessage || $t('SCHEDULING.CALENDAR.NO_RESOURCES') }}
     </div>
@@ -223,7 +223,7 @@ const handleStatusChange = payload => {
         <section
           v-for="day in listAppointments"
           :key="day.key"
-          class="overflow-hidden rounded-2xl outline outline-1 outline-n-container bg-n-solid-2"
+          class="overflow-hidden rounded-xl bg-n-solid-2 outline outline-1 -outline-offset-1 outline-n-container"
         >
           <header
             class="px-4 py-3 text-sm font-semibold border-b bg-n-surface-2 border-n-weak text-n-slate-12"
@@ -244,7 +244,7 @@ const handleStatusChange = payload => {
             >
               <button
                 type="button"
-                class="grid min-w-0 items-start gap-3 text-left md:col-span-2 md:grid-cols-[110px_minmax(0,1fr)]"
+                class="grid min-w-0 items-start gap-3 rounded-none p-0 text-left md:col-span-2 md:grid-cols-[110px_minmax(0,1fr)]"
                 @click="emit('selectAppointment', appointment)"
               >
                 <span class="pt-0.5 font-medium text-n-slate-12">
@@ -311,10 +311,7 @@ const handleStatusChange = payload => {
           </div>
         </section>
       </div>
-      <div
-        v-else
-        class="px-4 py-6 text-sm rounded-2xl outline outline-1 outline-n-container bg-n-solid-2 text-n-slate-11"
-      >
+      <div v-else class="px-4 py-10 text-center text-sm text-n-slate-11">
         {{ $t('SCHEDULING.CALENDAR.NO_APPOINTMENTS_DAY') }}
       </div>
     </template>

@@ -894,21 +894,21 @@ onBeforeUnmount(() => {
 
       <SchedulingErrorState
         v-else-if="ui.error"
-        class="m-3"
+        class="m-4"
         :title="$t('CRM.ERRORS.LOAD_TITLE')"
         :description="formatCrmErrorMessage(ui.error, t)"
         @retry="initializeSidebar"
       />
 
-      <div v-else class="border-t border-n-weak">
+      <div v-else>
         <div
           v-if="hasMetaAdReferral"
-          class="m-3 overflow-hidden rounded-xl border border-n-blue-4 bg-n-blue-2 text-xs text-n-blue-12 shadow-sm dark:border-n-blue-7/70 dark:bg-n-blue-3/25"
+          class="m-4 overflow-hidden rounded-xl border border-n-blue-4 bg-n-blue-2 text-xs text-n-blue-12 dark:border-n-blue-7/70 dark:bg-n-blue-3/25"
           data-test-id="crm-meta-ad-referral"
         >
           <button
             type="button"
-            class="flex w-full items-start gap-2 px-3 py-2.5 text-left hover:bg-n-blue-3/60 rtl:text-right dark:hover:bg-n-blue-4/20"
+            class="flex w-full items-start gap-2 px-4 py-2.5 text-left hover:bg-n-blue-3/60 rtl:text-right dark:hover:bg-n-blue-4/20"
             :aria-expanded="metaAdReferralExpanded"
             @click="metaAdReferralExpanded = !metaAdReferralExpanded"
           >
@@ -941,7 +941,7 @@ onBeforeUnmount(() => {
 
           <div
             v-show="metaAdReferralExpanded"
-            class="border-t border-n-blue-4/70 px-3 pb-3 pt-2 dark:border-n-blue-7/60"
+            class="border-t border-n-blue-4/70 px-4 pb-3 pt-2 dark:border-n-blue-7/60"
           >
             <p class="mb-2 text-[11px] leading-4 text-n-blue-11">
               {{ $t('CRM.DEALS.META_AD_REFERRAL.HELP_TEXT') }}
@@ -1000,7 +1000,7 @@ onBeforeUnmount(() => {
               :style="{ backgroundColor: stageColorForItem(item) }"
             />
             <span
-              class="flex min-w-0 flex-1 items-start justify-between gap-3 px-3 py-2.5"
+              class="flex min-w-0 flex-1 items-start justify-between gap-3 py-2.5 pe-4 ps-3"
             >
               <span class="min-w-0">
                 <span

@@ -23,7 +23,7 @@ export default {
     isActive(key) {
       return this.macroVisibility === key
         ? 'bg-n-blue-2 dark:bg-n-blue-1 border-n-blue-3 dark:border-n-blue-4'
-        : 'bg-white dark:bg-n-solid-2 border-n-weak dark:border-n-strong';
+        : 'bg-n-solid-2 border-n-weak dark:border-n-strong';
     },
     onUpdateName(value) {
       this.$emit('update:name', value);
@@ -37,7 +37,7 @@ export default {
 
 <template>
   <div
-    class="p-4 bg-n-solid-2 border border-n-weak rounded-lg shadow-sm h-full flex flex-col"
+    class="flex h-full flex-col rounded-xl bg-n-solid-2 p-4 outline outline-1 -outline-offset-1 outline-n-weak"
   >
     <div>
       <woot-input
@@ -55,7 +55,7 @@ export default {
       </p>
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <button
-          class="p-2 relative rounded-md border border-solid justify-between items-start gap-2 flex flex-col text-start cursor-default"
+          class="p-2 relative rounded-lg border border-solid justify-between items-start gap-2 flex flex-col text-start cursor-default"
           :class="isActive('global')"
           @click="onUpdateVisibility('global')"
         >
@@ -69,12 +69,12 @@ export default {
               class="text-n-brand size-4"
             />
           </div>
-          <p class="text-n-slate-11 text-label-small">
+          <p class="mb-0 text-n-slate-11 text-label-small">
             {{ $t('MACROS.EDITOR.VISIBILITY.GLOBAL.DESCRIPTION') }}
           </p>
         </button>
         <button
-          class="p-2 relative rounded-md border border-solid justify-between items-start gap-2 flex flex-col text-start cursor-default"
+          class="p-2 relative rounded-lg border border-solid justify-between items-start gap-2 flex flex-col text-start cursor-default"
           :class="isActive('personal')"
           @click="onUpdateVisibility('personal')"
         >
@@ -88,14 +88,12 @@ export default {
               class="text-n-brand size-4"
             />
           </div>
-          <p class="text-n-slate-11 text-label-small">
+          <p class="mb-0 text-n-slate-11 text-label-small">
             {{ $t('MACROS.EDITOR.VISIBILITY.PERSONAL.DESCRIPTION') }}
           </p>
         </button>
       </div>
-      <div
-        class="mt-2 flex items-start p-2 bg-n-alpha-1 gap-2 dark:bg-n-solid-3 rounded-md"
-      >
+      <div class="mt-2 flex items-start gap-2">
         <Icon
           icon="i-lucide-info"
           class="flex-shrink-0 mt-0.5 size-4 text-n-slate-11"

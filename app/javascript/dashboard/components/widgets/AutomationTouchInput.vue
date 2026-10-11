@@ -1031,9 +1031,7 @@ export default {
 </script>
 
 <template>
-  <div
-    class="grid gap-5 rounded-2xl bg-n-solid-1 p-4 outline outline-1 outline-n-weak"
-  >
+  <div class="grid gap-5 border-t border-n-weak pt-4">
     <SchedulingFormFieldGroup :framed="false">
       <div class="grid gap-4">
         <SchedulingSelectField
@@ -1113,7 +1111,7 @@ export default {
 
         <div
           v-if="canConfigureAppointmentConfirmation"
-          class="grid gap-3 rounded-2xl bg-n-alpha-black2 px-4 py-3"
+          class="grid gap-3 border-t border-n-weak pt-4"
         >
           <label
             class="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3 text-sm"
@@ -1131,7 +1129,9 @@ export default {
                   )
                 }}
               </span>
-              <span class="mt-1 block text-xs leading-5 text-n-slate-10">
+              <span
+                class="mt-1 block text-xs font-normal leading-5 text-n-slate-10"
+              >
                 {{
                   $t(
                     'AUTOMATION.ACTION.TOUCH_EDITOR.APPOINTMENT_CONFIRMATION_DESCRIPTION'
@@ -1146,7 +1146,7 @@ export default {
 
     <SchedulingFormFieldGroup :framed="false">
       <div class="grid gap-4">
-        <div class="rounded-2xl bg-n-surface-1 p-1">
+        <div>
           <TabBar
             :key="`automation-touch-timing-${activeTimingTabIndex}`"
             :tabs="timingModeTabs"
@@ -1261,15 +1261,15 @@ export default {
 
     <SchedulingFormFieldGroup :framed="false">
       <div
-        class="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3 rounded-2xl bg-n-alpha-black2 px-4 py-3"
+        class="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3 border-t border-n-weak pt-4"
       >
         <Checkbox
           class="mt-0.5 shrink-0"
           :model-value="autoCancelOnIncoming"
           @update:model-value="autoCancelOnIncoming = $event"
         />
-        <div class="min-w-0">
-          <p class="mb-1 text-sm font-medium text-n-slate-12">
+        <div class="flex min-w-0 flex-col gap-1">
+          <p class="mb-0 text-sm font-medium text-n-slate-12">
             {{ $t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.AUTO_CANCEL') }}
           </p>
           <p class="mb-0 text-xs leading-5 text-n-slate-10">
@@ -1288,15 +1288,15 @@ export default {
       :framed="false"
     >
       <div
-        class="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3 rounded-2xl bg-n-alpha-black2 px-4 py-3"
+        class="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3 border-t border-n-weak pt-4"
       >
         <Checkbox
           class="mt-0.5 shrink-0"
           :model-value="resolveConversationAfterDelivery"
           @update:model-value="resolveConversationAfterDelivery = $event"
         />
-        <div class="min-w-0">
-          <p class="mb-1 text-sm font-medium text-n-slate-12">
+        <div class="flex min-w-0 flex-col gap-1">
+          <p class="mb-0 text-sm font-medium text-n-slate-12">
             {{
               $t('AUTOMATION.ACTION.TOUCH_EDITOR.POST_DELIVERY_RESOLVE_LABEL')
             }}

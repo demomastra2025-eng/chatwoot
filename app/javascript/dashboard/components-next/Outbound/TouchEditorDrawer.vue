@@ -1501,7 +1501,7 @@ watch(
     :display-mode="displayMode"
     :close-on-outside="false"
     width="md"
-    panel-class="sm:!rounded-2xl"
+    panel-class="sm:!rounded-xl"
     :title="drawerTitle"
     :description="drawerDescription"
     :confirm-label="touch?.id ? drawerSaveLabel : drawerCreateLabel"
@@ -1511,7 +1511,7 @@ watch(
     @close="closeDrawer"
     @confirm="saveTouch"
   >
-    <div class="grid gap-5">
+    <div class="grid gap-6 divide-y divide-n-weak [&>*+*]:pt-6">
       <div
         v-if="unsupportedChannelWarning"
         class="rounded-xl bg-n-amber-2 px-4 py-3 outline outline-1 outline-n-amber-6"
@@ -1521,11 +1521,8 @@ watch(
         </p>
       </div>
 
-      <div
-        v-if="!isSidebarMode && !isTargetSelectionMode"
-        class="rounded-xl bg-n-brand/5 px-4 py-4 outline outline-1 outline-n-brand/10"
-      >
-        <p class="mb-1 text-sm font-semibold text-n-slate-12">
+      <div v-if="!isSidebarMode && !isTargetSelectionMode" class="grid gap-1">
+        <p class="mb-0 text-sm font-semibold text-n-slate-12">
           {{
             $t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.CONTEXT_TITLE', {
               entity: entityLabel,
@@ -1671,7 +1668,7 @@ watch(
 
       <SchedulingFormFieldGroup :framed="false">
         <div class="grid gap-4">
-          <div class="rounded-xl bg-n-surface-1 p-1">
+          <div>
             <TabBar
               :key="`touch-timing-mode-${activeTimingTabIndex}`"
               :tabs="timingModeTabs"
@@ -1795,16 +1792,14 @@ watch(
       </SchedulingFormFieldGroup>
 
       <SchedulingFormFieldGroup :framed="false">
-        <div
-          class="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3 rounded-xl border border-n-weak bg-transparent px-4 py-3"
-        >
+        <div class="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3">
           <Checkbox
             class="mt-0.5 shrink-0"
             :model-value="form.autoCancelOnIncoming"
             @update:model-value="form.autoCancelOnIncoming = $event"
           />
-          <div class="min-w-0">
-            <p class="mb-1 text-sm font-medium text-n-slate-12">
+          <div class="flex min-w-0 flex-col gap-1">
+            <p class="mb-0 text-sm font-medium text-n-slate-12">
               {{ $t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.AUTO_CANCEL') }}
             </p>
             <p class="mb-0 text-xs leading-5 text-n-slate-10">
@@ -1852,7 +1847,7 @@ watch(
 
 <style scoped>
 .touch-target-section {
-  @apply grid gap-2 rounded-xl border border-n-weak bg-n-solid-1 p-3 shadow-sm;
+  @apply grid gap-2;
 }
 
 .touch-target-row {

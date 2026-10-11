@@ -233,7 +233,7 @@ const handleRegisterWebhook = () => {
           <span class="text-heading-3 text-n-slate-12">
             {{ t('INBOX_MGMT.ACCOUNT_HEALTH.TITLE') }}
           </span>
-          <p class="mt-1 text-body-main text-n-slate-11">
+          <p class="mt-1 mb-0 text-body-main text-n-slate-11">
             {{ t('INBOX_MGMT.ACCOUNT_HEALTH.DESCRIPTION') }}
           </p>
         </div>
@@ -252,7 +252,7 @@ const handleRegisterWebhook = () => {
         <div
           v-for="item in healthItems"
           :key="item.key"
-          class="flex flex-col gap-2 p-4 rounded-lg border border-n-weak bg-n-solid-1"
+          class="flex flex-col gap-2 px-4 py-3 rounded-xl outline outline-1 -outline-offset-1 outline-n-weak bg-n-solid-1"
         >
           <div class="flex gap-2 items-center">
             <span class="text-body-main font-medium text-n-slate-11">
@@ -301,7 +301,7 @@ const handleRegisterWebhook = () => {
         <!-- Webhook configuration card -->
         <div
           v-if="showWebhookSection"
-          class="flex flex-col gap-2 p-4 rounded-lg border border-n-weak bg-n-solid-1"
+          class="flex flex-col gap-2 px-4 py-3 rounded-xl outline outline-1 -outline-offset-1 outline-n-weak bg-n-solid-1"
         >
           <div class="flex gap-2 items-center">
             <span class="text-body-main font-medium text-n-slate-11">
@@ -370,7 +370,7 @@ const handleRegisterWebhook = () => {
             v-for="item in recoveryItems"
             :key="item.key"
             data-testid="whatsapp-recovery-status"
-            class="flex flex-col gap-2 p-4 rounded-lg border border-n-weak bg-n-solid-1"
+            class="flex flex-col gap-2 px-4 py-3 rounded-xl outline outline-1 -outline-offset-1 outline-n-weak bg-n-solid-1"
           >
             <span class="text-body-main font-medium text-n-slate-11">
               {{ item.label }}

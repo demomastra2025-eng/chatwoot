@@ -29,7 +29,7 @@ const showRequiredAttributes = computed(() => {
 </script>
 
 <template>
-  <SettingsLayout :no-records-found="false" class="gap-10">
+  <SettingsLayout :no-records-found="false">
     <template #header>
       <BaseSettingsHeader
         :title="$t('CONVERSATION_WORKFLOW.INDEX.HEADER.TITLE')"
@@ -39,7 +39,7 @@ const showRequiredAttributes = computed(() => {
     </template>
 
     <template #body>
-      <div class="flex flex-col gap-8 mt-4">
+      <div class="flex flex-col gap-6">
         <AutoResolve v-if="showAutoResolutionConfig" />
         <ConversationRequiredAttributes :is-enabled="showRequiredAttributes" />
       </div>

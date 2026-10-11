@@ -11,7 +11,7 @@ const emit = defineEmits(['remove', 'reset']);
 
 <template>
   <div
-    class="flex flex-wrap items-center gap-2 px-5 pt-2"
+    class="flex flex-wrap items-center gap-2 px-6 pt-2"
     data-test="active-deal-filters"
   >
     <button
@@ -27,7 +27,7 @@ const emit = defineEmits(['remove', 'reset']);
     </button>
     <button
       type="button"
-      class="text-xs font-medium text-n-slate-11 hover:text-n-slate-12"
+      class="p-0 text-xs font-medium text-n-slate-11 hover:text-n-slate-12"
       data-test="reset-deal-filters"
       @click="emit('reset')"
     >

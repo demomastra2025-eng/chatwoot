@@ -2859,8 +2859,8 @@ watch(
           (currentPresentation === 'calendar' || shouldRenderBoard) &&
           !ui.isLoading &&
           !ui.error
-            ? 'flex h-full min-h-0 flex-col px-5 pb-5 pt-3'
-            : 'flex flex-col gap-4 px-5 pb-5 pt-3'
+            ? 'flex h-full min-h-0 flex-col px-6 pb-5 pt-3'
+            : 'flex flex-col gap-4 px-6 pb-5 pt-3'
         "
       >
         <CrmPageSkeleton
@@ -2894,7 +2894,7 @@ watch(
 
         <div
           v-else-if="currentPresentation === 'list'"
-          class="mt-3 overflow-hidden rounded-xl outline outline-1 -outline-offset-1 outline-n-weak"
+          class="overflow-hidden rounded-xl outline outline-1 -outline-offset-1 outline-n-weak"
         >
           <SchedulingRecordTable
             borderless
@@ -3268,18 +3268,22 @@ watch(
           @update:model-value="form.customAttributes = $event"
         />
 
-        <CrmTimelineFeed
+        <div
           v-if="selectedTask"
-          :items="timelineItems"
-          :error="ui.timelineError"
-          :is-loading="ui.isTimelineLoading"
-          :is-saving-comment="ui.isSavingComment"
-          :can-manage-comments="canManageTasks"
-          :empty-message="$t('CRM.TIMELINE.EMPTY')"
-          @create-comment="saveComment"
-          @delete-comment="deleteComment"
-          @retry="loadTimeline(selectedTask.id)"
-        />
+          class="crm-task-drawer-activity-panel border-t border-n-weak pt-6"
+        >
+          <CrmTimelineFeed
+            :items="timelineItems"
+            :error="ui.timelineError"
+            :is-loading="ui.isTimelineLoading"
+            :is-saving-comment="ui.isSavingComment"
+            :can-manage-comments="canManageTasks"
+            :empty-message="$t('CRM.TIMELINE.EMPTY')"
+            @create-comment="saveComment"
+            @delete-comment="deleteComment"
+            @retry="loadTimeline(selectedTask.id)"
+          />
+        </div>
       </div>
 
       <template v-if="selectedTask && canManageTasks" #footer>
@@ -3499,6 +3503,16 @@ watch(
 </template>
 
 <style scoped>
+/* The drawer is already the frame: show the history as an unframed
+   full-bleed list instead of a block inside the drawer. */
+.crm-task-drawer-activity-panel {
+  @apply -mx-4;
+}
+
+.crm-task-drawer-activity-panel > :deep(section) {
+  @apply rounded-none bg-transparent outline-0;
+}
+
 .crm-task-list-table :deep(.grid.border-b) {
   @apply bg-n-surface-1/70;
   padding-top: 0.625rem;

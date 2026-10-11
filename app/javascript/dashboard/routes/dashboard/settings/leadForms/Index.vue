@@ -7,6 +7,7 @@ import { useMapGetter } from 'dashboard/composables/store';
 import { useAlert } from 'dashboard/composables';
 import Button from 'dashboard/components-next/button/Button.vue';
 import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
+import Input from 'dashboard/components-next/input/Input.vue';
 import TabBar from 'dashboard/components-next/tabbar/TabBar.vue';
 import BaseSettingsHeader from '../components/BaseSettingsHeader.vue';
 import PreChatFormSettings from 'dashboard/routes/dashboard/settings/inbox/PreChatForm/Settings.vue';
@@ -442,15 +443,15 @@ onMounted(loadPage);
         <article class="min-w-0">
           <div class="mb-5 flex items-start gap-3">
             <div
-              class="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-n-brand/10 text-n-brand"
+              class="flex size-11 shrink-0 items-center justify-center rounded-xl bg-n-brand/10 text-n-brand"
             >
               <span class="i-ri-meta-fill text-2xl" />
             </div>
             <div>
-              <h2 class="text-lg font-semibold text-n-slate-12">
+              <h2 class="text-heading-2 text-n-slate-12">
                 {{ $t('LEAD_FORMS.META_FORMS.NEW_TITLE') }}
               </h2>
-              <p class="text-sm text-n-slate-11">
+              <p class="mb-0 text-body-main text-n-slate-11">
                 {{ $t('LEAD_FORMS.META_FORMS.NEW_DESCRIPTION') }}
               </p>
             </div>
@@ -458,7 +459,7 @@ onMounted(loadPage);
 
           <div
             v-if="!metaConnectionOptions.length"
-            class="mb-5 rounded-2xl border border-n-amber-6 bg-n-amber-3 p-4"
+            class="mb-5 rounded-xl bg-n-amber-3 p-4 outline outline-1 -outline-offset-1 outline-n-amber-6"
           >
             <h3 class="mb-1 text-sm font-semibold text-n-amber-12">
               {{ $t('LEAD_FORMS.META_FORMS.CONNECT_TITLE') }}
@@ -513,9 +514,8 @@ onMounted(loadPage);
               <span class="text-sm font-medium text-n-slate-12">
                 {{ $t('LEAD_FORMS.META_FORMS.NAME_LABEL') }}
               </span>
-              <input
+              <Input
                 v-model="metaForm.name"
-                class="h-10 w-full rounded-xl border border-n-weak bg-n-background px-3 text-sm text-n-slate-12"
                 :placeholder="$t('LEAD_FORMS.META_FORMS.NAME_PLACEHOLDER')"
               />
             </label>
@@ -524,9 +524,8 @@ onMounted(loadPage);
                 <span class="text-sm font-medium text-n-slate-12">
                   {{ $t('LEAD_FORMS.META_FORMS.FORM_ID_LABEL') }}
                 </span>
-                <input
+                <Input
                   v-model="metaForm.metaFormId"
-                  class="h-10 w-full rounded-xl border border-n-weak bg-n-background px-3 text-sm text-n-slate-12"
                   :placeholder="$t('LEAD_FORMS.META_FORMS.FORM_ID_PLACEHOLDER')"
                 />
               </label>
@@ -534,9 +533,8 @@ onMounted(loadPage);
                 <span class="text-sm font-medium text-n-slate-12">
                   {{ $t('LEAD_FORMS.META_FORMS.PAGE_ID_LABEL') }}
                 </span>
-                <input
+                <Input
                   v-model="metaForm.metaPageId"
-                  class="h-10 w-full rounded-xl border border-n-weak bg-n-background px-3 text-sm text-n-slate-12"
                   :placeholder="$t('LEAD_FORMS.META_FORMS.PAGE_ID_PLACEHOLDER')"
                 />
               </label>
@@ -545,15 +543,14 @@ onMounted(loadPage);
               <span class="text-sm font-medium text-n-slate-12">
                 {{ $t('LEAD_FORMS.META_FORMS.VERIFY_TOKEN_LABEL') }}
               </span>
-              <input
+              <Input
                 v-model="metaForm.verifyToken"
-                class="h-10 w-full rounded-xl border border-n-weak bg-n-background px-3 text-sm text-n-slate-12"
                 :placeholder="
                   $t('LEAD_FORMS.META_FORMS.VERIFY_TOKEN_PLACEHOLDER')
                 "
               />
             </label>
-            <p class="text-sm text-n-slate-11">
+            <p class="mb-0 text-sm text-n-slate-11">
               {{ $t('LEAD_FORMS.META_FORMS.WEBHOOK_NOTE') }}
               <code class="rounded bg-n-alpha-2 px-2 py-1 text-xs">
                 {{ $t('LEAD_FORMS.META_FORMS.WEBHOOK_PATH') }}
@@ -574,16 +571,21 @@ onMounted(loadPage);
         </article>
 
         <article class="min-w-0">
-          <h2 class="text-lg font-semibold text-n-slate-12">
+          <h2 class="text-heading-2 text-n-slate-12">
             {{ $t('LEAD_FORMS.META_FORMS.LIST_TITLE') }}
           </h2>
-          <div class="mt-3 divide-y divide-n-weak">
-            <p v-if="!metaForms.length" class="py-4 text-sm text-n-slate-11">
+          <div
+            class="mt-3 divide-y divide-n-weak rounded-xl outline outline-1 -outline-offset-1 outline-n-weak"
+          >
+            <p
+              v-if="!metaForms.length"
+              class="mb-0 px-4 py-3 text-sm text-n-slate-11"
+            >
               {{ $t('LEAD_FORMS.META_FORMS.EMPTY') }}
             </p>
-            <div v-for="form in metaForms" :key="form.id" class="py-3">
-              <p class="font-medium text-n-slate-12">{{ form.name }}</p>
-              <p class="text-xs text-n-slate-11">
+            <div v-for="form in metaForms" :key="form.id" class="px-4 py-3">
+              <p class="mb-0 font-medium text-n-slate-12">{{ form.name }}</p>
+              <p class="mb-0 text-xs text-n-slate-11">
                 {{ form.external_ref || form.settings?.meta_form_id }}
                 {{ $t('LEAD_FORMS.SEPARATOR') }}
                 {{ form.inbox_name || `Inbox #${form.inbox_id}` }}
@@ -599,15 +601,15 @@ onMounted(loadPage);
         <article class="min-w-0 lg:col-span-2">
           <div class="mb-5 flex items-start gap-3">
             <div
-              class="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-n-brand/10 text-n-brand"
+              class="flex size-11 shrink-0 items-center justify-center rounded-xl bg-n-brand/10 text-n-brand"
             >
               <span class="i-lucide-form-input text-2xl" />
             </div>
             <div>
-              <h2 class="text-lg font-semibold text-n-slate-12">
+              <h2 class="text-heading-2 text-n-slate-12">
                 {{ $t('LEAD_FORMS.API_FORMS.NEW_TITLE') }}
               </h2>
-              <p class="text-sm text-n-slate-11">
+              <p class="mb-0 text-body-main text-n-slate-11">
                 {{ $t('LEAD_FORMS.API_FORMS.NEW_DESCRIPTION') }}
               </p>
             </div>
@@ -619,9 +621,8 @@ onMounted(loadPage);
                 <span class="text-sm font-medium text-n-slate-12">
                   {{ $t('LEAD_FORMS.API_FORMS.NAME_LABEL') }}
                 </span>
-                <input
+                <Input
                   v-model="apiForm.name"
-                  class="h-10 w-full rounded-xl border border-n-weak bg-n-background px-3 text-sm text-n-slate-12"
                   :placeholder="$t('LEAD_FORMS.API_FORMS.NAME_PLACEHOLDER')"
                 />
               </label>
@@ -642,7 +643,7 @@ onMounted(loadPage);
 
             <p
               v-if="!leadTargetInboxOptions.length"
-              class="rounded-2xl border border-n-amber-6 bg-n-amber-3 p-3 text-sm text-n-amber-11"
+              class="mb-0 rounded-xl bg-n-amber-3 p-3 text-sm text-n-amber-11 outline outline-1 -outline-offset-1 outline-n-amber-6"
             >
               {{ $t('LEAD_FORMS.API_FORMS.NO_CHANNELS') }}
             </p>
@@ -669,18 +670,29 @@ onMounted(loadPage);
         </article>
 
         <article class="min-w-0">
-          <h2 class="text-lg font-semibold text-n-slate-12">
+          <h2 class="text-heading-2 text-n-slate-12">
             {{ $t('LEAD_FORMS.API_FORMS.LIST_TITLE') }}
           </h2>
-          <div class="mt-3 divide-y divide-n-weak">
-            <p v-if="!apiForms.length" class="py-4 text-sm text-n-slate-11">
+          <div
+            class="mt-3 divide-y divide-n-weak rounded-xl outline outline-1 -outline-offset-1 outline-n-weak"
+          >
+            <p
+              v-if="!apiForms.length"
+              class="mb-0 px-4 py-3 text-sm text-n-slate-11"
+            >
               {{ $t('LEAD_FORMS.EMPTY') }}
             </p>
-            <div v-for="form in apiForms" :key="form.id" class="py-4 space-y-3">
+            <div
+              v-for="form in apiForms"
+              :key="form.id"
+              class="space-y-3 px-4 py-3"
+            >
               <div class="flex items-start justify-between gap-4">
                 <div>
-                  <p class="font-medium text-n-slate-12">{{ form.name }}</p>
-                  <p class="text-xs text-n-slate-11">
+                  <p class="mb-0 font-medium text-n-slate-12">
+                    {{ form.name }}
+                  </p>
+                  <p class="mb-0 text-xs text-n-slate-11">
                     {{ form.inbox_name || `Inbox #${form.inbox_id}` }}
                     {{ $t('LEAD_FORMS.SEPARATOR') }}
                     {{ statusLabel(form.status) }}
@@ -688,27 +700,23 @@ onMounted(loadPage);
                 </div>
               </div>
               <div class="space-y-2">
-                <p class="text-xs font-medium uppercase text-n-slate-10">
+                <p class="mb-0 text-xs font-medium uppercase text-n-slate-10">
                   {{ $t('LEAD_FORMS.API_FORMS.ENDPOINT_TITLE') }}
                 </p>
-                <code
-                  class="block break-all rounded bg-n-alpha-2 px-2 py-1 text-xs"
-                >
+                <code class="block break-all bg-n-alpha-2 px-2 py-1 text-xs">
                   {{ postEndpointFor(form) }}
                 </code>
-                <p class="text-xs font-medium uppercase text-n-slate-10">
+                <p class="mb-0 text-xs font-medium uppercase text-n-slate-10">
                   {{ $t('LEAD_FORMS.API_FORMS.TOKEN_LABEL') }}
                 </p>
-                <code
-                  class="block break-all rounded bg-n-alpha-2 px-2 py-1 text-xs"
-                >
+                <code class="block break-all bg-n-alpha-2 px-2 py-1 text-xs">
                   {{ form.public_token }}
                 </code>
-                <p class="text-xs font-medium uppercase text-n-slate-10">
+                <p class="mb-0 text-xs font-medium uppercase text-n-slate-10">
                   {{ $t('LEAD_FORMS.API_FORMS.JSON_EXAMPLE') }}
                 </p>
                 <pre
-                  class="max-h-72 overflow-auto rounded bg-n-alpha-2 p-3 text-xs text-n-slate-12"
+                  class="max-h-72 overflow-auto bg-n-alpha-2 p-3 text-xs text-n-slate-12"
                 ><code>{{ sampleJsonFor(form) }}</code></pre>
               </div>
             </div>
@@ -722,10 +730,10 @@ onMounted(loadPage);
             class="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"
           >
             <div>
-              <h2 class="text-lg font-semibold text-n-slate-12">
+              <h2 class="text-heading-2 text-n-slate-12">
                 {{ $t('LEAD_FORMS.WIDGET_FORMS.NEW_TITLE') }}
               </h2>
-              <p class="text-sm text-n-slate-11">
+              <p class="mb-0 text-body-main text-n-slate-11">
                 {{ $t('LEAD_FORMS.WIDGET_FORMS.NEW_DESCRIPTION') }}
               </p>
             </div>
@@ -739,20 +747,17 @@ onMounted(loadPage);
             />
           </div>
 
-          <div
-            v-if="selectedWidgetInbox"
-            class="rounded-2xl border border-n-weak bg-n-surface-1 py-4"
-          >
-            <div class="mb-4 flex items-center gap-3 px-6">
+          <div v-if="selectedWidgetInbox">
+            <div class="mb-4 flex items-center gap-3">
               <span
                 class="flex size-10 items-center justify-center rounded-xl bg-n-brand/10 text-n-brand"
                 :class="getInboxIconByType(selectedWidgetInbox.channel_type)"
               />
               <div>
-                <p class="font-medium text-n-slate-12">
+                <p class="mb-0 font-medium text-n-slate-12">
                   {{ selectedWidgetInbox.name }}
                 </p>
-                <p class="text-xs text-n-slate-11">
+                <p class="mb-0 text-xs text-n-slate-11">
                   {{
                     selectedWidgetInbox.website_url ||
                     selectedWidgetInbox.channel_type
@@ -760,33 +765,44 @@ onMounted(loadPage);
                 </p>
               </div>
             </div>
-            <PreChatFormSettings
-              :inbox="selectedWidgetInbox"
-              @saved="fetchLeadIntake"
-            />
+            <!-- PreChatFormSettings has its own mx-6 inset; cancel it so the
+              toggle block and fields table align with the page column. -->
+            <div class="-mx-6">
+              <PreChatFormSettings
+                :inbox="selectedWidgetInbox"
+                @saved="fetchLeadIntake"
+              />
+            </div>
           </div>
-          <p v-else class="py-4 text-sm text-n-slate-11">
+          <p v-else class="mb-0 py-4 text-sm text-n-slate-11">
             {{ $t('LEAD_FORMS.WIDGET_FORMS.EMPTY') }}
           </p>
         </section>
 
         <section class="min-w-0">
-          <h2 class="text-lg font-semibold text-n-slate-12">
+          <h2 class="text-heading-2 text-n-slate-12">
             {{ $t('LEAD_FORMS.WIDGET_FORMS.LIST_TITLE') }}
           </h2>
-          <div class="mt-3 divide-y divide-n-weak">
-            <p v-if="!widgetForms.length" class="py-4 text-sm text-n-slate-11">
+          <div
+            class="mt-3 divide-y divide-n-weak rounded-xl outline outline-1 -outline-offset-1 outline-n-weak"
+          >
+            <p
+              v-if="!widgetForms.length"
+              class="mb-0 px-4 py-3 text-sm text-n-slate-11"
+            >
               {{ $t('LEAD_FORMS.WIDGET_FORMS.EMPTY') }}
             </p>
-            <div v-for="form in widgetForms" :key="form.id" class="py-3">
+            <div v-for="form in widgetForms" :key="form.id" class="px-4 py-3">
               <div class="flex items-start gap-3">
                 <span
-                  class="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl bg-n-alpha-2 text-n-slate-11"
+                  class="mt-0.5 size-5 shrink-0 text-n-slate-11"
                   :class="getInboxIconByType(INBOX_TYPES.WEB)"
                 />
                 <div>
-                  <p class="font-medium text-n-slate-12">{{ form.name }}</p>
-                  <p class="text-xs text-n-slate-11">
+                  <p class="mb-0 font-medium text-n-slate-12">
+                    {{ form.name }}
+                  </p>
+                  <p class="mb-0 text-xs text-n-slate-11">
                     {{ form.inbox_name || `Inbox #${form.inbox_id}` }}
                     {{ $t('LEAD_FORMS.SEPARATOR') }}
                     {{ statusLabel(form.status) }}

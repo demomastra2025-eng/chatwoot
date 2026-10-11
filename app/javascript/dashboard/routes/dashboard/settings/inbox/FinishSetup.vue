@@ -1533,7 +1533,7 @@ onBeforeUnmount(() => {
               <div class="flex min-h-full flex-col gap-5">
                 <div class="flex items-center gap-4">
                   <div
-                    class="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-[#25D366]/10 text-[#25D366]"
+                    class="flex size-14 shrink-0 items-center justify-center rounded-xl bg-n-teal-3 text-n-teal-11"
                   >
                     <i class="i-ri-whatsapp-line text-[1.75rem]" />
                   </div>
@@ -1556,10 +1556,10 @@ onBeforeUnmount(() => {
 
                 <div
                   v-if="shouldShowWhatsappWebSuccessCard"
-                  class="flex w-full flex-col items-start gap-2 rounded-2xl border border-[#25D366]/30 bg-[#25D366]/5 px-6 py-5"
+                  class="flex w-full flex-col items-start gap-2 rounded-xl bg-n-teal-3 px-6 py-5 outline outline-1 -outline-offset-1 outline-n-teal-6"
                 >
                   <div
-                    class="flex size-10 items-center justify-center rounded-full bg-[#25D366] text-white"
+                    class="flex size-10 items-center justify-center rounded-full bg-n-teal-9 text-white"
                   >
                     <i class="i-ri-check-line text-xl" />
                   </div>
@@ -1573,7 +1573,7 @@ onBeforeUnmount(() => {
                     v-if="isWhatsappWebHistorySyncing"
                     class="inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.08em] text-n-slate-10"
                   >
-                    <Spinner :size="14" class="text-[#25D366]" />
+                    <Spinner :size="14" class="text-n-teal-10" />
                     {{
                       $t(
                         'INBOX_MGMT.FINISH.WHATSAPP_WEB.CONNECTED_SYNCING_HISTORY'
@@ -1587,7 +1587,7 @@ onBeforeUnmount(() => {
                   class="grid gap-5 lg:grid-cols-[minmax(15rem,18rem)_minmax(18rem,22rem)] lg:items-stretch"
                 >
                   <div
-                    class="rounded-2xl border border-n-weak bg-n-surface-1 px-6 py-4"
+                    class="rounded-xl px-6 py-4 outline outline-1 -outline-offset-1 outline-n-weak"
                   >
                     <p
                       class="mb-2 text-xs font-medium uppercase tracking-[0.12em] text-n-slate-10"
@@ -1624,7 +1624,7 @@ onBeforeUnmount(() => {
                   </div>
 
                   <div
-                    class="min-w-[18rem] rounded-2xl border border-n-weak bg-n-surface-1 p-4"
+                    class="min-w-[18rem] rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
                   >
                     <p
                       class="mb-2 text-xs font-medium uppercase tracking-[0.12em] text-n-slate-10"
@@ -1638,7 +1638,7 @@ onBeforeUnmount(() => {
                         !isWhatsappWebConnected &&
                         !shouldShowWhatsappWebQrLoader
                       "
-                      class="flex w-full min-w-[16rem] items-center justify-center overflow-visible rounded-2xl bg-white p-3"
+                      class="flex w-full min-w-[16rem] items-center justify-center overflow-visible rounded-lg bg-white p-3"
                     >
                       <img
                         :src="whatsappWebDisplayQrCode"
@@ -1648,16 +1648,16 @@ onBeforeUnmount(() => {
                     </div>
                     <div
                       v-else-if="shouldShowWhatsappWebQrLoader"
-                      class="flex min-h-[16rem] w-full flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-n-strong px-6 py-8"
+                      class="flex min-h-[16rem] w-full flex-col items-center justify-center gap-3 px-6 py-8"
                     >
-                      <Spinner class="text-[#25D366]" :size="28" />
+                      <Spinner class="text-n-teal-10" :size="28" />
                       <p class="text-sm font-medium text-n-slate-11">
                         {{ $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.LOADING_TITLE') }}
                       </p>
                     </div>
                     <div
                       v-else
-                      class="rounded-xl border border-dashed border-n-strong bg-n-surface-2 px-4 py-6 text-center text-sm text-n-slate-10"
+                      class="px-4 py-6 text-center text-sm text-n-slate-10"
                     >
                       {{ $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.QR_EMPTY') }}
                     </div>
@@ -1695,7 +1695,7 @@ onBeforeUnmount(() => {
               <div class="flex min-h-full flex-col gap-5">
                 <div class="flex items-center gap-4">
                   <div
-                    class="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-[#07C160]/10 text-[#07C160]"
+                    class="flex size-14 shrink-0 items-center justify-center rounded-xl bg-n-teal-3 text-n-teal-11"
                   >
                     <i class="i-ri-wechat-line text-[1.75rem]" />
                   </div>
@@ -1718,10 +1718,10 @@ onBeforeUnmount(() => {
 
                 <div
                   v-if="isWeixinConnected"
-                  class="flex w-full flex-col items-start gap-2 rounded-2xl border border-[#07C160]/30 bg-[#07C160]/5 px-6 py-5"
+                  class="flex w-full flex-col items-start gap-2 rounded-xl bg-n-teal-3 px-6 py-5 outline outline-1 -outline-offset-1 outline-n-teal-6"
                 >
                   <div
-                    class="flex size-10 items-center justify-center rounded-full bg-[#07C160] text-white"
+                    class="flex size-10 items-center justify-center rounded-full bg-n-teal-9 text-white"
                   >
                     <i class="i-ri-check-line text-xl" />
                   </div>
@@ -1736,7 +1736,7 @@ onBeforeUnmount(() => {
 
               <div
                 v-if="currentInbox?.id"
-                class="rounded-2xl border border-n-weak bg-n-surface-1 p-4"
+                class="rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
               >
                 <div class="space-y-2 text-sm text-n-slate-11">
                   <p>
@@ -1763,7 +1763,7 @@ onBeforeUnmount(() => {
                     </span>
                     {{ weixinConnectionState }}
                   </p>
-                  <p v-if="weixinLastError" class="text-rose-600">
+                  <p v-if="weixinLastError" class="text-n-ruby-11">
                     <span class="font-medium">
                       {{ $t('INBOX_MGMT.FINISH.WEIXIN.LAST_ERROR') }}
                     </span>
@@ -1776,9 +1776,9 @@ onBeforeUnmount(() => {
             <div class="flex w-full flex-col gap-4">
               <div
                 v-if="!currentInbox?.id"
-                class="flex min-h-[22rem] w-full flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-n-strong px-6 py-8"
+                class="flex min-h-[22rem] w-full flex-col items-center justify-center gap-3 px-6 py-8"
               >
-                <Spinner class="text-[#07C160]" :size="28" />
+                <Spinner class="text-n-teal-10" :size="28" />
                 <p class="text-sm font-medium text-n-slate-11">
                   {{ $t('INBOX_MGMT.FINISH.WEIXIN.LOADING') }}
                 </p>
@@ -1786,7 +1786,7 @@ onBeforeUnmount(() => {
 
               <div
                 v-else-if="!isWeixinConnected"
-                class="max-w-[28rem] rounded-2xl border border-n-weak bg-n-surface-1 p-5"
+                class="max-w-[28rem] rounded-xl p-5 outline outline-1 -outline-offset-1 outline-n-weak"
               >
                 <p class="text-sm font-medium text-n-slate-12">
                   {{ $t('INBOX_MGMT.FINISH.WEIXIN.QR_LOGIN') }}
@@ -1797,7 +1797,7 @@ onBeforeUnmount(() => {
 
                 <div
                   v-if="weixinQrCode"
-                  class="mt-4 flex items-center justify-center rounded-2xl bg-white p-4"
+                  class="mt-4 flex items-center justify-center rounded-lg bg-white p-4"
                 >
                   <img
                     :src="weixinQrCode"
@@ -1807,7 +1807,7 @@ onBeforeUnmount(() => {
                 </div>
                 <div
                   v-else
-                  class="mt-4 rounded-2xl border border-dashed border-n-strong px-4 py-8 text-center text-sm text-n-slate-10"
+                  class="mt-4 px-4 py-8 text-center text-sm text-n-slate-10"
                 >
                   {{ $t('INBOX_MGMT.FINISH.WEIXIN.QR_EMPTY') }}
                 </div>
@@ -1845,7 +1845,7 @@ onBeforeUnmount(() => {
               <div class="flex min-h-full flex-col gap-5">
                 <div class="flex items-center gap-4">
                   <div
-                    class="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-[#229ED9]/10 text-[#229ED9]"
+                    class="flex size-14 shrink-0 items-center justify-center rounded-xl bg-n-blue-3 text-n-blue-11"
                   >
                     <i class="i-ri-telegram-line text-[1.75rem]" />
                   </div>
@@ -1870,10 +1870,10 @@ onBeforeUnmount(() => {
 
                 <div
                   v-if="isTelegramPersonalConnected"
-                  class="flex w-full flex-col items-start gap-2 rounded-2xl border border-[#229ED9]/30 bg-[#229ED9]/5 px-6 py-5"
+                  class="flex w-full flex-col items-start gap-2 rounded-xl bg-n-blue-3 px-6 py-5 outline outline-1 -outline-offset-1 outline-n-blue-6"
                 >
                   <div
-                    class="flex size-10 items-center justify-center rounded-full bg-[#229ED9] text-white"
+                    class="flex size-10 items-center justify-center rounded-full bg-n-blue-9 text-white"
                   >
                     <i class="i-ri-check-line text-xl" />
                   </div>
@@ -1896,7 +1896,7 @@ onBeforeUnmount(() => {
 
               <div
                 v-if="currentInbox?.id"
-                class="rounded-2xl border border-n-weak bg-n-surface-1 p-4"
+                class="rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
               >
                 <div class="space-y-2 text-sm text-n-slate-11">
                   <p>
@@ -1919,7 +1919,7 @@ onBeforeUnmount(() => {
                     </span>
                     {{ telegramPersonalConnectionState }}
                   </p>
-                  <p v-if="telegramPersonalLastError" class="text-rose-600">
+                  <p v-if="telegramPersonalLastError" class="text-n-ruby-11">
                     <span class="font-medium">
                       {{ $t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.LAST_ERROR') }}
                     </span>
@@ -1949,9 +1949,9 @@ onBeforeUnmount(() => {
             <div class="flex w-full flex-col gap-4">
               <div
                 v-if="!currentInbox?.id"
-                class="flex min-h-[22rem] w-full flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-n-strong px-6 py-8"
+                class="flex min-h-[22rem] w-full flex-col items-center justify-center gap-3 px-6 py-8"
               >
-                <Spinner class="text-[#229ED9]" :size="28" />
+                <Spinner class="text-n-blue-10" :size="28" />
                 <p class="text-sm font-medium text-n-slate-11">
                   {{ $t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.LOADING') }}
                 </p>
@@ -1959,7 +1959,7 @@ onBeforeUnmount(() => {
 
               <form
                 v-else-if="isTelegramPersonalPasswordRequired"
-                class="max-w-[21rem] space-y-3 rounded-2xl border border-n-weak bg-n-surface-1 p-5"
+                class="max-w-[21rem] space-y-3 rounded-xl p-5 outline outline-1 -outline-offset-1 outline-n-weak"
                 @submit.prevent="verifyTelegramPersonalPassword"
               >
                 <p class="text-sm font-medium text-n-slate-12">
@@ -1995,7 +1995,7 @@ onBeforeUnmount(() => {
                 <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
                   <div
                     v-if="shouldShowTelegramPersonalCodeRequest"
-                    class="space-y-3 rounded-2xl border border-n-weak bg-n-surface-1 p-5"
+                    class="space-y-3 rounded-xl p-5 outline outline-1 -outline-offset-1 outline-n-weak"
                   >
                     <p class="text-sm font-medium text-n-slate-12">
                       {{ $t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.CODE_LOGIN') }}
@@ -2020,7 +2020,7 @@ onBeforeUnmount(() => {
 
                   <form
                     v-else-if="shouldShowTelegramPersonalCodeVerify"
-                    class="space-y-3 rounded-2xl border border-n-weak bg-n-surface-1 p-5"
+                    class="space-y-3 rounded-xl p-5 outline outline-1 -outline-offset-1 outline-n-weak"
                     @submit.prevent="verifyTelegramPersonalCode"
                   >
                     <p class="text-sm font-medium text-n-slate-12">
@@ -2054,7 +2054,7 @@ onBeforeUnmount(() => {
                   </form>
 
                   <div
-                    class="rounded-2xl border border-n-weak bg-n-surface-1 p-5"
+                    class="rounded-xl p-5 outline outline-1 -outline-offset-1 outline-n-weak"
                   >
                     <p class="text-sm font-medium text-n-slate-12">
                       {{ $t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.QR_LOGIN') }}
@@ -2065,7 +2065,7 @@ onBeforeUnmount(() => {
 
                     <div
                       v-if="telegramPersonalQrCode"
-                      class="mt-4 flex items-center justify-center rounded-2xl bg-white p-4"
+                      class="mt-4 flex items-center justify-center rounded-lg bg-white p-4"
                     >
                       <img
                         :src="telegramPersonalQrCode"
@@ -2077,7 +2077,7 @@ onBeforeUnmount(() => {
                     </div>
                     <div
                       v-else
-                      class="mt-4 rounded-2xl border border-dashed border-n-strong px-4 py-8 text-center text-sm text-n-slate-10"
+                      class="mt-4 px-4 py-8 text-center text-sm text-n-slate-10"
                     >
                       {{ $t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.QR_EMPTY') }}
                     </div>

@@ -751,7 +751,7 @@ defineExpose({
 
       <div
         v-if="isAuthentication"
-        class="space-y-4 rounded-2xl border border-n-weak bg-n-surface-1 p-4"
+        class="space-y-4 border-t border-n-weak pt-6"
       >
         <div class="space-y-1">
           <p class="mb-0 text-sm font-medium text-n-slate-12">
@@ -784,7 +784,7 @@ defineExpose({
 
       <label
         v-if="!isAuthentication"
-        class="flex items-start gap-3 rounded-2xl border border-n-weak bg-n-surface-1 p-4"
+        class="flex items-start gap-3 border-t border-n-weak pt-6"
       >
         <input
           :checked="form.isCarousel"
@@ -797,7 +797,7 @@ defineExpose({
           <span class="block text-sm font-medium text-n-slate-12">
             {{ t('WHATSAPP_TEMPLATES.MANAGEMENT.CAROUSEL.ENABLE') }}
           </span>
-          <span class="block text-sm text-n-slate-11">
+          <span class="block text-sm font-normal text-n-slate-11">
             {{ t('WHATSAPP_TEMPLATES.MANAGEMENT.CAROUSEL.ENABLE_HINT') }}
           </span>
         </span>
@@ -805,13 +805,13 @@ defineExpose({
 
       <div
         v-if="!isAuthentication"
-        class="space-y-4 rounded-2xl border border-n-weak bg-n-surface-1 p-4"
+        class="space-y-4 border-t border-n-weak pt-6"
       >
         <div class="space-y-1">
-          <p class="text-sm font-medium text-n-slate-12">
+          <p class="mb-0 text-sm font-medium text-n-slate-12">
             {{ t('WHATSAPP_TEMPLATES.MANAGEMENT.BODY_SECTION') }}
           </p>
-          <p class="text-sm text-n-slate-11">
+          <p class="mb-0 text-sm text-n-slate-11">
             {{
               t('WHATSAPP_TEMPLATES.MANAGEMENT.VARIABLE_HINT', exampleVariables)
             }}
@@ -864,7 +864,7 @@ defineExpose({
 
       <div
         v-if="isStandardTemplate"
-        class="space-y-4 rounded-2xl border border-n-weak bg-n-surface-1 p-4"
+        class="space-y-4 border-t border-n-weak pt-6"
       >
         <div class="flex flex-col gap-1">
           <label class="mb-0.5 text-heading-3 text-n-slate-12">
@@ -981,14 +981,14 @@ defineExpose({
 
       <div
         v-if="isStandardTemplate"
-        class="space-y-4 rounded-2xl border border-n-weak bg-n-surface-1 p-4"
+        class="space-y-4 border-t border-n-weak pt-6"
       >
         <div class="flex items-center justify-between gap-3">
           <div class="space-y-1">
-            <p class="text-sm font-medium text-n-slate-12">
+            <p class="mb-0 text-sm font-medium text-n-slate-12">
               {{ t('WHATSAPP_TEMPLATES.MANAGEMENT.BUTTONS_SECTION') }}
             </p>
-            <p class="text-sm text-n-slate-11">
+            <p class="mb-0 text-sm text-n-slate-11">
               {{
                 t('WHATSAPP_TEMPLATES.MANAGEMENT.BUTTONS_HINT', {
                   count: MAX_TEMPLATE_BUTTONS,
@@ -1007,19 +1007,14 @@ defineExpose({
           />
         </div>
 
-        <div
-          v-if="!form.buttons.length"
-          class="rounded-xl bg-n-alpha-black2 p-4"
-        >
-          <p class="mb-0 text-sm text-n-slate-11">
-            {{ t('WHATSAPP_TEMPLATES.MANAGEMENT.NO_BUTTONS') }}
-          </p>
-        </div>
+        <p v-if="!form.buttons.length" class="mb-0 text-sm text-n-slate-11">
+          {{ t('WHATSAPP_TEMPLATES.MANAGEMENT.NO_BUTTONS') }}
+        </p>
 
         <div
           v-for="(button, index) in form.buttons"
           :key="`button-${index}`"
-          class="space-y-4 rounded-xl border border-n-weak bg-n-alpha-black2 p-4"
+          class="space-y-4 border-t border-n-weak pt-4"
         >
           <div class="flex items-center justify-between gap-3">
             <p class="mb-0 text-sm font-medium text-n-slate-12">

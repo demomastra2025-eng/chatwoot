@@ -54,13 +54,17 @@ describe('AddAttribute', () => {
     expect(wrapper.find('select').element.value).toBe('2');
   });
 
-  it('renders regex validation toggle with normal spacing and native v-model behavior', async () => {
+  it('renders regex validation toggle as an unframed inline option with native v-model behavior', async () => {
     const wrapper = mountComponent();
     const regexToggle = wrapper.find('label.mt-2.mb-4');
 
     expect(regexToggle.exists()).toBe(true);
-    expect(regexToggle.classes()).toContain('gap-3');
-    expect(regexToggle.classes()).toContain('py-3');
+    expect(regexToggle.classes()).toContain('gap-2');
+    expect(regexToggle.classes()).toContain('font-normal');
+    // The modal is already a frame: the option must not draw its own block.
+    expect(regexToggle.classes()).not.toContain('outline');
+    expect(regexToggle.classes()).not.toContain('rounded-xl');
+    expect(regexToggle.find('[class*="outline-n-"]').exists()).toBe(false);
 
     await regexToggle.find('input[type="checkbox"]').setValue(true);
 

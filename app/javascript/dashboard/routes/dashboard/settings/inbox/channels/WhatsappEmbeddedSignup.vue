@@ -755,17 +755,17 @@ onBeforeUnmount(() => {
   <div class="h-full">
     <div
       v-if="recoveryState"
-      class="flex flex-col gap-4 rounded-xl border border-n-weak bg-n-alpha-1 p-4"
+      class="flex flex-col gap-4"
       data-testid="whatsapp-signup-recovery"
     >
       <div class="flex flex-col gap-2">
         <h3 class="text-base font-medium text-n-slate-12">
           {{ recoveryTitle }}
         </h3>
-        <p class="text-sm leading-6 text-n-slate-11">
+        <p class="mb-0 text-sm leading-6 text-n-slate-11">
           {{ recoveryDescription }}
         </p>
-        <p class="text-sm leading-6 text-n-slate-11">
+        <p class="mb-0 text-sm leading-6 text-n-slate-11">
           {{ $t('INBOX_MGMT.ADD.WHATSAPP.EMBEDDED_SIGNUP.RECOVERY.TIP') }}
         </p>
       </div>
@@ -813,7 +813,7 @@ onBeforeUnmount(() => {
 
       <p
         v-if="showInAppBrowserHint"
-        class="mb-6 rounded-xl border border-n-amber-4 bg-n-amber-3 p-3 text-sm text-n-amber-11"
+        class="mb-6 text-sm text-n-amber-11"
         data-testid="whatsapp-signup-in-app-browser"
       >
         {{ $t('INBOX_MGMT.ADD.WHATSAPP.EMBEDDED_SIGNUP.IN_APP_BROWSER') }}

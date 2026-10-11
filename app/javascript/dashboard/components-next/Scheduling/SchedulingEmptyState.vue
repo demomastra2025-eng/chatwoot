@@ -25,10 +25,10 @@ defineEmits(['action']);
 
 <template>
   <div
-    class="flex flex-col items-center justify-center gap-4 px-6 py-12 text-center rounded-2xl outline outline-1 outline-dashed outline-n-strong bg-n-alpha-black2"
+    class="flex flex-col items-center justify-center gap-4 px-6 py-12 text-center"
   >
     <span
-      class="grid rounded-2xl size-12 place-content-center bg-n-alpha-1 text-n-slate-11"
+      class="grid rounded-xl size-12 place-content-center bg-n-alpha-1 text-n-slate-11"
       :class="icon"
     />
     <div class="flex flex-col gap-1">

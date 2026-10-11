@@ -68,10 +68,9 @@ describe('CrmTaskBoard', () => {
       columns.every(column => column.classes().includes('w-[18rem]'))
     ).toBe(true);
     expect(colorBars).toHaveLength(2);
-    expect(colorBars.map(bar => bar.attributes('style'))).toEqual([
-      'background-color: rgb(135, 241, 192);',
-      'background-color: rgb(231, 232, 234);',
-    ]);
+    expect(colorBars.every(bar => !bar.attributes('style'))).toBe(true);
+    expect(colorBars[0].classes()).toContain('bg-n-teal-7');
+    expect(colorBars[1].classes()).toContain('bg-n-slate-5');
   });
 
   it('shows authoritative bucket totals and requests the next bucket page', async () => {
@@ -170,12 +169,10 @@ describe('CrmTaskBoard', () => {
 
     const colorBars = wrapper.findAll('.crm-task-board-bucket-color');
     expect(wrapper.findAll('.crm-task-board-column')).toHaveLength(5);
-    expect(colorBars.slice(1).map(bar => bar.attributes('style'))).toEqual([
-      'background-color: rgb(231, 232, 234);',
-      'background-color: rgb(231, 232, 234);',
-      'background-color: rgb(231, 232, 234);',
-      'background-color: rgb(231, 232, 234);',
-    ]);
+    expect(colorBars.slice(1)).toHaveLength(4);
+    expect(
+      colorBars.slice(1).every(bar => bar.classes().includes('bg-n-slate-5'))
+    ).toBe(true);
   });
 
   it('exposes a native button for opening a task with the keyboard', async () => {

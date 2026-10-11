@@ -536,7 +536,10 @@ async function createTwilioChannel() {
       </div>
     </div>
 
-    <div v-else class="mt-6 px-6 py-5 rounded-2xl border border-n-weak">
+    <div
+      v-else
+      class="mt-6 px-6 py-5 rounded-xl outline outline-1 -outline-offset-1 outline-n-weak"
+    >
       <div
         class="flex flex-col gap-3 mb-6 md:flex-row md:items-start md:justify-between"
       >
@@ -544,13 +547,13 @@ async function createTwilioChannel() {
           <h2 class="text-lg font-medium text-n-slate-12">
             {{ selectedProviderCard?.title }}
           </h2>
-          <p class="text-sm text-n-slate-11">
+          <p class="mb-0 text-sm text-n-slate-11">
             {{ selectedProviderCard?.description }}
           </p>
         </div>
         <button
           type="button"
-          class="text-sm font-medium text-n-brand hover:opacity-80 text-left"
+          class="p-0 text-sm font-medium text-n-brand hover:opacity-80 text-left"
           @click="resetProviderSelection"
         >
           {{ t('INBOX_MGMT.ADD.VOICE.SELECT_PROVIDER.CHANGE_ACTION') }}
@@ -618,7 +621,7 @@ async function createTwilioChannel() {
         <button
           v-if="isAsteriskAnalogProvider || isWazoProvider"
           type="button"
-          class="text-sm font-medium text-n-brand hover:opacity-80 text-left"
+          class="p-0 text-sm font-medium text-n-brand hover:opacity-80 text-left"
           @click="isVirtualPbxAdvancedVisible = !isVirtualPbxAdvancedVisible"
         >
           {{
@@ -683,9 +686,7 @@ async function createTwilioChannel() {
               </option>
             </Select>
           </div>
-          <p
-            class="rounded-xl border border-n-weak p-4 text-sm text-n-slate-11"
-          >
+          <p class="mb-0 text-sm text-n-slate-11">
             {{ t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.BEELINE_CONFIG_HINT') }}
           </p>
         </template>
@@ -750,7 +751,7 @@ async function createTwilioChannel() {
           </div>
         </div>
 
-        <p class="rounded-xl border border-n-weak p-4 text-sm text-n-slate-11">
+        <p class="mb-0 text-sm text-n-slate-11">
           {{
             t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.CREATE_HINT')
           }}

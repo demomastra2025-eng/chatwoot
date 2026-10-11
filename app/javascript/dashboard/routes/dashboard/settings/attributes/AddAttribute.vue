@@ -315,7 +315,7 @@ export default {
           </div>
           <label
             v-if="isAttributeTypeText"
-            class="mt-2 mb-4 flex items-center gap-3 rounded-xl bg-n-alpha-black2 px-4 py-3 text-sm text-n-slate-12 outline outline-1 outline-n-weak"
+            class="mt-2 mb-4 flex items-center gap-2 text-sm font-normal text-n-slate-12"
           >
             <Checkbox v-model="regexEnabled" />
             <span>{{ $t('ATTRIBUTES_MGMT.ADD.FORM.ENABLE_REGEX.LABEL') }}</span>
