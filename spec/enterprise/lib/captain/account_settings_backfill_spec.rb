@@ -27,6 +27,14 @@ RSpec.describe Captain::AccountSettingsBackfill do
     expect(described_class.main_assistant(account)).to eq(main)
   end
 
+  it 'prefers a connected channel agent over a newer unconnected agent when no conversations are recent' do
+    inbox = create(:inbox, account: account)
+    create(:captain_inbox, captain_assistant: older, inbox: inbox)
+    main.update!(updated_at: 1.minute.from_now)
+
+    expect(described_class.main_assistant(account)).to eq(older)
+  end
+
   it 'reports only IDs and differing setting names' do
     older
     main

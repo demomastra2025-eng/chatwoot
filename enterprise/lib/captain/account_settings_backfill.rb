@@ -5,8 +5,11 @@ class Captain::AccountSettingsBackfill
     assistants = account.captain_assistants.external_agent.where(active: true).order(updated_at: :desc, id: :desc).to_a
     return if assistants.empty?
 
-    scores = conversation_scores(account, assistants)
-    assistants.max_by { |assistant| [scores.fetch(assistant.id, 0), assistant.updated_at, assistant.id] }
+    connected_ids = CaptainInbox.where(captain_assistant_id: assistants.map(&:id)).distinct.pluck(:captain_assistant_id)
+    candidates = assistants.select { |assistant| connected_ids.include?(assistant.id) }
+    candidates = assistants if candidates.empty?
+    scores = conversation_scores(account, candidates)
+    candidates.max_by { |assistant| [scores.fetch(assistant.id, 0), assistant.updated_at, assistant.id] }
   end
 
   def self.conversation_scores(account, assistants)
