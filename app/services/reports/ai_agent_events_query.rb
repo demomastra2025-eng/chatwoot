@@ -15,6 +15,8 @@ class Reports::AiAgentEventsQuery
       JOIN conversations ON conversations.id = messages.conversation_id AND conversations.account_id = :account_id
       LEFT JOIN captain_assistants AS authors ON authors.id = messages.sender_id
       WHERE messages.account_id = :account_id AND messages.sender_type = 'Captain::Assistant'
+        AND NOT (conversations.additional_attributes ? 'captain_playground_source')
+        AND NOT (conversations.additional_attributes ? 'captain_benchmark_source')
         AND messages.sender_id IS NOT NULL AND messages.message_type = :outgoing_type AND messages.private = FALSE
         AND messages.created_at >= :from_at AND messages.created_at < :until_at
         AND (authors.id IS NULL OR authors.account_id = :account_id)
@@ -40,6 +42,8 @@ class Reports::AiAgentEventsQuery
       JOIN conversations ON conversations.id = transitions.conversation_id AND conversations.account_id = :account_id
       LEFT JOIN captain_assistants AS actors ON actors.id = transitions.actor_id
       WHERE transitions.account_id = :account_id AND transitions.actor_type = 'Captain::Assistant'
+        AND NOT (conversations.additional_attributes ? 'captain_playground_source')
+        AND NOT (conversations.additional_attributes ? 'captain_benchmark_source')
         AND transitions.actor_id IS NOT NULL AND transitions.source IN ('captain', 'system')
         AND transitions.to_status IN ('open', 'resolved') AND transitions.from_status <> transitions.to_status
         AND transitions.created_at >= :from_at AND transitions.created_at < :until_at

@@ -6,6 +6,29 @@ RSpec.describe Llm::Monitoring::EventRecorder do
   describe '.record_notification' do
     let(:account) { create(:account) }
 
+    it 'persists coordination events with their run source and agent IDs' do
+      event = described_class.record_notification(
+        event_name: 'captain.agent.transfer', started_at: Time.current, finished_at: Time.current,
+        payload: { account_id: account.id, request_id: 'synthetic-request', run_source: 'benchmark',
+                   from_agent_id: 2, to_agent_id: 3 }
+      )
+
+      expect(event).to have_attributes(event_name: 'captain.agent.transfer', account_id: account.id,
+                                       request_id: 'synthetic-request')
+      expect(event.payload).to include('run_source' => 'benchmark', 'from_agent_id' => 2, 'to_agent_id' => 3)
+    end
+
+    it 'persists council participants and outcome without customer text' do
+      event = described_class.record_notification(
+        event_name: 'captain.council.finished', started_at: Time.current, finished_at: Time.current,
+        payload: { account_id: account.id, run_source: 'playground', participants: [2, 3],
+                   outcome: 'completed', response: 'PRIVATE_RESPONSE' }
+      )
+
+      expect(event.payload).to include('run_source' => 'playground', 'participants' => [2, 3], 'outcome' => 'completed')
+      expect(event.payload.to_json).not_to include('PRIVATE_RESPONSE')
+    end
+
     it 'persists outer chat errors without counting another provider usage request' do
       event = nil
       expect do

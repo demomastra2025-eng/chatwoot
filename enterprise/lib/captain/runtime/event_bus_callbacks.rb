@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'digest'
+
 class Captain::Runtime::EventBusCallbacks
   EVENT_BUS_STATE_KEY = :__llm_event_bus
 
@@ -57,7 +59,7 @@ class Captain::Runtime::EventBusCallbacks
   end
 
   def on_tool_start(tool_name, args, context_wrapper)
-    push_tool_timing(context_wrapper, tool_name)
+    push_tool_timing(context_wrapper, tool_name, args)
     publish(
       'tool.execute',
       context_wrapper,
@@ -104,6 +106,7 @@ class Captain::Runtime::EventBusCallbacks
       result_message_size: payload_size(normalized_result[:message]),
       result_error_type: payload_type(normalized_result[:error]),
       result_error_size: payload_size(normalized_result[:error]),
+      arguments_digest: timing[:arguments_digest],
       duration_ms: timing[:duration_ms],
       started_at: timing[:started_at],
       completed_at: timing[:completed_at]
@@ -118,6 +121,10 @@ class Captain::Runtime::EventBusCallbacks
       to_agent: to_agent,
       reason: reason.to_s
     )
+    payload = { from_agent_id: agent_id(from_agent), to_agent_id: agent_id(to_agent) }
+    publish('captain.agent.transfer', context_wrapper, payload)
+    entry_id = context_wrapper.context.dig(:state, :entry_assistant_id)
+    publish('captain.agent.return', context_wrapper, payload) if entry_id && payload[:to_agent_id] == entry_id
   end
 
   def on_run_complete(agent_name, result, context_wrapper)
@@ -143,6 +150,10 @@ class Captain::Runtime::EventBusCallbacks
     Llm::EventBus.publish(event_name, event_payload)
   end
 
+  def agent_id(name)
+    name.to_s.delete_prefix('assistant_').to_i if name.to_s.match?(/\Aassistant_\d+\z/)
+  end
+
   def base_payload(context_wrapper)
     state = context_wrapper&.context&.dig(:state) || {}
     conversation = state[:conversation] || {}
@@ -156,6 +167,7 @@ class Captain::Runtime::EventBusCallbacks
       conversation_display_id: conversation[:display_id],
       channel_type: state[:channel_type],
       source: state[:source],
+      run_source: %w[playground benchmark].include?(state[:source].to_s) ? state[:source] : 'live',
       project_case_id: state[:project_case_id] || context_wrapper&.context&.dig(:project_case_id),
       current_agent: context_wrapper&.context&.dig(:current_agent),
       session_id: context_wrapper&.context&.dig(:session_id)
@@ -170,13 +182,20 @@ class Captain::Runtime::EventBusCallbacks
     context_wrapper.context[EVENT_BUS_STATE_KEY] ||= {}
   end
 
-  def push_tool_timing(context_wrapper, tool_name)
+  def push_tool_timing(context_wrapper, tool_name, args)
     event_bus_state(context_wrapper)[:tool_timings] ||= {}
     event_bus_state(context_wrapper)[:tool_timings][tool_name.to_s] ||= []
     event_bus_state(context_wrapper)[:tool_timings][tool_name.to_s] << {
       started_at: Time.current,
-      started_monotonic: Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      started_monotonic: Process.clock_gettime(Process::CLOCK_MONOTONIC),
+      arguments_digest: arguments_digest(args)
     }
+  rescue StandardError
+    nil
+  end
+
+  def arguments_digest(args)
+    Digest::SHA256.hexdigest(JSON.generate(args))
   rescue StandardError
     nil
   end
@@ -189,7 +208,8 @@ class Captain::Runtime::EventBusCallbacks
     {
       started_at: timing[:started_at]&.iso8601(6),
       completed_at: completed_at.iso8601(6),
-      duration_ms: elapsed_ms(timing[:started_monotonic])
+      duration_ms: elapsed_ms(timing[:started_monotonic]),
+      arguments_digest: timing[:arguments_digest]
     }.compact
   rescue StandardError
     {}

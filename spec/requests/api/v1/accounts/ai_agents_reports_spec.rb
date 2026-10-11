@@ -23,10 +23,11 @@ RSpec.describe 'Account AI Agents Reports API', type: :request do
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.fetch('meta')).to include('timezone' => 'Europe/Berlin', 'assistant_id' => nil)
     payload = response.parsed_body.fetch('payload')
-    expect(payload.keys).to contain_exactly('totals', 'series', 'agents', 'agent_breakdown', 'reasons', 'availability')
+    expect(payload.keys).to contain_exactly('totals', 'series', 'agents', 'agent_breakdown', 'reasons', 'coordination', 'availability')
     expect(payload.fetch('totals')).to include('message_count' => 1, 'conversation_count' => 1, 'completion_count' => 1, 'handoff_count' => 0)
     expect(payload.dig('totals', 'classification_counts', 'pending')).to eq(1)
     expect(payload.fetch('reasons')).to be_empty
+    expect(payload.fetch('coordination')).to eq('transfers' => [], 'guard_count' => 0)
     expect(payload.dig('availability', 'latency')).to eq('available' => false, 'reason' => 'native_attribution_unavailable')
   end
 

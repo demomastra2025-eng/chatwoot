@@ -1093,11 +1093,17 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
           'handoff_tool_called' => true,
           'handoff_authorized' => true,
           'handoff_reason' => 'Customer explicitly requested human assistance.',
-          'handoff_message' => 'Передаю сотруднику.'
+          'handoff_message' => 'Передаю сотруднику.',
+          'captain_request_id' => 'synthetic-request'
         }
       )
 
       expect(conversation).to receive(:bot_handoff!).once.and_call_original
+      allow(Llm::EventBus).to receive(:publish).and_call_original
+      expect(Llm::EventBus).to receive(:publish).with(
+        'captain.agent.staff_handoff',
+        hash_including(request_id: 'synthetic-request', conversation_id: conversation.id, run_source: 'live')
+      ).and_call_original
       public_message = change { conversation.messages.outgoing.where(private: false).count }.by(1)
       private_note = change { conversation.messages.outgoing.where(private: true).count }.by(1)
       expect { described_class.perform_now(conversation, assistant) }.to public_message.and(private_note)

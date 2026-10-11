@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class Llm::EventSubscriber
-  PATTERN = /\Allm\./
+  PATTERN = /\A(?:llm|captain)\./
   INSTALL_MUTEX = Mutex.new
 
   class << self

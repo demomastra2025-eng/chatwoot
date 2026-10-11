@@ -893,8 +893,9 @@ class Captain::Assistant::AgentRunnerService
     state = context[:state] || {}
     conversation = state[:conversation] || {}
 
+    @captain_request_id = context[:agent_request_id] || SecureRandom.uuid
     {
-      request_id: SecureRandom.uuid,
+      request_id: @captain_request_id,
       feature: 'assistant',
       runtime_mode: 'captain_runtime',
       account_id: state[:account_id],
@@ -1007,6 +1008,7 @@ class Captain::Assistant::AgentRunnerService
 
   def with_agent_identity(response)
     return response unless response.is_a?(Hash)
+    response = response.merge('captain_request_id' => @captain_request_id) if @captain_request_id.present?
     return response unless @assistant.persisted?
 
     actor = agent_run_context.graph.find(@acting_assistant_id || @assistant.id)

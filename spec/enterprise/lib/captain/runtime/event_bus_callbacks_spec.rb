@@ -2,12 +2,13 @@
 
 require 'rails_helper'
 
-RSpec.describe Captain::Runtime::EventBusCallbacks do
-  class EventBusCallbacksSpecChat < Struct.new(:model)
-    def with_schema(_schema)
-      self
-    end
+EventBusCallbacksSpecChat = Struct.new(:model) do
+  def with_schema(_schema)
+    self
   end
+end
+
+RSpec.describe Captain::Runtime::EventBusCallbacks do
 
   let(:events) { [] }
   let(:subscriber) do
@@ -43,11 +44,9 @@ RSpec.describe Captain::Runtime::EventBusCallbacks do
   it 'publishes normalized runtime events with shared metadata' do
     chat = EventBusCallbacksSpecChat.new('gpt-4.1-mini')
     Llm::StructuredOutputPolicy.bind!(chat: chat, schema: Captain::ConversationCompletionSchema)
-    response = Struct.new(:content, :input_tokens, :output_tokens, :thinking_tokens, :tool_call?) do
-      def initialize(...)
-        super
-      end
-    end.new({ complete: true }, 11, 7, 2, false)
+    response = Struct.new(:content, :input_tokens, :output_tokens, :thinking_tokens, :tool_call?).new(
+      { complete: true }, 11, 7, 2, false
+    )
     result = Captain::Runtime::Result.new(
       output: { response: 'Done' },
       usage: Struct.new(:input_tokens, :output_tokens, :total_tokens, :thinking_tokens).new(11, 7, 18, 2)
@@ -117,6 +116,24 @@ RSpec.describe Captain::Runtime::EventBusCallbacks do
     )
   end
 
+  it 'records an agent transfer and return with source and request IDs' do
+    context_wrapper.context[:state][:entry_assistant_id] = 2
+    captured = []
+    listener = ActiveSupport::Notifications.subscribe(/\Acaptain\.agent\./) do |*args|
+      captured << ActiveSupport::Notifications::Event.new(*args)
+    end
+
+    Llm::EventBus.with_context(request_id: 'synthetic-request') do
+      callbacks.on_agent_handoff('assistant_3', 'assistant_2', 'handoff', context_wrapper)
+    end
+
+    expect(captured.map(&:name)).to contain_exactly('captain.agent.transfer', 'captain.agent.return')
+    expect(captured.first.payload).to include('from_agent_id' => 3, 'to_agent_id' => 2,
+                                              'run_source' => 'live', 'request_id' => 'synthetic-request')
+  ensure
+    ActiveSupport::Notifications.unsubscribe(listener) if listener
+  end
+
   it 'records lightweight tool execution timing when start and complete are paired' do
     callbacks.on_tool_start('lookup_contact', { contact_id: 123 }, context_wrapper)
     callbacks.on_tool_complete('lookup_contact', { status: 'ok' }, context_wrapper)
@@ -126,6 +143,7 @@ RSpec.describe Captain::Runtime::EventBusCallbacks do
     expect(tool_event.payload).to include(
       'tool_name' => 'lookup_contact',
       'duration_ms' => a_kind_of(Integer),
+      'arguments_digest' => Digest::SHA256.hexdigest(JSON.generate(contact_id: 123)),
       'started_at' => a_string_matching(/\d{4}-\d{2}-\d{2}T.*\.\d{6}/),
       'completed_at' => a_string_matching(/\d{4}-\d{2}-\d{2}T.*\.\d{6}/)
     )

@@ -82,6 +82,19 @@ RSpec.describe Reports::AiAgentsQuery do
     expect(payload.dig(:totals, :classification_counts, :completed)).to eq(1)
   end
 
+  it 'excludes playground and benchmark conversations from customer-facing totals' do
+    playground = create(:conversation, account: account,
+                        additional_attributes: { 'captain_playground_source' => true })
+    benchmark = create(:conversation, account: account,
+                       additional_attributes: { 'captain_benchmark_source' => true })
+    [playground, benchmark].each do |chat|
+      add_message(chat: chat)
+      add_outcome(chat: chat)
+    end
+
+    expect(report[:totals]).to include(message_count: 0, outcome_count: 0)
+  end
+
   it 'uses local event dates across DST with inclusive days and keeps total conversations distinct across days' do
     from_at = Time.iso8601('2026-03-28T23:00:00Z')
     next_day = Time.iso8601('2026-03-29T22:00:00Z')

@@ -63,7 +63,7 @@ class Llm::EventBus
 
     def full_event_name(event_name)
       event_name = event_name.to_s
-      return event_name if event_name.start_with?("#{EVENT_NAMESPACE}.")
+      return event_name if event_name.start_with?("#{EVENT_NAMESPACE}.", 'captain.')
 
       "#{EVENT_NAMESPACE}.#{event_name}"
     end

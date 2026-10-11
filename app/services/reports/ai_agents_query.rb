@@ -24,6 +24,8 @@ class Reports::AiAgentsQuery
       agents: available_agents,
       agent_breakdown: agent_breakdown(metrics),
       reasons: reasons.sort_by { |row| [-row[:count], row[:type], row[:assistant_id], row[:reason_id]] },
+      coordination: Reports::AiAgentTransfersQuery.new(account: account, date_range: date_range,
+                                                        assistant_id: assistant_id).perform,
       availability: unavailable_metrics
     }
   end

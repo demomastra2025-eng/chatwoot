@@ -3,6 +3,13 @@
 class Llm::Monitoring::EventRecorder
   PERSISTED_EVENTS = Set.new(
     %w[
+      captain.agent.transfer
+      captain.agent.transfer_guard
+      captain.agent.return
+      captain.agent.reset
+      captain.agent.staff_handoff
+      captain.council.started
+      captain.council.finished
       llm.agent.handoff
       llm.budget.blocked
       llm.budget.warning
@@ -41,6 +48,7 @@ class Llm::Monitoring::EventRecorder
   PERSISTED_PAYLOAD_MAX_BYTES = 8.kilobytes
   ESSENTIAL_PAYLOAD_KEYS = %w[
     canonical_event_name event_name_alias error_class error_code failure_mode openrouter_generation_id parent_request_id
+    run_source from_agent_id to_agent_id participants outcome
     payload_bytes payload_budget_bytes project_case_id queue_wait_ms retry_count schema_invalid_count status
     snippet_hash thinking_tokens tool_calls_count usage_scope provider_response_count provider_observability_error_count
     cached_tokens cache_creation_tokens actual_model endpoint_provider requested_model

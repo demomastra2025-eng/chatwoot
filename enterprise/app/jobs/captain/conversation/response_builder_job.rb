@@ -466,7 +466,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   # on the handoff tool. It is fenced like every Captain result: a human reply,
   # a status or control change, or a newer customer message wins.
   def handoff_failed_turn
-    @conversation.with_captain_activity_context(reason: provider_error_note_content, reason_type: :inference) do
+    result = @conversation.with_captain_activity_context(reason: provider_error_note_content, reason_type: :inference) do
       with_response_persistence_lock(stage: 'failed_turn_handoff') do
         audit = outcome_reason_config.pending_transition_options(:handoff, explanation: provider_error_note_content).fetch(:audit)
         @conversation.bot_handoff!(actor: response_assistant, source: 'system', fence: current_response_fence, audit: audit) do
@@ -474,6 +474,8 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
         end
       end
     end
+    record_staff_handoff if result == :applied
+    result
   rescue Captain::Conversation::ControlGenerationStaleError => e
     Rails.logger.info("[CAPTAIN][RunFence] Skipped failed-turn handoff conversation_id=#{@conversation.id}: #{e.message}")
     nil
@@ -552,7 +554,14 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     ) do
       create_action_notifications(action)
     end
+    record_staff_handoff if result == :applied
     result == :applied
+  end
+
+  def record_staff_handoff
+    Llm::EventBus.publish('captain.agent.staff_handoff',
+                          account_id: account.id, assistant_id: response_assistant.id, conversation_id: @conversation.id,
+                          request_id: @response['captain_request_id'], run_source: 'live', feature: 'assistant')
   end
 
   def handoff_reason_for(_action)

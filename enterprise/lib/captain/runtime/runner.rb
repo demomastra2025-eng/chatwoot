@@ -218,6 +218,7 @@ class Captain::Runtime::Runner
   end
 
   def missing_agent_result(session, target_name)
+    record_transfer_guard(session, 'target_missing')
     message = target_name.present? ? "Handoff failed: Agent '#{target_name}' not found in registry" : 'Handoff failed: target agent is missing'
     error = AgentNotFoundError.new(message)
     finalize_run(session[:chat], session[:context_wrapper], session[:current_agent], output: nil, error: error)
@@ -229,8 +230,16 @@ class Captain::Runtime::Runner
   end
 
   def self_handoff_result(session, next_agent)
+    record_transfer_guard(session, 'self_transfer', next_agent)
     error = SelfHandoffError.new("Agent #{next_agent.name} attempted to hand off to itself")
     finalize_run(session[:chat], session[:context_wrapper], session[:current_agent], output: nil, error: error)
+  end
+
+  def record_transfer_guard(session, reason, target = nil)
+    Captain::Runtime::CoordinationEvents.publish(
+      'agent.transfer_guard', context: session[:context_wrapper].context, reason: reason,
+      from_agent_id: session[:current_agent].assistant_id, to_agent_id: target&.assistant_id
+    )
   end
 
   def persist_handoff_state(session, next_agent)

@@ -11,14 +11,21 @@ class Captain::AgentRunContext
 
   def prepare(context)
     context.delete(:captain_faq_outcome)
+    context[:agent_request_id] ||= SecureRandom.uuid
     @entry_playground_overrides = context.fetch(:state, {}).slice(:playground_thinking_effort)
     saved = @session.read
     current = graph.find(saved['current_assistant_id']) || graph.entry
     raise ArgumentError, 'The entry agent is disabled' unless graph.find(current.id)
 
+    if saved['current_assistant_id'].present? && current.id != saved['current_assistant_id'].to_i
+      Captain::Runtime::CoordinationEvents.publish(
+        'agent.reset', context: context, reason: 'agent_unavailable',
+        from_agent_id: saved['current_assistant_id'], to_agent_id: current.id
+      )
+    end
+
     context[:agent_graph] = graph.payload
     context[:agent_session] = @session
-    context[:agent_request_id] ||= SecureRandom.uuid
     context[:agent_tasks] = saved['tasks'] || []
     context[:agent_tasks].each do |task|
       next if Captain::Runtime::TaskQueue::TERMINAL.include?(task['status']) || graph.find(task['assistant_id'])
