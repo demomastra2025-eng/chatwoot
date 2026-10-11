@@ -11,14 +11,12 @@ RSpec.describe Captain::Safety::CustomRulesEvaluator do
   let(:rules) { [rule] }
   let(:account_settings) { instance_double(Captain::AccountSettings, runtime_rules: rules) }
   let(:assistant) do
-    instance_double(Captain::Assistant, active?: true, account: account,
+    instance_double(Captain::Assistant, active?: true, account: account, account_settings: account_settings,
                                        config: { 'safety_settings' => { 'moderation_enabled' => false, 'custom_rules' => rules } })
   end
   let(:engine) { instance_double(Captain::Safety::CustomRulesStructuredOutputEngine, model: 'openai/gpt-6-luna', select: { rule_id: 'urgent_1' }) }
   let(:clock) { -> { 100.0 } }
   let(:evaluator) { described_class.new(engine: engine, clock: clock) }
-
-  before { allow(Captain::AccountSettings).to receive(:new).with(account).and_return(account_settings) }
 
   def evaluate(text: 'I need help.', direction: 'input', context: {})
     evaluator.evaluate(assistant: assistant, direction: direction, text: text, context: context)

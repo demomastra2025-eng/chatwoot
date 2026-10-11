@@ -160,7 +160,7 @@ class Captain::OutcomeReasonConfig
   end
 
   def account_reasons
-    handoff = Captain::AccountSettings.new(assistant.account).section('handoff')
+    handoff = assistant.account_settings.section('handoff')
     TYPES.each_with_object({}) do |type, result|
       result[reason_key(type)] = Array(handoff[reason_key(type)]).map do |reason|
         { 'id' => reason['id'], 'label' => reason['label'], 'active' => reason['enabled'] }

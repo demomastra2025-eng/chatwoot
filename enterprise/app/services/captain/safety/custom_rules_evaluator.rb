@@ -62,7 +62,7 @@ class Captain::Safety::CustomRulesEvaluator
   end
 
   def configured_rules(assistant)
-    rules = Captain::AccountSettings.new(assistant.account).runtime_rules
+    rules = assistant.account_settings.runtime_rules
     Captain::Safety::CustomRulesConfig.errors(rules).empty? ? rules : nil
   end
 

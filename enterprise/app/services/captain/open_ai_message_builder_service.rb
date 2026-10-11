@@ -184,7 +184,7 @@ class Captain::OpenAiMessageBuilderService
   def image_understanding_enabled?
     return true if @assistant.blank?
 
-    Captain::AccountSettings.new(@assistant.account).section('understanding')['images']
+    @assistant.account_settings.section('understanding')['images']
   end
 
   def file_attachments(attachments)

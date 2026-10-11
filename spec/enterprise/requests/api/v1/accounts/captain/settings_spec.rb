@@ -7,12 +7,14 @@ RSpec.describe 'Captain account settings', type: :request do
   let(:path) { "/api/v1/accounts/#{account.id}/captain/settings" }
 
   it 'returns one account-level settings object to an administrator' do
+    allow(Captain::Tools::FirecrawlService).to receive(:configured?).and_return(true)
     get path, headers: admin.create_new_auth_token, as: :json
 
     expect(response).to have_http_status(:ok)
     body = JSON.parse(response.body)
     expect(body.keys).to contain_exactly('understanding', 'handoff', 'faq', 'conversation', 'safety', 'availability')
     expect(body.dig('handoff', 'handoff_reasons')).to all(include('id', 'label', 'enabled', 'builtin'))
+    expect(body.dig('availability', 'web_access_configured')).to be(true)
   end
 
   it 'accepts a partial patch without changing another section or an agent config' do

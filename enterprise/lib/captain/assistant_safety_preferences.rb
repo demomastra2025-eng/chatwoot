@@ -28,7 +28,7 @@ class Captain::AssistantSafetyPreferences
   end
 
   def self.settings_for(assistant, feature, account)
-    return Captain::AccountSettings.new(account).section('safety') if feature.to_s == 'assistant' && assistant
+    return assistant.account_settings.section('safety') if feature.to_s == 'assistant' && assistant
 
     assistant&.config.to_h.deep_stringify_keys['safety_settings'].to_h
   end

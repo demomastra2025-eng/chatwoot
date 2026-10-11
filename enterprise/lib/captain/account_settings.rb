@@ -39,7 +39,9 @@ class Captain::AccountSettings
   end
 
   def section(name)
-    value.fetch(name.to_s)
+    key = name.to_s
+    @section_defaults ||= defaults(include_availability: false)
+    @section_defaults.fetch(key).deep_merge(@account.settings.to_h.fetch(KEY, {}).to_h.deep_stringify_keys.fetch(key, {}))
   end
 
   def update!(patch)
@@ -56,8 +58,8 @@ class Captain::AccountSettings
     value
   end
 
-  def defaults
-    {
+  def defaults(include_availability: true)
+    result = {
       'understanding' => { 'voice_messages' => true, 'images' => true, 'documents' => true,
                            'web_search' => false, 'web_page_reading' => false },
       'handoff' => { 'handoff_reasons' => default_reasons('handoff'), 'completion_reasons' => default_reasons('completion'),
@@ -66,9 +68,10 @@ class Captain::AccountSettings
       'faq' => { 'generate_from_resolved' => false },
       'conversation' => { 'message_collapse_window_seconds' => 15 },
       'safety' => { 'moderation_enabled' => false, 'prompt_injection_action' => 'block',
-                    'sensitive_info_action' => 'block', 'custom_rules' => [] },
-      'availability' => { 'web_access_configured' => web_access_configured? }
+                    'sensitive_info_action' => 'block', 'custom_rules' => [] }
     }
+    result['availability'] = { 'web_access_configured' => web_access_configured? } if include_availability
+    result
   end
 
   def self.from_assistant(assistant)
@@ -96,7 +99,6 @@ class Captain::AccountSettings
   end
 
   def web_access_configured?
-    Llm::RuntimePolicy.web_access_enabled?(:search, account: @account) ||
-      Llm::RuntimePolicy.web_access_enabled?(:scrape, account: @account)
+    Captain::Tools::FirecrawlService.configured?
   end
 end

@@ -67,7 +67,7 @@ module Captain::ToolAccess
   end
 
   def account_tool_ids_for(assistant, selected, available_ids)
-    settings = Captain::AccountSettings.new(assistant.account)
+    settings = assistant.account_settings
     understanding = settings.section('understanding')
     selected -= %w[web_search web_scrape_url resolve_conversation]
     selected |= %w[faq_lookup handoff] & available_ids
@@ -78,10 +78,13 @@ module Captain::ToolAccess
   end
 
   def allowed_tool_ids_for(assistant, scope_name, fallback_ids:)
-    return normalized_access_for(assistant).dig(SCOPE_AGENT, 'tool_ids') || [] if scope_name == SCOPE_AGENT && assistant.external_agent?
-
     tools = available_tools_for_scope(assistant, scope_name)
     available_ids = tools.pluck(:id)
+    if scope_name == SCOPE_AGENT && assistant.external_agent?
+      raw_scope = assistant.config.to_h.dig('tool_access', scope_name).to_h
+      defaults = default_tool_ids_for(scope_name, tools)
+      return selected_ids_for(assistant, scope_name, raw_scope, defaults, available_ids)
+    end
     return sanitize_tool_ids(fallback_ids, available_ids) unless scope_configured?(assistant, scope_name)
 
     raw_scope = assistant.config['tool_access'][scope_name]
@@ -116,7 +119,7 @@ module Captain::ToolAccess
     return false if assistant.blank?
 
     if scope_name == SCOPE_AGENT && assistant.external_agent?
-      understanding = Captain::AccountSettings.new(assistant.account).section('understanding')
+      understanding = assistant.account_settings.section('understanding')
       return understanding[normalized_id == 'web_search' ? 'web_search' : 'web_page_reading']
     end
 

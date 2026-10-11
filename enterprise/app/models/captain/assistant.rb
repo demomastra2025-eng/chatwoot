@@ -733,7 +733,7 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def account_settings
-    Captain::AccountSettings.new(account)
+    @account_settings ||= Captain::AccountSettings.new(account)
   end
 
   def handoff_message_text

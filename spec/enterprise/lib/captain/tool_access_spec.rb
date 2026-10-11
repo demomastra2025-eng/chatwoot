@@ -96,27 +96,29 @@ RSpec.describe Captain::ToolAccess do
   end
 
   describe '.per_assistant_web_tool_enabled?' do
-    it 'preserves the legacy default when no per-agent permission fields are stored' do
+    it 'uses the account default when no per-agent permission fields are stored' do
       assistant.config = {}
-
-      expect(described_class.per_assistant_web_tool_enabled?(assistant, 'web_search')).to be(true)
-      expect(described_class.per_assistant_web_tool_enabled?(assistant, 'web_scrape_url')).to be(true)
-    end
-
-    it 'honors the legacy aggregate flag when the per-agent scope is absent' do
-      assistant.config = { 'feature_web' => false }
 
       expect(described_class.per_assistant_web_tool_enabled?(assistant, 'web_search')).to be(false)
       expect(described_class.per_assistant_web_tool_enabled?(assistant, 'web_scrape_url')).to be(false)
     end
 
-    it 'uses separate web permissions when an agent scope is configured' do
+    it 'ignores the legacy aggregate flag when the account enables web access' do
+      assistant.config = { 'feature_web' => false }
+      assistant.account_settings.update!('understanding' => { 'web_search' => true, 'web_page_reading' => true })
+
+      expect(described_class.per_assistant_web_tool_enabled?(assistant, 'web_search')).to be(true)
+      expect(described_class.per_assistant_web_tool_enabled?(assistant, 'web_scrape_url')).to be(true)
+    end
+
+    it 'uses separate account web permissions when an agent scope is configured' do
       assistant.config = {
         'feature_web' => false,
         'tool_access' => {
           'agent' => { 'enabled' => true, 'tool_ids' => ['web_search'] }
         }
       }
+      assistant.account_settings.update!('understanding' => { 'web_search' => true, 'web_page_reading' => false })
 
       expect(described_class.per_assistant_web_tool_enabled?(assistant, 'web_search')).to be(true)
       expect(described_class.per_assistant_web_tool_enabled?(assistant, 'web_scrape_url')).to be(false)

@@ -25,7 +25,7 @@ class Captain::AccountSettingsBackfill
 
       assistant = main_assistant(account)
       settings = Captain::AccountSettings.new(account)
-      values = assistant ? Captain::AccountSettings.from_assistant(assistant) : settings.defaults.except('availability')
+      values = assistant ? Captain::AccountSettings.from_assistant(assistant) : settings.defaults(include_availability: false)
       account.update!(settings: account.settings.to_h.merge(Captain::AccountSettings::KEY => values))
       true
     end

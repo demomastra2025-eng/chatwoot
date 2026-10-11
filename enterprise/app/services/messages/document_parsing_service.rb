@@ -22,7 +22,7 @@ class Messages::DocumentParsingService
       account ||= assistant&.account
       return enabled_for_account?(account) unless assistant.present?
 
-      enabled_for_account?(account) && Captain::AccountSettings.new(account).section('understanding')['documents']
+      enabled_for_account?(account) && assistant.account_settings.section('understanding')['documents']
     end
 
     def parseable_attachment?(attachment)
