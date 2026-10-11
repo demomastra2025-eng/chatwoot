@@ -135,6 +135,33 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       )
     end
 
+    it 'schedules a configured council follow-up for an answered part' do
+      assistant.update!(
+        config: {
+          'follow_up_settings' => {
+            'enabled' => true,
+            'steps' => [{ 'mode' => 'static', 'message' => 'Still need help?', 'delay_seconds' => 60 }]
+          }
+        }
+      )
+      part_ref = { 'id' => SecureRandom.uuid, 'version' => 1 }
+      Captain::Conversation::AgentSession.new(entry: assistant, conversation: conversation).change do |session|
+        session['parts'] = [part_ref.merge('executor_agent_id' => assistant.id, 'state' => 'answered')]
+      end
+      reply = create(:message, conversation: conversation, sender: assistant, message_type: :outgoing, content: 'Done')
+      job = described_class.new
+      job.instance_variable_set(:@conversation, conversation)
+      job.instance_variable_set(:@assistant, assistant)
+      job.instance_variable_set(:@response, { 'part_refs' => [part_ref] })
+
+      expect(Captain::Conversation::FollowUpJob).to receive(:schedule!).with(
+        conversation: conversation, assistant: assistant, anchor_message: reply,
+        step: { index: 0, delay_seconds: 60 }, control_fence: {}, part_ref: part_ref
+      )
+
+      job.send(:schedule_council_follow_ups, reply)
+    end
+
     it 'uses Captain::Assistant::AgentRunnerService with runtime callbacks' do
       expect(Captain::Assistant::AgentRunnerService).to receive(:new).with(
         assistant: assistant,

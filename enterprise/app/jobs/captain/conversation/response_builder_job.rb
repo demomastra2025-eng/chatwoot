@@ -702,7 +702,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     session = Captain::Conversation::AgentSession.new(entry: @assistant, conversation: @conversation).read
     Array(@response['part_refs']).each do |ref|
       part = Array(session['parts']).find { |item| item['id'] == ref['id'] && item['version'].to_i == ref['version'].to_i }
-      next unless part && part['state'].in?(%w[waiting_customer waiting_confirmation])
+      next unless part && part['state'].in?(%w[answered waiting_customer waiting_confirmation done])
 
       actor = Captain::AgentGraph.new(@assistant, inbox: inbox).find(part['executor_agent_id'])
       next unless actor
