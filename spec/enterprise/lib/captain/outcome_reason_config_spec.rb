@@ -54,7 +54,7 @@ RSpec.describe Captain::OutcomeReasonConfig do
         )
       )
 
-      context = described_class.new(assistant).prompt_context
+      context = described_class.new(assistant, source: :assistant).prompt_context
 
       expect(context['handoff'].pluck('id').last(3)).to eq(%w[billing technical other])
     end
@@ -66,7 +66,7 @@ RSpec.describe Captain::OutcomeReasonConfig do
     it 'reserves room for built-ins while preserving the former maximum of saved custom reasons' do
       custom = (1..30).map { |index| { 'id' => "custom_#{index}", 'label' => "Custom #{index}" } }
       assistant.update!(config: { 'outcome_reason_settings' => { 'handoff_reasons' => custom } })
-      reasons = described_class.new(assistant).normalized_settings['handoff_reasons']
+      reasons = described_class.new(assistant, source: :assistant).normalized_settings['handoff_reasons']
       expect(reasons.size).to eq(described_class::MAX_REASONS_PER_TYPE)
       expect(reasons.map { |reason| reason['id'] }).to include(*described_class::BUILTIN_IDS['handoff'])
       expect(reasons.select { |reason| reason['removable'] }.pluck('id')).to eq((1..20).map { |index| "custom_#{index}" })
@@ -76,7 +76,7 @@ RSpec.describe Captain::OutcomeReasonConfig do
       assistant.update!(config: { 'outcome_reason_settings' => {
                           'handoff_reasons' => [{ 'id' => 'other', 'label' => 'Other' }, { 'id' => 'custom_reason', 'label' => 'Своя причина' }]
                         } })
-      reasons = described_class.new(assistant).normalized_settings['handoff_reasons']
+      reasons = described_class.new(assistant, source: :assistant).normalized_settings['handoff_reasons']
       expect(reasons.find { |reason| reason['id'] == 'other' }).to include('label' => 'Другое', 'locked' => true, 'removable' => false)
       expect(reasons.find { |reason| reason['id'] == 'customer_requested_human' }).to include('removable' => false)
       expect(reasons.find { |reason| reason['id'] == 'custom_reason' }).to include('label' => 'Своя причина', 'removable' => true)
@@ -92,10 +92,12 @@ RSpec.describe Captain::OutcomeReasonConfig do
           }
         }
       )
-      reason = -> { described_class.new(assistant).normalized_settings['handoff_reasons'].find { |entry| entry['id'] == 'faq_no_answer' } }
+      reason = lambda do
+        described_class.new(assistant, source: :assistant).normalized_settings['handoff_reasons'].find { |entry| entry['id'] == 'faq_no_answer' }
+      end
       expect(reason.call).to include('active' => true, 'locked' => true, 'removable' => false)
       assistant.update!(config: assistant.config.merge('tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['handoff'] } }))
-      expect(reason.call).to include('active' => false, 'locked' => false, 'removable' => false)
+      expect(reason.call).to include('active' => true, 'locked' => true, 'removable' => false)
     end
   end
 end

@@ -219,6 +219,6 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
   def resolution_message_content(assistant, generated_message: nil)
     return generated_message.presence if assistant.resolution_message_mode_value == Captain::Assistant::MESSAGE_MODE_AI
 
-    assistant.config['resolution_message'].presence
+    assistant.resolution_message_text.presence
   end
 end

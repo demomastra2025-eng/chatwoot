@@ -10,6 +10,15 @@ RSpec.describe Captain::AgentRunContext do
   before { entry.update!(handoff_agent_ids: [specialist.id]) }
   after { Current.executed_by = nil }
 
+  it 'does not repeat input checks when an agent is activated' do
+    expect(Captain::Safety::CustomRulesRuntime).not_to receive(:check_input!)
+
+    runtime = described_class.new(entry: entry)
+    runtime.prepare(context)
+    runtime.activate(specialist, context)
+    runtime.activate(entry, context)
+  end
+
   it 'builds only explicit directed edges and preserves each agent own prompt' do
     runtime = described_class.new(entry: entry)
     agents = runtime.runtime_agents

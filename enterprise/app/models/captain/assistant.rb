@@ -551,7 +551,7 @@ class Captain::Assistant < ApplicationRecord
       Captain::ToolAccess::SCOPE_AGENT,
       fallback_ids: fallback_ids
     )
-    selected_ids -= ['handoff'] unless handoff_enabled?
+    selected_ids |= %w[faq_lookup handoff] if external_agent?
     selected_ids -= ['resolve_conversation'] unless auto_completion_enabled?
     selected_ids
   end
@@ -581,19 +581,11 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def voice_runtime_agent_tools
-    raw_scope = config.is_a?(Hash) ? config.dig('tool_access', Captain::ToolAccess::SCOPE_AGENT) : nil
-    raw_scope = {} unless raw_scope.is_a?(Hash)
-    enabled = raw_scope.key?('enabled') ? ActiveModel::Type::Boolean.new.cast(raw_scope['enabled']) : true
-    return [] unless enabled
+    return [] unless tool_scope_enabled?(Captain::ToolAccess::SCOPE_AGENT)
 
-    selected_ids = if raw_scope.key?('tool_ids')
-                     Array(raw_scope['tool_ids']).map(&:to_s)
-                   else
-                     Captain::ToolAccess::DEFAULT_AGENT_TOOL_IDS
-                   end
+    selected_ids = selected_agent_tool_ids
     referenced_ids = prompt_referenced_tool_ids_for_template(:assistant)
     prompt_ids = companion_expanded_tool_ids(referenced_ids) - capability_controlled_tool_ids_for_scope(Captain::ToolAccess::SCOPE_AGENT)
-    selected_ids &= selected_agent_tool_ids
     direct_tools = Captain::ToolCatalog.available_tools_for_ids(self, Captain::ToolAccess::SCOPE_AGENT, selected_ids)
     prompt_tools = Captain::ToolCatalog.available_tools_for_ids(self, Captain::ToolAccess::SCOPE_AGENT, prompt_ids).select do |tool|
       prompt_visible_tool?(tool, scope_name: Captain::ToolAccess::SCOPE_AGENT)
@@ -693,7 +685,7 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def message_collapse_window_seconds_value
-    config_integer_value('message_collapse_window_seconds')
+    account_settings.section('conversation')['message_collapse_window_seconds']
   end
 
   def system_instruction
@@ -701,49 +693,63 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def history_message_limit_value
-    config_integer_value('history_message_limit')
+    40
   end
 
   def auto_reply_on_last_incoming_enabled?
-    config['auto_reply_on_last_incoming'] == true
+    account_settings.section('handoff')['auto_reply_on_last_incoming']
   end
 
   def use_audio_transcriptions?
-    value = config['use_audio_transcriptions']
-    return true if value.nil?
-
-    ActiveModel::Type::Boolean.new.cast(value)
+    account_settings.section('understanding')['voice_messages']
   end
 
   def handoff_message_enabled?
-    message_config_enabled?('handoff_message_enabled')
+    account_settings.section('handoff').dig('handoff_message', 'enabled')
   end
 
   def handoff_message_mode_value
-    message_mode_value('handoff_message_mode')
+    Captain::AccountSettings::MESSAGE_MODE_FROM_API.fetch(account_settings.section('handoff').dig('handoff_message', 'mode'))
   end
 
   def faq_enabled?
-    selected_agent_tool_ids.include?('faq_lookup')
+    external_agent?
   end
 
   def handoff_enabled?
-    return config_boolean_value('handoff_enabled', default: true) if config.to_h.key?('handoff_enabled')
-
-    access = Captain::ToolAccess.normalized_access_for(self).fetch(Captain::ToolAccess::SCOPE_AGENT, {})
-    access['enabled'] && Array(access['tool_ids']).include?(HANDOFF_TOOL_ID)
+    external_agent?
   end
 
   def auto_completion_enabled?
-    config_boolean_value('auto_completion_enabled', default: true)
+    account_settings.section('handoff')['auto_completion_enabled']
   end
 
   def resolution_message_enabled?
-    message_config_enabled?('resolution_message_enabled')
+    account_settings.section('handoff').dig('resolution_message', 'enabled')
   end
 
   def resolution_message_mode_value
-    message_mode_value('resolution_message_mode')
+    Captain::AccountSettings::MESSAGE_MODE_FROM_API.fetch(account_settings.section('handoff').dig('resolution_message', 'mode'))
+  end
+
+  def account_settings
+    Captain::AccountSettings.new(account)
+  end
+
+  def handoff_message_text
+    account_settings.section('handoff').dig('handoff_message', 'text')
+  end
+
+  def resolution_message_text
+    account_settings.section('handoff').dig('resolution_message', 'text')
+  end
+
+  def feature_faq
+    account_settings.section('faq')['generate_from_resolved']
+  end
+
+  def feature_memory
+    false
   end
 
   private

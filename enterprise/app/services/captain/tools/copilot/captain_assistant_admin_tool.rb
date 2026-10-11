@@ -2,11 +2,17 @@
 
 class Captain::Tools::Copilot::CaptainAssistantAdminTool < Captain::Tools::Copilot::BaseAccountTool
   CONFIG_FIELD_KEYS = %w[
-    feature_faq feature_memory feature_citation welcome_message handoff_message resolution_message
-    handoff_message_enabled handoff_message_mode resolution_message_enabled resolution_message_mode
-    temperature auto_reply_on_last_incoming message_collapse_window_seconds history_message_limit
-    context_access tool_access voice_settings
+    feature_citation welcome_message temperature context_access tool_access voice_settings
   ].freeze
+  ACCOUNT_SETTING_KEYS = %w[
+    feature_faq feature_memory feature_web feature_document_reading feature_image_understanding
+    use_audio_transcriptions handoff_enabled auto_completion_enabled auto_reply_on_last_incoming
+    handoff_message handoff_message_enabled handoff_message_mode resolution_message resolution_message_enabled
+    resolution_message_mode message_collapse_window_seconds history_message_limit outcome_reason_settings safety_settings
+  ].freeze
+  HIDDEN_CONFIG_KEYS = (ACCOUNT_SETTING_KEYS + %w[
+    handoff_requires_explicit_consent handoff_consent_reason rules skills main_prompt_rules_migration
+  ]).freeze
   SENSITIVE_KEY_PATTERN = /(otp|token|secret|password|credential|authorization|process_?id|session|api_?key|access_?key|refresh|url|webhook)/i
   SENSITIVE_VALUE_PATTERN = %r{
     https?://|
@@ -49,8 +55,8 @@ class Captain::Tools::Copilot::CaptainAssistantAdminTool < Captain::Tools::Copil
 
   def assistant_config_summary_payload(assistant)
     {
-      feature_faq: cast_config_boolean(assistant.config&.dig('feature_faq')),
-      feature_memory: cast_config_boolean(assistant.config&.dig('feature_memory')),
+      feature_faq: assistant.feature_faq,
+      feature_memory: false,
       feature_citation: cast_config_boolean(assistant.config&.dig('feature_citation')),
       temperature: assistant.config&.dig('temperature')
     }
@@ -74,8 +80,7 @@ class Captain::Tools::Copilot::CaptainAssistantAdminTool < Captain::Tools::Copil
   end
 
   def merge_extended_assistant_payload!(payload, assistant)
-    payload[:config] = redacted_value(assistant.config.to_h.except('handoff_requires_explicit_consent', 'handoff_consent_reason',
-                                                               'rules', 'skills', Captain::Assistant::MergeLegacyRulesService::MIGRATION_KEY))
+    payload[:config] = redacted_value(assistant.config.to_h.except(*HIDDEN_CONFIG_KEYS))
   end
 
   def parse_json_hash(value, field_name:, default: {})

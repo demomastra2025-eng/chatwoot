@@ -27,6 +27,6 @@ class Captain::SystemHandoffMessageService
     return unless assistant.handoff_message_enabled?
 
     generated = generated_message.to_s.strip.presence if assistant.handoff_message_mode_value == Captain::Assistant::MESSAGE_MODE_AI
-    generated || assistant.config['handoff_message'].to_s.strip.presence
+    generated || assistant.handoff_message_text.to_s.strip.presence
   end
 end

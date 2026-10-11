@@ -1,7 +1,8 @@
 require 'rails_helper'
 
 RSpec.describe Captain::Safety::CustomRulesRuntime do
-  let(:assistant) { build_stubbed(:captain_assistant) }
+  let(:account) { build_stubbed(:account) }
+  let(:assistant) { build_stubbed(:captain_assistant, account: account) }
   let(:context) { { captain_v2_current_input: 'Customer request', state: {} } }
   let(:allowed) { Captain::Safety::CustomRulesEvaluator::Result.new(status: :allowed) }
   let(:matched) do
@@ -17,18 +18,18 @@ RSpec.describe Captain::Safety::CustomRulesRuntime do
     allow(Llm::SafetyPolicy).to receive(:check!)
   end
 
-  it 'checks the same actor input once per run, but checks new input and another actor independently' do
+  it 'checks one customer input once across agent activations and checks new input separately' do
     2.times { described_class.check_input!(assistant: assistant, context: context) }
     described_class.check_input!(assistant: assistant, context: context, text: 'A different request')
-    other = build_stubbed(:captain_assistant)
+    other = build_stubbed(:captain_assistant, account: account)
     described_class.check_input!(assistant: other, context: context)
 
-    expect(Captain::Safety::CustomRulesEvaluator).to have_received(:evaluate).exactly(3).times
+    expect(Captain::Safety::CustomRulesEvaluator).to have_received(:evaluate).exactly(2).times
   end
 
   it 'does not reuse a decision after an enabled rule changes in the same run' do
     described_class.check_input!(assistant: assistant, context: context)
-    assistant.config['safety_settings'] = { 'custom_rules' => [{ 'id' => 'new_rule' }] }
+    account.settings[Captain::AccountSettings::KEY] = { 'safety' => { 'custom_rules' => [{ 'id' => 'new_rule' }] } }
     described_class.check_input!(assistant: assistant, context: context)
     expect(Captain::Safety::CustomRulesEvaluator).to have_received(:evaluate).twice
   end

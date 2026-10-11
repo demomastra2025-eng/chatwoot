@@ -21,8 +21,8 @@ class Captain::Safety::CustomRulesRuntime
     return if text.nil?
 
     candidate = text_content(text)
-    settings = assistant.config.to_h.dig('safety_settings', 'custom_rules')
-    fingerprint = Digest::SHA256.hexdigest([assistant.id, candidate, settings].to_json)
+    settings = Captain::AccountSettings.new(assistant.account).section('safety')['custom_rules']
+    fingerprint = Digest::SHA256.hexdigest([assistant.account_id, candidate, settings].to_json)
     checks = context[INPUT_CACHE_KEY] ||= []
     return if checks.include?(fingerprint)
 

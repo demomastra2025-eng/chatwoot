@@ -5,8 +5,7 @@ class Captain::Tools::Copilot::UpdateCaptainAssistantService < Captain::Tools::C
     'update_captain_assistant'
   end
 
-  CONFIG_JSON_DESCRIPTION = 'Optional JSON object with supported config fields such as temperature, tool_access, context_access, ' \
-                            'feature_faq, feature_memory, voice_settings'
+  CONFIG_JSON_DESCRIPTION = 'Optional JSON object with supported config fields such as temperature, tool_access, context_access, voice_settings'
 
   description 'Update one Captain assistant profile, main instructions, config or tool access in the current account. Requires operator confirmation.'
   param :assistant_id, type: :integer, desc: 'Captain assistant ID', required: true

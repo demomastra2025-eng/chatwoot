@@ -59,20 +59,15 @@ class Captain::OutcomeReasonConfig
   end
   private_class_method :normalize_reason, :ensure_other_fallback
 
-  def initialize(assistant)
+  def initialize(assistant, source: :account)
     @assistant = assistant
+    @source = source
   end
 
   def normalized_settings
     return @normalized_settings if defined?(@normalized_settings)
 
-    config = assistant.config.to_h.deep_stringify_keys
-    raw_settings = config['outcome_reason_settings'].to_h.deep_stringify_keys
-    legacy = legacy_settings
-    TYPES.each do |type|
-      key = reason_key(type)
-      raw_settings[key] = legacy[key] if !raw_settings.key?(key) && legacy[key].present?
-    end
+    raw_settings = source_settings
     @normalized_settings = self.class.normalize_settings(raw_settings).transform_keys(&:to_s)
     TYPES.each do |type|
       @normalized_settings[reason_key(type)] = with_builtin_reasons(type, @normalized_settings[reason_key(type)])
@@ -151,6 +146,27 @@ class Captain::OutcomeReasonConfig
   private
 
   attr_reader :assistant
+
+  def source_settings
+    return account_reasons unless @source == :assistant
+
+    raw = assistant.config.to_h.deep_stringify_keys['outcome_reason_settings'].to_h.deep_stringify_keys
+    legacy = legacy_settings
+    TYPES.each do |type|
+      key = reason_key(type)
+      raw[key] = legacy[key] if !raw.key?(key) && legacy[key].present?
+    end
+    raw
+  end
+
+  def account_reasons
+    handoff = Captain::AccountSettings.new(assistant.account).section('handoff')
+    TYPES.each_with_object({}) do |type, result|
+      result[reason_key(type)] = Array(handoff[reason_key(type)]).map do |reason|
+        { 'id' => reason['id'], 'label' => reason['label'], 'active' => reason['enabled'] }
+      end
+    end
+  end
 
   def with_builtin_reasons(type, configured)
     configured = Array(configured)

@@ -20,9 +20,10 @@ class Captain::OpenAiMessageBuilderService
     ['received at', %i[received_at receivedAt]]
   ].freeze
 
-  def initialize(message:, assistant: nil)
+  def initialize(message:, assistant: nil, budget: nil)
     @message = message
     @assistant = assistant
+    @budget = budget
   end
 
   # Extracts text and image URLs from multimodal content array (reverse of generate_content)
@@ -123,6 +124,7 @@ class Captain::OpenAiMessageBuilderService
     image_attachments.each_with_object([]) do |attachment, parts|
       url = get_attachment_url(attachment)
       next if url.blank?
+      next if @budget && !@budget.include_image?
 
       parts << image_url_part(url)
       parts << image_description_part(attachment, url)
@@ -159,6 +161,9 @@ class Captain::OpenAiMessageBuilderService
       document_text = Messages::DocumentParsingService.extracted_text(attachment)
       next if document_text.blank?
 
+      document_text = @budget.document_text(document_text) if @budget
+      next if document_text.blank?
+
       ["Document attachment: #{attachment_filename(attachment)}", document_text].join("\n")
     end.join("\n\n")
   end
@@ -179,10 +184,7 @@ class Captain::OpenAiMessageBuilderService
   def image_understanding_enabled?
     return true if @assistant.blank?
 
-    assistant_config = @assistant.config.to_h.deep_stringify_keys
-    return true unless assistant_config.key?('feature_image_understanding')
-
-    ActiveModel::Type::Boolean.new.cast(assistant_config['feature_image_understanding'])
+    Captain::AccountSettings.new(@assistant.account).section('understanding')['images']
   end
 
   def file_attachments(attachments)

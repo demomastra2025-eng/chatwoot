@@ -23,8 +23,7 @@ class Telephony::AiVoice::PostCallCaptainFeaturesService
   end
 
   def run_enabled_features
-    run_memory_feature if feature_enabled?('feature_memory')
-    run_faq_feature if feature_enabled?('feature_faq')
+    run_faq_feature if Captain::AccountSettings.new(call_session.account).section('faq')['generate_from_resolved']
   end
 
   def run_memory_feature

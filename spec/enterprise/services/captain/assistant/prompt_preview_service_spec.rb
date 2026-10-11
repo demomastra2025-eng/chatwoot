@@ -26,7 +26,7 @@ RSpec.describe Captain::Assistant::PromptPreviewService do
         include(id: 'instruction', title: 'System instruction', enabled: true, value: 'Handle billing questions only.')
       )
       expect(preview.dig(:assistant, :layers).pluck(:id)).not_to include('system_prompt_structure', 'system_rules', 'response_guidelines', 'guardrails')
-      expect(preview.dig(:assistant, :used_tool_ids)).to eq(%w[faq_lookup handoff])
+      expect(preview.dig(:assistant, :used_tool_ids)).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation')
       expect(preview.dig(:assistant, :compiled_prompt)).to include('FAQ Lookup (faq_lookup)', 'Handoff to Human (handoff)', '# Platform constraints')
       expect(preview.dig(:copilot, :layers)).to include(
         include(id: 'assistant_instruction', title: 'System instruction', enabled: true, value: 'Handle billing questions only.')
@@ -61,7 +61,7 @@ RSpec.describe Captain::Assistant::PromptPreviewService do
 
       preview = described_class.new(assistant: assistant).preview
 
-      expect(preview.dig(:assistant, :used_tool_ids)).to eq(%w[faq_lookup handoff])
+      expect(preview.dig(:assistant, :used_tool_ids)).to eq(%w[faq_lookup handoff resolve_conversation])
       expect(preview.dig(:assistant, :used_field_ids)).to contain_exactly(
         'contact.name',
         'conversation.display_id'
@@ -96,18 +96,18 @@ RSpec.describe Captain::Assistant::PromptPreviewService do
       target = create(:captain_assistant, account: account, description: "Own peer prompt: [Peer tool](tool://#{custom.slug})")
       assistant.update!(handoff_agent_ids: [target.id])
       preview = described_class.new(assistant: assistant).preview
-      expect(preview.dig(:assistant, :used_tool_ids)).to contain_exactly('faq_lookup', 'handoff')
+      expect(preview.dig(:assistant, :used_tool_ids)).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation')
       expect(preview.dig(:assistant, :compiled_prompt)).not_to include('Own peer prompt', custom.slug)
       expect(preview.dig(:scenarios, 0, :id)).to eq(target.id)
       expect(preview.dig(:scenarios, 0, :compiled_prompt)).to include('Own peer prompt', custom.slug)
       expect(preview.dig(:scenarios, 0, :compiled_prompt)).not_to include('Handle billing questions only.')
-      expect(preview.dig(:scenarios, 0, :used_tool_ids)).to contain_exactly('faq_lookup', 'handoff', custom.slug)
+      expect(preview.dig(:scenarios, 0, :used_tool_ids)).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation', custom.slug)
     end
 
     it 'includes handoff in the assistant preview when the default capability is enabled' do
       preview = described_class.new(assistant: assistant).preview
 
-      expect(preview.dig(:assistant, :used_tool_ids)).to contain_exactly('faq_lookup', 'handoff')
+      expect(preview.dig(:assistant, :used_tool_ids)).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation')
       expect(preview.dig(:assistant, :compiled_prompt)).to include('Handoff to Human (handoff)')
     end
 
@@ -125,13 +125,13 @@ RSpec.describe Captain::Assistant::PromptPreviewService do
 
       preview = described_class.new(assistant: assistant).preview
 
-      expect(preview.dig(:scenarios, 0, :used_tool_ids)).to eq(%w[faq_lookup handoff])
+      expect(preview.dig(:scenarios, 0, :used_tool_ids)).to eq(%w[faq_lookup handoff resolve_conversation])
       expect(preview.dig(:scenarios, 0, :layers)).to include(
         include(
           id: 'tool_ids',
           title: 'Runtime tool IDs',
           enabled: true,
-          values: %w[faq_lookup handoff]
+          values: %w[faq_lookup handoff resolve_conversation]
         )
       )
     end

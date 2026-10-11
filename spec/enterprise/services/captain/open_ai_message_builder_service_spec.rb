@@ -346,7 +346,7 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
       end
     end
 
-    it 'preserves image understanding for agents without the new setting and honors an explicit disable' do
+    it 'uses the account image setting even when an agent has an old disabled value' do
       message.attachments.create!(
         account: message.account,
         file_type: :image,
@@ -371,7 +371,9 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
       expect(legacy_result).to include(
         { type: 'text', text: 'Image attachment: Recognized image content' }
       )
-      expect(disabled_result).to be_empty
+      expect(disabled_result).to include(
+        { type: 'image_url', image_url: { url: 'https://example.com/image.jpg' } }
+      )
     end
 
     context 'with image attachments without URLs' do

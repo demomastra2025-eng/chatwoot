@@ -252,24 +252,48 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def collect_previous_messages
-    messages = if history_message_limit.positive?
-                 conversation_messages_scope.reorder(created_at: :desc, id: :desc).limit(history_message_limit).to_a.reverse
-               else
-                 conversation_messages_scope.reorder(created_at: :asc, id: :asc).to_a
-               end
+    messages, protected_ids = history_messages
+    budget = Captain::Conversation::HistoryBudget.new
 
-    messages.each_with_index.map do |message, index|
-      previous_assistant_message = previous_assistant_message_for(messages, index)
-      message_hash = {
-        content: prepare_multimodal_message_content(message, previous_assistant_message: previous_assistant_message),
-        role: determine_role(message)
-      }
+    messages.each_with_index.to_a.reverse.filter_map do |message, index|
+      history_entry(message, messages, index, budget, protected_ids)
+    end.reverse
+  end
 
-      agent_name = message_agent_name_for_history(message)
-      message_hash[:agent_name] = agent_name if agent_name.present?
+  def history_messages
+    scope = conversation_messages_scope
+    messages = scope.reorder(created_at: :desc, id: :desc).limit(history_message_limit).to_a
+    latest_inbound, reply_message = required_history_messages(scope)
+    ids = messages.map(&:id)
+    [latest_inbound, reply_message].compact.each do |message|
+      next if ids.include?(message.id)
 
-      message_hash
+      messages << message
+      ids << message.id
     end
+    messages.sort_by! { |message| [message.created_at, message.id] }
+    [messages, [latest_inbound&.id, reply_message&.id].compact]
+  end
+
+  def required_history_messages(scope)
+    latest_inbound = scope.where(message_type: :incoming).reorder(created_at: :desc, id: :desc).first
+    reply_id = latest_inbound&.content_attributes.to_h&.dig('in_reply_to')
+    reply_message = scope.find_by(id: reply_id) if reply_id.present?
+    [latest_inbound, reply_message]
+  end
+
+  def history_entry(message, messages, index, budget, protected_ids)
+    previous_assistant_message = previous_assistant_message_for(messages, index)
+    message_hash = {
+      content: prepare_multimodal_message_content(message, previous_assistant_message: previous_assistant_message, budget: budget),
+      role: determine_role(message)
+    }
+    return unless budget.include_message?(message_hash[:content], protected: protected_ids.include?(message.id))
+
+    agent_name = message_agent_name_for_history(message)
+    message_hash[:agent_name] = agent_name if agent_name.present?
+
+    message_hash
   end
 
   def conversation_messages_scope
@@ -287,8 +311,8 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     message.message_type == 'incoming' ? 'user' : 'assistant'
   end
 
-  def prepare_multimodal_message_content(message, previous_assistant_message: nil)
-    message_builder = Captain::OpenAiMessageBuilderService.new(message: message, assistant: input_assistant)
+  def prepare_multimodal_message_content(message, previous_assistant_message: nil, budget: nil)
+    message_builder = Captain::OpenAiMessageBuilderService.new(message: message, assistant: input_assistant, budget: budget)
     content = message_builder.generate_content
     return content unless receipt_image_after_request?(message, previous_assistant_message)
 
@@ -624,10 +648,10 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
   def handoff_message_content
     if response_assistant.handoff_message_mode_value == Captain::Assistant::MESSAGE_MODE_AI
-      return @response['handoff_message'].presence || response_assistant.config['handoff_message'].presence || I18n.t('conversations.captain.handoff')
+      return @response['handoff_message'].presence || response_assistant.handoff_message_text.presence || I18n.t('conversations.captain.handoff')
     end
 
-    response_assistant.config['handoff_message'].presence || I18n.t('conversations.captain.handoff')
+    response_assistant.handoff_message_text.presence || I18n.t('conversations.captain.handoff')
   end
 
   def create_handoff_private_note

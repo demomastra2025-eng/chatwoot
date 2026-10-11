@@ -61,7 +61,6 @@ class Captain::AgentRunContext
       clear_actor_caches(context)
     end
     Captain::Runtime::TaskQueue.new(context).on_handoff
-    Captain::Safety::CustomRulesRuntime.check_input!(assistant: actor, context: context)
   end
 
   def runtime_agents(overrides: {})

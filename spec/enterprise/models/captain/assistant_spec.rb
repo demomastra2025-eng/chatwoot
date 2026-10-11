@@ -22,8 +22,8 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(build(:captain_assistant, config: {}).use_audio_transcriptions?).to be(true)
     end
 
-    it 'respects an explicit disabled capability' do
-      expect(build(:captain_assistant, config: { 'use_audio_transcriptions' => false }).use_audio_transcriptions?).to be(false)
+    it 'ignores the old per-agent disabled capability' do
+      expect(build(:captain_assistant, config: { 'use_audio_transcriptions' => false }).use_audio_transcriptions?).to be(true)
     end
   end
 
@@ -394,39 +394,39 @@ RSpec.describe Captain::Assistant, type: :model do
     let(:assistant) { create(:captain_assistant, account: account) }
 
     it 'keeps the default agent runtime on faq and handoff by default' do
-      expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup', 'handoff')
+      expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation')
     end
 
     it 'keeps the direct agent runtime on faq and handoff by default' do
-      expect(assistant.direct_agent_tool_ids).to contain_exactly('faq_lookup', 'handoff')
+      expect(assistant.direct_agent_tool_ids).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation')
     end
 
     it 'keeps selected FAQ lookup available when FAQ generation is disabled' do
       assistant.update!(config: { 'feature_faq' => false,
                                   'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['faq_lookup'] } } })
 
-      expect(assistant.selected_agent_tool_ids).to eq(['faq_lookup'])
+      expect(assistant.selected_agent_tool_ids).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation')
       expect(assistant.allowed_agent_tool_ids).to include('faq_lookup')
       expect(assistant.prompt_runtime_agent_tools.pluck(:id)).to include('faq_lookup')
       expect(assistant.faq_enabled?).to be(true)
     end
 
-    it 'does not expose FAQ lookup when it is not selected' do
+    it 'exposes FAQ lookup even when it is not selected in the old agent config' do
       assistant.update!(config: { 'feature_faq' => false,
                                   'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['handoff'] } } })
 
-      expect(assistant.selected_agent_tool_ids).not_to include('faq_lookup')
-      expect(assistant.allowed_agent_tool_ids).not_to include('faq_lookup')
-      expect(assistant.faq_enabled?).to be(false)
+      expect(assistant.selected_agent_tool_ids).to include('faq_lookup', 'handoff')
+      expect(assistant.allowed_agent_tool_ids).to include('faq_lookup', 'handoff')
+      expect(assistant.faq_enabled?).to be(true)
     end
 
-    it 'does not select FAQ lookup from FAQ generation alone' do
+    it 'keeps FAQ lookup available when the old agent tool list is empty' do
       assistant.update!(config: { 'feature_faq' => true,
                                   'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => [] } } })
 
-      expect(assistant.selected_agent_tool_ids).not_to include('faq_lookup')
-      expect(assistant.allowed_agent_tool_ids).not_to include('faq_lookup')
-      expect(assistant.faq_enabled?).to be(false)
+      expect(assistant.selected_agent_tool_ids).to include('faq_lookup', 'handoff')
+      expect(assistant.allowed_agent_tool_ids).to include('faq_lookup', 'handoff')
+      expect(assistant.faq_enabled?).to be(true)
     end
 
     it 'keeps scenario default runtime limited to human handoff' do
@@ -487,12 +487,12 @@ RSpec.describe Captain::Assistant, type: :model do
         }
       )
 
-      expect(assistant.allowed_agent_tool_ids).to eq(['faq_lookup'])
-      expect(assistant.direct_agent_tool_ids).to eq(['faq_lookup'])
+      expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation')
+      expect(assistant.direct_agent_tool_ids).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation')
       expect(assistant.allowed_assistant_tool_ids).to eq(['search_documentation'])
     end
 
-    it 'treats an explicit empty agent tool scope as disabled defaults instead of falling back' do
+    it 'keeps mandatory agent tools when the old agent tool scope is empty' do
       assistant.update!(
         config: {
           'context_access' => {},
@@ -505,9 +505,9 @@ RSpec.describe Captain::Assistant, type: :model do
         }
       )
 
-      expect(assistant.allowed_agent_tool_ids).to eq([])
-      expect(assistant.direct_agent_tool_ids).to eq([])
-      expect(assistant.scenario_agent_tool_ids).to eq([])
+      expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation')
+      expect(assistant.direct_agent_tool_ids).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation')
+      expect(assistant.scenario_agent_tool_ids).to eq(['handoff'])
     end
 
     it 'keeps checked capability tools in the prompt glossary together with referenced fields' do
@@ -538,8 +538,8 @@ RSpec.describe Captain::Assistant, type: :model do
         group[:entries].map { |entry| entry[:id] }
       end
 
-      expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup', 'handoff')
-      expect(glossary_tool_ids).to contain_exactly('faq_lookup', 'handoff')
+      expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation')
+      expect(glossary_tool_ids).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation')
       expect(glossary_field_ids).to include('contact.email')
     end
 
@@ -691,12 +691,13 @@ RSpec.describe Captain::Assistant, type: :model do
     end
 
     it 'does not activate any unselected capability tool through prompt mentions' do
-      assistant.update!(description: 'Use [FAQ](tool://faq_lookup), [Handoff](tool://handoff), [Note](tool://add_private_note), [Resolve](tool://resolve_conversation).',
+      assistant.update!(description: 'Use [FAQ](tool://faq_lookup), [Handoff](tool://handoff), ' \
+                                     '[Note](tool://add_private_note), [Resolve](tool://resolve_conversation).',
                         config: { 'feature_faq' => false, 'handoff_enabled' => false, 'auto_completion_enabled' => false,
                                   'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => [] } } })
-      expect(assistant.allowed_agent_tool_ids).to eq([])
-      expect(assistant.prompt_runtime_agent_tools).to eq([])
-      expect(assistant.agent_instructions).not_to include('# Business answers', '# Human handoff')
+      expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation')
+      expect(assistant.prompt_runtime_agent_tools.pluck(:id)).to include('faq_lookup', 'handoff')
+      expect(assistant.agent_instructions).to include('# Business answers', '# Human handoff')
     end
   end
 
@@ -817,7 +818,7 @@ RSpec.describe Captain::Assistant, type: :model do
                                  'FAQ lookup has no suitable answer, you must hand off to a human.')
       assistant.update!(config: assistant.config.merge('handoff_enabled' => false))
       expect(assistant.agent_instructions).to include('# Business answers')
-      expect(assistant.agent_instructions).not_to include('you must hand off to a human', '# Human handoff')
+      expect(assistant.agent_instructions).to include('you must hand off to a human', '# Human handoff')
     end
 
     it 'does not present outcome reason IDs or classification instructions to the primary agent' do
@@ -1034,7 +1035,7 @@ RSpec.describe Captain::Assistant, type: :model do
       assistant.description = 'Use [Handoff to Human](tool://handoff) if needed.'
 
       expect(assistant).to be_valid
-      expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup')
+      expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation')
     end
 
     it 'accepts capability tools in instructions when their checkbox is on' do
@@ -1042,7 +1043,7 @@ RSpec.describe Captain::Assistant, type: :model do
       assistant.description = 'Use [Handoff to Human](tool://handoff) if needed.'
 
       expect(assistant).to be_valid
-      expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup', 'handoff')
+      expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation')
     end
 
     it 'accepts fields in response guidelines when they are explicitly referenced' do

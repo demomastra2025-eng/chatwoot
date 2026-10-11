@@ -130,7 +130,7 @@ RSpec.describe 'Captain assistant admin copilot tools' do
       expect(serialized_payload).not_to include('secret-token-value')
       expect(serialized_payload).not_to include('should-not-save')
       expect(assistant.reload).to have_attributes(name: 'Updated Bot')
-      expect(assistant.config).to include('feature_faq' => false, 'temperature' => 0.8, 'api_token' => 'secret-token-value')
+      expect(assistant.config).to include('feature_faq' => true, 'temperature' => 0.8, 'api_token' => 'secret-token-value')
       expect(assistant.config).not_to include('api_token' => 'should-not-save')
       expect(assistant.description).to eq('Be brief')
       expect(assistant.response_guidelines).to eq([])

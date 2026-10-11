@@ -22,11 +22,7 @@ class Messages::DocumentParsingService
       account ||= assistant&.account
       return enabled_for_account?(account) unless assistant.present?
 
-      config = assistant.config.to_h.deep_stringify_keys
-      return enabled_for_account?(account) unless config.key?('feature_document_reading')
-
-      enabled_for_account?(account) &&
-        ActiveModel::Type::Boolean.new.cast(config['feature_document_reading'])
+      enabled_for_account?(account) && Captain::AccountSettings.new(account).section('understanding')['documents']
     end
 
     def parseable_attachment?(attachment)

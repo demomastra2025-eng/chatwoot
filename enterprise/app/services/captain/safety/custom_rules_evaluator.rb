@@ -62,15 +62,7 @@ class Captain::Safety::CustomRulesEvaluator
   end
 
   def configured_rules(assistant)
-    config = assistant.config
-    return unless config.is_a?(Hash)
-
-    settings = config.deep_stringify_keys['safety_settings']
-    return [] if settings.nil?
-    return unless settings.is_a?(Hash)
-    return [] unless settings.key?('custom_rules')
-
-    rules = settings['custom_rules']
+    rules = Captain::AccountSettings.new(assistant.account).runtime_rules
     Captain::Safety::CustomRulesConfig.errors(rules).empty? ? rules : nil
   end
 

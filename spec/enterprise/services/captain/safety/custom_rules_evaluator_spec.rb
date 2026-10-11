@@ -9,6 +9,7 @@ RSpec.describe Captain::Safety::CustomRulesEvaluator do
       'action' => 'handoff', 'enabled' => true, 'message' => 'Please contact the appropriate emergency service.' }
   end
   let(:rules) { [rule] }
+  let(:account_settings) { instance_double(Captain::AccountSettings, runtime_rules: rules) }
   let(:assistant) do
     instance_double(Captain::Assistant, active?: true, account: account,
                                        config: { 'safety_settings' => { 'moderation_enabled' => false, 'custom_rules' => rules } })
@@ -16,6 +17,8 @@ RSpec.describe Captain::Safety::CustomRulesEvaluator do
   let(:engine) { instance_double(Captain::Safety::CustomRulesStructuredOutputEngine, model: 'openai/gpt-6-luna', select: { rule_id: 'urgent_1' }) }
   let(:clock) { -> { 100.0 } }
   let(:evaluator) { described_class.new(engine: engine, clock: clock) }
+
+  before { allow(Captain::AccountSettings).to receive(:new).with(account).and_return(account_settings) }
 
   def evaluate(text: 'I need help.', direction: 'input', context: {})
     evaluator.evaluate(assistant: assistant, direction: direction, text: text, context: context)
@@ -49,7 +52,7 @@ RSpec.describe Captain::Safety::CustomRulesEvaluator do
   [[], [{ 'enabled' => false }], [{ 'direction' => 'output', 'action' => 'rewrite' }]].each do |overrides|
     it "does not invoke an engine when #{overrides.inspect} produces no enabled input rules" do
       configured = overrides.empty? ? [] : overrides.map { |override| rule.merge(override) }
-      allow(assistant).to receive(:config).and_return('safety_settings' => { 'custom_rules' => configured })
+      allow(account_settings).to receive(:runtime_rules).and_return(configured)
       expect(engine).not_to receive(:model)
       expect(engine).not_to receive(:select)
 
@@ -61,7 +64,7 @@ RSpec.describe Captain::Safety::CustomRulesEvaluator do
     second = rule.merge('id' => 'second')
     output = rule.merge('id' => 'output', 'direction' => 'output', 'action' => 'rewrite')
     configured = [second, output, rule.merge('id' => 'disabled', 'enabled' => false), rule]
-    allow(assistant).to receive(:config).and_return('safety_settings' => { 'custom_rules' => configured })
+    allow(account_settings).to receive(:runtime_rules).and_return(configured)
     expect(engine).to receive(:select).with(model: 'openai/gpt-6-luna', rules: [second, rule], direction: 'input', text: 'I need help.', context: {})
                                     .and_return(rule_id: 'second')
 
@@ -69,14 +72,14 @@ RSpec.describe Captain::Safety::CustomRulesEvaluator do
   end
 
   it 'fails unavailable without calling an engine for malformed persisted configuration' do
-    allow(assistant).to receive(:config).and_return('safety_settings' => { 'custom_rules' => [rule.merge('enabled' => 'true')] })
+    allow(account_settings).to receive(:runtime_rules).and_return([rule.merge('enabled' => 'true')])
     expect(engine).not_to receive(:select)
 
     expect(evaluate).to have_attributes(status: :unavailable, reason: :invalid_configuration)
   end
 
   it 'does not invoke an engine for a legacy profile with no custom safety configuration' do
-    allow(assistant).to receive(:config).and_return({})
+    allow(account_settings).to receive(:runtime_rules).and_return([])
     expect(engine).not_to receive(:model)
     expect(engine).not_to receive(:select)
 
@@ -100,7 +103,7 @@ RSpec.describe Captain::Safety::CustomRulesEvaluator do
   end
 
   it 'passes only bounded factual fields and the output customer excerpt, excluding private tools and secrets' do
-    allow(assistant).to receive(:config).and_return('safety_settings' => { 'custom_rules' => [rule.merge('direction' => 'output')] })
+    allow(account_settings).to receive(:runtime_rules).and_return([rule.merge('direction' => 'output')])
     context = { conversation_status: 'pending', channel_type: 'web', locale: 'ru', source: 'playground',
                 last_customer_message: 'The client asked what this quoted passage means.', api_key: 'secret',
                 tool_results: { private_patient_note: 'private note' } }
@@ -125,7 +128,7 @@ RSpec.describe Captain::Safety::CustomRulesEvaluator do
   end
 
   it 'accepts the customer excerpt limit and rejects overflow without truncation' do
-    allow(assistant).to receive(:config).and_return('safety_settings' => { 'custom_rules' => [rule.merge('direction' => 'output')] })
+    allow(account_settings).to receive(:runtime_rules).and_return([rule.merge('direction' => 'output')])
     excerpt = 'q' * 2000
     expect(engine).to receive(:select).with(hash_including(context: { 'last_customer_message' => excerpt })).once.and_return(rule_id: 'none')
 
@@ -143,7 +146,7 @@ RSpec.describe Captain::Safety::CustomRulesEvaluator do
 
   it 'rejects a known ID when its rule belongs to another direction or is disabled' do
     configured = [rule, rule.merge('id' => 'output', 'direction' => 'output'), rule.merge('id' => 'disabled', 'enabled' => false)]
-    allow(assistant).to receive(:config).and_return('safety_settings' => { 'custom_rules' => configured })
+    allow(account_settings).to receive(:runtime_rules).and_return(configured)
     allow(engine).to receive(:select).and_return({ rule_id: 'output' }, { rule_id: 'disabled' })
 
     expect(evaluate).to be_unavailable

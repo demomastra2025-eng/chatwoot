@@ -8,7 +8,8 @@ class CaptainListener < BaseListener
     assistant = Captain::Conversation::AgentOwnership.new(conversation: conversation).current_assistant
     return unless assistant
 
-    Captain::Llm::ContactNotesService.new(assistant, conversation).generate_and_update_notes if assistant.config['feature_memory'].present?
-    Captain::Llm::ConversationFaqService.new(assistant, conversation).generate_and_deduplicate if assistant.config['feature_faq'].present?
+    return unless Captain::AccountSettings.new(conversation.account).section('faq')['generate_from_resolved']
+
+    Captain::Llm::ConversationFaqService.new(assistant, conversation).generate_and_deduplicate
   end
 end

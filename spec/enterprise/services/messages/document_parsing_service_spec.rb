@@ -29,9 +29,12 @@ RSpec.describe Messages::DocumentParsingService, type: :service do
       expect(described_class.reading_enabled_for?(assistant)).to be(true)
     end
 
-    it 'combines the per-agent flag with the existing account permission' do
+    it 'uses the account flag instead of the old per-agent flag' do
       allow(described_class).to receive(:enabled_for_account?).with(account).and_return(true)
       assistant.config = { 'feature_document_reading' => false }
+
+      expect(described_class.reading_enabled_for?(assistant)).to be(true)
+      Captain::AccountSettings.new(account).update!('understanding' => { 'documents' => false })
 
       expect(described_class.reading_enabled_for?(assistant)).to be(false)
     end

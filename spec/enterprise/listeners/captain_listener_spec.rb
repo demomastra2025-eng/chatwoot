@@ -26,7 +26,7 @@ describe CaptainListener do
       listener.conversation_resolved(event)
     end
 
-    context 'when feature_memory is enabled' do
+    context 'when the old agent memory flag is enabled' do
       before do
         assistant.config['feature_memory'] = true
         assistant.config['feature_faq'] = false
@@ -34,11 +34,8 @@ describe CaptainListener do
         assistant.save!
       end
 
-      it 'generates and updates notes' do
-        expect(Captain::Llm::ContactNotesService)
-          .to receive(:new)
-          .with(assistant, conversation)
-          .and_return(instance_double(Captain::Llm::ContactNotesService, generate_and_update_notes: nil))
+      it 'does not generate contact notes while client memory is unavailable' do
+        expect(Captain::Llm::ContactNotesService).not_to receive(:new)
         expect(Captain::Llm::ConversationFaqService).not_to receive(:new)
 
         listener.conversation_resolved(event)
@@ -47,13 +44,14 @@ describe CaptainListener do
 
     context 'when feature_faq is enabled' do
       before do
+        Captain::AccountSettings.new(account).update!('faq' => { 'generate_from_resolved' => true })
         assistant.config['feature_faq'] = true
         assistant.config['feature_memory'] = false
         assistant.config['tool_access'] = { 'agent' => { 'enabled' => true, 'tool_ids' => [] } }
         assistant.save!
       end
 
-      it 'generates and deduplicates FAQs' do
+      it 'generates and deduplicates FAQs even if the agent did not select FAQ lookup' do
         expect(Captain::Llm::ConversationFaqService)
           .to receive(:new)
           .with(assistant, conversation)
@@ -72,11 +70,10 @@ describe CaptainListener do
         Captain::Conversation::AgentSession.new(entry: assistant, conversation: conversation).update_routing(actor_id: specialist.id)
       end
 
-      it 'uses the specialist capabilities and knowledge ownership when the entry disables both features' do
+      it 'uses the specialist knowledge ownership with account FAQ generation enabled' do
+        Captain::AccountSettings.new(account).update!('faq' => { 'generate_from_resolved' => true })
         assistant.update!(config: { feature_memory: false, feature_faq: false })
-        expect(Captain::Llm::ContactNotesService)
-          .to receive(:new).with(specialist, conversation)
-          .and_return(instance_double(Captain::Llm::ContactNotesService, generate_and_update_notes: nil))
+        expect(Captain::Llm::ContactNotesService).not_to receive(:new)
         expect(Captain::Llm::ConversationFaqService)
           .to receive(:new).with(specialist, conversation)
           .and_return(instance_double(Captain::Llm::ConversationFaqService, generate_and_deduplicate: false))
@@ -84,7 +81,7 @@ describe CaptainListener do
         listener.conversation_resolved(event)
       end
 
-      it 'does not inherit the entry capabilities when the specialist disables both features' do
+      it 'does not generate FAQs when the account switch is off' do
         specialist.update!(config: { feature_memory: false, feature_faq: false })
         expect(Captain::Llm::ContactNotesService).not_to receive(:new)
         expect(Captain::Llm::ConversationFaqService).not_to receive(:new)

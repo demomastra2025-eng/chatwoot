@@ -42,23 +42,44 @@ module Captain::ToolAccess
       raw_scope = raw_access[scope_name].is_a?(Hash) ? raw_access[scope_name] : {}
       available_ids = tools.pluck(:id)
       default_ids = default_tool_ids_for(scope_name, tools)
-      configured_tool_ids = Array(raw_scope['tool_ids']).map(&:to_s)
+      selected = selected_ids_for(assistant, scope_name, raw_scope, default_ids, available_ids)
 
       result[scope_name] = {
-        'enabled' => if raw_scope.key?('enabled')
-                       ActiveModel::Type::Boolean.new.cast(raw_scope['enabled'])
-                     else
-                       default_ids.any?
-                     end,
-        'tool_ids' => sanitize_tool_ids(
-          raw_scope.key?('tool_ids') ? configured_tool_ids : default_ids,
-          available_ids
-        )
+        'enabled' => scope_enabled?(assistant, scope_name, raw_scope, default_ids),
+        'tool_ids' => selected
       }
     end
   end
 
+  def scope_enabled?(assistant, scope_name, raw_scope, default_ids)
+    return true if scope_name == SCOPE_AGENT && assistant.external_agent?
+    return ActiveModel::Type::Boolean.new.cast(raw_scope['enabled']) if raw_scope.key?('enabled')
+
+    default_ids.any?
+  end
+
+  def selected_ids_for(assistant, scope_name, raw_scope, default_ids, available_ids)
+    configured_ids = Array(raw_scope['tool_ids']).map(&:to_s)
+    selected = sanitize_tool_ids(raw_scope.key?('tool_ids') ? configured_ids : default_ids, available_ids)
+    return selected unless scope_name == SCOPE_AGENT && assistant.external_agent?
+
+    account_tool_ids_for(assistant, selected, available_ids)
+  end
+
+  def account_tool_ids_for(assistant, selected, available_ids)
+    settings = Captain::AccountSettings.new(assistant.account)
+    understanding = settings.section('understanding')
+    selected -= %w[web_search web_scrape_url resolve_conversation]
+    selected |= %w[faq_lookup handoff] & available_ids
+    selected << 'resolve_conversation' if settings.section('handoff')['auto_completion_enabled'] && available_ids.include?('resolve_conversation')
+    selected << 'web_search' if understanding['web_search'] && available_ids.include?('web_search')
+    selected << 'web_scrape_url' if understanding['web_page_reading'] && available_ids.include?('web_scrape_url')
+    selected
+  end
+
   def allowed_tool_ids_for(assistant, scope_name, fallback_ids:)
+    return normalized_access_for(assistant).dig(SCOPE_AGENT, 'tool_ids') || [] if scope_name == SCOPE_AGENT && assistant.external_agent?
+
     tools = available_tools_for_scope(assistant, scope_name)
     available_ids = tools.pluck(:id)
     return sanitize_tool_ids(fallback_ids, available_ids) unless scope_configured?(assistant, scope_name)
@@ -93,6 +114,11 @@ module Captain::ToolAccess
     normalized_id = tool_id.to_s
     return true unless PER_ASSISTANT_WEB_TOOL_IDS.include?(normalized_id)
     return false if assistant.blank?
+
+    if scope_name == SCOPE_AGENT && assistant.external_agent?
+      understanding = Captain::AccountSettings.new(assistant.account).section('understanding')
+      return understanding[normalized_id == 'web_search' ? 'web_search' : 'web_page_reading']
+    end
 
     config = assistant.config.to_h.deep_stringify_keys
     raw_access = config['tool_access'].to_h.deep_stringify_keys
