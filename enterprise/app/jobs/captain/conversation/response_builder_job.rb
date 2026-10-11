@@ -809,8 +809,6 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
                                'at' => message.created_at.iso8601 }
       end
     end
-  rescue StandardError => e
-    Rails.logger.warn("[CAPTAIN][PartDelivery] conversation_id=#{@conversation.id} message_id=#{message.id} error_class=#{e.class.name}")
   end
 
   def build_outgoing_message(message_content, options)
