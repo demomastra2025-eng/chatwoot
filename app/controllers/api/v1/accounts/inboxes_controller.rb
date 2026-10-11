@@ -324,6 +324,7 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     assistant = Current.account.captain_assistants.find(assistant_id)
     captain_inbox = ::CaptainInbox.find_or_initialize_by(inbox: voice_inbox)
     captain_inbox.captain_assistant = assistant
+    captain_inbox.ai_enabled = true
     captain_inbox.save! if captain_inbox.changed? || captain_inbox.new_record?
   end
 

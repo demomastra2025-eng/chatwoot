@@ -15,7 +15,10 @@ class Api::V1::Accounts::Captain::InboxesController < Api::V1::Accounts::BaseCon
 
     return render_existing_captain_inbox(inbox) if connected_to_current_assistant?
 
-    @captain_inbox = @assistant.captain_inboxes.create!(captain_inbox_attributes(inbox))
+    CaptainInbox.transaction do
+      ensure_text_membership!(inbox)
+      @captain_inbox = @assistant.captain_inboxes.create!(captain_inbox_attributes(inbox))
+    end
   rescue ActiveRecord::RecordInvalid => e
     handle_captain_inbox_create_failure(e, inbox)
   end
@@ -47,6 +50,7 @@ class Api::V1::Accounts::Captain::InboxesController < Api::V1::Accounts::BaseCon
   def captain_inbox_attributes(inbox)
     {
       inbox: inbox,
+      ai_enabled: true,
       auto_reply_mode: assistant_params[:auto_reply_mode].presence,
       reply_to_open_conversations: false
     }.compact
@@ -57,13 +61,22 @@ class Api::V1::Accounts::Captain::InboxesController < Api::V1::Accounts::BaseCon
   end
 
   def render_existing_captain_inbox(inbox)
-    update_requested_captain_inbox_settings!
+    CaptainInbox.transaction do
+      ensure_text_membership!(inbox)
+      update_requested_captain_inbox_settings!
+    end
     revalidate_inbox_cache(inbox)
     render :create
   end
 
+  def ensure_text_membership!(inbox)
+    return if inbox.channel_type == 'Channel::Voice' || @assistant.channel_scope == 'all'
+
+    @assistant.agent_channels.find_or_create_by!(account: Current.account, inbox: inbox)
+  end
+
   def update_requested_captain_inbox_settings!
-    updates = { reply_to_open_conversations: false }
+    updates = { reply_to_open_conversations: false, ai_enabled: true }
     updates[:auto_reply_mode] = assistant_params[:auto_reply_mode] if assistant_params[:auto_reply_mode].present?
 
     @captain_inbox.update!(updates)

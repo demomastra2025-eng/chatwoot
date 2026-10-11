@@ -43,19 +43,25 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     attributes = assistant_create_params
     Current.account.with_lock do
       @assistant = account_assistants.create!(attributes)
+      save_assistant_inbox_ids!
     end
   rescue ActiveRecord::RecordInvalid => e
     render_profile_validation_error_or_raise(e)
+  rescue Captain::ChannelMatrix::Invalid => e
+    render json: { errors: e.errors }, status: :unprocessable_content
   end
 
   def update
     attributes = assistant_update_params
     Current.account.with_lock do
       @assistant.update!(attributes)
+      save_assistant_inbox_ids!
       cancel_captain_follow_ups_if_disabled!
     end
   rescue ActiveRecord::RecordInvalid => e
     render_profile_validation_error_or_raise(e)
+  rescue Captain::ChannelMatrix::Invalid => e
+    render json: { errors: e.errors }, status: :unprocessable_content
   end
 
   def avatar
@@ -67,8 +73,16 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   end
 
   def destroy
-    @assistant.destroy
-    head :no_content
+    destroyed = Current.account.with_lock { @assistant.destroy }
+    if destroyed
+      head :no_content
+    elsif @assistant.errors.of_kind?(:base, I18n.t('captain.channel_matrix.default_agent_in_use'))
+      render_default_agent_in_use
+    elsif @assistant.errors.of_kind?(:base, I18n.t('captain.channel_matrix.main_agent_in_use'))
+      render_main_agent_in_use
+    else
+      render json: { errors: @assistant.errors.full_messages }, status: :unprocessable_content
+    end
   end
 
   def playground
@@ -174,13 +188,11 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
       :description,
       :usage_mode,
       :active,
+      :channel_scope,
       :routing_description,
       config: ASSISTANT_CONFIG_FIELDS + [{ safety_settings: ASSISTANT_SAFETY_SETTINGS_FIELDS }]
     )
 
-    if params[:assistant].key?(:handoff_agent_ids)
-      permitted[:handoff_agent_ids] = normalize_optional_config_value(params[:assistant][:handoff_agent_ids])
-    end
     merge_optional_config_param!(permitted, :context_access)
     merge_optional_config_param!(permitted, :tool_access)
     merge_optional_config_param!(permitted, :follow_up_settings)
@@ -248,6 +260,9 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   end
 
   def render_profile_validation_error_or_raise(error)
+    return render_main_agent_in_use if error.record.errors.of_kind?(:base, I18n.t('captain.channel_matrix.main_agent_in_use'))
+    return render_default_agent_in_use if error.record.errors.of_kind?(:base, I18n.t('captain.channel_matrix.default_agent_in_use'))
+
     violations = error.record.errors.where(:config, :invalid_custom_safety_rules)
     if violations.any?
       fields = violations.map { |item| { path: item.options[:path], code: item.options[:code], message: item.message } }
@@ -256,6 +271,46 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     raise error unless error.record.errors.of_kind?(:config, :fish_voice_invalid_reference)
 
     render json: { error: 'fish_voice_invalid_reference' }, status: :unprocessable_content
+  end
+
+  def render_main_agent_in_use
+    ids = CaptainInbox.where(captain_assistant_id: @assistant.id, ai_enabled: true).joins(:inbox)
+                      .where.not(inboxes: { channel_type: 'Channel::Voice' }).order(:inbox_id).pluck(:inbox_id)
+    error = { inbox_id: nil, assistant_id: @assistant.id, inbox_ids: ids, code: 'MAIN_AGENT_IN_USE',
+              message: I18n.t('captain.channel_matrix.main_agent_in_use') }
+    render json: { errors: [error] }, status: :unprocessable_content
+  end
+
+  def render_default_agent_in_use
+    error = { inbox_id: nil, assistant_id: @assistant.id, code: 'INVALID_DEFAULT',
+              message: I18n.t('captain.channel_matrix.default_agent_in_use') }
+    render json: { errors: [error] }, status: :unprocessable_content
+  end
+
+  def save_assistant_inbox_ids!
+    input = params.dig(:assistant, :inbox_ids)
+    input = @assistant.selected_inbox_ids unless params[:assistant].key?(:inbox_ids)
+    input = [] if @assistant.channel_scope == 'all'
+
+    ids = input.map { |value| value.to_i if value.to_s.match?(/\A[1-9]\d*\z/) } if input.is_a?(Array)
+    valid_ids = Current.account.inboxes.where.not(channel_type: 'Channel::Voice').where(id: ids).pluck(:id)
+    if ids.nil? || ids.any?(&:nil?) || valid_ids.sort != ids.uniq.sort
+      error = { inbox_id: nil, assistant_id: @assistant.id, code: 'INVALID_CHANNEL',
+                message: I18n.t('captain.channel_matrix.invalid_channel') }
+      raise Captain::ChannelMatrix::Invalid, [error]
+    end
+
+    enabled_main_ids = CaptainInbox.where(captain_assistant_id: @assistant.id, ai_enabled: true)
+                                   .joins(:inbox).where.not(inboxes: { channel_type: 'Channel::Voice' }).pluck(:inbox_id)
+    if @assistant.channel_scope == 'selected' && (enabled_main_ids - ids).any?
+      error = { inbox_id: nil, assistant_id: @assistant.id, inbox_ids: enabled_main_ids - ids,
+                code: 'MAIN_AGENT_IN_USE', message: I18n.t('captain.channel_matrix.main_agent_in_use') }
+      raise Captain::ChannelMatrix::Invalid, [error]
+    end
+
+    current_ids = @assistant.selected_inbox_ids
+    (ids - current_ids).each { |inbox_id| @assistant.agent_channels.create!(account: Current.account, inbox_id: inbox_id) }
+    @assistant.agent_channels.where(inbox_id: current_ids - ids).delete_all
   end
 
   def merge_custom_safety_rules_param!(permitted)

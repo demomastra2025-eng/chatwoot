@@ -1,62 +1,59 @@
 require 'rails_helper'
 
-RSpec.describe 'Captain standalone agent settings', type: :request do
+RSpec.describe 'Captain agent channel settings', type: :request do
   let(:account) { create(:account) }
   let(:admin) { create(:user, account: account, role: :administrator) }
   let(:assistant) { create(:captain_assistant, account: account) }
   let(:target) { create(:captain_assistant, account: account) }
+  let(:inbox) { create(:inbox, account: account) }
   let(:path) { "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}" }
-  let(:headers) { admin.create_new_auth_token }
 
-  it 'saves prompt, activity, routing description and graph together and returns their public shape' do
-    patch path, headers: headers, as: :json, params: {
-      assistant: { description: 'Own agent prompt', routing_description: 'Use for billing', active: true, handoff_agent_ids: [target.id] }
-    }
+  it 'accepts legacy handoff ids without changing the stored graph or exposing them' do
+    assistant.update!(handoff_agent_ids: [target.id])
+
+    patch path, headers: admin.create_new_auth_token, as: :json,
+                params: { assistant: { routing_description: 'Billing', handoff_agent_ids: [] } }
 
     expect(response).to have_http_status(:success)
-    expect(JSON.parse(response.body)).to include(
-      'description' => 'Own agent prompt', 'routing_description' => 'Use for billing', 'active' => true, 'handoff_agent_ids' => [target.id]
-    )
+    expect(assistant.reload.handoff_agent_ids).to eq([target.id])
+    expect(JSON.parse(response.body)).not_to have_key('handoff_agent_ids')
   end
 
-  it 'rolls back the complete settings save for a cross workspace target' do
-    assistant.update!(handoff_agent_ids: [target.id])
-    original = assistant.attributes.slice('name', 'description', 'active')
-    foreign_target = create(:captain_assistant)
+  it 'accepts selected inbox ids and returns both selected and main channel ids' do
+    patch path, headers: admin.create_new_auth_token, as: :json,
+                params: { assistant: { channel_scope: 'selected', inbox_ids: [inbox.id] } }
 
-    patch path, headers: headers, as: :json, params: {
-      assistant: { name: 'Uncommitted name', description: 'Uncommitted prompt', active: false, handoff_agent_ids: [foreign_target.id] }
-    }
-
-    expect(response).to have_http_status(:unprocessable_content)
-    expect(assistant.reload.attributes.slice('name', 'description', 'active')).to eq(original)
-    expect(assistant.handoff_agent_ids).to eq([target.id])
+    expect(response).to have_http_status(:success)
+    expect(JSON.parse(response.body)).to include('channel_scope' => 'selected', 'inbox_ids' => [inbox.id], 'main_in_inbox_ids' => [])
   end
 
-  it 'rejects newly selected inactive and internal targets' do
-    target.update!(active: false)
-    patch path, headers: headers, as: :json, params: { assistant: { handoff_agent_ids: [target.id] } }
-    expect(response).to have_http_status(:unprocessable_content)
+  it 'rejects deactivation of an enabled main agent with the channel ids' do
+    create(:captain_inbox, captain_assistant: assistant, inbox: inbox)
 
-    target.update!(active: true, usage_mode: 'internal_assistant')
-    patch path, headers: headers, as: :json, params: { assistant: { handoff_agent_ids: [target.id] } }
+    patch path, headers: admin.create_new_auth_token, as: :json, params: { assistant: { active: false } }
+
     expect(response).to have_http_status(:unprocessable_content)
-    expect(assistant.reload.handoff_agent_ids).to be_empty
+    expect(JSON.parse(response.body).dig('errors', 0)).to include('code' => 'MAIN_AGENT_IN_USE', 'inbox_ids' => [inbox.id])
+    expect(assistant.reload).to be_active
   end
 
-  it 'rolls back the prompt and existing routes if graph persistence fails after saving the agent row' do
-    assistant.update!(handoff_agent_ids: [target.id])
-    new_target = create(:captain_assistant, account: account)
-    invalid_route = Captain::AgentHandoff.new
-    invalid_route.errors.add(:target_assistant, 'became unavailable')
-    allow_any_instance_of(Captain::AgentHandoff).to receive(:save!).and_raise(ActiveRecord::RecordInvalid.new(invalid_route))
+  it 'rejects deletion of an enabled main agent' do
+    create(:captain_inbox, captain_assistant: assistant, inbox: inbox)
 
-    patch path, headers: headers, as: :json, params: {
-      assistant: { description: 'Uncommitted prompt', handoff_agent_ids: [new_target.id] }
-    }
+    delete path, headers: admin.create_new_auth_token
 
     expect(response).to have_http_status(:unprocessable_content)
-    expect(assistant.reload.description).to eq('Test description')
-    expect(assistant.handoff_agent_ids).to eq([target.id])
+    expect(JSON.parse(response.body).dig('errors', 0, 'code')).to eq('MAIN_AGENT_IN_USE')
+    expect(Captain::Assistant.exists?(assistant.id)).to be true
+  end
+
+  it 'rejects foreign channel selection without saving settings' do
+    foreign_inbox = create(:inbox)
+
+    patch path, headers: admin.create_new_auth_token, as: :json,
+                params: { assistant: { name: 'Unsaved', channel_scope: 'selected', inbox_ids: [foreign_inbox.id] } }
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(assistant.reload.name).not_to eq('Unsaved')
   end
 end

@@ -69,6 +69,7 @@ Rails.application.routes.draw do
             post :bulk_create, on: :collection
           end
           namespace :captain do
+            resource :channel_matrix, only: [:show, :update], controller: 'channel_matrix'
             resources :fish_voices, only: [:index, :show, :create, :destroy]
             resource :observability, only: [:show], controller: 'observability' do
               get :metrics
