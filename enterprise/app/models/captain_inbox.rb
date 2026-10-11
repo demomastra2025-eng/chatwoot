@@ -28,7 +28,7 @@ class CaptainInbox < ApplicationRecord
   DEFAULT_AUTO_REPLY_MODE = AUTO_REPLY_ALWAYS
 
   scope :enabled_for_runtime, lambda {
-    joins(:inbox).where('captain_inboxes.ai_enabled = TRUE OR inboxes.channel_type = ?', 'Channel::Voice')
+    joins(:inbox).where('(captain_inboxes.ai_enabled = TRUE OR inboxes.channel_type = ?)', 'Channel::Voice')
   }
 
   belongs_to :captain_assistant, class_name: 'Captain::Assistant'

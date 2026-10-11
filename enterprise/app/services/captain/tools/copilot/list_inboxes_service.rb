@@ -62,12 +62,12 @@ class Captain::Tools::Copilot::ListInboxesService < Captain::Tools::Copilot::Bas
     enabled = cast_boolean(value)
     joined_scope = scope.left_outer_joins(:captain_inbox)
     if enabled
-      return joined_scope.where("captain_inboxes.ai_enabled = TRUE OR (captain_inboxes.id IS NOT NULL " \
-                                "AND inboxes.channel_type = 'Channel::Voice')")
+      return joined_scope.where("(captain_inboxes.ai_enabled = TRUE OR (captain_inboxes.id IS NOT NULL " \
+                                "AND inboxes.channel_type = 'Channel::Voice'))")
     end
 
-    joined_scope.where("captain_inboxes.id IS NULL OR (captain_inboxes.ai_enabled = FALSE " \
-                       "AND inboxes.channel_type IS DISTINCT FROM 'Channel::Voice')")
+    joined_scope.where("(captain_inboxes.id IS NULL OR (captain_inboxes.ai_enabled = FALSE " \
+                       "AND inboxes.channel_type IS DISTINCT FROM 'Channel::Voice'))")
   end
 
   def inbox_records(inboxes, include_members:, limit:)
