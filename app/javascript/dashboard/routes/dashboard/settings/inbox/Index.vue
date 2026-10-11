@@ -541,13 +541,13 @@ const uiFlags = computed(() => getters['inboxes/getUIFlags'].value);
           v-for="inbox in filteredInboxesList"
           :key="inbox.id"
           :to="accountScopedRoute('settings_inbox_show', { inboxId: inbox.id })"
-          class="group flex min-h-48 flex-col justify-between rounded-2xl border border-n-weak bg-n-solid-1 p-4 shadow-sm outline outline-1 outline-transparent transition hover:-translate-y-0.5 hover:border-n-brand/50 hover:bg-n-alpha-2 hover:shadow-md focus-visible:outline-n-brand"
+          class="group flex min-h-48 flex-col justify-between rounded-xl bg-n-solid-2 px-6 py-5 outline outline-1 -outline-offset-1 outline-n-container transition-colors hover:bg-n-alpha-2 hover:outline-n-brand/50 focus-visible:outline-n-brand"
         >
           <div class="flex items-start justify-between gap-3">
             <div class="flex min-w-0 items-center gap-3">
               <div
                 v-if="inbox.avatar_url"
-                class="grid size-11 shrink-0 place-items-center rounded-xl border border-n-strong bg-n-alpha-3 shadow-sm ring ring-n-solid-1"
+                class="grid size-11 shrink-0 place-items-center rounded-full bg-n-alpha-3"
               >
                 <Avatar
                   :src="inbox.avatar_url"
@@ -558,7 +558,7 @@ const uiFlags = computed(() => getters['inboxes/getUIFlags'].value);
               </div>
               <div
                 v-else
-                class="grid size-11 shrink-0 place-items-center rounded-xl border border-n-strong bg-n-alpha-3 shadow-sm ring ring-n-solid-1"
+                class="grid size-11 shrink-0 place-items-center rounded-full bg-n-alpha-3"
               >
                 <ChannelIcon class="size-6 text-n-slate-10" :inbox="inbox" />
               </div>
@@ -609,7 +609,7 @@ const uiFlags = computed(() => getters['inboxes/getUIFlags'].value);
               <span
                 v-for="chip in getCapabilityChips(inbox)"
                 :key="chip"
-                class="rounded-md border border-n-weak bg-n-alpha-2 px-2 py-1 text-xs text-n-slate-11"
+                class="rounded-md bg-n-alpha-2 px-2 py-1 text-xs text-n-slate-11"
               >
                 {{ chip }}
               </span>
@@ -617,21 +617,21 @@ const uiFlags = computed(() => getters['inboxes/getUIFlags'].value);
 
             <p
               v-if="inbox.channel_missing"
-              class="rounded-lg bg-n-ruby-3 px-3 py-2 text-xs text-n-ruby-11"
+              class="mb-0 text-xs text-n-ruby-11"
               data-test-id="inbox-channel-missing"
             >
               {{ $t('INBOX_MGMT.LIST.CHANNEL_MISSING_DESCRIPTION') }}
             </p>
             <p
               v-if="inbox.deletion_recovery?.status === 'failed'"
-              class="rounded-lg bg-n-amber-3 px-3 py-2 text-xs text-n-amber-11"
+              class="mb-0 text-xs text-n-amber-11"
               data-test-id="inbox-deletion-recovery"
             >
               {{ $t('INBOX_MGMT.LIST.DELETION_RECOVERY_DESCRIPTION') }}
             </p>
             <p
               v-if="inbox.last_error"
-              class="line-clamp-2 rounded-lg bg-n-ruby-3 px-3 py-2 text-xs text-n-ruby-11"
+              class="mb-0 line-clamp-2 text-xs text-n-ruby-11"
               :title="inbox.last_error"
             >
               {{ inbox.last_error }}
@@ -652,10 +652,10 @@ const uiFlags = computed(() => getters['inboxes/getUIFlags'].value);
         <router-link
           v-if="showAddCard"
           :to="accountScopedRoute('settings_inbox_new')"
-          class="flex min-h-48 flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-n-strong bg-n-alpha-2 p-6 text-center outline outline-1 outline-transparent transition hover:border-n-brand hover:bg-n-brand/5 focus-visible:outline-n-brand"
+          class="flex min-h-48 flex-col items-center justify-center gap-3 rounded-xl bg-n-alpha-2 px-6 py-5 text-center outline-dashed outline-1 -outline-offset-1 outline-n-weak transition-colors hover:bg-n-brand/5 hover:outline-n-brand focus-visible:outline-n-brand"
         >
           <span
-            class="grid size-12 place-items-center rounded-2xl bg-n-brand/10 text-n-brand"
+            class="grid size-12 place-items-center rounded-full bg-n-brand/10 text-n-brand"
           >
             <Icon icon="i-lucide-plus" class="size-6" />
           </span>

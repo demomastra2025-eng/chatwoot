@@ -370,12 +370,10 @@ onMounted(() => {
         <span class="mx-2 text-sm whitespace-nowrap">
           {{ $t('REPORT.BUSINESS_HOURS') }}
         </span>
-        <span>
-          <ToggleSwitch
-            v-model="businessHoursSelected"
-            @change="onBusinessHoursToggle"
-          />
-        </span>
+        <ToggleSwitch
+          v-model="businessHoursSelected"
+          @change="onBusinessHoursToggle"
+        />
       </div>
     </div>
   </div>

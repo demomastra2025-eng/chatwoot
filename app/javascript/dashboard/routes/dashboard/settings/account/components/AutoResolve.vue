@@ -187,7 +187,7 @@ const toggleAutoResolve = async () => {
         </WithLabel>
         <WithLabel :label="t('GENERAL_SETTINGS.FORM.AUTO_RESOLVE.PREFERENCES')">
           <div class="w-full text-sm text-n-slate-12 divide-y divide-n-weak">
-            <div class="p-3 h-12 flex items-center justify-between">
+            <div class="flex h-12 items-center justify-between gap-3">
               <span>
                 {{
                   t('GENERAL_SETTINGS.FORM.AUTO_RESOLVE.IGNORE_WAITING.LABEL')
@@ -195,7 +195,7 @@ const toggleAutoResolve = async () => {
               </span>
               <Switch v-model="ignoreWaiting" />
             </div>
-            <div class="p-3 h-12 flex items-center justify-between">
+            <div class="flex h-12 items-center justify-between gap-3">
               <span>
                 {{ t('GENERAL_SETTINGS.FORM.AUTO_RESOLVE.LABEL.LABEL') }}
               </span>

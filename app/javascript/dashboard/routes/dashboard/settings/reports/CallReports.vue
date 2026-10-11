@@ -134,7 +134,7 @@ onMounted(() => loadReport());
 
     <div
       v-if="!isLoading && hasError"
-      class="flex items-center justify-between gap-3 rounded-lg border border-n-weak bg-n-surface-1 p-3"
+      class="flex items-center justify-between gap-3 rounded-xl bg-n-solid-2 px-6 py-5 shadow outline outline-1 outline-n-container"
       role="alert"
     >
       <p class="m-0 text-sm text-n-slate-11">{{ t('REPORTS.CALLS.ERROR') }}</p>
@@ -147,7 +147,7 @@ onMounted(() => loadReport());
 
     <div
       v-if="!coverage.complete"
-      class="rounded-lg border border-n-amber-6 bg-n-amber-2 px-3 py-2 text-sm text-n-amber-11"
+      class="rounded-xl bg-n-amber-2 px-4 py-3 text-sm text-n-amber-11 outline outline-1 -outline-offset-1 outline-n-amber-6"
       role="status"
     >
       {{
@@ -158,26 +158,24 @@ onMounted(() => loadReport());
       }}
     </div>
 
-    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      <div
+    <div
+      class="grid grid-cols-1 gap-5 rounded-xl bg-n-solid-2 px-6 py-5 shadow outline outline-1 outline-n-container sm:grid-cols-2 xl:grid-cols-4"
+    >
+      <ReportMetricCard
         v-for="metric in metrics"
         :key="metric.key"
-        class="rounded-xl border border-n-weak bg-n-surface-1 p-3"
-      >
-        <ReportMetricCard
-          :label="metric.label"
-          :value="metric.value"
-          :info-text="metric.info"
-          :disabled="isLoading"
-        />
-      </div>
+        :label="metric.label"
+        :value="metric.value"
+        :info-text="metric.info"
+        :disabled="isLoading"
+      />
     </div>
 
     <section
-      class="overflow-hidden rounded-xl border border-n-weak bg-n-surface-1"
+      class="min-w-0 overflow-hidden rounded-xl bg-n-solid-2 p-0 shadow outline outline-1 outline-n-container"
     >
-      <div class="border-b border-n-weak px-4 py-3">
-        <h2 class="m-0 text-sm font-semibold text-n-slate-12">
+      <div class="border-b border-n-weak px-5 py-4">
+        <h2 class="m-0 text-heading-2 text-n-slate-12">
           {{ t('REPORTS.CALLS.DAILY_TITLE') }}
         </h2>
       </div>
@@ -185,16 +183,16 @@ onMounted(() => loadReport());
         <table class="w-full min-w-[34rem] text-left text-sm">
           <thead class="bg-n-surface-2 text-xs text-n-slate-10">
             <tr>
-              <th class="px-4 py-2 font-medium">
+              <th class="px-5 py-2 font-medium">
                 {{ t('REPORTS.CALLS.DATE') }}
               </th>
-              <th class="px-4 py-2 font-medium">
+              <th class="px-5 py-2 font-medium">
                 {{ t('REPORTS.CALLS.LOGICAL_CALLS') }}
               </th>
-              <th class="px-4 py-2 font-medium">
+              <th class="px-5 py-2 font-medium">
                 {{ t('REPORTS.CALLS.ANSWERED_CALLS') }}
               </th>
-              <th class="px-4 py-2 font-medium">
+              <th class="px-5 py-2 font-medium">
                 {{ t('REPORTS.CALLS.UNANSWERED_CALLS') }}
               </th>
             </tr>
@@ -205,17 +203,17 @@ onMounted(() => loadReport());
               :key="day.date"
               class="text-n-slate-11"
             >
-              <td class="px-4 py-2.5">{{ formatDate(day.date) }}</td>
-              <td class="px-4 py-2.5">
+              <td class="px-5 py-2.5">{{ formatDate(day.date) }}</td>
+              <td class="px-5 py-2.5">
                 {{ formatCount(day.logical_call_count) }}
               </td>
-              <td class="px-4 py-2.5">{{ formatCount(day.answered_count) }}</td>
-              <td class="px-4 py-2.5">
+              <td class="px-5 py-2.5">{{ formatCount(day.answered_count) }}</td>
+              <td class="px-5 py-2.5">
                 {{ formatCount(day.unanswered_count) }}
               </td>
             </tr>
             <tr v-if="!isLoading && !hasError && dailyBreakdown.length === 0">
-              <td colspan="4" class="px-4 py-8 text-center text-n-slate-10">
+              <td colspan="4" class="px-5 py-8 text-center text-n-slate-10">
                 {{ t('REPORTS.CALLS.EMPTY') }}
               </td>
             </tr>
@@ -225,10 +223,10 @@ onMounted(() => loadReport());
     </section>
 
     <section
-      class="overflow-hidden rounded-xl border border-n-weak bg-n-surface-1"
+      class="min-w-0 overflow-hidden rounded-xl bg-n-solid-2 p-0 shadow outline outline-1 outline-n-container"
     >
-      <div class="border-b border-n-weak px-4 py-3">
-        <h2 class="m-0 text-sm font-semibold text-n-slate-12">
+      <div class="border-b border-n-weak px-5 py-4">
+        <h2 class="m-0 text-heading-2 text-n-slate-12">
           {{ t('REPORTS.CALLS.ROWS_TITLE') }}
         </h2>
         <p class="mb-0 mt-1 text-xs text-n-slate-10">
@@ -239,45 +237,45 @@ onMounted(() => loadReport());
         <table class="w-full min-w-[48rem] text-left text-sm">
           <thead class="bg-n-surface-2 text-xs text-n-slate-10">
             <tr>
-              <th class="px-4 py-2 font-medium">
+              <th class="px-5 py-2 font-medium">
                 {{ t('REPORTS.CALLS.DATE') }}
               </th>
-              <th class="px-4 py-2 font-medium">
+              <th class="px-5 py-2 font-medium">
                 {{ t('REPORTS.CALLS.DIRECTION') }}
               </th>
-              <th class="px-4 py-2 font-medium">
+              <th class="px-5 py-2 font-medium">
                 {{ t('REPORTS.CALLS.STATUS') }}
               </th>
-              <th class="px-4 py-2 font-medium">
+              <th class="px-5 py-2 font-medium">
                 {{ t('REPORTS.CALLS.INBOX') }}
               </th>
-              <th class="px-4 py-2 font-medium">
+              <th class="px-5 py-2 font-medium">
                 {{ t('REPORTS.CALLS.PROVIDER') }}
               </th>
-              <th class="px-4 py-2 font-medium">
+              <th class="px-5 py-2 font-medium">
                 {{ t('REPORTS.CALLS.DURATION') }}
               </th>
             </tr>
           </thead>
           <tbody class="divide-y divide-n-weak">
             <tr v-for="call in rows" :key="call.id" class="text-n-slate-11">
-              <td class="px-4 py-2.5">{{ formatDateTime(call.started_at) }}</td>
-              <td class="px-4 py-2.5">
+              <td class="px-5 py-2.5">{{ formatDateTime(call.started_at) }}</td>
+              <td class="px-5 py-2.5">
                 {{
                   t(
                     `REPORTS.CALLS.${call.direction?.toUpperCase() || 'INBOUND'}`
                   )
                 }}
               </td>
-              <td class="px-4 py-2.5">{{ statusLabel(call.status) }}</td>
-              <td class="px-4 py-2.5">{{ call.inbox_name || '—' }}</td>
-              <td class="px-4 py-2.5">{{ call.provider || '—' }}</td>
-              <td class="px-4 py-2.5">
+              <td class="px-5 py-2.5">{{ statusLabel(call.status) }}</td>
+              <td class="px-5 py-2.5">{{ call.inbox_name || '—' }}</td>
+              <td class="px-5 py-2.5">{{ call.provider || '—' }}</td>
+              <td class="px-5 py-2.5">
                 {{ formatSeconds(call.duration_seconds) }}
               </td>
             </tr>
             <tr v-if="!isLoading && !hasError && rows.length === 0">
-              <td colspan="6" class="px-4 py-8 text-center text-n-slate-10">
+              <td colspan="6" class="px-5 py-8 text-center text-n-slate-10">
                 {{ t('REPORTS.CALLS.EMPTY') }}
               </td>
             </tr>

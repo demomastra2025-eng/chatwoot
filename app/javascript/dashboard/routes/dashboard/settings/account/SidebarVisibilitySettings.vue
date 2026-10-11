@@ -104,7 +104,7 @@ watch(
 </script>
 
 <template>
-  <SettingsLayout :no-records-found="false" class="gap-8">
+  <SettingsLayout :no-records-found="false">
     <template #header>
       <BaseSettingsHeader
         :title="$t('GENERAL_SETTINGS.SIDEBAR_VISIBILITY.TITLE')"
@@ -114,76 +114,73 @@ watch(
     </template>
 
     <template #body>
-      <div class="flex flex-col gap-4 mt-4">
+      <div class="flex flex-col gap-4">
+        <!-- One list block for all sections; rows are divided, not boxed. -->
         <Draggable
           v-model="sidebarItemsDraft"
           item-key="key"
           handle=".sidebar-order-drag-handle"
           animation="200"
           ghost-class="opacity-50"
-          class="grid grid-cols-1 gap-2 w-full"
+          class="flex w-full flex-col divide-y divide-n-weak overflow-hidden rounded-xl outline outline-1 -outline-offset-1 outline-n-weak"
         >
           <template #item="{ element: item, index }">
-            <div class="rounded-xl border border-n-weak overflow-hidden">
-              <div
-                class="flex items-center gap-2 p-3 hover:bg-n-alpha-1 transition-colors"
+            <div
+              class="flex items-center gap-2 px-4 py-3 hover:bg-n-alpha-1 transition-colors"
+            >
+              <button
+                type="button"
+                data-test="sidebar-order-drag-handle"
+                class="sidebar-order-drag-handle inline-flex size-7 shrink-0 cursor-grab items-center justify-center rounded-md p-0 text-n-slate-9 hover:bg-n-alpha-2 hover:text-n-slate-12 active:cursor-grabbing"
+                :title="t('GENERAL_SETTINGS.SIDEBAR_VISIBILITY.DRAG')"
+                :aria-label="t('GENERAL_SETTINGS.SIDEBAR_VISIBILITY.DRAG')"
               >
+                <span class="i-lucide-grip-vertical size-4" />
+              </button>
+              <label
+                v-if="item.configurable !== false"
+                :for="checkboxId(item.key)"
+                class="flex flex-1 gap-3 items-start cursor-pointer"
+              >
+                <Checkbox
+                  :id="checkboxId(item.key)"
+                  v-model="visibilityDraft[item.key]"
+                  class="mt-0.5 shrink-0"
+                />
+                <span class="text-sm text-n-slate-12 leading-5 font-medium">
+                  {{ sidebarItemLabel(item) }}
+                </span>
+              </label>
+              <div v-else class="flex flex-1 gap-3 items-start">
+                <span class="text-sm text-n-slate-12 leading-5 font-medium">
+                  {{ sidebarItemLabel(item) }}
+                </span>
+              </div>
+              <div class="flex shrink-0 items-center gap-1">
                 <button
                   type="button"
-                  data-test="sidebar-order-drag-handle"
-                  class="sidebar-order-drag-handle inline-flex size-7 shrink-0 cursor-grab items-center justify-center rounded-md text-n-slate-9 hover:bg-n-alpha-2 hover:text-n-slate-12 active:cursor-grabbing"
-                  :title="t('GENERAL_SETTINGS.SIDEBAR_VISIBILITY.DRAG')"
-                  :aria-label="t('GENERAL_SETTINGS.SIDEBAR_VISIBILITY.DRAG')"
+                  class="inline-flex size-7 items-center justify-center rounded-md p-0 text-n-slate-10 hover:bg-n-alpha-2 hover:text-n-slate-12 disabled:pointer-events-none disabled:opacity-30"
+                  data-test="sidebar-order-up"
+                  :disabled="index === 0"
+                  :title="t('GENERAL_SETTINGS.SIDEBAR_VISIBILITY.MOVE_UP')"
+                  :aria-label="t('GENERAL_SETTINGS.SIDEBAR_VISIBILITY.MOVE_UP')"
+                  @click="moveSidebarItem(index, -1)"
                 >
-                  <span class="i-lucide-grip-vertical size-4" />
+                  <span class="i-lucide-chevron-up size-4" />
                 </button>
-                <label
-                  v-if="item.configurable !== false"
-                  :for="checkboxId(item.key)"
-                  class="flex flex-1 gap-3 items-start cursor-pointer"
+                <button
+                  type="button"
+                  class="inline-flex size-7 items-center justify-center rounded-md p-0 text-n-slate-10 hover:bg-n-alpha-2 hover:text-n-slate-12 disabled:pointer-events-none disabled:opacity-30"
+                  data-test="sidebar-order-down"
+                  :disabled="index === sidebarItemsDraft.length - 1"
+                  :title="t('GENERAL_SETTINGS.SIDEBAR_VISIBILITY.MOVE_DOWN')"
+                  :aria-label="
+                    t('GENERAL_SETTINGS.SIDEBAR_VISIBILITY.MOVE_DOWN')
+                  "
+                  @click="moveSidebarItem(index, 1)"
                 >
-                  <Checkbox
-                    :id="checkboxId(item.key)"
-                    v-model="visibilityDraft[item.key]"
-                    class="mt-0.5 shrink-0"
-                  />
-                  <span class="text-sm text-n-slate-12 leading-5 font-medium">
-                    {{ sidebarItemLabel(item) }}
-                  </span>
-                </label>
-                <div v-else class="flex flex-1 gap-3 items-start">
-                  <span class="text-sm text-n-slate-12 leading-5 font-medium">
-                    {{ sidebarItemLabel(item) }}
-                  </span>
-                </div>
-                <div class="flex shrink-0 items-center gap-1">
-                  <button
-                    type="button"
-                    class="inline-flex size-7 items-center justify-center rounded-md text-n-slate-10 hover:bg-n-alpha-2 hover:text-n-slate-12 disabled:pointer-events-none disabled:opacity-30"
-                    data-test="sidebar-order-up"
-                    :disabled="index === 0"
-                    :title="t('GENERAL_SETTINGS.SIDEBAR_VISIBILITY.MOVE_UP')"
-                    :aria-label="
-                      t('GENERAL_SETTINGS.SIDEBAR_VISIBILITY.MOVE_UP')
-                    "
-                    @click="moveSidebarItem(index, -1)"
-                  >
-                    <span class="i-lucide-chevron-up size-4" />
-                  </button>
-                  <button
-                    type="button"
-                    class="inline-flex size-7 items-center justify-center rounded-md text-n-slate-10 hover:bg-n-alpha-2 hover:text-n-slate-12 disabled:pointer-events-none disabled:opacity-30"
-                    data-test="sidebar-order-down"
-                    :disabled="index === sidebarItemsDraft.length - 1"
-                    :title="t('GENERAL_SETTINGS.SIDEBAR_VISIBILITY.MOVE_DOWN')"
-                    :aria-label="
-                      t('GENERAL_SETTINGS.SIDEBAR_VISIBILITY.MOVE_DOWN')
-                    "
-                    @click="moveSidebarItem(index, 1)"
-                  >
-                    <span class="i-lucide-chevron-down size-4" />
-                  </button>
-                </div>
+                  <span class="i-lucide-chevron-down size-4" />
+                </button>
               </div>
             </div>
           </template>

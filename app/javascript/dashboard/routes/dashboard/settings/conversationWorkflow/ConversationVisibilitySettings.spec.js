@@ -80,6 +80,26 @@ const mountComponent = () =>
     },
   });
 
+// A framed element is rounded and also bordered, outlined or filled. Real form
+// controls and buttons may sit inside a block.
+const FRAME_CLASS = /^(border|outline|bg-)/;
+const NO_FRAME_CLASS = /-(0|none|transparent)$/;
+const isFramed = element => {
+  const classes = [...element.classList];
+  const isRounded = classes.some(
+    name => name.startsWith('rounded') && name !== 'rounded-none'
+  );
+  const hasFrame = classes.some(
+    name => FRAME_CLASS.test(name) && !NO_FRAME_CLASS.test(name)
+  );
+  return isRounded && hasFrame;
+};
+const framedDescendants = block =>
+  [...block.element.querySelectorAll('*')]
+    .filter(element => !element.matches('input, select, textarea, button'))
+    .filter(isFramed)
+    .map(element => element.className);
+
 describe('ConversationVisibilitySettings', () => {
   beforeEach(() => {
     currentAccount.value = { settings: {} };
@@ -160,9 +180,11 @@ describe('ConversationVisibilitySettings', () => {
     const primaryNavigation = wrapper.get(
       '[data-testid="conversation-primary-navigation"]'
     );
-    expect(primaryNavigation.classes()).toContain('divide-y');
-    expect(primaryNavigation.classes()).not.toContain('rounded-xl');
-    expect(primaryNavigation.classes()).not.toContain('border');
+    // One toggle-list block with divided rows and nothing framed inside it.
+    expect(primaryNavigation.classes()).toEqual(
+      expect.arrayContaining(['divide-y', 'rounded-xl', 'outline'])
+    );
+    expect(framedDescendants(primaryNavigation)).toEqual([]);
     expect(primaryNavigation.findAll('label')).toHaveLength(3);
     expect(wrapper.vm.visibilityDraft['Conversation:Folders']).toBe(true);
     expect(wrapper.vm.visibilityDraft['Conversation:Teams']).toBe(true);
@@ -520,6 +542,12 @@ describe('ConversationVisibilitySettings', () => {
     await wrapper.vm.$nextTick();
     expect(wrapper.vm.isGroupExpanded(pipelineGroup)).toBe(true);
     expect(wrapper.text()).toContain('New');
+    // The expanded group opens as a tinted area, not as a framed box.
+    expect(
+      framedDescendants(
+        wrapper.get('[data-testid="conversation-primary-navigation"]')
+      )
+    ).toEqual([]);
     expect(pipelineSection.text()).toContain(
       'CONVERSATION_WORKFLOW.VISIBILITY.SUMMARY.COLLAPSE'
     );

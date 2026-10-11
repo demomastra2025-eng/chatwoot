@@ -236,6 +236,24 @@ const SelectMenuStub = {
   `,
 };
 
+// A framed element is rounded and drawn with a border, an outline or a fill.
+// Real form controls and buttons are allowed inside a block.
+const FRAME_RADIUS = /^rounded(-(sm|md|lg|xl|2xl|3xl))?$/;
+const FRAME_DRAWING = /^(border|outline|bg-)/;
+const FORM_CONTROL_TAGS = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA'];
+const nestedFrames = block =>
+  block
+    .findAll('*')
+    .filter(node => !FORM_CONTROL_TAGS.includes(node.element.tagName))
+    .filter(node => {
+      const classes = node.classes();
+      return (
+        classes.some(name => FRAME_RADIUS.test(name)) &&
+        classes.some(name => FRAME_DRAWING.test(name))
+      );
+    })
+    .map(node => node.classes().join(' '));
+
 const mountComponent = () =>
   mount(Index, {
     global: {
@@ -617,9 +635,13 @@ describe('CRM pipeline settings', () => {
     expect(selector.attributes('data-options').split(',')).toContain('10');
     expect(selector.attributes('data-options').split(',')).not.toContain('14');
     expect(selector.attributes('data-options').split(',')).not.toContain('15');
-    expect(selector.element.parentElement.classList).not.toContain(
-      'rounded-xl'
-    );
+    const sourcesBlock = wrapper.get('[data-testid="crm-channel-entry-block"]');
+    expect(sourcesBlock.classes()).toContain('rounded-xl');
+    expect(sourcesBlock.element.contains(selector.element)).toBe(true);
+    expect(nestedFrames(sourcesBlock)).toEqual([]);
+    expect(
+      nestedFrames(wrapper.get('[data-testid="crm-stage-entry-rules-block"]'))
+    ).toEqual([]);
     testState.selectedMenuOption = '13';
     await selector.trigger('click');
     await flushPromises();

@@ -580,7 +580,7 @@ onMounted(async () => {
       </template>
     </SchedulingPageHeader>
 
-    <div class="flex flex-col gap-4 px-5 pb-5 pt-3">
+    <div class="flex flex-col gap-4 px-6 pb-8 pt-3">
       <div
         v-if="referencesStore.ui.isLoadingResources"
         class="flex justify-center py-16"
@@ -612,7 +612,7 @@ onMounted(async () => {
         <article
           v-for="resource in resourceCards"
           :key="resource.id"
-          class="flex min-h-[15rem] flex-col gap-3 rounded-2xl bg-n-solid-2 p-4 outline outline-1 outline-n-container shadow-sm"
+          class="flex min-h-[15rem] flex-col gap-3 rounded-xl bg-n-solid-2 p-4 outline outline-1 -outline-offset-1 outline-n-container"
         >
           <div class="flex items-start gap-3">
             <div class="flex min-w-0 items-start gap-3">
@@ -694,11 +694,11 @@ onMounted(async () => {
           <div class="mt-auto flex items-center justify-between gap-3">
             <div class="inline-flex items-center">
               <span
-                class="rounded-full border border-solid bg-n-alpha-black2 px-2 py-1 text-[11px] font-medium"
+                class="rounded-full px-2 py-1 text-[11px] font-medium"
                 :class="
                   resource.active
-                    ? 'bg-n-teal-3 border-n-teal-4 text-n-teal-11'
-                    : 'border-n-strong text-n-slate-10'
+                    ? 'bg-n-teal-3 text-n-teal-11'
+                    : 'bg-n-alpha-black2 text-n-slate-10'
                 "
               >
                 {{
@@ -779,6 +779,7 @@ onMounted(async () => {
     >
       <div class="flex flex-col gap-6">
         <SchedulingFormFieldGroup
+          :framed="false"
           :title="$t('SCHEDULING.RESOURCES.BASIC')"
           :description="$t('SCHEDULING.RESOURCES.BASIC_DESCRIPTION')"
         >
@@ -831,7 +832,7 @@ onMounted(async () => {
                 v-for="color in RESOURCE_COLORS"
                 :key="color"
                 type="button"
-                class="relative size-8 rounded-full border-2 transition-transform hover:scale-105 disabled:cursor-not-allowed disabled:opacity-100 disabled:hover:scale-100"
+                class="relative size-8 rounded-full border-2 p-0 transition-transform hover:scale-105 disabled:cursor-not-allowed disabled:opacity-100 disabled:hover:scale-100"
                 :class="[
                   resourceForm.color?.toUpperCase() === color.toUpperCase()
                     ? 'ring-2 ring-offset-2 ring-offset-n-surface-1 ring-n-slate-8 border-n-slate-9'
@@ -864,7 +865,11 @@ onMounted(async () => {
           </div>
         </SchedulingFormFieldGroup>
 
-        <SchedulingFormFieldGroup v-if="!editingImportedResource">
+        <SchedulingFormFieldGroup
+          v-if="!editingImportedResource"
+          :framed="false"
+          class="border-t border-n-weak pt-6"
+        >
           <TextArea
             v-model="resourceForm.description"
             auto-height
@@ -888,7 +893,7 @@ onMounted(async () => {
       @confirm="saveSchedule"
     >
       <div class="flex flex-col gap-6">
-        <p v-if="isTemplateSchedule" class="text-sm text-n-slate-11">
+        <p v-if="isTemplateSchedule" class="mb-0 text-sm text-n-slate-11">
           {{ $t('SCHEDULING.RESOURCES.MEDELEMENT_TEMPLATE_HINT') }}
         </p>
         <TabBar
@@ -898,16 +903,19 @@ onMounted(async () => {
           @tab-changed="scheduleTab = $event.value"
         />
 
-        <div v-if="scheduleTab === 'work'" class="flex flex-col gap-4">
+        <div
+          v-if="scheduleTab === 'work'"
+          class="flex flex-col divide-y divide-n-weak"
+        >
           <div
             v-for="rule in scheduleForm.workRules"
             :key="rule.rowKey"
-            class="grid items-center gap-4 rounded-2xl bg-n-surface-1 p-4 outline outline-1 outline-n-container md:grid-cols-[160px_100px_1fr_1fr_88px]"
+            class="grid items-center gap-4 py-3 md:grid-cols-[160px_100px_1fr_1fr_88px]"
           >
             <span class="text-sm font-medium text-n-slate-12">
               {{ weekDayLabel(rule.weekday) }}
             </span>
-            <label class="flex items-center gap-2 text-sm text-n-slate-11">
+            <label class="flex items-center gap-2 text-sm text-n-slate-12">
               <Switch v-model="rule.active" />
               <span>{{ $t('SCHEDULING.GENERAL.ACTIVE') }}</span>
             </label>
@@ -944,16 +952,16 @@ onMounted(async () => {
           </div>
         </div>
 
-        <div v-else class="flex flex-col gap-4">
+        <div v-else class="flex flex-col divide-y divide-n-weak">
           <div
             v-for="rule in scheduleForm.breakRules"
             :key="rule.rowKey"
-            class="grid items-center gap-4 rounded-2xl bg-n-surface-1 p-4 outline outline-1 outline-n-container md:grid-cols-[160px_100px_1fr_1fr_1.2fr_88px]"
+            class="grid items-center gap-4 py-3 md:grid-cols-[160px_100px_1fr_1fr_1.2fr_88px]"
           >
             <span class="text-sm font-medium text-n-slate-12">
               {{ weekDayLabel(rule.weekday) }}
             </span>
-            <label class="flex items-center gap-2 text-sm text-n-slate-11">
+            <label class="flex items-center gap-2 text-sm text-n-slate-12">
               <Switch v-model="rule.active" />
               <span>{{ $t('SCHEDULING.GENERAL.ACTIVE') }}</span>
             </label>

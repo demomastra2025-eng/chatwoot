@@ -94,14 +94,14 @@ onMounted(() => {
           class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between"
         >
           <div class="min-w-0">
-            <h2 class="mb-1 text-lg font-semibold text-n-slate-12">
+            <h2 class="mb-1 text-heading-2 text-n-slate-12">
               {{ $t('OUTBOUND_WORKSPACE.AUDIENCES.TITLE') }}
             </h2>
-            <p class="max-w-3xl mb-0 text-sm leading-6 text-n-slate-11">
+            <p class="max-w-3xl mb-0 text-body-main text-n-slate-11">
               {{ $t('OUTBOUND_WORKSPACE.AUDIENCES.SUBTITLE') }}
             </p>
           </div>
-          <div class="shrink-0 rounded-2xl bg-n-brand/8 px-4 py-3 text-center">
+          <div class="shrink-0 rounded-xl bg-n-brand/8 px-4 py-3 text-center">
             <p
               class="mb-1 text-xs font-medium uppercase tracking-[0.08em] text-n-brand"
             >
@@ -116,9 +116,13 @@ onMounted(() => {
 
       <section
         v-if="audienceSegments.length"
-        class="overflow-hidden rounded-3xl bg-n-surface-1 outline outline-1 outline-n-container shadow-sm"
+        class="overflow-hidden rounded-xl bg-n-solid-2 outline outline-1 outline-n-container ltr:pl-4 rtl:pr-4"
       >
-        <BaseTable :headers="tableHeaders" :items="audienceSegments">
+        <BaseTable
+          :headers="tableHeaders"
+          :items="audienceSegments"
+          :show-header-top-border="false"
+        >
           <template #row="{ items }">
             <BaseTableRow
               v-for="segment in items"
@@ -131,7 +135,7 @@ onMounted(() => {
                     <span class="block truncate text-heading-3 text-n-slate-12">
                       {{ segment.name }}
                     </span>
-                    <p class="text-body-main text-n-slate-11">
+                    <p class="mb-0 text-body-main text-n-slate-11">
                       {{ $t('OUTBOUND_WORKSPACE.AUDIENCES.SUBTITLE') }}
                     </p>
                   </div>
@@ -155,15 +159,12 @@ onMounted(() => {
         </BaseTable>
       </section>
 
-      <section
-        v-else
-        class="rounded-3xl bg-n-surface-2 p-8 outline outline-1 outline-n-container shadow-sm"
-      >
-        <div class="max-w-2xl">
-          <h2 class="mb-2 text-lg font-semibold text-n-slate-12">
+      <section v-else class="flex flex-col items-center py-10 text-center">
+        <div class="flex max-w-2xl flex-col items-center">
+          <h2 class="mb-2 text-heading-2 text-n-slate-12">
             {{ $t('OUTBOUND_WORKSPACE.AUDIENCES.EMPTY') }}
           </h2>
-          <p class="mb-4 text-sm leading-6 text-n-slate-11">
+          <p class="mb-4 text-body-main text-n-slate-11">
             {{ $t('OUTBOUND_WORKSPACE.AUDIENCES.DESCRIPTION') }}
           </p>
           <Button

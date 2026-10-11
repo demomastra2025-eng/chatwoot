@@ -2894,7 +2894,7 @@ watch(
 
         <div
           v-else-if="currentPresentation === 'list'"
-          class="mt-3 overflow-hidden rounded-xl outline outline-1 outline-n-container"
+          class="mt-3 overflow-hidden rounded-xl outline outline-1 -outline-offset-1 outline-n-weak"
         >
           <SchedulingRecordTable
             borderless
@@ -3167,14 +3167,11 @@ watch(
           @retry="saveTask"
         />
 
-        <div
-          v-if="form.originatingConversationId"
-          class="rounded-2xl bg-n-alpha-black2 px-4 py-3 outline outline-1 outline-n-weak"
-        >
-          <p class="mb-1 text-sm font-medium text-n-slate-12">
+        <div v-if="form.originatingConversationId" class="flex flex-col gap-1">
+          <p class="mb-0 text-heading-3 text-n-slate-12">
             {{ $t('CRM.GENERAL.LINKED_CONVERSATION') }}
           </p>
-          <p class="mb-0 text-sm text-n-slate-11">
+          <p class="mb-0 text-body-main text-n-slate-11">
             {{
               [
                 $t('CRM.TIMELINE.CONVERSATION', {
@@ -3231,12 +3228,12 @@ watch(
               {{ $t('CRM.TASKS.FORM.SALES_DEAL_REQUIRED') }}
             </p>
 
-            <div class="flex items-center gap-3 md:col-span-2">
+            <div class="flex items-center gap-2 md:col-span-2">
               <Switch
                 :model-value="form.allDay"
                 @update:model-value="updateAllDay"
               />
-              <span class="text-sm font-medium text-n-slate-12">
+              <span class="text-sm text-n-slate-12">
                 {{ $t('CRM.TASKS.FORM.ALL_DAY') }}
               </span>
             </div>

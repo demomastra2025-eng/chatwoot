@@ -83,28 +83,29 @@ const rows = computed(() => props.report.attribution_breakdown || []);
 </script>
 
 <template>
-  <section class="min-w-0" data-testid="lead-appointment-conversion">
-    <h2 class="mb-2 mt-0 text-sm font-semibold text-n-slate-12">
+  <section
+    class="min-w-0 rounded-xl bg-n-solid-2 px-6 py-5 shadow outline outline-1 outline-n-container"
+    data-testid="lead-appointment-conversion"
+  >
+    <h2 class="mb-2 mt-0 text-heading-2 text-n-slate-12">
       {{ $t('CRM.LEAD_CONVERSION.TITLE') }}
     </h2>
     <p class="mb-4 mt-0 text-xs leading-5 text-n-slate-10">
       {{ $t('CRM.LEAD_CONVERSION.COHORT_HELP') }}
     </p>
-    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-      <div
+    <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
+      <ReportMetricCard
         v-for="metric in metrics"
         :key="metric.key"
-        class="rounded-lg border border-n-weak p-3"
-      >
-        <ReportMetricCard
-          :label="metric.label"
-          :value="metric.value"
-          :info-text="$t('CRM.LEAD_CONVERSION.COHORT_HELP')"
-          :disabled="loading"
-        />
-      </div>
+        :label="metric.label"
+        :value="metric.value"
+        :info-text="$t('CRM.LEAD_CONVERSION.COHORT_HELP')"
+        :disabled="loading"
+      />
     </div>
-    <dl class="mb-0 mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+    <dl
+      class="mb-0 mt-5 grid gap-2 border-t border-n-weak pt-4 sm:grid-cols-2 xl:grid-cols-3"
+    >
       <div
         v-for="count in counts"
         :key="count.key"

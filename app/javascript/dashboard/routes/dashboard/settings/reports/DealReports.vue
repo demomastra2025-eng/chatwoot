@@ -843,15 +843,12 @@ const onFilterChange = payload => {
       </button>
     </div>
 
-    <section
-      v-if="activeSection === 'activity'"
-      class="border-t border-n-weak pt-5"
-    >
+    <section v-if="activeSection === 'activity'" class="flex flex-col gap-4">
       <div class="flex flex-col gap-1">
-        <h3 class="text-base font-semibold text-n-slate-12">
+        <h3 class="m-0 text-heading-2 text-n-slate-12">
           {{ currentSection.label }}
         </h3>
-        <p class="text-sm text-n-slate-10">
+        <p class="m-0 text-body-main text-n-slate-11">
           {{ currentSection.description }}
         </p>
       </div>
@@ -860,7 +857,7 @@ const onFilterChange = payload => {
 
     <div
       v-if="isLoading && activeSection !== 'activity'"
-      class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"
+      class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4"
     >
       <div
         v-for="item in 4"
@@ -870,11 +867,11 @@ const onFilterChange = payload => {
     </div>
 
     <template v-else-if="report && activeSection !== 'activity'">
-      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <div
           v-for="card in summaryCards"
           :key="card.key"
-          class="flex min-h-28 items-start justify-between gap-3 rounded-xl border border-n-weak bg-n-surface-1 p-3"
+          class="flex min-h-28 items-start justify-between gap-3 rounded-xl bg-n-solid-2 px-6 py-5 shadow outline outline-1 outline-n-container"
         >
           <ReportMetricCard
             class="min-w-0 flex-1"
@@ -895,51 +892,53 @@ const onFilterChange = payload => {
 
       <div
         v-if="!hasReportData && activeSection !== 'activity'"
-        class="rounded-xl bg-n-solid-2 p-8 text-center shadow-sm outline outline-1 outline-n-container"
+        class="rounded-xl bg-n-solid-2 px-6 py-8 text-center shadow outline outline-1 outline-n-container"
       >
         <i
           class="i-lucide-chart-no-axes-column mx-auto text-3xl text-n-slate-9"
         />
-        <p class="mt-3 text-sm font-medium text-n-slate-12">
+        <p class="mb-0 mt-3 text-sm font-medium text-n-slate-12">
           {{ $t('CRM_DEAL_REPORTS.EMPTY_TITLE') }}
         </p>
-        <p class="mt-1 text-sm text-n-slate-10">
+        <p class="mb-0 mt-1 text-sm text-n-slate-10">
           {{ $t('CRM_DEAL_REPORTS.EMPTY_DESCRIPTION') }}
         </p>
       </div>
 
       <template v-else>
-        <section class="border-t border-n-weak pt-5">
+        <section class="flex flex-col gap-4">
           <div class="flex flex-col gap-1">
-            <h3 class="text-base font-semibold text-n-slate-12">
+            <h3 class="m-0 text-heading-2 text-n-slate-12">
               {{ currentSection.label }}
             </h3>
-            <p class="text-sm text-n-slate-10">
+            <p class="m-0 text-body-main text-n-slate-11">
               {{ currentSection.description }}
             </p>
           </div>
 
           <div
             v-if="activeSection === 'overview'"
-            class="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]"
+            class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]"
           >
-            <section class="min-w-0">
+            <section
+              class="min-w-0 rounded-xl bg-n-solid-2 px-6 py-5 shadow outline outline-1 outline-n-container"
+            >
               <div class="flex items-start justify-between gap-3">
                 <div>
-                  <h4 class="text-sm font-semibold text-n-slate-12">
+                  <h4 class="m-0 text-heading-2 text-n-slate-12">
                     {{ $t('CRM_DEAL_REPORTS.CHARTS.STAGE_FLOW.TITLE') }}
                   </h4>
-                  <p class="mt-1 text-xs leading-5 text-n-slate-10">
+                  <p class="mb-0 mt-1 text-xs leading-5 text-n-slate-10">
                     {{ $t('CRM_DEAL_REPORTS.CHARTS.STAGE_FLOW.DESCRIPTION') }}
                   </p>
                 </div>
               </div>
 
-              <div class="mt-4 flex flex-col gap-3">
+              <div class="mt-4 flex flex-col divide-y divide-n-weak">
                 <div
                   v-for="stage in stageRows"
                   :key="stage.stageId"
-                  class="rounded-xl bg-n-alpha-1 p-3"
+                  class="py-3 first:pt-0 last:pb-0"
                 >
                   <div class="flex items-start justify-between gap-4">
                     <div class="min-w-0">
@@ -948,19 +947,21 @@ const onFilterChange = payload => {
                           class="size-2 rounded-full"
                           :style="{ backgroundColor: stage.color }"
                         />
-                        <p class="truncate text-sm font-medium text-n-slate-12">
+                        <p
+                          class="mb-0 truncate text-sm font-medium text-n-slate-12"
+                        >
                           {{ stage.label }}
                         </p>
                       </div>
-                      <p class="mt-1 text-xs text-n-slate-10">
+                      <p class="mb-0 mt-1 text-xs text-n-slate-10">
                         {{ stage.amountLabel }}
                       </p>
                     </div>
                     <div class="text-right">
-                      <p class="text-sm font-semibold text-n-slate-12">
+                      <p class="mb-0 text-sm font-semibold text-n-slate-12">
                         {{ stage.countLabel }}
                       </p>
-                      <p class="text-xs text-n-slate-10">
+                      <p class="mb-0 text-xs text-n-slate-10">
                         {{ $t('CRM_DEAL_REPORTS.LABELS.DEALS') }}
                       </p>
                     </div>
@@ -986,11 +987,13 @@ const onFilterChange = payload => {
               </div>
             </section>
 
-            <section class="min-w-0">
-              <h4 class="text-sm font-semibold text-n-slate-12">
+            <section
+              class="min-w-0 rounded-xl bg-n-solid-2 px-6 py-5 shadow outline outline-1 outline-n-container"
+            >
+              <h4 class="m-0 text-heading-2 text-n-slate-12">
                 {{ $t('CRM_DEAL_REPORTS.CHARTS.STAGE_AMOUNT.TITLE') }}
               </h4>
-              <p class="mt-1 text-xs leading-5 text-n-slate-10">
+              <p class="mb-0 mt-1 text-xs leading-5 text-n-slate-10">
                 {{ $t('CRM_DEAL_REPORTS.CHARTS.STAGE_AMOUNT.DESCRIPTION') }}
               </p>
               <div class="mt-4 h-[28rem]">
@@ -1001,7 +1004,7 @@ const onFilterChange = payload => {
                 />
                 <p
                   v-else
-                  class="flex h-full items-center justify-center text-sm text-n-slate-10"
+                  class="m-0 flex h-full items-center justify-center text-sm text-n-slate-10"
                 >
                   {{ $t('REPORT.NO_ENOUGH_DATA') }}
                 </p>
@@ -1011,46 +1014,48 @@ const onFilterChange = payload => {
 
           <div
             v-else-if="activeSection === 'effectiveness'"
-            class="mt-5 flex flex-col gap-5"
+            class="flex flex-col gap-4"
           >
             <div
               v-if="managerEffectivenessError"
-              class="rounded-xl border border-n-amber-5 bg-n-amber-2 p-4 text-sm text-n-amber-12"
+              class="rounded-xl bg-n-amber-2 p-4 text-sm text-n-amber-12 outline outline-1 -outline-offset-1 outline-n-amber-5"
             >
               <div class="flex gap-2">
                 <i class="i-lucide-triangle-alert mt-0.5" />
-                <p>
+                <p class="m-0">
                   {{ $t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.LOAD_ERROR') }}
                 </p>
               </div>
             </div>
 
-            <div class="grid grid-cols-1 gap-3 md:grid-cols-4">
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-4">
               <div
                 v-for="card in effectivenessSummaryCards"
                 :key="card.key"
-                class="rounded-xl border border-n-container bg-n-alpha-1 p-4"
+                class="rounded-xl bg-n-solid-2 px-6 py-5 shadow outline outline-1 outline-n-container"
               >
-                <p class="text-xs font-medium text-n-slate-10">
+                <p class="m-0 text-xs font-medium text-n-slate-10">
                   {{ card.label }}
                 </p>
-                <p class="mt-2 text-xl font-semibold text-n-slate-12">
+                <p class="mb-0 mt-2 text-xl font-semibold text-n-slate-12">
                   {{ card.value }}
                 </p>
               </div>
             </div>
 
-            <section class="min-w-0">
+            <section
+              class="min-w-0 rounded-xl bg-n-solid-2 shadow outline outline-1 outline-n-container"
+            >
               <div
-                class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"
+                class="flex flex-col gap-3 px-5 py-4 lg:flex-row lg:items-start lg:justify-between"
               >
                 <div class="flex flex-col gap-1">
-                  <h4 class="text-sm font-semibold text-n-slate-12">
+                  <h4 class="m-0 text-heading-2 text-n-slate-12">
                     {{
                       $t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.TABLE_TITLE')
                     }}
                   </h4>
-                  <p class="text-xs leading-5 text-n-slate-10">
+                  <p class="m-0 text-xs leading-5 text-n-slate-10">
                     {{
                       $t(
                         'CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.TABLE_DESCRIPTION'
@@ -1118,13 +1123,13 @@ const onFilterChange = payload => {
 
               <div
                 v-if="managerRows.length"
-                class="mt-4 overflow-x-auto rounded-xl border border-n-container"
+                class="overflow-x-auto rounded-b-xl border-t border-n-weak"
               >
                 <table class="w-full min-w-[108rem] text-left text-sm">
                   <thead class="bg-n-alpha-1 text-xs text-n-slate-10">
                     <tr>
                       <th
-                        class="sticky left-0 z-10 bg-n-alpha-1 px-4 py-3 font-medium"
+                        class="sticky left-0 z-10 bg-n-alpha-1 px-5 py-3 font-medium"
                       >
                         {{
                           $t(
@@ -1168,7 +1173,7 @@ const onFilterChange = payload => {
                       :key="row.ownerId || 'unassigned'"
                       class="bg-n-solid-2 align-top text-n-slate-11"
                     >
-                      <td class="sticky left-0 z-10 bg-n-solid-2 px-4 py-3">
+                      <td class="sticky left-0 z-10 bg-n-solid-2 px-5 py-3">
                         <div class="flex flex-col">
                           <span class="font-medium text-n-slate-12">
                             {{
@@ -1214,7 +1219,7 @@ const onFilterChange = payload => {
                     class="border-t border-n-container bg-n-alpha-1 font-semibold text-n-slate-12"
                   >
                     <tr>
-                      <td class="sticky left-0 z-10 bg-n-alpha-1 px-4 py-3">
+                      <td class="sticky left-0 z-10 bg-n-alpha-1 px-5 py-3">
                         {{ $t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.TOTAL') }}
                       </td>
                       <td
@@ -1244,31 +1249,31 @@ const onFilterChange = payload => {
 
               <p
                 v-else
-                class="mt-4 rounded-xl bg-n-alpha-1 p-6 text-center text-sm text-n-slate-10"
+                class="m-0 border-t border-n-weak px-5 py-6 text-center text-sm text-n-slate-10"
               >
                 {{ $t('REPORT.NO_ENOUGH_DATA') }}
               </p>
             </section>
 
             <section
-              class="rounded-xl border border-n-container bg-n-alpha-1 p-4"
+              class="rounded-xl bg-n-alpha-1 p-4 outline outline-1 -outline-offset-1 outline-n-weak"
             >
               <div class="flex gap-3">
                 <i class="i-lucide-info mt-0.5 text-n-blue-10" />
                 <div class="space-y-1 text-xs leading-5 text-n-slate-10">
-                  <p>
+                  <p class="m-0">
                     {{
                       $t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.NOTES.LEADS')
                     }}
                   </p>
-                  <p>
+                  <p class="m-0">
                     {{
                       $t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.NOTES.CALLS', {
                         seconds: callDurationThresholdSeconds,
                       })
                     }}
                   </p>
-                  <p>
+                  <p class="m-0">
                     {{
                       $t(
                         'CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.NOTES.MEETINGS'
@@ -1282,13 +1287,15 @@ const onFilterChange = payload => {
 
           <div
             v-else-if="activeSection === 'forecast'"
-            class="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]"
+            class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]"
           >
-            <section class="min-w-0">
-              <h4 class="text-sm font-semibold text-n-slate-12">
+            <section
+              class="min-w-0 rounded-xl bg-n-solid-2 px-6 py-5 shadow outline outline-1 outline-n-container"
+            >
+              <h4 class="m-0 text-heading-2 text-n-slate-12">
                 {{ $t('CRM_DEAL_REPORTS.CHARTS.FORECAST_AMOUNT.TITLE') }}
               </h4>
-              <p class="mt-1 text-xs leading-5 text-n-slate-10">
+              <p class="mb-0 mt-1 text-xs leading-5 text-n-slate-10">
                 {{ $t('CRM_DEAL_REPORTS.CHARTS.FORECAST_AMOUNT.DESCRIPTION') }}
               </p>
               <div class="mt-4 h-80">
@@ -1299,7 +1306,7 @@ const onFilterChange = payload => {
                 />
                 <p
                   v-else
-                  class="flex h-full items-center justify-center text-sm text-n-slate-10"
+                  class="m-0 flex h-full items-center justify-center text-sm text-n-slate-10"
                 >
                   {{ $t('REPORT.NO_ENOUGH_DATA') }}
                 </p>
@@ -1307,31 +1314,35 @@ const onFilterChange = payload => {
             </section>
 
             <aside class="flex flex-col gap-4">
-              <div class="min-w-0">
-                <h4 class="text-sm font-semibold text-n-slate-12">
+              <div
+                class="min-w-0 rounded-xl bg-n-solid-2 px-6 py-5 shadow outline outline-1 outline-n-container"
+              >
+                <h4 class="m-0 text-heading-2 text-n-slate-12">
                   {{ $t('CRM_DEAL_REPORTS.LABELS.FORECAST_HEALTH') }}
                 </h4>
-                <div class="mt-4 space-y-3">
+                <div class="mt-4 flex flex-col divide-y divide-n-weak">
                   <div
                     v-for="item in forecastSummaryCards"
                     :key="item.key"
-                    class="rounded-lg bg-n-alpha-1 px-3 py-2"
+                    class="py-2 first:pt-0 last:pb-0"
                   >
-                    <p class="text-xs text-n-slate-10">
+                    <p class="m-0 text-xs text-n-slate-10">
                       {{ item.label }}
                     </p>
-                    <p class="mt-1 text-sm font-semibold text-n-slate-12">
+                    <p class="mb-0 mt-1 text-sm font-semibold text-n-slate-12">
                       {{ item.value }}
                     </p>
                   </div>
                 </div>
               </div>
 
-              <div class="min-w-0">
-                <h4 class="text-sm font-semibold text-n-slate-12">
+              <div
+                class="min-w-0 rounded-xl bg-n-solid-2 px-6 py-5 shadow outline outline-1 outline-n-container"
+              >
+                <h4 class="m-0 text-heading-2 text-n-slate-12">
                   {{ $t('CRM_DEAL_REPORTS.CHARTS.WON_LOST.TITLE') }}
                 </h4>
-                <p class="mt-1 text-xs leading-5 text-n-slate-10">
+                <p class="mb-0 mt-1 text-xs leading-5 text-n-slate-10">
                   {{ $t('CRM_DEAL_REPORTS.CHARTS.WON_LOST.DESCRIPTION') }}
                 </p>
                 <div class="mt-4 h-52">
@@ -1342,7 +1353,7 @@ const onFilterChange = payload => {
                   />
                   <p
                     v-else
-                    class="flex h-full items-center justify-center text-sm text-n-slate-10"
+                    class="m-0 flex h-full items-center justify-center text-sm text-n-slate-10"
                   >
                     {{ $t('REPORT.NO_ENOUGH_DATA') }}
                   </p>
@@ -1353,13 +1364,15 @@ const onFilterChange = payload => {
 
           <div
             v-else-if="activeSection === 'sources'"
-            class="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-[24rem_minmax(0,1fr)]"
+            class="grid grid-cols-1 gap-4 xl:grid-cols-[24rem_minmax(0,1fr)]"
           >
-            <section class="min-w-0">
-              <h4 class="text-sm font-semibold text-n-slate-12">
+            <section
+              class="min-w-0 rounded-xl bg-n-solid-2 px-6 py-5 shadow outline outline-1 outline-n-container"
+            >
+              <h4 class="m-0 text-heading-2 text-n-slate-12">
                 {{ $t('CRM_DEAL_REPORTS.CHARTS.SOURCE_MIX.TITLE') }}
               </h4>
-              <p class="mt-1 text-xs leading-5 text-n-slate-10">
+              <p class="mb-0 mt-1 text-xs leading-5 text-n-slate-10">
                 {{ $t('CRM_DEAL_REPORTS.CHARTS.SOURCE_MIX.DESCRIPTION') }}
               </p>
               <div class="relative mt-4 h-80">
@@ -1381,19 +1394,21 @@ const onFilterChange = payload => {
                 </div>
                 <p
                   v-else
-                  class="flex h-full items-center justify-center text-sm text-n-slate-10"
+                  class="m-0 flex h-full items-center justify-center text-sm text-n-slate-10"
                 >
                   {{ $t('REPORT.NO_ENOUGH_DATA') }}
                 </p>
               </div>
             </section>
 
-            <section class="min-w-0">
+            <section
+              class="min-w-0 rounded-xl bg-n-solid-2 px-6 py-5 shadow outline outline-1 outline-n-container"
+            >
               <div class="flex flex-col gap-1">
-                <h4 class="text-sm font-semibold text-n-slate-12">
+                <h4 class="m-0 text-heading-2 text-n-slate-12">
                   {{ $t('CRM_DEAL_REPORTS.TABLES.SOURCE.TITLE') }}
                 </h4>
-                <p class="text-xs leading-5 text-n-slate-10">
+                <p class="m-0 text-xs leading-5 text-n-slate-10">
                   {{ $t('CRM_DEAL_REPORTS.CHARTS.SOURCE.DESCRIPTION') }}
                 </p>
               </div>
@@ -1407,17 +1422,17 @@ const onFilterChange = payload => {
                   />
                   <p
                     v-else
-                    class="flex h-full items-center justify-center text-sm text-n-slate-10"
+                    class="m-0 flex h-full items-center justify-center text-sm text-n-slate-10"
                   >
                     {{ $t('REPORT.NO_ENOUGH_DATA') }}
                   </p>
                 </div>
 
-                <div class="space-y-3">
+                <div class="flex flex-col divide-y divide-n-weak">
                   <div
                     v-for="source in sourceRows"
                     :key="source.source"
-                    class="rounded-xl bg-n-alpha-1 p-3"
+                    class="py-3 first:pt-0 last:pb-0"
                   >
                     <div class="flex items-start justify-between gap-3">
                       <div class="min-w-0">
@@ -1427,12 +1442,12 @@ const onFilterChange = payload => {
                             :style="{ backgroundColor: source.color }"
                           />
                           <p
-                            class="truncate text-sm font-medium text-n-slate-12"
+                            class="mb-0 truncate text-sm font-medium text-n-slate-12"
                           >
                             {{ source.label }}
                           </p>
                         </div>
-                        <p class="mt-1 text-xs text-n-slate-10">
+                        <p class="mb-0 mt-1 text-xs text-n-slate-10">
                           {{
                             $t('CRM_DEAL_REPORTS.TABLES.SOURCE.ROW_HELPER', {
                               won: formatNumber(source.wonCount),
@@ -1443,10 +1458,10 @@ const onFilterChange = payload => {
                         </p>
                       </div>
                       <div class="text-right">
-                        <p class="text-sm font-semibold text-n-slate-12">
+                        <p class="mb-0 text-sm font-semibold text-n-slate-12">
                           {{ formatPercent(source.share) }}
                         </p>
-                        <p class="text-xs text-n-slate-10">
+                        <p class="mb-0 text-xs text-n-slate-10">
                           {{ formatMoney(source.wonAmountMinor) }}
                         </p>
                       </div>
@@ -1466,12 +1481,14 @@ const onFilterChange = payload => {
             </section>
           </div>
 
-          <div v-else class="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-2">
-            <section class="min-w-0">
-              <h4 class="text-sm font-semibold text-n-slate-12">
+          <div v-else class="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <section
+              class="min-w-0 rounded-xl bg-n-solid-2 px-6 py-5 shadow outline outline-1 outline-n-container"
+            >
+              <h4 class="m-0 text-heading-2 text-n-slate-12">
                 {{ $t('CRM_DEAL_REPORTS.CHARTS.OWNER_AMOUNT.TITLE') }}
               </h4>
-              <p class="mt-1 text-xs leading-5 text-n-slate-10">
+              <p class="mb-0 mt-1 text-xs leading-5 text-n-slate-10">
                 {{ $t('CRM_DEAL_REPORTS.CHARTS.OWNER_AMOUNT.DESCRIPTION') }}
               </p>
               <div class="mt-4 h-72">
@@ -1482,24 +1499,26 @@ const onFilterChange = payload => {
                 />
                 <p
                   v-else
-                  class="flex h-full items-center justify-center text-sm text-n-slate-10"
+                  class="m-0 flex h-full items-center justify-center text-sm text-n-slate-10"
                 >
                   {{ $t('REPORT.NO_ENOUGH_DATA') }}
                 </p>
               </div>
 
-              <div class="mt-4 space-y-3">
+              <div class="mt-4 flex flex-col">
                 <div
                   v-for="owner in ownerRows"
                   :key="owner.ownerId || owner.label"
-                  class="rounded-xl bg-n-alpha-1 p-3"
+                  class="border-t border-n-weak py-3 last:pb-0"
                 >
                   <div class="flex items-start justify-between gap-3">
                     <div class="min-w-0">
-                      <p class="truncate text-sm font-medium text-n-slate-12">
+                      <p
+                        class="mb-0 truncate text-sm font-medium text-n-slate-12"
+                      >
                         {{ owner.label }}
                       </p>
-                      <p class="mt-1 text-xs text-n-slate-10">
+                      <p class="mb-0 mt-1 text-xs text-n-slate-10">
                         {{
                           $t('CRM_DEAL_REPORTS.TABLES.TEAM.ROW_HELPER', {
                             deals: formatNumber(owner.dealCount),
@@ -1509,7 +1528,7 @@ const onFilterChange = payload => {
                         }}
                       </p>
                     </div>
-                    <p class="text-sm font-semibold text-n-slate-12">
+                    <p class="mb-0 text-sm font-semibold text-n-slate-12">
                       {{ owner.amountLabel }}
                     </p>
                   </div>
@@ -1523,24 +1542,26 @@ const onFilterChange = payload => {
               </div>
             </section>
 
-            <section class="min-w-0">
-              <h4 class="text-sm font-semibold text-n-slate-12">
+            <section
+              class="min-w-0 rounded-xl bg-n-solid-2 px-6 py-5 shadow outline outline-1 outline-n-container"
+            >
+              <h4 class="m-0 text-heading-2 text-n-slate-12">
                 {{ $t('CRM_DEAL_REPORTS.CHARTS.AGING.TITLE') }}
               </h4>
-              <p class="mt-1 text-xs leading-5 text-n-slate-10">
+              <p class="mb-0 mt-1 text-xs leading-5 text-n-slate-10">
                 {{ $t('CRM_DEAL_REPORTS.CHARTS.AGING.DESCRIPTION') }}
               </p>
-              <div class="mt-4 space-y-3">
+              <div class="mt-4 flex flex-col divide-y divide-n-weak">
                 <div
                   v-for="bucket in agingRows"
                   :key="bucket.key"
-                  class="rounded-xl bg-n-alpha-1 p-3"
+                  class="py-3 first:pt-0 last:pb-0"
                 >
                   <div class="flex items-center justify-between gap-3">
-                    <p class="text-sm font-medium text-n-slate-12">
+                    <p class="mb-0 text-sm font-medium text-n-slate-12">
                       {{ bucket.label }}
                     </p>
-                    <p class="text-sm font-semibold text-n-slate-12">
+                    <p class="mb-0 text-sm font-semibold text-n-slate-12">
                       {{ formatNumber(bucket.dealCount) }}
                     </p>
                   </div>

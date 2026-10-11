@@ -2499,12 +2499,14 @@ export default {
               class="mt-6"
             >
               <div class="space-y-4">
-                <p class="text-body-main text-n-slate-11">
+                <p class="mb-0 text-body-main text-n-slate-11">
                   {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.SUBTITLE') }}
                 </p>
 
                 <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                  <div class="rounded-xl border border-n-strong p-4">
+                  <div
+                    class="rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
+                  >
                     <p class="mb-3 text-sm font-medium text-n-slate-12">
                       {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.CONNECTION_STATE') }}
                     </p>
@@ -2561,7 +2563,7 @@ export default {
                         }}
                       </p>
                       <p v-if="whatsappWebEvolutionState.last_error">
-                        <span class="font-medium text-rose-600">{{
+                        <span class="font-medium text-n-ruby-11">{{
                           $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.LAST_ERROR')
                         }}</span>
                         {{ whatsappWebEvolutionState.last_error }}
@@ -2572,7 +2574,7 @@ export default {
                   <div class="space-y-4">
                     <div
                       v-if="shouldShowWhatsappWebQrPreview"
-                      class="rounded-xl border border-n-strong p-4"
+                      class="rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
                     >
                       <p class="mb-3 text-sm font-medium text-n-slate-12">
                         {{
@@ -2586,9 +2588,7 @@ export default {
                           v-if="whatsappWebDisplayQrCode"
                           class="flex flex-col items-center gap-3"
                         >
-                          <div
-                            class="rounded-2xl border border-n-strong bg-white p-3"
-                          >
+                          <div class="rounded-lg bg-white p-3">
                             <img
                               :src="whatsappWebDisplayQrCode"
                               :alt="
@@ -2601,12 +2601,9 @@ export default {
                           </div>
                         </div>
                         <div class="flex-1 space-y-3">
-                          <div
-                            v-if="formattedWhatsappWebPairingCode"
-                            class="rounded-2xl border border-[#25D366]/30 bg-[#25D366]/5 px-4 py-3"
-                          >
+                          <div v-if="formattedWhatsappWebPairingCode">
                             <p
-                              class="mb-2 text-xs font-medium uppercase tracking-[0.12em] text-n-slate-10"
+                              class="mb-1 text-xs font-medium uppercase tracking-[0.12em] text-n-slate-10"
                             >
                               {{
                                 $t(
@@ -2615,12 +2612,12 @@ export default {
                               }}
                             </p>
                             <p
-                              class="font-mono text-2xl font-semibold tracking-[0.22em] text-n-slate-12"
+                              class="mb-0 font-mono text-2xl font-semibold tracking-[0.22em] text-n-teal-11"
                             >
                               {{ formattedWhatsappWebPairingCode }}
                             </p>
                           </div>
-                          <p class="text-sm leading-6 text-n-slate-10">
+                          <p class="mb-0 text-sm leading-6 text-n-slate-11">
                             {{
                               $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.QR_PREVIEW_HINT')
                             }}
@@ -2629,7 +2626,9 @@ export default {
                       </div>
                     </div>
 
-                    <div class="rounded-xl border border-n-strong p-4">
+                    <div
+                      class="rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
+                    >
                       <p class="mb-3 text-sm font-medium text-n-slate-12">
                         {{
                           $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.OPERATOR_ACTIONS')
@@ -2670,14 +2669,16 @@ export default {
                           @click="disconnectWhatsappWeb"
                         />
                       </div>
-                      <p class="mt-3 text-sm text-n-slate-10">
+                      <p class="mb-0 mt-3 text-sm text-n-slate-11">
                         {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.RECOVER_HINT') }}
                       </p>
                     </div>
                   </div>
                 </div>
 
-                <div class="rounded-xl border border-n-strong p-4">
+                <div
+                  class="rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
+                >
                   <p class="mb-3 text-sm font-medium text-n-slate-12">
                     {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.NATIVE_SETTINGS') }}
                   </p>
@@ -2698,7 +2699,7 @@ export default {
                           class="w-full"
                           :options="enabledDisabledOptions"
                         />
-                        <p class="mt-1 text-sm text-n-slate-10">
+                        <p class="mb-0 mt-1 text-body-main text-n-slate-11">
                           {{
                             $t(
                               'INBOX_MGMT.EDIT.WHATSAPP_WEB.CONVERSATION_PENDING_HINT'
@@ -2724,7 +2725,7 @@ export default {
                           min="0"
                           max="3650"
                         />
-                        <p class="mt-1 text-sm text-n-slate-10">
+                        <p class="mb-0 mt-1 text-body-main text-n-slate-11">
                           {{
                             $t(
                               'INBOX_MGMT.EDIT.WHATSAPP_WEB.HISTORY_LOOKBACK_DAYS_HINT'
@@ -2744,7 +2745,7 @@ export default {
                           class="mb-0 min-h-[112px] w-full resize-y rounded-lg border-0 bg-n-surface-1 px-3 py-2 text-sm text-n-slate-12 outline outline-1 outline-offset-[-1px] outline-n-weak focus:outline-n-brand"
                           :placeholder="whatsappWebIgnoreJidsPlaceholder"
                         />
-                        <p class="mt-1 text-sm text-n-slate-10">
+                        <p class="mb-0 mt-1 text-body-main text-n-slate-11">
                           {{
                             $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.IGNORE_JIDS_HINT')
                           }}
@@ -2827,7 +2828,7 @@ export default {
                             )
                           "
                         />
-                        <p class="mt-1 text-sm text-n-slate-10">
+                        <p class="mb-0 mt-1 text-body-main text-n-slate-11">
                           {{
                             $t(
                               'INBOX_MGMT.EDIT.WHATSAPP_WEB.SIGN_DELIMITER_HINT'
@@ -2839,9 +2840,11 @@ export default {
                   </div>
                 </div>
 
-                <div class="border-t border-n-weak pt-4">
+                <div
+                  class="rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
+                >
                   <div class="flex items-center justify-between gap-3">
-                    <p class="text-sm font-medium text-n-slate-12">
+                    <p class="mb-0 text-sm font-medium text-n-slate-12">
                       {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.DIAGNOSTICS') }}
                     </p>
                     <span
@@ -2854,8 +2857,10 @@ export default {
                       {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.REFRESHING') }}
                     </span>
                   </div>
-                  <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
-                    <div class="rounded-lg bg-n-alpha-2 p-3">
+                  <div
+                    class="mt-4 grid grid-cols-1 gap-4 border-t border-n-weak pt-4 md:grid-cols-3 [&_p]:mb-0"
+                  >
+                    <div>
                       <p
                         class="text-xs uppercase tracking-wide text-n-slate-10"
                       >
@@ -2872,7 +2877,7 @@ export default {
                         }}
                       </p>
                     </div>
-                    <div class="rounded-lg bg-n-alpha-2 p-3">
+                    <div>
                       <p
                         class="text-xs uppercase tracking-wide text-n-slate-10"
                       >
@@ -2889,7 +2894,7 @@ export default {
                         }}
                       </p>
                     </div>
-                    <div class="rounded-lg bg-n-alpha-2 p-3">
+                    <div>
                       <p
                         class="text-xs uppercase tracking-wide text-n-slate-10"
                       >
@@ -2912,7 +2917,7 @@ export default {
                       whatsappWebDiagnostics?.samples?.provisional_contacts
                         ?.length
                     "
-                    class="mt-4"
+                    class="mt-4 divide-y divide-n-weak border-t border-n-weak pt-4"
                   >
                     <p class="mb-2 text-sm font-medium text-n-slate-12">
                       {{
@@ -2925,26 +2930,26 @@ export default {
                       v-for="contact in whatsappWebDiagnostics.samples
                         .provisional_contacts"
                       :key="contact.id"
-                      class="mb-2 rounded-lg border border-n-strong p-3 text-sm text-n-slate-11"
+                      class="py-3 text-sm text-n-slate-11 last:pb-0"
                     >
-                      <p class="font-medium text-n-slate-12">
+                      <p class="mb-0 font-medium text-n-slate-12">
                         {{ contact.name || `Contact #${contact.id}` }}
                       </p>
-                      <p>
+                      <p class="mb-0">
                         {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.RAW_JID') }}
                         {{
                           contact.raw_jid ||
                           $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.NOT_AVAILABLE')
                         }}
                       </p>
-                      <p>
+                      <p class="mb-0">
                         {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.CANONICAL_JID') }}
                         {{
                           contact.canonical_jid ||
                           $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.NOT_AVAILABLE')
                         }}
                       </p>
-                      <p>
+                      <p class="mb-0">
                         {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.IDENTIFIER') }}
                         {{
                           contact.identifier ||
@@ -2963,20 +2968,22 @@ export default {
               class="mt-6"
             >
               <div class="space-y-4">
-                <p class="text-body-main text-n-slate-11">
+                <p class="mb-0 text-body-main text-n-slate-11">
                   {{ $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.SUBTITLE') }}
                 </p>
 
                 <div class="grid grid-cols-1 gap-4 xl:grid-cols-3">
-                  <div class="min-w-0 xl:col-span-2">
+                  <div
+                    class="min-w-0 rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak xl:col-span-2"
+                  >
                     <div
                       class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"
                     >
                       <div>
-                        <p class="text-sm font-medium text-n-slate-12">
+                        <p class="mb-0 text-sm font-medium text-n-slate-12">
                           {{ $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.OVERVIEW') }}
                         </p>
-                        <p class="mt-1 text-sm text-n-slate-10">
+                        <p class="mb-0 mt-1 text-sm text-n-slate-11">
                           {{
                             $t(
                               'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.OVERVIEW_SUBTITLE'
@@ -3000,10 +3007,10 @@ export default {
                       </span>
                     </div>
 
-                    <div class="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2">
-                      <div
-                        class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
-                      >
+                    <div
+                      class="mt-4 grid grid-cols-1 gap-4 border-t border-n-weak pt-4 md:grid-cols-2 [&_p]:mb-0"
+                    >
+                      <div>
                         <div class="flex items-start justify-between gap-3">
                           <div>
                             <p
@@ -3036,9 +3043,7 @@ export default {
                         </div>
                       </div>
 
-                      <div
-                        class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
-                      >
+                      <div>
                         <div class="flex items-start justify-between gap-3">
                           <div>
                             <p
@@ -3068,9 +3073,7 @@ export default {
                         </div>
                       </div>
 
-                      <div
-                        class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
-                      >
+                      <div>
                         <div class="flex items-start justify-between gap-3">
                           <div>
                             <p
@@ -3100,9 +3103,7 @@ export default {
                         </div>
                       </div>
 
-                      <div
-                        class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
-                      >
+                      <div>
                         <div class="flex items-start justify-between gap-3">
                           <div>
                             <p
@@ -3133,24 +3134,26 @@ export default {
 
                     <div
                       v-if="telegramPersonalLastError"
-                      class="mt-4 rounded-xl border border-n-ruby-8 bg-n-ruby-9/10 p-4"
+                      class="mt-4 border-t border-n-weak pt-4"
                     >
-                      <p class="text-sm font-medium text-n-ruby-11">
+                      <p class="mb-0 text-sm font-medium text-n-ruby-11">
                         {{ $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.LAST_ERROR') }}
                       </p>
-                      <p class="mt-1 text-sm text-n-ruby-11">
+                      <p class="mb-0 mt-1 text-sm text-n-ruby-11">
                         {{ telegramPersonalLastError }}
                       </p>
                     </div>
                   </div>
 
-                  <div class="rounded-2xl border border-n-strong p-5">
-                    <p class="text-sm font-medium text-n-slate-12">
+                  <div
+                    class="rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
+                  >
+                    <p class="mb-0 text-sm font-medium text-n-slate-12">
                       {{
                         $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.SERVICE_CONTROLS')
                       }}
                     </p>
-                    <p class="mt-1 text-sm text-n-slate-10">
+                    <p class="mb-0 mt-1 text-sm text-n-slate-11">
                       {{
                         $t(
                           'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.SERVICE_CONTROLS_SUBTITLE'
@@ -3185,30 +3188,28 @@ export default {
                       />
                     </div>
 
-                    <div class="mt-4 rounded-xl bg-n-alpha-2 p-4">
-                      <p class="text-sm text-n-slate-10">
-                        {{
-                          $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.AUTO_SYNC_HINT')
-                        }}
-                      </p>
-                    </div>
+                    <p class="mb-0 mt-4 text-sm text-n-slate-11">
+                      {{
+                        $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.AUTO_SYNC_HINT')
+                      }}
+                    </p>
                   </div>
                 </div>
 
                 <div
                   v-if="!isTelegramPersonalConnected"
-                  class="rounded-2xl border border-n-strong p-5"
+                  class="rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
                 >
                   <div
                     class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"
                   >
                     <div>
-                      <p class="text-sm font-medium text-n-slate-12">
+                      <p class="mb-0 text-sm font-medium text-n-slate-12">
                         {{
                           $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.ACCESS_SECTION')
                         }}
                       </p>
-                      <p class="mt-1 text-sm text-n-slate-10">
+                      <p class="mb-0 mt-1 text-sm text-n-slate-11">
                         {{
                           $t(
                             'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.ACCESS_SECTION_SUBTITLE'
@@ -3232,16 +3233,16 @@ export default {
                     </span>
                   </div>
 
-                  <div class="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
-                    <div
-                      class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
-                    >
-                      <p class="text-sm font-medium text-n-slate-12">
+                  <div
+                    class="mt-4 grid grid-cols-1 gap-6 border-t border-n-weak pt-4 lg:grid-cols-2"
+                  >
+                    <div>
+                      <p class="mb-0 text-sm font-medium text-n-slate-12">
                         {{ $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.CODE_LOGIN') }}
                       </p>
 
                       <template v-if="shouldShowTelegramPersonalCodeRequest">
-                        <p class="mt-2 text-sm text-n-slate-10">
+                        <p class="mb-0 mt-2 text-sm text-n-slate-11">
                           {{
                             $t(
                               'INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.REQUEST_CODE_HINT'
@@ -3276,7 +3277,7 @@ export default {
                             )
                           "
                         />
-                        <p class="mt-2 text-sm text-n-slate-10">
+                        <p class="mb-0 mt-2 text-sm text-n-slate-11">
                           {{
                             $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.CODE_HINT')
                           }}
@@ -3296,19 +3297,17 @@ export default {
                       </template>
                     </div>
 
-                    <div
-                      class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
-                    >
+                    <div>
                       <template v-if="!isTelegramPersonalPasswordRequired">
-                        <p class="text-sm font-medium text-n-slate-12">
+                        <p class="mb-0 text-sm font-medium text-n-slate-12">
                           {{ $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.QR_LOGIN') }}
                         </p>
-                        <p class="mt-2 text-sm text-n-slate-10">
+                        <p class="mb-0 mt-2 text-sm text-n-slate-11">
                           {{ $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.QR_HINT') }}
                         </p>
                         <div
                           v-if="telegramPersonalQrCode"
-                          class="mt-4 flex items-center justify-center rounded-2xl bg-white p-4"
+                          class="mt-4 flex items-center justify-center"
                         >
                           <img
                             :src="telegramPersonalQrCode"
@@ -3317,18 +3316,18 @@ export default {
                                 'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.QR_IMAGE_ALT'
                               )
                             "
-                            class="h-auto w-full max-w-[14rem]"
+                            class="h-auto w-full max-w-[14rem] rounded-lg bg-white p-3"
                           />
                         </div>
                         <div
                           v-else
-                          class="mt-4 rounded-2xl border border-dashed border-n-strong px-4 py-8 text-center text-sm text-n-slate-10"
+                          class="mt-4 px-4 py-8 text-center text-sm text-n-slate-11"
                         >
                           {{ $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.QR_EMPTY') }}
                         </div>
                         <p
                           v-if="telegramPersonalQrExpiresAt"
-                          class="mt-3 text-xs text-n-slate-10"
+                          class="mb-0 mt-3 text-xs text-n-slate-11"
                         >
                           {{
                             $t(
@@ -3353,7 +3352,7 @@ export default {
                       </template>
 
                       <template v-else>
-                        <p class="text-sm font-medium text-n-slate-12">
+                        <p class="mb-0 text-sm font-medium text-n-slate-12">
                           {{
                             $t(
                               'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.PASSWORD_LABEL'
@@ -3371,7 +3370,7 @@ export default {
                             )
                           "
                         />
-                        <p class="mt-2 text-sm text-n-slate-10">
+                        <p class="mb-0 mt-2 text-sm text-n-slate-11">
                           {{
                             $t(
                               'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.PASSWORD_HINT'
@@ -3397,17 +3396,19 @@ export default {
                   </div>
                 </div>
 
-                <div class="border-t border-n-weak pt-4">
+                <div
+                  class="rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
+                >
                   <div
                     class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"
                   >
                     <div>
-                      <p class="text-sm font-medium text-n-slate-12">
+                      <p class="mb-0 text-sm font-medium text-n-slate-12">
                         {{
                           $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.IMPORT_SECTION')
                         }}
                       </p>
-                      <p class="mt-1 text-sm text-n-slate-10">
+                      <p class="mb-0 mt-1 text-sm text-n-slate-11">
                         {{
                           $t(
                             'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.IMPORT_SECTION_SUBTITLE'
@@ -3447,10 +3448,10 @@ export default {
                     </div>
                   </div>
 
-                  <div class="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <div
-                      class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
-                    >
+                  <div
+                    class="mt-4 grid grid-cols-1 gap-4 border-t border-n-weak pt-4 md:grid-cols-2 [&_p]:mb-0"
+                  >
+                    <div>
                       <p
                         class="text-xs uppercase tracking-wide text-n-slate-10"
                       >
@@ -3468,9 +3469,7 @@ export default {
                         }}
                       </p>
                     </div>
-                    <div
-                      class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
-                    >
+                    <div>
                       <p
                         class="text-xs uppercase tracking-wide text-n-slate-10"
                       >
@@ -3484,9 +3483,7 @@ export default {
                         {{ telegramPersonalHistorySyncCount }}
                       </p>
                     </div>
-                    <div
-                      class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
-                    >
+                    <div>
                       <p
                         class="text-xs uppercase tracking-wide text-n-slate-10"
                       >
@@ -3504,9 +3501,7 @@ export default {
                         }}
                       </p>
                     </div>
-                    <div
-                      class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
-                    >
+                    <div>
                       <p
                         class="text-xs uppercase tracking-wide text-n-slate-10"
                       >
@@ -3522,7 +3517,7 @@ export default {
                     </div>
                   </div>
 
-                  <div class="mt-5 flex flex-wrap gap-2">
+                  <div class="mt-4 flex flex-wrap gap-2">
                     <NextButton
                       class="w-full sm:w-auto"
                       outline
@@ -3564,19 +3559,21 @@ export default {
                   </div>
                 </div>
 
-                <div class="rounded-2xl border border-n-strong p-5">
+                <div
+                  class="rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
+                >
                   <div
                     class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"
                   >
                     <div>
-                      <p class="text-sm font-medium text-n-slate-12">
+                      <p class="mb-0 text-sm font-medium text-n-slate-12">
                         {{
                           $t(
                             'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.IGNORED_CHATS_SECTION'
                           )
                         }}
                       </p>
-                      <p class="mt-1 text-sm text-n-slate-10">
+                      <p class="mb-0 mt-1 text-sm text-n-slate-11">
                         {{
                           $t(
                             'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.IGNORED_CHATS_SECTION_SUBTITLE'
@@ -3596,7 +3593,7 @@ export default {
                     </span>
                   </div>
 
-                  <div class="mt-5 flex flex-col gap-3 sm:flex-row">
+                  <div class="mt-4 flex flex-col gap-3 sm:flex-row">
                     <input
                       v-model="telegramPersonalIgnoredChatId"
                       class="!mb-0 min-w-0 flex-1 rounded-lg border-0 bg-n-surface-1 px-3 py-2 text-sm text-n-slate-12 outline outline-1 outline-offset-[-1px] outline-n-weak focus:outline-n-brand"
@@ -3638,7 +3635,7 @@ export default {
                       <span class="break-all font-mono">{{ chatId }}</span>
                       <button
                         type="button"
-                        class="inline-flex size-5 shrink-0 items-center justify-center rounded-md text-n-slate-10 hover:bg-n-alpha-2 hover:text-n-ruby-11 disabled:cursor-not-allowed disabled:opacity-50"
+                        class="inline-flex size-5 shrink-0 items-center justify-center rounded-md p-0 text-n-slate-10 hover:bg-n-alpha-2 hover:text-n-ruby-11 disabled:cursor-not-allowed disabled:opacity-50"
                         :disabled="isSavingTelegramPersonalIgnoredChats"
                         :aria-label="
                           $t(
@@ -3652,7 +3649,7 @@ export default {
                       </button>
                     </span>
                   </div>
-                  <p v-else class="mt-4 text-sm text-n-slate-10">
+                  <p v-else class="mb-0 mt-4 text-sm text-n-slate-11">
                     {{
                       $t(
                         'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.IGNORED_CHATS_EMPTY'
@@ -3661,17 +3658,19 @@ export default {
                   </p>
                 </div>
 
-                <div class="border-t border-n-weak pt-4">
+                <div
+                  class="rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
+                >
                   <div class="flex items-start justify-between gap-3">
                     <div>
-                      <p class="text-sm font-medium text-n-slate-12">
+                      <p class="mb-0 text-sm font-medium text-n-slate-12">
                         {{
                           $t(
                             'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.DIAGNOSTICS_SECTION'
                           )
                         }}
                       </p>
-                      <p class="mt-1 text-sm text-n-slate-10">
+                      <p class="mb-0 mt-1 text-sm text-n-slate-11">
                         {{
                           $t(
                             'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.DIAGNOSTICS_SECTION_SUBTITLE'
@@ -3721,10 +3720,10 @@ export default {
                     </div>
                   </div>
 
-                  <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-                    <div
-                      class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
-                    >
+                  <div
+                    class="mt-4 grid grid-cols-1 gap-4 border-t border-n-weak pt-4 md:grid-cols-3 [&_p]:mb-0"
+                  >
+                    <div>
                       <p
                         class="text-xs uppercase tracking-wide text-n-slate-10"
                       >
@@ -3738,9 +3737,7 @@ export default {
                         }}
                       </p>
                     </div>
-                    <div
-                      class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
-                    >
+                    <div>
                       <p
                         class="text-xs uppercase tracking-wide text-n-slate-10"
                       >
@@ -3757,9 +3754,7 @@ export default {
                         }}
                       </p>
                     </div>
-                    <div
-                      class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
-                    >
+                    <div>
                       <p
                         class="text-xs uppercase tracking-wide text-n-slate-10"
                       >
@@ -3793,7 +3788,7 @@ export default {
                       lang="text"
                       :script="telegramPersonalDiagnosticsJson"
                     />
-                    <p v-else class="text-sm text-n-slate-10">
+                    <p v-else class="mb-0 text-sm text-n-slate-11">
                       {{
                         $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.NOT_AVAILABLE')
                       }}
@@ -3809,20 +3804,22 @@ export default {
               class="mt-6"
             >
               <div class="space-y-4">
-                <p class="text-body-main text-n-slate-11">
+                <p class="mb-0 text-body-main text-n-slate-11">
                   {{ $t('INBOX_MGMT.EDIT.WEIXIN.SUBTITLE') }}
                 </p>
 
                 <div class="grid grid-cols-1 gap-4 xl:grid-cols-3">
-                  <div class="min-w-0 xl:col-span-2">
+                  <div
+                    class="min-w-0 rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak xl:col-span-2"
+                  >
                     <div
                       class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"
                     >
                       <div>
-                        <p class="text-sm font-medium text-n-slate-12">
+                        <p class="mb-0 text-sm font-medium text-n-slate-12">
                           {{ $t('INBOX_MGMT.EDIT.WEIXIN.OVERVIEW') }}
                         </p>
-                        <p class="mt-1 text-sm text-n-slate-10">
+                        <p class="mb-0 mt-1 text-sm text-n-slate-11">
                           {{ $t('INBOX_MGMT.EDIT.WEIXIN.OVERVIEW_SUBTITLE') }}
                         </p>
                       </div>
@@ -3834,10 +3831,10 @@ export default {
                       </span>
                     </div>
 
-                    <div class="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2">
-                      <div
-                        class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
-                      >
+                    <div
+                      class="mt-4 grid grid-cols-1 gap-4 border-t border-n-weak pt-4 md:grid-cols-2 [&_p]:mb-0"
+                    >
+                      <div>
                         <div class="flex items-start justify-between gap-3">
                           <div>
                             <p
@@ -3862,9 +3859,7 @@ export default {
                         </div>
                       </div>
 
-                      <div
-                        class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
-                      >
+                      <div>
                         <div class="flex items-start justify-between gap-3">
                           <div>
                             <p
@@ -3893,9 +3888,7 @@ export default {
                         </div>
                       </div>
 
-                      <div
-                        class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
-                      >
+                      <div>
                         <div class="flex items-start justify-between gap-3">
                           <div>
                             <p
@@ -3917,9 +3910,7 @@ export default {
                         </div>
                       </div>
 
-                      <div
-                        class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
-                      >
+                      <div>
                         <div class="flex items-start justify-between gap-3">
                           <div>
                             <p
@@ -3944,22 +3935,24 @@ export default {
 
                     <div
                       v-if="weixinLastError"
-                      class="mt-4 rounded-xl border border-n-ruby-8 bg-n-ruby-9/10 p-4"
+                      class="mt-4 border-t border-n-weak pt-4"
                     >
-                      <p class="text-sm font-medium text-n-ruby-11">
+                      <p class="mb-0 text-sm font-medium text-n-ruby-11">
                         {{ $t('INBOX_MGMT.EDIT.WEIXIN.LAST_ERROR') }}
                       </p>
-                      <p class="mt-1 text-sm text-n-ruby-11">
+                      <p class="mb-0 mt-1 text-sm text-n-ruby-11">
                         {{ weixinLastError }}
                       </p>
                     </div>
                   </div>
 
-                  <div class="rounded-2xl border border-n-strong p-5">
-                    <p class="text-sm font-medium text-n-slate-12">
+                  <div
+                    class="rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
+                  >
+                    <p class="mb-0 text-sm font-medium text-n-slate-12">
                       {{ $t('INBOX_MGMT.EDIT.WEIXIN.SERVICE_CONTROLS') }}
                     </p>
-                    <p class="mt-1 text-sm text-n-slate-10">
+                    <p class="mb-0 mt-1 text-sm text-n-slate-11">
                       {{
                         $t('INBOX_MGMT.EDIT.WEIXIN.SERVICE_CONTROLS_SUBTITLE')
                       }}
@@ -3988,26 +3981,24 @@ export default {
                       />
                     </div>
 
-                    <div class="mt-4 rounded-xl bg-n-alpha-2 p-4">
-                      <p class="text-sm text-n-slate-10">
-                        {{ $t('INBOX_MGMT.EDIT.WEIXIN.AUTO_SYNC_HINT') }}
-                      </p>
-                    </div>
+                    <p class="mb-0 mt-4 text-sm text-n-slate-11">
+                      {{ $t('INBOX_MGMT.EDIT.WEIXIN.AUTO_SYNC_HINT') }}
+                    </p>
                   </div>
                 </div>
 
                 <div
                   v-if="!isWeixinConnected"
-                  class="rounded-2xl border border-n-strong p-5"
+                  class="rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
                 >
                   <div
                     class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"
                   >
                     <div>
-                      <p class="text-sm font-medium text-n-slate-12">
+                      <p class="mb-0 text-sm font-medium text-n-slate-12">
                         {{ $t('INBOX_MGMT.EDIT.WEIXIN.ACCESS_SECTION') }}
                       </p>
-                      <p class="mt-1 text-sm text-n-slate-10">
+                      <p class="mb-0 mt-1 text-sm text-n-slate-11">
                         {{
                           $t('INBOX_MGMT.EDIT.WEIXIN.ACCESS_SECTION_SUBTITLE')
                         }}
@@ -4021,34 +4012,32 @@ export default {
                     </span>
                   </div>
 
-                  <div
-                    class="mt-5 rounded-xl border border-n-strong bg-n-alpha-2 p-4"
-                  >
-                    <p class="text-sm font-medium text-n-slate-12">
+                  <div class="mt-4 border-t border-n-weak pt-4">
+                    <p class="mb-0 text-sm font-medium text-n-slate-12">
                       {{ $t('INBOX_MGMT.EDIT.WEIXIN.QR_LOGIN') }}
                     </p>
-                    <p class="mt-2 text-sm text-n-slate-10">
+                    <p class="mb-0 mt-2 text-sm text-n-slate-11">
                       {{ $t('INBOX_MGMT.EDIT.WEIXIN.QR_HINT') }}
                     </p>
                     <div
                       v-if="weixinQrCode"
-                      class="mt-4 flex items-center justify-center rounded-2xl bg-white p-4"
+                      class="mt-4 flex items-center justify-center"
                     >
                       <img
                         :src="weixinQrCode"
                         :alt="$t('INBOX_MGMT.EDIT.WEIXIN.QR_IMAGE_ALT')"
-                        class="h-auto w-full max-w-[14rem]"
+                        class="h-auto w-full max-w-[14rem] rounded-lg bg-white p-3"
                       />
                     </div>
                     <div
                       v-else
-                      class="mt-4 rounded-2xl border border-dashed border-n-strong px-4 py-8 text-center text-sm text-n-slate-10"
+                      class="mt-4 px-4 py-8 text-center text-sm text-n-slate-11"
                     >
                       {{ $t('INBOX_MGMT.EDIT.WEIXIN.QR_EMPTY') }}
                     </div>
                     <p
                       v-if="weixinQrExpiresAt"
-                      class="mt-3 text-xs text-n-slate-10"
+                      class="mb-0 mt-3 text-xs text-n-slate-11"
                     >
                       {{
                         $t('INBOX_MGMT.EDIT.WEIXIN.QR_EXPIRES_AT', {
@@ -4068,13 +4057,15 @@ export default {
                   </div>
                 </div>
 
-                <div class="border-t border-n-weak pt-4">
+                <div
+                  class="rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
+                >
                   <div class="flex items-start justify-between gap-3">
                     <div>
-                      <p class="text-sm font-medium text-n-slate-12">
+                      <p class="mb-0 text-sm font-medium text-n-slate-12">
                         {{ $t('INBOX_MGMT.EDIT.WEIXIN.DIAGNOSTICS_SECTION') }}
                       </p>
-                      <p class="mt-1 text-sm text-n-slate-10">
+                      <p class="mb-0 mt-1 text-sm text-n-slate-11">
                         {{
                           $t(
                             'INBOX_MGMT.EDIT.WEIXIN.DIAGNOSTICS_SECTION_SUBTITLE'
@@ -4116,10 +4107,10 @@ export default {
                     </div>
                   </div>
 
-                  <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
-                    <div
-                      class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
-                    >
+                  <div
+                    class="mt-4 grid grid-cols-1 gap-4 border-t border-n-weak pt-4 md:grid-cols-4 [&_p]:mb-0"
+                  >
+                    <div>
                       <p
                         class="text-xs uppercase tracking-wide text-n-slate-10"
                       >
@@ -4129,9 +4120,7 @@ export default {
                         {{ humanizeWeixinState(weixinAuthState) }}
                       </p>
                     </div>
-                    <div
-                      class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
-                    >
+                    <div>
                       <p
                         class="text-xs uppercase tracking-wide text-n-slate-10"
                       >
@@ -4141,9 +4130,7 @@ export default {
                         {{ humanizeWeixinState(weixinQrLoginState) }}
                       </p>
                     </div>
-                    <div
-                      class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
-                    >
+                    <div>
                       <p
                         class="text-xs uppercase tracking-wide text-n-slate-10"
                       >
@@ -4153,9 +4140,7 @@ export default {
                         {{ formatWeixinDate(weixinLastInboundAt) }}
                       </p>
                     </div>
-                    <div
-                      class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
-                    >
+                    <div>
                       <p
                         class="text-xs uppercase tracking-wide text-n-slate-10"
                       >
@@ -4176,7 +4161,7 @@ export default {
                       lang="text"
                       :script="weixinDiagnosticsJson"
                     />
-                    <p v-else class="text-sm text-n-slate-10">
+                    <p v-else class="mb-0 text-sm text-n-slate-11">
                       {{ $t('INBOX_MGMT.EDIT.WEIXIN.NOT_AVAILABLE') }}
                     </p>
                   </div>
@@ -4190,12 +4175,14 @@ export default {
               class="mt-6"
             >
               <div class="space-y-4">
-                <p class="text-body-main text-n-slate-11">
+                <p class="mb-0 text-body-main text-n-slate-11">
                   {{ $t('INBOX_MGMT.EDIT.VK_COMMUNITY.SUBTITLE') }}
                 </p>
 
                 <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                  <div class="rounded-xl border border-n-strong p-4">
+                  <div
+                    class="rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
+                  >
                     <p class="mb-3 text-sm font-medium text-n-slate-12">
                       {{ $t('INBOX_MGMT.EDIT.VK_COMMUNITY.CALLBACK') }}
                     </p>
@@ -4221,7 +4208,9 @@ export default {
                     </div>
                   </div>
 
-                  <div class="rounded-xl border border-n-strong p-4">
+                  <div
+                    class="rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
+                  >
                     <p class="mb-3 text-sm font-medium text-n-slate-12">
                       {{ $t('INBOX_MGMT.EDIT.VK_COMMUNITY.WEBHOOK_URL') }}
                     </p>
@@ -4229,7 +4218,7 @@ export default {
                       lang="html"
                       :script="inbox.callback_webhook_url"
                     />
-                    <p class="mt-3 text-sm text-n-slate-10">
+                    <p class="mb-0 mt-3 text-sm text-n-slate-11">
                       {{ $t('INBOX_MGMT.EDIT.VK_COMMUNITY.WEBHOOK_HINT') }}
                     </p>
                   </div>
@@ -4604,7 +4593,7 @@ export default {
             </div>
 
             <div
-              class="mt-6 rounded-2xl border border-n-ruby-6 bg-n-ruby-3/20 p-4 sm:p-5"
+              class="mt-6 rounded-xl bg-n-ruby-3/20 p-4 outline outline-1 -outline-offset-1 outline-n-ruby-6"
             >
               <div
                 class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"
@@ -4639,7 +4628,7 @@ export default {
             class="flex-1 sticky top-4 self-start max-w-lg flex-shrink-0 w-full min-w-0"
           >
             <div
-              class="flex flex-col outline -outline-offset-1 outline-1 outline-n-weak w-full px-3 pt-3 pb-8 bg-n-surface-1 rounded-2xl min-h-[45rem] overflow-hidden"
+              class="flex flex-col outline -outline-offset-1 outline-1 outline-n-weak w-full px-3 pt-3 pb-8 bg-n-surface-1 rounded-xl min-h-[45rem] overflow-hidden"
             >
               <Widget
                 :welcome-heading="channelWelcomeTitle"

@@ -1082,7 +1082,7 @@ onMounted(async () => {
           </SchedulingPageHeader>
 
           <div class="min-h-0 flex-1 overflow-auto">
-            <div class="flex min-w-0 flex-col gap-6 px-5 pb-5">
+            <div class="flex min-w-0 flex-col gap-6 px-6 pb-8">
               <section
                 class="min-w-0 overflow-x-auto"
                 data-testid="crm-stage-entry-settings"
@@ -1091,7 +1091,7 @@ onMounted(async () => {
                   <div class="flex min-w-max items-stretch">
                     <article
                       v-if="unsortedStage"
-                      class="flex min-h-44 w-[15rem] shrink-0 flex-col rounded-xl border-t-4 bg-n-slate-2 p-4 shadow-sm"
+                      class="flex min-h-44 w-[15rem] shrink-0 flex-col rounded-xl border-t-4 bg-n-slate-2 p-4 outline outline-1 -outline-offset-1 outline-n-weak"
                       :data-stage-id="unsortedStage.id"
                       :style="stageCardStyle(unsortedStage)"
                     >
@@ -1136,7 +1136,7 @@ onMounted(async () => {
                             type="button"
                             data-modal-safe-interaction
                             :data-testid="`create-stage-at-${index}`"
-                            class="stage-create-button group relative flex w-8 shrink-0 items-center justify-center"
+                            class="stage-create-button group relative flex w-8 shrink-0 items-center justify-center p-0"
                             :aria-label="$t('CRM.SETTINGS.STAGES.CREATE_TITLE')"
                             :title="$t('CRM.SETTINGS.STAGES.CREATE_TITLE')"
                             :disabled="settingsSaving"
@@ -1154,7 +1154,7 @@ onMounted(async () => {
                           </button>
 
                           <article
-                            class="flex min-h-44 w-[15rem] shrink-0 flex-col rounded-xl border-t-4 bg-n-slate-2 shadow-sm"
+                            class="flex min-h-44 w-[15rem] shrink-0 flex-col rounded-xl border-t-4 bg-n-slate-2 outline outline-1 -outline-offset-1 outline-n-weak"
                             :data-stage-id="stage.id"
                             :data-draft-stage="stage.draft ? 'true' : undefined"
                             :style="stageCardStyle(stage)"
@@ -1163,7 +1163,7 @@ onMounted(async () => {
                               <button
                                 v-if="canManage"
                                 type="button"
-                                class="stage-drag-handle flex h-7 w-full cursor-grab items-center justify-center rounded-md text-n-slate-9 hover:text-n-slate-12"
+                                class="stage-drag-handle flex h-7 w-full cursor-grab items-center justify-center rounded-md p-0 text-n-slate-9 hover:text-n-slate-12"
                                 :title="$t('CRM.SETTINGS.STAGES.REORDER')"
                               >
                                 <span
@@ -1237,7 +1237,7 @@ onMounted(async () => {
                       type="button"
                       data-testid="create-stage-button"
                       data-modal-safe-interaction
-                      class="stage-create-button group relative flex w-8 shrink-0 items-center justify-center"
+                      class="stage-create-button group relative flex w-8 shrink-0 items-center justify-center p-0"
                       :aria-label="$t('CRM.SETTINGS.STAGES.CREATE_TITLE')"
                       :title="$t('CRM.SETTINGS.STAGES.CREATE_TITLE')"
                       :disabled="settingsSaving"
@@ -1258,7 +1258,7 @@ onMounted(async () => {
 
                     <article
                       v-if="wonStage"
-                      class="flex min-h-44 w-[15rem] shrink-0 flex-col rounded-xl border-t-4 bg-n-slate-2 shadow-sm"
+                      class="flex min-h-44 w-[15rem] shrink-0 flex-col rounded-xl border-t-4 bg-n-slate-2 outline outline-1 -outline-offset-1 outline-n-weak"
                       :style="stageCardStyle(wonStage)"
                     >
                       <div class="grid gap-3 p-4">
@@ -1291,7 +1291,7 @@ onMounted(async () => {
 
                     <article
                       v-if="lostStage"
-                      class="flex min-h-44 w-[15rem] shrink-0 flex-col rounded-xl border-t-4 bg-n-slate-2 shadow-sm"
+                      class="flex min-h-44 w-[15rem] shrink-0 flex-col rounded-xl border-t-4 bg-n-slate-2 outline outline-1 -outline-offset-1 outline-n-weak"
                       :style="stageCardStyle(lostStage)"
                     >
                       <div class="grid gap-3 p-4">
@@ -1359,79 +1359,96 @@ onMounted(async () => {
                 </div>
               </section>
               <section
-                class="grid max-w-3xl gap-4 border-t border-n-weak pt-5"
+                class="flex max-w-3xl flex-col gap-4"
                 data-testid="crm-stage-entry-rules"
               >
-                <div class="text-sm font-semibold text-n-slate-12">
+                <h3 class="m-0 text-heading-2 text-n-slate-12">
                   {{ $t('CRM.SETTINGS.STAGE_RULES.TITLE') }}
+                </h3>
+                <div
+                  class="flex flex-col divide-y divide-n-weak rounded-xl outline outline-1 -outline-offset-1 outline-n-weak"
+                  data-testid="crm-stage-entry-rules-block"
+                >
+                  <label
+                    class="flex items-center justify-between gap-3 px-4 py-3 text-heading-3 text-n-slate-12"
+                  >
+                    <span>
+                      {{ $t('CRM.SETTINGS.STAGE_RULES.RESTRICT_SKIPPING') }}
+                    </span>
+                    <Switch
+                      :model-value="restrictStageSkippingDraft"
+                      :disabled="!canManage || settingsSaving"
+                      @update:model-value="restrictStageSkippingDraft = $event"
+                    />
+                  </label>
+                  <label
+                    class="flex items-center justify-between gap-3 px-4 py-3 text-heading-3 text-n-slate-12"
+                  >
+                    <span>
+                      {{ $t('CRM.SETTINGS.STAGE_RULES.RESTRICT_BACKWARD') }}
+                    </span>
+                    <Switch
+                      :model-value="restrictBackwardMoveDraft"
+                      :disabled="!canManage || settingsSaving"
+                      @update:model-value="restrictBackwardMoveDraft = $event"
+                    />
+                  </label>
+                  <label
+                    class="flex items-center justify-between gap-3 px-4 py-3 text-heading-3 text-n-slate-12"
+                  >
+                    <span>
+                      {{ $t('CRM.SETTINGS.STAGE_RULES.ALLOW_OVERRIDE') }}
+                    </span>
+                    <Switch
+                      :model-value="allowStageRuleOverrideDraft"
+                      :disabled="!canManage || settingsSaving"
+                      @update:model-value="allowStageRuleOverrideDraft = $event"
+                    />
+                  </label>
                 </div>
-                <label
-                  class="flex items-center justify-between gap-3 text-sm text-n-slate-11"
-                >
-                  <span>
-                    {{ $t('CRM.SETTINGS.STAGE_RULES.RESTRICT_SKIPPING') }}
-                  </span>
-                  <Switch
-                    :model-value="restrictStageSkippingDraft"
-                    :disabled="!canManage || settingsSaving"
-                    @update:model-value="restrictStageSkippingDraft = $event"
-                  />
-                </label>
-                <label
-                  class="flex items-center justify-between gap-3 text-sm text-n-slate-11"
-                >
-                  <span>
-                    {{ $t('CRM.SETTINGS.STAGE_RULES.RESTRICT_BACKWARD') }}
-                  </span>
-                  <Switch
-                    :model-value="restrictBackwardMoveDraft"
-                    :disabled="!canManage || settingsSaving"
-                    @update:model-value="restrictBackwardMoveDraft = $event"
-                  />
-                </label>
-                <label
-                  class="flex items-center justify-between gap-3 text-sm text-n-slate-11"
-                >
-                  <span>
-                    {{ $t('CRM.SETTINGS.STAGE_RULES.ALLOW_OVERRIDE') }}
-                  </span>
-                  <Switch
-                    :model-value="allowStageRuleOverrideDraft"
-                    :disabled="!canManage || settingsSaving"
-                    @update:model-value="allowStageRuleOverrideDraft = $event"
-                  />
-                </label>
               </section>
               <section
-                class="grid max-w-3xl gap-3 border-t border-n-weak pt-5"
+                class="flex max-w-3xl flex-col gap-4"
                 data-testid="crm-channel-entry-settings"
               >
-                <h3 class="m-0 text-sm font-semibold text-n-slate-12">
+                <h3 class="m-0 text-heading-2 text-n-slate-12">
                   {{ $t('CRM.SETTINGS.PIPELINES.SOURCES_TITLE') }}
                 </h3>
-                <div class="grid gap-3">
-                  <div class="flex items-center justify-between gap-3">
-                    <div
-                      class="flex items-center gap-2 text-sm font-medium text-n-slate-12"
-                    >
-                      <span class="i-lucide-zap size-4 text-n-brand" />
-                      {{ $t('CRM.SETTINGS.PIPELINES.FORM.AUTO_CREATE') }}
+                <div
+                  class="flex flex-col divide-y divide-n-weak rounded-xl outline outline-1 -outline-offset-1 outline-n-weak"
+                  data-testid="crm-channel-entry-block"
+                >
+                  <div class="flex flex-col gap-1 px-4 py-3">
+                    <div class="flex items-center justify-between gap-3">
+                      <span
+                        class="flex min-w-0 items-center gap-2 text-heading-3 text-n-slate-12"
+                      >
+                        <span
+                          class="i-lucide-zap size-4 shrink-0 text-n-brand"
+                        />
+                        {{ $t('CRM.SETTINGS.PIPELINES.FORM.AUTO_CREATE') }}
+                      </span>
+                      <Switch
+                        :model-value="pipelineAutoCreateEnabled"
+                        :disabled="
+                          !canManage || pipelineSaving || settingsSaving
+                        "
+                        @update:model-value="togglePipelineAutoCreate"
+                      />
                     </div>
-                    <Switch
-                      :model-value="pipelineAutoCreateEnabled"
-                      :disabled="!canManage || pipelineSaving || settingsSaving"
-                      @update:model-value="togglePipelineAutoCreate"
-                    />
+                    <p class="mb-0 text-body-main text-n-slate-11">
+                      {{
+                        $t(
+                          'CRM.SETTINGS.PIPELINES.FORM.AUTO_CREATE_DEAL_ON_CHANNEL_CONTACT_HELP'
+                        )
+                      }}
+                    </p>
                   </div>
-                  <p class="mb-0 text-xs leading-5 text-n-slate-10">
-                    {{
-                      $t(
-                        'CRM.SETTINGS.PIPELINES.FORM.AUTO_CREATE_DEAL_ON_CHANNEL_CONTACT_HELP'
-                      )
-                    }}
-                  </p>
-                  <div v-if="pipelineAutoCreateEnabled" class="grid gap-2">
-                    <span class="text-xs font-medium text-n-slate-11">
+                  <div
+                    v-if="pipelineAutoCreateEnabled"
+                    class="flex flex-col gap-1 px-4 pb-4 pt-3"
+                  >
+                    <span class="text-heading-3 text-n-slate-12">
                       {{
                         $t(
                           'CRM.SETTINGS.PIPELINES.AUTO_CREATE_DIALOG.STAGE_LABEL'
@@ -1449,12 +1466,12 @@ onMounted(async () => {
                       sub-menu-position="bottom"
                       @update:model-value="updatePipelineAutoCreateStage"
                     />
-                    <span v-else class="text-sm font-medium text-n-slate-12">
+                    <span v-else class="text-body-main text-n-slate-12">
                       {{ selectedAutoCreateStageLabel }}
                     </span>
                     <p
                       v-if="autoCreateStageOptions.length === 0"
-                      class="mb-0 text-xs leading-5 text-n-ruby-10"
+                      class="mb-0 text-label-small text-n-ruby-10"
                     >
                       {{
                         $t(
@@ -1463,27 +1480,31 @@ onMounted(async () => {
                       }}
                     </p>
                   </div>
-                </div>
-                <button
-                  type="button"
-                  class="group grid gap-3 py-3 text-left transition-colors hover:bg-n-alpha-black2"
-                  @click="openLeadForms"
-                >
-                  <div class="flex items-center justify-between gap-3">
-                    <div
-                      class="flex items-center gap-2 text-sm font-medium text-n-slate-12"
-                    >
-                      <span class="i-lucide-file-input size-4 text-n-brand" />
-                      {{ $t('CRM.SETTINGS.PIPELINES.LEAD_FORMS_TITLE') }}
-                    </div>
+                  <button
+                    type="button"
+                    class="group flex w-full flex-col gap-1 rounded-b-xl rounded-t-none px-4 py-3 text-left transition-colors hover:bg-n-alpha-black2"
+                    @click="openLeadForms"
+                  >
                     <span
-                      class="i-lucide-arrow-up-right size-4 text-n-slate-9 transition-colors group-hover:text-n-brand"
-                    />
-                  </div>
-                  <p class="mb-0 text-xs leading-5 text-n-slate-10">
-                    {{ $t('CRM.SETTINGS.PIPELINES.LEAD_FORMS_HELP') }}
-                  </p>
-                </button>
+                      class="flex w-full items-center justify-between gap-3"
+                    >
+                      <span
+                        class="flex min-w-0 items-center gap-2 text-heading-3 text-n-slate-12"
+                      >
+                        <span
+                          class="i-lucide-file-input size-4 shrink-0 text-n-brand"
+                        />
+                        {{ $t('CRM.SETTINGS.PIPELINES.LEAD_FORMS_TITLE') }}
+                      </span>
+                      <span
+                        class="i-lucide-arrow-up-right size-4 shrink-0 text-n-slate-9 transition-colors group-hover:text-n-brand"
+                      />
+                    </span>
+                    <span class="text-body-main text-n-slate-11">
+                      {{ $t('CRM.SETTINGS.PIPELINES.LEAD_FORMS_HELP') }}
+                    </span>
+                  </button>
+                </div>
               </section>
               <CrmAppointmentAutomationSettings
                 ref="appointmentSettingsRef"
@@ -1514,35 +1535,42 @@ onMounted(async () => {
       :disable-confirm="pipelineFormDisableConfirm"
       @confirm="savePipeline"
     >
-      <div class="grid gap-2">
-        <Input
-          autofocus
-          :label="$t('CRM.SETTINGS.PIPELINES.FORM.NAME')"
-          :model-value="pipelineForm.name"
-          @update:model-value="pipelineForm.name = $event"
-          @enter="savePipeline"
-        />
-        <p v-if="!pipelineForm.id" class="mb-0 text-xs text-n-slate-10">
-          {{ $t('CRM.SETTINGS.PIPELINES.NEW_PIPELINE_HELP') }}
-        </p>
-        <label
-          class="flex items-center justify-between gap-3 text-sm text-n-slate-11"
-        >
-          <span>{{ $t('CRM.SETTINGS.PIPELINES.FORM.DEFAULT') }}</span>
-          <Switch
-            v-model="newPipelineDefault"
-            :disabled="pipelineSaving || settingsSaving"
+      <div class="grid gap-4">
+        <div class="flex flex-col gap-1">
+          <Input
+            autofocus
+            :label="$t('CRM.SETTINGS.PIPELINES.FORM.NAME')"
+            :model-value="pipelineForm.name"
+            @update:model-value="pipelineForm.name = $event"
+            @enter="savePipeline"
           />
-        </label>
-        <label
-          class="flex items-center justify-between gap-3 text-sm text-n-slate-11"
-        >
-          <span>{{ $t('CRM.SETTINGS.PIPELINES.FORM.AUTO_CREATE') }}</span>
-          <Switch
-            v-model="newPipelineAutoCreate"
-            :disabled="pipelineSaving || settingsSaving"
-          />
-        </label>
+          <p
+            v-if="!pipelineForm.id"
+            class="mb-0 text-label-small text-n-slate-11"
+          >
+            {{ $t('CRM.SETTINGS.PIPELINES.NEW_PIPELINE_HELP') }}
+          </p>
+        </div>
+        <div class="flex flex-col gap-3">
+          <label
+            class="flex items-center justify-between gap-3 text-heading-3 text-n-slate-12"
+          >
+            <span>{{ $t('CRM.SETTINGS.PIPELINES.FORM.DEFAULT') }}</span>
+            <Switch
+              v-model="newPipelineDefault"
+              :disabled="pipelineSaving || settingsSaving"
+            />
+          </label>
+          <label
+            class="flex items-center justify-between gap-3 text-heading-3 text-n-slate-12"
+          >
+            <span>{{ $t('CRM.SETTINGS.PIPELINES.FORM.AUTO_CREATE') }}</span>
+            <Switch
+              v-model="newPipelineAutoCreate"
+              :disabled="pipelineSaving || settingsSaving"
+            />
+          </label>
+        </div>
       </div>
     </SchedulingDrawer>
 
@@ -1558,24 +1586,26 @@ onMounted(async () => {
       :confirm-label="$t('CRM.GENERAL.CLOSE')"
       @confirm="stageRequirementsDrawerOpen = false"
     >
-      <div class="grid gap-2">
-        <p class="mb-2 text-sm text-n-slate-10">
+      <div class="grid gap-4">
+        <p class="mb-0 text-body-main text-n-slate-11">
           {{ $t('CRM.SETTINGS.STAGE_RULES.DRAWER_DESCRIPTION') }}
         </p>
-        <label
-          v-for="field in stageRequirementFieldOptions"
-          :key="field.key"
-          class="flex cursor-pointer items-center gap-3 rounded-lg border border-n-weak px-3 py-2 text-sm text-n-slate-12 hover:bg-n-alpha-black2"
-        >
-          <input
-            type="checkbox"
-            class="size-4 rounded border-n-strong text-n-brand focus:ring-n-brand"
-            :checked="stageRequirementSelected(field.key)"
-            :disabled="!canManage || settingsSaving"
-            @change="toggleStageRequirement(field.key, $event.target.checked)"
-          />
-          <span>{{ field.label }}</span>
-        </label>
+        <div class="grid gap-1">
+          <label
+            v-for="field in stageRequirementFieldOptions"
+            :key="field.key"
+            class="flex cursor-pointer items-center gap-2 text-sm text-n-slate-12"
+          >
+            <input
+              type="checkbox"
+              class="size-4 rounded border-n-strong text-n-brand focus:ring-n-brand"
+              :checked="stageRequirementSelected(field.key)"
+              :disabled="!canManage || settingsSaving"
+              @change="toggleStageRequirement(field.key, $event.target.checked)"
+            />
+            <span>{{ field.label }}</span>
+          </label>
+        </div>
       </div>
     </SchedulingDrawer>
 

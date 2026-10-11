@@ -45,46 +45,47 @@ const updateTranscriptionSetting = async (key, enabled) => {
   <SectionLayout
     :title="t('GENERAL_SETTINGS.FORM.MEDIA_TRANSCRIPTION.TITLE')"
     :description="t('GENERAL_SETTINGS.FORM.MEDIA_TRANSCRIPTION.NOTE')"
+    with-border
   >
     <div
-      class="divide-y divide-n-weak rounded-xl border border-n-weak bg-n-solid-1"
+      class="divide-y divide-n-weak rounded-xl outline outline-1 -outline-offset-1 outline-n-weak"
     >
-      <div class="flex items-start justify-between gap-4 p-4">
-        <div class="min-w-0">
-          <p class="mb-1 text-sm font-medium text-n-slate-12">
+      <div class="flex flex-col gap-1 px-4 py-3">
+        <div class="flex items-center justify-between gap-3">
+          <span class="min-w-0 text-heading-3 text-n-slate-12">
             {{ t('GENERAL_SETTINGS.FORM.MEDIA_TRANSCRIPTION.AUDIO.TITLE') }}
-          </p>
-          <p class="mb-0 text-sm text-n-slate-11">
-            {{ t('GENERAL_SETTINGS.FORM.MEDIA_TRANSCRIPTION.AUDIO.NOTE') }}
-          </p>
+          </span>
+          <Switch
+            :model-value="audioTranscriptionsEnabled"
+            :disabled="disabled || updatingKey !== null"
+            @change="
+              enabled =>
+                updateTranscriptionSetting('audio_transcriptions', enabled)
+            "
+          />
         </div>
-        <Switch
-          :model-value="audioTranscriptionsEnabled"
-          :disabled="disabled || updatingKey !== null"
-          @change="
-            enabled =>
-              updateTranscriptionSetting('audio_transcriptions', enabled)
-          "
-        />
+        <p class="mb-0 text-body-main text-n-slate-11">
+          {{ t('GENERAL_SETTINGS.FORM.MEDIA_TRANSCRIPTION.AUDIO.NOTE') }}
+        </p>
       </div>
 
-      <div class="flex items-start justify-between gap-4 p-4">
-        <div class="min-w-0">
-          <p class="mb-1 text-sm font-medium text-n-slate-12">
+      <div class="flex flex-col gap-1 px-4 py-3">
+        <div class="flex items-center justify-between gap-3">
+          <span class="min-w-0 text-heading-3 text-n-slate-12">
             {{ t('GENERAL_SETTINGS.FORM.MEDIA_TRANSCRIPTION.CALLS.TITLE') }}
-          </p>
-          <p class="mb-0 text-sm text-n-slate-11">
-            {{ t('GENERAL_SETTINGS.FORM.MEDIA_TRANSCRIPTION.CALLS.NOTE') }}
-          </p>
+          </span>
+          <Switch
+            :model-value="callTranscriptionsEnabled"
+            :disabled="disabled || updatingKey !== null"
+            @change="
+              enabled =>
+                updateTranscriptionSetting('call_transcriptions', enabled)
+            "
+          />
         </div>
-        <Switch
-          :model-value="callTranscriptionsEnabled"
-          :disabled="disabled || updatingKey !== null"
-          @change="
-            enabled =>
-              updateTranscriptionSetting('call_transcriptions', enabled)
-          "
-        />
+        <p class="mb-0 text-body-main text-n-slate-11">
+          {{ t('GENERAL_SETTINGS.FORM.MEDIA_TRANSCRIPTION.CALLS.NOTE') }}
+        </p>
       </div>
     </div>
   </SectionLayout>

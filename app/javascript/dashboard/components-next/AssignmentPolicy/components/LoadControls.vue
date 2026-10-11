@@ -57,19 +57,22 @@ const stickyOwnerDurationDays = defineModel('stickyOwnerDurationDays', {
 </script>
 
 <template>
-  <div class="grid grid-cols-1 gap-3">
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-      <label
-        class="flex flex-col gap-1 rounded-xl border border-n-weak bg-n-solid-1 p-3"
-      >
-        <span class="text-sm font-medium text-n-slate-12">
+  <div
+    class="flex flex-col gap-4 bg-n-solid-1 p-4 outline outline-1 outline-n-weak rounded-xl"
+  >
+    <!-- One inline control block (the FairDistribution recipe): plain fields
+      on top, the switches as divided rows in a sub-area below. Nothing inside
+      it is framed again. -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <label class="flex flex-col gap-1">
+        <span class="text-heading-3 text-n-slate-12">
           {{
             t(
               'ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.FORM.LOAD_CONTROLS.DELAY.LABEL'
             )
           }}
         </span>
-        <span class="text-xs text-n-slate-11 min-h-8">
+        <span class="text-label-small text-n-slate-11 min-h-8">
           {{
             t(
               'ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.FORM.LOAD_CONTROLS.DELAY.DESCRIPTION'
@@ -85,17 +88,15 @@ const stickyOwnerDurationDays = defineModel('stickyOwnerDurationDays', {
         />
       </label>
 
-      <label
-        class="flex flex-col gap-1 rounded-xl border border-n-weak bg-n-solid-1 p-3"
-      >
-        <span class="text-sm font-medium text-n-slate-12">
+      <label class="flex flex-col gap-1">
+        <span class="text-heading-3 text-n-slate-12">
           {{
             t(
               'ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.FORM.LOAD_CONTROLS.MAX_OPEN.LABEL'
             )
           }}
         </span>
-        <span class="text-xs text-n-slate-11 min-h-8">
+        <span class="text-label-small text-n-slate-11 min-h-8">
           {{
             t(
               'ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.FORM.LOAD_CONTROLS.MAX_OPEN.DESCRIPTION'
@@ -115,17 +116,15 @@ const stickyOwnerDurationDays = defineModel('stickyOwnerDurationDays', {
         />
       </label>
 
-      <label
-        class="flex flex-col gap-1 rounded-xl border border-n-weak bg-n-solid-1 p-3"
-      >
-        <span class="text-sm font-medium text-n-slate-12">
+      <label class="flex flex-col gap-1">
+        <span class="text-heading-3 text-n-slate-12">
           {{
             t(
               'ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.FORM.LOAD_CONTROLS.MONTHLY_QUOTA.LABEL'
             )
           }}
         </span>
-        <span class="text-xs text-n-slate-11 min-h-8">
+        <span class="text-label-small text-n-slate-11 min-h-8">
           {{
             t(
               'ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.FORM.LOAD_CONTROLS.MONTHLY_QUOTA.DESCRIPTION'
@@ -146,92 +145,88 @@ const stickyOwnerDurationDays = defineModel('stickyOwnerDurationDays', {
       </label>
     </div>
 
-    <label
-      class="flex items-start gap-3 rounded-xl border border-n-weak bg-n-solid-1 p-3"
-    >
-      <Switch v-model="assignOnlineOnly" class="mt-0.5" />
-      <span class="flex flex-col gap-1">
-        <span class="text-sm font-medium text-n-slate-12">
-          {{
-            t(
-              'ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.FORM.LOAD_CONTROLS.ONLINE_ONLY.LABEL'
-            )
-          }}
+    <div class="flex flex-col divide-y divide-n-weak border-t border-n-weak">
+      <label class="flex flex-col gap-1 py-3 last:pb-0">
+        <span class="flex items-center justify-between gap-3">
+          <span class="min-w-0 text-heading-3 text-n-slate-12">
+            {{
+              t(
+                'ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.FORM.LOAD_CONTROLS.ONLINE_ONLY.LABEL'
+              )
+            }}
+          </span>
+          <Switch v-model="assignOnlineOnly" />
         </span>
-        <span class="text-xs text-n-slate-11">
+        <span class="text-body-main text-n-slate-11">
           {{
             t(
               'ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.FORM.LOAD_CONTROLS.ONLINE_ONLY.DESCRIPTION'
             )
           }}
         </span>
-      </span>
-    </label>
+      </label>
 
-    <label
-      class="flex items-start gap-3 rounded-xl border border-n-weak bg-n-solid-1 p-3"
-    >
-      <Switch v-model="assignPendingConversations" class="mt-0.5" />
-      <span class="flex flex-col gap-1">
-        <span class="text-sm font-medium text-n-slate-12">
-          {{
-            t(
-              'ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.FORM.LOAD_CONTROLS.ASSIGN_PENDING.LABEL'
-            )
-          }}
+      <label class="flex flex-col gap-1 py-3 last:pb-0">
+        <span class="flex items-center justify-between gap-3">
+          <span class="min-w-0 text-heading-3 text-n-slate-12">
+            {{
+              t(
+                'ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.FORM.LOAD_CONTROLS.ASSIGN_PENDING.LABEL'
+              )
+            }}
+          </span>
+          <Switch v-model="assignPendingConversations" />
         </span>
-        <span class="text-xs text-n-slate-11">
+        <span class="text-body-main text-n-slate-11">
           {{
             t(
               'ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.FORM.LOAD_CONTROLS.ASSIGN_PENDING.DESCRIPTION'
             )
           }}
         </span>
-      </span>
-    </label>
+      </label>
 
-    <div
-      class="flex flex-col md:flex-row md:items-center justify-between gap-3 rounded-xl border border-n-weak bg-n-solid-1 p-3"
-    >
-      <label class="flex items-start gap-3">
-        <Switch v-model="stickyOwnerEnabled" class="mt-0.5" />
-        <span class="flex flex-col gap-1">
-          <span class="text-sm font-medium text-n-slate-12">
-            {{
-              t(
-                'ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.FORM.LOAD_CONTROLS.STICKY_OWNER.LABEL'
-              )
-            }}
+      <div class="flex flex-col gap-3 py-3 last:pb-0">
+        <label class="flex flex-col gap-1">
+          <span class="flex items-center justify-between gap-3">
+            <span class="min-w-0 text-heading-3 text-n-slate-12">
+              {{
+                t(
+                  'ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.FORM.LOAD_CONTROLS.STICKY_OWNER.LABEL'
+                )
+              }}
+            </span>
+            <Switch v-model="stickyOwnerEnabled" />
           </span>
-          <span class="text-xs text-n-slate-11">
+          <span class="text-body-main text-n-slate-11">
             {{
               t(
                 'ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.FORM.LOAD_CONTROLS.STICKY_OWNER.DESCRIPTION'
               )
             }}
           </span>
-        </span>
-      </label>
+        </label>
 
-      <label
-        v-if="stickyOwnerEnabled"
-        class="flex items-center gap-2 text-sm text-n-slate-12"
-      >
-        <span>
-          {{
-            t(
-              'ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.FORM.LOAD_CONTROLS.STICKY_OWNER.DURATION_LABEL'
-            )
-          }}
-        </span>
-        <Input
-          v-model="stickyOwnerDurationDays"
-          type="number"
-          min="1"
-          max="3650"
-          class="w-24"
-        />
-      </label>
+        <label
+          v-if="stickyOwnerEnabled"
+          class="flex items-center gap-2 text-sm text-n-slate-12"
+        >
+          <span>
+            {{
+              t(
+                'ASSIGNMENT_POLICY.AGENT_ASSIGNMENT_POLICY.FORM.LOAD_CONTROLS.STICKY_OWNER.DURATION_LABEL'
+              )
+            }}
+          </span>
+          <Input
+            v-model="stickyOwnerDurationDays"
+            type="number"
+            min="1"
+            max="3650"
+            class="w-24"
+          />
+        </label>
+      </div>
     </div>
   </div>
 </template>

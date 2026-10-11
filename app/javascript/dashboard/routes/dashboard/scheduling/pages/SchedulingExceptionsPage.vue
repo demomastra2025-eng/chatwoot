@@ -445,7 +445,7 @@ onMounted(async () => {
       </template>
     </SchedulingPageHeader>
 
-    <div class="flex flex-col gap-4 px-5 pb-5 pt-3">
+    <div class="flex flex-col gap-4 px-6 pb-8 pt-3">
       <div
         v-if="
           referencesStore.ui.isLoadingExceptions ||
@@ -591,6 +591,7 @@ onMounted(async () => {
     >
       <SchedulingFormFieldGroup
         v-if="drawerType === 'holiday'"
+        :framed="false"
         :title="$t('SCHEDULING.EXCEPTIONS.HOLIDAY_FORM_TITLE')"
         :description="$t('SCHEDULING.EXCEPTIONS.HOLIDAY_FORM_DESCRIPTION')"
       >
@@ -615,6 +616,7 @@ onMounted(async () => {
 
       <SchedulingFormFieldGroup
         v-else-if="drawerType === 'override'"
+        :framed="false"
         :title="$t('SCHEDULING.EXCEPTIONS.OVERRIDE_FORM_TITLE')"
         :description="$t('SCHEDULING.EXCEPTIONS.OVERRIDE_FORM_DESCRIPTION')"
       >
@@ -659,6 +661,7 @@ onMounted(async () => {
 
       <SchedulingFormFieldGroup
         v-else
+        :framed="false"
         :title="$t('SCHEDULING.EXCEPTIONS.TIME_OFF_FORM_TITLE')"
         :description="$t('SCHEDULING.EXCEPTIONS.TIME_OFF_FORM_DESCRIPTION')"
       >

@@ -59,7 +59,7 @@ const apply = () => {
 
 <template>
   <form
-    class="flex flex-col gap-3 rounded-xl border border-n-weak bg-n-surface-1 p-3 sm:flex-row sm:items-end sm:justify-between"
+    class="flex flex-col gap-3 rounded-xl bg-n-solid-1 p-4 outline outline-1 -outline-offset-1 outline-n-weak sm:flex-row sm:items-end sm:justify-between"
     data-test="report-date-range"
     @submit.prevent="apply"
   >

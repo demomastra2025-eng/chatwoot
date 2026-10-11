@@ -368,18 +368,14 @@ const openChannelConversation = async channelIdentity => {
         <ContactLabels :contact-id="selectedContact?.id" />
         <details
           v-if="hasIdentityAccordion"
-          class="identity-accordion w-full overflow-hidden rounded-2xl border border-n-weak bg-n-solid-1 p-2 shadow-sm"
+          class="identity-accordion w-full overflow-hidden rounded-xl bg-n-solid-2 outline outline-1 outline-n-container"
         >
           <summary
-            class="identity-accordion__summary flex cursor-pointer list-none items-center justify-between gap-3 rounded-xl border border-transparent bg-n-solid-1 px-3 py-3 transition-colors hover:border-n-weak hover:bg-n-alpha-1 [&::-webkit-details-marker]:hidden"
+            class="identity-accordion__summary flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 transition-colors hover:bg-n-alpha-1 [&::-webkit-details-marker]:hidden"
           >
             <div class="flex min-w-0 items-center gap-2">
-              <span
-                class="inline-flex size-8 shrink-0 items-center justify-center rounded-xl border border-n-weak bg-n-alpha-1 text-n-slate-11 shadow-sm"
-              >
-                <span class="i-lucide-id-card size-4 text-n-slate-10" />
-              </span>
-              <span class="text-sm font-medium text-n-slate-12">
+              <span class="i-lucide-id-card size-4 shrink-0 text-n-slate-10" />
+              <span class="text-heading-3 text-n-slate-12">
                 {{ t('CONTACT_PANEL.IDENTIFIERS') }}
               </span>
             </div>
@@ -389,7 +385,7 @@ const openChannelConversation = async channelIdentity => {
             />
           </summary>
 
-          <div class="px-1 pb-1 pt-4">
+          <div class="border-t border-n-weak px-5 py-4">
             <ContactIdentitySources
               :contact="contactData"
               :is-updating="isUpdating"
@@ -455,10 +451,6 @@ const openChannelConversation = async channelIdentity => {
 <style scoped lang="scss">
 .identity-accordion__chevron {
   transition: transform 0.2s ease;
-}
-
-.identity-accordion[open] .identity-accordion__summary {
-  @apply border-n-weak bg-n-alpha-1;
 }
 
 .identity-accordion[open] .identity-accordion__chevron {

@@ -464,7 +464,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <SettingsLayout :no-records-found="false" class="gap-8">
+  <SettingsLayout :no-records-found="false">
     <template #header>
       <BaseSettingsHeader
         :title="$t('CONVERSATION_WORKFLOW.VISIBILITY.HEADER.TITLE')"
@@ -474,58 +474,62 @@ onMounted(() => {
     </template>
 
     <template #body>
-      <div class="flex flex-col">
+      <div class="flex flex-col gap-6">
+        <!-- One toggle-list block. Rows are divided, never framed again; an
+          expanded group opens as a tinted full-bleed area inside its row. -->
         <div
           data-testid="conversation-primary-navigation"
-          class="flex flex-col divide-y divide-n-weak/50 py-4"
+          class="flex flex-col divide-y divide-n-weak overflow-hidden rounded-xl outline outline-1 -outline-offset-1 outline-n-weak"
         >
           <template v-for="row in navigationRows" :key="row.key">
             <label
               v-if="!row.isGroup"
               :data-testid="`conversation-navigation-item-${row.key}`"
-              class="flex items-center justify-between gap-3 py-3"
+              class="flex flex-col gap-1 px-4 py-3"
             >
-              <span class="min-w-0">
-                <span class="block text-sm font-medium text-n-slate-12">
+              <span class="flex items-center justify-between gap-3">
+                <span class="min-w-0 text-heading-3 text-n-slate-12">
                   {{ groupLabel(row) }}
                 </span>
-                <span
-                  v-if="row.descriptionKey"
-                  class="mt-0.5 block text-xs text-n-slate-11"
-                >
-                  {{ groupDescription(row) }}
-                </span>
+                <Switch
+                  :id="switchId(row.visibilityKey)"
+                  :model-value="isPrimaryNavigationItemEnabled(row)"
+                  @update:model-value="togglePrimaryNavigationItem(row)"
+                />
               </span>
-              <Switch
-                :id="switchId(row.visibilityKey)"
-                :model-value="isPrimaryNavigationItemEnabled(row)"
-                @update:model-value="togglePrimaryNavigationItem(row)"
-              />
+              <span
+                v-if="row.descriptionKey"
+                class="text-body-main text-n-slate-11"
+              >
+                {{ groupDescription(row) }}
+              </span>
             </label>
             <div
               v-else
               :data-testid="`conversation-navigation-group-${row.key}`"
-              class="py-3"
+              class="px-4 py-3"
             >
-              <div class="flex items-center justify-between gap-3">
+              <!-- items-start keeps the switch on the title line: the 20px
+                switch matches the 21px title line. -->
+              <div class="flex items-start justify-between gap-3">
                 <button
                   type="button"
-                  class="min-w-0 flex-1 text-left"
+                  class="flex min-w-0 flex-1 flex-col gap-1 p-0 text-left"
                   :disabled="!isGroupEnabled(row)"
                   :aria-expanded="isGroupExpanded(row)"
                   @click="toggleGroupExpansion(row)"
                 >
-                  <span class="block text-sm font-medium text-n-slate-12">
+                  <span class="text-heading-3 text-n-slate-12">
                     {{ groupLabel(row) }}
                   </span>
                   <span
                     v-if="row.showDescription"
-                    class="mt-0.5 block text-xs text-n-slate-11"
+                    class="text-body-main text-n-slate-11"
                   >
                     {{ groupDescription(row) }}
                   </span>
                   <span
-                    class="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-n-slate-11"
+                    class="flex flex-wrap items-center gap-x-1.5 text-body-main text-n-slate-11"
                   >
                     <span>{{ groupSummary(row) }}</span>
                     <span
@@ -546,12 +550,12 @@ onMounted(() => {
 
               <div
                 v-if="isGroupEnabled(row) && isGroupExpanded(row)"
-                class="pb-2 pl-4 pt-4 md:pl-6"
+                class="-mx-4 -mb-3 mt-3 border-t border-n-weak bg-n-alpha-1 px-4 py-2"
               >
                 <div v-if="row.key === 'pipeline'" class="grid max-w-3xl gap-5">
                   <p
                     v-if="crmReferencesStore.ui?.isLoadingPipelines"
-                    class="text-body-main text-n-slate-11"
+                    class="mb-0 text-body-main text-n-slate-11"
                   >
                     {{
                       t(
@@ -562,7 +566,7 @@ onMounted(() => {
                   <div
                     v-else-if="pipelinesLoadFailed"
                     data-testid="conversation-navigation-pipelines-error"
-                    class="flex items-center justify-between gap-3 rounded-lg bg-n-amber-2 px-3 py-2 text-sm text-n-slate-12"
+                    class="flex items-center justify-between gap-3 rounded-xl bg-n-amber-2 px-3 py-2 text-sm text-n-slate-12"
                   >
                     <span>
                       {{
@@ -573,7 +577,7 @@ onMounted(() => {
                     </span>
                     <button
                       type="button"
-                      class="shrink-0 font-medium text-n-brand hover:underline"
+                      class="shrink-0 p-0 font-medium text-n-brand hover:underline"
                       @click="loadPipelines"
                     >
                       {{ t('CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.RETRY') }}
@@ -581,7 +585,7 @@ onMounted(() => {
                   </div>
                   <p
                     v-else-if="!pipelineOptions.length"
-                    class="text-body-main text-n-slate-11"
+                    class="mb-0 text-body-main text-n-slate-11"
                   >
                     {{
                       t(
@@ -640,7 +644,7 @@ onMounted(() => {
                           "
                         >
                           <span
-                            class="min-w-0 truncate text-sm text-n-slate-12"
+                            class="min-w-0 truncate text-body-main text-n-slate-12"
                           >
                             {{ stage.name }}
                           </span>
@@ -681,7 +685,7 @@ onMounted(() => {
                     :key="item.key"
                     class="flex items-center justify-between gap-3 py-3"
                   >
-                    <span class="min-w-0 text-sm text-n-slate-12">
+                    <span class="min-w-0 text-body-main text-n-slate-12">
                       {{ visibilityLabel(item) }}
                     </span>
                     <Switch
@@ -695,7 +699,7 @@ onMounted(() => {
           </template>
         </div>
 
-        <div class="flex justify-end border-t border-n-weak py-6">
+        <div class="flex justify-end">
           <Button
             :label="t('CONVERSATION_WORKFLOW.VISIBILITY.SAVE.BUTTON')"
             color="slate"

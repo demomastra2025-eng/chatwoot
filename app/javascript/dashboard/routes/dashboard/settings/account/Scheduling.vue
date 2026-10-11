@@ -46,43 +46,41 @@ const saveSchedulingSettings = async () => {
       :title="$t('GENERAL_SETTINGS.FORM.SCHEDULING.PAGE.TITLE')"
       :description="$t('GENERAL_SETTINGS.FORM.SCHEDULING.PAGE.NOTE')"
     />
-    <section class="mt-3 min-w-0">
+    <section class="mt-4 min-w-0">
       <form
         v-if="!uiFlags.isFetchingItem"
         class="grid gap-4"
         @submit.prevent="saveSchedulingSettings"
       >
-        <div class="grid gap-4 rounded-xl border border-n-weak p-4">
-          <div class="flex items-start justify-between gap-4">
-            <div class="min-w-0">
-              <p class="mb-1 text-sm font-medium text-n-slate-12">
+        <div
+          class="divide-y divide-n-weak rounded-xl outline outline-1 -outline-offset-1 outline-n-weak"
+        >
+          <div class="flex flex-col gap-1 px-4 py-3">
+            <div class="flex items-center justify-between gap-3">
+              <span class="min-w-0 text-heading-3 text-n-slate-12">
                 {{
                   $t('GENERAL_SETTINGS.FORM.SCHEDULING.CONTACT_REQUIRED.LABEL')
                 }}
-              </p>
-              <p class="text-sm text-n-slate-11">
-                {{
-                  $t('GENERAL_SETTINGS.FORM.SCHEDULING.CONTACT_REQUIRED.NOTE')
-                }}
-              </p>
+              </span>
+              <Switch v-model="schedulingContactRequired" />
             </div>
-            <Switch v-model="schedulingContactRequired" />
+            <p class="mb-0 text-body-main text-n-slate-11">
+              {{ $t('GENERAL_SETTINGS.FORM.SCHEDULING.CONTACT_REQUIRED.NOTE') }}
+            </p>
           </div>
 
-          <div class="flex items-start justify-between gap-4">
-            <div class="min-w-0">
-              <p class="mb-1 text-sm font-medium text-n-slate-12">
+          <div class="flex flex-col gap-1 px-4 py-3">
+            <div class="flex items-center justify-between gap-3">
+              <span class="min-w-0 text-heading-3 text-n-slate-12">
                 {{
                   $t('GENERAL_SETTINGS.FORM.SCHEDULING.COMPANY_ENABLED.LABEL')
                 }}
-              </p>
-              <p class="text-sm text-n-slate-11">
-                {{
-                  $t('GENERAL_SETTINGS.FORM.SCHEDULING.COMPANY_ENABLED.NOTE')
-                }}
-              </p>
+              </span>
+              <Switch v-model="schedulingCompanyEnabled" />
             </div>
-            <Switch v-model="schedulingCompanyEnabled" />
+            <p class="mb-0 text-body-main text-n-slate-11">
+              {{ $t('GENERAL_SETTINGS.FORM.SCHEDULING.COMPANY_ENABLED.NOTE') }}
+            </p>
           </div>
         </div>
 

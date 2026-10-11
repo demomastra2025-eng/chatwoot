@@ -18,7 +18,7 @@ const props = defineProps({
 
 const sectionClass = computed(() =>
   props.framed
-    ? 'overflow-hidden rounded-2xl bg-n-solid-2 outline outline-1 outline-n-container shadow-sm'
+    ? 'overflow-hidden rounded-xl bg-n-solid-2 outline outline-1 -outline-offset-1 outline-n-container'
     : 'overflow-visible'
 );
 

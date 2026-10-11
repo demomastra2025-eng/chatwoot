@@ -1597,7 +1597,7 @@ export default {
 
           <div
             v-if="showVirtualPbxTechnicalSettings"
-            class="rounded-xl border border-n-weak p-4"
+            class="rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
           >
             <label class="flex flex-col gap-1 text-sm text-n-slate-12">
               {{
@@ -1632,7 +1632,7 @@ export default {
                 max="240"
                 step="5"
               />
-              <span class="text-xs text-n-slate-11">
+              <span class="text-label-small text-n-slate-11">
                 {{
                   $t(
                     'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.MAX_CALL_DURATION.DESCRIPTION'
@@ -1644,7 +1644,7 @@ export default {
 
           <div
             v-if="showVirtualPbxTechnicalSettings"
-            class="rounded-xl border border-n-weak p-4"
+            class="rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
           >
             <div class="mb-3 space-y-1">
               <h3 class="text-sm font-medium text-n-slate-12">
@@ -1652,7 +1652,7 @@ export default {
                   $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.PROVIDER_CONNECTION')
                 }}
               </h3>
-              <p class="text-sm text-n-slate-11">
+              <p class="mb-0 text-sm text-n-slate-11">
                 {{
                   $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.JANUS_SIP_SUBTITLE')
                 }}
@@ -1777,18 +1777,14 @@ export default {
             </div>
             <p
               v-if="isVirtualPbxBeeline"
-              class="mt-4 rounded-lg bg-n-slate-2 p-3 text-sm text-n-slate-11"
+              class="mb-0 mt-4 border-t border-n-weak pt-4 text-sm text-n-slate-11"
             >
               {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.BEELINE_CONFIG_HINT') }}
             </p>
           </div>
 
           <div
-            :class="
-              isVirtualPbxProviderOwnedSip
-                ? ''
-                : 'rounded-xl border border-n-weak p-4'
-            "
+            class="rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
           >
             <div class="mb-3 space-y-1">
               <h3 class="text-sm font-medium text-n-slate-12">
@@ -1796,18 +1792,18 @@ export default {
                   $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.TITLE')
                 }}
               </h3>
-              <p class="text-sm text-n-slate-11">
+              <p class="mb-0 text-sm text-n-slate-11">
                 {{
                   $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.HINT')
                 }}
               </p>
             </div>
 
-            <div class="flex flex-col gap-3">
+            <div class="flex flex-col divide-y divide-n-weak">
               <div
                 v-for="(profile, index) in virtualPbxForm.profiles"
                 :key="profile.clientId"
-                class="grid grid-cols-1 gap-3 rounded-lg border border-n-weak p-3 md:grid-cols-2"
+                class="grid grid-cols-1 gap-3 py-4 first:pt-0 last:pb-0 md:grid-cols-2"
               >
                 <label
                   v-if="profile.profileKind !== 'voice_agent'"
@@ -1901,7 +1897,7 @@ export default {
                 </label>
 
                 <label
-                  class="flex items-center gap-2 rounded-lg border border-n-weak px-3 py-2 text-sm text-n-slate-12 md:col-span-2"
+                  class="flex items-center gap-2 text-sm text-n-slate-12 md:col-span-2"
                 >
                   <input
                     v-model="profile.profileKind"
@@ -1925,7 +1921,7 @@ export default {
                 <div class="md:col-span-2">
                   <button
                     type="button"
-                    class="text-sm text-n-ruby-10"
+                    class="p-0 text-sm text-n-ruby-10"
                     :disabled="isVirtualPbxReadOnly"
                     @click="removeVirtualPbxProfile(index)"
                   >
@@ -1940,14 +1936,17 @@ export default {
               </div>
             </div>
 
-            <button
+            <NextButton
               type="button"
-              class="mt-3 rounded-lg border border-n-weak py-2 text-sm text-n-slate-12"
+              class="mt-3"
+              outline
+              slate
+              sm
               :disabled="isVirtualPbxReadOnly"
               @click="addVirtualPbxProfile"
             >
               {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_PROFILES.ADD') }}
-            </button>
+            </NextButton>
           </div>
 
           <div
@@ -2010,7 +2009,7 @@ export default {
 
           <div
             v-if="virtualPbxPlanOperations.length"
-            class="rounded-xl border border-n-weak p-4 text-sm text-n-slate-11"
+            class="rounded-xl p-4 text-sm text-n-slate-11 outline outline-1 -outline-offset-1 outline-n-weak"
           >
             <div class="mb-2 font-medium text-n-slate-12">
               {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PLAN_OPERATIONS') }}

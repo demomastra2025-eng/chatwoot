@@ -154,7 +154,7 @@ onBeforeUnmount(() => {
     :header-title="t('AI_REPORTS.TITLE')"
     :header-description="t('AI_REPORTS.DESCRIPTION')"
   />
-  <div class="flex min-w-0 flex-col gap-5 pb-8">
+  <div class="flex min-w-0 flex-col gap-4 pb-8">
     <ReportDateRange
       v-model:from-date="fromDate"
       v-model:to-date="toDate"
@@ -191,14 +191,14 @@ onBeforeUnmount(() => {
     <div
       v-else-if="hasError"
       role="alert"
-      class="flex items-center justify-between gap-3 border-y border-n-weak py-4"
+      class="flex items-center justify-between gap-3 rounded-xl bg-n-solid-2 px-6 py-5 shadow outline outline-1 outline-n-container"
     >
       <p class="m-0 text-sm text-n-slate-11">{{ t('AI_REPORTS.ERROR') }}</p>
       <Button :label="t('AI_REPORTS.RETRY')" size="sm" @click="reload" />
     </div>
     <template v-else>
       <div
-        class="grid grid-cols-2 gap-5 border-y border-n-weak py-5 xl:grid-cols-4"
+        class="grid grid-cols-2 gap-5 rounded-xl bg-n-solid-2 px-6 py-5 shadow outline outline-1 outline-n-container xl:grid-cols-4"
         data-testid="ai-report-totals"
       >
         <ReportMetricCard
@@ -216,29 +216,36 @@ onBeforeUnmount(() => {
       <p v-if="!hasEvents" class="m-0 py-8 text-center text-sm text-n-slate-11">
         {{ t('AI_REPORTS.EMPTY') }}
       </p>
-      <section v-else class="min-w-0">
-        <h2 class="mb-4 mt-0 text-sm font-semibold text-n-slate-12">
+      <section
+        v-else
+        class="min-w-0 rounded-xl bg-n-solid-2 px-6 py-5 shadow outline outline-1 outline-n-container"
+      >
+        <h2 class="mb-4 mt-0 text-heading-2 text-n-slate-12">
           {{ t('AI_REPORTS.DYNAMICS') }}
         </h2>
         <div class="h-64" role="img" :aria-label="t('AI_REPORTS.DYNAMICS')">
           <BarChart :collection="chartData" :chart-options="chartOptions" />
         </div>
       </section>
-      <section class="min-w-0 border-t border-n-weak pt-5">
-        <h2 class="mb-3 mt-0 text-sm font-semibold text-n-slate-12">
+      <section
+        class="min-w-0 overflow-hidden rounded-xl bg-n-solid-2 p-0 shadow outline outline-1 outline-n-container"
+      >
+        <h2
+          class="m-0 border-b border-n-weak px-5 py-4 text-heading-2 text-n-slate-12"
+        >
           {{ t('AI_REPORTS.BY_AGENT') }}
         </h2>
         <div class="overflow-x-auto">
           <table class="w-full text-left text-sm">
             <thead class="border-b border-n-weak text-xs text-n-slate-10">
               <tr>
-                <th class="py-3 pr-4 font-medium">
+                <th class="py-3 pl-5 pr-4 font-medium">
                   {{ t('AI_REPORTS.AGENT') }}
                 </th>
                 <th
                   v-for="[, title] in metrics"
                   :key="title"
-                  class="px-3 py-3 text-right font-medium"
+                  class="px-3 py-3 text-right font-medium last:pr-5"
                 >
                   {{ label(title) }}
                 </th>
@@ -250,17 +257,17 @@ onBeforeUnmount(() => {
                 :key="row.assistant_id"
                 class="text-n-slate-11"
               >
-                <td class="py-3 pr-4">{{ agentName(row) }}</td>
+                <td class="py-3 pl-5 pr-4">{{ agentName(row) }}</td>
                 <td
                   v-for="[key] in metrics"
                   :key="key"
-                  class="px-3 py-3 text-right tabular-nums"
+                  class="px-3 py-3 text-right tabular-nums last:pr-5"
                 >
                   {{ formatNumber(row[key]) }}
                 </td>
               </tr>
               <tr v-if="!agentRows.length">
-                <td colspan="5" class="py-6 text-center text-n-slate-10">
+                <td colspan="5" class="px-5 py-6 text-center text-n-slate-10">
                   {{ t('AI_REPORTS.EMPTY') }}
                 </td>
               </tr>
@@ -268,8 +275,10 @@ onBeforeUnmount(() => {
           </table>
         </div>
       </section>
-      <section class="border-t border-n-weak pt-5">
-        <h2 class="mb-2 mt-0 text-sm font-semibold text-n-slate-12">
+      <section
+        class="rounded-xl bg-n-solid-2 px-6 py-5 shadow outline outline-1 outline-n-container"
+      >
+        <h2 class="mb-2 mt-0 text-heading-2 text-n-slate-12">
           {{ t('AI_REPORTS.CLASSIFICATION') }}
         </h2>
         <p class="mb-4 mt-0 text-xs leading-5 text-n-slate-10">
@@ -292,15 +301,17 @@ onBeforeUnmount(() => {
           </div>
         </dl>
       </section>
-      <section class="border-t border-n-weak pt-5">
-        <h2 class="mb-3 mt-0 text-sm font-semibold text-n-slate-12">
+      <section
+        class="rounded-xl bg-n-solid-2 px-6 py-5 shadow outline outline-1 outline-n-container"
+      >
+        <h2 class="mb-3 mt-0 text-heading-2 text-n-slate-12">
           {{ t('AI_REPORTS.REASONS') }}
         </h2>
         <ul class="m-0 list-none divide-y divide-n-weak p-0">
           <li
             v-for="row in reasons"
             :key="[row.assistant_id, row.type, row.reason_id].join('-')"
-            class="flex items-center justify-between gap-4 py-3"
+            class="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0"
           >
             <div class="min-w-0">
               <p class="m-0 break-words text-sm text-n-slate-12">
@@ -324,13 +335,11 @@ onBeforeUnmount(() => {
             >
           </li>
         </ul>
-        <p v-if="!reasons.length" class="m-0 py-5 text-sm text-n-slate-10">
+        <p v-if="!reasons.length" class="m-0 py-2 text-sm text-n-slate-10">
           {{ t('AI_REPORTS.NO_REASONS') }}
         </p>
       </section>
-      <p
-        class="m-0 border-t border-n-weak pt-4 text-xs leading-5 text-n-slate-10"
-      >
+      <p class="m-0 text-xs leading-5 text-n-slate-10">
         {{ t('AI_REPORTS.UNAVAILABLE_NOTE') }}
       </p>
     </template>

@@ -25,7 +25,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <SettingsLayout :no-records-found="false" class="gap-8">
+  <SettingsLayout :no-records-found="false">
     <template #header>
       <BaseSettingsHeader
         :title="t('GENERAL_SETTINGS.CONVERSATIONS.TITLE')"
@@ -35,11 +35,10 @@ onMounted(() => {
     </template>
 
     <template #body>
-      <div class="flex flex-col gap-8">
-        <WorkspaceAssignmentPolicySettings />
+      <!-- Flat sections: each one owns its pt-8/pb-8 and divider. -->
+      <div class="flex flex-col">
+        <WorkspaceAssignmentPolicySettings class="!pt-0" />
         <CaptainAiEditorSettings :disabled="isWorkspaceReadOnly" />
-      </div>
-      <div class="mt-4 rounded-xl border border-n-weak bg-n-solid-2 px-4">
         <MediaTranscription :disabled="isWorkspaceReadOnly" />
       </div>
     </template>

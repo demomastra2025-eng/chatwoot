@@ -17,9 +17,11 @@ const props = defineProps({
 
 <template>
   <section
-    class="flex flex-col overflow-hidden rounded-2xl bg-n-solid-2"
+    class="flex flex-col divide-y divide-n-weak overflow-hidden rounded-xl bg-n-solid-2"
     :class="
-      props.borderless ? '' : 'outline outline-1 outline-n-container shadow-sm'
+      props.borderless
+        ? ''
+        : 'outline outline-1 -outline-offset-1 outline-n-container'
     "
   >
     <header
@@ -27,10 +29,10 @@ const props = defineProps({
       class="flex flex-col gap-3 px-5 py-4 md:flex-row md:items-start md:justify-between"
     >
       <div class="flex flex-col gap-1">
-        <h2 v-if="title" class="mb-0 text-base font-semibold text-n-slate-12">
+        <h2 v-if="title" class="mb-0 text-heading-2 text-n-slate-12">
           {{ title }}
         </h2>
-        <p v-if="description" class="mb-0 text-xs text-n-slate-11">
+        <p v-if="description" class="mb-0 text-body-para text-n-slate-11">
           {{ description }}
         </p>
       </div>

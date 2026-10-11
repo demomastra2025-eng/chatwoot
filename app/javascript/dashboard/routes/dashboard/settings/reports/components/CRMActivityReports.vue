@@ -227,19 +227,19 @@ const donutSegments = computed(() => {
       key: 'completed',
       label: t('CRM_DEAL_REPORTS.ACTIVITY.COMPLETED'),
       count: taskLifecycleCounts.value.completed,
-      color: '#159B8B',
+      color: 'rgb(var(--teal-9))',
     },
     {
       key: 'cancelled',
       label: t('CRM_DEAL_REPORTS.ACTIVITY.CANCELLED'),
       count: taskLifecycleCounts.value.cancelled,
-      color: '#ED7969',
+      color: 'rgb(var(--ruby-9))',
     },
     {
       key: 'other',
       label: t('CRM_DEAL_REPORTS.ACTIVITY.OTHER_LIFECYCLE'),
       count: taskLifecycleCounts.value.other,
-      color: '#D9A340',
+      color: 'rgb(var(--amber-9))',
     },
   ];
   let offset = 0;
@@ -485,7 +485,7 @@ onMounted(loadDealsWithoutNextAction);
 </script>
 
 <template>
-  <div class="activity-dashboard mt-5">
+  <div class="activity-dashboard">
     <div class="activity-period-note">
       <i aria-hidden="true" />{{
         $t('CRM_DEAL_REPORTS.ACTIVITY.PERIOD_HELPER')
@@ -496,7 +496,7 @@ onMounted(loadDealsWithoutNextAction);
       :aria-label="$t('CRM_DEAL_REPORTS.ACTIVITY.KPI_GROUP_ARIA')"
     >
       <article
-        class="activity-kpi activity-kpi--violet"
+        class="activity-kpi activity-kpi--violet rounded-xl bg-n-solid-2 px-6 py-5 shadow outline outline-1 outline-n-container"
         data-testid="kpi-stage-passes"
       >
         <div class="activity-kpi-top">
@@ -516,7 +516,7 @@ onMounted(loadDealsWithoutNextAction);
         <small>{{ $t('CRM_DEAL_REPORTS.ACTIVITY.KPI_STAGE_NOTE') }}</small>
       </article>
       <article
-        class="activity-kpi activity-kpi--teal"
+        class="activity-kpi activity-kpi--teal rounded-xl bg-n-solid-2 px-6 py-5 shadow outline outline-1 outline-n-container"
         data-testid="kpi-completed-events"
       >
         <div class="activity-kpi-top">
@@ -537,7 +537,7 @@ onMounted(loadDealsWithoutNextAction);
         <small>{{ $t('CRM_DEAL_REPORTS.ACTIVITY.KPI_EVENT_NOTE') }}</small>
       </article>
       <article
-        class="activity-kpi activity-kpi--coral"
+        class="activity-kpi activity-kpi--coral rounded-xl bg-n-solid-2 px-6 py-5 shadow outline outline-1 outline-n-container"
         data-testid="kpi-cancelled-events"
       >
         <div class="activity-kpi-top">
@@ -558,7 +558,7 @@ onMounted(loadDealsWithoutNextAction);
         <small>{{ $t('CRM_DEAL_REPORTS.ACTIVITY.KPI_EVENT_NOTE') }}</small>
       </article>
       <article
-        class="activity-kpi activity-kpi--amber"
+        class="activity-kpi activity-kpi--amber rounded-xl bg-n-solid-2 px-6 py-5 shadow outline outline-1 outline-n-container"
         data-testid="kpi-no-action"
       >
         <div class="activity-kpi-top">
@@ -583,7 +583,10 @@ onMounted(loadDealsWithoutNextAction);
     </section>
 
     <div class="activity-analysis-grid">
-      <section class="activity-panel" data-testid="stage-panel">
+      <section
+        class="activity-panel rounded-xl bg-n-solid-2 px-6 py-5 shadow outline outline-1 outline-n-container"
+        data-testid="stage-panel"
+      >
         <header class="activity-panel-header">
           <div>
             <div class="activity-title-line">
@@ -826,7 +829,9 @@ onMounted(loadDealsWithoutNextAction);
         </div>
       </section>
       <div class="activity-aside-column">
-        <section class="activity-panel activity-task-mix">
+        <section
+          class="activity-panel activity-task-mix rounded-xl bg-n-solid-2 px-6 py-5 shadow outline outline-1 outline-n-container"
+        >
           <header class="activity-panel-header">
             <div>
               <div class="activity-title-line">
@@ -907,7 +912,7 @@ onMounted(loadDealsWithoutNextAction);
                   cx="60"
                   cy="60"
                   r="42"
-                  :stroke="segment.color"
+                  :style="{ stroke: segment.color }"
                   :stroke-dasharray="segment.dashArray"
                   :stroke-dashoffset="segment.dashOffset"
                 />
@@ -958,7 +963,7 @@ onMounted(loadDealsWithoutNextAction);
           </div>
         </section>
         <section
-          class="activity-no-action-panel"
+          class="activity-no-action-panel rounded-xl bg-n-solid-2 px-6 py-5 shadow outline outline-1 outline-n-container"
           data-testid="no-action-snapshot"
         >
           <div class="activity-no-action-main">
@@ -1064,7 +1069,9 @@ onMounted(loadDealsWithoutNextAction);
       </div>
     </div>
 
-    <section class="activity-panel">
+    <section
+      class="activity-panel rounded-xl bg-n-solid-2 px-6 py-5 shadow outline outline-1 outline-n-container"
+    >
       <header class="activity-panel-header">
         <div>
           <div class="activity-title-line">
@@ -1192,21 +1199,28 @@ onMounted(loadDealsWithoutNextAction);
 
 <style scoped>
 .activity-dashboard {
-  --ink: #28243a;
-  --muted: #777386;
-  --line: #eceaf2;
-  --violet: #6956df;
-  --violet-soft: #f3f0ff;
-  --teal: #168d80;
-  --teal-soft: #e9f7f4;
-  --coral: #e77868;
-  --coral-soft: #fff0ed;
-  --amber: #bb8618;
-  --amber-soft: #fff7e4;
+  --ink: rgb(var(--slate-12));
+  --muted: rgb(var(--slate-11));
+  --faint: rgb(var(--slate-10));
+  --line: rgb(var(--border-weak));
+  --track: rgb(var(--slate-3));
+  --violet: rgb(var(--violet-9));
+  --violet-light: rgb(var(--violet-7));
+  --violet-ink: rgb(var(--violet-11));
+  --violet-soft: rgb(var(--violet-3));
+  --teal: rgb(var(--teal-9));
+  --teal-ink: rgb(var(--teal-11));
+  --teal-soft: rgb(var(--teal-3));
+  --coral: rgb(var(--ruby-9));
+  --coral-ink: rgb(var(--ruby-11));
+  --coral-soft: rgb(var(--ruby-3));
+  --amber: rgb(var(--amber-9));
+  --amber-ink: rgb(var(--amber-11));
+  --amber-soft: rgb(var(--amber-3));
   color: var(--ink);
   display: flex;
   flex-direction: column;
-  gap: 15px;
+  gap: 16px;
 }
 .activity-period-note {
   align-items: center;
@@ -1229,17 +1243,12 @@ onMounted(loadDealsWithoutNextAction);
 }
 .activity-kpis {
   display: grid;
-  gap: 11px;
+  gap: 16px;
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 .activity-kpi {
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 15px;
-  box-shadow: 0 5px 16px rgb(42 35 72 / 3%);
   min-width: 0;
   overflow: hidden;
-  padding: 14px 15px;
   position: relative;
 }
 .activity-kpi:before {
@@ -1251,18 +1260,22 @@ onMounted(loadDealsWithoutNextAction);
 }
 .activity-kpi--violet {
   --accent: var(--violet);
+  --accent-ink: var(--violet-ink);
   --accent-soft: var(--violet-soft);
 }
 .activity-kpi--teal {
   --accent: var(--teal);
+  --accent-ink: var(--teal-ink);
   --accent-soft: var(--teal-soft);
 }
 .activity-kpi--coral {
   --accent: var(--coral);
+  --accent-ink: var(--coral-ink);
   --accent-soft: var(--coral-soft);
 }
 .activity-kpi--amber {
   --accent: var(--amber);
+  --accent-ink: var(--amber-ink);
   --accent-soft: var(--amber-soft);
 }
 .activity-kpi-top {
@@ -1276,7 +1289,7 @@ onMounted(loadDealsWithoutNextAction);
   align-items: center;
   background: var(--accent-soft);
   border-radius: 9px;
-  color: var(--accent);
+  color: var(--accent-ink);
   display: inline-flex;
   font-size: 15px;
   font-weight: 700;
@@ -1294,13 +1307,13 @@ onMounted(loadDealsWithoutNextAction);
   width: 16px;
 }
 .activity-kpi-top > span:last-child:not(.activity-kpi-icon) {
-  color: #938fa1;
+  color: var(--faint);
   font-size: 12px;
   font-weight: 650;
   text-align: right;
 }
 .activity-kpi-value {
-  color: var(--accent);
+  color: var(--accent-ink);
   display: block;
   font-size: clamp(38px, 3.2vw, 44px);
   font-variant-numeric: tabular-nums;
@@ -1323,9 +1336,9 @@ onMounted(loadDealsWithoutNextAction);
   margin-top: 5px;
 }
 .activity-current-badge {
-  background: #fff0e7;
+  background: var(--amber-soft);
   border-radius: 99px;
-  color: #b66d38;
+  color: var(--amber-ink);
   font-size: 12px;
   font-weight: 650;
   padding: 4px 7px;
@@ -1333,23 +1346,18 @@ onMounted(loadDealsWithoutNextAction);
 .activity-analysis-grid {
   align-items: start;
   display: grid;
-  gap: 13px;
+  gap: 16px;
   grid-template-columns: minmax(0, 1.65fr) minmax(270px, 0.8fr);
 }
 .activity-aside-column {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
   min-width: 0;
 }
 .activity-panel,
 .activity-no-action-panel {
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  box-shadow: 0 7px 22px rgb(42 35 72 / 3.5%);
   min-width: 0;
-  padding: 17px;
 }
 .activity-panel-header {
   align-items: flex-start;
@@ -1366,9 +1374,9 @@ onMounted(loadDealsWithoutNextAction);
 .activity-title-line h2 {
   color: var(--ink);
   font-size: 16px;
-  font-weight: 740;
-  letter-spacing: -0.018em;
-  line-height: 1.3;
+  font-weight: 500;
+  letter-spacing: -0.27px;
+  line-height: 24px;
   margin: 0;
 }
 .activity-title-mark {
@@ -1377,13 +1385,13 @@ onMounted(loadDealsWithoutNextAction);
   height: 18px;
 }
 .activity-title-mark--violet {
-  background: linear-gradient(180deg, #8d7bf4, var(--violet));
+  background: var(--violet);
 }
 .activity-title-mark--teal {
-  background: linear-gradient(180deg, #54c7b8, var(--teal));
+  background: var(--teal);
 }
 .activity-title-mark--coral {
-  background: linear-gradient(180deg, #f49c83, var(--coral));
+  background: var(--coral);
 }
 .activity-subtitle {
   color: var(--muted);
@@ -1392,7 +1400,7 @@ onMounted(loadDealsWithoutNextAction);
   margin: 5px 0 0 15px;
 }
 .activity-reliable-since {
-  color: #9692a1;
+  color: var(--faint);
   font-size: 12px;
   line-height: 1.4;
   margin: 3px 0 0 15px;
@@ -1410,20 +1418,20 @@ onMounted(loadDealsWithoutNextAction);
   padding: 5px 7px;
 }
 .activity-coverage-pill {
-  background: #f1f0f5;
-  color: #777386;
+  background: var(--track);
+  color: var(--muted);
 }
 .activity-coverage-pill[data-coverage='exact'] {
   background: var(--teal-soft);
-  color: #16786e;
+  color: var(--teal-ink);
 }
 .activity-coverage-pill[data-coverage='estimated'] {
   background: var(--amber-soft);
-  color: #926811;
+  color: var(--amber-ink);
 }
 .activity-coverage-pill[data-coverage='unknown'] {
   background: var(--coral-soft);
-  color: #b65345;
+  color: var(--coral-ink);
 }
 .activity-coverage-pill--small {
   font-size: 12px;
@@ -1431,7 +1439,7 @@ onMounted(loadDealsWithoutNextAction);
 }
 .activity-total-chip {
   background: var(--teal-soft);
-  color: #16786e;
+  color: var(--teal-ink);
   font-size: 12px;
   justify-content: center;
   min-width: 31px;
@@ -1439,7 +1447,7 @@ onMounted(loadDealsWithoutNextAction);
 }
 .activity-total-chip--violet {
   background: var(--violet-soft);
-  color: #5543c8;
+  color: var(--violet-ink);
 }
 .activity-help {
   color: var(--muted);
@@ -1449,7 +1457,7 @@ onMounted(loadDealsWithoutNextAction);
 }
 .activity-help summary,
 .activity-row-help summary {
-  color: #777386;
+  color: var(--muted);
   cursor: pointer;
   font-size: 12px;
   font-weight: 650;
@@ -1475,7 +1483,7 @@ onMounted(loadDealsWithoutNextAction);
   margin-bottom: 6px;
 }
 .activity-stage-axis > div {
-  color: #9894a4;
+  color: var(--faint);
   display: flex;
   font-size: 10px;
   grid-column: 2;
@@ -1485,14 +1493,13 @@ onMounted(loadDealsWithoutNextAction);
 .activity-stage-rows {
   display: flex;
   flex-direction: column;
-  gap: 7px;
 }
 .activity-stage-row {
-  background: linear-gradient(120deg, #fbfaff, #fff 70%);
-  border: 1px solid #f0edf7;
-  border-radius: 11px;
   min-width: 0;
-  padding: 9px 10px 7px;
+  padding: 10px 0;
+}
+.activity-stage-row + .activity-stage-row {
+  border-top: 1px solid var(--line);
 }
 .activity-stage-row-head {
   align-items: flex-start;
@@ -1510,7 +1517,7 @@ onMounted(loadDealsWithoutNextAction);
   min-width: 0;
 }
 .activity-stage-names small {
-  color: #898497;
+  color: var(--faint);
   flex: 0 0 100%;
   font-size: 12px;
 }
@@ -1521,7 +1528,7 @@ onMounted(loadDealsWithoutNextAction);
   overflow-wrap: anywhere;
 }
 .activity-stage-names > span {
-  color: #7f7a8d;
+  color: var(--muted);
   font-size: 12px;
 }
 .activity-stage-meta {
@@ -1532,7 +1539,7 @@ onMounted(loadDealsWithoutNextAction);
   gap: 5px;
 }
 .activity-stage-meta > small {
-  color: #777386;
+  color: var(--muted);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   font-weight: 650;
@@ -1548,13 +1555,13 @@ onMounted(loadDealsWithoutNextAction);
   min-height: 14px;
 }
 .activity-stage-measure > span:first-child {
-  color: #817c90;
+  color: var(--muted);
   font-size: 12px;
   line-height: 1.2;
 }
 .activity-bar-track,
 .activity-task-track {
-  background: #f0edf7;
+  background: var(--track);
   border-radius: 99px;
   height: 7px;
   min-width: 0;
@@ -1568,13 +1575,13 @@ onMounted(loadDealsWithoutNextAction);
   transition: width 0.18s ease-out;
 }
 .activity-bar-fill--median {
-  background: linear-gradient(90deg, #8775f0, #6551dc);
+  background: var(--violet);
 }
 .activity-bar-fill--p75 {
-  background: linear-gradient(90deg, #b1a4f7, #8e7be9);
+  background: var(--violet-light);
 }
 .activity-stage-measure > strong {
-  color: #4f4a60;
+  color: var(--ink);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   font-weight: 700;
@@ -1582,12 +1589,12 @@ onMounted(loadDealsWithoutNextAction);
   white-space: nowrap;
 }
 .activity-row-help {
-  border-top: 1px solid #f0edf7;
+  border-top: 1px solid var(--line);
   margin-top: 7px;
   padding-top: 6px;
 }
 .activity-row-help > div {
-  color: #777386;
+  color: var(--muted);
   display: flex;
   flex-wrap: wrap;
   font-size: 12px;
@@ -1596,7 +1603,7 @@ onMounted(loadDealsWithoutNextAction);
 }
 .activity-legend {
   align-items: center;
-  color: #777386;
+  color: var(--muted);
   display: flex;
   flex-wrap: wrap;
   font-size: 12px;
@@ -1617,10 +1624,10 @@ onMounted(loadDealsWithoutNextAction);
   background: var(--violet);
 }
 .activity-legend-dot--p75 {
-  background: #a194ef;
+  background: var(--violet-light);
 }
 .activity-unit {
-  color: #9a96a7;
+  color: var(--faint);
   margin-left: auto;
 }
 .activity-task-mix {
@@ -1654,7 +1661,7 @@ onMounted(loadDealsWithoutNextAction);
   stroke-width: 12;
 }
 .activity-donut-track {
-  stroke: #f1eff6;
+  stroke: var(--track);
 }
 .activity-donut-segment {
   stroke-linecap: butt;
@@ -1698,7 +1705,7 @@ onMounted(loadDealsWithoutNextAction);
   display: flex;
 }
 .activity-donut-legend li {
-  color: #676276;
+  color: var(--muted);
   font-size: 12px;
   gap: 10px;
   justify-content: space-between;
@@ -1723,7 +1730,7 @@ onMounted(loadDealsWithoutNextAction);
   background: var(--coral);
 }
 .activity-dot--other {
-  background: #d9a340;
+  background: var(--amber);
 }
 .activity-task-coverage {
   border-top: 1px solid var(--line);
@@ -1737,16 +1744,14 @@ onMounted(loadDealsWithoutNextAction);
 }
 .activity-task-rows {
   display: grid;
-  gap: 8px;
+  gap: 0 24px;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
   margin-top: 12px;
 }
 .activity-task-row {
-  background: #fcfbfe;
-  border: 1px solid #f0edf5;
-  border-radius: 11px;
+  border-top: 1px solid var(--line);
   min-width: 0;
-  padding: 10px 11px;
+  padding: 12px 0;
 }
 .activity-task-row-head {
   align-items: flex-start;
@@ -1787,7 +1792,7 @@ onMounted(loadDealsWithoutNextAction);
   line-height: 1;
 }
 .activity-task-count small {
-  color: #9894a4;
+  color: var(--faint);
   font-size: 12px;
 }
 .activity-task-meta {
@@ -1800,34 +1805,34 @@ onMounted(loadDealsWithoutNextAction);
 .activity-lifecycle-pill {
   background: var(--teal-soft);
   border-radius: 99px;
-  color: #16786e;
+  color: var(--teal-ink);
   font-size: 12px;
   font-weight: 650;
   padding: 4px 7px;
 }
 .activity-lifecycle-pill[data-lifecycle='cancelled'] {
   background: var(--coral-soft);
-  color: #b65345;
+  color: var(--coral-ink);
 }
 .activity-lifecycle-pill[data-lifecycle]:not([data-lifecycle='completed']):not(
     [data-lifecycle='cancelled']
   ) {
   background: var(--amber-soft);
-  color: #926811;
+  color: var(--amber-ink);
 }
 .activity-task-track {
   height: 5px;
   margin-top: 7px;
 }
 .activity-task-track > i {
-  background: linear-gradient(90deg, #a99af5, var(--violet));
+  background: var(--violet);
   border-radius: inherit;
   display: block;
   height: 100%;
 }
 .activity-task-counts {
   align-items: center;
-  color: #777386;
+  color: var(--muted);
   display: flex;
   flex-wrap: wrap;
   font-size: 12px;
@@ -1841,22 +1846,14 @@ onMounted(loadDealsWithoutNextAction);
   padding-top: 8px;
 }
 .activity-no-action-panel {
-  background: radial-gradient(
-      circle at 100% 0,
-      rgb(246 171 146 / 15%),
-      transparent 34%
-    ),
-    linear-gradient(115deg, #fff9f6, #fff 70%);
-  border-color: #f4e5df;
   display: flex;
   flex-direction: column;
   gap: 11px;
   overflow: hidden;
-  padding: 14px;
 }
 .activity-no-action-side {
   align-items: flex-start;
-  border-top: 1px solid #f1e4df;
+  border-top: 1px solid var(--line);
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -1878,7 +1875,7 @@ onMounted(loadDealsWithoutNextAction);
   gap: 8px;
 }
 .activity-no-action-number strong {
-  color: #d76856;
+  color: var(--coral);
   font-size: clamp(34px, 5vw, 50px);
   font-variant-numeric: tabular-nums;
   font-weight: 760;
@@ -1886,21 +1883,21 @@ onMounted(loadDealsWithoutNextAction);
   line-height: 0.95;
 }
 .activity-no-action-number span {
-  color: #6e6570;
+  color: var(--muted);
   font-size: 12px;
   font-weight: 650;
 }
 .activity-no-action-clear {
-  color: #477d6e;
+  color: var(--teal-ink);
   font-size: 12px;
   line-height: 1.45;
   margin: 8px 0 0;
 }
 .activity-no-action-clear--attention {
-  color: #a56d48;
+  color: var(--amber-ink);
 }
 .activity-snapshot-meta {
-  color: #938b92;
+  color: var(--faint);
   font-size: 12px;
   line-height: 1.45;
   margin: 7px 0 0;
@@ -1913,29 +1910,29 @@ onMounted(loadDealsWithoutNextAction);
   margin: 10px 0 0 12px;
 }
 .activity-snapshot-coverage small {
-  color: #938b92;
+  color: var(--faint);
   font-size: 12px;
 }
 .activity-retry {
   background: var(--violet-soft);
-  border: 1px solid #e1dcfb;
+  border: 1px solid rgb(var(--violet-6));
   border-radius: 8px;
-  color: #5543c8;
+  color: var(--violet-ink);
   cursor: pointer;
   font-size: 12px;
   font-weight: 700;
   padding: 6px 9px;
 }
 .activity-retry:hover {
-  background: #eae6ff;
+  background: rgb(var(--violet-4));
 }
 .activity-retry--coral {
-  background: #fff0ed;
-  border-color: #f5d8d2;
-  color: #b65345;
+  background: var(--coral-soft);
+  border-color: rgb(var(--ruby-6));
+  color: var(--coral-ink);
 }
 .activity-retry--coral:hover {
-  background: #ffe7e2;
+  background: rgb(var(--ruby-4));
 }
 .activity-state {
   align-items: center;
@@ -1951,7 +1948,7 @@ onMounted(loadDealsWithoutNextAction);
   margin: 0;
 }
 .activity-state--error {
-  color: #b65345;
+  color: var(--coral-ink);
 }
 .activity-state--inline {
   flex-wrap: nowrap;
@@ -1968,7 +1965,7 @@ onMounted(loadDealsWithoutNextAction);
 .activity-loading i,
 .activity-no-action-loading i {
   animation: activity-pulse 1.5s ease-in-out infinite;
-  background: #f1eff6;
+  background: var(--track);
   border-radius: 99px;
   display: block;
   height: 7px;
@@ -1986,7 +1983,7 @@ onMounted(loadDealsWithoutNextAction);
   min-height: 190px;
 }
 .activity-loading--mix i:first-child {
-  border: 11px solid #f1eff6;
+  border: 11px solid var(--track);
   border-radius: 50%;
   height: 112px;
   width: 112px;
@@ -2038,16 +2035,6 @@ onMounted(loadDealsWithoutNextAction);
   }
 }
 @media (max-width: 700px) {
-  .activity-dashboard {
-    gap: 10px;
-  }
-  .activity-kpis {
-    gap: 7px;
-  }
-  .activity-kpi {
-    border-radius: 12px;
-    padding: 11px 10px;
-  }
   .activity-kpi-value {
     font-size: clamp(32px, 8vw, 36px);
     margin-top: 11px;
@@ -2060,11 +2047,6 @@ onMounted(loadDealsWithoutNextAction);
   }
   .activity-kpi small {
     font-size: 12px;
-  }
-  .activity-panel,
-  .activity-no-action-panel {
-    border-radius: 13px;
-    padding: 12px;
   }
   .activity-panel-header > .activity-coverage-pill {
     font-size: 12px;
@@ -2082,7 +2064,7 @@ onMounted(loadDealsWithoutNextAction);
     font-size: 12px;
   }
   .activity-stage-row {
-    padding: 7px;
+    padding: 8px 0;
   }
   .activity-stage-row-head {
     flex-direction: column;
@@ -2157,7 +2139,7 @@ onMounted(loadDealsWithoutNextAction);
     gap: 10px;
   }
   .activity-no-action-side {
-    border-top: 1px solid #f1e4df;
+    border-top: 1px solid var(--line);
     padding: 9px 0 0 12px;
   }
   .activity-panel-header {

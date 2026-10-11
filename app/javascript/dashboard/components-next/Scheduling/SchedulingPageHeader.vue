@@ -28,7 +28,7 @@ defineProps({
 </script>
 
 <template>
-  <header class="bg-n-surface-1 px-5 pb-2 pt-4">
+  <header class="bg-n-surface-1 px-6 pb-2 pt-4">
     <div
       class="flex min-w-0 flex-col gap-3 md:flex-row md:flex-wrap md:items-start md:gap-4"
       :class="contentClass"

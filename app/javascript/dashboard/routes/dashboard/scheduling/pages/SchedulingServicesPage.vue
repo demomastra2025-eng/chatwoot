@@ -237,7 +237,7 @@ onMounted(async () => {
       </template>
     </SchedulingPageHeader>
 
-    <div class="flex flex-col gap-4 px-5 pb-5 pt-3">
+    <div class="flex flex-col gap-4 px-6 pb-8 pt-3">
       <div
         v-if="
           referencesStore.ui.isLoadingServices ||
@@ -383,6 +383,7 @@ onMounted(async () => {
     >
       <div class="flex flex-col gap-6">
         <SchedulingFormFieldGroup
+          :framed="false"
           :title="$t('SCHEDULING.SERVICES.BASIC')"
           :description="$t('SCHEDULING.SERVICES.BASIC_DESCRIPTION')"
         >
@@ -425,20 +426,22 @@ onMounted(async () => {
         </SchedulingFormFieldGroup>
 
         <SchedulingFormFieldGroup
+          :framed="false"
+          class="border-t border-n-weak pt-6"
           :title="$t('SCHEDULING.SERVICES.PRICING_TITLE')"
           :description="$t('SCHEDULING.SERVICES.PRICING_DESCRIPTION')"
         >
-          <div class="flex flex-col gap-4">
+          <div class="flex flex-col divide-y divide-n-weak">
             <div
               v-for="price in serviceForm.prices"
               :key="price.resourceId"
-              class="grid gap-4 rounded-2xl bg-n-surface-1 p-4 outline outline-1 outline-n-container lg:grid-cols-[minmax(0,1.2fr)_180px]"
+              class="grid gap-4 py-3 lg:grid-cols-[minmax(0,1.2fr)_180px]"
             >
               <div class="flex flex-col gap-1">
                 <span class="text-sm font-medium text-n-slate-12">
                   {{ price.resourceName }}
                 </span>
-                <label class="flex items-center gap-2 text-xs text-n-slate-11">
+                <label class="flex items-center gap-2 text-sm text-n-slate-12">
                   <Switch
                     v-model="price.active"
                     @change="handlePriceActiveChange(price, $event)"
@@ -455,7 +458,10 @@ onMounted(async () => {
           </div>
         </SchedulingFormFieldGroup>
 
-        <SchedulingFormFieldGroup>
+        <SchedulingFormFieldGroup
+          :framed="false"
+          class="border-t border-n-weak pt-6"
+        >
           <TextArea
             v-model="serviceForm.description"
             auto-height

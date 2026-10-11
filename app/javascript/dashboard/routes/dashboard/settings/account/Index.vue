@@ -326,11 +326,11 @@ export default {
 <template>
   <div class="flex flex-col w-full">
     <BaseSettingsHeader :title="$t('GENERAL_SETTINGS.TITLE')" />
-    <div class="w-full max-w-3xl mt-5">
+    <div class="w-full max-w-3xl mt-4">
       <main class="min-w-0">
         <div
           v-if="isWorkspaceReadOnly"
-          class="mt-6 flex items-start gap-2 rounded-lg bg-n-amber-3 px-4 py-3 text-sm text-n-amber-11"
+          class="mb-6 flex items-start gap-2 rounded-xl bg-n-amber-3 px-4 py-3 text-sm text-n-amber-11"
         >
           <span class="i-lucide-lock-keyhole mt-0.5" />
           <span>{{ $t('GENERAL_SETTINGS.READ_ONLY') }}</span>
@@ -339,7 +339,7 @@ export default {
         <SectionLayout
           :title="$t('GENERAL_SETTINGS.FORM.GENERAL_SECTION.TITLE')"
           :description="$t('GENERAL_SETTINGS.FORM.GENERAL_SECTION.NOTE')"
-          class="!pt-6"
+          class="!pt-0"
         >
           <form
             v-if="!uiFlags.isFetchingItem"
@@ -462,7 +462,7 @@ export default {
 
     <div
       v-if="hasWorkspaceChanges && !isWorkspaceReadOnly"
-      class="sticky bottom-4 z-20 mt-6 flex w-full max-w-3xl flex-col items-start gap-3 rounded-xl border border-n-weak bg-n-background/95 px-4 py-3 shadow-lg backdrop-blur"
+      class="sticky bottom-4 z-20 mt-6 flex w-full max-w-3xl flex-col items-start gap-3 rounded-xl outline outline-1 -outline-offset-1 outline-n-weak bg-n-background/95 px-4 py-3 shadow-lg backdrop-blur"
     >
       <div class="flex items-center gap-2">
         <NextButton

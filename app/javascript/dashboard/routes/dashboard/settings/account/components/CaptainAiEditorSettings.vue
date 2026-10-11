@@ -109,7 +109,7 @@ onMounted(loadSettings);
       </p>
       <button
         type="button"
-        class="text-sm font-medium text-n-brand hover:underline"
+        class="p-0 text-sm font-medium text-n-brand hover:underline"
         @click="loadSettings({ force: true })"
       >
         {{ t('DESIGN_SYSTEM.STATE.RETRY') }}
@@ -117,40 +117,44 @@ onMounted(loadSettings);
     </div>
     <div v-else class="grid gap-4">
       <div
-        class="flex items-center justify-between gap-4"
-        data-test="captain-text-improvement"
+        class="divide-y divide-n-weak rounded-xl outline outline-1 -outline-offset-1 outline-n-weak"
       >
-        <div class="min-w-0">
-          <div class="text-sm font-medium text-n-slate-12">
-            {{ t('CAPTAIN_SETTINGS.FEATURES.TEXT_IMPROVEMENT.TITLE') }}
+        <div
+          class="flex flex-col gap-1 px-4 py-3"
+          data-test="captain-text-improvement"
+        >
+          <div class="flex items-center justify-between gap-3">
+            <span class="min-w-0 text-heading-3 text-n-slate-12">
+              {{ t('CAPTAIN_SETTINGS.FEATURES.TEXT_IMPROVEMENT.TITLE') }}
+            </span>
+            <Switch
+              :model-value="isTextImprovementEnabled"
+              :disabled="props.disabled || savingKey !== ''"
+              @change="enabled => saveFeature('textImprovement', enabled)"
+            />
           </div>
-          <div class="text-xs text-n-slate-11">
+          <p class="mb-0 text-body-main text-n-slate-11">
             {{ t('CAPTAIN_SETTINGS.FEATURES.TEXT_IMPROVEMENT.DESCRIPTION') }}
-          </div>
+          </p>
         </div>
-        <Switch
-          :model-value="isTextImprovementEnabled"
-          :disabled="props.disabled || savingKey !== ''"
-          @change="enabled => saveFeature('textImprovement', enabled)"
-        />
-      </div>
-      <div
-        class="flex items-center justify-between gap-4"
-        data-test="captain-label-suggestion"
-      >
-        <div class="min-w-0">
-          <div class="text-sm font-medium text-n-slate-12">
-            {{ t('CAPTAIN_SETTINGS.FEATURES.LABEL_SUGGESTION.TITLE') }}
+        <div
+          class="flex flex-col gap-1 px-4 py-3"
+          data-test="captain-label-suggestion"
+        >
+          <div class="flex items-center justify-between gap-3">
+            <span class="min-w-0 text-heading-3 text-n-slate-12">
+              {{ t('CAPTAIN_SETTINGS.FEATURES.LABEL_SUGGESTION.TITLE') }}
+            </span>
+            <Switch
+              :model-value="isLabelSuggestionEnabled"
+              :disabled="props.disabled || savingKey !== ''"
+              @change="enabled => saveFeature('labelSuggestion', enabled)"
+            />
           </div>
-          <div class="text-xs text-n-slate-11">
+          <p class="mb-0 text-body-main text-n-slate-11">
             {{ t('CAPTAIN_SETTINGS.FEATURES.LABEL_SUGGESTION.DESCRIPTION') }}
-          </div>
+          </p>
         </div>
-        <Switch
-          :model-value="isLabelSuggestionEnabled"
-          :disabled="props.disabled || savingKey !== ''"
-          @change="enabled => saveFeature('labelSuggestion', enabled)"
-        />
       </div>
       <p v-if="saveFailed" class="m-0 text-sm text-n-ruby-9" role="alert">
         {{ t('CAPTAIN_SETTINGS.API.ERROR') }}

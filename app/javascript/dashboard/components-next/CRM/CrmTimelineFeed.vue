@@ -215,12 +215,12 @@ const submitComment = () => {
 
 <template>
   <section
-    class="overflow-hidden rounded-2xl border border-n-weak bg-n-solid-1 shadow-sm"
+    class="overflow-hidden rounded-xl bg-n-solid-2 outline outline-1 -outline-offset-1 outline-n-container"
   >
     <button
       v-if="showHeader"
       type="button"
-      class="group flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-n-alpha-black2"
+      class="group flex w-full items-center justify-between gap-3 rounded-none px-4 py-3 text-left transition-colors hover:bg-n-alpha-black2"
       :aria-expanded="isContentVisible"
       @click="toggleExpanded"
     >
@@ -285,7 +285,7 @@ const submitComment = () => {
 
       <SchedulingErrorState
         v-if="error"
-        class="m-4"
+        class="!rounded-none !outline-0"
         :title="t('CRM.TIMELINE.LOAD_ERROR')"
         :description="errorDescription"
         @retry="emit('retry')"

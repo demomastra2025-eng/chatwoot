@@ -1017,7 +1017,7 @@ defineExpose({ openCreateTaskDialog, loadTasks });
 
 <template>
   <section
-    class="overflow-hidden rounded-2xl border border-n-weak bg-n-solid-1 shadow-sm"
+    class="overflow-hidden rounded-xl bg-n-solid-2 outline outline-1 -outline-offset-1 outline-n-container"
   >
     <header
       class="flex items-center justify-between gap-3 border-b border-n-weak px-4 py-3"
@@ -1099,7 +1099,7 @@ defineExpose({ openCreateTaskDialog, loadTasks });
 
     <SchedulingErrorState
       v-else-if="ui.error"
-      class="m-4"
+      class="!rounded-none !outline-0"
       :title="$t('CRM.ERRORS.LOAD_TITLE')"
       :description="formatCrmErrorMessage(ui.error, t)"
       @retry="loadTasks"
@@ -1110,7 +1110,7 @@ defineExpose({ openCreateTaskDialog, loadTasks });
       class="grid place-items-center gap-3 px-4 py-8 text-center"
     >
       <span
-        class="flex size-10 items-center justify-center rounded-2xl bg-n-alpha-black2 text-n-slate-11"
+        class="flex size-10 items-center justify-center rounded-xl bg-n-alpha-black2 text-n-slate-11"
       >
         <Icon icon="i-lucide-list-checks" class="size-5" />
       </span>
@@ -1128,14 +1128,14 @@ defineExpose({ openCreateTaskDialog, loadTasks });
       <li
         v-for="task in sortedTasks"
         :key="task.id"
-        class="group grid gap-1.5 px-3 py-2 transition-colors hover:bg-n-alpha-black2/70"
+        class="group grid gap-1.5 px-4 py-3 transition-colors hover:bg-n-alpha-black2/70"
       >
         <div class="flex min-w-0 items-start justify-between gap-2">
           <div class="grid min-w-0 gap-0.5">
             <div class="flex min-w-0 items-center gap-1">
               <button
                 type="button"
-                class="min-w-0 text-left disabled:cursor-default"
+                class="min-w-0 p-0 text-left disabled:cursor-default"
                 :disabled="!canOpenTaskDialog(task)"
                 :aria-label="
                   canEditTask(task)
@@ -1197,7 +1197,7 @@ defineExpose({ openCreateTaskDialog, loadTasks });
             <button
               v-if="canSetTaskResult(task)"
               type="button"
-              class="inline-flex h-7 items-center gap-1 rounded-full border px-2 text-[11px] font-medium transition-colors"
+              class="inline-flex h-7 items-center gap-1 rounded-full border px-2 py-0 text-[11px] font-medium transition-colors"
               :class="taskResultButtonClass(task)"
               :aria-label="$t('CRM.TASKS.RESULT_DIALOG.ACTION')"
               @click="openTaskResultDialog(task)"
@@ -1271,13 +1271,13 @@ defineExpose({ openCreateTaskDialog, loadTasks });
       </div>
 
       <div class="crm-task-dialog-grid">
-        <div class="flex items-center gap-3 md:col-span-2">
+        <div class="flex items-center gap-2 md:col-span-2">
           <Switch
             :model-value="form.allDay"
             :disabled="isTaskReadOnly"
             @update:model-value="updateAllDay"
           />
-          <span class="text-sm font-medium text-n-slate-12">
+          <span class="text-sm text-n-slate-12">
             {{ $t('CRM.TASKS.FORM.ALL_DAY') }}
           </span>
         </div>

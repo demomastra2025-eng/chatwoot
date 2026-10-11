@@ -162,7 +162,7 @@ onBeforeUnmount(() => {
 
     <div
       v-if="!isLoading && hasError"
-      class="flex items-center justify-between gap-3 rounded-lg border border-n-weak bg-n-surface-1 p-3"
+      class="flex items-center justify-between gap-3 rounded-xl bg-n-solid-2 px-6 py-5 shadow outline outline-1 outline-n-container"
       role="alert"
     >
       <p class="m-0 text-sm text-n-slate-11">{{ t('REPORTS.LEADS.ERROR') }}</p>
@@ -183,31 +183,29 @@ onBeforeUnmount(() => {
       {{ t('REPORTS.LEADS.EVENTS_NOTE') }}
     </p>
 
-    <section class="border-t border-n-weak pt-4">
-      <h2 class="mb-3 mt-0 text-sm font-semibold text-n-slate-12">
+    <section
+      class="rounded-xl bg-n-solid-2 px-6 py-5 shadow outline outline-1 outline-n-container"
+    >
+      <h2 class="mb-4 mt-0 text-heading-2 text-n-slate-12">
         {{ t('REPORTS.LEADS.REFERRALS_TITLE') }}
       </h2>
-      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <div
+      <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
+        <ReportMetricCard
           v-for="metric in referralMetrics"
           :key="metric.key"
-          class="rounded-lg border border-n-weak p-3"
-        >
-          <ReportMetricCard
-            :label="metric.label"
-            :value="metric.value"
-            :info-text="t('REPORTS.LEADS.EVENTS_NOTE')"
-            :disabled="isLoading"
-          />
-        </div>
+          :label="metric.label"
+          :value="metric.value"
+          :info-text="t('REPORTS.LEADS.EVENTS_NOTE')"
+          :disabled="isLoading"
+        />
       </div>
     </section>
 
     <section
-      class="overflow-hidden rounded-xl border border-n-weak bg-n-surface-1"
+      class="min-w-0 overflow-hidden rounded-xl bg-n-solid-2 p-0 shadow outline outline-1 outline-n-container"
     >
-      <div class="border-b border-n-weak px-4 py-3">
-        <h2 class="m-0 text-sm font-semibold text-n-slate-12">
+      <div class="border-b border-n-weak px-5 py-4">
+        <h2 class="m-0 text-heading-2 text-n-slate-12">
           {{ t('REPORTS.LEADS.ATTRIBUTION_BREAKDOWN') }}
         </h2>
       </div>
@@ -215,19 +213,19 @@ onBeforeUnmount(() => {
         <table class="w-full min-w-[42rem] text-left text-sm">
           <thead class="bg-n-surface-2 text-xs text-n-slate-10">
             <tr>
-              <th class="px-4 py-2 font-medium">
+              <th class="px-5 py-2 font-medium">
                 {{ t('REPORTS.LEADS.PROVIDER') }}
               </th>
-              <th class="px-4 py-2 font-medium">
+              <th class="px-5 py-2 font-medium">
                 {{ t('REPORTS.LEADS.ATTRIBUTION') }}
               </th>
-              <th class="px-4 py-2 font-medium">
+              <th class="px-5 py-2 font-medium">
                 {{ t('REPORTS.LEADS.SOURCE_TYPE') }}
               </th>
-              <th class="px-4 py-2 font-medium">
+              <th class="px-5 py-2 font-medium">
                 {{ t('REPORTS.LEADS.REFERRAL_TYPE') }}
               </th>
-              <th class="px-4 py-2 text-right font-medium">
+              <th class="px-5 py-2 text-right font-medium">
                 {{ t('REPORTS.LEADS.EVENT_COUNT') }}
               </th>
             </tr>
@@ -238,8 +236,8 @@ onBeforeUnmount(() => {
               :key="`${row.provider}-${row.attribution_type}-${row.source_type}-${index}`"
               class="text-n-slate-11"
             >
-              <td class="px-4 py-2.5">{{ row.provider }}</td>
-              <td class="px-4 py-2.5">
+              <td class="px-5 py-2.5">{{ row.provider }}</td>
+              <td class="px-5 py-2.5">
                 {{
                   localizedValue(
                     'REPORTS.LEADS.ATTRIBUTIONS',
@@ -247,14 +245,14 @@ onBeforeUnmount(() => {
                   )
                 }}
               </td>
-              <td class="px-4 py-2.5">{{ row.source_type }}</td>
-              <td class="px-4 py-2.5">{{ row.referral_type }}</td>
-              <td class="px-4 py-2.5 text-right">
+              <td class="px-5 py-2.5">{{ row.source_type }}</td>
+              <td class="px-5 py-2.5">{{ row.referral_type }}</td>
+              <td class="px-5 py-2.5 text-right">
                 {{ number(row.event_count) }}
               </td>
             </tr>
             <tr v-if="!isLoading && !hasError && referralRows.length === 0">
-              <td colspan="5" class="px-4 py-8 text-center text-n-slate-10">
+              <td colspan="5" class="px-5 py-8 text-center text-n-slate-10">
                 {{ t('REPORTS.LEADS.EMPTY') }}
               </td>
             </tr>
@@ -263,7 +261,7 @@ onBeforeUnmount(() => {
       </div>
       <p
         v-if="referrals.attribution_breakdown_omitted_event_count"
-        class="m-0 border-t border-n-weak px-4 py-2 text-xs text-n-slate-10"
+        class="m-0 border-t border-n-weak px-5 py-2 text-xs text-n-slate-10"
       >
         {{
           t('REPORTS.LEADS.OMITTED_ATTRIBUTION', {
@@ -273,9 +271,11 @@ onBeforeUnmount(() => {
       </p>
     </section>
 
-    <section class="border-t border-n-weak pt-4">
-      <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <h2 class="m-0 text-sm font-semibold text-n-slate-12">
+    <section
+      class="rounded-xl bg-n-solid-2 px-6 py-5 shadow outline outline-1 outline-n-container"
+    >
+      <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <h2 class="m-0 text-heading-2 text-n-slate-12">
           {{ t('REPORTS.LEADS.FORM_SUBMISSIONS_TITLE') }}
         </h2>
         <span class="text-xs text-n-slate-10">
@@ -292,33 +292,29 @@ onBeforeUnmount(() => {
           </span>
         </span>
       </div>
-      <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div
+      <div class="grid grid-cols-1 gap-5 sm:grid-cols-3">
+        <ReportMetricCard
           v-for="metric in submissionMetrics"
           :key="metric.key"
-          class="rounded-lg border border-n-weak p-3"
-        >
-          <ReportMetricCard
-            :label="metric.label"
-            :value="metric.value"
-            :info-text="t('REPORTS.LEADS.EVENTS_NOTE')"
-            :disabled="isLoading"
-          />
-        </div>
+          :label="metric.label"
+          :value="metric.value"
+          :info-text="t('REPORTS.LEADS.EVENTS_NOTE')"
+          :disabled="isLoading"
+        />
       </div>
 
-      <div class="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
+      <div
+        class="mt-5 grid grid-cols-1 gap-5 border-t border-n-weak pt-5 xl:grid-cols-2"
+      >
         <div>
-          <h3 class="mb-2 mt-0 text-xs font-semibold text-n-slate-11">
+          <h3 class="mb-2 mt-0 text-heading-3 text-n-slate-12">
             {{ t('REPORTS.LEADS.SOURCE_STATUS') }}
           </h3>
-          <ul
-            class="m-0 divide-y divide-n-weak rounded-lg border border-n-weak p-0"
-          >
+          <ul class="m-0 list-none divide-y divide-n-weak p-0">
             <li
               v-for="row in sourceStatusRows"
               :key="`${row.source_kind}-${row.status}`"
-              class="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+              class="flex items-center justify-between gap-3 py-2 text-sm"
             >
               <span class="text-n-slate-11">
                 {{
@@ -333,23 +329,21 @@ onBeforeUnmount(() => {
             </li>
             <li
               v-if="!isLoading && !hasError && sourceStatusRows.length === 0"
-              class="px-3 py-4 text-center text-sm text-n-slate-10"
+              class="py-4 text-center text-sm text-n-slate-10"
             >
               {{ t('REPORTS.LEADS.EMPTY') }}
             </li>
           </ul>
         </div>
         <div>
-          <h3 class="mb-2 mt-0 text-xs font-semibold text-n-slate-11">
+          <h3 class="mb-2 mt-0 text-heading-3 text-n-slate-12">
             {{ t('REPORTS.LEADS.FORMS') }}
           </h3>
-          <ul
-            class="m-0 divide-y divide-n-weak rounded-lg border border-n-weak p-0"
-          >
+          <ul class="m-0 list-none divide-y divide-n-weak p-0">
             <li
               v-for="row in formRows"
               :key="`${row.lead_form_id}-${row.source_kind}`"
-              class="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+              class="flex items-center justify-between gap-3 py-2 text-sm"
             >
               <span class="min-w-0 truncate text-n-slate-11">
                 {{ row.lead_form_name }}
@@ -364,7 +358,7 @@ onBeforeUnmount(() => {
             </li>
             <li
               v-if="!isLoading && !hasError && formRows.length === 0"
-              class="px-3 py-4 text-center text-sm text-n-slate-10"
+              class="py-4 text-center text-sm text-n-slate-10"
             >
               {{ t('REPORTS.LEADS.EMPTY') }}
             </li>
@@ -382,18 +376,18 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div
+        class="mt-5 grid grid-cols-1 gap-5 border-t border-n-weak pt-5 lg:grid-cols-2"
+      >
         <div>
-          <h3 class="mb-2 mt-0 text-xs font-semibold text-n-slate-11">
+          <h3 class="mb-2 mt-0 text-heading-3 text-n-slate-12">
             {{ t('REPORTS.LEADS.UTM_SOURCES') }}
           </h3>
-          <ul
-            class="m-0 divide-y divide-n-weak rounded-lg border border-n-weak p-0"
-          >
+          <ul class="m-0 list-none divide-y divide-n-weak p-0">
             <li
               v-for="row in sourceRows"
               :key="row.value"
-              class="flex justify-between gap-3 px-3 py-2 text-sm"
+              class="flex justify-between gap-3 py-2 text-sm"
             >
               <span class="truncate text-n-slate-11">{{ row.value }}</span>
               <span class="font-medium text-n-slate-12">
@@ -402,7 +396,7 @@ onBeforeUnmount(() => {
             </li>
             <li
               v-if="!isLoading && !hasError && sourceRows.length === 0"
-              class="px-3 py-4 text-center text-sm text-n-slate-10"
+              class="py-4 text-center text-sm text-n-slate-10"
             >
               {{ t('REPORTS.LEADS.EMPTY') }}
             </li>
@@ -421,16 +415,14 @@ onBeforeUnmount(() => {
           </p>
         </div>
         <div>
-          <h3 class="mb-2 mt-0 text-xs font-semibold text-n-slate-11">
+          <h3 class="mb-2 mt-0 text-heading-3 text-n-slate-12">
             {{ t('REPORTS.LEADS.UTM_CAMPAIGNS') }}
           </h3>
-          <ul
-            class="m-0 divide-y divide-n-weak rounded-lg border border-n-weak p-0"
-          >
+          <ul class="m-0 list-none divide-y divide-n-weak p-0">
             <li
               v-for="row in campaignRows"
               :key="row.value"
-              class="flex justify-between gap-3 px-3 py-2 text-sm"
+              class="flex justify-between gap-3 py-2 text-sm"
             >
               <span class="truncate text-n-slate-11">{{ row.value }}</span>
               <span class="font-medium text-n-slate-12">
@@ -439,7 +431,7 @@ onBeforeUnmount(() => {
             </li>
             <li
               v-if="!isLoading && !hasError && campaignRows.length === 0"
-              class="px-3 py-4 text-center text-sm text-n-slate-10"
+              class="py-4 text-center text-sm text-n-slate-10"
             >
               {{ t('REPORTS.LEADS.EMPTY') }}
             </li>

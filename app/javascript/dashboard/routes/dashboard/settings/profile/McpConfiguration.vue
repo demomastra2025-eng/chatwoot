@@ -188,13 +188,6 @@ const toolGroupName = tool =>
   localizedCaptainTool(tool)?.group_label ||
   tool.group_name ||
   t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.OTHER_GROUP');
-const stateLabel = enabled => {
-  if (enabled) {
-    return t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.STATE_ENABLED');
-  }
-
-  return t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.STATE_DISABLED');
-};
 const hasCustomAccessFilters = access =>
   [
     'allowed_groups',
@@ -507,7 +500,7 @@ onMounted(fetchMcpSettings);
             </code>
             <button
               type="button"
-              class="flex size-9 shrink-0 items-center justify-center border-l border-n-weak text-n-slate-10 transition hover:bg-n-alpha-2 hover:text-n-slate-12"
+              class="flex size-9 shrink-0 items-center justify-center rounded-none border-l border-n-weak p-0 text-n-slate-10 transition hover:bg-n-alpha-2 hover:text-n-slate-12"
               :aria-label="
                 t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.COPY_URL')
               "
@@ -531,7 +524,6 @@ onMounted(fetchMcpSettings);
               variant="outline"
               icon="i-lucide-copy"
               :label="t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.COPY_CONFIG')"
-              class="rounded-xl"
               @click="copyConfig"
             />
           </div>
@@ -560,13 +552,10 @@ onMounted(fetchMcpSettings);
         </div>
         <div
           v-if="canManageMcpAccess"
-          class="flex items-center justify-between gap-3 rounded-lg bg-n-alpha-1 px-3 py-2 sm:justify-end"
+          class="flex items-center justify-between gap-3 rounded-lg bg-n-alpha-1 p-3"
         >
           <span class="text-sm font-medium text-n-slate-12">
             {{ t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.ACCESS_ENABLED') }}
-          </span>
-          <span class="text-xs font-normal text-n-slate-10">
-            {{ stateLabel(accessForm.enabled) }}
           </span>
           <Switch
             v-model="accessForm.enabled"
@@ -614,28 +603,14 @@ onMounted(fetchMcpSettings);
           </button>
         </div>
 
-        <div
-          class="flex items-center justify-between gap-3 rounded-lg bg-n-alpha-1 p-3"
-        >
-          <span class="flex min-w-0 flex-col gap-1">
-            <span class="text-sm font-medium text-n-slate-12">
+        <div class="flex flex-col gap-1 rounded-lg bg-n-alpha-1 p-3">
+          <div class="flex items-center justify-between gap-3">
+            <span class="min-w-0 text-sm font-medium text-n-slate-12">
               {{
                 t(
                   'PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.MUTATION_CONFIRMATION'
                 )
               }}
-            </span>
-            <span class="text-xs font-normal text-n-slate-10">
-              {{
-                t(
-                  'PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.MUTATION_CONFIRMATION_LOCKED'
-                )
-              }}
-            </span>
-          </span>
-          <div class="flex items-center gap-2">
-            <span class="text-xs font-normal text-n-slate-10">
-              {{ stateLabel(accessForm.require_confirmation_for_mutations) }}
             </span>
             <Switch
               model-value
@@ -647,6 +622,13 @@ onMounted(fetchMcpSettings);
               "
             />
           </div>
+          <span class="text-label-small text-n-slate-11">
+            {{
+              t(
+                'PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.MUTATION_CONFIRMATION_LOCKED'
+              )
+            }}
+          </span>
         </div>
 
         <div v-if="groupedCatalogTools.length">
@@ -656,14 +638,14 @@ onMounted(fetchMcpSettings);
             </div>
           </div>
           <div
-            class="max-h-[28rem] overflow-auto rounded-xl border border-n-weak"
+            class="max-h-[28rem] overflow-auto rounded-xl outline outline-1 -outline-offset-1 outline-n-weak"
           >
             <div
               v-for="group in groupedCatalogTools"
               :key="group.id"
               class="border-b border-n-weak last:border-b-0"
             >
-              <div class="flex h-11 items-center justify-between gap-3 px-3">
+              <div class="flex h-11 items-center justify-between gap-3 px-4">
                 <div class="flex min-w-0 items-center gap-2">
                   <span
                     class="min-w-0 truncate text-sm font-semibold text-n-slate-12"
@@ -676,40 +658,28 @@ onMounted(fetchMcpSettings);
                     {{ sourceSummaryForGroup(group) }}
                   </span>
                 </div>
-                <div class="flex shrink-0 items-center gap-2">
-                  <span class="text-xs font-normal text-n-slate-10">
-                    {{ stateLabel(groupIsEnabled(group)) }}
-                  </span>
-                  <Switch
-                    :model-value="groupIsEnabled(group)"
-                    :disabled="accessControlsDisabled"
-                    :aria-label="group.name"
-                    @change="value => setGroupSelected(group, value)"
-                  />
-                </div>
+                <Switch
+                  :model-value="groupIsEnabled(group)"
+                  :disabled="accessControlsDisabled"
+                  :aria-label="group.name"
+                  @change="value => setGroupSelected(group, value)"
+                />
               </div>
               <div class="divide-y divide-n-weak">
                 <div
                   v-for="tool in group.tools"
                   :key="toolPolicyId(tool)"
-                  class="flex h-10 items-center justify-between gap-3 px-3 ltr:pl-6 rtl:pr-6 transition-colors hover:bg-n-alpha-1"
+                  class="flex h-10 items-center justify-between gap-3 px-4 ltr:pl-8 rtl:pr-8 transition-colors hover:bg-n-alpha-1"
                 >
-                  <span
-                    class="min-w-0 truncate text-xs font-normal text-n-slate-11"
-                  >
+                  <span class="min-w-0 truncate text-body-main text-n-slate-12">
                     {{ toolTitle(tool) }}
                   </span>
-                  <div class="flex shrink-0 items-center gap-2">
-                    <span class="text-xs font-normal text-n-slate-10">
-                      {{ stateLabel(isToolSelected(tool)) }}
-                    </span>
-                    <Switch
-                      :model-value="isToolSelected(tool)"
-                      :disabled="toolCheckboxDisabled(tool)"
-                      :aria-label="toolTitle(tool)"
-                      @change="value => setToolSelected(tool, value)"
-                    />
-                  </div>
+                  <Switch
+                    :model-value="isToolSelected(tool)"
+                    :disabled="toolCheckboxDisabled(tool)"
+                    :aria-label="toolTitle(tool)"
+                    @change="value => setToolSelected(tool, value)"
+                  />
                 </div>
               </div>
             </div>

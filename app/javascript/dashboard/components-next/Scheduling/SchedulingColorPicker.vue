@@ -65,8 +65,8 @@ const selectPaletteColor = color => {
         :title="compact ? triggerLabel : undefined"
         :class="
           compact
-            ? 'flex size-5 shrink-0 items-center justify-center rounded-full outline outline-1 outline-n-strong transition-transform hover:scale-110 focus-visible:outline-2 focus-visible:outline-n-brand disabled:cursor-not-allowed disabled:opacity-50'
-            : 'flex w-full items-center justify-between gap-3 rounded-xl bg-n-alpha-black2 px-3 py-2 text-left outline outline-1 outline-n-weak transition-all duration-150 hover:outline-n-slate-6 focus-visible:outline-n-brand disabled:cursor-not-allowed disabled:opacity-50'
+            ? 'flex size-5 shrink-0 items-center justify-center rounded-full p-0 outline outline-1 outline-n-strong transition-transform hover:scale-110 focus-visible:outline-2 focus-visible:outline-n-brand disabled:cursor-not-allowed disabled:opacity-50'
+            : 'flex w-full items-center justify-between gap-3 rounded-lg bg-n-alpha-black2 px-3 py-2 text-left outline outline-1 outline-n-weak transition-all duration-150 hover:outline-n-slate-6 focus-visible:outline-n-brand disabled:cursor-not-allowed disabled:opacity-50'
         "
         :style="compact ? { backgroundColor: colorValue } : undefined"
       >
@@ -95,7 +95,7 @@ const selectPaletteColor = color => {
         :class="
           compact
             ? 'reka-color-picker__content z-[140] w-44 rounded-xl bg-n-alpha-3 p-2.5 shadow-md backdrop-blur-[100px] outline outline-1 outline-n-container'
-            : 'reka-color-picker__content z-[140] w-[20rem] rounded-2xl bg-n-alpha-3 p-4 shadow-md backdrop-blur-[100px] outline outline-1 outline-n-container'
+            : 'reka-color-picker__content z-[140] w-[20rem] rounded-xl bg-n-alpha-3 p-4 shadow-md backdrop-blur-[100px] outline outline-1 outline-n-container'
         "
       >
         <div v-if="compact" class="grid grid-cols-5 gap-2">
@@ -103,7 +103,7 @@ const selectPaletteColor = color => {
             v-for="color in palette"
             :key="color"
             type="button"
-            class="size-6 rounded-full outline outline-1 outline-black/10 transition-transform hover:scale-110 focus-visible:outline-2 focus-visible:outline-n-brand dark:outline-white/10"
+            class="size-6 rounded-full p-0 outline outline-1 outline-black/10 transition-transform hover:scale-110 focus-visible:outline-2 focus-visible:outline-n-brand dark:outline-white/10"
             :class="
               colorValue.toUpperCase() === String(color).toUpperCase()
                 ? 'ring-2 ring-n-slate-8 ring-offset-2 ring-offset-n-surface-1'
@@ -126,7 +126,7 @@ const selectPaletteColor = color => {
             <template #default="{ style }">
               <ColorAreaArea
                 :style="style"
-                class="relative h-40 w-full overflow-hidden rounded-2xl outline outline-1 outline-black/10 dark:outline-white/10"
+                class="relative h-40 w-full overflow-hidden rounded-xl outline outline-1 outline-black/10 dark:outline-white/10"
               >
                 <ColorAreaThumb
                   class="size-4 rounded-full border-2 border-white shadow-[0_0_0_1px_rgba(15,23,42,0.16)]"
@@ -140,9 +140,10 @@ const selectPaletteColor = color => {
             channel="hue"
             color-space="hsb"
             :disabled="disabled"
+            class="relative flex h-4 w-full touch-none select-none items-center"
           >
             <ColorSliderTrack
-              class="relative h-3 w-full overflow-hidden rounded-full outline outline-1 outline-black/10 dark:outline-white/10"
+              class="relative h-3 grow overflow-hidden rounded-full outline outline-1 outline-black/10 dark:outline-white/10"
             />
             <ColorSliderThumb
               class="block size-4 rounded-full border-2 border-white bg-white shadow-[0_1px_4px_rgba(15,23,42,0.2)]"
@@ -157,7 +158,7 @@ const selectPaletteColor = color => {
             </span>
             <ColorFieldRoot v-model="colorValue" :disabled="disabled">
               <ColorFieldInput
-                class="block h-10 w-full rounded-xl bg-n-alpha-black2 px-3 text-sm font-medium text-n-slate-12 outline outline-1 outline-n-weak transition-all duration-150 hover:outline-n-slate-6 focus:outline-n-brand placeholder:text-n-slate-10"
+                class="block h-10 w-full rounded-lg bg-n-alpha-black2 px-3 text-sm font-medium text-n-slate-12 outline outline-1 outline-n-weak transition-all duration-150 hover:outline-n-slate-6 focus:outline-n-brand placeholder:text-n-slate-10"
               />
             </ColorFieldRoot>
           </div>

@@ -2151,8 +2151,8 @@ onMounted(async () => {
           ['calendar', 'kanban'].includes(currentPresentation) &&
           !calendarStore.ui.isLoading &&
           !calendarStore.ui.error
-            ? 'flex h-full min-h-0 flex-col px-5 pb-4 pt-2'
-            : 'flex flex-col gap-4 px-5 pb-4 pt-2'
+            ? 'flex h-full min-h-0 flex-col px-6 pb-4 pt-2'
+            : 'flex flex-col gap-4 px-6 pb-4 pt-2'
         "
       >
         <div
