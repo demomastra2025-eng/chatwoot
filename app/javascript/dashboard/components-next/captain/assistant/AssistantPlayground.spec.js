@@ -13,7 +13,9 @@ const mocks = vi.hoisted(() => ({
   getSelectedModelForFeature: vi.fn(),
   uiFlags: { fetchError: false },
 }));
-vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: key => key }) }));
+vi.mock('vue-i18n', () => ({
+  useI18n: () => ({ t: key => key, te: () => true }),
+}));
 vi.mock('dashboard/api/captain/assistant', () => ({ default: mocks }));
 vi.mock('dashboard/store/captain/preferences', () => ({
   useCaptainConfigStore: () => mocks,
@@ -97,6 +99,22 @@ const send = async (wrapper, text = 'Hello') => {
   await wrapper.get('[data-test="playground-message-input"]').setValue(text);
   await wrapper.get('form').trigger('submit');
   await flushPromises();
+};
+// Block rules: a frame is an outline or a full border, or a rounded element
+// with a filled background. Real form controls and buttons do not count.
+const CONTROL_TAGS = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA'];
+const isFramed = element => {
+  if (CONTROL_TAGS.includes(element.tagName)) return false;
+  const classes = Array.from(element.classList);
+  const rounded = classes.some(
+    name => /^rounded(-|$)/.test(name) && name !== 'rounded-none'
+  );
+  const filled = classes.some(name => name.startsWith('bg-'));
+  return (
+    classes.includes('outline') ||
+    classes.includes('border') ||
+    (rounded && filled)
+  );
 };
 
 beforeEach(() => {
@@ -474,6 +492,110 @@ describe('one Playground workspace', () => {
     await flushPromises();
     expect(wrapper.text()).toContain('CAPTAIN.PLAYGROUND.ACTION_PENDING');
     expect(wrapper.text()).not.toContain('CAPTAIN.PLAYGROUND.ACTION_COMPLETED');
+    wrapper.unmount();
+  });
+
+  it('switches the test model per request and shows only the parameters it supports', async () => {
+    mocks.getModelsForFeature.mockReturnValue([
+      {
+        id: 'provider/model',
+        display_name: 'Profile model',
+        supports_temperature: true,
+        reasoning_efforts: ['low', 'high'],
+      },
+      {
+        id: 'provider/fast',
+        display_name: 'Fast model',
+        supports_temperature: false,
+        reasoning_efforts: [],
+      },
+    ]);
+    const wrapper = mountPlayground();
+    await flushPromises();
+    const settings = wrapper.get('[data-test="playground-settings"]');
+
+    expect(settings.find('[data-test="model-temperature"]').exists()).toBe(
+      true
+    );
+    expect(settings.find('[data-test="model-reasoning"]').exists()).toBe(true);
+    await settings
+      .get('[data-test="model-temperature"] input[type="checkbox"]')
+      .setValue(true);
+    await settings.get('[data-test="model-reasoning"] select').setValue('high');
+    await send(wrapper, 'With the profile model');
+    expect(mocks.playground).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        assistantId: 4,
+        testOptions: { model: '', temperature: 1, thinkingEffort: 'high' },
+      })
+    );
+
+    await settings
+      .get('[data-test="model-settings"] select')
+      .setValue('provider/fast');
+    await flushPromises();
+    expect(settings.find('[data-test="model-temperature"]').exists()).toBe(
+      false
+    );
+    expect(settings.find('[data-test="model-reasoning"]').exists()).toBe(false);
+    await send(wrapper, 'With the fast model');
+    expect(mocks.playground).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        assistantId: 4,
+        testOptions: {
+          model: 'provider/fast',
+          temperature: null,
+          thinkingEffort: '',
+        },
+      })
+    );
+    wrapper.unmount();
+  });
+
+  it('frames the chat column once and keeps the side panel unframed', async () => {
+    mocks.playgroundPermissions.mockImplementation(({ read, write }) =>
+      Promise.resolve({
+        data: {
+          playground: payload({
+            real_data_read: read,
+            real_data_write: read && write,
+            action_previews: write ? [approval()] : [],
+          }),
+        },
+      })
+    );
+    mocks.playground.mockRejectedValueOnce({
+      response: { data: { message: 'Provider down' } },
+    });
+    const wrapper = mountPlayground();
+    await flushPromises();
+    await wrapper.vm.setPermissions(true, true);
+    await send(wrapper);
+
+    const chat = wrapper.get('[data-test="playground-chat"]');
+    expect(chat.get('[role="alert"]').text()).toBe('Provider down');
+    expect(chat.find('[data-test="playground-action-previews"]').exists()).toBe(
+      true
+    );
+    expect(chat.find('[data-test="playground-message-input"]').exists()).toBe(
+      true
+    );
+    expect(chat.classes()).toEqual(
+      expect.arrayContaining(['rounded-xl', 'outline'])
+    );
+    expect(
+      Array.from(chat.element.querySelectorAll('*'))
+        .filter(isFramed)
+        .map(element => element.outerHTML)
+    ).toEqual([]);
+
+    const layout = wrapper.get('[data-test="playground-layout"]');
+    expect(Array.from(layout.element.children).filter(isFramed)).toHaveLength(
+      1
+    );
+    const settings = wrapper.get('[data-test="playground-settings"]');
+    expect(isFramed(settings.element)).toBe(false);
+    expect(settings.text()).toContain('CAPTAIN.AGENT_TABS.CHECK.SIDE_TITLE');
     wrapper.unmount();
   });
 

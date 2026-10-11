@@ -37,6 +37,10 @@ vi.mock('vue-i18n', () => ({
       if (key === 'CONVERSATION.AUTOMATION_SYSTEM') {
         return 'Automation';
       }
+      if (key === 'CAPTAIN.CHAT_AVATARS.COUNCIL_CAPTION') {
+        return `Ответ консилиума: ${params.names}`;
+      }
+      if (key === 'CAPTAIN.CHAT_AVATARS.MORE') return `+${params.count}`;
       return key;
     },
   }),
@@ -64,7 +68,7 @@ const contextMenuStub = {
   template: '<div />',
 };
 
-const createWrapper = customProps =>
+const createWrapper = (customProps, stubOverrides = {}) =>
   shallowMount(Message, {
     props: {
       id: 10,
@@ -115,9 +119,34 @@ const createWrapper = customProps =>
         VoiceCallBubble: { template: '<div />' },
         MessageError: true,
         ContextMenu: contextMenuStub,
+        ...stubOverrides,
       },
     },
   });
+
+const captainSender = (overrides = {}) => ({
+  id: 18,
+  type: 'captain_assistant',
+  name: 'Айгерим Ассистент',
+  avatarUrl: 'https://cdn.test/agent.png',
+  ...overrides,
+});
+
+const captainProps = (senderOverrides = {}, customProps = {}) => ({
+  sender: captainSender(senderOverrides),
+  senderId: 18,
+  senderType: 'captain_assistant',
+  ...customProps,
+});
+
+const councilList = [
+  { id: 1, name: 'A', avatarUrl: 'https://cdn.test/a.png' },
+  { id: 2, name: 'B' },
+  { id: 3, name: 'C' },
+  { id: 4, name: 'D' },
+];
+
+const gridClasses = wrapper => wrapper.find('.gap-x-2').classes();
 
 describe('Message', () => {
   beforeEach(() => {
@@ -299,5 +328,193 @@ describe('Message', () => {
       src: '',
       iconName: null,
     });
+  });
+
+  it('shows the AI agent photo and name for a Captain reply', () => {
+    const wrapper = createWrapper(captainProps());
+
+    expect(wrapper.findComponent({ name: 'Avatar' }).props()).toMatchObject({
+      name: 'Айгерим Ассистент',
+      src: 'https://cdn.test/agent.png',
+      iconName: null,
+    });
+    expect(wrapper.find('[data-tooltip]').attributes('data-tooltip')).toBe(
+      'Sent by: Айгерим Ассистент'
+    );
+    expect(
+      wrapper.findComponent({ name: 'CaptainSenderAvatars' }).exists()
+    ).toBe(false);
+    expect(gridClasses(wrapper)).toContain('grid-cols-[minmax(0,1fr)_24px]');
+  });
+
+  it('shows initials, not the generic icon, for an AI agent without a photo', () => {
+    const wrapper = createWrapper(captainProps({ avatarUrl: '' }));
+
+    expect(wrapper.findComponent({ name: 'Avatar' }).props()).toMatchObject({
+      name: 'Айгерим Ассистент',
+      src: '',
+      iconName: null,
+    });
+  });
+
+  it('recognises the AI agent by the message sender type', () => {
+    const wrapper = createWrapper({
+      sender: { id: 18, name: 'Sales AI' },
+      senderId: 18,
+      senderType: 'Captain::Assistant',
+    });
+
+    expect(wrapper.findComponent({ name: 'Avatar' }).props()).toMatchObject({
+      name: 'Sales AI',
+      src: '',
+      iconName: null,
+    });
+  });
+
+  it('keeps the Captain icon only for an AI agent without a name', () => {
+    const wrapper = createWrapper(captainProps({ name: '', avatarUrl: '' }));
+
+    expect(wrapper.findComponent({ name: 'Avatar' }).props()).toMatchObject({
+      name: '',
+      src: '',
+      iconName: 'i-woot-captain',
+    });
+  });
+
+  it('keeps the agent bot avatar behaviour', () => {
+    const noPhoto = createWrapper({
+      sender: { id: 3, type: 'agent_bot', name: 'Webhook bot' },
+      senderId: 3,
+      senderType: 'agent_bot',
+    });
+    const photo = createWrapper({
+      sender: {
+        id: 3,
+        type: 'agent_bot',
+        name: 'Webhook bot',
+        avatarUrl: 'https://cdn.test/bot.png',
+      },
+      senderId: 3,
+      senderType: 'agent_bot',
+    });
+
+    expect(noPhoto.findComponent({ name: 'Avatar' }).props()).toMatchObject({
+      name: '',
+      src: '',
+      iconName: 'i-woot-captain',
+    });
+    expect(photo.findComponent({ name: 'Avatar' }).props()).toMatchObject({
+      name: 'Webhook bot',
+      src: 'https://cdn.test/bot.png',
+      iconName: null,
+    });
+  });
+
+  it('shows three stacked avatars, +1 and the council caption for a council reply', () => {
+    const wrapper = createWrapper(
+      captainProps(
+        {},
+        { contentAttributes: { councilContributors: councilList } }
+      ),
+      { CaptainSenderAvatars: false }
+    );
+    const council = wrapper.findComponent({ name: 'CaptainSenderAvatars' });
+    const avatars = council.findAllComponents({ name: 'Avatar' });
+
+    expect(council.exists()).toBe(true);
+    expect(council.props('contributors').map(member => member.name)).toEqual([
+      'A',
+      'B',
+      'C',
+      'D',
+    ]);
+    expect(avatars).toHaveLength(3);
+    expect(avatars[0].props()).toMatchObject({
+      name: 'A',
+      src: 'https://cdn.test/a.png',
+    });
+    expect(avatars[1].props()).toMatchObject({ name: 'B', src: '' });
+    expect(
+      council.find('[data-testid="captain-sender-avatars-more"]').text()
+    ).toBe('+1');
+    expect(wrapper.find('[data-tooltip]').attributes('data-tooltip')).toBe(
+      'Ответ консилиума: A, B, C, D'
+    );
+    expect(gridClasses(wrapper)).toContain('grid-cols-[minmax(0,1fr)_auto]');
+  });
+
+  it('reads snake_case council contributors from additional attributes', () => {
+    const wrapper = createWrapper(
+      captainProps(
+        {},
+        {
+          additionalAttributes: {
+            council_contributors: [
+              { id: 1, name: 'Терапевт', avatar_url: 'https://cdn.test/t.png' },
+              { id: 2, name: 'Хирург' },
+            ],
+          },
+        }
+      )
+    );
+
+    expect(
+      wrapper.findComponent({ name: 'CaptainSenderAvatars' }).props()
+    ).toMatchObject({
+      contributors: [
+        { id: 1, name: 'Терапевт', avatarUrl: 'https://cdn.test/t.png' },
+        { id: 2, name: 'Хирург', avatarUrl: '' },
+      ],
+      size: 24,
+    });
+    expect(wrapper.findComponent({ name: 'Avatar' }).exists()).toBe(false);
+    expect(wrapper.find('[data-tooltip]').attributes('data-tooltip')).toBe(
+      'Ответ консилиума: Терапевт, Хирург'
+    );
+  });
+
+  it('keeps the regular avatar column when a council reply is grouped with the next message', () => {
+    const wrapper = createWrapper(
+      captainProps(
+        {},
+        {
+          groupWithNext: true,
+          contentAttributes: { councilContributors: councilList },
+        }
+      )
+    );
+
+    expect(
+      wrapper.findComponent({ name: 'CaptainSenderAvatars' }).exists()
+    ).toBe(false);
+    expect(gridClasses(wrapper)).toContain('grid-cols-[minmax(0,1fr)_24px]');
+  });
+
+  it('leaves employee and customer messages unchanged', () => {
+    const employee = createWrapper({
+      sender: { id: 5, type: 'user', name: 'Akhan Bakhitov', thumbnail: '' },
+      senderId: 5,
+      senderType: 'User',
+    });
+    const customer = createWrapper({
+      messageType: MESSAGE_TYPES.INCOMING,
+      sender: { id: 2, type: 'contact', name: 'Client', thumbnail: '' },
+      senderId: 2,
+      senderType: 'Contact',
+      contentAttributes: { councilContributors: councilList },
+    });
+
+    expect(
+      employee.findComponent({ name: 'CaptainSenderAvatars' }).exists()
+    ).toBe(false);
+    expect(employee.findComponent({ name: 'Avatar' }).props()).toMatchObject({
+      name: 'Akhan Bakhitov',
+      src: '',
+    });
+    expect(gridClasses(employee)).toContain('grid-cols-[minmax(0,1fr)_24px]');
+    expect(
+      customer.findComponent({ name: 'CaptainSenderAvatars' }).exists()
+    ).toBe(false);
+    expect(gridClasses(customer)).toContain('grid-cols-[24px_minmax(0,1fr)]');
   });
 });

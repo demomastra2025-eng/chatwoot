@@ -64,7 +64,27 @@ const baseMessageContext = status => ({
   contentAttributes: ref({ externalEcho: true }),
   attachments: ref([]),
   orientation: ref('right'),
+  sender: ref(null),
+  senderType: ref(null),
 });
+
+const captainSender = (overrides = {}) => ({
+  id: 18,
+  type: 'captain_assistant',
+  name: 'Айгерим Ассистент',
+  avatarUrl: '',
+  ...overrides,
+});
+
+const councilList = [
+  { id: 1, name: 'A', avatarUrl: 'https://cdn.test/a.png' },
+  { id: 2, name: 'B' },
+  { id: 3, name: 'C' },
+  { id: 4, name: 'D' },
+];
+
+const senderLabel = wrapper =>
+  wrapper.find('[data-testid="message-meta-sender"]');
 
 const mountComponent = () =>
   shallowMount(MessageMeta, {
@@ -313,5 +333,96 @@ describe('MessageMeta', () => {
     expect(wrapper.findComponent({ name: 'MessageStatus' }).exists()).toBe(
       false
     );
+  });
+
+  it('shows the name of the AI agent that sent the reply', () => {
+    useMessageContextMock.mockReturnValue({
+      ...baseMessageContext(MESSAGE_STATUS.READ),
+      contentAttributes: ref({}),
+      additionalAttributes: ref({ agentName: 'scenario_35_andalusiya_agent' }),
+      sender: ref(captainSender()),
+      senderType: ref('captain_assistant'),
+    });
+
+    const wrapper = mountComponent();
+
+    expect(senderLabel(wrapper).text()).toBe('Айгерим Ассистент');
+    expect(wrapper.text()).not.toContain('Andalusiya');
+  });
+
+  it('recognises the AI agent by the message sender type', () => {
+    useMessageContextMock.mockReturnValue({
+      ...baseMessageContext(MESSAGE_STATUS.READ),
+      contentAttributes: ref({}),
+      sender: ref({ id: 18, name: 'Sales AI' }),
+      senderType: ref('Captain::Assistant'),
+    });
+
+    const wrapper = mountComponent();
+
+    expect(senderLabel(wrapper).text()).toBe('Sales AI');
+  });
+
+  it('falls back to the formatted agentName when the AI agent has no name', () => {
+    useMessageContextMock.mockReturnValue({
+      ...baseMessageContext(MESSAGE_STATUS.READ),
+      contentAttributes: ref({}),
+      additionalAttributes: ref({ agent_name: 'scenario_35_andalusiya_agent' }),
+      sender: ref(captainSender({ name: '' })),
+      senderType: ref('captain_assistant'),
+    });
+
+    const wrapper = mountComponent();
+
+    expect(senderLabel(wrapper).text()).toBe('Andalusiya');
+  });
+
+  it('does not show a sender name for employee replies', () => {
+    useMessageContextMock.mockReturnValue({
+      ...baseMessageContext(MESSAGE_STATUS.READ),
+      contentAttributes: ref({}),
+      sender: ref({ id: 5, type: 'user', name: 'Akhan Bakhitov' }),
+      senderType: ref('User'),
+    });
+
+    const wrapper = mountComponent();
+
+    expect(senderLabel(wrapper).exists()).toBe(false);
+    expect(wrapper.text()).not.toContain('Akhan Bakhitov');
+  });
+
+  it('shows the council caption instead of the agent name', () => {
+    useMessageContextMock.mockReturnValue({
+      ...baseMessageContext(MESSAGE_STATUS.READ),
+      contentAttributes: ref({ councilContributors: councilList }),
+      sender: ref(captainSender()),
+      senderType: ref('captain_assistant'),
+    });
+
+    const wrapper = mountComponent();
+    const label = senderLabel(wrapper);
+
+    expect(label.text()).toContain('A, B, C, D');
+    expect(label.attributes('title')).toBe(label.text());
+    expect(wrapper.text()).not.toContain('Айгерим Ассистент');
+  });
+
+  it('reads snake_case council contributors from additional attributes', () => {
+    useMessageContextMock.mockReturnValue({
+      ...baseMessageContext(MESSAGE_STATUS.READ),
+      contentAttributes: ref({}),
+      additionalAttributes: ref({
+        council_contributors: [
+          { id: 1, name: 'Терапевт', avatar_url: 'https://cdn.test/t.png' },
+          { id: 2, name: 'Хирург', avatar_url: null },
+        ],
+      }),
+      sender: ref(captainSender()),
+      senderType: ref('captain_assistant'),
+    });
+
+    const wrapper = mountComponent();
+
+    expect(senderLabel(wrapper).text()).toContain('Терапевт, Хирург');
   });
 });

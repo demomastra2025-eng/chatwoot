@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, unref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { messageTimestamp } from 'shared/helpers/timeHelper';
 
@@ -15,6 +15,11 @@ import {
 import { useMessageContext } from './provider.js';
 import { useAudioPlaybackState } from './audioPlaybackState';
 import { isManualDelayedTouchMessage } from './helpers/messageProvenance';
+import {
+  councilCaption,
+  councilContributors,
+  isCaptainAssistantSender,
+} from './helpers/captainSender';
 
 import { ATTACHMENT_TYPES, MESSAGE_STATUS, MESSAGE_TYPES } from './constants';
 
@@ -30,6 +35,8 @@ const {
   contentAttributes,
   attachments,
   orientation,
+  sender,
+  senderType,
 } = useMessageContext();
 
 const {
@@ -74,6 +81,33 @@ const subagentName = computed(
   () =>
     formatAgentName(additionalAttributes.value?.agentName) ||
     formatAgentName(additionalAttributes.value?.agent_name)
+);
+
+// sender/senderType may be absent from a partial message context.
+const captainSenderName = computed(() => {
+  const currentSender = unref(sender);
+  if (!isCaptainAssistantSender(currentSender, unref(senderType))) return '';
+
+  return String(currentSender?.name ?? '').trim();
+});
+
+const councilCaptionText = computed(() => {
+  const members = councilContributors({
+    contentAttributes: unref(contentAttributes),
+    additionalAttributes: unref(additionalAttributes),
+  });
+  if (!members.length) return '';
+
+  return t('CAPTAIN.CHAT_AVATARS.COUNCIL_CAPTION', {
+    names: councilCaption(members),
+  });
+});
+
+// Council caption, else the AI agent that sent the reply, else the legacy
+// scenario agent name.
+const senderLabel = computed(
+  () =>
+    councilCaptionText.value || captainSenderName.value || subagentName.value
 );
 const isAiVoiceTranscriptTurn = computed(
   () => contentAttributes.value?.data?.type === 'ai_voice_transcript_turn'
@@ -262,8 +296,13 @@ const isIncomingOrientation = computed(() => orientation.value === 'left');
     <div class="inline-flex items-center gap-1.5">
       <time class="inline">{{ readableTime }}</time>
     </div>
-    <span v-if="subagentName" class="inline text-n-slate-11/90 font-medium">
-      {{ subagentName }}
+    <span
+      v-if="senderLabel"
+      class="inline min-w-0 truncate text-n-slate-11/90 font-medium"
+      :title="senderLabel"
+      data-testid="message-meta-sender"
+    >
+      {{ senderLabel }}
     </span>
     <span
       v-if="audioTimeLabel && isIncomingOrientation"

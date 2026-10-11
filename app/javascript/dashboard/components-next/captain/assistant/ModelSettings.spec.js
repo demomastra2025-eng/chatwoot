@@ -97,4 +97,40 @@ describe('confirmed model settings', () => {
     expect(wrapper.emitted('update:temperature')).toContainEqual([null]);
     expect(wrapper.emitted('update:effort')).toContainEqual(['']);
   });
+
+  it('keeps the playground three-column grid and test model label by default', () => {
+    const wrapper = mount(ModelSettings, {
+      props: { metadata: {} },
+      global: { stubs },
+    });
+    const grid = wrapper.get('[data-test="model-settings-grid"]');
+    expect(grid.classes()).toContain('md:grid-cols-3');
+    expect(grid.classes()).not.toContain('grid-cols-1');
+    expect(wrapper.text()).toContain('CAPTAIN.PLAYGROUND.TEST_MODEL');
+  });
+
+  it('stacks the controls in one column and uses the given model label', () => {
+    const wrapper = mount(ModelSettings, {
+      props: {
+        stacked: true,
+        modelLabel: 'Agent model',
+        metadata: {
+          supports_temperature: true,
+          reasoning_efforts: ['none', 'low'],
+        },
+      },
+      global: { stubs },
+    });
+    const grid = wrapper.get('[data-test="model-settings-grid"]');
+    expect(grid.classes()).toContain('grid-cols-1');
+    expect(grid.classes()).not.toContain('md:grid-cols-3');
+    expect(wrapper.text()).toContain('Agent model');
+    expect(wrapper.text()).not.toContain('CAPTAIN.PLAYGROUND.TEST_MODEL');
+    expect(
+      wrapper
+        .get('[data-test="model-reasoning"]')
+        .findAll('option')
+        .map(option => option.attributes('value'))
+    ).toEqual(['', 'none', 'low']);
+  });
 });

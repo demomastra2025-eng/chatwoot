@@ -3,7 +3,7 @@ import { isInternalAssistant } from '../../../store/captain/assistant';
 
 // Internal assistants are gone from the product, so a link to one of their
 // pages (an old bookmark, an observability event) behaves like a missing
-// agent: the person lands on the list of agents, never on a reduced page.
+// agent: the person lands on the agents gallery, never on a reduced page.
 export const redirectHiddenAssistant = async to => {
   const assistantId = Number(to.params?.assistantId);
   if (!assistantId) {
@@ -29,7 +29,7 @@ export const redirectHiddenAssistant = async to => {
   }
 
   return {
-    name: 'captain_assistants_create_index',
+    name: 'captain_agents_index',
     params: { accountId: to.params.accountId },
     replace: true,
   };

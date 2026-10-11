@@ -1,7 +1,9 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useRoute, useRouter } from 'vue-router';
 import { useAlert } from 'dashboard/composables';
+import { useMapGetter, useStore } from 'dashboard/composables/store';
 
 import CaptainObservabilityAPI from 'dashboard/api/captain/observability';
 import Button from 'dashboard/components-next/button/Button.vue';
@@ -11,6 +13,10 @@ import DatePicker from 'dashboard/components/ui/DatePicker/DatePicker.vue';
 import EventDetailsDialog from './EventDetailsDialog.vue';
 
 const { t, locale } = useI18n();
+const route = useRoute();
+const router = useRouter();
+const store = useStore();
+const assistants = useMapGetter('captainAssistants/getRecords');
 
 const events = ref([]);
 const timeSeries = ref({ points: [], bucket: 'hour' });
@@ -54,6 +60,40 @@ const rangeOptions = computed(() => [
   },
 ]);
 
+// «Логи агента» on the agent page opens this page with ?assistant_id=<id>.
+const assistantFilterId = computed(() => {
+  const value = route.query?.assistant_id;
+  const id = String((Array.isArray(value) ? value[0] : value) ?? '');
+  return /^\d+$/.test(id) ? id : '';
+});
+
+const assistantFilterLabel = computed(() => {
+  if (!assistantFilterId.value) return '';
+
+  const assistant = (assistants.value || []).find(
+    record => String(record.id) === assistantFilterId.value
+  );
+  return t('CAPTAIN.NAV.LOGS_AGENT_FILTER', {
+    name: assistant?.name || `#${assistantFilterId.value}`,
+  });
+});
+
+const ensureAssistantsLoaded = async () => {
+  if (!assistantFilterId.value || assistants.value?.length) return;
+
+  try {
+    await store.dispatch('captainAssistants/get');
+  } catch {
+    // The chip keeps the #id fallback.
+  }
+};
+
+const clearAssistantFilter = () => {
+  const query = { ...route.query };
+  delete query.assistant_id;
+  router.replace({ query });
+};
+
 const currentPage = computed(() => Number(meta.value.current_page || 1));
 const totalCount = computed(() => Number(meta.value.count || 0));
 const itemsPerPage = computed(() => Number(meta.value.per_page || 25));
@@ -93,6 +133,9 @@ const fetchEvents = async (page = currentPage.value) => {
       page,
       per_page: itemsPerPage.value,
       ...requestRange(),
+      ...(assistantFilterId.value
+        ? { assistant_id: assistantFilterId.value }
+        : {}),
     });
     if (fetchId !== latestFetchId) return;
 
@@ -166,7 +209,14 @@ const barTitle = point =>
 watch(selectedRange, value => {
   if (value !== 'custom') fetchEvents(1);
 });
-onMounted(() => fetchEvents(1));
+watch(assistantFilterId, () => {
+  fetchEvents(1);
+  ensureAssistantsLoaded();
+});
+onMounted(() => {
+  fetchEvents(1);
+  ensureAssistantsLoaded();
+});
 </script>
 
 <template>
@@ -183,6 +233,22 @@ onMounted(() => fetchEvents(1));
   >
     <template #search>
       <div class="flex flex-wrap items-end gap-2">
+        <span
+          v-if="assistantFilterId"
+          data-test-id="logs-agent-filter"
+          class="inline-flex h-8 max-w-64 items-center rounded-lg bg-n-alpha-2 px-1 text-sm text-n-slate-12"
+        >
+          <span class="truncate px-2">{{ assistantFilterLabel }}</span>
+          <Button
+            icon="i-lucide-x"
+            variant="ghost"
+            color="slate"
+            size="xs"
+            :aria-label="t('CAPTAIN.NAV.LOGS_AGENT_FILTER_CLEAR')"
+            :title="t('CAPTAIN.NAV.LOGS_AGENT_FILTER_CLEAR')"
+            @click="clearAssistantFilter"
+          />
+        </span>
         <div class="relative min-w-48">
           <Select
             v-model="selectedRange"

@@ -1,19 +1,28 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
 import { OnClickOutside } from '@vueuse/components';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 
 import { useAlert } from 'dashboard/composables';
 import { useMapGetter, useStore } from 'dashboard/composables/store';
+import { usePolicy } from 'dashboard/composables/usePolicy';
+import { useCaptainChannelMatrixStore } from 'dashboard/store/captain/channelMatrix';
+import { isTextChannel, toIdList } from 'dashboard/helper/captainChannelMatrix';
 
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
+import DsStatusDot from 'dashboard/components-next/ds/DsStatusDot.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 import Policy from 'dashboard/components/policy.vue';
 import SelectInput from 'dashboard/components-next/select/Select.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import { activeExternalAssistants } from 'dashboard/components-next/captain/assistant/assistantAccess';
+
+// Voice inboxes keep this per-inbox editor (the voice agent is configured
+// here). Text inboxes only show a summary: AI on/off, the main agent and the
+// other agents are edited for every channel at once on «ИИ-агенты → Каналы»,
+// so there is a single writer with one set of rules.
 
 const props = defineProps({
   inbox: {
@@ -27,7 +36,10 @@ const NO_ASSISTANT_VALUE = '';
 
 const store = useStore();
 const route = useRoute();
+const router = useRouter();
 const { t } = useI18n();
+const { checkPermissions } = usePolicy();
+const matrixStore = useCaptainChannelMatrixStore();
 
 const assistantUiFlags = useMapGetter('captainAssistants/getUIFlags');
 const assistants = useMapGetter('captainAssistants/getRecords');
@@ -55,6 +67,72 @@ const connectedAssistantId = computed(
   () => Number(connectedAssistant.value?.id) || null
 );
 const inboxName = computed(() => currentInbox.value?.name || '');
+const isAdmin = computed(() => checkPermissions(['administrator']));
+const isVoiceInbox = computed(
+  () => !isTextChannel(currentInbox.value?.channel_type)
+);
+
+const findMatrixChannel = inboxId =>
+  matrixStore.getChannels.find(channel => Number(channel.inbox_id) === inboxId);
+
+const matrixChannel = computed(
+  () => findMatrixChannel(currentInboxId.value) || null
+);
+const matrixAssistantsById = computed(() => {
+  const byId = new Map();
+  matrixStore.getAssistants.forEach(item => byId.set(Number(item.id), item));
+  return byId;
+});
+const isSummaryLoading = computed(
+  () =>
+    isAdmin.value &&
+    !matrixChannel.value &&
+    Boolean(matrixStore.getUIFlags.isFetching)
+);
+
+// Admins read the channel matrix (members, main, AI flag); other roles only
+// see what the inbox payload carries (the main agent).
+const channelSummary = computed(() => {
+  const channel = isAdmin.value ? matrixChannel.value : null;
+  if (channel) {
+    const mainId = Number(channel.main_assistant_id) || null;
+    const assistantsById = matrixAssistantsById.value;
+    return {
+      aiEnabled: Boolean(channel.ai_enabled),
+      main: assistantsById.get(mainId) || null,
+      others: toIdList(channel.assistant_ids)
+        .filter(id => id !== mainId)
+        .map(id => assistantsById.get(id))
+        .filter(Boolean),
+    };
+  }
+
+  const main = connectedAssistant.value;
+  return {
+    aiEnabled:
+      Boolean(main) && currentInbox.value?.captain_ai_enabled !== false,
+    main,
+    others: null,
+  };
+});
+
+const aiStatusLabel = computed(() =>
+  channelSummary.value.aiEnabled
+    ? t('CAPTAIN.CHANNEL_MATRIX.BOT_CONFIG.AI_ON')
+    : t('CAPTAIN.CHANNEL_MATRIX.BOT_CONFIG.AI_OFF')
+);
+const mainAgentName = computed(
+  () =>
+    channelSummary.value.main?.name ||
+    t('CAPTAIN.CHANNEL_MATRIX.BOT_CONFIG.MAIN_NONE')
+);
+
+const openChannelMatrix = () => {
+  router.push({
+    name: 'captain_channels_index',
+    params: { accountId: route.params.accountId },
+  });
+};
 
 const isFetching = computed(() =>
   Boolean(assistantUiFlags.value?.fetchingList)
@@ -231,8 +309,8 @@ const selectAssistant = assistantId => {
 };
 
 watch(
-  currentInboxId,
-  inboxId => {
+  [currentInboxId, isVoiceInbox],
+  ([inboxId, isVoice]) => {
     settingsIdentity += 1;
     isSaving.value = false;
     syncLocalStateFromInbox();
@@ -240,7 +318,12 @@ watch(
       return;
     }
 
-    fetchCaptainChannelData();
+    if (isVoice) {
+      fetchCaptainChannelData();
+      return;
+    }
+    // The matrix API is admin-only; other roles see the inbox payload.
+    if (isAdmin.value) matrixStore.fetch();
   },
   { immediate: true }
 );
@@ -258,8 +341,109 @@ watch(
 
 <template>
   <div class="mx-6 max-w-3xl">
+    <section
+      v-if="!isVoiceInbox"
+      class="py-4"
+      data-testid="captain-inbox-summary"
+    >
+      <div
+        v-if="isSummaryLoading"
+        class="flex min-h-32 items-center justify-center"
+      >
+        <Spinner />
+      </div>
+      <div
+        v-else
+        class="flex flex-col divide-y divide-n-weak rounded-xl bg-n-solid-2 outline outline-1 -outline-offset-1 outline-n-container"
+      >
+        <div class="flex flex-col gap-1 px-5 py-4">
+          <h2 class="mb-0 text-heading-2 text-n-slate-12">
+            {{ t('CAPTAIN.CHANNEL_MATRIX.BOT_CONFIG.SUMMARY_TITLE') }}
+          </h2>
+          <p class="mb-0 text-body-para text-n-slate-11">
+            {{
+              t('CAPTAIN.CHANNEL_MATRIX.BOT_CONFIG.SUMMARY_DESCRIPTION', {
+                inboxName,
+              })
+            }}
+          </p>
+        </div>
+        <div class="flex items-center justify-between gap-3 px-5 py-3">
+          <span class="text-heading-3 text-n-slate-12">
+            {{ t('CAPTAIN.CHANNEL_MATRIX.BOT_CONFIG.AI') }}
+          </span>
+          <DsStatusDot
+            :status="channelSummary.aiEnabled ? 'good' : 'neutral'"
+            :label="aiStatusLabel"
+            data-testid="captain-inbox-ai-status"
+          />
+        </div>
+        <div class="flex items-center justify-between gap-3 px-5 py-3">
+          <span class="shrink-0 text-heading-3 text-n-slate-12">
+            {{ t('CAPTAIN.CHANNEL_MATRIX.BOT_CONFIG.MAIN') }}
+          </span>
+          <span
+            class="flex min-w-0 items-center gap-2"
+            data-testid="captain-inbox-main-agent"
+          >
+            <Avatar
+              v-if="channelSummary.main"
+              :src="channelSummary.main.avatar_url || ''"
+              :name="channelSummary.main.name || ''"
+              :size="24"
+              rounded-full
+            />
+            <span class="min-w-0 truncate text-body-main text-n-slate-12">
+              {{ mainAgentName }}
+            </span>
+          </span>
+        </div>
+        <div v-if="channelSummary.others" class="flex flex-col gap-2 px-5 py-3">
+          <span class="text-heading-3 text-n-slate-12">
+            {{ t('CAPTAIN.CHANNEL_MATRIX.BOT_CONFIG.OTHERS') }}
+          </span>
+          <ul
+            v-if="channelSummary.others.length"
+            class="mb-0 flex list-none flex-wrap gap-x-4 gap-y-2 p-0"
+            data-testid="captain-inbox-other-agents"
+          >
+            <li
+              v-for="agent in channelSummary.others"
+              :key="agent.id"
+              class="flex min-w-0 items-center gap-2"
+            >
+              <Avatar
+                :src="agent.avatar_url || ''"
+                :name="agent.name || ''"
+                :size="20"
+                rounded-full
+              />
+              <span class="min-w-0 truncate text-body-main text-n-slate-12">
+                {{ agent.name }}
+              </span>
+            </li>
+          </ul>
+          <p v-else class="mb-0 text-body-main text-n-slate-11">
+            {{ t('CAPTAIN.CHANNEL_MATRIX.BOT_CONFIG.OTHERS_NONE') }}
+          </p>
+        </div>
+        <div v-if="isAdmin" class="px-5 py-4">
+          <Button
+            :label="t('CAPTAIN.CHANNEL_MATRIX.BOT_CONFIG.OPEN_MATRIX')"
+            variant="outline"
+            color="slate"
+            size="sm"
+            icon="i-lucide-arrow-up-right"
+            trailing-icon
+            data-testid="captain-inbox-open-matrix"
+            @click="openChannelMatrix"
+          />
+        </div>
+      </div>
+    </section>
+
     <div
-      v-if="isFetching"
+      v-else-if="isFetching"
       class="flex min-h-32 items-center justify-center rounded-2xl bg-n-solid-1"
     >
       <Spinner />

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  MAX_REASONS_PER_LIST,
   SYSTEM_REASON_ID,
+  createCustomReason,
   insertReason,
   isSystemReason,
   isBuiltInReason,
@@ -93,5 +95,28 @@ describe('outcome reason ordering', () => {
     expect(isReasonLocked({ ...reason('faq_no_answer'), locked: false })).toBe(
       false
     );
+  });
+
+  it('treats a reason flagged builtin by the API as built in', () => {
+    expect(isBuiltInReason({ id: 'clinic_specific', builtin: true })).toBe(
+      true
+    );
+    expect(isBuiltInReason({ id: 'custom_handoff_1', builtin: false })).toBe(
+      false
+    );
+    expect(isBuiltInReason({ id: 'goal_achieved', builtin: false })).toBe(true);
+  });
+
+  it('creates unique custom reasons that match the backend id pattern', () => {
+    const first = createCustomReason('handoff');
+    const second = createCustomReason('completion');
+
+    expect(MAX_REASONS_PER_LIST).toBe(27);
+    expect(first).toMatchObject({ label: '', enabled: true, builtin: false });
+    expect(first.id).not.toBe(second.id);
+    [first.id, second.id].forEach(id => {
+      expect(id).toMatch(/^[a-z0-9][a-z0-9_-]{0,63}$/);
+    });
+    expect(isBuiltInReason(first)).toBe(false);
   });
 });

@@ -7,13 +7,10 @@ const conversationSettingsRedirect = to => ({
   hash: to.hash,
 });
 
+// captain/settings is now the AI settings page of the «ИИ-агенты» section
+// (captain_ai_settings_index), so only the old settings URL redirects here.
 export default {
   routes: [
-    {
-      path: frontendURL('accounts/:accountId/captain/settings'),
-      name: 'captain_settings_index',
-      redirect: conversationSettingsRedirect,
-    },
     {
       path: frontendURL('accounts/:accountId/settings/captain'),
       redirect: conversationSettingsRedirect,

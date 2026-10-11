@@ -1,19 +1,34 @@
 /* eslint-disable vue/one-component-per-file */
-import { defineComponent, h } from 'vue';
+import { defineComponent, h, reactive, ref } from 'vue';
 import { flushPromises, mount } from '@vue/test-utils';
 
 const getMock = vi.fn();
 const alertMock = vi.fn();
+const replaceMock = vi.fn();
+const dispatchMock = vi.fn();
+const route = reactive({ query: {} });
+const assistantRecords = ref([]);
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
-    t: (key, params = {}) => `${key}${params.count ?? ''}`,
+    t: (key, params = {}) =>
+      `${key}${params.count ?? ''}${params.name ? `:${params.name}` : ''}`,
     locale: { value: 'en' },
   }),
 }));
 
+vi.mock('vue-router', () => ({
+  useRoute: () => route,
+  useRouter: () => ({ replace: replaceMock }),
+}));
+
 vi.mock('dashboard/composables', () => ({
   useAlert: (...args) => alertMock(...args),
+}));
+
+vi.mock('dashboard/composables/store', () => ({
+  useMapGetter: () => assistantRecords,
+  useStore: () => ({ dispatch: dispatchMock }),
 }));
 
 vi.mock('dashboard/api/captain/observability', () => ({
@@ -134,15 +149,23 @@ const response = {
   },
 };
 
+const agentFilterChip = wrapper =>
+  wrapper.find('[data-test-id="logs-agent-filter"]');
+
 describe('AI Agent logs', () => {
   beforeEach(() => {
     getMock.mockReset();
     getMock.mockResolvedValue(response);
     alertMock.mockReset();
+    replaceMock.mockReset();
+    dispatchMock.mockReset();
+    dispatchMock.mockResolvedValue([]);
+    route.query = {};
+    assistantRecords.value = [];
   });
 
   it('requests completed AI Agent calls for the selected time range', async () => {
-    mount(ObservabilityIndex);
+    const wrapper = mount(ObservabilityIndex);
     await flushPromises();
 
     expect(getMock).toHaveBeenCalledWith(
@@ -159,6 +182,90 @@ describe('AI Agent logs', () => {
     expect(Number(params.until) - Number(params.since)).toBeGreaterThanOrEqual(
       30 * 24 * 60 * 60 - 2
     );
+    expect(params).not.toHaveProperty('assistant_id');
+    expect(agentFilterChip(wrapper).exists()).toBe(false);
+    expect(dispatchMock).not.toHaveBeenCalled();
+  });
+
+  describe('filter by agent («Логи агента»)', () => {
+    it('requests only the calls of the agent from the link and names it', async () => {
+      route.query = { assistant_id: '7' };
+      assistantRecords.value = [{ id: 7, name: 'Sofia' }];
+
+      const wrapper = mount(ObservabilityIndex);
+      await flushPromises();
+
+      expect(getMock).toHaveBeenCalledWith(
+        expect.objectContaining({ assistant_id: '7', page: 1 })
+      );
+      expect(agentFilterChip(wrapper).text()).toContain(
+        'CAPTAIN.NAV.LOGS_AGENT_FILTER:Sofia'
+      );
+      expect(dispatchMock).not.toHaveBeenCalled();
+    });
+
+    it('shows the agent id and loads the agents when they are not loaded yet', async () => {
+      route.query = { assistant_id: '7' };
+
+      const wrapper = mount(ObservabilityIndex);
+      await flushPromises();
+
+      expect(dispatchMock).toHaveBeenCalledWith('captainAssistants/get');
+      expect(agentFilterChip(wrapper).text()).toContain(
+        'CAPTAIN.NAV.LOGS_AGENT_FILTER:#7'
+      );
+
+      assistantRecords.value = [{ id: 7, name: 'Sofia' }];
+      await flushPromises();
+
+      expect(agentFilterChip(wrapper).text()).toContain(
+        'CAPTAIN.NAV.LOGS_AGENT_FILTER:Sofia'
+      );
+    });
+
+    it('removes only the agent from the link when the chip is cleared', async () => {
+      route.query = { assistant_id: '7', source: 'agent_page' };
+      assistantRecords.value = [{ id: 7, name: 'Sofia' }];
+
+      const wrapper = mount(ObservabilityIndex);
+      await flushPromises();
+
+      await wrapper
+        .get('button[aria-label="CAPTAIN.NAV.LOGS_AGENT_FILTER_CLEAR"]')
+        .trigger('click');
+
+      expect(replaceMock).toHaveBeenCalledWith({
+        query: { source: 'agent_page' },
+      });
+    });
+
+    it('reloads all calls once the agent filter leaves the link', async () => {
+      route.query = { assistant_id: '7' };
+      assistantRecords.value = [{ id: 7, name: 'Sofia' }];
+
+      const wrapper = mount(ObservabilityIndex);
+      await flushPromises();
+      expect(getMock).toHaveBeenCalledTimes(1);
+
+      route.query = {};
+      await flushPromises();
+
+      expect(getMock).toHaveBeenCalledTimes(2);
+      expect(getMock.mock.calls[1][0]).not.toHaveProperty('assistant_id');
+      expect(getMock.mock.calls[1][0].page).toBe(1);
+      expect(agentFilterChip(wrapper).exists()).toBe(false);
+    });
+
+    it('ignores an agent id that is not a number', async () => {
+      route.query = { assistant_id: 'abc' };
+
+      const wrapper = mount(ObservabilityIndex);
+      await flushPromises();
+
+      expect(getMock.mock.calls[0][0]).not.toHaveProperty('assistant_id');
+      expect(agentFilterChip(wrapper).exists()).toBe(false);
+      expect(dispatchMock).not.toHaveBeenCalled();
+    });
   });
 
   it('renders the request timeline and required table columns', async () => {

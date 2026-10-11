@@ -3,6 +3,10 @@
 // always closes the list, so every list goes through the helpers below.
 export const SYSTEM_REASON_ID = 'other';
 
+// Same limit as Captain::OutcomeReasonConfig::MAX_REASONS_PER_TYPE.
+export const MAX_REASONS_PER_LIST = 27;
+export const MAX_REASON_LABEL_LENGTH = 255;
+
 export const isSystemReason = reason => reason?.id === SYSTEM_REASON_ID;
 
 export const BUILTIN_REASON_IDS = new Set([
@@ -19,7 +23,10 @@ export const BUILTIN_REASON_IDS = new Set([
   SYSTEM_REASON_ID,
 ]);
 
-export const isBuiltInReason = reason => BUILTIN_REASON_IDS.has(reason?.id);
+// The workspace settings API marks platform reasons with `builtin: true`;
+// the known ids stay built in even when the flag is missing.
+export const isBuiltInReason = reason =>
+  reason?.builtin === true || BUILTIN_REASON_IDS.has(reason?.id);
 export const isReasonLocked = reason =>
   isSystemReason(reason) || reason?.locked === true;
 
@@ -37,3 +44,16 @@ export const sortReasons = reasons => {
 // and before the system reason.
 export const insertReason = (reasons, reason) =>
   sortReasons([...(Array.isArray(reasons) ? reasons : []), reason]);
+
+// Ids follow Captain::OutcomeReasonConfig::ID_PATTERN (lowercase letters,
+// digits, `_` and `-`, at most 64 characters).
+let customReasonSequence = 0;
+export const createCustomReason = type => {
+  customReasonSequence += 1;
+  return {
+    id: `custom_${type}_${Date.now().toString(36)}_${customReasonSequence}`,
+    label: '',
+    enabled: true,
+    builtin: false,
+  };
+};

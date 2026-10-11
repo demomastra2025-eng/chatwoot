@@ -1,17 +1,20 @@
 <script setup>
-import { ref, computed, watch } from 'vue';
-import { OnClickOutside } from '@vueuse/components';
-import { useRoute, useRouter } from 'vue-router';
-import { useI18n } from 'vue-i18n';
-import { useMapGetter, useStore } from 'dashboard/composables/store.js';
+import { computed } from 'vue';
 import { usePolicy } from 'dashboard/composables/usePolicy';
 import Button from 'dashboard/components-next/button/Button.vue';
 import BackButton from 'dashboard/components/widgets/BackButton.vue';
 import PaginationFooter from 'dashboard/components-next/pagination/PaginationFooter.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import Policy from 'dashboard/components/policy.vue';
-import AssistantSwitcher from 'dashboard/components-next/captain/pageComponents/switcher/AssistantSwitcher.vue';
-import CreateAssistantDialog from 'dashboard/components-next/captain/pageComponents/assistant/CreateAssistantDialog.vue';
+
+// Shared shell of the «ИИ-агенты» pages. Agents are picked in the gallery
+// (captain/agents) and created there, so the header has no agent switcher and
+// no create button of its own.
+const CONTENT_WIDTH_CLASSES = {
+  default: 'max-w-5xl',
+  form: 'max-w-3xl',
+  full: 'max-w-none',
+};
 
 const props = defineProps({
   currentPage: {
@@ -46,6 +49,14 @@ const props = defineProps({
     type: String,
     default: 'i-lucide-plus',
   },
+  buttonDisabled: {
+    type: Boolean,
+    default: false,
+  },
+  buttonLoading: {
+    type: Boolean,
+    default: false,
+  },
   featureFlag: {
     type: String,
     default: '',
@@ -66,50 +77,31 @@ const props = defineProps({
     type: Boolean,
     default: true,
   },
+  // Kept so existing pages can still pass it; the switcher is gone.
   showAssistantSwitcher: {
     type: Boolean,
     default: true,
+  },
+  // 'default' (max-w-5xl), 'form' (max-w-3xl) or 'full' (max-w-none).
+  contentWidth: {
+    type: String,
+    default: 'default',
+    validator: value => ['default', 'form', 'full'].includes(value),
   },
 });
 
 const emit = defineEmits(['click', 'close', 'update:currentPage']);
 
-const { t } = useI18n();
-
-const route = useRoute();
-const router = useRouter();
-const store = useStore();
 const { shouldShowPaywall } = usePolicy();
-
-const showAssistantSwitcherDropdown = ref(false);
-const createAssistantDialogRef = ref(null);
-
-const assistants = useMapGetter('captainAssistants/getRecords');
-const uiFlags = useMapGetter('captainAssistants/getUIFlags');
-
-const currentAssistantId = computed(() => route.params.assistantId);
-const isFetchingAssistants = computed(() => uiFlags.value?.fetchingList);
-const hasActiveAssistantLoaded = computed(() => {
-  if (!currentAssistantId.value) {
-    return assistants.value.length > 0;
-  }
-
-  return assistants.value.some(
-    assistant => assistant.id === Number(currentAssistantId.value)
-  );
-});
-
-const activeAssistantName = computed(() => {
-  return (
-    assistants.value?.find(
-      assistant => assistant.id === Number(currentAssistantId.value)
-    )?.name || t('CAPTAIN.ASSISTANT_SWITCHER.NEW_ASSISTANT')
-  );
-});
 
 const showPaywall = computed(() => {
   return shouldShowPaywall(props.featureFlag);
 });
+
+const contentWidthClass = computed(
+  () =>
+    CONTENT_WIDTH_CLASSES[props.contentWidth] || CONTENT_WIDTH_CLASSES.default
+);
 
 const handleButtonClick = () => {
   emit('click');
@@ -118,117 +110,22 @@ const handleButtonClick = () => {
 const handlePageChange = event => {
   emit('update:currentPage', event);
 };
-
-const toggleAssistantSwitcher = () => {
-  showAssistantSwitcherDropdown.value = !showAssistantSwitcherDropdown.value;
-};
-
-const handleCreateAssistant = () => {
-  showAssistantSwitcherDropdown.value = false;
-  createAssistantDialogRef.value.dialogRef.open();
-};
-
-const handleAssistantCreated = assistant => {
-  if (!assistant?.id) return;
-
-  router.push({
-    name: 'captain_assistants_settings_index',
-    params: {
-      accountId: route.params.accountId,
-      assistantId: assistant.id,
-    },
-  });
-};
-
-const ensureAssistantsLoaded = async () => {
-  if (!props.showAssistantSwitcher || showPaywall.value) {
-    return;
-  }
-
-  if (isFetchingAssistants.value || hasActiveAssistantLoaded.value) {
-    return;
-  }
-
-  await store.dispatch('captainAssistants/get');
-};
-
-watch(
-  () => [
-    props.showAssistantSwitcher,
-    showPaywall.value,
-    currentAssistantId.value,
-  ],
-  () => {
-    ensureAssistantsLoaded();
-  },
-  { immediate: true }
-);
 </script>
 
 <template>
   <section class="flex flex-col w-full h-full overflow-hidden bg-n-surface-1">
     <header class="sticky top-0 z-10 px-6">
-      <div class="w-full max-w-5xl mx-auto">
+      <div class="w-full mx-auto" :class="contentWidthClass">
+        <slot v-if="$slots.header" name="header" :show-paywall="showPaywall" />
         <div
+          v-else
           class="flex items-start lg:items-center justify-between w-full py-3 lg:py-0 lg:h-14 gap-4 lg:gap-2 flex-col lg:flex-row"
         >
           <div
             class="flex w-full min-w-0 flex-wrap gap-3 items-center lg:w-auto"
           >
             <BackButton v-if="backUrl" :back-url="backUrl" />
-            <div
-              v-if="showAssistantSwitcher && !showPaywall"
-              class="flex items-center gap-2 min-w-0"
-            >
-              <div
-                class="flex items-center gap-2 min-w-0 flex-wrap sm:flex-nowrap"
-              >
-                <span
-                  v-if="!isFetchingAssistants"
-                  class="min-w-0 text-sm font-medium truncate text-n-slate-12"
-                >
-                  {{ activeAssistantName }}
-                </span>
-                <div class="relative group shrink-0">
-                  <OnClickOutside
-                    @trigger="showAssistantSwitcherDropdown = false"
-                  >
-                    <Button
-                      icon="i-lucide-chevron-down"
-                      :variant="
-                        showAssistantSwitcherDropdown ? 'faded' : 'ghost'
-                      "
-                      color="slate"
-                      size="xs"
-                      :disabled="isFetchingAssistants"
-                      :is-loading="isFetchingAssistants"
-                      class="rounded-md group-hover:bg-n-slate-3 hover:bg-n-slate-3 [&>span]:size-4"
-                      @click="toggleAssistantSwitcher"
-                    />
-
-                    <AssistantSwitcher
-                      v-if="showAssistantSwitcherDropdown"
-                      class="absolute ltr:left-0 rtl:right-0 top-9"
-                      @close="showAssistantSwitcherDropdown = false"
-                    />
-                  </OnClickOutside>
-                </div>
-                <Button
-                  :label="t('CAPTAIN.ASSISTANT_SWITCHER.NEW_ASSISTANT')"
-                  icon="i-lucide-plus"
-                  variant="outline"
-                  color="slate"
-                  size="sm"
-                  class="shrink-0"
-                  @click="handleCreateAssistant"
-                />
-              </div>
-            </div>
             <div class="flex items-center gap-4">
-              <div
-                v-if="showAssistantSwitcher && !showPaywall && headerTitle"
-                class="w-0.5 h-4 rounded-2xl bg-n-weak"
-              />
               <span
                 v-if="headerTitle"
                 class="text-sm font-medium text-n-slate-12"
@@ -257,6 +154,8 @@ watch(
                   :label="buttonLabel"
                   :icon="buttonIcon || undefined"
                   size="sm"
+                  :disabled="buttonDisabled || buttonLoading"
+                  :is-loading="buttonLoading"
                   class="group-hover/captain-button:brightness-110"
                   @click="handleButtonClick"
                 />
@@ -269,7 +168,7 @@ watch(
       </div>
     </header>
     <main class="flex-1 px-6 overflow-y-auto">
-      <div class="w-full max-w-5xl h-full mx-auto py-4">
+      <div class="w-full h-full mx-auto py-4" :class="contentWidthClass">
         <slot v-if="!showPaywall" name="controls" />
         <div
           v-if="isFetching"
@@ -296,9 +195,5 @@ watch(
         @update:current-page="handlePageChange"
       />
     </footer>
-    <CreateAssistantDialog
-      ref="createAssistantDialogRef"
-      @created="handleAssistantCreated"
-    />
   </section>
 </template>

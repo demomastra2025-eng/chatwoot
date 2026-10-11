@@ -1217,81 +1217,65 @@ const menuItems = computed(() => {
       {
         name: 'Captain',
         icon: 'i-woot-captain',
-        label: t('SIDEBAR.CAPTAIN'),
-        defaultChildName: 'Profile',
-        activeOn: ['captain_assistants_create_index'],
-        // As in aset/dev the AI children have no icons.
+        label: t('CAPTAIN.NAV.GROUP'),
+        defaultChildName: 'Agents',
+        // As in aset/dev the AI children have no icons. Each agent is opened
+        // from the gallery («Агенты»); its pages are tabs, not sidebar items.
         children: [
           {
-            name: 'Profile',
-            visibilityKey: 'Captain:Settings',
-            label: t('PROFILE_SETTINGS.FORM.PROFILE_SECTION.TITLE'),
-            activeOn: ['captain_assistants_settings_index'],
-            to: accountScopedRoute('captain_assistants_index', {
-              navigationPath: 'captain_assistants_settings_index',
-            }),
+            name: 'Agents',
+            visibilityKey: 'Captain:Agents',
+            label: t('CAPTAIN.NAV.AGENTS'),
+            activeOn: ['captain_agents_index', 'captain_agent_show'],
+            to: accountScopedRoute('captain_agents_index'),
           },
-          {
-            name: 'Prompts',
-            visibilityKey: 'Captain:Prompts',
-            label: t('SIDEBAR.CAPTAIN_PROMPTS'),
-            activeOn: [
-              'captain_assistants_prompts_index',
-              'captain_assistants_restrictions_index',
-              'captain_assistants_guardrails_index',
-              'captain_assistants_guidelines_index',
-            ],
-            to: accountScopedRoute('captain_assistants_index', {
-              navigationPath: 'captain_assistants_prompts_index',
-            }),
-          },
-          {
-            name: 'Sandbox',
-            visibilityKey: 'Captain:Playground',
-            label: t('SIDEBAR.CAPTAIN_PLAYGROUND'),
-            activeOn: ['captain_assistants_playground_index'],
-            to: accountScopedRoute('captain_assistants_index', {
-              navigationPath: 'captain_assistants_playground_index',
-            }),
-          },
-          {
-            name: 'Follow-up scenarios',
-            visibilityKey: 'Captain:FollowUps',
-            label: t('SIDEBAR.CAPTAIN_FOLLOW_UPS'),
-            activeOn: ['captain_assistants_follow_ups_index'],
-            to: accountScopedRoute('captain_assistants_index', {
-              navigationPath: 'captain_assistants_follow_ups_index',
-            }),
-          },
-          {
-            name: 'Tools',
-            visibilityKey: 'Captain:Tools',
-            label: t('SIDEBAR.CAPTAIN_TOOLS'),
-            activeOn: ['captain_tools_index'],
-            to: accountScopedRoute('captain_assistants_index', {
-              navigationPath: 'captain_tools_index',
-            }),
-          },
-          {
-            name: 'Observability',
-            visibilityKey: 'Captain:Observability',
-            label: t('SIDEBAR.CAPTAIN_OBSERVABILITY'),
-            activeOn: ['captain_observability_index'],
-            to: accountScopedRoute('captain_observability_index'),
-          },
+          ...(checkPermissions(['administrator'])
+            ? [
+                {
+                  name: 'Channels',
+                  visibilityKey: 'Captain:Channels',
+                  label: t('CAPTAIN.NAV.CHANNELS'),
+                  activeOn: ['captain_channels_index'],
+                  to: accountScopedRoute('captain_channels_index'),
+                },
+              ]
+            : []),
           {
             name: 'Knowledge Base',
             visibilityKey: 'Captain:FAQs',
-            label: t('SIDEBAR.CAPTAIN_RESPONSES'),
+            label: t('CAPTAIN.NAV.KNOWLEDGE'),
             activeOn: [
               'captain_assistants_responses_index',
               'captain_assistants_responses_pending',
               'captain_assistants_documents_index',
             ],
-            to: accountScopedRoute('captain_assistants_index', {
-              navigationPath: 'captain_assistants_responses_index',
-            }),
+            to: accountScopedRoute('captain_assistants_responses_index'),
           },
+          {
+            name: 'Tools',
+            visibilityKey: 'Captain:Tools',
+            label: t('CAPTAIN.NAV.TOOLS'),
+            activeOn: ['captain_tools_index'],
+            to: accountScopedRoute('captain_tools_index'),
+          },
+          ...(checkPermissions(['administrator'])
+            ? [
+                {
+                  name: 'AI Settings',
+                  visibilityKey: 'Captain:AiSettings',
+                  label: t('CAPTAIN.NAV.SETTINGS'),
+                  activeOn: ['captain_ai_settings_index'],
+                  to: accountScopedRoute('captain_ai_settings_index'),
+                },
+                {
+                  name: 'Observability',
+                  visibilityKey: 'Captain:Observability',
+                  label: t('CAPTAIN.NAV.LOGS'),
+                  activeOn: ['captain_observability_index'],
+                  to: accountScopedRoute('captain_observability_index'),
+                },
+              ]
+            : []),
         ],
       },
       {

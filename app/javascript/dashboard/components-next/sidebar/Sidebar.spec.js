@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import campaignsRoutes from 'dashboard/routes/dashboard/campaigns/campaigns.routes';
+import enIntegrations from 'dashboard/i18n/locale/en/integrations.json';
 import enSettings from 'dashboard/i18n/locale/en/settings.json';
 import Sidebar from './Sidebar.vue';
 import SidebarGroup from './SidebarGroup.vue';
@@ -278,67 +279,94 @@ describe('Sidebar', () => {
   });
 
   describe('AI group', () => {
-    it('is labelled «AI Агенты» and lists AI pages without AI settings', async () => {
+    const ADMIN_AI_ITEMS = [
+      'Agents',
+      'Channels',
+      'Knowledge Base',
+      'Tools',
+      'AI Settings',
+      'Observability',
+    ];
+
+    const captainChild = (wrapper, name) =>
+      sidebarGroup(wrapper, 'Captain')
+        .props('children')
+        .find(child => child.name === name);
+
+    it('is labelled «ИИ-агенты» and lists the section pages for administrators', async () => {
       const wrapper = await mountSidebar({
         permissions: ADMINISTRATOR,
-        routeName: 'captain_assistants_playground_index',
+        routeName: 'captain_agents_index',
       });
       const captain = sidebarGroup(wrapper, 'Captain');
 
-      expect(captain.props('label')).toBe(enSettings.SIDEBAR.CAPTAIN);
-      expect(captain.props('label')).not.toBe('AI');
-      expect(navigationChildNames(captain)).toEqual([
-        'Profile',
-        'Prompts',
-        'Sandbox',
-        'Follow-up scenarios',
-        'Tools',
-        'Observability',
-        'Knowledge Base',
-      ]);
+      expect(captain.props('label')).toBe(enIntegrations.CAPTAIN.NAV.GROUP);
+      expect(captain.props('label')).not.toBe('CAPTAIN.NAV.GROUP');
+      expect(captain.props('defaultChildName')).toBe('Agents');
+      expect(navigationChildNames(captain)).toEqual(ADMIN_AI_ITEMS);
       captain
         .props('children')
         .forEach(child => expect(child.icon).toBeUndefined());
-      const children = captain.props('children');
-      expect(children.find(child => child.name === 'Sandbox').to).toMatchObject(
-        {
-          name: 'captain_assistants_index',
-          params: { navigationPath: 'captain_assistants_playground_index' },
-        }
-      );
-      expect(renderedLeaves(wrapper).filter(leaf => leaf.active)).toEqual([
-        { name: 'Sandbox', active: true },
-      ]);
       expect(
         navigationChildNames(sidebarGroup(wrapper, 'Settings'))
       ).not.toContain('Settings Captain');
     });
 
-    it('highlights only «Площадка» while the sandbox page is open', async () => {
+    it('links every item straight to its page', async () => {
       const wrapper = await mountSidebar({
         permissions: ADMINISTRATOR,
-        routeName: 'captain_assistants_playground_index',
+        routeName: 'captain_agents_index',
+      });
+
+      expect(
+        ADMIN_AI_ITEMS.map(name => captainChild(wrapper, name).to.name)
+      ).toEqual([
+        'captain_agents_index',
+        'captain_channels_index',
+        'captain_assistants_responses_index',
+        'captain_tools_index',
+        'captain_ai_settings_index',
+        'captain_observability_index',
+      ]);
+      ADMIN_AI_ITEMS.forEach(name =>
+        expect(captainChild(wrapper, name).to.params).not.toHaveProperty(
+          'navigationPath'
+        )
+      );
+    });
+
+    it('keeps «Агенты» highlighted on the page of an agent', async () => {
+      const wrapper = await mountSidebar({
+        permissions: ADMINISTRATOR,
+        routeName: 'captain_agent_show',
       });
 
       expect(renderedLeaves(wrapper).filter(leaf => leaf.active)).toEqual([
-        { name: 'Sandbox', active: true },
+        { name: 'Agents', active: true },
       ]);
     });
 
-    it('hides «Расходы» from employees', async () => {
+    it('highlights «Знания» on the pending FAQ page', async () => {
+      const wrapper = await mountSidebar({
+        permissions: ADMINISTRATOR,
+        routeName: 'captain_assistants_responses_pending',
+      });
+
+      expect(renderedLeaves(wrapper).filter(leaf => leaf.active)).toEqual([
+        { name: 'Knowledge Base', active: true },
+      ]);
+    });
+
+    it('shows employees only the agents, the knowledge and the tools', async () => {
       const wrapper = await mountSidebar({
         permissions: AGENT,
         routeName: 'contacts_dashboard_index',
       });
 
       expect(navigationChildNames(sidebarGroup(wrapper, 'Captain'))).toEqual([
-        'Profile',
-        'Prompts',
-        'Sandbox',
-        'Follow-up scenarios',
-        'Tools',
-        'Observability',
+        'Agents',
         'Knowledge Base',
+        'Tools',
       ]);
     });
   });

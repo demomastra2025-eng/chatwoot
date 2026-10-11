@@ -11,6 +11,10 @@ const props = defineProps({
   models: { type: Array, default: () => [] },
   disabled: { type: Boolean, default: false },
   defaultLabel: { type: String, default: '' },
+  // One column (narrow side blocks, e.g. the agent page «Модель» block).
+  stacked: { type: Boolean, default: false },
+  // Label of the model select; empty keeps the playground wording.
+  modelLabel: { type: String, default: '' },
 });
 const emit = defineEmits([
   'update:model',
@@ -51,9 +55,13 @@ watch(efforts, supported => {
 
 <template>
   <div class="min-w-0" data-test="model-settings">
-    <div class="grid gap-4 md:grid-cols-3">
+    <div
+      class="grid gap-4"
+      :class="stacked ? 'grid-cols-1' : 'md:grid-cols-3'"
+      data-test="model-settings-grid"
+    >
       <label class="flex min-w-0 flex-col gap-1 text-xs text-n-slate-11">
-        {{ t('CAPTAIN.PLAYGROUND.TEST_MODEL') }}
+        {{ modelLabel || t('CAPTAIN.PLAYGROUND.TEST_MODEL') }}
         <Select
           class="w-full min-w-0"
           :model-value="model"

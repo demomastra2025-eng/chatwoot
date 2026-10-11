@@ -28,9 +28,15 @@ import {
   CONTENT_TYPES,
 } from './constants';
 import { isAutomationTouchMessage } from './helpers/messageProvenance';
+import {
+  councilCaption,
+  councilContributors,
+  isCaptainAssistantSender,
+} from './helpers/captainSender';
 import { isAttachmentConfirmedPurged } from 'dashboard/composables/useAttachmentAvailability';
 
 import Avatar from 'next/avatar/Avatar.vue';
+import CaptainSenderAvatars from './CaptainSenderAvatars.vue';
 
 import TextBubble from './bubbles/Text/Index.vue';
 import ActivityBubble from './bubbles/Activity.vue';
@@ -238,9 +244,8 @@ const variant = computed(() => {
   const hasExternalSenderName = !!props.additionalAttributes?.senderName;
   const isBot =
     (!props.sender && !hasExternalSenderName) ||
-    [SENDER_TYPES.AGENT_BOT, SENDER_TYPES.CAPTAIN_ASSISTANT].includes(
-      senderType
-    );
+    senderType === SENDER_TYPES.AGENT_BOT ||
+    isCaptainAssistantSender(props.sender, props.senderType);
   if (isBot && props.messageType === MESSAGE_TYPES.OUTGOING) {
     return MESSAGE_VARIANTS.BOT;
   }
@@ -275,9 +280,8 @@ const isBotOrAgentMessage = computed(() => {
   }
 
   if (
-    [SENDER_TYPES.AGENT_BOT, SENDER_TYPES.CAPTAIN_ASSISTANT].includes(
-      senderType
-    )
+    senderType === SENDER_TYPES.AGENT_BOT ||
+    isCaptainAssistantSender(props.sender, props.senderType)
   ) {
     return true;
   }
@@ -309,15 +313,6 @@ const flexOrientationClass = computed(() => {
   return map[orientation.value];
 });
 
-const gridClass = computed(() => {
-  const map = {
-    [ORIENTATION.LEFT]: 'grid grid-cols-[24px_minmax(0,1fr)]',
-    [ORIENTATION.RIGHT]: 'grid grid-cols-[minmax(0,1fr)_24px]',
-  };
-
-  return map[orientation.value];
-});
-
 const gridTemplate = computed(() => {
   const map = {
     [ORIENTATION.LEFT]: `
@@ -343,6 +338,45 @@ const shouldShowAvatar = computed(() => {
   if (props.messageType === MESSAGE_TYPES.ACTIVITY) return false;
 
   return [ORIENTATION.LEFT, ORIENTATION.RIGHT].includes(orientation.value);
+});
+
+// Agents that answered together (council reply), normalized from the
+// camelCase or snake_case payload.
+const councilMembers = computed(() =>
+  councilContributors({
+    contentAttributes: props.contentAttributes,
+    additionalAttributes: props.additionalAttributes,
+  })
+);
+
+const shouldShowCouncilAvatars = computed(
+  () =>
+    orientation.value === ORIENTATION.RIGHT &&
+    councilMembers.value.length > 0 &&
+    !shouldGroupWithNext.value &&
+    shouldShowAvatar.value
+);
+
+const councilCaptionText = computed(() => {
+  if (!councilMembers.value.length) return '';
+
+  return t('CAPTAIN.CHAT_AVATARS.COUNCIL_CAPTION', {
+    names: councilCaption(councilMembers.value),
+  });
+});
+
+const gridClass = computed(() => {
+  // Stacked council avatars need more room than one 24px avatar.
+  if (shouldShowCouncilAvatars.value) {
+    return 'grid grid-cols-[minmax(0,1fr)_auto]';
+  }
+
+  const map = {
+    [ORIENTATION.LEFT]: 'grid grid-cols-[24px_minmax(0,1fr)]',
+    [ORIENTATION.RIGHT]: 'grid grid-cols-[minmax(0,1fr)_24px]',
+  };
+
+  return map[orientation.value];
 });
 
 const isVoiceNote = computed(() => {
@@ -581,9 +615,8 @@ const avatarInfo = computed(() => {
   if (
     props.messageType === MESSAGE_TYPES.OUTGOING &&
     isAutomationTouchMessage(props.additionalAttributes) &&
-    ![SENDER_TYPES.AGENT_BOT, SENDER_TYPES.CAPTAIN_ASSISTANT].includes(
-      props.sender?.type ?? props.senderType
-    )
+    (props.sender?.type ?? props.senderType) !== SENDER_TYPES.AGENT_BOT &&
+    !isCaptainAssistantSender(props.sender, props.senderType)
   ) {
     return {
       name: t('CONVERSATION.AUTOMATION_SYSTEM'),
@@ -616,8 +649,21 @@ const avatarInfo = computed(() => {
   const { sender } = props;
   const { name, type, avatarUrl, thumbnail } = sender || {};
 
+  // AI agent: its photo, or the initials of its name; the generic Captain
+  // icon only when the agent has no name.
+  if (isCaptainAssistantSender(sender, props.senderType)) {
+    const agentName = String(name ?? '').trim();
+    const src = avatarUrl || '';
+
+    return {
+      name: agentName,
+      src,
+      iconName: agentName || src ? null : 'i-woot-captain',
+    };
+  }
+
   // If sender type is agent bot, use avatarUrl
-  if ([SENDER_TYPES.AGENT_BOT, SENDER_TYPES.CAPTAIN_ASSISTANT].includes(type)) {
+  if (type === SENDER_TYPES.AGENT_BOT) {
     const shouldUseCaptainIcon = !avatarUrl;
 
     return {
@@ -642,6 +688,7 @@ const avatarTooltip = computed(() => {
       })
     );
   }
+  if (shouldShowCouncilAvatars.value) return councilCaptionText.value;
   if (avatarInfo.value.name === '') return '';
   return `${t('CONVERSATION.SENT_BY')} ${avatarInfo.value.name}`;
 });
@@ -707,7 +754,12 @@ provideMessageContext({
         v-tooltip.left-end="avatarTooltip"
         class="[grid-area:avatar] flex items-end"
       >
-        <Avatar v-bind="avatarInfo" :size="24" />
+        <CaptainSenderAvatars
+          v-if="shouldShowCouncilAvatars"
+          :contributors="councilMembers"
+          :size="24"
+        />
+        <Avatar v-else v-bind="avatarInfo" :size="24" />
       </div>
       <div
         class="[grid-area:bubble] flex max-w-full min-w-0"

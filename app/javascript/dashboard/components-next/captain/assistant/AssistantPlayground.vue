@@ -483,25 +483,20 @@ defineExpose({
 </script>
 
 <template>
+  <!-- Block rules: the chat column is the one framed block; the side panel
+       stays unframed (a border-l on desktop) with border-t sections. -->
   <div
-    class="grid h-full min-h-0 gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]"
+    class="grid h-full min-h-0 gap-4 lg:grid-cols-[minmax(0,1fr)_20rem] lg:grid-rows-[minmax(0,1fr)]"
     data-test="playground-layout"
   >
     <aside
-      class="flex min-h-0 flex-col gap-4 overflow-y-auto lg:col-start-2 lg:row-start-1 lg:border-l lg:border-n-weak lg:pl-4"
+      class="flex min-h-0 flex-col gap-4 lg:col-start-2 lg:row-start-1 lg:overflow-y-auto lg:border-l lg:border-n-weak lg:pl-4"
       data-test="playground-settings"
     >
-      <div class="flex shrink-0 flex-wrap items-start justify-between gap-3">
-        <ModelSettings
-          v-model:model="selectedModelValue"
-          v-model:temperature="temperature"
-          v-model:effort="thinkingEffort"
-          :models="modelOptions"
-          :metadata="metadata"
-          :disabled="isLoadingSettings"
-          :default-label="t('CAPTAIN.PLAYGROUND.USE_PROFILE_SETTINGS')"
-          class="w-full [&>div]:!grid-cols-1"
-        />
+      <div class="flex shrink-0 flex-wrap items-center justify-between gap-3">
+        <h3 class="mb-0 text-heading-3 text-n-slate-12">
+          {{ t('CAPTAIN.AGENT_TABS.CHECK.SIDE_TITLE') }}
+        </h3>
         <Button
           icon="i-lucide-rotate-ccw"
           variant="ghost"
@@ -513,6 +508,17 @@ defineExpose({
           @click="resetConversation"
         />
       </div>
+      <ModelSettings
+        v-model:model="selectedModelValue"
+        v-model:temperature="temperature"
+        v-model:effort="thinkingEffort"
+        :models="modelOptions"
+        :metadata="metadata"
+        :disabled="isLoadingSettings"
+        :default-label="t('CAPTAIN.PLAYGROUND.USE_PROFILE_SETTINGS')"
+        stacked
+        class="w-full shrink-0"
+      />
       <section
         class="shrink-0 border-t border-n-weak pt-3"
         data-test="playground-permissions"
@@ -623,17 +629,35 @@ defineExpose({
         </ul>
       </section>
     </aside>
-    <div class="flex min-h-0 flex-col gap-3 lg:col-start-1 lg:row-start-1">
-      <p v-if="error" class="mb-0 shrink-0 text-sm text-n-ruby-11" role="alert">
+    <section
+      class="flex h-[70vh] min-h-[24rem] flex-col overflow-hidden rounded-xl outline outline-1 -outline-offset-1 outline-n-weak lg:col-start-1 lg:row-start-1 lg:h-auto lg:min-h-0"
+      data-test="playground-chat"
+    >
+      <p
+        v-if="error"
+        class="mb-0 shrink-0 border-b border-n-weak px-4 py-2 text-sm text-n-ruby-11"
+        role="alert"
+      >
         {{ error }}
       </p>
+      <MessageList
+        :messages="messages"
+        :is-loading="isLoading || isLoadingSession || isLoadingSettings"
+        class="pt-4"
+      />
       <section
         v-if="previews.length"
-        class="max-h-[min(38vh,24rem)] shrink-0 space-y-3 overflow-y-auto rounded-lg border border-n-amber-6 p-3"
+        class="max-h-[min(38vh,24rem)] shrink-0 divide-y divide-n-weak overflow-y-auto border-t border-n-weak bg-n-alpha-1 px-4"
         data-test="playground-action-previews"
       >
-        <div v-for="approval in previews" :key="approval.id">
-          <h4 class="mb-2 text-sm font-medium">{{ actionTitle(approval) }}</h4>
+        <div v-for="approval in previews" :key="approval.id" class="py-3">
+          <h4 class="mb-2 flex items-center gap-1.5 text-sm text-n-amber-11">
+            <span
+              class="i-lucide-triangle-alert size-4 shrink-0"
+              aria-hidden="true"
+            />
+            {{ actionTitle(approval) }}
+          </h4>
           <p
             v-for="(record, key) in approval.target"
             :key="key"
@@ -672,7 +696,7 @@ defineExpose({
               </dd>
             </div>
           </dl>
-          <details class="rounded bg-n-alpha-1 p-2">
+          <details>
             <summary class="cursor-pointer text-xs text-n-slate-11">
               {{ t('CAPTAIN.PLAYGROUND.ACTION_DETAILS') }}
             </summary>
@@ -693,12 +717,9 @@ defineExpose({
           />
         </div>
       </section>
-      <MessageList
-        :messages="messages"
-        :is-loading="isLoading || isLoadingSession || isLoadingSettings"
-      />
       <form
-        class="flex shrink-0 items-end gap-2 rounded-xl border border-n-weak bg-n-solid-1 p-3"
+        class="flex shrink-0 items-end gap-2 border-t border-n-weak p-3"
+        data-test="playground-composer"
         @submit.prevent="sendMessage"
       >
         <textarea
@@ -719,6 +740,6 @@ defineExpose({
           data-test="playground-send"
         />
       </form>
-    </div>
+    </section>
   </div>
 </template>

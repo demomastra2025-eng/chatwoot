@@ -3821,6 +3821,256 @@
     "MODEL_SETTINGS": {
       "TITLE": "Model settings",
       "PROVIDER_DEFAULT": "Provider default"
+    },
+    "AGENT_PAGE": {
+      "BREADCRUMB_ARIA": "Back to AI agents",
+      "NAME_PLACEHOLDER": "Agent name",
+      "NAME_REQUIRED": "Enter the agent name",
+      "DESCRIPTION_PLACEHOLDER": "What the agent does and when to hand conversations to it",
+      "DESCRIPTION_REQUIRED": "Add a short description of the agent",
+      "DESCRIPTION_MAX": "Maximum description length: {max}",
+      "DESCRIPTION_EMPTY": "No description yet",
+      "ACTIVE": "Active",
+      "CHECK": "Test",
+      "SAVE": "Save",
+      "SAVED": "Changes saved",
+      "LEAVE_CONFIRM": "You have unsaved changes. Leave the page without saving?",
+      "AVATAR_UPLOAD_ERROR": "Could not upload the avatar. Please try again.",
+      "AVATAR_DELETE_ERROR": "Could not remove the avatar. Please try again.",
+      "MENU": {
+        "LOGS": "Agent logs",
+        "DELETE": "Delete agent",
+        "ACTIONS_ARIA": "Agent actions"
+      },
+      "TABS": {
+        "INSTRUCTION": "Instruction",
+        "FOLLOW_UPS": "Follow-ups",
+        "FOLLOW_UPS_ON": "on",
+        "FOLLOW_UPS_OFF": "off",
+        "CHECK": "Test",
+        "VOICE": "Voice"
+      },
+      "TOOLBAR": {
+        "TOOLS": "Tools",
+        "FIELDS": "Fields"
+      },
+      "INSTRUCTION_LABEL": "Instruction",
+      "INSTRUCTION_PLACEHOLDER": "Describe how the agent should work and what it may answer",
+      "INSTRUCTION_REQUIRED": "Add an instruction",
+      "INSTRUCTION_MAX": "Maximum instruction length: {max}",
+      "TOOLS_ROW": "The agent can call:",
+      "TOOL_NOT_MENTIONED": "not mentioned in the instruction",
+      "MODEL": {
+        "TITLE": "Model",
+        "SELECT_LABEL": "Model for replies",
+        "DEFAULT_MARK": "default",
+        "DEFAULT_OPTION": "Default",
+        "CURRENT_MARK": "current",
+        "PLATFORM_DEFAULT": "Platform default model",
+        "PROVIDER_WORD": "model provider"
+      },
+      "CHANNELS": {
+        "TITLE": "Channels",
+        "ALL": "All channels",
+        "MAIN_IN": "Main agent in: {channels}",
+        "NONE": "The agent does not work in any channel",
+        "CONFIGURE": "Configure"
+      },
+      "FOLLOW_UPS": {
+        "TITLE": "Follow-ups",
+        "ON": "On",
+        "OFF": "Off",
+        "STEPS": "Steps: {count}",
+        "OPEN": "Open"
+      }
+    },
+    "AGENT_TABS": {
+      "FOLLOW_UPS": {
+        "TITLE": "Follow-ups",
+        "DESCRIPTION": "If the customer stops replying, the agent writes to them in the steps below. Before each step it checks whether the customer has replied or the conversation is closed.",
+        "STEPS_TITLE": "Steps",
+        "STEPS_DESCRIPTION": "Messages go out in order until the customer replies.",
+        "EXPAND": "Expand step",
+        "COLLAPSE": "Collapse step"
+      },
+      "CHECK": {
+        "SIDE_TITLE": "Test settings"
+      },
+      "VOICE": {
+        "TITLE": "Voice",
+        "DESCRIPTION": "How the agent speaks on calls: provider, voice, languages, handoff to a teammate and silences. Applies in the voice channels this agent answers.",
+        "SAVE": "Save"
+      }
+    },
+    "AI_SETTINGS": {
+      "TITLE": "Settings",
+      "DESCRIPTION": "These settings apply to every AI agent in the workspace.",
+      "SAVE": "Save",
+      "SAVED": "Settings saved",
+      "SAVE_ERROR": "Could not save the settings. Check the highlighted fields.",
+      "VALIDATION_ERROR": "Fix the highlighted fields to save the settings.",
+      "LEAVE_CONFIRM": "You have unsaved changes. Leave the page without saving?",
+      "LOAD_ERROR": "Could not load the AI agent settings.",
+      "RETRY": "Retry",
+      "UNDERSTANDING": {
+        "TITLE": "Message understanding",
+        "DESCRIPTION": "What agents can make sense of in customer messages.",
+        "VOICE": "Voice messages",
+        "VOICE_DESCRIPTION": "The agent reads the transcript of the customer's voice messages.",
+        "IMAGES": "Images",
+        "IMAGES_DESCRIPTION": "The agent understands photos and pictures the customer sends.",
+        "DOCUMENTS": "Customer documents",
+        "DOCUMENTS_DESCRIPTION": "The agent reads files the customer sends: PDFs, documents, spreadsheets.",
+        "WEB_SEARCH": "Web search",
+        "WEB_SEARCH_DESCRIPTION": "The agent searches the web when the knowledge base has no answer.",
+        "WEB_PAGES": "Reading pages from links",
+        "WEB_PAGES_DESCRIPTION": "The agent opens links from customer messages and reads the page.",
+        "WEB_NOT_CONFIGURED": "Web access is not connected on the platform. Contact the platform administrator."
+      },
+      "HANDOFF": {
+        "TITLE": "Handoff and completion",
+        "DESCRIPTION": "When an agent hands a conversation to a teammate and when it closes it on its own.",
+        "HANDOFF_REASONS": "Handoff reasons",
+        "HANDOFF_REASONS_DESCRIPTION": "The reason is detected from the conversation after the handoff and appears in reports.",
+        "COMPLETION_REASONS": "Completion reasons",
+        "COMPLETION_REASONS_DESCRIPTION": "The reason is detected from the conversation after it is completed.",
+        "REASONS_LIMIT": "Maximum reasons: {count}",
+        "HANDOFF_MESSAGE": "Handoff message",
+        "HANDOFF_MESSAGE_DESCRIPTION": "The agent sends it to the customer when handing the conversation to a teammate.",
+        "RESOLUTION_MESSAGE": "Completion message",
+        "RESOLUTION_MESSAGE_DESCRIPTION": "The agent sends it to the customer when completing the conversation.",
+        "MODE_FIXED": "Fixed text",
+        "MODE_FIXED_DESCRIPTION": "The customer always gets the same text.",
+        "MODE_GENERATED": "Written by AI",
+        "MODE_GENERATED_DESCRIPTION": "The agent writes the message itself based on the conversation.",
+        "TEXT_LABEL_FIXED": "Message text",
+        "TEXT_LABEL_GENERATED": "Guidance for the message (optional)",
+        "TEXT_PLACEHOLDER_FIXED": "For example: a teammate will join shortly and continue the conversation.",
+        "TEXT_PLACEHOLDER_GENERATED": "For example: short and polite, no promises about timing.",
+        "TEXT_REQUIRED": "Enter the message text or choose \"Written by AI\".",
+        "AUTO_COMPLETION": "Complete conversations automatically",
+        "AUTO_COMPLETION_DESCRIPTION": "The agent completes the conversation once the customer's question is resolved.",
+        "REPLY_ON_RETURN": "Reply right away when a conversation is returned to AI",
+        "REPLY_ON_RETURN_DESCRIPTION": "When a teammate returns the conversation to AI, the agent immediately answers the customer's last message."
+      },
+      "KNOWLEDGE": {
+        "TITLE": "Knowledge base",
+        "DESCRIPTION": "How the knowledge base grows from conversations.",
+        "FAQ_FROM_RESOLVED": "Suggest FAQs from resolved conversations",
+        "FAQ_FROM_RESOLVED_DESCRIPTION": "After a conversation is completed, AI suggests new questions and answers. They are added to the FAQ only after review."
+      },
+      "SPEED": {
+        "TITLE": "Response speed",
+        "DESCRIPTION": "How quickly agents reply to customer messages.",
+        "COLLAPSE_WINDOW": "Message grouping window, sec",
+        "COLLAPSE_HINT": "How many seconds the agent waits for the customer's next message to answer them all at once. 0 means reply immediately.",
+        "COLLAPSE_INVALID": "Enter a whole number of seconds: 0 or more."
+      },
+      "SAFETY": {
+        "TITLE": "Safety",
+        "DESCRIPTION": "Checks apply to every agent. Custom rules are checked from top to bottom and the first match wins.",
+        "STANDARD": "Standard checks",
+        "MODERATION": "Content moderation",
+        "MODERATION_DESCRIPTION": "The AI provider checks messages for prohibited content.",
+        "INJECTION": "Attempts to change the agent's instructions",
+        "INJECTION_DESCRIPTION": "Messages in which the customer tries to rewrite the agent's rules.",
+        "SENSITIVE": "Keys and credentials",
+        "SENSITIVE_DESCRIPTION": "Passwords, access keys and other secrets in messages and replies.",
+        "OFF": "Off",
+        "INBOUND": "Incoming messages",
+        "OUTBOUND": "Agent replies",
+        "ADD_RULE": "+ Rule",
+        "RULES_LIMIT": "Maximum rules: {count}"
+      }
+    },
+    "CHANNEL_MATRIX": {
+      "TITLE": "Channels",
+      "DESCRIPTION": "Which AI agents work in each text channel and which one is the main agent: the main agent answers first and hands the conversation over to the other agents of the channel.",
+      "DEFAULT_MAIN_LABEL": "Default main agent for new channels",
+      "DEFAULT_MAIN_HINT": "Becomes the main agent when AI is turned on in a channel that has no main agent yet.",
+      "DEFAULT_MAIN_NONE": "Not selected",
+      "CHANNEL_COLUMN": "Channel",
+      "AI": "AI",
+      "AI_TOGGLE": "AI in “{channel}”",
+      "WORKS_HERE": "works here",
+      "WORKS_HERE_LABEL": "{agent} works in “{channel}”",
+      "MAIN": "Main agent",
+      "MAKE_MAIN": "Make main agent",
+      "MAIN_INACTIVE": "A disabled agent cannot be the main agent",
+      "MAIN_NONE": "Not selected",
+      "MAIN_MISSING_HINT": "Choose a main agent, otherwise AI will not reply in this channel.",
+      "SCOPE_ALL": "all channels",
+      "SCOPE_SELECTED": "selected",
+      "SCOPE_MENU": "Where {agent} works",
+      "MENU_ALL": "All channels, including new ones",
+      "MENU_SELECTED": "Selected channels only",
+      "INACTIVE": "disabled",
+      "AGENTS_LABEL": "Agents in the channel",
+      "VOICE_NOTE": "Calls: the voice agent is configured separately",
+      "EMPTY": "There are no text channels yet. Connect a channel in settings and it will appear here.",
+      "NO_AGENTS": "There are no AI agents yet. Create one on the Agents page.",
+      "LOAD_ERROR": "Could not load the channels. Refresh the page.",
+      "SAVE": "Save",
+      "SAVED": "Channels saved",
+      "SAVE_ERROR": "Could not save. Fix the marked rows and save again.",
+      "LEAVE_CONFIRM": "You have unsaved changes. Leave without saving?",
+      "BOT_CONFIG": {
+        "SUMMARY_TITLE": "AI agents in this channel",
+        "SUMMARY_DESCRIPTION": "The agents of “{inboxName}” and its main agent are set up on the Channels page for all channels at once.",
+        "AI": "AI in the channel",
+        "AI_ON": "On",
+        "AI_OFF": "Off",
+        "MAIN": "Main agent",
+        "MAIN_NONE": "Not selected",
+        "OTHERS": "Other agents",
+        "OTHERS_NONE": "None",
+        "OPEN_MATRIX": "Set up on the Channels page"
+      }
+    },
+    "CHAT_AVATARS": {
+      "COUNCIL_CAPTION": "Council reply: {names}",
+      "MORE": "+{count}"
+    },
+    "GALLERY": {
+      "EMPTY": "There are no AI agents yet.",
+      "NEW_TILE": "New agent",
+      "CARD": {
+        "NO_DESCRIPTION": "Add a description",
+        "CHANNELS_LINE": "Main in channels: {main} · Channels: {total}",
+        "ALL_CHANNELS": "Main in channels: {main} · All channels",
+        "NO_CHANNELS": "Not working on any channel"
+      },
+      "CREATE": {
+        "TITLE": "New agent",
+        "NAME_LABEL": "Name",
+        "NAME_PLACEHOLDER": "For example, Receptionist",
+        "NAME_ERROR": "Enter the agent name",
+        "DESCRIPTION_LABEL": "What it does and when to hand over to it",
+        "DESCRIPTION_PLACEHOLDER": "For example: books patients for appointments and answers questions about prices",
+        "DESCRIPTION_ERROR_REQUIRED": "Describe what the agent does and when to hand a conversation over to it",
+        "DESCRIPTION_ERROR_MAX": "The description is too long. Maximum characters: {max}",
+        "AVATAR_LABEL": "Avatar",
+        "AVATAR_HINT": "Optional. Click the picture to upload an image.",
+        "SUBMIT": "Create",
+        "SUCCESS": "Agent created",
+        "ERROR": "Could not create the agent. Please try again.",
+        "AVATAR_ERROR": "The agent was created, but the avatar could not be uploaded."
+      },
+      "ERRORS": {
+        "MAIN_AGENT_IN_USE": "This agent is the main agent in channels: {channels}. First choose another main agent on the Channels page.",
+        "TOGGLE_FAILED": "Could not change the agent status. Please try again."
+      }
+    },
+    "NAV": {
+      "GROUP": "AI agents",
+      "AGENTS": "Agents",
+      "CHANNELS": "Channels",
+      "KNOWLEDGE": "Knowledge",
+      "TOOLS": "Tools",
+      "SETTINGS": "Settings",
+      "LOGS": "Logs",
+      "LOGS_AGENT_FILTER": "Agent: {name}",
+      "LOGS_AGENT_FILTER_CLEAR": "Clear the agent filter"
     }
   }
 }

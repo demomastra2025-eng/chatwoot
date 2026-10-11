@@ -122,7 +122,7 @@ export const SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
     CONVERSATION_SIDEBAR_VISIBILITY_ITEMS
   ),
   item(MASS_BROADCASTS_VISIBILITY_KEY, 'SIDEBAR.MASS_BROADCASTS'),
-  item('Captain', 'SIDEBAR.CAPTAIN'),
+  item('Captain', 'CAPTAIN.NAV.GROUP'),
   item('Contacts', 'SIDEBAR.CONTACTS'),
   item('Companies', 'SIDEBAR.COMPANIES'),
   item('CRM', 'SIDEBAR.PIPELINES'),

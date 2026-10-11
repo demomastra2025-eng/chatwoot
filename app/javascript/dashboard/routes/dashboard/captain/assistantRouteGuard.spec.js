@@ -18,7 +18,7 @@ const toRoute = assistantId => ({
   params: { accountId: '1', assistantId },
 });
 const listRedirect = {
-  name: 'captain_assistants_create_index',
+  name: 'captain_agents_index',
   params: { accountId: '1' },
   replace: true,
 };
