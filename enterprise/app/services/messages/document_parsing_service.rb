@@ -15,7 +15,8 @@ class Messages::DocumentParsingService
       return false if account.blank?
       return false unless account.feature_enabled?('captain_integration')
 
-      Llm::RuntimePolicy.web_access_enabled?(:document_parse, account: account)
+      Llm::RuntimePolicy.web_access_enabled?(:document_parse, account: account) &&
+        Captain::AccountSettings.new(account).section('understanding')['documents']
     end
 
     def reading_enabled_for?(assistant, account: nil)

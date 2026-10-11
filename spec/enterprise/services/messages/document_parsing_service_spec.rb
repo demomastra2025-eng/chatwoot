@@ -40,6 +40,13 @@ RSpec.describe Messages::DocumentParsingService, type: :service do
     end
   end
 
+  it 'does not parse new documents when account document understanding is off' do
+    allow(Llm::RuntimePolicy).to receive(:web_access_enabled?).with(:document_parse, account: account).and_return(true)
+    Captain::AccountSettings.new(account).update!('understanding' => { 'documents' => false })
+
+    expect(described_class.enabled_for_account?(account)).to be(false)
+  end
+
   describe '#perform' do
     context 'with a Firecrawl-supported document' do
       let(:attachment) do
