@@ -132,6 +132,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       expect(Captain::Assistant::AgentRunnerService).to receive(:new).with(
         assistant: assistant,
         conversation: conversation,
+        incoming_message_id: conversation.messages.incoming.last.id,
         callbacks: hash_including(
           on_agent_thinking: kind_of(Proc),
           on_tool_start: kind_of(Proc),

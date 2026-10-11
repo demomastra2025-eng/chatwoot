@@ -45,7 +45,7 @@ RSpec.describe Captain::ContextFields do
     )
 
     expect(described_class.field_ids_for(account)).to include('conversation.reply_notification')
-    expect(prompt.dig(:conversation, 'reply_notification')).to eq(payload)
+    expect(prompt.dig(:conversation, 'reply_notification')).to eq(payload.stringify_keys)
     expect(prompt.dig(:conversation, 'reply_notification')).not_to be_nil
   end
 end

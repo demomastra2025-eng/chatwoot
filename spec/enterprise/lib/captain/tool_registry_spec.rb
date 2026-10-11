@@ -6,7 +6,8 @@ RSpec.describe Captain::ToolRegistry do
       agent_tool_ids = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_AGENT).pluck(:id)
       assistant_tool_ids = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_ASSISTANT).pluck(:id)
 
-      expect(agent_tool_ids - assistant_tool_ids).to be_empty
+      # These tools require the current client conversation, which the assistant scope does not have.
+      expect(agent_tool_ids - assistant_tool_ids).to match_array(%w[get_my_contact update_my_contact list_my_deals])
       expect(assistant_tool_ids).not_to include('create_touch_plan', 'apply_touch_plan', 'archive_touch_plan')
       expect(assistant_tool_ids).to include(
         'list_captain_assistants',
