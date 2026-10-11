@@ -19,8 +19,9 @@ module Captain::Playground::ScenarioContext
   def appointment_card(record)
     return unless record
 
-    start = Time.iso8601(record['starts_at']).in_time_zone(data['timezone'])
     resource = data['resources'].find { |item| item['id'] == record['resource_id'] }
+    zone = Captain::Tools::Agent::AppointmentTimeInput.timezone(resource_timezone: resource&.fetch('timezone', nil), account_timezone: data['timezone'])
+    start = Time.iso8601(record['starts_at']).in_time_zone(zone)
     service = data['services'].find { |item| item['id'] == record['service_id'] }
     { id: record['id'], status: record['status'] == 'confirmed' ? 'scheduled' : record['status'], date: start.strftime('%d.%m.%Y'),
       time: start.strftime('%H:%M'), doctor: resource&.fetch('name', nil), service: service&.fetch('name', nil) }

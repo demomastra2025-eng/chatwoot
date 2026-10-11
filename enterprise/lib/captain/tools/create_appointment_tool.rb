@@ -5,10 +5,11 @@ class Captain::Tools::CreateAppointmentTool < Captain::Tools::BasePublicTool
               'confirm the booking to the patient in your reply. For a local-only booking, the local calendar save is sufficient. ' \
               'For an argument validation failure follow the returned correction before retrying. ' \
               'For any other failure or an unknown outcome, do not claim success or repeat the create call; ' \
-              'use the handoff tool when available.'
+              'use the handoff tool when available. Report the local_date and local_time returned by the tool, never substitute the requested time.'
   param :resource_id, type: 'number', desc: 'Specialist resource ID', required: true
-  param :starts_at, type: 'string', desc: 'Appointment start datetime in ISO 8601 format', required: true
-  param :ends_at, type: 'string', desc: 'Optional appointment end datetime in ISO 8601 format', required: false
+  param :starts_at, type: 'string', desc: 'Use the exact requested local calendar clock as YYYY-MM-DDTHH:MM without a timezone; the server resolves the specialist timezone. ' \
+              'Do not convert it to UTC yourself. Alternatively copy an ISO 8601 datetime returned by a slot tool unchanged.', required: true
+  param :ends_at, type: 'string', desc: 'Optional local calendar end YYYY-MM-DDTHH:MM without timezone, or exact returned slot datetime. Prefer duration_min; do not calculate timezone offsets.', required: false
   param :duration_min, type: 'number', desc: 'Optional appointment duration in minutes when ends_at is not provided', required: false
   param :service_id, type: 'number', desc: 'Optional local service ID returned by search_scheduling_services', required: false
   param :appointment_type,

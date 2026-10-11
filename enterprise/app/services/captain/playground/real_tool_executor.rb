@@ -149,8 +149,17 @@ class Captain::Playground::RealToolExecutor
   end
 
   def exact_appointment_arguments(tool_id, arguments, records)
-    return arguments unless %w[create_appointment update_appointment].include?(tool_id) && arguments[:ends_at].blank?
+    return arguments unless %w[create_appointment update_appointment].include?(tool_id)
+
     existing = records['appointment_id']
+    resource = records['resource_id'] || existing&.resource
+    clock = Captain::Tools::Agent::AppointmentTimeInput
+    zone = clock.timezone(resource_timezone: resource&.timezone, account_timezone: @session.account.reporting_timezone)
+    arguments = arguments.dup
+    %i[starts_at ends_at].each do |field|
+      arguments[field] = clock.parse(arguments[field], timezone: zone, field_name: field.to_s).iso8601 if arguments[field].present?
+    end
+    return arguments if arguments[:ends_at].present?
     return arguments unless arguments[:starts_at].present? || arguments[:duration_min].present? || arguments[:service_id].present?
 
     starts_at = arguments[:starts_at].presence || existing&.starts_at&.iso8601

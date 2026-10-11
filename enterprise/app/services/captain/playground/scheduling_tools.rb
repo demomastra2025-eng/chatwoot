@@ -29,8 +29,10 @@ module Captain::Playground::SchedulingTools
     resource = resource!(inputs.fetch('resource_id'))
     service_id = inputs['service_id']
     duration = duration_for(resource, service_id, inputs['duration_min'])
-    start = parse_time(inputs.fetch('starts_at'))
-    ending = @args['ends_at'] ? parse_time(@args['ends_at']) : start + duration.minutes
+    clock = Captain::Tools::Agent::AppointmentTimeInput
+    zone = clock.timezone(resource_timezone: resource['timezone'], account_timezone: @data['timezone'])
+    start = clock.parse(inputs.fetch('starts_at'), timezone: zone, field_name: 'starts_at')
+    ending = @args['ends_at'] ? clock.parse(@args['ends_at'], timezone: zone, field_name: 'ends_at') : start + duration.minutes
     raise ArgumentError, 'Appointment must start in the future and end after its start' unless start >= Time.current && ending > start
 
     { resource: resource, service_id: service_id, start: start, ending: ending }

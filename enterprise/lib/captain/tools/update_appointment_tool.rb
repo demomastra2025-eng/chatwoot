@@ -3,7 +3,8 @@ class Captain::Tools::UpdateAppointmentTool < Captain::Tools::BasePublicTool
               'to an exact date/time authorizes that change after checking availability; do not ask them to confirm the same request again. ' \
               'Clarify an ambiguous appointment or requested change. For another patient use the task token returned by search_appointments, ' \
               'confirm the patient, doctor, date/time and requested change, then set patient_confirmed. ' \
-              'Do not claim completion while provider confirmation is pending; do not repeat an uncertain provider write.'
+              'Do not claim completion while provider confirmation is pending; do not repeat an uncertain provider write. ' \
+              'Report the local_date and local_time returned by the tool, never substitute the requested time.'
   param :appointment_id, type: 'number', desc: 'Exact appointment ID returned by get_appointment or a previous appointment mutation', required: false
   param :appointment_access_token, type: 'string', desc: 'Opaque token from search_appointments for a specifically identified other patient appointment', required: false
   param :patient_confirmed, type: 'boolean',
@@ -11,8 +12,9 @@ class Captain::Tools::UpdateAppointmentTool < Captain::Tools::BasePublicTool
               'Omit for the current customer appointment.', required: false
   param :resource_id, type: 'number', desc: 'Updated specialist resource ID', required: false
   param :service_id, type: 'number', desc: 'Updated local service ID returned by search_scheduling_services', required: false
-  param :starts_at, type: 'string', desc: 'Updated appointment start datetime in ISO 8601 format', required: false
-  param :ends_at, type: 'string', desc: 'Optional updated appointment end datetime in ISO 8601 format', required: false
+  param :starts_at, type: 'string', desc: 'Use the exact requested local calendar clock as YYYY-MM-DDTHH:MM without a timezone; the server resolves the specialist timezone. ' \
+              'Do not convert it to UTC yourself. Alternatively copy an ISO 8601 datetime returned by a slot tool unchanged.', required: false
+  param :ends_at, type: 'string', desc: 'Optional local calendar end YYYY-MM-DDTHH:MM without timezone, or exact returned slot datetime. Prefer duration_min; do not calculate timezone offsets.', required: false
   param :duration_min, type: 'number', desc: 'Optional updated appointment duration in minutes when ends_at is not provided', required: false
   param :appointment_type,
         type: 'string',

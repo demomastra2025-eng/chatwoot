@@ -20,6 +20,7 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
                          custom_attributes: nil, patient: nil, crm_deal_id: nil, crm_pipeline_id: nil)
     @persisted_creation = nil
     ensure_feature_enabled!('scheduling', 'Scheduling is not enabled for this account')
+    starts_at, ends_at = normalize_appointment_times(resource_id: resource_id, starts_at: starts_at, ends_at: ends_at)
     validated_service = validate_booking_inputs!(starts_at: starts_at, ends_at: ends_at, duration_min: duration_min, service_id: service_id)
     service_id = validated_service.id if validated_service
 
@@ -55,6 +56,7 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
     ensure_feature_enabled!('scheduling', 'Scheduling is not enabled for this account')
     appointment = target_appointment(appointment_id, appointment_access_token: appointment_access_token, patient_confirmed: patient_confirmed)
 
+    starts_at, ends_at = normalize_appointment_times(resource_id: resource_id || appointment.resource_id, starts_at: starts_at, ends_at: ends_at)
     validated_service = validate_booking_inputs!(starts_at: starts_at, ends_at: ends_at, duration_min: duration_min,
                                                  service_id: service_id, appointment: appointment)
     service_id = validated_service.id if validated_service
@@ -98,6 +100,19 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
   end
 
   private
+
+  def normalize_appointment_times(resource_id:, starts_at:, ends_at:)
+    return [starts_at, ends_at] if starts_at.nil? && ends_at.nil?
+
+    resource = account.scheduling_resources.find_by(id: required_positive_id(resource_id, field_name: 'resource_id'))
+    raise Scheduling::Error.new(code: 'RESOURCE_UNAVAILABLE', message: 'Resource is not available', status: :not_found) unless resource
+
+    input = Captain::Tools::Agent::AppointmentTimeInput
+    zone = input.timezone(resource_timezone: resource.timezone, account_timezone: account.reporting_timezone)
+    [[:starts_at, starts_at], [:ends_at, ends_at]].map do |field, value|
+      input.parse(value, timezone: zone, field_name: field.to_s).iso8601 unless value.nil?
+    end
+  end
 
   def validate_booking_inputs!(starts_at:, ends_at:, duration_min:, service_id:, appointment: nil)
     start_time = starts_at.nil? && appointment ? appointment.starts_at : Scheduling::InputValidation.datetime(starts_at, field_name: 'starts_at')

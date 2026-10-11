@@ -14,7 +14,7 @@ class Captain::Tools::Agent::AppointmentResult
     'cancel_appointment' => 'remove_reception'
   }.freeze
   INPUT_FAILURE_GUIDANCE = {
-    'INVALID_DATE' => 'Use a valid ISO 8601 date/time for the requested field.',
+    'INVALID_DATE' => 'Use the exact local calendar datetime YYYY-MM-DDTHH:MM without timezone, or copy a returned ISO 8601 slot unchanged. Do not calculate UTC offsets. For an ambiguous clock use an exact returned slot.',
     'INVALID_DURATION' => 'Use a positive whole number of minutes for duration_min.',
     'INVALID_DATE_RANGE' => 'Choose an end time after the start and keep the search range within 31 days.',
     'INVALID_SERVICE_ID' => 'Use an integer service_id returned by search_scheduling_services.',
