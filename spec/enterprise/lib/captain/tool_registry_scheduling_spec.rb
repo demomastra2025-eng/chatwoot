@@ -24,6 +24,20 @@ RSpec.describe 'Captain scheduling tool registry' do
       .to eq(Captain::Tools::Agent::AccountToolAdapter)
   end
 
+  it 'lists current-client CRM and contact tools without removing broad admin tools' do
+    %w[list_my_deals get_my_contact update_my_contact].each do |id|
+      definition = Captain::ToolRegistry.definition_for(id)
+      expect(definition.title).to match(/[А-Яа-я]/)
+      expect(definition.description).to match(/[А-Яа-я]/)
+      expect(definition.allowed_scopes).to include(Captain::ToolAccess::SCOPE_AGENT)
+      expect(definition.tool_class_for(Captain::ToolAccess::SCOPE_AGENT))
+        .to eq(Captain::Tools::Agent::AccountToolAdapter)
+    end
+    expect(Captain::ToolRegistry.definition_for('search_deals')).to be_present
+    expect(Captain::ToolRegistry.definition_for('get_contact')).to be_present
+    expect(Captain::ToolRegistry.definition_for('update_contact')).to be_present
+  end
+
   it 'keeps appointment mutation tools available to ordered scopes' do
     ordered_scope_ids = Captain::ToolAccess::SCOPE_ORDER.flat_map do |scope|
       Captain::ToolRegistry.tools_for_scope(scope).pluck(:id)

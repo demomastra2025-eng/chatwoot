@@ -618,6 +618,19 @@ class Captain::ToolRegistry
           risk_level: 'low'
         ),
         definition(
+          id: 'get_my_contact',
+          title: 'Данные клиента',
+          description: 'Показывает имя, ИИН, дату рождения, пол и контакты клиента текущего диалога',
+          group_name: 'Contacts',
+          icon: 'user',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_AGENT],
+          agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
+          assistant_tool_class: Captain::Tools::Copilot::GetMyContactService,
+          required_permissions: %w[contact_manage],
+          risk_level: 'low',
+          selected_by_default: false
+        ),
+        definition(
           id: 'search_contacts',
           title: 'Search Contacts',
           description: 'Search contacts by name, email, or phone number',
@@ -652,6 +665,19 @@ class Captain::ToolRegistry
           assistant_tool_class: Captain::Tools::Copilot::UpdateContactService,
           required_permissions: %w[contact_manage],
           risk_level: 'medium'
+        ),
+        definition(
+          id: 'update_my_contact',
+          title: 'Обновить данные клиента',
+          description: 'Обновляет имя, ИИН, дату рождения, пол и контакты клиента текущего диалога',
+          group_name: 'Contacts',
+          icon: 'user-edit',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_AGENT],
+          agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
+          assistant_tool_class: Captain::Tools::Copilot::UpdateMyContactService,
+          required_permissions: %w[contact_manage],
+          risk_level: 'medium',
+          selected_by_default: false
         ),
         definition(
           id: 'get_company',
@@ -726,6 +752,20 @@ class Captain::ToolRegistry
           required_features: %w[crm_deals],
           required_permissions: %w[crm_deal_view crm_deal_manage],
           risk_level: 'low'
+        ),
+        definition(
+          id: 'list_my_deals',
+          title: 'Сделки клиента',
+          description: 'Показывает сделки клиента текущего диалога с фильтрами и страницами',
+          group_name: 'CRM Deals',
+          icon: 'money',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_AGENT],
+          agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
+          assistant_tool_class: Captain::Tools::Copilot::ListMyDealsService,
+          required_features: %w[crm_deals],
+          required_permissions: %w[crm_deal_view crm_deal_manage],
+          risk_level: 'low',
+          selected_by_default: false
         ),
         definition(
           id: 'list_deal_pipelines',
