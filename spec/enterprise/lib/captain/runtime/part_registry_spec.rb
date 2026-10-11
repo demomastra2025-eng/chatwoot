@@ -66,6 +66,17 @@ RSpec.describe Captain::Runtime::PartRegistry do
     expect(confirmed['version']).to eq(2)
   end
 
+  it 'keeps the recorded executor when confirming a proposed operation' do
+    old = plan([{ fragment: 'Book', executor_agent_id: 1 }])[:parts].sole
+    described_class.new(context).update!(old['id'], state: 'waiting_confirmation',
+                                                    proposed_operation: { 'type' => 'create_appointment', 'params' => { 'slot_id' => 9 } })
+    next_message
+
+    expect do
+      plan([{ fragment: 'Yes', executor_agent_id: 2, link_part_id: old['id'], link_action: 'confirmation' }], mode: 'handoff')
+    end.to raise_error(ArgumentError, /executor agent/)
+  end
+
   it 'persists a part across messages and an agent ownership change' do
     entry = create(:captain_assistant)
     specialist = create(:captain_assistant, account: entry.account)

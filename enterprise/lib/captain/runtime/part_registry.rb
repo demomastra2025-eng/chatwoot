@@ -54,6 +54,9 @@ class Captain::Runtime::PartRegistry
       if link_action == 'confirmation' && (!prior || prior['state'] != 'waiting_confirmation' || prior['proposed_operation'].blank?)
         raise ArgumentError, 'There is no operation awaiting confirmation for this part'
       end
+      if link_action == 'confirmation' && prior['executor_agent_id'] != actor_id
+        raise ArgumentError, 'The confirmed operation must keep its executor agent'
+      end
 
       { 'id' => prior&.dig('id') || SecureRandom.uuid,
         'version' => prior ? prior['version'].to_i + 1 : 1,
