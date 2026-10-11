@@ -2,6 +2,7 @@
 import { useI18n } from 'vue-i18n';
 import { ref, watch, nextTick } from 'vue';
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
+import CaptainToolExecutionGroup from 'dashboard/components-next/message/CaptainToolExecutionGroup.vue';
 import { useMessageFormatter } from 'shared/composables/useMessageFormatter';
 
 const props = defineProps({
@@ -24,14 +25,19 @@ const getMessageAlignment = sender =>
   isUserMessage(sender) ? 'justify-end' : 'justify-start';
 const getMessageDirection = sender =>
   isUserMessage(sender) ? 'flex-row-reverse' : 'flex-row';
-const getAvatarName = sender =>
-  isUserMessage(sender)
+const getAvatarName = message =>
+  isUserMessage(message.sender)
     ? t('CAPTAIN.PLAYGROUND.USER')
-    : t('CAPTAIN.PLAYGROUND.ASSISTANT');
+    : message.agentName || t('CAPTAIN.PLAYGROUND.ASSISTANT');
 const getMessageStyle = sender =>
   isUserMessage(sender)
     ? 'bg-n-solid-blue text-n-slate-12 rounded-br-sm rounded-bl-xl rounded-t-xl'
     : 'bg-n-solid-iris text-n-slate-12 rounded-bl-sm rounded-br-xl rounded-t-xl';
+const traceAttributes = message => ({
+  captain_trace: Array.isArray(message.toolTrace)
+    ? { tool_steps: message.toolTrace }
+    : message.toolTrace || {},
+});
 
 const scrollToBottom = async () => {
   await nextTick();
@@ -59,7 +65,7 @@ watch(() => props.messages.length, scrollToBottom);
         :class="getMessageDirection(message.sender)"
       >
         <Avatar
-          :name="getAvatarName(message.sender)"
+          :name="getAvatarName(message)"
           rounded-full
           :size="24"
           :icon-name="isUserMessage(message.sender) ? null : 'i-woot-captain'"
@@ -69,14 +75,41 @@ watch(() => props.messages.length, scrollToBottom);
           class="px-4 py-3 text-sm [overflow-wrap:break-word]"
           :class="getMessageStyle(message.sender)"
         >
+          <div
+            v-if="!isUserMessage(message.sender) && message.agentName"
+            class="mb-1 text-xs font-medium text-n-slate-11"
+            data-test="playground-responding-agent"
+          >
+            {{ message.agentName }}
+          </div>
           <div v-html="formatMessage(message.content)" />
+          <CaptainToolExecutionGroup
+            v-if="message.toolTrace"
+            :additional-attributes="traceAttributes(message)"
+            class="mt-2"
+          />
+          <ul
+            v-if="message.agentTasks?.length"
+            class="mb-0 mt-2 list-none space-y-1 border-t border-n-weak p-0 pt-2"
+          >
+            <li
+              v-for="task in message.agentTasks"
+              :key="task.id"
+              class="text-xs"
+            >
+              {{ task.title }} ·
+              {{
+                t(`CAPTAIN.PLAYGROUND.TASK_STATUS.${task.status.toUpperCase()}`)
+              }}
+            </li>
+          </ul>
         </div>
       </div>
     </div>
     <div v-if="isLoading" class="flex justify-start">
       <div class="flex items-start gap-1.5">
         <Avatar
-          :name="getAvatarName('assistant')"
+          :name="getAvatarName({ sender: 'assistant' })"
           rounded-full
           :size="24"
           icon-name="i-woot-captain"

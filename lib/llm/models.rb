@@ -20,6 +20,8 @@ module Llm::Models
   OPENROUTER_DYNAMIC_FEATURE_REQUIREMENTS = {
     'editor' => [],
     'label_suggestion' => [],
+    'outcome_classification' => %w[structured_output],
+    'custom_guardrail' => %w[structured_output],
     'assistant' => %w[structured_output tool_calling tool_choice],
     'copilot' => %w[structured_output tool_calling tool_choice],
     'audio_transcription' => %w[audio_input transcription],
@@ -65,18 +67,27 @@ module Llm::Models
     openai/gpt-5.6-luna
     openai/gpt-5.4
     openai/gpt-5.4-mini
+    anthropic/claude-haiku-5.5
   ].freeze
 
   class << self
     def providers = CONFIG['providers']
     def legacy_providers = CONFIG['legacy_providers'] || {}
     def configured_models = CONFIG['models']
-    def models(account: nil) = configured_models.merge(dynamic_model_configs(account: account))
+    def models(account: nil)
+      configured_models.merge(dynamic_model_configs(account: account)) do |model_name, configured, dynamic|
+        decision_model?(model_name) ? configured : dynamic
+      end
+    end
     def features = CONFIG['features']
     def feature_keys = CONFIG['features'].keys
 
     def canonical_model_name(model_name)
       LEGACY_MODEL_ALIASES.fetch(model_name.to_s, model_name.to_s)
+    end
+
+    def decision_model?(model_name)
+      Llm::OpenRouterDecisionClient.supported_model?(canonical_model_name(model_name))
     end
 
     def configured_default_model_for(feature)
@@ -114,8 +125,12 @@ module Llm::Models
       required_capabilities.uniq
     end
 
-    def required_capability_sets_for(feature, runtime_preferences: nil)
+    def required_capability_sets_for(feature, runtime_preferences: nil, model_name: nil)
       feature_key = feature.to_s
+      if feature_key == 'outcome_classification' && decision_model?(model_name)
+        return [{ type: 'decision', capabilities: %w[decision_classification] }]
+      end
+
       required_capabilities = required_capabilities_for(feature_key, runtime_preferences: runtime_preferences)
       return [{ type: 'chat', capabilities: [] }] if required_capabilities.blank? && OPENROUTER_DYNAMIC_FEATURE_REQUIREMENTS.key?(feature_key)
       return [] if required_capabilities.blank?
@@ -204,6 +219,7 @@ module Llm::Models
 
       model_config = model_config(canonical_name, account: account)
       return false if model_config.blank?
+      return false if decision_model?(canonical_name) && feature_key != 'outcome_classification'
 
       if configured_static_model_for_feature?(feature_key, canonical_name)
         return model_config_allowed_for_feature?(
@@ -237,10 +253,13 @@ module Llm::Models
 
     def model_config(model_name, account: nil)
       canonical_name = canonical_model_name(model_name)
+      configured_config = configured_models[canonical_name]
+      return configured_config if configured_config.present? && decision_model?(canonical_name)
+
       dynamic_config = dynamic_model_configs(account: account)[canonical_name]
       return dynamic_config if dynamic_config.to_h['provider'] == OPENROUTER_PROVIDER
 
-      configured_models[canonical_name] || dynamic_config
+      configured_config || dynamic_config
     end
 
     def provider_for(model_name, account: nil)
@@ -673,6 +692,10 @@ module Llm::Models
 
     def model_config_allowed_for_feature?(feature_key, model_config, account: nil, runtime_filtered: true)
       return false if model_config.blank?
+      if model_config['type'] == 'decision'
+        return feature_key.to_s == 'outcome_classification' && decision_model?(model_config['id'])
+      end
+
       return true unless feature_key.to_s == 'help_center_search'
 
       return embedding_model_supports_requested_dimensions?(model_config) unless runtime_filtered
@@ -725,6 +748,7 @@ module Llm::Models
     end
 
     def registry_capabilities_for(model_name, model_config, account: nil)
+      return [] if decision_model?(model_name)
       return [] if dynamic_openrouter_model_config?(model_name, model_config, account: account)
 
       Array(registry_info_for(model_name)&.capabilities)

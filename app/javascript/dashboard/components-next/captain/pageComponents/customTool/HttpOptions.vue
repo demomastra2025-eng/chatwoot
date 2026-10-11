@@ -304,7 +304,7 @@ defineExpose({ validate });
         />
       </section>
 
-      <section class="flex flex-col gap-3 rounded-lg border border-n-weak p-3">
+      <section class="flex flex-col gap-3 border-t border-n-weak py-3">
         <label class="flex cursor-pointer items-start gap-3">
           <Checkbox
             :model-value="modelValue.retry.enabled"
@@ -353,7 +353,7 @@ defineExpose({ validate });
 
       <section class="grid gap-3 sm:grid-cols-2">
         <label
-          class="flex cursor-pointer items-start gap-3 rounded-lg border border-n-weak p-3"
+          class="flex cursor-pointer items-start gap-3 border-t border-n-weak py-3"
         >
           <Checkbox
             :model-value="modelValue.redirects.enabled"
@@ -379,7 +379,7 @@ defineExpose({ validate });
         </label>
 
         <label
-          class="flex cursor-pointer items-start gap-3 rounded-lg border border-n-weak p-3"
+          class="flex cursor-pointer items-start gap-3 border-t border-n-weak py-3"
         >
           <Checkbox
             :model-value="modelValue.idempotency.enabled"
@@ -403,7 +403,7 @@ defineExpose({ validate });
         </label>
       </section>
 
-      <section class="flex flex-col gap-3 rounded-lg border border-n-weak p-3">
+      <section class="flex flex-col gap-3 border-t border-n-weak py-3">
         <label class="flex cursor-pointer items-start gap-3">
           <Checkbox
             :model-value="modelValue.pagination.enabled"
@@ -506,7 +506,7 @@ defineExpose({ validate });
         </div>
       </section>
 
-      <section class="flex flex-col gap-3 rounded-lg border border-n-weak p-3">
+      <section class="flex flex-col gap-3 border-t border-n-weak py-3">
         <label class="flex cursor-pointer items-start gap-3">
           <Checkbox
             :model-value="modelValue.batching.enabled"

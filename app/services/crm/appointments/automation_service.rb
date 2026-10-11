@@ -58,7 +58,7 @@ class Crm::Appointments::AutomationService
       account: deal.account, deal: deal, actor: nil,
       params: {
         stage_id: rule['stage_id'], lock_version: deal.lock_version,
-        closing_reasons: rule['closing_reasons'], transition_reason: rule['transition_reason'],
+        closing_reasons: rule['closing_reasons'],
         idempotency_key: "appointment_stage:#{fingerprint}:#{deal.lock_version}:#{rule['stage_id']}", appointment_automation: true
       }
     ).perform

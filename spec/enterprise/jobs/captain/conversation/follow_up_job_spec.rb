@@ -158,10 +158,11 @@ RSpec.describe Captain::Conversation::FollowUpJob, type: :job do
     it 'rejects cross-account and internal assistants' do
       other_account = create(:account)
       other_assistant = create(:captain_assistant, account: other_account)
-      internal_assistant = create(:captain_assistant, account: account, usage_mode: 'internal_assistant')
+      internal_assistant = create(:captain_assistant, account: account)
       internal_inbox = create(:inbox, account: account)
       internal_conversation = create(:conversation, account: account, inbox: internal_inbox, status: :pending)
       create(:captain_inbox, captain_assistant: internal_assistant, inbox: internal_inbox)
+      internal_assistant.update_column(:usage_mode, 'internal_assistant') # rubocop:disable Rails/SkipsModelValidations
       create(
         :message,
         account: account,

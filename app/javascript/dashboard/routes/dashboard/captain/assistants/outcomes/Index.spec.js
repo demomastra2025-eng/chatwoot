@@ -4,7 +4,12 @@ import { defineComponent, h } from 'vue';
 import { mount } from '@vue/test-utils';
 
 vi.mock('vue-i18n', () => ({
-  useI18n: () => ({ t: key => key }),
+  useI18n: () => ({
+    t: key =>
+      key === 'CAPTAIN.ASSISTANTS.OUTCOMES.DEFAULTS.COMMON.OTHER'
+        ? 'Другое'
+        : key,
+  }),
 }));
 
 vi.mock(
@@ -61,11 +66,12 @@ vi.mock('dashboard/components-next/switch/Switch.vue', () => ({
 }));
 
 const { default: OutcomesForm } = await import('./Index.vue');
-const mountComponent = (config = {}) =>
+const mountComponent = (config = {}, props = {}) =>
   mount(OutcomesForm, {
     props: {
       assistant: { id: 58, config },
       handoffEnabled: config.handoff_enabled !== false,
+      ...props,
     },
   });
 
@@ -74,7 +80,7 @@ describe('Captain assistant outcome settings form', () => {
     const wrapper = mountComponent();
 
     expect(wrapper.findAll('[data-testid="outcome-reason-row"]')).toHaveLength(
-      11
+      12
     );
     expect(
       wrapper.find('[data-testid="outcome-toggle-handoffReasons"]').exists()
@@ -186,7 +192,7 @@ describe('Captain assistant outcome settings form', () => {
       otherRows.every(
         row =>
           !row.find('[data-testid="outcome-remove"]').exists() &&
-          row.get('input[type="checkbox"]').attributes('disabled') !== undefined
+          !row.find('input[type="checkbox"]').exists()
       )
     ).toBe(true);
   });
@@ -214,6 +220,22 @@ describe('Captain assistant outcome settings form', () => {
 
 const HANDOFF = 'handoffReasons';
 const COMPLETION = 'completionReasons';
+const COMPLETION_BUILTINS = [
+  'goal_achieved',
+  'question_resolved',
+  'customer_declined',
+  'no_response',
+  'other',
+];
+const HANDOFF_BUILTINS = [
+  'customer_requested_human',
+  'low_confidence',
+  'manual_action_required',
+  'complaint_or_conflict',
+  'tool_or_policy_limit',
+  'faq_no_answer',
+  'other',
+];
 
 const sectionOf = (wrapper, type) =>
   wrapper.get(`[data-testid="outcome-section-${type}"]`);
@@ -262,8 +284,8 @@ describe('Captain assistant outcome settings: consistent reason lists', () => {
     const userRowSignature = rowSignature(completionRows[0]);
     const systemRowSignature = rowSignature(completionRows.at(-1));
 
-    expect(userRowSignature).toHaveLength(4);
-    expect(systemRowSignature).toHaveLength(3);
+    expect(userRowSignature).toHaveLength(3);
+    expect(systemRowSignature).toHaveLength(2);
     handoffRows.slice(0, -1).forEach(row => {
       expect(rowSignature(row)).toEqual(userRowSignature);
     });
@@ -314,22 +336,26 @@ describe('Captain assistant outcome settings: consistent reason lists', () => {
     });
 
     expect(idsOf(sectionOf(wrapper, COMPLETION))).toEqual([
+      ...COMPLETION_BUILTINS.slice(0, -1),
       'first',
       'second',
       'other',
     ]);
     expect(idsOf(sectionOf(wrapper, HANDOFF))).toEqual([
+      ...HANDOFF_BUILTINS.slice(0, -1),
       'first',
       'second',
       'third',
       'other',
     ]);
     expect(await payloadIds(wrapper, 'completion_reasons')).toEqual([
+      ...COMPLETION_BUILTINS.slice(0, -1),
       'first',
       'second',
       'other',
     ]);
     expect(await payloadIds(wrapper, 'handoff_reasons')).toEqual([
+      ...HANDOFF_BUILTINS.slice(0, -1),
       'first',
       'second',
       'third',
@@ -349,10 +375,12 @@ describe('Captain assistant outcome settings: consistent reason lists', () => {
     });
 
     expect(idsOf(sectionOf(wrapper, COMPLETION))).toEqual([
+      ...COMPLETION_BUILTINS.slice(0, -1),
       'legacy_completion_1',
       'other',
     ]);
     expect(idsOf(sectionOf(wrapper, HANDOFF))).toEqual([
+      ...HANDOFF_BUILTINS.slice(0, -1),
       'legacy_handoff_1',
       'legacy_handoff_2',
       'other',
@@ -381,7 +409,10 @@ describe('Captain assistant outcome settings: consistent reason lists', () => {
     expect(unsavedInput.attributes('placeholder')).toBe(
       'CAPTAIN.ASSISTANTS.OUTCOMES.PLACEHOLDER'
     );
-    expect(rowSignature(unsavedRow)).toEqual(rowSignature(rows[0]));
+    expect(unsavedRow.find('[data-testid="outcome-remove"]').exists()).toBe(
+      true
+    );
+    expect(unsavedRow.find('input[type="checkbox"]').exists()).toBe(true);
     expect(unsavedRow.classes()).toEqual(rows[0].classes());
   };
 
@@ -392,7 +423,7 @@ describe('Captain assistant outcome settings: consistent reason lists', () => {
     await expectNewReasonsBeforeOther(wrapper, COMPLETION);
   });
 
-  it('keeps a new reason before Other when the completion list only has Other', async () => {
+  it('restores builtins and inserts custom reasons before Other when legacy config only has Other', async () => {
     const wrapper = mountComponent({
       outcome_reason_settings: {
         completion_reasons: [{ id: 'other', label: 'Other', active: true }],
@@ -400,16 +431,17 @@ describe('Captain assistant outcome settings: consistent reason lists', () => {
     });
     const completion = sectionOf(wrapper, COMPLETION);
 
-    expect(idsOf(completion)).toEqual(['other']);
+    expect(idsOf(completion)).toEqual(COMPLETION_BUILTINS);
 
     await completion
       .get('[data-testid="outcome-add-completionReasons"]')
       .trigger('click');
-    expect(idsOf(completion)[0]).toMatch(/^custom_completion_/);
+    expect(idsOf(completion).at(-2)).toMatch(/^custom_completion_/);
     expect(idsOf(completion).at(-1)).toBe('other');
 
-    await labelInputsOf(completion)[0].setValue('Brand new reason');
+    await labelInputsOf(completion).at(-2).setValue('Brand new reason');
     expect(await payloadIds(wrapper, 'completion_reasons')).toEqual([
+      ...COMPLETION_BUILTINS.slice(0, -1),
       expect.stringMatching(/^custom_completion_/),
       'other',
     ]);
@@ -438,33 +470,192 @@ describe('Captain assistant outcome settings: consistent reason lists', () => {
     expect(completion.at(-2).label).toBe(`New ${COMPLETION}`);
   });
 
-  it('locks the system reason and hides its delete button in both lists', async () => {
+  it('protects every builtin and only permits deleting custom reasons in both lists', async () => {
     const wrapper = mountComponent();
-    const expectLockedSystemReason = async type => {
+    const expectBuiltinsProtected = async type => {
       const section = sectionOf(wrapper, type);
-      const rows = rowsOf(section);
-      const systemRow = rows.at(-1);
-
-      expect(systemRow.attributes('data-reason-id')).toBe('other');
+      const builtinIds = idsOf(section);
+      const systemRow = section.get('[data-reason-id="other"]');
       expect(systemRow.find('[data-testid="outcome-remove"]').exists()).toBe(
         false
       );
-      expect(
-        systemRow.get('input[type="checkbox"]').attributes('disabled')
-      ).toBeDefined();
-      rows.slice(0, -1).forEach(row => {
-        expect(row.find('[data-testid="outcome-remove"]').exists()).toBe(true);
-        expect(
-          row.get('input[type="checkbox"]').attributes('disabled')
-        ).toBeUndefined();
-      });
-
-      await section.get('[data-testid="outcome-remove"]').trigger('click');
-      expect(rowsOf(section)).toHaveLength(rows.length - 1);
-      expect(idsOf(section).at(-1)).toBe('other');
+      expect(systemRow.find('input[type="checkbox"]').exists()).toBe(false);
+      rowsOf(section)
+        .slice(0, -1)
+        .forEach(row => {
+          expect(row.find('[data-testid="outcome-remove"]').exists()).toBe(
+            false
+          );
+          expect(
+            row.get('input[type="checkbox"]').attributes('disabled')
+          ).toBeUndefined();
+        });
+      await section
+        .get('[data-testid="outcome-add-' + type + '"]')
+        .trigger('click');
+      const custom = rowsOf(section).at(-2);
+      expect(custom.find('[data-testid="outcome-remove"]').exists()).toBe(true);
+      await custom.get('[data-testid="outcome-remove"]').trigger('click');
+      expect(idsOf(section)).toEqual(builtinIds);
+      wrapper
+        .findAllComponents({ name: 'OutcomeReasonSection' })
+        .find(component => component.props('type') === type)
+        .vm.$emit('remove', builtinIds[0]);
+      await wrapper.vm.$nextTick();
+      expect(idsOf(section)).toEqual(builtinIds);
     };
+    await expectBuiltinsProtected(HANDOFF);
+    await expectBuiltinsProtected(COMPLETION);
+  });
 
-    await expectLockedSystemReason(HANDOFF);
-    await expectLockedSystemReason(COMPLETION);
+  it('retains saved inactive builtins while restoring the rest of a sparse legacy list', async () => {
+    const wrapper = mountComponent({
+      outcome_reason_settings: {
+        completion_reasons: [
+          { id: 'goal_achieved', label: 'Resolved goal', active: false },
+        ],
+        handoff_reasons: [
+          { id: 'low_confidence', label: 'Ask a colleague', active: false },
+        ],
+      },
+    });
+    expect(idsOf(sectionOf(wrapper, COMPLETION))).toEqual(COMPLETION_BUILTINS);
+    expect(idsOf(sectionOf(wrapper, HANDOFF))).toEqual(HANDOFF_BUILTINS);
+    const goal = sectionOf(wrapper, COMPLETION).get(
+      '[data-reason-id="goal_achieved"]'
+    );
+    expect(goal.get('input[type="checkbox"]').element.checked).toBe(false);
+    expect(goal.find('[data-testid="outcome-remove"]').exists()).toBe(false);
+    await goal.get('input[type="checkbox"]').setValue(true);
+    const payload = await wrapper.vm.buildPayload();
+    expect(
+      payload.assistant.config.outcome_reason_settings.completion_reasons
+    ).toContainEqual({
+      id: 'goal_achieved',
+      label: 'Resolved goal',
+      active: true,
+    });
+    expect(
+      payload.assistant.config.outcome_reason_settings.handoff_reasons
+    ).toContainEqual({
+      id: 'low_confidence',
+      label: 'Ask a colleague',
+      active: false,
+    });
+  });
+
+  it('localizes the default Other label from old English config and keeps it active', async () => {
+    const wrapper = mountComponent({
+      outcome_reason_settings: {
+        completion_reasons: [{ id: 'other', label: 'Other', active: false }],
+        handoff_reasons: [{ id: 'other', label: 'other', active: false }],
+      },
+    });
+    [HANDOFF, COMPLETION].forEach(type => {
+      const row = sectionOf(wrapper, type).get('[data-reason-id="other"]');
+      expect(row.get('input:not([type="checkbox"])').element.value).toBe(
+        'Другое'
+      );
+      expect(row.find('input[type="checkbox"]').exists()).toBe(false);
+    });
+    const payload = await wrapper.vm.buildPayload();
+    ['handoff_reasons', 'completion_reasons'].forEach(key => {
+      expect(
+        payload.assistant.config.outcome_reason_settings[key].at(-1)
+      ).toEqual({ id: 'other', label: 'Другое', active: true });
+    });
+  });
+
+  it('pins FAQ no-answer on only when FAQ and handoff are enabled and restores its toggle when FAQ is off', async () => {
+    const wrapper = mountComponent(
+      {
+        outcome_reason_settings: {
+          handoff_reasons: [
+            {
+              id: 'faq_no_answer',
+              label: 'FAQ could not answer',
+              active: false,
+            },
+          ],
+        },
+      },
+      { faqEnabled: true }
+    );
+    let row = sectionOf(wrapper, HANDOFF).get(
+      '[data-reason-id="faq_no_answer"]'
+    );
+    expect(row.find('input[type="checkbox"]').exists()).toBe(false);
+    expect(row.find('[data-testid="outcome-remove"]').exists()).toBe(false);
+    let payload = await wrapper.vm.buildPayload();
+    expect(
+      payload.assistant.config.outcome_reason_settings.handoff_reasons
+    ).toContainEqual({
+      id: 'faq_no_answer',
+      label: 'FAQ could not answer',
+      active: true,
+    });
+    await wrapper.setProps({ faqEnabled: false });
+    row = sectionOf(wrapper, HANDOFF).get('[data-reason-id="faq_no_answer"]');
+    expect(
+      row.get('input[type="checkbox"]').attributes('disabled')
+    ).toBeUndefined();
+    await row.get('input[type="checkbox"]').setValue(false);
+    payload = await wrapper.vm.buildPayload();
+    expect(
+      payload.assistant.config.outcome_reason_settings.handoff_reasons
+    ).toContainEqual({
+      id: 'faq_no_answer',
+      label: 'FAQ could not answer',
+      active: false,
+    });
+    await wrapper.setProps({ faqEnabled: true });
+    expect(row.find('input[type="checkbox"]').exists()).toBe(false);
+    await wrapper.setProps({ handoffEnabled: false });
+    expect(
+      wrapper.find('[data-testid="outcome-section-handoffReasons"]').exists()
+    ).toBe(false);
+    await wrapper.setProps({ handoffEnabled: true });
+    expect(
+      sectionOf(wrapper, HANDOFF)
+        .get('[data-reason-id="faq_no_answer"]')
+        .find('input[type="checkbox"]')
+        .exists()
+    ).toBe(false);
+  });
+
+  it('uses the next assistant configuration without carrying over a previous profile draft', async () => {
+    const wrapper = mountComponent();
+    await sectionOf(wrapper, COMPLETION)
+      .get('[data-reason-id="goal_achieved"] input:not([type="checkbox"])')
+      .setValue('Previous draft');
+    await wrapper.setProps({
+      assistant: {
+        id: 99,
+        config: {
+          outcome_reason_settings: {
+            completion_reasons: [
+              {
+                id: 'goal_achieved',
+                label: 'Next profile goal',
+                active: false,
+              },
+            ],
+          },
+        },
+      },
+    });
+    expect(
+      sectionOf(wrapper, COMPLETION).get(
+        '[data-reason-id="goal_achieved"] input:not([type="checkbox"])'
+      ).element.value
+    ).toBe('Next profile goal');
+    const payload = await wrapper.vm.buildPayload();
+    expect(
+      payload.assistant.config.outcome_reason_settings.completion_reasons
+    ).toContainEqual({
+      id: 'goal_achieved',
+      label: 'Next profile goal',
+      active: false,
+    });
   });
 });

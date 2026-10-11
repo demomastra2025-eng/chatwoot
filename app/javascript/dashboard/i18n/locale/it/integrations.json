@@ -565,6 +565,16 @@
           "TITLE": "Elimina Assistente",
           "DESCRIPTION": "Questa azione è permanente. L'eliminazione di questo assistente la rimuoverà da tutte le inbox connesse e cancellerà definitivamente tutte le knowledge generate.",
           "BUTTON_TEXT": "Elimina {assistantName}"
+        },
+        "TABS": {
+          "RUNTIME": {
+            "LABEL": "Messages when status changes",
+            "DESCRIPTION": "What to send to the customer when handing off to a staff member or completing a conversation.",
+            "SECTION": "Configure the messages sent to the customer when handing off or completing a conversation."
+          },
+          "BASIC": {
+            "DESCRIPTION": "Agent profile, operating mode, avatar and messages for customers."
+          }
         }
       },
       "OPTIONS": {
@@ -732,6 +742,20 @@
             "SUCCESS": "Scenari eliminati correttamente",
             "ERROR": "Si è verificato un errore durante l'eliminazione degli scenari, riprova."
           }
+        }
+      },
+      "OUTCOMES": {
+        "DEFAULTS": {
+          "HANDOFF": {
+            "FAQ_NO_ANSWER": "No answer in FAQ"
+          }
+        },
+        "DESCRIPTION": "Reasons for conversation completion and staff handoff reports.",
+        "HANDOFF": {
+          "DESCRIPTION": "The reason is determined from the conversation after it is handed to a staff member."
+        },
+        "COMPLETION": {
+          "DESCRIPTION": "The reason is determined from the conversation after it is completed."
         }
       }
     },

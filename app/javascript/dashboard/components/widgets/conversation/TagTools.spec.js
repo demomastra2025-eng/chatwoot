@@ -101,4 +101,69 @@ describe('TagTools', () => {
 
     expect(wrapper.emitted('close')).toHaveLength(1);
   });
+
+  it('offers ordinary tools while hiding capabilities and skill scripts in an agent prompt', async () => {
+    getMock.mockResolvedValue({
+      data: [
+        { id: 'faq_lookup', title: 'FAQ' },
+        { id: 'handoff', title: 'Handoff' },
+        { id: 'resolve_conversation', title: 'Resolve' },
+        {
+          id: 'future_capability',
+          title: 'Future capability',
+          capability_tool: true,
+        },
+        { id: 'hidden_tool', title: 'Hidden', mentionable: false },
+        {
+          id: 'legacy_script',
+          title: 'Legacy script',
+          provider: 'skill_script',
+        },
+        { id: 'create_deal', title: 'Create deal' },
+        { id: 'custom_orders', title: 'Orders', provider: 'custom' },
+        {
+          id: 'mcp__calendar__slots',
+          title: 'Calendar slots',
+          provider: 'mcp',
+        },
+      ],
+    });
+    const wrapper = shallowMount(TagTools, {
+      props: { assistantId: 23, toolScope: 'agent' },
+      global: { stubs: { ToolsDropdown: toolsDropdownStub } },
+    });
+    await flushPromises();
+    const ids = wrapper
+      .findComponent({ name: 'ToolsDropdown' })
+      .props('items')
+      .map(item => item.id);
+    expect(ids).toHaveLength(3);
+    expect(ids).toEqual(
+      expect.arrayContaining([
+        'create_deal',
+        'custom_orders',
+        'mcp__calendar__slots',
+      ])
+    );
+    wrapper
+      .findComponent({ name: 'ToolsDropdown' })
+      .vm.$emit('select', ids.indexOf('custom_orders'));
+    expect(wrapper.emitted('selectTool')[0][0].id).toBe('custom_orders');
+  });
+
+  it('keeps the separate Copilot tool picker contract', async () => {
+    getMock.mockResolvedValue({
+      data: [
+        { id: 'search_documentation', title: 'Search', capability_tool: true },
+      ],
+    });
+    const wrapper = shallowMount(TagTools, {
+      props: { toolScope: 'assistant' },
+      global: { stubs: { ToolsDropdown: toolsDropdownStub } },
+    });
+    await flushPromises();
+    expect(
+      wrapper.findComponent({ name: 'ToolsDropdown' }).props('items')
+    ).toHaveLength(1);
+  });
 });

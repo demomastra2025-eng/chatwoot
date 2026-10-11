@@ -18,18 +18,38 @@ class Llm::ChatClient
     end
 
     def ask(chat, content, model: nil, observability: nil, account: nil)
+      observe_chat_request(chat, model: model, observability: observability) do
+        perform_ask(chat, content, model: model, account: account)
+      end
+    end
+
+    def complete(chat, model: nil, observability: nil)
+      observe_chat_request(chat, model: model, observability: observability) do
+        Llm::StructuredOutputPolicy.execute(chat: chat) { chat.complete }
+      end
+    end
+
+    private
+
+    def observe_chat_request(chat, model:, observability:)
+      return yield if Llm::ChatResponseObserver.active?(chat)
+
       payload = observability_payload(observability, chat, model)
-      return perform_ask(chat, content, model: model, account: account) if payload.blank?
+      return yield if payload.blank?
 
       response = nil
 
-      Llm::EventBus.publish('chat.complete', payload) do |event_payload|
-        response = perform_ask(chat, content, model: model, account: account)
-        attach_chat_response_best_effort!(event_payload, response)
-        response
-      rescue StandardError => e
-        Llm::ObservabilityPayload.attach_error!(event_payload, e)
-        raise
+      Llm::ChatResponseObserver.observe(chat, payload) do |scope|
+        Llm::EventBus.publish(scope ? 'chat.request' : 'chat.complete', payload) do |event_payload|
+          response = yield
+          attach_chat_response_best_effort!(event_payload, response)
+          response
+        rescue StandardError => e
+          Llm::ObservabilityPayload.attach_error!(event_payload, e)
+          raise
+        ensure
+          scope&.annotate_outer!(event_payload)
+        end
       end
     rescue *OBSERVABILITY_NON_CRITICAL_ERRORS => e
       raise if response.nil?
@@ -37,8 +57,6 @@ class Llm::ChatClient
       log_observability_failure(e, phase: 'event_bus')
       response
     end
-
-    private
 
     def attach_chat_response_best_effort!(event_payload, response)
       Llm::ObservabilityPayload.attach_chat_response!(event_payload, response)

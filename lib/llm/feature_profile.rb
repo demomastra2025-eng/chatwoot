@@ -50,6 +50,20 @@ class Llm::FeatureProfile
       cost_policy: 'speed_cost',
       fallback_strategy: 'fast_background'
     },
+    'outcome_classification' => {
+      config_feature_key: 'outcome_classification',
+      required_capabilities: %w[text_input text_output structured_output],
+      timeout_seconds: 20,
+      max_retries: 1,
+      streaming: false,
+      native_endpoint: nil,
+      structured_output: true,
+      response_healing: false,
+      reasoning_policy: 'disabled',
+      privacy_policy: 'standard',
+      cost_policy: 'speed_cost',
+      fallback_strategy: 'fast_background'
+    },
     'label_suggestion' => {
       config_feature_key: 'label_suggestion',
       required_capabilities: %w[text_input text_output],

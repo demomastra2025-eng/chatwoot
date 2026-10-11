@@ -1,6 +1,16 @@
 require 'rails_helper'
 
 RSpec.describe Captain::Tools::Agent::AppointmentResult do
+  it 'preserves booking success and warns against recreating it when optional CRM linkage needs attention' do
+    warning = { 'status' => 'not_linked', 'code' => 'CRM_REQUIRED_FIELDS', 'message' => 'Required field is missing' }
+    appointment = create(:scheduling_appointment, custom_attributes: { 'crm_link_result' => warning })
+
+    result = described_class.success(appointment, action: 'create_appointment')
+
+    expect(result).to include(success: true, appointment_id: appointment.id, crm_link_result: warning)
+    expect(result[:crm_link_guidance]).to include('Do not create it again')
+  end
+
   it 'does not report an asynchronous provider move or removal as completed' do
     appointment = create(:scheduling_appointment, custom_attributes: { 'medelement_provider_sync_status' => 'pending' })
     %w[update_appointment cancel_appointment].each do |action|

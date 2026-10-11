@@ -3,6 +3,8 @@ import {
   SYSTEM_REASON_ID,
   insertReason,
   isSystemReason,
+  isBuiltInReason,
+  isReasonLocked,
   sortReasons,
 } from './reasonOrder';
 
@@ -62,5 +64,34 @@ describe('outcome reason ordering', () => {
       'other',
     ]);
     expect(ids(insertReason(undefined, reason('new_1')))).toEqual(['new_1']);
+  });
+
+  it('recognizes builtins independently from mandatory reasons', () => {
+    [
+      'goal_achieved',
+      'question_resolved',
+      'customer_declined',
+      'no_response',
+      'customer_requested_human',
+      'low_confidence',
+      'manual_action_required',
+      'complaint_or_conflict',
+      'tool_or_policy_limit',
+      'faq_no_answer',
+    ].forEach(id => {
+      expect(isBuiltInReason(reason(id))).toBe(true);
+      expect(isSystemReason(reason(id))).toBe(false);
+      expect(isReasonLocked(reason(id))).toBe(false);
+    });
+    expect(isBuiltInReason(reason('other'))).toBe(true);
+    expect(isReasonLocked(reason('other'))).toBe(true);
+    expect(isBuiltInReason(reason('custom_handoff_1'))).toBe(false);
+    expect(isBuiltInReason(null)).toBe(false);
+    expect(isReasonLocked({ ...reason('faq_no_answer'), locked: true })).toBe(
+      true
+    );
+    expect(isReasonLocked({ ...reason('faq_no_answer'), locked: false })).toBe(
+      false
+    );
   });
 });

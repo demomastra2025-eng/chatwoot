@@ -39,6 +39,10 @@ import SchedulingResourceFilter from 'dashboard/components-next/Scheduling/Sched
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
 import SchedulingToolbar from 'dashboard/components-next/Scheduling/SchedulingToolbar.vue';
 import SchedulingViewSwitcher from 'dashboard/components-next/Scheduling/SchedulingViewSwitcher.vue';
+import {
+  appointmentCrmLinkWarningMessage,
+  appointmentSaveAlertMessage,
+} from 'dashboard/components-next/Scheduling/appointmentSaveMessage';
 
 import {
   APPOINTMENT_STATUS_ICONS,
@@ -1835,7 +1839,7 @@ const handleAppointmentSubmit = async () => {
     isCurrent,
     onSuccess: appointment => {
       if (!appointment) return;
-      useAlert(t('SCHEDULING.APPOINTMENT_FORM.SUCCESS_SAVE'));
+      useAlert(appointmentSaveAlertMessage(appointment, t));
       handleDrawerClose();
       if (shouldCreateInMedelement) {
         stageProviderCommand({
@@ -2293,6 +2297,24 @@ onMounted(async () => {
                 :inert="formStore.ui.isSaving ? '' : undefined"
                 data-test="appointment-form-controls"
               >
+                <p
+                  v-if="
+                    appointmentCrmLinkWarningMessage(
+                      formStore.selectedAppointment,
+                      $t
+                    )
+                  "
+                  class="mb-3 text-sm leading-5 text-n-amber-11"
+                  role="status"
+                  data-test="calendar-crm-link-result"
+                >
+                  {{
+                    appointmentCrmLinkWarningMessage(
+                      formStore.selectedAppointment,
+                      $t
+                    )
+                  }}
+                </p>
                 <div
                   v-if="formStore.ui.error"
                   class="px-4 py-3 text-sm rounded-xl bg-n-ruby-3/70 text-n-ruby-11"

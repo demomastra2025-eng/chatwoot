@@ -38,11 +38,13 @@ class Captain::AssistantResponse < ApplicationRecord
   belongs_to :account
   belongs_to :documentable, polymorphic: true, optional: true
   belongs_to :document_chunk, class_name: 'Captain::DocumentChunk', optional: true
+  include Concerns::CaptainKnowledgeAccess
   has_neighbors :embedding, normalize: true
 
   validates :question, presence: true
   validates :answer, presence: true
   validate :assistant_belongs_to_account
+  validate :knowledge_sources_belong_to_account
 
   before_validation :ensure_account
   before_validation :ensure_status
@@ -57,19 +59,34 @@ class Captain::AssistantResponse < ApplicationRecord
   # workspace-personal, but they are not assistant-private records.
   scope :workspace_owned, -> { where(assistant_id: nil) }
   scope :visible_to_assistant, lambda { |assistant_id|
-    if assistant_id.blank?
-      workspace_owned
-    else
-      where(
-        <<~SQL.squish,
-          captain_assistant_responses.assistant_id IS NULL OR
-          captain_assistant_responses.visibility = :general_visibility OR
-          captain_assistant_responses.assistant_id = :assistant_id
-        SQL
-        general_visibility: visibilities[:general],
-        assistant_id: assistant_id
-      )
-    end
+    documents = Captain::Document.visible_to_assistant(assistant_id).select(:id)
+    source_document_access = <<~SQL.squish
+      captain_assistant_responses.documentable_type = 'Captain::Document'
+      AND captain_assistant_responses.documentable_id IN (#{documents.to_sql})
+    SQL
+    # Generated FAQs inherit their source permissions. An explicit FAQ selection
+    # may narrow that access, and can never expose a private source document.
+    own_access = local_knowledge_access_sql(assistant_id)
+    relation = where(<<~SQL.squish)
+      (#{source_document_access} AND (
+        (captain_assistant_responses.restricted_to_assistants = FALSE AND
+          (captain_assistant_responses.visibility = #{visibilities[:general]} OR
+           captain_assistant_responses.assistant_id IS NULL OR
+           captain_assistant_responses.assistant_id =
+             (SELECT assistant_id FROM captain_documents WHERE id = captain_assistant_responses.documentable_id))) OR
+        (#{own_access})
+      )) OR
+      (COALESCE(captain_assistant_responses.documentable_type, '') <> 'Captain::Document' AND (#{own_access}))
+    SQL
+    relation = relation.where(account_id: Captain::Assistant.where(id: assistant_id).select(:account_id)) if assistant_id.present?
+    chunks = Captain::DocumentChunk.where(document_id: documents).select(:id)
+    relation.where('captain_assistant_responses.document_chunk_id IS NULL OR captain_assistant_responses.document_chunk_id IN (?)', chunks)
+  }
+  scope :generally_visible, lambda {
+    documents = Captain::Document.generally_visible.select(:id)
+    where(visibility: visibilities[:general])
+      .where("COALESCE(documentable_type, '') <> 'Captain::Document' OR documentable_id IN (?)", documents)
+      .where('document_chunk_id IS NULL OR document_chunk_id IN (?)', Captain::DocumentChunk.where(document_id: documents).select(:id))
   }
 
   enum status: { pending: 0, approved: 1 }
@@ -158,6 +175,14 @@ class Captain::AssistantResponse < ApplicationRecord
   end
   private_class_method :lexical_tokens, :lexical_bind_values, :lexical_conditions, :lexical_ranking, :lexical_relevance
 
+  def inherited_knowledge_source
+    return if restricted_to_assistants? || documentable_type != 'Captain::Document'
+    return if documentable.blank? || documentable.account_id != account_id
+    return unless visibility_general? || assistant_id.nil? || assistant_id == documentable.assistant_id
+
+    documentable
+  end
+
   private
 
   def ensure_status
@@ -178,6 +203,15 @@ class Captain::AssistantResponse < ApplicationRecord
     return if assistant.blank? || account.blank? || assistant.account_id == account_id
 
     errors.add(:assistant, 'must belong to the same account')
+  end
+
+  def knowledge_sources_belong_to_account
+    if documentable_type == 'Captain::Document' && documentable.present? && documentable.account_id != account_id
+      errors.add(:documentable, 'must belong to the same account')
+    end
+    return if document_chunk.blank? || document_chunk.account_id == account_id
+
+    errors.add(:document_chunk, 'must belong to the same account')
   end
 
   def update_response_embedding

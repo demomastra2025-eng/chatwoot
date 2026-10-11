@@ -13,7 +13,9 @@ module Llm::Config
     'image_recognition' => 'CAPTAIN_IMAGE_RECOGNITION_MODEL',
     'help_center_search' => 'CAPTAIN_EMBEDDING_MODEL',
     'moderation' => 'CAPTAIN_MODERATION_MODEL',
-    'label_suggestion' => 'CAPTAIN_LABEL_SUGGESTION_MODEL'
+    'custom_guardrail' => 'CAPTAIN_CUSTOM_GUARDRAIL_MODEL',
+    'label_suggestion' => 'CAPTAIN_LABEL_SUGGESTION_MODEL',
+    'outcome_classification' => 'CAPTAIN_OUTCOME_CLASSIFIER_MODEL'
   }.freeze
   OPENAI_DEFAULT_API_BASE = 'https://api.openai.com/v1'.freeze
   OPENROUTER_DEFAULT_API_BASE = 'https://openrouter.ai/api/v1'.freeze
@@ -73,7 +75,9 @@ module Llm::Config
       explicit_model = explicit_model_for(feature_key, account: account)
       return explicit_model if explicit_model.present?
 
-      installation_model = installation_model_for(feature_key, account: account)
+      unless %w[outcome_classification custom_guardrail].include?(feature_key)
+        installation_model = installation_model_for(feature_key, account: account)
+      end
       return installation_model if installation_model.present?
 
       if feature_key.present?

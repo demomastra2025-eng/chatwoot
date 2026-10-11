@@ -54,9 +54,8 @@ class Captain::Conversation::FollowUpControlFence
   end
 
   def assistant_matches_conversation?
-    assistant.present? && assistant.account_id == conversation.account_id && assistant.external_agent? &&
-      assistant.inboxes.exists?(id: conversation.inbox_id) &&
-      conversation.inbox&.captain_assistant&.id == assistant.id
+    assistant.present? && assistant.account_id == conversation.account_id && assistant.active? && assistant.external_agent? &&
+      Captain::Conversation::AgentOwnership.new(conversation: conversation, assistant: assistant).current?
   end
 
   def legacy_anchor_matches?

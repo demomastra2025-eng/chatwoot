@@ -152,6 +152,7 @@ module Concerns::Agentable
       appointment: nil,
       communication_thread: nil,
       campaign: {},
+      current_context_rule: '',
       runtime_clock: {},
       reply_window: {},
       conversation_visible_fields: [],

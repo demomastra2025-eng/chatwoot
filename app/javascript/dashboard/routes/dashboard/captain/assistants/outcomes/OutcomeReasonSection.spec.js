@@ -143,7 +143,7 @@ describe('OutcomeReasonSection', () => {
       );
       expect(row.find('[data-testid="outcome-remove"]').exists()).toBe(true);
     });
-    expect(other.get('input[type="checkbox"]').attributes('disabled')).toBe('');
+    expect(other.find('input[type="checkbox"]').exists()).toBe(false);
     expect(other.find('[data-testid="outcome-remove"]').exists()).toBe(false);
   });
 
@@ -195,5 +195,52 @@ describe('OutcomeReasonSection', () => {
 
     expect(label(withSubheading)).toBe('Reasons');
     expect(label(withoutSubheading)).toBe('Section title');
+  });
+
+  it('keeps ordinary builtins switchable and hides their delete buttons', async () => {
+    const rows = [
+      { id: 'goal_achieved', label: 'Goal achieved', active: true },
+      { id: 'low_confidence', label: 'Ask a colleague', active: false },
+    ];
+    const wrapper = mountSection({ reasons: rows });
+    const rendered = wrapper.findAll('[data-testid="outcome-reason-row"]');
+    expect(
+      rendered.every(
+        row => !row.find('[data-testid="outcome-remove"]').exists()
+      )
+    ).toBe(true);
+    await rendered[0].get('input[type="checkbox"]').setValue(false);
+    await rendered[1].get('input[type="checkbox"]').setValue(true);
+    expect(rows.map(row => row.active)).toEqual([false, true]);
+  });
+
+  it('renders a mandatory FAQ no-answer reason with no switch or delete control', () => {
+    const wrapper = mountSection({
+      reasons: [
+        {
+          id: 'faq_no_answer',
+          label: 'No FAQ answer',
+          active: true,
+          locked: true,
+        },
+      ],
+    });
+    const row = wrapper.get('[data-testid="outcome-reason-row"]');
+    expect(row.find('input[type="checkbox"]').exists()).toBe(false);
+    expect(row.find('[data-testid="outcome-remove"]').exists()).toBe(false);
+    expect(row.get('input:not([type="checkbox"])').element.value).toBe(
+      'No FAQ answer'
+    );
+  });
+
+  it('uses plain sections and rows without nested decorative cards', () => {
+    const wrapper = mountSection();
+    expect(wrapper.classes()).not.toContain('rounded-xl');
+    expect(wrapper.classes()).not.toContain('border');
+    expect(wrapper.classes()).not.toContain('bg-n-solid-2');
+    wrapper.findAll('[data-testid="outcome-reason-row"]').forEach(row => {
+      expect(row.classes()).not.toContain('rounded-lg');
+      expect(row.classes()).not.toContain('border');
+    });
   });
 });

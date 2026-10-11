@@ -199,7 +199,7 @@ class Llm::OpenRouterRoutingProfile
                               sort: { by: 'latency', partition: 'model' },
                               preferred_max_latency: { p90: 3 }
                             }
-                          when 'moderation'
+                          when 'moderation', 'outcome_classification'
                             { require_parameters: true }
                           when 'copilot'
                             { require_parameters: true, sort: { by: 'latency', partition: 'none' } }

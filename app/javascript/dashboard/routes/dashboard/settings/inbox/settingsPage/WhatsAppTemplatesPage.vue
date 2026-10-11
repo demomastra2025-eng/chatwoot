@@ -397,7 +397,7 @@ const getTemplateCarouselCards = template => {
                 <section
                   v-for="variant in templateGroup.variants"
                   :key="`${templateGroup.name}-${variant.language}-details`"
-                  class="space-y-1.5 rounded-lg bg-n-alpha-1 p-2"
+                  class="space-y-1.5 border-t border-n-weak pt-2"
                   data-test="template-variant-details"
                 >
                   <div class="flex flex-wrap items-center gap-1.5">

@@ -62,6 +62,45 @@ RSpec.describe Llm::ObservabilityPayload do
     end
   end
 
+  describe '.attach_provider_chat_response!' do
+    it 'uses native inclusive token counts and cost without exporting the response body or reasoning' do
+      raw = Struct.new(:body).new({
+        'id' => 'gen-provider-usage', 'model' => 'openai/gpt-6-luna', 'provider' => 'Azure',
+        'choices' => [{ 'message' => { 'content' => 'PRIVATE_DRAFT', 'reasoning' => 'PRIVATE_REASONING' } }],
+        'usage' => {
+          'prompt_tokens' => 100, 'completion_tokens' => 20, 'total_tokens' => 120, 'cost' => '0.0017',
+          'prompt_tokens_details' => { 'cached_tokens' => 30 },
+          'completion_tokens_details' => { 'reasoning_tokens' => 7 }, 'unknown_private_field' => 'PRIVATE_USAGE'
+        }
+      })
+      response = RubyLLM::Message.new(role: :assistant, content: 'PRIVATE_DRAFT', input_tokens: 70,
+                                     output_tokens: 13, thinking_tokens: 7, model_id: 'openai/gpt-6-luna', raw: raw)
+      payload = { 'provider' => 'openrouter' }
+
+      described_class.attach_provider_chat_response!(payload, response)
+
+      expect(payload).to include('prompt_tokens' => 100, 'completion_tokens' => 20, 'total_tokens' => 120,
+                                'thinking_tokens' => 7, 'cached_tokens' => 30, 'estimated_cost' => '0.0017',
+                                'endpoint_provider' => 'Azure', 'openrouter_generation_id' => 'gen-provider-usage')
+      expect(payload.to_json).not_to include('PRIVATE_DRAFT', 'PRIVATE_REASONING', 'PRIVATE_USAGE', 'choices', 'raw')
+    end
+
+    it 'preserves explicit zero cost and leaves missing or malformed cost unknown' do
+      response = RubyLLM::Message.new(role: :assistant, content: 'Done', input_tokens: 5, output_tokens: 2,
+                                     raw: Struct.new(:body).new({ 'usage' => { 'cost' => 0 } }))
+      zero = described_class.attach_provider_chat_response!({ 'provider' => 'openrouter' }, response)
+      expect(zero['estimated_cost']).to eq('0.0')
+
+      [nil, 'not-a-number', 'NaN', '-1', { 'secret' => 'PRIVATE_COST' }].each do |cost|
+        message = RubyLLM::Message.new(role: :assistant, content: 'Done', input_tokens: 5, output_tokens: 2,
+                                      raw: Struct.new(:body).new({ 'usage' => { 'cost' => cost } }))
+        payload = described_class.attach_provider_chat_response!({ 'provider' => 'openrouter' }, message)
+        expect(payload).not_to have_key('estimated_cost')
+        expect(payload.to_json).not_to include('PRIVATE_COST')
+      end
+    end
+  end
+
   describe '.attach_chat_response!' do
     it 'extracts OpenRouter generation ids from response methods' do
       response = Struct.new(:content, :input_tokens, :output_tokens, :generation_id, :model_id, keyword_init: true)

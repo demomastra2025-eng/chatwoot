@@ -8,10 +8,13 @@ class Llm::Monitoring::EventRecorder
       llm.budget.warning
       llm.captain.tool.denied
       llm.chat.complete
+      llm.chat.request
+      llm.chat.runtime_complete
       llm.context_transform.applied
       llm.context_transform.failed
       llm.context_transform.skipped
       llm.embedding.complete
+      llm.decision.complete
       llm.moderation.complete
       llm.moderation.unavailable
       llm.metadata.fetch
@@ -37,9 +40,17 @@ class Llm::Monitoring::EventRecorder
 
   PERSISTED_PAYLOAD_MAX_BYTES = 8.kilobytes
   ESSENTIAL_PAYLOAD_KEYS = %w[
-    canonical_event_name event_name_alias error_class error_code failure_mode openrouter_generation_id
+    canonical_event_name event_name_alias error_class error_code failure_mode openrouter_generation_id parent_request_id
     payload_bytes payload_budget_bytes project_case_id queue_wait_ms retry_count schema_invalid_count status
-    snippet_hash thinking_tokens tool_calls_count
+    snippet_hash thinking_tokens tool_calls_count usage_scope provider_response_count provider_observability_error_count
+    cached_tokens cache_creation_tokens actual_model endpoint_provider requested_model
+  ].freeze
+  CHAT_ACCOUNTING_KEYS = %w[
+    usage_scope request_id parent_request_id trace_id session_id account_id assistant_id conversation_id
+    conversation_display_id copilot_thread_id feature runtime_mode current_agent channel_type source project_case_id
+    provider model requested_model actual_model endpoint_provider openrouter_generation_id status error error_class
+    error_code reason prompt_tokens completion_tokens total_tokens thinking_tokens cached_tokens cache_creation_tokens
+    estimated_cost provider_response_count provider_observability_error_count
   ].freeze
 
   PROMOTED_PAYLOAD_KEYS = Set.new(
@@ -62,7 +73,11 @@ class Llm::Monitoring::EventRecorder
     @event_name = event_name.to_s
     @started_at = started_at
     @finished_at = finished_at
-    @payload = Llm::Monitoring::PayloadSanitizer.call(payload.to_h.stringify_keys, redact_raw_content: true)
+    payload = payload.to_h.stringify_keys
+    if %w[provider_response outer_request].include?(payload['usage_scope'])
+      payload = payload.slice(*CHAT_ACCOUNTING_KEYS).merge(payload.except(*CHAT_ACCOUNTING_KEYS))
+    end
+    @payload = Llm::Monitoring::PayloadSanitizer.call(payload, redact_raw_content: true)
   end
 
   def record
@@ -136,6 +151,9 @@ class Llm::Monitoring::EventRecorder
   end
 
   def enqueue_openrouter_generation_metadata(event)
+    # The Decisions endpoint supplies native usage; chat generation lookup is not part of its contract.
+    return if event.event_name == 'llm.decision.complete'
+
     generation_id = @payload['openrouter_generation_id'].presence
     return if generation_id.blank?
     return unless event.provider.to_s == 'openrouter'
@@ -282,6 +300,8 @@ class Llm::Monitoring::EventRecorder
   end
 
   def duration_ms
+    # The SDK after_message callback supplies usage, without HTTP timing.
+    return if @payload['usage_scope'] == 'provider_response'
     return unless @started_at && @finished_at
 
     ((@finished_at - @started_at) * 1000).round

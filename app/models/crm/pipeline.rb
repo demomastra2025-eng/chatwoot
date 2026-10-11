@@ -43,6 +43,7 @@ class Crm::Pipeline < ApplicationRecord
   before_validation :normalize_code
   before_validation :assign_position, on: :create
   before_validation :disable_default_when_inactive
+  before_validation :normalize_appointment_automation, if: :will_save_change_to_appointment_automation?
   before_save :clear_other_defaults, if: :reassigning_default?
   before_save :prepare_appointment_automation_sources, if: :will_save_change_to_appointment_automation?
   after_update_commit :refresh_appointment_automation, if: :saved_change_to_appointment_automation?
@@ -59,25 +60,37 @@ class Crm::Pipeline < ApplicationRecord
 
   def only_disabling_appointment_automation?
     defaults = Crm::Appointments::Configuration::DEFAULTS
-    previous = defaults.deep_dup.merge(appointment_automation_in_database.to_h.deep_stringify_keys)
+    previous = defaults.deep_dup.merge(Crm::Appointments::Configuration.normalize(appointment_automation_in_database, pipeline: self))
     current = defaults.deep_dup.merge(appointment_automation.to_h.deep_stringify_keys)
     changed = (previous.keys | current.keys).select { |key| previous[key] != current[key] }
-    switches = ['enabled', *Crm::Appointments::Configuration::SOURCE_KEYS]
+    switches = %w[enabled auto_create_deals] + Crm::Appointments::Configuration::SOURCE_KEYS
     changed.present? && changed.all? { |key| key.in?(switches) && previous[key] == true && current[key] == false }
   end
 
+  def normalize_appointment_automation
+    self.appointment_automation = Crm::Appointments::Configuration.normalize(appointment_automation, pipeline: self)
+  end
+
   def prepare_appointment_automation_sources
-    previous = appointment_automation_in_database.to_h
-    self.appointment_automation = appointment_automation.to_h.deep_stringify_keys
+    return unless appointment_automation['auto_create_deals'] == true
+
+    previous = Crm::Appointments::Configuration.normalize(appointment_automation_in_database)
     Crm::Appointments::Configuration::SOURCE_KEYS.each do |key|
       next unless appointment_automation[key] == true
 
-      appointment_automation["#{key}_enabled_at"] = previous["#{key}_enabled_at"].presence || Time.current.iso8601(6) if previous[key] == true
-      appointment_automation["#{key}_enabled_at"] = Time.current.iso8601(6) unless previous[key] == true
+      appointment_automation["#{key}_enabled_at"] = source_enabled_at(previous, key)
       account.crm_pipelines.where.not(id: id).where("appointment_automation ->> ? = 'true'", key).find_each do |other|
+        next unless Crm::Appointments::Configuration.for(other)['auto_create_deals'] == true
+
         other.update!(appointment_automation: other.appointment_automation.merge(key => false))
       end
     end
+  end
+
+  def source_enabled_at(previous, key)
+    return Time.current.iso8601(6) unless previous['auto_create_deals'] == true && previous[key] == true
+
+    previous["#{key}_enabled_at"].presence || Time.current.iso8601(6)
   end
 
   def refresh_appointment_automation

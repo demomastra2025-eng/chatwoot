@@ -10,6 +10,7 @@ import SchedulingProviderCommandsAPI from 'dashboard/api/scheduling/providerComm
 import SchedulingAvailabilityPicker from './SchedulingAvailabilityPicker.vue';
 import SchedulingAppointmentTimeFields from './SchedulingAppointmentTimeFields.vue';
 import AppointmentDealSelector from 'dashboard/components-next/CRM/AppointmentDealSelector.vue';
+import enScheduling from 'dashboard/i18n/locale/en/scheduling.json';
 
 const existingAppointment = {
   id: 501,
@@ -628,12 +629,82 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     await flushPromises();
     const link = wrapper.find('[data-testid="appointment-patient-card"]');
     expect(link.text()).toContain('Relative');
+    expect(link.text()).toContain('Client card');
+    expect(link.text()).not.toContain('Patient card');
     expect(link.text()).toContain('#84');
     expect(link.attributes('data-contact-id')).toBe('84');
     expect(link.attributes('data-account-id')).toBe('1');
     expect(wrapper.vm.appointments[0].contactId).toBe(42);
     expect(wrapper.props('currentChat').meta.sender.id).toBe(42);
   });
+
+  it.each([
+    ['DEAL_STAGE_REQUIRES_FIELDS', 'SAVED_WITHOUT_DEAL_REQUIRED_FIELDS'],
+    ['CRM_DEAL_SELECTION_REQUIRED', 'SAVED_WITHOUT_DEAL'],
+  ])(
+    'acknowledges one saved booking without a deal when CRM returns %s',
+    async (code, messageKey) => {
+      SchedulingAppointmentsAPI.get.mockResolvedValue({
+        data: { payload: [] },
+      });
+      SchedulingAppointmentsAPI.create.mockResolvedValueOnce({
+        data: {
+          payload: {
+            ...existingAppointment,
+            id: 777,
+            crm_deal_id: null,
+            crm_link_result: { status: 'not_linked', code },
+          },
+        },
+      });
+      const wrapper = mountComponent();
+      await flushPromises();
+      await wrapper.vm.startCreateAppointment({ scroll: false });
+      Object.assign(wrapper.vm.createForm, {
+        startsAt: '2026-06-27T15:00',
+        endsAt: '2026-06-27T15:30',
+        durationMin: 30,
+      });
+      await wrapper.vm.saveCreateAppointment();
+      await flushPromises();
+
+      expect(SchedulingAppointmentsAPI.create).toHaveBeenCalledOnce();
+      expect(SchedulingAppointmentsAPI.update).not.toHaveBeenCalled();
+      expect(wrapper.vm.isCreating).toBe(false);
+      expect(wrapper.vm.appointments).toHaveLength(1);
+      expect(wrapper.vm.appointments[0]).toMatchObject({
+        id: 777,
+        crmDealId: null,
+        crmLinkResult: { status: 'not_linked', code },
+      });
+      expect(mocks.alert).toHaveBeenCalledOnce();
+      expect(mocks.alert).toHaveBeenCalledWith(
+        `SCHEDULING.APPOINTMENT_FORM.${messageKey}`
+      );
+      expect(
+        wrapper.get('[data-testid="appointment-crm-link-result-777"]').text()
+      ).toBe(enScheduling.SCHEDULING.APPOINTMENT_FORM[messageKey]);
+      expect(wrapper.emitted('patientBound')[0][0].id).toBe(777);
+    }
+  );
+
+  it.each([false, true])(
+    'shows MedElement cabinet controls only for a provider resource (provider=%s)',
+    async providerResource => {
+      if (providerResource) configureMedelementResource();
+      const wrapper = mountComponent();
+      await flushPromises();
+      await wrapper.vm.startCreateAppointment({ scroll: false });
+      expect(
+        wrapper
+          .find('#scheduling-conversation-appointment-medelement-cabinet')
+          .exists()
+      ).toBe(providerResource);
+      expect(
+        wrapper.find('[data-test="patient-provider-source"]').exists()
+      ).toBe(false);
+    }
+  );
 
   it('removes the old patient card when the conversation changes', async () => {
     SchedulingAppointmentsAPI.get.mockResolvedValue({

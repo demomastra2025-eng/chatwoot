@@ -18,17 +18,21 @@ class Llm::Monitoring::PerformanceBudgetSnapshot
     { name: 'avg_cost_per_request', metric: :avg_cost_per_request, budget: :max_cost_per_request },
     { name: 'request_error_rate', metric: :request_error_rate, budget: :max_error_rate }
   ].freeze
+  REQUEST_EVENT_SQL = <<~SQL.squish.freeze
+    (event_name = 'llm.chat.request' OR
+      (event_name = 'llm.chat.complete' AND COALESCE(payload ->> 'usage_scope', '') <> 'provider_response'))
+  SQL
   TOP_CASES_SELECT = <<~SQL.squish.freeze
     project_case_id,
     COUNT(*) AS event_count,
-    COUNT(*) FILTER (WHERE event_name = 'llm.chat.complete') AS request_count,
+    COUNT(*) FILTER (WHERE #{REQUEST_EVENT_SQL}) AS request_count,
     COUNT(*) FILTER (WHERE error = TRUE) AS event_error_count,
-    COUNT(*) FILTER (WHERE event_name = 'llm.chat.complete' AND error = TRUE) AS request_error_count,
-    AVG(duration_ms) FILTER (WHERE event_name = 'llm.chat.complete' AND duration_ms IS NOT NULL) AS avg_duration_ms,
+    COUNT(*) FILTER (WHERE #{REQUEST_EVENT_SQL} AND error = TRUE) AS request_error_count,
+    AVG(duration_ms) FILTER (WHERE #{REQUEST_EVENT_SQL} AND duration_ms IS NOT NULL) AS avg_duration_ms,
     percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms)
-      FILTER (WHERE event_name = 'llm.chat.complete' AND duration_ms IS NOT NULL) AS p95_duration_ms,
+      FILTER (WHERE #{REQUEST_EVENT_SQL} AND duration_ms IS NOT NULL) AS p95_duration_ms,
     percentile_cont(0.99) WITHIN GROUP (ORDER BY duration_ms)
-      FILTER (WHERE event_name = 'llm.chat.complete' AND duration_ms IS NOT NULL) AS p99_duration_ms,
+      FILTER (WHERE #{REQUEST_EVENT_SQL} AND duration_ms IS NOT NULL) AS p99_duration_ms,
     AVG(queue_wait_ms) FILTER (WHERE queue_wait_ms IS NOT NULL) AS avg_queue_wait_ms,
     percentile_cont(0.95) WITHIN GROUP (ORDER BY queue_wait_ms)
       FILTER (WHERE queue_wait_ms IS NOT NULL) AS p95_queue_wait_ms,

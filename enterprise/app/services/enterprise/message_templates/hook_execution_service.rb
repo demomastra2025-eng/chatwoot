@@ -8,7 +8,7 @@ module Enterprise::MessageTemplates::HookExecutionService
     auto_reply_allowed = inbox.captain_auto_reply_allowed?
     return schedule_captain_response if auto_reply_allowed && inbox.captain_active?
 
-    open_conversation_for_human_response(quota_used_up: auto_reply_allowed)
+    open_conversation_for_human_response(quota_used_up: auto_reply_allowed && inbox.captain_assistant.active?)
   end
 
   def should_send_greeting?

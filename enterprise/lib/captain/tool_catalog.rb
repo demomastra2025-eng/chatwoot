@@ -9,16 +9,8 @@ class Captain::ToolCatalog
 
   class << self
     def available_tools_for(assistant, scope_name)
-      (built_in_tools_for(assistant,
-                          scope_name) + custom_tools_for(assistant,
-                                                         scope_name) + mcp_tools_for(assistant,
-                                                                                     scope_name) + skill_script_tools_for(assistant, scope_name))
-        .map do |tool_definition|
-        with_source_type(tool_definition).dup
-      end
-        .uniq do |tool_definition|
-        tool_definition[:id]
-      end
+      tools = built_in_tools_for(assistant, scope_name) + custom_tools_for(assistant, scope_name) + mcp_tools_for(assistant, scope_name)
+      tools.map { |tool_definition| with_source_type(tool_definition).dup }.uniq { |tool_definition| tool_definition[:id] }
     end
 
     def available_tool_ids_for(assistant, scope_name)
@@ -37,9 +29,8 @@ class Captain::ToolCatalog
       tools.concat(custom_tools)
       unresolved_ids -= custom_tools.pluck(:id).map(&:to_s)
 
-      mcp_ids, skill_or_stale_ids = unresolved_ids.partition { |tool_id| tool_id.start_with?('mcp__') }
+      mcp_ids = unresolved_ids.select { |tool_id| tool_id.start_with?('mcp__') }
       tools.concat(mcp_tools_for(assistant, scope_name)) if mcp_ids.any?
-      tools.concat(skill_script_tools_for_ids(assistant, scope_name, skill_or_stale_ids)) if skill_or_stale_ids.any?
 
       tools.filter_map do |tool_definition|
         next unless requested_ids.include?(tool_definition[:id].to_s)
@@ -72,6 +63,7 @@ class Captain::ToolCatalog
       tool_definition = tool_definition.with_indifferent_access
       tool_id = tool_definition[:id].to_s
       return if tool_id.blank?
+      return if tool_definition[:provider].to_s == 'skill_script'
 
       if ActiveModel::Type::Boolean.new.cast(tool_definition[:custom])
         build_custom_tool(tool_id, assistant: assistant, scope_name: scope_name, user: user, conversation: conversation,
@@ -79,8 +71,6 @@ class Captain::ToolCatalog
       elsif tool_definition[:provider].to_s == 'mcp'
         build_mcp_tool(tool_definition, assistant: assistant, scope_name: scope_name, user: user, conversation: conversation,
                                         copilot_thread: copilot_thread)
-      elsif tool_definition[:provider].to_s == 'skill_script'
-        build_skill_script_tool(tool_definition, assistant: assistant, scope_name: scope_name)
       else
         build_registered_tool(tool_id, assistant: assistant, scope_name: scope_name, user: user, conversation: conversation,
                                        copilot_thread: copilot_thread)
@@ -198,17 +188,6 @@ class Captain::ToolCatalog
       end
     end
 
-    def skill_script_tools_for(assistant, scope_name)
-      return [] unless scope_name.to_s == Captain::ToolAccess::SCOPE_AGENT
-
-      Captain::SkillCatalog.script_tools_for(account: assistant.account)
-    end
-
-    def skill_script_tools_for_ids(assistant, scope_name, tool_ids)
-      requested_ids = Array(tool_ids).map(&:to_s)
-      skill_script_tools_for(assistant, scope_name).select { |tool| requested_ids.include?(tool[:id].to_s) }
-    end
-
     def require_assistant_confirmation(tool, scope_name, include_missing_idempotency: false)
       return tool unless requires_confirmation_for_scope?(
         tool,
@@ -283,10 +262,5 @@ class Captain::ToolCatalog
       end
     end
 
-    def build_skill_script_tool(tool_definition, assistant:, scope_name:)
-      return unless scope_name.to_s == Captain::ToolAccess::SCOPE_AGENT
-
-      Captain::Tools::SkillScriptTool.new(assistant, tool_definition)
-    end
   end
 end

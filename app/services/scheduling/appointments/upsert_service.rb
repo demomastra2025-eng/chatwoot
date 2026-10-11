@@ -4,7 +4,7 @@ class Scheduling::Appointments::UpsertService
   CLIENT_NAME_PART_KEYS = %i[client_first_name client_last_name client_middle_name].freeze
   DERIVED_SYSTEM_CUSTOM_ATTRIBUTE_KEYS = %w[service_ids services].freeze
   INTAKE_SYSTEM_CUSTOM_ATTRIBUTE_KEYS = %w[medelement_cabinet_code].freeze
-  PRESERVED_SYSTEM_CUSTOM_ATTRIBUTE_KEYS = %w[source_mode appointment_created_notification_hold captain_playground].freeze
+  PRESERVED_SYSTEM_CUSTOM_ATTRIBUTE_KEYS = %w[source_mode appointment_created_notification_hold captain_playground crm_link_result].freeze
   PRESERVED_SYSTEM_CUSTOM_ATTRIBUTE_PREFIXES = %w[medelement_].freeze
 
   def initialize(account:, params:, appointment: nil, actor: nil, appointment_access: nil)

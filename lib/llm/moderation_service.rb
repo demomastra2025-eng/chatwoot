@@ -59,7 +59,6 @@ class Llm::ModerationService
 
       result = moderation_result_for(
         content: normalized_text(content),
-        provider: provider,
         model: model,
         feature: feature,
         stage: stage,
@@ -118,7 +117,7 @@ class Llm::ModerationService
 
     private
 
-    def moderation_result_for(content:, provider:, model:, feature:, stage:, account: nil)
+    def moderation_result_for(content:, model:, feature:, stage:, account: nil)
       openrouter_moderation_result(content: content, model: model, feature: feature, stage: stage, account: account)
     end
 
@@ -147,9 +146,9 @@ class Llm::ModerationService
       payload = moderation_payload(response)
 
       ModerationResult.new(
-        flagged: payload[:flagged] == true,
-        categories: Array(payload[:categories]).map(&:to_s),
-        reason: payload[:reason].to_s,
+        flagged: payload[:flagged],
+        categories: payload[:categories],
+        reason: payload[:reason],
         raw: payload
       )
     end
@@ -185,13 +184,28 @@ class Llm::ModerationService
     def moderation_payload(response)
       content = response.respond_to?(:content) ? response.content : response
       content = JSON.parse(content) if content.is_a?(String)
-      content.with_indifferent_access
+      raise RubyLLM::Error, 'OpenRouter moderation response was not an object' unless content.is_a?(Hash)
+
+      payload = content.with_indifferent_access
+      unless valid_moderation_payload?(payload)
+        raise RubyLLM::Error, 'OpenRouter moderation response did not match the expected schema'
+      end
+
+      payload
     rescue JSON::ParserError, NoMethodError
       raise RubyLLM::Error, 'OpenRouter moderation response was not valid JSON'
     end
 
+    def valid_moderation_payload?(payload)
+      (payload[:flagged].equal?(true) || payload[:flagged].equal?(false)) &&
+        payload[:categories].is_a?(Array) && payload[:categories].all? { |category| category.is_a?(String) } &&
+        payload[:reason].is_a?(String)
+    end
+
     def handle_unavailable!(feature:, stage:, reason:, account:, preferences:, error: nil)
-      Rails.logger.warn("[Llm::ModerationService] Moderation unavailable for #{feature}/#{stage}: #{reason}#{": #{error.message}" if error}")
+      log_message = "[Llm::ModerationService] Moderation unavailable for #{feature}/#{stage}: #{reason}"
+      log_message += " error_class=#{error.class.name}" if error
+      Rails.logger.warn(log_message)
       failure_mode = Llm::RuntimePolicy.moderation_failure_mode(feature: feature, account: account, preferences: preferences)
       model = moderation_model_for(account)
       provider = moderation_provider_for(account, model: model)

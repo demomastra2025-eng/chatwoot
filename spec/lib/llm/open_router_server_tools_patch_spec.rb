@@ -137,4 +137,39 @@ RSpec.describe Llm::OpenRouterServerToolsPatch do
 
     expect(provider.payload).not_to include(:temperature, :thinking, :top_p, described_class::OMIT_TEMPERATURE_PARAM)
   end
+
+  context 'when disabling optional provider reasoning requires enabled:false instead of effort:none' do
+    let(:config) do
+      { 'provider' => 'openrouter', 'supported_parameters' => ['reasoning'],
+        'reasoning' => { 'supported_efforts' => %w[max high medium low], 'mandatory' => false } }
+    end
+
+    before do
+      allow(Llm::Models).to receive(:model_config).with('vendor/optional', account: nil).and_return(config)
+    end
+
+    [false, true].each do |with_server_tools|
+      it "sends an unambiguous off flag without mutating saved params (server tools: #{with_server_tools})" do
+        original = { 'reasoning' => { 'effort' => 'max', 'enabled' => true }, :reasoning_effort => 'max' }
+        original[described_class::SERVER_TOOLS_PARAM] = server_tools if with_server_tools
+        snapshot = original.deep_dup
+        provider = provider_class.new
+
+        provider.complete([], tools: function_tools, temperature: nil, model: 'vendor/optional',
+                          params: original, thinking: Struct.new(:effort).new('none'))
+
+        expect(provider.payload).to include(reasoning: { enabled: false })
+        expect(provider.payload).not_to include(:thinking, 'reasoning', :reasoning_effort, 'reasoning_effort')
+        expect(original).to eq(snapshot)
+      end
+    end
+
+    it 'keeps a supported nonzero reasoning effort unchanged' do
+      thinking = Struct.new(:effort).new('low')
+      provider = provider_class.new
+      provider.complete([], tools: function_tools, temperature: nil, model: 'vendor/optional', thinking: thinking)
+      expect(provider.payload[:thinking]).to equal(thinking)
+      expect(provider.payload).not_to include(:reasoning)
+    end
+  end
 end

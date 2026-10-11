@@ -320,11 +320,23 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
   def runtime_metadata_payload
     metadata = params[:client_metadata_only] == 'true' ? {} : Llm::ModelRegistryService.runtime_metadata(account: Current.account)
     metadata.merge(
+      safety_defaults: safety_defaults_payload,
       web_access: web_access_metadata_payload,
       knowledge_indexing: Captain::KnowledgeSettings.metadata_for(Current.account).merge(
         chunk_size_options: Llm::Models.knowledge_chunk_size_options(account: Current.account)
       )
     )
+  end
+
+  def safety_defaults_payload
+    preferences = Current.account.captain_runtime_preferences
+    CaptainFeaturable::RUNTIME_FEATURE_KEYS.index_with do |feature|
+      {
+        moderation_enabled: Llm::RuntimePolicy.moderation_enabled?(feature: feature, preferences: preferences) == true,
+        prompt_injection_action: Llm::RuntimePolicy.guardrail_action(guardrail: :prompt_injection, feature: feature, preferences: preferences),
+        sensitive_info_action: Llm::RuntimePolicy.guardrail_action(guardrail: :sensitive_info, feature: feature, preferences: preferences)
+      }
+    end
   end
 
   def web_access_metadata_payload

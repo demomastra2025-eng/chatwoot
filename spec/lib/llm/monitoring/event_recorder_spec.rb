@@ -6,6 +6,62 @@ RSpec.describe Llm::Monitoring::EventRecorder do
   describe '.record_notification' do
     let(:account) { create(:account) }
 
+    it 'persists outer chat errors without counting another provider usage request' do
+      event = nil
+      expect do
+        event = described_class.record_notification(
+          event_name: 'llm.chat.request', started_at: Time.current, finished_at: Time.current,
+          payload: { 'account_id' => account.id, 'feature' => 'captain_agent', 'provider' => 'openrouter',
+                     'status' => 'error', 'error' => true, 'error_class' => 'RubyLLM::Error',
+                     'usage_scope' => 'outer_request', 'provider_response_count' => 2 }
+        )
+      end.to change(LlmEvent, :count).by(1).and change(LlmUsageEvent, :count).by(0)
+
+      expect(event).to have_attributes(event_name: 'llm.chat.request', error: true, prompt_tokens: nil,
+                                      completion_tokens: nil, total_tokens: nil, estimated_cost: nil)
+      expect(event.payload).to include('usage_scope' => 'outer_request', 'provider_response_count' => 2)
+    end
+
+    it 'leaves provider HTTP duration unknown when only the SDK response callback is observed' do
+      event = described_class.record_notification(
+        event_name: 'llm.chat.complete', started_at: Time.current, finished_at: Time.current + 1.second,
+        payload: { 'account_id' => account.id, 'feature' => 'captain_agent', 'provider' => 'openrouter',
+                   'usage_scope' => 'provider_response', 'prompt_tokens' => 10, 'completion_tokens' => 2 }
+      )
+
+      expect(event).to have_attributes(duration_ms: nil, prompt_tokens: 10, completion_tokens: 2, total_tokens: 12)
+    end
+
+    it 'keeps provider accounting and its parent request when routing metadata exceeds the sanitizer key and payload budgets' do
+      assistant = create(:captain_assistant, account: account)
+      conversation = create(:conversation, account: account)
+      routing = 70.times.to_h { |index| ["synthetic_route_#{index}", 'r' * 1000] }
+      payload = routing.merge(
+        'account_id' => account.id, 'assistant_id' => assistant.id, 'conversation_id' => conversation.id,
+        'feature' => 'captain_agent', 'provider' => 'openrouter', 'model' => 'openai/gpt-6-luna',
+        'actual_model' => 'openai/gpt-6-luna', 'endpoint_provider' => 'Azure',
+        'usage_scope' => 'provider_response', 'request_id' => 'synthetic-child', 'parent_request_id' => 'synthetic-parent',
+        'openrouter_generation_id' => 'gen-synthetic-accounting', 'status' => 'success', 'error' => false,
+        'prompt_tokens' => 100, 'completion_tokens' => 20, 'total_tokens' => 120, 'thinking_tokens' => 7,
+        'cached_tokens' => 30, 'estimated_cost' => '0', 'response' => { 'content' => 'PRIVATE_PROVIDER_BODY' }
+      )
+
+      event = described_class.record_notification(event_name: 'llm.chat.complete', started_at: Time.current,
+                                                  finished_at: Time.current, payload: payload)
+
+      expect(event).to have_attributes(account_id: account.id, assistant_id: assistant.id, conversation_id: conversation.id,
+                                      prompt_tokens: 100, completion_tokens: 20, total_tokens: 120, thinking_tokens: 7,
+                                      estimated_cost: BigDecimal(0), duration_ms: nil, payload_truncated: true)
+      expect(event.payload).to include('usage_scope' => 'provider_response', 'parent_request_id' => 'synthetic-parent',
+                                      'openrouter_generation_id' => 'gen-synthetic-accounting', 'cached_tokens' => 30)
+      usage = LlmUsageEvent.find_by!(llm_event_id: event.id)
+      expect(usage).to have_attributes(generation_id: 'gen-synthetic-accounting', actual_provider: 'Azure',
+                                      actual_model: 'openai/gpt-6-luna', cached_tokens: 30, reasoning_tokens: 7,
+                                      estimated_cost: BigDecimal(0))
+      expect(usage.metadata).to include('assistant_id' => assistant.id, 'conversation_id' => conversation.id)
+      expect(event.payload.to_json).not_to include('PRIVATE_PROVIDER_BODY')
+    end
+
     it 'persists summarized chat completion events with derived monitoring fields' do
       allow(Llm::Models).to receive(:credit_multiplier_for).with('gpt-4.1-mini').and_return(1)
       allow(Llm::Models).to receive(:estimated_text_cost).with(

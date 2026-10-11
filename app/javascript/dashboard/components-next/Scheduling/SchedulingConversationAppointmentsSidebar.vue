@@ -25,6 +25,10 @@ import SchedulingAppointmentTimeFields from 'dashboard/components-next/Schedulin
 import SchedulingAvailabilityPicker from 'dashboard/components-next/Scheduling/SchedulingAvailabilityPicker.vue';
 import SchedulingErrorState from 'dashboard/components-next/Scheduling/SchedulingErrorState.vue';
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
+import {
+  appointmentCrmLinkWarningMessage,
+  appointmentSaveAlertMessage,
+} from './appointmentSaveMessage';
 import { useAlert } from 'dashboard/composables';
 import { useStore } from 'dashboard/composables/store';
 import {
@@ -1991,7 +1995,7 @@ const saveCreateAppointment = async () => {
     refreshDialogAppointments(savedAppointment);
     refreshPendingPatientAction(savedAppointment).catch(() => {});
     refreshSidebarCounters();
-    useAlert(t('SCHEDULING.APPOINTMENT_FORM.SUCCESS_SAVE'));
+    useAlert(appointmentSaveAlertMessage(savedAppointment, t));
     emit('patientBound', savedAppointment);
   } catch (error) {
     if (
@@ -2367,7 +2371,7 @@ const saveAppointment = async appointment => {
     refreshPendingPatientAction(savedAppointment).catch(() => {});
     openAppointmentKeys.value = [appointmentKey(savedAppointment)];
     refreshSidebarCounters();
-    useAlert(t('SCHEDULING.APPOINTMENT_FORM.SUCCESS_SAVE'));
+    useAlert(appointmentSaveAlertMessage(savedAppointment, t));
     emit('patientBound', savedAppointment);
   } catch (error) {
     if (
@@ -3010,6 +3014,15 @@ watch(
               })
             }}
           </RouterLink>
+
+          <p
+            v-if="appointmentCrmLinkWarningMessage(appointment, $t)"
+            class="mx-3 mb-3 text-xs leading-5 text-n-amber-11"
+            role="status"
+            :data-testid="`appointment-crm-link-result-${appointment.id}`"
+          >
+            {{ appointmentCrmLinkWarningMessage(appointment, $t) }}
+          </p>
 
           <div
             v-if="patientActions[appointmentKey(appointment)]"

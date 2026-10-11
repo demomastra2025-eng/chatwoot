@@ -35,7 +35,7 @@ class Llm::Monitoring::MetricsSnapshot
       all_thinking_tokens: @scope.sum(:thinking_tokens),
       estimated_cost: chat_events.sum(:estimated_cost),
       total_estimated_cost: @scope.sum(:estimated_cost),
-      avg_duration_ms: chat_events.average(:duration_ms)&.to_f,
+      avg_duration_ms: chat_request_duration_average,
       avg_queue_wait_ms: @scope.average(:queue_wait_ms)&.to_f,
       max_payload_bytes: @scope.maximum(:payload_bytes),
       payload_truncated_count: @scope.where(payload_truncated: true).count,
@@ -62,6 +62,13 @@ class Llm::Monitoring::MetricsSnapshot
   end
 
   private
+
+  def chat_request_duration_average
+    # New SDK response events have no HTTP timing; measure the outer request alongside legacy completions.
+    @scope.where(event_name: %w[llm.chat.complete llm.chat.request])
+          .where("COALESCE(payload ->> 'usage_scope', '') <> ?", 'provider_response')
+          .average(:duration_ms)&.to_f
+  end
 
   def zero_completion_event_names
     %w[

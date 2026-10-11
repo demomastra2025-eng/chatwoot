@@ -248,18 +248,24 @@ class Llm::ChatRequestRunner
   end
 
   def run_observed(chat)
+    return yield if Llm::ChatResponseObserver.active?(chat)
+
     payload = observability_payload(chat)
     return yield if payload.blank?
 
     response = nil
 
-    Llm::EventBus.publish('chat.complete', payload) do |event_payload|
-      response = yield
-      attach_chat_response_best_effort!(event_payload, response)
-      response
-    rescue StandardError => e
-      Llm::ObservabilityPayload.attach_error!(event_payload, e)
-      raise
+    Llm::ChatResponseObserver.observe(chat, payload) do |scope|
+      Llm::EventBus.publish(scope ? 'chat.request' : 'chat.complete', payload) do |event_payload|
+        response = yield
+        attach_chat_response_best_effort!(event_payload, response)
+        response
+      rescue StandardError => e
+        Llm::ObservabilityPayload.attach_error!(event_payload, e)
+        raise
+      ensure
+        scope&.annotate_outer!(event_payload)
+      end
     end
   rescue *OBSERVABILITY_NON_CRITICAL_ERRORS => e
     raise if response.nil?

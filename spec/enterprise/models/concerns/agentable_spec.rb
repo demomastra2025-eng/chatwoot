@@ -105,6 +105,7 @@ RSpec.describe Concerns::Agentable do
           contact: nil,
           communication_thread: nil,
           campaign: {},
+          current_context_rule: '',
           conversation_visible_fields: [],
           contact_visible_fields: []
         )
@@ -134,6 +135,22 @@ RSpec.describe Concerns::Agentable do
       expect(Captain::PromptRenderer).to receive(:render).with(
         'dummy_class',
         hash_including(expected_context)
+      )
+
+      dummy_instance.agent_instructions(context_double)
+    end
+
+    it 'keeps live summaries and context warnings in the runtime data slot' do
+      context_double = instance_double(
+        Captain::Runtime::RunContext,
+        context: { state: { prompt_context: {
+          context_summaries: { contact: { name: 'Ada' } },
+          context_warnings: [{ field_id: 'contact.email', message: 'Field unavailable' }]
+        } } }
+      )
+      expect(Captain::PromptRenderer).to receive(:render).with(
+        'dummy_class',
+        hash_including(current_context_rule: include('contact.summary', 'Ada', 'Context migration: contact.email'))
       )
 
       dummy_instance.agent_instructions(context_double)

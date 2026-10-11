@@ -411,7 +411,7 @@ watch(
         <div
           v-for="tool in discoveredTools"
           :key="tool.id"
-          class="rounded-lg bg-white border border-n-blue-3 px-3 py-2 shadow-sm"
+          class="border-t border-n-blue-3 py-3"
         >
           <div class="text-sm font-semibold text-n-slate-12">
             {{ tool.title }}

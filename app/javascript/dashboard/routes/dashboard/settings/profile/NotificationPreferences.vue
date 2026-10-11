@@ -463,10 +463,7 @@ export default {
         </div>
       </div>
 
-      <div
-        v-if="!isTelegramConnected"
-        class="flex flex-col gap-2 p-3 rounded-lg bg-n-slate-2"
-      >
+      <div v-if="!isTelegramConnected" class="flex flex-col gap-2">
         <span class="text-xs leading-4 text-n-slate-11">
           {{ $t('PROFILE_SETTINGS.FORM.NOTIFICATIONS.TELEGRAM_TOKEN_HELP') }}
         </span>

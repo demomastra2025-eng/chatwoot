@@ -32,7 +32,7 @@ const boardColumnCount = computed(() =>
       <section
         v-for="column in boardColumnCount"
         :key="column"
-        class="min-w-[15rem] flex-1 rounded-xl bg-n-alpha-1 p-3 outline outline-1 outline-n-container"
+        class="min-w-[15rem] flex-1 p-3"
       >
         <header class="mb-3 flex items-center justify-between gap-3">
           <span class="h-4 w-24 rounded bg-n-alpha-3" />

@@ -9,6 +9,88 @@ RSpec.describe Llm::OpenRouterCapabilityResolver do
   end
 
   describe '.call' do
+    %w[microsoft/microsoft-decision-1 microsoft/microsoft-decision-1-20261009].each do |model|
+      it "allows the native Decision endpoint for the approved outcome model #{model}" do
+        allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return({})
+
+        result = described_class.call(model_id: model, feature: :outcome_classification)
+
+        expect(result).to be_allowed
+        expect(result.reasons).to be_empty
+        expect(result.model_config).to include('type' => 'decision', 'capabilities' => ['decision_classification'])
+        expect(Llm::Models.supports_structured_output?(model)).to be(false)
+        expect(Llm::Models.supports_tool_calling?(model)).to be(false)
+      end
+    end
+
+    it 'rejects Decision models for guardrails and every other normal Captain feature' do
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return({})
+
+      (Llm::Models.feature_keys - ['outcome_classification']).each do |feature|
+        result = described_class.call(model_id: 'microsoft/microsoft-decision-1', feature: feature)
+
+        expect(result).not_to be_allowed
+        expect(result.reasons).to include(hash_including(code: 'decision_model_unsupported'))
+      end
+    end
+
+    it 'rejects unapproved Decision IDs even when catalog metadata claims the native capability' do
+      model = 'microsoft/microsoft-decision-1-unapproved'
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+        model => { 'provider' => 'openrouter', 'type' => 'decision', 'capabilities' => ['decision_classification'] }
+      )
+
+      result = described_class.call(model_id: model, feature: :outcome_classification)
+
+      expect(result).not_to be_allowed
+      expect(result.reasons).to include(hash_including(code: 'decision_model_unsupported'))
+    end
+
+    it 'keeps ordinary structured-output chat models valid for outcomes and custom guardrails' do
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+        'vendor/structured-chat' => {
+          'provider' => 'openrouter', 'type' => 'chat', 'capabilities' => %w[text_input text_output],
+          'supported_parameters' => ['response_format']
+        }
+      )
+
+      %w[outcome_classification custom_guardrail].each do |feature|
+        expect(described_class.call(model_id: 'vendor/structured-chat', feature: feature)).to be_allowed
+      end
+    end
+
+    it 'does not grant the native Decision capability to an ordinary chat model without structured output' do
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+        'vendor/decision-like-chat' => {
+          'provider' => 'openrouter', 'type' => 'chat', 'capabilities' => ['decision_classification']
+        }
+      )
+
+      result = described_class.call(model_id: 'vendor/decision-like-chat', feature: :outcome_classification)
+
+      expect(result).not_to be_allowed
+      expect(result.missing).to include('structured_output')
+    end
+
+    it 'still rejects a native Decision when provider credentials are absent' do
+      InstallationConfig.where(name: 'CAPTAIN_OPENROUTER_API_KEY').delete_all
+
+      result = described_class.call(model_id: 'microsoft/microsoft-decision-1', feature: :outcome_classification)
+
+      expect(result).not_to be_allowed
+      expect(result.reasons).to include(hash_including(code: 'provider_not_configured'))
+    end
+
+    it 'preserves ZDR eligibility checks for native Decision models' do
+      result = described_class.call(
+        model_id: 'microsoft/microsoft-decision-1', feature: :outcome_classification,
+        runtime_preferences: { privacy_profile: 'zdr_required' }
+      )
+
+      expect(result).not_to be_allowed
+      expect(result.reasons).to include(hash_including(code: 'zdr_required_unsupported'))
+    end
+
     it 'allows an OpenRouter model that satisfies assistant requirements' do
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
         'openai/gpt-5.4' => {

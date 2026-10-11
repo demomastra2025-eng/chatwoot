@@ -65,7 +65,7 @@ class Api::V1::Accounts::Captain::AssistantResponsesController < Api::V1::Accoun
   def set_responses
     @responses = knowledge_index_scope(
       Current.account.captain_assistant_responses
-             .includes(:assistant, :documentable)
+             .includes(:assistant, :documentable, :knowledge_grants)
              .ordered
     )
   end
@@ -75,7 +75,7 @@ class Api::V1::Accounts::Captain::AssistantResponsesController < Api::V1::Accoun
 
     return base_scope if Current.account_user&.administrator?
 
-    base_scope.where(visibility: Captain::AssistantResponse.visibilities[:general])
+    base_scope.generally_visible
   end
 
   def set_response
@@ -96,7 +96,8 @@ class Api::V1::Accounts::Captain::AssistantResponsesController < Api::V1::Accoun
       :answer,
       :assistant_id,
       :status,
-      :visibility
+      :visibility,
+      allowed_assistant_ids: []
     )
   end
 
@@ -113,6 +114,9 @@ class Api::V1::Accounts::Captain::AssistantResponsesController < Api::V1::Accoun
   end
 
   def personal_visibility_without_assistant?(attributes)
+    return false if attributes.key?(:allowed_assistant_ids)
+    return false if @response.present? && !attributes.key?(:assistant_id)
+
     attributes[:visibility] == 'personal' && attributes[:assistant_id].blank?
   end
 end

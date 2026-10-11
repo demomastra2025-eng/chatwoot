@@ -5,7 +5,7 @@ class Captain::Tools::Copilot::GetCaptainAssistantService < Captain::Tools::Copi
     'get_captain_assistant'
   end
 
-  description 'Get one Captain assistant profile, rules, config, selected tools, and context access for the current account'
+  description 'Get one Captain assistant profile, main instructions, config, selected tools, and context access for the current account'
   param :assistant_id, type: :integer, desc: 'Captain assistant ID', required: true
 
   def execute(assistant_id:)

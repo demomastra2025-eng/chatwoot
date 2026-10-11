@@ -9,7 +9,7 @@ crm_error:
 crm_field_requirement:
   type: object
   properties:
-    id: { type: integer }
+    id: { type: integer, readOnly: true }
     field_key: { type: string }
     required: { type: boolean }
     validation: { type: object, additionalProperties: true }
@@ -28,10 +28,10 @@ crm_stage:
     outcome: { type: string, enum: [open, won, lost] }
     system: { type: boolean }
     position_locked: { type: boolean }
-    closing_reason_options: { type: array, items: { type: string } }
-    closing_reason_required: { type: boolean }
-    transition_reason_options: { type: array, items: { type: string } }
-    transition_reason_required: { type: boolean }
+    closing_reason_options: { type: array, items: { type: string }, description: Configured loss reasons; always empty on open and won stages. }
+    closing_reason_required: { type: boolean, description: Whether loss reasons are required; always false on open and won stages. }
+    transition_reason_options: { type: array, maxItems: 0, items: { type: string }, deprecated: true, readOnly: true, description: Compatibility field; always empty. Ordinary transition reasons are removed. }
+    transition_reason_required: { type: boolean, enum: [false], deprecated: true, readOnly: true, description: Compatibility field; ordinary stage moves never require a reason. }
     active: { type: boolean }
     default: { type: boolean }
     field_requirements: { type: array, items: { $ref: '#/components/schemas/crm_field_requirement' } }
@@ -50,7 +50,7 @@ crm_pipeline:
     position: { type: integer }
     active: { type: boolean }
     default: { type: boolean }
-    auto_create_deal_on_channel_contact: { type: boolean }
+    auto_create_deal_on_channel_contact: { type: boolean, description: Incoming-channel deal creation; independent of appointment_automation.auto_create_deals. }
     appointment_automation: { $ref: '#/components/schemas/crm_appointment_automation' }
     restrict_stage_skipping: { type: boolean }
     restrict_backward_move: { type: boolean }
@@ -137,7 +137,7 @@ crm_deal:
     waiting_started_at: { type: string, format: date-time, nullable: true }
     waiting_set_by_id: { type: integer, nullable: true }
     next_action: { type: object, nullable: true, additionalProperties: true }
-    closing_reasons: { type: array, items: { type: string } }
+    closing_reasons: { type: array, items: { type: string }, description: Loss reasons on the current lost stage; empty for open and won deals. }
     position: { type: integer }
     win_probability: { type: number, nullable: true }
     external_ref: { type: string, nullable: true }
@@ -331,14 +331,27 @@ crm_storage_trash_item:
 
 captain_assistant:
   type: object
+  description: An independent agent in the requested account. Instructions live in description. Separate response_guidelines and guardrails are not returned; config.rules, config.skills and prompt-migration internals are excluded from config.
   properties:
     id: { type: integer }
     account_id: { type: integer }
     name: { type: string }
-    description: { type: string, nullable: true }
+    description: { type: string, nullable: true, description: This agent's own main prompt. }
     usage_mode: { type: string, enum: [external_agent, internal_assistant] }
-    response_guidelines: { type: array, nullable: true, items: { type: string } }
-    guardrails: { type: array, nullable: true, items: { type: string } }
+    active: { type: boolean, description: Only active external agents can be channel entry agents or participate as handoff targets. }
+    routing_description: { type: string, nullable: true, maxLength: 2000, description: Describes when another agent should route a request to this agent. }
+    handoff_agent_ids:
+      type: array
+      uniqueItems: true
+      items: { type: integer, minimum: 1 }
+      description: Saved outgoing targets in this account. Runtime routing uses only active external targets. A saved target may remain listed after it becomes inactive.
+    legacy_scenario_id: { type: integer, nullable: true, readOnly: true, description: Original scenario ID for an agent converted from a legacy scenario. }
+    migration_warnings:
+      type: array
+      readOnly: true
+      items: { $ref: '#/components/schemas/captain_agent_migration_warning' }
+      description: Review notices recorded during legacy scenario conversion; empty for agents without notices.
+    avatar_url: { type: string, nullable: true }
     config:
       type: object
       description: 'Assistant configuration is updated through the existing assistant endpoint. Model, tool access, follow-up settings, and outcome reason settings are account-scoped per assistant. Omitted safety fields retain saved overrides during a partial update; explicit null resets a safety field to inheritance from the workspace policy. Unspecified safety fields on a new assistant inherit workspace policy.'
@@ -347,13 +360,26 @@ captain_assistant:
         safety_settings: { $ref: '#/components/schemas/captain_assistant_safety_settings' }
         tool_access: { type: object, additionalProperties: true }
         follow_up_settings: { type: object, additionalProperties: true }
-        outcome_reason_settings: { type: object, additionalProperties: true }
+        outcome_reason_settings: { $ref: '#/components/schemas/captain_outcome_reason_settings' }
         context_access: { type: object, additionalProperties: true }
         voice_settings: { type: object, additionalProperties: true }
       additionalProperties: true
+    outcome_reason_options:
+      allOf: [{ $ref: '#/components/schemas/captain_outcome_reason_settings' }]
+      readOnly: true
+      description: Normalized reason options including built-in IDs and active flags, returned for every assistant. Configure custom options through config.outcome_reason_settings.
     type: { type: string, enum: [captain_assistant] }
     created_at: { type: integer, format: int64, description: Unix timestamp in seconds }
     updated_at: { type: integer, format: int64, description: Unix timestamp in seconds }
+
+captain_agent_migration_warning:
+  type: object
+  required: [code, message]
+  properties:
+    code: { type: string }
+    message: { type: string }
+    reference_ids: { type: array, items: { type: string }, description: Parent-prompt tool, field or skill references that were not copied. }
+  additionalProperties: false
 
 captain_assistants_response:
   type: object
@@ -370,11 +396,66 @@ captain_assistants_response:
 
 captain_assistant_safety_settings:
   type: object
-  description: Omitted safety fields retain saved overrides during a partial update; explicit null resets a safety field to inheritance from the workspace policy. Unspecified safety fields on a new assistant inherit workspace policy.
+  description: Omitted fields retain saved overrides during a partial update. Provider-safety fields accept null to inherit workspace policy. Custom rules are independent of the provider moderation toggle; an omitted custom_rules retains the saved list, an empty array clears it, and null is rejected.
   properties:
     moderation_enabled: { type: [boolean, 'null'], description: Enable or disable provider moderation for this assistant; null inherits the workspace value. }
     prompt_injection_action: { type: [string, 'null'], enum: [disabled, flag, block, null], description: Runtime prompt-injection guardrail action; null inherits the workspace value. }
     sensitive_info_action: { type: [string, 'null'], enum: [disabled, flag, block, null], description: Runtime sensitive-information guardrail action; null inherits the workspace value. }
+    custom_rules:
+      type: array
+      maxItems: 20
+      description: Replaces the entire ordered list atomically with the assistant profile. The first matching enabled rule for the checked direction wins. IDs must be unique within the list. Disabled rules remain saved but are not evaluated. No rules means no classifier request. Invalid rules return 422 invalid_custom_safety_rules without saving profile or routing changes.
+      items: { $ref: '#/components/schemas/captain_custom_safety_rule' }
+  additionalProperties: false
+
+captain_custom_safety_rule:
+  type: object
+  required: [id, name, direction, instruction, action, enabled]
+  properties:
+    id:
+      type: string
+      minLength: 1
+      maxLength: 64
+      pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$'
+      not: { enum: [none] }
+      description: Stable unique identifier. The exact identifier none is reserved and rejected. Preserve this ID when editing or reordering a rule.
+    name: { type: string, minLength: 1, maxLength: 120, description: Nonblank display name; it is not sent to the classifier. }
+    direction: { type: string, enum: [input, output] }
+    instruction: { type: string, minLength: 1, maxLength: 2000, description: Nonblank condition describing when the rule matches. Rules are evaluated in saved array order. }
+    action:
+      type: string
+      enum: [handoff, block, rewrite]
+      description: Server-owned action associated with this ID. Rewrite is valid only for output rules. Block is accepted for compatibility; input handoff and block stop automation and transfer to staff.
+    enabled: { type: boolean, description: A literal boolean is required; strings and numeric values are rejected. }
+    message:
+      type: string
+      maxLength: 2000
+      description: Optional preapproved public message after a match. Omitted or empty uses the configured handoff message. Null is rejected. This field is not sent to the classifier.
+  oneOf:
+    - properties:
+        direction: { type: string, enum: [input] }
+        action: { type: string, enum: [handoff, block] }
+    - properties:
+        direction: { type: string, enum: [output] }
+        action: { type: string, enum: [handoff, block, rewrite] }
+  additionalProperties: false
+
+captain_custom_safety_rules_error:
+  type: object
+  required: [error, fields]
+  properties:
+    error: { type: string, enum: [invalid_custom_safety_rules] }
+    fields:
+      type: array
+      minItems: 1
+      items:
+        type: object
+        required: [path, code, message]
+        properties:
+          path: { type: string, example: 'safety_settings.custom_rules[0].action' }
+          code: { type: string, enum: [invalid_type, too_many, unknown_fields, required, invalid_id, duplicate_id, blank, too_long, invalid_value, output_only] }
+          message: { type: string, description: Concrete validation message without echoing rule text or arbitrary field values. }
+        additionalProperties: false
   additionalProperties: false
 
 captain_assistant_playground_request:
@@ -386,14 +467,16 @@ captain_assistant_playground_request:
 captain_assistant_playground_parameters:
   type: object
   properties:
-    message_content: { type: string, description: Required for the default message action. }
-    playground_mode: { type: string, enum: [trial, live], default: trial, description: Live requires an account administrator and uses real clinic operations with a synthetic caller. }
-    playground_action: { type: string, enum: [message, session, reset], default: message }
-    playground_session_id: { type: string, description: Server-owned session identifier scoped to this account, user, assistant and mode. }
-    scenario: { type: object, additionalProperties: true, description: Trial accepts synthetic business data; Live accepts only the synthetic caller profile. }
-    live_inbox_id: { type: integer }
-    external_delivery_enabled: { type: boolean, default: false }
-    controlled_test_number: { type: string, description: Explicit controlled delivery target for Live mode. }
+    message_content: { type: string, maxLength: 12000, description: Required for the default message action. }
+    playground_mode: { type: string, enum: [workspace, trial], default: workspace, description: Workspace uses a synthetic caller and server-owned history. The trial compatibility value also opens a workspace session; legacy live mode is rejected. }
+    playground_action: { type: string, enum: [message, session, reset, permissions, confirm], default: message }
+    playground_session_id: { type: string, description: Server-owned session identifier scoped to this account, user and entry assistant. Required for permissions; use the same session for confirming a preview. }
+    scenario: { type: object, additionalProperties: true, description: Synthetic business data. Changing the scenario revokes pending real-action previews. }
+    real_data_read: { type: boolean, default: false, description: Applied by the permissions action. Enables selected tools to read real account data under the current operator's permissions. }
+    real_data_write: { type: boolean, default: false, description: Applied by the permissions action; requires real_data_read. Each real change still needs an explicit preview confirmation. }
+    approval_id: { type: string, description: ID of a pending action preview required by the confirm action. }
+    approval_digest: { type: string, description: Digest of the unchanged action preview required by the confirm action. }
+    external_delivery_enabled: { type: boolean, enum: [false], default: false, description: External delivery is unavailable; true is rejected. }
     message_history:
       type: array
       description: External-agent sessions use server-owned history and ignore client history. Reserved for the enabled internal assistant playground.
@@ -404,7 +487,7 @@ captain_assistant_playground_parameters:
           role: { type: string }
           content: { type: string }
           agent_name: { type: string }
-    conversation_id: { type: string, description: Trial rejects real conversations; Live accepts only its own dedicated session conversation display ID. }
+    conversation_id: { type: string, description: External-agent Playground rejects real conversations. Used only by the enabled internal assistant playground with the operator's conversation access. }
     test_model: { type: string, description: Per-request selectable model override. It is validated against the assistant model registry and is not saved to the assistant. }
     test_temperature: { type: number, minimum: 0, maximum: 1, description: Per-request temperature override; accepted only when the selected model supports temperature. }
     test_thinking_effort: { type: string, description: Per-request reasoning effort override; validated against the selected model's supported capabilities. }
@@ -412,43 +495,111 @@ captain_assistant_playground_parameters:
 captain_assistant_playground_response:
   type: object
   properties:
-    response: { type: string, nullable: true, description: Present for a message action; session and reset actions return session state without a generated reply. }
+    response: { type: string, nullable: true, description: Present for a message action. Session, reset and permissions return session state; confirm returns the action result. }
     playground: { $ref: '#/components/schemas/captain_playground_session' }
-    delivery: { type: object, additionalProperties: true, description: Actual delivery result; a queued message is not confirmed delivery. }
-    agent_name: { type: [string, 'null'] }
+    delivery:
+      type: object
+      description: Present for an external-agent message action; replies stay in the Playground transcript.
+      properties:
+        enabled: { type: boolean, enum: [false] }
+        status: { type: string, enum: [playground_only] }
+        delivered: { type: boolean, enum: [false] }
+    agent_name: { type: [string, 'null'], description: Runtime agent key. }
+    agent_id: { type: [integer, 'null'], description: Account-scoped ID of the acting agent after any handoff. }
+    agent_display_name: { type: [string, 'null'], description: Display name of the acting agent. }
+    agent_tasks:
+      type: array
+      maxItems: 30
+      items: { $ref: '#/components/schemas/captain_agent_task' }
+      description: Results and remaining work for a multi-request task queue. Empty when no queue was created; these are runtime tasks rather than CRM task records.
     reasoning: { type: [string, 'null'] }
     response_latency_ms: { type: integer, minimum: 0, description: Measured end-to-end response latency in milliseconds. }
     reported_reasoning_tokens: { type: integer, minimum: 1, description: Provider-reported reasoning tokens, included only when the provider supplies this usage metric. }
-    tool_trace:
-      type: array
-      items:
-        type: object
-        properties:
-          tool: { type: string }
-          event: { type: string }
-        additionalProperties: true
+    action_id: { type: string, description: Confirmed preview ID; present for a confirm action. }
+    result: { description: Tool result returned by a confirm action; its representation follows the selected tool. }
+    success: { type: boolean, description: Whether the confirmed action completed successfully. }
+    delivered: { type: boolean, enum: [false], description: A confirm action does not deliver a customer message. }
+    timed_out: { type: boolean, description: Present with response=null when the request times out. }
   additionalProperties: true
+
+captain_agent_task:
+  type: object
+  properties:
+    id: { type: string }
+    title: { type: string, minLength: 1, maxLength: 500 }
+    assistant_id: { type: integer, description: Assigned agent in the entry agent's reachable account-scoped graph. }
+    status: { type: string, enum: [awaiting, active, waiting, completed, failed, cancelled] }
+    result: { type: [string, 'null'], maxLength: 1500, description: Concise outcome or reason the request remains waiting. }
+  additionalProperties: false
 
 captain_playground_session:
   type: object
   properties:
     session_id: { type: string }
-    mode: { type: string, enum: [trial, live] }
+    mode: { type: string, enum: [workspace] }
     scenario: { type: object, additionalProperties: true }
     message_history: { type: array, items: { type: object, additionalProperties: true } }
-    live_available: { type: boolean }
-    live_warning: { type: string }
-    conversation_id: { type: integer, description: Dedicated Live conversation display ID. }
-    inbox_id: { type: integer }
-    delivery_enabled: { type: boolean }
-    delivery_target: { type: string }
-    inboxes: { type: array, items: { type: object, properties: { id: { type: integer }, name: { type: string }, channel_type: { type: string } } } }
+    real_data_read: { type: boolean }
+    real_data_write: { type: boolean }
+    delivery_enabled: { type: boolean, enum: [false] }
+    action_previews:
+      type: array
+      items: { $ref: '#/components/schemas/captain_playground_action_preview' }
+      description: Pending unexpired previews for the current permissions and acting agent; changing either invalidates confirmation.
+    expires_in: { type: integer, description: Session lifetime in seconds. }
+
+captain_playground_action_preview:
+  type: object
+  properties:
+    id: { type: string }
+    digest: { type: string }
+    tool: { type: string }
+    arguments: { type: object, additionalProperties: true }
+    target: { type: object, additionalProperties: true }
+    status: { type: string, enum: [pending] }
+    expires_at: { type: integer, format: int64, description: Unix timestamp in seconds. }
+    binding:
+      type: object
+      properties:
+        session_id: { type: string }
+        mode: { type: string, enum: [workspace] }
+        account_id: { type: integer }
+        user_id: { type: integer }
+        entry_assistant_id: { type: integer }
+        assistant_id: { type: integer, description: Acting agent whose selected tools authorize this preview. }
+      additionalProperties: false
+  additionalProperties: false
+
+captain_knowledge_access_parameters:
+  type: object
+  description: Access fields accepted inside document or assistant_response create/update payloads. Access changes are saved only when the request succeeds; material is shared through grants without duplication. Omitted allowed_assistant_ids retains existing grants unless visibility changes to general. Each selected agent must belong to the requested account.
+  properties:
+    assistant_id: { type: [integer, 'null'], description: Legacy owner. Personal knowledge may instead use an explicit allowed_assistant_ids selection with assistant_id=null. }
+    visibility: { type: string, enum: [general, personal], description: General grants access to all agents in this account and clears explicit grants. Personal grants access to the legacy owner and selected agents. }
+    allowed_assistant_ids:
+      type: array
+      items: { type: integer, minimum: 1 }
+      description: Replaces the explicit selected-agent grants on save. Personal knowledge requires at least one selected agent or a legacy owner; switching to general clears these grants.
+
+captain_knowledge_access:
+  type: object
+  description: Access fields returned by document and FAQ serializers. Legacy personal material with no owner and restricted_to_assistants=false remains workspace-shared; derived material inherits source access where applicable.
+  properties:
+    visibility: { type: string, enum: [general, personal] }
+    allowed_assistant_ids:
+      type: array
+      uniqueItems: true
+      readOnly: true
+      items: { type: integer, minimum: 1 }
+      description: Effective legacy owner and explicit grants for personal knowledge; empty for general visibility.
+    restricted_to_assistants: { type: boolean, readOnly: true, description: Stored explicit-selection flag. Derived material also follows its source's access restrictions. }
 
 crm_appointment_automation:
   type: object
-  description: Prospective, per-pipeline configuration. Stage automation is disabled until explicitly enabled; historical appointment links and existing channel autodeal settings are retained.
+  description: Prospective per-pipeline settings. enabled controls appointment-driven stage automation. auto_create_deals independently controls all automatic appointment deal creation, including cardinality cloning; incoming-channel auto-create never enables it. Existing links and explicit valid existing-deal selection remain usable while creation is off. A deliberate crm_deal_selection=create remains an explicit manual action subject to CRM validation. Legacy absent masters normalize true only from explicit calendar or integration source opt-ins.
   properties:
-    enabled: { type: boolean, default: false }
+    enabled: { type: boolean, default: false, description: Enables appointment-driven stage automation. }
+    auto_create_deals: { type: boolean, default: false, description: Independent master switch for automatic appointment deal creation. Turning it off preserves source preferences and historical links. }
     cardinality: { type: string, enum: [request, appointment], default: request }
     auto_create_from_calendar: { type: boolean, default: false }
     auto_create_from_medelement: { type: boolean, default: false }
@@ -462,11 +613,12 @@ crm_appointment_automation:
         type: object
         required: [stage_id, scope, conditions]
         properties:
-          stage_id: { type: integer }
+          id: { type: string }
+          name: { type: string }
+          stage_id: { $ref: '#/components/schemas/crm_stage_reference' }
           scope: { type: string, enum: [any, all, selected, nearest] }
           conditions: { type: array, minItems: 1, items: { type: string, enum: [provider_confirmed, patient_confirmed, scheduled, attended, cancelled, no_show, today, tomorrow, past, future] } }
-          closing_reasons: { type: array, items: { type: string } }
-          transition_reason: { type: string }
+          closing_reasons: { type: array, items: { type: string }, description: Accepted only for a lost target stage; removed from rules targeting open or won stages. }
 
 crm_appointment_plan_item:
   type: object
@@ -504,26 +656,64 @@ lead_appointment_conversion:
 captain_assistant_payload:
   type: object
   required: [assistant]
+  description: Creates an account-scoped independent agent. Routing and profile settings are persisted together only when the request succeeds. Instructions belong in assistant.description. Separate response_guidelines, guardrails or config.rules writes return 422 separate_rules_removed. config.skills is no longer permitted and is ignored.
   properties:
     assistant:
       type: object
       required: [name]
       properties:
         name: { type: string }
-        description: { type: string, nullable: true }
+        description: { type: string, nullable: true, description: This agent's own main prompt. }
         usage_mode: { type: string, enum: [external_agent, internal_assistant] }
-        response_guidelines: { type: array, items: { type: string } }
-        guardrails: { type: array, items: { type: string } }
+        active: { type: boolean, default: true, description: Enables this agent for entry and handoff routing when usage_mode is external_agent. }
+        routing_description: { type: string, nullable: true, maxLength: 2000 }
+        handoff_agent_ids:
+          type: array
+          items: { type: integer, minimum: 1 }
+          description: Explicit outgoing targets from this account. Newly selected targets must be active external agents; the current agent cannot target itself. An empty array saves no outgoing routes.
         config:
           type: object
-          description: 'Omitted safety fields retain saved overrides during a partial update; explicit null resets a safety field to inheritance from the workspace policy. Unspecified safety fields on a new assistant inherit workspace policy.'
+          description: 'Omitted safety fields retain saved overrides during a partial update. Provider-safety fields accept null for workspace inheritance. custom_rules is a complete ordered replacement; [] clears it and null is invalid.'
           properties:
             model: { type: string }
             safety_settings: { $ref: '#/components/schemas/captain_assistant_safety_settings' }
             tool_access: { type: object, additionalProperties: true }
             follow_up_settings: { type: object, additionalProperties: true }
-            outcome_reason_settings: { type: object, additionalProperties: true }
+            outcome_reason_settings: { $ref: '#/components/schemas/captain_outcome_reason_settings' }
             context_access: { type: object, additionalProperties: true }
             voice_settings: { type: object, additionalProperties: true }
           additionalProperties: true
       additionalProperties: true
+
+captain_outcome_reason_settings:
+  type: object
+  description: Stable reason IDs for conversation completion and handoff. Completion is a conversation status outcome, not a sale. Labels may change without changing the ID. The other fallback remains active. Writes normalize at most 27 configured entries per type; read options additionally include built-in choices.
+  properties:
+    completion_reasons:
+      type: array
+      items: { $ref: '#/components/schemas/captain_outcome_reason_option' }
+    handoff_reasons:
+      type: array
+      items: { $ref: '#/components/schemas/captain_outcome_reason_option' }
+  additionalProperties: false
+
+captain_outcome_reason_option:
+  type: object
+  required: [id, label]
+  properties:
+    id: { type: string, pattern: '^[a-z0-9][a-z0-9_-]{0,63}$', description: Stable ID unique within its outcome type. }
+    label: { type: string, minLength: 1, maxLength: 255 }
+    active: { type: boolean, default: true }
+  additionalProperties: false
+
+captain_removed_rules_error:
+  type: object
+  required: [error, fields, message]
+  properties:
+    error: { type: string, enum: [separate_rules_removed] }
+    fields:
+      type: array
+      minItems: 1
+      items: { type: string, enum: [response_guidelines, guardrails, config.rules] }
+    message: { type: string, enum: ['Save instructions in assistant.description.'] }
+  additionalProperties: false

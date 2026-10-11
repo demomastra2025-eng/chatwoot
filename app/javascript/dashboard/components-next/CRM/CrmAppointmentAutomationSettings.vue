@@ -1,28 +1,18 @@
 <script setup>
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import Button from 'dashboard/components-next/button/Button.vue';
-import Input from 'dashboard/components-next/input/Input.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
-import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
-import { formatCrmErrorMessage } from 'dashboard/stores/crm/shared';
-import CrmPipelinesAPI from 'dashboard/api/crm/pipelines';
 
 const props = defineProps({
   pipeline: { type: Object, required: true },
   canManage: { type: Boolean, default: false },
+  saving: { type: Boolean, default: false },
+  medelementInstalled: { type: Boolean, default: false },
 });
+const draft = defineModel({ type: Object, required: true });
 const { t } = useI18n();
-const route = useRoute();
-const accountId = computed(() => String(route?.params?.accountId || ''));
-let generation = 0;
-const references = useCrmReferencesStore();
-const saving = ref(false);
-const error = ref('');
-const baseline = ref('');
-const draft = reactive({});
 const translate = key => {
   // eslint-disable-next-line @intlify/vue-i18n/no-dynamic-keys
   return t(`CRM.APPOINTMENT_AUTOMATION.${key}`);
@@ -60,57 +50,27 @@ const activeStages = computed(() =>
 const stages = computed(() =>
   activeStages.value.map(stage => ({ value: stage.id, label: stage.name }))
 );
-const dirty = computed(() => JSON.stringify(draft) !== baseline.value);
-const valid = computed(() =>
-  draft.rules?.every(rule => rule.stage_id && rule.conditions.length)
+const stageFor = rule =>
+  activeStages.value.find(stage => String(stage.id) === String(rule.stage_id));
+const valid = computed(
+  () =>
+    !draft.value.enabled ||
+    draft.value.rules?.every(rule => stageFor(rule) && rule.conditions.length)
 );
-
-watch(
-  [accountId, () => props.pipeline],
-  ([, pipeline]) => {
-    generation += 1;
-    const config = pipeline.appointmentAutomation || {};
-    Object.assign(draft, {
-      enabled: config.enabled === true,
-      cardinality: config.cardinality || 'request',
-      auto_create_from_calendar: config.autoCreateFromCalendar === true,
-      auto_create_from_medelement: config.autoCreateFromMedelement === true,
-      manual_stage_change: config.manualStageChange || 'continue',
-      success_mode: config.successMode || 'manual',
-      rules: (config.rules || []).map(rule => ({
-        stage_id: rule.stageId,
-        scope: rule.scope || 'any',
-        conditions: [...(rule.conditions || [])],
-        closing_reasons: [...(rule.closingReasons || [])],
-        transition_reason: rule.transitionReason || '',
-      })),
-    });
-    baseline.value = JSON.stringify(draft);
-    error.value = '';
-    saving.value = false;
-  },
-  { immediate: true }
-);
-onBeforeUnmount(() => {
-  generation += 1;
-});
 
 const addRule = () =>
-  draft.rules.push({
+  draft.value.rules.push({
     stage_id: stages.value[0]?.value || null,
     scope: 'any',
     conditions: ['provider_confirmed'],
     closing_reasons: [],
-    transition_reason: '',
   });
 const moveRule = (index, offset) => {
   const target = index + offset;
-  if (target < 0 || target >= draft.rules.length) return;
-  const [rule] = draft.rules.splice(index, 1);
-  draft.rules.splice(target, 0, rule);
+  if (target < 0 || target >= draft.value.rules.length) return;
+  const [rule] = draft.value.rules.splice(index, 1);
+  draft.value.rules.splice(target, 0, rule);
 };
-const stageFor = rule =>
-  activeStages.value.find(stage => Number(stage.id) === Number(rule.stage_id));
 const toggleCondition = (rule, value, checked) => {
   rule.conditions = checked
     ? [...rule.conditions, value]
@@ -121,37 +81,45 @@ const toggleReason = (rule, value, checked) => {
     ? [...rule.closing_reasons, value]
     : rule.closing_reasons.filter(reason => reason !== value);
 };
-const save = async () => {
-  if (!props.canManage || !valid.value || saving.value) return;
-  const pipelineId = props.pipeline.id;
-  const request = generation;
-  const account = accountId.value;
-  saving.value = true;
-  error.value = '';
-  try {
-    await CrmPipelinesAPI.update(pipelineId, {
-      appointment_automation: JSON.parse(JSON.stringify(draft)),
-    });
-    if (request !== generation || account !== accountId.value) return;
-    await references.loadPipelines({ include_inactive_stages: true });
-  } catch (failure) {
-    if (request === generation && account === accountId.value)
-      error.value = formatCrmErrorMessage(failure, t);
-  } finally {
-    if (request === generation) saving.value = false;
-  }
-};
+const buildPayload = () =>
+  valid.value
+    ? {
+        ...JSON.parse(JSON.stringify(draft.value)),
+        rules: draft.value.rules.map(rule => ({
+          stage_id: rule.stage_id,
+          scope: rule.scope,
+          conditions: [...rule.conditions],
+          closing_reasons:
+            stageFor(rule)?.outcome === 'lost' ? [...rule.closing_reasons] : [],
+        })),
+      }
+    : null;
+defineExpose({ buildPayload });
 </script>
 
 <template>
   <section
-    class="grid gap-3 px-5 py-4"
+    class="grid min-w-0 gap-3 border-t border-n-weak pt-5"
     data-testid="crm-appointment-automation-settings"
   >
     <h3 class="m-0 text-sm font-semibold text-n-slate-12">
       {{ $t('CRM.APPOINTMENT_AUTOMATION.TITLE') }}
     </h3>
+    <label
+      class="flex items-center justify-between gap-3 text-sm text-n-slate-11"
+    >
+      <span>{{ $t('CRM.APPOINTMENT_AUTOMATION.AUTO_CREATE_DEALS') }}</span>
+      <Switch
+        v-model="draft.auto_create_deals"
+        :disabled="!canManage || saving"
+        data-testid="appointment-auto-create-deals"
+      />
+    </label>
+    <p class="m-0 text-xs leading-5 text-n-slate-10">
+      {{ $t('CRM.APPOINTMENT_AUTOMATION.AUTO_CREATE_DEALS_HELP') }}
+    </p>
     <SchedulingSelectField
+      v-if="draft.auto_create_deals"
       v-model="draft.cardinality"
       :label="$t('CRM.APPOINTMENT_AUTOMATION.CARDINALITY')"
       :options="cardinalities"
@@ -161,6 +129,7 @@ const save = async () => {
       {{ $t('CRM.APPOINTMENT_AUTOMATION.PROSPECTIVE_HELP') }}
     </p>
     <label
+      v-if="draft.auto_create_deals"
       class="flex items-center justify-between gap-3 text-sm text-n-slate-11"
     >
       <span>{{ $t('CRM.APPOINTMENT_AUTOMATION.CALENDAR_SOURCE') }}</span>
@@ -170,6 +139,7 @@ const save = async () => {
       />
     </label>
     <label
+      v-if="draft.auto_create_deals && medelementInstalled"
       class="flex items-center justify-between gap-3 text-sm text-n-slate-11"
     >
       <span>{{ $t('CRM.APPOINTMENT_AUTOMATION.ME_SOURCE') }}</span>
@@ -180,7 +150,9 @@ const save = async () => {
     </label>
     <p
       v-if="
-        draft.auto_create_from_calendar || draft.auto_create_from_medelement
+        draft.auto_create_deals &&
+        (draft.auto_create_from_calendar ||
+          (medelementInstalled && draft.auto_create_from_medelement))
       "
       class="m-0 text-xs leading-5 text-n-slate-10"
     >
@@ -223,7 +195,7 @@ const save = async () => {
           v-for="(rule, index) in draft.rules"
           :key="index"
           :disabled="!canManage || saving"
-          class="grid min-w-0 gap-3 rounded-lg border border-n-weak p-3"
+          class="grid min-w-0 gap-3 border-t border-n-weak pt-3"
         >
           <div class="flex items-center justify-between gap-1">
             <span class="text-xs font-semibold text-n-slate-12">{{
@@ -289,7 +261,12 @@ const save = async () => {
             />
             <span>{{ condition.label }}</span>
           </label>
-          <template v-if="stageFor(rule)?.closingReasonOptions?.length">
+          <template
+            v-if="
+              stageFor(rule)?.outcome === 'lost' &&
+              stageFor(rule)?.closingReasonOptions?.length
+            "
+          >
             <span class="text-xs font-medium text-n-slate-12">{{
               $t('CRM.APPOINTMENT_AUTOMATION.CLOSING_REASONS')
             }}</span>
@@ -306,24 +283,6 @@ const save = async () => {
               <span>{{ reason }}</span>
             </label>
           </template>
-          <SchedulingSelectField
-            v-if="stageFor(rule)?.transitionReasonOptions?.length"
-            v-model="rule.transition_reason"
-            :label="$t('CRM.APPOINTMENT_AUTOMATION.TRANSITION_REASON')"
-            :options="
-              stageFor(rule).transitionReasonOptions.map(value => ({
-                value,
-                label: value,
-              }))
-            "
-            :disabled="!canManage || saving"
-          />
-          <Input
-            v-else-if="stageFor(rule)?.transitionReasonRequired"
-            v-model="rule.transition_reason"
-            :label="$t('CRM.APPOINTMENT_AUTOMATION.TRANSITION_REASON')"
-            :disabled="!canManage || saving"
-          />
         </fieldset>
         <Button
           size="sm"
@@ -336,16 +295,5 @@ const save = async () => {
         />
       </div>
     </details>
-    <p v-if="error" role="alert" class="m-0 text-xs text-n-ruby-10">
-      {{ error }}
-    </p>
-    <Button
-      v-if="canManage"
-      size="sm"
-      :label="$t('CRM.GENERAL.SAVE')"
-      :is-loading="saving"
-      :disabled="saving || !dirty || !valid"
-      @click="save"
-    />
   </section>
 </template>

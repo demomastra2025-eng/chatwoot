@@ -17,6 +17,16 @@ class StandaloneReportsAPI extends ApiClient {
       params: { from_date: fromDate, to_date: toDate },
     });
   }
+
+  getAiAgents({ fromDate, toDate, assistantId } = {}) {
+    return axios.get(`${this.url}/ai_agents`, {
+      params: {
+        from_date: fromDate,
+        to_date: toDate,
+        assistant_id: assistantId,
+      },
+    });
+  }
 }
 
 export default new StandaloneReportsAPI();

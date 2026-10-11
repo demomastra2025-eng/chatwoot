@@ -5,13 +5,16 @@ class Captain::Runtime::ToolLoopGuard
   TERMINAL_STOP_KEY = :captain_v2_terminal_tool_stop
   MAX_REQUESTS_PER_TOOL = 6
   MAX_REQUESTS_PER_RUN = 16
+  MAX_COORDINATION_REQUESTS = 64
   MAX_REQUESTS_BY_TOOL = {
     'search_scheduling_services' => 4
   }.freeze
 
-  def initialize(context_wrapper, tool_name)
+  def initialize(context_wrapper, tool_name, coordination: false, task_scope: nil)
     @context_wrapper = context_wrapper
     @tool_name = tool_name.to_s
+    @coordination = coordination
+    @task_scope = task_scope if task_scope.to_s.start_with?('task:')
   end
 
   def register_request(signature:)
@@ -54,17 +57,27 @@ class Captain::Runtime::ToolLoopGuard
     counts[:total] = counts[:total].to_i
     counts[:by_tool] = counts[:by_tool].to_h.stringify_keys
     counts[:by_signature] = counts[:by_signature].to_h.stringify_keys
+    counts[:by_task] = counts[:by_task].to_h.stringify_keys
     context[REQUEST_COUNTS_KEY] = counts
   end
 
   def increment_counts!(counts, signature)
-    counts[:total] += 1
+    if @coordination
+      counts[:coordination_total] = counts[:coordination_total].to_i + 1
+    else
+      counts[:total] += 1
+      counts[:by_task][@task_scope] = counts[:by_task].fetch(@task_scope, 0) + 1 if @task_scope
+    end
     counts[:by_tool][request_count_key] = counts[:by_tool].fetch(request_count_key, 0) + 1
     counts[:by_signature][signature] = counts[:by_signature].fetch(signature, 0) + 1
   end
 
   def request_limit_exceeded?(counts)
-    counts[:total] > MAX_REQUESTS_PER_RUN || counts[:by_tool][request_count_key] > max_requests_for_tool
+    return counts[:coordination_total].to_i > MAX_COORDINATION_REQUESTS if @coordination
+
+    total_limit = @task_scope ? MAX_REQUESTS_PER_RUN * Captain::Runtime::TaskQueue::MAX_TASKS : MAX_REQUESTS_PER_RUN
+    task_limit_exceeded = @task_scope && counts[:by_task].fetch(@task_scope, 0) > MAX_REQUESTS_PER_RUN
+    counts[:total] > total_limit || task_limit_exceeded || counts[:by_tool][request_count_key] > max_requests_for_tool
   end
 
   def request_limit_result(counts)
@@ -114,7 +127,8 @@ class Captain::Runtime::ToolLoopGuard
   end
 
   def request_count_key
-    MAX_REQUESTS_BY_TOOL.key?(canonical_tool_name) ? canonical_tool_name : @tool_name
+    name = MAX_REQUESTS_BY_TOOL.key?(canonical_tool_name) ? canonical_tool_name : @tool_name
+    @task_scope && !@coordination ? "#{@task_scope}:#{name}" : name
   end
 
   def canonical_tool_name

@@ -32,6 +32,8 @@ class CaptainInbox < ApplicationRecord
 
   validates :inbox_id, uniqueness: true
   validates :auto_reply_mode, inclusion: { in: AUTO_REPLY_MODES }
+  validate :assistant_belongs_to_inbox_account
+  validate :new_entry_assistant_is_eligible
 
   before_validation :set_default_auto_reply_mode
 
@@ -69,6 +71,19 @@ class CaptainInbox < ApplicationRecord
   end
 
   private
+
+  def assistant_belongs_to_inbox_account
+    return if captain_assistant&.account_id == inbox&.account_id
+
+    errors.add(:captain_assistant, 'must belong to the channel workspace')
+  end
+
+  def new_entry_assistant_is_eligible
+    return unless new_record? || will_save_change_to_captain_assistant_id?
+    return if captain_assistant&.entry_eligible?
+
+    errors.add(:captain_assistant, 'must be an active external agent')
+  end
 
   def lock_voice_assistant_assignment!
     Telephony::AiVoice::AssistantAssignmentLock.acquire!(inbox_id)

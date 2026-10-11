@@ -4,7 +4,7 @@ class Api::V1::Accounts::Captain::DocumentsController < Api::V1::Accounts::BaseC
 
   before_action :set_current_page, only: [:index]
   before_action :set_documents, except: [:create, :preview]
-  before_action :set_document, only: [:show, :destroy, :resync, :refresh_changed_only, :retry_failed, :source_text]
+  before_action :set_document, only: [:show, :update, :destroy, :resync, :refresh_changed_only, :retry_failed, :source_text]
   before_action :set_assistant, only: [:create]
   RESULTS_PER_PAGE = 25
 
@@ -66,6 +66,19 @@ class Api::V1::Accounts::Captain::DocumentsController < Api::V1::Accounts::BaseC
     render_could_not_create_error(e.message)
   end
 
+  def update
+    attributes = document_creation_params.slice(:name, :assistant_id, :faq_generation_enabled, :visibility, :allowed_assistant_ids)
+    if attributes[:assistant_id].present?
+      attributes[:assistant_id] = Current.account.captain_assistants.find(attributes[:assistant_id]).id
+    end
+    @document.update!(attributes)
+    render :show
+  rescue ActiveRecord::RecordInvalid => e
+    render_could_not_create_error(e.record.errors.full_messages.join(', '))
+  rescue ActiveRecord::RecordNotFound => e
+    render_could_not_create_error(e.message)
+  end
+
   def resync
     return render_could_not_create_error(I18n.t('captain.documents.derived_document_resync_error')) if @document.derived_document?
 
@@ -121,7 +134,7 @@ class Api::V1::Accounts::Captain::DocumentsController < Api::V1::Accounts::BaseC
   def set_documents
     @documents = knowledge_index_scope(
       Current.account.captain_documents
-             .includes(:assistant)
+             .includes(:assistant, :knowledge_grants)
              .ordered
     )
   end
@@ -131,7 +144,7 @@ class Api::V1::Accounts::Captain::DocumentsController < Api::V1::Accounts::BaseC
 
     return base_scope if Current.account_user&.administrator?
 
-    base_scope.where(visibility: Captain::Document.visibilities[:general])
+    base_scope.generally_visible
   end
 
   def set_document
@@ -153,7 +166,8 @@ class Api::V1::Accounts::Captain::DocumentsController < Api::V1::Accounts::BaseC
   end
 
   def base_document_params
-    document_creation_params.slice(:name, :external_link, :assistant_id, :pdf_file, :source_file, :faq_generation_enabled, :visibility)
+    document_creation_params.slice(:name, :external_link, :assistant_id, :pdf_file, :source_file, :faq_generation_enabled, :visibility,
+                                   :allowed_assistant_ids)
   end
 
   def document_creation_params
@@ -169,12 +183,14 @@ class Api::V1::Accounts::Captain::DocumentsController < Api::V1::Accounts::BaseC
       import_profile: [:sitemap, :max_pages, :max_discovery_depth, :allow_subdomains, :ignore_query_parameters, :only_main_content,
                        :timeout, :pdf_parser_mode, :pdf_max_pages, :remove_base64_images, :zero_data_retention, :store_in_cache, :proxy,
                        { include_paths: [], exclude_paths: [] }],
-      selected_urls: []
+      selected_urls: [],
+      allowed_assistant_ids: []
     )
   end
 
   def personal_visibility_without_assistant?
-    document_creation_params[:visibility] == 'personal' && document_creation_params[:assistant_id].blank?
+    document_creation_params[:visibility] == 'personal' && document_creation_params[:assistant_id].blank? &&
+      !document_creation_params.key?(:allowed_assistant_ids)
   end
 
   def document_metadata

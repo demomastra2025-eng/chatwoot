@@ -799,6 +799,72 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     expect(events.last[2]).to be_a(RubyLLM::Tool::Halt)
   end
 
+  it 'stops a later read-only call in the same sequential batch after an agent handoff' do
+    target = Captain::Runtime::Agent.new(name: 'billing_specialist')
+    handoff_tool = Captain::Runtime::HandoffTool.new(target)
+    handoff_wrapper = described_class.new(handoff_tool, context_wrapper)
+    later_tool = ToolWrapperSpecReadOnlyTool.new
+    later_wrapper = described_class.new(later_tool, context_wrapper)
+    context_wrapper.context[:captain_v2_current_tool_batch_id] = 'handoff-batch'
+
+    handoff_result = handoff_wrapper.call({})
+    later_result = later_wrapper.call(result: 'must not execute in the former agent')
+
+    expect(handoff_result).to be_a(RubyLLM::Tool::Halt)
+    expect(context_wrapper.context[:pending_handoff]).to include(target_agent: target)
+    expect(later_result).to be_a(RubyLLM::Tool::Halt)
+    expect(later_result.content).to include('Control has been transferred')
+    expect(later_tool.calls).to eq(0)
+    expect(events.count { |event| event.first == :start }).to eq(1)
+    expect(requested_calls.map(&:first)).to eq([handoff_tool.name])
+    expect(context_wrapper.context[:captain_v2_current_tool_batch_id]).to eq('handoff-batch')
+  end
+
+  [Captain::Tools::HandoffTool, Captain::Tools::ResolveConversationTool].each do |terminal_tool_class|
+    it "permits #{terminal_tool_class.name} after a completed queue exceeded the ordinary call budget" do
+      2.times do |task_index|
+        3.times do |tool_index|
+          guard = Captain::Runtime::ToolLoopGuard.new(context_wrapper, "read_#{tool_index}", task_scope: "task:#{task_index}")
+          3.times { |index| expect(guard.register_request(signature: index.to_s)).to be_nil }
+        end
+      end
+      assistant = create(:captain_assistant)
+      conversation = create(:conversation, account: assistant.account, status: :pending)
+      context_wrapper.context[:state].merge!(account_id: assistant.account_id, assistant_id: assistant.id,
+                                             conversation: { id: conversation.id })
+      terminal_tool = terminal_tool_class.new(assistant)
+      expect(terminal_tool).to receive(:perform).and_return(Captain::ToolResult.success(message: 'control applied'))
+
+      result = described_class.new(terminal_tool, context_wrapper).call(reason: 'All customer requests were processed')
+
+      expect(result).not_to be_a(RubyLLM::Tool::Halt)
+      expect(result.to_s).to include('control applied')
+    end
+  end
+
+  it 'stops a later action in the same sequential batch after a human handoff' do
+    assistant = create(:captain_assistant, config: { 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['handoff'] } } })
+    conversation = create(:conversation, account: assistant.account)
+    context_wrapper.context[:state].merge!(account_id: assistant.account_id, assistant_id: assistant.id, conversation: { id: conversation.id })
+    context_wrapper.context[:captain_v2_current_tool_batch_id] = 'human-handoff-batch'
+    handoff_tool = Captain::Tools::HandoffTool.new(assistant)
+    handoff_wrapper = described_class.new(handoff_tool, context_wrapper)
+    later_tool = ToolWrapperSpecMutatingTool.new
+    later_wrapper = described_class.new(later_tool, context_wrapper)
+
+    handoff_result = handoff_wrapper.call(reason: 'Customer requested a human')
+    later_result = later_wrapper.call(title: 'must not create after handoff')
+
+    expect(handoff_result).to be_a(RubyLLM::Tool::Halt)
+    expect(context_wrapper.context[:pending_human_handoff]).to include(reason: 'Customer requested a human')
+    expect(later_result).to be_a(RubyLLM::Tool::Halt)
+    expect(later_result.content).to include('Control has been transferred')
+    expect(later_tool.calls).to eq(0)
+    expect(events.count { |event| event.first == :start }).to eq(1)
+    expect(requested_calls.map(&:first)).to eq([handoff_tool.name])
+    expect(context_wrapper.context[:captain_v2_current_tool_batch_id]).to eq('human-handoff-batch')
+  end
+
   it 'reuses successful mutating tool results for repeated identical calls instead of executing twice' do
     mutating_tool = ToolWrapperSpecMutatingTool.new
     mutating_wrapper = described_class.new(mutating_tool, context_wrapper)
@@ -853,6 +919,83 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     expect_tool_error(mutating_wrapper.call(**arguments), 'Temporary provider timeout', retryable: true)
     expect(mutating_wrapper.call(**arguments)).to eq('created Retry-safe action')
     expect(mutating_tool).to have_received(:perform).twice
+  end
+
+  describe 'correcting a mutation rejected before execution' do
+    let(:assistant) { build_stubbed(:captain_assistant) }
+    let(:agent_session) { Captain::Conversation::AgentSession.new(entry: assistant) }
+    let(:mutating_tool) { ToolWrapperSpecMutatingTool.new }
+    let(:mutating_wrapper) { described_class.new(mutating_tool, context_wrapper) }
+    let(:unexecuted_failure) do
+      Captain::ToolResult.failure(
+        error: 'The appointment date is invalid', retryable: false,
+        audit: { failure_stage: 'tool_arguments', mutation_executed: false }
+      ).deep_stringify_keys
+    end
+
+    before do
+      context_wrapper.context[:state].merge!(assistant_id: assistant.id, account_id: assistant.account_id)
+      context_wrapper.context[:agent_session] = agent_session
+      context_wrapper.context[:agent_request_id] = 'scheduled-request'
+      context_wrapper.context[:captain_v2_current_tool_batch_id] = 'invalid-arguments-batch'
+    end
+
+    it 'normalizes the failure audit, releases the reservation, and executes corrected arguments in the next batch' do
+      allow(mutating_tool).to receive(:perform).and_return(
+        unexecuted_failure,
+        Captain::ToolResult.success(message: 'Appointment created')
+      )
+
+      expect_tool_error(mutating_wrapper.call(title: 'Invalid date'), 'The appointment date is invalid', retryable: false)
+      expect(agent_session.read.fetch('operations')).to be_empty
+      context_wrapper.context[:captain_v2_current_tool_batch_id] = 'corrected-arguments-batch'
+
+      corrected_result = mutating_wrapper.call('name' => mutating_tool.name, 'parameters' => { 'title' => 'Verified date' })
+
+      expect(corrected_result).to eq('Appointment created')
+      expect(mutating_tool).to have_received(:perform).with(anything, title: 'Invalid date').once
+      expect(mutating_tool).to have_received(:perform).with(anything, title: 'Verified date').once
+      expect(agent_session.read.fetch('operations').values).to contain_exactly(
+        include('status' => 'finished', 'result' => include('success' => true, 'message' => 'Appointment created'))
+      )
+    end
+
+    it 'blocks the same normalized invalid arguments even after releasing the operation reservation' do
+      allow(mutating_tool).to receive(:perform).and_return(unexecuted_failure)
+      mutating_wrapper.call(title: 'Invalid date')
+      context_wrapper.context[:captain_v2_current_tool_batch_id] = 'repeated-arguments-batch'
+
+      repeated_result = mutating_wrapper.call('name' => mutating_tool.name, 'parameters' => { 'title' => 'Invalid date' })
+
+      expect(repeated_result).to be_a(RubyLLM::Tool::Halt)
+      expect_tool_error(repeated_result, described_class::DUPLICATE_FAILED_TOOL_ERROR, retryable: false)
+      expect(mutating_tool).to have_received(:perform).once
+      expect(agent_session.read.fetch('operations')).to be_empty
+    end
+
+    {
+      'an unknown provider outcome' => {},
+      'an action that already executed' => { failure_stage: 'tool_arguments', mutation_executed: true },
+      'a failure outside argument validation' => { failure_stage: 'provider_request', mutation_executed: false },
+      'an argument failure without execution evidence' => { failure_stage: 'tool_arguments' },
+      'an unexecuted failure without its validation stage' => { mutation_executed: false }
+    }.each do |outcome, audit|
+      it "blocks alternate arguments after #{outcome}" do
+        failure = Captain::ToolResult.failure(error: 'Action could not be confirmed', retryable: false, audit: audit).deep_stringify_keys
+        allow(mutating_tool).to receive(:perform).and_return(failure)
+        mutating_wrapper.call(title: 'First attempt')
+        context_wrapper.context[:captain_v2_current_tool_batch_id] = 'alternate-arguments-batch'
+
+        alternate_result = mutating_wrapper.call(title: 'Alternate attempt')
+
+        expect(alternate_result).to be_a(RubyLLM::Tool::Halt)
+        expect_tool_error(
+          alternate_result, 'This action tool already ran in the current assistant run. Do not retry it with alternate arguments.', retryable: false
+        )
+        expect(mutating_tool).to have_received(:perform).once
+        expect(agent_session.read.fetch('operations').values).to contain_exactly(include('status' => 'finished'))
+      end
+    end
   end
 
   it 'blocks a second mutating tool call in the same assistant tool-call batch' do

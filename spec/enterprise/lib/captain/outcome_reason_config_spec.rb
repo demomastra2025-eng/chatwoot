@@ -22,7 +22,7 @@ RSpec.describe Captain::OutcomeReasonConfig do
 
     it 'keeps the limit of reasons when "other" is moved out of the middle of a full list' do
       reason = ->(index) { { 'id' => "reason_#{index}", 'label' => "Reason #{index}" } }
-      reasons = (1..5).map(&reason) + [{ 'id' => 'other', 'label' => 'Other' }] + (6..19).map(&reason)
+      reasons = (1..5).map(&reason) + [{ 'id' => 'other', 'label' => 'Other' }] + (6...described_class::MAX_REASONS_PER_TYPE).map(&reason)
 
       completion = described_class.normalize_settings('completion_reasons' => reasons)['completion_reasons']
 
@@ -56,7 +56,39 @@ RSpec.describe Captain::OutcomeReasonConfig do
 
       context = described_class.new(assistant).prompt_context
 
-      expect(context['handoff'].pluck('id')).to eq(%w[billing technical other])
+      expect(context['handoff'].pluck('id').last(3)).to eq(%w[billing technical other])
+    end
+  end
+
+  describe 'platform reasons' do
+    let(:assistant) { create(:captain_assistant, account: create(:account, locale: 'ru')) }
+
+    it 'reserves room for built-ins while preserving the former maximum of saved custom reasons' do
+      custom = (1..30).map { |index| { 'id' => "custom_#{index}", 'label' => "Custom #{index}" } }
+      assistant.update!(config: { 'outcome_reason_settings' => { 'handoff_reasons' => custom } })
+      reasons = described_class.new(assistant).normalized_settings['handoff_reasons']
+      expect(reasons.size).to eq(described_class::MAX_REASONS_PER_TYPE)
+      expect(reasons.map { |reason| reason['id'] }).to include(*described_class::BUILTIN_IDS['handoff'])
+      expect(reasons.select { |reason| reason['removable'] }.pluck('id')).to eq((1..20).map { |index| "custom_#{index}" })
+    end
+
+    it 'restores standard reasons and translates Other without overwriting custom labels' do
+      assistant.update!(config: { 'outcome_reason_settings' => {
+                          'handoff_reasons' => [{ 'id' => 'other', 'label' => 'Other' }, { 'id' => 'custom_reason', 'label' => 'Своя причина' }]
+                        } })
+      reasons = described_class.new(assistant).normalized_settings['handoff_reasons']
+      expect(reasons.find { |reason| reason['id'] == 'other' }).to include('label' => 'Другое', 'locked' => true, 'removable' => false)
+      expect(reasons.find { |reason| reason['id'] == 'customer_requested_human' }).to include('removable' => false)
+      expect(reasons.find { |reason| reason['id'] == 'custom_reason' }).to include('label' => 'Своя причина', 'removable' => true)
+    end
+
+    it 'forces FAQ miss on only when both FAQ and human handoff are available' do
+      assistant.update!(config: { 'feature_faq' => true, 'handoff_enabled' => true,
+                                  'outcome_reason_settings' => { 'handoff_reasons' => [{ 'id' => 'faq_no_answer', 'label' => 'FAQ', 'active' => false }] } })
+      reason = -> { described_class.new(assistant).normalized_settings['handoff_reasons'].find { |entry| entry['id'] == 'faq_no_answer' } }
+      expect(reason.call).to include('active' => true, 'locked' => true, 'removable' => false)
+      assistant.update!(config: assistant.config.merge('feature_faq' => false))
+      expect(reason.call).to include('active' => false, 'locked' => false, 'removable' => false)
     end
   end
 end

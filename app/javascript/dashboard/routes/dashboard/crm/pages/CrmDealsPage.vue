@@ -659,18 +659,6 @@ const collectClosingReasonsForStage = async ({ targetStage, deal = null }) => {
   );
 };
 
-const shouldPromptForTransitionReason = stage =>
-  normalizedTextValues(stage?.transitionReasonOptions).length > 0;
-
-const collectTransitionReasonForStage = async ({ targetStage }) => {
-  if (!targetStage || !shouldPromptForTransitionReason(targetStage)) return '';
-
-  return (
-    closingReasonDialogRef.value?.open({ kind: 'transition', targetStage }) ??
-    ''
-  );
-};
-
 const isStageReasonSelectionCancelled = value =>
   value === null || value === closingReasonDialogRef.value?.CANCELLED;
 
@@ -2637,7 +2625,6 @@ const saveDeal = async () => {
     !selectedDeal.value ||
     Number(form.stageId) !== Number(selectedDeal.value.stageId);
 
-  let transitionReason = '';
   if (stageChanging) {
     const closingReasons = await collectClosingReasonsForStage({
       deal: selectedDeal.value,
@@ -2647,10 +2634,6 @@ const saveDeal = async () => {
     if (isStageReasonSelectionCancelled(closingReasons)) return;
 
     form.closingReasons = closingReasons;
-    if (selectedDeal.value) {
-      transitionReason = await collectTransitionReasonForStage({ targetStage });
-      if (isStageReasonSelectionCancelled(transitionReason)) return;
-    }
   }
 
   ui.isSaving = true;
@@ -2700,7 +2683,6 @@ const saveDeal = async () => {
           closing_reasons: form.closingReasons,
           lock_version: deal.lockVersion,
           stage_id: Number(form.stageId),
-          ...(transitionReason ? { transition_reason: transitionReason } : {}),
         });
         if (!isCurrentEditor()) return;
         deal = normalizePayload(transitionResponse.data);
@@ -3422,7 +3404,6 @@ const handleDealStageChange = async ({ deal, stageId, position }) => {
 
   const stageChanging = Number(currentDeal.stageId) !== nextStageId;
   let closingReasons;
-  let transitionReason = '';
   try {
     const targetStage = findStageById(nextStageId);
     closingReasons = stageChanging
@@ -3434,17 +3415,13 @@ const handleDealStageChange = async ({ deal, stageId, position }) => {
         deals.value = [...deals.value];
         return;
       }
-      transitionReason = await collectTransitionReasonForStage({ targetStage });
     }
   } catch (error) {
     pendingDealStageIds.delete(dealId);
     throw error;
   }
 
-  if (
-    isStageReasonSelectionCancelled(closingReasons) ||
-    isStageReasonSelectionCancelled(transitionReason)
-  ) {
+  if (isStageReasonSelectionCancelled(closingReasons)) {
     pendingDealStageIds.delete(dealId);
     deals.value = [...deals.value];
     return;
@@ -3481,9 +3458,6 @@ const handleDealStageChange = async ({ deal, stageId, position }) => {
             lock_version: currentDeal.lockVersion,
             position: nextPosition || undefined,
             stage_id: nextStageId,
-            ...(transitionReason
-              ? { transition_reason: transitionReason }
-              : {}),
           });
     const updatedDeal = normalizePayload(response.data);
     if (dealStageMutationTokens.get(currentDeal.id) !== mutationToken) {
@@ -3589,12 +3563,6 @@ const overridePendingStageEntry = async () => {
     return;
   }
 
-  const targetStage = findStageById(pendingStageEntry.value.stageId);
-  const transitionReason = await collectTransitionReasonForStage({
-    targetStage,
-  });
-  if (isStageReasonSelectionCancelled(transitionReason)) return;
-
   const editorGeneration = dealEditorGeneration;
   const editorDealId = Number(selectedDeal.value.id);
   const isCurrentEditor = () =>
@@ -3608,7 +3576,6 @@ const overridePendingStageEntry = async () => {
       override_reason: stageRuleOverrideReason.value.trim(),
       position: pendingStageEntry.value.position,
       stage_id: pendingStageEntry.value.stageId,
-      ...(transitionReason ? { transition_reason: transitionReason } : {}),
     });
     const updatedDeal = await applyDealMutation(
       normalizePayload(response.data),
@@ -3694,7 +3661,6 @@ const performDealLifecycleAction = async action => {
     editorGeneration === dealEditorGeneration &&
     Number(selectedDeal.value?.id) === editorDealId;
   let closingReasons = [];
-  let transitionReason = '';
   let transitionTargetStage = null;
   if (action === 'closeLost') {
     const targetStage = lifecycleStageByOutcome('lost');
@@ -3702,19 +3668,6 @@ const performDealLifecycleAction = async action => {
     if (isStageReasonSelectionCancelled(closingReasons)) return;
   } else if (action === 'reopen') {
     transitionTargetStage = lifecycleReopenStage();
-    transitionReason = await collectTransitionReasonForStage({
-      targetStage: transitionTargetStage,
-    });
-    if (isStageReasonSelectionCancelled(transitionReason)) return;
-  } else if (action === 'undo') {
-    const undoEvent = latestUndoableTransition.value;
-    transitionTargetStage = findStageById(
-      Number(undoEvent?.beforeData?.stageId)
-    );
-    transitionReason = await collectTransitionReasonForStage({
-      targetStage: transitionTargetStage,
-    });
-    if (isStageReasonSelectionCancelled(transitionReason)) return;
   }
 
   const payload = {
@@ -3725,7 +3678,6 @@ const performDealLifecycleAction = async action => {
   if (action === 'reopen' && transitionTargetStage?.id)
     payload.stage_id = transitionTargetStage.id;
   if (action === 'undo') payload.event_id = latestUndoableTransition.value?.id;
-  if (transitionReason) payload.transition_reason = transitionReason;
 
   ui.isSaving = true;
   try {

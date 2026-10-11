@@ -11,13 +11,14 @@ class Llm::CaptainResponseContentNormalizer
       return content unless content.respond_to?(:with_indifferent_access)
 
       payload = content.with_indifferent_access
+      # Outcome reasons belong to the classification pipeline.
+      payload.delete('handoff_status_reason')
+      payload.delete('handoff_outcome_reason_id')
       payload['response_mode'] = normalized_response_mode(payload['response_mode'])
       apply_reasoning_default!(payload)
       payload['artifact_ids'] = normalized_artifact_ids(payload['artifact_ids'])
       apply_text_default!(payload, 'handoff_message')
       apply_text_default!(payload, 'handoff_reason')
-      apply_text_default!(payload, 'handoff_status_reason')
-      apply_text_default!(payload, 'handoff_outcome_reason_id')
       payload
     end
 
@@ -34,9 +35,7 @@ class Llm::CaptainResponseContentNormalizer
         reasoning: DEFAULT_REASONING,
         artifact_ids: [],
         handoff_message: '',
-        handoff_reason: '',
-        handoff_status_reason: '',
-        handoff_outcome_reason_id: ''
+        handoff_reason: ''
       }
     end
 

@@ -183,7 +183,7 @@ onBeforeUnmount(() => {
       {{ t('REPORTS.LEADS.EVENTS_NOTE') }}
     </p>
 
-    <section class="rounded-xl border border-n-weak bg-n-surface-1 p-4">
+    <section class="border-t border-n-weak pt-4">
       <h2 class="mb-3 mt-0 text-sm font-semibold text-n-slate-12">
         {{ t('REPORTS.LEADS.REFERRALS_TITLE') }}
       </h2>
@@ -273,7 +273,7 @@ onBeforeUnmount(() => {
       </p>
     </section>
 
-    <section class="rounded-xl border border-n-weak bg-n-surface-1 p-4">
+    <section class="border-t border-n-weak pt-4">
       <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
         <h2 class="m-0 text-sm font-semibold text-n-slate-12">
           {{ t('REPORTS.LEADS.FORM_SUBMISSIONS_TITLE') }}

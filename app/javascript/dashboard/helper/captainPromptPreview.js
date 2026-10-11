@@ -19,10 +19,5 @@ export const normalizePromptPreviewText = value => {
   const jsonDecodedText = parseJsonEncodedString(rawText);
   const text = jsonDecodedText ?? rawText;
 
-  return text
-    .replace(/\\r\\n/g, '\n')
-    .replace(/\\n/g, '\n')
-    .replace(/\\t/g, '\t')
-    .replace(/\\"/g, '"')
-    .replace(/\\\//g, '/');
+  return text.replace(/\r\n/g, '\n');
 };

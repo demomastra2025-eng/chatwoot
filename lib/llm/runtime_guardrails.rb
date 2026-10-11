@@ -44,9 +44,15 @@ class Llm::RuntimeGuardrails
     ['deepseek_control_token_injection', /<｜(?:end▁of▁sentence|begin▁of▁sentence)｜>/i]
   ].freeze
 
+  API_KEY_ASSIGNMENT_PATTERN = /
+    (?<![\w"'])
+    (?<key_quote>["']?)\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret|password|authorization)\b\k<key_quote>
+    \s*(?:=>|=|:)\s*["']?[^\s"'&,;{}\[\]<>]{8,}
+  /ix
+
   SENSITIVE_INFO_PATTERNS = [
     ['bearer_token', /\bbearer\s+[a-z0-9._\-]{12,}/i],
-    ['api_key_assignment', /\b(api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret|password|authorization)\s*[:=]\s*["']?[^\s"'&,;]{8,}/i],
+    ['api_key_assignment', API_KEY_ASSIGNMENT_PATTERN],
     ['openrouter_or_openai_key', /\bsk-(or-)?[a-z0-9_-]{20,}\b/i],
     ['aws_access_key', /\bAKIA[0-9A-Z]{16}\b/],
     ['private_key_block', /-----BEGIN\s+(RSA\s+|EC\s+|OPENSSH\s+|DSA\s+)?PRIVATE\s+KEY-----/i]
@@ -122,7 +128,7 @@ class Llm::RuntimeGuardrails
         content.filter_map { |part| text_part(part) }.join("\n")
       else
         content.to_s
-      end.to_s.first(Llm::ModerationService::MAX_CONTENT_LENGTH)
+      end.to_s
     end
 
     def text_part(part)

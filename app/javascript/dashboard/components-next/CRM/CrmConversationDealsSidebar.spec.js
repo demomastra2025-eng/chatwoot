@@ -345,6 +345,37 @@ it('rebases and retries when stage transition conflicts after update succeeds', 
   expect(state.dealConflict.active).toBe(false);
 });
 
+it('moves an ordinary stage without prompting for legacy transition reasons', async () => {
+  const target = referencesStore.pipelines[0].stages[1];
+  const originalTarget = { ...target };
+  Object.assign(target, {
+    outcome: 'open',
+    transitionReasonRequired: true,
+    transitionReasonOptions: ['Needs documents'],
+  });
+  try {
+    CrmDealsAPI.update.mockResolvedValueOnce({
+      data: { payload: dealFixture({ lockVersion: 2 }) },
+    });
+    CrmDealsAPI.transitionStage.mockResolvedValueOnce({
+      data: { payload: dealFixture({ stageId: 101, lockVersion: 3 }) },
+    });
+    const wrapper = await mountWithDeals([dealFixture()]);
+    const state = wrapper.vm.$.setupState;
+    state.forms['deal-1'].stageId = 101;
+    await state.saveDeal(state.accordionItems[0]);
+    await flushPromises();
+    expect(CrmDealsAPI.transitionStage).toHaveBeenCalledWith(1, {
+      closing_reasons: [],
+      lock_version: 2,
+      stage_id: 101,
+    });
+    expect(state.deals[0].stageId).toBe(101);
+  } finally {
+    referencesStore.pipelines[0].stages[1] = originalTarget;
+  }
+});
+
 it('does not treat a non-stale HTTP 409 as an editable conflict', async () => {
   const duplicateError = new Error('Duplicate external reference');
   duplicateError.response = {

@@ -5,6 +5,24 @@ export const SYSTEM_REASON_ID = 'other';
 
 export const isSystemReason = reason => reason?.id === SYSTEM_REASON_ID;
 
+export const BUILTIN_REASON_IDS = new Set([
+  'goal_achieved',
+  'question_resolved',
+  'customer_declined',
+  'no_response',
+  'customer_requested_human',
+  'low_confidence',
+  'manual_action_required',
+  'complaint_or_conflict',
+  'tool_or_policy_limit',
+  'faq_no_answer',
+  SYSTEM_REASON_ID,
+]);
+
+export const isBuiltInReason = reason => BUILTIN_REASON_IDS.has(reason?.id);
+export const isReasonLocked = reason =>
+  isSystemReason(reason) || reason?.locked === true;
+
 // User-defined reasons keep the order they already have, the system reason is
 // always last. Array#filter is stable, so no other reordering happens.
 export const sortReasons = reasons => {

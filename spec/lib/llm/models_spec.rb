@@ -54,12 +54,63 @@ RSpec.describe Llm::Models do
       expect(described_class.features.dig('image_recognition', 'default')).to eq('openai/gpt-6-luna')
       expect(described_class.features.dig('audio_transcription', 'default')).to eq('openai/gpt-4o-mini-transcribe')
       expect(described_class.features.dig('moderation', 'default')).to eq('openai/gpt-oss-safeguard-20b')
+      expect(described_class.features.dig('outcome_classification', 'default')).to eq('microsoft/microsoft-decision-1')
+      expect(described_class.features.dig('custom_guardrail', 'default')).to eq('openai/gpt-6-luna')
+    end
+  end
+
+  describe 'native Decision models' do
+    before do
+      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return({})
+      allow(Llm::OpenRouterEndpointCatalog).to receive(:endpoint_metadata).and_return({})
+    end
+
+    it 'selects the native classifier default without changing the independent Luna guardrail default' do
+      expect(described_class.default_model_for('outcome_classification')).to eq('microsoft/microsoft-decision-1')
+      expect(described_class.default_model_for('custom_guardrail')).to eq('openai/gpt-6-luna')
+    end
+
+    it 'keeps native transport metadata authoritative even when a refreshed chat catalog claims chat capabilities' do
+      model = 'microsoft/microsoft-decision-1'
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+        model => { 'provider' => 'openrouter', 'type' => 'chat', 'capabilities' => %w[structured_output tool_calling tool_choice] }
+      )
+      expect(described_class).not_to receive(:registry_info_for).with(model)
+
+      expect(described_class.models[model]).to include('type' => 'decision')
+      expect(described_class.model_config(model)).to include('type' => 'decision')
+      expect(described_class.capabilities_for(model)).to eq(['decision_classification'])
+      expect(described_class.supports_structured_output?(model)).to be(false)
+      expect(described_class.supports_tool_calling?(model)).to be(false)
+    end
+
+    it 'lists approved Decision models only for outcome classification' do
+      models = %w[microsoft/microsoft-decision-1 microsoft/microsoft-decision-1-20261009]
+
+      expect(described_class.models_for('outcome_classification')).to include(*models)
+      (described_class.feature_keys - ['outcome_classification']).each do |feature|
+        expect(described_class.models_for(feature)).not_to include(*models)
+        models.each { |model| expect(described_class.model_allowed_for_feature?(feature, model)).to be(false) }
+      end
+    end
+
+    it 'rejects a catalog Decision model outside the exact native allowlist' do
+      model = 'vendor/unapproved-decision'
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+        model => { 'provider' => 'openrouter', 'type' => 'decision', 'capabilities' => ['decision_classification'] }
+      )
+
+      expect(described_class.model_allowed_for_feature?('outcome_classification', model)).to be(false)
+      expect(described_class.models_for('outcome_classification')).not_to include(model)
     end
   end
 
   describe 'the short model list curated by the platform' do
     describe '.configured_model_allowlist' do
       it 'is nil while the platform has not curated a list' do
+        upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', '')
+
         expect(described_class.configured_model_allowlist).to be_nil
       end
 
@@ -82,6 +133,8 @@ RSpec.describe Llm::Models do
 
     describe '.model_selectable_for_feature?' do
       it 'restricts only the assistant model, and only while a list is curated' do
+        upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', '')
+
         expect(described_class.model_selectable_for_feature?('assistant', 'gpt-5.1')).to be true
 
         upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', '["openai/gpt-5.4"]')

@@ -495,7 +495,9 @@ class Conversation < ApplicationRecord
   def inbox_captain_assistant_present?
     return false unless Object.const_defined?('CaptainInbox')
 
-    CaptainInbox.exists?(inbox_id: inbox_id)
+    CaptainInbox.joins(:captain_assistant)
+                .where(inbox_id: inbox_id, captain_assistants: { account_id: account_id, active: true })
+                .exists?
   end
 
   def ai_transfer_changed_attributes

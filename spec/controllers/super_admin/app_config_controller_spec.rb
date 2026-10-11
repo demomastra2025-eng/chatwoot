@@ -175,6 +175,8 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
             CAPTAIN_AUDIO_TRANSCRIPTION_MODEL: 'openai/gpt-4o-mini-transcribe',
             CAPTAIN_IMAGE_RECOGNITION_MODEL: 'openai/gpt-5.4-mini',
             CAPTAIN_MODERATION_MODEL: 'openai/gpt-oss-safeguard-20b',
+            CAPTAIN_CUSTOM_GUARDRAIL_MODEL: 'openai/gpt-6-luna',
+            CAPTAIN_OUTCOME_CLASSIFIER_MODEL: 'microsoft/microsoft-decision-1',
             CAPTAIN_EMBEDDING_MODEL: 'text-embedding-3-small',
             CAPTAIN_LABEL_SUGGESTION_MODEL: 'gpt-5.4-mini',
             CAPTAIN_ASSISTANT_MODEL_ALLOWLIST: '["openai/gpt-6-luna", " openai/gpt-5.6-luna ", "openai/gpt-6-luna"]'
@@ -211,6 +213,8 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
           expect(InstallationConfig.find_by(name: 'CAPTAIN_AUDIO_TRANSCRIPTION_MODEL')&.value).to eq('openai/gpt-4o-mini-transcribe')
           expect(InstallationConfig.find_by(name: 'CAPTAIN_IMAGE_RECOGNITION_MODEL')&.value).to eq('openai/gpt-5.4-mini')
           expect(InstallationConfig.find_by(name: 'CAPTAIN_MODERATION_MODEL')&.value).to eq('openai/gpt-oss-safeguard-20b')
+          expect(InstallationConfig.find_by(name: 'CAPTAIN_CUSTOM_GUARDRAIL_MODEL')&.value).to eq('openai/gpt-6-luna')
+          expect(InstallationConfig.find_by(name: 'CAPTAIN_OUTCOME_CLASSIFIER_MODEL')&.value).to eq('microsoft/microsoft-decision-1')
           expect(InstallationConfig.find_by(name: 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')&.value)
             .to eq('["openai/gpt-6-luna","openai/gpt-5.6-luna"]')
         end
@@ -221,6 +225,49 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
           expect(response).to redirect_to(super_admin_settings_path)
           expect(InstallationConfig.find_by(name: 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')&.value)
             .to eq('["openai/gpt-6-luna","openai/gpt-5.6-luna"]')
+        end
+
+        it 'renders both independent slots and saves a changed guardrail model on the enterprise plan' do
+          allow(ChatwootHub).to receive(:pricing_plan).and_return('enterprise')
+          upsert_installation_config('CAPTAIN_CUSTOM_GUARDRAIL_MODEL', 'openai/gpt-6-luna')
+          upsert_installation_config('CAPTAIN_OUTCOME_CLASSIFIER_MODEL', 'microsoft/microsoft-decision-1')
+
+          get '/super_admin/app_config?config=captain'
+
+          expect(response).to have_http_status(:success)
+          expect(response.body).to include(
+            'name="app_config[CAPTAIN_CUSTOM_GUARDRAIL_MODEL]"',
+            'name="app_config[CAPTAIN_OUTCOME_CLASSIFIER_MODEL]"'
+          )
+
+          post '/super_admin/app_config?config=captain',
+               params: { app_config: { CAPTAIN_CUSTOM_GUARDRAIL_MODEL: 'openai/gpt-5.6-luna' } }
+
+          expect(response).to redirect_to(super_admin_settings_path)
+          expect(InstallationConfig.find_by(name: 'CAPTAIN_CUSTOM_GUARDRAIL_MODEL')&.value).to eq('openai/gpt-5.6-luna')
+          expect(InstallationConfig.find_by(name: 'CAPTAIN_OUTCOME_CLASSIFIER_MODEL')&.value).to eq('microsoft/microsoft-decision-1')
+        end
+
+        it 'allows the platform to explicitly select the served dated Decision model for outcomes' do
+          post '/super_admin/app_config?config=captain',
+               params: { app_config: { CAPTAIN_OUTCOME_CLASSIFIER_MODEL: 'microsoft/microsoft-decision-1-20261009' } }
+
+          expect(response).to redirect_to(super_admin_settings_path)
+          expect(InstallationConfig.find_by(name: 'CAPTAIN_OUTCOME_CLASSIFIER_MODEL')&.value)
+            .to eq('microsoft/microsoft-decision-1-20261009')
+        end
+
+        it 'rejects Decision as the custom guardrail model and retains both explicit existing settings' do
+          upsert_installation_config('CAPTAIN_CUSTOM_GUARDRAIL_MODEL', 'openai/gpt-6-luna')
+          upsert_installation_config('CAPTAIN_OUTCOME_CLASSIFIER_MODEL', 'openai/gpt-5.4-mini')
+
+          post '/super_admin/app_config?config=captain',
+               params: { app_config: { CAPTAIN_CUSTOM_GUARDRAIL_MODEL: 'microsoft/microsoft-decision-1' } }
+
+          expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
+          expect(flash[:alert]).to include('CAPTAIN_CUSTOM_GUARDRAIL_MODEL', 'microsoft/microsoft-decision-1')
+          expect(InstallationConfig.find_by(name: 'CAPTAIN_CUSTOM_GUARDRAIL_MODEL')&.value).to eq('openai/gpt-6-luna')
+          expect(InstallationConfig.find_by(name: 'CAPTAIN_OUTCOME_CLASSIFIER_MODEL')&.value).to eq('openai/gpt-5.4-mini')
         end
 
         it 'clears a model slot and the short list when they are submitted blank' do
@@ -247,13 +294,16 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
         end
 
         it 'rejects a short list that is not a JSON array of model ids' do
+          original_value = '["openai/gpt-6-luna","openai/gpt-5.6-luna"]'
+          upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', original_value)
+
           ['{not json', '{"model": "openai/gpt-6-luna"}', '[1, 2]'].each do |value|
             post '/super_admin/app_config?config=captain', params: { app_config: { CAPTAIN_ASSISTANT_MODEL_ALLOWLIST: value } }
 
             expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
             expect(flash[:alert]).to include('JSON')
           end
-          expect(InstallationConfig.find_by(name: 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')&.value).to be_blank
+          expect(InstallationConfig.find_by(name: 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')&.value).to eq(original_value)
         end
 
         it 'rejects a short list that is not short' do
@@ -268,6 +318,8 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
 
         it 'rejects a short list without the default AI agent model' do
           upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
+          upsert_installation_config('CAPTAIN_DEFAULT_MODEL', 'openai/gpt-6-luna')
+          upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', '["openai/gpt-6-luna","openai/gpt-5.6-luna"]')
           default_model = Llm::Config.model_for(feature: 'assistant', fallback: nil)
 
           post '/super_admin/app_config?config=captain', params: { app_config: { CAPTAIN_ASSISTANT_MODEL_ALLOWLIST: '["openai/gpt-5.6-luna"]' } }
@@ -275,7 +327,7 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
           expect(default_model).to eq('openai/gpt-6-luna')
           expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
           expect(flash[:alert]).to include(default_model)
-          expect(Llm::Models.configured_model_allowlist).to be_nil
+          expect(Llm::Models.configured_model_allowlist).to eq(%w[openai/gpt-6-luna openai/gpt-5.6-luna])
         end
 
         it 'lets the platform move every model of the default at once and back to Luna 5.6, which stays on the short list' do
@@ -290,6 +342,7 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
 
         it 'rejects a default model that is unknown, unfit for the agent, editor and copilot, or outside the short list' do
           upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', '["openai/gpt-6-luna"]')
+          upsert_installation_config('CAPTAIN_DEFAULT_MODEL', 'openai/gpt-6-luna')
 
           ['vendor/not-in-catalog', 'openai/gpt-4o-mini-transcribe', 'openai/gpt-5.6-luna'].each do |value|
             post '/super_admin/app_config?config=captain', params: { app_config: { CAPTAIN_DEFAULT_MODEL: value } }
@@ -297,17 +350,21 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
             expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
             expect(flash[:alert]).to include('CAPTAIN_DEFAULT_MODEL')
           end
-          expect(InstallationConfig.find_by(name: 'CAPTAIN_DEFAULT_MODEL')&.value).to be_blank
+          expect(InstallationConfig.find_by(name: 'CAPTAIN_DEFAULT_MODEL')&.value).to eq('openai/gpt-6-luna')
         end
 
         it 'rejects a model slot whose model is unknown or unfit for the feature' do
+          upsert_installation_config('CAPTAIN_AUDIO_TRANSCRIPTION_MODEL', 'openai/gpt-4o-mini-transcribe')
+          upsert_installation_config('CAPTAIN_IMAGE_RECOGNITION_MODEL', 'openai/gpt-5.4-mini')
+
           post '/super_admin/app_config?config=captain', params: {
             app_config: { CAPTAIN_AUDIO_TRANSCRIPTION_MODEL: 'openai/gpt-5.4', CAPTAIN_IMAGE_RECOGNITION_MODEL: 'vendor/not-in-catalog' }
           }
 
           expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
           expect(flash[:alert]).to include('CAPTAIN_AUDIO_TRANSCRIPTION_MODEL', 'CAPTAIN_IMAGE_RECOGNITION_MODEL')
-          expect(InstallationConfig.find_by(name: 'CAPTAIN_AUDIO_TRANSCRIPTION_MODEL')&.value).to be_blank
+          expect(InstallationConfig.find_by(name: 'CAPTAIN_AUDIO_TRANSCRIPTION_MODEL')&.value).to eq('openai/gpt-4o-mini-transcribe')
+          expect(InstallationConfig.find_by(name: 'CAPTAIN_IMAGE_RECOGNITION_MODEL')&.value).to eq('openai/gpt-5.4-mini')
         end
       end
 

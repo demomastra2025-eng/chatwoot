@@ -88,7 +88,6 @@ Rails.application.routes.draw do
               collection do
                 get :tools
                 get :context_fields
-                get :skills
               end
               resources :inboxes, only: [:index, :create, :destroy], param: :inbox_id
               resources :scenarios
@@ -124,7 +123,7 @@ Rails.application.routes.draw do
                 delete :oauth_disconnect
               end
             end
-            resources :documents, only: [:index, :show, :create, :destroy] do
+            resources :documents, only: [:index, :show, :create, :update, :destroy] do
               collection do
                 post :preview
               end
@@ -562,6 +561,7 @@ Rails.application.routes.draw do
             collection do
               get :calls
               get :leads
+              get :ai_agents
             end
           end
 

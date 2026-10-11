@@ -10,6 +10,10 @@ class CrmPipelinesAPI extends ApiClient {
     return axios.get(this.url, { params });
   }
 
+  saveSettings(pipelineId, payload) {
+    return axios.patch(`${this.url}/${pipelineId}`, payload);
+  }
+
   createStage(pipelineId, data) {
     return axios.post(`${this.url}/${pipelineId}/stages`, data);
   }

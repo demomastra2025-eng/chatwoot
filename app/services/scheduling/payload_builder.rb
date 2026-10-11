@@ -81,6 +81,8 @@ module Scheduling::PayloadBuilder
         command: appointment.medelement_provider_command_receipt
       )
       payload[:provider_command_receipt] = receipt if receipt.present?
+      crm_link_result = appointment.custom_attributes.to_h[Crm::Appointments::LinkService::RESULT_ATTRIBUTE]
+      payload[:crm_link_result] = crm_link_result if crm_link_result.present?
       cancellation_mode = medelement_cancellation_mode(appointment, medelement_cancellation_modes)
       payload[:medelement_cancellation_mode] = cancellation_mode if cancellation_mode
     end

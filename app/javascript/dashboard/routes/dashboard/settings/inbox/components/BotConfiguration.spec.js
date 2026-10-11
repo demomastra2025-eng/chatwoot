@@ -252,7 +252,7 @@ describe('Inbox BotConfiguration Captain settings', () => {
     expect(mockState.dispatch).toHaveBeenCalledWith('captainAssistants/get');
   });
 
-  it('connects the concrete inbox when an assistant is selected', async () => {
+  it('keeps the main agent and mode as a local draft until Save', async () => {
     const wrapper = buildWrapper({ inbox: mockState.inbox });
     await flushPromises();
 
@@ -263,15 +263,27 @@ describe('Inbox BotConfiguration Captain settings', () => {
       .get('[data-testid="captain-inbox-assistant-option-101"]')
       .trigger('click');
     await flushPromises();
-
+    expect(mockState.dispatch).not.toHaveBeenCalledWith(
+      'captainInboxes/create',
+      expect.anything()
+    );
+    await wrapper
+      .get('[data-testid="captain-inbox-auto-reply-mode"]')
+      .setValue('working_hours');
+    expect(mockState.dispatch).not.toHaveBeenCalledWith(
+      'captainInboxes/create',
+      expect.anything()
+    );
+    await wrapper.get('[data-testid="captain-inbox-save"]').trigger('click');
+    await flushPromises();
     expect(mockState.dispatch).toHaveBeenCalledWith('captainInboxes/create', {
       assistantId: 101,
       inboxId: 4593,
-      autoReplyMode: 'always',
+      autoReplyMode: 'working_hours',
     });
     expect(mockState.dispatch).toHaveBeenCalledWith('inboxes/get');
     expect(mockState.useAlert).toHaveBeenCalledWith(
-      'CAPTAIN.INBOXES.CREATE.SUCCESS_MESSAGE'
+      'CAPTAIN.INBOXES.CHANNEL_SETTINGS.SAVE_SUCCESS'
     );
   });
 
@@ -289,15 +301,70 @@ describe('Inbox BotConfiguration Captain settings', () => {
       .get('[data-testid="captain-inbox-auto-reply-mode"]')
       .setValue('outside_working_hours');
     await flushPromises();
-
+    expect(mockState.dispatch).not.toHaveBeenCalledWith(
+      'captainInboxes/create',
+      expect.anything()
+    );
+    await wrapper.get('[data-testid="captain-inbox-save"]').trigger('click');
+    await flushPromises();
     expect(mockState.dispatch).toHaveBeenCalledWith('captainInboxes/create', {
       assistantId: 101,
       inboxId: 4593,
       autoReplyMode: 'outside_working_hours',
     });
     expect(mockState.useAlert).toHaveBeenCalledWith(
-      'CAPTAIN.INBOXES.AUTO_REPLY_MODE.UPDATE.SUCCESS_MESSAGE'
+      'CAPTAIN.INBOXES.CHANNEL_SETTINGS.SAVE_SUCCESS'
     );
+  });
+
+  it('cancels a local draft and resets it when opening another inbox', async () => {
+    const wrapper = buildWrapper({ inbox: mockState.inbox });
+    await flushPromises();
+    await wrapper
+      .get('[data-testid="captain-inbox-assistant-option-101"]')
+      .trigger('click');
+    expect(
+      wrapper.get('[data-testid="captain-inbox-save"]').element.disabled
+    ).toBe(false);
+    await wrapper.get('[data-testid="captain-inbox-cancel"]').trigger('click');
+    expect(
+      wrapper.get('[data-testid="captain-inbox-save"]').element.disabled
+    ).toBe(true);
+    expect(
+      wrapper.get('[data-testid="captain-inbox-assistant"]').text()
+    ).toContain('CAPTAIN.INBOXES.CHANNEL_SETTINGS.ASSISTANT.NO_AGENT');
+    await wrapper
+      .get('[data-testid="captain-inbox-assistant-option-101"]')
+      .trigger('click');
+    await wrapper.setProps({
+      inbox: {
+        id: 77,
+        name: 'Other inbox',
+        captain_assistant: { id: 102, name: 'Support assistant' },
+        captain_auto_reply_mode: 'working_hours',
+      },
+    });
+    expect(
+      wrapper.get('[data-testid="captain-inbox-assistant"]').text()
+    ).toContain('Support assistant');
+    expect(
+      wrapper.get('[data-testid="captain-inbox-save"]').element.disabled
+    ).toBe(true);
+    expect(mockState.dispatch).not.toHaveBeenCalledWith(
+      'captainInboxes/create',
+      expect.anything()
+    );
+  });
+
+  it('does not offer a disabled main agent', async () => {
+    mockState.assistants[0].active = false;
+    const wrapper = buildWrapper({ inbox: mockState.inbox });
+    await flushPromises();
+    expect(
+      wrapper
+        .find('[data-testid="captain-inbox-assistant-option-101"]')
+        .exists()
+    ).toBe(false);
   });
 
   it('does not offer open conversation replies even for a legacy inbox with them enabled', async () => {

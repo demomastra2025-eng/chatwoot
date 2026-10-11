@@ -9,6 +9,7 @@ class Captain::Playground::ActionApproval
   end
 
   def preview(tool_id, arguments)
+    @session.validate_active_agent!
     raise ArgumentError, 'Changing real data is disabled' unless @session.write_enabled?
 
     prepared = @executor.prepare(tool_id, arguments)
@@ -44,9 +45,11 @@ class Captain::Playground::ActionApproval
            action['binding'] == @session.context_reference.stringify_keys
       raise ArgumentError, 'The real-action preview expired, changed, or was revoked'
     end
+    @session.validate_active_agent!
     prepared = @executor.prepare(action['tool'], action['arguments'])
     current = @session.permissions
-    unless current['read'] == true && current['write'] == true && current['generation'] == action['generation']
+    unless current['read'] == true && current['write'] == true && current['generation'] == action['generation'] &&
+           action['binding'] == @session.context_reference.stringify_keys
       raise ArgumentError, 'The real-action confirmation was revoked'
     end
     unless prepared[:target].deep_stringify_keys == action['target'] && fingerprint(action.slice('tool', 'arguments', 'target', 'generation', 'binding')) == digest
@@ -57,6 +60,10 @@ class Captain::Playground::ActionApproval
     action['status'] = 'executing'
     action['confirmed_at'] = Time.current.iso8601
     @session.save!
+    @session.validate_active_agent!
+    unless action['binding'] == @session.context_reference.stringify_keys
+      raise ArgumentError, 'The acting agent changed; review a new preview'
+    end
     policy = Outbound::PlaygroundDeliveryPolicy.issue(
       @session.context_reference.merge(mode: 'workspace', run_id: SecureRandom.uuid, delivery_enabled: false,
                                        action_id: action['id'], action_digest: digest, generation: action['generation'],

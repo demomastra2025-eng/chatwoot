@@ -2,6 +2,7 @@
 
 class Captain::Runtime::Agent
   attr_reader :name, :instructions, :model, :tools, :handoff_agents, :temperature, :response_schema, :headers, :params
+  attr_accessor :context_preparer, :assistant_id
 
   def initialize(name:, instructions: nil, model: LlmConstants::DEFAULT_MODEL, tools: [], handoff_agents: [],
                  temperature: 0.7, response_schema: nil, headers: nil, params: nil)

@@ -1,7 +1,6 @@
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import Button from 'dashboard/components-next/button/Button.vue';
 import Select from 'dashboard/components-next/select/Select.vue';
 
 const props = defineProps({
@@ -19,7 +18,6 @@ const emit = defineEmits([
   'update:effort',
 ]);
 const { t } = useI18n();
-const expanded = ref(false);
 const supportsTemperature = computed(
   () => props.metadata?.supports_temperature === true
 );
@@ -34,32 +32,26 @@ const effortOptions = computed(() => [
     label: t(`CAPTAIN.PLAYGROUND.REASONING_${value.toUpperCase()}`),
   })),
 ]);
-watch(supportsTemperature, supported => {
-  if (!supported && props.temperature !== null)
-    emit('update:temperature', null);
-});
+watch(
+  () => props.metadata?.supports_temperature,
+  supported => {
+    if (supported === false && props.temperature !== null)
+      emit('update:temperature', null);
+  }
+);
 watch(efforts, supported => {
-  if (props.effort && !supported.includes(props.effort))
+  if (
+    Array.isArray(props.metadata?.reasoning_efforts) &&
+    props.effort &&
+    !supported.includes(props.effort)
+  )
     emit('update:effort', '');
 });
 </script>
 
 <template>
   <div class="min-w-0" data-test="model-settings">
-    <Button
-      icon="i-lucide-settings-2"
-      :label="t('CAPTAIN.MODEL_SETTINGS.TITLE')"
-      size="sm"
-      variant="ghost"
-      color="slate"
-      data-test="model-settings-toggle"
-      :aria-expanded="expanded"
-      @click="expanded = !expanded"
-    />
-    <div
-      v-if="expanded"
-      class="mt-3 grid gap-4 rounded-lg border border-n-weak p-3 md:grid-cols-3"
-    >
+    <div class="grid gap-4 md:grid-cols-3">
       <label class="flex min-w-0 flex-col gap-1 text-xs text-n-slate-11">
         {{ t('CAPTAIN.PLAYGROUND.TEST_MODEL') }}
         <Select

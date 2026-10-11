@@ -2,7 +2,7 @@ class Captain::Tools::ProviderBookingHandoffService
   FENCE_KEY = 'ai_booking_response_fence'.freeze
   STAFF_NOTE_ID_KEY = Integrations::Medelement::AiBookingOutcomeJob::STAFF_NOTE_ID_KEY
   CUSTOMER_MESSAGE_ID_KEY = Integrations::Medelement::AiBookingOutcomeJob::CUSTOMER_MESSAGE_ID_KEY
-  FENCE_KEYS = %w[control_generation status_transition_id last_message_id].freeze
+  FENCE_KEYS = %w[control_generation status_transition_id last_message_id entry_assistant_id routing_revision].freeze
 
   # rubocop:disable Metrics/ParameterLists
   def initialize(assistant:, conversation:, appointment: nil, command: nil, fence: nil, orphaned_write: false)
@@ -33,8 +33,19 @@ class Captain::Tools::ProviderBookingHandoffService
       state = command.execution_state.to_h
       next if state[FENCE_KEY].present?
 
-      command.update!(execution_state: state.merge(FENCE_KEY => values))
+      command.update!(execution_state: state.merge(FENCE_KEY => routing_fence_for(command).merge(values)))
     end
+  end
+
+  def self.routing_fence_for(command)
+    conversation = Conversation.find_by(id: command.request_snapshot['conversation_id'], account_id: command.account_id)
+    assistant = Captain::Assistant.find_by(id: command.request_snapshot.dig('actor', 'id'), account_id: command.account_id)
+    return {} unless conversation && assistant
+
+    ownership = Captain::Conversation::AgentOwnership.new(conversation: conversation, assistant: assistant)
+    return {} unless ownership.current?
+
+    { 'entry_assistant_id' => ownership.entry.id, 'routing_revision' => ownership.routing_revision }
   end
 
   private
@@ -56,8 +67,13 @@ class Captain::Tools::ProviderBookingHandoffService
   end
 
   def assistant_allowed?
-    assistant&.usage_mode == 'external_agent' && conversation&.account_id == assistant.account_id &&
-      CaptainInbox.exists?(inbox_id: conversation.inbox_id, captain_assistant_id: assistant.id)
+    return false unless assistant&.active? && assistant.external_agent? && conversation&.account_id == assistant.account_id
+
+    Captain::Conversation::AgentOwnership.new(conversation: conversation, assistant: assistant).current?(
+      expected_entry_id: response_fence['entry_assistant_id'],
+      expected_revision: response_fence['routing_revision'],
+      enforce_revision: true
+    )
   end
 
   def appointment_matches_context?
@@ -99,7 +115,8 @@ class Captain::Tools::ProviderBookingHandoffService
   def response_fence
     return @response_fence if defined?(@response_fence)
 
-    values = (fence.presence || command&.execution_state.to_h&.dig(FENCE_KEY)).to_h.stringify_keys.slice(*FENCE_KEYS)
+    stored = command&.execution_state.to_h&.dig(FENCE_KEY).to_h.stringify_keys
+    values = stored.merge(fence.to_h.stringify_keys).slice(*FENCE_KEYS)
     @response_fence = values['control_generation'].nil? || values['last_message_id'].blank? ? {} : values
   end
 
@@ -118,6 +135,16 @@ class Captain::Tools::ProviderBookingHandoffService
   end
 
   def handoff!
+    conversation.with_lock do
+      conversation.with_captain_control_lock do
+        next :invalid_context unless assistant_allowed?
+
+        apply_handoff!
+      end
+    end
+  end
+
+  def apply_handoff!
     note = nil
     customer_message = nil
     return :stale_request if slot_conflict? && !current_incoming_request?

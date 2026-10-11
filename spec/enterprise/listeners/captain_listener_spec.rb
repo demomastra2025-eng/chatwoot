@@ -52,5 +52,50 @@ describe CaptainListener do
         listener.conversation_resolved(event)
       end
     end
+
+    context 'when a specialist is the current conversation agent' do
+      let(:specialist) { create(:captain_assistant, account: account, config: { feature_memory: true, feature_faq: true }) }
+
+      before do
+        assistant.update!(handoff_agent_ids: [specialist.id])
+        Captain::Conversation::AgentSession.new(entry: assistant, conversation: conversation).update_routing(actor_id: specialist.id)
+      end
+
+      it 'uses the specialist capabilities and knowledge ownership when the entry disables both features' do
+        assistant.update!(config: { feature_memory: false, feature_faq: false })
+        expect(Captain::Llm::ContactNotesService)
+          .to receive(:new).with(specialist, conversation)
+          .and_return(instance_double(Captain::Llm::ContactNotesService, generate_and_update_notes: nil))
+        expect(Captain::Llm::ConversationFaqService)
+          .to receive(:new).with(specialist, conversation)
+          .and_return(instance_double(Captain::Llm::ConversationFaqService, generate_and_deduplicate: false))
+
+        listener.conversation_resolved(event)
+      end
+
+      it 'does not inherit the entry capabilities when the specialist disables both features' do
+        specialist.update!(config: { feature_memory: false, feature_faq: false })
+        expect(Captain::Llm::ContactNotesService).not_to receive(:new)
+        expect(Captain::Llm::ConversationFaqService).not_to receive(:new)
+
+        listener.conversation_resolved(event)
+      end
+
+      it 'does not fall back to entry knowledge ownership when the specialist is inactive' do
+        specialist.update!(active: false)
+        expect(Captain::Llm::ContactNotesService).not_to receive(:new)
+        expect(Captain::Llm::ConversationFaqService).not_to receive(:new)
+
+        listener.conversation_resolved(event)
+      end
+
+      it 'does not fall back to entry knowledge ownership when the specialist is no longer reachable' do
+        assistant.update!(handoff_agent_ids: [])
+        expect(Captain::Llm::ContactNotesService).not_to receive(:new)
+        expect(Captain::Llm::ConversationFaqService).not_to receive(:new)
+
+        listener.conversation_resolved(event)
+      end
+    end
   end
 end

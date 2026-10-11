@@ -4,11 +4,12 @@ module Captain::Assistant::RunPayloadHelper
   private
 
   def build_context(message_history)
-    {
+    context = {
       session_id: captain_session_id,
       conversation_history: normalize_history(message_history),
       state: build_state
     }
+    @assistant.persisted? ? agent_run_context.prepare(context) : context
   end
 
   def captain_session_id

@@ -6,16 +6,14 @@ class Captain::Tools::Copilot::UpdateCaptainAssistantService < Captain::Tools::C
   end
 
   CONFIG_JSON_DESCRIPTION = 'Optional JSON object with supported config fields such as temperature, tool_access, context_access, ' \
-                            'rules, feature_faq, feature_memory, voice_settings'
+                            'feature_faq, feature_memory, voice_settings'
 
-  description 'Update one Captain assistant profile/config/rules/tool access in the current account. Requires operator confirmation.'
+  description 'Update one Captain assistant profile, main instructions, config or tool access in the current account. Requires operator confirmation.'
   param :assistant_id, type: :integer, desc: 'Captain assistant ID', required: true
   param :name, type: :string, desc: 'Optional assistant name', required: false
   param :description, type: :string, desc: 'Optional assistant instructions/description', required: false
   param :usage_mode, type: :string, desc: 'Optional usage mode: external_agent or internal_assistant', required: false
   param :config_json, type: :string, desc: CONFIG_JSON_DESCRIPTION, required: false
-  param :response_guidelines_json, type: :string, desc: 'Optional JSON array of response guideline entries', required: false
-  param :guardrails_json, type: :string, desc: 'Optional JSON array of guardrail entries', required: false
 
   def execute(assistant_id:, **kwargs)
     ensure_account_administrator!
@@ -40,9 +38,12 @@ class Captain::Tools::Copilot::UpdateCaptainAssistantService < Captain::Tools::C
   private
 
   def build_update_attributes(assistant:, kwargs:)
+    if kwargs.key?(:response_guidelines_json) || kwargs.key?(:guardrails_json)
+      raise ArgumentError, 'Separate rules were removed. Save instructions in description.'
+    end
+
     profile_update_attributes(kwargs)
       .merge(config_update_attributes(assistant, kwargs))
-      .merge(rules_update_attributes(kwargs))
   end
 
   def profile_update_attributes(kwargs)
@@ -57,15 +58,6 @@ class Captain::Tools::Copilot::UpdateCaptainAssistantService < Captain::Tools::C
     return {} if kwargs[:config_json].blank?
 
     { config: merged_config(assistant, kwargs[:config_json]) }
-  end
-
-  def rules_update_attributes(kwargs)
-    attributes = {}
-    response_guidelines = parse_json_array(kwargs[:response_guidelines_json], field_name: 'response_guidelines_json')
-    guardrails = parse_json_array(kwargs[:guardrails_json], field_name: 'guardrails_json')
-    attributes[:response_guidelines] = response_guidelines unless response_guidelines.nil?
-    attributes[:guardrails] = guardrails unless guardrails.nil?
-    attributes
   end
 
   def merged_config(assistant, config_json)

@@ -117,6 +117,29 @@ RSpec.describe Internal::FetchOpenRouterGenerationMetadataJob do
     described_class.perform_now(event.id)
   end
 
+  it 'keeps provider metadata lookup in the outer request without adding a second usage row' do
+    event.update!(request_id: 'synthetic-generation-request',
+                  payload: event.payload.merge('usage_scope' => 'provider_response', 'parent_request_id' => 'synthetic-outer-request'))
+    Llm::UsageLedger.record_event!(event)
+    allow(Llm::OpenRouterGenerationClient).to receive(:fetch).and_return(metadata)
+    events = []
+    subscriber = ActiveSupport::Notifications.subscribe('llm.metadata.fetch') do |*args|
+      events << ActiveSupport::Notifications::Event.new(*args)
+    end
+
+    expect { described_class.perform_now(event.id) }.not_to change(LlmUsageEvent, :count)
+
+    expect(events.size).to eq(1)
+    expect(events.sole.payload).to include('request_id' => 'synthetic-outer-request', 'source_event_id' => event.id)
+    expect(event.reload.request_id).to eq('synthetic-generation-request')
+    expect(event.payload).to include('usage_scope' => 'provider_response', 'parent_request_id' => 'synthetic-outer-request')
+    usage = LlmUsageEvent.find_by!(llm_event_id: event.id)
+    expect(usage).to have_attributes(generation_id: 'gen-123', request_id: 'synthetic-generation-request', duration_ms: 830)
+    expect(usage.estimated_cost.to_f).to eq(0.00042)
+  ensure
+    ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+  end
+
   it 'sanitizes provider error reasons returned by generation metadata' do
     error_metadata = Llm::OpenRouterGenerationClient::Result.new(
       generation_id: 'gen-123',

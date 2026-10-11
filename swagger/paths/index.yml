@@ -330,6 +330,7 @@ x-scheduling-appointment-schema: &scheduling_appointment_schema
     patient_context_contact_id: { type: integer, nullable: true }
     patient_contact_name: { type: string, nullable: true }
     crm_deal_id: { type: integer, nullable: true }
+    crm_link_result: { $ref: '#/components/schemas/scheduling_crm_link_result' }
     attendance_confirmed_at: { type: string, format: date-time, nullable: true }
     actual_attended: { type: boolean }
     provider_command_receipt: { type: object, additionalProperties: true, description: Current provider operation receipt; queued and failed operations must not be reported as confirmed. }
@@ -1549,7 +1550,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     tags: [Scheduling]
     operationId: create-scheduling-appointment
     summary: Create a scheduling appointment
-    description: Supports true idempotency via `idempotency_key`. Replaying the same key returns the existing appointment with HTTP 200. A selected clinical patient is separate from the communication contact. CRM selection is required only when active candidates are ambiguous; an explicit new-deal choice uses crm_deal_selection=create and crm_pipeline_id. The complete manual interval must be free and confirmed by the provider availability policy.
+    description: Supports true idempotency via idempotency_key; a replay returns the existing appointment with HTTP 200. A selected patient_contact_id is separate from the communication contact. All automatic appointment deal creation, including cardinality clones, obeys appointment_automation.auto_create_deals independently of channel auto-create. crm_pipeline_id alone does not authorize creating a deal while the master is off; crm_deal_selection=create is an explicit manual choice. Valid account/contact-scoped existing deals may still be linked. Optional CRM validation or ambiguous-selection failures preserve the appointment and return crm_link_result.status=not_linked with an honest warning; do not retry appointment creation for this warning. Foreign or mismatched explicit links remain invalid. Provider command confirmation and interval availability checks still apply independently.
     security:
       - userApiKey: []
     requestBody:
@@ -1563,9 +1564,9 @@ x-scheduling-expense-schema: &scheduling_expense_schema
               resource_id: { type: integer }
               contact_id: { type: integer }
               patient_contact_id: { type: integer }
-              crm_deal_id: { type: integer }
-              crm_pipeline_id: { type: integer }
-              crm_deal_selection: { type: string, enum: [create] }
+              crm_deal_id: { type: integer, minimum: 1, description: Existing deal in this account matching the appointment communication contact. Scope validation still applies with automatic creation off. }
+              crm_pipeline_id: { type: integer, minimum: 1, description: Selects an account-owned pipeline for linkage; by itself it does not enable creation when auto_create_deals is false. }
+              crm_deal_selection: { type: string, enum: [create], description: Explicit manual request to create a deal. Missing CRM required fields produce an optional crm_link_result warning after saving the appointment. }
               service_id: { type: integer }
               service_ids: { type: array, items: { type: integer } }
               company_id: { type: integer }
@@ -1601,7 +1602,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
                 description: Free-form attributes by default. When active `appointment` field definitions exist for the account, unknown keys are rejected, field defaults may be applied on create, and deleted managed field values are removed on the next update while preserved system integration keys remain.
     responses:
       '200':
-        description: Existing appointment returned for a replayed idempotency key
+        description: Existing appointment returned for a replayed idempotency key, including any persisted optional CRM warning.
         content:
           application/json:
             schema:
@@ -1609,7 +1610,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
               properties:
                 payload: *scheduling_appointment_schema
       '201':
-        description: Appointment created
+        description: Appointment saved. Optional CRM failures appear in payload.crm_link_result and do not change this successful HTTP status; provider confirmation remains separate.
         content:
           application/json:
             schema:
@@ -1668,7 +1669,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     tags: [Scheduling]
     operationId: update-scheduling-appointment
     summary: Update a scheduling appointment
-    description: Retains the existing CRM link when rescheduling. The entire requested interval must be free. Imported provider appointments use their existing provider command operations rather than direct local rewriting.
+    description: Retains the existing CRM link and any persisted optional crm_link_result warning when rescheduling. A later successful link clears the warning. The entire requested interval must be free. Imported provider appointments use their existing provider command operations rather than direct local rewriting.
     security:
       - userApiKey: []
     requestBody:
@@ -2889,6 +2890,12 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     $ref: ./application/reporting_events/index.yml
 
 # Standalone account reports (permission: administrator or report_manage; no CRM feature dependency)
+/api/v1/accounts/{account_id}/reports/ai_agents:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+  get:
+    $ref: ./application/reports/ai_agents.yml
+
 /api/v1/accounts/{account_id}/reports/calls:
   parameters:
     - $ref: '#/components/parameters/account_id'
@@ -3297,7 +3304,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     operationId: create-crm-pipeline
     summary: Create a CRM pipeline
     security: [{ userApiKey: [] }]
-    requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { name: { type: string }, code: { type: string }, position: { type: integer }, active: { type: boolean }, default: { type: boolean }, auto_create_deal_on_channel_contact: { type: boolean }, appointment_automation: { $ref: '#/components/schemas/crm_appointment_automation' }, restrict_stage_skipping: { type: boolean }, restrict_backward_move: { type: boolean }, allow_stage_rule_override: { type: boolean }, stages: { type: array, items: { type: object } } } } } } }
+    requestBody: { required: true, content: { application/json: { schema: { allOf: [{ $ref: '#/components/schemas/crm_pipeline_settings' }], type: object, required: [name] } } } }
     responses: { '201': { description: Created, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_pipeline' } } } } } }, '422': { description: Invalid pipeline, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } } }
 /api/v1/accounts/{account_id}/crm/pipelines/{id}:
   parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
@@ -3310,10 +3317,43 @@ x-scheduling-expense-schema: &scheduling_expense_schema
   patch:
     tags: [CRM]
     operationId: update-crm-pipeline
-    summary: Update a CRM pipeline
+    summary: Atomically save a CRM funnel draft
+    description: Saves pipeline profile, movement rules, channel creation target, appointment creation master, stage edits, requirements, deletions and optional account pipeline order in one transaction. Existing IDs and new stage client_id references must belong to this account and draft. A failure rolls back every change. Omit stages for a partial settings update; including stages returns the selected payload plus full account pipelines for publishing defaults, source ownership and order. Incoming-channel auto-create never enables appointment creation. New and unconfigured appointment masters default off; explicit legacy calendar/integration opt-ins are normalized independently. Reasons apply only to lost stages; ordinary and won reasons are not required or retained as new stage settings.
     security: [{ userApiKey: [] }]
-    requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { name: { type: string }, code: { type: string }, position: { type: integer }, active: { type: boolean }, default: { type: boolean }, auto_create_deal_on_channel_contact: { type: boolean }, appointment_automation: { $ref: '#/components/schemas/crm_appointment_automation' }, restrict_stage_skipping: { type: boolean }, restrict_backward_move: { type: boolean }, allow_stage_rule_override: { type: boolean } } } } } }
-    responses: { '200': { description: Updated, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_pipeline' } } } } } }, '422': { description: Invalid update, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } } }
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/crm_pipeline_save_payload' }
+          example:
+            name: Service requests
+            active: true
+            auto_create_deal_on_channel_contact: true
+            auto_create_stage_id: draft-stage-1
+            stages:
+              - { id: 10, name: Review, color: '#2563eb', active: true }
+              - { client_id: draft-stage-1, name: New requests, color: '#16a34a', active: true }
+            deleted_stage_ids: []
+            appointment_automation:
+              auto_create_deals: false
+              enabled: false
+              auto_create_from_calendar: true
+              rules:
+                - { stage_id: draft-stage-1, scope: any, conditions: [scheduled] }
+            pipeline_order: [1, 2]
+    responses:
+      '200':
+        description: All changes saved; pipelines is included for a full stage draft.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/crm_pipeline_save_response' }
+      '403': { description: Caller lacks CRM pipeline update permission or the CRM deals feature is unavailable. }
+      '404': { description: Pipeline is outside the account policy scope. }
+      '422':
+        description: Invalid draft, required fields, blocked deletion, stage reference, auto-create target or pipeline order. No settings changes persist. Codes include INVALID_STAGE_REFERENCE, INVALID_AUTO_CREATE_STAGE and INVALID_PIPELINE_ORDER.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/crm_error' }
   delete:
     tags: [CRM]
     operationId: delete-crm-pipeline
@@ -3327,8 +3367,9 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     tags: [CRM]
     operationId: create-crm-stage
     summary: Create a pipeline stage
+    description: Creates an ordinary open stage. System terminal stages are managed through the pipeline draft; ordinary stages have no transition or closing reasons. Save field requirements through their endpoint or the atomic pipeline draft.
     security: [{ userApiKey: [] }]
-    requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { name: { type: string }, code: { type: string }, color: { type: string }, position: { type: integer }, outcome: { type: string, enum: [open, won, lost] }, active: { type: boolean }, closing_reason_options: { type: array, items: { type: string } }, closing_reason_required: { type: boolean }, transition_reason_options: { type: array, items: { type: string } }, transition_reason_required: { type: boolean }, field_requirements: { type: array, items: { type: object } } } } } } }
+    requestBody: { required: true, content: { application/json: { schema: { type: object, required: [name], properties: { name: { type: string }, code: { type: string }, color: { type: string }, position: { type: integer }, active: { type: boolean }, default: { type: boolean, description: Legacy routing fallback selection. } } } } } }
     responses: { '201': { description: Created, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_stage' } } } } } }, '422': { description: Invalid stage, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}
 /api/v1/accounts/{account_id}/crm/pipelines/{pipeline_id}/stages/batch_update:
   parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: pipeline_id, required: true, schema: { type: integer } }]
@@ -3336,10 +3377,10 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     tags: [CRM]
     operationId: batch-update-crm-stages
     summary: Atomically update a pipeline's stage list
-    description: Submits the ordered open stage list and stage-rule settings together. System stages and stages referenced by deals remain subject to server validation; legacy imported positions are not automatically cleaned.
+    description: Submits the complete ordered movable stage list, optional terminal and technical settings, deletions and pipeline_rules together. Closing reasons apply only to the lost stage. System stages and stages referenced by deals remain subject to server validation. For one save that also includes channel and appointment automation settings, use PATCH crm/pipelines/{id}.
     security: [{ userApiKey: [] }]
-    requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { stages: { type: array, items: { type: object } }, deleted_stage_ids: { type: array, items: { type: integer } }, pipeline: { type: object, properties: { restrict_stage_skipping: { type: boolean }, restrict_backward_move: { type: boolean }, allow_stage_rule_override: { type: boolean } } } } } } } }
-    responses: { '200': { description: Updated stages, content: { application/json: { schema: { type: object, properties: { payload: { type: array, items: { $ref: '#/components/schemas/crm_stage' } } } } } } }, '422': { description: Invalid stage set, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } } }
+    requestBody: { required: true, content: { application/json: { schema: { allOf: [{ $ref: '#/components/schemas/crm_stage_draft' }, { type: object, required: [stages] }] } } } }
+    responses: { '200': { description: Updated pipeline including all stages, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_pipeline' } } } } } }, '422': { description: Invalid stage set; all changes are rolled back, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } } }
 
 /api/v1/accounts/{account_id}/crm/stages/{id}:
   parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
@@ -3347,8 +3388,9 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     tags: [CRM]
     operationId: update-crm-stage
     summary: Update a CRM stage
+    description: Updates the permitted profile fields of a movable stage, the name of a terminal stage, or activity/color of a technical stage. Closing-reason settings are accepted only for the lost terminal stage. Ordinary transition-reason inputs and non-lost closing-reason inputs are ignored. Outcome and ordered position are not editable here; use the atomic pipeline draft for ordering and field requirements.
     security: [{ userApiKey: [] }]
-    requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { name: { type: string }, code: { type: string }, color: { type: string }, position: { type: integer }, outcome: { type: string, enum: [open, won, lost] }, active: { type: boolean }, default: { type: boolean }, closing_reason_options: { type: array, items: { type: string } }, closing_reason_required: { type: boolean }, transition_reason_options: { type: array, items: { type: string } }, transition_reason_required: { type: boolean } } } } } }
+    requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { name: { type: string }, code: { type: string }, color: { type: string }, active: { type: boolean }, default: { type: boolean, description: Legacy routing fallback selection for ordinary stages. }, closing_reason_options: { type: array, items: { type: string }, description: Available only for the lost terminal stage. }, closing_reason_required: { type: boolean, description: Available only for the lost terminal stage. } } } } } }
     responses: { '200': { description: Updated stage, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_stage' } } } } } }, '422': { description: Invalid stage update, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } } }
   delete:
     tags: [CRM]
@@ -3596,8 +3638,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     tags: [CRM]
     operationId: create-crm-deal
     summary: Create a CRM deal
-    description: Creates an account-scoped CRM deal under the existing deal policy. Supplying owner_id or team_id also requires the current assignment authorization.
-    description: An account idempotency_key returns the matching existing deal; related records and assignment remain subject to authorization.
+    description: Creates an account-scoped CRM deal under the existing deal policy. An account idempotency_key returns the matching existing deal; related records remain subject to authorization. Supplying owner_id or team_id also requires the current assignment authorization.
     security: [{ userApiKey: [] }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { pipeline_id: { type: integer }, stage_id: { type: integer }, owner_id: { type: integer }, creator_id: { type: integer }, team_id: { type: integer }, company_id: { type: integer }, originating_conversation_id: { type: integer }, originating_communication_thread_id: { type: integer }, title: { type: string }, description: { type: string }, amount_minor: { type: integer }, currency: { type: string }, expected_close_on: { type: string, format: date }, position: { type: integer }, win_probability: { type: number }, external_ref: { type: string }, idempotency_key: { type: string }, primary_contact_id: { type: integer }, contact_ids: { type: array, items: { type: integer } }, closing_reasons: { type: array, items: { type: string } }, custom_attributes: { type: object, additionalProperties: true } } } } } }
     responses: { '201': { description: Created deal, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_deal' } } } } } }, '422': { description: Invalid deal, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}
@@ -3623,6 +3664,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     tags: [CRM]
     operationId: get-crm-deal-timeline
     summary: Get CRM deal timeline
+    description: Returns the retained event history. Ordinary stage-transition reasons are no longer recorded, and previously stored transition_reason metadata is removed without deleting events, notes, timestamps, actors or loss-reason history.
     security: [{ userApiKey: [] }]
     parameters: [{ in: query, name: before, schema: { type: string } }, { in: query, name: limit, schema: { type: integer } }]
     responses: { '200': { description: Events and pagination metadata, content: { application/json: { schema: { type: object, properties: { payload: { type: array, items: { type: object } }, meta: { type: object } } } } } }}
@@ -3633,9 +3675,9 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     tags: [CRM]
     operationId: transition-crm-deal-stage
     summary: Transition a deal between stages
-    description: Stage policy validates stage-skipping/backward moves and transition reasons; required closing reasons are checked on terminal stages. Override is available only where pipeline rules permit.
+    description: Stage policy validates stage-skipping/backward moves and required target-stage fields. Closing reasons are validated only when moving to a lost stage; won and ordinary stages never require or retain new reasons. Legacy transition_reason input is ignored and is not recorded. Override remains available only where pipeline rules permit.
     security: [{ userApiKey: [] }]
-    requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { stage_id: { type: integer }, position: { type: integer }, lock_version: { type: integer }, idempotency_key: { type: string }, event_id: { type: string }, transition_reason: { type: string }, override: { type: boolean }, override_reason: { type: string }, closing_reasons: { type: array, items: { type: string } } } } } } }
+    requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { stage_id: { type: integer }, position: { type: integer }, lock_version: { type: integer }, idempotency_key: { type: string }, event_id: { type: string }, override: { type: boolean }, override_reason: { type: string }, closing_reasons: { type: array, items: { type: string }, description: Loss reasons; applies only when the target stage is lost. } } } } } }
     responses: { '200': { description: Deal after transition, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_deal' } } } } } }, '409': { description: Stale state or idempotency conflict, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }, '422': { description: Transition or reason rejected, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}
 /api/v1/accounts/{account_id}/crm/deals/{id}/close_won:
   parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
@@ -3643,17 +3685,17 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     tags: [CRM]
     operationId: close-crm-deal-won
     summary: Close a deal as won
-    description: Validates the stage's configured closing reasons and whether a reason is required.
+    description: Closes the deal in the won stage while retaining normal required-field and stale-write validation. Winning never requires or saves closing reasons; legacy closing_reasons input is ignored. Historical loss reasons in earlier events are preserved.
     security: [{ userApiKey: [] }]
-    requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { closing_reasons: { type: array, items: { type: string } }, lock_version: { type: integer }, idempotency_key: { type: string }, event_id: { type: string } } } } } }
-    responses: { '200': { description: Won deal, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_deal' } } } } } }, '422': { description: Invalid or missing required closing reason, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}
+    requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { lock_version: { type: integer }, idempotency_key: { type: string }, event_id: { type: string } } } } } }
+    responses: { '200': { description: Won deal with no closing reasons, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_deal' } } } } } }, '422': { description: Required stage fields or other deal validation failed, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}
 /api/v1/accounts/{account_id}/crm/deals/{id}/close_lost:
   parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
   post:
     tags: [CRM]
     operationId: close-crm-deal-lost
     summary: Close a deal as lost
-    description: Validates the stage's configured closing reasons and whether a reason is required.
+    description: Validates the lost stage's configured closing reasons, its reason-required flag and normal required-field rules. Loss reasons are retained in the deal and its history.
     security: [{ userApiKey: [] }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { closing_reasons: { type: array, items: { type: string } }, lock_version: { type: integer }, idempotency_key: { type: string }, event_id: { type: string } } } } } }
     responses: { '200': { description: Lost deal, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_deal' } } } } } }, '422': { description: Invalid or missing required closing reason, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}
@@ -4026,40 +4068,56 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     parameters: [{ in: query, name: confirmed, required: true, schema: { type: boolean, enum: [true] } }, { in: query, name: item_type, schema: { type: string, enum: [recording, attachment] } }, { in: query, name: item_id, schema: { type: string } }]
     responses: { '200': { description: Purged items and freed bytes, content: { application/json: { schema: { type: object, additionalProperties: true } } } }, '422': { description: Invalid selection or missing confirmation } }
 
-# Per-assistant model, tools, follow-up and outcome settings are stored through this existing API.
+# Independent agents and their explicit account-scoped routes use the existing assistant API.
 /api/v1/accounts/{account_id}/captain/assistants:
   parameters: [{ $ref: '#/components/parameters/account_id' }]
   get:
     tags: [Captain Assistants]
     operationId: list-captain-assistants
     summary: List account Captain assistants
+    description: Returns each agent's main prompt in description and normalized read-only outcome_reason_options. Separate response_guidelines, guardrails, config.rules and config.skills are not returned.
     security: [{ userApiKey: [] }]
     responses: { '200': { description: Assistants with count metadata, content: { application/json: { schema: { $ref: '#/components/schemas/captain_assistants_response' } } } } }
   post:
     tags: [Captain Assistants]
     operationId: create-captain-assistant
     summary: Create an account Captain assistant
-    description: Creates an assistant using the existing account-scoped API. Model, tool access, follow-up, outcome reasons, response guidelines, and guardrails can be supplied with the assistant.
+    description: Creates an independent agent in this account with its own prompt in assistant.description, model, tools and settings. active, routing_description and handoff_agent_ids are top-level assistant fields. Newly selected targets must be active external agents from the same account. config.safety_settings.custom_rules accepts up to 20 ordered conditions with stable unique IDs; rewrite is output-only. Invalid custom rules return 422 invalid_custom_safety_rules with field paths before saving. response_guidelines, guardrails or config.rules writes are rejected with 422 separate_rules_removed before saving. config.skills is no longer permitted and is ignored. Responses exclude these separate instruction fields and include normalized outcome_reason_options.
     security: [{ userApiKey: [] }]
     requestBody:
       required: true
       content:
         application/json:
           schema: { $ref: '#/components/schemas/captain_assistant_payload' }
-    responses: { '200': { description: Created assistant configuration, content: { application/json: { schema: { $ref: '#/components/schemas/captain_assistant' } } } }, '422': { description: Invalid assistant configuration } }
+    responses:
+      '200':
+        description: Created assistant configuration
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/captain_assistant' }
+      '422':
+        description: Invalid configuration or a removed separate instruction field; no assistant is created.
+        content:
+          application/json:
+            schema:
+              anyOf:
+                - { $ref: '#/components/schemas/captain_removed_rules_error' }
+                - { $ref: '#/components/schemas/captain_custom_safety_rules_error' }
+                - { type: object, additionalProperties: true }
 /api/v1/accounts/{account_id}/captain/assistants/{id}:
   parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
   get:
     tags: [Captain Assistants]
     operationId: get-captain-assistant
     summary: Get an account Captain assistant
+    description: Returns the main prompt in description and normalized outcome_reason_options, including built-in completion and handoff reasons. Separate response_guidelines, guardrails, config.rules and config.skills are not returned.
     security: [{ userApiKey: [] }]
     responses: { '200': { description: Assistant configuration, content: { application/json: { schema: { $ref: '#/components/schemas/captain_assistant' } } } }, '404': { description: Assistant not found } }
   patch:
     tags: [Captain Assistants]
     operationId: update-captain-assistant
     summary: Update an account Captain assistant
-    description: Select model and update tool access, follow-up, outcome reason, and runtime safety settings inside the existing assistant.config object. Omitted safety fields retain saved overrides during a partial update; explicit null resets a safety field to inheritance from the workspace policy. Unspecified safety fields on a new assistant inherit workspace policy. Follow-ups use native reminders; disabling them cancels that assistant's open reminders.
+    description: Saves the agent's own prompt in assistant.description, activity, routing description, explicit handoff targets and configuration together. Omitted handoff_agent_ids retains saved routes; an empty array clears them. Newly selected targets must be active external agents in this account and cannot include the agent itself. A validation failure rolls back the complete settings save. Model, tools, follow-ups, outcome reasons and runtime safety belong inside assistant.config. Omitted safety fields retain saved overrides; provider-safety fields accept null to inherit workspace policy. custom_rules replaces the complete ordered list; omitted retains it, [] clears it and null is invalid. Invalid custom rules return 422 invalid_custom_safety_rules with concrete field paths and codes. Disabling follow-ups cancels this agent's open reminders. response_guidelines, guardrails or config.rules writes are rejected with 422 separate_rules_removed before saving. config.skills is no longer permitted and is ignored. Responses exclude these separate instruction fields and include normalized outcome_reason_options.
     security: [{ userApiKey: [] }]
     requestBody:
       required: true
@@ -4073,8 +4131,14 @@ x-scheduling-expense-schema: &scheduling_expense_schema
                 type: object
                 properties:
                   name: { type: string }
-                  description: { type: string }
+                  description: { type: string, nullable: true, description: This agent's own main prompt. }
                   usage_mode: { type: string, enum: [external_agent, internal_assistant] }
+                  active: { type: boolean, description: Only active external agents are eligible for channel entry or handoff routing. }
+                  routing_description: { type: string, nullable: true, maxLength: 2000 }
+                  handoff_agent_ids:
+                    type: array
+                    items: { type: integer, minimum: 1 }
+                    description: Replaces outgoing routes only when this settings request succeeds. Existing inactive targets may be retained; runtime routing ignores them.
                   config:
                     type: object
                     properties:
@@ -4092,13 +4156,26 @@ x-scheduling-expense-schema: &scheduling_expense_schema
                       use_audio_transcriptions: { type: boolean }
                       tool_access: { type: object, additionalProperties: true }
                       follow_up_settings: { type: object, additionalProperties: true }
-                      outcome_reason_settings: { type: object, additionalProperties: true }
+                      outcome_reason_settings: { $ref: '#/components/schemas/captain_outcome_reason_settings' }
                       context_access: { type: object, additionalProperties: true }
                       voice_settings: { type: object, additionalProperties: true }
-                      rules: { type: object, additionalProperties: true }
                     additionalProperties: true
                 additionalProperties: true
-    responses: { '200': { description: Updated assistant configuration, content: { application/json: { schema: { type: object, additionalProperties: true } } } }, '422': { description: Invalid assistant configuration } }
+    responses:
+      '200':
+        description: Saved agent configuration and routes
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/captain_assistant' }
+      '422':
+        description: Invalid configuration, handoff target or a removed separate instruction field; no settings changes are saved.
+        content:
+          application/json:
+            schema:
+              anyOf:
+                - { $ref: '#/components/schemas/captain_removed_rules_error' }
+                - { $ref: '#/components/schemas/captain_custom_safety_rules_error' }
+                - { type: object, additionalProperties: true }
   delete:
     tags: [Captain Assistants]
     operationId: delete-captain-assistant
@@ -4111,7 +4188,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     tags: [Captain Assistants]
     operationId: test-captain-assistant-playground
     summary: Run one assistant playground request
-    description: External agents use server-owned Trial or Live sessions. Live requires an account administrator and uses real clinic operations with a synthetic caller; external delivery is disabled by default. Session and reset actions do not generate a message. Per-request model, temperature, and reasoning-effort overrides are validated against the model registry and never saved. The internal assistant playground is feature-gated and rejects these controls. Response latency is measured end-to-end; reasoning-token usage is returned only if reported by the provider.
+    description: External agents use server-owned workspace sessions with a synthetic caller and account-scoped routing. Real-data permissions start disabled; the permissions action enables reads or previews of real changes under the current operator's access. Every real change requires a confirm request bound to the unchanged preview, session and acting agent. External delivery is unavailable. Session, reset and permissions actions do not generate a message. Message responses expose the acting agent and any task queue results. Per-request model, temperature and reasoning controls are validated and never saved; the internal assistant playground is feature-gated and rejects those overrides. Latency is measured; reasoning tokens are returned only when reported by the provider.
     security: [{ userApiKey: [] }]
     requestBody:
       required: true
@@ -4120,19 +4197,44 @@ x-scheduling-expense-schema: &scheduling_expense_schema
           schema: { $ref: '#/components/schemas/captain_assistant_playground_request' }
     responses:
       '200':
-        description: Assistant response and available runtime metrics
+        description: Message response, session state, confirmed action result or timeout response
         content:
           application/json:
             schema: { $ref: '#/components/schemas/captain_assistant_playground_response' }
       '422':
-        description: Unsupported or invalid per-request override
+        description: Invalid scenario, action, expired preview, legacy live mode or unsupported per-request override
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [error, field]
+                  properties:
+                    error: { type: string, enum: [unsupported_playground_setting] }
+                    field: { type: string, enum: [test_model, test_temperature, test_thinking_effort] }
+                - type: object
+                  required: [error, message]
+                  properties:
+                    error: { type: string, enum: [invalid_playground_scenario] }
+                    message: { type: string }
+      '403':
+        description: Workspace, acting agent, tool or real-record access is not authorized
         content:
           application/json:
             schema:
               type: object
-              required: [error, field]
+              required: [error]
               properties:
-                error: { type: string, enum: [unsupported_playground_setting] }
-                field: { type: string, enum: [test_model, test_temperature, test_thinking_effort] }
+                error: { type: string, enum: [playground_live_forbidden] }
+      '409':
+        description: Session is already running, expired or changed
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [error, message]
+              properties:
+                error: { type: string, enum: [playground_session_conflict] }
+                message: { type: string }
       '410':
         description: The internal assistant playground is not enabled

@@ -10,6 +10,11 @@ import Input from 'dashboard/components-next/input/Input.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
+import AgentSelector from 'dashboard/components-next/captain/assistant/AgentSelector.vue';
+import {
+  externalAssistants,
+  knowledgeAccessPayload,
+} from 'dashboard/components-next/captain/assistant/assistantAccess';
 
 import {
   UPLOADABLE_FILE_EXTENSIONS,
@@ -54,7 +59,7 @@ const initialState = {
   previewLinks: [],
   selectedUrls: [],
   visibility: 'general',
-  selectedAssistantId: '',
+  selectedAssistantIds: props.assistantId ? [Number(props.assistantId)] : [],
   faqGenerationEnabled: true,
 };
 
@@ -68,19 +73,12 @@ const requiresPreviewSelection = computed(
 const supportsAdvancedSettings = computed(() =>
   ['site_import', 'selected_pages'].includes(state.documentType)
 );
-const showAssistantSelector = computed(
-  () => state.visibility === 'personal' && !props.assistantId
+const showAssistantSelector = computed(() => state.visibility === 'personal');
+const availableAssistants = computed(() =>
+  externalAssistants(formState.assistants.value)
 );
-const assistantOptions = computed(() =>
-  formState.assistants.value.map(assistant => ({
-    value: assistant.id,
-    label: assistant.name,
-  }))
-);
-const effectiveAssistantId = computed(() =>
-  state.visibility === 'personal'
-    ? props.assistantId || state.selectedAssistantId
-    : null
+const accessPayload = computed(() =>
+  knowledgeAccessPayload(state.visibility, state.selectedAssistantIds)
 );
 
 const validationRules = {
@@ -90,7 +88,7 @@ const validationRules = {
   uploadedFile: {
     required: requiredIf(() => state.documentType === 'file_upload'),
   },
-  selectedAssistantId: {
+  selectedAssistantIds: {
     required: requiredIf(() => showAssistantSelector.value),
   },
 };
@@ -209,7 +207,7 @@ const formErrors = computed(() => ({
       : '',
   selectedPages: selectedPagesError.value,
   assistant:
-    v$.value.selectedAssistantId.$error && showAssistantSelector.value
+    v$.value.selectedAssistantIds.$error && showAssistantSelector.value
       ? t('CAPTAIN.KNOWLEDGE_VISIBILITY.ASSISTANT_REQUIRED')
       : '',
 }));
@@ -258,7 +256,6 @@ watch(
 );
 
 const ensureAssistantsLoaded = () => {
-  if (props.assistantId) return;
   if (formState.assistantUiFlags.value.fetchingList) return;
   if (formState.assistants.value.length) return;
 
@@ -268,12 +265,7 @@ const ensureAssistantsLoaded = () => {
 watch(
   () => state.visibility,
   visibility => {
-    if (visibility !== 'personal') {
-      state.selectedAssistantId = '';
-      return;
-    }
-
-    ensureAssistantsLoaded();
+    if (visibility === 'personal') ensureAssistantsLoaded();
   }
 );
 
@@ -350,9 +342,7 @@ const handlePreviewSelectedPages = async () => {
   try {
     const response = await store.dispatch('captainDocuments/preview', {
       document: {
-        ...(effectiveAssistantId.value
-          ? { assistant_id: effectiveAssistantId.value }
-          : {}),
+        ...accessPayload.value,
         external_link: state.url,
         source_mode: state.documentType,
         import_profile: buildImportProfile(),
@@ -374,9 +364,12 @@ const prepareDocumentDetails = () => {
     const formData = new FormData();
     const extension =
       state.uploadedFile?.name.split('.').pop()?.toLowerCase() || '';
-    if (effectiveAssistantId.value) {
-      formData.append('document[assistant_id]', effectiveAssistantId.value);
-    }
+    // Empty owner removes the legacy single-agent restriction.
+    formData.append('document[assistant_id]', '');
+    formData.append('document[allowed_assistant_ids][]', '');
+    accessPayload.value.allowed_assistant_ids.forEach(id => {
+      formData.append('document[allowed_assistant_ids][]', id);
+    });
     if (extension === 'pdf') {
       formData.append('document[pdf_file]', state.uploadedFile);
     } else {
@@ -397,15 +390,12 @@ const prepareDocumentDetails = () => {
 
   return {
     document: {
-      ...(effectiveAssistantId.value
-        ? { assistant_id: effectiveAssistantId.value }
-        : {}),
+      ...accessPayload.value,
       name: state.name || state.url,
       external_link: state.url,
       source_mode: state.documentType,
       import_profile: buildImportProfile(),
       faq_generation_enabled: state.faqGenerationEnabled,
-      visibility: state.visibility,
       ...(state.documentType === 'selected_pages'
         ? { selected_urls: state.selectedUrls }
         : {}),
@@ -483,7 +473,7 @@ const handleSubmit = async () => {
       :message-type="formErrors.url ? 'error' : 'info'"
     />
 
-    <div v-if="supportsAdvancedSettings" class="rounded-xl bg-n-alpha-2 p-4">
+    <div v-if="supportsAdvancedSettings" class="border-t border-n-weak pt-4">
       <div class="mb-3">
         <p class="m-0 text-sm font-medium text-n-slate-12">
           {{ t('CAPTAIN.DOCUMENTS.FORM.ADVANCED.TITLE') }}
@@ -520,7 +510,7 @@ const handleSubmit = async () => {
 
       <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
         <div
-          class="flex items-center justify-between rounded-lg bg-n-alpha-2 p-3"
+          class="flex items-center justify-between border-b border-n-weak py-3"
         >
           <div>
             <p class="m-0 text-sm font-medium text-n-slate-12">
@@ -530,7 +520,7 @@ const handleSubmit = async () => {
           <Switch v-model="state.importProfile.allowSubdomains" />
         </div>
         <div
-          class="flex items-center justify-between rounded-lg bg-n-alpha-2 p-3"
+          class="flex items-center justify-between border-b border-n-weak py-3"
         >
           <div>
             <p class="m-0 text-sm font-medium text-n-slate-12">
@@ -540,7 +530,7 @@ const handleSubmit = async () => {
           <Switch v-model="state.importProfile.ignoreQueryParameters" />
         </div>
         <div
-          class="flex items-center justify-between rounded-lg bg-n-alpha-2 p-3"
+          class="flex items-center justify-between border-b border-n-weak py-3"
         >
           <div>
             <p class="m-0 text-sm font-medium text-n-slate-12">
@@ -564,10 +554,7 @@ const handleSubmit = async () => {
         @click="handlePreviewSelectedPages"
       />
 
-      <div
-        v-if="state.previewLinks.length"
-        class="rounded-xl border border-n-weak bg-n-background p-4"
-      >
+      <div v-if="state.previewLinks.length" class="border-t border-n-weak pt-4">
         <div class="mb-3 flex items-center justify-between gap-2">
           <div>
             <p class="m-0 text-sm font-medium text-n-slate-12">
@@ -709,18 +696,11 @@ const handleSubmit = async () => {
     </div>
 
     <div v-if="showAssistantSelector" class="flex flex-col gap-1">
-      <label
-        for="documentAssistant"
-        class="mb-0.5 text-sm font-medium text-n-slate-12"
-      >
-        {{ t('CAPTAIN.KNOWLEDGE_VISIBILITY.ASSISTANT_LABEL') }}
-      </label>
-      <ComboBox
-        id="documentAssistant"
-        v-model="state.selectedAssistantId"
-        :options="assistantOptions"
-        :placeholder="t('CAPTAIN.KNOWLEDGE_VISIBILITY.ASSISTANT_PLACEHOLDER')"
-        class="[&>div>button]:bg-n-alpha-black2"
+      <AgentSelector
+        v-model="state.selectedAssistantIds"
+        :assistants="availableAssistants"
+        :disabled="formState.assistantUiFlags.value.fetchingList"
+        :label="t('CAPTAIN.KNOWLEDGE_VISIBILITY.ASSISTANT_LABEL')"
       />
       <p
         class="m-0 text-xs"

@@ -575,6 +575,16 @@
           "TITLE": "删除助手",
           "DESCRIPTION": "此操作是永久性的。删除此文档将永久删除所有生成的知识。",
           "BUTTON_TEXT": "删除 {assistantName}"
+        },
+        "TABS": {
+          "RUNTIME": {
+            "LABEL": "Messages when status changes",
+            "DESCRIPTION": "What to send to the customer when handing off to a staff member or completing a conversation.",
+            "SECTION": "Configure the messages sent to the customer when handing off or completing a conversation."
+          },
+          "BASIC": {
+            "DESCRIPTION": "Agent profile, operating mode, avatar and messages for customers."
+          }
         }
       },
       "OPTIONS": {
@@ -742,6 +752,20 @@
             "SUCCESS": "Scenarios deleted successfully",
             "ERROR": "There was an error deleting scenarios, please try again."
           }
+        }
+      },
+      "OUTCOMES": {
+        "DEFAULTS": {
+          "HANDOFF": {
+            "FAQ_NO_ANSWER": "No answer in FAQ"
+          }
+        },
+        "DESCRIPTION": "Reasons for conversation completion and staff handoff reports.",
+        "HANDOFF": {
+          "DESCRIPTION": "The reason is determined from the conversation after it is handed to a staff member."
+        },
+        "COMPLETION": {
+          "DESCRIPTION": "The reason is determined from the conversation after it is completed."
         }
       }
     },

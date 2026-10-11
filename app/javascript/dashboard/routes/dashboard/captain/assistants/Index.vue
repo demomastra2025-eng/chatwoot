@@ -86,7 +86,8 @@ const handleAssistantAction = ({ id }) => {
           :id="assistant.id"
           :key="assistant.id"
           :name="assistant.name"
-          :description="assistant.description || ''"
+          :description="assistant.routing_description || ''"
+          :active="assistant.active !== false"
           :updated-at="assistant.updated_at || assistant.created_at"
           @action="handleAssistantAction"
         />

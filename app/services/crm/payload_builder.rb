@@ -72,10 +72,10 @@ module Crm::PayloadBuilder
 
   def stage_reason_attributes(stage)
     {
-      closing_reason_options: stage.closing_reason_options,
-      closing_reason_required: stage.closing_reason_required,
-      transition_reason_options: stage.transition_reason_options,
-      transition_reason_required: stage.transition_reason_required
+      closing_reason_options: stage.outcome_lost? ? stage.closing_reason_options : [],
+      closing_reason_required: stage.outcome_lost? && stage.closing_reason_required,
+      transition_reason_options: [],
+      transition_reason_required: false
     }
   end
 
@@ -211,7 +211,7 @@ module Crm::PayloadBuilder
       waiting_started_at: deal.waiting_started_at&.iso8601,
       waiting_set_by_id: deal.waiting_set_by_id,
       next_action: Crm::Deals::NextActionService.new(deal: deal).perform,
-      closing_reasons: deal.closing_reasons,
+      closing_reasons: deal.stage&.outcome_lost? ? deal.closing_reasons : [],
       position: deal.position,
       win_probability: deal.win_probability,
       external_ref: deal.external_ref,

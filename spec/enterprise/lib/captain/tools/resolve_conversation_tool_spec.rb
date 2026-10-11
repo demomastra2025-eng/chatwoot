@@ -54,10 +54,10 @@ RSpec.describe Captain::Tools::ResolveConversationTool do
       expect(payload).not_to have_key('reason')
     end
 
-    it 'canonicalizes explicit configured status reasons' do
+    it 'defers reason classification without rejecting legacy callers or required workspace reasons' do
       account.update!(
         conversation_status_reason_config: {
-          resolved: { options: ['Customer confirmed'], required: false }
+          resolved: { options: ['Customer confirmed'], required: true }
         }
       )
 
@@ -65,11 +65,12 @@ RSpec.describe Captain::Tools::ResolveConversationTool do
       payload = JSON.parse(result)
 
       expect(conversation.reload).to be_resolved
-      expect(payload['status_reason']).to eq('Customer confirmed')
-      expect(conversation.status_transitions.last.reason).to eq('Customer confirmed')
+      expect(payload['reason_classification']).to eq('pending')
+      expect(payload).not_to have_key('status_reason')
+      expect(conversation.status_transitions.last.metadata.dig('outcome_classification', 'state')).to eq('pending')
     end
 
-    it 'prefers an exact outcome reason ID when it collides with another reason label' do
+    it 'captures allowed reasons without accepting a primary-model classification' do
       assistant.update!(
         config: assistant.config.to_h.deep_merge(
           'outcome_reason_settings' => {
@@ -94,15 +95,15 @@ RSpec.describe Captain::Tools::ResolveConversationTool do
       payload = JSON.parse(result)
       transition = conversation.status_transitions.last
 
-      expect(payload).to include('outcome_reason_id' => 'support', 'status_reason' => 'Technical')
-      expect(transition.reason).to eq('Technical')
+      expect(payload).to include('reason_classification' => 'pending')
+      expect(payload).not_to have_key('outcome_reason_id')
+      expect(transition.metadata.dig('outcome_classification', 'reasons')).to include('id' => 'support', 'label' => 'Technical')
       expect(transition.metadata).to include(
-        'outcome_reason_id' => 'support',
         'outcome_reason_type' => 'completion'
       )
     end
 
-    it 'requires a specific explanation for the Other completion reason and audits the selected reason' do
+    it 'retains a factual explanation for asynchronous classification' do
       assistant.update!(
         config: assistant.config.to_h.deep_merge(
           'outcome_reason_settings' => {
@@ -116,20 +117,16 @@ RSpec.describe Captain::Tools::ResolveConversationTool do
         }
       )
 
-      expect(tool.perform(tool_context, outcome_reason_id: 'other')).to include('ERROR:')
-      expect(conversation.reload).not_to be_resolved
-
       result = tool.perform(
         tool_context,
         outcome_reason_id: 'other',
         reason: 'The customer asked to close the conversation after receiving the requested information.'
       )
 
-      expect(JSON.parse(result)).to include('outcome_reason_id' => 'other')
+      expect(JSON.parse(result)).to include('reason_classification' => 'pending')
       transition = conversation.status_transitions.last
-      expect(transition.reason).to eq('Other')
+      expect(transition.metadata.dig('outcome_classification', 'state')).to eq('pending')
       expect(transition.metadata).to include(
-        'outcome_reason_id' => 'other',
         'outcome_reason_type' => 'completion',
         'assistant_id' => assistant.id,
         'outcome_reason_explanation' => 'The customer asked to close the conversation after receiving the requested information.'

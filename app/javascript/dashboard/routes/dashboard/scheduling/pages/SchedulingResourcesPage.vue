@@ -648,7 +648,7 @@ onMounted(async () => {
 
           <div class="grid gap-2 text-sm">
             <div
-              class="flex items-center justify-between gap-3 rounded-xl bg-n-alpha-black2 px-3 py-2 outline outline-1 outline-transparent"
+              class="flex items-center justify-between gap-3 border-b border-n-weak py-2"
             >
               <span class="text-xs text-n-slate-10">
                 {{ $t('SCHEDULING.RESOURCES.LINKED_USER') }}
@@ -667,7 +667,7 @@ onMounted(async () => {
             </div>
 
             <div
-              class="flex items-center justify-between gap-3 rounded-xl bg-n-alpha-black2 px-3 py-2 outline outline-1 outline-transparent"
+              class="flex items-center justify-between gap-3 border-b border-n-weak py-2"
             >
               <span class="text-xs text-n-slate-10">
                 {{ $t('SCHEDULING.RESOURCES.SLOT_DURATION') }}

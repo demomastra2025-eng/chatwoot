@@ -54,6 +54,16 @@ RSpec.describe Llm::StructuredOutputPolicy do
     end
   end
   let(:events) { [] }
+  let(:captain_content) do
+    {
+      'response' => 'Done',
+      'response_mode' => 'reply',
+      'reasoning' => 'Checked the tool result before replying.',
+      'artifact_ids' => [],
+      'handoff_message' => '',
+      'handoff_reason' => ''
+    }
+  end
   let(:subscriber) do
     ActiveSupport::Notifications.subscribe(/llm\.schema\./) do |*args|
       events << ActiveSupport::Notifications::Event.new(*args)
@@ -182,22 +192,51 @@ RSpec.describe Llm::StructuredOutputPolicy do
 
     it 'adds Captain response defaults before schema validation' do
       described_class.bind!(chat: chat, schema: Captain::ResponseSchema)
-      response = instance_double(
-        RubyLLM::Message,
-        content: '{"response":"Done","reasoning":"Checked the tool result before replying."}',
-        tool_call?: false,
-        'content=': nil
+      response = StructuredOutputPolicySpecResponse.new(
+        '{"response":"Done","reasoning":"Checked the tool result before replying."}'
       )
 
-      expect(response).to receive(:content=).with(hash_including(
-                                                    'response' => 'Done',
-                                                    'reasoning' => 'Checked the tool result before replying.',
-                                                    'artifact_ids' => [],
-                                                    'handoff_message' => '',
-                                                    'handoff_outcome_reason_id' => ''
-                                                  ))
-
       described_class.normalize_response!(chat: chat, response: response)
+
+      expect(response.content).to eq(captain_content)
+      expect(response.content.keys).to match_array(captain_response_schema_required_keys)
+    end
+
+    %i[hash json].each do |format|
+      it "discards retired Captain handoff reason fields from #{format} content" do
+        described_class.bind!(chat: chat, schema: Captain::ResponseSchema)
+        expected_content = captain_content.merge(
+          'response' => 'conversation_handoff',
+          'handoff_message' => 'A specialist will continue.',
+          'handoff_reason' => 'The customer requested a specialist.'
+        )
+        legacy_content = expected_content.merge(
+          'handoff_status_reason' => 'Model-supplied status reason',
+          'handoff_outcome_reason_id' => 'model_supplied_reason_id'
+        )
+        content = format == :json ? legacy_content.to_json : legacy_content.symbolize_keys
+        response = StructuredOutputPolicySpecResponse.new(content)
+
+        described_class.normalize_response!(chat: chat, response: response)
+
+        expect(response.content).to eq(expected_content)
+        expect(response.content.keys).to match_array(captain_response_schema_required_keys)
+      end
+    end
+
+    it 'rejects unknown Captain fields even when retired handoff reason fields are present' do
+      described_class.bind!(chat: chat, schema: Captain::ResponseSchema)
+      response = StructuredOutputPolicySpecResponse.new(
+        captain_content.merge(
+          'handoff_status_reason' => 'Model-supplied status reason',
+          'handoff_outcome_reason_id' => 'model_supplied_reason_id',
+          'custom_guardrail' => { 'action' => 'handoff' }
+        ).to_json
+      )
+
+      expect do
+        described_class.normalize_response!(chat: chat, response: response)
+      end.to raise_error(described_class::InvalidStructuredOutputError, /did not match schema/)
     end
 
     it 'rejects plain text Captain responses before the repair path runs' do
@@ -287,6 +326,24 @@ RSpec.describe Llm::StructuredOutputPolicy do
   end
 
   describe '.execute' do
+    %w[openai/gpt-6-luna anthropic/claude-haiku-5.5].each do |model_id|
+      it "accepts a complete six-field Captain response once without repair for #{model_id}" do
+        model = instance_double(RubyLLM::Model::Info, id: model_id, provider: 'openrouter')
+        response = StructuredOutputPolicySpecResponse.new(captain_content.to_json)
+        retry_chat = StructuredOutputPolicySpecChat.new([response], model: model)
+        described_class.bind!(chat: retry_chat, schema: Captain::ResponseSchema)
+        expect(retry_chat).to receive(:ask).with('Hello').once.and_call_original
+
+        result = described_class.execute(chat: retry_chat) { retry_chat.ask('Hello') }
+
+        expect(result.content).to eq(captain_content)
+        expect(result.content.keys).to match_array(captain_response_schema_required_keys)
+        expect(retry_chat.messages).to contain_exactly(response)
+        expect(retry_chat.instructions).to be_empty
+        expect(events).to be_empty
+      end
+    end
+
     it 'retries once with repair instructions and keeps only the successful response in history' do
       response_one = StructuredOutputPolicySpecResponse.new('{"unexpected":"field"}')
       response_two = StructuredOutputPolicySpecResponse.new('{"message":"Done"}')
@@ -412,11 +469,13 @@ RSpec.describe Llm::StructuredOutputPolicy do
 
       result = described_class.execute(chat: retry_chat) { retry_chat.ask('Hello') }
 
-      expect(result.content).to include(
+      expect(result.content).to eq(
         'response' => 'Готово, обновил сделку.',
+        'response_mode' => 'reply',
         'reasoning' => 'Response generated from the current conversation and available tool results.',
         'artifact_ids' => [],
-        'handoff_message' => ''
+        'handoff_message' => '',
+        'handoff_reason' => ''
       )
       expect(result.content.keys).to match_array(captain_response_schema_required_keys)
       expect(retry_chat.messages).to contain_exactly(response_three)

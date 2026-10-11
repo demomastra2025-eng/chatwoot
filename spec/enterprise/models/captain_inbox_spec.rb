@@ -6,6 +6,25 @@ RSpec.describe CaptainInbox do
   let(:inbox) { create(:inbox, account: account) }
   let(:assistant) { create(:captain_assistant, account: account) }
 
+  it 'rejects new inactive and internal entry agents' do
+    assistant.update!(active: false)
+    expect(build(:captain_inbox, inbox: inbox, captain_assistant: assistant)).not_to be_valid
+    assistant.update!(active: true, usage_mode: 'internal_assistant')
+    expect(build(:captain_inbox, inbox: inbox, captain_assistant: assistant)).not_to be_valid
+  end
+
+  it 'rejects entry assignments from another workspace' do
+    expect(build(:captain_inbox, inbox: inbox, captain_assistant: create(:captain_assistant))).not_to be_valid
+  end
+
+  it 'retains the configured entry when the agent is temporarily deactivated' do
+    assignment = create(:captain_inbox, inbox: inbox, captain_assistant: assistant)
+    assistant.update!(active: false)
+
+    expect(assignment.reload).to be_valid
+    expect(assignment.captain_assistant_id).to eq(assistant.id)
+  end
+
   it 'acquires the shared assistant assignment lock on save and destroy' do
     captain_inbox = build(:captain_inbox, inbox: inbox, captain_assistant: assistant)
 

@@ -104,8 +104,8 @@ const assistantRoutes = [
   {
     path: frontendURL('accounts/:accountId/captain/:assistantId/scenarios'),
     redirect: to => ({
-      name: 'captain_assistants_prompts_index',
-      params: to.params,
+      name: 'captain_assistants_create_index',
+      params: { accountId: to.params.accountId },
       query: to.query,
     }),
     name: 'captain_assistants_scenarios_index',

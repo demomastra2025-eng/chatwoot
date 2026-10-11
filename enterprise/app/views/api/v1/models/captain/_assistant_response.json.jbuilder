@@ -36,4 +36,6 @@ json.question resource.question
 json.updated_at resource.updated_at.to_i
 json.status resource.status
 json.visibility resource.visibility
+json.allowed_assistant_ids resource.allowed_assistant_ids
+json.restricted_to_assistants resource.restricted_to_assistants?
 json.edited resource.edited

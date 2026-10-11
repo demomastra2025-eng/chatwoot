@@ -26,7 +26,11 @@ class Campaigns::CaptainGeneratedMessageService
     end.with_indifferent_access
 
     content = response[:response].to_s.strip
-    raise ArgumentError, 'Captain requested a handoff instead of a message' if content == 'conversation_handoff'
+    if content.in?(['conversation_handoff', 'response_cancelled', Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_RESPONSE]) ||
+       response[:error_class].present? || response[:moderation_blocked] == true || response[:response_suppressed] == true ||
+       response[:response_cancelled] == true
+      raise ArgumentError, 'Captain did not produce a deliverable campaign message'
+    end
     raise ArgumentError, 'Captain generated blank campaign content' if content.blank?
 
     {

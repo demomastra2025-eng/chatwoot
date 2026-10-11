@@ -1,13 +1,16 @@
 json.account_id resource.account_id
 json.avatar_url resource.avatar_url
-json.config(resource.config.to_h.except('handoff_requires_explicit_consent', 'handoff_consent_reason')
-                    .merge('rules' => resource.rule_entries.map(&:stringify_keys)))
+json.config(resource.config.to_h.except('handoff_requires_explicit_consent', 'handoff_consent_reason', 'rules', 'skills', 'main_prompt_rules_migration'))
 json.created_at resource.created_at.to_i
 json.description resource.description
-json.guardrails resource.guardrails
 json.id resource.id
 json.name resource.name
-json.response_guidelines resource.response_guidelines
 json.type 'captain_assistant'
 json.updated_at resource.updated_at.to_i
 json.usage_mode resource.usage_mode
+json.active resource.active?
+json.routing_description resource.routing_description
+json.handoff_agent_ids resource.handoff_agent_ids
+json.legacy_scenario_id resource.legacy_scenario_id
+json.migration_warnings resource.config.to_h.dig('legacy_scenario_migration', 'warnings') || []
+json.outcome_reason_options Captain::OutcomeReasonConfig.new(resource).normalized_settings

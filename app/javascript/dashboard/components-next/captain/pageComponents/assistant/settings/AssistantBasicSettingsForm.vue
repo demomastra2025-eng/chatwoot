@@ -7,6 +7,7 @@ import { required, minLength } from '@vuelidate/validators';
 import Input from 'dashboard/components-next/input/Input.vue';
 import Select from 'dashboard/components-next/select/Select.vue';
 import ModelSettings from 'dashboard/components-next/captain/assistant/ModelSettings.vue';
+import AssistantGuardrailsSettings from './AssistantGuardrailsSettings.vue';
 import { useCaptainConfigStore } from 'dashboard/store/captain/preferences';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Editor from 'dashboard/components-next/Editor/Editor.vue';
@@ -81,7 +82,11 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['submit', 'handoffCapabilityChange']);
+const emit = defineEmits([
+  'submit',
+  'handoffCapabilityChange',
+  'faqCapabilityChange',
+]);
 
 const { t } = useI18n();
 
@@ -109,45 +114,57 @@ const initialState = {
     promptInjectionAction: 'inherit',
     sensitiveInfoAction: 'inherit',
   },
+  customRules: [],
   avatarFile: null,
   avatarUrl: '',
   removeAvatar: false,
 };
 
 const state = reactive({ ...initialState });
+const safetyChanges = reactive({});
+const customRulesChanged = ref(false);
+const guardrailsRef = ref(null);
+const customRulesValue = computed({
+  get: () => state.customRules,
+  set: rules => {
+    state.customRules = rules;
+    customRulesChanged.value = true;
+  },
+});
 const instructionEditorRef = ref(null);
 const captainConfigStore = useCaptainConfigStore();
 const clientModelLabel = label =>
   String(label || '').replace(/openrouter/gi, 'поставщик моделей');
-// Only the short list curated by the platform. A model the agent already has stays selectable and is marked as
-// the current one; it is not offered to agents that do not use it. The first option is empty: the agent has no model
-// of its own and follows the platform default, so the Super Admin default (and its rollback) reaches it.
+const platformModelId = computed(
+  () => captainConfigStore.getSelectedModelForFeature('assistant') || ''
+);
+// Show the actual effective model while retaining null for inherited settings.
+const selectedModelValue = computed({
+  get: () => state.model || platformModelId.value,
+  set: value => {
+    state.model = value === platformModelId.value ? '' : value;
+  },
+});
 const assistantModelOptions = computed(() => {
   const currentLabel = name =>
     `${name} (${t('CAPTAIN.ASSISTANTS.FORM.MODEL.CURRENT_MODEL')})`;
-  const platformModelId =
-    captainConfigStore.getSelectedModelForFeature('assistant') || '';
-  const platformModel = captainConfigStore
-    .getModelsForFeature('assistant')
-    .find(model => model.id === platformModelId && !model.current_only);
-  const platformDefault = {
-    value: '',
-    label: platformModel
-      ? t('CAPTAIN.ASSISTANTS.FORM.MODEL.PLATFORM_DEFAULT_WITH_MODEL', {
-          model: clientModelLabel(
-            platformModel.display_name || platformModel.id
-          ),
-        })
-      : t('CAPTAIN.ASSISTANTS.FORM.MODEL.PLATFORM_DEFAULT'),
-  };
   const options = captainConfigStore
     .getModelsForFeature('assistant')
-    .filter(model => !model.current_only || model.id === state.model)
+    .filter(
+      model =>
+        !model.current_only ||
+        model.id === state.model ||
+        model.id === platformModelId.value
+    )
     .map(model => {
       const name = clientModelLabel(model.display_name || model.id);
+      let label = model.current_only ? currentLabel(name) : name;
+      if (model.id === platformModelId.value) {
+        label = `${name} (${t('CAPTAIN.ASSISTANTS.FORM.MODEL.DEFAULT_MODEL')})`;
+      }
       return {
         value: model.id,
-        label: model.current_only ? currentLabel(name) : name,
+        label,
       };
     });
 
@@ -158,18 +175,74 @@ const assistantModelOptions = computed(() => {
     });
   }
 
-  return [platformDefault, ...options];
+  if (
+    platformModelId.value &&
+    !options.some(option => option.value === platformModelId.value)
+  ) {
+    options.unshift({
+      value: platformModelId.value,
+      label: `${clientModelLabel(platformModelId.value)} (${t('CAPTAIN.ASSISTANTS.FORM.MODEL.DEFAULT_MODEL')})`,
+    });
+  }
+  return options;
 });
 // Web search, page and document reading need the web provider that the platform administrator connects.
 // Unavailable web capabilities remain disabled until the provider is configured.
 const isWebProviderConfigured = computed(
   () => captainConfigStore.runtimeMetadata?.web_access?.configured === true
 );
+const moderationSettingValue = value => {
+  if (value === true) return 'enabled';
+  if (value === false) return 'disabled';
+  return 'inherit';
+};
+const safetyActions = ['block', 'flag', 'disabled'];
+const safetyDefaults = computed(() => {
+  const feature =
+    props.assistant.usage_mode === 'internal_assistant'
+      ? 'copilot'
+      : 'assistant';
+  return captainConfigStore.runtimeMetadata?.safety_defaults?.[feature] || {};
+});
+// Display the effective value without copying an inherited setting into the
+// saved config. Only an explicit selection creates an agent override.
+const safetyControlValue = (field, defaultKey, allowed, normalize = v => v) =>
+  computed({
+    get: () => {
+      const saved = state.safetySettings[field];
+      if (allowed.includes(saved)) return saved;
+      const effective = normalize(safetyDefaults.value[defaultKey]);
+      return allowed.includes(effective) ? effective : '';
+    },
+    set: value => {
+      if (!allowed.includes(value)) return;
+      state.safetySettings[field] = value;
+      safetyChanges[defaultKey] =
+        defaultKey === 'moderation_enabled' ? value === 'enabled' : value;
+    },
+  });
+const safetyModerationValue = safetyControlValue(
+  'moderationEnabled',
+  'moderation_enabled',
+  ['enabled', 'disabled'],
+  value => moderationSettingValue(value)
+);
+const safetyPromptInjectionValue = safetyControlValue(
+  'promptInjectionAction',
+  'prompt_injection_action',
+  safetyActions
+);
+const safetySensitiveInfoValue = safetyControlValue(
+  'sensitiveInfoAction',
+  'sensitive_info_action',
+  safetyActions
+);
+const safetyValuePlaceholder = computed(() =>
+  captainConfigStore.uiFlags?.isFetching
+    ? t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.LOADING')
+    : t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.UNAVAILABLE')
+);
 const safetyModerationOptions = computed(() => [
-  {
-    value: 'inherit',
-    label: t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.INHERIT'),
-  },
   {
     value: 'enabled',
     label: t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.ENABLED'),
@@ -180,10 +253,6 @@ const safetyModerationOptions = computed(() => [
   },
 ]);
 const safetyActionOptions = computed(() => [
-  {
-    value: 'inherit',
-    label: t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.INHERIT'),
-  },
   { value: 'block', label: t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.BLOCK') },
   { value: 'flag', label: t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.FLAG') },
   {
@@ -196,6 +265,12 @@ const validationRules = {
   description: { required, minLength: minLength(1) },
 };
 
+watch(
+  () => state.features.conversationFaqs,
+  enabled => emit('faqCapabilityChange', enabled),
+  { immediate: true }
+);
+
 const instructionReferenceActions = computed(() => [
   {
     id: 'tools',
@@ -206,11 +281,6 @@ const instructionReferenceActions = computed(() => [
     id: 'fields',
     marker: '$',
     label: t('CAPTAIN.ASSISTANTS.FORM.REFERENCE_ACTIONS.FIELDS'),
-  },
-  {
-    id: 'skills',
-    marker: '!',
-    label: t('CAPTAIN.ASSISTANTS.FORM.REFERENCE_ACTIONS.SKILLS'),
   },
 ]);
 
@@ -358,12 +428,6 @@ const resolveInstructionText = assistant => {
     : '';
 };
 
-const moderationSettingValue = value => {
-  if (value === true) return 'enabled';
-  if (value === false) return 'disabled';
-  return 'inherit';
-};
-
 const updateStateFromAssistant = assistant => {
   const { config = {} } = assistant;
   state.name = assistant.name;
@@ -379,13 +443,26 @@ const updateStateFromAssistant = assistant => {
     config.message_collapse_window_seconds || 0
   );
   state.historyMessageLimit = Number(config.history_message_limit || 0);
+  Object.keys(safetyChanges).forEach(key => delete safetyChanges[key]);
   const safetySettings = config.safety_settings || {};
+  state.customRules = Array.isArray(safetySettings.custom_rules)
+    ? safetySettings.custom_rules.map(rule => ({ ...rule }))
+    : [];
+  customRulesChanged.value = false;
   state.safetySettings = {
     moderationEnabled: moderationSettingValue(
       safetySettings.moderation_enabled
     ),
-    promptInjectionAction: safetySettings.prompt_injection_action || 'inherit',
-    sensitiveInfoAction: safetySettings.sensitive_info_action || 'inherit',
+    promptInjectionAction: safetyActions.includes(
+      safetySettings.prompt_injection_action
+    )
+      ? safetySettings.prompt_injection_action
+      : 'inherit',
+    sensitiveInfoAction: safetyActions.includes(
+      safetySettings.sensitive_info_action
+    )
+      ? safetySettings.sensitive_info_action
+      : 'inherit',
   };
   state.features = {
     conversationFaqs: config.feature_faq || false,
@@ -441,6 +518,13 @@ const buildPayload = async () => {
     results.every(Boolean)
   );
   if (!result) return null;
+  if (
+    props.showFeatureFlags &&
+    props.showCoreSettings &&
+    guardrailsRef.value?.validate?.() === false
+  ) {
+    return null;
+  }
 
   const assistantPayload = {};
 
@@ -470,21 +554,21 @@ const buildPayload = async () => {
       history_message_limit: normalizeNonNegativeInteger(
         state.historyMessageLimit
       ),
-      safety_settings: {
-        moderation_enabled:
-          state.safetySettings.moderationEnabled === 'inherit'
-            ? null
-            : state.safetySettings.moderationEnabled === 'enabled',
-        prompt_injection_action:
-          state.safetySettings.promptInjectionAction === 'inherit'
-            ? null
-            : state.safetySettings.promptInjectionAction,
-        sensitive_info_action:
-          state.safetySettings.sensitiveInfoAction === 'inherit'
-            ? null
-            : state.safetySettings.sensitiveInfoAction,
-      },
     };
+    if (
+      props.assistant.config?.safety_settings ||
+      Object.keys(safetyChanges).length ||
+      customRulesChanged.value
+    ) {
+      assistantPayload.config.safety_settings = {
+        ...props.assistant.config?.safety_settings,
+        ...safetyChanges,
+        ...(customRulesChanged.value ||
+        Array.isArray(props.assistant.config?.safety_settings?.custom_rules)
+          ? { custom_rules: state.customRules.map(rule => ({ ...rule })) }
+          : {}),
+      };
+    }
   }
 
   if (props.showFeatureFlags && props.showCapabilities) {
@@ -522,8 +606,6 @@ const handleBasicInfoUpdate = async () => {
 };
 
 onMounted(async () => {
-  // The workspace model is only shown in the label of the empty option. It is never copied into the agent: an agent
-  // that saved it would stop following the platform default.
   await captainConfigStore.fetch();
 });
 
@@ -573,26 +655,30 @@ defineExpose({
         class="flex flex-col gap-5"
       >
         <ModelSettings
-          v-model:model="state.model"
+          v-model:model="selectedModelValue"
           v-model:temperature="state.temperature"
           v-model:effort="state.thinkingEffort"
           :metadata="modelMetadata"
           :models="assistantModelOptions"
         />
 
-        <div class="rounded-xl border border-n-weak bg-n-solid-1 p-4">
+        <section>
           <h4 class="text-sm font-medium text-n-slate-12">
             {{ t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.LABEL') }}
           </h4>
           <p class="mt-1 text-xs text-n-slate-11">
             {{ t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.DESCRIPTION') }}
           </p>
-          <div class="mt-4 grid gap-4 md:grid-cols-3">
+          <div class="mt-4 grid items-end gap-4 md:grid-cols-3">
             <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
               {{ t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.MODERATION') }}
               <Select
-                v-model="state.safetySettings.moderationEnabled"
+                v-model="safetyModerationValue"
                 :options="safetyModerationOptions"
+                :placeholder="
+                  safetyModerationValue ? '' : safetyValuePlaceholder
+                "
+                :disabled="!safetyModerationValue"
                 class="w-full"
               />
             </label>
@@ -601,21 +687,35 @@ defineExpose({
                 t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.PROMPT_INJECTION')
               }}
               <Select
-                v-model="state.safetySettings.promptInjectionAction"
+                v-model="safetyPromptInjectionValue"
                 :options="safetyActionOptions"
+                :placeholder="
+                  safetyPromptInjectionValue ? '' : safetyValuePlaceholder
+                "
+                :disabled="!safetyPromptInjectionValue"
                 class="w-full"
               />
             </label>
             <label class="flex min-w-0 flex-col gap-1 text-sm text-n-slate-12">
               {{ t('CAPTAIN.ASSISTANTS.FORM.SAFETY_SETTINGS.SENSITIVE_INFO') }}
               <Select
-                v-model="state.safetySettings.sensitiveInfoAction"
+                v-model="safetySensitiveInfoValue"
                 :options="safetyActionOptions"
+                :placeholder="
+                  safetySensitiveInfoValue ? '' : safetyValuePlaceholder
+                "
+                :disabled="!safetySensitiveInfoValue"
                 class="w-full"
               />
             </label>
           </div>
-        </div>
+        </section>
+
+        <AssistantGuardrailsSettings
+          :key="assistant?.id || 'new'"
+          ref="guardrailsRef"
+          v-model="customRulesValue"
+        />
 
         <div class="flex items-center justify-between gap-6">
           <div class="min-w-0">
@@ -710,7 +810,6 @@ defineExpose({
           class="z-0 captain-prompt-editor"
           enable-captain-tools
           enable-captain-fields
-          enable-captain-skills
           :captain-context-assistant-id="assistant.id"
           :captain-context-access="state.contextAccess"
           :captain-tool-access="state.toolAccess"

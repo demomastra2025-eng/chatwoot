@@ -66,6 +66,22 @@ class Llm::ObservabilityPayload
       payload
     end
 
+    def attach_provider_chat_response!(payload, response)
+      attach_chat_response!(payload, response)
+      data = provider_response_body(response)
+      usage = data['usage'].is_a?(Hash) ? data['usage'] : {}
+
+      payload['prompt_tokens'] = integer_value(usage['prompt_tokens']) || payload['prompt_tokens']
+      payload['completion_tokens'] = integer_value(usage['completion_tokens']) || payload['completion_tokens']
+      payload['total_tokens'] = integer_value(usage['total_tokens']) || compact_sum(payload['prompt_tokens'], payload['completion_tokens'])
+      payload['thinking_tokens'] = integer_value(usage.dig('completion_tokens_details', 'reasoning_tokens')) || payload['thinking_tokens']
+      payload['cached_tokens'] = integer_value(usage.dig('prompt_tokens_details', 'cached_tokens')) || token_value(response, :cached_tokens)
+      payload['estimated_cost'] = provider_response_cost(usage['cost'])
+      payload['endpoint_provider'] = data['provider'] if data['provider'].is_a?(String)
+      payload.compact!
+      payload
+    end
+
     def attach_embedding_response!(payload, response)
       vectors = response.respond_to?(:vectors) ? response.vectors : response
       vector_count, dimensions = vector_shape(vectors)
@@ -104,6 +120,16 @@ class Llm::ObservabilityPayload
       payload['total_tokens'] = integer_value(usage[:total_tokens]) || compact_sum(payload['prompt_tokens'], payload['completion_tokens'])
       payload['estimated_cost'] = usage[:cost] || usage[:estimated_cost]
       payload['result_count'] = response.results.count if response.respond_to?(:results) && response.results.respond_to?(:count)
+      payload.compact!
+      payload
+    end
+
+    def attach_decision_response!(payload, response)
+      attach_rerank_response!(payload, response)
+      payload['actual_model'] = response.model
+      payload['endpoint_provider'] = response.provider
+      payload['openrouter_generation_id'] = response.request_id
+      payload['output_type'] = 'decision'
       payload.compact!
       payload
     end
@@ -168,6 +194,21 @@ class Llm::ObservabilityPayload
 
     def token_value(response, method_name)
       response.public_send(method_name) if response.respond_to?(method_name)
+    end
+
+    def provider_response_body(response)
+      raw = response.raw if response.respond_to?(:raw)
+      body = raw.respond_to?(:body) ? raw.body : raw
+      body.is_a?(Hash) ? body.stringify_keys : {}
+    end
+
+    def provider_response_cost(value)
+      return unless value.is_a?(Numeric) || value.is_a?(String)
+
+      cost = BigDecimal(value.to_s)
+      cost.to_s('F') if cost.finite? && cost >= 0
+    rescue ArgumentError, TypeError
+      nil
     end
 
     def integer_value(value)

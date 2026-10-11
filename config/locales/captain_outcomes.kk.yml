@@ -1,0 +1,16 @@
+kk:
+  captain:
+    outcome_reasons:
+      pending: Себеп анықталып жатыр
+      unclassified: Себеп анықталмады
+      other: Басқа
+      goal_achieved: Мақсатқа қол жеткізілді
+      question_resolved: Сұрақ шешілді
+      customer_declined: Клиент бас тартты
+      no_response: Жауап жоқ
+      customer_requested_human: Клиент қызметкерді сұрады
+      low_confidence: Сенімділік жеткіліксіз
+      manual_action_required: Қызметкердің әрекеті қажет
+      complaint_or_conflict: Шағым немесе қақтығыс
+      tool_or_policy_limit: Құрал қолжетімсіз немесе әрекетке шектеу қойылған
+      faq_no_answer: FAQ бөлімінде жауап жоқ

@@ -116,12 +116,12 @@ RSpec.describe 'Captain assistant admin copilot tools' do
           assistant_id: assistant.id,
           name: 'Updated Bot',
           config_json: { feature_faq: false, temperature: 0.8, api_token: 'should-not-save' }.to_json,
-          response_guidelines_json: ['Be brief'].to_json
+          description: 'Be brief'
         )
       )
 
       expect(payload['action']).to eq('update_captain_assistant')
-      expect(payload['updated_fields']).to contain_exactly('name', 'config', 'response_guidelines')
+      expect(payload['updated_fields']).to contain_exactly('name', 'config', 'description')
       expect(payload['previous_assistant']).to include('name' => 'Main Bot')
       expect(payload['previous_assistant']['config']['api_token']).to eq('[FILTERED]')
       expect(payload['assistant']).to include('name' => 'Updated Bot')
@@ -132,7 +132,8 @@ RSpec.describe 'Captain assistant admin copilot tools' do
       expect(assistant.reload).to have_attributes(name: 'Updated Bot')
       expect(assistant.config).to include('feature_faq' => false, 'temperature' => 0.8, 'api_token' => 'secret-token-value')
       expect(assistant.config).not_to include('api_token' => 'should-not-save')
-      expect(assistant.response_guidelines).to eq(['Be brief'])
+      expect(assistant.description).to eq('Be brief')
+      expect(assistant.response_guidelines).to eq([])
     end
 
     it 'does not mutate until the backend confirmation gate permits execution' do
@@ -150,6 +151,20 @@ RSpec.describe 'Captain assistant admin copilot tools' do
 
       expect(result).to include('Account administrator permission is required')
       expect(assistant.reload.name).to eq('Main Bot')
+    end
+
+    it 'rejects old rule params rather than applying a parallel instructions mechanism' do
+      original = assistant.description
+      result = service.execute(assistant_id: assistant.id, description: 'Must not save', response_guidelines_json: ['Old field'].to_json)
+      expect(result).to include('Separate rules were removed')
+      expect(assistant.reload.description).to eq(original)
+    end
+
+    it 'rejects separate rule config and keeps migration archives out of tool context' do
+      result = service.execute(assistant_id: assistant.id, config_json: { rules: [] }.to_json)
+      expect(result).to include('Separate rules were removed')
+      payload = JSON.parse(Captain::Tools::Copilot::GetCaptainAssistantService.new(assistant, user: admin).execute(assistant_id: assistant.id))
+      expect(payload['assistant']['config']).not_to have_key('main_prompt_rules_migration')
     end
 
     it 'rejects malformed config JSON without mutation' do

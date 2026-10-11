@@ -857,9 +857,7 @@ const getFileTypeName = type => {
         <!-- TAB 2: CLEANER & TRASH -->
         <div v-else-if="activeTab === 'cleaner'" class="space-y-6">
           <!-- Smart Cleaner Form Card -->
-          <div
-            class="p-5 sm:p-6 bg-n-surface-1 rounded-xl border border-n-weak shadow-sm"
-          >
+          <div class="space-y-4">
             <div class="border-b border-n-weak pb-4 mb-4">
               <h3
                 class="text-base font-bold text-n-slate-12 flex items-center gap-2"
@@ -991,9 +989,7 @@ const getFileTypeName = type => {
               </div>
               <div v-else class="space-y-3">
                 <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                  <div
-                    class="bg-n-surface-1 p-2.5 rounded-lg border border-n-blue-4"
-                  >
+                  <div class="min-w-0">
                     <span class="text-n-slate-11 block">{{
                       $t('STORAGE.CLEANER.FOUND_FILES')
                     }}</span>
@@ -1001,9 +997,7 @@ const getFileTypeName = type => {
                       previewData.total_count
                     }}</strong>
                   </div>
-                  <div
-                    class="bg-n-surface-1 p-2.5 rounded-lg border border-n-blue-4"
-                  >
+                  <div class="min-w-0">
                     <span class="text-n-slate-11 block">{{
                       $t('STORAGE.CLEANER.TO_TRASH_SIZE')
                     }}</span>
@@ -1012,9 +1006,7 @@ const getFileTypeName = type => {
                       formatBytes(previewData.total_bytes)
                     }}</strong>
                   </div>
-                  <div
-                    class="bg-n-surface-1 p-2.5 rounded-lg border border-n-blue-4"
-                  >
+                  <div class="min-w-0">
                     <span class="text-n-slate-11 block">{{
                       $t('STORAGE.TYPES.RECORDINGS')
                     }}</span>
@@ -1022,9 +1014,7 @@ const getFileTypeName = type => {
                       `${previewData.recordings_count} (${formatBytes(previewData.recordings_bytes)})`
                     }}</strong>
                   </div>
-                  <div
-                    class="bg-n-surface-1 p-2.5 rounded-lg border border-n-blue-4"
-                  >
+                  <div class="min-w-0">
                     <span class="text-n-slate-11 block">{{
                       $t('STORAGE.TYPES.DOCUMENTS')
                     }}</span>
@@ -1035,9 +1025,7 @@ const getFileTypeName = type => {
                 </div>
 
                 <!-- Retention notice -->
-                <p
-                  class="text-xs text-n-blue-11 bg-n-blue-3/60 p-2.5 rounded-lg border border-n-blue-5"
-                >
+                <p class="text-xs text-n-blue-11">
                   {{ 'ℹ️ ' + $t('STORAGE.CLEANER.RETENTION_NOTICE') }}
                 </p>
 

@@ -39,7 +39,7 @@ RSpec.describe Captain::Tools::UpdateDealTool, type: :model do
     expect(payload['deal']).to include('id' => deal.id, 'title' => 'Moved deal', 'pipeline_id' => target_pipeline.id, 'stage_id' => target_stage.id)
   end
 
-  it 'updates and moves the deal with a configured transition reason' do
+  it 'updates and moves the deal while ignoring retired ordinary reason input' do
     contact = create(:contact, account: account)
     conversation = create(:conversation, account: account, contact: contact)
     pipeline = create(:crm_pipeline, account: account)
@@ -61,7 +61,7 @@ RSpec.describe Captain::Tools::UpdateDealTool, type: :model do
     event = deal.reload.events.where(event_type: 'deal_stage_changed').last
 
     expect(payload['deal']).to include('id' => deal.id, 'title' => 'Moved with reason', 'stage_id' => target_stage.id)
-    expect(event.meta['transition_reason']).to eq('Waiting payment')
+    expect(event.meta).not_to have_key('transition_reason')
   end
 
   it 'updates an explicit deal_id instead of the current conversation deal' do

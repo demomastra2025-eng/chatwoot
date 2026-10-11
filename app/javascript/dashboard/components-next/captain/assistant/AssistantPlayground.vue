@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import Button from 'dashboard/components-next/button/Button.vue';
+import ToggleSwitch from 'dashboard/components-next/switch/Switch.vue';
 import MessageList from './MessageList.vue';
 import ModelSettings from './ModelSettings.vue';
 import PlaygroundScenarioEditor from './PlaygroundScenarioEditor.vue';
@@ -16,6 +17,7 @@ const { t } = useI18n();
 const configStore = useCaptainConfigStore();
 const assistant = ref(null);
 const session = ref(null);
+const agentTasks = ref([]);
 const messages = ref([]);
 const newMessage = ref('');
 const scenarioDraft = ref({});
@@ -48,6 +50,12 @@ const profileModel = computed(
 const effectiveModel = computed(
   () => selectedModel.value || profileModel.value
 );
+const selectedModelValue = computed({
+  get: () => effectiveModel.value,
+  set: value => {
+    selectedModel.value = value === profileModel.value ? '' : value;
+  },
+});
 const metadata = computed(
   () =>
     models.value.find(model => model.id === effectiveModel.value) ||
@@ -55,12 +63,27 @@ const metadata = computed(
       ? assistant.value.playground_model
       : {})
 );
-const modelOptions = computed(() => [
-  { value: '', label: t('CAPTAIN.PLAYGROUND.USE_ASSISTANT_MODEL') },
-  ...models.value
+const modelOptions = computed(() => {
+  const options = models.value
     .filter(model => !model.current_only || model.id === profileModel.value)
-    .map(model => ({ value: model.id, label: model.display_name || model.id })),
-]);
+    .map(model => ({
+      value: model.id,
+      label:
+        model.id === profileModel.value
+          ? `${model.display_name || model.id} (${t('CAPTAIN.PLAYGROUND.PROFILE_MODEL')})`
+          : model.display_name || model.id,
+    }));
+  if (
+    profileModel.value &&
+    !options.some(option => option.value === profileModel.value)
+  ) {
+    options.unshift({
+      value: profileModel.value,
+      label: `${profileModel.value} (${t('CAPTAIN.PLAYGROUND.PROFILE_MODEL')})`,
+    });
+  }
+  return options;
+});
 const messageDisabled = computed(
   () =>
     isLoading.value ||
@@ -144,9 +167,17 @@ const failedActionText = result => {
     ? detail
     : t('CAPTAIN.PLAYGROUND.ACTION_FAILED');
 };
+const displayAgentName = record =>
+  record.agent_display_name ||
+  (Number(record.agent_id) === Number(assistant.value?.id)
+    ? assistant.value?.name
+    : '') ||
+  record.agent_name;
 const acceptSession = (payload, { restoreHistory = false } = {}) => {
   if (!payload || payload.mode !== 'workspace') return;
   session.value = { ...session.value, ...payload };
+  if (Array.isArray(payload.agent_tasks))
+    agentTasks.value = payload.agent_tasks;
   if (payload.scenario)
     scenarioDraft.value = JSON.parse(JSON.stringify(payload.scenario));
   realRead.value = payload.real_data_read === true;
@@ -155,7 +186,10 @@ const acceptSession = (payload, { restoreHistory = false } = {}) => {
     messages.value = payload.message_history.map(item => ({
       sender: item.role,
       content: item.content,
-      agentName: item.agent_name,
+      agentId: item.agent_id,
+      agentName: displayAgentName(item),
+      agentTasks: item.agent_tasks || [],
+      toolTrace: item.tool_trace,
     }));
   }
 };
@@ -248,6 +282,7 @@ const resetConversation = async () => {
   if (pendingTurn) await pendingTurn.catch(() => {});
   if (current !== identity) return;
   messages.value = [];
+  agentTasks.value = [];
   newMessage.value = '';
   isLoading.value = false;
   await loadSession({ reset: true });
@@ -298,11 +333,14 @@ const sendMessage = async () => {
     messages.value.push({
       sender: 'assistant',
       content: replyContent,
-      agentName: data.agent_name,
+      agentId: data.agent_id,
+      agentName: displayAgentName(data),
+      agentTasks: data.agent_tasks || [],
       reasoning: data.reasoning,
       toolTrace: data.tool_trace || [],
     });
     acceptSession(data.playground);
+    if (Array.isArray(data.agent_tasks)) agentTasks.value = data.agent_tasks;
   } catch (failure) {
     if (
       current === identity &&
@@ -402,6 +440,7 @@ watch(
     permissionEpoch += 1;
     assistant.value = null;
     session.value = null;
+    agentTasks.value = [];
     messages.value = [];
     newMessage.value = '';
     scenarioDraft.value = {};
@@ -444,209 +483,242 @@ defineExpose({
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col gap-3" data-test="playground-layout">
-    <div class="flex shrink-0 flex-wrap items-start justify-between gap-3">
-      <ModelSettings
-        v-model:model="selectedModel"
-        v-model:temperature="temperature"
-        v-model:effort="thinkingEffort"
-        :models="modelOptions"
-        :metadata="metadata"
-        :disabled="isLoadingSettings"
-        :default-label="t('CAPTAIN.PLAYGROUND.USE_PROFILE_SETTINGS')"
-      />
-      <Button
-        icon="i-lucide-rotate-ccw"
-        variant="ghost"
-        color="slate"
-        size="sm"
-        :label="t('CAPTAIN.PLAYGROUND.RESET_SESSION')"
-        :disabled="isLoadingSession || isUpdatingPermissions"
-        data-test="playground-reset"
-        @click="resetConversation"
-      />
-    </div>
-    <section
-      class="shrink-0 rounded-lg border border-n-weak p-3"
-      data-test="playground-permissions"
+  <div
+    class="grid h-full min-h-0 gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]"
+    data-test="playground-layout"
+  >
+    <aside
+      class="flex min-h-0 flex-col gap-4 overflow-y-auto lg:col-start-2 lg:row-start-1 lg:border-l lg:border-n-weak lg:pl-4"
+      data-test="playground-settings"
     >
-      <div class="flex flex-wrap items-center gap-4">
-        <label class="flex items-center gap-2 text-sm text-n-slate-12">
-          <input
-            type="checkbox"
-            :checked="realRead"
-            :disabled="!session || isUpdatingPermissions"
-            data-test="playground-real-read"
-            @change="setPermissions($event.target.checked, false)"
-          />
-          {{ t('CAPTAIN.PLAYGROUND.REAL_READ') }}
-        </label>
-        <label
-          v-if="realRead"
-          class="flex items-center gap-2 text-sm text-n-slate-12"
-        >
-          <input
-            type="checkbox"
-            :checked="realWrite"
-            :disabled="!session || isUpdatingPermissions"
-            data-test="playground-real-write"
-            @change="setPermissions(true, $event.target.checked)"
-          />
-          {{ t('CAPTAIN.PLAYGROUND.REAL_WRITE') }}
-        </label>
-      </div>
-      <p
-        v-if="realWrite"
-        class="mb-0 mt-2 text-xs font-medium text-n-amber-11"
-        role="status"
-        data-test="playground-write-warning"
-      >
-        {{ t('CAPTAIN.PLAYGROUND.WRITE_WARNING') }}
-      </p>
-      <p v-else class="mb-0 mt-2 text-xs text-n-slate-11">
-        {{ t('CAPTAIN.PLAYGROUND.SYNTHETIC_NOTICE') }}
-      </p>
-      <div
-        v-if="permissionsUnresolved"
-        class="mt-2 flex flex-wrap items-center gap-2"
-        role="alert"
-      >
-        <span class="text-xs text-n-ruby-11">{{
-          t('CAPTAIN.PLAYGROUND.REVOCATION_UNCONFIRMED')
-        }}</span>
+      <div class="flex shrink-0 flex-wrap items-start justify-between gap-3">
+        <ModelSettings
+          v-model:model="selectedModelValue"
+          v-model:temperature="temperature"
+          v-model:effort="thinkingEffort"
+          :models="modelOptions"
+          :metadata="metadata"
+          :disabled="isLoadingSettings"
+          :default-label="t('CAPTAIN.PLAYGROUND.USE_PROFILE_SETTINGS')"
+          class="w-full [&>div]:!grid-cols-1"
+        />
         <Button
-          size="sm"
+          icon="i-lucide-rotate-ccw"
+          variant="ghost"
           color="slate"
-          variant="outline"
-          :label="t('CAPTAIN.PLAYGROUND.REVOKE_RETRY')"
-          :disabled="isUpdatingPermissions"
-          data-test="playground-revoke-retry"
-          @click="setPermissions(false, false)"
+          size="sm"
+          :label="t('CAPTAIN.PLAYGROUND.RESET_SESSION')"
+          :disabled="isLoadingSession || isUpdatingPermissions"
+          data-test="playground-reset"
+          @click="resetConversation"
         />
       </div>
-    </section>
-    <section
-      class="shrink-0 rounded-lg border border-n-weak p-3"
-      data-test="playground-scenario"
-    >
-      <Button
-        variant="ghost"
-        color="slate"
-        size="sm"
-        icon="i-lucide-users"
-        :label="t('CAPTAIN.PLAYGROUND.SCENARIO_EDITOR')"
-        :aria-expanded="scenarioExpanded"
-        data-test="playground-scenario-toggle"
-        @click="scenarioExpanded = !scenarioExpanded"
-      />
-      <div
-        v-if="scenarioExpanded && session"
-        class="mt-3 max-h-[min(42vh,28rem)] space-y-3 overflow-y-auto overscroll-contain pr-1"
+      <section
+        class="shrink-0 border-t border-n-weak pt-3"
+        data-test="playground-permissions"
       >
-        <PlaygroundScenarioEditor
-          v-model="scenarioDraft"
-          :disabled="isLoading || isLoadingSession"
-        />
-        <Button
-          :label="t('CAPTAIN.PLAYGROUND.SCENARIO_APPLY')"
-          size="sm"
-          :disabled="isLoading || isLoadingSession"
-          data-test="playground-scenario-save"
-          @click="saveScenario"
-        />
-      </div>
-    </section>
-    <p v-if="error" class="mb-0 shrink-0 text-sm text-n-ruby-11" role="alert">
-      {{ error }}
-    </p>
-    <section
-      v-if="previews.length"
-      class="max-h-[min(38vh,24rem)] shrink-0 space-y-3 overflow-y-auto rounded-lg border border-n-amber-6 p-3"
-      data-test="playground-action-previews"
-    >
-      <div v-for="approval in previews" :key="approval.id">
-        <h4 class="mb-2 text-sm font-medium">{{ actionTitle(approval) }}</h4>
-        <p
-          v-for="(record, key) in approval.target"
-          :key="key"
-          class="mb-1 break-words text-sm"
-        >
-          {{ targetName(record) }}
-          <span class="text-xs text-n-slate-11">#{{ record.id }}</span>
-          <template v-if="record.clinical_identity?.iin">
-            <span class="ml-2 text-xs">
-              {{ t('CAPTAIN.PLAYGROUND.SCENARIO_IIN') }}:
-              {{ record.clinical_identity.iin }}
-            </span>
-          </template>
-          <template v-if="record.appointment">
-            <span class="block text-xs text-n-slate-11">
-              {{ record.appointment.starts_at.replace('T', ' ') }} —
-              {{ record.appointment.ends_at.replace('T', ' ') }}
-            </span>
-          </template>
-        </p>
-        <dl class="my-2 space-y-1 text-xs">
-          <div
-            v-for="change in actionChanges(approval)"
-            :key="change.field"
-            class="flex flex-wrap gap-x-2"
+        <div class="flex flex-wrap items-center gap-4">
+          <label class="flex items-center gap-2 text-sm text-n-slate-12">
+            <ToggleSwitch
+              :model-value="realRead"
+              :disabled="!session || isUpdatingPermissions"
+              :aria-label="t('CAPTAIN.PLAYGROUND.REAL_READ')"
+              data-test="playground-real-read"
+              @change="setPermissions($event, false)"
+            />
+            {{ t('CAPTAIN.PLAYGROUND.REAL_READ') }}
+          </label>
+          <label
+            v-if="realRead"
+            class="flex items-center gap-2 text-sm text-n-slate-12"
           >
-            <dt class="text-n-slate-11">{{ fieldLabel(change.field) }}:</dt>
-            <dd class="m-0 break-words">
-              <template v-if="change.before !== undefined">
-                <span class="text-n-slate-11">
-                  {{ displayValue(change.field, change.before, approval) }}
-                  {{ '→' }}
-                </span>
-              </template>
-              {{ change.after }}
-            </dd>
-          </div>
-        </dl>
-        <details class="rounded bg-n-alpha-1 p-2">
-          <summary class="cursor-pointer text-xs text-n-slate-11">
-            {{ t('CAPTAIN.PLAYGROUND.ACTION_DETAILS') }}
-          </summary>
-          <pre class="m-0 mt-2 max-h-40 overflow-auto text-xs">{{
-            describe({ target: approval.target, arguments: approval.arguments })
-          }}</pre>
-        </details>
+            <ToggleSwitch
+              :model-value="realWrite"
+              :disabled="!session || isUpdatingPermissions"
+              :aria-label="t('CAPTAIN.PLAYGROUND.REAL_WRITE')"
+              data-test="playground-real-write"
+              @change="setPermissions(true, $event)"
+            />
+            {{ t('CAPTAIN.PLAYGROUND.REAL_WRITE') }}
+          </label>
+        </div>
+        <p
+          v-if="realWrite"
+          class="mb-0 mt-2 text-xs font-medium text-n-amber-11"
+          role="status"
+          data-test="playground-write-warning"
+        >
+          {{ t('CAPTAIN.PLAYGROUND.WRITE_WARNING') }}
+        </p>
+        <p v-else class="mb-0 mt-2 text-xs text-n-slate-11">
+          {{ t('CAPTAIN.PLAYGROUND.SYNTHETIC_NOTICE') }}
+        </p>
+        <div
+          v-if="permissionsUnresolved"
+          class="mt-2 flex flex-wrap items-center gap-2"
+          role="alert"
+        >
+          <span class="text-xs text-n-ruby-11">{{
+            t('CAPTAIN.PLAYGROUND.REVOCATION_UNCONFIRMED')
+          }}</span>
+          <Button
+            size="sm"
+            color="slate"
+            variant="outline"
+            :label="t('CAPTAIN.PLAYGROUND.REVOKE_RETRY')"
+            :disabled="isUpdatingPermissions"
+            data-test="playground-revoke-retry"
+            @click="setPermissions(false, false)"
+          />
+        </div>
+      </section>
+      <section
+        class="shrink-0 border-t border-n-weak pt-3"
+        data-test="playground-scenario"
+      >
         <Button
-          class="mt-2"
+          variant="ghost"
+          color="slate"
           size="sm"
-          :label="t('CAPTAIN.PLAYGROUND.CONFIRM_ACTION')"
-          :disabled="messageDisabled"
-          data-test="playground-confirm-action"
-          @click="confirmAction(approval)"
+          icon="i-lucide-users"
+          :label="t('CAPTAIN.PLAYGROUND.SCENARIO_EDITOR')"
+          :aria-expanded="scenarioExpanded"
+          data-test="playground-scenario-toggle"
+          @click="scenarioExpanded = !scenarioExpanded"
         />
-      </div>
-    </section>
-    <MessageList
-      :messages="messages"
-      :is-loading="isLoading || isLoadingSession || isLoadingSettings"
-    />
-    <form
-      class="flex shrink-0 items-end gap-2 rounded-xl border border-n-weak bg-n-solid-1 p-3"
-      @submit.prevent="sendMessage"
-    >
-      <textarea
-        v-model="newMessage"
-        rows="2"
-        class="mb-0 min-w-0 flex-1 resize-none border-0 bg-transparent text-sm"
-        :placeholder="t('CAPTAIN.PLAYGROUND.PLACEHOLDER')"
-        :disabled="messageDisabled"
-        data-test="playground-message-input"
-        @keydown.enter="enter"
+        <div
+          v-if="scenarioExpanded && session"
+          class="mt-3 max-h-[min(42vh,28rem)] space-y-3 overflow-y-auto overscroll-contain pr-1"
+        >
+          <PlaygroundScenarioEditor
+            v-model="scenarioDraft"
+            :disabled="isLoading || isLoadingSession"
+          />
+          <Button
+            :label="t('CAPTAIN.PLAYGROUND.SCENARIO_APPLY')"
+            size="sm"
+            :disabled="isLoading || isLoadingSession"
+            data-test="playground-scenario-save"
+            @click="saveScenario"
+          />
+        </div>
+      </section>
+      <section
+        v-if="agentTasks.length"
+        class="shrink-0 border-t border-n-weak pt-3"
+        data-test="playground-agent-tasks"
+      >
+        <h4 class="mb-2 text-sm font-medium text-n-slate-12">
+          {{ t('CAPTAIN.PLAYGROUND.AGENT_TASKS') }}
+        </h4>
+        <ul class="m-0 list-none space-y-3 p-0">
+          <li v-for="task in agentTasks" :key="task.id" class="text-sm">
+            <span class="block text-n-slate-12">{{ task.title }}</span>
+            <span class="text-xs text-n-slate-11">
+              {{
+                t(`CAPTAIN.PLAYGROUND.TASK_STATUS.${task.status.toUpperCase()}`)
+              }}
+            </span>
+          </li>
+        </ul>
+      </section>
+    </aside>
+    <div class="flex min-h-0 flex-col gap-3 lg:col-start-1 lg:row-start-1">
+      <p v-if="error" class="mb-0 shrink-0 text-sm text-n-ruby-11" role="alert">
+        {{ error }}
+      </p>
+      <section
+        v-if="previews.length"
+        class="max-h-[min(38vh,24rem)] shrink-0 space-y-3 overflow-y-auto rounded-lg border border-n-amber-6 p-3"
+        data-test="playground-action-previews"
+      >
+        <div v-for="approval in previews" :key="approval.id">
+          <h4 class="mb-2 text-sm font-medium">{{ actionTitle(approval) }}</h4>
+          <p
+            v-for="(record, key) in approval.target"
+            :key="key"
+            class="mb-1 break-words text-sm"
+          >
+            {{ targetName(record) }}
+            <span class="text-xs text-n-slate-11">#{{ record.id }}</span>
+            <template v-if="record.clinical_identity?.iin">
+              <span class="ml-2 text-xs">
+                {{ t('CAPTAIN.PLAYGROUND.SCENARIO_IIN') }}:
+                {{ record.clinical_identity.iin }}
+              </span>
+            </template>
+            <template v-if="record.appointment">
+              <span class="block text-xs text-n-slate-11">
+                {{ record.appointment.starts_at.replace('T', ' ') }} —
+                {{ record.appointment.ends_at.replace('T', ' ') }}
+              </span>
+            </template>
+          </p>
+          <dl class="my-2 space-y-1 text-xs">
+            <div
+              v-for="change in actionChanges(approval)"
+              :key="change.field"
+              class="flex flex-wrap gap-x-2"
+            >
+              <dt class="text-n-slate-11">{{ fieldLabel(change.field) }}:</dt>
+              <dd class="m-0 break-words">
+                <template v-if="change.before !== undefined">
+                  <span class="text-n-slate-11">
+                    {{ displayValue(change.field, change.before, approval) }}
+                    {{ '→' }}
+                  </span>
+                </template>
+                {{ change.after }}
+              </dd>
+            </div>
+          </dl>
+          <details class="rounded bg-n-alpha-1 p-2">
+            <summary class="cursor-pointer text-xs text-n-slate-11">
+              {{ t('CAPTAIN.PLAYGROUND.ACTION_DETAILS') }}
+            </summary>
+            <pre class="m-0 mt-2 max-h-40 overflow-auto text-xs">{{
+              describe({
+                target: approval.target,
+                arguments: approval.arguments,
+              })
+            }}</pre>
+          </details>
+          <Button
+            class="mt-2"
+            size="sm"
+            :label="t('CAPTAIN.PLAYGROUND.CONFIRM_ACTION')"
+            :disabled="messageDisabled"
+            data-test="playground-confirm-action"
+            @click="confirmAction(approval)"
+          />
+        </div>
+      </section>
+      <MessageList
+        :messages="messages"
+        :is-loading="isLoading || isLoadingSession || isLoadingSettings"
       />
-      <Button
-        type="submit"
-        icon="i-lucide-send"
-        size="sm"
-        :label="t('CAPTAIN.PLAYGROUND.SEND')"
-        :disabled="messageDisabled || !newMessage.trim()"
-        data-test="playground-send"
-      />
-    </form>
+      <form
+        class="flex shrink-0 items-end gap-2 rounded-xl border border-n-weak bg-n-solid-1 p-3"
+        @submit.prevent="sendMessage"
+      >
+        <textarea
+          v-model="newMessage"
+          rows="2"
+          class="mb-0 min-w-0 flex-1 resize-none border-0 bg-transparent text-sm"
+          :placeholder="t('CAPTAIN.PLAYGROUND.PLACEHOLDER')"
+          :disabled="messageDisabled"
+          data-test="playground-message-input"
+          @keydown.enter="enter"
+        />
+        <Button
+          type="submit"
+          icon="i-lucide-send"
+          size="sm"
+          :label="t('CAPTAIN.PLAYGROUND.SEND')"
+          :disabled="messageDisabled || !newMessage.trim()"
+          data-test="playground-send"
+        />
+      </form>
+    </div>
   </div>
 </template>

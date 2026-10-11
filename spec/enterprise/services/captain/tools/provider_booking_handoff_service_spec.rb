@@ -58,6 +58,43 @@ RSpec.describe Captain::Tools::ProviderBookingHandoffService do
     expect(conversation.reload.status).to eq('pending')
   end
 
+  it 'authorizes a current delegated actor using the synchronous routing stamp' do
+    entry = create(:captain_assistant, account: account)
+    conversation.inbox.captain_inbox.update!(captain_assistant: entry)
+    entry.update!(handoff_agent_ids: [assistant.id])
+    session = Captain::Conversation::AgentSession.new(entry: entry, conversation: conversation)
+    session.update_routing(actor_id: assistant.id)
+    routing_fence = fence.merge(entry_assistant_id: entry.id, routing_revision: session.read['routing_revision'])
+
+    result = described_class.new(assistant: assistant, conversation: conversation, fence: routing_fence).perform
+
+    expect(result).to eq(:applied)
+    expect(conversation.reload).to be_open
+    expect(conversation.messages.outgoing.where(private: true).sole.sender).to eq(assistant)
+  end
+
+  it 'rechecks the routing revision under the final handoff locks' do
+    entry = create(:captain_assistant, account: account)
+    conversation.inbox.captain_inbox.update!(captain_assistant: entry)
+    entry.update!(handoff_agent_ids: [assistant.id])
+    session = Captain::Conversation::AgentSession.new(entry: entry, conversation: conversation)
+    session.update_routing(actor_id: assistant.id)
+    service = described_class.new(assistant: assistant, conversation: conversation,
+                                  fence: fence.merge(entry_assistant_id: entry.id, routing_revision: session.read['routing_revision']))
+    allow(service).to receive(:assistant_allowed?).and_wrap_original do |method|
+      result = method.call
+      if result
+        session.update_routing(actor_id: entry.id)
+        session.update_routing(actor_id: assistant.id)
+      end
+      result
+    end
+
+    expect(service.perform).to eq(:invalid_context)
+    expect(conversation.reload).to be_pending
+    expect(conversation.messages.outgoing).to be_empty
+  end
+
   it 'does not take over a conversation whose inbox belongs to a different Captain assistant' do
     replacement = create(:captain_assistant, account: account, usage_mode: 'external_agent')
     conversation.inbox.captain_inbox.update!(captain_assistant: replacement)

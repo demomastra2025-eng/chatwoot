@@ -13,7 +13,7 @@ class Captain::Playground::ExecutionBoundary
     return failure('A server-owned Playground session is required') unless session.is_a?(Captain::Playground::Session)
 
     session.assert_context!(state)
-    return yield if tool.is_a?(Captain::Runtime::HandoffTool)
+    return yield if tool.is_a?(Captain::Runtime::HandoffTool) || tool.is_a?(Captain::Runtime::TaskQueueTool)
     return Captain::Playground::ExternalToolPolicy.failure if opaque_external_tool?(tool)
     return Captain::Playground::ToolSupport.failure(tool.name) if Captain::Playground::ToolSupport::EXTERNAL_TOOLS.include?(tool.name.to_s)
 

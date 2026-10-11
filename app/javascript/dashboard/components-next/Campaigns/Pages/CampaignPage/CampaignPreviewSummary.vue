@@ -69,16 +69,16 @@ const statusLabel = computed(() => {
       </div>
     </div>
 
-    <div v-if="preview" class="grid grid-cols-3 gap-2 text-xs">
-      <div class="rounded-lg bg-n-alpha-1 px-3 py-2">
+    <div v-if="preview" class="grid grid-cols-3 gap-3 text-xs">
+      <div class="min-w-0">
         <div class="opacity-80">{{ t('CAMPAIGN.PREVIEW.AUDIENCE_SIZE') }}</div>
         <div class="text-sm font-medium">{{ preview.audience_size }}</div>
       </div>
-      <div class="rounded-lg bg-n-alpha-1 px-3 py-2">
+      <div class="min-w-0">
         <div class="opacity-80">{{ t('CAMPAIGN.PREVIEW.DELIVERABLE') }}</div>
         <div class="text-sm font-medium">{{ preview.deliverable_count }}</div>
       </div>
-      <div class="rounded-lg bg-n-alpha-1 px-3 py-2">
+      <div class="min-w-0">
         <div class="opacity-80">{{ t('CAMPAIGN.PREVIEW.BLOCKED') }}</div>
         <div class="text-sm font-medium">{{ preview.blocked_count }}</div>
       </div>

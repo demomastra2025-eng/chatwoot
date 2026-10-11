@@ -26,6 +26,7 @@ const props = defineProps({
     type: Number,
     required: true,
   },
+  active: { type: Boolean, default: true },
 });
 
 const emit = defineEmits(['action']);
@@ -82,6 +83,13 @@ const handleAction = ({ action, value }) => {
         >
           {{ name }}
         </h6>
+        <span class="shrink-0 text-xs text-n-slate-11">
+          {{
+            t(
+              `CAPTAIN.ASSISTANTS.ROUTING.${active ? 'ACTIVE_STATUS' : 'INACTIVE_STATUS'}`
+            )
+          }}
+        </span>
       </div>
       <div class="flex items-center gap-2">
         <div
@@ -106,7 +114,7 @@ const handleAction = ({ action, value }) => {
     </div>
     <div class="flex items-center justify-between w-full gap-4">
       <span class="text-sm truncate text-n-slate-11">
-        {{ description || 'Description not available' }}
+        {{ description }}
       </span>
       <span class="text-sm text-n-slate-11 line-clamp-1 shrink-0">
         {{ lastUpdatedAt }}

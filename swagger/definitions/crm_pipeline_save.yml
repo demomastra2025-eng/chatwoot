@@ -1,0 +1,113 @@
+crm_pipeline_settings:
+  type: object
+  properties:
+    name: { type: string }
+    code: { type: string }
+    position: { type: integer }
+    active: { type: boolean, description: Archiving the current default clears its default flag and promotes an active replacement when available. }
+    default: { type: boolean }
+    auto_create_deal_on_channel_contact: { type: boolean, description: Incoming-channel creation only; does not enable appointment deal creation. }
+    appointment_automation: { $ref: '#/components/schemas/crm_appointment_automation' }
+    restrict_stage_skipping: { type: boolean }
+    restrict_backward_move: { type: boolean }
+    allow_stage_rule_override: { type: boolean }
+
+crm_stage_reference:
+  description: A positive existing stage ID in this pipeline or a new stage's client_id from the same atomic draft. Temporary IDs are resolved before settings are saved.
+  oneOf:
+    - { type: integer, minimum: 1 }
+    - { type: string, pattern: '^([1-9][0-9]*|[a-zA-Z][a-zA-Z0-9_-]{0,127})$' }
+
+crm_movable_stage_draft:
+  type: object
+  description: Existing stages use id; new stages may use a unique client_id and must have a name. Submit every retained movable open stage exactly once, in the desired order. System and terminal stages use their separate draft fields.
+  properties:
+    id: { type: integer, minimum: 1 }
+    client_id: { type: string, pattern: '^[a-zA-Z][a-zA-Z0-9_-]{0,127}$', description: Request-only ID for a new stage without id. Must be unique within this draft. }
+    name: { type: string }
+    color: { type: string }
+    active: { type: boolean }
+    default: { type: boolean, description: Legacy fallback selection; auto_create_stage_id selects the channel creation target in the full pipeline save. }
+    field_requirements:
+      type: array
+      description: Replaces requirements only when provided. Preserve validation and role_exemptions when retaining a requirement. Manual CRM writes continue to validate these fields.
+      items: { $ref: '#/components/schemas/crm_field_requirement' }
+
+crm_stage_draft:
+  type: object
+  properties:
+    stages:
+      type: array
+      items: { $ref: '#/components/schemas/crm_movable_stage_draft' }
+    deleted_stage_ids:
+      type: array
+      uniqueItems: true
+      items: { type: integer, minimum: 1 }
+      description: Existing removable stages in this pipeline. Referenced stages and protected system stages cannot be deleted.
+    technical_stage:
+      type: object
+      required: [id]
+      properties:
+        id: { type: integer, minimum: 1 }
+        active: { type: boolean }
+    terminal_stages:
+      type: array
+      description: When provided, include every existing won and lost stage exactly once. Closing reason options and requirements apply only to lost; won reasons are ignored and cleared.
+      items:
+        type: object
+        required: [id]
+        properties:
+          id: { type: integer, minimum: 1 }
+          name: { type: string }
+          closing_reason_options: { type: array, items: { type: string }, description: Loss reason choices; only a lost stage retains these. }
+          closing_reason_required: { type: boolean, description: Requires a reason only for a lost target stage. }
+          field_requirements: { type: array, items: { $ref: '#/components/schemas/crm_field_requirement' } }
+    pipeline_rules:
+      type: object
+      description: Movement rules accepted by the legacy stage-batch endpoint. The full pipeline PATCH also accepts the same settings at its top level.
+      properties:
+        restrict_stage_skipping: { type: boolean }
+        restrict_backward_move: { type: boolean }
+        allow_stage_rule_override: { type: boolean }
+
+crm_pipeline_save_payload:
+  description: One atomic save for pipeline settings, channel creation, appointment automation and the full ordered stage draft. All account, stage, requirement, deletion, target and ordering checks must succeed before any change persists. Omit stages for a legacy partial settings update.
+  allOf:
+    - { $ref: '#/components/schemas/crm_pipeline_settings' }
+    - { $ref: '#/components/schemas/crm_stage_draft' }
+  type: object
+  properties:
+    auto_create_stage_id:
+      allOf: [{ $ref: '#/components/schemas/crm_stage_reference' }]
+      description: Active open stage used for channel-created deals. May refer to a new stage client_id. Omit when channel creation is off and a removed selection should fall back to a retained active open stage.
+    pipeline_order:
+      type: array
+      uniqueItems: true
+      items: { type: integer, minimum: 1 }
+      description: Every active pipeline ID in this account exactly once after applying this draft's active flag. Positions are saved as 10, 20, 30, and so on in the same transaction.
+  dependentRequired:
+    deleted_stage_ids: [stages]
+    technical_stage: [stages]
+    terminal_stages: [stages]
+    pipeline_rules: [stages]
+
+crm_pipeline_save_response:
+  type: object
+  required: [payload]
+  properties:
+    payload: { $ref: '#/components/schemas/crm_pipeline' }
+    pipelines:
+      type: array
+      description: Included when the request contains stages. Full account pipeline state, including inactive stages, publishes promoted defaults, source ownership and ordering from the completed atomic save. Legacy partial updates return payload only.
+      items: { $ref: '#/components/schemas/crm_pipeline' }
+
+scheduling_crm_link_result:
+  type: object
+  readOnly: true
+  required: [status, code, message]
+  description: Optional warning after the appointment was saved but an attempted CRM link or creation could not validate. It does not revoke appointment persistence or confirm a provider booking. Review the CRM fields or select an existing valid deal; do not create the appointment again to address this warning. Intentional master-off unlinked bookings omit this field; a later successful link clears it.
+  properties:
+    status: { type: string, enum: [not_linked] }
+    code: { type: string, description: CRM validation or optional-selection error code. }
+    message: { type: string }
+    details: { type: object, additionalProperties: true }

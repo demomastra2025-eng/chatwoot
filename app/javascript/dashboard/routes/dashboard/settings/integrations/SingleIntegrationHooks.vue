@@ -1005,10 +1005,7 @@ onBeforeUnmount(() => {
       </template>
     </BaseSettingsHeader>
 
-    <section
-      v-if="showHookSyncPanel"
-      class="flex flex-col gap-5 rounded-xl border border-n-weak bg-n-alpha-2 p-5"
-    >
+    <section v-if="showHookSyncPanel" class="flex flex-col gap-5">
       <header class="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 class="text-base font-medium text-n-slate-12">
@@ -1233,7 +1230,7 @@ onBeforeUnmount(() => {
         <article
           v-for="conflict in syncConflicts"
           :key="conflict.id"
-          class="flex flex-col gap-4 rounded-lg border border-n-weak bg-n-solid-1 p-4"
+          class="flex flex-col gap-4 border-t border-n-weak pt-4"
         >
           <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -1815,10 +1812,7 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <div
-      v-if="hasConnectedHooks"
-      class="outline outline-n-container outline-1 bg-n-alpha-3 rounded-md shadow p-6"
-    >
+    <div v-if="hasConnectedHooks" class="border-t border-n-weak pt-5">
       <div class="flex flex-col gap-6 lg:flex-row lg:items-start">
         <div class="flex h-16 w-16 shrink-0 items-center justify-center">
           <img

@@ -1237,7 +1237,6 @@ const menuItems = computed(() => {
             label: t('SIDEBAR.CAPTAIN_PROMPTS'),
             activeOn: [
               'captain_assistants_prompts_index',
-              'captain_assistants_scenarios_index',
               'captain_assistants_restrictions_index',
               'captain_assistants_guardrails_index',
               'captain_assistants_guidelines_index',
@@ -1510,7 +1509,7 @@ const menuItems = computed(() => {
           {
             name: 'Reports Bot',
             visibilityKey: 'Reports:Bot',
-            label: t('SIDEBAR.REPORTS_BOT'),
+            label: t('AI_REPORTS.TITLE'),
             to: accountScopedRoute('bot_reports'),
           },
         ],

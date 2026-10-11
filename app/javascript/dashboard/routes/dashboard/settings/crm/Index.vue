@@ -38,6 +38,8 @@ import {
   sortStages,
 } from './stageOrder';
 import { dealStageDisplayName } from 'dashboard/components-next/CRM/dealStageSelection';
+import { appointmentAutomationDraft } from 'dashboard/components-next/CRM/appointmentAutomation';
+import IntegrationsAPI from 'dashboard/api/integrations';
 
 const referencesStore = useCrmReferencesStore();
 const route = useRoute();
@@ -56,7 +58,6 @@ const canManage = computed(() =>
   checkPermissions(['administrator', 'crm_settings_manage'])
 );
 
-const autoCreateSwitchResetKey = ref(0);
 const pipelineDrawerOpen = ref(false);
 const pipelineDeleteDialogRef = ref(null);
 const pipelinePendingDelete = ref(null);
@@ -77,15 +78,23 @@ const deletedStageIds = ref([]);
 const stageDraftBaseline = ref('');
 const stageNameDrafts = reactive({});
 const stageFieldRequirementDrafts = reactive({});
-const stageTransitionReasonDrafts = reactive({});
-const stageTransitionReasonRequiredDrafts = reactive({});
 const stageRequirementsDrawerOpen = ref(false);
 const stageRequirementsTarget = ref(null);
 const restrictStageSkippingDraft = ref(false);
 const restrictBackwardMoveDraft = ref(false);
 const allowStageRuleOverrideDraft = ref(false);
 const pipelineNameDraft = ref('');
+const pipelineDefaultDraft = ref(false);
+const pipelineActiveDraft = ref(true);
+const pipelineAutoCreateEnabled = ref(false);
+const selectedAutoCreateStageId = ref('');
+const pipelineOrderDraft = ref([]);
+const appointmentAutomationState = ref(appointmentAutomationDraft());
+const appointmentSettingsRef = ref(null);
+const medelementInstalled = ref(false);
 const isLeaving = ref(false);
+let settingsGeneration = 0;
+let settingsRequest = null;
 let temporaryStageSequence = 0;
 let unsavedDecisionPromise = null;
 let resolveUnsavedDecision = null;
@@ -173,26 +182,6 @@ const stageRequirementFieldOptions = computed(() => [
     .filter(definition => definition.active !== false)
     .map(definition => ({ key: definition.key, label: definition.label })),
 ]);
-const autoCreateStageOptions = computed(() =>
-  autoCreateStagesForPipeline(selectedPipeline.value).map(stage => ({
-    label: dealStageDisplayName(stage, t),
-    value: String(stage.id),
-  }))
-);
-const selectedPipelineIndex = computed(() =>
-  orderedActivePipelines.value.findIndex(
-    pipeline => Number(pipeline.id) === Number(selectedPipeline.value?.id)
-  )
-);
-const selectedAutoCreateStageId = computed(() =>
-  String(defaultAutoCreateStageForPipeline(selectedPipeline.value)?.id || '')
-);
-const selectedAutoCreateStageLabel = computed(
-  () =>
-    autoCreateStageOptions.value.find(
-      option => option.value === selectedAutoCreateStageId.value
-    )?.label || t('CRM.SETTINGS.PIPELINES.AUTO_CREATE_DIALOG.STAGE_LABEL')
-);
 const unsortedStage = computed(() =>
   selectedStages.value.find(isTechnicalStage)
 );
@@ -205,15 +194,6 @@ const lostStage = computed(() =>
   selectedStages.value.find(
     stage => String(stage.outcome).toLowerCase() === 'lost'
   )
-);
-
-const pipelineForm = reactive({
-  id: null,
-  name: '',
-});
-
-const pipelineFormDisableConfirm = computed(
-  () => !String(pipelineForm.name || '').trim()
 );
 
 const normalizedTextValues = values => [
@@ -229,14 +209,73 @@ const normalizedClosingReasonDraft = computed(() =>
 
 const stageDraftName = stage =>
   String(stageNameDrafts[stage?.id] ?? stage?.name ?? '').trim();
+const draftStages = computed(() =>
+  [
+    ...(unsortedStage.value
+      ? [{ ...unsortedStage.value, active: unsortedActiveDraft.value }]
+      : []),
+    ...movableStageRows.value,
+    ...[wonStage.value, lostStage.value].filter(Boolean),
+  ].map(stage => ({
+    ...stage,
+    name: stageDraftName(stage),
+    closingReasonOptions:
+      stage.id === lostStage.value?.id && lossReasonsEnabled.value
+        ? normalizedClosingReasonDraft.value
+        : [],
+  }))
+);
+const appointmentPipeline = computed(() => ({
+  ...selectedPipeline.value,
+  name: pipelineNameDraft.value,
+  stages: draftStages.value,
+}));
+const autoCreateStageOptions = computed(() =>
+  autoCreateStagesForPipeline({
+    ...selectedPipeline.value,
+    active: pipelineActiveDraft.value,
+    stages: draftStages.value,
+  }).map(stage => ({
+    label: dealStageDisplayName(stage, t),
+    value: String(stage.id),
+  }))
+);
+const selectedPipelineIndex = computed(() =>
+  pipelineOrderDraft.value.findIndex(
+    id => Number(id) === Number(selectedPipeline.value?.id)
+  )
+);
+const selectedAutoCreateStageLabel = computed(
+  () =>
+    autoCreateStageOptions.value.find(
+      option => option.value === selectedAutoCreateStageId.value
+    )?.label || t('CRM.SETTINGS.PIPELINES.AUTO_CREATE_DIALOG.STAGE_LABEL')
+);
+
+const pipelineForm = reactive({
+  id: null,
+  name: '',
+});
+
+const pipelineFormDisableConfirm = computed(
+  () => !String(pipelineForm.name || '').trim()
+);
+
 const buildStageDraftState = () => ({
+  pipelineName: String(pipelineNameDraft.value).trim(),
+  pipelineDefault: pipelineDefaultDraft.value,
+  pipelineActive: pipelineActiveDraft.value,
+  channelAutoCreate: pipelineAutoCreateEnabled.value,
+  autoCreateStageId: selectedAutoCreateStageId.value,
+  pipelineOrder: [...pipelineOrderDraft.value],
+  appointments: appointmentAutomationState.value,
   allowStageRuleOverride: allowStageRuleOverrideDraft.value,
   closingReasons: lossReasonsEnabled.value
     ? normalizedClosingReasonDraft.value
     : [],
   closingReasonRequired: Boolean(closingReasonRequiredDraft.value),
   lostName: lostStage.value ? stageDraftName(lostStage.value) : '',
-  requirements: selectedStages.value.map(stage => ({
+  requirements: draftStages.value.map(stage => ({
     id: String(stage.id),
     keys: [...(stageFieldRequirementDrafts[stage.id] || [])].sort(),
   })),
@@ -244,17 +283,9 @@ const buildStageDraftState = () => ({
   restrictStageSkipping: restrictStageSkippingDraft.value,
   regularStages: movableStageRows.value.map((stage, index) => ({
     color: String(stage.color || '').toUpperCase(),
-    default: Boolean(stage.default),
     id: String(stage.id),
     name: stageDraftName(stage),
     position: index + 1,
-    transitionReasonOptions: normalizedTextValues(
-      stageTransitionReasonDrafts[stage.id] ?? stage.transitionReasonOptions
-    ),
-    transitionReasonRequired: Boolean(
-      stageTransitionReasonRequiredDrafts[stage.id] ??
-        stage.transitionReasonRequired
-    ),
   })),
   unsortedActive: unsortedStage.value ? unsortedActiveDraft.value : null,
   wonName: wonStage.value ? stageDraftName(wonStage.value) : '',
@@ -281,6 +312,7 @@ const syncSelectedPipelineRoute = async () => {
 };
 
 const syncSelectedPipelineState = () => {
+  settingsGeneration += 1;
   movableStageRows.value = selectedStages.value
     .filter(
       stage =>
@@ -288,17 +320,30 @@ const syncSelectedPipelineState = () => {
     )
     .map(stage => ({ ...stage, draft: false }));
   pipelineNameDraft.value = selectedPipeline.value?.name || '';
+  pipelineDefaultDraft.value = Boolean(selectedPipeline.value?.default);
+  pipelineActiveDraft.value = selectedPipeline.value?.active !== false;
+  pipelineAutoCreateEnabled.value = Boolean(
+    selectedPipeline.value?.autoCreateDealOnChannelContact ??
+      selectedPipeline.value?.auto_create_deal_on_channel_contact
+  );
+  selectedAutoCreateStageId.value = String(
+    selectedPipeline.value?.autoCreateStageId ??
+      selectedPipeline.value?.auto_create_stage_id ??
+      fallbackAutoCreateStageForPipeline(selectedPipeline.value)?.id ??
+      ''
+  );
+  pipelineOrderDraft.value = orderedActivePipelines.value.map(
+    pipeline => pipeline.id
+  );
+  appointmentAutomationState.value = appointmentAutomationDraft(
+    selectedPipeline.value?.appointmentAutomation ||
+      selectedPipeline.value?.appointment_automation
+  );
   selectedStages.value.forEach(stage => {
     stageNameDrafts[stage.id] = stage.name;
     stageFieldRequirementDrafts[stage.id] = (stage.fieldRequirements || [])
       .filter(requirement => requirement.required !== false)
       .map(requirement => requirement.fieldKey);
-    stageTransitionReasonDrafts[stage.id] = normalizedTextValues(
-      stage.transitionReasonOptions
-    );
-    stageTransitionReasonRequiredDrafts[stage.id] = Boolean(
-      stage.transitionReasonRequired
-    );
   });
   restrictStageSkippingDraft.value = Boolean(
     selectedPipeline.value?.restrictStageSkipping
@@ -319,24 +364,48 @@ const syncSelectedPipelineState = () => {
   stageDraftBaseline.value = JSON.stringify(buildStageDraftState());
 };
 
+const loadInstalledIntegrations = async () => {
+  const requestAccountId = String(accountId.value);
+  medelementInstalled.value = false;
+  try {
+    const response = await IntegrationsAPI.get();
+    if (String(accountId.value) !== requestAccountId) return;
+    medelementInstalled.value = (response.data.payload || []).some(
+      integration =>
+        integration.id === 'medelement' && integration.hooks?.length
+    );
+  } catch {
+    // Integration-specific settings stay hidden if the catalog cannot be read.
+  }
+};
+
 const loadSettings = async () => {
+  const requestAccountId = String(accountId.value);
   await Promise.all([
     referencesStore.loadPipelines({ include_inactive_stages: true }),
     referencesStore.loadFieldDefinitions('deal'),
+    loadInstalledIntegrations(),
   ]);
+  if (String(accountId.value) !== requestAccountId) return;
   await syncSelectedPipelineRoute();
   syncSelectedPipelineState();
 };
 
+watch(accountId, async () => {
+  settingsRequest = null;
+  settingsSaving.value = false;
+  settingsGeneration += 1;
+  stageDraftBaseline.value = '';
+  stageRequirementsDrawerOpen.value = false;
+  try {
+    await loadSettings();
+  } catch (error) {
+    useAlert(formatErrorMessage(error));
+  }
+});
+
 const openStageRequirements = stage => {
   stageRequirementsTarget.value = stage;
-  stageTransitionReasonDrafts[stage.id] = normalizedTextValues(
-    stageTransitionReasonDrafts[stage.id] ?? stage.transitionReasonOptions
-  );
-  stageTransitionReasonRequiredDrafts[stage.id] = Boolean(
-    stageTransitionReasonRequiredDrafts[stage.id] ??
-      stage.transitionReasonRequired
-  );
   stageRequirementsDrawerOpen.value = true;
 };
 
@@ -355,15 +424,11 @@ const toggleStageRequirement = (key, selected) => {
   stageFieldRequirementDrafts[stageId] = [...current];
 };
 
-const setDefaultStage = stage => {
-  if (!stage || stage.active === false || isTerminalStageOutcome(stage.outcome))
-    return;
-  movableStageRows.value.forEach(row => {
-    row.default = String(row.id) === String(stage.id);
-  });
-};
-
-watch(routePipelineId, syncSelectedPipelineState);
+watch(routePipelineId, () => {
+  settingsRequest = null;
+  settingsSaving.value = false;
+  syncSelectedPipelineState();
+});
 watch(
   () => referencesStore.pipelines,
   () => {
@@ -396,14 +461,6 @@ const selectPipeline = pipelineId =>
     },
   });
 
-const openCreatePipelineDrawer = () => {
-  pipelineForm.id = null;
-  pipelineForm.name = '';
-  newPipelineDefault.value = false;
-  newPipelineAutoCreate.value = false;
-  pipelineDrawerOpen.value = true;
-};
-
 const savePipeline = async () => {
   if (pipelineFormDisableConfirm.value) return;
 
@@ -425,50 +482,23 @@ const savePipeline = async () => {
   }
 };
 
-const togglePipelineDefault = async isDefault => {
-  if (!selectedPipeline.value) return;
-  pipelineSaving.value = true;
-  try {
-    await referencesStore.savePipeline({
-      id: selectedPipeline.value.id,
-      default: Boolean(isDefault),
-    });
-    await referencesStore.loadPipelines({ include_inactive_stages: true });
-    syncSelectedPipelineState();
-  } catch (error) {
-    useAlert(formatErrorMessage(error));
-  } finally {
-    pipelineSaving.value = false;
-  }
+const togglePipelineDefault = isDefault => {
+  pipelineDefaultDraft.value = Boolean(isDefault);
 };
 
-const togglePipelineArchived = async isActive => {
-  if (!selectedPipeline.value) return;
-  pipelineSaving.value = true;
-  try {
-    await referencesStore.savePipeline({
-      id: selectedPipeline.value.id,
-      active: Boolean(isActive),
-    });
-    await referencesStore.loadPipelines({ include_inactive_stages: true });
-    await syncSelectedPipelineRoute();
-    syncSelectedPipelineState();
-  } catch (error) {
-    useAlert(formatErrorMessage(error));
-  } finally {
-    pipelineSaving.value = false;
-  }
+const togglePipelineArchived = isActive => {
+  pipelineActiveDraft.value = Boolean(isActive);
 };
 
-const moveSelectedPipeline = async direction => {
-  const pipelines = [...orderedActivePipelines.value];
+const moveSelectedPipeline = direction => {
+  const pipelines = [...pipelineOrderDraft.value];
   const index = selectedPipelineIndex.value;
   const targetIndex = index + direction;
   if (
     index < 0 ||
     targetIndex < 0 ||
     targetIndex >= pipelines.length ||
-    pipelineSaving.value
+    settingsSaving.value
   ) {
     return;
   }
@@ -477,48 +507,11 @@ const moveSelectedPipeline = async direction => {
     pipelines[targetIndex],
     pipelines[index],
   ];
-  pipelineSaving.value = true;
-  try {
-    const saveResults = await Promise.allSettled(
-      pipelines.map((pipeline, position) =>
-        referencesStore.savePipeline({
-          id: pipeline.id,
-          position: (position + 1) * 10,
-        })
-      )
-    );
-    const failedSave = saveResults.find(result => result.status === 'rejected');
-    if (failedSave) throw failedSave.reason;
-    await referencesStore.loadPipelines({ include_inactive_stages: true });
-  } catch (error) {
-    await referencesStore.loadPipelines({ include_inactive_stages: true });
-    useAlert(formatErrorMessage(error));
-  } finally {
-    pipelineSaving.value = false;
-  }
+  pipelineOrderDraft.value = pipelines;
 };
 
-const saveInlinePipelineName = async () => {
-  const name = String(pipelineNameDraft.value || '').trim();
-  if (!selectedPipeline.value || name === selectedPipeline.value.name) return;
-  if (!name) {
-    pipelineNameDraft.value = selectedPipeline.value.name;
-    return;
-  }
-
-  pipelineSaving.value = true;
-  try {
-    await referencesStore.savePipeline({
-      id: selectedPipeline.value.id,
-      name,
-    });
-    useAlert(t('CRM.SETTINGS.PIPELINES.SUCCESS_SAVE'));
-  } catch (error) {
-    pipelineNameDraft.value = selectedPipeline.value.name;
-    useAlert(formatErrorMessage(error));
-  } finally {
-    pipelineSaving.value = false;
-  }
+const saveInlinePipelineName = () => {
+  pipelineNameDraft.value = String(pipelineNameDraft.value || '').trim();
 };
 
 const openDeletePipelineDialog = () => {
@@ -552,68 +545,31 @@ const openLeadForms = () =>
     params: { accountId: accountId.value },
   });
 
-const persistPipelineAutoCreate = async (pipeline, value, stageId) => {
-  if (!pipeline) return false;
-
-  pipelineSaving.value = true;
-  try {
-    await referencesStore.savePipeline({
-      id: pipeline.id,
-      auto_create_deal_on_channel_contact: value,
-      auto_create_stage_id: stageId,
-    });
-    useAlert(t('CRM.SETTINGS.PIPELINES.SUCCESS_SAVE'));
-    return true;
-  } catch (error) {
-    useAlert(formatErrorMessage(error));
-    return false;
-  } finally {
-    pipelineSaving.value = false;
+const togglePipelineAutoCreate = value => {
+  pipelineAutoCreateEnabled.value = Boolean(value);
+  if (
+    value &&
+    !autoCreateStageOptions.value.some(
+      option => option.value === selectedAutoCreateStageId.value
+    )
+  ) {
+    selectedAutoCreateStageId.value =
+      autoCreateStageOptions.value[0]?.value || '';
   }
 };
 
-const resetPipelineAutoCreateSwitch = () => {
-  autoCreateSwitchResetKey.value += 1;
-};
-
-const togglePipelineAutoCreate = async value => {
-  const pipeline = selectedPipeline.value;
-  if (!pipeline) return;
-
-  if (!value) {
-    const saved = await persistPipelineAutoCreate(pipeline, false);
-    if (!saved) resetPipelineAutoCreateSwitch();
-    return;
-  }
-
-  const stageId = String(
-    fallbackAutoCreateStageForPipeline(pipeline)?.id || ''
-  );
-  const saved = stageId
-    ? await persistPipelineAutoCreate(pipeline, true, stageId)
-    : false;
-  if (!saved) resetPipelineAutoCreateSwitch();
-};
-
-const updatePipelineAutoCreateStage = async stageId => {
-  const pipeline = selectedPipeline.value;
+const updatePipelineAutoCreateStage = stageId => {
   const normalizedStageId = String(stageId || '');
   if (
-    !autoCreateStagesForPipeline(pipeline).some(
-      stage => String(stage.id) === normalizedStageId
+    !autoCreateStageOptions.value.some(
+      option => option.value === normalizedStageId
     )
   ) {
     return false;
   }
 
-  const saved = await persistPipelineAutoCreate(
-    pipeline,
-    true,
-    normalizedStageId
-  );
-  if (!saved)
-    await referencesStore.loadPipelines({ include_inactive_stages: true });
-  return saved;
+  selectedAutoCreateStageId.value = normalizedStageId;
+  return true;
 };
 
 const toggleUnsortedStage = active => {
@@ -624,12 +580,42 @@ const saveInlineStageName = stage => {
   stageNameDrafts[stage.id] = stageDraftName(stage);
 };
 
+const fieldRequirementPayload = stage =>
+  (stageFieldRequirementDrafts[stage.id] || []).map(fieldKey => {
+    const existing = (stage.fieldRequirements || []).find(
+      requirement => requirement.fieldKey === fieldKey
+    );
+    return {
+      field_key: fieldKey,
+      required: true,
+      ...(existing?.validation ? { validation: existing.validation } : {}),
+      ...(existing?.roleExemptions
+        ? { role_exemptions: existing.roleExemptions }
+        : {}),
+    };
+  });
+
+const pipelineOrderPayload = () => {
+  const activeIds = allPipelines.value
+    .filter(pipeline =>
+      Number(pipeline.id) === Number(selectedPipeline.value?.id)
+        ? pipelineActiveDraft.value
+        : pipeline.active !== false
+    )
+    .map(pipeline => pipeline.id);
+  return [...pipelineOrderDraft.value, ...activeIds].filter(
+    (id, index, ids) => activeIds.includes(id) && ids.indexOf(id) === index
+  );
+};
+
 const saveSettings = async () => {
   if (!canManage.value || settingsSaving.value || !selectedPipeline.value)
     return false;
   if (!hasUnsavedStageChanges.value) return true;
 
   const pipelineId = selectedPipeline.value.id;
+  const requestAccountId = String(accountId.value);
+  const generation = settingsGeneration;
   const draftRows = movableStageRows.value.map((stage, index) => ({
     ...stage,
     name: stageDraftName(stage),
@@ -644,37 +630,47 @@ const saveSettings = async () => {
   const hasBlankStageName = [...draftRows, ...terminalStages].some(
     stage => !stageDraftName(stage)
   );
-  if (hasBlankStageName) {
+  const appointmentPayload = appointmentSettingsRef.value?.buildPayload();
+  const autoCreateStageId = autoCreateStageOptions.value.some(
+    option => option.value === selectedAutoCreateStageId.value
+  )
+    ? selectedAutoCreateStageId.value
+    : undefined;
+  if (
+    hasBlankStageName ||
+    !String(pipelineNameDraft.value).trim() ||
+    !appointmentPayload ||
+    (pipelineActiveDraft.value &&
+      pipelineAutoCreateEnabled.value &&
+      !autoCreateStageId)
+  ) {
     useAlert(t('CRM.ERRORS.VALIDATION_ERROR'));
     return false;
   }
 
   settingsSaving.value = true;
+  const request = {};
+  settingsRequest = request;
   try {
-    await referencesStore.batchUpdateStages(pipelineId, {
+    const payload = {
+      name: String(pipelineNameDraft.value).trim(),
+      default: pipelineDefaultDraft.value,
+      active: pipelineActiveDraft.value,
+      auto_create_deal_on_channel_contact: pipelineAutoCreateEnabled.value,
+      auto_create_stage_id: autoCreateStageId,
+      restrict_stage_skipping: restrictStageSkippingDraft.value,
+      restrict_backward_move: restrictBackwardMoveDraft.value,
+      allow_stage_rule_override: allowStageRuleOverrideDraft.value,
+      appointment_automation: appointmentPayload,
       deleted_stage_ids: deletedIds,
       stages: draftRows.map(stage => ({
         id: stage.draft ? undefined : stage.id,
+        client_id: stage.draft ? stage.id : undefined,
         name: stage.name,
         color: stage.color,
         active: stage.draft ? true : stage.active !== false,
-        default: Boolean(stage.default),
-        transition_reason_options: normalizedTextValues(
-          stageTransitionReasonDrafts[stage.id] ?? stage.transitionReasonOptions
-        ),
-        transition_reason_required: Boolean(
-          stageTransitionReasonRequiredDrafts[stage.id] ??
-            stage.transitionReasonRequired
-        ),
-        field_requirements: (stageFieldRequirementDrafts[stage.id] || []).map(
-          fieldKey => ({ field_key: fieldKey, required: true })
-        ),
+        field_requirements: fieldRequirementPayload(stage),
       })),
-      pipeline_rules: {
-        restrict_stage_skipping: restrictStageSkippingDraft.value,
-        restrict_backward_move: restrictBackwardMoveDraft.value,
-        allow_stage_rule_override: allowStageRuleOverrideDraft.value,
-      },
       technical_stage: originalUnsortedStage
         ? {
             id: originalUnsortedStage.id,
@@ -687,25 +683,42 @@ const saveSettings = async () => {
         closing_reason_required:
           stage.id === lostStage.value?.id
             ? Boolean(closingReasonRequiredDraft.value)
-            : Boolean(stage.closingReasonRequired),
-        field_requirements: (stageFieldRequirementDrafts[stage.id] || []).map(
-          fieldKey => ({ field_key: fieldKey, required: true })
-        ),
+            : false,
+        field_requirements: fieldRequirementPayload(stage),
         closing_reason_options:
-          stage.id === lostStage.value?.id
-            ? closingReasons
-            : normalizedTextValues(stage.closingReasonOptions || []),
+          stage.id === lostStage.value?.id ? closingReasons : [],
       })),
-    });
-    await referencesStore.loadPipelines({ include_inactive_stages: true });
+    };
+    const savedOrder = orderedActivePipelines.value.map(
+      pipeline => pipeline.id
+    );
+    const draftOrder = pipelineOrderPayload();
+    if (JSON.stringify(savedOrder) !== JSON.stringify(draftOrder)) {
+      payload.pipeline_order = draftOrder;
+    }
+    await referencesStore.savePipelineSettings(pipelineId, payload);
+    if (
+      String(accountId.value) !== requestAccountId ||
+      settingsGeneration !== generation ||
+      Number(selectedPipeline.value?.id) !== Number(pipelineId)
+    )
+      return true;
     syncSelectedPipelineState();
     useAlert(t('CRM.SETTINGS.STAGES.SUCCESS_SAVE'));
     return true;
   } catch (error) {
-    useAlert(formatErrorMessage(error));
+    if (
+      String(accountId.value) === requestAccountId &&
+      settingsGeneration === generation
+    ) {
+      useAlert(formatErrorMessage(error));
+    }
     return false;
   } finally {
-    settingsSaving.value = false;
+    if (settingsRequest === request) {
+      settingsSaving.value = false;
+      settingsRequest = null;
+    }
   }
 };
 
@@ -738,6 +751,15 @@ const resolveUnsavedChanges = async () => {
   return true;
 };
 
+const openCreatePipelineDrawer = async () => {
+  if (!(await resolveUnsavedChanges())) return;
+  pipelineForm.id = null;
+  pipelineForm.name = '';
+  newPipelineDefault.value = false;
+  newPipelineAutoCreate.value = false;
+  pipelineDrawerOpen.value = true;
+};
+
 const prepareForRouteLeave = async () => {
   if (isLeaving.value) return true;
 
@@ -759,7 +781,8 @@ onBeforeRouteUpdate((to, from) => {
     ? from.query.pipelineId[0]
     : from.query.pipelineId;
 
-  return String(nextPipelineId || '') === String(currentPipelineId || '')
+  return String(nextPipelineId || '') === String(currentPipelineId || '') &&
+    String(to.params?.accountId || '') === String(from.params?.accountId || '')
     ? true
     : resolveUnsavedChanges();
 });
@@ -791,9 +814,6 @@ const createStageAt = async insertIndex => {
   const draftStage = {
     active: true,
     color: randomStageColor(),
-    default: !movableStageRows.value.some(
-      stage => stage.active !== false && stage.default
-    ),
     draft: true,
     id: temporaryId,
     name: newStageName,
@@ -805,8 +825,6 @@ const createStageAt = async insertIndex => {
   movableStageRows.value.splice(targetIndex, 0, draftStage);
   stageNameDrafts[temporaryId] = newStageName;
   stageFieldRequirementDrafts[temporaryId] = [];
-  stageTransitionReasonDrafts[temporaryId] = [];
-  stageTransitionReasonRequiredDrafts[temporaryId] = false;
   await focusStageName(temporaryId);
 };
 
@@ -882,16 +900,6 @@ const deleteStage = () => {
 const stageCardStyle = stage => ({
   borderTopColor: stage.color || DEFAULT_STAGE_COLOR,
 });
-const pipelineAutoCreateEnabled = computed(() =>
-  Boolean(
-    selectedPipeline.value?.autoCreateDealOnChannelContact ??
-      selectedPipeline.value?.auto_create_deal_on_channel_contact
-  )
-);
-const pipelineAutoCreateSwitchKey = computed(
-  () =>
-    `${selectedPipeline.value?.id}-${pipelineAutoCreateEnabled.value}-${autoCreateSwitchResetKey.value}`
-);
 const handleRouteAction = async () => {
   if (route.query.action !== 'create-stage' || !canManage.value) return;
 
@@ -947,7 +955,8 @@ onMounted(async () => {
                   :disabled="
                     !canManage ||
                     pipelineSaving ||
-                    selectedPipeline.active === false
+                    settingsSaving ||
+                    !pipelineActiveDraft
                   "
                   @blur="saveInlinePipelineName"
                   @keydown.enter="$event.currentTarget.blur()"
@@ -973,15 +982,15 @@ onMounted(async () => {
             </template>
             <template #actions>
               <div
-                v-if="canManage && selectedPipeline.active !== false"
+                v-if="canManage && pipelineActiveDraft"
                 class="flex items-center gap-2"
               >
                 <span class="text-xs text-n-slate-10">{{
                   $t('CRM.SETTINGS.PIPELINES.FORM.DEFAULT')
                 }}</span>
                 <Switch
-                  :model-value="Boolean(selectedPipeline.default)"
-                  :disabled="pipelineSaving"
+                  :model-value="pipelineDefaultDraft"
+                  :disabled="pipelineSaving || settingsSaving"
                   :aria-label="$t('CRM.SETTINGS.PIPELINES.FORM.DEFAULT')"
                   @update:model-value="togglePipelineDefault"
                 />
@@ -992,7 +1001,11 @@ onMounted(async () => {
                   icon="i-lucide-chevron-up"
                   :aria-label="$t('CRM.SETTINGS.PIPELINES.MOVE_UP')"
                   :title="$t('CRM.SETTINGS.PIPELINES.MOVE_UP')"
-                  :disabled="pipelineSaving || selectedPipelineIndex <= 0"
+                  :disabled="
+                    pipelineSaving ||
+                    settingsSaving ||
+                    selectedPipelineIndex <= 0
+                  "
                   @click="moveSelectedPipeline(-1)"
                 />
                 <Button
@@ -1004,8 +1017,9 @@ onMounted(async () => {
                   :title="$t('CRM.SETTINGS.PIPELINES.MOVE_DOWN')"
                   :disabled="
                     pipelineSaving ||
+                    settingsSaving ||
                     selectedPipelineIndex < 0 ||
-                    selectedPipelineIndex >= orderedActivePipelines.length - 1
+                    selectedPipelineIndex >= pipelineOrderDraft.length - 1
                   "
                   @click="moveSelectedPipeline(1)"
                 />
@@ -1016,28 +1030,26 @@ onMounted(async () => {
                 color="slate"
                 variant="ghost"
                 :icon="
-                  selectedPipeline.active === false
+                  !pipelineActiveDraft
                     ? 'i-lucide-rotate-ccw'
                     : 'i-lucide-archive'
                 "
                 :aria-label="
                   $t(
-                    selectedPipeline.active === false
+                    !pipelineActiveDraft
                       ? 'CRM.GENERAL.UNARCHIVE'
                       : 'CRM.GENERAL.ARCHIVE'
                   )
                 "
                 :title="
                   $t(
-                    selectedPipeline.active === false
+                    !pipelineActiveDraft
                       ? 'CRM.GENERAL.UNARCHIVE'
                       : 'CRM.GENERAL.ARCHIVE'
                   )
                 "
-                :disabled="pipelineSaving"
-                @click="
-                  togglePipelineArchived(selectedPipeline.active === false)
-                "
+                :disabled="pipelineSaving || settingsSaving"
+                @click="togglePipelineArchived(!pipelineActiveDraft)"
               />
               <Button
                 v-if="canManage && selectedPipeline.active === false"
@@ -1070,155 +1082,11 @@ onMounted(async () => {
           </SchedulingPageHeader>
 
           <div class="min-h-0 flex-1 overflow-auto">
-            <div
-              class="grid min-h-[34rem] min-w-max grid-cols-[18rem_max-content] gap-5 px-5 pb-5"
-            >
-              <aside
-                class="h-fit overflow-hidden rounded-2xl border border-n-weak bg-n-solid-2"
+            <div class="flex min-w-0 flex-col gap-6 px-5 pb-5">
+              <section
+                class="min-w-0 overflow-x-auto"
+                data-testid="crm-stage-entry-settings"
               >
-                <div class="border-b border-n-weak px-5 py-4">
-                  <div
-                    class="flex items-center gap-2 text-sm font-semibold text-n-slate-12"
-                  >
-                    <span class="i-lucide-plug-zap size-4 text-n-brand" />
-                    {{ $t('CRM.SETTINGS.PIPELINES.SOURCES_TITLE') }}
-                  </div>
-                </div>
-
-                <div class="grid divide-y divide-n-weak">
-                  <div class="grid gap-3 px-5 py-4">
-                    <div class="flex items-center justify-between gap-3">
-                      <div
-                        class="flex items-center gap-2 text-sm font-medium text-n-slate-12"
-                      >
-                        <span class="i-lucide-zap size-4 text-n-brand" />
-                        {{ $t('CRM.SETTINGS.PIPELINES.FORM.AUTO_CREATE') }}
-                      </div>
-                      <Switch
-                        :key="pipelineAutoCreateSwitchKey"
-                        :model-value="pipelineAutoCreateEnabled"
-                        :disabled="!canManage || pipelineSaving"
-                        @update:model-value="togglePipelineAutoCreate"
-                      />
-                    </div>
-                    <p class="mb-0 text-xs leading-5 text-n-slate-10">
-                      {{
-                        $t(
-                          'CRM.SETTINGS.PIPELINES.FORM.AUTO_CREATE_DEAL_ON_CHANNEL_CONTACT_HELP'
-                        )
-                      }}
-                    </p>
-                    <div v-if="pipelineAutoCreateEnabled" class="grid gap-2">
-                      <span class="text-xs font-medium text-n-slate-11">
-                        {{
-                          $t(
-                            'CRM.SETTINGS.PIPELINES.AUTO_CREATE_DIALOG.STAGE_LABEL'
-                          )
-                        }}
-                      </span>
-                      <SelectMenu
-                        v-if="canManage && !pipelineSaving"
-                        data-testid="auto-create-stage-select"
-                        :model-value="selectedAutoCreateStageId"
-                        :options="autoCreateStageOptions"
-                        :label="selectedAutoCreateStageLabel"
-                        class="w-full"
-                        sub-menu-align="start"
-                        sub-menu-position="bottom"
-                        @update:model-value="updatePipelineAutoCreateStage"
-                      />
-                      <span v-else class="text-sm font-medium text-n-slate-12">
-                        {{ selectedAutoCreateStageLabel }}
-                      </span>
-                      <p
-                        v-if="autoCreateStageOptions.length === 0"
-                        class="mb-0 text-xs leading-5 text-n-ruby-10"
-                      >
-                        {{
-                          $t(
-                            'CRM.SETTINGS.PIPELINES.AUTO_CREATE_DIALOG.NO_STAGES'
-                          )
-                        }}
-                      </p>
-                    </div>
-                  </div>
-
-                  <CrmAppointmentAutomationSettings
-                    :key="selectedPipeline.id"
-                    :pipeline="selectedPipeline"
-                    :can-manage="canManage"
-                  />
-
-                  <div class="grid gap-4 px-5 py-4">
-                    <div class="text-sm font-semibold text-n-slate-12">
-                      {{ $t('CRM.SETTINGS.STAGE_RULES.TITLE') }}
-                    </div>
-                    <label
-                      class="flex items-center justify-between gap-3 text-sm text-n-slate-11"
-                    >
-                      <span>
-                        {{ $t('CRM.SETTINGS.STAGE_RULES.RESTRICT_SKIPPING') }}
-                      </span>
-                      <Switch
-                        :model-value="restrictStageSkippingDraft"
-                        :disabled="!canManage || settingsSaving"
-                        @update:model-value="
-                          restrictStageSkippingDraft = $event
-                        "
-                      />
-                    </label>
-                    <label
-                      class="flex items-center justify-between gap-3 text-sm text-n-slate-11"
-                    >
-                      <span>
-                        {{ $t('CRM.SETTINGS.STAGE_RULES.RESTRICT_BACKWARD') }}
-                      </span>
-                      <Switch
-                        :model-value="restrictBackwardMoveDraft"
-                        :disabled="!canManage || settingsSaving"
-                        @update:model-value="restrictBackwardMoveDraft = $event"
-                      />
-                    </label>
-                    <label
-                      class="flex items-center justify-between gap-3 text-sm text-n-slate-11"
-                    >
-                      <span>
-                        {{ $t('CRM.SETTINGS.STAGE_RULES.ALLOW_OVERRIDE') }}
-                      </span>
-                      <Switch
-                        :model-value="allowStageRuleOverrideDraft"
-                        :disabled="!canManage || settingsSaving"
-                        @update:model-value="
-                          allowStageRuleOverrideDraft = $event
-                        "
-                      />
-                    </label>
-                  </div>
-
-                  <button
-                    type="button"
-                    class="group grid gap-3 px-5 py-4 text-left transition-colors hover:bg-n-alpha-black2"
-                    @click="openLeadForms"
-                  >
-                    <div class="flex items-center justify-between gap-3">
-                      <div
-                        class="flex items-center gap-2 text-sm font-medium text-n-slate-12"
-                      >
-                        <span class="i-lucide-file-input size-4 text-n-brand" />
-                        {{ $t('CRM.SETTINGS.PIPELINES.LEAD_FORMS_TITLE') }}
-                      </div>
-                      <span
-                        class="i-lucide-arrow-up-right size-4 text-n-slate-9 transition-colors group-hover:text-n-brand"
-                      />
-                    </div>
-                    <p class="mb-0 text-xs leading-5 text-n-slate-10">
-                      {{ $t('CRM.SETTINGS.PIPELINES.LEAD_FORMS_HELP') }}
-                    </p>
-                  </button>
-                </div>
-              </aside>
-
-              <section class="w-max">
                 <div class="py-1">
                   <div class="flex min-w-max items-stretch">
                     <article
@@ -1344,25 +1212,6 @@ onMounted(async () => {
                                 @update:model-value="
                                   saveInlineStageColor(stage, $event)
                                 "
-                              />
-                              <Button
-                                v-if="canManage"
-                                size="xs"
-                                color="slate"
-                                variant="ghost"
-                                :icon="
-                                  stage.default
-                                    ? 'i-lucide-star'
-                                    : 'i-lucide-star-off'
-                                "
-                                :aria-label="
-                                  $t('CRM.SETTINGS.STAGES.DEFAULT_BADGE')
-                                "
-                                :title="$t('CRM.SETTINGS.STAGES.DEFAULT_BADGE')"
-                                :disabled="
-                                  settingsSaving || stage.active === false
-                                "
-                                @click="setDefaultStage(stage)"
                               />
                               <Button
                                 v-if="canManage"
@@ -1509,6 +1358,142 @@ onMounted(async () => {
                   </div>
                 </div>
               </section>
+              <section
+                class="grid max-w-3xl gap-4 border-t border-n-weak pt-5"
+                data-testid="crm-stage-entry-rules"
+              >
+                <div class="text-sm font-semibold text-n-slate-12">
+                  {{ $t('CRM.SETTINGS.STAGE_RULES.TITLE') }}
+                </div>
+                <label
+                  class="flex items-center justify-between gap-3 text-sm text-n-slate-11"
+                >
+                  <span>
+                    {{ $t('CRM.SETTINGS.STAGE_RULES.RESTRICT_SKIPPING') }}
+                  </span>
+                  <Switch
+                    :model-value="restrictStageSkippingDraft"
+                    :disabled="!canManage || settingsSaving"
+                    @update:model-value="restrictStageSkippingDraft = $event"
+                  />
+                </label>
+                <label
+                  class="flex items-center justify-between gap-3 text-sm text-n-slate-11"
+                >
+                  <span>
+                    {{ $t('CRM.SETTINGS.STAGE_RULES.RESTRICT_BACKWARD') }}
+                  </span>
+                  <Switch
+                    :model-value="restrictBackwardMoveDraft"
+                    :disabled="!canManage || settingsSaving"
+                    @update:model-value="restrictBackwardMoveDraft = $event"
+                  />
+                </label>
+                <label
+                  class="flex items-center justify-between gap-3 text-sm text-n-slate-11"
+                >
+                  <span>
+                    {{ $t('CRM.SETTINGS.STAGE_RULES.ALLOW_OVERRIDE') }}
+                  </span>
+                  <Switch
+                    :model-value="allowStageRuleOverrideDraft"
+                    :disabled="!canManage || settingsSaving"
+                    @update:model-value="allowStageRuleOverrideDraft = $event"
+                  />
+                </label>
+              </section>
+              <section
+                class="grid max-w-3xl gap-3 border-t border-n-weak pt-5"
+                data-testid="crm-channel-entry-settings"
+              >
+                <h3 class="m-0 text-sm font-semibold text-n-slate-12">
+                  {{ $t('CRM.SETTINGS.PIPELINES.SOURCES_TITLE') }}
+                </h3>
+                <div class="grid gap-3">
+                  <div class="flex items-center justify-between gap-3">
+                    <div
+                      class="flex items-center gap-2 text-sm font-medium text-n-slate-12"
+                    >
+                      <span class="i-lucide-zap size-4 text-n-brand" />
+                      {{ $t('CRM.SETTINGS.PIPELINES.FORM.AUTO_CREATE') }}
+                    </div>
+                    <Switch
+                      :model-value="pipelineAutoCreateEnabled"
+                      :disabled="!canManage || pipelineSaving || settingsSaving"
+                      @update:model-value="togglePipelineAutoCreate"
+                    />
+                  </div>
+                  <p class="mb-0 text-xs leading-5 text-n-slate-10">
+                    {{
+                      $t(
+                        'CRM.SETTINGS.PIPELINES.FORM.AUTO_CREATE_DEAL_ON_CHANNEL_CONTACT_HELP'
+                      )
+                    }}
+                  </p>
+                  <div v-if="pipelineAutoCreateEnabled" class="grid gap-2">
+                    <span class="text-xs font-medium text-n-slate-11">
+                      {{
+                        $t(
+                          'CRM.SETTINGS.PIPELINES.AUTO_CREATE_DIALOG.STAGE_LABEL'
+                        )
+                      }}
+                    </span>
+                    <SelectMenu
+                      v-if="canManage && !pipelineSaving && !settingsSaving"
+                      data-testid="auto-create-stage-select"
+                      :model-value="selectedAutoCreateStageId"
+                      :options="autoCreateStageOptions"
+                      :label="selectedAutoCreateStageLabel"
+                      class="w-full"
+                      sub-menu-align="start"
+                      sub-menu-position="bottom"
+                      @update:model-value="updatePipelineAutoCreateStage"
+                    />
+                    <span v-else class="text-sm font-medium text-n-slate-12">
+                      {{ selectedAutoCreateStageLabel }}
+                    </span>
+                    <p
+                      v-if="autoCreateStageOptions.length === 0"
+                      class="mb-0 text-xs leading-5 text-n-ruby-10"
+                    >
+                      {{
+                        $t(
+                          'CRM.SETTINGS.PIPELINES.AUTO_CREATE_DIALOG.NO_STAGES'
+                        )
+                      }}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  class="group grid gap-3 py-3 text-left transition-colors hover:bg-n-alpha-black2"
+                  @click="openLeadForms"
+                >
+                  <div class="flex items-center justify-between gap-3">
+                    <div
+                      class="flex items-center gap-2 text-sm font-medium text-n-slate-12"
+                    >
+                      <span class="i-lucide-file-input size-4 text-n-brand" />
+                      {{ $t('CRM.SETTINGS.PIPELINES.LEAD_FORMS_TITLE') }}
+                    </div>
+                    <span
+                      class="i-lucide-arrow-up-right size-4 text-n-slate-9 transition-colors group-hover:text-n-brand"
+                    />
+                  </div>
+                  <p class="mb-0 text-xs leading-5 text-n-slate-10">
+                    {{ $t('CRM.SETTINGS.PIPELINES.LEAD_FORMS_HELP') }}
+                  </p>
+                </button>
+              </section>
+              <CrmAppointmentAutomationSettings
+                ref="appointmentSettingsRef"
+                v-model="appointmentAutomationState"
+                class="max-w-3xl"
+                :pipeline="appointmentPipeline"
+                :can-manage="canManage"
+                :saving="settingsSaving"
+                :medelement-installed="medelementInstalled"
+              />
             </div>
           </div>
         </template>
@@ -1544,13 +1529,19 @@ onMounted(async () => {
           class="flex items-center justify-between gap-3 text-sm text-n-slate-11"
         >
           <span>{{ $t('CRM.SETTINGS.PIPELINES.FORM.DEFAULT') }}</span>
-          <Switch v-model="newPipelineDefault" :disabled="pipelineSaving" />
+          <Switch
+            v-model="newPipelineDefault"
+            :disabled="pipelineSaving || settingsSaving"
+          />
         </label>
         <label
           class="flex items-center justify-between gap-3 text-sm text-n-slate-11"
         >
           <span>{{ $t('CRM.SETTINGS.PIPELINES.FORM.AUTO_CREATE') }}</span>
-          <Switch v-model="newPipelineAutoCreate" :disabled="pipelineSaving" />
+          <Switch
+            v-model="newPipelineAutoCreate"
+            :disabled="pipelineSaving || settingsSaving"
+          />
         </label>
       </div>
     </SchedulingDrawer>
@@ -1564,57 +1555,13 @@ onMounted(async () => {
           name: stageRequirementsTarget?.name || '',
         })
       "
-      :confirm-label="$t('CRM.GENERAL.SAVE')"
+      :confirm-label="$t('CRM.GENERAL.CLOSE')"
       @confirm="stageRequirementsDrawerOpen = false"
     >
       <div class="grid gap-2">
         <p class="mb-2 text-sm text-n-slate-10">
           {{ $t('CRM.SETTINGS.STAGE_RULES.DRAWER_DESCRIPTION') }}
         </p>
-        <div
-          v-if="
-            stageRequirementsTarget &&
-            !isTerminalStageOutcome(stageRequirementsTarget.outcome)
-          "
-          class="grid gap-3 rounded-lg border border-n-weak p-3"
-        >
-          <label
-            class="flex items-center justify-between gap-3 text-sm text-n-slate-11"
-          >
-            <span>{{
-              $t('CRM.SETTINGS.STAGES.TRANSITION_REASON_REQUIRED')
-            }}</span>
-            <Switch
-              :model-value="
-                Boolean(
-                  stageTransitionReasonRequiredDrafts[
-                    stageRequirementsTarget.id
-                  ]
-                )
-              "
-              :disabled="!canManage || settingsSaving"
-              @update:model-value="
-                stageTransitionReasonRequiredDrafts[
-                  stageRequirementsTarget.id
-                ] = $event
-              "
-            />
-          </label>
-          <TagInput
-            :model-value="
-              stageTransitionReasonDrafts[stageRequirementsTarget.id] || []
-            "
-            allow-create
-            :disabled="!canManage || settingsSaving"
-            :auto-open-dropdown="false"
-            :placeholder="
-              $t('CRM.SETTINGS.STAGES.FORM.TRANSITION_REASONS_PLACEHOLDER')
-            "
-            @update:model-value="
-              stageTransitionReasonDrafts[stageRequirementsTarget.id] = $event
-            "
-          />
-        </div>
         <label
           v-for="field in stageRequirementFieldOptions"
           :key="field.key"

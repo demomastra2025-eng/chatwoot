@@ -2,7 +2,7 @@
 import { useI18n } from 'vue-i18n';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
-import { isSystemReason } from './reasonOrder';
+import { isBuiltInReason, isReasonLocked } from './reasonOrder';
 
 // One card with an editable outcome reason list. The handoff and the
 // completion lists are both rendered by this component, so they cannot drift
@@ -30,7 +30,7 @@ const { t } = useI18n();
 <template>
   <section
     :data-testid="`outcome-section-${type}`"
-    class="rounded-xl border border-n-weak bg-n-solid-1 p-4"
+    class="border-t border-n-weak pt-5"
   >
     <div class="flex items-start justify-between gap-4">
       <div class="flex min-w-0 gap-3">
@@ -75,7 +75,7 @@ const { t } = useI18n();
         :key="reason.id"
         data-testid="outcome-reason-row"
         :data-reason-id="reason.id"
-        class="flex items-center gap-2 rounded-lg border border-n-weak bg-n-alpha-1 px-3 py-2"
+        class="flex items-center gap-3 border-b border-n-weak py-3"
       >
         <span class="size-1.5 shrink-0 rounded-full bg-n-slate-8" />
         <input
@@ -86,12 +86,12 @@ const { t } = useI18n();
           :placeholder="t('CAPTAIN.ASSISTANTS.OUTCOMES.PLACEHOLDER')"
         />
         <Switch
+          v-if="!isReasonLocked(reason)"
           v-model="reason.active"
-          :disabled="isSystemReason(reason)"
           :aria-label="t('CAPTAIN.ASSISTANTS.OUTCOMES.ACTIVE')"
         />
         <button
-          v-if="!isSystemReason(reason)"
+          v-if="!isBuiltInReason(reason)"
           type="button"
           data-testid="outcome-remove"
           class="flex size-7 shrink-0 items-center justify-center rounded-md text-n-slate-10 hover:bg-n-alpha-2 hover:text-n-slate-12"

@@ -40,7 +40,12 @@ class Llm::RuntimePolicy
   class << self
     def thinking_options(feature:, model:, account: nil, preferences: nil, effort_override: nil)
       effort = (effort_override || runtime_preferences(account, preferences)["#{feature}_thinking_effort"]).to_s
-      return nil if effort.blank? || (effort == 'none' && effort_override.nil?)
+      return nil if effort.blank?
+      if effort == 'none' && effort_override.nil?
+        return { effort: 'none' } if Llm::ModelParameters.for(model, account: account).disabled_reasoning_uses_flag?
+
+        return nil
+      end
       if effort_override.present? && !Llm::Models.reasoning_efforts_for(model, account: account).include?(effort)
         raise ArgumentError, 'The model does not support the requested reasoning effort.'
       end

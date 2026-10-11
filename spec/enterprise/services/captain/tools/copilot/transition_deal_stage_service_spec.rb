@@ -99,7 +99,7 @@ RSpec.describe Captain::Tools::Copilot::TransitionDealStageService do
     expect(deal.reload.closing_reasons).to eq(['Competitor'])
   end
 
-  it 'passes transition reason through the confirmed copilot tool call' do
+  it 'ignores retired transition reason input in the confirmed copilot tool call' do
     pipeline = create(:crm_pipeline, account: account)
     current_stage = create(:crm_stage, account: account, pipeline: pipeline, name: 'Новый', code: 'new', position: 1, color: '#111111')
     target_stage = create(
@@ -119,7 +119,7 @@ RSpec.describe Captain::Tools::Copilot::TransitionDealStageService do
     event = deal.reload.events.where(event_type: 'deal_stage_changed').last
 
     expect(payload['deal']).to include('id' => deal.id, 'stage_id' => target_stage.id)
-    expect(event.meta['transition_reason']).to eq('Waiting payment')
+    expect(event.meta).not_to have_key('transition_reason')
   end
 
   it 'rejects stage_action combined with explicit target selectors' do

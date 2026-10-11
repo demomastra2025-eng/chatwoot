@@ -4,6 +4,7 @@ class Llm::UsageLedger
   CHAT_EVENT_NAME = 'llm.chat.complete'
   TRACKED_EVENT_NAMES = %w[
     llm.chat.complete
+    llm.decision.complete
     llm.embedding.complete
     llm.moderation.complete
     llm.moderation.unavailable

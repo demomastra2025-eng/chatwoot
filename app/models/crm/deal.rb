@@ -195,6 +195,10 @@ class Crm::Deal < ApplicationRecord
 
   def normalize_closing_reasons
     self.closing_reasons = ::Crm::Stage.normalize_closing_reason_values(closing_reasons)
+    return if stage&.outcome_lost?
+    return unless new_record? || will_save_change_to_closing_reasons? || will_save_change_to_stage_id?
+
+    self.closing_reasons = []
   end
 
   def normalize_description

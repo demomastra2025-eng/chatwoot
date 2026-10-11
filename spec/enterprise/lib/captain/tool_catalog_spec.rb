@@ -139,33 +139,17 @@ RSpec.describe Captain::ToolCatalog do
       expect(tool_ids).to include('faq_lookup', 'handoff', 'create_deal')
     end
 
-    it 'normalizes first-class source types across system, custom, MCP, and skill tools' do
+    it 'normalizes system, custom and MCP sources without loading skill script catalogs' do
       custom_tool = create(:captain_custom_tool, account: account)
-      allow(Captain::Mcp::ToolCatalog).to receive(:available_tools_for)
-        .and_return([
-                      {
-                        id: 'mcp__github_mcp__list_issues',
-                        title: 'List issues',
-                        description: 'List repository issues',
-                        provider: 'mcp'
-                      }
-                    ])
-      allow(Captain::SkillCatalog).to receive(:script_tools_for)
-        .and_return([
-                      {
-                        id: 'skill_script_support_summary',
-                        title: 'Support summary',
-                        description: 'Summarize support context',
-                        provider: 'skill_script'
-                      }
-                    ])
-
+      allow(Captain::Mcp::ToolCatalog).to receive(:available_tools_for).and_return([
+        { id: 'mcp__github_mcp__list_issues', title: 'List issues', description: 'List repository issues', provider: 'mcp' }
+      ])
+      expect(Captain::SkillCatalog).not_to receive(:script_tools_for)
       tools = described_class.available_tools_for(assistant, Captain::ToolAccess::SCOPE_AGENT)
-
       expect(tools.find { |tool| tool[:id] == 'faq_lookup' }).to include(source_type: 'system')
       expect(tools.find { |tool| tool[:id] == custom_tool.slug }).to include(source_type: 'custom')
       expect(tools.find { |tool| tool[:id] == 'mcp__github_mcp__list_issues' }).to include(source_type: 'mcp')
-      expect(tools.find { |tool| tool[:id] == 'skill_script_support_summary' }).to include(source_type: 'skill')
+      expect(tools).not_to include(include(provider: 'skill_script'))
     end
 
     it 'marks non-idempotent assistant MCP tools as confirmation-required' do
@@ -232,26 +216,10 @@ RSpec.describe Captain::ToolCatalog do
       expect(tools).to contain_exactly(include(id: custom_tool.slug, source_type: 'custom'))
     end
 
-    it 'resolves skill tools without relying on a tool id prefix' do
-      allow(Captain::SkillCatalog).to receive(:script_tools_for).and_return(
-        [
-          {
-            id: 'workspace_status_script',
-            title: 'Workspace status',
-            description: 'Read workspace status',
-            provider: 'skill_script'
-          }
-        ]
-      )
+    it 'does not resolve retired agent skill scripts or load their attachments' do
+      expect(Captain::SkillCatalog).not_to receive(:script_tools_for)
       expect(Captain::Mcp::ToolCatalog).not_to receive(:available_tools_for)
-
-      tools = described_class.available_tools_for_ids(
-        assistant,
-        Captain::ToolAccess::SCOPE_AGENT,
-        ['workspace_status_script']
-      )
-
-      expect(tools).to contain_exactly(include(id: 'workspace_status_script', source_type: 'skill'))
+      expect(described_class.available_tools_for_ids(assistant, Captain::ToolAccess::SCOPE_AGENT, ['skill_script_support_summary'])).to eq([])
     end
 
     it 'discovers MCP only for unresolved MCP ids and ignores stale ids' do
@@ -278,6 +246,11 @@ RSpec.describe Captain::ToolCatalog do
   end
 
   describe '.build_tool' do
+    it 'refuses to construct a stale skill script definition' do
+      expect(Captain::SkillCatalog).not_to receive(:script_tools_for)
+      expect(described_class.build_tool({ id: 'legacy_script', provider: 'skill_script' }, assistant: assistant, scope_name: Captain::ToolAccess::SCOPE_AGENT)).to be_nil
+    end
+
     it 'builds a built-in assistant tool using the registry resolver' do
       tool = described_class.build_tool(
         { id: 'search_documentation', custom: false },

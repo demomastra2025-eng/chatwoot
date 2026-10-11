@@ -86,11 +86,12 @@ RSpec.describe Conversations::StatusTransitionService do
     expect(conversation.current_captain_control_state).to eq('human')
   end
 
-  it 'merges assistant outcome audit data into transition history' do
+  it 'keeps the action explanation while deferring reason selection to the classifier' do
+    assistant = create(:captain_assistant, account: account)
     described_class.new(
       conversation: conversation,
       params: { status: 'resolved', status_reason: 'Other' },
-      actor: create(:captain_assistant, account: account),
+      actor: assistant,
       source: 'captain',
       audit: {
         reason_override: 'Other',
@@ -103,13 +104,14 @@ RSpec.describe Conversations::StatusTransitionService do
       }
     ).perform
 
-    expect(conversation.status_transitions.last).to have_attributes(reason: 'Other', source: 'captain')
+    expect(conversation.status_transitions.last).to have_attributes(reason: 'Reason is being classified', source: 'captain')
     expect(conversation.status_transitions.last.metadata).to include(
-      'outcome_reason_id' => 'other',
       'outcome_reason_type' => 'completion',
-      'assistant_id' => 123,
+      'assistant_id' => assistant.id,
       'outcome_reason_explanation' => 'Customer requested closure after resolution.'
     )
+    expect(conversation.status_transitions.last.metadata).not_to have_key('outcome_reason_id')
+    expect(conversation.status_transitions.last.metadata.dig('outcome_classification', 'state')).to eq('pending')
   end
 
   it 'requires configured reasons for manual transitions' do

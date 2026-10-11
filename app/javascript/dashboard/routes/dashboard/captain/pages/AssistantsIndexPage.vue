@@ -63,7 +63,7 @@ const SHARED_NAVIGATION_ROUTES = {
 };
 
 const VALID_NAVIGATION_ROUTES = [
-  'captain_assistants_scenarios_index', // Legacy prompts alias
+  'captain_assistants_scenarios_index', // Legacy agent list alias
   'captain_assistants_settings_index', // Settings page
   'captain_assistants_prompts_index', // Prompts page
   'captain_assistants_playground_index', // Assistant sandbox («Площадка»)

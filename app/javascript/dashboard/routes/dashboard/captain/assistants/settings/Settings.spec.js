@@ -9,6 +9,7 @@ const basicBuildPayloadMock = vi.fn();
 const capabilitiesBuildPayloadMock = vi.fn();
 const systemBuildPayloadMock = vi.fn();
 const outcomeBuildPayloadMock = vi.fn();
+const routingBuildPayloadMock = vi.fn();
 
 const assistantRecord = {
   id: 57,
@@ -147,6 +148,18 @@ vi.mock(
 vi.mock('../outcomes/Index.vue', () => ({
   default: AssistantOutcomeSettingsFormStub,
 }));
+vi.mock(
+  'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantRoutingSettingsForm.vue',
+  () => ({
+    default: defineComponent({
+      name: 'AssistantRoutingSettingsForm',
+      setup(_props, { expose }) {
+        expose({ buildPayload: routingBuildPayloadMock });
+        return () => h('div', 'routing-form');
+      },
+    }),
+  })
+);
 
 vi.mock(
   'dashboard/components-next/captain/pageComponents/DeleteDialog.vue',
@@ -176,10 +189,20 @@ const clickUpdate = async wrapper => {
 
 describe('Captain assistant settings page', () => {
   beforeEach(() => {
+    delete assistantRecord.config.legacy_scenario_migration;
+    delete assistantRecord.config.safety_settings;
     dispatchMock.mockReset();
     dispatchMock.mockResolvedValue({});
     useAlertMock.mockReset();
     routerPushMock.mockReset();
+    routingBuildPayloadMock.mockReset();
+    routingBuildPayloadMock.mockReturnValue({
+      assistant: {
+        active: false,
+        routing_description: 'Voice requests',
+        handoff_agent_ids: [72, 73],
+      },
+    });
 
     basicBuildPayloadMock.mockReset();
     basicBuildPayloadMock.mockResolvedValue({
@@ -261,6 +284,9 @@ describe('Captain assistant settings page', () => {
     expect(action).toBe('captainAssistants/update');
     expect(payload).toEqual({
       id: 57,
+      active: false,
+      routing_description: 'Voice requests',
+      handoff_agent_ids: [72, 73],
       name: 'Voice assistant',
       description: 'Updated description',
       config: expect.objectContaining({
@@ -285,6 +311,100 @@ describe('Captain assistant settings page', () => {
     expect(payload).not.toHaveProperty('usage_mode');
   });
 
+  it('replaces deleted custom rules with an explicit empty array only on the global save', async () => {
+    const savedRule = {
+      id: 'saved-rule',
+      name: 'Contract changes',
+      direction: 'input',
+      instruction: 'If the customer asks to change contract terms.',
+      action: 'handoff',
+      enabled: true,
+    };
+    assistantRecord.config.safety_settings = {
+      moderation_enabled: true,
+      custom_rules: [savedRule],
+    };
+    basicBuildPayloadMock.mockResolvedValue({
+      assistant: {
+        name: assistantRecord.name,
+        config: {
+          safety_settings: { moderation_enabled: true, custom_rules: [] },
+        },
+      },
+    });
+    // A different form cannot reintroduce the original safety array.
+    capabilitiesBuildPayloadMock.mockResolvedValue({
+      assistant: {
+        config: {
+          feature_faq: false,
+          safety_settings: { custom_rules: [savedRule] },
+        },
+      },
+    });
+    const wrapper = mountComponent();
+    expect(dispatchMock).not.toHaveBeenCalled();
+    await clickUpdate(wrapper);
+    const writes = dispatchMock.mock.calls.filter(
+      ([action]) => action === 'captainAssistants/update'
+    );
+    expect(writes).toHaveLength(1);
+    expect(writes[0][1].config.safety_settings).toEqual({
+      moderation_enabled: true,
+      custom_rules: [],
+    });
+    expect(assistantRecord.config.safety_settings.custom_rules).toEqual([
+      savedRule,
+    ]);
+  });
+
+  it('preserves the exact priority order and public message from the rules draft', async () => {
+    const rules = [
+      {
+        id: 'second-first',
+        name: 'Contract terms',
+        direction: 'input',
+        instruction: 'If the customer asks to change contract terms.',
+        action: 'handoff',
+        enabled: false,
+        message: 'A teammate will help with this request.',
+      },
+      {
+        id: 'reply-check',
+        name: 'Unsupported promise',
+        direction: 'output',
+        instruction: 'If the reply promises a result we cannot guarantee.',
+        action: 'rewrite',
+        enabled: true,
+      },
+    ];
+    basicBuildPayloadMock.mockResolvedValue({
+      assistant: {
+        name: assistantRecord.name,
+        config: { safety_settings: { custom_rules: rules } },
+      },
+    });
+    const wrapper = mountComponent();
+    expect(dispatchMock).not.toHaveBeenCalled();
+    await clickUpdate(wrapper);
+    expect(dispatchMock).toHaveBeenCalledWith(
+      'captainAssistants/update',
+      expect.objectContaining({
+        config: expect.objectContaining({
+          safety_settings: { custom_rules: rules },
+          voice_settings: assistantRecord.config.voice_settings,
+        }),
+      })
+    );
+  });
+
+  it('does not send a profile update when the rules draft fails validation', async () => {
+    basicBuildPayloadMock.mockResolvedValue(null);
+    const wrapper = mountComponent();
+    await clickUpdate(wrapper);
+    expect(dispatchMock).not.toHaveBeenCalled();
+    expect(useAlertMock).not.toHaveBeenCalled();
+  });
+
   it('persists disabling audio transcriptions for the assistant', async () => {
     const wrapper = mountComponent();
 
@@ -292,6 +412,9 @@ describe('Captain assistant settings page', () => {
 
     expect(dispatchMock).toHaveBeenCalledWith('captainAssistants/update', {
       id: 57,
+      active: false,
+      routing_description: 'Voice requests',
+      handoff_agent_ids: [72, 73],
       name: 'Voice assistant',
       description: 'Updated description',
       config: expect.objectContaining({
@@ -313,6 +436,27 @@ describe('Captain assistant settings page', () => {
     expect(wrapper.text()).toContain('outcome-form');
     expect(wrapper.text()).toContain('system-form');
     expect(wrapper.text().match(/basic-form/g)).toHaveLength(2);
+  });
+  it('shows migration instruction review only when the converted agent has warnings', () => {
+    const cleanWrapper = mountComponent();
+    expect(
+      cleanWrapper.find('[data-test="agent-migration-review"]').exists()
+    ).toBe(false);
+    assistantRecord.config.legacy_scenario_migration = {
+      warnings: [
+        {
+          code: 'parent_reference',
+          message: 'Review the copied tool references.',
+        },
+      ],
+    };
+    const wrapper = mountComponent();
+    expect(
+      wrapper.get('[data-test="agent-migration-review"]').text()
+    ).toContain('CAPTAIN.ASSISTANTS.ROUTING.MIGRATION_REVIEW');
+    expect(
+      wrapper.get('[data-test="agent-migration-review"]').text()
+    ).toContain('Review the copied tool references.');
   });
 
   it('saves voice agent settings from the dedicated voice tab', async () => {

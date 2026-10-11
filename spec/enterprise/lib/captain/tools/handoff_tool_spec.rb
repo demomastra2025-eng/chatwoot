@@ -19,12 +19,11 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
 
   describe '#parameters' do
     it 'returns the correct parameters' do
-      expect(tool.parameters.keys).to include(:reason, :status_reason, :outcome_reason_id, :message)
+      expect(tool.parameters.keys).to contain_exactly(:reason, :message)
       expect(tool.parameters[:reason].name).to eq(:reason)
       expect(tool.parameters[:reason].type).to eq('string')
       expect(tool.parameters[:reason].description).to eq('Optional handoff reason for the human team')
       expect(tool.parameters[:reason].required).to be false
-      expect(tool.parameters[:status_reason]).to have_attributes(type: 'string', required: false)
       expect(tool.parameters[:message]).to have_attributes(type: 'string', required: false)
     end
   end
@@ -49,7 +48,8 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
         it 'does not execute a disabled tool even when a prompt mentions handoff' do
           assistant.update!(
             description: 'Mention handoff as a concept, but do not enable its tool.',
-            config: assistant.config.deep_merge('tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['faq_lookup'] } })
+            config: assistant.config.deep_merge('handoff_enabled' => false,
+                                                 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['faq_lookup'] } })
           )
 
           expect { tool.execute(tool_context, reason: 'Model tried to transfer') }
@@ -58,7 +58,7 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
         end
       end
 
-      it 'retains the selected outcome reason ID when configured labels are duplicated' do
+      it 'leaves classification to the outcome job even if an old caller supplies a reason ID' do
         assistant.update!(
           config: assistant.config.to_h.deep_merge(
             'outcome_reason_settings' => {
@@ -73,13 +73,12 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
         result = tool.perform(tool_context, outcome_reason_id: 'technical_queue', reason: 'The issue requires technical review.')
 
         expect(result).to be_a(RubyLLM::Tool::Halt)
-        expect(run_context.context[:pending_human_handoff]).to include(
-          status_reason: 'Support',
-          outcome_reason_id: 'technical_queue'
-        )
+        expect(run_context.context[:pending_human_handoff]).to include(reason: 'The issue requires technical review.')
+        expect(run_context.context[:pending_human_handoff]).not_to have_key(:outcome_reason_id)
+        expect(run_context.context[:pending_human_handoff]).not_to have_key(:status_reason)
       end
 
-      it 'requires an explanation for Other and uses configured handoff reasons' do
+      it 'does not block handoff while its reporting reason is unknown' do
         assistant.update!(
           config: assistant.config.to_h.deep_merge(
             'outcome_reason_settings' => {
@@ -88,10 +87,8 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
           )
         )
 
-        expect(tool.execute(tool_context, outcome_reason_id: 'other')).to eq(
-          'ERROR: Provide a specific explanation when choosing Other'
-        )
-        expect(run_context.context).not_to have_key(:pending_human_handoff)
+        expect(tool.perform(tool_context, outcome_reason_id: 'other')).to be_a(RubyLLM::Tool::Halt)
+        expect(run_context.context).to have_key(:pending_human_handoff)
 
         result = tool.perform(
           tool_context,
@@ -101,8 +98,7 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
 
         expect(result).to be_a(RubyLLM::Tool::Halt)
         expect(run_context.context[:pending_human_handoff]).to include(
-          reason: 'The customer described an account-specific policy exception.',
-          status_reason: 'Other'
+          reason: 'The customer described an account-specific policy exception.'
         )
       end
 
@@ -112,6 +108,20 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
         expect { tool.execute(tool_context, reason: 'The model tried to transfer') }
           .to raise_error(ArgumentError, 'Tool is not available for the current runtime policy')
         expect(run_context.context).not_to have_key(:pending_human_handoff)
+      end
+
+      it 'carries a proven FAQ miss only from the current agent, and distinguishes a retrieval outage' do
+        run_context.context[:captain_faq_outcome] = { assistant_id: assistant.id, result: 'not_found', unavailable: false }
+        tool.perform(tool_context)
+        expect(run_context.context[:pending_human_handoff][:outcome_signal]).to eq('faq_no_answer')
+
+        run_context.context[:captain_faq_outcome][:unavailable] = true
+        tool.perform(tool_context)
+        expect(run_context.context[:pending_human_handoff]).not_to have_key(:outcome_signal)
+
+        run_context.context[:captain_faq_outcome] = { assistant_id: assistant.id + 1, result: 'not_found', unavailable: false }
+        tool.perform(tool_context)
+        expect(run_context.context[:pending_human_handoff]).not_to have_key(:outcome_signal)
       end
 
       context 'with reason provided' do
@@ -128,9 +138,9 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
 
           expect(run_context.context[:pending_human_handoff]).to include(
             reason: reason,
-            status_reason: status_reason,
             message: message
           )
+          expect(run_context.context[:pending_human_handoff]).not_to have_key(:status_reason)
         end
 
         it 'creates a conversation_bot_handoff reporting event' do

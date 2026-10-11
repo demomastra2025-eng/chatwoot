@@ -439,7 +439,7 @@ onMounted(loadPage);
       </header>
 
       <section v-if="activeTab === 'meta'" class="grid gap-4 lg:grid-cols-2">
-        <article class="rounded-3xl border border-n-weak bg-n-surface-2 p-5">
+        <article class="min-w-0">
           <div class="mb-5 flex items-start gap-3">
             <div
               class="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-n-brand/10 text-n-brand"
@@ -573,7 +573,7 @@ onMounted(loadPage);
           </form>
         </article>
 
-        <article class="rounded-3xl border border-n-weak bg-n-surface-2 p-5">
+        <article class="min-w-0">
           <h2 class="text-lg font-semibold text-n-slate-12">
             {{ $t('LEAD_FORMS.META_FORMS.LIST_TITLE') }}
           </h2>
@@ -596,9 +596,7 @@ onMounted(loadPage);
       </section>
 
       <section v-if="activeTab === 'api'" class="grid gap-4 lg:grid-cols-2">
-        <article
-          class="rounded-3xl border border-n-weak bg-n-surface-2 p-5 lg:col-span-2"
-        >
+        <article class="min-w-0 lg:col-span-2">
           <div class="mb-5 flex items-start gap-3">
             <div
               class="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-n-brand/10 text-n-brand"
@@ -670,7 +668,7 @@ onMounted(loadPage);
           </form>
         </article>
 
-        <article class="rounded-3xl border border-n-weak bg-n-surface-2 p-5">
+        <article class="min-w-0">
           <h2 class="text-lg font-semibold text-n-slate-12">
             {{ $t('LEAD_FORMS.API_FORMS.LIST_TITLE') }}
           </h2>
@@ -689,7 +687,7 @@ onMounted(loadPage);
                   </p>
                 </div>
               </div>
-              <div class="space-y-2 rounded-2xl bg-n-surface-1 p-3">
+              <div class="space-y-2">
                 <p class="text-xs font-medium uppercase text-n-slate-10">
                   {{ $t('LEAD_FORMS.API_FORMS.ENDPOINT_TITLE') }}
                 </p>
@@ -719,7 +717,7 @@ onMounted(loadPage);
       </section>
 
       <section v-if="activeTab === 'widget'" class="space-y-4">
-        <section class="rounded-3xl border border-n-weak bg-n-surface-2 p-5">
+        <section class="min-w-0">
           <div
             class="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"
           >
@@ -772,7 +770,7 @@ onMounted(loadPage);
           </p>
         </section>
 
-        <section class="rounded-3xl border border-n-weak bg-n-surface-2 p-5">
+        <section class="min-w-0">
           <h2 class="text-lg font-semibold text-n-slate-12">
             {{ $t('LEAD_FORMS.WIDGET_FORMS.LIST_TITLE') }}
           </h2>

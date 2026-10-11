@@ -16,7 +16,7 @@ const stubs = {
 };
 
 describe('confirmed model settings', () => {
-  it('hides all controls until the gear opens and omits unknown parameter controls', async () => {
+  it('shows the model immediately and omits unknown parameter controls', () => {
     const wrapper = mount(ModelSettings, {
       props: {
         models: [{ value: 'unknown', label: 'Unknown model' }],
@@ -24,9 +24,10 @@ describe('confirmed model settings', () => {
       },
       global: { stubs },
     });
-    expect(wrapper.find('select').exists()).toBe(false);
-    await wrapper.get('[data-test="model-settings-toggle"]').trigger('click');
     expect(wrapper.findAll('select')).toHaveLength(1);
+    expect(wrapper.find('[data-test="model-settings-toggle"]').exists()).toBe(
+      false
+    );
     expect(wrapper.find('[data-test="model-temperature"]').exists()).toBe(
       false
     );
@@ -44,7 +45,6 @@ describe('confirmed model settings', () => {
       },
       global: { stubs },
     });
-    await wrapper.get('[data-test="model-settings-toggle"]').trigger('click');
     const choices = wrapper
       .get('[data-test="model-reasoning"]')
       .findAll('option')
@@ -58,5 +58,43 @@ describe('confirmed model settings', () => {
     expect(wrapper.find('[data-test="model-temperature"]').exists()).toBe(
       false
     );
+  });
+
+  it('preserves saved parameters while preference metadata is loading', async () => {
+    const wrapper = mount(ModelSettings, {
+      props: { temperature: 0.7, effort: 'medium', metadata: {} },
+      global: { stubs },
+    });
+    await wrapper.setProps({ metadata: {} });
+
+    expect(wrapper.emitted('update:temperature')).toBeUndefined();
+    expect(wrapper.emitted('update:effort')).toBeUndefined();
+
+    await wrapper.setProps({
+      metadata: {
+        supports_temperature: true,
+        reasoning_efforts: ['low', 'medium', 'high'],
+      },
+    });
+    expect(wrapper.emitted('update:temperature')).toBeUndefined();
+    expect(wrapper.emitted('update:effort')).toBeUndefined();
+    expect(
+      wrapper.get('[data-test="model-temperature"] input[type="range"]').element
+        .value
+    ).toBe('0.7');
+    expect(
+      wrapper
+        .get('[data-test="model-reasoning"]')
+        .findAll('option')
+        .map(option => option.attributes('value'))
+    ).toEqual(['', 'low', 'medium', 'high']);
+    await wrapper.setProps({ metadata: {} });
+    expect(wrapper.emitted('update:temperature')).toBeUndefined();
+    expect(wrapper.emitted('update:effort')).toBeUndefined();
+    await wrapper.setProps({
+      metadata: { supports_temperature: false, reasoning_efforts: [] },
+    });
+    expect(wrapper.emitted('update:temperature')).toContainEqual([null]);
+    expect(wrapper.emitted('update:effort')).toContainEqual(['']);
   });
 });

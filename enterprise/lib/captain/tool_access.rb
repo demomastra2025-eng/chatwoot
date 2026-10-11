@@ -7,6 +7,10 @@ module Captain::ToolAccess
   ].freeze
   DEFAULT_AGENT_TOOL_IDS = %w[faq_lookup web_search web_scrape_url handoff].freeze
   PER_ASSISTANT_WEB_TOOL_IDS = %w[web_search web_scrape_url].freeze
+  CAPABILITY_CONTROLLED_AGENT_TOOL_IDS = %w[
+    faq_lookup web_search web_scrape_url handoff resolve_conversation add_contact_note add_private_note
+    cancel_response send_notification
+  ].freeze
 
   module_function
 
@@ -22,7 +26,9 @@ module Captain::ToolAccess
         tool.merge(
           metadata,
           scope_name: scope_name,
-          selected: selected_ids.include?(tool[:id])
+          selected: selected_ids.include?(tool[:id]),
+          mentionable: scope_name != SCOPE_AGENT ||
+            (!tool[:capability_tool] && !CAPABILITY_CONTROLLED_AGENT_TOOL_IDS.include?(tool[:id].to_s))
         )
       end
     end

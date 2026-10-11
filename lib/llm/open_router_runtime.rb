@@ -65,6 +65,12 @@ class Llm::OpenRouterRuntime
     Llm::ChatClient.ask(chat, content, model: model, observability: enriched_observability, account: account)
   end
 
+  def complete(chat, model: nil, observability: nil)
+    enriched_observability = observed_ask_observability(chat, observability)
+    enforce_observed_ask_budget!(model: model, observability: enriched_observability)
+    Llm::ChatClient.complete(chat, model: model, observability: enriched_observability)
+  end
+
   def transcribe(request)
     request = normalize_request(request, feature: :audio_transcription)
     raise ArgumentError, 'input is required for OpenRouter transcription.' if request.input.blank?
@@ -142,6 +148,29 @@ class Llm::OpenRouterRuntime
           headers: headers.headers
         )
       end
+    end
+  end
+
+  def decide(request)
+    request = normalize_request(request)
+    raise ArgumentError, 'Decisions is only available for outcome classification.' unless request.feature_key == 'outcome_classification'
+
+    model = resolve_model(request)
+    raise ArgumentError, 'Unsupported decision model.' unless Llm::OpenRouterDecisionClient.supported_model?(model)
+
+    enforce_budget!(request, model)
+    profile = routing_profile(request, model)
+    headers = Llm::OpenRouterHeaders.build(include_cache: false)
+    metadata = native_routing_metadata(request, model, profile, headers).merge(openrouter_native_endpoint: '/alpha/decisions')
+    # FeatureRequest symbolises nested options; the Decisions contract uses string category IDs.
+    criteria = request.options[:decision_criteria]
+    criteria = criteria.stringify_keys if criteria.is_a?(Hash)
+    observe_native_request(request, model, 'decision.complete', routing_metadata: metadata) do
+      Llm::OpenRouterDecisionClient.choose(
+        state: request.input, criteria: criteria, instructions: request.options[:decision_instructions],
+        model: model, api_key: api_key!(request), api_base: api_base(request),
+        provider: profile.provider_preferences, headers: headers.headers
+      )
     end
   end
 
@@ -284,6 +313,8 @@ class Llm::OpenRouterRuntime
       Llm::ObservabilityPayload.attach_embedding_response!(event_payload, response)
     when 'rerank.complete'
       Llm::ObservabilityPayload.attach_rerank_response!(event_payload, response)
+    when 'decision.complete'
+      Llm::ObservabilityPayload.attach_decision_response!(event_payload, response)
     when 'transcription.complete'
       Llm::ObservabilityPayload.attach_transcription_response!(event_payload, response)
     end

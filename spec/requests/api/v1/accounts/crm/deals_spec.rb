@@ -275,6 +275,7 @@ RSpec.describe 'CRM Deals API', type: :request do
     pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
     open_stage = pipeline.stages.find_by!(code: 'new')
     won_stage = pipeline.stages.find_by!(code: 'won')
+    won_stage.update_columns(closing_reason_options: ['Legacy won reason'], closing_reason_required: true)
     company = create(:company, account: account)
     deal = create(:crm_deal, account: account, pipeline: pipeline, stage: open_stage, company: company)
 
@@ -286,7 +287,25 @@ RSpec.describe 'CRM Deals API', type: :request do
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('payload', 'stage_id')).to eq(won_stage.id)
     expect(response.parsed_body.dig('payload', 'closed_at')).to be_present
+    expect(deal.reload.closing_reasons).to eq([])
     expect(deal.reload.events.where(event_type: 'deal_stage_changed')).to exist
+  end
+
+  it 'ignores reason input on a won transition' do
+    Crm::Bootstrap::AccountService.new(account: account).perform
+    pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
+    stage = pipeline.stages.find_by!(code: 'new')
+    won = pipeline.stages.find_by!(code: 'won')
+    deal = create(:crm_deal, account: account, pipeline: pipeline, stage: stage)
+
+    post "#{path}/#{deal.id}/transition_stage",
+         params: { stage_id: won.id, lock_version: deal.lock_version, closing_reasons: ['Unconfigured won reason'] },
+         headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'closing_reasons')).to eq([])
+    expect(deal.reload.closing_reasons).to eq([])
+    expect(deal.events.where(event_type: 'deal_stage_changed').last.meta['closing_reasons']).to eq([])
   end
 
   it 'requires a closing reason when the Lost stage toggle is enabled' do
@@ -355,12 +374,13 @@ RSpec.describe 'CRM Deals API', type: :request do
     expect(deal.reload.stage_id).to eq(open_stage.id)
   end
 
-  it 'validates and records the configured reason when entering an open stage', :aggregate_failures do
+  it 'enters ordinary stages without a reason and ignores legacy reason input without recording it', :aggregate_failures do
     Crm::Bootstrap::AccountService.new(account: account).perform
     pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
     open_stage = pipeline.stages.find_by!(code: 'new')
     proposal_stage = pipeline.stages.find_by!(code: 'proposal')
-    proposal_stage.update!(transition_reason_options: ['Needs docs'], transition_reason_required: true)
+    # Simulate stage configuration persisted by the previous release.
+    proposal_stage.update_columns(transition_reason_options: ['Needs docs'], transition_reason_required: true)
     deal = create(:crm_deal, account: account, pipeline: pipeline, stage: open_stage)
 
     post "#{path}/#{deal.id}/transition_stage",
@@ -368,22 +388,22 @@ RSpec.describe 'CRM Deals API', type: :request do
          headers: headers,
          as: :json
 
-    expect(response).to have_http_status(:unprocessable_content)
-    expect(response.parsed_body['code']).to eq('DEAL_STAGE_REQUIRES_TRANSITION_REASON')
-    expect(deal.reload.stage_id).to eq(open_stage.id)
+    expect(response).to have_http_status(:ok)
+    expect(deal.reload.stage_id).to eq(proposal_stage.id)
+    expect(deal.events.where(event_type: 'deal_stage_changed').last.meta).not_to have_key('transition_reason')
 
     post "#{path}/#{deal.id}/transition_stage",
          params: {
-           stage_id: proposal_stage.id,
+           stage_id: open_stage.id,
            lock_version: deal.lock_version,
            transition_reason: 'Waiting payment'
          },
          headers: headers,
          as: :json
 
-    expect(response).to have_http_status(:unprocessable_content)
-    expect(response.parsed_body['code']).to eq('DEAL_STAGE_INVALID_TRANSITION_REASON')
+    expect(response).to have_http_status(:ok)
     expect(deal.reload.stage_id).to eq(open_stage.id)
+    expect(deal.events.where(event_type: 'deal_stage_changed').last.meta).not_to have_key('transition_reason')
 
     post "#{path}/#{deal.id}/transition_stage",
          params: {
@@ -398,10 +418,8 @@ RSpec.describe 'CRM Deals API', type: :request do
     event = deal.reload.events.where(event_type: 'deal_stage_changed').last
     expect(response).to have_http_status(:ok)
     expect(deal.stage_id).to eq(proposal_stage.id)
-    expect(event.meta).to include(
-      'transition_reason' => 'Needs docs',
-      'command_fingerprint' => be_present
-    )
+    expect(event.meta).not_to have_key('transition_reason')
+    expect(event.meta).to include('command_fingerprint' => be_present)
   end
 
   it 'reorders deals inside a stage using board position' do

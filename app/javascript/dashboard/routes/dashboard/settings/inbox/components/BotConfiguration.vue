@@ -13,6 +13,7 @@ import Icon from 'dashboard/components-next/icon/Icon.vue';
 import Policy from 'dashboard/components/policy.vue';
 import SelectInput from 'dashboard/components-next/select/Select.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
+import { activeExternalAssistants } from 'dashboard/components-next/captain/assistant/assistantAccess';
 
 const props = defineProps({
   inbox: {
@@ -33,9 +34,9 @@ const assistants = useMapGetter('captainAssistants/getRecords');
 
 const selectedAssistantId = ref(NO_ASSISTANT_VALUE);
 const selectedAutoReplyMode = ref(DEFAULT_AUTO_REPLY_MODE);
-const isUpdatingConnection = ref(false);
-const isUpdatingMode = ref(false);
+const isSaving = ref(false);
 const isAssistantDropdownOpen = ref(false);
+let settingsIdentity = 0;
 
 const currentInboxId = computed(() =>
   Number(props.inbox?.id || route.params.inboxId)
@@ -60,15 +61,19 @@ const isFetching = computed(() =>
 );
 
 const sortedAssistants = computed(() => {
-  return [...(assistants.value || [])].sort((a, b) =>
+  return activeExternalAssistants(assistants.value || []).sort((a, b) =>
     (a?.name || '').localeCompare(b?.name || '')
   );
 });
 
-const selectedAssistant = computed(() =>
-  sortedAssistants.value.find(
-    assistant => String(assistant.id) === selectedAssistantId.value
-  )
+const selectedAssistant = computed(
+  () =>
+    (assistants.value || []).find(
+      assistant => String(assistant.id) === selectedAssistantId.value
+    ) ||
+    (String(connectedAssistantId.value) === selectedAssistantId.value
+      ? connectedAssistant.value
+      : null)
 );
 const selectedAssistantName = computed(
   () =>
@@ -78,6 +83,11 @@ const selectedAssistantName = computed(
 
 const currentAutoReplyMode = computed(
   () => currentInbox.value?.captain_auto_reply_mode || DEFAULT_AUTO_REPLY_MODE
+);
+const hasChanges = computed(
+  () =>
+    selectedAssistantId.value !== String(connectedAssistantId.value || '') ||
+    selectedAutoReplyMode.value !== currentAutoReplyMode.value
 );
 
 const autoReplyModeOptions = computed(() => [
@@ -100,14 +110,10 @@ const canChangeSettings = computed(
   () => Boolean(currentInboxId.value) && !isFetching.value
 );
 const isAssistantTriggerDisabled = computed(
-  () => isUpdatingConnection.value || !canChangeSettings.value
+  () => isSaving.value || !canChangeSettings.value
 );
 const isAutoReplyModeDisabled = computed(
-  () =>
-    !selectedAssistantId.value ||
-    isUpdatingConnection.value ||
-    isUpdatingMode.value ||
-    !canChangeSettings.value
+  () => !selectedAssistantId.value || isAssistantTriggerDisabled.value
 );
 
 const isAssistantSelected = assistantId => {
@@ -134,87 +140,87 @@ const refreshInboxData = async () => {
 };
 
 const syncLocalStateFromInbox = () => {
-  if (!isUpdatingConnection.value) {
-    selectedAssistantId.value = connectedAssistantId.value
-      ? String(connectedAssistantId.value)
-      : NO_ASSISTANT_VALUE;
-  }
-
-  if (!isUpdatingMode.value) {
-    selectedAutoReplyMode.value = currentAutoReplyMode.value;
-  }
+  selectedAssistantId.value = connectedAssistantId.value
+    ? String(connectedAssistantId.value)
+    : NO_ASSISTANT_VALUE;
+  selectedAutoReplyMode.value = currentAutoReplyMode.value;
+  closeAssistantDropdown();
 };
 
-const deleteCurrentConnection = async () => {
-  if (!connectedAssistantId.value) {
+const deleteCurrentConnection = async (assistantId, inboxId) => {
+  if (!assistantId) {
     return;
   }
 
   await store.dispatch('captainInboxes/delete', {
-    assistantId: connectedAssistantId.value,
-    inboxId: currentInboxId.value,
+    assistantId,
+    inboxId,
   });
 };
 
-const connectSelectedAssistant = async assistantId => {
+const connectSelectedAssistant = async (
+  assistantId,
+  inboxId,
+  autoReplyMode
+) => {
   if (!assistantId) {
     return;
   }
 
   await store.dispatch('captainInboxes/create', {
     assistantId: Number(assistantId),
-    inboxId: currentInboxId.value,
-    autoReplyMode: selectedAutoReplyMode.value || DEFAULT_AUTO_REPLY_MODE,
+    inboxId,
+    autoReplyMode,
   });
 };
 
-const handleAssistantSelection = async valueOrEvent => {
-  const nextAssistantId = String(
-    valueOrEvent?.target
-      ? valueOrEvent.target.value
-      : (valueOrEvent ?? selectedAssistantId.value)
-  );
+const saveChannelSettings = async () => {
+  if (!canChangeSettings.value || !hasChanges.value || isSaving.value) return;
+  const inboxId = currentInboxId.value;
+  const currentIdentity = settingsIdentity;
+  const nextAssistantId = selectedAssistantId.value;
+  const nextMode = selectedAutoReplyMode.value || DEFAULT_AUTO_REPLY_MODE;
   const previousAssistantId = connectedAssistantId.value
     ? String(connectedAssistantId.value)
     : NO_ASSISTANT_VALUE;
 
-  if (!canChangeSettings.value || nextAssistantId === previousAssistantId) {
-    return;
-  }
-
-  isUpdatingConnection.value = true;
+  const previousMode = currentAutoReplyMode.value;
+  isSaving.value = true;
 
   try {
-    await deleteCurrentConnection();
-    await connectSelectedAssistant(nextAssistantId);
-    useAlert(
-      nextAssistantId
-        ? t('CAPTAIN.INBOXES.CREATE.SUCCESS_MESSAGE')
-        : t('CAPTAIN.INBOXES.DELETE.SUCCESS_MESSAGE')
-    );
+    if (nextAssistantId !== previousAssistantId)
+      await deleteCurrentConnection(Number(previousAssistantId), inboxId);
+    await connectSelectedAssistant(nextAssistantId, inboxId, nextMode);
     await refreshInboxData();
+    if (currentIdentity === settingsIdentity) {
+      syncLocalStateFromInbox();
+      useAlert(t('CAPTAIN.INBOXES.CHANNEL_SETTINGS.SAVE_SUCCESS'));
+    }
   } catch (error) {
-    selectedAssistantId.value = previousAssistantId;
-    if (previousAssistantId && nextAssistantId) {
+    if (previousAssistantId && nextAssistantId !== previousAssistantId) {
       try {
-        await connectSelectedAssistant(previousAssistantId);
+        await connectSelectedAssistant(
+          previousAssistantId,
+          inboxId,
+          previousMode
+        );
       } catch {
         // Keep the original failure message; the follow-up refresh below shows the actual server state.
       }
     }
     await refreshInboxData();
-    useAlert(
-      error?.message ||
-        (nextAssistantId
-          ? t('CAPTAIN.INBOXES.CREATE.ERROR_MESSAGE')
-          : t('CAPTAIN.INBOXES.DELETE.ERROR_MESSAGE'))
-    );
+    if (currentIdentity === settingsIdentity) {
+      syncLocalStateFromInbox();
+      useAlert(
+        error?.message || t('CAPTAIN.INBOXES.CHANNEL_SETTINGS.SAVE_ERROR')
+      );
+    }
   } finally {
-    isUpdatingConnection.value = false;
+    if (currentIdentity === settingsIdentity) isSaving.value = false;
   }
 };
 
-const selectAssistant = async assistantId => {
+const selectAssistant = assistantId => {
   if (isAssistantTriggerDisabled.value) return;
 
   const nextAssistantId = assistantId
@@ -222,12 +228,14 @@ const selectAssistant = async assistantId => {
     : NO_ASSISTANT_VALUE;
   selectedAssistantId.value = nextAssistantId;
   closeAssistantDropdown();
-  await handleAssistantSelection(nextAssistantId);
 };
 
 watch(
   currentInboxId,
   inboxId => {
+    settingsIdentity += 1;
+    isSaving.value = false;
+    syncLocalStateFromInbox();
     if (!inboxId) {
       return;
     }
@@ -237,42 +245,15 @@ watch(
   { immediate: true }
 );
 
-watch([connectedAssistantId, currentAutoReplyMode], syncLocalStateFromInbox, {
-  immediate: true,
-});
-
-const updateAutoReplyMode = async event => {
-  const nextMode = String(event?.target?.value ?? selectedAutoReplyMode.value);
-  if (
-    !nextMode ||
-    !connectedAssistantId.value ||
-    nextMode === currentAutoReplyMode.value ||
-    isAutoReplyModeDisabled.value
-  ) {
-    return;
+watch(
+  [connectedAssistantId, currentAutoReplyMode],
+  (_values, [previousAssistantId, previousMode]) => {
+    const draftWasSaved =
+      selectedAssistantId.value === String(previousAssistantId || '') &&
+      selectedAutoReplyMode.value === previousMode;
+    if (!isSaving.value && draftWasSaved) syncLocalStateFromInbox();
   }
-
-  const previousMode = currentAutoReplyMode.value;
-  isUpdatingMode.value = true;
-
-  try {
-    await store.dispatch('captainInboxes/create', {
-      assistantId: connectedAssistantId.value,
-      inboxId: currentInboxId.value,
-      autoReplyMode: nextMode,
-    });
-    useAlert(t('CAPTAIN.INBOXES.AUTO_REPLY_MODE.UPDATE.SUCCESS_MESSAGE'));
-    await refreshInboxData();
-  } catch (error) {
-    selectedAutoReplyMode.value = previousMode;
-    useAlert(
-      error?.message ||
-        t('CAPTAIN.INBOXES.AUTO_REPLY_MODE.UPDATE.ERROR_MESSAGE')
-    );
-  } finally {
-    isUpdatingMode.value = false;
-  }
-};
+);
 </script>
 
 <template>
@@ -284,7 +265,7 @@ const updateAutoReplyMode = async event => {
       <Spinner />
     </div>
 
-    <section v-else class="rounded-2xl bg-n-solid-1 p-5 md:p-6">
+    <section v-else class="py-4">
       <div class="mb-5 flex flex-col gap-3">
         <div
           class="grid size-10 place-items-center rounded-2xl bg-n-brand/10 text-n-brand"
@@ -464,9 +445,25 @@ const updateAutoReplyMode = async event => {
               data-testid="captain-inbox-auto-reply-mode"
               :options="autoReplyModeOptions"
               :disabled="isAutoReplyModeDisabled"
-              @change="updateAutoReplyMode"
             />
           </div>
+        </div>
+        <div class="mt-5 flex justify-end gap-2">
+          <Button
+            variant="ghost"
+            color="slate"
+            :label="t('CAPTAIN.FORM.CANCEL')"
+            :disabled="!hasChanges || isSaving"
+            data-testid="captain-inbox-cancel"
+            @click="syncLocalStateFromInbox"
+          />
+          <Button
+            :label="t('CAPTAIN.ASSISTANTS.FORM.SAVE')"
+            :disabled="!hasChanges || !canChangeSettings || isSaving"
+            :is-loading="isSaving"
+            data-testid="captain-inbox-save"
+            @click="saveChannelSettings"
+          />
         </div>
       </Policy>
     </section>

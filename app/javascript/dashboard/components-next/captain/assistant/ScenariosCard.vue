@@ -346,7 +346,6 @@ const humanizeToolId = toolId => toolLabels.value[toolId] || `@${toolId}`;
         :max-length="SCENARIO_INSTRUCTION_MAX_LENGTH"
         enable-captain-tools
         enable-captain-fields
-        enable-captain-skills
         :captain-context-assistant-id="assistantId"
       />
       <div class="flex items-center gap-3">

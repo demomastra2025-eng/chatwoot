@@ -8,6 +8,8 @@ import {
   SYSTEM_REASON_ID,
   insertReason,
   isSystemReason,
+  isBuiltInReason,
+  isReasonLocked,
   sortReasons,
 } from './reasonOrder';
 
@@ -20,13 +22,17 @@ const props = defineProps({
     type: Boolean,
     default: true,
   },
+  faqEnabled: {
+    type: Boolean,
+    default: false,
+  },
   legacyReasons: {
     type: Object,
     default: () => ({}),
   },
 });
 
-const MAX_REASONS = 20;
+const MAX_REASONS = 27;
 
 const { t } = useI18n();
 const state = reactive({
@@ -55,11 +61,12 @@ const defaultReasons = () => ({
     ['manual_action_required', 'HANDOFF.MANUAL_ACTION_REQUIRED'],
     ['complaint_or_conflict', 'HANDOFF.COMPLAINT_OR_CONFLICT'],
     ['tool_or_policy_limit', 'HANDOFF.TOOL_OR_POLICY_LIMIT'],
+    ['faq_no_answer', 'HANDOFF.FAQ_NO_ANSWER'],
     [SYSTEM_REASON_ID, 'COMMON.OTHER'],
   ].map(([id, key]) => ({
     id,
     label: t(`CAPTAIN.ASSISTANTS.OUTCOMES.DEFAULTS.${key}`),
-    active: true,
+    active: id !== 'faq_no_answer',
   })),
 });
 
@@ -75,16 +82,25 @@ const editableReasons = reasons =>
         }))
     : [];
 
-// Whatever order the API returns, every list is shown with the system reason
-// last (see reasonOrder.js).
-const withOtherFallback = (reasons, fallback) => {
+const withBuiltinReasons = (reasons, defaults) => {
   const normalized = editableReasons(reasons);
-  const other = normalized.find(isSystemReason) || fallback;
+  const builtins = defaults.map(fallback => {
+    const saved = normalized.find(reason => reason.id === fallback.id);
+    const reason = { ...fallback, ...saved };
+    if (isSystemReason(reason) && reason.label.toLowerCase() === 'other') {
+      reason.label = fallback.label;
+    }
+    reason.locked =
+      isSystemReason(reason) ||
+      (reason.id === 'faq_no_answer' &&
+        props.faqEnabled &&
+        props.handoffEnabled);
+    if (reason.locked) reason.active = true;
+    return reason;
+  });
   return sortReasons([
-    ...normalized
-      .filter(reason => !isSystemReason(reason))
-      .slice(0, MAX_REASONS - 1),
-    { ...other, id: SYSTEM_REASON_ID, active: true },
+    ...builtins,
+    ...normalized.filter(reason => !isBuiltInReason(reason)),
   ]);
 };
 
@@ -128,13 +144,13 @@ const incomingDraft = value => {
 
   return {
     autoCompletionEnabled: config.auto_completion_enabled !== false,
-    completionReasons: withOtherFallback(
+    completionReasons: withBuiltinReasons(
       settings?.completion_reasons || legacyCompletion,
-      defaults.completionReasons.at(-1)
+      defaults.completionReasons
     ),
-    handoffReasons: withOtherFallback(
+    handoffReasons: withBuiltinReasons(
       settings?.handoff_reasons || legacyHandoff,
-      defaults.handoffReasons.at(-1)
+      defaults.handoffReasons
     ),
   };
 };
@@ -189,7 +205,7 @@ const addReason = type => {
 };
 
 const removeReason = (type, reasonId) => {
-  if (reasonId === SYSTEM_REASON_ID) return;
+  if (isBuiltInReason({ id: reasonId })) return;
   state[type] = state[type].filter(reason => reason.id !== reasonId);
 };
 
@@ -197,7 +213,7 @@ const serializedReasons = reasons =>
   reasons.map(reason => ({
     id: reason.id,
     label: reason.label.trim(),
-    active: isSystemReason(reason) || reason.active !== false,
+    active: isReasonLocked(reason) || reason.active !== false,
   }));
 
 const buildPayload = async () => {
@@ -230,6 +246,18 @@ const buildPayload = async () => {
 };
 
 defineExpose({ buildPayload });
+
+watch(
+  () => [props.faqEnabled, props.handoffEnabled],
+  () => {
+    const reason = state.handoffReasons.find(
+      item => item.id === 'faq_no_answer'
+    );
+    if (!reason) return;
+    reason.locked = props.faqEnabled && props.handoffEnabled;
+    if (reason.locked) reason.active = true;
+  }
+);
 
 // The handoff card has no toggle and its title already names the reason list,
 // so it has no separate reasons subheading.

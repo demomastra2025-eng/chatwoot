@@ -54,6 +54,11 @@ class Captain::Runtime::ToolWrapper
 
   def call(args)
     ensure_response_run_current!
+    if context_wrapper_context[:pending_handoff] || context_wrapper_context[:pending_human_handoff] ||
+       context_wrapper_context[:pending_response_cancellation]
+      return RubyLLM::Tool::Halt.new('Control has been transferred; remaining calls in this batch were not executed.')
+    end
+    @operation_scope = Captain::Runtime::TaskQueue.new(context_wrapper_context).operation_scope if context_wrapper_context[:agent_session]
     normalized_args = normalize_args(args)
 
     request_stop = requested_tool_stop_result(normalized_args)
@@ -126,6 +131,11 @@ class Captain::Runtime::ToolWrapper
   end
 
   def execute_registered_tool(normalized_args)
+    @operation_guard = Captain::Runtime::OperationGuard.new(context_wrapper_context, @tool, normalized_args, scope: @operation_scope)
+    existing = @operation_guard.reserve
+    return complete_and_halt(existing) if terminal_early_result?(existing)
+    return complete_and_render(existing) if existing
+
     tool_context = Captain::Runtime::ToolContext.new(run_context: @context_wrapper)
     @context_wrapper.callback_manager.emit_tool_start(@tool.name, normalized_args, @context_wrapper)
     track_mutating_tool_execution(normalized_args)
@@ -168,6 +178,7 @@ class Captain::Runtime::ToolWrapper
     end
     result_error = tool_safety_error_for(:tool_results, safety_checked_result(result))
     final_result = result_error || result
+    @operation_guard&.finish(final_result) unless halt_result?(final_result)
     cache_successful_mutating_tool_result(normalized_args, final_result)
     cache_non_retryable_failure(normalized_args, final_result)
     record_mutating_tool_result(final_result)
@@ -602,15 +613,17 @@ class Captain::Runtime::ToolWrapper
   end
 
   def register_tool_execution_attempt(normalized_args)
-    counts = tool_attempt_counts.fetch(@tool.name.to_s) { { total: 0, by_signature: {} } }
+    attempt_key = coordination_tool? ? @tool.name.to_s : mutation_execution_key
+    counts = tool_attempt_counts.fetch(attempt_key) { { total: 0, by_signature: {} } }
     signature = tool_result_cache_digest(normalized_args)
     signature_count = counts[:by_signature].fetch(signature, 0)
-    return tool_attempt_limit_result(counts, signature_count) if counts[:total] >= MAX_TOOL_EXECUTIONS_PER_TOOL ||
+    execution_limit = coordination_tool? ? Captain::Runtime::ToolLoopGuard::MAX_COORDINATION_REQUESTS : MAX_TOOL_EXECUTIONS_PER_TOOL
+    return tool_attempt_limit_result(counts, signature_count) if counts[:total] >= execution_limit ||
                                                                  signature_count >= MAX_IDENTICAL_TOOL_EXECUTIONS
 
     counts[:total] += 1
     counts[:by_signature][signature] = signature_count + 1
-    tool_attempt_counts[@tool.name.to_s] = counts
+    tool_attempt_counts[attempt_key] = counts
     nil
   end
 
@@ -636,11 +649,15 @@ class Captain::Runtime::ToolWrapper
   end
 
   def tool_loop_guard
-    @tool_loop_guard ||= Captain::Runtime::ToolLoopGuard.new(@context_wrapper, @tool.name)
+    Captain::Runtime::ToolLoopGuard.new(
+      @context_wrapper, @tool.name, coordination: coordination_tool? || terminal_control_tool?, task_scope: task_operation_scope
+    )
   end
 
   def repeated_mutating_tool_result(normalized_args)
-    entry = mutating_tool_executions[@tool.name.to_s]
+    return unless domain_mutating_tool?
+
+    entry = mutating_tool_executions[mutation_execution_key]
     return if entry.blank? || mutation_retry_allowed?(entry, normalized_args)
 
     Captain::ToolResult.failure(
@@ -651,27 +668,32 @@ class Captain::Runtime::ToolWrapper
   end
 
   def mutation_retry_allowed?(entry, normalized_args)
+    return true if entry[:safe_to_correct] && entry[:arguments_digest] != tool_result_cache_digest(normalized_args)
+
     idempotency_key = normalized_args[:idempotency_key].presence
     entry[:retryable] == true && idempotency_key.present? && entry[:idempotency_key] == idempotency_key
   end
 
   def track_mutating_tool_execution(normalized_args)
-    return unless mutating_tool?
+    return unless domain_mutating_tool?
 
-    mutating_tool_executions[@tool.name.to_s] = {
+    mutating_tool_executions[mutation_execution_key] = {
+      arguments_digest: tool_result_cache_digest(normalized_args),
       idempotency_key: normalized_args[:idempotency_key].presence,
       retryable: false
     }
   end
 
   def record_mutating_tool_result(result)
-    entry = mutating_tool_executions[@tool.name.to_s]
+    entry = mutating_tool_executions[mutation_execution_key]
     return if entry.blank?
 
     normalized_result = Captain::ToolResult.normalize(result)
     entry[:retryable] = normalized_result[:retryable] == true
     entry[:failure_stage] = normalized_result.dig(:audit, :failure_stage).to_s.presence
     entry[:failure_reason] = normalized_result.dig(:audit, :failure_reason).to_s.presence
+    entry[:safe_to_correct] = normalized_result[:success] == false && normalized_result.dig(:audit, :mutation_executed) == false &&
+                              normalized_result.dig(:audit, :failure_stage) == 'tool_arguments'
   rescue StandardError
     entry[:retryable] = false
   end
@@ -681,7 +703,23 @@ class Captain::Runtime::ToolWrapper
   end
 
   def tool_result_cache_digest(normalized_args)
-    Digest::SHA256.hexdigest(JSON.generate(canonical_json_value({ tool_name: @tool.name.to_s, arguments: normalized_args })))
+    Digest::SHA256.hexdigest(JSON.generate(canonical_json_value({
+      tool_name: @tool.name.to_s, arguments: normalized_args,
+      actor_id: context_wrapper_context.dig(:state, :assistant_id),
+      task_scope: task_operation_scope
+    })))
+  end
+
+  def mutation_execution_key
+    return @tool.name.to_s unless context_wrapper_context[:agent_session]
+
+    "#{task_operation_scope}:#{@tool.name}"
+  end
+
+  def task_operation_scope
+    return unless context_wrapper_context[:agent_session]
+
+    @operation_scope || Captain::Runtime::TaskQueue.new(context_wrapper_context).operation_scope
   end
 
   def semantic_tool_call_digest(normalized_args)
@@ -702,11 +740,25 @@ class Captain::Runtime::ToolWrapper
   end
 
   def cache_mutating_tool_results?
+    domain_mutating_tool?
+  end
+
+  def domain_mutating_tool?
     mutating_tool?
   end
 
   def mutating_tool?
+    return false if coordination_tool?
+
     Llm::ToolRiskPolicy.mutating?(@tool)
+  end
+
+  def coordination_tool?
+    @tool.is_a?(Captain::Runtime::HandoffTool) || @tool.is_a?(Captain::Runtime::TaskQueueTool)
+  end
+
+  def terminal_control_tool?
+    @tool.is_a?(Captain::Tools::HandoffTool) || @tool.is_a?(Captain::Tools::ResolveConversationTool)
   end
 
   def parallel_mutating_tool_error

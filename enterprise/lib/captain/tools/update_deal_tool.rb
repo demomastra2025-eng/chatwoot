@@ -18,11 +18,7 @@ class Captain::Tools::UpdateDealTool < Captain::Tools::BasePublicTool
   param :stage_code, type: 'string', desc: 'Target stage code; only use with pipeline_id/pipeline_code if codes repeat', required: false
   param :closing_reasons,
         type: 'array',
-        desc: 'Configured closing reason labels when moving to a Won/Lost stage',
-        required: false
-  param :transition_reason,
-        type: 'string',
-        desc: 'Configured transition reason label when moving to an open stage',
+        desc: 'Configured loss reason labels from list_deal_stages when moving to a Lost stage',
         required: false
   param :amount,
         type: 'string',

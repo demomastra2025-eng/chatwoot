@@ -8,8 +8,11 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
   let(:contact) { create(:contact, account: account) }
   let(:conversation) { create(:conversation, account: account, inbox: inbox, contact: contact) }
   let(:assistant) { create(:captain_assistant, account: account) }
-  let(:scenario) { create(:captain_scenario, assistant: assistant, enabled: true) }
-  let(:second_scenario) { create(:captain_scenario, assistant: assistant, enabled: true) }
+  let(:scenario) { create(:captain_assistant, account: account, routing_description: 'Specialist') }
+  let(:second_scenario) { create(:captain_assistant, account: account, routing_description: 'Second specialist') }
+  let(:entry_agent_identity) do
+    { 'agent_id' => assistant.id, 'agent_display_name' => assistant.name, 'agent_tasks' => [] }
+  end
 
   let(:mock_runner) { instance_double(Captain::Runtime::AgentRunner) }
   let(:mock_agent) { instance_double(Captain::Runtime::Agent) }
@@ -38,11 +41,12 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     allow(Llm::Config).to receive(:api_key).with('openai').and_return('openai-key')
     allow(Llm::Config).to receive(:api_key).with('openai', account: account).and_return('openai-key')
     allow(Llm::ApiClient).to receive(:moderate).and_return(instance_double(RubyLLM::Moderation, flagged?: false))
-    allow(assistant).to receive(:agent).and_return(mock_agent)
-    scenarios_relation = instance_double(Captain::Scenario)
-    allow(scenarios_relation).to receive(:enabled).and_return([scenario])
-    allow(assistant).to receive(:scenarios).and_return(scenarios_relation)
-    allow(scenario).to receive(:agent).and_return(mock_scenario_agent)
+    assistant.update!(handoff_agent_ids: [scenario.id])
+    scenario.update!(handoff_agent_ids: [assistant.id])
+    runtime_agents = { assistant.id => mock_agent, scenario.id => mock_scenario_agent, second_scenario.id => mock_second_scenario_agent }
+    allow_any_instance_of(Captain::Assistant).to receive(:agent).and_wrap_original do |method, *_arguments|
+      runtime_agents.fetch(method.receiver.id)
+    end
     allow(Captain::Runtime::Runner).to receive(:with_agents).and_return(mock_runner)
     allow(mock_runner).to receive(:run).and_return(mock_result)
     Captain::Runtime::CallbackManager::EVENT_TYPES.each do |event_type|
@@ -50,6 +54,11 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     end
     allow(mock_agent).to receive(:register_handoffs)
     allow(mock_scenario_agent).to receive(:register_handoffs)
+    allow(mock_second_scenario_agent).to receive(:register_handoffs)
+    [mock_agent, mock_scenario_agent, mock_second_scenario_agent].each do |runtime_agent|
+      allow(runtime_agent).to receive(:context_preparer=)
+      allow(runtime_agent).to receive(:assistant_id=)
+    end
   end
 
   describe '#initialize' do
@@ -71,6 +80,62 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
   describe '#generate_response' do
     subject(:service) { described_class.new(assistant: assistant, conversation: conversation) }
+
+    context 'when scheduled generation uses an unpersisted assistant copy' do
+      let(:generation_assistant) { assistant.dup }
+
+      before do
+        allow(generation_assistant).to receive(:agent).and_return(mock_agent)
+        expect(Captain::AgentRunContext).not_to receive(:new)
+        expect(Captain::AgentGraph).not_to receive(:new)
+      end
+
+      %w[touch_agent touch_ai_wakeup campaign_agent].each do |source|
+        it "runs the temporary #{source} assistant without loading persisted routing state" do
+          expect(Captain::Runtime::Runner).to receive(:with_agents).with(mock_agent).and_return(mock_runner)
+          expect(mock_agent).not_to receive(:register_handoffs)
+          expect(mock_runner).to receive(:run) do |input, context:, **_options|
+            expect(input).to eq('I need help with my account')
+            expect(context).not_to include(:agent_graph, :agent_session, :acting_assistant_id)
+            expect(context[:state]).to include(account_id: account.id, source: source)
+            expect(context[:state][:assistant_id]).to be_nil
+            expect(context[:conversation_history]).to include(role: :user, content: 'Hello there')
+            mock_result
+          end
+          temporary_service = described_class.new(assistant: generation_assistant, conversation: conversation, source: source)
+
+          response = temporary_service.generate_response(message_history: message_history)
+
+          expect(response).to include('response' => 'Test response')
+          expect(response['agent_id']).to be_nil
+          expect(response).not_to include('agent_display_name', 'agent_tasks')
+          expect(generation_assistant).not_to be_persisted
+        end
+      end
+
+      it 'checks the temporary assistant for MCP references without resolving a routing graph' do
+        generation_assistant.description = 'Use mcp__scheduled_server__lookup for the scheduled message.'
+        expect(mock_runner).to receive(:run) do |_input, **_options|
+          expect(Thread.current[Captain::Mcp::ToolCatalog::DISCOVERY_DISABLED_KEY]).to be_nil
+          mock_result
+        end
+        temporary_service = described_class.new(assistant: generation_assistant, conversation: conversation, source: 'touch_agent')
+
+        expect(temporary_service.generate_response(message_history: message_history)).to include('response' => 'Test response')
+      end
+
+      it 'preserves an error result without resolving a persisted agent identity' do
+        provider_error = RubyLLM::RateLimitError.new('Quota exceeded')
+        allow(mock_result).to receive(:output).and_return(nil)
+        allow(mock_result).to receive(:error).and_return(provider_error)
+        temporary_service = described_class.new(assistant: generation_assistant, conversation: conversation, source: 'campaign_agent')
+
+        response = temporary_service.generate_response(message_history: message_history)
+
+        expect(response).to include('response' => described_class::PROVIDER_ERROR_RESPONSE, 'error_class' => 'RubyLLM::RateLimitError')
+        expect(response).not_to include('agent_id', 'agent_display_name', 'agent_tasks')
+      end
+    end
 
     it 'initializes RubyLLM configuration before running the agent' do
       expect(Llm::Config).to receive(:initialize!)
@@ -164,8 +229,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       expect(Captain::Mcp::ToolCatalog::DiscoveryService).to have_received(:new).once.with(mcp_server)
     end
 
-    it 'keeps MCP discovery enabled for an MCP tool referenced by a scenario' do
-      allow(scenario).to receive(:tools).and_return(['mcp__scenario_server__lookup'])
+    it 'keeps MCP discovery enabled for an MCP tool referenced by an independent specialist' do
+      scenario.update_column(:description, 'Use mcp__scenario_server__lookup')
       allow(mock_runner).to receive(:run) do
         expect(Thread.current[Captain::Mcp::ToolCatalog::DISCOVERY_DISABLED_KEY]).to be_nil
         mock_result
@@ -176,26 +241,23 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
     it 'builds agents and wires them together' do
       expect(assistant).to receive(:agent).and_return(mock_agent)
-      scenarios_relation = instance_double(Captain::Scenario)
-      allow(scenarios_relation).to receive(:enabled).and_return([scenario])
-      expect(assistant).to receive(:scenarios).and_return(scenarios_relation)
-      expect(scenario).to receive(:agent).and_return(mock_scenario_agent)
       expect(mock_agent).to receive(:register_handoffs).with(mock_scenario_agent)
       expect(mock_scenario_agent).to receive(:register_handoffs).with(mock_agent)
 
       service.generate_response(message_history: message_history)
     end
 
-    it 'wires sibling scenarios for direct handoff' do
-      scenarios_relation = instance_double(Captain::Scenario)
-      allow(scenarios_relation).to receive(:enabled).and_return([scenario, second_scenario])
-      allow(assistant).to receive(:scenarios).and_return(scenarios_relation)
-      allow(scenario).to receive(:agent).and_return(mock_scenario_agent)
-      allow(second_scenario).to receive(:agent).and_return(mock_second_scenario_agent)
+    it 'wires explicitly authorized peer agents for direct handoff' do
+      assistant.update!(handoff_agent_ids: [scenario.id, second_scenario.id])
+      scenario.update!(handoff_agent_ids: [assistant.id, second_scenario.id])
+      second_scenario.update!(handoff_agent_ids: [assistant.id, scenario.id])
 
-      expect(mock_agent).to receive(:register_handoffs).with(mock_scenario_agent, mock_second_scenario_agent)
-      expect(mock_scenario_agent).to receive(:register_handoffs).with(mock_agent, mock_second_scenario_agent)
-      expect(mock_second_scenario_agent).to receive(:register_handoffs).with(mock_agent, mock_scenario_agent)
+      expect(mock_agent).to receive(:register_handoffs).with(mock_scenario_agent)
+      expect(mock_agent).to receive(:register_handoffs).with(mock_second_scenario_agent)
+      expect(mock_scenario_agent).to receive(:register_handoffs).with(mock_agent)
+      expect(mock_scenario_agent).to receive(:register_handoffs).with(mock_second_scenario_agent)
+      expect(mock_second_scenario_agent).to receive(:register_handoffs).with(mock_agent)
+      expect(mock_second_scenario_agent).to receive(:register_handoffs).with(mock_scenario_agent)
       expect(Captain::Runtime::Runner).to receive(:with_agents).with(
         mock_agent,
         mock_scenario_agent,
@@ -241,7 +303,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
           )
         )
         expect(context[:captain_v2_trace_input]).to include('I need help with my account')
-        expect(max_turns).to eq(described_class::MAX_RUNTIME_TURNS)
+        expect(max_turns).to eq(described_class::MAX_GRAPH_RUNTIME_TURNS)
         expect(runtime_options[:llm_context]).to be_a(RubyLLM::Context)
         mock_result
       end
@@ -280,7 +342,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
           expect(input.text).to eq('What does this error mean?')
           expect(input.attachments.first.source.to_s).to eq('https://example.com/error.png')
           expect(context[:conversation_history]).to eq([{ role: :assistant, content: 'Please share a screenshot' }])
-          expect(max_turns).to eq(described_class::MAX_RUNTIME_TURNS)
+          expect(max_turns).to eq(described_class::MAX_GRAPH_RUNTIME_TURNS)
           expect(runtime_options[:llm_context]).to be_a(RubyLLM::Context)
           mock_result
         end
@@ -310,7 +372,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
             { type: 'text', text: 'Here is my error screenshot' },
             { type: 'image_url', image_url: { url: 'https://example.com/error.png' } }
           )
-          expect(max_turns).to eq(described_class::MAX_RUNTIME_TURNS)
+          expect(max_turns).to eq(described_class::MAX_GRAPH_RUNTIME_TURNS)
           expect(runtime_options[:llm_context]).to be_a(RubyLLM::Context)
           mock_result
         end
@@ -322,7 +384,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         expect(mock_runner).to receive(:run) do |_input, context:, max_turns:, runtime_options:|
           expect(context[:captain_v2_trace_input]).to include('image_url')
           expect(context[:captain_v2_trace_current_input]).to include('image_url')
-          expect(max_turns).to eq(described_class::MAX_RUNTIME_TURNS)
+          expect(max_turns).to eq(described_class::MAX_GRAPH_RUNTIME_TURNS)
           expect(runtime_options[:llm_context]).to be_a(RubyLLM::Context)
           mock_result
         end
@@ -355,7 +417,18 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     it 'processes and formats agent result' do
       result = service.generate_response(message_history: message_history)
 
-      expect(result).to eq({ 'response' => 'Test response', 'agent_name' => nil, 'handoff_tool_called' => false })
+      expect(result).to eq({ 'response' => 'Test response', 'agent_name' => nil, 'handoff_tool_called' => false }.merge(entry_agent_identity))
+    end
+
+    it 'reports the independent agent that answered and the current task outcomes' do
+      tasks = [{ 'id' => 'billing-task', 'assistant_id' => scenario.id, 'status' => 'completed', 'result' => 'Billing request completed' }]
+      allow(mock_result).to receive(:context).and_return(
+        current_agent: "assistant_#{scenario.id}", acting_assistant_id: scenario.id, agent_tasks: tasks
+      )
+
+      response = service.generate_response(message_history: message_history)
+
+      expect(response).to include('agent_id' => scenario.id, 'agent_display_name' => scenario.name, 'agent_tasks' => tasks)
     end
 
     it 'records a persisted omission reason when the model skips all bound tools' do
@@ -523,7 +596,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
           'blank_response_retry' => true,
           'zero_completion_recovered' => true,
           'zero_completion_recovery_kind' => described_class::ZERO_COMPLETION_BLANK_RETRY
-        }
+        }.merge(entry_agent_identity)
       )
     end
 
@@ -958,7 +1031,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
           'handoff_authorized' => true,
           'agent_name' => 'assistant_agent',
           'handoff_tool_called' => true
-        }
+        }.merge(entry_agent_identity)
       )
     end
 
@@ -1049,7 +1122,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
           'response_cancelled' => true,
           'cancel_reason' => 'Acknowledgement does not need a reply',
           'agent_name' => 'assistant_agent'
-        }
+        }.merge(entry_agent_identity)
       )
     end
 
@@ -1381,11 +1454,9 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       expect(result).not_to have_key('error_class')
     end
 
-    context 'when no scenarios are enabled' do
+    context 'when no peer agents are enabled' do
       before do
-        scenarios_relation = instance_double(Captain::Scenario)
-        allow(scenarios_relation).to receive(:enabled).and_return([])
-        allow(assistant).to receive(:scenarios).and_return(scenarios_relation)
+        assistant.update!(handoff_agent_ids: [])
       end
 
       it 'only uses assistant agent' do
@@ -1393,6 +1464,203 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         expect(mock_agent).not_to receive(:register_handoffs)
 
         service.generate_response(message_history: message_history)
+      end
+    end
+
+    context 'with configured custom safety rules' do
+      let(:input_rule) do
+        {
+          'id' => 'current_request', 'name' => 'Current request', 'direction' => 'input',
+          'instruction' => 'Hand off a current request that needs staff.', 'action' => 'handoff',
+          'enabled' => true, 'message' => 'Your request has been transferred.'
+        }
+      end
+      let(:output_rule) do
+        {
+          'id' => 'unsupported_reply', 'name' => 'Unsupported reply', 'direction' => 'output',
+          'instruction' => 'Stop an unsupported public reply.', 'action' => 'block', 'enabled' => true
+        }
+      end
+
+      before do
+        allow(Llm::SafetyPolicy).to receive(:check!).and_return(nil)
+        allow(Captain::Safety::CustomRulesEvaluator).to receive(:evaluate) do |direction:, **_attributes|
+          custom_check_result(direction: direction, status: :allowed, reason: :no_enabled_rules)
+        end
+      end
+
+      def save_custom_rules(actor, *rules)
+        actor.update!(config: actor.config.to_h.deep_merge('safety_settings' => { 'custom_rules' => rules }))
+      end
+
+      def custom_check_result(direction:, status:, rule_id: nil, action: nil, reason: nil)
+        Captain::Safety::CustomRulesEvaluator::Result.new(
+          status: status, direction: direction, rule_id: rule_id, action: action,
+          model: 'decision-test-model', latency_ms: 1, reason: reason
+        )
+      end
+
+      %i[matched unavailable].each do |status|
+        it "stops the main runner when the configured input check is #{status}" do
+          save_custom_rules(assistant, input_rule)
+          check = custom_check_result(
+            direction: 'input', status: status, rule_id: (input_rule['id'] if status == :matched),
+            action: ('handoff' if status == :matched), reason: (:engine_unavailable if status == :unavailable)
+          )
+          expect(Captain::Safety::CustomRulesEvaluator).to receive(:evaluate).with(
+            assistant: assistant, direction: 'input', text: 'I need help with my account', context: kind_of(Hash)
+          ).and_return(check)
+          expect(mock_runner).not_to receive(:run)
+
+          response = service.generate_response(message_history: message_history)
+
+          expect(response).to include(
+            'response' => described_class::PROVIDER_ERROR_RESPONSE,
+            described_class::PROVIDER_ERROR_AUTHORIZED_KEY => true,
+            'agent_id' => assistant.id
+          )
+          expect(response.dig('custom_guardrail', 'direction')).to eq('input')
+          expect(response.dig('custom_guardrail', 'reason')).to eq(check.reason.to_s)
+        end
+      end
+
+      it 'checks the destination rules before that routed agent can continue the run' do
+        destination_rule = input_rule.merge('id' => 'specialist_request')
+        save_custom_rules(scenario, destination_rule)
+        destination_preparer = nil
+        allow(mock_scenario_agent).to receive(:context_preparer=) { |callback| destination_preparer = callback }
+        expect(Captain::Safety::CustomRulesEvaluator).to receive(:evaluate).with(
+          assistant: scenario, direction: 'input', text: 'I need help with my account', context: kind_of(Hash)
+        ).and_return(custom_check_result(
+                       direction: 'input', status: :matched, rule_id: destination_rule['id'], action: 'handoff'
+                     ))
+        expect(mock_runner).to receive(:run) do |_input, context:, **_options|
+          expect(destination_preparer).to be_a(Proc)
+          destination_preparer.call(Struct.new(:context).new(context))
+          raise 'The destination must not continue after its input check'
+        end
+
+        response = service.generate_response(message_history: message_history)
+
+        expect(response).to include('response' => described_class::PROVIDER_ERROR_RESPONSE, 'agent_id' => scenario.id)
+        expect(response.dig('custom_guardrail', 'rule_id')).to eq(destination_rule['id'])
+      end
+
+      it 'strips custom guardrail metadata supplied by ordinary model output' do
+        allow(mock_result).to receive(:output).and_return(
+          'response' => 'Normal public reply',
+          'custom_guardrail' => {
+            'direction' => 'input', 'rule_id' => input_rule['id'], 'action' => 'handoff',
+            'approved_message' => 'Model-supplied handoff text'
+          },
+          described_class::PROVIDER_ERROR_AUTHORIZED_KEY => true
+        )
+
+        response = service.generate_response(message_history: message_history)
+
+        expect(response['response']).to eq('Normal public reply')
+        expect(response).not_to have_key('custom_guardrail')
+        expect(response).not_to have_key(described_class::PROVIDER_ERROR_AUTHORIZED_KEY)
+      end
+
+      it 'uses the routed response actor for the final output policy' do
+        save_custom_rules(scenario, output_rule)
+        allow(mock_result).to receive(:context).and_return(
+          current_agent: "assistant_#{scenario.id}", acting_assistant_id: scenario.id,
+          captain_v2_current_input: 'I need help with my account'
+        )
+        expect(Captain::Safety::CustomRulesEvaluator).to receive(:evaluate).with(
+          assistant: scenario, direction: 'output', text: 'Test response',
+          context: hash_including(last_customer_message: 'I need help with my account')
+        ).and_return(custom_check_result(
+                       direction: 'output', status: :matched, rule_id: output_rule['id'], action: 'block'
+                     ))
+
+        response = service.generate_response(message_history: message_history)
+
+        expect(response).to include('response' => described_class::PROVIDER_ERROR_RESPONSE, 'agent_id' => scenario.id)
+        expect(response.dig('custom_guardrail', 'direction')).to eq('output')
+        expect(response.dig('custom_guardrail', 'rule_id')).to eq(output_rule['id'])
+      end
+
+      it 'returns only a rewritten reply after the replacement passes the output policy' do
+        rewrite_rule = output_rule.merge('action' => 'rewrite')
+        save_custom_rules(assistant, rewrite_rule)
+        rewriter = instance_double(Captain::Safety::ResponseRewriteEngine)
+        allow(Captain::Safety::ResponseRewriteEngine).to receive(:new).and_return(rewriter)
+        expect(rewriter).to receive(:rewrite).with(
+          assistant: assistant, text: 'Test response', rule_id: rewrite_rule['id'],
+          last_customer_message: 'I need help with my account'
+        ).and_return('I will ask staff to check your request.')
+        expect(Captain::Safety::CustomRulesEvaluator).to receive(:evaluate).with(
+          assistant: assistant, direction: 'output', text: 'Test response', context: kind_of(Hash)
+        ).ordered.and_return(custom_check_result(
+                               direction: 'output', status: :matched, rule_id: rewrite_rule['id'], action: 'rewrite'
+                             ))
+        expect(Captain::Safety::CustomRulesEvaluator).to receive(:evaluate).with(
+          assistant: assistant, direction: 'output', text: 'I will ask staff to check your request.', context: kind_of(Hash)
+        ).ordered.and_return(custom_check_result(direction: 'output', status: :allowed))
+
+        response = service.generate_response(message_history: message_history)
+
+        expect(response['response']).to eq('I will ask staff to check your request.')
+        expect(response).not_to have_key('custom_guardrail')
+      end
+
+      it 'checks the deterministic blank-response fallback before returning public text' do
+        save_custom_rules(assistant, output_rule)
+        allow(mock_runner).to receive(:run).and_return(
+          instance_double(
+            Captain::Runtime::Result, output: { 'response' => '' }, error: nil,
+            context: {
+              current_agent: "assistant_#{assistant.id}", acting_assistant_id: assistant.id,
+              captain_v2_current_input: 'I need help with my account',
+              captain_v2_completed_tool_names: ['create_deal']
+            }
+          )
+        )
+        expect(Captain::Safety::CustomRulesEvaluator).to receive(:evaluate).with(
+          assistant: assistant, direction: 'output', text: 'Request processed. Completed actions: Create Deal ×1.',
+          context: kind_of(Hash)
+        ).and_return(custom_check_result(
+                       direction: 'output', status: :matched, rule_id: output_rule['id'], action: 'block'
+                     ))
+
+        response = service.generate_response(message_history: message_history)
+
+        expect(response['response']).to eq(described_class::PROVIDER_ERROR_RESPONSE)
+        expect(response.dig('custom_guardrail', 'rule_id')).to eq(output_rule['id'])
+        expect(mock_runner).to have_received(:run).once
+      end
+
+      it 'checks the public tool-result fallback after the runner raises' do
+        save_custom_rules(assistant, output_rule)
+        tool_complete_callbacks = []
+        wrapper = Struct.new(:context).new({ current_agent: "assistant_#{assistant.id}" })
+        allow(mock_runner).to receive(:on_tool_complete) do |&callback|
+          tool_complete_callbacks << callback
+          mock_runner
+        end
+        allow(mock_runner).to receive(:run) do
+          tool_complete_callbacks.each do |callback|
+            callback.call('update_deal', Captain::ToolResult.success(message: 'ok'), wrapper)
+          end
+          raise StandardError, 'Provider failed after the completed action'
+        end
+        allow(ChatwootExceptionTracker).to receive(:new).and_return(
+          instance_double(ChatwootExceptionTracker, capture_exception: true)
+        )
+        expect(Captain::Safety::CustomRulesEvaluator).to receive(:evaluate).with(
+          assistant: assistant, direction: 'output', text: 'Request processed. Completed actions: Update Deal ×1.',
+          context: kind_of(Hash)
+        ).and_return(custom_check_result(
+                       direction: 'output', status: :matched, rule_id: output_rule['id'], action: 'block'
+                     ))
+
+        response = service.generate_response(message_history: message_history)
+
+        expect(response['response']).to eq(described_class::PROVIDER_ERROR_RESPONSE)
+        expect(response.dig('custom_guardrail', 'rule_id')).to eq(output_rule['id'])
       end
     end
 
@@ -1408,7 +1676,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
           'response' => 'conversation_handoff',
           'reasoning' => 'Agent input blocked by moderation policy',
           described_class::MODERATION_BLOCKED_KEY => true
-        }
+        }.merge(entry_agent_identity)
       )
     end
 
@@ -1424,7 +1692,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
           'response' => 'conversation_handoff',
           'reasoning' => 'Agent input blocked because moderation policy is unavailable',
           described_class::MODERATION_BLOCKED_KEY => true
-        }
+        }.merge(entry_agent_identity)
       )
     end
 
@@ -1454,7 +1722,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       expect(mock_runner).to receive(:run).with(
         anything,
         context: anything,
-        max_turns: described_class::MAX_RUNTIME_TURNS,
+        max_turns: described_class::MAX_GRAPH_RUNTIME_TURNS,
         runtime_options: hash_including(
           llm_context: an_instance_of(RubyLLM::Context),
           account: account
@@ -1482,7 +1750,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
                                'reasoning' => '',
                                'agent_name' => nil,
                                'handoff_tool_called' => false
-                             })
+                             }.merge(entry_agent_identity))
       end
     end
 
@@ -1507,7 +1775,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
                                'error_class' => 'StandardError',
                                'error_message' => 'Test error',
                                described_class::PROVIDER_ERROR_AUTHORIZED_KEY => true
-                             })
+                             }.merge(entry_agent_identity))
       end
 
       it 'uses deterministic public fallback when the runner raises after a successful tool callback' do
@@ -1555,7 +1823,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
                                  'error_class' => 'StandardError',
                                  'error_message' => 'Test error',
                                  described_class::PROVIDER_ERROR_AUTHORIZED_KEY => true
-                               })
+                               }.merge(entry_agent_identity))
         end
       end
     end
@@ -1581,7 +1849,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
             'error_class' => 'RubyLLM::RateLimitError',
             'error_message' => 'Quota exceeded',
             described_class::PROVIDER_ERROR_AUTHORIZED_KEY => true
-          }
+          }.merge(entry_agent_identity)
         )
       end
 

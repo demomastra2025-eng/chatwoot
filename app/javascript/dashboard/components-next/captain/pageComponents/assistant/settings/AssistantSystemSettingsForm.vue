@@ -865,7 +865,7 @@ defineExpose({
       v-if="showVoiceSettings"
       open
       data-test-id="assistant-voice-settings"
-      class="rounded-xl border border-n-weak bg-n-solid-1 p-4"
+      class="border-t border-n-weak pt-4"
     >
       <summary class="cursor-pointer list-none">
         <div class="flex items-start justify-between gap-4">
@@ -947,7 +947,7 @@ defineExpose({
         </div>
         <div
           data-test-id="assistant-input-language-priorities"
-          class="md:col-span-2 flex flex-col gap-2 rounded-lg border border-n-weak p-3"
+          class="md:col-span-2 flex flex-col gap-2 border-t border-n-weak pt-4"
         >
           <div>
             <label class="text-sm font-medium text-n-slate-12">
@@ -1111,7 +1111,7 @@ defineExpose({
         />
         <div
           data-test-id="assistant-voice-manager-handoff"
-          class="md:col-span-2 flex flex-col gap-3 rounded-lg border border-n-weak p-3"
+          class="md:col-span-2 flex flex-col gap-3 border-t border-n-weak pt-4"
         >
           <div class="flex flex-col gap-1.5">
             <label class="text-sm font-medium text-n-slate-12">
@@ -1214,7 +1214,7 @@ defineExpose({
           </p>
         </div>
         <div
-          class="rounded-lg border border-n-weak p-3 flex items-center justify-between gap-4"
+          class="border-b border-n-weak py-3 flex items-center justify-between gap-4"
         >
           <div class="min-w-0">
             <h5 class="text-sm font-medium text-n-slate-12">
@@ -1232,7 +1232,7 @@ defineExpose({
         </div>
         <details
           data-test-id="assistant-voice-silence-settings"
-          class="md:col-span-2 rounded-lg border border-n-weak p-3"
+          class="md:col-span-2 border-t border-n-weak pt-4"
         >
           <summary class="cursor-pointer text-sm font-medium text-n-slate-12">
             {{ t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.SILENCE_TITLE') }}
@@ -1244,7 +1244,7 @@ defineExpose({
           </p>
           <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
             <div
-              class="md:col-span-2 rounded-lg border border-n-weak p-3 flex items-center justify-between gap-4"
+              class="md:col-span-2 border-b border-n-weak py-3 flex items-center justify-between gap-4"
             >
               <span class="text-sm font-medium text-n-slate-12">
                 {{
@@ -1312,7 +1312,7 @@ defineExpose({
                 "
               />
               <div
-                class="md:col-span-2 rounded-lg border border-n-weak p-3 flex items-center justify-between gap-4"
+                class="md:col-span-2 border-b border-n-weak py-3 flex items-center justify-between gap-4"
               >
                 <span class="text-sm font-medium text-n-slate-12">
                   {{
@@ -1327,7 +1327,7 @@ defineExpose({
         <div
           v-if="isGeminiLive"
           data-test-id="assistant-gemini-context-compression"
-          class="rounded-lg border border-n-weak p-3 flex items-center justify-between gap-4"
+          class="border-b border-n-weak py-3 flex items-center justify-between gap-4"
         >
           <div class="min-w-0">
             <h5 class="text-sm font-medium text-n-slate-12">
@@ -1350,7 +1350,7 @@ defineExpose({
         <div
           v-if="isGeminiProactiveAudioSupported"
           data-test-id="assistant-gemini-proactive-audio"
-          class="rounded-lg border border-n-weak p-3 flex items-center justify-between gap-4"
+          class="border-b border-n-weak py-3 flex items-center justify-between gap-4"
         >
           <div class="min-w-0">
             <h5 class="text-sm font-medium text-n-slate-12">
@@ -1369,7 +1369,7 @@ defineExpose({
         <div
           v-if="isAffectiveDialogSupported"
           data-test-id="assistant-gemini-affective-dialog"
-          class="rounded-lg border border-n-weak p-3 flex items-center justify-between gap-4"
+          class="border-b border-n-weak py-3 flex items-center justify-between gap-4"
         >
           <div class="min-w-0">
             <h5 class="text-sm font-medium text-n-slate-12">

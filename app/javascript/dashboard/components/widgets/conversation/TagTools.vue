@@ -30,6 +30,18 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'selectTool']);
 
+const capabilityToolIds = new Set([
+  'faq_lookup',
+  'handoff',
+  'resolve_conversation',
+  'web_search',
+  'web_scrape_url',
+  'add_contact_note',
+  'add_private_note',
+  'cancel_response',
+  'send_notification',
+]);
+
 const { t, te } = useI18n();
 
 const selectedIndex = ref(0);
@@ -51,10 +63,20 @@ const loadTools = async () => {
 const usedItemIdSet = computed(() => new Set(props.usedItemIds || []));
 
 const localizedTools = computed(() =>
-  tools.value.map(tool => ({
-    ...localizeCatalogTool(tool, { t, te }),
-    isUsed: usedItemIdSet.value.has(tool.id),
-  }))
+  tools.value
+    .filter(
+      tool =>
+        props.toolScope !== 'agent' ||
+        (tool.mentionable !== false &&
+          !tool.capability_tool &&
+          !capabilityToolIds.has(tool.id) &&
+          tool.provider !== 'skill_script' &&
+          tool.source_type !== 'skill')
+    )
+    .map(tool => ({
+      ...localizeCatalogTool(tool, { t, te }),
+      isUsed: usedItemIdSet.value.has(tool.id),
+    }))
 );
 
 const filteredTools = computed(() => {

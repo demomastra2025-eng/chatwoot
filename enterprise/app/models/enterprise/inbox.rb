@@ -13,7 +13,7 @@ module Enterprise::Inbox
   end
 
   def captain_active?
-    captain_assistant.present? && captain_usage_available?
+    captain_assistant.present? && captain_assistant.active? && captain_usage_available?
   end
 
   def captain_auto_reply_allowed?

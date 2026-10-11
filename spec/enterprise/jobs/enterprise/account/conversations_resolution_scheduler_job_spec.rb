@@ -28,6 +28,14 @@ RSpec.describe Account::ConversationsResolutionSchedulerJob, type: :job do
         end.not_to have_enqueued_job(Captain::InboxPendingConversationsResolutionJob)
           .with(email_inbox)
       end
+
+      it 'does not enqueue Captain resolution when the existing entry is disabled' do
+        assistant.update!(active: false)
+
+        expect do
+          described_class.perform_now
+        end.not_to have_enqueued_job(Captain::InboxPendingConversationsResolutionJob)
+      end
     end
 
     context 'when account has captain auto resolve disabled' do

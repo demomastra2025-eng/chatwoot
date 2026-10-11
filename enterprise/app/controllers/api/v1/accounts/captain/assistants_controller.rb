@@ -13,7 +13,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   ].freeze
   ASSISTANT_SAFETY_SETTINGS_FIELDS = %i[
     moderation_enabled prompt_injection_action sensitive_info_action
-  ].freeze
+  ].concat([{ custom_rules: %i[id name direction instruction action enabled message] }]).freeze
   VOICE_SETTINGS_ARRAY_FIELDS = Telephony::AiVoice::VoiceSettingsDefaults::ARRAY_KEYS.index_with { [] }.freeze
   VOICE_SETTINGS_SCALAR_FIELDS = (Telephony::AiVoice::VoiceSettingsDefaults::DEFAULTS.keys - VOICE_SETTINGS_ARRAY_FIELDS.keys).freeze
 
@@ -22,10 +22,11 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
 
   before_action :set_assistant, only: [:show, :update, :destroy, :playground, :avatar, :prompt_preview, :voice_preview]
   before_action :ensure_internal_playground_available, only: :playground
+  before_action :reject_separate_rules, only: [:create, :update]
   around_action :with_model_metadata_snapshot, only: :show
 
   def index
-    @assistants = account_assistants.ordered
+    @assistants = account_assistants.ordered.includes(:outgoing_agent_handoffs)
   end
 
   def show
@@ -44,7 +45,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
       @assistant = account_assistants.create!(attributes)
     end
   rescue ActiveRecord::RecordInvalid => e
-    render_fish_voice_reference_error_or_raise(e)
+    render_profile_validation_error_or_raise(e)
   end
 
   def update
@@ -54,7 +55,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
       cancel_captain_follow_ups_if_disabled!
     end
   rescue ActiveRecord::RecordInvalid => e
-    render_fish_voice_reference_error_or_raise(e)
+    render_profile_validation_error_or_raise(e)
   end
 
   def avatar
@@ -126,11 +127,19 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     end
   end
 
-  def skills
-    @skills = Captain::SkillCatalog.all(account: Current.account)
-  end
-
   private
+
+  def reject_separate_rules
+    attributes = params[:assistant]
+    return unless attributes.respond_to?(:key?)
+
+    fields = %w[response_guidelines guardrails].select { |field| attributes.key?(field) }
+    fields << 'config.rules' if attributes[:config].respond_to?(:key?) && attributes[:config].key?(:rules)
+    return if fields.empty?
+
+    render json: { error: 'separate_rules_removed', fields: fields, message: 'Save instructions in assistant.description.' },
+           status: :unprocessable_entity
+  end
 
   def with_model_metadata_snapshot
     return yield if @assistant.internal_assistant?
@@ -164,17 +173,20 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
       :name,
       :description,
       :usage_mode,
+      :active,
+      :routing_description,
       config: ASSISTANT_CONFIG_FIELDS + [{ safety_settings: ASSISTANT_SAFETY_SETTINGS_FIELDS }]
     )
 
-    merge_optional_array_param!(permitted, :response_guidelines)
-    merge_optional_array_param!(permitted, :guardrails)
+    if params[:assistant].key?(:handoff_agent_ids)
+      permitted[:handoff_agent_ids] = normalize_optional_config_value(params[:assistant][:handoff_agent_ids])
+    end
     merge_optional_config_param!(permitted, :context_access)
     merge_optional_config_param!(permitted, :tool_access)
     merge_optional_config_param!(permitted, :follow_up_settings)
     merge_optional_config_param!(permitted, :outcome_reason_settings)
     merge_optional_config_param!(permitted, :voice_settings, voice_settings: true)
-    merge_optional_config_param!(permitted, :rules)
+    merge_custom_safety_rules_param!(permitted)
 
     permitted
   end
@@ -235,22 +247,25 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     Telephony::AiVoice::VoiceSettingsDefaults.normalize(merged)
   end
 
-  def render_fish_voice_reference_error_or_raise(error)
+  def render_profile_validation_error_or_raise(error)
+    violations = error.record.errors.where(:config, :invalid_custom_safety_rules)
+    if violations.any?
+      fields = violations.map { |item| { path: item.options[:path], code: item.options[:code], message: item.message } }
+      return render json: { error: 'invalid_custom_safety_rules', fields: fields }, status: :unprocessable_content
+    end
     raise error unless error.record.errors.of_kind?(:config, :fish_voice_invalid_reference)
 
     render json: { error: 'fish_voice_invalid_reference' }, status: :unprocessable_content
   end
 
-  def merge_optional_array_param!(permitted, field_name)
-    return unless params[:assistant].key?(field_name)
+  def merge_custom_safety_rules_param!(permitted)
+    settings = params.dig(:assistant, :config, :safety_settings)
+    return unless settings.respond_to?(:key?) && settings.key?(:custom_rules)
 
-    permitted[field_name] = normalize_optional_array_value(params[:assistant][field_name])
-  end
-
-  def normalize_optional_array_value(value)
-    Array(normalize_optional_config_value(value)).map do |item|
-      item.is_a?(Hash) ? item.to_json : item
-    end
+    # Preserve invalid types and unknown rule fields so validation cannot silently discard them.
+    permitted[:config] ||= {}
+    permitted[:config][:safety_settings] ||= {}
+    permitted[:config][:safety_settings][:custom_rules] = normalize_optional_config_value(settings[:custom_rules])
   end
 
   def merge_optional_config_param!(permitted, field_name, voice_settings: false)

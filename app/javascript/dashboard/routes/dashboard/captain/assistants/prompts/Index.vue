@@ -1,5 +1,5 @@
 <script setup>
-import { computed, defineAsyncComponent, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
@@ -8,24 +8,13 @@ import { useMapGetter } from 'dashboard/composables/store';
 
 import PageLayout from 'dashboard/components-next/captain/PageLayout.vue';
 import AssistantBasicSettingsForm from 'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantBasicSettingsForm.vue';
-import AssistantRulesManager from 'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantRulesManager.vue';
 import PromptInspector from 'dashboard/components-next/captain/pageComponents/assistant/PromptInspector.vue';
-import TabBar from 'dashboard/components-next/tabbar/TabBar.vue';
-
-const AssistantScenariosManager = defineAsyncComponent(
-  () =>
-    import(
-      'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantScenariosManager.vue'
-    )
-);
 
 const { t } = useI18n();
 const route = useRoute();
 const store = useStore();
 
 const promptDescriptionFormRef = ref(null);
-const promptRulesManagerRef = ref(null);
-const PROMPT_INSTRUCTION_MAX_LENGTH = 20_000;
 const PROMPT_INSTRUCTION_INITIAL_HEIGHT = 420;
 const uiFlags = useMapGetter('captainAssistants/getUIFlags');
 const isFetching = computed(() => uiFlags.value.fetchingItem);
@@ -33,20 +22,9 @@ const assistantId = computed(() => Number(route.params.assistantId));
 const assistant = computed(() =>
   store.getters['captainAssistants/getRecord'](assistantId.value)
 );
-const PROMPT_TAB_RULES = 'rules';
-const PROMPT_TAB_SCENARIOS = 'scenarios';
-const promptTabs = computed(() => [
-  {
-    key: PROMPT_TAB_RULES,
-    label: t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.PROMPT_TABS.RULES'),
-  },
-  {
-    key: PROMPT_TAB_SCENARIOS,
-    label: t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.PROMPT_TABS.SCENARIOS'),
-  },
-]);
-const activePromptTab = ref(PROMPT_TAB_RULES);
-const showPromptTabs = computed(() => promptTabs.value.length > 1);
+const promptInstructionMaxLength = computed(() =>
+  Math.max(20_000, assistant.value?.description?.length || 0)
+);
 
 watch(
   assistantId,
@@ -76,72 +54,14 @@ const handleSubmit = async updatedAssistant => {
   }
 };
 
-const mergeAssistantPayloads = (...payloads) =>
-  payloads.filter(Boolean).reduce(
-    (result, payload) => {
-      const nextAssistant = payload.assistant || {};
-      const nextConfig = nextAssistant.config || {};
-      const currentAssistant = result.assistant || {};
-
-      result.assistant = {
-        ...currentAssistant,
-        ...nextAssistant,
-        config: {
-          ...(currentAssistant.config || {}),
-          ...nextConfig,
-        },
-      };
-
-      return result;
-    },
-    {
-      assistant: {
-        config: {},
-      },
-    }
-  );
-
 const handlePromptsSave = async () => {
   try {
-    const instructionPayload =
-      await promptDescriptionFormRef.value?.buildPayload?.();
-    const rulesPayload =
-      activePromptTab.value === PROMPT_TAB_RULES
-        ? await promptRulesManagerRef.value?.buildPayload?.()
-        : null;
-    const mergedPayload = mergeAssistantPayloads(
-      instructionPayload,
-      rulesPayload
-    );
-
-    if (!instructionPayload && !rulesPayload) {
-      return;
-    }
-
-    await handleSubmit(mergedPayload);
+    const payload = await promptDescriptionFormRef.value?.buildPayload?.();
+    if (payload) await handleSubmit(payload);
   } catch (error) {
     useAlert(error?.message || t('CAPTAIN.ASSISTANTS.EDIT.ERROR_MESSAGE'));
   }
 };
-
-const onPromptTabChanged = tab => {
-  const fallbackTab = promptTabs.value[0]?.key || PROMPT_TAB_SCENARIOS;
-  const nextTab = tab?.key || fallbackTab;
-
-  activePromptTab.value = promptTabs.value.some(item => item.key === nextTab)
-    ? nextTab
-    : fallbackTab;
-};
-
-watch(
-  promptTabs,
-  tabs => {
-    if (!tabs.some(tab => tab.key === activePromptTab.value)) {
-      activePromptTab.value = tabs[0]?.key || PROMPT_TAB_SCENARIOS;
-    }
-  },
-  { immediate: true }
-);
 </script>
 
 <template>
@@ -160,9 +80,7 @@ watch(
           class="grid gap-6 lg:grid-cols-[minmax(0,1.02fr)_minmax(24rem,1fr)]"
         >
           <div class="flex h-full flex-col gap-6">
-            <div
-              class="instructions-card rounded-2xl bg-n-solid-1 flex h-full flex-col gap-6"
-            >
+            <div class="instructions-card flex h-full flex-col gap-6">
               <AssistantBasicSettingsForm
                 ref="promptDescriptionFormRef"
                 :assistant="assistant"
@@ -170,7 +88,7 @@ watch(
                 :show-name-field="false"
                 :show-feature-flags="false"
                 :show-submit-button="false"
-                :description-max-length="PROMPT_INSTRUCTION_MAX_LENGTH"
+                :description-max-length="promptInstructionMaxLength"
                 :description-initial-height="PROMPT_INSTRUCTION_INITIAL_HEIGHT"
                 description-min-height="26rem"
               />
@@ -182,34 +100,6 @@ watch(
               :assistant-id="assistant?.id"
               :assistant="assistant"
               :show-scenarios-section="false"
-            />
-          </div>
-        </div>
-
-        <div class="flex flex-col gap-6 pt-2">
-          <div class="border-t border-n-weak" />
-          <div class="rounded-2xl bg-n-solid-1 p-5 md:p-6 flex flex-col gap-5">
-            <div v-if="showPromptTabs" class="flex items-center justify-start">
-              <TabBar
-                :tabs="promptTabs"
-                :initial-active-tab="
-                  promptTabs.findIndex(tab => tab.key === activePromptTab)
-                "
-                @tab-changed="onPromptTabChanged"
-              />
-            </div>
-
-            <AssistantRulesManager
-              v-if="activePromptTab === PROMPT_TAB_RULES"
-              ref="promptRulesManagerRef"
-              :assistant-id="assistantId"
-              :assistant="assistant"
-              :show-header="false"
-            />
-            <AssistantScenariosManager
-              v-else-if="activePromptTab === PROMPT_TAB_SCENARIOS"
-              :assistant-id="assistantId"
-              :show-header="!showPromptTabs"
             />
           </div>
         </div>

@@ -10,6 +10,7 @@ RSpec.describe Llm::InstallationModelConfig do
       end
       expect(described_class.manages?('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')).to be true
       expect(described_class.manages?('CAPTAIN_DEFAULT_MODEL')).to be true
+      expect(described_class.manages?('CAPTAIN_CUSTOM_GUARDRAIL_MODEL')).to be true
       expect(described_class.manages?('CAPTAIN_OPENROUTER_API_KEY')).to be false
     end
   end
@@ -29,6 +30,77 @@ RSpec.describe Llm::InstallationModelConfig do
     it 'rejects a model that is unknown or does not fit the feature' do
       expect(described_class.normalize('CAPTAIN_AUDIO_TRANSCRIPTION_MODEL', 'openai/gpt-5.4')).not_to be_valid
       expect(described_class.normalize('CAPTAIN_IMAGE_RECOGNITION_MODEL', 'vendor/unknown')).not_to be_valid
+    end
+
+    it 'accepts supported structured-output models and rejects unrelated models for the outcome classifier' do
+      expect(described_class.normalize('CAPTAIN_OUTCOME_CLASSIFIER_MODEL', 'openai/gpt-6-luna')).to be_valid
+      expect(described_class.normalize('CAPTAIN_OUTCOME_CLASSIFIER_MODEL', 'whisper-1')).not_to be_valid
+      expect(described_class.normalize('CAPTAIN_OUTCOME_CLASSIFIER_MODEL', 'vendor/unknown')).not_to be_valid
+    end
+
+    %w[microsoft/microsoft-decision-1 microsoft/microsoft-decision-1-20261009].each do |model|
+      it "accepts the approved native Decision model #{model} only for the outcome classifier" do
+        expect(described_class.normalize('CAPTAIN_OUTCOME_CLASSIFIER_MODEL', " #{model} "))
+          .to have_attributes(value: model, error: nil)
+        expect(described_class.normalize('CAPTAIN_CUSTOM_GUARDRAIL_MODEL', model)).not_to be_valid
+        expect(described_class.normalize('CAPTAIN_MODERATION_MODEL', model)).not_to be_valid
+        expect(described_class.normalize('CAPTAIN_DEFAULT_MODEL', model)).not_to be_valid
+      end
+    end
+  end
+
+  describe '.normalize for the custom guardrail model' do
+    let(:config_name) { 'CAPTAIN_CUSTOM_GUARDRAIL_MODEL' }
+
+    def stub_guardrail_catalog_model(supported_parameters:)
+      model = 'vendor/custom-guardrail-chat'
+      allow(Llm::Models).to receive(:model_config).and_call_original
+      allow(Llm::Models).to receive(:model_config).with(model, account: nil).and_return(
+        'id' => model, 'provider' => 'openrouter', 'type' => 'chat',
+        'capabilities' => %w[text_input text_output], 'supported_parameters' => supported_parameters
+      )
+      allow(Llm::Models).to receive(:openrouter_catalog_enabled?).and_call_original
+      allow(Llm::Models).to receive(:openrouter_catalog_enabled?).with(account: nil).and_return(true)
+      allow(Llm::Config).to receive(:provider_available?).and_call_original
+      allow(Llm::Config).to receive(:provider_available?).with('openrouter', account: nil).and_return(true)
+      allow(Llm::OpenRouterEndpointCatalog).to receive(:endpoint_metadata).and_call_original
+      allow(Llm::OpenRouterEndpointCatalog).to receive(:endpoint_metadata).with(model).and_return('endpoints' => [])
+      model
+    end
+
+    it 'accepts absent and blank values and keeps the built-in Luna fallback valid' do
+      expect(described_class.normalize(config_name, nil)).to have_attributes(value: '', error: nil)
+      expect(described_class.normalize(config_name, '  ')).to have_attributes(value: '', error: nil)
+      expect(described_class.normalize(config_name, Llm::Config::DEFAULT_MODEL)).to be_valid
+    end
+
+    it 'accepts a supported catalog chat model and removes surrounding whitespace' do
+      result = described_class.normalize(config_name, ' openai/gpt-6-luna ')
+
+      expect(result).to be_valid
+      expect(result.value).to eq('openai/gpt-6-luna')
+    end
+
+    it 'accepts structured-output chat without requiring agent tools or a provider-moderation capability' do
+      model = stub_guardrail_catalog_model(supported_parameters: ['response_format'])
+
+      expect(described_class.normalize(config_name, model)).to have_attributes(value: model, error: nil)
+    end
+
+    it 'rejects a known chat model whose installed metadata does not support structured output' do
+      model = stub_guardrail_catalog_model(supported_parameters: ['temperature'])
+      diagnostics = Llm::OpenRouterCapabilityResolver.call(model_id: model, feature: 'custom_guardrail')
+
+      expect(diagnostics.missing).to include('structured_output')
+      result = described_class.normalize(config_name, model)
+      expect(result).not_to be_valid
+      expect(result.value).to be_nil
+      expect(result.error).to include(model)
+    end
+
+    it 'rejects nonchat and unknown model identifiers' do
+      expect(described_class.normalize(config_name, 'whisper-1')).not_to be_valid
+      expect(described_class.normalize(config_name, 'vendor/unknown')).not_to be_valid
     end
   end
 

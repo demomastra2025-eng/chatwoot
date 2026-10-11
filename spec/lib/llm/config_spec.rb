@@ -132,6 +132,7 @@ RSpec.describe Llm::Config do
     end
 
     it 'falls back to the legacy OpenAI model setting when needed' do
+      upsert_installation_config('CAPTAIN_DEFAULT_MODEL', '')
       upsert_installation_config('CAPTAIN_OPEN_AI_MODEL', 'gpt-4.1-mini')
 
       expect(described_class.installation_default_model).to eq('gpt-4.1-mini')
@@ -226,7 +227,9 @@ RSpec.describe Llm::Config do
         'image_recognition' => 'CAPTAIN_IMAGE_RECOGNITION_MODEL',
         'help_center_search' => 'CAPTAIN_EMBEDDING_MODEL',
         'moderation' => 'CAPTAIN_MODERATION_MODEL',
-        'label_suggestion' => 'CAPTAIN_LABEL_SUGGESTION_MODEL'
+        'custom_guardrail' => 'CAPTAIN_CUSTOM_GUARDRAIL_MODEL',
+        'label_suggestion' => 'CAPTAIN_LABEL_SUGGESTION_MODEL',
+        'outcome_classification' => 'CAPTAIN_OUTCOME_CLASSIFIER_MODEL'
       )
     end
 
@@ -238,6 +241,57 @@ RSpec.describe Llm::Config do
 
       expect(described_class.model_for(feature: 'audio_transcription', account: account))
         .to eq('openai/gpt-4o-mini-transcribe')
+    end
+
+    it 'uses Decision 1 for outcome classification independently of account and general agent defaults' do
+      account = create(:account)
+      allow(account).to receive(:captain_models).and_return('outcome_classification' => 'openai/gpt-5.4-mini')
+      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
+      upsert_installation_config('CAPTAIN_DEFAULT_MODEL', 'openai/gpt-5.4-mini')
+      upsert_installation_config('CAPTAIN_OUTCOME_CLASSIFIER_MODEL', '')
+      catalog = transcription_catalog.merge('openai/gpt-6-luna' => {
+                                              'provider' => 'openrouter', 'type' => 'chat', 'capabilities' => %w[structured_output]
+                                            })
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(catalog)
+      expect(described_class.model_for(feature: 'outcome_classification', account: account)).to eq('microsoft/microsoft-decision-1')
+
+      upsert_installation_config('CAPTAIN_OUTCOME_CLASSIFIER_MODEL', 'openai/gpt-6-luna')
+      expect(described_class.model_for(feature: 'outcome_classification', account: account)).to eq('openai/gpt-6-luna')
+
+      upsert_installation_config('CAPTAIN_OUTCOME_CLASSIFIER_MODEL', 'openai/gpt-5.4-mini')
+      expect(described_class.model_for(feature: 'outcome_classification', account: account)).to eq('openai/gpt-5.4-mini')
+    end
+
+    it 'uses the native Decision default when the classifier setting is absent from the installation' do
+      InstallationConfig.where(name: 'CAPTAIN_OUTCOME_CLASSIFIER_MODEL').delete_all
+      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return({})
+
+      expect(described_class.model_for(feature: 'outcome_classification')).to eq('microsoft/microsoft-decision-1')
+    end
+
+    it 'preserves an explicit dated Decision model selected by the platform' do
+      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
+      upsert_installation_config('CAPTAIN_OUTCOME_CLASSIFIER_MODEL', 'microsoft/microsoft-decision-1-20261009')
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return({})
+
+      expect(described_class.model_for(feature: 'outcome_classification')).to eq('microsoft/microsoft-decision-1-20261009')
+    end
+
+    it 'keeps the custom guardrail model independent of outcome, account and general model selections' do
+      account = create(:account)
+      allow(account).to receive(:captain_models).and_return('custom_guardrail' => 'microsoft/microsoft-decision-1')
+      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
+      upsert_installation_config('CAPTAIN_CUSTOM_GUARDRAIL_MODEL', '')
+      upsert_installation_config('CAPTAIN_OUTCOME_CLASSIFIER_MODEL', 'microsoft/microsoft-decision-1')
+      upsert_installation_config('CAPTAIN_DEFAULT_MODEL', 'openai/gpt-5.4-mini')
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(transcription_catalog)
+
+      expect(described_class.model_for(feature: 'custom_guardrail', account: account)).to eq('openai/gpt-6-luna')
+
+      upsert_installation_config('CAPTAIN_CUSTOM_GUARDRAIL_MODEL', 'openai/gpt-5.4-mini')
+      expect(described_class.model_for(feature: 'custom_guardrail', account: account)).to eq('openai/gpt-5.4-mini')
+      expect(described_class.model_for(feature: 'outcome_classification', account: account)).to eq('microsoft/microsoft-decision-1')
     end
 
     it 'uses the installation image recognition model instead of an account override' do

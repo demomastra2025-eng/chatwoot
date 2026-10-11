@@ -3,7 +3,8 @@ class Captain::Tools::CreateAppointmentTool < Captain::Tools::BasePublicTool
               'For a named relative or another patient, pass their explicit patient details; the communication chat stays unchanged. ' \
               'A successful result for a Medelement-linked specialist includes a reception ID from this booking command: ' \
               'confirm the booking to the patient in your reply. For a local-only booking, the local calendar save is sufficient. ' \
-              'If the tool reports failure or an unknown outcome, do not claim success or repeat the create call; ' \
+              'For an argument validation failure follow the returned correction before retrying. ' \
+              'For any other failure or an unknown outcome, do not claim success or repeat the create call; ' \
               'use the handoff tool when available.'
   param :resource_id, type: 'number', desc: 'Specialist resource ID', required: true
   param :starts_at, type: 'string', desc: 'Appointment start datetime in ISO 8601 format', required: true
@@ -46,11 +47,11 @@ class Captain::Tools::CreateAppointmentTool < Captain::Tools::BasePublicTool
     )
 
     command = verify_provider_booking!(tool_context, appointment)
-    JSON.generate(Captain::Tools::Agent::AppointmentResult.success(appointment, action: 'create_appointment'))
+    JSON.generate(booking_result(appointment, command))
   rescue Scheduling::Error => e
     appointment ||= operation.persisted_creation if operation.respond_to?(:persisted_creation)
     handoff_unconfirmed_booking!(tool_context, appointment, e)
-    JSON.generate(Captain::Tools::Agent::AppointmentResult.failure(e))
+    Captain::Tools::Agent::AppointmentResult.failure_output(e)
   rescue StandardError => e
     appointment ||= operation.persisted_creation if operation.respond_to?(:persisted_creation)
     handle_unexpected_booking_error(tool_context, appointment, command, e)
@@ -58,6 +59,19 @@ class Captain::Tools::CreateAppointmentTool < Captain::Tools::BasePublicTool
   # rubocop:enable Metrics/MethodLength, Metrics/ParameterLists
 
   private
+
+  def booking_result(appointment, verified_command)
+    result = Captain::Tools::Agent::AppointmentResult.success(appointment, action: 'create_appointment')
+    return result unless verified_command
+
+    # OutcomeService has verified this exact current write's reception ID. Its
+    # asynchronous read-back may still be pending; that must not undo success.
+    result.merge(
+      success: true, status: 'created', provider_confirmed: true,
+      provider_confirmation_status: Integrations::Medelement::AppointmentProviderStatus::SUCCEEDED,
+      provider_confirmation_operation: 'create_reception', provider_confirmation_scope: 'medelement'
+    ).except(:reason)
+  end
 
   def verify_provider_booking!(tool_context, appointment)
     Captain::Tools::ProviderBookingOutcomeService.new(
@@ -88,7 +102,7 @@ class Captain::Tools::CreateAppointmentTool < Captain::Tools::BasePublicTool
 
   def handle_unexpected_booking_error(tool_context, appointment, command, error)
     handoff_unconfirmed_booking!(tool_context, appointment, error) if command.nil?
-    JSON.generate(Captain::Tools::Agent::AppointmentResult.failure(error))
+    Captain::Tools::Agent::AppointmentResult.failure_output(error)
   end
 
   def operations(state)

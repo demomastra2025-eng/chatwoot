@@ -213,8 +213,11 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
     payload = JSON.parse(result)
 
     expect(payload).to include('success' => false, 'appointment_id' => appointment.id, 'status' => 'pending_provider_confirmation',
-                              'provider_confirmed' => false, 'reason' => 'pending_provider_confirmation')
-    expect(payload.keys).to match_array(%w[success appointment_id doctor_name local_date local_time status reason provider_confirmed])
+                              'provider_confirmed' => false, 'reason' => 'pending_provider_confirmation',
+                              'provider_confirmation_status' => 'pending', 'provider_confirmation_operation' => 'move_reception',
+                              'provider_confirmation_scope' => 'medelement')
+    expect(payload.keys).to match_array(%w[success appointment_id doctor_name local_date local_time status reason provider_confirmed
+                                          provider_confirmation_status provider_confirmation_operation provider_confirmation_scope])
     command = Integrations::Medelement::ProviderCommand.find_by!(appointment_id: appointment.id, operation: 'move_reception')
     expect(command.request_snapshot.dig('actor', 'type')).to eq('Captain::Assistant')
     expect(other.reload.starts_at).to eq(other_starts_at)

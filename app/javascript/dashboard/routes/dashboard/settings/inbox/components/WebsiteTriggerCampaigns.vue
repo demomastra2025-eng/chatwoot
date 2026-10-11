@@ -129,9 +129,7 @@ watch(
 </script>
 
 <template>
-  <div
-    class="mt-6 rounded-2xl bg-n-surface-1 p-4 outline outline-1 outline-n-container"
-  >
+  <div class="mt-6 border-t border-n-weak pt-4">
     <div
       class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between"
     >

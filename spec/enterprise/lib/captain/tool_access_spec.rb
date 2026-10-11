@@ -56,6 +56,22 @@ RSpec.describe Captain::ToolAccess do
     end
   end
 
+  describe '.definitions_for' do
+    it 'marks capability tools as nonmentionable without hiding ordinary tool choices' do
+      allow(assistant).to receive(:available_agent_tools).and_return([
+        { id: 'faq_lookup' }, { id: 'handoff' }, { id: 'create_deal' },
+        { id: 'custom_orders', provider: 'custom' }, { id: 'future_capability', capability_tool: true }
+      ])
+      allow(assistant).to receive(:available_assistant_tools).and_return([])
+      tools = described_class.definitions_for(assistant).index_by { |tool| tool[:id] }
+      expect(tools['faq_lookup'][:mentionable]).to be(false)
+      expect(tools['handoff'][:mentionable]).to be(false)
+      expect(tools['future_capability'][:mentionable]).to be(false)
+      expect(tools['create_deal'][:mentionable]).to be(true)
+      expect(tools['custom_orders'][:mentionable]).to be(true)
+    end
+  end
+
   describe '.allowed_tool_ids_for' do
     it 'resolves only the requested scope' do
       assistant.config = {

@@ -49,7 +49,7 @@ RSpec.describe Captain::Playground::Session do
       expect(workspace.set_permissions!(read: false, write: true)).to include('read' => false, 'write' => false)
       permitted = workspace.set_permissions!(read: true, write: true)
       workspace.data['action_previews'] << { 'id' => SecureRandom.uuid, 'status' => 'pending', 'generation' => permitted['generation'],
-                                            'expires_at' => 10.minutes.from_now.to_i }
+                                            'expires_at' => 10.minutes.from_now.to_i, 'binding' => workspace.context_reference.stringify_keys }
       expect(workspace.payload[:action_previews].size).to eq(1)
       revoker = session(session_id: workspace.id)
       revoked = revoker.set_permissions!(read: false, write: true)
@@ -100,5 +100,38 @@ RSpec.describe Captain::Playground::Session do
     expect { store.write('value' => 'x' * Captain::Playground::SessionStore::MAX_BYTES) }.to raise_error(ArgumentError)
     expect(Redis::Alfred).to receive(:set).with(anything, anything, ex: Captain::Playground::SessionStore::TTL).and_call_original
     store.write('id' => SecureRandom.uuid)
+  end
+
+  it 'persists the active agent under the original entry session and restores it before confirmation' do
+    destination = create(:captain_assistant, account: account)
+    assistant.update!(handoff_agent_ids: [destination.id])
+    id = nil
+    session.with_lock do |workspace|
+      id = workspace.id
+      workspace.activate_agent!(destination)
+      expect(workspace.assistant).to eq(destination)
+      expect(workspace.entry_assistant).to eq(assistant)
+      expect(workspace.context_reference).to include(assistant_id: destination.id, entry_assistant_id: assistant.id)
+      expect(workspace.deep_dup).to equal(workspace)
+    end
+
+    session(session_id: id).with_lock do |workspace|
+      expect(workspace.assistant.id).to eq(destination.id)
+      expect(workspace.validate_active_agent!.id).to eq(destination.id)
+    end
+  end
+
+  it 'rejects a disabled, foreign or no longer reachable acting agent using the current graph' do
+    destination = create(:captain_assistant, account: account)
+    assistant.update!(handoff_agent_ids: [destination.id])
+    session.with_lock do |workspace|
+      expect { workspace.activate_agent!(create(:captain_assistant)) }.to raise_error(Pundit::NotAuthorizedError)
+      workspace.activate_agent!(destination)
+      destination.update!(active: false)
+      expect { workspace.validate_active_agent! }.to raise_error(Pundit::NotAuthorizedError, /disabled or no longer reachable/)
+      destination.update!(active: true)
+      assistant.update!(handoff_agent_ids: [])
+      expect { workspace.validate_active_agent! }.to raise_error(Pundit::NotAuthorizedError, /disabled or no longer reachable/)
+    end
   end
 end

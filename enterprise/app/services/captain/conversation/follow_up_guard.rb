@@ -62,13 +62,19 @@ class Captain::Conversation::FollowUpGuard
   end
 
   def assistant_tenant_matches?
-    assistant.account_id == reminder.account_id && assistant.external_agent?
+    assistant.account_id == reminder.account_id && assistant.active? && assistant.external_agent?
   end
 
   def assistant_controls_inbox?
-    conversation.inbox_id.present? &&
-      assistant.inboxes.exists?(id: conversation.inbox_id) &&
-      conversation.inbox&.captain_assistant&.id == assistant.id
+    conversation.inbox_id.present? && agent_ownership.current?(
+      expected_entry_id: follow_up_metadata['entry_assistant_id'],
+      expected_revision: follow_up_metadata['routing_revision'],
+      enforce_revision: true
+    )
+  end
+
+  def agent_ownership
+    @agent_ownership ||= Captain::Conversation::AgentOwnership.new(conversation: conversation, assistant: assistant)
   end
 
   def anchor_matches_conversation?
@@ -165,6 +171,7 @@ class Captain::Conversation::FollowUpGuard
       state: {
         account_id: conversation.account_id,
         assistant_id: assistant.id,
+        entry_assistant_id: agent_ownership.entry.id,
         conversation: { id: conversation.id },
         captain_response_fence: fence
       },
@@ -177,7 +184,7 @@ class Captain::Conversation::FollowUpGuard
     fence = control_fence
     Captain::Conversation::ResponseCancellationService.new(
       conversation: conversation,
-      assistant: assistant
+      assistant: agent_ownership.entry
     ).cancelled?(
       expected_control_generation: fence['control_generation'],
       expected_status_transition_id: fence['status_transition_id'],

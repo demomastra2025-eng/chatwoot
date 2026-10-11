@@ -1,0 +1,116 @@
+ai_agents_classification_counts:
+  type: object
+  required: [completed, pending, processing, failed, insufficient_context, unclassified]
+  description: Current classifier state of the selected outcome events. Missing or unknown historic states are unclassified. Pending, processing, failed and insufficient_context are separate from completed reasons.
+  properties:
+    completed: { type: integer, minimum: 0 }
+    pending: { type: integer, minimum: 0 }
+    processing: { type: integer, minimum: 0 }
+    failed: { type: integer, minimum: 0 }
+    insufficient_context: { type: integer, minimum: 0 }
+    unclassified: { type: integer, minimum: 0 }
+  additionalProperties: false
+
+ai_agents_counts:
+  type: object
+  required: [message_count, conversation_count, outcome_count, completion_count, handoff_count, classification_counts]
+  properties:
+    message_count: { type: integer, minimum: 0, description: Persisted public outgoing messages whose native sender is Captain::Assistant. Includes failed messages; this is not a delivered-message count. }
+    conversation_count: { type: integer, minimum: 0, description: Distinct physical conversations touched by counted AI messages or outcomes in this row's period and agent scope. Whole-period totals are not the sum of daily or per-agent distinct counts. }
+    outcome_count: { type: integer, minimum: 0, description: Actual open or resolved status changes by a native Captain::Assistant actor with source captain or system. }
+    completion_count: { type: integer, minimum: 0, description: Counted AI status transitions to resolved. Conversation completion does not establish a sale or business success. }
+    handoff_count: { type: integer, minimum: 0, description: Counted AI status transitions to open, representing the native handoff outcome. }
+    classification_counts: { $ref: '#/components/schemas/ai_agents_classification_counts' }
+
+ai_agents_unavailable_metric:
+  type: object
+  required: [available, reason]
+  description: Full native response attribution is unavailable. Request-level estimated usage and classifier duration are not reported as public-response cost or latency; no zero or estimated total is substituted.
+  properties:
+    available: { type: boolean, enum: [false] }
+    reason: { type: string, enum: [native_attribution_unavailable] }
+  additionalProperties: false
+
+ai_agents_report_response:
+  type: object
+  required: [payload, meta]
+  properties:
+    payload:
+      type: object
+      required: [totals, series, agents, agent_breakdown, reasons, availability]
+      properties:
+        totals: { $ref: '#/components/schemas/ai_agents_counts' }
+        series:
+          type: array
+          minItems: 1
+          maxItems: 90
+          description: One row per inclusive local date, including zero-filled days. Each message uses its own created_at; each outcome uses the status event's created_at. Conversation creation date does not filter these counts.
+          items:
+            allOf:
+              - { $ref: '#/components/schemas/ai_agents_counts' }
+              - type: object
+                required: [date]
+                properties:
+                  date: { type: string, format: date }
+        agents:
+          type: array
+          description: Current assistants in this account, including inactive agents, available for filtering. Deleted actors appear only in historical breakdown rows.
+          items:
+            type: object
+            required: [id, name, active]
+            properties:
+              id: { type: integer, minimum: 1 }
+              name: { type: string }
+              active: { type: boolean }
+            additionalProperties: false
+        agent_breakdown:
+          type: array
+          description: Native authors and actors with counted events, including surviving deleted-actor history. Deleted actors have name=null and active=null. Native assistant deletion may erase message authorship; those nullified messages cannot be attributed and are omitted.
+          items:
+            allOf:
+              - { $ref: '#/components/schemas/ai_agents_counts' }
+              - type: object
+                required: [assistant_id, name, active]
+                properties:
+                  assistant_id: { type: integer, minimum: 1 }
+                  name: { type: [string, 'null'] }
+                  active: { type: [boolean, 'null'] }
+        reasons:
+          type: array
+          description: Only completed classifier outcomes with a stable reason ID. Groups use assistant_id, native outcome type and reason_id. Label is the latest snapshot label in the group; renaming does not split its count. Incomplete and historic unclassified events remain in classification_counts.
+          items:
+            type: object
+            required: [assistant_id, type, reason_id, label, count]
+            properties:
+              assistant_id: { type: integer, minimum: 1 }
+              type: { type: string, enum: [completion, handoff] }
+              reason_id: { type: string }
+              label: { type: string }
+              count: { type: integer, minimum: 1 }
+            additionalProperties: false
+        availability:
+          type: object
+          required: [latency, cost]
+          properties:
+            latency: { $ref: '#/components/schemas/ai_agents_unavailable_metric' }
+            cost: { $ref: '#/components/schemas/ai_agents_unavailable_metric' }
+          additionalProperties: false
+      additionalProperties: false
+    meta:
+      type: object
+      required: [from_date, to_date, timezone, max_range_days, assistant_id]
+      properties:
+        from_date: { type: string, format: date }
+        to_date: { type: string, format: date }
+        timezone: { type: string, description: Canonical IANA identifier of the account reporting timezone. }
+        max_range_days: { type: integer, enum: [90] }
+        assistant_id: { type: [integer, 'null'], description: Selected current account-owned assistant ID; null means all native actors in this account. }
+      additionalProperties: false
+
+ai_agents_report_error:
+  type: object
+  required: [code, error]
+  properties:
+    code: { type: string, enum: [INVALID_REPORT_RANGE, INVALID_REPORT_AGENT] }
+    error: { type: string }
+  additionalProperties: false

@@ -59,7 +59,7 @@ class Captain::Tools::SearchReplyDocumentationService < RubyLLM::Tool
 
   def search_responses(query)
     Timeout.timeout(SEMANTIC_LOOKUP_TIMEOUT_SECONDS) do
-      scoped_responses.search(query, account_id: @account.id).to_a.select do |response|
+      scoped_responses.search(query, account_id: @account.id, assistant_id: assistant&.id).to_a.select do |response|
         distance = response.respond_to?(:neighbor_distance) ? response.neighbor_distance : nil
         distance.present? && distance.to_f <= SEMANTIC_DISTANCE_THRESHOLD
       end

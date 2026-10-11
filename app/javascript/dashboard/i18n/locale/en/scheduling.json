@@ -6,13 +6,13 @@
       "captain": "AI agent"
     },
     "PATIENT_CONTEXT": {
-      "SELECT_PATIENT": "Patient",
+      "SELECT_PATIENT": "Client",
       "NO_BIRTH_DATE": "Birth date not provided",
       "SELECTION_SCOPE": "Your selection is saved for this conversation.",
-      "LOAD_ERROR": "Unable to load patients for this conversation",
-      "NEW_PATIENT": "Add patient",
-      "OWN_PHONE": "Patient's own phone, if different",
-      "CREATE_DESCRIPTION": "Create a separate patient card for this shared number. The conversation will stay the same.",
+      "LOAD_ERROR": "Unable to load clients for this conversation",
+      "NEW_PATIENT": "Add client",
+      "OWN_PHONE": "Client's own phone, if different",
+      "CREATE_DESCRIPTION": "Create a separate client card for this shared number. The conversation will stay the same.",
       "PROVIDER_ID": "MedElement patient code",
       "PROVIDER_IDENTITY_READ_ONLY": "Patient details are from MedElement. Edit the patient's card in MedElement to change them.",
       "CONFIRM_PATIENT_CARD": "Confirm the selected patient for this appointment. The conversation and its recipient will stay the same.",
@@ -185,13 +185,13 @@
     },
     "APPOINTMENT_FORM": {
       "AVAILABILITY": {
-        "DATE": "Дата приёма",
-        "LOADING": "Загружаем свободное время…",
-        "EMPTY": "Нет свободного времени",
-        "NOT_CONFIRMED": "График врача пока не подтверждён. Выберите другую дату или попробуйте позже.",
-        "UNAVAILABLE": "Не удалось проверить доступность. Попробуйте позже.",
-        "HORIZON": "График врача открыт до {date}",
-        "CONFLICT": "Время уже занято, выберите другое",
+        "DATE": "Appointment date",
+        "LOADING": "Loading available times…",
+        "EMPTY": "No available times",
+        "NOT_CONFIRMED": "The specialist’s schedule is not confirmed yet. Choose another date or try again later.",
+        "UNAVAILABLE": "Unable to check availability. Try again later.",
+        "HORIZON": "The specialist’s schedule is open through {date}",
+        "CONFLICT": "This time is already booked. Choose another time.",
         "SEARCHING": "No free time on {date}. Searching confirmed availability through {through}…",
         "NEAREST_CONFIRMED": "No free time on {date}. The nearest confirmed time was found on {nearestDate}.",
         "SHOW_NEAREST": "Go to {date}",
@@ -199,9 +199,9 @@
         "NEAREST_NOT_CONFIRMED": "No free time on {date}. None was found through {through}; some dates have unconfirmed schedules.",
         "NEAREST_UNAVAILABLE": "No free time on {date}. The search for confirmed availability failed. Try again later."
       },
-      "PATIENT_CARD": "Patient card",
-      "PATIENT_CARD_LINK": "Patient card: {patientName} #{contactId}",
-      "APPOINTMENT_DESCRIPTION": "Choose the specialist, service, and time slot for the visit.",
+      "PATIENT_CARD": "Client card",
+      "PATIENT_CARD_LINK": "Client card: {patientName} #{contactId}",
+      "APPOINTMENT_DESCRIPTION": "Choose the specialist, service, and appointment time.",
       "APPOINTMENT_TITLE": "Appointment details",
       "APPOINTMENT_TYPE": "Appointment type",
       "CANCEL_APPOINTMENT": "Cancel appointment",
@@ -271,7 +271,9 @@
         "MEDELEMENT_SERVICE_REQUIRED": "Select a service from the MedElement catalog",
         "RESOURCE_REQUIRED": "Select a specialist",
         "START_REQUIRED": "Choose a start time"
-      }
+      },
+      "SAVED_WITHOUT_DEAL": "Appointment saved without a deal. Review the deal requirements or select an existing deal. You do not need to book again.",
+      "SAVED_WITHOUT_DEAL_REQUIRED_FIELDS": "Appointment saved without a deal: required stage fields are missing. Complete them or select an existing deal."
     },
     "APPOINTMENT_STATUS": {
       "scheduled": "Scheduled",

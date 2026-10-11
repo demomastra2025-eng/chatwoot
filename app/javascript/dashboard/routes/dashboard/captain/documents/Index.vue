@@ -19,6 +19,7 @@ import CaptainPaywall from 'dashboard/components-next/captain/pageComponents/Pay
 import RelatedResponses from 'dashboard/components-next/captain/pageComponents/document/RelatedResponses.vue';
 import CreateDocumentDialog from 'dashboard/components-next/captain/pageComponents/document/CreateDocumentDialog.vue';
 import SourceTextDialog from 'dashboard/components-next/captain/pageComponents/document/SourceTextDialog.vue';
+import DocumentAccessDialog from 'dashboard/components-next/captain/pageComponents/document/DocumentAccessDialog.vue';
 import DocumentPageEmptyState from 'dashboard/components-next/captain/pageComponents/emptyStates/DocumentPageEmptyState.vue';
 import FeatureSpotlightPopover from 'dashboard/components-next/feature-spotlight/FeatureSpotlightPopover.vue';
 import LimitBanner from 'dashboard/components-next/captain/pageComponents/document/LimitBanner.vue';
@@ -56,6 +57,8 @@ const showSourceTextDialog = ref(false);
 const createDocumentDialog = ref(null);
 const relationQuestionDialog = ref(null);
 const sourceTextDialog = ref(null);
+const showAccessDialog = ref(false);
+const accessDialog = ref(null);
 const sourceTextDocument = ref({});
 
 const handleShowRelatedDocument = () => {
@@ -164,6 +167,9 @@ const handleAction = ({ action, id }) => {
       handleRefreshChangedOnly(id);
     } else if (action === 'retryFailed') {
       handleRetryFailed(id);
+    } else if (action === 'editAccess') {
+      showAccessDialog.value = true;
+      nextTick(() => accessDialog.value.dialogRef.open());
     }
   });
 };
@@ -313,6 +319,8 @@ watch(
           :display-url="doc.display_url"
           :visibility="doc.visibility"
           :assistant="doc.assistant"
+          :allowed-assistant-ids="doc.allowed_assistant_ids"
+          :restricted-to-assistants="doc.restricted_to_assistants"
           :source-mode="doc.source_mode"
           :sync-status="doc.sync_status"
           :refresh-mode="doc.refresh_mode"
@@ -351,6 +359,12 @@ watch(
       :document="sourceTextDocument"
       :is-loading="uiFlags.fetchingSourceText"
       @close="handleSourceTextClose"
+    />
+    <DocumentAccessDialog
+      v-if="showAccessDialog && selectedDocument"
+      ref="accessDialog"
+      :document="selectedDocument"
+      @close="showAccessDialog = false"
     />
     <DeleteDialog
       v-if="selectedDocument"

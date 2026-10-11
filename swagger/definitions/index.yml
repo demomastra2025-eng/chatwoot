@@ -16,6 +16,20 @@ crm_pipeline:
   $ref: ./crm_account_apis.yml#/crm_pipeline
 crm_appointment_automation:
   $ref: ./crm_account_apis.yml#/crm_appointment_automation
+crm_pipeline_settings:
+  $ref: ./crm_pipeline_save.yml#/crm_pipeline_settings
+crm_stage_reference:
+  $ref: ./crm_pipeline_save.yml#/crm_stage_reference
+crm_movable_stage_draft:
+  $ref: ./crm_pipeline_save.yml#/crm_movable_stage_draft
+crm_stage_draft:
+  $ref: ./crm_pipeline_save.yml#/crm_stage_draft
+crm_pipeline_save_payload:
+  $ref: ./crm_pipeline_save.yml#/crm_pipeline_save_payload
+crm_pipeline_save_response:
+  $ref: ./crm_pipeline_save.yml#/crm_pipeline_save_response
+scheduling_crm_link_result:
+  $ref: ./crm_pipeline_save.yml#/scheduling_crm_link_result
 crm_appointment_plan_item:
   $ref: ./crm_account_apis.yml#/crm_appointment_plan_item
 lead_appointment_conversion:
@@ -273,6 +287,16 @@ conversation_labels:
   $ref: ./resource/extension/conversation/labels.yml
 
 ## Report
+ai_agents_classification_counts:
+  $ref: ./resource/reports/ai_agents.yml#/ai_agents_classification_counts
+ai_agents_counts:
+  $ref: ./resource/reports/ai_agents.yml#/ai_agents_counts
+ai_agents_unavailable_metric:
+  $ref: ./resource/reports/ai_agents.yml#/ai_agents_unavailable_metric
+ai_agents_report_response:
+  $ref: ./resource/reports/ai_agents.yml#/ai_agents_report_response
+ai_agents_report_error:
+  $ref: ./resource/reports/ai_agents.yml#/ai_agents_report_error
 account_summary:
   $ref: './resource/reports/summary.yml'
 agent_conversation_metrics:
@@ -329,10 +353,30 @@ captain_assistant_payload:
   $ref: ./crm_account_apis.yml#/captain_assistant_payload
 captain_assistant_safety_settings:
   $ref: ./crm_account_apis.yml#/captain_assistant_safety_settings
+captain_custom_safety_rule:
+  $ref: ./crm_account_apis.yml#/captain_custom_safety_rule
+captain_custom_safety_rules_error:
+  $ref: ./crm_account_apis.yml#/captain_custom_safety_rules_error
+captain_outcome_reason_settings:
+  $ref: ./crm_account_apis.yml#/captain_outcome_reason_settings
+captain_outcome_reason_option:
+  $ref: ./crm_account_apis.yml#/captain_outcome_reason_option
+captain_removed_rules_error:
+  $ref: ./crm_account_apis.yml#/captain_removed_rules_error
 captain_assistant_playground_request:
   $ref: ./crm_account_apis.yml#/captain_assistant_playground_request
 captain_assistant_playground_response:
   $ref: ./crm_account_apis.yml#/captain_assistant_playground_response
+captain_agent_migration_warning:
+  $ref: ./crm_account_apis.yml#/captain_agent_migration_warning
+captain_agent_task:
+  $ref: ./crm_account_apis.yml#/captain_agent_task
+captain_playground_action_preview:
+  $ref: ./crm_account_apis.yml#/captain_playground_action_preview
+captain_knowledge_access_parameters:
+  $ref: ./crm_account_apis.yml#/captain_knowledge_access_parameters
+captain_knowledge_access:
+  $ref: ./crm_account_apis.yml#/captain_knowledge_access
 
 crm_task_lifecycle_snapshot:
   $ref: ./crm_account_apis.yml#/crm_task_lifecycle_snapshot

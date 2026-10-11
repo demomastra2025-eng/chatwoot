@@ -41,6 +41,7 @@ class Captain::Scenario < ApplicationRecord
 
   belongs_to :assistant, class_name: 'Captain::Assistant'
   belongs_to :account
+  has_one :standalone_agent, class_name: 'Captain::Assistant', foreign_key: :legacy_scenario_id
 
   validates :title, presence: true
   validates :description, presence: true, length: { maximum: 2000 }
@@ -49,12 +50,10 @@ class Captain::Scenario < ApplicationRecord
   validates :account_id, presence: true
   validate :validate_instruction_tools
   validate :validate_instruction_fields
-  validate :validate_instruction_skills
 
   scope :enabled, -> { where(enabled: true) }
 
-  delegate :temperature, :feature_faq, :feature_memory, :response_guidelines, :guardrails, :system_rule_groups,
-           :response_guideline_groups, :guardrail_groups, :model, to: :assistant
+  delegate :temperature, :feature_faq, :feature_memory, :model, to: :assistant
 
   before_save :resolve_tool_references
 
@@ -63,48 +62,16 @@ class Captain::Scenario < ApplicationRecord
   end
 
   def prompt_context
-    referenced_field_ids = referenced_field_ids_for_prompt
-    referenced_skill_ids = referenced_skill_ids_for_prompt
     available_prompt_tools = prompt_runtime_tools
-
     {
       title: title,
       global_system_instruction: Llm::Config.global_agent_system_prompt,
       instructions: resolved_instructions,
-      assistant_instruction: assistant.system_instruction,
-      scenario_system_context_rule: assistant.enabled_system_template_rule_content(
-        Captain::Assistant::SYSTEM_TEMPLATE_SLOT_SCENARIO_CONTEXT
-      ),
-      scenario_role_rule: assistant.enabled_system_template_rule_content(
-        Captain::Assistant::SYSTEM_TEMPLATE_SLOT_SCENARIO_ROLE
-      ),
-      scenario_orchestrator_return_rule: assistant.enabled_system_template_rule_content(
-        Captain::Assistant::SYSTEM_TEMPLATE_SLOT_SCENARIO_RETURN
-      ),
-      scenario_peer_handoffs_rule: assistant.enabled_system_template_rule_content(
-        Captain::Assistant::SYSTEM_TEMPLATE_SLOT_SCENARIO_PEER_HANDOFFS
-      ),
-      scenario_human_handoff_rule: assistant.enabled_system_template_rule_content(
-        Captain::Assistant::SYSTEM_TEMPLATE_SLOT_SCENARIO_HUMAN_HANDOFF
-      ),
-      current_context_rule: assistant.enabled_system_template_rule_content(
-        Captain::Assistant::SYSTEM_TEMPLATE_SLOT_CURRENT_CONTEXT
-      ),
-      reference_glossary_rule: assistant.enabled_system_template_rule_content(
-        Captain::Assistant::SYSTEM_TEMPLATE_SLOT_REFERENCE_GLOSSARY
-      ),
+      faq_enabled: assistant.faq_enabled? && available_prompt_tools.pluck(:id).include?('faq_lookup'),
+      human_handoff_enabled: assistant.handoff_enabled? && available_prompt_tools.pluck(:id).include?('handoff'),
       runtime_tool_ids: available_prompt_tools.pluck(:id),
-      tools: available_prompt_tools,
-      assistant_handoff_tool_name: assistant.handoff_tool_name,
-      outcome_reasons: Captain::OutcomeReasonConfig.prompt_context_for(assistant),
-      handoff_scenarios: sibling_handoff_scenarios,
-      system_rule_groups: system_rule_groups,
-      response_guidelines: response_guidelines || [],
-      guardrails: guardrails || [],
-      response_guideline_groups: response_guideline_groups,
-      guardrail_groups: guardrail_groups,
-      skill_references: Captain::SkillCatalog.prompt_blocks_for(account: assistant.account, skill_ids: referenced_skill_ids),
-      context_glossary: assistant.context_glossary_groups(referenced_field_ids),
+      scenarios: sibling_handoff_scenarios,
+      context_glossary: assistant.context_glossary_groups(referenced_field_ids_for_prompt),
       tool_glossary: assistant.tool_glossary_groups(available_prompt_tools)
     }
   end
@@ -185,7 +152,8 @@ class Captain::Scenario < ApplicationRecord
   end
 
   def resolved_instructions
-    render_skill_references(render_tool_references(instruction))
+    text = instruction.gsub(%r{\[([^\]]+)\]\(tool://skill_script_[^)]+\)}, '\\1')
+    render_tool_references(text).gsub(%r{\[([^\]]+)\]\(skill://[^)]+\)}, '\\1')
   end
 
   def resolved_tools(referenced_tool_ids: prompt_referenced_tool_ids)
@@ -229,7 +197,7 @@ class Captain::Scenario < ApplicationRecord
     return if tool_ids.empty?
 
     all_available_tool_ids = assistant.available_tool_ids
-    invalid_tools = tool_ids - all_available_tool_ids
+    invalid_tools = (tool_ids - all_available_tool_ids).reject { |id| id.start_with?('skill_script_') }
 
     return unless invalid_tools.any?
 
@@ -246,18 +214,6 @@ class Captain::Scenario < ApplicationRecord
     return unless invalid_fields.any?
 
     errors.add(:instruction, "contains invalid fields: #{invalid_fields.join(', ')}")
-  end
-
-  def validate_instruction_skills
-    return if instruction.blank?
-
-    skill_ids = extract_skill_ids_from_text(instruction)
-    return if skill_ids.empty?
-
-    invalid_skills = skill_ids - Captain::SkillCatalog.available_ids(account: assistant.account)
-    return unless invalid_skills.any?
-
-    errors.add(:instruction, "contains invalid skills: #{invalid_skills.join(', ')}")
   end
 
   # Resolves tool references from the instruction text into the tools field.
@@ -285,10 +241,6 @@ class Captain::Scenario < ApplicationRecord
     Captain::ContextFields.extract_field_ids_from_text(prompt_glossary_texts.flatten.compact.join("\n"))
   end
 
-  def referenced_skill_ids_for_prompt
-    extract_skill_ids_from_text(prompt_glossary_texts.flatten.compact.join("\n"))
-  end
-
   def sibling_handoff_scenarios
     scenarios = assistant.scenarios.enabled.to_a.reject { |scenario| scenario.id == id }
 
@@ -302,13 +254,7 @@ class Captain::Scenario < ApplicationRecord
   end
 
   def prompt_glossary_texts
-    [
-      instruction,
-      assistant.system_instruction,
-      assistant.system_rule_contents_for_prompt(template_name: :scenario),
-      response_guidelines,
-      guardrails
-    ]
+    [instruction]
   end
 
   def prompt_referenced_tool_ids
@@ -320,9 +266,6 @@ class Captain::Scenario < ApplicationRecord
   end
 
   def prompt_referenced_runtime_tool_ids
-    (
-      prompt_referenced_tool_ids +
-        Captain::SkillCatalog.script_tool_ids_for(account: assistant.account, skill_ids: referenced_skill_ids_for_prompt)
-    ).uniq
+    prompt_referenced_tool_ids
   end
 end

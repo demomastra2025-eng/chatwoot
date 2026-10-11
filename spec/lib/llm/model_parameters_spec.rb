@@ -51,4 +51,27 @@ RSpec.describe Llm::ModelParameters do
     )
     expect(contract.reasoning_efforts).to eq([])
   end
+
+  context 'when OpenRouter supports optional reasoning but not the none effort' do
+    let(:config) do
+      { 'provider' => 'openrouter', 'supported_parameters' => ['reasoning'],
+        'reasoning' => { 'supported_efforts' => %w[high medium low], 'mandatory' => false, 'default_effort' => 'medium' } }
+    end
+
+    it 'exposes a real off choice without changing the recorded provider effort contract' do
+      expect(contract.reasoning_efforts).to eq(%w[none high medium low])
+      expect(contract.disabled_reasoning_uses_flag?).to be true
+      expect(contract.normalize_config(thinking_effort: 'none')).to eq('thinking_effort' => 'none')
+      expect(contract.compile(thinking: { effort: 'none' })).to include(thinking: { effort: 'none' })
+      expect(config['reasoning']['supported_efforts']).to eq(%w[high medium low])
+      expect(contract.thinking('minimal')).to be_nil
+    end
+
+    it 'does not expose an off choice when the provider requires reasoning' do
+      config['reasoning']['mandatory'] = true
+      expect(contract.reasoning_efforts).to eq(%w[high medium low])
+      expect(contract.disabled_reasoning_uses_flag?).to be false
+      expect(contract.normalize_config(thinking_effort: 'none')).to eq({})
+    end
+  end
 end

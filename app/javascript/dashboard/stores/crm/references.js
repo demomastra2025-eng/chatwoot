@@ -34,6 +34,7 @@ const publicationStateFor = (store, accountId) => {
   };
   pipelinePublicationStates.set(store, next);
   store.pipelines = [];
+  store.ui.isSaving = false;
   return next;
 };
 
@@ -235,6 +236,50 @@ export const useCrmReferencesStore = defineStore('crmReferences', {
           pipelineLoadRequests.delete(this);
           this.ui.isLoadingPipelines = false;
         }
+      }
+    },
+
+    async savePipelineSettings(pipelineId, payload) {
+      const accountId = pipelineAccountId();
+      const publicationState = publicationStateFor(this, accountId);
+      this.ui.isSaving = true;
+      try {
+        const response = await CrmPipelinesAPI.saveSettings(
+          pipelineId,
+          payload
+        );
+        const pipeline = normalizePayload(response.data);
+        if (
+          pipelineAccountId() !== accountId ||
+          pipelinePublicationStates.get(this) !== publicationState
+        )
+          return pipeline;
+        const hasAccountPipelines = Array.isArray(response.data.pipelines);
+        this.pipelines = hasAccountPipelines
+          ? normalizePayload({ payload: response.data.pipelines })
+          : upsertPipelineInList(this.pipelines, pipeline);
+        if (!hasAccountPipelines && payload.pipeline_order) {
+          const positions = new Map(
+            payload.pipeline_order.map((id, index) => [
+              Number(id),
+              (index + 1) * 10,
+            ])
+          );
+          this.pipelines = this.pipelines
+            .map(record =>
+              positions.has(Number(record.id))
+                ? { ...record, position: positions.get(Number(record.id)) }
+                : record
+            )
+            .sort((left, right) => left.position - right.position);
+        }
+        publicationState.latestGeneration += 1;
+        publicationState.publishedGeneration =
+          publicationState.latestGeneration;
+        publicationState.includesInactiveStages = true;
+        return pipeline;
+      } finally {
+        if (pipelineAccountId() === accountId) this.ui.isSaving = false;
       }
     },
 

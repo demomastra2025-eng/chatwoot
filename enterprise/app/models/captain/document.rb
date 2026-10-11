@@ -49,6 +49,7 @@ class Captain::Document < ApplicationRecord
   has_many :responses, class_name: 'Captain::AssistantResponse', dependent: :destroy, as: :documentable
   has_many :document_chunks, class_name: 'Captain::DocumentChunk', dependent: :destroy, inverse_of: :document
   belongs_to :account
+  include Concerns::CaptainKnowledgeAccess
   has_one_attached :pdf_file
   has_one_attached :source_file
   account_storage_attachments :pdf_file, :source_file
@@ -79,6 +80,7 @@ class Captain::Document < ApplicationRecord
   after_destroy :update_document_usage
   after_destroy_commit :destroy_derived_documents
   after_commit :enqueue_response_builder_job
+  after_update :sync_inherited_knowledge_permissions, if: -> { saved_change_to_assistant_id? || saved_change_to_visibility? }
   scope :ordered, -> { order(created_at: :desc) }
 
   scope :for_account, ->(account_id) { where(account_id: account_id) }
@@ -87,22 +89,33 @@ class Captain::Document < ApplicationRecord
   # workspace-personal, but they are not assistant-private records.
   scope :workspace_owned, -> { where(assistant_id: nil) }
   scope :visible_to_assistant, lambda { |assistant_id|
-    if assistant_id.blank?
-      workspace_owned
-    else
-      where(
-        <<~SQL.squish,
-          captain_documents.assistant_id IS NULL OR
-          captain_documents.visibility = :general_visibility OR
-          captain_documents.assistant_id = :assistant_id
-        SQL
-        general_visibility: visibilities[:general],
-        assistant_id: assistant_id
+    root_id = "COALESCE(captain_documents.metadata -> 'firecrawl' ->> 'root_document_id', '')"
+    where(<<~SQL.squish)
+      (#{root_id} = '' AND (#{local_knowledge_access_sql(assistant_id)})) OR
+      EXISTS (
+        SELECT 1 FROM captain_documents knowledge_source_documents
+        WHERE knowledge_source_documents.id::text = #{root_id}
+          AND knowledge_source_documents.account_id = captain_documents.account_id
+          AND COALESCE(knowledge_source_documents.metadata -> 'firecrawl' ->> 'root_document_id', '') = ''
+          AND (#{local_knowledge_access_sql(assistant_id, table: 'knowledge_source_documents')})
       )
-    end
+    SQL
   }
   scope :source_documents, lambda {
     where("COALESCE(metadata -> 'firecrawl' ->> 'root_document_id', '') = ''")
+  }
+  scope :generally_visible, lambda {
+    where(<<~SQL.squish, general_visibility: visibilities[:general])
+      (COALESCE(captain_documents.metadata -> 'firecrawl' ->> 'root_document_id', '') = '' AND
+        captain_documents.visibility = :general_visibility) OR
+      EXISTS (
+        SELECT 1 FROM captain_documents knowledge_source_documents
+        WHERE knowledge_source_documents.id::text = captain_documents.metadata -> 'firecrawl' ->> 'root_document_id'
+          AND knowledge_source_documents.account_id = captain_documents.account_id
+          AND knowledge_source_documents.visibility = :general_visibility
+          AND COALESCE(knowledge_source_documents.metadata -> 'firecrawl' ->> 'root_document_id', '') = ''
+      )
+    SQL
   }
 
   def pdf_document?
@@ -243,6 +256,16 @@ class Captain::Document < ApplicationRecord
 
   def derived_document?
     !source_document?
+  end
+
+  def knowledge_source_document
+    return self if source_document?
+
+    self.class.source_documents.find_by(account_id: account_id, id: firecrawl_metadata['root_document_id'])
+  end
+
+  def inherited_knowledge_source
+    knowledge_source_document if derived_document?
   end
 
   def import_profile
@@ -592,6 +615,21 @@ class Captain::Document < ApplicationRecord
   end
 
   private
+
+  def sync_inherited_knowledge_permissions
+    return unless source_document?
+
+    attributes = { assistant_id: assistant_id, visibility: visibility, restricted_to_assistants: false, updated_at: Time.current }
+    derived = self.class.where(account_id: account_id)
+                  .where("metadata -> 'firecrawl' ->> 'root_document_id' = ?", id.to_s)
+    document_ids = [id] + derived.pluck(:id)
+    derived.update_all(attributes)
+    # Preserve an explicitly narrowed FAQ. Generated rows still matching the
+    # former source owner follow an ownership/visibility edit atomically.
+    Captain::AssistantResponse.where(account_id: account_id, documentable_type: 'Captain::Document', documentable_id: document_ids,
+                                     restricted_to_assistants: false, assistant_id: [assistant_id_before_last_save, nil])
+                              .update_all(attributes)
+  end
 
   def terminal_import?
     %w[completed failed].include?(firecrawl_sync['status'])

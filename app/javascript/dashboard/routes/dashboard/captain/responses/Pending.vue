@@ -342,6 +342,8 @@ watch(
           :status="response.status"
           :visibility="response.visibility"
           :assistant="response.assistant"
+          :allowed-assistant-ids="response.allowed_assistant_ids"
+          :restricted-to-assistants="response.restricted_to_assistants"
           :created-at="response.created_at"
           :updated-at="response.updated_at"
           :is-selected="bulkSelectedIds.has(response.id)"

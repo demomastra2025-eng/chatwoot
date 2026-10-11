@@ -652,7 +652,17 @@
         "COMPLETED": "Completed",
         "CANCELLED": "Cancelled",
         "NO_SHOW": "No show"
-      }
+      },
+      "AGENT_TASKS": "Agent tasks",
+      "TASK_STATUS": {
+        "AWAITING": "Queued",
+        "ACTIVE": "In progress",
+        "WAITING": "Waiting",
+        "COMPLETED": "Completed",
+        "FAILED": "Failed",
+        "CANCELLED": "Cancelled"
+      },
+      "PROFILE_MODEL": "profile model"
     },
     "EVALUATIONS": {
       "TITLE": "Testing",
@@ -938,15 +948,54 @@
         },
         "SAFETY_SETTINGS": {
           "LABEL": "Safety checks",
-          "DESCRIPTION": "Choose the runtime checks for this agent. Inherit keeps the workspace setting; block stops matching requests, flag logs a match and continues, and off skips that check.",
+          "DESCRIPTION": "Block stops matching requests. Flag logs a match and continues. Off skips the check.",
           "MODERATION": "Provider content moderation",
           "PROMPT_INJECTION": "Prompt injection",
           "SENSITIVE_INFO": "Secrets and credentials",
-          "INHERIT": "Use workspace setting",
+          "LOADING": "Loading value…",
+          "UNAVAILABLE": "Value unavailable",
           "ENABLED": "On",
           "DISABLED": "Off",
           "BLOCK": "Block",
-          "FLAG": "Flag and continue"
+          "FLAG": "Flag"
+        },
+        "CUSTOM_GUARDRAILS": {
+          "TITLE": "Custom safety rules",
+          "DESCRIPTION": "Rules in each group are checked from top to bottom. The first match applies. Changes take effect after saving the profile.",
+          "INPUT": {
+            "TITLE": "Incoming messages",
+            "DESCRIPTION": "Checked before the agent handles an incoming message.",
+            "EXAMPLE": "For example: if the customer asks to change the terms of a contract."
+          },
+          "OUTPUT": {
+            "TITLE": "Agent replies",
+            "DESCRIPTION": "Checked before sending. The reply is rewritten once; if it still breaks a rule, the conversation is handed over to a teammate.",
+            "EXAMPLE": "For example: if the reply promises a result that we cannot guarantee."
+          },
+          "NAME": "Rule name",
+          "NAME_PLACEHOLDER": "Contract terms",
+          "INSTRUCTION": "When should the rule apply?",
+          "ACTION": "Action",
+          "ACTIONS": {
+            "HANDOFF": "Stop the automatic reply and hand over to a teammate",
+            "REWRITE": "Rewrite the reply once"
+          },
+          "MESSAGE": "Message to the customer when handing over (optional)",
+          "MESSAGE_PLACEHOLDER": "Leave empty to use the agent’s handoff message.",
+          "ACTIVE": "Enabled",
+          "PRIORITY": "Rule {position}",
+          "EMPTY": "No custom rules in this group.",
+          "ADD": "Add rule",
+          "DELETE": "Delete",
+          "MOVE_UP": "Move up",
+          "MOVE_DOWN": "Move down",
+          "LIMIT": "A profile can have up to {count} custom rules.",
+          "ERRORS": {
+            "NAME": "Enter a rule name of up to 120 characters.",
+            "INSTRUCTION": "Describe the condition in up to 2000 characters.",
+            "MESSAGE": "The message must contain no more than 2000 characters.",
+            "RULES": "Check the rule list: up to 20 rules are allowed. Remove any invalid rule and add it again."
+          }
         },
         "MESSAGE_COLLAPSE_WINDOW_SECONDS": {
           "LABEL": "Message Collapse Window",
@@ -1956,7 +2005,8 @@
           "DESCRIPTION": "Choose from the model catalogue allowed by the OneLink administrator.",
           "CURRENT_MODEL": "current model",
           "PLATFORM_DEFAULT": "Platform default model",
-          "PLATFORM_DEFAULT_WITH_MODEL": "Platform default model ({model})"
+          "PLATFORM_DEFAULT_WITH_MODEL": "Platform default model ({model})",
+          "DEFAULT_MODEL": "default"
         }
       },
       "EDIT": {
@@ -1983,8 +2033,8 @@
           },
           "PROMPTS": {
             "LABEL": "Prompts",
-            "DESCRIPTION": "Instruction, response rules, and compiled prompt preview.",
-            "SECTION": "Edit the live AI agent instruction layers without changing the system prompt contract."
+            "DESCRIPTION": "Main prompt and generated prompt preview.",
+            "SECTION": "Edit the agent instructions and response style."
           },
           "PROMPT_TABS": {
             "RULES": "Rules",
@@ -2003,13 +2053,16 @@
             "DESCRIPTION": "Connect this AI agent to inboxes and channel surfaces where it should be active."
           },
           "RUNTIME": {
-            "LABEL": "Runtime",
-            "DESCRIPTION": "Tune response creativity, auto-reply behavior, and history windows for the live runtime.",
-            "SECTION": "Runtime settings affect how the AI agent responds after prompts and tools are resolved."
+            "LABEL": "Messages when status changes",
+            "DESCRIPTION": "What to send to the customer when handing off to a staff member or completing a conversation.",
+            "SECTION": "Configure the messages sent to the customer when handing off or completing a conversation."
           },
           "DANGER": {
             "LABEL": "Danger zone",
             "DESCRIPTION": "Permanent destructive action for this AI agent."
+          },
+          "BASIC": {
+            "DESCRIPTION": "Agent profile, operating mode, avatar and messages for customers."
           }
         },
         "BASIC_SETTINGS": {
@@ -2436,7 +2489,7 @@
       },
       "OUTCOMES": {
         "HEADER": "Outcomes and handoffs",
-        "DESCRIPTION": "Configure the reasons the AI agent uses when completing a conversation or handing it to a human.",
+        "DESCRIPTION": "Reasons for conversation completion and staff handoff reports.",
         "ADD": "Add",
         "REMOVE": "Remove reason",
         "ACTIVE": "Active reason",
@@ -2448,11 +2501,11 @@
           "ENABLE_TITLE": "Automatically complete conversations",
           "ENABLE_DESCRIPTION": "The AI agent can complete a conversation when the customer's task is resolved.",
           "TITLE": "Completion reasons",
-          "DESCRIPTION": "The agent selects one reason when it considers the customer’s task complete."
+          "DESCRIPTION": "The reason is determined from the conversation after it is completed."
         },
         "HANDOFF": {
           "TITLE": "Human handoff reasons",
-          "DESCRIPTION": "The agent selects one reason when it opens the conversation for a human."
+          "DESCRIPTION": "The reason is determined from the conversation after it is handed to a staff member."
         },
         "DEFAULTS": {
           "COMPLETION": {
@@ -2466,12 +2519,25 @@
             "LOW_CONFIDENCE": "AI is not confident in the answer",
             "MANUAL_ACTION_REQUIRED": "Manual action required",
             "COMPLAINT_OR_CONFLICT": "Complaint or conflict",
-            "TOOL_OR_POLICY_LIMIT": "Tool or policy limitation"
+            "TOOL_OR_POLICY_LIMIT": "Tool or policy limitation",
+            "FAQ_NO_ANSWER": "No answer in FAQ"
           },
           "COMMON": {
             "OTHER": "Other reason"
           }
         }
+      },
+      "ROUTING": {
+        "ACTIVE": "Agent enabled",
+        "ACTIVE_HELP": "Disabled agents do not receive new conversations or handoffs.",
+        "DESCRIPTION": "When to contact this agent",
+        "DESCRIPTION_PLACEHOLDER": "Briefly describe what this agent can help with.",
+        "TARGETS": "Allowed handoff agents",
+        "TARGETS_HELP": "This agent can transfer a conversation or assign a task to the selected active agents.",
+        "NO_AGENTS": "No available agents",
+        "ACTIVE_STATUS": "Enabled",
+        "INACTIVE_STATUS": "Disabled",
+        "MIGRATION_REVIEW": "Review the instructions after migration"
       }
     },
     "KNOWLEDGE_BASE": {
@@ -2484,16 +2550,20 @@
     },
     "KNOWLEDGE_VISIBILITY": {
       "LABEL": "Visibility",
-      "HELP_TEXT": "Shared knowledge is available to all AI agents. Personal knowledge is available only to the selected AI agent.",
-      "ASSISTANT_LABEL": "AI Agent",
-      "ASSISTANT_PLACEHOLDER": "Select an AI agent",
-      "ASSISTANT_HELP_TEXT": "For personal knowledge, choose which AI agent can see it.",
-      "ASSISTANT_REQUIRED": "Select an AI agent for personal knowledge",
+      "HELP_TEXT": "Shared materials are available to all agents. Selected materials are available to the agents you choose.",
+      "ASSISTANT_LABEL": "Allowed agents",
+      "ASSISTANT_PLACEHOLDER": "Select agents",
+      "ASSISTANT_HELP_TEXT": "Choose one or more agents that can use this material.",
+      "ASSISTANT_REQUIRED": "Select at least one agent",
       "ASSISTANT_BADGE": "AI Agent: {name}",
       "OPTIONS": {
         "GENERAL": "Shared",
-        "PERSONAL": "Personal"
-      }
+        "PERSONAL": "Selected agents"
+      },
+      "EDIT_ACCESS": "Agent access",
+      "AGENT_COUNT": "Agents: {count}",
+      "SAVE_SUCCESS": "Agent access saved",
+      "SAVE_ERROR": "Could not save agent access"
     },
     "DOCUMENTS": {
       "HEADER": "Documents",
@@ -3712,11 +3782,13 @@
         "TITLE": "AI agent for this inbox",
         "DESCRIPTION": "Choose an AI agent for “{inboxName}” and configure the auto-reply mode.",
         "ASSISTANT": {
-          "LABEL": "AI agent",
+          "LABEL": "Main agent",
           "NO_AGENT": "Not selected"
         },
         "EMPTY_TITLE": "No available AI agents",
-        "EMPTY_DESCRIPTION": "Create an external AI agent in AI employees before connecting it to this inbox."
+        "EMPTY_DESCRIPTION": "Create an external AI agent in AI employees before connecting it to this inbox.",
+        "SAVE_SUCCESS": "Channel settings saved",
+        "SAVE_ERROR": "Could not save channel settings"
       },
       "OPTIONS": {
         "DISCONNECT": "Disconnect"

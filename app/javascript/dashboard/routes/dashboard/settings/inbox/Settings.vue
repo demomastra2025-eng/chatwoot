@@ -2839,7 +2839,7 @@ export default {
                   </div>
                 </div>
 
-                <div class="rounded-xl border border-n-strong p-4">
+                <div class="border-t border-n-weak pt-4">
                   <div class="flex items-center justify-between gap-3">
                     <p class="text-sm font-medium text-n-slate-12">
                       {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.DIAGNOSTICS') }}
@@ -2968,9 +2968,7 @@ export default {
                 </p>
 
                 <div class="grid grid-cols-1 gap-4 xl:grid-cols-3">
-                  <div
-                    class="rounded-2xl border border-n-strong bg-gradient-to-br from-n-alpha-2 via-transparent to-transparent p-5 xl:col-span-2"
-                  >
+                  <div class="min-w-0 xl:col-span-2">
                     <div
                       class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"
                     >
@@ -3399,7 +3397,7 @@ export default {
                   </div>
                 </div>
 
-                <div class="rounded-2xl border border-n-strong p-5">
+                <div class="border-t border-n-weak pt-4">
                   <div
                     class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"
                   >
@@ -3663,7 +3661,7 @@ export default {
                   </p>
                 </div>
 
-                <div class="rounded-2xl border border-n-strong p-5">
+                <div class="border-t border-n-weak pt-4">
                   <div class="flex items-start justify-between gap-3">
                     <div>
                       <p class="text-sm font-medium text-n-slate-12">
@@ -3783,7 +3781,7 @@ export default {
 
                   <div
                     v-if="isTelegramPersonalRawDiagnosticsVisible"
-                    class="mt-4 rounded-xl border border-n-strong bg-n-alpha-2 p-4"
+                    class="mt-4"
                   >
                     <p class="mb-3 text-sm font-medium text-n-slate-12">
                       {{
@@ -3816,9 +3814,7 @@ export default {
                 </p>
 
                 <div class="grid grid-cols-1 gap-4 xl:grid-cols-3">
-                  <div
-                    class="rounded-2xl border border-n-strong bg-gradient-to-br from-n-alpha-2 via-transparent to-transparent p-5 xl:col-span-2"
-                  >
+                  <div class="min-w-0 xl:col-span-2">
                     <div
                       class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"
                     >
@@ -4072,7 +4068,7 @@ export default {
                   </div>
                 </div>
 
-                <div class="rounded-2xl border border-n-strong p-5">
+                <div class="border-t border-n-weak pt-4">
                   <div class="flex items-start justify-between gap-3">
                     <div>
                       <p class="text-sm font-medium text-n-slate-12">
@@ -4171,10 +4167,7 @@ export default {
                     </div>
                   </div>
 
-                  <div
-                    v-if="isWeixinRawDiagnosticsVisible"
-                    class="mt-4 rounded-xl border border-n-strong bg-n-alpha-2 p-4"
-                  >
+                  <div v-if="isWeixinRawDiagnosticsVisible" class="mt-4">
                     <p class="mb-3 text-sm font-medium text-n-slate-12">
                       {{ $t('INBOX_MGMT.EDIT.WEIXIN.RAW_DIAGNOSTICS') }}
                     </p>

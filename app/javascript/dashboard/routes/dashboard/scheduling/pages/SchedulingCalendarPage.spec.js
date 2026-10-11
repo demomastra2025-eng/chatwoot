@@ -587,6 +587,80 @@ describe('SchedulingCalendarPage pending local booking', () => {
     expect(SchedulingAppointmentsAPI.create).toHaveBeenCalledOnce();
   });
 
+  it.each([
+    ['DEAL_STAGE_REQUIRES_FIELDS', 'SAVED_WITHOUT_DEAL_REQUIRED_FIELDS'],
+    ['CRM_DEAL_SELECTION_REQUIRED', 'SAVED_WITHOUT_DEAL'],
+  ])(
+    'closes a successfully saved booking and explains unlinked CRM result %s without resubmitting',
+    async (code, messageKey) => {
+      const { store } = await mountPage();
+      SchedulingAppointmentsAPI.create.mockResolvedValueOnce({
+        data: {
+          payload: {
+            id: 501,
+            contact_id: 42,
+            starts_at: slot.startsAt,
+            ends_at: slot.endsAt,
+            crm_deal_id: null,
+            crm_link_result: { status: 'not_linked', code },
+          },
+        },
+      });
+      await wrapper
+        .get('.modal-mask button[data-label="SCHEDULING.GENERAL.CREATE"]')
+        .trigger('click');
+      await flushPromises();
+
+      expect(SchedulingAppointmentsAPI.create).toHaveBeenCalledOnce();
+      expect(SchedulingAppointmentsAPI.update).not.toHaveBeenCalled();
+      expect(store.isOpen).toBe(false);
+      expect(store.ui.error).toBeNull();
+      expect(mocks.calendar.syncAppointment).toHaveBeenCalledOnce();
+      expect(mocks.calendar.syncAppointment).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 501,
+          crmDealId: null,
+          crmLinkResult: { status: 'not_linked', code },
+        })
+      );
+      expect(mocks.alert).toHaveBeenCalledOnce();
+      expect(mocks.alert).toHaveBeenCalledWith(
+        `SCHEDULING.APPOINTMENT_FORM.${messageKey}`
+      );
+    }
+  );
+
+  it('retains the saved linkage warning when reopening a local booking and hides provider fields', async () => {
+    const { store } = await mountPage();
+    store.openEdit({
+      id: 501,
+      accountId: 74,
+      contactId: 42,
+      clientFirstName: 'Client',
+      resourceId: 3,
+      startsAt: slot.startsAt,
+      endsAt: slot.endsAt,
+      crmLinkResult: {
+        status: 'not_linked',
+        code: 'DEAL_STAGE_REQUIRES_FIELDS',
+      },
+    });
+    await flushPromises();
+    expect(wrapper.get('[data-test="calendar-crm-link-result"]').text()).toBe(
+      'SCHEDULING.APPOINTMENT_FORM.SAVED_WITHOUT_DEAL_REQUIRED_FIELDS'
+    );
+    expect(
+      wrapper.find('[data-test="calendar-patient-provider-source"]').exists()
+    ).toBe(false);
+    expect(
+      wrapper
+        .findAllComponents(SelectStub)
+        .some(field => field.props('label') === 'SCHEDULING.MEDELEMENT.CABINET')
+    ).toBe(false);
+    expect(SchedulingAppointmentsAPI.create).not.toHaveBeenCalled();
+    expect(SchedulingAppointmentsAPI.update).not.toHaveBeenCalled();
+  });
+
   it('keeps dismiss available during submit and preserves a subsequently opened form', async () => {
     const { store } = await mountPage();
     const pending = deferred();

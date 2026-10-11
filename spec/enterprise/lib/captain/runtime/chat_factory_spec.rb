@@ -55,6 +55,77 @@ RSpec.describe Captain::Runtime::ChatFactory do
       )
     end
 
+    it 'forwards a snapshot of resolved current actor preferences after preparing its context' do
+      resolved = {
+        'openrouter_provider_only' => ['anthropic'], 'openrouter_allow_fallbacks' => false,
+        'openrouter_cache_policy' => 'read_only', 'openrouter_sort' => { 'by' => 'latency' }
+      }
+      context_wrapper.context[:state] = { assistant_id: 1, captain_runtime: { 'previous_actor_only' => true } }
+      agent.context_preparer = lambda do |wrapper|
+        wrapper.context[:state].merge!(assistant_id: 2, captain_runtime: resolved)
+      end
+      expect(Llm::Runtime).to receive(:build_chat) do |**attributes|
+        expect(context_wrapper.context.dig(:state, :assistant_id)).to eq(2)
+        expect(attributes.fetch(:runtime_preferences)).to eq(resolved)
+        expect(attributes.fetch(:runtime_preferences)).not_to equal(resolved)
+        chat
+      end
+
+      described_class.build(
+        agent: agent, context_wrapper: context_wrapper, llm_context: :llm_context,
+        runtime_headers: {}, runtime_params: {}
+      )
+    end
+
+    it 'uses each actor preferences on a shared wrapper without stale settings or nested mutation leakage' do
+      first_preferences = {
+        'openrouter_provider_only' => ['anthropic'], 'openrouter_cache_policy' => 'read_only',
+        'openrouter_sort' => { 'by' => 'latency' }, 'first_actor_only' => true
+      }
+      second_preferences = {
+        'openrouter_provider_only' => ['azure/global'], 'openrouter_cache_policy' => 'disabled',
+        'openrouter_sort' => { 'by' => 'price' }
+      }
+      original_first = first_preferences.deep_dup
+      original_second = second_preferences.deep_dup
+      second_agent = Captain::Runtime::Agent.new(name: 'specialist_agent', model: agent.model)
+      context_wrapper.context[:state] = {}
+      agent.context_preparer = ->(wrapper) { wrapper.context[:state][:captain_runtime] = first_preferences }
+      second_agent.context_preparer = ->(wrapper) { wrapper.context[:state][:captain_runtime] = second_preferences }
+      captured = []
+      expect(Llm::Runtime).to receive(:build_chat).twice do |**attributes|
+        captured << attributes.fetch(:runtime_preferences)
+        chat
+      end
+
+      [agent, second_agent].each do |current_agent|
+        described_class.build(
+          agent: current_agent, context_wrapper: context_wrapper, llm_context: :llm_context,
+          runtime_headers: {}, runtime_params: {}
+        )
+      end
+
+      expect(captured).to eq([original_first, original_second])
+      captured.each do |preferences|
+        preferences['openrouter_provider_only'] << 'mutation'
+        preferences['openrouter_sort']['by'] = 'mutation'
+      end
+      expect(first_preferences).to eq(original_first)
+      expect(second_preferences).to eq(original_second)
+      expect(context_wrapper.context.dig(:state, :captain_runtime)).to eq(original_second)
+    end
+
+    it 'passes empty runtime preferences when the context has no resolved settings' do
+      expect(Llm::Runtime).to receive(:build_chat).with(hash_including(runtime_preferences: {})).and_return(chat)
+
+      described_class.build(
+        agent: agent, context_wrapper: context_wrapper, llm_context: :llm_context,
+        runtime_headers: {}, runtime_params: {}
+      )
+
+      expect(context_wrapper.context).not_to have_key(:state)
+    end
+
     it 'does not pass parallel tool call routing for mutating Captain tool requests' do
       mutating_tool = ChatFactorySpecTool.new('create_deal', 'Create CRM deal')
       agent_with_tool = Captain::Runtime::Agent.new(
@@ -66,7 +137,9 @@ RSpec.describe Captain::Runtime::ChatFactory do
 
       allow(chat).to receive(:model).and_return('openai/gpt-5.4-mini')
       allow(chat).to receive(:with_instructions).and_return(chat)
-      allow(chat).to receive(:with_tools).and_return(chat)
+      expect(chat).to receive(:with_tools).with(
+        an_instance_of(Captain::Runtime::ToolWrapper), replace: true, concurrency: false
+      ).and_return(chat)
 
       expect(Llm::Runtime).to receive(:build_chat).with(
         hash_including(
@@ -97,7 +170,9 @@ RSpec.describe Captain::Runtime::ChatFactory do
 
       allow(chat).to receive(:model).and_return('openai/gpt-5.4-mini')
       allow(chat).to receive(:with_instructions).and_return(chat)
-      allow(chat).to receive(:with_tools).and_return(chat)
+      expect(chat).to receive(:with_tools).with(
+        an_instance_of(Captain::Runtime::ToolWrapper), replace: true, concurrency: false
+      ).and_return(chat)
 
       expect(Llm::Runtime).to receive(:build_chat).with(
         hash_including(
@@ -151,9 +226,10 @@ RSpec.describe Captain::Runtime::ChatFactory do
         )
         chat
       end
-      expect(chat).to receive(:with_tools) do |*tools, replace:|
+      expect(chat).to receive(:with_tools) do |*tools, replace:, concurrency:|
         expect(tools.first).to be_a(Captain::Runtime::ToolWrapper)
         expect(replace).to be true
+        expect(concurrency).to be false
         chat
       end
 

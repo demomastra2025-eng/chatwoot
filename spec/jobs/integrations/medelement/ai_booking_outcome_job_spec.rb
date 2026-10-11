@@ -492,6 +492,89 @@ RSpec.describe Integrations::Medelement::AiBookingOutcomeJob do
     end
   end
 
+  context 'when a delegated specialist created the provider command' do
+    let(:entry_assistant) { create(:captain_assistant, account: account) }
+
+    before do
+      conversation.inbox.captain_inbox.update!(captain_assistant: entry_assistant)
+      entry_assistant.update!(handoff_agent_ids: [assistant.id])
+      route_booking_actor_to(assistant)
+    end
+
+    def route_booking_actor_to(actor)
+      Captain::Conversation::AgentSession.new(entry: entry_assistant, conversation: conversation).update_routing(actor_id: actor.id)
+    end
+
+    it 'hands an unknown specialist booking to staff without requiring the specialist to own the inbox' do
+      bind_provider_status!('provider_status_unknown')
+      capture_booking_fence!
+      command.update!(status: 'provider_status_unknown')
+
+      2.times { described_class.perform_now(command.id) }
+
+      expect(assistant.inboxes).to be_empty
+      expect(command.reload.execution_state['ai_booking_response_fence']).to include(
+        'entry_assistant_id' => entry_assistant.id, 'routing_revision' => 1
+      )
+      expect(conversation.reload).to be_open
+      expect(conversation.status_transitions.last.actor).to eq(assistant)
+      expect(conversation.messages.outgoing.pluck(:private)).to eq([true])
+    end
+
+    %w[transfer return_to_same_actor remove_route deactivate].each do |change|
+      it "does not let a late unknown booking take control after #{change}" do
+        bind_provider_status!('provider_status_unknown')
+        capture_booking_fence!
+        command.update!(status: 'provider_status_unknown')
+        case change
+        when 'transfer' then route_booking_actor_to(entry_assistant)
+        when 'return_to_same_actor'
+          route_booking_actor_to(entry_assistant)
+          route_booking_actor_to(assistant)
+        when 'remove_route' then entry_assistant.update!(handoff_agent_ids: [])
+        when 'deactivate' then assistant.update!(active: false)
+        end
+
+        described_class.perform_now(command.id)
+
+        expect(conversation.reload).to be_pending
+        expect(conversation.messages.outgoing).to be_empty
+      end
+    end
+
+    context 'with a successful reschedule' do
+      let(:operation) { 'move_reception' }
+
+      before do
+        bind_provider_status!('succeeded')
+        capture_booking_fence!
+        command.update!(status: 'succeeded')
+      end
+
+      it 'sends a current specialist confirmation under its original routing and control fence' do
+        described_class.perform_now(command.id)
+
+        reply = conversation.messages.outgoing.where(private: false).sole
+        expect(reply.sender).to eq(assistant)
+        expect(reply.content).to include('Ваша запись перенесена')
+      end
+
+      it 'keeps the original routing stamp immutable and stops a confirmation after the same actor returns' do
+        original_fence = command.execution_state['ai_booking_response_fence'].deep_dup
+        route_booking_actor_to(entry_assistant)
+        route_booking_actor_to(assistant)
+        Captain::Tools::ProviderBookingHandoffService.capture_fence!(command: command, fence: original_fence)
+
+        described_class.perform_now(command.id)
+
+        expect(command.reload.execution_state['ai_booking_response_fence']).to eq(original_fence)
+        expect(conversation.messages.outgoing.where(private: false)).to be_empty
+        expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
+        expect(conversation.reload).to be_pending
+      end
+    end
+  end
+
   context 'when a human created the provider command' do
     let(:actor_type) { 'User' }
 

@@ -173,6 +173,47 @@ RSpec.describe Llm::OpenRouterRuntime do
     ).to eq(response)
   end
 
+  it 'continues a stateful chat with its routing metadata and current actor evaluation' do
+    chat = instance_double(RubyLLM::Chat)
+    response = instance_double(RubyLLM::Message)
+    Llm::OpenRouterRequestPolicy.tag!(
+      chat,
+      feature: :captain_agent,
+      account: account,
+      model: 'openai/gpt-5.4-mini',
+      routing_metadata: { requested_model: 'openai/gpt-5.4-mini', openrouter_provider_order: ['OpenAI'] }
+    )
+    expect(Llm::BudgetEvaluator).to receive(:evaluate!) do |request:, model:|
+      expect(request.account).to eq(account)
+      expect(request.feature.to_s).to eq('captain_agent')
+      expect(model).to eq('openai/gpt-5.4-mini')
+      expect(request.observability).to include(assistant_id: 17, conversation_record_id: 25)
+    end
+    expect(Llm::ChatClient).not_to receive(:ask)
+    expect(Llm::ChatClient).to receive(:complete).with(
+      chat,
+      model: 'openai/gpt-5.4-mini',
+      observability: hash_including(
+        feature: 'captain_agent',
+        assistant_id: 17,
+        conversation_record_id: 25,
+        requested_model: 'openai/gpt-5.4-mini',
+        openrouter_provider_order: ['OpenAI']
+      )
+    ).and_return(response)
+
+    expect(runtime.complete(chat, model: 'openai/gpt-5.4-mini', observability: { assistant_id: 17, conversation_record_id: 25 })).to eq(response)
+  end
+
+  it 'propagates an evaluation failure before executing the continuation' do
+    chat = instance_double(RubyLLM::Chat)
+    allow(Llm::BudgetEvaluator).to receive(:evaluate!).and_raise(StandardError, 'Synthetic evaluation failure')
+
+    expect(Llm::ChatClient).not_to receive(:complete)
+    expect { runtime.complete(chat, model: 'openai/gpt-5.4-mini', observability: { feature: 'captain_agent' }) }
+      .to raise_error(StandardError, 'Synthetic evaluation failure')
+  end
+
   it 'runs chat requests with a stored exhausted budget policy' do
     budget_account = create(:account)
     create(:llm_budget_policy, account: budget_account, daily_budget: 0, hard_stop: true)
@@ -188,6 +229,21 @@ RSpec.describe Llm::OpenRouterRuntime do
 
     expect(Llm::ChatRequestRunner).to receive(:new).and_return(runner)
     expect(described_class.new(account: budget_account).chat(request)).to eq(:response)
+  end
+
+  it 'preserves the no-limit policy for continuation with an exhausted stored budget' do
+    budget_account = create(:account)
+    policy = create(:llm_budget_policy, account: budget_account, daily_budget: 0, hard_stop: true)
+    chat = instance_double(RubyLLM::Chat)
+    expect(Llm::ChatClient).to receive(:complete)
+      .with(chat, model: 'openai/gpt-5.4-mini', observability: { feature: 'captain_agent' }).and_return(:response)
+
+    expect(
+      described_class.new(account: budget_account).complete(
+        chat, model: 'openai/gpt-5.4-mini', observability: { feature: 'captain_agent' }
+      )
+    ).to eq(:response)
+    expect(policy.reload.daily_budget.to_f).to eq(0)
   end
 
   it 'routes native embeddings to the OpenRouter embedding client' do

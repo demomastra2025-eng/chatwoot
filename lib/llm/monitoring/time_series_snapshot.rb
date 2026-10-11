@@ -87,7 +87,9 @@ class Llm::Monitoring::TimeSeriesSnapshot
     error_series = grouped_scope(scoped_events.error_events, bucket:, range:, default_value: 0).count
     cost_series = grouped_scope(scoped_events, bucket:, range:, default_value: 0).sum(:estimated_cost)
     latency_series = grouped_scope(
-      scoped_events.chat_completions.where.not(duration_ms: nil),
+      scoped_events.where(event_name: %w[llm.chat.complete llm.chat.request])
+                   .where("COALESCE(payload ->> 'usage_scope', '') <> ?", 'provider_response')
+                   .where.not(duration_ms: nil),
       bucket:,
       range:
     ).average(:duration_ms)

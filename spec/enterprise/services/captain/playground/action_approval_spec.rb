@@ -91,4 +91,47 @@ RSpec.describe Captain::Playground::ActionApproval do
       expect(preview['status']).to eq('failed')
     end
   end
+
+  it 'cannot confirm the entry agent preview after another agent becomes active' do
+    destination = create(:captain_assistant, account: account)
+    assistant.update!(handoff_agent_ids: [destination.id])
+    with_preview do |workspace, service, preview|
+      workspace.activate_agent!(destination)
+      expect(service.instance_variable_get(:@executor)).not_to receive(:execute)
+      expect { service.confirm(id: preview['id'], digest: preview['digest']) }.to raise_error(ArgumentError, /revoked/)
+    end
+  end
+
+  it 'binds a destination preview to its own tools and rechecks routing and activation at confirmation' do
+    destination = create(:captain_assistant, account: account)
+    assistant.update!(handoff_agent_ids: [destination.id])
+    allow(destination).to receive(:allowed_agent_tool_ids).and_return(%w[update_deal])
+    session.with_lock do |workspace|
+      workspace.set_permissions!(read: true, write: true)
+      workspace.activate_agent!(destination)
+      service = described_class.new(workspace)
+      preview = service.preview('update_deal', deal_id: deal.id, title: 'Destination title')
+      expect(preview['binding']).to include('assistant_id' => destination.id, 'entry_assistant_id' => assistant.id)
+      expect(service.instance_variable_get(:@executor)).not_to receive(:execute)
+
+      destination.update!(active: false)
+      expect { service.confirm(id: preview['id'], digest: preview['digest']) }.to raise_error(Pundit::NotAuthorizedError)
+      destination.update!(active: true)
+      assistant.update!(handoff_agent_ids: [])
+      expect { service.confirm(id: preview['id'], digest: preview['digest']) }.to raise_error(Pundit::NotAuthorizedError)
+    end
+  end
+
+  it 'does not grant a destination the entry agent selected tool list' do
+    destination = create(:captain_assistant, account: account)
+    assistant.update!(handoff_agent_ids: [destination.id])
+    allow(destination).to receive(:allowed_agent_tool_ids).and_return([])
+    session.with_lock do |workspace|
+      workspace.set_permissions!(read: true, write: true)
+      workspace.activate_agent!(destination)
+      expect do
+        described_class.new(workspace).preview('update_deal', deal_id: deal.id, title: 'Unselected action')
+      end.to raise_error(Pundit::NotAuthorizedError, /not selected/)
+    end
+  end
 end

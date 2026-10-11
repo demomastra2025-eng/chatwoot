@@ -146,7 +146,7 @@ RSpec.describe Captain::Tools::SearchReplyDocumentationService do
     allow(scoped_relation).to receive(:search).and_return(scoped_relation)
 
     expect(service.send(:search_responses, 'visibilityscope')).to eq(scoped_relation.to_a)
-    expect(scoped_relation).to have_received(:search).with('visibilityscope', account_id: account.id)
+    expect(scoped_relation).to have_received(:search).with('visibilityscope', account_id: account.id, assistant_id: assistant.id)
   end
 
   it 'bounds semantic response lookup and degrades to lexical fallback on timeout' do

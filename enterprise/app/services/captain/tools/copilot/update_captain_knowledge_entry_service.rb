@@ -11,6 +11,7 @@ class Captain::Tools::Copilot::UpdateCaptainKnowledgeEntryService < Captain::Too
   param :answer, type: :string, desc: 'Optional updated answer', required: false
   param :status, type: :string, desc: 'Optional status: pending or approved', required: false
   param :visibility, type: :string, desc: 'Optional visibility: general or personal', required: false
+  param :allowed_assistant_ids, type: :array, desc: 'Optional same-workspace agent IDs for personal knowledge', required: false
   param :assistant_id, type: :integer, desc: 'Optional destination Captain assistant ID in the same account', required: false
   param :document_id, type: :integer, desc: 'Optional Captain document ID to attach entry to', required: false
 
@@ -37,16 +38,19 @@ class Captain::Tools::Copilot::UpdateCaptainKnowledgeEntryService < Captain::Too
   private
 
   def knowledge_entry_update_attributes(entry, kwargs)
-    target_assistant = kwargs[:assistant_id].present? ? find_captain_assistant!(kwargs[:assistant_id]) : entry.assistant
+    target_assistant = entry.assistant
+    target_assistant = kwargs[:assistant_id].present? ? find_captain_assistant!(kwargs[:assistant_id]) : nil if kwargs.key?(:assistant_id)
 
     {}.tap do |attributes|
-      attributes[:assistant] = target_assistant if kwargs[:assistant_id].present?
+      attributes[:assistant] = target_assistant if kwargs.key?(:assistant_id)
       attributes[:question] = kwargs[:question] if kwargs[:question].present?
       attributes[:answer] = kwargs[:answer] if kwargs[:answer].present?
       attributes[:status] = kwargs[:status] if kwargs[:status].present?
       attributes[:visibility] = normalize_knowledge_visibility(kwargs[:visibility]) if kwargs[:visibility].present?
-      attributes[:documentable] = entry_documentable(entry, kwargs, target_assistant)
-    end.compact
+      attributes[:allowed_assistant_ids] = kwargs[:allowed_assistant_ids] if kwargs.key?(:allowed_assistant_ids)
+      documentable = entry_documentable(entry, kwargs, target_assistant)
+      attributes[:documentable] = documentable if documentable.present?
+    end
   end
 
   def entry_documentable(entry, kwargs, target_assistant)

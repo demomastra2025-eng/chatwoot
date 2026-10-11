@@ -646,5 +646,41 @@
     "AVG_REPLY_TIME": "Avg. Customer Waiting Time",
     "RESOLUTION_COUNT": "Auflösungsanzahl",
     "CONVERSATIONS": "Anzahl der Konversationen"
+  },
+  "AI_REPORTS": {
+    "TITLE": "AI agents",
+    "DESCRIPTION": "Messages, conversation outcomes and reasons for the selected period.",
+    "AGENT": "Agent",
+    "ALL_AGENTS": "All agents",
+    "DELETED_AGENT": "Deleted agent #{id}",
+    "LOADING": "Loading report…",
+    "ERROR": "Could not load the AI report.",
+    "RETRY": "Try again",
+    "CONVERSATIONS": "Conversations",
+    "MESSAGES": "Outgoing messages",
+    "COMPLETIONS": "Closures",
+    "HANDOFFS": "Handovers to staff",
+    "CONVERSATIONS_HELP": "Distinct conversations with an AI message or outcome in this period. The same conversation may involve several agents.",
+    "MESSAGES_HELP": "Saved public outgoing messages authored by an AI agent. This is not a delivery confirmation.",
+    "OUTCOMES_HELP": "Actual AI status changes during the period. A conversation can be closed or handed over more than once.",
+    "COUNTING_NOTE": "Messages and status changes use their own event date in the workspace time zone. Closures do not establish a successful sale. Agent conversation counts may overlap.",
+    "EMPTY": "No AI activity in this period.",
+    "DYNAMICS": "Activity by day",
+    "BY_AGENT": "By agent",
+    "CLASSIFICATION": "Outcome classification",
+    "CLASSIFICATION_HELP": "Reasons are determined after the action. Older events without classification and failed attempts remain separate.",
+    "REASONS": "Closure and handover reasons",
+    "NO_REASONS": "No completed reason classifications in this period.",
+    "UNAVAILABLE_NOTE": "Response time and cost are not yet shown: reliable attribution to these agents is unavailable.",
+    "STATES": {
+      "COMPLETED": "Determined",
+      "PENDING": "Queued",
+      "PROCESSING": "Processing",
+      "FAILED": "Failed",
+      "INSUFFICIENT_CONTEXT": "Insufficient context",
+      "UNCLASSIFIED": "Not classified"
+    },
+    "REASON_CONTEXT": "{agent} · {type}",
+    "HISTORY_NOTE": "Messages from previously deleted agents may be missing because their authorship was cleared on deletion."
   }
 }

@@ -126,8 +126,8 @@ RSpec.describe Captain::Tools::Copilot::ListDealStagesService do
     expect(payload['stages']).to include(
       include(
         'id' => open_stage.id,
-        'transition_reason_options' => ['Needs docs', 'Waiting payment'],
-        'transition_reason_required' => true
+        'transition_reason_options' => [],
+        'transition_reason_required' => false
       ),
       include(
         'id' => lost_stage.id,

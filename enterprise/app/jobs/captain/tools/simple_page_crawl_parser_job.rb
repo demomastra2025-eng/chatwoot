@@ -114,11 +114,10 @@ class Captain::Tools::SimplePageCrawlParserJob < ApplicationJob
     nil
   end
 
-  def compatible_document_context?(document, source_document, assistant)
-    return document.visibility_general? || (assistant.present? && document.assistant_id == assistant.id) if source_document.blank?
-    return true if document.metadata&.dig('firecrawl', 'root_document_id').to_s == source_document.id.to_s
+  def compatible_document_context?(document, source_document, _assistant)
+    return document.visibility_general? && document.source_document? if source_document.blank?
 
-    document.assistant_id == source_document.assistant_id && document.visibility == source_document.visibility
+    document.metadata&.dig('firecrawl', 'root_document_id').to_s == source_document.id.to_s
   end
 
   def mark_conflicting_page_processed(source_document, normalized_link, import_run_id)

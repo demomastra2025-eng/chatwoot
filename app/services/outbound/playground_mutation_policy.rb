@@ -41,16 +41,23 @@ class Outbound::PlaygroundMutationPolicy
       user = User.find_by(id: payload[:user_id])
       assistant = Captain::Assistant.find_by(id: payload[:assistant_id], account_id: account&.id)
       return false unless account && user && assistant && account.account_users.exists?(user_id: user.id)
+      entry_id = payload[:entry_assistant_id].presence || assistant.id
+      entry = Captain::Assistant.find_by(id: entry_id, account_id: account.id)
+      return false unless entry && Captain::AgentGraph.new(entry).find(assistant.id)
       return false unless Captain::Playground::ToolSelection.include?(assistant, payload[:tool])
       return false unless operator_authorized?(account, user, assistant, payload)
 
-      store = Captain::Playground::SessionStore.new(account: account, user: user, assistant: assistant)
+      store = Captain::Playground::SessionStore.new(account: account, user: user, assistant: entry)
       permissions = store.permissions(session_id: payload[:session_id])
       return false unless permissions['read'] == true && permissions['write'] == true && permissions['generation'] == payload[:generation]
 
       session = store.read(session_id: payload[:session_id])
+      return false unless session && (session['active_assistant_id'].presence || entry.id).to_i == assistant.id
       action = Array(session&.dig('action_previews')).find { |item| item['id'] == payload[:action_id] }
+      binding = { 'session_id' => payload[:session_id], 'mode' => 'workspace', 'account_id' => account.id,
+                  'user_id' => user.id, 'entry_assistant_id' => entry.id, 'assistant_id' => assistant.id }
       action && %w[executing completed].include?(action['status']) && action['digest'] == payload[:action_digest] &&
+        action['binding'] == binding &&
         action['tool'] == payload[:tool] && action['arguments'] == payload[:arguments].to_h.deep_stringify_keys &&
         action['target'] == payload[:target].to_h.deep_stringify_keys
     rescue Captain::Playground::SessionStore::Stale, ArgumentError
@@ -61,6 +68,9 @@ class Outbound::PlaygroundMutationPolicy
       definition = Captain::ToolRegistry.definition_for(payload[:tool])
       return false unless definition && Captain::ToolPolicy.execution_allowed?(
         definition.to_h, assistant: assistant, scope_name: Captain::ToolAccess::SCOPE_ASSISTANT, user: user
+      )
+      return false unless Captain::ToolPolicy.execution_allowed?(
+        definition.to_h, assistant: assistant, scope_name: Captain::ToolAccess::SCOPE_AGENT
       )
 
       context = { user: user, account: account, account_user: account.account_users.find_by(user_id: user.id) }

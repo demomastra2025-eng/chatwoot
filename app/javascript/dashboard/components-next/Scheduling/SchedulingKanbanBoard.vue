@@ -206,7 +206,7 @@ const canMoveAppointment = event =>
         <section
           v-for="column in kanbanColumns"
           :key="column.value"
-          class="flex h-full min-h-0 w-[15rem] shrink-0 flex-col overflow-hidden rounded-2xl outline outline-1 outline-n-container bg-n-solid-2"
+          class="flex h-full min-h-0 w-[15rem] shrink-0 flex-col overflow-hidden"
         >
           <header
             class="flex items-center justify-between gap-3 border-b border-n-weak bg-n-surface-2 px-4 py-3"
@@ -293,7 +293,7 @@ const canMoveAppointment = event =>
             <template #footer>
               <div
                 v-if="!column.appointments.length"
-                class="flex min-h-[8rem] flex-1 items-center justify-center rounded-2xl border border-dashed border-n-strong bg-n-alpha-black2 px-4 text-center text-sm text-n-slate-11"
+                class="flex min-h-[8rem] flex-1 items-center justify-center px-4 text-center text-sm text-n-slate-11"
               >
                 {{ $t('SCHEDULING.CALENDAR.NO_APPOINTMENTS_STATUS') }}
               </div>

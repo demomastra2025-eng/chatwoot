@@ -207,14 +207,10 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
       )
     end
     let(:scenario) do
-      create(
-        :captain_scenario,
-        assistant: assistant,
-        account: account,
-        title: 'Billing disputes',
-        description: 'Handles disputed charge flows.',
-        instruction: 'Collect the dispute reason, then use [@Handoff](tool://handoff) if finance approval is needed.'
-      )
+      target = create(:captain_assistant, account: account, name: 'Billing disputes', routing_description: 'Handles disputed charge flows.',
+                      description: 'Collect the dispute reason, then use [@Handoff](tool://handoff) if finance approval is needed.')
+      assistant.update!(handoff_agent_ids: [target.id])
+      target
     end
 
     before do
@@ -534,8 +530,6 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         assistant: {
           name: 'New Assistant',
           description: 'Assistant Description',
-          response_guidelines: ['Be helpful', 'Be concise'],
-          guardrails: ['No harmful content', 'Stay on topic'],
           config: {
             feature_faq: true,
             feature_memory: false,
@@ -574,31 +568,22 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         end.to change(Captain::Assistant, :count).by(1)
 
         expect(json_response[:name]).to eq('New Assistant')
-        expect(json_response[:response_guidelines]).to eq(['Be helpful', 'Be concise'])
-        expect(json_response[:guardrails]).to eq(['No harmful content', 'Stay on topic'])
+        expect(json_response[:description]).to eq('Assistant Description')
+        expect(json_response).not_to have_key(:response_guidelines)
+        expect(json_response).not_to have_key(:guardrails)
         expect(json_response[:config][:feature_citation]).to be(true)
         expect(response).to have_http_status(:success)
       end
 
-      it 'creates assistants with nested response guidelines and guardrails' do
-        attributes_with_nested_arrays = valid_attributes.deep_dup
-        attributes_with_nested_arrays[:assistant][:response_guidelines] = [
-          { title: 'Tone', body: 'Be concise' }
-        ]
-        attributes_with_nested_arrays[:assistant][:guardrails] = [
-          { name: 'Safety', rule: 'Stay on topic' }
-        ]
-
+      it 'rejects removed separate-rule fields instead of silently ignoring user text' do
+        attributes = valid_attributes.deep_dup
+        attributes[:assistant][:response_guidelines] = ['Be concise']
+        attributes[:assistant][:guardrails] = ['Never invent a result']
         expect do
-          post "/api/v1/accounts/#{account.id}/captain/assistants",
-               params: attributes_with_nested_arrays,
-               headers: admin.create_new_auth_token,
-               as: :json
-        end.to change(Captain::Assistant, :count).by(1)
-
-        expect(response).to have_http_status(:success)
-        expect(json_response[:response_guidelines]).to eq([{ title: 'Tone', body: 'Be concise' }.to_json])
-        expect(json_response[:guardrails]).to eq([{ name: 'Safety', rule: 'Stay on topic' }.to_json])
+          post "/api/v1/accounts/#{account.id}/captain/assistants", params: attributes, headers: admin.create_new_auth_token, as: :json
+        end.not_to change(Captain::Assistant, :count)
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(json_response).to include(error: 'separate_rules_removed', fields: %w[response_guidelines guardrails])
       end
 
       it 'creates assistants with the standard humanlike voice defaults' do
@@ -762,8 +747,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
       {
         assistant: {
           name: 'Updated Assistant',
-          response_guidelines: ['Updated guideline'],
-          guardrails: ['Updated guardrail'],
+          description: 'Updated instruction',
           config: {
             feature_citation: false
           }
@@ -799,8 +783,9 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(json_response[:name]).to eq('Updated Assistant')
-        expect(json_response[:response_guidelines]).to eq(['Updated guideline'])
-        expect(json_response[:guardrails]).to eq(['Updated guardrail'])
+        expect(json_response[:description]).to eq('Updated instruction')
+        expect(json_response).not_to have_key(:response_guidelines)
+        expect(json_response).not_to have_key(:guardrails)
       end
 
       it 'updates prompt instructions up to the product limit' do
@@ -815,34 +800,22 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         expect(assistant.reload.description).to eq(long_description)
       end
 
-      it 'updates only response_guidelines when only that is provided' do
-        assistant.update!(response_guidelines: ['Original guideline'], guardrails: ['Original guardrail'])
-        original_name = assistant.name
-
+      it 'rejects removed response_guidelines writes without changing the main prompt' do
+        original = assistant.description
         patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
-              params: { assistant: { response_guidelines: ['New guideline only'] } },
-              headers: admin.create_new_auth_token,
-              as: :json
-
-        expect(response).to have_http_status(:success)
-        expect(json_response[:name]).to eq(original_name)
-        expect(json_response[:response_guidelines]).to eq(['New guideline only'])
-        expect(json_response[:guardrails]).to eq(['Original guardrail'])
+              params: { assistant: { response_guidelines: ['New text'] } }, headers: admin.create_new_auth_token, as: :json
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(json_response[:error]).to eq('separate_rules_removed')
+        expect(assistant.reload.description).to eq(original)
       end
 
-      it 'updates only guardrails when only that is provided' do
-        assistant.update!(response_guidelines: ['Original guideline'], guardrails: ['Original guardrail'])
-        original_name = assistant.name
-
+      it 'rejects removed guardrails writes without changing the main prompt' do
+        original = assistant.description
         patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
-              params: { assistant: { guardrails: ['New guardrail only'] } },
-              headers: admin.create_new_auth_token,
-              as: :json
-
-        expect(response).to have_http_status(:success)
-        expect(json_response[:name]).to eq(original_name)
-        expect(json_response[:response_guidelines]).to eq(['Original guideline'])
-        expect(json_response[:guardrails]).to eq(['New guardrail only'])
+              params: { assistant: { guardrails: ['New text'] } }, headers: admin.create_new_auth_token, as: :json
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(json_response[:error]).to eq('separate_rules_removed')
+        expect(assistant.reload.description).to eq(original)
       end
 
       it 'updates feature_citation config' do
@@ -1022,13 +995,9 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
             'contact' => { 'enabled' => true, 'field_ids' => ['contact.name'] }
           }
         )
-        expect(assistant.config['rules']).to include(
-          hash_including(
-            'id' => 'reply_short',
-            'type' => 'response_guideline',
-            'content' => 'Reply briefly.'
-          )
-        )
+        expect(assistant.description).to include('Reply briefly.')
+        expect(assistant.config).not_to have_key('rules')
+
       end
 
       it 'preserves tool and rules config when patching system settings only' do
@@ -1082,13 +1051,9 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
           }
         )
         expect(assistant.config).not_to include('handoff_requires_explicit_consent', 'handoff_consent_reason')
-        expect(assistant.config['rules']).to include(
-          hash_including(
-            'id' => 'stay_focused',
-            'type' => 'system',
-            'content' => 'Stay focused.'
-          )
-        )
+        expect(assistant.description).to include('Stay focused.')
+        expect(assistant.config).not_to have_key('rules')
+
       end
 
       it 'persists assistant safety selections while retaining omitted checks and unrelated config' do
@@ -1211,213 +1176,14 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         )
       end
 
-      # rubocop:disable RSpec/ExampleLength
-      it 'updates structured rules config and syncs legacy rule lists' do
+      it 'rejects removed structured rules without applying other submitted changes' do
+        original = assistant.attributes
         patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
-              params: {
-                assistant: {
-                  config: {
-                    rules: [
-                      {
-                        id: 'clarify_first',
-                        type: 'response_guideline',
-                        group: 'Conversation flow',
-                        content: 'Ask one clarifying question before proposing a solution.',
-                        enabled: true
-                      },
-                      {
-                        id: 'no_passwords',
-                        type: 'guardrail',
-                        group: 'Restrictions',
-                        content: 'Never request passwords or verification codes.',
-                        enabled: false
-                      }
-                    ]
-                  }
-                }
-              },
-              headers: admin.create_new_auth_token,
-              as: :json
-
-        expect(response).to have_http_status(:success)
-        expect(assistant.reload.response_guidelines).to eq(
-          ['Ask one clarifying question before proposing a solution.']
-        )
-        expect(assistant.guardrails).to eq([])
-        expect(assistant.config['rules']).to include(
-          hash_including(
-            'id' => 'clarify_first',
-            'type' => 'response_guideline',
-            'group' => 'Conversation flow',
-            'content' => 'Ask one clarifying question before proposing a solution.',
-            'enabled' => true
-          ),
-          hash_including(
-            'id' => 'no_passwords',
-            'type' => 'guardrail',
-            'group' => 'Restrictions',
-            'content' => 'Never request passwords or verification codes.',
-            'enabled' => false
-          )
-        )
-        expect(json_response.dig(:config, :rules)).to include(
-          hash_including(
-            id: 'clarify_first',
-            type: 'response_guideline',
-            group: 'Conversation flow',
-            content: 'Ask one clarifying question before proposing a solution.',
-            enabled: true
-          ),
-          hash_including(
-            id: 'no_passwords',
-            type: 'guardrail',
-            group: 'Restrictions',
-            content: 'Never request passwords or verification codes.',
-            enabled: false
-          )
-        )
-      end
-      # rubocop:enable RSpec/ExampleLength
-
-      # rubocop:disable RSpec/ExampleLength
-      it 'keeps structured rules when updating them alongside the full config payload' do
-        patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
-              params: {
-                assistant: {
-                  config: {
-                    rules: [
-                      {
-                        id: 'assistant_rule_inline',
-                        type: 'response_guideline',
-                        group: 'Conversation flow',
-                        content: 'Reply with the short direct answer first.',
-                        enabled: true
-                      }
-                    ],
-                    feature_faq: true,
-                    feature_memory: true,
-                    feature_citation: true,
-                    temperature: 1,
-                    tool_access: {
-                      agent: {
-                        enabled: true,
-                        tool_ids: %w[faq_lookup handoff add_contact_note add_private_note]
-                      }
-                    },
-                    context_access: {},
-                    handoff_message: '',
-                    resolution_message: '',
-                    history_message_limit: 0,
-                    auto_reply_on_last_incoming: false,
-                    message_collapse_window_seconds: 0
-                  }
-                }
-              },
-              headers: admin.create_new_auth_token,
-              as: :json
-
-        expect(response).to have_http_status(:success)
-        expect(assistant.reload.response_guidelines).to include(
-          'Reply with the short direct answer first.'
-        )
-        expect(assistant.config['rules']).to include(
-          hash_including(
-            'id' => 'assistant_rule_inline',
-            'type' => 'response_guideline',
-            'group' => 'Conversation flow',
-            'content' => 'Reply with the short direct answer first.',
-            'enabled' => true
-          )
-        )
-        expect(assistant.config['tool_access']).to eq(
-          'agent' => {
-            'enabled' => true,
-            'tool_ids' => %w[faq_lookup handoff add_contact_note add_private_note]
-          }
-        )
-        expect(json_response.dig(:config, :rules)).to include(
-          hash_including(
-            id: 'assistant_rule_inline',
-            type: 'response_guideline',
-            group: 'Conversation flow',
-            content: 'Reply with the short direct answer first.',
-            enabled: true
-          )
-        )
-      end
-      # rubocop:enable RSpec/ExampleLength
-
-      it 'restores default system rules when the full config payload sends an empty rules array' do
-        patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
-              params: {
-                assistant: {
-                  config: {
-                    rules: [],
-                    feature_faq: false,
-                    feature_memory: false,
-                    feature_citation: false,
-                    temperature: 0.4,
-                    tool_access: {
-                      agent: {
-                        enabled: true,
-                        tool_ids: %w[faq_lookup handoff add_contact_note add_private_note]
-                      }
-                    },
-                    context_access: {},
-                    handoff_message: '',
-                    resolution_message: '',
-                    history_message_limit: 15,
-                    auto_reply_on_last_incoming: true,
-                    message_collapse_window_seconds: 3
-                  }
-                }
-              },
-              headers: admin.create_new_auth_token,
-              as: :json
-
-        expect(response).to have_http_status(:success)
-        expect(assistant.reload.config['rules']).to include(
-          hash_including(
-            'id' => 'stay_within_scope',
-            'type' => 'system',
-            'enabled' => true,
-            'editable' => false,
-            'deletable' => false
-          )
-        )
-        expect(json_response.dig(:config, :rules)).to include(
-          hash_including(
-            id: 'stay_within_scope',
-            type: 'system',
-            enabled: true,
-            editable: false,
-            deletable: false
-          )
-        )
-      end
-
-      it 'rejects malformed structured rules with a validation error' do
-        patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
-              params: {
-                assistant: {
-                  config: {
-                    rules: [
-                      {
-                        id: 'bad_rule',
-                        type: 'guardrail',
-                        group: 'Restrictions',
-                        content: '   '
-                      },
-                      'not-a-rule'
-                    ]
-                  }
-                }
-              },
-              headers: admin.create_new_auth_token,
-              as: :json
-
-        expect(response).to have_http_status(:unprocessable_content)
-        expect(response.body).to include('invalid')
+              params: { assistant: { description: 'Should not save', config: { feature_faq: true, rules: [{ content: 'New rule' }] } } },
+              headers: admin.create_new_auth_token, as: :json
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(json_response).to include(error: 'separate_rules_removed', fields: ['config.rules'])
+        expect(assistant.reload.attributes).to eq(original)
       end
     end
   end

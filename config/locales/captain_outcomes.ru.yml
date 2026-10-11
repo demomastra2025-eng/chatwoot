@@ -1,0 +1,16 @@
+ru:
+  captain:
+    outcome_reasons:
+      pending: Причина уточняется
+      unclassified: Причина не определена
+      other: Другое
+      goal_achieved: Цель достигнута
+      question_resolved: Вопрос решён
+      customer_declined: Клиент отказался
+      no_response: Нет ответа
+      customer_requested_human: Клиент попросил сотрудника
+      low_confidence: Недостаточно уверенности
+      manual_action_required: Требуется действие сотрудника
+      complaint_or_conflict: Жалоба или конфликт
+      tool_or_policy_limit: Инструмент недоступен или действие ограничено
+      faq_no_answer: Нет ответа в FAQ

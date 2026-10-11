@@ -158,7 +158,11 @@ class Integrations::Medelement::AiBookingOutcomeJob < ApplicationJob
       next notify_staff!(command, conversation, assistant) if superseded_before_binding?(command, appointment)
       next notify_staff!(command, conversation, assistant) unless current_confirmed_booking?(command, appointment)
 
-      conversation.with_lock { deliver_pending_confirmation!(command, appointment, conversation, assistant) }
+      conversation.with_lock do
+        conversation.with_captain_control_lock do
+          deliver_pending_confirmation!(command, appointment, conversation, assistant)
+        end
+      end
     end
   end
 
@@ -179,6 +183,7 @@ class Integrations::Medelement::AiBookingOutcomeJob < ApplicationJob
 
   def deliver_pending_confirmation!(command, appointment, conversation, assistant)
     return notify_staff!(command, conversation, assistant) unless conversation.pending? && !human_replied_after_command?(command, conversation)
+    return notify_staff!(command, conversation, assistant) unless confirmation_actor_current?(command, conversation, assistant)
 
     message = conversation.messages.create!(
       account_id: command.account_id,
@@ -189,6 +194,26 @@ class Integrations::Medelement::AiBookingOutcomeJob < ApplicationJob
       additional_attributes: { medelement_provider_command_id: command.id }
     )
     record_outcome!(command, CUSTOMER_MESSAGE_ID_KEY, message.id)
+  end
+
+  def confirmation_actor_current?(command, conversation, assistant)
+    return false unless assistant.active? && assistant.external_agent?
+
+    fence = command.execution_state.to_h[Captain::Tools::ProviderBookingHandoffService::FENCE_KEY].to_h.deep_stringify_keys
+    ownership = Captain::Conversation::AgentOwnership.new(conversation: conversation, assistant: assistant)
+    return false unless ownership.current?(expected_entry_id: fence['entry_assistant_id'],
+                                           expected_revision: fence['routing_revision'], enforce_revision: true)
+    return true if fence.blank?
+
+    Captain::Conversation::RunFenceService.new(
+      assistant: assistant,
+      state: { account_id: conversation.account_id, assistant_id: assistant.id, entry_assistant_id: ownership.entry.id,
+               conversation: { id: conversation.id }, captain_response_fence: fence },
+      stage: 'booking_confirmation'
+    ).ensure_current!
+    true
+  rescue Captain::Conversation::ControlGenerationStaleError
+    false
   end
 
   # Same v4 takeover predicate as the late human-response fence: a staff public

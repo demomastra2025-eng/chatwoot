@@ -17,12 +17,6 @@ class Captain::ResponseSchema < RubyLLM::Schema
       'response is conversation_handoff. Return an empty string when no handoff is requested.'
     ].join
   ).freeze
-  HANDOFF_STATUS_REASON_DESCRIPTION = (
-    [
-      'Configured conversation status reason for opening/handoff when status reasons are enabled. ',
-      'Use only an exact configured option; return an empty string when unknown or not configured.'
-    ].join
-  ).freeze
   REASONING_DESCRIPTION = (
     [
       'Required non-empty, brief user-visible outcome rationale based on facts and tool results. ',
@@ -40,6 +34,4 @@ class Captain::ResponseSchema < RubyLLM::Schema
   array :artifact_ids, of: :string, description: ARTIFACT_IDS_DESCRIPTION
   string :handoff_message, description: HANDOFF_MESSAGE_DESCRIPTION
   string :handoff_reason, description: HANDOFF_REASON_DESCRIPTION
-  string :handoff_status_reason, description: HANDOFF_STATUS_REASON_DESCRIPTION
-  string :handoff_outcome_reason_id, description: 'Stable configured handoff outcome reason ID selected by a tool.'
 end

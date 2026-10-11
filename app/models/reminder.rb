@@ -1175,7 +1175,7 @@ class Reminder < ApplicationRecord
     anchor = Message.find_by(id: follow_up['anchor_message_id'])
 
     validate_follow_up_target(target)
-    validate_follow_up_assistant(assistant, target)
+    validate_follow_up_assistant(assistant, target, follow_up)
     validate_follow_up_anchor(anchor, assistant, target)
   end
 
@@ -1198,7 +1198,7 @@ class Reminder < ApplicationRecord
     errors.add(:conversation, 'must be pending under Captain control') if target.present? && !target.pending?
   end
 
-  def validate_follow_up_assistant(assistant, target)
+  def validate_follow_up_assistant(assistant, target, follow_up)
     if assistant.blank?
       errors.add(:metadata, 'references a missing Captain assistant')
       return
@@ -1206,8 +1206,12 @@ class Reminder < ApplicationRecord
 
     errors.add(:account, 'must match the Captain assistant') unless assistant.account_id == account_id
     errors.add(:assistant, 'must be a customer-facing agent') unless assistant.external_agent?
-    errors.add(:assistant, 'must be connected to the follow-up inbox') unless
-      target.present? && assistant.inboxes.exists?(id: target.inbox_id)
+    owns_conversation = target.present? && Captain::Conversation::AgentOwnership.new(conversation: target, assistant: assistant).current?(
+      expected_entry_id: follow_up['entry_assistant_id'],
+      expected_revision: follow_up['routing_revision'],
+      enforce_revision: true
+    )
+    errors.add(:assistant, 'must currently control the follow-up conversation') unless owns_conversation && target.pending?
   end
 
   def validate_follow_up_anchor(anchor, assistant, target)

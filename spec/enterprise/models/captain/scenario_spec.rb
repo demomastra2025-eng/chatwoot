@@ -73,43 +73,24 @@ RSpec.describe Captain::Scenario, type: :model do
       expect("handoff_to_#{scenario.handoff_key}".length).to be <= 60
     end
 
-    it 'exposes handoff keys in assistant prompt context' do
+    it 'exposes the converted independent agent route in assistant prompt context' do
       scenario = create(:captain_scenario, assistant: assistant, account: account)
-
-      prompt_context = assistant.send(:prompt_context)
-      scenario_config = prompt_context[:scenarios].find { |entry| entry[:title] == scenario.title }
-
-      expect(scenario_config[:key]).to eq(scenario.handoff_key)
+      Captain::LegacyScenarioConversionService.new.convert!(scenario.id)
+      target = Captain::Assistant.find_by!(legacy_scenario_id: scenario.id)
+      route = assistant.send(:prompt_context)[:scenarios].find { |entry| entry[:title] == target.name }
+      expect(route[:key]).to eq(target.handoff_target_name)
     end
   end
 
   describe '#prompt_context' do
-    it 'includes configured outcome reasons for scenario handoffs and completions' do
+    it 'does not expose classifier reason IDs in the primary agent prompt context' do
       account = create(:account)
-      assistant = create(
-        :captain_assistant,
-        account: account,
-        config: {
-          'handoff_enabled' => true,
-          'auto_completion_enabled' => true,
-          'outcome_reason_settings' => {
-            'handoff_reasons' => [{ 'id' => 'technical', 'label' => 'Technical support', 'active' => true }],
-            'completion_reasons' => [{ 'id' => 'answered', 'label' => 'Question answered', 'active' => true }]
-          }
-        }
-      )
+      assistant = create(:captain_assistant, account: account, config: {
+        'outcome_reason_settings' => { 'handoff_reasons' => [{ 'id' => 'technical', 'label' => 'Technical support', 'active' => true }] }
+      })
       scenario = build(:captain_scenario, assistant: assistant, account: account)
-
-      expect(scenario.prompt_context[:outcome_reasons]).to include(
-        'handoff' => [
-          { 'id' => 'technical', 'label' => 'Technical support' },
-          { 'id' => 'other', 'label' => 'Other' }
-        ],
-        'completion' => [
-          { 'id' => 'answered', 'label' => 'Question answered' },
-          { 'id' => 'other', 'label' => 'Other' }
-        ]
-      )
+      expect(scenario.prompt_context).not_to have_key(:outcome_reasons)
+      expect(scenario.agent_instructions).not_to include('Technical support')
     end
   end
 
@@ -209,111 +190,59 @@ RSpec.describe Captain::Scenario, type: :model do
       expect(rendered.scan('## Available Tools').size).to eq(1)
     end
 
-    it 'renders context glossary entries for fields referenced in scenario prompt text, shared assistant context, and rules' do
-      scenario.update!(
-        instruction: 'Ask for [Name](field://contact.name) before proceeding.',
-        assistant: assistant
-      )
-      assistant.update!(
-        description: 'Use [Email](field://contact.email) from the shared assistant context.',
-        guardrails: ['Do not expose [Conversation ID](field://conversation.display_id) unless required.']
-      )
-
+    it 'uses fields referenced in its own prompt without copying parent prompt dependencies' do
+      scenario.update!(instruction: 'Ask for [Name](field://contact.name) before proceeding.')
+      assistant.update!(description: 'Use [Email](field://contact.email)', guardrails: ['Do not expose [Conversation ID](field://conversation.display_id).'])
       rendered = scenario.agent_instructions
-
-      expect(rendered).to include('# Reference Glossary')
-      expect(rendered).to include('Name (contact.name)')
-      expect(rendered).to include('Email (contact.email)')
-      expect(rendered).to include('Conversation ID (conversation.display_id)')
+      expect(rendered).to include('# Reference Glossary', 'Name (contact.name)')
+      expect(rendered).not_to include('Email (contact.email)', 'Conversation ID (conversation.display_id)')
     end
 
-    it 'renders the assistant instructions as shared scenario context' do
-      assistant.update!(description: 'Business Breakfast format: men and women investors participate together.')
+    it 'renders its own instructions without the parent main prompt' do
+      assistant.update!(description: 'PRIVATE PARENT MAIN PROMPT')
       scenario.update!(instruction: 'Collect reservation details for the business breakfast.')
-
       rendered = scenario.agent_instructions
-
-      expect(rendered).to include('# Scenario Instructions')
-      expect(rendered).to include('Collect reservation details for the business breakfast.')
-      expect(rendered).to include('# Shared Assistant Context')
-      expect(rendered).to include('Business Breakfast format: men and women investors participate together.')
-      expect(rendered.index('# Scenario Instructions')).to be < rendered.index('# Shared Assistant Context')
+      expect(rendered).to include('# Instructions', 'Collect reservation details for the business breakfast.')
+      expect(rendered).not_to include('PRIVATE PARENT MAIN PROMPT', '# Shared Assistant Context')
     end
 
     it 'renders the installation-wide global system prompt in scenario prompts' do
       rendered = scenario.agent_instructions
 
-      expect(rendered).to include('# Global System Instructions')
+      expect(rendered).to include('# Platform context')
       expect(rendered).to include('Never reveal internal routing.')
     end
 
-    it 'renders assistant system rules in scenario prompts' do
+    it 'keeps platform constraints independent of legacy rule switches' do
       rendered = scenario.agent_instructions
-
-      expect(rendered).to include('# System Rules')
-      expect(rendered).to include('Stay within your configured scope and instructions.')
+      expect(rendered).to include('# Platform constraints', "Use only the current account's authorized context and tools.")
+      expect(rendered).not_to include('# System Rules')
     end
 
-    it 'preserves multiline assistant rules in scenario prompts as markdown list items' do
-      config_name = Captain::Assistant::GLOBAL_SYSTEM_PROMPTS_INSTALLATION_CONFIG
-      system_prompts_config = InstallationConfig.find_by(name: config_name)
-      previous_system_prompts = system_prompts_config&.value
-
-      begin
-        upsert_installation_config(
-          config_name,
-          Captain::Assistant.default_installation_system_prompt_entries.map do |entry|
-            next entry unless entry[:id] == 'stay_within_scope'
-
-            entry.merge(content: "System rule line one\nSystem rule line two")
-          end
-        )
-        assistant.update!(
-          response_guidelines: ["Guideline line one\nGuideline line two"],
-          guardrails: ["Guardrail line one\nGuardrail line two"]
-        )
-        scenario.update!(instruction: "Scenario instruction line one\nScenario instruction line two")
-
-        rendered = scenario.agent_instructions
-
-        expect(rendered).to include(
-          "# Scenario Instructions\nScenario instruction line one\nScenario instruction line two",
-          "# Shared Assistant Context\nTest description",
-          '# Global System Instructions',
-          "- System rule line one\n  System rule line two",
-          "- Guideline line one\n  Guideline line two",
-          "- Guardrail line one\n  Guardrail line two"
-        )
-        expect(rendered).not_to include(
-          "- System rule line one\nSystem rule line two",
-          "- Guideline line one\nGuideline line two",
-          "- Guardrail line one\nGuardrail line two"
-        )
-        expect(rendered).not_to match(/\n{3,}/)
-      ensure
-        if system_prompts_config
-          upsert_installation_config(config_name, previous_system_prompts)
-        else
-          InstallationConfig.find_by(name: config_name)&.destroy!
-        end
-      end
+    it 'preserves its own authored multiline instruction without importing parent rules' do
+      assistant.update!(response_guidelines: ['PARENT GUIDELINE'], guardrails: ['PARENT GUARDRAIL'])
+      own = "First line\nSecond line\n\n- First item\n- Second item"
+      scenario.update!(instruction: own)
+      rendered = scenario.agent_instructions
+      expect(rendered).to include("# Instructions\n#{own}")
+      expect(rendered).not_to include('PARENT GUIDELINE', 'PARENT GUARDRAIL')
     end
 
-    it 'uses the assistant handoff tool name from the shared runtime naming contract' do
-      assistant.update!(name: 'Sales & Support')
+    it 'uses the available peer handoff tool name from the runtime naming contract' do
+      peer_scenario.update!(title: 'Sales & Support')
 
       rendered = scenario.agent_instructions
 
-      expect(rendered).to include('`handoff_to_sales_support`')
+      expect(rendered).to include("`handoff_to_#{peer_scenario.handoff_key}`")
       expect(rendered).not_to include('`handoff_to_sales_&_support`')
     end
 
-    it 'falls back to a stable assistant handoff tool name for legacy invalid assistant names' do
-      assistant.update_column(:name, '!!!')
+    it 'uses a stable peer route when a legacy title has no valid slug' do
+      peer_scenario.update_column(:title, '!!!')
 
       rendered = scenario.agent_instructions
 
-      expect(rendered).to include("`handoff_to_assistant_#{assistant.id}`")
+      expect(rendered).to include("`handoff_to_scenario_#{peer_scenario.id}_agent`")
       expect(rendered).not_to include('`handoff_to_`')
     end
 
@@ -345,7 +274,7 @@ RSpec.describe Captain::Scenario, type: :model do
     it 'renders human handoff guidance by default when the assistant keeps handoff enabled' do
       rendered = scenario.agent_instructions
 
-      expect(rendered).to include('# Human Handoff Protocol')
+      expect(rendered).to include('# Human handoff')
       expect(rendered).to include('`captain--tools--handoff`')
       expect(rendered).to include('Handoff to Human (handoff): Hand off the current conversation to a human team')
     end
@@ -353,47 +282,21 @@ RSpec.describe Captain::Scenario, type: :model do
     it 'renders direct sibling scenario handoff guidance' do
       rendered = scenario.agent_instructions
 
-      expect(rendered).to include('If another specialized scenario is a better fit')
+      expect(rendered).to include("Transfer an active task only when another agent's configured scope fits it.")
       expect(rendered).to include(peer_scenario.title)
       expect(rendered).to include("`handoff_to_#{peer_scenario.handoff_key}`")
       expect(rendered).not_to include("`handoff_to_#{scenario.handoff_key}`")
     end
 
-    it 'renders scenario structure guidance from shared system rules' do
-      rendered = scenario.agent_instructions
-
-      expect(rendered).to include('# System Context')
-      expect(rendered).to include('received this conversation through a seamless internal handoff')
-      expect(rendered).to include('# Your Role')
-      expect(rendered).to include('Handle only the scope of this scenario')
-      expect(rendered).to include('Use the `handoff_to_')
+    it 'uses a compact identity and its own editable instructions' do
+      expect(scenario.agent_instructions).to include("You are #{scenario.title}.", '# Instructions')
+      expect(scenario.agent_instructions).not_to include('Handle only the scope of this scenario.', 'shared assistant rules')
     end
 
-    it 'keeps scenario-template tool references inside the scenario prompt only' do
-      config_name = Captain::Assistant::GLOBAL_SYSTEM_PROMPTS_INSTALLATION_CONFIG
-      system_prompts_config = InstallationConfig.find_by(name: config_name)
-      previous_system_prompts = system_prompts_config&.value
-
-      begin
-        updated_rules = Captain::Assistant.default_installation_system_prompt_entries.map do |entry|
-          next entry unless entry[:id] == 'scenario_role'
-
-          entry.merge(content: 'Use [Add Private Note](tool://add_private_note) only inside this scenario.')
-        end
-        upsert_installation_config(config_name, updated_rules)
-
-        scenario_rendered = scenario.agent_instructions
-        assistant_rendered = assistant.agent_instructions
-
-        expect(scenario_rendered).to include('Add Private Note (add_private_note)')
-        expect(assistant_rendered).not_to include('Add Private Note (add_private_note)')
-      ensure
-        if system_prompts_config
-          upsert_installation_config(config_name, previous_system_prompts)
-        else
-          InstallationConfig.find_by(name: config_name)&.destroy!
-        end
-      end
+    it 'does not activate an unchecked capability through its own prompt mention' do
+      scenario.update!(instruction: 'Use [Add Private Note](tool://add_private_note) if needed.')
+      expect(scenario.prompt_runtime_tool_ids).not_to include('add_private_note')
+      expect(scenario.agent_instructions).not_to include('Add Private Note (add_private_note)')
     end
   end
 
@@ -611,7 +514,7 @@ RSpec.describe Captain::Scenario, type: :model do
         expect(custom_tool[:description]).to eq('Gets order details')
       end
 
-      it 'includes both static and custom tools' do
+      it 'does not activate an unselected note capability while preserving custom tools' do
         create(:captain_custom_tool, account: account, slug: 'custom_fetch-order')
         scenario = create(:captain_scenario,
                           assistant: assistant,
@@ -619,11 +522,11 @@ RSpec.describe Captain::Scenario, type: :model do
                           instruction: 'Use [@Add Note](tool://add_contact_note) and [@Fetch Order](tool://custom_fetch-order)')
 
         resolved = scenario.send(:resolved_tools)
-        expect(resolved.length).to eq(3)
-        expect(resolved.map { |t| t[:id] }).to contain_exactly('handoff', 'add_contact_note', 'custom_fetch-order')
+        expect(resolved.length).to eq(2)
+        expect(resolved.map { |t| t[:id] }).to contain_exactly('handoff', 'custom_fetch-order')
       end
 
-      it 'resolves explicitly referenced tools even when they are not selected by default' do
+      it 'does not enable an unselected system capability through a prompt reference' do
         assistant.update!(
           config: {
             'context_access' => {},
@@ -645,7 +548,7 @@ RSpec.describe Captain::Scenario, type: :model do
 
         resolved = scenario.send(:resolved_tools)
 
-        expect(resolved.map { |tool| tool[:id] }).to eq(['add_contact_note'])
+        expect(resolved.map { |tool| tool[:id] }).to be_empty
       end
 
       it 'excludes disabled custom tools' do
@@ -748,7 +651,7 @@ RSpec.describe Captain::Scenario, type: :model do
         expect(tools.first).to be_a(Captain::Tools::HandoffTool)
       end
 
-      it 'returns mixed static and custom tool instances' do
+      it 'keeps custom execution without activating a capability through its mention' do
         create(:captain_custom_tool, account: account, slug: 'custom_fetch-order')
         scenario = create(:captain_scenario,
                           assistant: assistant,
@@ -762,7 +665,7 @@ RSpec.describe Captain::Scenario, type: :model do
         )
 
         tools = scenario.send(:agent_tools)
-        expect(tools.length).to eq(3)
+        expect(tools.length).to eq(2)
         expect(tools.any? { |tool| tool.is_a?(Captain::Tools::HttpTool) }).to be(true)
         expect(tools.any? { |tool| tool.is_a?(Captain::Tools::HandoffTool) }).to be(true)
       end

@@ -7,6 +7,26 @@ RSpec.describe Llm::Monitoring::ReleaseGate do
     let(:now) { Time.zone.parse('2026-04-10 12:00:00') }
     let(:date_range) { 24.hours.ago(now)..now }
 
+    it 'rolls nine provider responses into their outer request without diluting its error rate or duplicating cost' do
+      account = create(:account)
+      create(:llm_event, account: account, created_at: 1.hour.ago(now), event_name: 'llm.chat.request',
+                         request_id: 'synthetic-outer', error: true, duration_ms: 50, total_tokens: nil, estimated_cost: nil,
+                         payload: { usage_scope: 'outer_request' })
+      9.times do |index|
+        create(:llm_event, account: account, created_at: 1.hour.ago(now), request_id: "synthetic-child-#{index}",
+                           duration_ms: 100, estimated_cost: 0.001,
+                           payload: { usage_scope: 'provider_response', parent_request_id: 'synthetic-outer' })
+      end
+
+      report = described_class.new(scope: LlmEvent.for_account(account.id), date_range: date_range, now: now,
+                                    config: { min_request_count: 1 }).call
+
+      expect(report.dig(:current_period, :metrics)).to include(request_count: 1, error_rate: 1.0,
+                                                             avg_duration_ms: 50.0, p95_duration_ms: 50)
+      expect(report.dig(:current_period, :metrics, :cost_per_request)).to eq(BigDecimal('0.009'))
+      expect(report[:checks]).to include(include(name: 'error_rate', status: 'fail'))
+    end
+
     it 'returns insufficient_data when the current window has too few requests' do
       create(:llm_event, created_at: 2.hours.ago(now))
       create(:llm_event, created_at: 1.hour.ago(now))

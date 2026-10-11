@@ -120,6 +120,12 @@ deliver_captain_observability_alerts_job:
   class: 'Internal::DeliverCaptainObservabilityAlertsJob'
   queue: scheduled_jobs
 
+recover_captain_outcome_classifications_job:
+  cron: '*/10 * * * *'
+  class: 'Internal::RecoverCaptainOutcomeClassificationsJob'
+  queue: low
+  active_job: true
+
 # executed every 10 minutes
 # progressively backfills llm_event.trace_id from persisted payloads without a heavy deploy-time table rewrite
 backfill_llm_event_trace_id_job:

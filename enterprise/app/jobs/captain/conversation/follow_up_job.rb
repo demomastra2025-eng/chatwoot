@@ -81,10 +81,13 @@ class Captain::Conversation::FollowUpJob < ApplicationJob
   end
 
   def self.reminder_metadata(payload)
+    ownership = Captain::Conversation::AgentOwnership.new(conversation: payload[:conversation], assistant: payload[:assistant])
     {
       'auto_cancel_on_incoming_explicit' => true,
       'captain_follow_up' => {
         'assistant_id' => payload[:assistant].id,
+        'entry_assistant_id' => ownership.entry&.id,
+        'routing_revision' => ownership.routing_revision,
         'anchor_message_id' => payload[:anchor_message].id,
         'step_index' => payload[:step][:index],
         'control_fence' => payload[:control_fence]
@@ -119,6 +122,12 @@ class Captain::Conversation::FollowUpJob < ApplicationJob
     conversation = Conversation.find_by(id: reminder.target_conversation_id, account_id: reminder.account_id)
     anchor = Message.find_by(id: metadata['anchor_message_id'], account_id: reminder.account_id)
     return unless assistant && conversation && anchor
+    return unless Captain::Conversation::FollowUpGuard.current?(
+      reminder: reminder,
+      conversation: conversation,
+      assistant: assistant,
+      anchor_message: anchor
+    )
 
     fence = Captain::Conversation::FollowUpControlFence.resolve(
       reminder: reminder,
@@ -523,7 +532,6 @@ class Captain::Conversation::FollowUpJob < ApplicationJob
       messages: completion_messages,
       settings: settings,
       step: current_step,
-      scenario: active_scenario,
       step_index: @step_index
     )
   end
@@ -535,13 +543,6 @@ class Captain::Conversation::FollowUpJob < ApplicationJob
       "[CAPTAIN][FollowUpJob] Message generation failed: #{result[:error].to_s.presence || 'unknown'}"
     )
     raise Reminders::RetryableExecutionError, 'Captain follow-up message generation was unavailable'
-  end
-
-  def active_scenario
-    agent_name = @anchor_message.additional_attributes.to_h['agent_name'].to_s
-    return if agent_name.blank?
-
-    @assistant.scenarios.enabled.find_by(handoff_key: agent_name)
   end
 
   def find_or_create_follow_up_message(content)
@@ -614,6 +615,8 @@ class Captain::Conversation::FollowUpJob < ApplicationJob
     attributes = {
       'captain_follow_up' => {
         'assistant_id' => @assistant.id,
+        'entry_assistant_id' => @reminder.metadata.dig('captain_follow_up', 'entry_assistant_id'),
+        'routing_revision' => @reminder.metadata.dig('captain_follow_up', 'routing_revision'),
         'step_index' => @step_index,
         'anchor_message_id' => @anchor_message.id,
         'mode' => static_step? ? 'static' : 'ai',

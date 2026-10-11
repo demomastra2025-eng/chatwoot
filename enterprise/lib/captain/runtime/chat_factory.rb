@@ -10,6 +10,7 @@ class Captain::Runtime::ChatFactory
 
   class << self
     def build(agent:, context_wrapper:, llm_context:, runtime_headers:, runtime_params:, account: nil, finalization_only: false)
+      agent.context_preparer&.call(context_wrapper)
       chat = Llm::Runtime.build_chat(**chat_build_kwargs(
         agent: agent,
         context_wrapper: context_wrapper,
@@ -37,6 +38,7 @@ class Captain::Runtime::ChatFactory
         feature: :captain_agent,
         account: account,
         model: agent.model,
+        runtime_preferences: (context_wrapper.context.dig(:state, :captain_runtime) || {}).deep_dup,
         options: {
           context: llm_context,
           headers: merged_headers(agent, runtime_headers)
@@ -58,7 +60,7 @@ class Captain::Runtime::ChatFactory
       chat.with_instructions(system_prompt) if system_prompt.present?
       track_tool_call_batches!(chat, context_wrapper)
       enforce_openrouter_tool_parameters!(chat, agent_tools, account: account, schema: agent.response_schema)
-      chat.with_tools(*agent_tools, replace: true) if agent_tools.present?
+      chat.with_tools(*agent_tools, replace: true, concurrency: false) if agent_tools.present?
       Llm::StructuredOutputPolicy.bind!(chat: chat, schema: agent.response_schema) if agent.response_schema.present?
       chat
     end
@@ -72,13 +74,21 @@ class Captain::Runtime::ChatFactory
         Captain::Runtime::ToolWrapper.new(tool, context_wrapper)
       end
 
-      handoff_tools + regular_tools
+      queue_tools = if context_wrapper.context[:agent_graph].present?
+                      [Captain::Runtime::ToolWrapper.new(Captain::Runtime::TaskQueueTool.new, context_wrapper)]
+                    else
+                      []
+                    end
+      handoff_tools + regular_tools + queue_tools
     end
 
     def system_prompt_for(agent, context_wrapper, finalization_only: false)
       prompts = []
       prompt = agent.get_system_prompt(context_wrapper)
       prompts << prompt if prompt.present?
+      if context_wrapper.context[:agent_graph].present?
+        prompts << Captain::Runtime::CoordinationPrompt.render(context_wrapper.context)
+      end
       prompts << FINALIZATION_ONLY_INSTRUCTIONS if finalization_only
       prompts.join("\n\n")
     end
@@ -124,6 +134,7 @@ class Captain::Runtime::ChatFactory
 
     def record_bound_agent_tools(agent, context_wrapper, finalization_only: false)
       bound_tool_names = finalization_only ? [] : (handoff_tool_names(agent) + regular_tool_names(agent)).uniq
+      bound_tool_names << 'manage_agent_tasks' if !finalization_only && context_wrapper.context[:agent_graph].present?
 
       context_wrapper.context[:current_agent] = agent.name
       context_wrapper.context[:captain_v2_bound_tool_ids_by_agent] ||= {}

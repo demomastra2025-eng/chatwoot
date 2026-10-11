@@ -83,10 +83,7 @@ const rows = computed(() => props.report.attribution_breakdown || []);
 </script>
 
 <template>
-  <section
-    class="rounded-xl border border-n-weak bg-n-surface-1 p-4"
-    data-testid="lead-appointment-conversion"
-  >
+  <section class="min-w-0" data-testid="lead-appointment-conversion">
     <h2 class="mb-2 mt-0 text-sm font-semibold text-n-slate-12">
       {{ $t('CRM.LEAD_CONVERSION.TITLE') }}
     </h2>

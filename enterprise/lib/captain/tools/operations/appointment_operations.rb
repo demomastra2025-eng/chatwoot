@@ -109,6 +109,14 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
       Scheduling::InputValidation.interval!(starts_at: start_time, ends_at: start_time + duration.minutes)
     end
     Scheduling::InputValidation.service!(account: account, value: service_id) unless service_id.nil?
+  rescue Scheduling::Error => e
+    # This boundary only parses arguments and reads the catalog. No local or
+    # provider mutation has started, so a corrected call is safe.
+    raise Scheduling::Error.new(code: e.code, message: e.message, status: e.status,
+                                details: e.details.to_h.merge(mutation_executed: false))
+  rescue ArgumentError => e
+    raise Scheduling::Error.new(code: 'INVALID_DURATION', message: e.message, status: :unprocessable_entity,
+                                details: { mutation_executed: false })
   end
 
   def imported_appointment?(appointment)

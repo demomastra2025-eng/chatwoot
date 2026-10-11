@@ -4,6 +4,22 @@ require 'rails_helper'
 
 RSpec.describe Llm::Monitoring::MetricsSnapshot do
   describe '#call' do
+    it 'averages outer request latency with legacy completions without counting enriched provider durations' do
+      legacy = create(:llm_event, duration_ms: 200)
+      outer = create(:llm_event, event_name: 'llm.chat.request', duration_ms: 1000, total_tokens: nil, estimated_cost: nil,
+                                 payload: { usage_scope: 'outer_request', provider_response_count: 9 })
+      responses = Array.new(9) do
+        create(:llm_event, duration_ms: 100, total_tokens: 120, payload: { usage_scope: 'provider_response' })
+      end
+      scope = LlmEvent.where(id: [legacy.id, outer.id, *responses.map(&:id)])
+
+      snapshot = described_class.new(scope: scope).call
+
+      expect(snapshot[:avg_duration_ms]).to eq(600.0)
+      expect(snapshot[:request_count]).to eq(10)
+      expect(described_class.new(scope: scope.where.not(id: legacy.id)).call[:avg_duration_ms]).to eq(1000.0)
+    end
+
     it 'builds a summarized monitoring snapshot from persisted llm events' do
       create(
         :llm_event,

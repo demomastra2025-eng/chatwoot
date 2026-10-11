@@ -17,6 +17,7 @@ module Enterprise::Account::ConversationsResolutionSchedulerJob
       end
 
       next if inbox.email?
+      next unless captain_inbox.captain_assistant&.active?
       next if inbox.account.auto_resolve_after.blank?
       next if inbox.account.captain_auto_resolve_disabled?
 

@@ -66,6 +66,36 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(json_response.dig(:runtime_metadata, :web_access)).to have_key(:configured)
         expect(json_response.dig(:runtime_metadata, :knowledge_indexing)).to have_key(:chunk_size_options)
         expect(json_response.dig(:runtime_metadata, :registry)).to be_nil
+        expect(json_response.dig(:runtime_metadata, :safety_defaults, :assistant)).to eq(
+          moderation_enabled: false, prompt_injection_action: 'block', sensitive_info_action: 'block'
+        )
+      end
+
+      it 'reports actual safety actions without rewriting stored preferences' do
+        stored_runtime = {
+          'assistant_moderation' => 'false',
+          'assistant_prompt_injection_guardrail' => 'audit',
+          'assistant_sensitive_info_guardrail' => false,
+          'copilot_moderation' => '1',
+          'copilot_prompt_injection_guardrail' => nil,
+          'copilot_sensitive_info_guardrail' => 'monitor'
+        }
+        # Legacy stored preferences predate the current JSON validation.
+        account.update_columns(settings: account.settings.merge('captain_runtime' => stored_runtime)) # rubocop:disable Rails/SkipsModelValidations
+        account.reload
+
+        get "/api/v1/accounts/#{account.id}/captain/preferences",
+            params: { client_metadata_only: 'true' },
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response.dig(:runtime_metadata, :safety_defaults)).to eq(
+          assistant: { moderation_enabled: false, prompt_injection_action: 'flag', sensitive_info_action: 'disabled' },
+          copilot: { moderation_enabled: true, prompt_injection_action: 'block', sensitive_info_action: 'flag' }
+        )
+        expect(account.reload.captain_runtime).to eq(stored_runtime)
+        expect(json_response[:runtime]).to include(stored_runtime.transform_keys(&:to_sym))
       end
 
       it 'reports text improvement (editor) as on while the account never switched it' do

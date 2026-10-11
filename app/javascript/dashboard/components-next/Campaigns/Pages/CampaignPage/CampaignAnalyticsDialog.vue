@@ -301,7 +301,7 @@ defineExpose({ open, close });
       </div>
 
       <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <section class="rounded-2xl border border-n-weak bg-n-surface-2 p-5">
+        <section class="min-w-0">
           <div class="mb-4 flex items-center justify-between gap-3">
             <div>
               <p class="mb-1 text-base font-medium text-n-slate-12">
@@ -374,7 +374,7 @@ defineExpose({ open, close });
         </section>
 
         <aside class="space-y-4">
-          <section class="rounded-2xl border border-n-weak bg-n-surface-2 p-5">
+          <section class="min-w-0">
             <p class="mb-1 text-base font-medium text-n-slate-12">
               {{ t('CAMPAIGN.ANALYTICS.SUMMARY_TITLE') }}
             </p>
@@ -432,7 +432,7 @@ defineExpose({ open, close });
             </dl>
           </section>
 
-          <section class="rounded-2xl border border-n-weak bg-n-surface-2 p-5">
+          <section class="min-w-0">
             <p class="mb-1 text-base font-medium text-n-slate-12">
               {{ t('CAMPAIGN.ANALYTICS.RUNS_TITLE') }}
             </p>
@@ -661,7 +661,7 @@ defineExpose({ open, close });
             </p>
           </section>
 
-          <section class="rounded-2xl border border-n-weak bg-n-surface-2 p-5">
+          <section class="min-w-0">
             <p class="mb-1 text-base font-medium text-n-slate-12">
               {{ t('CAMPAIGN.ANALYTICS.NOT_SENT_TITLE') }}
             </p>
@@ -688,7 +688,7 @@ defineExpose({ open, close });
             </p>
           </section>
 
-          <section class="rounded-2xl border border-n-weak bg-n-surface-2 p-5">
+          <section class="min-w-0">
             <p class="mb-1 text-base font-medium text-n-slate-12">
               {{ t('CAMPAIGN.ANALYTICS.ERRORS_TITLE') }}
             </p>

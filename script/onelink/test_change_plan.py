@@ -135,6 +135,77 @@ class ChangePlanTest(unittest.TestCase):
 
         self.assertEqual(violations, [])
 
+    def assert_protected_migration_cases(self, migration, changes):
+        repository_root = Path(__file__).resolve().parents[2]
+        original = (repository_root / migration).read_text(encoding="utf-8")
+        with chdir(repository_root):
+            self.assertEqual(migration_violations([migration]), [])
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for label, transform in changes:
+                with self.subTest(case=label):
+                    changed = transform(original)
+                    self.assertNotEqual(changed, original, "Negative control must alter the protected operation")
+                    path = root / migration
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text(changed, encoding="utf-8")
+                    with chdir(root):
+                        self.assertEqual(validate_migrations([migration]), [migration])
+
+            other = "db/migrate/20261011110000_unrelated.rb"
+            (root / other).write_text(original, encoding="utf-8")
+            with chdir(root):
+                self.assertEqual(validate_migrations([other]), [other])
+
+    def test_only_guarded_scenario_history_relaxation_is_expand_compatible(self):
+        migration = "db/migrate/20261011080000_create_captain_standalone_agents.rb"
+        changes = [
+            ("different field", lambda text: text.replace(
+                "change_column_null(:captain_scenarios, :assistant_id, true)",
+                "change_column_null(:captain_scenarios, :account_id, true)",
+            )),
+            ("contracts nullability", lambda text: text.replace(
+                "change_column_null(:captain_scenarios, :assistant_id, true)",
+                "change_column_null(:captain_scenarios, :assistant_id, false)",
+            )),
+            ("no timeout", lambda text: text.replace("LOCK_TIMEOUT = '5s'.freeze", "LOCK_TIMEOUT = '0'.freeze")),
+            ("no retries", lambda text: text.replace("      retry\n", "      raise\n")),
+            ("long DDL transaction", lambda text: text.replace("  disable_ddl_transaction!\n", "")),
+            ("additional unsafe change", lambda text: text + "\nchange_column_null(:accounts, :name, false)\n"),
+        ]
+        self.assert_protected_migration_cases(migration, changes)
+
+    def test_only_verified_concurrent_crm_target_index_swap_is_expand_compatible(self):
+        migration = "db/migrate/20261011093000_update_crm_appointment_target_indexes.rb"
+        valid_guard = (
+            '    raise ActiveRecord::MigrationError, "Valid replacement missing for #{name}" '
+            'unless fixed_valid_index?(replacement, source_key)\n'
+        )
+        remove = "    remove_index :crm_pipelines, name: name, algorithm: :concurrently\n"
+        changes = [
+            ("nonconcurrent removal", lambda text: text.replace(remove, remove.replace(":concurrently", ":default"))),
+            ("nonconcurrent build", lambda text: text.replace(
+                "where: predicate(source_key), algorithm: :concurrently", "where: predicate(source_key), algorithm: :default",
+            )),
+            ("missing valid replacement guard", lambda text: text.replace(valid_guard, "")),
+            ("removal before validation", lambda text: text.replace(valid_guard + "\n" + remove, remove + "\n" + valid_guard)),
+            ("unknown old predicate accepted", lambda text: text.replace(
+                "[legacy_predicate(source_key), predicate(source_key)].any?", "[definition['predicate']].any?",
+            )),
+            ("changed legacy predicate", lambda text: text.replace(
+                "\"active AND appointment_automation ->> '#{source_key}' = 'true'\"",
+                "\"appointment_automation ->> '#{source_key}' = 'true'\"",
+            )),
+            ("uniqueness not checked", lambda text: text.replace(
+                "definition['indisunique'] && definition['account_id_only']", "definition['account_id_only']",
+            )),
+            ("wrong key columns", lambda text: text.replace("attname = 'account_id'", "attname = 'id'")),
+            ("invalid replacement accepted", lambda text: text.replace("definition['indisvalid'] && target_index_shape?", "target_index_shape?")),
+            ("additional index removal", lambda text: text + "\nremove_index :crm_pipelines, :name\n"),
+        ]
+        self.assert_protected_migration_cases(migration, changes)
+
     def test_empty_cli_file_list_has_no_output(self):
         root = Path(__file__).resolve().parents[2]
 

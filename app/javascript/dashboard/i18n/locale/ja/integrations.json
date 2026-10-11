@@ -565,6 +565,16 @@
           "TITLE": "アシスタントを削除",
           "DESCRIPTION": "この操作は永久的です。アシスタントを削除すると、すべての接続された受信トレイから削除され、生成されたすべての知識が永久に消去されます。",
           "BUTTON_TEXT": "{assistantName}を削除"
+        },
+        "TABS": {
+          "RUNTIME": {
+            "LABEL": "Messages when status changes",
+            "DESCRIPTION": "What to send to the customer when handing off to a staff member or completing a conversation.",
+            "SECTION": "Configure the messages sent to the customer when handing off or completing a conversation."
+          },
+          "BASIC": {
+            "DESCRIPTION": "Agent profile, operating mode, avatar and messages for customers."
+          }
         }
       },
       "OPTIONS": {
@@ -732,6 +742,20 @@
             "SUCCESS": "Scenarios deleted successfully",
             "ERROR": "There was an error deleting scenarios, please try again."
           }
+        }
+      },
+      "OUTCOMES": {
+        "DEFAULTS": {
+          "HANDOFF": {
+            "FAQ_NO_ANSWER": "No answer in FAQ"
+          }
+        },
+        "DESCRIPTION": "Reasons for conversation completion and staff handoff reports.",
+        "HANDOFF": {
+          "DESCRIPTION": "The reason is determined from the conversation after it is handed to a staff member."
+        },
+        "COMPLETION": {
+          "DESCRIPTION": "The reason is determined from the conversation after it is completed."
         }
       }
     },

@@ -1,5 +1,5 @@
 <script setup>
-import { reactive, computed, watch, onMounted } from 'vue';
+import { reactive, computed, ref, watch, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useVuelidate } from '@vuelidate/core';
 import { required, minLength, requiredIf } from '@vuelidate/validators';
@@ -9,6 +9,14 @@ import Input from 'dashboard/components-next/input/Input.vue';
 import Editor from 'dashboard/components-next/Editor/Editor.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
+import AgentSelector from 'dashboard/components-next/captain/assistant/AgentSelector.vue';
+import {
+  externalAssistants,
+  knowledgeAccessPayload,
+  knowledgeAccessSignature,
+  knowledgeAssistantIds,
+  knowledgeVisibility,
+} from 'dashboard/components-next/captain/assistant/assistantAccess';
 
 const props = defineProps({
   mode: {
@@ -40,31 +48,30 @@ const initialState = {
   question: '',
   answer: '',
   visibility: 'general',
-  selectedAssistantId: '',
+  selectedAssistantIds: props.assistantId ? [Number(props.assistantId)] : [],
 };
 
 const state = reactive({ ...initialState });
+const savedAccess = ref('');
+const accessChanged = computed(
+  () =>
+    props.mode === 'create' ||
+    knowledgeAccessSignature(state.visibility, state.selectedAssistantIds) !==
+      savedAccess.value
+);
 
-const showAssistantSelector = computed(
-  () => state.visibility === 'personal' && !props.assistantId
-);
-const assistantOptions = computed(() =>
-  formState.assistants.value.map(assistant => ({
-    value: assistant.id,
-    label: assistant.name,
-  }))
-);
-const effectiveAssistantId = computed(() =>
-  state.visibility === 'personal'
-    ? props.assistantId || state.selectedAssistantId
-    : null
+const showAssistantSelector = computed(() => state.visibility === 'personal');
+const availableAssistants = computed(() =>
+  externalAssistants(formState.assistants.value)
 );
 
 const validationRules = {
   question: { required, minLength: minLength(1) },
   answer: { required, minLength: minLength(1) },
-  selectedAssistantId: {
-    required: requiredIf(() => showAssistantSelector.value),
+  selectedAssistantIds: {
+    required: requiredIf(
+      () => showAssistantSelector.value && accessChanged.value
+    ),
   },
 };
 
@@ -82,7 +89,7 @@ const formErrors = computed(() => ({
   question: getErrorMessage('question', 'QUESTION'),
   answer: getErrorMessage('answer', 'ANSWER'),
   assistant:
-    v$.value.selectedAssistantId.$error && showAssistantSelector.value
+    v$.value.selectedAssistantIds.$error && showAssistantSelector.value
       ? t('CAPTAIN.KNOWLEDGE_VISIBILITY.ASSISTANT_REQUIRED')
       : '',
 }));
@@ -103,9 +110,8 @@ const handleCancel = () => emit('cancel');
 const prepareDocumentDetails = () => ({
   question: state.question,
   answer: state.answer,
-  visibility: state.visibility,
-  ...(effectiveAssistantId.value
-    ? { assistant_id: effectiveAssistantId.value }
+  ...(accessChanged.value
+    ? knowledgeAccessPayload(state.visibility, state.selectedAssistantIds)
     : {}),
 });
 
@@ -121,14 +127,18 @@ const handleSubmit = async () => {
 const updateStateFromResponse = response => {
   if (!response) return;
 
-  const { question, answer, visibility, assistant } = response;
+  const { question, answer } = response;
 
   Object.assign(state, {
     question,
     answer,
-    visibility: visibility || 'general',
-    selectedAssistantId: assistant?.id || '',
+    visibility: knowledgeVisibility(response),
+    selectedAssistantIds: knowledgeAssistantIds(response),
   });
+  savedAccess.value = knowledgeAccessSignature(
+    state.visibility,
+    state.selectedAssistantIds
+  );
 };
 
 watch(
@@ -142,7 +152,6 @@ watch(
 );
 
 const ensureAssistantsLoaded = () => {
-  if (props.assistantId) return;
   if (formState.assistantUiFlags.value.fetchingList) return;
   if (formState.assistants.value.length) return;
 
@@ -152,12 +161,7 @@ const ensureAssistantsLoaded = () => {
 watch(
   () => state.visibility,
   visibility => {
-    if (visibility !== 'personal') {
-      state.selectedAssistantId = '';
-      return;
-    }
-
-    ensureAssistantsLoaded();
+    if (visibility === 'personal') ensureAssistantsLoaded();
   }
 );
 
@@ -204,18 +208,11 @@ onMounted(() => {
       </p>
     </div>
     <div v-if="showAssistantSelector" class="flex flex-col gap-1">
-      <label
-        for="responseAssistant"
-        class="mb-0.5 text-sm font-medium text-n-slate-12"
-      >
-        {{ t('CAPTAIN.KNOWLEDGE_VISIBILITY.ASSISTANT_LABEL') }}
-      </label>
-      <ComboBox
-        id="responseAssistant"
-        v-model="state.selectedAssistantId"
-        :options="assistantOptions"
-        :placeholder="t('CAPTAIN.KNOWLEDGE_VISIBILITY.ASSISTANT_PLACEHOLDER')"
-        class="[&>div>button]:bg-n-alpha-black2"
+      <AgentSelector
+        v-model="state.selectedAssistantIds"
+        :assistants="availableAssistants"
+        :disabled="formState.assistantUiFlags.value.fetchingList"
+        :label="t('CAPTAIN.KNOWLEDGE_VISIBILITY.ASSISTANT_LABEL')"
       />
       <p
         class="m-0 text-xs"

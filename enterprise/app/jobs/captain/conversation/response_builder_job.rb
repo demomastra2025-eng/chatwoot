@@ -16,6 +16,8 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   FAILED_TURN_HANDOFF_NOTE = 'Automatic reply could not be generated. Handoff to human agent was triggered.'.freeze
   MODERATION_HANDOFF_NOTE = 'Automatic reply was stopped by the content safety check. Handoff to human agent was triggered.'.freeze
   MODERATION_BLOCKED_KEY = Captain::Assistant::AgentRunnerService::MODERATION_BLOCKED_KEY
+  CUSTOM_GUARDRAIL_KEY = Captain::Safety::CustomRulesRuntime::RESPONSE_KEY
+  CUSTOM_GUARDRAIL_HANDOFF_NOTE = 'Automatic reply was stopped by a configured agent check. Handoff to human agent was triggered.'.freeze
   ARTIFACT_UNAVAILABLE_RESPONSE = 'The requested file is no longer available. Please ask me to fetch it again.'.freeze
   DOCUMENT_DELIVERY_REQUEST_PATTERN = Regexp.new(
     '((отправ|пришл|вышл|скин|прикреп).{0,80}(документ|файл|pdf|пдф))|' \
@@ -82,6 +84,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     @conversation = conversation
     @inbox = conversation.inbox
     @assistant = assistant
+    @input_assistant = current_input_assistant
     @buffer_token = buffer_token
     @expected_last_message_id = expected_last_message_id || conversation.messages.incoming.last&.id
     @expected_control_generation = expected_control_generation || message_control_generation || conversation.current_captain_control_generation
@@ -101,8 +104,40 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     ).generate_response(
       message_history: collect_previous_messages
     )
+    resolve_response_assistant!
+    Current.executed_by = response_assistant
     attach_tool_trace_to_response!(tool_trace_steps)
     process_response
+  end
+
+  def input_assistant
+    @input_assistant || @assistant
+  end
+
+  def response_assistant
+    @response_assistant || input_assistant
+  end
+
+  def current_input_assistant
+    ownership = Captain::Conversation::AgentOwnership.new(conversation: @conversation, assistant: @assistant)
+    Captain::AgentGraph.new(@assistant).find(ownership.current_actor_id) || @assistant
+  end
+
+  def resolve_response_assistant!
+    ownership = Captain::Conversation::AgentOwnership.new(conversation: @conversation, assistant: @assistant)
+    actor_id = @response['agent_id'].presence || ownership.current_actor_id || input_assistant.id
+    @response_assistant = Captain::AgentGraph.new(@assistant.reload).find(actor_id)
+    return if @response_assistant
+
+    raise Captain::Conversation::ControlGenerationStaleError, 'Captain response agent is no longer reachable'
+  end
+
+  def ensure_response_actor_current!
+    response_assistant.reload
+    ownership = Captain::Conversation::AgentOwnership.new(conversation: @conversation, assistant: response_assistant)
+    return if ownership.current?(expected_entry_id: @assistant.id)
+
+    raise Captain::Conversation::ControlGenerationStaleError, 'Captain response agent no longer owns this conversation'
   end
 
   def process_response
@@ -148,7 +183,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
       feature: 'assistant',
       runtime_mode: 'captain_runtime',
       account_id: account.id,
-      assistant_id: @assistant.id,
+      assistant_id: response_assistant.id,
       conversation_id: @conversation.id,
       communication_thread_id: @conversation.communication_thread&.id,
       job_id: job_id
@@ -166,31 +201,40 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
     ensure_response_content_for_artifact_failure!(attachment_ids)
 
-    @conversation.with_lock do
-      @conversation.with_captain_control_lock do
-        ensure_response_fence_current!(stage: 'response_persistence')
-        # These exits intentionally stop the full response persistence method after the cancellation cleanup.
-        return process_cancelled_response unless current_buffer_state_valid?
-        return process_cancelled_response if response_cancelled?
+    with_response_persistence_lock(stage: 'response_persistence') do
+      # These exits intentionally stop the full response persistence method after the cancellation cleanup.
+      return process_cancelled_response unless current_buffer_state_valid?
+      return process_cancelled_response if response_cancelled?
 
-        ActiveRecord::Base.transaction do
-          outgoing_message = create_messages(attachment_ids: attachment_ids)
-          schedule_first_follow_up(outgoing_message)
-          Rails.logger.info("[CAPTAIN][ResponseBuilderJob] Incrementing response usage for #{account.id}")
-          account.increment_response_usage
-          account.increment_token_usage(@response.dig('usage', 'total_tokens'))
-        end
+      ActiveRecord::Base.transaction do
+        outgoing_message = create_messages(attachment_ids: attachment_ids)
+        schedule_first_follow_up(outgoing_message)
+        Rails.logger.info("[CAPTAIN][ResponseBuilderJob] Incrementing response usage for #{account.id}")
+        account.increment_response_usage
+        account.increment_token_usage(@response.dig('usage', 'total_tokens'))
       end
     end
     true
   end
 
+  def with_response_persistence_lock(stage:)
+    @conversation.with_lock do
+      @conversation.with_captain_control_lock do
+        Telephony::AiVoice::AssistantAssignmentLock.acquire!(@conversation.inbox_id)
+        ensure_response_fence_current!(stage: stage)
+        yield
+      end
+    end
+  end
+
   def ensure_response_fence_current!(stage:)
+    ensure_response_actor_current! if @response_assistant
     Captain::Conversation::RunFenceService.new(
-      assistant: @assistant,
+      assistant: response_assistant,
       state: {
         account_id: account.id,
-        assistant_id: @assistant.id,
+        assistant_id: response_assistant.id,
+        entry_assistant_id: @assistant.id,
         conversation: { id: @conversation.id },
         captain_response_fence: response_fence
       },
@@ -236,7 +280,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def history_message_limit
-    @assistant.history_message_limit_value
+    input_assistant.history_message_limit_value
   end
 
   def determine_role(message)
@@ -244,7 +288,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def prepare_multimodal_message_content(message, previous_assistant_message: nil)
-    message_builder = Captain::OpenAiMessageBuilderService.new(message: message, assistant: @assistant)
+    message_builder = Captain::OpenAiMessageBuilderService.new(message: message, assistant: input_assistant)
     content = message_builder.generate_content
     return content unless receipt_image_after_request?(message, previous_assistant_message)
 
@@ -271,7 +315,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
   def wait_for_audio_transcriptions
     return unless account.audio_transcriptions_enabled?
-    return unless @assistant.use_audio_transcriptions?
+    return unless input_assistant.use_audio_transcriptions?
     return unless pending_audio_transcription?
 
     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + AUDIO_TRANSCRIPTION_WAIT_TIMEOUT.to_f
@@ -292,7 +336,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def wait_for_document_parsing
-    return unless Messages::DocumentParsingService.reading_enabled_for?(@assistant)
+    return unless Messages::DocumentParsingService.reading_enabled_for?(input_assistant)
     return unless pending_document_parsing?
 
     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + DOCUMENT_PARSE_WAIT_TIMEOUT.to_f
@@ -326,7 +370,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def authorized_v2_handoff_requested?
-    @assistant.handoff_enabled? && @assistant.selected_agent_tool_ids.include?('handoff') &&
+    response_assistant.handoff_enabled? && response_assistant.selected_agent_tool_ids.include?('handoff') &&
       ActiveModel::Type::Boolean.new.cast(@response['handoff_authorized']) &&
       v2_handoff_tool_fired? && @response['response'] == 'conversation_handoff'
   end
@@ -397,10 +441,12 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   # on the handoff tool. It is fenced like every Captain result: a human reply,
   # a status or control change, or a newer customer message wins.
   def handoff_failed_turn
-    ensure_response_fence_current!(stage: 'failed_turn_handoff')
     @conversation.with_captain_activity_context(reason: provider_error_note_content, reason_type: :inference) do
-      @conversation.bot_handoff!(actor: @assistant, source: 'system', fence: current_response_fence) do
-        create_failed_turn_notifications
+      with_response_persistence_lock(stage: 'failed_turn_handoff') do
+        audit = outcome_reason_config.pending_transition_options(:handoff, explanation: provider_error_note_content).fetch(:audit)
+        @conversation.bot_handoff!(actor: response_assistant, source: 'system', fence: current_response_fence, audit: audit) do
+          create_failed_turn_notifications
+        end
       end
     end
   rescue Captain::Conversation::ControlGenerationStaleError => e
@@ -409,11 +455,38 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def create_failed_turn_notifications
-    I18n.with_locale(@assistant.account.locale) do
+    I18n.with_locale(response_assistant.account.locale) do
       create_provider_error_private_note
-      Captain::SystemHandoffMessageService.new(conversation: @conversation, assistant: @assistant).perform
-      send_out_of_office_message_if_applicable
+      if custom_guardrail_message.present?
+        create_outgoing_message(custom_guardrail_message, preserve_waiting_since: true)
+      else
+        Captain::SystemHandoffMessageService.new(conversation: @conversation, assistant: response_assistant).perform
+      end
+      send_out_of_office_message_if_applicable unless @response[CUSTOM_GUARDRAIL_KEY].is_a?(Hash)
     end
+  end
+
+  def custom_guardrail_message
+    return @custom_guardrail_message if defined?(@custom_guardrail_message)
+
+    @custom_guardrail_message = nil
+    metadata = @response[CUSTOM_GUARDRAIL_KEY]
+    return unless metadata.is_a?(Hash) && metadata['rule_id'].present?
+
+    rules = response_assistant.config.to_h.dig('safety_settings', 'custom_rules')
+    return unless Captain::Safety::CustomRulesConfig.errors(rules).empty?
+
+    rule = rules.find do |item|
+      item['enabled'] && item['id'] == metadata['rule_id'] && item['direction'] == metadata['direction']
+    end
+    text = rule&.[]('message').to_s.strip
+    return if text.blank?
+
+    matches = Llm::RuntimeGuardrails.matches(
+      feature: :assistant, stage: :output, content: text, account: account,
+      preferences: { 'sensitive_info_guardrail' => 'block' }
+    )
+    @custom_guardrail_message = text unless matches.any?(&:blocking?)
   end
 
   # A turn the safety policy blocked, or could not check, has no reply to send.
@@ -472,9 +545,9 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def create_handoff_notifications
-    I18n.with_locale(@assistant.account.locale) do
+    I18n.with_locale(response_assistant.account.locale) do
       create_handoff_private_note
-      create_handoff_message(preserve_waiting_since: true) if @assistant.handoff_message_enabled?
+      create_handoff_message(preserve_waiting_since: true) if response_assistant.handoff_message_enabled?
       send_out_of_office_message_if_applicable
     end
   end
@@ -482,14 +555,16 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   def bot_handoff_with_activity_reason(reason = handoff_activity_reason, status_reason: handoff_status_reason, reason_type: nil, audit: {}, &)
     source = status_reason.present? ? 'captain' : 'system'
     handoff = lambda do
-      @conversation.bot_handoff!(
-        status_reason: status_reason,
-        actor: @assistant,
-        source: source,
-        fence: current_response_fence,
-        audit: audit,
-        &
-      )
+      with_response_persistence_lock(stage: 'response_handoff') do
+        @conversation.bot_handoff!(
+          status_reason: status_reason,
+          actor: response_assistant,
+          source: source,
+          fence: current_response_fence,
+          audit: audit,
+          &
+        )
+      end
     end
     return handoff.call if reason.blank?
 
@@ -513,54 +588,19 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def handoff_status_reason
-    explicit_reason = @response['handoff_status_reason'].to_s.strip.presence || @response['status_reason'].to_s.strip.presence
-    return handoff_outcome_reason&.fetch('label') if outcome_reason_config.configured?(:handoff)
-
-    config = Conversations::StatusReasonConfig.new(@conversation.account)
-    if explicit_reason.present?
-      canonical_reason = config.canonical_reason('open', explicit_reason)
-      publish_handoff_status_reason_dropped if canonical_reason.blank?
-      return canonical_reason
-    end
-
-    config.canonical_reason('open', handoff_activity_reason)
-  end
-
-  def handoff_outcome_reason
-    candidate = @response['handoff_outcome_reason_id'].to_s.strip.presence ||
-                @response['handoff_status_reason'].to_s.strip.presence ||
-                @response['status_reason'].to_s.strip.presence
-    outcome_reason_config.resolve(:handoff, candidate)
+    outcome_reason_config.pending_label
   end
 
   def outcome_reason_config
-    @outcome_reason_config ||= Captain::OutcomeReasonConfig.new(@assistant)
+    @outcome_reason_config ||= Captain::OutcomeReasonConfig.new(response_assistant)
   end
 
   def handoff_transition_audit
-    return {} unless outcome_reason_config.configured?(:handoff)
-
-    outcome_reason_config.transition_options(
+    outcome_reason_config.pending_transition_options(
       :handoff,
-      handoff_outcome_reason,
-      explanation: handoff_activity_reason
+      explanation: handoff_activity_reason,
+      signal: v2_handoff_tool_fired? ? @response['handoff_outcome_signal'] : nil
     ).fetch(:audit, {})
-  rescue ArgumentError => e
-    Rails.logger.warn("[CAPTAIN][Handoff] Outcome reason rejected conversation_id=#{@conversation.id}: #{e.message}")
-    {}
-  end
-
-  def publish_handoff_status_reason_dropped
-    Llm::EventBus.publish(
-      'captain.handoff_status_reason_dropped',
-      feature: 'assistant',
-      runtime_mode: 'captain_runtime',
-      account_id: account.id,
-      conversation_id: @conversation.id,
-      job_id: job_id
-    )
-  rescue StandardError => e
-    Rails.logger.warn("[CAPTAIN][Handoff] Failed to publish dropped status reason: #{e.class}: #{e.message}")
   end
 
   def send_out_of_office_message_if_applicable
@@ -574,20 +614,20 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   def create_handoff_message(preserve_waiting_since: false)
     handoff_message = handoff_message_content
 
-    I18n.with_locale(@assistant.account.locale) do
+    I18n.with_locale(response_assistant.account.locale) do
       create_outgoing_message(
-        @assistant.render_runtime_text(handoff_message, conversation: @conversation),
+        response_assistant.render_runtime_text(handoff_message, conversation: @conversation),
         preserve_waiting_since: preserve_waiting_since
       )
     end
   end
 
   def handoff_message_content
-    if @assistant.handoff_message_mode_value == Captain::Assistant::MESSAGE_MODE_AI
-      return @response['handoff_message'].presence || @assistant.config['handoff_message'].presence || I18n.t('conversations.captain.handoff')
+    if response_assistant.handoff_message_mode_value == Captain::Assistant::MESSAGE_MODE_AI
+      return @response['handoff_message'].presence || response_assistant.config['handoff_message'].presence || I18n.t('conversations.captain.handoff')
     end
 
-    @assistant.config['handoff_message'].presence || I18n.t('conversations.captain.handoff')
+    response_assistant.config['handoff_message'].presence || I18n.t('conversations.captain.handoff')
   end
 
   def create_handoff_private_note
@@ -596,14 +636,14 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def schedule_first_follow_up(outgoing_message)
-    settings = @assistant.config.to_h.deep_stringify_keys.fetch('follow_up_settings', {}).to_h
+    settings = response_assistant.config.to_h.deep_stringify_keys.fetch('follow_up_settings', {}).to_h
     first_step = Array(settings['steps']).first.to_h.deep_stringify_keys
     delay_seconds = first_step['delay_seconds'].to_i
     return unless first_step_schedulable?(settings, first_step, outgoing_message, delay_seconds)
 
     Captain::Conversation::FollowUpJob.schedule!(
       conversation: @conversation,
-      assistant: @assistant,
+      assistant: response_assistant,
       anchor_message: outgoing_message,
       step: { index: 0, delay_seconds: delay_seconds },
       control_fence: current_response_fence
@@ -616,8 +656,8 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def assistant_can_schedule_follow_up?
-    @assistant.external_agent? && @assistant.account.feature_enabled?('captain_integration') &&
-      @assistant.inboxes.exists?(id: @conversation.inbox_id)
+    response_assistant.external_agent? && response_assistant.active? && account.feature_enabled?('captain_integration') &&
+      Captain::Conversation::AgentOwnership.new(conversation: @conversation, assistant: response_assistant).current?
   end
 
   def follow_up_step_configured?(settings, step)
@@ -665,6 +705,8 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def provider_error_note_content
+    return CUSTOM_GUARDRAIL_HANDOFF_NOTE if @response&.dig(CUSTOM_GUARDRAIL_KEY).is_a?(Hash)
+
     @response&.dig(MODERATION_BLOCKED_KEY) == true ? MODERATION_HANDOFF_NOTE : FAILED_TURN_HANDOFF_NOTE
   end
 
@@ -685,7 +727,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
       message_type: :outgoing,
       account_id: account.id,
       inbox_id: inbox.id,
-      sender: @assistant,
+      sender: response_assistant,
       content: message_content,
       additional_attributes: additional_message_attributes(
         agent_name: options[:agent_name],
@@ -699,7 +741,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   def additional_message_attributes(agent_name:, include_trace:, captain_reply: false)
     {}.tap do |attributes|
       add_agent_name_attributes(attributes, agent_name)
-      attributes[:captain_ai_reply] = { assistant_id: @assistant.id } if captain_reply
+      attributes[:captain_ai_reply] = { assistant_id: response_assistant.id } if captain_reply
       attributes[:captain_trace] = @response['captain_trace'] if include_trace && @response&.dig('captain_trace').present?
     end
   end
@@ -857,7 +899,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def attachment_resolver
-    @attachment_resolver ||= Captain::Tools::AttachmentResolver.new(account: account, assistant: @assistant)
+    @attachment_resolver ||= Captain::Tools::AttachmentResolver.new(account: account, assistant: response_assistant)
   end
 
   def create_private_note(message_content)
@@ -866,7 +908,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
       private: true,
       account_id: account.id,
       inbox_id: inbox.id,
-      sender: @assistant,
+      sender: response_assistant,
       content: message_content,
       additional_attributes: private_note_additional_attributes
     )
@@ -883,11 +925,13 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     return explicit_agent_name if explicit_agent_name.present?
     return unless message.sender_type == 'Captain::Assistant'
 
-    inferred_agent_name_from_trace(message.additional_attributes&.dig('captain_trace'))
+    inferred_agent_name_from_trace(message.additional_attributes&.dig('captain_trace')) ||
+      ("assistant_#{message.sender_id}" if message.sender_id != @assistant.id)
   end
 
   def display_agent_name_for(agent_name)
-    @assistant.scenarios.find { |scenario| scenario.handoff_key == agent_name }&.title
+    Captain::AgentGraph.new(@assistant).resolve(agent_name)&.name ||
+      @assistant.scenarios.find { |scenario| scenario.handoff_key == agent_name }&.title
   end
 
   def inferred_agent_name_from_trace(trace_payload)

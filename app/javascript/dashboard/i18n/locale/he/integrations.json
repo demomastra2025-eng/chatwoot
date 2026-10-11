@@ -565,6 +565,16 @@
           "TITLE": "מחק עוזר",
           "DESCRIPTION": "פעולה זו היא קבועה. מחיקת עוזר זה תסיר אותו מכל תיבות הדואר הנכנס המחוברות ותמחק לצמיתות את כל הידע שנוצר.",
           "BUTTON_TEXT": "מחק את {assistantName}"
+        },
+        "TABS": {
+          "RUNTIME": {
+            "LABEL": "Messages when status changes",
+            "DESCRIPTION": "What to send to the customer when handing off to a staff member or completing a conversation.",
+            "SECTION": "Configure the messages sent to the customer when handing off or completing a conversation."
+          },
+          "BASIC": {
+            "DESCRIPTION": "Agent profile, operating mode, avatar and messages for customers."
+          }
         }
       },
       "OPTIONS": {
@@ -732,6 +742,20 @@
             "SUCCESS": "תרחישים נמחקו בהצלחה",
             "ERROR": "אירעה שגיאה במחיקת תרחישים, אנא נסה שוב."
           }
+        }
+      },
+      "OUTCOMES": {
+        "DEFAULTS": {
+          "HANDOFF": {
+            "FAQ_NO_ANSWER": "No answer in FAQ"
+          }
+        },
+        "DESCRIPTION": "Reasons for conversation completion and staff handoff reports.",
+        "HANDOFF": {
+          "DESCRIPTION": "The reason is determined from the conversation after it is handed to a staff member."
+        },
+        "COMPLETION": {
+          "DESCRIPTION": "The reason is determined from the conversation after it is completed."
         }
       }
     },

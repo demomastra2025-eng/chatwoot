@@ -173,7 +173,7 @@ class Captain::Tools::SearchDocumentationService < Captain::Tools::BaseTool
 
   def semantic_responses(query)
     Timeout.timeout(SEMANTIC_LOOKUP_TIMEOUT_SECONDS) do
-      candidates = Captain::DocumentChunk.search(query, account_id: assistant.account_id)
+      candidates = Captain::DocumentChunk.search(query, account_id: assistant.account_id, assistant_id: assistant.id)
                                          .visible_to_assistant(assistant.id)
                                          .where(account_id: assistant.account_id)
                                          .limit(SEMANTIC_RESULT_LIMIT)

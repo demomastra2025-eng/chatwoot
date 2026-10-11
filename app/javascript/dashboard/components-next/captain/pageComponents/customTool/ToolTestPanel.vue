@@ -573,9 +573,7 @@ defineExpose({ runTestForCreate });
       t('CAPTAIN.CUSTOM_TOOLS.FORM.TEST_PANEL.TEST.CONFIRM_ACTION')
     "
   />
-  <section
-    class="flex flex-col gap-3 p-4 rounded-xl border border-n-weak bg-n-alpha-2"
-  >
+  <section class="flex flex-col gap-3">
     <div class="flex items-center gap-2">
       <h3 class="text-sm font-medium text-n-slate-12">
         {{ t('CAPTAIN.CUSTOM_TOOLS.FORM.TEST_PANEL.TITLE') }}
@@ -719,7 +717,7 @@ defineExpose({ runTestForCreate });
 
     <div
       v-if="state.preview"
-      class="flex flex-col gap-3 p-3 rounded-lg border border-n-weak bg-n-solid-1"
+      class="flex flex-col gap-3 border-t border-n-weak pt-3"
     >
       <div class="flex items-center justify-between gap-3">
         <p class="text-sm font-medium text-n-slate-12">

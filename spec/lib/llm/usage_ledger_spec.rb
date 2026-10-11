@@ -6,6 +6,15 @@ RSpec.describe Llm::UsageLedger do
   let(:account) { create(:account) }
 
   describe '.record_event!' do
+    it 'keeps outer chat lifecycle errors out of provider request counts and spend' do
+      event = create(:llm_event, account: account, event_name: 'llm.chat.request', status: 'error', error: true,
+                                 provider: 'openrouter', prompt_tokens: 100, completion_tokens: 10,
+                                 estimated_cost: 0.5, payload: { 'usage_scope' => 'outer_request' })
+
+      expect { described_class.record_event!(event) }.not_to change(LlmUsageEvent, :count)
+      expect(described_class.spend(account: account)).to eq(0)
+    end
+
     it 'records one account-scoped usage row for an OpenRouter llm event' do
       event = create(
         :llm_event,

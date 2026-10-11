@@ -4,6 +4,7 @@ class Llm::Monitoring::ReleaseGate
   DEFAULT_WINDOW = 7.days
   REQUEST_ANCHOR_EVENTS = %w[
     llm.chat.complete
+    llm.chat.request
     llm.embedding.complete
     llm.run.complete
     llm.safety.blocked
@@ -140,7 +141,8 @@ class Llm::Monitoring::ReleaseGate
         :tool_failure,
         :moderation_skipped,
         :estimated_cost,
-        :duration_ms
+        :duration_ms,
+        :payload
       )
       .each_with_object({}) do |event, rollups|
         request_key = request_rollup_key(event)
@@ -166,11 +168,17 @@ class Llm::Monitoring::ReleaseGate
         rollup[:tool_failure] ||= event.tool_failure?
         rollup[:moderation_skipped] ||= event.moderation_skipped?
         rollup[:estimated_cost] += event.estimated_cost.to_d if event.estimated_cost.present?
-        rollup[:duration_ms] = [rollup[:duration_ms].to_i, event.duration_ms.to_i].max if event.duration_ms.present?
+        if event.payload['usage_scope'] != 'provider_response' && event.duration_ms.present?
+          rollup[:duration_ms] = [rollup[:duration_ms].to_i, event.duration_ms.to_i].max
+        end
       end.values
   end
 
   def request_rollup_key(event)
+    if event.payload['usage_scope'] == 'provider_response' && event.payload['parent_request_id'].present?
+      return "request:#{event.payload['parent_request_id']}"
+    end
+
     return "request:#{event.request_id}" if event.request_id.present?
     return "trace:#{event.trace_id}" if event.trace_id.present?
     return "event:#{event.id}" if REQUEST_ANCHOR_EVENTS.include?(event.event_name) || payload_budget_alert_event?(event)

@@ -5,12 +5,13 @@ class Captain::Playground::Session
   MAX_MESSAGE_LENGTH = 12_000
   LIVE_WARNING = 'Разрешены изменения реальных данных. Каждое действие требует отдельного подтверждения.'.freeze
 
-  attr_reader :assistant, :account, :user, :data, :scenario, :namespace, :store
+  attr_reader :assistant, :entry_assistant, :account, :user, :data, :scenario, :namespace, :store
 
   def initialize(assistant:, account:, user:, mode: 'workspace', session_id: nil)
     raise ArgumentError, 'Legacy Live Playground is unavailable; reset the session' if mode.to_s == 'live'
 
     @assistant, @account, @user = assistant, account, user
+    @entry_assistant = assistant
     @requested_id = session_id.presence
     @store = Captain::Playground::SessionStore.new(account: account, user: user, assistant: assistant, mode: mode)
   end
@@ -19,6 +20,7 @@ class Captain::Playground::Session
   def trial? = true
   def live? = false
   def conversation = nil
+  def deep_dup = self
 
   def with_lock(reset: false, scenario_input: nil, **)
     store.with_lock do
@@ -51,7 +53,33 @@ class Captain::Playground::Session
   end
 
   def context_reference
-    { session_id: id, mode: mode, account_id: account.id, user_id: user.id, assistant_id: assistant.id }
+    { session_id: id, mode: mode, account_id: account.id, user_id: user.id,
+      entry_assistant_id: entry_assistant.id, assistant_id: assistant.id }
+  end
+
+  def activate_agent!(actor)
+    ensure_membership!
+    raise Pundit::NotAuthorizedError, 'Agent belongs to another workspace' unless actor.account_id == account.id
+
+    entry_assistant.reload
+    unless Captain::AgentGraph.new(entry_assistant).find(actor.id)
+      raise Pundit::NotAuthorizedError, 'Agent is disabled or no longer reachable from the Playground entry agent'
+    end
+    @assistant = actor
+    data['active_assistant_id'] = actor.id
+    @run_policy = nil
+    assistant
+  end
+
+  def validate_active_agent!
+    ensure_membership!
+    entry_assistant.reload
+    assistant.reload unless assistant.equal?(entry_assistant)
+    unless data.fetch('active_assistant_id', entry_assistant.id).to_i == assistant.id &&
+           Captain::AgentGraph.new(entry_assistant).find(assistant.id)
+      raise Pundit::NotAuthorizedError, 'Agent is disabled or no longer reachable from the Playground entry agent'
+    end
+    assistant
   end
 
   def state
@@ -64,14 +92,16 @@ class Captain::Playground::Session
       raise ArgumentError, 'Playground execution context does not match the server session'
     end
     raise ArgumentError, 'Playground source is required' unless state.to_h.with_indifferent_access[:source] == 'playground'
+    actor_id = state.to_h.with_indifferent_access[:assistant_id]
+    raise ArgumentError, 'Playground acting agent changed' if actor_id.present? && actor_id.to_i != assistant.id
 
-    ensure_membership!
+    validate_active_agent!
   end
 
   def run_policy
     @run_policy ||= Outbound::PlaygroundDeliveryPolicy.issue(
       mode: mode, run_id: SecureRandom.uuid, session_id: id, account_id: account.id,
-      user_id: user.id, assistant_id: assistant.id, delivery_enabled: false
+      user_id: user.id, entry_assistant_id: entry_assistant.id, assistant_id: assistant.id, delivery_enabled: false
     )
   end
 
@@ -95,7 +125,7 @@ class Captain::Playground::Session
     current = permissions
     pending = Array(data['action_previews']).select do |preview|
       preview['status'] == 'pending' && current['write'] == true && preview['generation'] == current['generation'] &&
-        preview['expires_at'].to_i > Time.current.to_i
+        preview['expires_at'].to_i > Time.current.to_i && preview['binding'] == context_reference.stringify_keys
     end
     { session_id: id, mode: mode, scenario: namespace.encode(scenario.public_data(mode: mode)),
       message_history: data['history'], real_data_read: current['read'] == true, real_data_write: current['write'] == true,
@@ -111,6 +141,9 @@ class Captain::Playground::Session
     @data = new_data if fresh
     @namespace = Captain::Playground::SyntheticNamespace.new(id)
     @scenario = Captain::Playground::Scenario.new(data['scenario'])
+    active_id = data['active_assistant_id'].to_i
+    @assistant = active_id == entry_assistant.id ? entry_assistant : (account.captain_assistants.find_by(id: active_id) || entry_assistant)
+    @run_policy = nil
     scenario.apply(namespace.decode(scenario_input), mode: mode) if scenario_input.present?
     if scenario_input.present?
       Array(data['action_previews']).each { |preview| preview['status'] = 'revoked' if preview['status'] == 'pending' }
@@ -127,11 +160,12 @@ class Captain::Playground::Session
     end
     { 'id' => SecureRandom.uuid, 'version' => 2, 'mode' => mode,
       'scenario' => Captain::Playground::Scenario.default(timezone: account.reporting_timezone).merge('custom_fields' => configuration),
-      'history' => [], 'action_previews' => [] }
+      'history' => [], 'action_previews' => [], 'active_assistant_id' => entry_assistant.id }
   end
 
   def ensure_membership!
     raise Pundit::NotAuthorizedError, 'Workspace membership is required' unless account.account_users.exists?(user_id: user.id)
     raise Pundit::NotAuthorizedError, 'Assistant belongs to another workspace' unless assistant.account_id == account.id
+    raise Pundit::NotAuthorizedError, 'Entry agent belongs to another workspace' unless entry_assistant.account_id == account.id
   end
 end

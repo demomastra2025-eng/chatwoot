@@ -72,11 +72,12 @@ class Captain::Runtime::Runner
 
   def execute_turn(session)
     emit_agent_thinking(session)
+    options = chat_request_options(session)
 
     response = if first_turn?(session) && !session[:input_already_in_history]
-                 ask_chat(session[:chat], session[:input], account: session[:account])
+                 Llm::Runtime.ask(session[:chat], session[:input], **options)
                else
-                 Llm::StructuredOutputPolicy.execute(chat: session[:chat]) { session[:chat].complete }
+                 Llm::Runtime.complete(session[:chat], **options)
                end
 
     track_usage(response, session[:context_wrapper])
@@ -89,11 +90,24 @@ class Captain::Runtime::Runner
     response
   end
 
-  def ask_chat(chat, input, account: nil)
-    kwargs = {}
-    kwargs[:account] = account if account.present?
+  def chat_request_options(session)
+    context = session[:context_wrapper].context
+    state = context[:state] || {}
+    conversation = state[:conversation] || {}
+    observability = {
+      assistant_id: state[:assistant_id],
+      current_agent: session[:current_agent].name,
+      account_id: session[:account]&.id || state[:account_id],
+      conversation_record_id: conversation[:id],
+      conversation_display_id: conversation[:display_id],
+      channel_type: state[:channel_type],
+      source: state[:source],
+      session_id: context[:session_id]
+    }.compact
 
-    Llm::Runtime.ask(chat, input, **kwargs)
+    { model: session[:current_agent].model, observability: observability }.tap do |options|
+      options[:account] = session[:account] if session[:account].present?
+    end
   end
 
   def emit_agent_thinking(session)

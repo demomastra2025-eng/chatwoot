@@ -54,8 +54,9 @@ RSpec.describe 'Captain playground model controls' do
         test_overrides: { model: model, temperature: 0, thinking_effort: effort }
       )
       runtime_agent = service.send(:build_and_wire_agents).first
-      state = service.send(:build_state)
-      context_wrapper = Captain::Runtime::RunContext.new({ state: state })
+      context = service.send(:build_context, [])
+      expect(context[:state]).to include(entry_assistant_id: assistant.id, playground_thinking_effort: effort)
+      context_wrapper = Captain::Runtime::RunContext.new(context)
       chat = Captain::Runtime::ChatFactory.build(
         agent: runtime_agent, context_wrapper: context_wrapper,
         llm_context: llm_context, runtime_headers: {}, runtime_params: {}, account: account

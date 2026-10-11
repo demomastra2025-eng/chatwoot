@@ -57,7 +57,15 @@ class Llm::OpenRouterCapabilityResolver
         reasons << reason('provider_not_configured', 'OpenRouter provider key is not configured.', provider: OPENROUTER_PROVIDER)
       end
 
-      requirement_sets = Llm::Models.required_capability_sets_for(feature_key, runtime_preferences: runtime_preferences)
+      if model_config['type'] == 'decision' &&
+         (feature_key != 'outcome_classification' || !Llm::Models.decision_model?(canonical_model))
+        reasons << reason('decision_model_unsupported', 'Decision models are supported only for outcome classification with an approved model ID.')
+        return result(canonical_model, feature_key, false, reasons, missing, model_config, endpoint_metadata)
+      end
+
+      requirement_sets = Llm::Models.required_capability_sets_for(
+        feature_key, runtime_preferences: runtime_preferences, model_name: canonical_model
+      )
       return result(canonical_model, feature_key, reasons.empty?, reasons, missing, model_config, endpoint_metadata) if requirement_sets.blank?
 
       allowed_by_requirements = requirement_sets.any? do |requirement|

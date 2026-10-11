@@ -845,7 +845,7 @@ const onFilterChange = payload => {
 
     <section
       v-if="activeSection === 'activity'"
-      class="rounded-xl bg-n-solid-2 p-5 shadow-sm outline outline-1 outline-n-container"
+      class="border-t border-n-weak pt-5"
     >
       <div class="flex flex-col gap-1">
         <h3 class="text-base font-semibold text-n-slate-12">
@@ -909,9 +909,7 @@ const onFilterChange = payload => {
       </div>
 
       <template v-else>
-        <section
-          class="rounded-xl bg-n-solid-2 p-5 shadow-sm outline outline-1 outline-n-container"
-        >
+        <section class="border-t border-n-weak pt-5">
           <div class="flex flex-col gap-1">
             <h3 class="text-base font-semibold text-n-slate-12">
               {{ currentSection.label }}
@@ -925,7 +923,7 @@ const onFilterChange = payload => {
             v-if="activeSection === 'overview'"
             class="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]"
           >
-            <section class="rounded-xl border border-n-container p-4">
+            <section class="min-w-0">
               <div class="flex items-start justify-between gap-3">
                 <div>
                   <h4 class="text-sm font-semibold text-n-slate-12">
@@ -988,7 +986,7 @@ const onFilterChange = payload => {
               </div>
             </section>
 
-            <section class="rounded-xl border border-n-container p-4">
+            <section class="min-w-0">
               <h4 class="text-sm font-semibold text-n-slate-12">
                 {{ $t('CRM_DEAL_REPORTS.CHARTS.STAGE_AMOUNT.TITLE') }}
               </h4>
@@ -1042,7 +1040,7 @@ const onFilterChange = payload => {
               </div>
             </div>
 
-            <section class="rounded-xl border border-n-container p-4">
+            <section class="min-w-0">
               <div
                 class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"
               >
@@ -1286,7 +1284,7 @@ const onFilterChange = payload => {
             v-else-if="activeSection === 'forecast'"
             class="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]"
           >
-            <section class="rounded-xl border border-n-container p-4">
+            <section class="min-w-0">
               <h4 class="text-sm font-semibold text-n-slate-12">
                 {{ $t('CRM_DEAL_REPORTS.CHARTS.FORECAST_AMOUNT.TITLE') }}
               </h4>
@@ -1309,7 +1307,7 @@ const onFilterChange = payload => {
             </section>
 
             <aside class="flex flex-col gap-4">
-              <div class="rounded-xl border border-n-container p-4">
+              <div class="min-w-0">
                 <h4 class="text-sm font-semibold text-n-slate-12">
                   {{ $t('CRM_DEAL_REPORTS.LABELS.FORECAST_HEALTH') }}
                 </h4>
@@ -1329,7 +1327,7 @@ const onFilterChange = payload => {
                 </div>
               </div>
 
-              <div class="rounded-xl border border-n-container p-4">
+              <div class="min-w-0">
                 <h4 class="text-sm font-semibold text-n-slate-12">
                   {{ $t('CRM_DEAL_REPORTS.CHARTS.WON_LOST.TITLE') }}
                 </h4>
@@ -1357,7 +1355,7 @@ const onFilterChange = payload => {
             v-else-if="activeSection === 'sources'"
             class="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-[24rem_minmax(0,1fr)]"
           >
-            <section class="rounded-xl border border-n-container p-4">
+            <section class="min-w-0">
               <h4 class="text-sm font-semibold text-n-slate-12">
                 {{ $t('CRM_DEAL_REPORTS.CHARTS.SOURCE_MIX.TITLE') }}
               </h4>
@@ -1390,7 +1388,7 @@ const onFilterChange = payload => {
               </div>
             </section>
 
-            <section class="rounded-xl border border-n-container p-4">
+            <section class="min-w-0">
               <div class="flex flex-col gap-1">
                 <h4 class="text-sm font-semibold text-n-slate-12">
                   {{ $t('CRM_DEAL_REPORTS.TABLES.SOURCE.TITLE') }}
@@ -1469,7 +1467,7 @@ const onFilterChange = payload => {
           </div>
 
           <div v-else class="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-2">
-            <section class="rounded-xl border border-n-container p-4">
+            <section class="min-w-0">
               <h4 class="text-sm font-semibold text-n-slate-12">
                 {{ $t('CRM_DEAL_REPORTS.CHARTS.OWNER_AMOUNT.TITLE') }}
               </h4>
@@ -1525,7 +1523,7 @@ const onFilterChange = payload => {
               </div>
             </section>
 
-            <section class="rounded-xl border border-n-container p-4">
+            <section class="min-w-0">
               <h4 class="text-sm font-semibold text-n-slate-12">
                 {{ $t('CRM_DEAL_REPORTS.CHARTS.AGING.TITLE') }}
               </h4>

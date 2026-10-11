@@ -223,6 +223,112 @@ RSpec.describe Llm::ChatClient do
     end
   end
 
+  describe '.complete' do
+    it 'continues existing history through structured output policy without adding a user turn' do
+      history = [RubyLLM::Message.new(role: :user, content: 'Already present')]
+      response = RubyLLM::Message.new(role: :assistant, content: 'Done')
+      allow(chat).to receive(:messages).and_return(history)
+      expect(chat).not_to receive(:ask)
+      expect(chat).not_to receive(:add_message)
+      expect(chat).to receive(:complete).once.and_return(response)
+      expect(Llm::StructuredOutputPolicy).to receive(:execute).with(chat: chat).and_call_original
+
+      expect(described_class.complete(chat)).to eq(response)
+      expect(history.map(&:content)).to eq(['Already present'])
+    end
+
+    it 'publishes one outer completion event with response usage and generation metadata' do
+      events = []
+      subscriber = ActiveSupport::Notifications.subscribe('llm.chat.complete') do |*args|
+        events << ActiveSupport::Notifications::Event.new(*args)
+      end
+      response = double('message', content: 'Synthetic public answer', input_tokens: 5, output_tokens: 7,
+                                   thinking_tokens: 3, tool_call?: false, id: 'gen-synthetic-continuation')
+      expect(chat).not_to receive(:ask)
+      expect(chat).to receive(:complete).once.and_return(response)
+
+      result = described_class.complete(
+        chat,
+        model: 'openai/gpt-5.4-mini',
+        observability: { feature: 'captain_agent', account_id: 1, assistant_id: 17, conversation_record_id: 25 }
+      )
+
+      expect(result).to eq(response)
+      expect(events.size).to eq(1)
+      expect(events.first.payload).to include(
+        'assistant_id' => 17,
+        'conversation_id' => 25,
+        'model' => 'openai/gpt-5.4-mini',
+        'status' => 'success',
+        'prompt_tokens' => 5,
+        'completion_tokens' => 7,
+        'thinking_tokens' => 3,
+        'total_tokens' => 12,
+        'openrouter_generation_id' => 'gen-synthetic-continuation'
+      )
+      expect(events.first.payload.to_json).not_to include('Synthetic public answer')
+    ensure
+      ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+    end
+
+    it 'records a failed continuation and propagates the provider error without asking again' do
+      events = []
+      subscriber = ActiveSupport::Notifications.subscribe('llm.chat.complete') do |*args|
+        events << ActiveSupport::Notifications::Event.new(*args)
+      end
+      expect(chat).not_to receive(:ask)
+      expect(chat).to receive(:complete).once.and_raise(StandardError, 'Synthetic provider failure')
+
+      expect do
+        described_class.complete(chat, model: 'openai/gpt-5.4-mini', observability: { feature: 'captain_agent' })
+      end.to raise_error(StandardError, 'Synthetic provider failure')
+      expect(events.size).to eq(1)
+      expect(events.first.payload).to include('status' => 'error', 'error' => true, 'error_class' => 'StandardError')
+    ensure
+      ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+    end
+
+    it 'keeps a successful continuation when response observability fails' do
+      response = double('message', content: 'Done', input_tokens: 5, output_tokens: 7, tool_call?: false)
+      expect(chat).to receive(:complete).once.and_return(response)
+      allow(Llm::ObservabilityPayload).to receive(:attach_chat_response!).and_raise(SystemStackError, 'Synthetic stack failure')
+
+      expect(described_class.complete(chat, model: 'openai/gpt-5.4-mini', observability: { feature: 'captain_agent' })).to eq(response)
+    end
+
+    it 'persists completion usage through the real event subscriber without a provider call' do
+      account = create(:account)
+      assistant = create(:captain_assistant, account: account)
+      conversation = create(:conversation, account: account)
+      response = double('message', content: 'Synthetic public answer', input_tokens: 9, output_tokens: 4,
+                                   tool_call?: false, id: 'gen-synthetic-ledger-continuation')
+      expect(chat).not_to receive(:ask)
+      expect(chat).to receive(:complete).once.and_return(response)
+      expect(Llm::OpenRouterGenerationClient).not_to receive(:fetch)
+      allow(Llm::Monitoring::OtelEventExporter).to receive(:export_notification)
+      Llm::EventSubscriber.install!
+
+      expect do
+        described_class.complete(
+          chat,
+          model: 'openai/gpt-5.4-mini',
+          observability: {
+            feature: 'captain_agent', account_id: account.id, assistant_id: assistant.id,
+            conversation_record_id: conversation.id, conversation_display_id: conversation.display_id
+          }
+        )
+      end.to change { LlmUsageEvent.where(account_id: account.id, event_name: 'llm.chat.complete').count }.by(1)
+
+      usage = LlmUsageEvent.where(account_id: account.id, event_name: 'llm.chat.complete').last
+      expect(usage).to have_attributes(prompt_tokens: 9, completion_tokens: 4, total_tokens: 13,
+                                      generation_id: 'gen-synthetic-ledger-continuation', requested_model: 'openai/gpt-5.4-mini')
+      expect(usage.metadata).to include('assistant_id' => assistant.id, 'conversation_id' => conversation.id)
+      expect(usage.metadata.to_json).not_to include('Synthetic public answer')
+    ensure
+      Llm::EventSubscriber.uninstall!
+    end
+  end
+
   describe '.ask' do
     it 'asks with plain content directly' do
       expect(chat).to receive(:ask).with('Hello')

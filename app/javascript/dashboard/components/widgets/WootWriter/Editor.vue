@@ -1187,6 +1187,24 @@ useEmitter(BUS_EVENTS.INSERT_INTO_RICH_EDITOR, insertContentIntoEditor);
   overflow-wrap: anywhere;
   word-break: normal;
   overflow-x: hidden;
+  line-height: 1.5;
+
+  p,
+  ul,
+  ol,
+  li {
+    margin-block: 0;
+  }
+
+  ul,
+  ol {
+    padding-block: 0;
+    padding-inline-start: 1.25rem;
+  }
+
+  li > p {
+    margin: 0;
+  }
 }
 
 .ProseMirror-woot-style:not(

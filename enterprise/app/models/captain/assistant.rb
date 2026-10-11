@@ -26,8 +26,7 @@ class Captain::Assistant < ApplicationRecord
   include Avatarable
   include Concerns::CaptainToolsHelpers
   include Concerns::Agentable
-
-  attr_accessor :raw_rules_config_input
+  include Concerns::CaptainAgentRouting
 
   self.table_name = 'captain_assistants'
   INTERNAL_ASSISTANT_INBOX_ERROR = 'Internal assistants cannot be connected to channels. Disconnect connected channels first.'
@@ -62,7 +61,7 @@ class Captain::Assistant < ApplicationRecord
   MESSAGE_MODE_STATIC = 'static'
   MESSAGE_MODE_AI = 'ai'
   SAFETY_ACTION_VALUES = %w[disabled flag block].freeze
-  SAFETY_SETTINGS_KEYS = %w[moderation_enabled prompt_injection_action sensitive_info_action].freeze
+  SAFETY_SETTINGS_KEYS = %w[moderation_enabled prompt_injection_action sensitive_info_action custom_rules].freeze
   MESSAGE_MODES = [MESSAGE_MODE_STATIC, MESSAGE_MODE_AI].freeze
   HANDOFF_TOOL_ID = 'handoff'
   CRM_DEAL_PIPELINE_COMPANION_TOOL_IDS = %w[list_deal_pipelines list_deal_stages].freeze
@@ -377,7 +376,7 @@ class Captain::Assistant < ApplicationRecord
            through: :captain_inboxes
   has_many :messages, as: :sender, dependent: :nullify
   has_many :copilot_threads, dependent: :destroy_async
-  has_many :scenarios, class_name: 'Captain::Scenario', dependent: :destroy_async
+  has_many :scenarios, class_name: 'Captain::Scenario', dependent: :nullify
 
   store_accessor :config, :temperature, :thinking_effort, :feature_faq, :feature_memory,
                  :message_collapse_window_seconds, :history_message_limit,
@@ -387,14 +386,13 @@ class Captain::Assistant < ApplicationRecord
   before_validation :initialize_context_access_config, on: :create
   before_validation :ensure_usage_mode
   before_validation :normalize_instruction_description
-  before_validation :capture_raw_rules_config_input
-  before_validation :normalize_rules_config
+  before_validation :merge_legacy_rules_into_prompt
   before_destroy :destroy_personal_knowledge, prepend: true
   before_destroy :lock_captain_assignment_before_destroy, prepend: true
 
   validates :name, presence: true
   validates :description, presence: true
-  validates :description, length: { maximum: DESCRIPTION_MAX_LENGTH }
+  validates :description, length: { maximum: ->(agent) { [DESCRIPTION_MAX_LENGTH, agent.description_in_database.to_s.length].max } }
   validates :account_id, presence: true
   validates :usage_mode, presence: true, inclusion: { in: %w[external_agent internal_assistant] }
   validates :message_collapse_window_seconds,
@@ -406,17 +404,6 @@ class Captain::Assistant < ApplicationRecord
   validate :internal_assistant_cannot_have_connected_inboxes
   validate :validate_instruction_tools
   validate :validate_instruction_fields
-  validate :validate_instruction_skills
-  validate :validate_system_rule_tools
-  validate :validate_system_rule_fields
-  validate :validate_system_rule_skills
-  validate :validate_structured_rules_config
-  validate :validate_response_guideline_tools
-  validate :validate_response_guideline_fields
-  validate :validate_response_guideline_skills
-  validate :validate_guardrail_tools
-  validate :validate_guardrail_fields
-  validate :validate_guardrail_skills
   validate :validate_fish_voice_reference
   validate :validate_conversational_model
   validate :validate_follow_up_settings
@@ -436,11 +423,7 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def handoff_target_name
-    Captain::HandoffNaming.safe_target_name(
-      name,
-      fallback_prefix: 'assistant',
-      record_id: id
-    )
+    id.present? ? "assistant_#{id}" : Captain::HandoffNaming.safe_target_name(name, fallback_prefix: 'assistant')
   end
 
   def handoff_tool_name
@@ -529,7 +512,7 @@ class Captain::Assistant < ApplicationRecord
 
     available_ids = available_tool_ids
     explicit_tool_ids = companion_expanded_tool_ids(Array(referenced_tool_ids).map(&:to_s))
-    explicit_tool_ids -= ['handoff'] unless selected_agent_tool_ids.include?('handoff')
+    explicit_tool_ids -= capability_controlled_tool_ids_for_scope(Captain::ToolAccess::SCOPE_AGENT)
 
     (scenario_default_tool_ids + explicit_tool_ids)
       .uniq
@@ -542,11 +525,15 @@ class Captain::Assistant < ApplicationRecord
       available_agent_tools
     )
 
-    Captain::ToolAccess.allowed_tool_ids_for(
+    selected_ids = Captain::ToolAccess.allowed_tool_ids_for(
       self,
       Captain::ToolAccess::SCOPE_AGENT,
       fallback_ids: fallback_ids
     )
+    selected_ids -= ['handoff'] unless handoff_enabled?
+    selected_ids -= ['faq_lookup'] if config.to_h.key?('feature_faq') && !config_boolean_value('feature_faq', default: false)
+    selected_ids -= ['resolve_conversation'] unless auto_completion_enabled?
+    selected_ids
   end
 
   def direct_agent_tool_ids
@@ -562,7 +549,7 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def prompt_runtime_agent_tools
-    explicit_tool_ids = prompt_referenced_tool_ids_for_template(:assistant) + prompt_referenced_skill_script_tool_ids_for_template(:assistant)
+    explicit_tool_ids = prompt_referenced_tool_ids_for_template(:assistant)
 
     prompt_visible_tools_for_scope(
       Captain::ToolAccess::SCOPE_AGENT,
@@ -584,8 +571,9 @@ class Captain::Assistant < ApplicationRecord
                    else
                      Captain::ToolAccess::DEFAULT_AGENT_TOOL_IDS
                    end
-    referenced_ids = prompt_referenced_tool_ids_for_template(:assistant) + prompt_referenced_skill_script_tool_ids_for_template(:assistant)
-    prompt_ids = companion_expanded_tool_ids(referenced_ids)
+    referenced_ids = prompt_referenced_tool_ids_for_template(:assistant)
+    prompt_ids = companion_expanded_tool_ids(referenced_ids) - capability_controlled_tool_ids_for_scope(Captain::ToolAccess::SCOPE_AGENT)
+    selected_ids &= selected_agent_tool_ids
     direct_tools = Captain::ToolCatalog.available_tools_for_ids(self, Captain::ToolAccess::SCOPE_AGENT, selected_ids)
     prompt_tools = Captain::ToolCatalog.available_tools_for_ids(self, Captain::ToolAccess::SCOPE_AGENT, prompt_ids).select do |tool|
       prompt_visible_tool?(tool, scope_name: Captain::ToolAccess::SCOPE_AGENT)
@@ -694,55 +682,6 @@ class Captain::Assistant < ApplicationRecord
     description.to_s.strip
   end
 
-  def rule_entries
-    build_effective_rule_entries(
-      config_rules_source: config.is_a?(Hash) ? config[RULES_CONFIG_KEY] : nil,
-      response_guideline_values: self[:response_guidelines],
-      guardrail_values: self[:guardrails],
-      force_replace_types: []
-    )
-  end
-
-  def system_rule_groups
-    grouped_rule_entries_for(rule_entries, RULE_TYPE_SYSTEM)
-  end
-
-  def response_guideline_groups
-    grouped_rule_entries_for(rule_entries, RULE_TYPE_RESPONSE_GUIDELINE)
-  end
-
-  def guardrail_groups
-    grouped_rule_entries_for(rule_entries, RULE_TYPE_GUARDRAIL)
-  end
-
-  def system_rule_contents
-    enabled_rule_contents_for(rule_entries, RULE_TYPE_SYSTEM)
-  end
-
-  def system_rule_contents_for_prompt(template_name:)
-    enabled_rule_contents_for(
-      enabled_system_rule_entries_for_prompt(template_name: template_name),
-      RULE_TYPE_SYSTEM
-    )
-  end
-
-  def enabled_system_template_rule_content(slot)
-    entry = system_template_rule_entries.find do |rule|
-      rule[:slot].to_s == slot.to_s && rule[:enabled]
-    end
-
-    entry&.dig(:content).to_s
-  end
-
-  def template_rule_preview_values(template_name)
-    template_slots_for(template_name).filter_map do |slot|
-      content = enabled_system_template_rule_content(slot)
-      next if content.blank?
-
-      "#{SYSTEM_TEMPLATE_SLOT_LABELS[slot]}: #{content}"
-    end
-  end
-
   def history_message_limit_value
     config_integer_value('history_message_limit')
   end
@@ -764,6 +703,10 @@ class Captain::Assistant < ApplicationRecord
 
   def handoff_message_mode_value
     message_mode_value('handoff_message_mode')
+  end
+
+  def faq_enabled?
+    config_boolean_value('feature_faq', default: false) && selected_agent_tool_ids.include?('faq_lookup')
   end
 
   def handoff_enabled?
@@ -854,9 +797,15 @@ class Captain::Assistant < ApplicationRecord
     end
 
     action_values = settings.values_at('prompt_injection_action', 'sensitive_info_action')
-    return if action_values.all? { |value| value.nil? || SAFETY_ACTION_VALUES.include?(value.to_s) }
+    unless action_values.all? { |value| value.nil? || SAFETY_ACTION_VALUES.include?(value.to_s) }
+      errors.add(:config, :invalid_safety_settings)
+    end
+    return unless settings.key?('custom_rules')
 
-    errors.add(:config, :invalid_safety_settings)
+    Captain::Safety::CustomRulesConfig.errors(settings['custom_rules']).each do |violation|
+      errors.add(:config, :invalid_custom_safety_rules, path: violation[:path], code: violation[:code],
+                 message: "#{violation[:path]} #{violation[:message]}")
+    end
   end
 
   def outcome_reason_prompt_context
@@ -880,8 +829,7 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def destroy_personal_knowledge
-    documents.visibility_personal.find_each(&:destroy!)
-    responses.visibility_personal.find_each(&:destroy!)
+    Captain::Knowledge::AccessService.release_owner!(assistant: self)
   end
 
   def ensure_usage_mode
@@ -893,24 +841,9 @@ class Captain::Assistant < ApplicationRecord
     remove_legacy_config_keys
   end
 
-  def capture_raw_rules_config_input
-    self.config = (config || {}).deep_stringify_keys
-    self.raw_rules_config_input = config.key?(RULES_CONFIG_KEY) ? config[RULES_CONFIG_KEY] : nil
-  end
-
-  def normalize_rules_config
-    self.config = (config || {}).deep_stringify_keys
-
-    normalized_entries = build_effective_rule_entries(
-      config_rules_source: config[RULES_CONFIG_KEY],
-      response_guideline_values: effective_legacy_rule_values(RULE_TYPE_RESPONSE_GUIDELINE),
-      guardrail_values: effective_legacy_rule_values(RULE_TYPE_GUARDRAIL),
-      force_replace_types: changed_legacy_rule_types
-    )
-
-    config[RULES_CONFIG_KEY] = serialize_rule_entries(normalized_entries)
-    self[:response_guidelines] = enabled_rule_contents_for(normalized_entries, RULE_TYPE_RESPONSE_GUIDELINE)
-    self[:guardrails] = enabled_rule_contents_for(normalized_entries, RULE_TYPE_GUARDRAIL)
+  def merge_legacy_rules_into_prompt
+    attributes = Captain::Assistant::MergeLegacyRulesService.attributes_for(self)
+    assign_attributes(attributes) if attributes.present?
   end
 
   def agent_name
@@ -929,33 +862,21 @@ class Captain::Assistant < ApplicationRecord
 
   def prompt_context
     referenced_field_ids = referenced_field_ids_for_texts(prompt_glossary_texts)
-    referenced_skill_ids = referenced_skill_ids_for_texts(prompt_glossary_texts)
 
     {
       name: name,
       global_system_instruction: Llm::Config.global_agent_system_prompt,
       instruction: system_instruction,
-      assistant_system_context_rule: enabled_system_template_rule_content(SYSTEM_TEMPLATE_SLOT_ASSISTANT_CONTEXT),
-      assistant_identity_rule: enabled_system_template_rule_content(SYSTEM_TEMPLATE_SLOT_ASSISTANT_IDENTITY),
-      assistant_specialized_scenarios_rule: enabled_system_template_rule_content(SYSTEM_TEMPLATE_SLOT_ASSISTANT_SCENARIOS),
-      assistant_human_handoff_rule: enabled_system_template_rule_content(SYSTEM_TEMPLATE_SLOT_ASSISTANT_HUMAN_HANDOFF),
-      outcome_reasons: outcome_reason_prompt_context,
-      current_context_rule: enabled_system_template_rule_content(SYSTEM_TEMPLATE_SLOT_CURRENT_CONTEXT),
-      reference_glossary_rule: enabled_system_template_rule_content(SYSTEM_TEMPLATE_SLOT_REFERENCE_GLOSSARY),
+      faq_enabled: faq_enabled?,
+      human_handoff_enabled: handoff_enabled? && selected_agent_tool_ids.include?(HANDOFF_TOOL_ID),
       runtime_tool_ids: prompt_runtime_agent_tools.pluck(:id),
-      scenarios: scenarios.enabled.map do |scenario|
+      scenarios: handoff_targets.map do |scenario|
         {
-          title: scenario.title,
-          key: scenario.handoff_key,
-          description: scenario.description
+          title: scenario.name,
+          key: scenario.handoff_target_name,
+          description: scenario.routing_description
         }
       end,
-      system_rule_groups: system_rule_groups,
-      response_guidelines: response_guidelines || [],
-      guardrails: guardrails || [],
-      response_guideline_groups: response_guideline_groups,
-      guardrail_groups: guardrail_groups,
-      skill_references: Captain::SkillCatalog.prompt_blocks_for(account: account, skill_ids: referenced_skill_ids),
       context_glossary: context_glossary_groups(referenced_field_ids),
       tool_glossary: tool_glossary_groups(prompt_runtime_agent_tools)
     }
@@ -978,9 +899,10 @@ class Captain::Assistant < ApplicationRecord
 
     case value
     when String
-      text_with_tools = render_tool_references(value)
-      text_with_skills = render_skill_references(text_with_tools)
-      Captain::ContextFields.render_references(text_with_skills, prompt_state: prompt_state, allowed_fields: allowed_fields)
+      text_without_scripts = value.gsub(%r{\[([^\]]+)\]\(tool://skill_script_[^)]+\)}, '\\1')
+      text_with_tools = render_tool_references(text_without_scripts)
+      text_without_skill_links = text_with_tools.gsub(%r{\[([^\]]+)\]\(skill://[^)]+\)}, '\\1')
+      Captain::ContextFields.render_references(text_without_skill_links, prompt_state: prompt_state, allowed_fields: allowed_fields)
     when Array
       value.map { |item| resolve_runtime_value(item, prompt_state, field_ids: field_ids, allowed_fields: allowed_fields) }
     when Hash
@@ -1038,58 +960,11 @@ class Captain::Assistant < ApplicationRecord
     add_invalid_field_error(:description, invalid_field_ids_for_texts([description]))
   end
 
-  def validate_instruction_skills
-    add_invalid_skill_error(:description, invalid_skill_ids_for_texts([description]))
-  end
-
-  def validate_response_guideline_tools
-    add_invalid_tool_error(:response_guidelines, invalid_tool_ids_for_texts(response_guidelines))
-  end
-
-  def validate_response_guideline_fields
-    add_invalid_field_error(:response_guidelines, invalid_field_ids_for_texts(response_guidelines))
-  end
-
-  def validate_response_guideline_skills
-    add_invalid_skill_error(:response_guidelines, invalid_skill_ids_for_texts(response_guidelines))
-  end
-
-  def validate_guardrail_tools
-    add_invalid_tool_error(:guardrails, invalid_tool_ids_for_texts(guardrails))
-  end
-
-  def validate_guardrail_fields
-    add_invalid_field_error(:guardrails, invalid_field_ids_for_texts(guardrails))
-  end
-
-  def validate_guardrail_skills
-    add_invalid_skill_error(:guardrails, invalid_skill_ids_for_texts(guardrails))
-  end
-
-  def validate_system_rule_tools
-    add_invalid_tool_error(:config, invalid_tool_ids_for_texts(system_rule_contents))
-  end
-
-  def validate_system_rule_fields
-    add_invalid_field_error(:config, invalid_field_ids_for_texts(system_rule_contents))
-  end
-
-  def validate_system_rule_skills
-    add_invalid_skill_error(:config, invalid_skill_ids_for_texts(system_rule_contents))
-  end
-
-  def validate_structured_rules_config
-    invalid_rules = invalid_structured_rules(raw_rules_config_input)
-    return if invalid_rules.empty?
-
-    errors.add(:config, "contains invalid rules: #{invalid_rules.join(', ')}")
-  end
-
   def invalid_tool_ids_for_texts(texts)
     tool_ids = referenced_tool_ids_for_texts(texts)
     return [] if tool_ids.empty?
 
-    tool_ids - available_runtime_tool_ids
+    (tool_ids - available_runtime_tool_ids).reject { |id| id.start_with?('skill_script_') }
   end
 
   def invalid_field_ids_for_texts(texts)
@@ -1099,181 +974,8 @@ class Captain::Assistant < ApplicationRecord
     field_ids - available_context_field_ids
   end
 
-  def invalid_skill_ids_for_texts(texts)
-    skill_ids = referenced_skill_ids_for_texts(texts)
-    return [] if skill_ids.empty?
-
-    skill_ids - Captain::SkillCatalog.available_ids(account: account)
-  end
-
   def prompt_glossary_texts
     prompt_glossary_texts_for_template(:assistant)
-  end
-
-  def effective_legacy_rule_values(rule_type)
-    return nil unless changed_legacy_rule_types.include?(rule_type)
-
-    rule_type == RULE_TYPE_RESPONSE_GUIDELINE ? response_guidelines : guardrails
-  end
-
-  def invalid_structured_rules(entries)
-    return [] if entries.nil?
-    return ['rules must be an array'] unless entries.is_a?(Array)
-
-    Array(entries).filter_map.with_index do |entry, index|
-      raw_entry = entry.respond_to?(:to_h) ? entry.to_h : nil
-      next "rule_#{index}: invalid object" unless raw_entry.is_a?(Hash)
-
-      rule_type = raw_entry['type'].to_s.presence
-      content = raw_entry['content'].to_s.strip
-      next "rule_#{index}: invalid type" unless RULE_TYPES.include?(rule_type)
-      next "rule_#{index}: blank content" if content.blank?
-    end
-  end
-
-  def build_effective_rule_entries(config_rules_source:, response_guideline_values:, guardrail_values:, force_replace_types:)
-    entries = normalize_rule_entries(config_rules_source)
-    entries = merge_legacy_rule_entries(
-      entries,
-      RULE_TYPE_RESPONSE_GUIDELINE,
-      response_guideline_values,
-      replace_existing: force_replace_types.include?(RULE_TYPE_RESPONSE_GUIDELINE)
-    )
-    entries = merge_legacy_rule_entries(
-      entries,
-      RULE_TYPE_GUARDRAIL,
-      guardrail_values,
-      replace_existing: force_replace_types.include?(RULE_TYPE_GUARDRAIL)
-    )
-
-    ensure_default_system_rules(entries)
-  end
-
-  def merge_legacy_rule_entries(entries, rule_type, values, replace_existing:)
-    normalized_values = Array(values).map { |value| value.to_s.strip }.reject(&:blank?)
-    return entries if !replace_existing && entries.any? { |entry| entry[:type] == rule_type }
-
-    filtered_entries = entries.reject { |entry| entry[:type] == rule_type }
-    legacy_entries = normalized_values.map.with_index do |content, index|
-      normalize_rule_entry(
-        {
-          'id' => generated_rule_id(rule_type, content, index),
-          'type' => rule_type,
-          'group' => DEFAULT_RULE_GROUPS[rule_type],
-          'content' => content,
-          'enabled' => true
-        },
-        index
-      )
-    end
-
-    filtered_entries + legacy_entries
-  end
-
-  def ensure_default_system_rules(entries)
-    installation_system_rules = self.class.installation_system_prompt_entries
-    installation_system_rule_ids = installation_system_rules.map { |rule| rule[:id].to_s }
-    custom_entries = entries.reject do |entry|
-      installation_system_rule_ids.include?(entry[:id].to_s)
-    end
-    existing_system_entries = entries.select do |entry|
-      entry[:type] == RULE_TYPE_SYSTEM && installation_system_rule_ids.include?(entry[:id].to_s)
-    end.index_by { |entry| entry[:id] }
-
-    default_system_entries = installation_system_rules.map.with_index do |rule, index|
-      existing_rule = existing_system_entries[rule[:id]]
-
-      normalize_rule_entry(
-        {
-          'id' => rule[:id],
-          'type' => RULE_TYPE_SYSTEM,
-          'group' => rule[:group],
-          'content' => rule[:content],
-          'enabled' => existing_rule.nil? || existing_rule[:enabled],
-          'slot' => rule[:slot],
-          'editable' => false,
-          'deletable' => false
-        },
-        index
-      )
-    end
-
-    default_system_entries + custom_entries
-  end
-
-  def normalize_rule_entries(entries)
-    Array(entries).filter_map.with_index do |entry, index|
-      normalize_rule_entry(entry, index)
-    end
-  end
-
-  def normalize_rule_entry(entry, index)
-    raw_entry = entry.respond_to?(:to_h) ? entry.to_h : {}
-    rule_type = raw_entry['type'].to_s.presence
-    return unless RULE_TYPES.include?(rule_type)
-
-    content = raw_entry['content'].to_s.strip
-    return if content.blank?
-
-    {
-      id: raw_entry['id'].presence || generated_rule_id(rule_type, content, index),
-      type: rule_type,
-      group: raw_entry['group'].to_s.strip.presence || DEFAULT_RULE_GROUPS[rule_type],
-      content: content,
-      slot: raw_entry['slot'].to_s.strip.presence,
-      enabled: raw_entry.key?('enabled') ? ActiveModel::Type::Boolean.new.cast(raw_entry['enabled']) : true,
-      editable: raw_entry.key?('editable') ? ActiveModel::Type::Boolean.new.cast(raw_entry['editable']) : true,
-      deletable: raw_entry.key?('deletable') ? ActiveModel::Type::Boolean.new.cast(raw_entry['deletable']) : true
-    }
-  end
-
-  def serialize_rule_entries(entries)
-    Array(entries).map do |entry|
-      {
-        'id' => entry[:id].to_s,
-        'type' => entry[:type].to_s,
-        'group' => entry[:group].to_s,
-        'content' => entry[:content].to_s,
-        'slot' => entry[:slot].to_s.presence,
-        'enabled' => entry[:enabled] == true,
-        'editable' => entry[:editable] != false,
-        'deletable' => entry[:deletable] != false
-      }
-    end
-  end
-
-  def enabled_rule_contents_for(entries, rule_type)
-    Array(entries)
-      .select { |entry| entry[:type] == rule_type && entry[:enabled] }
-      .map { |entry| entry[:content].to_s }
-  end
-
-  def grouped_rule_entries_for(entries, rule_type)
-    Array(entries)
-      .select do |entry|
-        entry[:type] == rule_type &&
-          entry[:enabled] &&
-          !(rule_type == RULE_TYPE_SYSTEM && entry[:slot].present?)
-      end
-      .group_by { |entry| entry[:group].to_s }
-      .map do |group_name, grouped_entries|
-        {
-          group_name: group_name,
-          rules: grouped_entries.map { |entry| entry[:content].to_s }
-        }
-      end
-  end
-
-  def generated_rule_id(rule_type, content, index)
-    digest = Digest::SHA1.hexdigest("#{rule_type}:#{index}:#{content}")[0, 12]
-    "#{rule_type}_#{digest}"
-  end
-
-  def changed_legacy_rule_types
-    [].tap do |types|
-      types << RULE_TYPE_RESPONSE_GUIDELINE if will_save_change_to_attribute?('response_guidelines')
-      types << RULE_TYPE_GUARDRAIL if will_save_change_to_attribute?('guardrails')
-    end
   end
 
   def referenced_tool_ids_for_texts(texts)
@@ -1282,10 +984,6 @@ class Captain::Assistant < ApplicationRecord
 
   def referenced_field_ids_for_texts(texts)
     Array(texts).flatten.compact.flat_map { |text| Captain::ContextFields.extract_field_ids_from_text(text) }.uniq
-  end
-
-  def referenced_skill_ids_for_texts(texts)
-    Array(texts).flatten.compact.flat_map { |text| extract_skill_ids_from_text(text) }.uniq
   end
 
   def glossary_context_definitions(field_ids)
@@ -1314,12 +1012,6 @@ class Captain::Assistant < ApplicationRecord
     return if invalid_field_ids.empty?
 
     errors.add(field, "contains invalid fields: #{invalid_field_ids.join(', ')}")
-  end
-
-  def add_invalid_skill_error(field, invalid_skill_ids)
-    return if invalid_skill_ids.empty?
-
-    errors.add(field, "contains invalid skills: #{invalid_skill_ids.join(', ')}")
   end
 
   def validate_fish_voice_reference
@@ -1355,7 +1047,13 @@ class Captain::Assistant < ApplicationRecord
     tool_ids = referenced_tool_ids_for_texts(prompt_glossary_texts)
     return tool_ids unless scope_name.to_s == Captain::ToolAccess::SCOPE_AGENT
 
-    (tool_ids + prompt_referenced_skill_script_tool_ids_for_template(:assistant)).uniq
+    (tool_ids + legacy_scenario_explicit_tool_ids).uniq
+  end
+
+  def legacy_scenario_explicit_tool_ids
+    return [] if legacy_scenario_id.blank?
+
+    Array(config.to_h.dig('legacy_scenario_migration', 'explicit_tool_ids')).map(&:to_s) & selected_agent_tool_ids
   end
 
   def effective_tool_ids_for(scope_name, referenced_tool_ids:)
@@ -1363,11 +1061,10 @@ class Captain::Assistant < ApplicationRecord
 
     available_ids = available_tool_ids_for_scope(scope_name)
     selected_ids = selected_tool_ids_for_scope(scope_name)
-    default_ids = default_tool_ids_for_scope(scope_name)
     explicit_tool_ids = companion_expanded_tool_ids(Array(referenced_tool_ids).map(&:to_s))
-    explicit_tool_ids -= ['handoff'] if scope_name.to_s == Captain::ToolAccess::SCOPE_AGENT && selected_ids.exclude?('handoff')
+    explicit_tool_ids -= capability_controlled_tool_ids_for_scope(scope_name)
 
-    ((selected_ids & default_ids) + explicit_tool_ids)
+    companion_expanded_tool_ids(selected_ids + explicit_tool_ids)
       .uniq
       .select { |tool_id| available_ids.include?(tool_id) }
   end
@@ -1396,6 +1093,12 @@ class Captain::Assistant < ApplicationRecord
   def tool_scope_enabled?(scope_name)
     normalized_scope = normalized_tool_access[scope_name.to_s] || {}
     normalized_scope['enabled'] != false
+  end
+
+  def capability_controlled_tool_ids_for_scope(scope_name)
+    return [] unless scope_name.to_s == Captain::ToolAccess::SCOPE_AGENT
+
+    capability_tool_ids_for_scope(scope_name) | Captain::ToolAccess::CAPABILITY_CONTROLLED_AGENT_TOOL_IDS
   end
 
   def capability_tool_ids_for_scope(scope_name)
@@ -1477,48 +1180,12 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def prompt_glossary_texts_for_template(template_name)
-    texts = [
-      system_rule_contents_for_prompt(template_name: template_name),
-      response_guidelines,
-      guardrails
-    ]
-    texts.unshift(system_instruction) if template_name.to_sym == :assistant
-    texts
+    template_name.to_sym == :assistant ? [system_instruction] : []
   end
 
   def prompt_referenced_tool_ids_for_template(template_name)
-    referenced_tool_ids_for_texts(prompt_glossary_texts_for_template(template_name))
+    tool_ids = referenced_tool_ids_for_texts(prompt_glossary_texts_for_template(template_name))
+    template_name.to_sym == :assistant ? tool_ids | legacy_scenario_explicit_tool_ids : tool_ids
   end
 
-  def prompt_referenced_skill_script_tool_ids_for_template(template_name)
-    Captain::SkillCatalog.script_tool_ids_for(
-      account: account,
-      skill_ids: referenced_skill_ids_for_texts(prompt_glossary_texts_for_template(template_name))
-    )
-  end
-
-  def enabled_system_rule_entries_for_prompt(template_name:)
-    relevant_slots = template_slots_for(template_name).map(&:to_s)
-
-    rule_entries.select do |entry|
-      next false unless entry[:type] == RULE_TYPE_SYSTEM && entry[:enabled]
-
-      entry[:slot].blank? || relevant_slots.include?(entry[:slot].to_s)
-    end
-  end
-
-  def system_template_rule_entries
-    rule_entries.select do |entry|
-      entry[:type] == RULE_TYPE_SYSTEM && entry[:slot].present?
-    end
-  end
-
-  def template_slots_for(template_name)
-    case template_name.to_sym
-    when :scenario
-      SCENARIO_TEMPLATE_SLOTS
-    else
-      ASSISTANT_TEMPLATE_SLOTS
-    end
-  end
 end

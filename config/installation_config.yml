@@ -297,6 +297,11 @@
   display_title: 'Модель индексации базы знаний (эмбеддинги)'
   description: 'Одна модель на всю установку для поиска по базе знаний и FAQ; клиенты её не выбирают. Пусто — text-embedding-3-small. Смена модели требует переиндексации базы знаний.'
   locked: false
+- name: CAPTAIN_CUSTOM_GUARDRAIL_MODEL
+  display_title: 'Модель пользовательских проверок входящих сообщений и ответов'
+  description: 'Проверяет условия, заданные в профиле агента. Модель должна поддерживать структурированный ответ. Пусто — OpenAI GPT-6 Luna. При ошибке проверки автоматический ответ останавливается и диалог передаётся сотруднику.'
+  value: 'openai/gpt-6-luna'
+  locked: false
 - name: CAPTAIN_AUDIO_TRANSCRIPTION_MODEL
   display_title: 'Модель расшифровки голоса'
   description: 'Одна модель на всю установку для расшифровки голосовых сообщений; клиенты только включают или выключают расшифровку. Пусто — openai/gpt-4o-mini-transcribe.'
@@ -306,6 +311,11 @@
   display_title: 'Модель распознавания изображений'
   description: 'Одна модель на всю установку для распознавания картинок и документов; клиенты только включают или выключают распознавание. Пусто — берётся «Модель ИИ по умолчанию».'
   locked: false
+- name: CAPTAIN_OUTCOME_CLASSIFIER_MODEL
+  display_title: 'Модель классификации итогов диалога'
+  description: 'Выбирает причину после передачи сотруднику или завершения. Получает короткий фрагмент и при необходимости один расширенный. Не меняет статус и не отвечает клиенту. Пусто — Microsoft Decision 1. Также можно выбрать модель со структурированным ответом.'
+  value: 'microsoft/microsoft-decision-1'
+  locked: false
 - name: CAPTAIN_LABEL_SUGGESTION_MODEL
   display_title: 'Модель подсказок меток'
   description: 'Модель для подсказок меток в диалоге (AI-подсказки); клиенты только включают или выключают подсказки. Пусто — берётся «Модель ИИ по умолчанию».'
@@ -313,7 +323,7 @@
 - name: CAPTAIN_ASSISTANT_MODEL_ALLOWLIST
   display_title: 'Короткий список моделей для основного агента'
   description: 'JSON-список идентификаторов моделей OpenRouter, из которых клиент выбирает модель основного агента (не больше 12, каждая должна быть в каталоге). В списке должна быть модель агента по умолчанию. Пусто — клиент видит встроенный короткий список, ограничений при сохранении нет.'
-  value: '["openai/gpt-6-luna", "openai/gpt-5.6-luna", "openai/gpt-5.4", "openai/gpt-5.4-mini"]'
+  value: '["openai/gpt-6-luna", "openai/gpt-5.6-luna", "openai/gpt-5.4", "openai/gpt-5.4-mini", "anthropic/claude-haiku-5.5"]'
   locked: false
   type: code
 - name: CAPTAIN_FIRECRAWL_API_KEY

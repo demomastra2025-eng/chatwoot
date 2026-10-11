@@ -16,6 +16,8 @@ module Crm::StageReasonConfiguration
   end
 
   def canonical_closing_reasons(values)
+    return [] unless outcome_lost?
+
     normalized_values = self.class.normalize_closing_reason_values(values)
     return [] if normalized_values.blank?
 
@@ -26,6 +28,8 @@ module Crm::StageReasonConfiguration
   end
 
   def invalid_closing_reasons(values)
+    return [] unless outcome_lost?
+
     normalized_values = self.class.normalize_closing_reason_values(values)
     canonical_values = canonical_closing_reasons(normalized_values)
 
@@ -34,20 +38,12 @@ module Crm::StageReasonConfiguration
     end
   end
 
-  def canonical_transition_reason(value)
-    reason = self.class.normalize_closing_reason_values([value]).first
-    return if reason.blank?
-
-    options_by_key = transition_reason_options.index_by { |option| option.to_s.downcase }
-    options_by_key[reason.to_s.downcase]
+  def canonical_transition_reason(_value)
+    nil
   end
 
-  def invalid_transition_reason(value)
-    reason = self.class.normalize_closing_reason_values([value]).first
-    return [] if reason.blank?
-    return [] if canonical_transition_reason(reason).present?
-
-    [reason]
+  def invalid_transition_reason(_value)
+    []
   end
 
   private
@@ -55,34 +51,22 @@ module Crm::StageReasonConfiguration
   def normalize_closing_reason_config
     self.closing_reason_options = self.class.normalize_closing_reason_values(closing_reason_options)
 
-    return if terminal_outcome?
+    return if outcome_lost?
 
     self.closing_reason_options = []
     self.closing_reason_required = false
   end
 
   def normalize_transition_reason_config
-    self.transition_reason_options = self.class.normalize_closing_reason_values(transition_reason_options)
-
-    return if outcome_open?
-
     self.transition_reason_options = []
     self.transition_reason_required = false
   end
 
   def closing_reason_required_requires_options
-    return unless terminal_outcome?
+    return unless outcome_lost?
     return unless closing_reason_required?
     return if closing_reason_options.present?
 
     errors.add(:closing_reason_options, 'must include at least one reason when required')
-  end
-
-  def transition_reason_required_requires_options
-    return unless outcome_open?
-    return unless transition_reason_required?
-    return if transition_reason_options.present?
-
-    errors.add(:transition_reason_options, 'must include at least one reason when required')
   end
 end

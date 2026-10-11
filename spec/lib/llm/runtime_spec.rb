@@ -70,6 +70,27 @@ RSpec.describe Llm::Runtime do
     expect(described_class.ask(chat, 'hello', account: account, model: 'openai/gpt-5.4-mini', observability: {})).to eq(:response)
   end
 
+  it 'dispatches history continuation without supplying another user input' do
+    chat = instance_double(RubyLLM::Chat)
+    observability = { assistant_id: 17, conversation_record_id: 25 }
+    openrouter_runtime = instance_double(Llm::OpenRouterRuntime)
+
+    expect(Llm::OpenRouterRuntime).to receive(:new).with(account: account).and_return(openrouter_runtime)
+    expect(openrouter_runtime).not_to receive(:ask)
+    expect(openrouter_runtime).to receive(:complete)
+      .with(chat, model: 'openai/gpt-5.4-mini', observability: observability).and_return(:response)
+
+    expect(described_class.complete(chat, account: account, model: 'openai/gpt-5.4-mini', observability: observability)).to eq(:response)
+  end
+
+  it 'rejects an unsupported provider before continuing the chat' do
+    chat = instance_double(RubyLLM::Chat)
+
+    expect(chat).not_to receive(:complete)
+    expect { described_class.complete(chat, provider: :openai) }
+      .to raise_error(ArgumentError, /Unsupported LLM runtime provider/)
+  end
+
   it 'builds feature requests from keyword arguments' do
     openrouter_runtime = instance_double(Llm::OpenRouterRuntime, embed: :embedding)
 

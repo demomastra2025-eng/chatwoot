@@ -95,7 +95,6 @@ class Crm::Deals::StageTransition
       to_pipeline_id: target_stage.pipeline_id,
       from_closing_reasons: previous[:closing_reasons],
       closing_reasons: deal.closing_reasons,
-      transition_reason: params[:transition_reason],
       stage_rule_override: params[:stage_rule_override],
       appointment_automation: params[:appointment_automation]
     }.compact

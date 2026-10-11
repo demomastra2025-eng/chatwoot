@@ -1,11 +1,14 @@
 import { flushPromises, mount } from '@vue/test-utils';
-import { h, nextTick, ref } from 'vue';
+import { h, nextTick, reactive, ref } from 'vue';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import Index from './Index.vue';
 
 const testState = vi.hoisted(() => ({
-  batchUpdateStages: vi.fn(() => Promise.resolve()),
+  accountId: null,
+  batchUpdateStages: vi.fn(),
+  integrations: vi.fn(),
+  savePipelineSettings: vi.fn(() => Promise.resolve()),
   checkStageDeletion: vi.fn(() => Promise.resolve({ deletable: true })),
   useAlert: vi.fn(),
   translate: vi.fn(key =>
@@ -47,13 +50,17 @@ vi.mock('vue-router', () => ({
   useRouter: () => testState.router,
 }));
 
+vi.mock('dashboard/api/integrations', () => ({
+  default: { get: testState.integrations },
+}));
+
 vi.mock('dashboard/composables', () => ({
   useAlert: testState.useAlert,
 }));
 
 vi.mock('dashboard/composables/store', () => ({
   useMapGetter: key => {
-    if (key === 'getCurrentAccountId') return ref(1);
+    if (key === 'getCurrentAccountId') return testState.accountId;
     if (key === 'accounts/isFeatureEnabledonAccount') {
       return ref(() => true);
     }
@@ -117,6 +124,7 @@ vi.mock('dashboard/stores/crm/references', () => ({
     },
     loadPipelines: testState.loadPipelines,
     loadFieldDefinitions: testState.loadFieldDefinitions,
+    savePipelineSettings: testState.savePipelineSettings,
     batchUpdateStages: testState.batchUpdateStages,
     checkStageDeletion: testState.checkStageDeletion,
     deleteStage: testState.deleteStage,
@@ -240,6 +248,7 @@ const mountComponent = () =>
         SchedulingColorPicker: true,
         SchedulingDrawer: SchedulingDrawerStub,
         SchedulingErrorState: true,
+        SchedulingSelectField: true,
         SelectMenu: SelectMenuStub,
         SettingsLayout: {
           template:
@@ -254,14 +263,18 @@ const mountComponent = () =>
 
 describe('CRM pipeline settings', () => {
   beforeEach(() => {
+    testState.accountId = ref(1);
     testState.pipelineList = [pipeline];
+    testState.integrations.mockReset();
+    testState.integrations.mockResolvedValue({ data: { payload: [] } });
+    testState.batchUpdateStages.mockReset();
     pipeline.stages.find(stage => stage.id === 13).active = true;
     testState.checkStageDeletion.mockReset();
     testState.checkStageDeletion.mockResolvedValue({ deletable: true });
     testState.useAlert.mockReset();
     testState.translate.mockClear();
-    testState.batchUpdateStages.mockReset();
-    testState.batchUpdateStages.mockResolvedValue(pipeline);
+    testState.savePipelineSettings.mockReset();
+    testState.savePipelineSettings.mockResolvedValue(pipeline);
     testState.deleteStage.mockClear();
     testState.loadPipelines.mockClear();
     testState.reorderStages.mockClear();
@@ -319,7 +332,7 @@ describe('CRM pipeline settings', () => {
     await saveButton.trigger('click');
     await flushPromises();
 
-    expect(testState.batchUpdateStages).toHaveBeenCalledWith(
+    expect(testState.savePipelineSettings).toHaveBeenCalledWith(
       1,
       expect.objectContaining({
         stages: expect.arrayContaining([
@@ -353,7 +366,7 @@ describe('CRM pipeline settings', () => {
     await saveButton.trigger('click');
     await flushPromises();
 
-    expect(testState.batchUpdateStages).toHaveBeenCalledWith(
+    expect(testState.savePipelineSettings).toHaveBeenCalledWith(
       1,
       expect.objectContaining({
         stages: expect.arrayContaining([
@@ -364,7 +377,7 @@ describe('CRM pipeline settings', () => {
     expect(testState.reorderStages).not.toHaveBeenCalled();
   });
 
-  it('validates blank stage names before sending the batch request', async () => {
+  it('validates blank stage names before sending the atomic settings request', async () => {
     const wrapper = mountComponent();
     await flushPromises();
 
@@ -373,12 +386,12 @@ describe('CRM pipeline settings', () => {
     await wrapper.get('[data-testid="save-settings-button"]').trigger('click');
     await flushPromises();
 
-    expect(testState.batchUpdateStages).not.toHaveBeenCalled();
+    expect(testState.savePipelineSettings).not.toHaveBeenCalled();
     expect(nameInput.element.value).toBe('   ');
   });
 
-  it('preserves the complete local draft when the atomic batch is rejected', async () => {
-    testState.batchUpdateStages.mockRejectedValueOnce({
+  it('preserves the complete local draft when the atomic settings request is rejected', async () => {
+    testState.savePipelineSettings.mockRejectedValueOnce({
       response: { data: { code: 'STAGE_HAS_DEALS' } },
     });
     const wrapper = mountComponent();
@@ -416,7 +429,7 @@ describe('CRM pipeline settings', () => {
     await wrapper.get('[data-testid="save-settings-button"]').trigger('click');
     await flushPromises();
 
-    expect(testState.batchUpdateStages).toHaveBeenCalledWith(
+    expect(testState.savePipelineSettings).toHaveBeenCalledWith(
       1,
       expect.objectContaining({
         stages: expect.arrayContaining([
@@ -452,7 +465,7 @@ describe('CRM pipeline settings', () => {
     await wrapper.get('[data-testid="save-settings-button"]').trigger('click');
     await flushPromises();
 
-    expect(testState.batchUpdateStages).toHaveBeenCalledWith(
+    expect(testState.savePipelineSettings).toHaveBeenCalledWith(
       1,
       expect.objectContaining({ deleted_stage_ids: [13] })
     );
@@ -483,7 +496,7 @@ describe('CRM pipeline settings', () => {
     expect(testState.useAlert).toHaveBeenCalledWith(
       'CRM.ERRORS.STAGE_HAS_DEALS'
     );
-    expect(testState.batchUpdateStages).not.toHaveBeenCalled();
+    expect(testState.savePipelineSettings).not.toHaveBeenCalled();
   });
 
   it('keeps a stage that deals have passed through and says to deactivate it', async () => {
@@ -505,7 +518,7 @@ describe('CRM pipeline settings', () => {
     expect(testState.useAlert).toHaveBeenCalledWith(
       'CRM.ERRORS.STAGE_HAS_HISTORY'
     );
-    expect(testState.batchUpdateStages).not.toHaveBeenCalled();
+    expect(testState.savePipelineSettings).not.toHaveBeenCalled();
   });
 
   it('keeps a stage when the deletion preflight rejects it', async () => {
@@ -563,7 +576,7 @@ describe('CRM pipeline settings', () => {
       )
       .trigger('click');
     await expect(saveDecision).resolves.toBe(true);
-    expect(testState.batchUpdateStages).toHaveBeenCalledWith(
+    expect(testState.savePipelineSettings).toHaveBeenCalledWith(
       1,
       expect.objectContaining({
         stages: expect.arrayContaining([
@@ -573,7 +586,7 @@ describe('CRM pipeline settings', () => {
     );
   });
 
-  it('keeps the default stage selector inside auto-create settings', async () => {
+  it('keeps the channel target selector in the draft without default markers', async () => {
     const inactiveStage = {
       active: false,
       code: 'inactive_open',
@@ -610,11 +623,15 @@ describe('CRM pipeline settings', () => {
     testState.selectedMenuOption = '13';
     await selector.trigger('click');
     await flushPromises();
-    expect(testState.savePipeline).toHaveBeenCalledWith(
+    expect(testState.savePipeline).not.toHaveBeenCalled();
+    expect(testState.savePipelineSettings).not.toHaveBeenCalled();
+    await wrapper.get('[data-testid="save-settings-button"]').trigger('click');
+    await flushPromises();
+    expect(testState.savePipelineSettings).toHaveBeenCalledWith(
+      1,
       expect.objectContaining({
         auto_create_deal_on_channel_contact: true,
         auto_create_stage_id: '13',
-        id: 1,
       })
     );
   });
@@ -629,11 +646,14 @@ describe('CRM pipeline settings', () => {
     await selector.trigger('click');
     await flushPromises();
 
-    expect(testState.savePipeline).toHaveBeenCalledWith(
+    expect(testState.savePipeline).not.toHaveBeenCalled();
+    await wrapper.get('[data-testid="save-settings-button"]').trigger('click');
+    await flushPromises();
+    expect(testState.savePipelineSettings).toHaveBeenCalledWith(
+      1,
       expect.objectContaining({
         auto_create_deal_on_channel_contact: true,
         auto_create_stage_id: '10',
-        id: 1,
       })
     );
   });
@@ -742,10 +762,13 @@ describe('CRM pipeline settings', () => {
     await input.trigger('blur');
     await flushPromises();
 
-    expect(testState.savePipeline).toHaveBeenCalledWith({
-      id: 1,
-      name: 'Direct Sales',
-    });
+    expect(testState.savePipeline).not.toHaveBeenCalled();
+    await wrapper.get('[data-testid="save-settings-button"]').trigger('click');
+    await flushPromises();
+    expect(testState.savePipelineSettings).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ name: 'Direct Sales' })
+    );
   });
 
   it('renders the pipeline name editor through the real header title slot', async () => {
@@ -792,5 +815,249 @@ describe('CRM pipeline settings', () => {
     expect(wrapper.find('[data-testid="scheduling-drawer"]').exists()).toBe(
       true
     );
+  });
+
+  it('keeps all settings local and sends one atomic Save, preserving every draft on failure', async () => {
+    testState.pipelineList = [
+      pipeline,
+      { id: 2, name: 'Support', active: true, position: 20, stages: [] },
+    ];
+    testState.savePipelineSettings.mockRejectedValueOnce({
+      response: { data: { code: 'INVALID_PIPELINE_ORDER' } },
+    });
+    const wrapper = mountComponent();
+    await flushPromises();
+    await wrapper
+      .get('[data-testid="pipeline-name-input"]')
+      .setValue('Sales draft');
+    await wrapper.get('[data-testid="pipeline-name-input"]').trigger('blur');
+    await wrapper.get('[data-stage-name-id="13"]').setValue('Proposal draft');
+    wrapper
+      .get('header')
+      .findComponent({ name: 'Switch' })
+      .vm.$emit('update:modelValue', false);
+    wrapper
+      .get('[data-testid="crm-channel-entry-settings"]')
+      .findComponent({ name: 'Switch' })
+      .vm.$emit('update:modelValue', false);
+    wrapper
+      .findComponent('[data-testid="appointment-auto-create-deals"]')
+      .vm.$emit('update:modelValue', true);
+    await nextTick();
+    await wrapper
+      .findAll('button')
+      .find(
+        button =>
+          button.attributes('aria-label') === 'CRM.SETTINGS.PIPELINES.MOVE_DOWN'
+      )
+      .trigger('click');
+    expect(testState.savePipeline).not.toHaveBeenCalled();
+    expect(testState.savePipelineSettings).not.toHaveBeenCalled();
+
+    await wrapper.get('[data-testid="save-settings-button"]').trigger('click');
+    await flushPromises();
+    expect(testState.savePipelineSettings).toHaveBeenCalledTimes(1);
+    expect(testState.savePipelineSettings).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({
+        name: 'Sales draft',
+        default: false,
+        active: true,
+        auto_create_deal_on_channel_contact: false,
+        appointment_automation: expect.objectContaining({
+          auto_create_deals: true,
+        }),
+        pipeline_order: [2, 1],
+        stages: expect.arrayContaining([
+          expect.objectContaining({ id: 13, name: 'Proposal draft' }),
+        ]),
+      })
+    );
+    expect(testState.batchUpdateStages).not.toHaveBeenCalled();
+    expect(testState.savePipeline).not.toHaveBeenCalled();
+    expect(
+      wrapper.get('[data-testid="pipeline-name-input"]').element.value
+    ).toBe('Sales draft');
+    expect(wrapper.get('[data-stage-name-id="13"]').element.value).toBe(
+      'Proposal draft'
+    );
+    expect(
+      wrapper
+        .findComponent({ name: 'CrmAppointmentAutomationSettings' })
+        .props('modelValue').auto_create_deals
+    ).toBe(true);
+    expect(
+      wrapper
+        .get('header')
+        .findComponent({ name: 'Switch' })
+        .props('modelValue')
+    ).toBe(false);
+    expect(
+      wrapper.get('[data-testid="save-settings-button"]').attributes()
+    ).not.toHaveProperty('disabled');
+    expect(testState.loadPipelines).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves appointment deal creation off when the channel source is enabled and omits unchanged ordering', async () => {
+    const wrapper = mountComponent();
+    await flushPromises();
+    expect(
+      wrapper
+        .findComponent('[data-testid="appointment-auto-create-deals"]')
+        .props('modelValue')
+    ).toBe(false);
+    await wrapper.get('[data-stage-name-id="13"]').setValue('Proposal draft');
+    await wrapper.get('[data-testid="save-settings-button"]').trigger('click');
+    await flushPromises();
+    const payload = testState.savePipelineSettings.mock.calls[0][1];
+    expect(payload.auto_create_deal_on_channel_contact).toBe(true);
+    expect(payload.appointment_automation.auto_create_deals).toBe(false);
+    expect(payload).not.toHaveProperty('pipeline_order');
+    expect(
+      payload.stages.every(
+        stage =>
+          !('default' in stage) &&
+          !('transition_reason_options' in stage) &&
+          !('transition_reason_required' in stage)
+      )
+    ).toBe(true);
+  });
+
+  it('uses new stage client IDs in both the channel target and appointment rules in the same Save', async () => {
+    const wrapper = mountComponent();
+    await flushPromises();
+    await wrapper.get('[data-testid="create-stage-button"]').trigger('click');
+    const clientId = wrapper
+      .get('[data-draft-stage="true"]')
+      .attributes('data-stage-id');
+    testState.selectedMenuOption = clientId;
+    await wrapper
+      .get('[data-testid="auto-create-stage-select"]')
+      .trigger('click');
+    const appointments = wrapper.findComponent({
+      name: 'CrmAppointmentAutomationSettings',
+    });
+    appointments.props('modelValue').enabled = true;
+    await nextTick();
+    await appointments
+      .findAll('button')
+      .find(button => button.text() === 'CRM.APPOINTMENT_AUTOMATION.ADD_RULE')
+      .trigger('click');
+    appointments
+      .findAllComponents({ name: 'SchedulingSelectField' })
+      .find(
+        field => field.props('label') === 'CRM.APPOINTMENT_AUTOMATION.STAGE'
+      )
+      .vm.$emit('update:modelValue', clientId);
+    await nextTick();
+    await wrapper.get('[data-testid="save-settings-button"]').trigger('click');
+    await flushPromises();
+    expect(testState.savePipelineSettings).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({
+        auto_create_stage_id: clientId,
+        stages: expect.arrayContaining([
+          expect.objectContaining({
+            id: undefined,
+            client_id: clientId,
+            name: 'New stage',
+          }),
+        ]),
+        appointment_automation: expect.objectContaining({
+          rules: [expect.objectContaining({ stage_id: clientId })],
+        }),
+      })
+    );
+  });
+
+  it('places appointment automation after entry rules without ordinary reason controls or stage markers', async () => {
+    const wrapper = mountComponent();
+    await flushPromises();
+    expect(
+      wrapper
+        .findAll('section[data-testid]')
+        .map(section => section.attributes('data-testid'))
+    ).toEqual([
+      'crm-stage-entry-settings',
+      'crm-stage-entry-rules',
+      'crm-channel-entry-settings',
+      'crm-appointment-automation-settings',
+    ]);
+    expect(wrapper.find('[icon="i-lucide-star"]').exists()).toBe(false);
+    expect(wrapper.find('[icon="i-lucide-star-off"]').exists()).toBe(false);
+    await wrapper
+      .get('[data-stage-id="13"]')
+      .findAll('button')
+      .find(
+        button => button.text() === 'CRM.SETTINGS.STAGE_RULES.REQUIRED_FIELDS'
+      )
+      .trigger('click');
+    expect(
+      wrapper.get('[data-testid="scheduling-drawer"]').text()
+    ).not.toContain('TRANSITION_REASON');
+    expect(
+      wrapper
+        .findComponent({ name: 'CrmAppointmentAutomationSettings' })
+        .props('medelementInstalled')
+    ).toBe(false);
+  });
+
+  it('exposes the MedElement source only when the integration has an installed hook', async () => {
+    testState.integrations.mockResolvedValueOnce({
+      data: { payload: [{ id: 'medelement', hooks: [{ id: 7 }] }] },
+    });
+    const wrapper = mountComponent();
+    await flushPromises();
+    expect(
+      wrapper
+        .findComponent({ name: 'CrmAppointmentAutomationSettings' })
+        .props('medelementInstalled')
+    ).toBe(true);
+  });
+
+  it('resets the form on account change and ignores a previous account Save completion', async () => {
+    testState.pipelineList = reactive([pipeline]);
+    let completeOldSave;
+    testState.savePipelineSettings.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          completeOldSave = resolve;
+        })
+    );
+    const wrapper = mountComponent();
+    await flushPromises();
+    await wrapper
+      .get('[data-testid="pipeline-name-input"]')
+      .setValue('Account A draft');
+    await wrapper.get('[data-testid="save-settings-button"]').trigger('click');
+    expect(testState.savePipelineSettings).toHaveBeenCalledTimes(1);
+    testState.loadPipelines.mockImplementationOnce(() => {
+      testState.pipelineList.splice(0, testState.pipelineList.length, {
+        id: 2,
+        name: 'Account B',
+        active: true,
+        default: true,
+        stages: [],
+      });
+      return Promise.resolve();
+    });
+    testState.accountId.value = 2;
+    await flushPromises();
+    expect(
+      wrapper.get('[data-testid="pipeline-name-input"]').element.value
+    ).toBe('Account B');
+    completeOldSave({ id: 1, name: 'Account A draft' });
+    await flushPromises();
+    expect(
+      wrapper.get('[data-testid="pipeline-name-input"]').element.value
+    ).toBe('Account B');
+    expect(
+      wrapper.get('[data-testid="save-settings-button"]').attributes()
+    ).toHaveProperty('disabled');
+    expect(
+      wrapper
+        .findComponent({ name: 'CrmAppointmentAutomationSettings' })
+        .props('modelValue')
+    ).toMatchObject({ auto_create_deals: false, rules: [] });
   });
 });

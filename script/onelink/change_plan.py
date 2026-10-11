@@ -106,6 +106,86 @@ SAFE_STAGE_VISIT_UUID_DEFAULT_BLOCK = re.compile(
     """,
     re.DOTALL | re.VERBOSE,
 )
+# These two unpublished expand migrations need a nullable history reference and
+# a verified concurrent index swap. Accept only their exact protected blocks;
+# other nullability changes and index removals still fail the release gate.
+SAFE_SCENARIO_HISTORY_MIGRATION = "db/migrate/20261011080000_create_captain_standalone_agents.rb"
+SAFE_CRM_TARGET_INDEX_MIGRATION = "db/migrate/20261011093000_update_crm_appointment_target_indexes.rb"
+SAFE_SHORT_LOCK_SETTINGS = """  disable_ddl_transaction!
+
+  LOCK_TIMEOUT = '5s'.freeze
+  LOCK_ATTEMPTS = 5
+"""
+SAFE_SHORT_LOCK_BLOCK = """  def with_short_lock_timeout
+    attempt = 0
+    begin
+      attempt += 1
+      transaction(requires_new: true) do
+        execute("SET LOCAL lock_timeout = '#{LOCK_TIMEOUT}'")
+        yield
+      end
+    rescue ActiveRecord::LockWaitTimeout
+      raise if attempt >= LOCK_ATTEMPTS
+
+      sleep(attempt)
+      retry
+    end
+  end"""
+SAFE_SCENARIO_HISTORY_BLOCK = """  def preserve_legacy_scenario_history
+    with_short_lock_timeout do
+      change_column_null(:captain_scenarios, :assistant_id, true)
+    end
+  end"""
+SAFE_CRM_TARGET_INDEX_SWAP_BLOCK = """  def remove_replaced_index(name, replacement, source_key)
+    definition = index_definition(name)
+    return unless definition
+
+    raise ActiveRecord::MigrationError, "Unexpected index definition for #{name}" unless known_target_index?(definition, source_key)
+    raise ActiveRecord::MigrationError, "Valid replacement missing for #{name}" unless fixed_valid_index?(replacement, source_key)
+
+    remove_index :crm_pipelines, name: name, algorithm: :concurrently
+  end"""
+SAFE_CRM_TARGET_INDEX_GUARDS = (
+    """  INDEXES = {
+    'idx_crm_pipeline_calendar_target' => 'auto_create_from_calendar',
+    'idx_crm_pipeline_medelement_target' => 'auto_create_from_medelement'
+  }.freeze""",
+    """  def known_target_index?(definition, source_key)
+    target_index_shape?(definition) && [legacy_predicate(source_key), predicate(source_key)].any? do |expected|
+      normalize_predicate(definition['predicate']) == normalize_predicate(expected)
+    end
+  end""",
+    """  def target_index_shape?(definition)
+    definition['indisunique'] && definition['account_id_only']
+  end""",
+    """  def legacy_predicate(source_key)
+    "active AND appointment_automation ->> '#{source_key}' = 'true'"
+  end""",
+    """  def predicate(source_key)
+    "active AND appointment_automation ->> '#{source_key}' = 'true' " \\
+      "AND (appointment_automation ->> 'auto_create_deals') IS DISTINCT FROM 'false'"
+  end""",
+    """  def fixed_valid_index?(name, source_key)
+    definition = index_definition(name)
+    return false unless definition && definition['indisvalid'] && target_index_shape?(definition)
+
+    normalize_predicate(definition['predicate']) == normalize_predicate(predicate(source_key))
+  end""",
+    """  def normalize_predicate(value)
+    value.to_s.gsub(/::text|[\\s()]/, '')
+  end""",
+    """  def index_definition(name)
+    select_one <<~SQL.squish
+      SELECT indisvalid, indisunique, pg_get_expr(indpred, indrelid) AS predicate,
+             indnkeyatts = 1 AND indnatts = 1 AND indkey[0] = (
+               SELECT attnum FROM pg_attribute WHERE attrelid = indrelid AND attname = 'account_id'
+             ) AS account_id_only
+      FROM pg_index
+      WHERE indexrelid = to_regclass(#{quote(name)})
+        AND indrelid = to_regclass('crm_pipelines')
+    SQL
+  end""",
+)
 # Production runs migrations while the previous release is still serving, so an
 # "expand" migration must also be cheap and short-locked, not only additive.
 # These rules flag the statements that hold a strong lock for as long as the
@@ -295,6 +375,21 @@ def frontend_files(paths: Iterable[str]) -> list[str]:
     )
 
 
+def protected_expand_content(raw_path: str, content: str) -> str:
+    """Exclude only an exact, migration-specific safe operation from the ban."""
+    if raw_path == SAFE_SCENARIO_HISTORY_MIGRATION:
+        protected = SAFE_SCENARIO_HISTORY_BLOCK
+        required = (SAFE_SHORT_LOCK_SETTINGS, SAFE_SHORT_LOCK_BLOCK, protected)
+    elif raw_path == SAFE_CRM_TARGET_INDEX_MIGRATION:
+        protected = SAFE_CRM_TARGET_INDEX_SWAP_BLOCK
+        required = (protected, *SAFE_CRM_TARGET_INDEX_GUARDS)
+    else:
+        return content
+    if all(content.count(block) == 1 for block in required):
+        return content.replace(protected, "", 1)
+    return content
+
+
 def migration_violations(paths: Iterable[str]) -> list[tuple[str, str]]:
     """Return (path, rule) for every changed migration that is not a safe expand."""
     violations: list[tuple[str, str]] = []
@@ -307,6 +402,7 @@ def migration_violations(paths: Iterable[str]) -> list[tuple[str, str]]:
         content = path.read_text(encoding="utf-8")
         if raw_path == SAFE_STAGE_VISIT_UUID_DEFAULT_MIGRATION:
             content = SAFE_STAGE_VISIT_UUID_DEFAULT_BLOCK.sub("", content)
+        content = protected_expand_content(raw_path, content)
         if DESTRUCTIVE_MIGRATION_PATTERN.search(content):
             violations.append((raw_path, "destructive or contracting schema change"))
         violations.extend((raw_path, rule) for rule in unsafe_migration_rules(content))

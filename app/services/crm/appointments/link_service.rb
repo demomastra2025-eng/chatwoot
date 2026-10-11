@@ -1,4 +1,7 @@
 class Crm::Appointments::LinkService
+  RESULT_ATTRIBUTE = 'crm_link_result'.freeze
+  OPTIONAL_SELECTION_ERRORS = %w[CRM_DEAL_SELECTION_REQUIRED CRM_PIPELINE_NO_OPEN_STAGE].freeze
+
   def initialize(appointment:, params: {}, actor: nil, newly_imported: false)
     @appointment = appointment
     @params = params.to_h.deep_symbolize_keys
@@ -12,7 +15,7 @@ class Crm::Appointments::LinkService
     return unless account.feature_enabled?('crm_deals')
     return unless appointment.contact && appointment.contact.account_id == account.id
 
-    appointment.contact.with_lock { resolve_and_link! }
+    appointment.contact.with_lock { link_with_savepoint }
   end
 
   private
@@ -21,6 +24,18 @@ class Crm::Appointments::LinkService
 
   def account
     appointment.account
+  end
+
+  def link_with_savepoint
+    # A CRM validation failure rolls back its own deal/contact/event writes,
+    # while leaving the surrounding appointment transaction usable.
+    ApplicationRecord.transaction(requires_new: true) { resolve_and_link! }
+  rescue Crm::Error, ActiveRecord::RecordInvalid => e
+    record_unlinked_result!(e)
+  rescue Scheduling::Error => e
+    raise unless e.code.in?(OPTIONAL_SELECTION_ERRORS)
+
+    record_unlinked_result!(e)
   end
 
   def resolve_and_link!
@@ -38,10 +53,12 @@ class Crm::Appointments::LinkService
     return unless deal
 
     deal.with_lock do
-      if Crm::Appointments::Configuration.for(deal.pipeline)['cardinality'] == 'appointment' && deal.appointments.exists?
+      config = Crm::Appointments::Configuration.for(deal.pipeline)
+      if config['auto_create_deals'] == true && config['cardinality'] == 'appointment' && deal.appointments.exists?
         deal = create_deal!(deal.pipeline, source_deal: deal)
       end
       appointment.crm_deal = deal
+      appointment.custom_attributes = appointment.custom_attributes.to_h.except(RESULT_ATTRIBUTE)
     end
     deal
   end
@@ -63,7 +80,7 @@ class Crm::Appointments::LinkService
     return matches.first if matches.one?
     require_selection! if matches.many?
 
-    create_deal!(pipeline)
+    create_deal!(pipeline) if Crm::Appointments::Configuration.for(pipeline)['auto_create_deals'] == true
   end
 
   def dialog_deal
@@ -71,14 +88,14 @@ class Crm::Appointments::LinkService
     return matches.first if matches.one?
     require_selection! if matches.many?
 
-    pipeline = account.crm_pipelines.active.where(auto_create_deal_on_channel_contact: true).ordered.to_a
-                      .then { |records| records.find(&:default?) || records.first }
-    pipeline && create_deal!(pipeline)
+    direct_source_deal
   end
 
   def direct_source_deal
     key = newly_imported ? 'auto_create_from_medelement' : 'auto_create_from_calendar'
-    pipeline = account.crm_pipelines.active.where("appointment_automation ->> ? = 'true'", key).first
+    pipeline = account.crm_pipelines.active.where("appointment_automation ->> ? = 'true'", key).ordered.detect do |candidate|
+      Crm::Appointments::Configuration.for(candidate)['auto_create_deals'] == true
+    end
     return unless pipeline && prospective?(pipeline, key)
 
     scope = Crm::Appointments::CandidateScope.resolve(account: account, contact: appointment.contact, pipeline_id: pipeline.id)
@@ -126,5 +143,19 @@ class Crm::Appointments::LinkService
     raise Scheduling::Error.new(
       code: 'CRM_DEAL_SELECTION_REQUIRED', message: 'Choose a deal or create a new deal for this appointment', status: :unprocessable_content
     )
+  end
+
+  def record_unlinked_result!(error)
+    code = error.respond_to?(:code) ? error.code : 'CRM_DEAL_VALIDATION_ERROR'
+    details = error.is_a?(ActiveRecord::RecordInvalid) ? error.record.errors.to_hash : error.details
+    appointment.custom_attributes = appointment.custom_attributes.to_h.merge(
+      RESULT_ATTRIBUTE => {
+        'status' => 'not_linked', 'code' => code,
+        'message' => 'The appointment was saved without a CRM deal. Review the deal requirements or select an existing deal.',
+        'details' => details
+      }.compact
+    )
+    Rails.logger.info("Appointment CRM link skipped: account_id=#{account.id} appointment_id=#{appointment.id} code=#{code}")
+    nil
   end
 end

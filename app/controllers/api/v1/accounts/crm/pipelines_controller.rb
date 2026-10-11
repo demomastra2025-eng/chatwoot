@@ -1,4 +1,6 @@
 class Api::V1::Accounts::Crm::PipelinesController < Api::V1::Accounts::Crm::BaseController
+  include Api::V1::Accounts::Crm::Concerns::StageParameterSupport
+
   before_action :ensure_crm_deals_enabled!
   before_action :set_pipeline, only: [:show, :update, :destroy, :reorder_stages]
 
@@ -37,17 +39,14 @@ class Api::V1::Accounts::Crm::PipelinesController < Api::V1::Accounts::Crm::Base
 
   def update
     authorize @pipeline
+    ::Crm::Pipelines::UpdateService.new(
+      pipeline: @pipeline, attributes: pipeline_params,
+      stage_draft: params.key?(:stages) ? batch_update_params : nil,
+      auto_create_stage_id: params[:auto_create_stage_id],
+      pipeline_order: params.key?(:pipeline_order) ? params[:pipeline_order] : nil
+    ).perform
 
-    ApplicationRecord.transaction do
-      lock_account_for_pipeline_defaults!
-      @pipeline.lock!
-      was_default = @pipeline.active? && @pipeline.default?
-      set_auto_create_default_stage!
-      @pipeline.update!(pipeline_params)
-      promote_default_pipeline! if was_default && (!@pipeline.active? || !@pipeline.default?)
-    end
-
-    render_payload(::Crm::PayloadBuilder.pipeline(@pipeline.reload))
+    render_pipeline_save_payload
   end
 
   def destroy
@@ -99,32 +98,22 @@ class Api::V1::Accounts::Crm::PipelinesController < Api::V1::Accounts::Crm::Base
       :restrict_backward_move,
       :allow_stage_rule_override,
       appointment_automation: [
-        :enabled, :cardinality, :auto_create_from_calendar, :auto_create_from_medelement, :manual_stage_change, :success_mode,
-        { rules: [:id, :name, :stage_id, :scope, :transition_reason, { conditions: [], closing_reasons: [] }] }
+        :enabled, :auto_create_deals, :cardinality, :auto_create_from_calendar, :auto_create_from_medelement, :manual_stage_change, :success_mode,
+        { rules: [:id, :name, :stage_id, :scope, { conditions: [], closing_reasons: [] }] }
       ]
     )
-    if attrs.key?(:appointment_automation) && @pipeline
-      attrs[:appointment_automation] = @pipeline.appointment_automation.to_h.merge(attrs[:appointment_automation].to_h)
-    end
     attrs
   end
 
-  def set_auto_create_default_stage!
-    return if params[:auto_create_stage_id].blank?
+  def render_pipeline_save_payload
+    payload = ::Crm::PayloadBuilder.pipeline(@pipeline.reload, include_inactive_stages: true)
+    return render_payload(payload) unless params.key?(:stages)
 
-    stage = @pipeline.stages.active.find_by(
-      id: params[:auto_create_stage_id],
-      outcome: 'open'
-    )
-    if stage.blank?
-      raise ::Crm::Error.new(
-        code: 'INVALID_AUTO_CREATE_STAGE',
-        message: 'Auto-created deals require an active open stage from the selected pipeline.',
-        status: :unprocessable_content
-      )
-    end
-
-    stage.update!(default: true)
+    pipelines = policy_scope(::Crm::Pipeline).includes(stages: :field_requirements).ordered
+    render json: {
+      payload: payload,
+      pipelines: pipelines.map { |record| ::Crm::PayloadBuilder.pipeline(record, include_inactive_stages: true) }
+    }
   end
 
   def include_inactive_stages?

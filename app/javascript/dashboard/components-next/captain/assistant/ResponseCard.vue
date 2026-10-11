@@ -10,6 +10,7 @@ import Button from 'dashboard/components-next/button/Button.vue';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import Policy from 'dashboard/components/policy.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
+import { knowledgeAssistantIds, knowledgeVisibility } from './assistantAccess';
 
 const props = defineProps({
   id: {
@@ -44,6 +45,8 @@ const props = defineProps({
     type: Object,
     default: null,
   },
+  allowedAssistantIds: { type: Array, default: () => [] },
+  restrictedToAssistants: { type: Boolean, default: undefined },
   updatedAt: {
     type: Number,
     required: true,
@@ -115,13 +118,34 @@ const timestamp = computed(() =>
   dynamicTime(props.updatedAt || props.createdAt)
 );
 
+const knowledgeAccess = computed(() => ({
+  visibility: props.visibility,
+  assistant: props.assistant,
+  allowed_assistant_ids: props.allowedAssistantIds,
+  restricted_to_assistants: props.restrictedToAssistants,
+  documentable: props.documentable,
+}));
+const effectiveVisibility = computed(() =>
+  knowledgeVisibility(knowledgeAccess.value)
+);
 const visibilityLabel = computed(() =>
-  props.visibility === 'personal'
+  effectiveVisibility.value === 'personal'
     ? t('CAPTAIN.KNOWLEDGE_VISIBILITY.OPTIONS.PERSONAL')
     : t('CAPTAIN.KNOWLEDGE_VISIBILITY.OPTIONS.GENERAL')
 );
 const assistantLabel = computed(() => {
-  if (props.visibility !== 'personal' || !props.assistant?.name) return '';
+  if (effectiveVisibility.value !== 'personal') return '';
+  const ids = knowledgeAssistantIds(knowledgeAccess.value);
+  if (
+    ids.length &&
+    (!props.assistant?.name ||
+      ids.length > 1 ||
+      !ids.includes(Number(props.assistant.id)))
+  )
+    return t('CAPTAIN.KNOWLEDGE_VISIBILITY.AGENT_COUNT', {
+      count: ids.length,
+    });
+  if (!props.assistant?.name) return '';
 
   return t('CAPTAIN.KNOWLEDGE_VISIBILITY.ASSISTANT_BADGE', {
     name: props.assistant.name,

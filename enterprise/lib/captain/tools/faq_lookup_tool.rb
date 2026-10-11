@@ -13,7 +13,21 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
   description 'Search FAQ responses using semantic similarity to find relevant answers'
   param :query, type: 'string', desc: 'The question or topic to search for in the FAQ database'
 
-  def perform(_tool_context, query:, semantic: true, voice_realtime: false)
+  def perform(tool_context, query:, semantic: true, voice_realtime: false)
+    result = lookup_result(query: query, semantic: semantic, voice_realtime: voice_realtime)
+    payload = JSON.parse(result)
+    fallback_reason = payload.dig('retrieval_trace', 'fallback_reason')
+    tool_context.context[:captain_faq_outcome] = {
+      assistant_id: assistant.id,
+      result: payload['result'],
+      unavailable: fallback_reason.to_s.in?(%w[lookup_timeout semantic_timeout semantic_unavailable semantic_not_configured])
+    } if tool_context.respond_to?(:context) && tool_context.context.respond_to?(:[]=)
+    result
+  end
+
+  private
+
+  def lookup_result(query:, semantic: true, voice_realtime: false)
     log_tool_usage('searching', { query: query })
     return JSON.pretty_generate(voice_realtime_payload(query)) if voice_realtime
 
@@ -31,8 +45,6 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
     Rails.logger.warn "Captain::Tools::FaqLookupTool semantic lookup unavailable: #{e.class}: #{e.message}"
     JSON.pretty_generate(semantic_unavailable_payload(query, error: e))
   end
-
-  private
 
   def exact_faq_payload(query)
     responses = Captain::AssistantResponse.exact_search(

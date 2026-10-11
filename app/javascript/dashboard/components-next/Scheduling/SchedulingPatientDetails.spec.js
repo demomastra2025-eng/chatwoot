@@ -179,6 +179,18 @@ describe('SchedulingPatientDetails', () => {
     }
   );
 
+  it('keeps a local client editable without a MedElement identity label', async () => {
+    const { wrapper } = await mountSelected(84);
+    expect(wrapper.text()).toContain('Local Family');
+    expect(wrapper.text()).not.toContain('MedElement');
+    expect(wrapper.find('[data-test="patient-provider-source"]').exists()).toBe(
+      false
+    );
+    expect(wrapper.find('button').exists()).toBe(true);
+    expect(SchedulingContactsAPI.update).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
   it('saves only a changed local DOB and reloads the clinical projection with the selection intact', async () => {
     const { wrapper, store } = await mountSelected(84);
     await wrapper.find('button').trigger('click');

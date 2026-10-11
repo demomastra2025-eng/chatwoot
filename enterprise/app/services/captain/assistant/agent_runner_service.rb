@@ -16,6 +16,7 @@ class Captain::Assistant::AgentRunnerService
   CONTACT_INBOX_STATE_ATTRIBUTES = %i[id hmac_verified].freeze
   CAMPAIGN_STATE_ATTRIBUTES = %i[id title message campaign_type description].freeze
   MAX_RUNTIME_TURNS = 24
+  MAX_GRAPH_RUNTIME_TURNS = (Captain::Runtime::TaskQueue::MAX_TASKS * 2) + 1
   MAX_BLANK_RESPONSE_RETRIES = 1
   MAX_FINALIZATION_ONLY_RETRIES = 1
   MAX_TOOL_ARTIFACT_SCAN_BYTES = 100_000
@@ -62,6 +63,7 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def generate_response(message_history: [])
+    previous_actor = Current.executed_by
     started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     policy = if @playground_session
                Outbound::PlaygroundDeliveryPolicy.for_run(@playground_session.run_policy)
@@ -69,21 +71,48 @@ class Captain::Assistant::AgentRunnerService
                Outbound::PlaygroundDeliveryPolicy.policy_for(conversation: @conversation)
              end
     response = Outbound::PlaygroundDeliveryPolicy.with(policy) do
-      generate_response_in_runtime_cache(message_history)
+      guard_public_response(generate_response_in_runtime_cache(message_history))
     end
-    add_playground_latency(response, started_at)
+    add_playground_latency(with_agent_identity(response), started_at)
   rescue Captain::Conversation::ControlGenerationStaleError
     raise
+  rescue Captain::Safety::CustomRulesRuntime::HandoffRequired => e
+    @acting_assistant_id = e.assistant_id
+    add_playground_latency(with_agent_identity(Captain::Safety::CustomRulesRuntime.response_for(e)), started_at)
   rescue StandardError => e
     # In rake/local runs, conversation may not be present, so account is optional here.
     ChatwootExceptionTracker.new(e, account: @conversation&.account).capture_exception
     Rails.logger.error "[Captain V2] AgentRunnerService error: #{e.message}"
     Rails.logger.error e.backtrace.join("\n")
 
-    add_playground_latency(error_response(e), started_at)
+    add_playground_latency(with_agent_identity(guard_public_response(error_response(e))), started_at)
+  ensure
+    Current.executed_by = previous_actor
   end
 
   private
+
+  def guard_public_response(response)
+    return response unless response.is_a?(Hash) && response['response'].present?
+    return response if response['response_suppressed'] || response['response_cancelled']
+    return response if ['conversation_handoff', PROVIDER_ERROR_RESPONSE, 'response_cancelled'].include?(response['response'])
+
+    actor = custom_guardrail_actor(@acting_assistant_id)
+    Captain::Safety::CustomRulesRuntime.check_output!(
+      assistant: actor, context: @custom_guardrail_context.to_h, response: response
+    )
+  rescue Captain::Safety::CustomRulesRuntime::HandoffRequired => e
+    @acting_assistant_id = e.assistant_id
+    Captain::Safety::CustomRulesRuntime.response_for(e)
+  rescue Llm::SafetyPolicy::UnsafeContentError, Llm::SafetyPolicy::UnavailableError
+    blocked_by_moderation_response('Revised agent output blocked by safety policy')
+  end
+
+  def custom_guardrail_actor(actor_id)
+    return @assistant unless @assistant.persisted?
+
+    agent_run_context.graph.find(actor_id) || @assistant
+  end
 
   def generate_response_in_runtime_cache(message_history)
     Captain::Mcp::ToolCatalog.with_runtime_cache do
@@ -107,15 +136,10 @@ class Captain::Assistant::AgentRunnerService
     return false if @source.to_s == 'playground'
     return false unless Outbound::PlaygroundDeliveryPolicy.policy_for(conversation: @conversation).nil?
 
-    mcp_tool_reference?(
-      [
-        @assistant.config,
-        @assistant.description,
-        @assistant.response_guidelines,
-        @assistant.guardrails,
-        enabled_scenarios.map { |scenario| [scenario.tools, scenario.instruction] }
-      ]
-    )
+    actors = @assistant.persisted? ? agent_run_context.graph.agents : [@assistant]
+    mcp_tool_reference?(actors.map do |actor|
+      [actor.config, actor.description, actor.response_guidelines, actor.guardrails]
+    end)
   end
 
   def mcp_tool_reference?(value)
@@ -189,7 +213,7 @@ class Captain::Assistant::AgentRunnerService
       runner.run(
         message_to_process,
         context: context,
-        max_turns: MAX_RUNTIME_TURNS,
+        max_turns: (context[:agent_session] ? MAX_GRAPH_RUNTIME_TURNS : MAX_RUNTIME_TURNS),
         runtime_options: {
           llm_context: llm_context_for_run,
           account: @assistant.account
@@ -245,8 +269,15 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def process_agent_result(result)
+    @custom_guardrail_context = result.context if result.context
+    @acting_assistant_id = result.context&.dig(:acting_assistant_id)
+    @agent_tasks = result.context&.dig(:agent_tasks)
     log_agent_result(result)
     handoff_tool_called = handoff_tool_called_from_context(result.context)
+    if result.respond_to?(:error) && result.error.is_a?(Captain::Safety::CustomRulesRuntime::HandoffRequired)
+      @acting_assistant_id = result.error.assistant_id
+      return Captain::Safety::CustomRulesRuntime.response_for(result.error)
+    end
     if result.respond_to?(:error) && result.error.present?
       if authorized_handoff_pending?(result.context, handoff_tool_called)
         return human_handoff_response(result.context[:pending_human_handoff],
@@ -274,7 +305,10 @@ class Captain::Assistant::AgentRunnerService
     response.delete('handoff_authorized')
     response.delete(PROVIDER_ERROR_AUTHORIZED_KEY)
     response.delete(MODERATION_BLOCKED_KEY)
+    response.delete(Captain::Safety::CustomRulesRuntime::RESPONSE_KEY)
     response['agent_name'] = result.context&.dig(:current_agent)
+    response['agent_id'] = @acting_assistant_id
+    response['agent_tasks'] = @agent_tasks if @agent_tasks.present?
     response['handoff_tool_called'] = handoff_tool_called
     sanitize_response_artifact_ids!(response, result.context)
     return suppressed_response(response) if provider_booking_notification_deferred?(result.context)
@@ -938,16 +972,15 @@ class Captain::Assistant::AgentRunnerService
       model_override: @test_overrides[:model],
       temperature_override: @test_overrides[:temperature]
     }.compact
-    assistant_agent = @assistant.agent(**agent_options)
-    scenario_agents = enabled_scenarios.map { |scenario| scenario.agent(**agent_options) }
+    return [@assistant.agent(**agent_options)] unless @assistant.persisted?
 
-    assistant_agent.register_handoffs(*scenario_agents) if scenario_agents.any?
-    scenario_agents.each do |scenario_agent|
-      sibling_agents = scenario_agents.reject { |agent| agent.equal?(scenario_agent) }
-      scenario_agent.register_handoffs(assistant_agent, *sibling_agents)
-    end
+    agent_run_context.runtime_agents(overrides: agent_options)
+  end
 
-    [assistant_agent] + scenario_agents
+  def agent_run_context
+    @agent_run_context ||= Captain::AgentRunContext.new(
+      entry: @assistant, conversation: @conversation, playground: @playground_session, fence: @response_fence
+    )
   end
 
   def runtime_preferences_for_run
@@ -964,6 +997,14 @@ class Captain::Assistant::AgentRunnerService
 
     elapsed_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
     response.merge('response_latency_ms' => elapsed_ms)
+  end
+
+  def with_agent_identity(response)
+    return response unless response.is_a?(Hash)
+    return response unless @assistant.persisted?
+
+    actor = agent_run_context.graph.find(@acting_assistant_id || @assistant.id)
+    response.merge('agent_id' => actor&.id, 'agent_display_name' => actor&.name, 'agent_tasks' => @agent_tasks || [])
   end
 
   def add_playground_usage(response, result)
@@ -1263,6 +1304,7 @@ class Captain::Assistant::AgentRunnerService
       context[:playground_session] = @playground_session
     end
     context[:captain_v2_current_input] = message_to_process
+    @custom_guardrail_context = context
     enrich_context_with_trace_payload!(context, message_history, message_to_process)
     [message_to_process, context]
   end
@@ -1275,6 +1317,9 @@ class Captain::Assistant::AgentRunnerService
       account: @assistant.account,
       preferences: context.dig(:state, :captain_runtime)
     )
+    actor = custom_guardrail_actor(context[:acting_assistant_id])
+    @acting_assistant_id = actor.id
+    Captain::Safety::CustomRulesRuntime.check_input!(assistant: actor, context: context, text: message_to_process)
     nil
   rescue Llm::SafetyPolicy::UnsafeContentError
     blocked_by_moderation_response('Agent input blocked by moderation policy')
@@ -1326,16 +1371,14 @@ class Captain::Assistant::AgentRunnerService
 
   def human_handoff_response(handoff_payload, agent_name, handoff_tool_called: false)
     reason = handoff_payload[:reason].presence || handoff_payload['reason'].presence
-    status_reason = handoff_payload[:status_reason].presence || handoff_payload['status_reason'].presence
-    outcome_reason_id = handoff_payload[:outcome_reason_id].presence || handoff_payload['outcome_reason_id'].presence
+    outcome_signal = handoff_payload[:outcome_signal].presence || handoff_payload['outcome_signal'].presence
     message = handoff_payload[:message].presence || handoff_payload['message'].presence
 
     response = {
       'response' => 'conversation_handoff',
       'reasoning' => reason.present? ? "Human handoff requested: #{reason}" : 'Human handoff requested',
       'handoff_reason' => reason,
-      'handoff_status_reason' => status_reason,
-      'handoff_outcome_reason_id' => outcome_reason_id,
+      'handoff_outcome_signal' => outcome_signal,
       'handoff_message' => message,
       'handoff_authorized' => true,
       'agent_name' => agent_name

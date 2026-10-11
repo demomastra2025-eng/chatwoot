@@ -31,6 +31,16 @@ class Llm::Runtime
       )
     end
 
+    def complete(chat, **options)
+      provider = options.delete(:provider) || :openrouter
+      account = options[:account]
+      provider_runtime(provider: provider, account: account).complete(
+        chat,
+        model: options[:model],
+        observability: options[:observability]
+      )
+    end
+
     def transcribe(request = nil, **attributes)
       feature_request = build_request(request, feature: :audio_transcription, **attributes)
       provider_runtime(account: feature_request.account).transcribe(feature_request)
@@ -44,6 +54,11 @@ class Llm::Runtime
     def rerank(request = nil, **attributes)
       feature_request = build_request(request, feature: :knowledge_rerank, **attributes)
       provider_runtime(account: feature_request.account).rerank(feature_request)
+    end
+
+    def decide(request = nil, **attributes)
+      feature_request = build_request(request, **attributes)
+      provider_runtime(account: feature_request.account).decide(feature_request)
     end
 
     def metadata(generation_id:, provider: :openrouter, account: nil)

@@ -4,6 +4,24 @@ require 'rails_helper'
 
 RSpec.describe Llm::Monitoring::PerformanceBudgetSnapshot do
   describe '#call' do
+    it 'counts one outer request and its error while summing the costs of all nine provider responses' do
+      account = create(:account)
+      create(:llm_event, account: account, project_case_id: 'tool_loop', event_name: 'llm.chat.request',
+                         request_id: 'synthetic-outer', error: true, duration_ms: 1000, total_tokens: nil, estimated_cost: nil,
+                         payload: { usage_scope: 'outer_request' })
+      9.times do |index|
+        create(:llm_event, account: account, project_case_id: 'tool_loop', request_id: "synthetic-child-#{index}",
+                           duration_ms: 100, estimated_cost: 0.001,
+                           payload: { usage_scope: 'provider_response', parent_request_id: 'synthetic-outer' })
+      end
+
+      entry = described_class.new(scope: LlmEvent.for_account(account.id)).call[:cases].sole
+
+      expect(entry).to include(request_count: 1, request_error_count: 1, event_error_count: 1)
+      expect(entry[:metrics]).to include(request_error_rate: 1.0, avg_duration_ms: 1000.0, p95_duration_ms: 1000.0,
+                                        avg_cost_per_request: 0.009, total_estimated_cost: 0.009)
+    end
+
     it 'summarizes per-case performance budgets from persisted indexed event fields' do
       account = create(:account)
 

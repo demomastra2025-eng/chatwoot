@@ -72,7 +72,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       }
     end
 
-    it 'resolves duplicate handoff labels by stable outcome reason ID' do
+    it 'does not let the primary model classify a completed outcome' do
       assistant.update!(
         config: assistant.config.to_h.deep_merge(
           'outcome_reason_settings' => {
@@ -90,7 +90,8 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
                                   'handoff_status_reason' => 'Support'
                                 })
 
-      expect(job.send(:handoff_outcome_reason)).to include('id' => 'technical_queue', 'label' => 'Support')
+      expect(job.send(:handoff_status_reason)).to eq(Captain::OutcomeReasonConfig.new(assistant).pending_label)
+      expect(job.send(:handoff_transition_audit)[:metadata]).not_to have_key(:outcome_reason_id)
     end
 
     it 'persists a fenced first follow-up with a normal public AI reply' do
@@ -1220,6 +1221,158 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       expect(conversation.messages.outgoing.where(private: false)).to be_empty
     end
 
+    context 'when a configured custom check stops the reply' do
+      let(:approved_message) { 'Your request has been transferred to staff.' }
+      let(:saved_rule) do
+        {
+          'id' => 'current_request', 'name' => 'Current request', 'direction' => 'input',
+          'instruction' => 'Hand off a current request that needs staff.', 'action' => 'handoff',
+          'enabled' => true, 'message' => approved_message
+        }
+      end
+      let(:guardrail_response) do
+        {
+          'response' => Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_RESPONSE,
+          Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_AUTHORIZED_KEY => true,
+          'agent_id' => assistant.id,
+          'custom_guardrail' => {
+            'direction' => 'input', 'rule_id' => saved_rule['id'], 'action' => 'handoff',
+            'approved_message' => 'Text supplied by the response payload.'
+          }
+        }
+      end
+
+      before do
+        save_custom_handoff_rules(assistant, saved_rule)
+        allow(agent_runner_service).to receive(:generate_response).and_return(guardrail_response)
+      end
+
+      def save_custom_handoff_rules(actor, *rules)
+        actor.update!(
+          config: actor.config.to_h.deep_merge(
+            'handoff_enabled' => false, 'handoff_message_enabled' => false,
+            'safety_settings' => { 'custom_rules' => rules }
+          )
+        )
+      end
+
+      def expect_no_custom_guardrail_handoff
+        expect(conversation.reload.captain_handoff_applied_at).to be_nil
+        expect(conversation.messages.where(private: true, content: described_class::CUSTOM_GUARDRAIL_HANDOFF_NOTE)).to be_empty
+        expect(conversation.messages.outgoing.where(sender: assistant)).to be_empty
+      end
+
+      it 'sends the saved static message once even when ordinary handoff and its message are disabled' do
+        expect(assistant.handoff_enabled?).to be(false)
+        expect(assistant.handoff_message_enabled?).to be(false)
+
+        2.times { described_class.perform_now(conversation, assistant) }
+
+        expect(conversation.reload.status).to eq('open')
+        expect(conversation.captain_handoff_applied_at).to be_present
+        expect(conversation.waiting_since).to be_present
+        expect(conversation.messages.outgoing.where(private: false).pluck(:content)).to eq([approved_message])
+        expect(conversation.messages.where(private: true).pluck(:content)).to eq([described_class::CUSTOM_GUARDRAIL_HANDOFF_NOTE])
+        expect(conversation.status_transitions.last).to have_attributes(source: 'system', actor: assistant)
+        expect(agent_runner_service).to have_received(:generate_response).once
+      end
+
+      it 'loads the latest saved message instead of trusting text in the response payload' do
+        updated_message = 'Staff will handle the request recorded in this conversation.'
+        allow(agent_runner_service).to receive(:generate_response) do
+          save_custom_handoff_rules(assistant, saved_rule.merge('message' => updated_message))
+          guardrail_response
+        end
+
+        described_class.perform_now(conversation, assistant)
+
+        expect(conversation.reload.messages.outgoing.where(private: false).pluck(:content)).to eq([updated_message])
+        expect(conversation.messages.where(content: guardrail_response.dig('custom_guardrail', 'approved_message'))).to be_empty
+      end
+
+      it 'does not send payload text when the saved rule has no message' do
+        save_custom_handoff_rules(assistant, saved_rule.except('message'))
+
+        described_class.perform_now(conversation, assistant)
+
+        expect(conversation.reload.status).to eq('open')
+        expect(conversation.messages.outgoing.where(private: false)).to be_empty
+        expect(conversation.messages.where(private: true).pluck(:content)).to eq([described_class::CUSTOM_GUARDRAIL_HANDOFF_NOTE])
+      end
+
+      %w[disabled deleted direction_changed].each do |change|
+        it "does not send the matched rule message when the saved rule is #{change.tr('_', ' ')}" do
+          rules = case change
+                  when 'disabled' then [saved_rule.merge('enabled' => false)]
+                  when 'deleted' then []
+                  when 'direction_changed' then [saved_rule.merge('direction' => 'output')]
+                  end
+          save_custom_handoff_rules(assistant, *rules)
+
+          described_class.perform_now(conversation, assistant)
+
+          expect(conversation.reload.status).to eq('open')
+          expect(conversation.messages.outgoing.where(private: false)).to be_empty
+          expect(conversation.messages.where(private: true).pluck(:content)).to eq([described_class::CUSTOM_GUARDRAIL_HANDOFF_NOTE])
+        end
+      end
+
+      it 'uses the routed actor and saved profile for the handoff message' do
+        routed_assistant = create(:captain_assistant, account: account)
+        assistant.update!(handoff_agent_ids: [routed_assistant.id])
+        routed_message = 'The specialist has transferred your request to staff.'
+        save_custom_handoff_rules(routed_assistant, saved_rule.merge('message' => routed_message))
+        Captain::Conversation::AgentSession.new(entry: assistant, conversation: conversation).update_routing(actor_id: routed_assistant.id)
+        allow(agent_runner_service).to receive(:generate_response).and_return(guardrail_response.merge('agent_id' => routed_assistant.id))
+
+        described_class.perform_now(conversation, assistant)
+
+        public_message = conversation.reload.messages.outgoing.where(private: false).sole
+        expect(public_message).to have_attributes(content: routed_message, sender: routed_assistant)
+        expect(conversation.status_transitions.last).to have_attributes(source: 'system', actor: routed_assistant)
+        expect(conversation.messages.where(private: true).sole.sender).to eq(routed_assistant)
+      end
+
+      it 'blocks a secret-shaped string in the saved static message' do
+        fake_secret_message = 'api_key=FAKE_CUSTOM_GUARDRAIL_SECRET_NOT_REAL_123456'
+        save_custom_handoff_rules(assistant, saved_rule.merge('message' => fake_secret_message))
+
+        described_class.perform_now(conversation, assistant)
+
+        expect(conversation.reload.status).to eq('open')
+        expect(conversation.messages.outgoing.where(private: false)).to be_empty
+        expect(conversation.messages.where(content: fake_secret_message)).to be_empty
+        expect(conversation.messages.where(private: true).pluck(:content)).to eq([described_class::CUSTOM_GUARDRAIL_HANDOFF_NOTE])
+      end
+
+      it 'sends neither the message nor the handoff if a newer customer message wins the locked fence' do
+        job = described_class.new
+        allow(job).to receive(:handoff_failed_turn).and_wrap_original do |method|
+          create(:message, conversation: conversation, content: 'A newer request', message_type: :incoming)
+          method.call
+        end
+
+        job.perform(conversation, assistant)
+
+        expect(conversation.reload.status).to eq('pending')
+        expect_no_custom_guardrail_handoff
+      end
+
+      it 'sends neither the message nor the handoff if the status epoch changes before the locked handoff' do
+        job = described_class.new
+        allow(job).to receive(:handoff_failed_turn).and_wrap_original do |method|
+          Conversations::StatusTransitionService.new(conversation: conversation, params: { status: 'open' }, source: 'system').perform
+          Conversations::StatusTransitionService.new(conversation: conversation, params: { status: 'pending' }, source: 'system').perform
+          method.call
+        end
+
+        job.perform(conversation, assistant)
+
+        expect(conversation.reload.status).to eq('pending')
+        expect_no_custom_guardrail_handoff
+      end
+    end
+
     it 'hands a provider error to people as a system handoff, not as an AI tool call' do
       allow(agent_runner_service).to receive(:generate_response).and_return(
         {
@@ -1233,8 +1386,9 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
       expect(conversation.reload.status).to eq('open')
       expect(conversation.status_transitions.last).to have_attributes(
-        from_status: 'pending', to_status: 'open', source: 'system', reason: nil, actor: assistant
+        from_status: 'pending', to_status: 'open', source: 'system', reason: 'Reason is being classified', actor: assistant
       )
+      expect(conversation.status_transitions.last.metadata['outcome_reason_explanation']).to eq(described_class::FAILED_TURN_HANDOFF_NOTE)
       expect(conversation.messages.outgoing.where(private: false)).to be_empty
     end
 
@@ -1341,8 +1495,8 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       expect(conversation.captain_handoff_applied_at).to be_nil
       expect(conversation.messages.outgoing.where(sender: assistant)).to be_empty
       expect(Llm::EventBus).to have_received(:publish).with(
-        'captain.handoff.skipped_stale',
-        hash_including(conversation_id: conversation.id)
+        'captain.run.fenced',
+        hash_including(conversation_id: conversation.id, reason: 'status_changed', stage: 'response_handoff')
       )
     end
 
@@ -1496,7 +1650,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         expect(private_note.sender).to eq(assistant)
       end
 
-      it 'maps an unknown optional handoff reason to Other and audits its explanation' do
+      it 'defers reason classification and audits the explanation without blocking a fenced handoff' do
         buffer_token = SecureRandom.uuid
         trigger_message = conversation.messages.incoming.last
         expected_generation = conversation.captain_control_generation
@@ -1533,9 +1687,9 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         end.not_to raise_error
 
         transition = conversation.reload.status_transitions.last
-        expect(transition).to have_attributes(reason: 'Other', source: 'captain')
+        expect(transition).to have_attributes(reason: Captain::OutcomeReasonConfig.new(assistant).pending_label, source: 'captain')
+        expect(transition.metadata.dig('outcome_classification', 'state')).to eq('pending')
         expect(transition.metadata).to include(
-          'outcome_reason_id' => 'other',
           'outcome_reason_type' => 'handoff',
           'assistant_id' => assistant.id,
           'outcome_reason_explanation' => 'Customer requested a human'
@@ -1583,7 +1737,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         expect(conversation.status_transitions.where(to_status: 'open').count).to eq(1)
       end
 
-      it 'canonicalizes a configured optional status reason before handoff' do
+      it 'hands off with asynchronous reason classification regardless of a legacy selected reason' do
         account.update!(
           conversation_status_reason_config: {
             open: { options: ['Needs agent'], required: false }
@@ -1600,7 +1754,8 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
         described_class.perform_now(conversation, assistant)
 
-        expect(conversation.reload.status_transitions.last).to have_attributes(reason: 'Needs agent', source: 'captain')
+        expect(conversation.reload.status_transitions.last).to have_attributes(reason: Captain::OutcomeReasonConfig.new(assistant).pending_label,
+                                                                            source: 'captain')
       end
 
       it 'records the AI open activity with the handoff reason' do
@@ -1661,6 +1816,24 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         expect(private_note.content).not_to include('RubyLLM')
         expect(private_note.content).not_to include('Quota exceeded')
         expect(private_note.sender).to eq(assistant)
+      end
+
+      it 'records the failed-turn handoff activity with its inference reason after commit' do
+        expected_content = I18n.t(
+          'conversations.activity.captain.open_with_reason',
+          locale: account.locale,
+          user_name: assistant.name,
+          reason: described_class::FAILED_TURN_HANDOFF_NOTE
+        )
+
+        expect { described_class.perform_now(conversation, assistant) }
+          .to have_enqueued_job(Conversations::ActivityMessageJob)
+          .with(conversation, { account_id: conversation.account_id, inbox_id: conversation.inbox_id, message_type: :activity,
+                                content: expected_content })
+
+        expect(conversation.reload).to be_open
+        expect(conversation.captain_activity_reason).to be_nil
+        expect(conversation.captain_activity_reason_type).to be_nil
       end
 
       it 'hands off even with the handoff tool disabled, without public transfer text' do
@@ -2113,7 +2286,8 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         expect { job.send(:handle_error, standard_error) }.not_to raise_error
 
         expect(conversation.reload.status).to eq('open')
-        expect(conversation.status_transitions.last).to have_attributes(reason: nil, source: 'system')
+        expect(conversation.status_transitions.last).to have_attributes(reason: 'Reason is being classified', source: 'system')
+        expect(conversation.status_transitions.last.metadata['outcome_reason_explanation']).not_to eq('Polluted handoff reason')
         expect(conversation.messages.where(content: 'Polluted handoff reason')).to be_empty
         expect(conversation.messages.where(content: 'Polluted public handoff')).to be_empty
         expect(conversation.messages.where(private: true).last.content).to eq(

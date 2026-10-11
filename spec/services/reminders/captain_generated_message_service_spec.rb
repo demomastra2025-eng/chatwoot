@@ -47,7 +47,42 @@ RSpec.describe Reminders::CaptainGeneratedMessageService do
 
         expect(result[:assistant]).to eq(assistant)
         expect(result[:assistant]).to be_persisted
+        expect(result[:captain_trace]).to eq('steps' => [])
       end.not_to change(Captain::Assistant, :count)
+    end
+
+    context 'when the runtime returns an undeliverable result' do
+      let(:account) { create(:account) }
+      let(:conversation) { create(:conversation, account: account) }
+      let(:assistant) { create(:captain_assistant, account: account) }
+      let(:reminder) do
+        build(:reminder, account: account, remindable: conversation, text_mode: :agent,
+                         instructions: 'Follow up', metadata: { 'captain_assistant_id' => assistant.id })
+      end
+      let(:runner) { instance_double(Captain::Assistant::AgentRunnerService) }
+
+      before do
+        allow(Captain::Assistant::AgentRunnerService).to receive(:new).and_return(runner)
+      end
+
+      {
+        'a human handoff' => { response: ' conversation_handoff ' },
+        'a provider error sentinel' => { response: 'conversation_handoff_due_to_provider_error' },
+        'a cancellation sentinel' => { response: ' response_cancelled ' },
+        'a cancelled response with otherwise nonblank content' => { 'response' => 'Cancelled follow-up', 'response_cancelled' => true },
+        'an error with otherwise nonblank content' => { 'response' => 'Partial follow-up', 'error_class' => 'RubyLLM::RateLimitError' },
+        'a moderation block with otherwise nonblank content' => { response: 'Blocked follow-up', moderation_blocked: true },
+        'a suppressed response with otherwise nonblank content' => { 'response' => 'Suppressed follow-up', 'response_suppressed' => true }
+      }.each do |outcome, payload|
+        %i[touch wakeup].each do |mode|
+          it "rejects #{outcome} in #{mode} mode" do
+            allow(runner).to receive(:generate_response).and_return(payload)
+
+            expect { described_class.new(reminder: reminder, conversation: conversation, mode: mode).perform }
+              .to raise_error(ArgumentError, 'Captain did not produce a deliverable touch message')
+          end
+        end
+      end
     end
   end
 end

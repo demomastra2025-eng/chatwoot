@@ -155,6 +155,23 @@ RSpec.describe 'Captain knowledge admin copilot tools' do
       expect(entry.reload.assistant_id).to eq(other_assistant.id)
       expect(entry.visibility).to eq('personal')
     end
+
+    it 'preserves an explicitly narrowed FAQ when its source sharing is resubmitted' do
+      other_assistant = create(:captain_assistant, account: account)
+      selected_ids = [assistant.id, other_assistant.id]
+      document.update!(visibility: :personal, allowed_assistant_ids: selected_ids)
+      entry = create(:captain_assistant_response, account: account, assistant: assistant, documentable: document,
+                                                visibility: :personal, allowed_assistant_ids: [assistant.id])
+
+      payload = JSON.parse(service.execute(document_id: document.id, visibility: 'personal', allowed_assistant_ids: selected_ids))
+
+      expect(payload['action']).to eq('update_captain_knowledge_document')
+      expect(document.reload.allowed_assistant_ids).to match_array(selected_ids)
+      expect(entry.reload).to have_attributes(visibility: 'personal', restricted_to_assistants: true)
+      expect(entry.allowed_assistant_ids).to eq([assistant.id])
+      expect(Captain::Document.visible_to_assistant(other_assistant.id)).to include(document)
+      expect(Captain::AssistantResponse.visible_to_assistant(other_assistant.id)).not_to include(entry)
+    end
   end
 
   describe Captain::Tools::Copilot::ResyncCaptainKnowledgeDocumentService do
@@ -238,6 +255,23 @@ RSpec.describe 'Captain knowledge admin copilot tools' do
 
       expect(payload['entry']).to include('id' => entry.id)
       expect(entry.reload.documentable).to eq(other_document)
+    end
+
+    it 'clears an explicitly removed owner while preserving an unrequested document attachment' do
+      other_assistant = create(:captain_assistant, account: account)
+      entry.update!(visibility: :personal)
+      service = Captain::Tools::Copilot::UpdateCaptainKnowledgeEntryService.new(assistant, user: admin)
+
+      payload = JSON.parse(
+        service.execute(entry_id: entry.id, assistant_id: nil, allowed_assistant_ids: [other_assistant.id])
+      )
+
+      expect(payload['action']).to eq('update_captain_knowledge_entry')
+      expect(payload['updated_fields']).to contain_exactly('assistant', 'allowed_assistant_ids')
+      expect(entry.reload).to have_attributes(assistant_id: nil, documentable: document, restricted_to_assistants: true)
+      expect(entry.allowed_assistant_ids).to eq([other_assistant.id])
+      expect(Captain::AssistantResponse.visible_to_assistant(other_assistant.id)).to include(entry)
+      expect(Captain::AssistantResponse.visible_to_assistant(assistant.id)).not_to include(entry)
     end
 
     it 'creates, updates, and deletes manual entries with confirmation-gated services' do

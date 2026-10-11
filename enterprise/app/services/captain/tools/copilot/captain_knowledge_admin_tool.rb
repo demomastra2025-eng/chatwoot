@@ -9,7 +9,7 @@ class Captain::Tools::Copilot::CaptainKnowledgeAdminTool < Captain::Tools::Copil
   private
 
   def documents_scope
-    account.captain_documents.includes(:assistant).ordered
+    account.captain_documents.includes(:assistant, :knowledge_grants).ordered
   end
 
   def source_documents_scope
@@ -17,7 +17,7 @@ class Captain::Tools::Copilot::CaptainKnowledgeAdminTool < Captain::Tools::Copil
   end
 
   def knowledge_entries_scope
-    account.captain_assistant_responses.includes(:assistant, :documentable).ordered
+    account.captain_assistant_responses.includes(:assistant, :documentable, :knowledge_grants).ordered
   end
 
   def find_document!(document_id)
@@ -54,6 +54,8 @@ class Captain::Tools::Copilot::CaptainKnowledgeAdminTool < Captain::Tools::Copil
       name: redacted_value(document.name),
       source_mode: document.source_mode,
       visibility: document.visibility,
+      allowed_assistant_ids: document.allowed_assistant_ids,
+      restricted_to_assistants: document.restricted_to_assistants?,
       created_at: document.created_at&.iso8601,
       updated_at: document.updated_at&.iso8601
     }
@@ -101,6 +103,8 @@ class Captain::Tools::Copilot::CaptainKnowledgeAdminTool < Captain::Tools::Copil
       assistant_name: entry.assistant&.name,
       status: entry.status,
       visibility: entry.visibility,
+      allowed_assistant_ids: entry.allowed_assistant_ids,
+      restricted_to_assistants: entry.restricted_to_assistants?,
       edited: entry.edited,
       documentable_type: entry.documentable_type,
       documentable_id: safe_documentable_id(entry),
@@ -133,7 +137,7 @@ class Captain::Tools::Copilot::CaptainKnowledgeAdminTool < Captain::Tools::Copil
     source_mode = normalize_source_mode(kwargs[:source_mode])
     require_firecrawl_if_needed!(source_mode)
 
-    {
+    attributes = {
       assistant: assistant,
       account: account,
       name: kwargs[:name],
@@ -142,6 +146,8 @@ class Captain::Tools::Copilot::CaptainKnowledgeAdminTool < Captain::Tools::Copil
       visibility: normalize_knowledge_visibility(kwargs[:visibility]),
       metadata: document_metadata(source_mode: source_mode, kwargs: kwargs)
     }
+    attributes[:allowed_assistant_ids] = kwargs[:allowed_assistant_ids] if kwargs.key?(:allowed_assistant_ids)
+    attributes
   end
 
   def normalize_knowledge_visibility(visibility, default: 'general')

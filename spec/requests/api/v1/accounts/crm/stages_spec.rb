@@ -278,7 +278,7 @@ RSpec.describe 'CRM Stages API', type: :request do
     expect(stage.slice(:active, :color, :default, :outcome, :position)).to eq(original_attributes)
   end
 
-  it 'configures closing reasons on standard won and lost stages', :aggregate_failures do
+  it 'configures closing reasons on the lost stage', :aggregate_failures do
     stage = account.crm_stages.find_by!(code: 'lost')
 
     patch "/api/v1/accounts/#{account.id}/crm/stages/#{stage.id}",
@@ -303,7 +303,7 @@ RSpec.describe 'CRM Stages API', type: :request do
     expect(stage.reload.closing_reason_required).to be(false)
   end
 
-  it 'saves normalized transition reason configuration on open stages' do
+  it 'ignores retired ordinary transition reasons while saving the stage draft' do
     stage = account.crm_stages.find_by!(code: 'proposal')
 
     patch "/api/v1/accounts/#{account.id}/crm/stages/#{stage.id}",
@@ -318,13 +318,25 @@ RSpec.describe 'CRM Stages API', type: :request do
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body['payload']).to include(
       'name' => 'Proposal sent',
-      'transition_reason_options' => ['Needs approval', 'Waiting payment'],
-      'transition_reason_required' => true
+      'transition_reason_options' => [],
+      'transition_reason_required' => false
     )
     expect(stage.reload).to have_attributes(
-      transition_reason_options: ['Needs approval', 'Waiting payment'],
-      transition_reason_required: true
+      transition_reason_options: [],
+      transition_reason_required: false
     )
+  end
+
+  it 'saves the won stage without reason configuration even when an older client submits it' do
+    stage = account.crm_stages.find_by!(code: 'won')
+
+    patch "/api/v1/accounts/#{account.id}/crm/stages/#{stage.id}",
+          params: { name: 'Closed Won', closing_reason_options: ['Purchase'], closing_reason_required: true },
+          headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body['payload']).to include('closing_reason_options' => [], 'closing_reason_required' => false)
+    expect(stage.reload).to have_attributes(name: 'Closed Won', closing_reason_options: [], closing_reason_required: false)
   end
 
   it 'rejects deleting standard won and lost stages' do

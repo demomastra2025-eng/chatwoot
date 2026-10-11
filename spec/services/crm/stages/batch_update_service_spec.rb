@@ -42,7 +42,7 @@ RSpec.describe Crm::Stages::BatchUpdateService do
             .order(:position, :id).pluck(:id)
   end
 
-  it 'applies a complete ordered draft under one pipeline lock and preserves existing configuration' do
+  it 'applies a complete ordered draft under one pipeline lock and preserves closing reason configuration' do
     reason_stage = pipeline.stages.find_by!(code: 'proposal')
     reason_stage.update!(
       transition_reason_options: ['Budget confirmed'],
@@ -69,8 +69,8 @@ RSpec.describe Crm::Stages::BatchUpdateService do
     expect(saved_open_stage_ids(pipeline)).to eq(stages.map { |stage| stage[:id] })
     expect(reason_stage.reload).to have_attributes(
       default: true,
-      transition_reason_options: ['Budget confirmed'],
-      transition_reason_required: true
+      transition_reason_options: [],
+      transition_reason_required: false
     )
     expect(default_stage.reload).not_to be_default
     expect(terminal_stage.reload).to have_attributes(

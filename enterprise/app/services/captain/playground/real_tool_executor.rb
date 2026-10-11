@@ -39,6 +39,7 @@ class Captain::Playground::RealToolExecutor
   def read?(tool_id) = READ_TOOLS.include?(tool_id)
 
   def prepare(tool_id, arguments)
+    @session.validate_active_agent!
     raise ArgumentError, 'Reading real data is disabled' unless @session.read_enabled?
     raise ArgumentError, Outbound::PlaygroundDeliveryPolicy::BLOCKED_MESSAGE if DELIVERY_TOOLS.include?(tool_id)
     raise ArgumentError, 'A synthetic reference cannot be used for a real action' if @session.namespace.synthetic?(arguments)
@@ -87,11 +88,16 @@ class Captain::Playground::RealToolExecutor
       end
       target
     end
-    { delegate: delegate, arguments: arguments, target: snapshot, records: records, conversation: conversation }
+    { delegate: delegate, arguments: arguments, target: snapshot, records: records, conversation: conversation,
+      actor_id: @session.assistant.id, entry_assistant_id: @session.entry_assistant.id }
   end
 
   def execute(tool_id, arguments, prepared: nil)
     prepared ||= prepare(tool_id, arguments)
+    @session.validate_active_agent!
+    unless prepared[:actor_id] == @session.assistant.id && prepared[:entry_assistant_id] == @session.entry_assistant.id
+      raise ArgumentError, 'The acting agent changed; review a new preview'
+    end
     if read?(tool_id)
       raise ArgumentError, 'Reading real data is disabled' unless @session.read_enabled?
       return ActiveRecord::Base.connected_to(role: :writing, prevent_writes: true) { execute_prepared(tool_id, prepared) }
@@ -100,7 +106,8 @@ class Captain::Playground::RealToolExecutor
     ActiveRecord::Base.transaction do
       prepared.fetch(:records).values.uniq.sort_by { |record| [record.class.name, record.id] }.each(&:lock!)
       fresh = prepare(tool_id, prepared.fetch(:arguments))
-      unless fresh[:target].deep_stringify_keys == prepared[:target].deep_stringify_keys
+      unless fresh[:actor_id] == prepared[:actor_id] && fresh[:entry_assistant_id] == prepared[:entry_assistant_id] &&
+             fresh[:target].deep_stringify_keys == prepared[:target].deep_stringify_keys
         raise ArgumentError, 'The target or payload changed; review a new preview'
       end
       unless Outbound::PlaygroundMutationPolicy.authorized_action?(Current.playground_run_policy)

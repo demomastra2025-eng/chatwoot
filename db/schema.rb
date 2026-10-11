@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_10_10_061300) do
+ActiveRecord::Schema[7.2].define(version: 2026_10_11_100000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -541,6 +541,18 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_10_061300) do
     t.datetime "updated_at", precision: nil, null: false
   end
 
+  create_table "captain_agent_handoffs", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "source_assistant_id", null: false
+    t.bigint "target_assistant_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_captain_agent_handoffs_on_account_id"
+    t.index ["source_assistant_id", "target_assistant_id"], name: "index_captain_agent_handoffs_on_source_and_target", unique: true
+    t.index ["target_assistant_id"], name: "index_captain_agent_handoffs_on_target_assistant_id"
+    t.check_constraint "source_assistant_id <> target_assistant_id", name: "captain_agent_handoffs_no_self"
+  end
+
   create_table "captain_assistant_responses", force: :cascade do |t|
     t.string "question", null: false
     t.text "answer", null: false
@@ -555,6 +567,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_10_061300) do
     t.boolean "edited", default: false, null: false
     t.bigint "document_chunk_id"
     t.integer "visibility", default: 0, null: false
+    t.boolean "restricted_to_assistants", default: false, null: false
     t.index ["account_id", "visibility"], name: "idx_captain_responses_account_visibility"
     t.index ["account_id"], name: "index_captain_assistant_responses_on_account_id"
     t.index ["assistant_id"], name: "index_captain_assistant_responses_on_assistant_id"
@@ -574,7 +587,12 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_10_061300) do
     t.jsonb "response_guidelines", default: []
     t.jsonb "guardrails", default: []
     t.string "usage_mode", default: "external_agent", null: false
+    t.boolean "active", default: true, null: false
+    t.text "routing_description"
+    t.bigint "legacy_scenario_id"
     t.index ["account_id"], name: "index_captain_assistants_on_account_id"
+    t.index ["id", "account_id"], name: "index_captain_assistants_on_id_and_account_id", unique: true
+    t.index ["legacy_scenario_id"], name: "index_captain_assistants_on_legacy_scenario_id", unique: true
     t.index ["usage_mode"], name: "index_captain_assistants_on_usage_mode"
   end
 
@@ -637,6 +655,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_10_061300) do
     t.text "source_text"
     t.boolean "faq_generation_enabled", default: true, null: false
     t.integer "visibility", default: 0, null: false
+    t.boolean "restricted_to_assistants", default: false, null: false
     t.index ["account_id", "external_link"], name: "index_captain_documents_on_account_id_and_external_link", unique: true
     t.index ["account_id", "visibility"], name: "idx_captain_documents_account_visibility"
     t.index ["account_id"], name: "index_captain_documents_on_account_id"
@@ -700,6 +719,19 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_10_061300) do
     t.index ["expires_at"], name: "idx_captain_answer_cache_expires_at"
   end
 
+  create_table "captain_knowledge_grants", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "assistant_id", null: false
+    t.string "knowledge_record_type", null: false
+    t.bigint "knowledge_record_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_captain_knowledge_grants_on_account_id"
+    t.index ["assistant_id"], name: "index_captain_knowledge_grants_on_assistant_id"
+    t.index ["knowledge_record_type", "knowledge_record_id", "assistant_id"], name: "idx_captain_knowledge_grants_record_assistant", unique: true
+    t.check_constraint "knowledge_record_type::text = ANY (ARRAY['Captain::Document'::character varying::text, 'Captain::AssistantResponse'::character varying::text])", name: "captain_knowledge_grants_record_type"
+  end
+
   create_table "captain_mcp_servers", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.string "name", null: false
@@ -733,7 +765,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_10_061300) do
     t.text "instruction"
     t.jsonb "tools", default: []
     t.boolean "enabled", default: true, null: false
-    t.bigint "assistant_id", null: false
+    t.bigint "assistant_id"
     t.bigint "account_id", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
@@ -1273,6 +1305,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_10_061300) do
     t.index ["account_id"], name: "index_conversation_status_transitions_on_account_id"
     t.index ["actor_type", "actor_id"], name: "index_conversation_status_transitions_on_actor"
     t.index ["conversation_id"], name: "index_conversation_status_transitions_on_conversation_id"
+    t.index ["updated_at", "id"], name: "idx_pending_captain_outcome_classification", where: "(((metadata -> 'outcome_classification'::text) ->> 'state'::text) = ANY (ARRAY['pending'::text, 'processing'::text]))"
   end
 
   create_table "conversation_user_read_states", force: :cascade do |t|
@@ -1516,8 +1549,8 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_10_061300) do
     t.boolean "allow_stage_rule_override", default: false, null: false
     t.jsonb "appointment_automation", default: {}, null: false
     t.index ["account_id", "code"], name: "index_crm_pipelines_on_account_id_and_code", unique: true
-    t.index ["account_id"], name: "idx_crm_pipeline_calendar_target", unique: true, where: "(active AND ((appointment_automation ->> 'auto_create_from_calendar'::text) = 'true'::text))"
-    t.index ["account_id"], name: "idx_crm_pipeline_medelement_target", unique: true, where: "(active AND ((appointment_automation ->> 'auto_create_from_medelement'::text) = 'true'::text))"
+    t.index ["account_id"], name: "idx_crm_pipeline_calendar_target", unique: true, where: "(active AND ((appointment_automation ->> 'auto_create_from_calendar'::text) = 'true'::text) AND ((appointment_automation ->> 'auto_create_deals'::text) IS DISTINCT FROM 'false'::text))"
+    t.index ["account_id"], name: "idx_crm_pipeline_medelement_target", unique: true, where: "(active AND ((appointment_automation ->> 'auto_create_from_medelement'::text) = 'true'::text) AND ((appointment_automation ->> 'auto_create_deals'::text) IS DISTINCT FROM 'false'::text))"
     t.index ["account_id"], name: "index_crm_pipelines_on_account_default_active", unique: true, where: "((\"default\" = true) AND (active = true))"
     t.index ["account_id"], name: "index_crm_pipelines_on_account_id"
     t.check_constraint "jsonb_typeof(appointment_automation) = 'object'::text", name: "crm_pipeline_appointment_config_object"
@@ -3681,7 +3714,11 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_10_061300) do
   add_foreign_key "campaign_runs", "inboxes"
   add_foreign_key "campaigns", "campaign_audience_imports", on_delete: :nullify
   add_foreign_key "campaigns", "captain_assistants"
+  add_foreign_key "captain_agent_handoffs", "accounts"
+  add_foreign_key "captain_agent_handoffs", "captain_assistants", column: ["source_assistant_id", "account_id"], primary_key: ["id", "account_id"], name: "captain_agent_handoffs_source_assistant_id_account_fk", on_delete: :cascade
+  add_foreign_key "captain_agent_handoffs", "captain_assistants", column: ["target_assistant_id", "account_id"], primary_key: ["id", "account_id"], name: "captain_agent_handoffs_target_assistant_id_account_fk", on_delete: :cascade
   add_foreign_key "captain_assistant_responses", "captain_document_chunks", column: "document_chunk_id", on_delete: :nullify
+  add_foreign_key "captain_assistants", "captain_scenarios", column: "legacy_scenario_id", on_delete: :nullify
   add_foreign_key "captain_document_chunks", "accounts"
   add_foreign_key "captain_document_chunks", "captain_assistants", column: "assistant_id", on_delete: :nullify
   add_foreign_key "captain_document_chunks", "captain_documents", column: "document_id"
@@ -3691,6 +3728,8 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_10_061300) do
   add_foreign_key "captain_follow_up_attempts", "messages", column: "anchor_message_id", on_delete: :cascade
   add_foreign_key "captain_knowledge_answer_cache_entries", "accounts", on_delete: :cascade
   add_foreign_key "captain_knowledge_answer_cache_entries", "captain_assistants", column: "assistant_id", on_delete: :nullify
+  add_foreign_key "captain_knowledge_grants", "accounts", on_delete: :cascade
+  add_foreign_key "captain_knowledge_grants", "captain_assistants", column: "assistant_id", on_delete: :cascade
   add_foreign_key "captain_mcp_servers", "accounts"
   add_foreign_key "captain_skills", "accounts"
   add_foreign_key "communication_thread_conversations", "accounts"

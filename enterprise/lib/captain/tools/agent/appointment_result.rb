@@ -15,6 +15,7 @@ class Captain::Tools::Agent::AppointmentResult
   }.freeze
   INPUT_FAILURE_GUIDANCE = {
     'INVALID_DATE' => 'Use a valid ISO 8601 date/time for the requested field.',
+    'INVALID_DURATION' => 'Use a positive whole number of minutes for duration_min.',
     'INVALID_DATE_RANGE' => 'Choose an end time after the start and keep the search range within 31 days.',
     'INVALID_SERVICE_ID' => 'Use an integer service_id returned by search_scheduling_services.',
     'UNKNOWN_SERVICE' => 'Search the service catalog again and use a returned service_id.',
@@ -40,7 +41,7 @@ class Captain::Tools::Agent::AppointmentResult
       local_date: local_time&.strftime('%d.%m.%Y'),
       local_time: local_time&.strftime('%H:%M'),
       status: status
-    }.merge(provider_confirmation(appointment, action: action))
+    }.merge(provider_confirmation(appointment, action: action)).merge(crm_link_result(appointment))
   end
 
   def self.success(appointment, action: nil)
@@ -101,6 +102,23 @@ class Captain::Tools::Agent::AppointmentResult
   end
   private_class_method :provider_confirmation
 
+  def self.crm_link_result(appointment)
+    warning = appointment.custom_attributes.to_h['crm_link_result']
+    return {} unless warning.is_a?(Hash) && warning['status'] == 'not_linked'
+
+    { crm_link_result: warning.slice('status', 'code', 'message', 'details'),
+      crm_link_guidance: 'The appointment is saved. Do not create it again to fix the deal link. Staff can link this appointment after resolving the CRM fields.' }
+  end
+  private_class_method :crm_link_result
+
+  def self.failure_output(error)
+    result = failure(error)
+    audit = result.delete(:audit)
+    return JSON.generate(result) unless audit
+
+    Captain::ToolResult.failure(error: result[:correction], data: result.deep_stringify_keys, retryable: false, audit: audit)
+  end
+
   def self.failure(error)
     code = error.respond_to?(:code) ? error.code.to_s : ''
     if code.blank? && !error.is_a?(ArgumentError) && !error.is_a?(ActiveRecord::RecordInvalid) && !error.is_a?(ActiveRecord::RecordNotFound)
@@ -111,7 +129,11 @@ class Captain::Tools::Agent::AppointmentResult
       code = cause == 'internal_failure' ? 'INTERNAL_FAILURE' : 'PROVIDER_UNAVAILABLE' if cause.present?
     end
     if INPUT_FAILURE_GUIDANCE.key?(code)
-      return { success: false, reason: code.downcase, code: code, correction: INPUT_FAILURE_GUIDANCE.fetch(code) }
+      result = { success: false, reason: code.downcase, code: code, correction: INPUT_FAILURE_GUIDANCE.fetch(code) }
+      if error.is_a?(Scheduling::Error) && error.details.to_h.with_indifferent_access[:mutation_executed] == false
+        result[:audit] = { mutation_executed: false, failure_stage: 'tool_arguments' }
+      end
+      return result
     end
     reason = if code == 'MEDELEMENT_HORIZON_EXCEEDED'
                'schedule_not_open'

@@ -1,12 +1,16 @@
 class Crm::Stages::BatchUpdateService
+  attr_reader :stage_id_map
+
   def initialize(pipeline:, attributes:)
     @pipeline = pipeline
     @attributes = attributes.to_h.deep_symbolize_keys
+    @stage_id_map = {}
   end
 
   def perform
     pipeline.with_lock do
       validate_movable_stage_draft!
+      validate_client_ids!
       validate_default_selection!(stage_rows)
       validate_terminal_stage_draft!
       delete_stages!
@@ -54,6 +58,7 @@ class Crm::Stages::BatchUpdateService
     stage.default = false unless stage.active?
     stage.save!
     replace_field_requirements!(stage, row) if row.key?(:field_requirements)
+    stage_id_map[row[:client_id]] = stage.id if row[:client_id].present?
     stage.id
   end
 
@@ -125,6 +130,18 @@ class Crm::Stages::BatchUpdateService
 
   def validate_movable_stage_draft!
     Crm::Stages::MovableStageDraftValidator.new(pipeline: pipeline, attributes: attributes).validate!
+  end
+
+  def validate_client_ids!
+    rows = stage_rows.select { |row| row.key?(:client_id) }
+    ids = rows.map { |row| row[:client_id] }
+    valid = rows.all? do |row|
+      row[:id].blank? && row[:client_id].is_a?(String) &&
+        row[:client_id].match?(/\A[a-zA-Z][a-zA-Z0-9_-]{0,127}\z/)
+    end
+    return if valid && ids.uniq.length == ids.length
+
+    raise_stage_error!('INVALID_STAGE_DRAFT', 'New stages require unique client IDs beginning with a letter.')
   end
 
   def validate_terminal_stage_draft!

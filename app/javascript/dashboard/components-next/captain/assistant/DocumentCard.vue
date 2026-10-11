@@ -13,6 +13,7 @@ import CardLayout from 'dashboard/components-next/CardLayout.vue';
 import DropdownMenu from 'dashboard/components-next/dropdown-menu/DropdownMenu.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
+import { knowledgeAssistantIds, knowledgeVisibility } from './assistantAccess';
 
 const props = defineProps({
   id: {
@@ -31,6 +32,8 @@ const props = defineProps({
     type: Object,
     default: null,
   },
+  allowedAssistantIds: { type: Array, default: () => [] },
+  restrictedToAssistants: { type: Boolean, default: undefined },
   externalLink: {
     type: String,
     required: true,
@@ -121,6 +124,12 @@ const menuItems = computed(() => {
 
   if (checkPermissions(['administrator'])) {
     allOptions.push({
+      label: t('CAPTAIN.KNOWLEDGE_VISIBILITY.EDIT_ACCESS'),
+      value: 'editAccess',
+      action: 'editAccess',
+      icon: 'i-lucide-users',
+    });
+    allOptions.push({
       label: t('CAPTAIN.DOCUMENTS.OPTIONS.RESYNC_DOCUMENT'),
       value: 'resync',
       action: 'resync',
@@ -193,13 +202,33 @@ const sourceModeLabel = computed(() =>
   t(`CAPTAIN.DOCUMENTS.SOURCE_MODE.${props.sourceMode.toUpperCase()}`)
 );
 
+const knowledgeAccess = computed(() => ({
+  visibility: props.visibility,
+  assistant: props.assistant,
+  allowed_assistant_ids: props.allowedAssistantIds,
+  restricted_to_assistants: props.restrictedToAssistants,
+}));
+const effectiveVisibility = computed(() =>
+  knowledgeVisibility(knowledgeAccess.value)
+);
 const visibilityLabel = computed(() =>
-  props.visibility === 'personal'
+  effectiveVisibility.value === 'personal'
     ? t('CAPTAIN.KNOWLEDGE_VISIBILITY.OPTIONS.PERSONAL')
     : t('CAPTAIN.KNOWLEDGE_VISIBILITY.OPTIONS.GENERAL')
 );
 const assistantLabel = computed(() => {
-  if (props.visibility !== 'personal' || !props.assistant?.name) return '';
+  if (effectiveVisibility.value !== 'personal') return '';
+  const ids = knowledgeAssistantIds(knowledgeAccess.value);
+  if (
+    ids.length &&
+    (!props.assistant?.name ||
+      ids.length > 1 ||
+      !ids.includes(Number(props.assistant.id)))
+  )
+    return t('CAPTAIN.KNOWLEDGE_VISIBILITY.AGENT_COUNT', {
+      count: ids.length,
+    });
+  if (!props.assistant?.name) return '';
 
   return t('CAPTAIN.KNOWLEDGE_VISIBILITY.ASSISTANT_BADGE', {
     name: props.assistant.name,

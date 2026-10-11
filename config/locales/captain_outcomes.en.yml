@@ -1,0 +1,16 @@
+en:
+  captain:
+    outcome_reasons:
+      pending: Reason is being classified
+      unclassified: Reason not determined
+      other: Other
+      goal_achieved: Goal achieved
+      question_resolved: Question answered
+      customer_declined: Customer declined
+      no_response: No response
+      customer_requested_human: Customer requested a person
+      low_confidence: Insufficient confidence
+      manual_action_required: Staff action required
+      complaint_or_conflict: Complaint or conflict
+      tool_or_policy_limit: Tool unavailable or action restricted
+      faq_no_answer: No answer in FAQ

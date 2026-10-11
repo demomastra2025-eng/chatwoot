@@ -45,6 +45,7 @@ class Captain::DocumentChunk < ApplicationRecord
   validates :content, presence: true
   validates :content_sha256, presence: true
   validates :chunk_index, uniqueness: { scope: :document_id }
+  validate :associations_belong_to_account
 
   enum embedding_status: { pending: 0, indexed: 1, failed: 2, stale: 3 }, _prefix: :embedding
 
@@ -59,23 +60,11 @@ class Captain::DocumentChunk < ApplicationRecord
       .or(where(embedding: nil))
   }
   scope :visible_to_assistant, lambda { |assistant_id|
-    relation = joins(:document)
-    if assistant_id.blank?
-      relation.where(captain_documents: { assistant_id: nil })
-    else
-      relation.where(
-        <<~SQL.squish,
-          captain_documents.assistant_id IS NULL OR
-          captain_documents.visibility = :general_visibility OR
-          captain_documents.assistant_id = :assistant_id
-        SQL
-        general_visibility: Captain::Document.visibilities[:general],
-        assistant_id: assistant_id
-      )
-    end
+    where(document_id: Captain::Document.visible_to_assistant(assistant_id).select(:id))
+      .where('captain_document_chunks.account_id = (SELECT account_id FROM captain_documents WHERE id = captain_document_chunks.document_id)')
   }
 
-  def self.search(query, account_id: nil)
+  def self.search(query, account_id: nil, assistant_id: nil)
     return none if account_id.blank?
 
     embedding = Captain::Llm::EmbeddingService.new(account_id: account_id).get_embedding(
@@ -84,6 +73,7 @@ class Captain::DocumentChunk < ApplicationRecord
     )
     nearest_neighbors(:embedding, embedding, distance: 'cosine')
       .where(account_id: account_id)
+      .visible_to_assistant(assistant_id)
       .where(embedding_status: embedding_statuses[:indexed])
       .where.not(embedding: nil)
       .limit(5)
@@ -94,6 +84,11 @@ class Captain::DocumentChunk < ApplicationRecord
   def ensure_associations
     self.account ||= document&.account
     self.assistant ||= document&.assistant
+  end
+
+  def associations_belong_to_account
+    errors.add(:document, 'must belong to the same account') if document.present? && document.account_id != account_id
+    errors.add(:assistant, 'must belong to the same account') if assistant.present? && assistant.account_id != account_id
   end
 
   def ensure_content_sha256

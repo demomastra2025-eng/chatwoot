@@ -2,6 +2,7 @@ module Api::V1::Accounts::Crm::Concerns::StageParameterSupport
   FIELD_REQUIREMENT_PARAMS = [:field_key, :required, { validation: {}, role_exemptions: [] }].freeze
   MOVABLE_STAGE_PARAMS = [
     :id,
+    :client_id,
     :name,
     :color,
     :active,

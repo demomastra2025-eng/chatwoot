@@ -61,6 +61,16 @@ RSpec.describe Captain::Playground::ExecutionBoundary do
     expect([Contact.count, Conversation.count, Message.count]).to eq(counts)
   end
 
+  it 'allows the internal agent task queue to execute inside the temporary Playground session' do
+    session.with_lock do |workspace|
+      tool = Captain::Runtime::TaskQueueTool.new
+      result = described_class.execute(tool, tool_context(workspace), {}) { 'Internal task queue executed' }
+
+      expect(result).to eq('Internal task queue executed')
+      expect(workspace.conversation).to be_nil
+    end
+  end
+
   it 'blocks legacy captured state and forged server handles while leaving an ordinary runtime unchanged' do
     tool = Captain::Tools::UpdateContactTool.new(assistant)
     [%w[playground live], %w[conversation live]].each do |source, mode|

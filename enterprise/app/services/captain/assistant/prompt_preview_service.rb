@@ -65,7 +65,7 @@ class Captain::Assistant::PromptPreviewService
     }
   end
 
-  def scenario_previews = assistant.scenarios.enabled.map { |scenario| scenario_preview(scenario) }
+  def scenario_previews = assistant.handoff_targets.map { |agent| scenario_preview(agent) }
 
   def allowed_copilot_tools
     assistant.allowed_assistant_tools
@@ -76,14 +76,6 @@ class Captain::Assistant::PromptPreviewService
       text_layer('global_system_instruction', 'Global system instruction', Llm::Config.global_agent_system_prompt),
       text_layer('instruction', 'System instruction', assistant.system_instruction),
       list_layer(
-        'system_prompt_structure',
-        'System prompt structure',
-        assistant.template_rule_preview_values(:assistant)
-      ),
-      list_layer('system_rules', 'System rules', grouped_rule_values(assistant.system_rule_groups)),
-      list_layer('response_guidelines', 'Response guidelines', assistant.response_guidelines),
-      list_layer('guardrails', 'Guardrails', assistant.guardrails),
-      list_layer(
         'available_runtime_tools',
         'Available runtime tools',
         assistant_runtime_tools.map { |tool| "#{tool[:id]}: #{tool[:description]}" }
@@ -91,7 +83,7 @@ class Captain::Assistant::PromptPreviewService
       list_layer(
         'scenario_handoffs',
         'Scenario handoffs',
-        assistant.scenarios.enabled.map { |scenario| "#{scenario.title}: #{scenario.description}" }
+        assistant.handoff_targets.map { |agent| "#{agent.name}: #{agent.routing_description}" }
       )
     ]
   end
@@ -135,51 +127,27 @@ class Captain::Assistant::PromptPreviewService
 
   def effective_runtime_tools_note
     'Prompt-visible tools come from tool_access plus explicit tool:// references ' \
-      'in the rendered assistant instruction and rules.'
+      'in the editable main prompt; capability tools follow their switches.'
   end
 
-  def scenario_preview(scenario)
-    compiled_prompt = scenario.agent_instructions
-    runtime_tool_ids = scenario.prompt_runtime_tool_ids
-
+  def scenario_preview(agent)
+    compiled_prompt = agent.agent_instructions
+    runtime_tools = agent.prompt_runtime_agent_tools
     {
-      id: scenario.id,
-      title: scenario.title,
-      handoff_key: scenario.handoff_key,
-      prompt_id: "captain_v2.scenario.#{scenario.id}",
-      template_name: 'scenario',
+      id: agent.id,
+      title: agent.name,
+      handoff_key: agent.handoff_target_name,
+      prompt_id: "captain_v2.assistant.#{agent.id}",
+      template_name: 'assistant',
       prompt_sha256: digest(compiled_prompt),
       compiled_prompt: compiled_prompt,
-      used_field_ids: scenario_used_field_ids(scenario),
-      used_tool_ids: runtime_tool_ids,
+      used_field_ids: referenced_field_ids_for_texts([agent.system_instruction]) & agent.available_context_field_ids,
+      used_tool_ids: runtime_tools.pluck(:id),
       layers: [
-        text_layer('global_system_instruction', 'Global system instruction', Llm::Config.global_agent_system_prompt),
-        text_layer('description', 'Description', scenario.description),
-        text_layer('instructions', 'Scenario instructions', scenario.instruction),
-        list_layer(
-          'system_prompt_structure',
-          'System prompt structure',
-          assistant.template_rule_preview_values(:scenario)
-        ),
-        list_layer('system_rules', 'System rules', grouped_rule_values(assistant.system_rule_groups)),
-        list_layer('response_guidelines', 'Response guidelines', assistant.response_guidelines),
-        list_layer('guardrails', 'Guardrails', assistant.guardrails),
-        list_layer('tool_ids', 'Runtime tool IDs', runtime_tool_ids)
+        text_layer('instruction', 'Main prompt', agent.system_instruction),
+        list_layer('tool_ids', 'Runtime tool IDs', runtime_tools.pluck(:id))
       ]
     }
-  end
-
-  def scenario_used_field_ids(scenario)
-    field_ids = referenced_field_ids_for_texts(
-      [
-        scenario.instruction,
-        assistant.system_rule_contents_for_prompt(template_name: :scenario),
-        assistant.response_guidelines,
-        assistant.guardrails
-      ]
-    )
-
-    field_ids & assistant.available_context_field_ids
   end
 
   def referenced_tool_ids_for_texts(texts)
@@ -224,12 +192,4 @@ class Captain::Assistant::PromptPreviewService
     Digest::SHA256.hexdigest(prompt.to_s)
   end
 
-  def grouped_rule_values(groups)
-    Array(groups).flat_map do |group|
-      rules = Array(group[:rules]).map(&:to_s)
-      next rules if group[:group_name].blank?
-
-      rules.map { |rule| "#{group[:group_name]}: #{rule}" }
-    end
-  end
 end

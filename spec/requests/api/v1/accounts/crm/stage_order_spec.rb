@@ -99,8 +99,8 @@ RSpec.describe 'CRM stage draft API', type: :request do
       name: 'Proposal review',
       color: '#2563EB',
       default: true,
-      transition_reason_options: ['Waiting for approval', 'Budget confirmed'],
-      transition_reason_required: true
+      transition_reason_options: [],
+      transition_reason_required: false
     )
     expect(original_default.reload).not_to be_default
     expect(inactive_stage.reload).to have_attributes(active: false)
@@ -141,8 +141,8 @@ RSpec.describe 'CRM stage draft API', type: :request do
     ).to eq(terminal_order)
     expect(won_stage.reload).to have_attributes(
       name: 'Successful close',
-      closing_reason_options: ['Purchase completed'],
-      closing_reason_required: true
+      closing_reason_options: [],
+      closing_reason_required: false
     )
     expect(lost_stage.reload).to have_attributes(
       name: 'Closed without sale',
@@ -258,12 +258,12 @@ RSpec.describe 'CRM stage draft API', type: :request do
     end
   end
 
-  it 'rolls back every edit when a required transition reason has no options' do
+  it 'rolls back every edit when a stage name is invalid' do
     proposal_stage = pipeline.stages.find_by!(code: 'proposal')
     original_attributes = proposal_stage.attributes
     draft = stage_draft(pipeline)
     proposal_row = draft[:stages].find { |stage| stage[:id] == proposal_stage.id }
-    proposal_row.merge!(name: 'Should roll back', transition_reason_required: true, transition_reason_options: [])
+    proposal_row[:name] = ''
 
     submit_stage_draft(draft)
 

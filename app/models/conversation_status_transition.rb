@@ -52,3 +52,5 @@ class ConversationStatusTransition < ApplicationRecord
     self.metadata = {} if metadata.blank?
   end
 end
+
+ConversationStatusTransition.prepend_mod_with('ConversationStatusTransition')

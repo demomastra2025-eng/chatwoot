@@ -3,6 +3,7 @@ class Captain::Conversation::RunFenceService
     assistant_missing: :assistant_missing?,
     conversation_missing: :conversation_missing?,
     assistant_changed: :assistant_changed?,
+    agent_routing_changed: :agent_routing_changed?,
     human_response_committed: :human_response_committed?,
     control_generation_changed: :control_generation_changed?,
     status_epoch_changed: :status_epoch_changed?,
@@ -37,7 +38,13 @@ class Captain::Conversation::RunFenceService
   end
 
   def assistant_missing?
-    assistant.blank?
+    return true if assistant.blank?
+
+    # Another request can disable an actor while inference is still running.
+    # Neither the loaded actor nor the request query cache is authoritative here.
+    Captain::Assistant.uncached do
+      !Captain::Assistant.where(account_id: state[:account_id], id: assistant.id, active: true).exists?
+    end
   end
 
   def conversation_missing?
@@ -45,7 +52,22 @@ class Captain::Conversation::RunFenceService
   end
 
   def assistant_changed?
-    conversation.inbox.captain_assistant&.id != assistant.id
+    entry = Captain::Assistant.uncached { conversation.inbox.reload.captain_assistant }
+    return true if entry.blank? || entry.id != entry_assistant_id || !entry.active?
+    return false if assistant.id == entry_assistant_id
+
+    Captain::Assistant.uncached { !Captain::AgentGraph.new(entry).find(assistant.id) }
+  end
+
+  def entry_assistant_id
+    state[:entry_assistant_id].presence&.to_i || assistant.id
+  end
+
+  def agent_routing_changed?
+    return false unless state[:entry_assistant_id].present? && fence.key?(:routing_revision)
+
+    session = conversation.reload.additional_attributes.to_h[Captain::Conversation::AgentSession::ATTRIBUTE].to_h
+    session['current_assistant_id'].to_i != assistant.id || session['routing_revision'].to_i != fence[:routing_revision].to_i
   end
 
   def human_response_committed?
@@ -100,7 +122,7 @@ class Captain::Conversation::RunFenceService
     return true if fence[:buffer_token].blank?
 
     current_buffer_state[:token] == fence[:buffer_token] &&
-      current_buffer_state[:assistant_id].to_i == assistant.id &&
+      current_buffer_state[:assistant_id].to_i == entry_assistant_id &&
       current_buffer_state[:last_message_id].to_i == fence[:last_message_id].to_i &&
       current_buffer_state[:control_generation].to_i == fence[:control_generation].to_i
   end

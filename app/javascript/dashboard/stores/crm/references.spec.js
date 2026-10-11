@@ -14,6 +14,7 @@ const {
   getTaskTypesMock,
   saveTaskOutcomeMock,
   savePipelineMock,
+  savePipelineSettingsMock,
   saveTaskStatusMock,
   saveTaskTypeMock,
   updateStageMock,
@@ -28,6 +29,7 @@ const {
   getTaskTypesMock: vi.fn(),
   saveTaskOutcomeMock: vi.fn(),
   savePipelineMock: vi.fn(),
+  savePipelineSettingsMock: vi.fn(),
   saveTaskStatusMock: vi.fn(),
   saveTaskTypeMock: vi.fn(),
   updateStageMock: vi.fn(),
@@ -55,6 +57,7 @@ vi.mock('dashboard/api/crm/pipelines', () => ({
     deleteStage: deleteStageMock,
     get: getPipelinesMock,
     update: savePipelineMock,
+    saveSettings: savePipelineSettingsMock,
     updateStage: updateStageMock,
   },
 }));
@@ -108,6 +111,163 @@ describe('useCrmReferencesStore', () => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
     currentAccount.id = '1';
+  });
+
+  it('publishes a full atomic settings response and confirmed pipeline order in one mutation', async () => {
+    const store = useCrmReferencesStore();
+    getPipelinesMock.mockResolvedValueOnce({
+      data: {
+        payload: [
+          { id: 1, name: 'Before', position: 10, default: false },
+          { id: 2, name: 'Other', position: 20, default: true },
+        ],
+      },
+    });
+    await store.loadPipelines({ include_inactive_stages: true });
+    savePipelineSettingsMock.mockResolvedValueOnce({
+      data: {
+        payload: {
+          id: 1,
+          name: 'After',
+          position: 20,
+          default: true,
+          appointment_automation: { auto_create_deals: false },
+          stages: [{ id: 3, name: 'Archived', active: false }],
+        },
+      },
+    });
+    const payload = {
+      name: 'After',
+      pipeline_order: [2, 1],
+      appointment_automation: { auto_create_deals: false },
+      stages: [],
+    };
+    await store.savePipelineSettings(1, payload);
+    expect(savePipelineSettingsMock).toHaveBeenCalledTimes(1);
+    expect(savePipelineSettingsMock).toHaveBeenCalledWith(1, payload);
+    expect(savePipelineMock).not.toHaveBeenCalled();
+    expect(store.pipelines).toEqual([
+      expect.objectContaining({ id: 2, position: 10, default: false }),
+      expect.objectContaining({
+        id: 1,
+        name: 'After',
+        position: 20,
+        default: true,
+        appointmentAutomation: { autoCreateDeals: false },
+        stages: [{ id: 3, name: 'Archived', active: false }],
+      }),
+    ]);
+  });
+
+  it('keeps the published references and form load state unchanged when atomic settings Save fails', async () => {
+    const store = useCrmReferencesStore();
+    getPipelinesMock.mockResolvedValueOnce({
+      data: { payload: [{ id: 1, name: 'Before' }] },
+    });
+    await store.loadPipelines({ include_inactive_stages: true });
+    const error = { response: { data: { code: 'INVALID_PIPELINE_ORDER' } } };
+    savePipelineSettingsMock.mockRejectedValueOnce(error);
+    await expect(
+      store.savePipelineSettings(1, { name: 'After', pipeline_order: [] })
+    ).rejects.toEqual(error);
+    expect(store.pipelines).toEqual([{ id: 1, name: 'Before' }]);
+    expect(store.ui.error).toBe(null);
+    expect(store.ui.isSaving).toBe(false);
+  });
+
+  it('publishes account-wide default and source changes returned by the same atomic response', async () => {
+    const store = useCrmReferencesStore();
+    getPipelinesMock.mockResolvedValueOnce({
+      data: {
+        payload: [
+          { id: 1, name: 'Sales', active: true, default: true },
+          {
+            id: 2,
+            name: 'Other',
+            active: true,
+            default: false,
+            appointment_automation: { auto_create_from_calendar: true },
+          },
+        ],
+      },
+    });
+    await store.loadPipelines({ include_inactive_stages: true });
+    savePipelineSettingsMock.mockResolvedValueOnce({
+      data: {
+        payload: { id: 1, name: 'Sales', active: false, default: false },
+        pipelines: [
+          {
+            id: 2,
+            name: 'Other',
+            active: true,
+            default: true,
+            appointment_automation: { auto_create_from_calendar: false },
+            stages: [{ id: 5, active: false }],
+          },
+          { id: 1, name: 'Sales', active: false, default: false },
+        ],
+      },
+    });
+    await store.savePipelineSettings(1, {
+      active: false,
+      default: true,
+      stages: [],
+    });
+    expect(store.pipelines).toEqual([
+      {
+        id: 2,
+        name: 'Other',
+        active: true,
+        default: true,
+        appointmentAutomation: { autoCreateFromCalendar: false },
+        stages: [{ id: 5, active: false }],
+      },
+      { id: 1, name: 'Sales', active: false, default: false },
+    ]);
+    expect(getPipelinesMock).toHaveBeenCalledTimes(1);
+    expect(savePipelineSettingsMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not let an older full pipeline read overwrite confirmed settings', async () => {
+    const store = useCrmReferencesStore();
+    const oldRead = deferred();
+    getPipelinesMock.mockReturnValueOnce(oldRead.promise);
+    const loading = store.loadPipelines({ include_inactive_stages: true });
+    savePipelineSettingsMock.mockResolvedValueOnce({
+      data: {
+        payload: { id: 1, name: 'Saved', stages: [{ id: 4, active: false }] },
+      },
+    });
+    await store.savePipelineSettings(1, { name: 'Saved' });
+    oldRead.resolve({
+      data: { payload: [{ id: 1, name: 'Before', stages: [] }] },
+    });
+    await loading;
+    expect(store.pipelines).toEqual([
+      { id: 1, name: 'Saved', stages: [{ id: 4, active: false }] },
+    ]);
+  });
+
+  it('does not publish an old account settings result into the next account references', async () => {
+    const store = useCrmReferencesStore();
+    getPipelinesMock.mockResolvedValueOnce({
+      data: { payload: [{ id: 1, name: 'Account A' }] },
+    });
+    await store.loadPipelines({ include_inactive_stages: true });
+    const oldSave = deferred();
+    savePipelineSettingsMock.mockReturnValueOnce(oldSave.promise);
+    const saving = store.savePipelineSettings(1, { name: 'Old account draft' });
+    currentAccount.id = '2';
+    getPipelinesMock.mockResolvedValueOnce({
+      data: { payload: [{ id: 2, name: 'Account B' }] },
+    });
+    await store.loadPipelines({ include_inactive_stages: true });
+    oldSave.resolve({
+      data: { payload: { id: 1, name: 'Old account draft' } },
+    });
+    await saving;
+    expect(store.pipelines).toEqual([{ id: 2, name: 'Account B' }]);
+    expect(store.ui.isSaving).toBe(false);
   });
 
   it('does not publish stale field definitions after an account reset', async () => {

@@ -8,6 +8,11 @@ module Llm::OpenRouterServerToolsPatch
 
   def complete(messages, tools:, temperature:, model:, params: {}, headers: {}, schema: nil, thinking: nil, tool_prefs: nil, &block)
     normalized_params = params.respond_to?(:to_h) ? params.to_h.deep_dup : {}
+    if disable_reasoning_with_flag?(model, thinking)
+      normalized_params.except!(:reasoning, 'reasoning', :reasoning_effort, 'reasoning_effort')
+      normalized_params[:reasoning] = { enabled: false }
+      thinking = nil
+    end
     server_tools = Array(normalized_params.delete(SERVER_TOOLS_PARAM) || normalized_params.delete(SERVER_TOOLS_PARAM.to_s)).compact_blank
     omit_temperature = normalized_params.delete(OMIT_TEMPERATURE_PARAM) || normalized_params.delete(OMIT_TEMPERATURE_PARAM.to_s)
     normalized_temperature = omit_temperature ? nil : maybe_normalize_temperature(temperature, model)
@@ -44,6 +49,16 @@ module Llm::OpenRouterServerToolsPatch
     else
       sync_response @connection, payload, headers
     end
+  end
+
+  private
+
+  def disable_reasoning_with_flag?(model, thinking)
+    effort = thinking.respond_to?(:effort) ? thinking.effort : thinking.to_h[:effort] || thinking.to_h['effort']
+    return false unless effort.to_s == 'none'
+
+    model_id = model.respond_to?(:id) ? model.id : model
+    Llm::ModelParameters.for(model_id).disabled_reasoning_uses_flag?
   end
 end
 

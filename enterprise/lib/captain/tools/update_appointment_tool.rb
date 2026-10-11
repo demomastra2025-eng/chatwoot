@@ -1,10 +1,14 @@
 class Captain::Tools::UpdateAppointmentTool < Captain::Tools::BasePublicTool
-  description 'Update a specifically identified appointment. For another patient use the task token returned by search_appointments, ' \
+  description 'Update a specifically identified appointment. For the current customer, an explicit request to move their identified appointment ' \
+              'to an exact date/time authorizes that change after checking availability; do not ask them to confirm the same request again. ' \
+              'Clarify an ambiguous appointment or requested change. For another patient use the task token returned by search_appointments, ' \
               'confirm the patient, doctor, date/time and requested change, then set patient_confirmed. ' \
               'Do not claim completion while provider confirmation is pending; do not repeat an uncertain provider write.'
   param :appointment_id, type: 'number', desc: 'Exact appointment ID returned by get_appointment or a previous appointment mutation', required: false
   param :appointment_access_token, type: 'string', desc: 'Opaque token from search_appointments for a specifically identified other patient appointment', required: false
-  param :patient_confirmed, type: 'boolean', desc: 'True only after the caller confirms the specific patient, doctor, time and requested change', required: false
+  param :patient_confirmed, type: 'boolean',
+        desc: 'For another patient accessed by token: true only after the caller confirms the specific patient, doctor, time and requested change. ' \
+              'Omit for the current customer appointment.', required: false
   param :resource_id, type: 'number', desc: 'Updated specialist resource ID', required: false
   param :service_id, type: 'number', desc: 'Updated local service ID returned by search_scheduling_services', required: false
   param :starts_at, type: 'string', desc: 'Updated appointment start datetime in ISO 8601 format', required: false
@@ -41,7 +45,7 @@ class Captain::Tools::UpdateAppointmentTool < Captain::Tools::BasePublicTool
     capture_reschedule_fence(tool_context, appointment)
     JSON.generate(Captain::Tools::Agent::AppointmentResult.success(appointment, action: 'update_appointment'))
   rescue StandardError => e
-    JSON.generate(Captain::Tools::Agent::AppointmentResult.failure(e))
+    Captain::Tools::Agent::AppointmentResult.failure_output(e)
   end
 
   private

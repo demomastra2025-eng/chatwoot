@@ -152,6 +152,40 @@ beforeEach(() => {
 });
 
 describe('one Playground workspace', () => {
+  it('keeps a delegated reply in the same chat and shows its responding agent and task state', async () => {
+    mocks.playground.mockResolvedValueOnce({
+      data: {
+        response: 'I can help with the invoice.',
+        agent_id: 5,
+        agent_name: 'assistant_5',
+        agent_display_name: 'Billing',
+        agent_tasks: [
+          {
+            id: 'task-1',
+            title: 'Check invoice',
+            status: 'waiting',
+            assistant_id: 5,
+          },
+        ],
+        playground: payload(),
+      },
+    });
+    const wrapper = mountPlayground({ realMessages: true });
+    await flushPromises();
+    await send(wrapper, 'Please check the invoice');
+    expect(
+      wrapper.get('[data-test="playground-responding-agent"]').text()
+    ).toBe('Billing');
+    expect(
+      wrapper.get('[data-test="playground-agent-tasks"]').text()
+    ).toContain('Check invoice');
+    expect(
+      wrapper.get('[data-test="playground-agent-tasks"]').text()
+    ).toContain('CAPTAIN.PLAYGROUND.TASK_STATUS.WAITING');
+    expect(mocks.playgroundSession).toHaveBeenCalledTimes(1);
+    wrapper.unmount();
+  });
+
   it('renders provider and delegated action failures as text through the actual message formatter', async () => {
     mocks.playground.mockResolvedValueOnce({
       data: {
@@ -184,25 +218,34 @@ describe('one Playground workspace', () => {
     wrapper.unmount();
   });
 
-  it('keeps all model controls behind the gear and write access hidden/off until reading is enabled', async () => {
+  it('uses permission toggles and keeps write access hidden/off until reading is enabled', async () => {
     const wrapper = mountPlayground();
     await flushPromises();
-    expect(wrapper.find('select').exists()).toBe(false);
+    expect(
+      wrapper.get('[data-test="playground-settings"]').find('select').exists()
+    ).toBe(true);
     expect(wrapper.find('[data-test="playground-real-write"]').exists()).toBe(
       false
     );
-    expect(
-      wrapper.get('[data-test="playground-real-read"]').element.checked
-    ).toBe(false);
-    await wrapper.get('[data-test="model-settings-toggle"]').trigger('click');
+    const readToggle = wrapper.get('[data-test="playground-real-read"]');
+    expect(readToggle.attributes('role')).toBe('switch');
+    expect(readToggle.attributes('aria-label')).toBe(
+      'CAPTAIN.PLAYGROUND.REAL_READ'
+    );
+    expect(readToggle.attributes('aria-checked')).toBe('false');
     expect(wrapper.find('[data-test="model-temperature"]').exists()).toBe(true);
-    await wrapper.get('[data-test="playground-real-read"]').setValue(true);
+    await readToggle.trigger('click');
     await flushPromises();
-    expect(
-      wrapper.get('[data-test="playground-real-write"]').element.checked
-    ).toBe(false);
-    await wrapper.get('[data-test="playground-real-write"]').setValue(true);
+    expect(readToggle.attributes('aria-checked')).toBe('true');
+    const writeToggle = wrapper.get('[data-test="playground-real-write"]');
+    expect(writeToggle.attributes('role')).toBe('switch');
+    expect(writeToggle.attributes('aria-label')).toBe(
+      'CAPTAIN.PLAYGROUND.REAL_WRITE'
+    );
+    expect(writeToggle.attributes('aria-checked')).toBe('false');
+    await writeToggle.trigger('click');
     await flushPromises();
+    expect(writeToggle.attributes('aria-checked')).toBe('true');
     expect(
       wrapper.find('[data-test="playground-write-warning"]').exists()
     ).toBe(true);
@@ -211,6 +254,18 @@ describe('one Playground workspace', () => {
       sessionId: 'session-1',
       read: true,
       write: true,
+    });
+    await readToggle.trigger('click');
+    await flushPromises();
+    expect(readToggle.attributes('aria-checked')).toBe('false');
+    expect(wrapper.find('[data-test="playground-real-write"]').exists()).toBe(
+      false
+    );
+    expect(mocks.playgroundPermissions).toHaveBeenLastCalledWith({
+      assistantId: 4,
+      sessionId: 'session-1',
+      read: false,
+      write: false,
     });
     wrapper.unmount();
   });
@@ -235,8 +290,10 @@ describe('one Playground workspace', () => {
     });
     await flushPromises();
     expect(
-      wrapper.get('[data-test="playground-real-read"]').element.checked
-    ).toBe(false);
+      wrapper
+        .get('[data-test="playground-real-read"]')
+        .attributes('aria-checked')
+    ).toBe('false');
     expect(wrapper.find('[data-test="playground-real-write"]').exists()).toBe(
       false
     );
@@ -327,8 +384,10 @@ describe('one Playground workspace', () => {
       wrapper.find('[data-test="playground-action-previews"]').exists()
     ).toBe(false);
     expect(
-      wrapper.get('[data-test="playground-real-read"]').element.checked
-    ).toBe(false);
+      wrapper
+        .get('[data-test="playground-real-read"]')
+        .attributes('aria-checked')
+    ).toBe('false');
     wrapper.unmount();
   });
 
@@ -360,8 +419,10 @@ describe('one Playground workspace', () => {
       expect.objectContaining({ reset: true })
     );
     expect(
-      wrapper.get('[data-test="playground-real-read"]').element.checked
-    ).toBe(false);
+      wrapper
+        .get('[data-test="playground-real-read"]')
+        .attributes('aria-checked')
+    ).toBe('false');
     wrapper.unmount();
   });
 
@@ -387,8 +448,10 @@ describe('one Playground workspace', () => {
     await flushPromises();
     expect(wrapper.text()).not.toContain('Old assistant');
     expect(
-      wrapper.get('[data-test="playground-real-read"]').element.checked
-    ).toBe(false);
+      wrapper
+        .get('[data-test="playground-real-read"]')
+        .attributes('aria-checked')
+    ).toBe('false');
     wrapper.unmount();
   });
 

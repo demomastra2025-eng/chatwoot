@@ -25,7 +25,7 @@ RSpec.describe Crm::Appointments::LinkService do
   end
 
   it 'keeps the explicit source for the first booking and creates a separate deal for the next distinct appointment' do
-    pipeline.update!(appointment_automation: { cardinality: 'appointment' })
+    pipeline.update!(appointment_automation: { auto_create_deals: true, cardinality: 'appointment' })
     first = appointment
     expect(link(first, { crm_deal_id: deal.id })).to eq(deal)
     first.save!
@@ -63,18 +63,22 @@ RSpec.describe Crm::Appointments::LinkService do
     expect(second.contact_id).to eq(contact.id)
   end
 
-  it 'requires a chooser when several active deals match instead of silently selecting one' do
+  it 'reports an unlinked booking when several active deals match and still honors explicit selection' do
     deal
     another = create(:crm_deal, account: account, pipeline: pipeline, stage: stage)
     create(:crm_deal_contact, account: account, deal: another, contact: contact, primary: true)
 
-    expect { link(appointment) }.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('CRM_DEAL_SELECTION_REQUIRED') }
+    ambiguous = appointment
+    expect(link(ambiguous)).to be_nil
+    expect(ambiguous.crm_deal_id).to be_nil
+    expect(ambiguous.custom_attributes.dig('crm_link_result', 'code')).to eq('CRM_DEAL_SELECTION_REQUIRED')
     explicit = appointment
     expect(link(explicit, { crm_deal_id: another.id })).to eq(another)
     expect(link(appointment, { crm_deal_selection: 'create', crm_pipeline_id: pipeline.id }).id).not_to be_in([deal.id, another.id])
   end
 
   it 'does not match a clinical-only contact or an unrelated contact with the same phone' do
+    pipeline.update!(appointment_automation: { auto_create_from_calendar: true })
     unrelated = create(:contact, account: account)
     unrelated.update_columns(phone_number: contact.phone_number)
     unrelated_deal = create(:crm_deal, account: account, pipeline: pipeline, stage: stage)
@@ -118,7 +122,7 @@ RSpec.describe Crm::Appointments::LinkService do
   end
 
   it 'treats an ordinary new appointment after cancellation according to current pipeline rules' do
-    pipeline.update!(appointment_automation: { cardinality: 'appointment' })
+    pipeline.update!(appointment_automation: { auto_create_deals: true, cardinality: 'appointment' })
     cancelled = appointment(status: 'cancelled')
     link(cancelled, { crm_deal_id: deal.id })
     cancelled.save!
@@ -147,10 +151,60 @@ RSpec.describe Crm::Appointments::LinkService do
     end
   end
 
-  it 'respects an explicit pipeline when Captain supplies a target without a source deal' do
-    target = create(:crm_pipeline, account: account)
+  it 'creates in an explicitly selected pipeline only when automatic appointment creation is enabled' do
+    target = create(:crm_pipeline, account: account, appointment_automation: { auto_create_deals: true })
     create(:crm_stage, account: account, pipeline: target, default: true)
 
     expect(link(appointment, { crm_pipeline_id: target.id }).pipeline_id).to eq(target.id)
+  end
+
+  it 'does not treat a pipeline selector alone as permission to bypass master OFF' do
+    booking = appointment
+
+    expect { expect(link(booking, { crm_pipeline_id: pipeline.id })).to be_nil }.not_to change(Crm::Deal, :count)
+    expect(link(appointment, { crm_pipeline_id: pipeline.id, crm_deal_id: deal.id })).to eq(deal)
+  end
+
+  it 'does not create a deal for a dialog appointment from the channel incoming switch alone' do
+    booking = appointment
+
+    expect { expect(link(booking)).to be_nil }.not_to change(Crm::Deal, :count)
+    expect(booking.crm_deal_id).to be_nil
+    expect(Crm::Appointments::Configuration.for(pipeline)['auto_create_deals']).to be false
+  end
+
+  it 'honors master OFF with both source toggles retained and a channel configured to create deals' do
+    pipeline.update!(appointment_automation: {
+                       auto_create_deals: false, auto_create_from_calendar: true, auto_create_from_medelement: true
+                     })
+    direct = appointment(conversation: nil)
+    dialog = appointment
+    imported = create(:scheduling_appointment, account: account, contact: contact, source: 'medelement',
+                                              custom_attributes: { medelement_source_created_at: 1.minute.from_now.iso8601 })
+
+    expect do
+      expect(link(direct)).to be_nil
+      expect(link(dialog)).to be_nil
+      expect(link(imported, {}, newly_imported: true)).to be_nil
+    end.not_to change(Crm::Deal, :count)
+    expect(pipeline.reload.appointment_automation).to include('auto_create_deals' => false, 'auto_create_from_calendar' => true)
+  end
+
+  it 'links an explicit existing deal without cloning while master creation is OFF' do
+    pipeline.update!(appointment_automation: { auto_create_deals: false, cardinality: 'appointment' })
+    first = appointment
+    link(first, { crm_deal_id: deal.id })
+    first.save!
+    second = appointment
+
+    expect { expect(link(second, { crm_deal_id: deal.id })).to eq(deal) }.not_to change(Crm::Deal, :count)
+    expect(second.crm_deal_id).to eq(deal.id)
+  end
+
+  it 'allows an explicit create selection while automatic creation is OFF' do
+    booking = appointment
+
+    expect(link(booking, { crm_deal_selection: 'create', crm_pipeline_id: pipeline.id })).to be_present
+    expect(Crm::Appointments::Configuration.for(pipeline)['auto_create_deals']).to be false
   end
 end

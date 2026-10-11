@@ -37,7 +37,17 @@ class Llm::ModelParameters
 
     values = reasoning['supported_efforts'].nil? ? Llm::RuntimePolicy::THINKING_EFFORTS : Array(reasoning['supported_efforts'])
     efforts = values.map(&:to_s) & Llm::RuntimePolicy::THINKING_EFFORTS
+    # `none` is the UI's off choice. Optional OpenRouter reasoning can use an
+    # enabled:false wire flag even when none is not a supported provider effort.
+    efforts = ['none'] + efforts if disabled_reasoning_uses_flag?
     reasoning['mandatory'] == true ? efforts - ['none'] : efforts
+  end
+
+  def disabled_reasoning_uses_flag?
+    reasoning = @config['reasoning']
+    @config['provider'] == 'openrouter' && supported_parameters.include?('reasoning') && reasoning.is_a?(Hash) &&
+      reasoning['mandatory'] == false && reasoning['supported_efforts'].is_a?(Array) &&
+      reasoning['supported_efforts'].any? && !reasoning['supported_efforts'].include?('none')
   end
 
   def metadata

@@ -438,7 +438,7 @@ defineExpose({ open });
             <div
               v-for="tool in surface?.tools || []"
               :key="tool.id"
-              class="rounded-xl border border-n-weak bg-n-solid-1 p-4"
+              class="border-t border-n-weak pt-4"
             >
               <div class="font-medium text-n-slate-12">{{ tool.title }}</div>
               <div class="mt-1 text-sm text-n-slate-11">
@@ -455,7 +455,7 @@ defineExpose({ open });
             <div
               v-for="resource in surface?.resources || []"
               :key="resource.uri"
-              class="rounded-xl border border-n-weak bg-n-solid-1 p-4"
+              class="border-t border-n-weak pt-4"
             >
               <div class="font-medium text-n-slate-12">{{ resource.name }}</div>
               <div class="mt-1 break-all text-xs text-n-slate-10">
@@ -485,7 +485,7 @@ defineExpose({ open });
             <div
               v-for="template in surface?.resource_templates || []"
               :key="template.name"
-              class="rounded-xl border border-n-weak bg-n-solid-1 p-4"
+              class="border-t border-n-weak pt-4"
             >
               <div class="font-medium text-n-slate-12">{{ template.name }}</div>
               <div class="mt-1 break-all text-xs text-n-slate-10">
@@ -515,7 +515,7 @@ defineExpose({ open });
             <div
               v-for="prompt in surface?.prompts || []"
               :key="prompt.name"
-              class="rounded-xl border border-n-weak bg-n-solid-1 p-4"
+              class="border-t border-n-weak pt-4"
             >
               <div class="font-medium text-n-slate-12">{{ prompt.name }}</div>
               <div class="mt-1 text-sm text-n-slate-11">
@@ -545,7 +545,7 @@ defineExpose({ open });
             <div
               v-for="task in surface?.tasks || []"
               :key="task.task_id"
-              class="rounded-xl border border-n-weak bg-n-solid-1 p-4"
+              class="border-t border-n-weak pt-4"
             >
               <div class="font-medium text-n-slate-12">{{ task.task_id }}</div>
               <div class="mt-1 text-sm text-n-slate-11">{{ task.status }}</div>
@@ -576,7 +576,7 @@ defineExpose({ open });
           </template>
         </div>
 
-        <aside class="min-w-0 rounded-xl border border-n-weak bg-n-alpha-2 p-4">
+        <aside class="min-w-0">
           <div class="text-sm font-medium text-n-slate-12">
             {{ t('CAPTAIN.MCP_SERVERS.SURFACE.RESULT_TITLE') }}
           </div>

@@ -51,6 +51,16 @@ RSpec.describe Llm::RuntimePolicy do
         described_class.thinking_options(feature: :assistant, account: account, model: 'vendor/model', effort_override: 'none')
       end.to raise_error(ArgumentError, /does not support/)
     end
+
+    it 'preserves saved off for optional OpenRouter reasoning whose provider default would otherwise be medium' do
+      config = { 'provider' => 'openrouter', 'supported_parameters' => ['reasoning'],
+                 'reasoning' => { 'supported_efforts' => %w[low medium high], 'mandatory' => false, 'default_effort' => 'medium' } }
+      allow(Llm::Models).to receive(:model_config).with('vendor/optional', account: account).and_return(config)
+
+      expect(described_class.thinking_options(
+        feature: :assistant, account: account, model: 'vendor/optional', preferences: { 'assistant_thinking_effort' => 'none' }
+      )).to eq(effort: 'none')
+    end
   end
 
   describe '.moderation_enabled?' do

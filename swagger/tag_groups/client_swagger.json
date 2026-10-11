@@ -690,7 +690,8 @@
         "type": "object",
         "properties": {
           "id": {
-            "type": "integer"
+            "type": "integer",
+            "readOnly": true
           },
           "field_key": {
             "type": "string"
@@ -752,19 +753,31 @@
             "type": "array",
             "items": {
               "type": "string"
-            }
+            },
+            "description": "Configured loss reasons; always empty on open and won stages."
           },
           "closing_reason_required": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "Whether loss reasons are required; always false on open and won stages."
           },
           "transition_reason_options": {
             "type": "array",
+            "maxItems": 0,
             "items": {
               "type": "string"
-            }
+            },
+            "deprecated": true,
+            "readOnly": true,
+            "description": "Compatibility field; always empty. Ordinary transition reasons are removed."
           },
           "transition_reason_required": {
-            "type": "boolean"
+            "type": "boolean",
+            "enum": [
+              false
+            ],
+            "deprecated": true,
+            "readOnly": true,
+            "description": "Compatibility field; ordinary stage moves never require a reason."
           },
           "active": {
             "type": "boolean"
@@ -819,7 +832,8 @@
             "type": "boolean"
           },
           "auto_create_deal_on_channel_contact": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "Incoming-channel deal creation; independent of appointment_automation.auto_create_deals."
           },
           "appointment_automation": {
             "$ref": "#/components/schemas/crm_appointment_automation"
@@ -857,11 +871,17 @@
       },
       "crm_appointment_automation": {
         "type": "object",
-        "description": "Prospective, per-pipeline configuration. Stage automation is disabled until explicitly enabled; historical appointment links and existing channel autodeal settings are retained.",
+        "description": "Prospective per-pipeline settings. enabled controls appointment-driven stage automation. auto_create_deals independently controls all automatic appointment deal creation, including cardinality cloning; incoming-channel auto-create never enables it. Existing links and explicit valid existing-deal selection remain usable while creation is off. A deliberate crm_deal_selection=create remains an explicit manual action subject to CRM validation. Legacy absent masters normalize true only from explicit calendar or integration source opt-ins.",
         "properties": {
           "enabled": {
             "type": "boolean",
-            "default": false
+            "default": false,
+            "description": "Enables appointment-driven stage automation."
+          },
+          "auto_create_deals": {
+            "type": "boolean",
+            "default": false,
+            "description": "Independent master switch for automatic appointment deal creation. Turning it off preserves source preferences and historical links."
           },
           "cardinality": {
             "type": "string",
@@ -909,8 +929,14 @@
                 "conditions"
               ],
               "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
                 "stage_id": {
-                  "type": "integer"
+                  "$ref": "#/components/schemas/crm_stage_reference"
                 },
                 "scope": {
                   "type": "string",
@@ -944,13 +970,274 @@
                   "type": "array",
                   "items": {
                     "type": "string"
-                  }
-                },
-                "transition_reason": {
-                  "type": "string"
+                  },
+                  "description": "Accepted only for a lost target stage; removed from rules targeting open or won stages."
                 }
               }
             }
+          }
+        }
+      },
+      "crm_pipeline_settings": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "position": {
+            "type": "integer"
+          },
+          "active": {
+            "type": "boolean",
+            "description": "Archiving the current default clears its default flag and promotes an active replacement when available."
+          },
+          "default": {
+            "type": "boolean"
+          },
+          "auto_create_deal_on_channel_contact": {
+            "type": "boolean",
+            "description": "Incoming-channel creation only; does not enable appointment deal creation."
+          },
+          "appointment_automation": {
+            "$ref": "#/components/schemas/crm_appointment_automation"
+          },
+          "restrict_stage_skipping": {
+            "type": "boolean"
+          },
+          "restrict_backward_move": {
+            "type": "boolean"
+          },
+          "allow_stage_rule_override": {
+            "type": "boolean"
+          }
+        }
+      },
+      "crm_stage_reference": {
+        "description": "A positive existing stage ID in this pipeline or a new stage's client_id from the same atomic draft. Temporary IDs are resolved before settings are saved.",
+        "oneOf": [
+          {
+            "type": "integer",
+            "minimum": 1
+          },
+          {
+            "type": "string",
+            "pattern": "^([1-9][0-9]*|[a-zA-Z][a-zA-Z0-9_-]{0,127})$"
+          }
+        ]
+      },
+      "crm_movable_stage_draft": {
+        "type": "object",
+        "description": "Existing stages use id; new stages may use a unique client_id and must have a name. Submit every retained movable open stage exactly once, in the desired order. System and terminal stages use their separate draft fields.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "client_id": {
+            "type": "string",
+            "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,127}$",
+            "description": "Request-only ID for a new stage without id. Must be unique within this draft."
+          },
+          "name": {
+            "type": "string"
+          },
+          "color": {
+            "type": "string"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "default": {
+            "type": "boolean",
+            "description": "Legacy fallback selection; auto_create_stage_id selects the channel creation target in the full pipeline save."
+          },
+          "field_requirements": {
+            "type": "array",
+            "description": "Replaces requirements only when provided. Preserve validation and role_exemptions when retaining a requirement. Manual CRM writes continue to validate these fields.",
+            "items": {
+              "$ref": "#/components/schemas/crm_field_requirement"
+            }
+          }
+        }
+      },
+      "crm_stage_draft": {
+        "type": "object",
+        "properties": {
+          "stages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/crm_movable_stage_draft"
+            }
+          },
+          "deleted_stage_ids": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Existing removable stages in this pipeline. Referenced stages and protected system stages cannot be deleted."
+          },
+          "technical_stage": {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "active": {
+                "type": "boolean"
+              }
+            }
+          },
+          "terminal_stages": {
+            "type": "array",
+            "description": "When provided, include every existing won and lost stage exactly once. Closing reason options and requirements apply only to lost; won reasons are ignored and cleared.",
+            "items": {
+              "type": "object",
+              "required": [
+                "id"
+              ],
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "name": {
+                  "type": "string"
+                },
+                "closing_reason_options": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Loss reason choices; only a lost stage retains these."
+                },
+                "closing_reason_required": {
+                  "type": "boolean",
+                  "description": "Requires a reason only for a lost target stage."
+                },
+                "field_requirements": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/crm_field_requirement"
+                  }
+                }
+              }
+            }
+          },
+          "pipeline_rules": {
+            "type": "object",
+            "description": "Movement rules accepted by the legacy stage-batch endpoint. The full pipeline PATCH also accepts the same settings at its top level.",
+            "properties": {
+              "restrict_stage_skipping": {
+                "type": "boolean"
+              },
+              "restrict_backward_move": {
+                "type": "boolean"
+              },
+              "allow_stage_rule_override": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      },
+      "crm_pipeline_save_payload": {
+        "description": "One atomic save for pipeline settings, channel creation, appointment automation and the full ordered stage draft. All account, stage, requirement, deletion, target and ordering checks must succeed before any change persists. Omit stages for a legacy partial settings update.",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/crm_pipeline_settings"
+          },
+          {
+            "$ref": "#/components/schemas/crm_stage_draft"
+          }
+        ],
+        "type": "object",
+        "properties": {
+          "auto_create_stage_id": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/crm_stage_reference"
+              }
+            ],
+            "description": "Active open stage used for channel-created deals. May refer to a new stage client_id. Omit when channel creation is off and a removed selection should fall back to a retained active open stage."
+          },
+          "pipeline_order": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Every active pipeline ID in this account exactly once after applying this draft's active flag. Positions are saved as 10, 20, 30, and so on in the same transaction."
+          }
+        },
+        "dependentRequired": {
+          "deleted_stage_ids": [
+            "stages"
+          ],
+          "technical_stage": [
+            "stages"
+          ],
+          "terminal_stages": [
+            "stages"
+          ],
+          "pipeline_rules": [
+            "stages"
+          ]
+        }
+      },
+      "crm_pipeline_save_response": {
+        "type": "object",
+        "required": [
+          "payload"
+        ],
+        "properties": {
+          "payload": {
+            "$ref": "#/components/schemas/crm_pipeline"
+          },
+          "pipelines": {
+            "type": "array",
+            "description": "Included when the request contains stages. Full account pipeline state, including inactive stages, publishes promoted defaults, source ownership and ordering from the completed atomic save. Legacy partial updates return payload only.",
+            "items": {
+              "$ref": "#/components/schemas/crm_pipeline"
+            }
+          }
+        }
+      },
+      "scheduling_crm_link_result": {
+        "type": "object",
+        "readOnly": true,
+        "required": [
+          "status",
+          "code",
+          "message"
+        ],
+        "description": "Optional warning after the appointment was saved but an attempted CRM link or creation could not validate. It does not revoke appointment persistence or confirm a provider booking. Review the CRM fields or select an existing valid deal; do not create the appointment again to address this warning. Intentional master-off unlinked bookings omit this field; a later successful link clears it.",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "not_linked"
+            ]
+          },
+          "code": {
+            "type": "string",
+            "description": "CRM validation or optional-selection error code."
+          },
+          "message": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": true
           }
         }
       },
@@ -1060,47 +1347,64 @@
         "properties": {
           "message_content": {
             "type": "string",
+            "maxLength": 12000,
             "description": "Required for the default message action."
           },
           "playground_mode": {
             "type": "string",
             "enum": [
-              "trial",
-              "live"
+              "workspace",
+              "trial"
             ],
-            "default": "trial",
-            "description": "Live requires an account administrator and uses real clinic operations with a synthetic caller."
+            "default": "workspace",
+            "description": "Workspace uses a synthetic caller and server-owned history. The trial compatibility value also opens a workspace session; legacy live mode is rejected."
           },
           "playground_action": {
             "type": "string",
             "enum": [
               "message",
               "session",
-              "reset"
+              "reset",
+              "permissions",
+              "confirm"
             ],
             "default": "message"
           },
           "playground_session_id": {
             "type": "string",
             "description": "Server-owned session identifier scoped to this account",
-            "user": null,
-            "assistant and mode.": null
+            "user and entry assistant. Required for permissions; use the same session for confirming a preview.": null
           },
           "scenario": {
             "type": "object",
             "additionalProperties": true,
-            "description": "Trial accepts synthetic business data; Live accepts only the synthetic caller profile."
+            "description": "Synthetic business data. Changing the scenario revokes pending real-action previews."
           },
-          "live_inbox_id": {
-            "type": "integer"
+          "real_data_read": {
+            "type": "boolean",
+            "default": false,
+            "description": "Applied by the permissions action. Enables selected tools to read real account data under the current operator's permissions."
+          },
+          "real_data_write": {
+            "type": "boolean",
+            "default": false,
+            "description": "Applied by the permissions action; requires real_data_read. Each real change still needs an explicit preview confirmation."
+          },
+          "approval_id": {
+            "type": "string",
+            "description": "ID of a pending action preview required by the confirm action."
+          },
+          "approval_digest": {
+            "type": "string",
+            "description": "Digest of the unchanged action preview required by the confirm action."
           },
           "external_delivery_enabled": {
             "type": "boolean",
-            "default": false
-          },
-          "controlled_test_number": {
-            "type": "string",
-            "description": "Explicit controlled delivery target for Live mode."
+            "enum": [
+              false
+            ],
+            "default": false,
+            "description": "External delivery is unavailable; true is rejected."
           },
           "message_history": {
             "type": "array",
@@ -1126,7 +1430,7 @@
           },
           "conversation_id": {
             "type": "string",
-            "description": "Trial rejects real conversations; Live accepts only its own dedicated session conversation display ID."
+            "description": "External-agent Playground rejects real conversations. Used only by the enabled internal assistant playground with the operator's conversation access."
           },
           "test_model": {
             "type": "string",
@@ -1153,8 +1457,7 @@
           "mode": {
             "type": "string",
             "enum": [
-              "trial",
-              "live"
+              "workspace"
             ]
           },
           "scenario": {
@@ -1168,41 +1471,28 @@
               "additionalProperties": true
             }
           },
-          "live_available": {
+          "real_data_read": {
             "type": "boolean"
           },
-          "live_warning": {
-            "type": "string"
-          },
-          "conversation_id": {
-            "type": "integer",
-            "description": "Dedicated Live conversation display ID."
-          },
-          "inbox_id": {
-            "type": "integer"
+          "real_data_write": {
+            "type": "boolean"
           },
           "delivery_enabled": {
-            "type": "boolean"
+            "type": "boolean",
+            "enum": [
+              false
+            ]
           },
-          "delivery_target": {
-            "type": "string"
-          },
-          "inboxes": {
+          "action_previews": {
             "type": "array",
             "items": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "type": "integer"
-                },
-                "name": {
-                  "type": "string"
-                },
-                "channel_type": {
-                  "type": "string"
-                }
-              }
-            }
+              "$ref": "#/components/schemas/captain_playground_action_preview"
+            },
+            "description": "Pending unexpired previews for the current permissions and acting agent; changing either invalidates confirmation."
+          },
+          "expires_in": {
+            "type": "integer",
+            "description": "Session lifetime in seconds."
           }
         }
       },
@@ -1454,7 +1744,8 @@
             "type": "array",
             "items": {
               "type": "string"
-            }
+            },
+            "description": "Loss reasons on the current lost stage; empty for open and won deals."
           },
           "position": {
             "type": "integer"
@@ -1873,6 +2164,7 @@
       },
       "captain_assistant": {
         "type": "object",
+        "description": "An independent agent in the requested account. Instructions live in description. Separate response_guidelines and guardrails are not returned; config.rules, config.skills and prompt-migration internals are excluded from config.",
         "properties": {
           "id": {
             "type": "integer"
@@ -1885,7 +2177,8 @@
           },
           "description": {
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "description": "This agent's own main prompt."
           },
           "usage_mode": {
             "type": "string",
@@ -1894,19 +2187,42 @@
               "internal_assistant"
             ]
           },
-          "response_guidelines": {
-            "type": "array",
-            "nullable": true,
-            "items": {
-              "type": "string"
-            }
+          "active": {
+            "type": "boolean",
+            "description": "Only active external agents can be channel entry agents or participate as handoff targets."
           },
-          "guardrails": {
-            "type": "array",
+          "routing_description": {
+            "type": "string",
             "nullable": true,
+            "maxLength": 2000,
+            "description": "Describes when another agent should route a request to this agent."
+          },
+          "handoff_agent_ids": {
+            "type": "array",
+            "uniqueItems": true,
             "items": {
-              "type": "string"
-            }
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Saved outgoing targets in this account. Runtime routing uses only active external targets. A saved target may remain listed after it becomes inactive."
+          },
+          "legacy_scenario_id": {
+            "type": "integer",
+            "nullable": true,
+            "readOnly": true,
+            "description": "Original scenario ID for an agent converted from a legacy scenario."
+          },
+          "migration_warnings": {
+            "type": "array",
+            "readOnly": true,
+            "items": {
+              "$ref": "#/components/schemas/captain_agent_migration_warning"
+            },
+            "description": "Review notices recorded during legacy scenario conversion; empty for agents without notices."
+          },
+          "avatar_url": {
+            "type": "string",
+            "nullable": true
           },
           "config": {
             "type": "object",
@@ -1927,8 +2243,7 @@
                 "additionalProperties": true
               },
               "outcome_reason_settings": {
-                "type": "object",
-                "additionalProperties": true
+                "$ref": "#/components/schemas/captain_outcome_reason_settings"
               },
               "context_access": {
                 "type": "object",
@@ -1940,6 +2255,15 @@
               }
             },
             "additionalProperties": true
+          },
+          "outcome_reason_options": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/captain_outcome_reason_settings"
+              }
+            ],
+            "readOnly": true,
+            "description": "Normalized reason options including built-in IDs and active flags, returned for every assistant. Configure custom options through config.outcome_reason_settings."
           },
           "type": {
             "type": "string",
@@ -6483,6 +6807,335 @@
           }
         }
       },
+      "ai_agents_classification_counts": {
+        "type": "object",
+        "required": [
+          "completed",
+          "pending",
+          "processing",
+          "failed",
+          "insufficient_context",
+          "unclassified"
+        ],
+        "description": "Current classifier state of the selected outcome events. Missing or unknown historic states are unclassified. Pending, processing, failed and insufficient_context are separate from completed reasons.",
+        "properties": {
+          "completed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "pending": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "processing": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "failed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "insufficient_context": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "unclassified": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "ai_agents_counts": {
+        "type": "object",
+        "required": [
+          "message_count",
+          "conversation_count",
+          "outcome_count",
+          "completion_count",
+          "handoff_count",
+          "classification_counts"
+        ],
+        "properties": {
+          "message_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Persisted public outgoing messages whose native sender is Captain::Assistant. Includes failed messages; this is not a delivered-message count."
+          },
+          "conversation_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Distinct physical conversations touched by counted AI messages or outcomes in this row's period and agent scope. Whole-period totals are not the sum of daily or per-agent distinct counts."
+          },
+          "outcome_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Actual open or resolved status changes by a native Captain::Assistant actor with source captain or system."
+          },
+          "completion_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Counted AI status transitions to resolved. Conversation completion does not establish a sale or business success."
+          },
+          "handoff_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Counted AI status transitions to open",
+            "representing the native handoff outcome.": null
+          },
+          "classification_counts": {
+            "$ref": "#/components/schemas/ai_agents_classification_counts"
+          }
+        }
+      },
+      "ai_agents_unavailable_metric": {
+        "type": "object",
+        "required": [
+          "available",
+          "reason"
+        ],
+        "description": "Full native response attribution is unavailable. Request-level estimated usage and classifier duration are not reported as public-response cost or latency; no zero or estimated total is substituted.",
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "native_attribution_unavailable"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "ai_agents_report_response": {
+        "type": "object",
+        "required": [
+          "payload",
+          "meta"
+        ],
+        "properties": {
+          "payload": {
+            "type": "object",
+            "required": [
+              "totals",
+              "series",
+              "agents",
+              "agent_breakdown",
+              "reasons",
+              "availability"
+            ],
+            "properties": {
+              "totals": {
+                "$ref": "#/components/schemas/ai_agents_counts"
+              },
+              "series": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 90,
+                "description": "One row per inclusive local date, including zero-filled days. Each message uses its own created_at; each outcome uses the status event's created_at. Conversation creation date does not filter these counts.",
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ai_agents_counts"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "date"
+                      ],
+                      "properties": {
+                        "date": {
+                          "type": "string",
+                          "format": "date"
+                        }
+                      }
+                    }
+                  ]
+                }
+              },
+              "agents": {
+                "type": "array",
+                "description": "Current assistants in this account, including inactive agents, available for filtering. Deleted actors appear only in historical breakdown rows.",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "name",
+                    "active"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "active": {
+                      "type": "boolean"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "agent_breakdown": {
+                "type": "array",
+                "description": "Native authors and actors with counted events, including surviving deleted-actor history. Deleted actors have name=null and active=null. Native assistant deletion may erase message authorship; those nullified messages cannot be attributed and are omitted.",
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ai_agents_counts"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "assistant_id",
+                        "name",
+                        "active"
+                      ],
+                      "properties": {
+                        "assistant_id": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "name": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "active": {
+                          "type": [
+                            "boolean",
+                            "null"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              },
+              "reasons": {
+                "type": "array",
+                "description": "Only completed classifier outcomes with a stable reason ID. Groups use assistant_id, native outcome type and reason_id. Label is the latest snapshot label in the group; renaming does not split its count. Incomplete and historic unclassified events remain in classification_counts.",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "assistant_id",
+                    "type",
+                    "reason_id",
+                    "label",
+                    "count"
+                  ],
+                  "properties": {
+                    "assistant_id": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "completion",
+                        "handoff"
+                      ]
+                    },
+                    "reason_id": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "count": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "availability": {
+                "type": "object",
+                "required": [
+                  "latency",
+                  "cost"
+                ],
+                "properties": {
+                  "latency": {
+                    "$ref": "#/components/schemas/ai_agents_unavailable_metric"
+                  },
+                  "cost": {
+                    "$ref": "#/components/schemas/ai_agents_unavailable_metric"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          "meta": {
+            "type": "object",
+            "required": [
+              "from_date",
+              "to_date",
+              "timezone",
+              "max_range_days",
+              "assistant_id"
+            ],
+            "properties": {
+              "from_date": {
+                "type": "string",
+                "format": "date"
+              },
+              "to_date": {
+                "type": "string",
+                "format": "date"
+              },
+              "timezone": {
+                "type": "string",
+                "description": "Canonical IANA identifier of the account reporting timezone."
+              },
+              "max_range_days": {
+                "type": "integer",
+                "enum": [
+                  90
+                ]
+              },
+              "assistant_id": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "Selected current account-owned assistant ID; null means all native actors in this account."
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "ai_agents_report_error": {
+        "type": "object",
+        "required": [
+          "code",
+          "error"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "INVALID_REPORT_RANGE",
+              "INVALID_REPORT_AGENT"
+            ]
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "account_summary": {
         "type": "object",
         "properties": {
@@ -7861,6 +8514,7 @@
         "required": [
           "assistant"
         ],
+        "description": "Creates an account-scoped independent agent. Routing and profile settings are persisted together only when the request succeeds. Instructions belong in assistant.description. Separate response_guidelines, guardrails or config.rules writes return 422 separate_rules_removed. config.skills is no longer permitted and is ignored.",
         "properties": {
           "assistant": {
             "type": "object",
@@ -7873,7 +8527,8 @@
               },
               "description": {
                 "type": "string",
-                "nullable": true
+                "nullable": true,
+                "description": "This agent's own main prompt."
               },
               "usage_mode": {
                 "type": "string",
@@ -7882,21 +8537,27 @@
                   "internal_assistant"
                 ]
               },
-              "response_guidelines": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
+              "active": {
+                "type": "boolean",
+                "default": true,
+                "description": "Enables this agent for entry and handoff routing when usage_mode is external_agent."
               },
-              "guardrails": {
+              "routing_description": {
+                "type": "string",
+                "nullable": true,
+                "maxLength": 2000
+              },
+              "handoff_agent_ids": {
                 "type": "array",
                 "items": {
-                  "type": "string"
-                }
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "description": "Explicit outgoing targets from this account. Newly selected targets must be active external agents; the current agent cannot target itself. An empty array saves no outgoing routes."
               },
               "config": {
                 "type": "object",
-                "description": "Omitted safety fields retain saved overrides during a partial update; explicit null resets a safety field to inheritance from the workspace policy. Unspecified safety fields on a new assistant inherit workspace policy.",
+                "description": "Omitted safety fields retain saved overrides during a partial update. Provider-safety fields accept null for workspace inheritance. custom_rules is a complete ordered replacement; [] clears it and null is invalid.",
                 "properties": {
                   "model": {
                     "type": "string"
@@ -7913,8 +8574,7 @@
                     "additionalProperties": true
                   },
                   "outcome_reason_settings": {
-                    "type": "object",
-                    "additionalProperties": true
+                    "$ref": "#/components/schemas/captain_outcome_reason_settings"
                   },
                   "context_access": {
                     "type": "object",
@@ -7934,7 +8594,7 @@
       },
       "captain_assistant_safety_settings": {
         "type": "object",
-        "description": "Omitted safety fields retain saved overrides during a partial update; explicit null resets a safety field to inheritance from the workspace policy. Unspecified safety fields on a new assistant inherit workspace policy.",
+        "description": "Omitted fields retain saved overrides during a partial update. Provider-safety fields accept null to inherit workspace policy. Custom rules are independent of the provider moderation toggle; an omitted custom_rules retains the saved list, an empty array clears it, and null is rejected.",
         "properties": {
           "moderation_enabled": {
             "type": [
@@ -7968,6 +8628,246 @@
               null
             ],
             "description": "Runtime sensitive-information guardrail action; null inherits the workspace value."
+          },
+          "custom_rules": {
+            "type": "array",
+            "maxItems": 20,
+            "description": "Replaces the entire ordered list atomically with the assistant profile. The first matching enabled rule for the checked direction wins. IDs must be unique within the list. Disabled rules remain saved but are not evaluated. No rules means no classifier request. Invalid rules return 422 invalid_custom_safety_rules without saving profile or routing changes.",
+            "items": {
+              "$ref": "#/components/schemas/captain_custom_safety_rule"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "captain_custom_safety_rule": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "direction",
+          "instruction",
+          "action",
+          "enabled"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$",
+            "not": {
+              "enum": [
+                "none"
+              ]
+            },
+            "description": "Stable unique identifier. The exact identifier none is reserved and rejected. Preserve this ID when editing or reordering a rule."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "description": "Nonblank display name; it is not sent to the classifier."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "input",
+              "output"
+            ]
+          },
+          "instruction": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "Nonblank condition describing when the rule matches. Rules are evaluated in saved array order."
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "handoff",
+              "block",
+              "rewrite"
+            ],
+            "description": "Server-owned action associated with this ID. Rewrite is valid only for output rules. Block is accepted for compatibility; input handoff and block stop automation and transfer to staff."
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "A literal boolean is required; strings and numeric values are rejected."
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "Optional preapproved public message after a match. Omitted or empty uses the configured handoff message. Null is rejected. This field is not sent to the classifier."
+          }
+        },
+        "oneOf": [
+          {
+            "properties": {
+              "direction": {
+                "type": "string",
+                "enum": [
+                  "input"
+                ]
+              },
+              "action": {
+                "type": "string",
+                "enum": [
+                  "handoff",
+                  "block"
+                ]
+              }
+            }
+          },
+          {
+            "properties": {
+              "direction": {
+                "type": "string",
+                "enum": [
+                  "output"
+                ]
+              },
+              "action": {
+                "type": "string",
+                "enum": [
+                  "handoff",
+                  "block",
+                  "rewrite"
+                ]
+              }
+            }
+          }
+        ],
+        "additionalProperties": false
+      },
+      "captain_custom_safety_rules_error": {
+        "type": "object",
+        "required": [
+          "error",
+          "fields"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "enum": [
+              "invalid_custom_safety_rules"
+            ]
+          },
+          "fields": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": [
+                "path",
+                "code",
+                "message"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "example": "safety_settings.custom_rules[0].action"
+                },
+                "code": {
+                  "type": "string",
+                  "enum": [
+                    "invalid_type",
+                    "too_many",
+                    "unknown_fields",
+                    "required",
+                    "invalid_id",
+                    "duplicate_id",
+                    "blank",
+                    "too_long",
+                    "invalid_value",
+                    "output_only"
+                  ]
+                },
+                "message": {
+                  "type": "string",
+                  "description": "Concrete validation message without echoing rule text or arbitrary field values."
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "captain_outcome_reason_settings": {
+        "type": "object",
+        "description": "Stable reason IDs for conversation completion and handoff. Completion is a conversation status outcome, not a sale. Labels may change without changing the ID. The other fallback remains active. Writes normalize at most 27 configured entries per type; read options additionally include built-in choices.",
+        "properties": {
+          "completion_reasons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/captain_outcome_reason_option"
+            }
+          },
+          "handoff_reasons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/captain_outcome_reason_option"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "captain_outcome_reason_option": {
+        "type": "object",
+        "required": [
+          "id",
+          "label"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
+            "description": "Stable ID unique within its outcome type."
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "active": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "captain_removed_rules_error": {
+        "type": "object",
+        "required": [
+          "error",
+          "fields",
+          "message"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "enum": [
+              "separate_rules_removed"
+            ]
+          },
+          "fields": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "enum": [
+                "response_guidelines",
+                "guardrails",
+                "config.rules"
+              ]
+            }
+          },
+          "message": {
+            "type": "string",
+            "enum": [
+              "Save instructions in assistant.description."
+            ]
           }
         },
         "additionalProperties": false
@@ -7989,21 +8889,64 @@
           "response": {
             "type": "string",
             "nullable": true,
-            "description": "Present for a message action; session and reset actions return session state without a generated reply."
+            "description": "Present for a message action. Session",
+            "reset and permissions return session state; confirm returns the action result.": null
           },
           "playground": {
             "$ref": "#/components/schemas/captain_playground_session"
           },
           "delivery": {
             "type": "object",
-            "additionalProperties": true,
-            "description": "Actual delivery result; a queued message is not confirmed delivery."
+            "description": "Present for an external-agent message action; replies stay in the Playground transcript.",
+            "properties": {
+              "enabled": {
+                "type": "boolean",
+                "enum": [
+                  false
+                ]
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "playground_only"
+                ]
+              },
+              "delivered": {
+                "type": "boolean",
+                "enum": [
+                  false
+                ]
+              }
+            }
           },
           "agent_name": {
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "Runtime agent key."
+          },
+          "agent_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Account-scoped ID of the acting agent after any handoff."
+          },
+          "agent_display_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Display name of the acting agent."
+          },
+          "agent_tasks": {
+            "type": "array",
+            "maxItems": 30,
+            "items": {
+              "$ref": "#/components/schemas/captain_agent_task"
+            },
+            "description": "Results and remaining work for a multi-request task queue. Empty when no queue was created; these are runtime tasks rather than CRM task records."
           },
           "reasoning": {
             "type": [
@@ -8022,23 +8965,210 @@
             "description": "Provider-reported reasoning tokens",
             "included only when the provider supplies this usage metric.": null
           },
-          "tool_trace": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "tool": {
-                  "type": "string"
-                },
-                "event": {
-                  "type": "string"
-                }
-              },
-              "additionalProperties": true
-            }
+          "action_id": {
+            "type": "string",
+            "description": "Confirmed preview ID; present for a confirm action."
+          },
+          "result": {
+            "description": "Tool result returned by a confirm action; its representation follows the selected tool."
+          },
+          "success": {
+            "type": "boolean",
+            "description": "Whether the confirmed action completed successfully."
+          },
+          "delivered": {
+            "type": "boolean",
+            "enum": [
+              false
+            ],
+            "description": "A confirm action does not deliver a customer message."
+          },
+          "timed_out": {
+            "type": "boolean",
+            "description": "Present with response=null when the request times out."
           }
         },
         "additionalProperties": true
+      },
+      "captain_agent_migration_warning": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "reference_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Parent-prompt tool",
+            "field or skill references that were not copied.": null
+          }
+        },
+        "additionalProperties": false
+      },
+      "captain_agent_task": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "assistant_id": {
+            "type": "integer",
+            "description": "Assigned agent in the entry agent's reachable account-scoped graph."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "awaiting",
+              "active",
+              "waiting",
+              "completed",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "result": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 1500,
+            "description": "Concise outcome or reason the request remains waiting."
+          }
+        },
+        "additionalProperties": false
+      },
+      "captain_playground_action_preview": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "digest": {
+            "type": "string"
+          },
+          "tool": {
+            "type": "string"
+          },
+          "arguments": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "target": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending"
+            ]
+          },
+          "expires_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix timestamp in seconds."
+          },
+          "binding": {
+            "type": "object",
+            "properties": {
+              "session_id": {
+                "type": "string"
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "workspace"
+                ]
+              },
+              "account_id": {
+                "type": "integer"
+              },
+              "user_id": {
+                "type": "integer"
+              },
+              "entry_assistant_id": {
+                "type": "integer"
+              },
+              "assistant_id": {
+                "type": "integer",
+                "description": "Acting agent whose selected tools authorize this preview."
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      "captain_knowledge_access_parameters": {
+        "type": "object",
+        "description": "Access fields accepted inside document or assistant_response create/update payloads. Access changes are saved only when the request succeeds; material is shared through grants without duplication. Omitted allowed_assistant_ids retains existing grants unless visibility changes to general. Each selected agent must belong to the requested account.",
+        "properties": {
+          "assistant_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Legacy owner. Personal knowledge may instead use an explicit allowed_assistant_ids selection with assistant_id=null."
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "general",
+              "personal"
+            ],
+            "description": "General grants access to all agents in this account and clears explicit grants. Personal grants access to the legacy owner and selected agents."
+          },
+          "allowed_assistant_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Replaces the explicit selected-agent grants on save. Personal knowledge requires at least one selected agent or a legacy owner; switching to general clears these grants."
+          }
+        }
+      },
+      "captain_knowledge_access": {
+        "type": "object",
+        "description": "Access fields returned by document and FAQ serializers. Legacy personal material with no owner and restricted_to_assistants=false remains workspace-shared; derived material inherits source access where applicable.",
+        "properties": {
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "general",
+              "personal"
+            ]
+          },
+          "allowed_assistant_ids": {
+            "type": "array",
+            "uniqueItems": true,
+            "readOnly": true,
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Effective legacy owner and explicit grants for personal knowledge; empty for general visibility."
+          },
+          "restricted_to_assistants": {
+            "type": "boolean",
+            "readOnly": true,
+            "description": "Stored explicit-selection flag. Derived material also follows its source's access restrictions."
+          }
+        }
       },
       "crm_task_lifecycle_snapshot": {
         "type": "object",

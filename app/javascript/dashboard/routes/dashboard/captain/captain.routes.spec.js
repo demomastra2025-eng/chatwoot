@@ -76,6 +76,21 @@ const buildRouter = () =>
   });
 
 describe('captain routes', () => {
+  it('redirects a former scenarios link to the normal agent list', () => {
+    const legacyRoute = flattenRoutes(routes).find(
+      route => route.name === 'captain_assistants_scenarios_index'
+    );
+    expect(
+      legacyRoute.redirect({
+        params: { accountId: '1', assistantId: '2' },
+        query: { source: 'legacy' },
+      })
+    ).toEqual({
+      name: 'captain_assistants_create_index',
+      params: { accountId: '1' },
+      query: { source: 'legacy' },
+    });
+  });
   it('exposes the assistant sandbox («Площадка») at the playground route', () => {
     const playgroundRoute = flattenRoutes(routes).find(
       route => route.name === 'captain_assistants_playground_index'

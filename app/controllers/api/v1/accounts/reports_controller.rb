@@ -2,7 +2,8 @@
 
 class Api::V1::Accounts::ReportsController < Api::V1::Accounts::BaseController
   rescue_from ArgumentError, with: :render_unprocessable_entity
-  before_action :authorize_report_access!, only: %i[calls leads]
+  rescue_from ::Reports::AiAgentsQuery::InvalidAssistantFilter, with: :render_invalid_assistant_filter
+  before_action :authorize_report_access!, only: %i[calls leads ai_agents]
 
   def calls
     report = ::Reports::CallsQuery.new(account: Current.account, params: report_params)
@@ -11,6 +12,12 @@ class Api::V1::Accounts::ReportsController < Api::V1::Accounts::BaseController
 
   def leads
     report = ::Reports::LeadsQuery.new(account: Current.account, params: report_params)
+    render_payload(report.perform, meta: report.meta)
+  end
+
+  def ai_agents
+    values = report_params.to_h.merge(assistant_id: params[:assistant_id])
+    report = ::Reports::AiAgentsQuery.new(account: Current.account, params: values)
     render_payload(report.perform, meta: report.meta)
   end
 
@@ -38,5 +45,9 @@ class Api::V1::Accounts::ReportsController < Api::V1::Accounts::BaseController
   def render_unprocessable_entity(error)
     render json: { code: 'INVALID_REPORT_RANGE', error: error.message },
            status: :unprocessable_content
+  end
+
+  def render_invalid_assistant_filter(error)
+    render json: { code: 'INVALID_REPORT_AGENT', error: error.message }, status: :unprocessable_content
   end
 end

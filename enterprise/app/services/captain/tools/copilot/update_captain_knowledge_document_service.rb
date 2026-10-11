@@ -10,6 +10,7 @@ class Captain::Tools::Copilot::UpdateCaptainKnowledgeDocumentService < Captain::
   param :assistant_id, type: :integer, desc: 'Optional destination Captain assistant ID in the same account', required: false
   param :name, type: :string, desc: 'Optional document name', required: false
   param :visibility, type: :string, desc: 'Optional visibility: general or personal', required: false
+  param :allowed_assistant_ids, type: :array, desc: 'Optional same-workspace agent IDs for personal knowledge', required: false
   param :faq_generation_enabled, type: :boolean, desc: 'Optional FAQ generation flag', required: false
 
   def execute(document_id:, **kwargs)
@@ -20,10 +21,7 @@ class Captain::Tools::Copilot::UpdateCaptainKnowledgeDocumentService < Captain::
     raise ArgumentError, 'No supported document fields were provided' if attributes.blank?
 
     before_payload = document_payload(document, include_details: true)
-    ActiveRecord::Base.transaction do
-      document.update!(attributes)
-      reconcile_document_entries!(document) if attributes.key?(:assistant) || attributes.key?(:visibility)
-    end
+    document.update!(attributes)
 
     formatted_payload(
       action: 'update_captain_knowledge_document',
@@ -39,16 +37,14 @@ class Captain::Tools::Copilot::UpdateCaptainKnowledgeDocumentService < Captain::
 
   def knowledge_document_update_attributes(kwargs)
     {}.tap do |attributes|
-      attributes[:assistant] = find_captain_assistant!(kwargs[:assistant_id]) if kwargs[:assistant_id].present?
+      if kwargs.key?(:assistant_id)
+        attributes[:assistant] = kwargs[:assistant_id].present? ? find_captain_assistant!(kwargs[:assistant_id]) : nil
+      end
       attributes[:name] = kwargs[:name] if kwargs[:name].present?
       attributes[:visibility] = normalize_knowledge_visibility(kwargs[:visibility]) if kwargs[:visibility].present?
+      attributes[:allowed_assistant_ids] = kwargs[:allowed_assistant_ids] if kwargs.key?(:allowed_assistant_ids)
       attributes[:faq_generation_enabled] = cast_boolean(kwargs[:faq_generation_enabled]) unless kwargs[:faq_generation_enabled].nil?
     end
   end
 
-  def reconcile_document_entries!(document)
-    document.responses.find_each do |entry|
-      entry.update!(assistant: document.assistant, account: account, visibility: document.visibility)
-    end
-  end
 end

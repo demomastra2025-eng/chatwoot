@@ -95,6 +95,17 @@ RSpec.describe Captain::Knowledge::AnswerCache do
     expect(entry.errors[:assistant]).to include('must belong to the same account')
   end
 
+  it 'cannot serve a selected material after its grant is revoked' do
+    document.update!(assistant: nil, visibility: :personal, allowed_assistant_ids: [assistant.id])
+    described_class.new(account: account, assistant: assistant, query: 'Refund policy').write(payload)
+    expect(described_class.new(account: account, assistant: assistant, query: 'Refund policy').fetch).to be_present
+
+    document.knowledge_grants.where(assistant: assistant).destroy_all
+
+    expect(described_class.new(account: account, assistant: assistant, query: 'Refund policy').fetch).to be_nil
+    expect(Captain::DocumentChunk.visible_to_assistant(assistant.id)).not_to include(chunk)
+  end
+
   it 'can serve semantic cache matches through the vector entry boundary' do
     entry = described_class.new(account: account, assistant: assistant, query: 'Refund policy').write(payload)
     cache_entry = Captain::KnowledgeAnswerCacheEntry.last

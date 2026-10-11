@@ -1,7 +1,7 @@
 class Captain::Tools::TransitionDealStageTool < Captain::Tools::BasePublicTool
   description 'Move a specific CRM deal. Use its deal_id from get_deal/search_deals; use list_deal_stages first and prefer stage_id; ' \
-              'stage_action next/previous follows current pipeline position. For Won/Lost stages pass configured ' \
-              'closing_reasons when required or known. For open stages pass configured transition_reason when required or known.'
+              'stage_action next/previous follows current pipeline position. For Lost stages pass configured ' \
+              'closing_reasons when required or known.'
   param :deal_id, type: 'integer', desc: 'Specific deal ID from get_deal/search_deals; omit only for an explicit CRM event context', required: false
   param :stage_id, type: 'integer', desc: 'Positive target stage ID from list_deal_stages/list_deal_pipelines. Omit when unknown.', required: false
   param :stage_name, type: 'string', desc: 'Target stage name; scoped to the current deal pipeline unless pipeline_id/pipeline_code is provided',
@@ -17,11 +17,7 @@ class Captain::Tools::TransitionDealStageTool < Captain::Tools::BasePublicTool
   param :stage_action, type: 'string', desc: 'Relative stage action: next or previous by position in the current pipeline', required: false
   param :closing_reasons,
         type: 'array',
-        desc: 'One or more configured closing reason labels from list_deal_stages for Won/Lost target stages',
-        required: false
-  param :transition_reason,
-        type: 'string',
-        desc: 'Configured transition reason label from list_deal_stages for open target stages',
+        desc: 'Configured loss reason labels from list_deal_stages when moving to a Lost stage',
         required: false
 
   def perform(tool_context, deal_id: nil, stage_id: nil, stage_name: nil, stage_code: nil, pipeline_id: nil, pipeline_code: nil,

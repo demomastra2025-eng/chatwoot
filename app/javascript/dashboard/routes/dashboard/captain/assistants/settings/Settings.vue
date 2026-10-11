@@ -11,6 +11,7 @@ import PageLayout from 'dashboard/components-next/captain/PageLayout.vue';
 import SettingsHeader from 'dashboard/components-next/captain/pageComponents/settings/SettingsHeader.vue';
 import AssistantBasicSettingsForm from 'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantBasicSettingsForm.vue';
 import AssistantSystemSettingsForm from 'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantSystemSettingsForm.vue';
+import AssistantRoutingSettingsForm from 'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantRoutingSettingsForm.vue';
 import AssistantOutcomeSettingsForm from '../outcomes/Index.vue';
 
 import DeleteDialog from 'dashboard/components-next/captain/pageComponents/DeleteDialog.vue';
@@ -30,12 +31,14 @@ const store = useStore();
 
 const deleteAssistantDialog = ref(null);
 const generalBasicFormRef = ref(null);
+const generalRoutingFormRef = ref(null);
 const generalCapabilitiesFormRef = ref(null);
 const generalOutcomeFormRef = ref(null);
 const generalSystemFormRef = ref(null);
 const voiceSystemFormRef = ref(null);
 // Kept in step with the "hand over to a human" switch of the capabilities form.
 const handoffEnabled = ref(true);
+const faqEnabled = ref(false);
 const activeSettingsTab = ref('profile');
 
 const uiFlags = useMapGetter('captainAssistants/getUIFlags');
@@ -46,6 +49,10 @@ const assistant = computed(() =>
   store.getters['captainAssistants/getRecord'](assistantId.value)
 );
 const assistantConfig = computed(() => assistant.value?.config || {});
+const migrationWarnings = computed(() => {
+  const warnings = assistantConfig.value.legacy_scenario_migration?.warnings;
+  return Array.isArray(warnings) ? warnings : [];
+});
 const legacyOutcomeReasons = computed(() => {
   const getAccount = store.getters['accounts/getAccount'];
   const account =
@@ -195,12 +202,14 @@ const mergeAssistantPayloads = (
   basicPayload,
   capabilitiesPayload,
   systemPayload,
-  outcomePayload
+  outcomePayload,
+  routingPayload
 ) => {
   const basicAssistant = basicPayload?.assistant || {};
 
   return {
     assistant: {
+      ...routingPayload?.assistant,
       name: basicAssistant.name,
       description: basicAssistant.description,
       config: {
@@ -226,6 +235,8 @@ const mergeAssistantPayloads = (
 };
 
 const handleGeneralSave = async () => {
+  const routingPayload = await generalRoutingFormRef.value?.buildPayload?.();
+  if (!routingPayload) return;
   const basicPayload = await generalBasicFormRef.value?.buildPayload?.();
   if (!basicPayload) return;
 
@@ -247,7 +258,8 @@ const handleGeneralSave = async () => {
       basicPayload,
       capabilitiesPayload,
       systemPayload,
-      outcomePayload
+      outcomePayload,
+      routingPayload
     )
   );
 };
@@ -321,7 +333,27 @@ const handleDeleteSuccess = () => {
         />
 
         <template v-if="activeSettingsTab === 'profile'">
-          <div class="rounded-2xl bg-n-solid-1 p-5 md:p-6">
+          <details
+            v-if="migrationWarnings.length"
+            class="text-sm text-n-amber-11"
+            data-test="agent-migration-review"
+          >
+            <summary class="cursor-pointer font-medium">
+              {{ t('CAPTAIN.ASSISTANTS.ROUTING.MIGRATION_REVIEW') }}
+            </summary>
+            <ul class="mb-0 mt-2 space-y-1 pl-5">
+              <li v-for="(warning, index) in migrationWarnings" :key="index">
+                {{ warning.message }}
+                <span
+                  v-if="warning.reference_ids?.length"
+                  class="block text-xs"
+                >
+                  {{ warning.reference_ids.join(', ') }}
+                </span>
+              </li>
+            </ul>
+          </details>
+          <div class="flex flex-col gap-6">
             <div class="flex flex-col gap-6">
               <AssistantBasicSettingsForm
                 ref="generalBasicFormRef"
@@ -330,10 +362,14 @@ const handleDeleteSuccess = () => {
                 :show-capabilities="false"
                 :show-submit-button="false"
               />
+              <AssistantRoutingSettingsForm
+                ref="generalRoutingFormRef"
+                :assistant="assistant"
+              />
             </div>
           </div>
 
-          <div class="rounded-2xl bg-n-solid-1 p-5 md:p-6">
+          <div class="border-t border-n-weak pt-6">
             <div class="flex flex-col gap-6">
               <SettingsHeader
                 :heading="t('CAPTAIN.ASSISTANTS.FORM.FEATURES.TITLE')"
@@ -350,20 +386,22 @@ const handleDeleteSuccess = () => {
                 :show-core-settings="false"
                 :show-submit-button="false"
                 @handoff-capability-change="handleHandoffCapabilityChange"
+                @faq-capability-change="faqEnabled = $event"
               />
             </div>
           </div>
 
-          <div class="rounded-2xl bg-n-solid-1 p-5 md:p-6">
+          <div class="border-t border-n-weak pt-6">
             <AssistantOutcomeSettingsForm
               ref="generalOutcomeFormRef"
               :assistant="assistant"
               :handoff-enabled="handoffEnabled"
+              :faq-enabled="faqEnabled"
               :legacy-reasons="legacyOutcomeReasons"
             />
           </div>
 
-          <div class="rounded-2xl bg-n-solid-1 p-5 md:p-6">
+          <div class="border-t border-n-weak pt-6">
             <div class="flex flex-col gap-6">
               <SettingsHeader
                 :heading="t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.RUNTIME.LABEL')"
@@ -389,7 +427,7 @@ const handleDeleteSuccess = () => {
         </template>
 
         <template v-else-if="activeSettingsTab === 'voice_agent'">
-          <div class="rounded-2xl bg-n-solid-1 p-5 md:p-6">
+          <div class="border-t border-n-weak pt-6">
             <div class="flex flex-col gap-6">
               <SettingsHeader
                 :heading="

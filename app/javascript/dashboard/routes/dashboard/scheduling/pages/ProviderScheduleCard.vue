@@ -40,9 +40,7 @@ const nextWorkingDay = computed(() =>
 </script>
 
 <template>
-  <section
-    class="rounded-xl bg-n-alpha-black2 px-3 py-2 text-xs text-n-slate-11"
-  >
+  <section class="border-t border-n-weak py-2 text-xs text-n-slate-11">
     <h4 class="mb-1 text-xs font-semibold text-n-slate-12">
       {{ t('SCHEDULING.RESOURCES.PROVIDER_SCHEDULE_TITLE') }}
     </h4>

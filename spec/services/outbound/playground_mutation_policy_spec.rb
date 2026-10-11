@@ -38,7 +38,7 @@ RSpec.describe Outbound::PlaygroundMutationPolicy do
         'iin' => '900101400013', 'first_name' => 'Айгуль', 'last_name' => 'Садыкова', 'middle_name' => nil, 'birth_date' => '1990-01-01'
       } } }
       action = { 'id' => SecureRandom.uuid, 'digest' => SecureRandom.hex(32), 'tool' => 'create_appointment',
-                 'status' => 'executing', 'arguments' => args, 'target' => target }
+                 'status' => 'executing', 'arguments' => args, 'target' => target, 'binding' => workspace.context_reference.stringify_keys }
       workspace.data['action_previews'] = [action]
       workspace.save!
       policy = Outbound::PlaygroundDeliveryPolicy.issue(workspace.context_reference.merge(
@@ -74,6 +74,31 @@ RSpec.describe Outbound::PlaygroundMutationPolicy do
       workspace.store.set_permissions(session_id: workspace.id, read: false, write: true)
       expect(described_class.authorized_action?(policy)).to be(false)
       expect(described_class.allowed_command?(Struct.new(:request_snapshot).new(snapshot), bound)).to be(false)
+    end
+  end
+
+  it 'uses the entry session for a delegated actor and rejects changed graph membership or a substituted actor' do
+    destination = create(:captain_assistant, account: account)
+    other = create(:captain_assistant, account: account)
+    assistant.update!(handoff_agent_ids: [destination.id, other.id])
+    with_approved_policy do |workspace, policy|
+      workspace.activate_agent!(destination)
+      action = workspace.data['action_previews'].first
+      action['binding'] = workspace.context_reference.stringify_keys
+      workspace.save!
+      payload = Outbound::PlaygroundDeliveryPolicy.verified(policy)
+      delegated = Outbound::PlaygroundDeliveryPolicy.issue(payload.to_h.merge(workspace.context_reference.stringify_keys))
+
+      expect(described_class.authorized_action?(delegated)).to be true
+      substituted = Outbound::PlaygroundDeliveryPolicy.issue(
+        Outbound::PlaygroundDeliveryPolicy.verified(delegated).to_h.merge('assistant_id' => other.id)
+      )
+      expect(described_class.authorized_action?(substituted)).to be false
+      destination.update!(active: false)
+      expect(described_class.authorized_action?(delegated)).to be false
+      destination.update!(active: true)
+      assistant.update!(handoff_agent_ids: [other.id])
+      expect(described_class.authorized_action?(delegated)).to be false
     end
   end
 

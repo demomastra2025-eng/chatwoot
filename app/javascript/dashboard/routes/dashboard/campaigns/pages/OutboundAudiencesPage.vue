@@ -89,9 +89,7 @@ onMounted(() => {
     </div>
 
     <div v-else class="grid gap-6">
-      <section
-        class="rounded-3xl bg-n-surface-2 p-5 outline outline-1 outline-n-container shadow-sm"
-      >
+      <section class="min-w-0">
         <div
           class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between"
         >

@@ -1,0 +1,34 @@
+tags: [Reports]
+operationId: get-account-ai-agents-report
+summary: Get AI agent messages, conversation outcomes and reasons
+description: Exact account-scoped SQL counts by native message sender and status actor, with no sampled cap. Requires an account administrator or a custom role with report_manage through ReportPolicy; CRM and inbox assignment are not required. Public outgoing AI messages use their own created_at, and captain/system outcomes use the status transition's created_at. Unique conversations include both event types. Completion is not a sale and no success percentages are inferred. Totals and reasons share one database snapshot. Surviving orphan actor history is retained; known foreign actors and cross-account conversation references are excluded. Messages with authorship cleared by native agent deletion cannot be counted as AI. Cost and response latency are explicitly unavailable.
+security:
+  - userApiKey: []
+parameters:
+  - in: query
+    name: from_date
+    schema: { type: string, format: date }
+    description: Inclusive workspace-local start date in YYYY-MM-DD. Defaults to 29 days before to_date. The range must be ordered and span at most 90 inclusive calendar days.
+  - in: query
+    name: to_date
+    schema: { type: string, format: date }
+    description: Inclusive workspace-local end date in YYYY-MM-DD. Defaults to today in the account reporting timezone. Local midnight boundaries include daylight-saving changes.
+  - in: query
+    name: assistant_id
+    schema: { type: integer, minimum: 1, maximum: 9223372036854775807 }
+    description: Optional current assistant ID belonging to this account, including inactive or internal agents with historic public events. Deleted actors remain in unfiltered native history but cannot be selected through this filter. Foreign, malformed, nonscalar and out-of-range filters return 422.
+responses:
+  '200':
+    description: Exact AI counts, zero-filled daily series, agent choices and breakdowns, completed reason groups, classification states and attribution availability.
+    content:
+      application/json:
+        schema: { $ref: '#/components/schemas/ai_agents_report_response' }
+  '401':
+    description: Authentication required or caller does not belong to the requested account.
+  '403':
+    description: Caller lacks ReportPolicy report permission.
+  '422':
+    description: INVALID_REPORT_RANGE for invalid dates, excessive intervals or timezone; INVALID_REPORT_AGENT for an invalid account-owned assistant filter.
+    content:
+      application/json:
+        schema: { $ref: '#/components/schemas/ai_agents_report_error' }

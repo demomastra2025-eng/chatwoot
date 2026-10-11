@@ -6,7 +6,7 @@ require 'timeout'
 class Captain::Knowledge::AnswerCache
   DEFAULT_TTL = 24.hours
   CACHEABLE_STRATEGIES = %w[semantic_chunk semantic_faq].freeze
-  RETRIEVAL_VERSION = 'faq-response-v4-question-corroboration'
+  RETRIEVAL_VERSION = 'faq-response-v5-shared-agent-access'
   QUERY_EMBEDDING_TIMEOUT_SECONDS = 4
 
   def initialize(account:, assistant:, query:, semantic: true, ttl: DEFAULT_TTL)
@@ -180,6 +180,7 @@ class Captain::Knowledge::AnswerCache
       [
         RETRIEVAL_VERSION,
         account.id,
+        Captain::Knowledge::AccessService.fingerprint(account: account, assistant: assistant),
         scope_fingerprint(account.captain_documents),
         scope_fingerprint(Captain::DocumentChunk.where(account_id: account.id)),
         scope_fingerprint(account.captain_assistant_responses.approved)

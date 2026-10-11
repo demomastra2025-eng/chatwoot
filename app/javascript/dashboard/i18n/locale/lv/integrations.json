@@ -565,6 +565,16 @@
           "TITLE": "Dzēst Asistentu",
           "DESCRIPTION": "Šī darbība ir pastāvīga. Dzēšot šo asistentu, tas tiks noņemts no visām pievienotajām iesūtnēm un neatgriezeniski dzēstas visas ģenerētās zināšanas.",
           "BUTTON_TEXT": "Dzēst {assistantName}"
+        },
+        "TABS": {
+          "RUNTIME": {
+            "LABEL": "Messages when status changes",
+            "DESCRIPTION": "What to send to the customer when handing off to a staff member or completing a conversation.",
+            "SECTION": "Configure the messages sent to the customer when handing off or completing a conversation."
+          },
+          "BASIC": {
+            "DESCRIPTION": "Agent profile, operating mode, avatar and messages for customers."
+          }
         }
       },
       "OPTIONS": {
@@ -732,6 +742,20 @@
             "SUCCESS": "Scenarios deleted successfully",
             "ERROR": "There was an error deleting scenarios, please try again."
           }
+        }
+      },
+      "OUTCOMES": {
+        "DEFAULTS": {
+          "HANDOFF": {
+            "FAQ_NO_ANSWER": "No answer in FAQ"
+          }
+        },
+        "DESCRIPTION": "Reasons for conversation completion and staff handoff reports.",
+        "HANDOFF": {
+          "DESCRIPTION": "The reason is determined from the conversation after it is handed to a staff member."
+        },
+        "COMPLETION": {
+          "DESCRIPTION": "The reason is determined from the conversation after it is completed."
         }
       }
     },

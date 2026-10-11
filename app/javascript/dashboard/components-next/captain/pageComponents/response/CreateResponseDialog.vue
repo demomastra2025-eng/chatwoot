@@ -42,19 +42,12 @@ const routeAssistantId = computed(() =>
   route.params.assistantId ? Number(route.params.assistantId) : null
 );
 
-const withOptionalAssistantId = responseDetails => ({
-  ...responseDetails,
-  ...(routeAssistantId.value ? { assistant_id: routeAssistantId.value } : {}),
-});
-
 const handleSubmit = async updatedResponse => {
   try {
     if (props.type === 'edit') {
-      await updateResponse({
-        ...withOptionalAssistantId(updatedResponse),
-      });
+      await updateResponse(updatedResponse);
     } else {
-      await createResponse(withOptionalAssistantId(updatedResponse));
+      await createResponse(updatedResponse);
     }
     useAlert(t(`${i18nKey.value}.SUCCESS_MESSAGE`));
     dialogRef.value.close();

@@ -515,23 +515,14 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup')
     end
 
-    it 'does not include non-default tools in the runtime set when they are only checked but not referenced' do
+    it 'includes explicitly selected ordinary tools and their required read companions without a prompt mention' do
       account.enable_features!('crm_deals')
-
-      assistant.update!(
-        config: {
-          'context_access' => {},
-          'tool_access' => {
-            'agent' => {
-              'enabled' => true,
-              'tool_ids' => %w[faq_lookup handoff create_deal]
-            }
-          }
-        }
-      )
-
-      expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup', 'handoff')
-      expect(assistant.prompt_runtime_agent_tools.pluck(:id)).to contain_exactly('faq_lookup', 'handoff')
+      assistant.update!(config: {
+        'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => %w[faq_lookup handoff create_deal] } }
+      })
+      expected = %w[faq_lookup handoff create_deal get_deal search_deals list_deal_pipelines list_deal_stages list_deal_custom_fields]
+      expect(assistant.allowed_agent_tool_ids).to match_array(expected)
+      expect(assistant.prompt_runtime_agent_tools.pluck(:id)).to match_array(expected)
     end
 
     it 'keeps explicitly referenced custom tools in the final runtime tool set' do
@@ -655,228 +646,24 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(assistant.prompt_runtime_agent_tools).to eq([visible_tool])
     end
 
-    it 'does not expose scenario-only template tool references in the root assistant prompt' do
-      updated_rules = assistant.rule_entries.map do |entry|
-        next entry unless entry[:id] == 'scenario_role'
-
-        entry.merge(content: 'Use [Add Private Note](tool://add_private_note) only inside the scenario role.')
-      end
-
-      assistant.update!(config: assistant.config.merge('rules' => updated_rules))
-
-      prompt_context = assistant.send(:prompt_context)
-      glossary_tool_ids = prompt_context[:tool_glossary].flat_map do |group|
-        group[:entries].map { |entry| entry[:id] }
-      end
-
-      expect(assistant.prompt_runtime_agent_tools.pluck(:id)).to contain_exactly('faq_lookup', 'handoff')
-      expect(glossary_tool_ids).to contain_exactly('faq_lookup', 'handoff')
+    it 'does not activate any unselected capability tool through prompt mentions' do
+      assistant.update!(description: 'Use [FAQ](tool://faq_lookup), [Handoff](tool://handoff), [Note](tool://add_private_note), [Resolve](tool://resolve_conversation).',
+                        config: { 'feature_faq' => false, 'handoff_enabled' => false, 'auto_completion_enabled' => false,
+                                  'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => [] } } })
+      expect(assistant.allowed_agent_tool_ids).to eq([])
+      expect(assistant.prompt_runtime_agent_tools).to eq([])
+      expect(assistant.agent_instructions).not_to include('# Business answers', '# Human handoff')
     end
   end
 
-  describe '#rule_entries' do
-    let(:account) { create(:account) }
-    let(:assistant) { create(:captain_assistant, account: account) }
-
-    it 'exposes default system rules together with structured editable rules from config' do
-      assistant.update!(
-        config: assistant.config.merge(
-          'rules' => [
-            {
-              'id' => 'reply_short',
-              'type' => 'response_guideline',
-              'group' => 'Conversation flow',
-              'content' => 'Reply in one short paragraph.',
-              'enabled' => true
-            },
-            {
-              'id' => 'block_legal_advice',
-              'type' => 'guardrail',
-              'group' => 'Restrictions',
-              'content' => 'Do not provide legal advice.',
-              'enabled' => false
-            }
-          ]
-        )
-      )
-
-      expect(assistant.rule_entries.select { |entry| entry[:type] == 'system' }).not_to be_empty
-      expect(assistant.rule_entries).to include(
-        include(
-          id: 'stay_within_scope',
-          type: 'system',
-          enabled: true,
-          editable: false,
-          deletable: false
-        )
-      )
-      expect(assistant.rule_entries).to include(
-        include(
-          id: 'assistant_system_context',
-          type: 'system',
-          slot: 'assistant_system_context',
-          enabled: true,
-          editable: false,
-          deletable: false
-        )
-      )
-      expect(assistant.rule_entries).to include(
-        include(
-          id: 'reply_short',
-          type: 'response_guideline',
-          group: 'Conversation flow',
-          content: 'Reply in one short paragraph.',
-          enabled: true,
-          editable: true,
-          deletable: true
-        )
-      )
-      expect(assistant.rule_entries).to include(
-        include(
-          id: 'block_legal_advice',
-          type: 'guardrail',
-          group: 'Restrictions',
-          enabled: false
-        )
-      )
-      expect(assistant.response_guidelines).to eq(['Reply in one short paragraph.'])
-      expect(assistant.guardrails).to eq([])
-    end
-
-    it 'preserves assistant-level custom system rules after installation-managed defaults' do
-      assistant.update!(
-        config: assistant.config.merge(
-          'rules' => [
-            {
-              'id' => 'custom_system_rule',
-              'type' => 'system',
-              'group' => 'Strict rules',
-              'content' => 'Always confirm the business unit before answering.',
-              'enabled' => true
-            }
-          ]
-        )
-      )
-
-      expect(assistant.rule_entries).to include(
-        include(
-          id: 'custom_system_rule',
-          type: 'system',
-          group: 'Strict rules',
-          content: 'Always confirm the business unit before answering.',
-          enabled: true
-        )
-      )
-      expect(assistant.rule_entries.index { |entry| entry[:id] == 'custom_system_rule' }).to be >=
-                                                                                             described_class.installation_system_prompt_entries.length
-    end
-
-    it 'restores canonical metadata for built-in default system rules even when stored config drifted' do
-      assistant.update!(
-        config: assistant.config.merge(
-          'rules' => [
-            {
-              'id' => 'stay_within_scope',
-              'type' => 'system',
-              'group' => 'Strict rules',
-              'content' => "Stay within your configured scope and instructions. Don't digress away from them.",
-              'enabled' => true,
-              'editable' => false,
-              'deletable' => true
-            },
-            {
-              'id' => 'assistant_system_context',
-              'type' => 'system',
-              'group' => 'Assistant structure',
-              'content' => 'Corrupted slot should not survive.',
-              'enabled' => true,
-              'slot' => 'wrong_slot',
-              'editable' => false,
-              'deletable' => true
-            }
-          ]
-        )
-      )
-
-      expect(assistant.rule_entries).to include(
-        include(
-          id: 'stay_within_scope',
-          editable: false,
-          deletable: false
-        )
-      )
-      expect(assistant.rule_entries).to include(
-        include(
-          id: 'assistant_system_context',
-          slot: 'assistant_system_context',
-          editable: false,
-          deletable: false
-        )
-      )
-    end
-
-    it 'drops non-system duplicates that reuse installation system prompt ids' do
-      scenario_role = described_class.installation_system_prompt_entries.find do |rule|
-        rule[:id].to_s == 'scenario_role'
-      end
-
-      assistant.update!(
-        config: assistant.config.merge(
-          'rules' => [
-            {
-              'id' => 'scenario_role',
-              'type' => 'response_guideline',
-              'group' => 'Scenario structure',
-              'content' => scenario_role[:content],
-              'enabled' => false
-            },
-            {
-              'id' => 'reply_short',
-              'type' => 'response_guideline',
-              'group' => 'Conversation flow',
-              'content' => 'Reply in one short paragraph.',
-              'enabled' => true
-            }
-          ]
-        )
-      )
-
-      scenario_role_entries = assistant.reload.rule_entries.select { |entry| entry[:id].to_s == 'scenario_role' }
-
-      expect(scenario_role_entries.size).to eq(1)
-      expect(scenario_role_entries.first[:type]).to eq('system')
-      expect(assistant.rule_entries).to include(include(id: 'reply_short', type: 'response_guideline'))
-      expect(assistant.response_guidelines).to eq(['Reply in one short paragraph.'])
-    end
-
-    it 'rejects malformed structured rules instead of silently dropping them' do
-      assistant.config = assistant.config.merge(
-        'rules' => [
-          {
-            'id' => 'bad_rule',
-            'type' => 'guardrail',
-            'group' => 'Restrictions',
-            'content' => '   '
-          },
-          'not-a-rule'
-        ]
-      )
-
-      expect(assistant).not_to be_valid
-      expect(assistant.errors[:config].join).to include('invalid')
-    end
-
-    it 'keeps compatibility when legacy array fields are cleared' do
-      assistant.update!(
-        response_guidelines: ['Ask one clarifying question first.'],
-        guardrails: ['Do not request passwords.']
-      )
-
-      assistant.update!(response_guidelines: [])
-
+  describe 'legacy rule storage' do
+    it 'moves custom rules into the editable prompt and clears the separate lists' do
+      assistant = create(:captain_assistant, description: 'Own instructions', response_guidelines: ['Be concise'], guardrails: ['Never invent results'])
+      expect(assistant.description).to eq("Own instructions\n\nBe concise\n\nNever invent results")
+      expect(assistant.config).not_to have_key('rules')
       expect(assistant.response_guidelines).to eq([])
-      expect(assistant.rule_entries.none? { |entry| entry[:type] == 'response_guideline' }).to be(true)
-      expect(assistant.guardrails).to eq(['Do not request passwords.'])
+      expect(assistant.guardrails).to eq([])
+      expect(assistant).not_to respond_to(:rule_entries)
     end
   end
 
@@ -893,14 +680,14 @@ RSpec.describe Captain::Assistant, type: :model do
 
       rendered = assistant.agent_instructions
 
-      expect(rendered).to include('# System Instructions')
+      expect(rendered).to include('# Instructions')
       expect(rendered).to include('Always confirm the customer goal before answering.')
     end
 
     it 'renders the installation-wide global system prompt in the assistant prompt' do
       rendered = assistant.agent_instructions
 
-      expect(rendered).to include('# Global System Instructions')
+      expect(rendered).to include('# Platform context')
       expect(rendered).to include('Never reveal internal routing.')
     end
 
@@ -911,128 +698,39 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(rendered).not_to include('The following are the scenario agents that are available to you.')
     end
 
-    it 'renders specialized scenario handoff routes only when scenarios exist' do
-      scenario = create(
-        :captain_scenario,
-        assistant: assistant,
-        account: account,
-        title: 'Billing Escalations',
-        description: 'Handle complex billing issues and escalations'
-      )
-
+    it 'renders configured independent agent routes using their own scope descriptions' do
+      target = create(:captain_assistant, account: account, name: 'Billing Escalations', routing_description: 'Handle complex billing issues and escalations')
+      assistant.update!(handoff_agent_ids: [target.id])
       rendered = assistant.agent_instructions
-
-      expect(rendered).to include('# Specialized Scenarios')
-      expect(rendered).to include('Billing Escalations: Handle complex billing issues and escalations')
-      expect(rendered).to include("`handoff_to_#{scenario.handoff_key}`")
+      expect(rendered).to include('# Available agent routes', 'Billing Escalations: Handle complex billing issues and escalations')
+      expect(rendered).to include("\x60#{target.handoff_tool_name}\x60")
     end
 
-    it 'renders system rules from the structured rules config' do
+    it 'keeps platform constraints mandatory after old system-rule switches are disabled' do
+      assistant.update!(config: assistant.config.merge('rules' => [{ 'id' => 'stay_within_scope', 'type' => 'system', 'content' => 'Stay within your configured scope and instructions.', 'enabled' => false }]))
       rendered = assistant.agent_instructions
-
-      expect(rendered).to include('# System Rules')
-      expect(rendered).to include('Stay within your configured scope and instructions.')
-      expect(rendered).to include('Use only the fields and tools explicitly available in this prompt')
-      expect(rendered).to include('Mirror the user language exactly')
+      expect(rendered).to include('# Platform constraints', "Use only the current account's authorized context and tools.", 'Claim an operation succeeded only after its tool confirms success.')
+      expect(rendered).not_to include('# System Rules')
     end
 
-    it 'preserves multiline prompt rules as single markdown list items with stable section spacing' do
-      config_name = described_class::GLOBAL_SYSTEM_PROMPTS_INSTALLATION_CONFIG
-      system_prompts_config = InstallationConfig.find_by(name: config_name)
-      previous_system_prompts = system_prompts_config&.value
-
-      begin
-        upsert_installation_config(
-          config_name,
-          described_class.default_installation_system_prompt_entries.map do |entry|
-            next entry unless entry[:id] == 'stay_within_scope'
-
-            entry.merge(content: "System rule line one\nSystem rule line two")
-          end
-        )
-
-        assistant.update!(
-          description: "Instruction line one\nInstruction line two",
-          response_guidelines: ["Guideline line one\nGuideline line two"],
-          guardrails: ["Guardrail line one\nGuardrail line two"]
-        )
-
-        rendered = assistant.agent_instructions
-
-        expect(rendered).to include(
-          "# System Instructions\nInstruction line one\nInstruction line two\n\n# Global System Instructions",
-          "- System rule line one\n  System rule line two",
-          "- Guideline line one\n  Guideline line two",
-          "- Guardrail line one\n  Guardrail line two"
-        )
-        expect(rendered).not_to include(
-          "- System rule line one\nSystem rule line two",
-          "- Guideline line one\nGuideline line two",
-          "- Guardrail line one\nGuardrail line two"
-        )
-        expect(rendered).to match(/# System Context\n.+\n\n# Your Identity/m)
-        expect(rendered).not_to match(/\n{3,}/)
-      ensure
-        if system_prompts_config
-          upsert_installation_config(config_name, previous_system_prompts)
-        else
-          InstallationConfig.find_by(name: config_name)&.destroy!
-        end
-      end
+    it 'preserves authored paragraph, list and code formatting in the main prompt' do
+      prompt = "First line\nSecond line\n\n- First item\n- Second item\n\n  code line"
+      assistant.update!(description: prompt)
+      expect(assistant.agent_instructions).to include("# Instructions\n#{prompt}")
+      expect(assistant.reload.description).to eq(prompt)
     end
 
-    it 'uses installation-wide system prompts as the source of truth while preserving assistant toggles' do
-      upsert_installation_config(
-        'CAPTAIN_SYSTEM_PROMPTS',
-        [
-          {
-            id: 'stay_within_scope',
-            type: 'system',
-            group: 'Strict rules',
-            content: 'Follow the globally configured scope rule.',
-            slot: nil
-          },
-          {
-            id: 'admin_global_rule',
-            type: 'system',
-            group: 'Conversation flow',
-            content: 'Always confirm the ticket priority before answering.',
-            slot: nil
-          }
-        ]
-      )
-
-      assistant.update!(
-        config: assistant.config.merge(
-          'rules' => assistant.rule_entries.map do |entry|
-            next entry unless entry[:id] == 'stay_within_scope'
-
-            entry.merge(content: 'Outdated assistant-local rule', enabled: false)
-          end
-        )
-      )
-
-      scoped_rule = assistant.rule_entries.find { |entry| entry[:id] == 'stay_within_scope' }
-      global_rule = assistant.rule_entries.find { |entry| entry[:id] == 'admin_global_rule' }
+    it 'keeps user personality editable without appending obsolete system-rule templates' do
+      assistant.update!(description: 'Speak warmly and answer in two short sentences.')
       rendered = assistant.agent_instructions
-
-      expect(scoped_rule[:content]).to eq('Follow the globally configured scope rule.')
-      expect(scoped_rule[:enabled]).to be(false)
-      expect(scoped_rule[:editable]).to be(false)
-      expect(scoped_rule[:deletable]).to be(false)
-      expect(global_rule[:content]).to eq('Always confirm the ticket priority before answering.')
-      expect(rendered).not_to include('Follow the globally configured scope rule.')
-      expect(rendered).to include('Always confirm the ticket priority before answering.')
+      expect(rendered).to include('Speak warmly and answer in two short sentences.', '# Platform constraints')
+      expect(rendered).not_to include('Mirror the user language exactly', 'Do not ask A/B questions', 'Act as the main orchestrator')
     end
 
-    it 'renders assistant prompt structure text from default system rules' do
+    it 'uses a compact agent identity without a parent or orchestrator prompt' do
       rendered = assistant.agent_instructions
-
-      expect(rendered).to include('# System Context')
-      expect(rendered).to include('You are part of Captain, a multi-agent AI system')
-      expect(rendered).to include('# Your Identity')
-      expect(rendered).to include("You are #{assistant.name}.")
-      expect(rendered).to include('Act as the main orchestrator for this conversation')
+      expect(rendered).to include("You are #{assistant.name}.", '# Instructions')
+      expect(rendered).not_to include('multi-agent AI system', '# Your Identity', 'main orchestrator')
     end
 
     it 'renders runtime clock details when the run context provides them' do
@@ -1066,32 +764,23 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(rendered).to include('24-hour window closes at: 2026-05-04T10:00:00Z')
     end
 
-    it 'prioritizes explicit context, language mirroring, and single-question flow in default rules' do
+    it 'checks configured facts before FAQ and requires human handoff for an unanswered business question only when enabled' do
+      assistant.update!(config: assistant.config.merge('feature_faq' => true))
       rendered = assistant.agent_instructions
-
-      expect(rendered).to include('If the current prompt, scenario, conversation context, or visible fields already contain the answer')
-      expect(rendered).to include('Do not call FAQ or knowledge tools when explicit prompt/context facts are enough')
-      expect(rendered).to include('Mirror the user language exactly')
-      expect(rendered).to include('Do not ask A/B questions or bundle two alternatives')
+      expect(rendered).to include('Use the configured instructions, current conversation facts and verified live records',
+                                 'If a business answer is missing, use the enabled FAQ lookup.',
+                                 'Do not replace verified live records with an older FAQ answer.',
+                                 'FAQ lookup has no suitable answer, you must hand off to a human.')
+      assistant.update!(config: assistant.config.merge('handoff_enabled' => false))
+      expect(assistant.agent_instructions).to include('# Business answers')
+      expect(assistant.agent_instructions).not_to include('you must hand off to a human', '# Human handoff')
     end
 
-    it 'lets operators disable template-backed system sections' do
-      assistant.update!(
-        config: assistant.config.merge(
-          'rules' => assistant.rule_entries.map do |entry|
-            if entry[:id] == 'assistant_system_context'
-              entry.merge(enabled: false)
-            else
-              entry
-            end
-          end
-        )
-      )
-
-      rendered = assistant.agent_instructions
-
-      expect(rendered).not_to include('# System Context')
-      expect(rendered).to include('# Your Identity')
+    it 'does not present outcome reason IDs or classification instructions to the primary agent' do
+      assistant.update!(config: assistant.config.merge('outcome_reason_settings' => {
+        'handoff_reasons' => [{ 'id' => 'unique_reason_id', 'label' => 'Unique reason label', 'active' => true }]
+      }))
+      expect(assistant.agent_instructions).not_to include('unique_reason_id', 'Unique reason label', '# Conversation Outcome Reasons')
     end
 
     it 'renders the default runtime tools in the prompt glossary' do
@@ -1100,7 +789,7 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(rendered).to include('# Reference Glossary')
       expect(rendered).to include('FAQ Lookup (faq_lookup): Search FAQ responses using semantic similarity')
       expect(rendered).to include('Handoff to Human (handoff): Hand off the current conversation to a human team')
-      expect(rendered).to include('# Human Handoff Protocol')
+      expect(rendered).to include('# Human handoff')
     end
 
     it 'renders referenced fields alongside the effective runtime tool glossary' do
@@ -1149,7 +838,7 @@ RSpec.describe Captain::Assistant, type: :model do
       rendered = assistant.agent_instructions
 
       expect(rendered).to include('Handoff to Human (handoff): Hand off the current conversation to a human team')
-      expect(rendered).to include('# Human Handoff Protocol')
+      expect(rendered).to include('# Human handoff')
     end
 
     it 'renders deal and task context using explicitly passed visible fields' do

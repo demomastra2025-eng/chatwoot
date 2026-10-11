@@ -55,7 +55,7 @@ class Conversations::StatusTransitionService
     previous_status = conversation.status
     target_status = resolve_target_status(previous_status)
     status_changing = previous_status != target_status
-    reason_override = audit[:reason_override].to_s.strip.presence
+    reason_override = captain_outcome_pending_reason(target_status) || audit[:reason_override].to_s.strip.presence
     reason = reason_override || reason_config.resolve_reason!(
       target_status,
       params[:status_reason],
@@ -76,6 +76,13 @@ class Conversations::StatusTransitionService
   def record_status_transition(previous_status, reason)
     record_transition!(previous_status: previous_status, target_status: conversation.status, reason: reason)
     @status_transition_recorded = true
+  end
+
+  def captain_outcome_pending_reason(target_status)
+    return unless defined?(Captain::OutcomeReasonConfig) && actor.is_a?(Captain::Assistant)
+    return unless actor.account_id == account.id && source.in?(%w[captain system]) && target_status.in?(%w[open resolved])
+
+    Captain::OutcomeReasonConfig.new(actor).pending_label
   end
 
   def cancel_follow_up_chain_after_status_change

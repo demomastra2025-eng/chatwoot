@@ -1,11 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 import { shallowMount } from '@vue/test-utils';
+import { createI18n } from 'vue-i18n';
+import en from 'dashboard/i18n/locale/en/scheduling.json';
+import ru from 'dashboard/i18n/locale/ru/scheduling.json';
+import kk from 'dashboard/i18n/locale/kk/scheduling.json';
 import SchedulingContactsAPI from 'dashboard/api/scheduling/contacts';
 import { useConversationPatientContextStore } from 'dashboard/stores/scheduling/patientContext';
 import SchedulingConversationPatientSelector from './SchedulingConversationPatientSelector.vue';
 
-vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: key => key }) }));
+const mocks = vi.hoisted(() => ({ t: vi.fn(key => key) }));
+vi.mock('vue-i18n', async importOriginal => ({
+  ...(await importOriginal()),
+  useI18n: () => ({ t: mocks.t }),
+}));
 vi.mock('dashboard/api/scheduling/contacts', () => ({
   default: { patients: vi.fn(), createPatient: vi.fn() },
 }));
@@ -27,6 +35,7 @@ describe('conversation patient selector', () => {
     setActivePinia(pinia);
     window.localStorage.clear();
     vi.clearAllMocks();
+    mocks.t.mockImplementation(messageKey => messageKey);
     SchedulingContactsAPI.patients.mockResolvedValue({
       data: {
         payload: {
@@ -56,6 +65,35 @@ describe('conversation patient selector', () => {
     expect(SchedulingContactsAPI.createPatient).not.toHaveBeenCalled();
     expect(wrapper.vm.isCreating).toBe(true);
   });
+
+  it.each([
+    ['en', 'Client', 'Add client'],
+    ['ru', 'Клиент', 'Добавить клиента'],
+    ['kk', 'Клиент', 'Клиент қосу'],
+  ])(
+    'uses generic client wording for a local appointment in %s',
+    async (locale, label, addLabel) => {
+      const i18n = createI18n({
+        legacy: false,
+        locale,
+        fallbackLocale: 'en',
+        messages: { en, ru, kk },
+      });
+      mocks.t.mockImplementation(i18n.global.t);
+      const wrapper = await mountLoaded();
+      expect(wrapper.get('label').text()).toContain(label);
+      expect(wrapper.findComponent({ name: 'Button' }).props('label')).toBe(
+        addLabel
+      );
+      wrapper.vm.startCreate();
+      await wrapper.vm.$nextTick();
+      expect(wrapper.find('form').text()).toContain(
+        { en, ru, kk }[locale].SCHEDULING.PATIENT_CONTEXT.CREATE_DESCRIPTION
+      );
+      expect(wrapper.text()).not.toMatch(/patient|пациент|науқас/i);
+      expect(SchedulingContactsAPI.createPatient).not.toHaveBeenCalled();
+    }
+  );
 
   it('autofills only the new patient from a valid IIN and keeps the mother and separated names intact', async () => {
     const mother = {

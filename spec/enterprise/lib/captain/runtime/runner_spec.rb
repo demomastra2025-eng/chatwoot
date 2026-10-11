@@ -31,8 +31,9 @@ class RuntimeRunnerSpecChat
     self
   end
 
-  def with_tools(*value, replace: false)
+  def with_tools(*value, replace: false, concurrency: nil)
     @tools = { value: value, replace: replace }
+    @tool_concurrency = concurrency
     self
   end
 
@@ -155,6 +156,14 @@ RSpec.describe Captain::Runtime::Runner do
     let(:second_chat) { RuntimeRunnerSpecChat.new(complete_response: RubyLLM::Message.new(role: :assistant, content: 'Done')) }
 
     it 'builds a fresh chat for each handoff and reapplies the next agent configuration', :aggregate_failures do
+      allow(Llm::Models).to receive(:model_config).and_call_original
+      [first_agent, second_agent].each do |agent|
+        model_config = Llm::Models.model_config(agent.model, account: account).merge(
+          'supported_parameters' => %w[temperature max_tokens]
+        )
+        allow(Llm::Models).to receive(:model_config).with(agent.model, account: account).and_return(model_config)
+      end
+
       allow(runner).to receive(:handoff_requested?).and_call_original
       allow(runner).to receive(:handoff_requested?).with(anything, handoff_response).and_return(true)
 
@@ -162,12 +171,12 @@ RSpec.describe Captain::Runtime::Runner do
         feature: :captain_agent,
         account: account,
         model: 'gpt-4.1-mini',
+        runtime_preferences: {},
         options: {
           context: llm_context,
           temperature: 0.2,
           params: { max_tokens: 111 },
-          headers: { :'X-Agent' => 'primary' },
-          thinking: nil
+          headers: { :'X-Agent' => 'primary' }
         }
       ).and_return(first_chat).ordered
 
@@ -175,12 +184,12 @@ RSpec.describe Captain::Runtime::Runner do
         feature: :captain_agent,
         account: account,
         model: 'gpt-4.1-nano',
+        runtime_preferences: {},
         options: {
           context: llm_context,
           temperature: 0.9,
           params: { max_tokens: 22 },
-          headers: { :'X-Agent' => 'scenario' },
-          thinking: nil
+          headers: { :'X-Agent' => 'scenario' }
         }
       ).and_return(second_chat).ordered
 
@@ -324,6 +333,75 @@ RSpec.describe Captain::Runtime::Runner do
       expect(result.output).to eq(response.content)
     end
 
+    it 'observes restored input without asking again or duplicating the user history' do
+      agent = Captain::Runtime::Agent.new(name: 'assistant_10', model: 'gpt-4.1-mini')
+      response = RubyLLM::Message.new(role: :assistant, content: 'Done', input_tokens: 3, output_tokens: 2)
+      chat = RuntimeRunnerSpecChat.new(complete_response: response)
+      history = [{ role: :user, content: 'Already supplied' }]
+      expect(Llm::Runtime).to receive(:build_chat).and_return(chat)
+      expect(Llm::Runtime).not_to receive(:ask)
+      expect(chat).not_to receive(:ask)
+      expect(Llm::Runtime).to receive(:complete).with(
+        chat,
+        account: account,
+        model: 'gpt-4.1-mini',
+        observability: hash_including(assistant_id: 10, current_agent: 'assistant_10', conversation_record_id: 25)
+      ).once.and_call_original
+
+      result = runner.run(
+        agent,
+        'Already supplied',
+        context: { conversation_history: history, state: { assistant_id: 10, conversation: { id: 25 } } },
+        registry: { agent.name => agent },
+        llm_context: llm_context,
+        account: account
+      )
+
+      expect(result.output).to eq('Done')
+      expect(chat.messages.select { |message| message.role == :user }.map(&:content)).to eq(['Already supplied'])
+    end
+
+    it 'attributes continuation events to the activated handoff actor instead of the entry context' do
+      events = []
+      subscriber = ActiveSupport::Notifications.subscribe('llm.chat.complete') do |*args|
+        events << ActiveSupport::Notifications::Event.new(*args)
+      end
+      entry = Captain::Runtime::Agent.new(name: 'assistant_10', model: 'gpt-4.1-mini')
+      target = Captain::Runtime::Agent.new(name: 'assistant_11', model: 'gpt-4.1-nano')
+      target.context_preparer = lambda do |wrapper|
+        wrapper.context[:state][:assistant_id] = 11
+      end
+      first_chat = RuntimeRunnerSpecChat.new(ask_response: handoff_response)
+      next_chat = RuntimeRunnerSpecChat.new(complete_response: RubyLLM::Message.new(role: :assistant, content: 'Done'))
+      expect(Llm::Runtime).to receive(:build_chat).and_return(first_chat, next_chat)
+      expect(next_chat).not_to receive(:ask)
+
+      result = Llm::EventBus.with_context(assistant_id: 10, conversation_id: 999) do
+        runner.run(
+          entry,
+          'Help me',
+          context: {
+            pending_handoff: { target_agent: target },
+            state: { assistant_id: 10, conversation: { id: 25, display_id: 7 }, private_tool_results: 'Synthetic private context' }
+          },
+          registry: { entry.name => entry, target.name => target },
+          llm_context: llm_context,
+          account: account
+        )
+      end
+
+      expect(result.output).to eq('Done')
+      expect(events.map { |event| event.payload['assistant_id'] }).to eq([10, 11])
+      expect(events.map { |event| event.payload['current_agent'] }).to eq(%w[assistant_10 assistant_11])
+      expect(events.map { |event| event.payload['model'] }).to eq(%w[gpt-4.1-mini gpt-4.1-nano])
+      expect(events.map { |event| event.payload['account_id'] }).to eq([account.id, account.id])
+      expect(events.map { |event| event.payload['conversation_id'] }).to eq([25, 25])
+      expect(events.map { |event| event.payload['conversation_display_id'] }).to eq([7, 7])
+      expect(events.map(&:payload).to_json).not_to include('Synthetic private context')
+    ensure
+      ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+    end
+
     it 'finalizes generic halt responses that are not agent-to-agent handoffs' do
       agent = Captain::Runtime::Agent.new(name: 'assistant_agent')
       chat = RuntimeRunnerSpecChat.new(ask_response: RubyLLM::Tool::Halt.new('conversation_handoff'))
@@ -402,6 +480,7 @@ RSpec.describe Captain::Runtime::Runner do
       allow(Llm::Models).to receive(:supports?).and_return(true)
       expect(Llm::Runtime).to receive(:build_chat).and_return(chat)
       expect(Llm::Runtime).not_to receive(:ask)
+      expect(Llm::Runtime).to receive(:complete).once.and_call_original
 
       result = runner.run(
         agent,
@@ -418,6 +497,7 @@ RSpec.describe Captain::Runtime::Runner do
       expect(chat.instructions).to include('using only the completed tool result messages')
       expect(chat.tools).to be_nil
       expect(chat.messages.map(&:role)).to include(:tool)
+      expect(chat.messages.count { |message| message.role == :user }).to eq(1)
       expect(result.context[:captain_v2_bound_tool_ids]).to eq([])
     end
   end

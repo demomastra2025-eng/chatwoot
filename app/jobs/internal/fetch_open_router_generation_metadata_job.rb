@@ -40,6 +40,7 @@ class Internal::FetchOpenRouterGenerationMetadataJob < ApplicationJob
 
   def metadata_fetch_payload(event, generation_id)
     {
+      request_id: event.payload['usage_scope'] == 'provider_response' ? event.payload['parent_request_id'].presence : nil,
       account_id: event.account_id,
       feature: event.feature,
       provider: 'openrouter',

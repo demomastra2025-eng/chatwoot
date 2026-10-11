@@ -65,7 +65,7 @@ RSpec.describe Captain::Tools::TransitionDealStageTool, type: :model do
     expect(deal.reload.closing_reasons).to eq(['Competitor'])
   end
 
-  it 'passes transition reason when transitioning to configured open stages' do
+  it 'ignores retired ordinary reason input when transitioning to open stages' do
     pipeline = create(:crm_pipeline, account: account)
     current_stage = create(:crm_stage, account: account, pipeline: pipeline, code: 'new', position: 1, color: '#111111')
     target_stage = create(
@@ -87,7 +87,7 @@ RSpec.describe Captain::Tools::TransitionDealStageTool, type: :model do
     event = deal.reload.events.where(event_type: 'deal_stage_changed').last
 
     expect(payload['deal']).to include('id' => deal.id, 'stage_id' => target_stage.id)
-    expect(event.meta['transition_reason']).to eq('Waiting payment')
+    expect(event.meta).not_to have_key('transition_reason')
   end
 
   it 'returns a validation error instead of looking up zero ID placeholders' do

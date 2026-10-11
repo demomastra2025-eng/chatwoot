@@ -239,11 +239,8 @@ onBeforeUnmount(() => {
     </div>
 
     <template v-else>
-      <section
-        v-if="assistantPreview"
-        class="rounded-2xl border border-n-weak bg-n-solid-1"
-      >
-        <div class="flex flex-col gap-4 px-4 py-4 md:px-5">
+      <section v-if="assistantPreview" class="min-w-0">
+        <div class="flex flex-col gap-4">
           <div
             class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between"
           >
@@ -337,7 +334,7 @@ onBeforeUnmount(() => {
               :style="promptPreviewStyle('assistant')"
             >
               <pre
-                class="min-h-0 min-w-0 max-w-full flex-1 overflow-auto p-2.5 whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-xs leading-5 text-n-slate-11"
+                class="min-h-0 min-w-0 max-w-full flex-1 overflow-auto p-2.5 whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-xs leading-normal text-n-slate-11"
               ><code>{{ normalizePromptPreviewText(assistantPreview.compiled_prompt) }}</code></pre>
               <div
                 class="group flex h-5 shrink-0 cursor-row-resize select-none items-center justify-center border-t border-n-weak text-n-slate-9 hover:bg-n-alpha-2"
@@ -473,7 +470,7 @@ onBeforeUnmount(() => {
                       :style="promptPreviewStyle(`scenario-${scenario.id}`)"
                     >
                       <pre
-                        class="min-h-0 min-w-0 max-w-full flex-1 overflow-auto p-3 whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-xs leading-5 text-n-slate-11"
+                        class="min-h-0 min-w-0 max-w-full flex-1 overflow-auto p-3 whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-xs leading-normal text-n-slate-11"
                       ><code>{{ normalizePromptPreviewText(scenario.compiled_prompt) }}</code></pre>
                       <div
                         class="group flex h-5 shrink-0 cursor-row-resize select-none items-center justify-center border-t border-n-weak text-n-slate-9 hover:bg-n-alpha-2"

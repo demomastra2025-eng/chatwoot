@@ -1,9 +1,13 @@
 class Captain::OutcomeReasonConfig
   TYPES = %w[completion handoff].freeze
-  MAX_REASONS_PER_TYPE = 20
+  MAX_REASONS_PER_TYPE = 27
   MAX_LABEL_LENGTH = 255
   DEFAULT_OTHER_LABEL = 'Other'.freeze
   ID_PATTERN = /\A[a-z0-9][a-z0-9_-]{0,63}\z/
+  BUILTIN_IDS = {
+    'completion' => %w[goal_achieved question_resolved customer_declined no_response other],
+    'handoff' => %w[customer_requested_human low_confidence manual_action_required complaint_or_conflict tool_or_policy_limit faq_no_answer other]
+  }.freeze
 
   def self.prompt_context_for(assistant)
     context = new(assistant).prompt_context
@@ -69,7 +73,11 @@ class Captain::OutcomeReasonConfig
       key = reason_key(type)
       raw_settings[key] = legacy[key] if !raw_settings.key?(key) && legacy[key].present?
     end
-    @normalized_settings = self.class.normalize_settings(raw_settings)
+    @normalized_settings = self.class.normalize_settings(raw_settings).transform_keys(&:to_s)
+    TYPES.each do |type|
+      @normalized_settings[reason_key(type)] = with_builtin_reasons(type, @normalized_settings[reason_key(type)])
+    end
+    @normalized_settings
   end
 
   def reasons(type)
@@ -129,9 +137,37 @@ class Captain::OutcomeReasonConfig
     }
   end
 
+  def pending_transition_options(type, explanation: nil, signal: nil)
+    metadata = { outcome_reason_type: canonical_type(type), assistant_id: assistant.id }
+    metadata[:outcome_reason_explanation] = explanation.to_s.squish.truncate(1000) if explanation.present?
+    metadata[:outcome_signal] = signal if signal == 'faq_no_answer' && assistant.faq_enabled? && assistant.handoff_enabled?
+    { audit: { reason_override: pending_label, metadata: metadata } }
+  end
+
+  def pending_label
+    I18n.t('captain.outcome_reasons.pending', locale: assistant.account.locale, default: 'Reason is being classified')
+  end
+
   private
 
   attr_reader :assistant
+
+  def with_builtin_reasons(type, configured)
+    configured = Array(configured)
+    defaults = BUILTIN_IDS.fetch(type).map do |id|
+      saved = configured.find { |reason| reason['id'] == id }
+      label = saved&.fetch('label')
+      label = nil if id == 'other' && label.to_s.casecmp?(DEFAULT_OTHER_LABEL)
+      label ||= I18n.t("captain.outcome_reasons.#{id}", locale: assistant.account.locale, default: id.humanize)
+      locked = id == 'other' || (id == 'faq_no_answer' && assistant.faq_enabled? && assistant.handoff_enabled?)
+      active = locked || (saved ? saved['active'] : id != 'faq_no_answer')
+      { 'id' => id, 'label' => label, 'active' => active, 'removable' => false, 'locked' => locked }
+    end
+    custom = configured.reject { |reason| BUILTIN_IDS.fetch(type).include?(reason['id']) }
+                       .first(MAX_REASONS_PER_TYPE - BUILTIN_IDS.fetch(type).size)
+                       .map { |reason| reason.merge('removable' => true, 'locked' => false) }
+    defaults.reject { |reason| reason['id'] == 'other' } + custom + defaults.select { |reason| reason['id'] == 'other' }
+  end
 
   def legacy_settings
     normalized = Conversations::StatusReasonConfig.new(assistant.account).normalized_settings

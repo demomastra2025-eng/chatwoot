@@ -22,6 +22,24 @@ class Captain::Runtime::EventBusCallbacks
   end
 
   def on_llm_call_complete(agent_name, model, response, context_wrapper)
+    accounting = Llm::ChatResponseObserver.response_accounting(response)
+    if accounting
+      publish(
+        'chat.runtime_complete',
+        context_wrapper,
+        agent_name: agent_name,
+        model: model,
+        schema_name: current_chat_state(context_wrapper)[:schema_name],
+        request_id: accounting[:request_id],
+        usage_scope: 'runtime_summary',
+        provider_response_count: accounting[:provider_response_count],
+        tool_call: response.respond_to?(:tool_call?) ? response.tool_call? : false,
+        output_type: response.respond_to?(:content) ? payload_type(response.content) : nil,
+        output_size: response.respond_to?(:content) ? payload_size(response.content) : nil
+      )
+      return
+    end
+
     publish(
       'chat.complete',
       context_wrapper,
@@ -118,7 +136,11 @@ class Captain::Runtime::EventBusCallbacks
   private
 
   def publish(event_name, context_wrapper, payload = {})
-    Llm::EventBus.publish(event_name, base_payload(context_wrapper).merge(payload).compact)
+    event_payload = base_payload(context_wrapper).merge(payload).compact
+    if event_name == 'chat.runtime_complete'
+      event_payload.except!(*Llm::ChatResponseObserver::USAGE_KEYS.map(&:to_sym), :usage, :generation_id)
+    end
+    Llm::EventBus.publish(event_name, event_payload)
   end
 
   def base_payload(context_wrapper)

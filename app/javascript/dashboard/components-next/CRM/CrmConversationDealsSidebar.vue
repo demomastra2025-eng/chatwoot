@@ -302,8 +302,6 @@ const closingReasonOptionsForStage = stage =>
   normalizedTextValues(stage?.closingReasonOptions);
 const shouldPromptForClosingReasons = stage =>
   stage?.outcome === 'lost' && closingReasonOptionsForStage(stage).length > 0;
-const shouldPromptForTransitionReason = stage =>
-  normalizedTextValues(stage?.transitionReasonOptions).length > 0;
 const isStageReasonCancelled = value =>
   value === closingReasonDialogRef.value?.CANCELLED;
 
@@ -323,15 +321,6 @@ const collectClosingReasonsForStage = async ({
       kind: 'closing',
       targetStage,
     }) ?? []
-  );
-};
-
-const collectTransitionReasonForStage = async targetStage => {
-  if (!targetStage || !shouldPromptForTransitionReason(targetStage)) return '';
-
-  return (
-    closingReasonDialogRef.value?.open({ kind: 'transition', targetStage }) ??
-    ''
   );
 };
 
@@ -759,7 +748,6 @@ const saveDeal = async item => {
   const stageChanging =
     !item.deal?.id || Number(form.stageId) !== Number(item.deal.stageId);
 
-  let transitionReason = '';
   if (stageChanging) {
     const closingReasons = await collectClosingReasonsForStage({
       deal: item.deal,
@@ -773,13 +761,6 @@ const saveDeal = async item => {
     }
 
     form.closingReasons = closingReasons;
-    if (item.deal?.id) {
-      transitionReason = await collectTransitionReasonForStage(targetStage);
-      if (!isCurrentMutation() || isStageReasonCancelled(transitionReason)) {
-        if (isCurrentMutation()) savingDealKey.value = '';
-        return;
-      }
-    }
   }
 
   let appliedUpdatePayload = null;
@@ -822,9 +803,6 @@ const saveDeal = async item => {
             closing_reasons: form.closingReasons,
             lock_version: savedDeal.lockVersion,
             stage_id: Number(form.stageId),
-            ...(transitionReason
-              ? { transition_reason: transitionReason }
-              : {}),
           }
         );
         if (!isCurrentMutation()) return;

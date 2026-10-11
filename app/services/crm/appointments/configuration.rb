@@ -1,6 +1,7 @@
 class Crm::Appointments::Configuration
   DEFAULTS = {
     'enabled' => false,
+    'auto_create_deals' => false,
     'cardinality' => 'request',
     'auto_create_from_calendar' => false,
     'auto_create_from_medelement' => false,
@@ -14,7 +15,24 @@ class Crm::Appointments::Configuration
   SOURCE_KEYS = %w[auto_create_from_calendar auto_create_from_medelement].freeze
 
   def self.for(pipeline)
-    DEFAULTS.deep_dup.merge(pipeline.appointment_automation.to_h.deep_stringify_keys)
+    DEFAULTS.deep_dup.merge(normalize(pipeline.appointment_automation, pipeline: pipeline))
+  end
+
+  def self.normalize(attributes, pipeline: nil)
+    config = attributes.to_h.deep_stringify_keys
+    unless config.key?('auto_create_deals')
+      config['auto_create_deals'] = SOURCE_KEYS.any? { |key| config[key] == true }
+    end
+    if config['rules'].is_a?(Array)
+      non_loss_ids = pipeline&.persisted? ? pipeline.stages.where.not(outcome: 'lost').pluck(:id).map(&:to_s) : []
+      config['rules'] = config['rules'].map do |rule|
+        next rule unless rule.is_a?(Hash)
+
+        normalized = rule.except('transition_reason')
+        non_loss_ids.include?(rule['stage_id'].to_s) ? normalized.except('closing_reasons') : normalized
+      end
+    end
+    config
   end
 
   def self.validate(pipeline)
@@ -23,7 +41,7 @@ class Crm::Appointments::Configuration
     errors << 'cardinality must be request or appointment' unless config['cardinality'].in?(%w[request appointment])
     errors << 'manual_stage_change must be continue or pause' unless config['manual_stage_change'].in?(%w[continue pause])
     errors << 'success_mode is invalid' unless config['success_mode'].in?(SUCCESS_MODES)
-    %w[enabled auto_create_from_calendar auto_create_from_medelement].each do |key|
+    %w[enabled auto_create_deals auto_create_from_calendar auto_create_from_medelement].each do |key|
       errors << "#{key} must be boolean" unless [true, false].include?(config[key])
     end
     rules = config['rules']
@@ -43,11 +61,9 @@ class Crm::Appointments::Configuration
     errors << "rule #{index + 1} requires an active stage in this pipeline" unless stage
     errors << "rule #{index + 1} has an invalid scope" unless rule['scope'].in?(SCOPES)
     errors << "rule #{index + 1} requires valid conditions" if conditions.empty? || (conditions - CONDITIONS).any?
-    if stage
+    if stage&.outcome_lost?
       errors << "rule #{index + 1} has invalid closing reasons" if stage.invalid_closing_reasons(Array(rule['closing_reasons'])).any?
       errors << "rule #{index + 1} requires closing reasons" if stage.closing_reason_required? && Array(rule['closing_reasons']).empty?
-      errors << "rule #{index + 1} has an invalid transition reason" if stage.invalid_transition_reason(rule['transition_reason']).any?
-      errors << "rule #{index + 1} requires a transition reason" if stage.transition_reason_required? && rule['transition_reason'].blank?
     end
     errors
   end

@@ -255,7 +255,7 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
     expect(tool.description).to include('reception ID', 'do not claim success or repeat the create call')
   end
 
-  it 'keeps the provider command internally while showing only the booking result' do
+  it 'confirms an acknowledged create while read-back is pending and keeps the command internal on replay' do
     stub_provider_availability
     hook_settings = attributes_for(:integrations_hook, :medelement)[:settings].merge('write_enabled' => true)
     create(:integrations_hook, :medelement, account: account, settings: hook_settings)
@@ -295,10 +295,14 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
     replay_payload = JSON.parse(tool.perform(tool_context, **arguments))
     expect(payload).to eq(
       'success' => true, 'appointment_id' => appointment.id, 'doctor_name' => resource.name,
-      'local_date' => '20.04.2026', 'local_time' => '09:00', 'status' => 'created'
+      'local_date' => '20.04.2026', 'local_time' => '09:00', 'status' => 'created',
+      'provider_confirmed' => true, 'provider_confirmation_status' => 'succeeded',
+      'provider_confirmation_operation' => 'create_reception', 'provider_confirmation_scope' => 'medelement'
     )
     expect(replay_payload).to eq(payload)
     command = Integrations::Medelement::ProviderCommand.find_by!(appointment_id: appointment.id, operation: 'create_reception')
+    expect(command).not_to be_succeeded
+    expect(appointment.reload.custom_attributes['medelement_provider_sync_status']).to eq('pending')
     expect(command.request_snapshot.dig('actor', 'type')).to eq('Captain::Assistant')
     expect(Integrations::Medelement::ProviderCommand.where(account_id: account.id, operation: 'create_reception').count).to eq(1)
     expect(conversation.messages.outgoing.where(private: false)).to be_empty

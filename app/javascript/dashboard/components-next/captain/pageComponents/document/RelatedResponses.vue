@@ -78,6 +78,8 @@ defineExpose({ dialogRef });
         :status="response.status"
         :answer="response.answer"
         :assistant="response.assistant"
+        :allowed-assistant-ids="response.allowed_assistant_ids"
+        :restricted-to-assistants="response.restricted_to_assistants"
         :created-at="response.created_at"
         :updated-at="response.updated_at"
         compact

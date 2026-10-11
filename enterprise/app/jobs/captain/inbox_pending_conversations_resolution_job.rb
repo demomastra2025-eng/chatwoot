@@ -24,11 +24,14 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
   end
 
   def perform_time_based(inbox)
-    Current.executed_by = inbox.captain_assistant
-
     resolvable_pending_conversations(inbox).each do |conversation|
-      create_resolution_message(conversation, inbox)
-      transition_conversation_status!(conversation, 'resolved', actor: inbox.captain_assistant, source: 'system')
+      context = auto_completion_context(conversation)
+      next unless context
+
+      with_current_agent(conversation, context) do |assistant|
+        create_resolution_message(conversation, assistant)
+        transition_conversation_status!(conversation, 'resolved', actor: assistant, source: 'system')
+      end
     end
   end
 
@@ -36,17 +39,24 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
   # evaluation) leaves pending through a system handoff, so people see it and it
   # is not evaluated again every run.
   def perform_with_evaluation(inbox)
-    Current.executed_by = inbox.captain_assistant
-
     resolvable_pending_conversations(inbox).each do |conversation|
-      fence = handoff_fence(conversation)
-      evaluation = evaluate_conversation(conversation, inbox)
-      next unless still_resolvable_after_evaluation?(conversation)
+      context = auto_completion_context(conversation)
+      next unless context
 
-      if evaluation[:complete]
-        resolve_conversation(conversation, inbox, evaluation[:reason], generated_message: evaluation[:message])
-      else
-        handoff_conversation(conversation, inbox, evaluation[:reason], fence, generated_message: evaluation[:message])
+      Current.executed_by = context[:assistant]
+      evaluation = evaluate_conversation(conversation, inbox)
+
+      activity_reason = evaluation[:complete] ? CAPTAIN_INFERENCE_RESOLVE_ACTIVITY_REASON : CAPTAIN_INFERENCE_HANDOFF_ACTIVITY_REASON
+      # Status activity is created after commit, so its context must outlive the
+      # transaction opened by the final ownership check.
+      conversation.with_captain_activity_context(reason: activity_reason, reason_type: :inference) do
+        with_current_agent(conversation, context) do |assistant|
+          if evaluation[:complete]
+            resolve_conversation(conversation, assistant, evaluation[:reason], generated_message: evaluation[:message])
+          else
+            handoff_conversation(conversation, assistant, evaluation[:reason], context[:fence], generated_message: evaluation[:message])
+          end
+        end
       end
     end
   end
@@ -87,13 +97,48 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
     Time.now.utc - auto_resolve_after.minutes
   end
 
-  def resolve_conversation(conversation, inbox, reason, generated_message: nil)
-    create_private_note(conversation, inbox, "Auto-resolved: #{reason}")
-    create_resolution_message(conversation, inbox, generated_message: generated_message)
-    conversation.with_captain_activity_context(
-      reason: CAPTAIN_INFERENCE_RESOLVE_ACTIVITY_REASON,
-      reason_type: :inference
-    ) { transition_conversation_status!(conversation, 'resolved', actor: inbox.captain_assistant, source: 'system') }
+  def auto_completion_context(conversation)
+    ownership = Captain::Conversation::AgentOwnership.new(conversation: conversation)
+    assistant = ownership.current_assistant
+    return unless assistant&.auto_completion_enabled?
+
+    {
+      assistant: assistant,
+      fence: handoff_fence(conversation).merge(entry_assistant_id: ownership.entry.id, routing_revision: ownership.routing_revision)
+    }
+  end
+
+  # Evaluation runs without database locks. Only the final messages and status
+  # change hold the conversation, shared control owner and inbox assignment, so
+  # a transfer or reassignment cannot race the final ownership check.
+  def with_current_agent(conversation, context)
+    conversation.with_lock do
+      conversation.with_captain_control_lock do
+        Telephony::AiVoice::AssistantAssignmentLock.acquire!(conversation.inbox_id)
+        ownership = Captain::Conversation::AgentOwnership.new(conversation: conversation, assistant: context[:assistant])
+        fence = context[:fence]
+        next unless ownership.current?(expected_entry_id: fence[:entry_assistant_id],
+                                       expected_revision: fence[:routing_revision], enforce_revision: true)
+        next unless control_fence_current?(conversation, fence) && still_resolvable_after_evaluation?(conversation)
+
+        assistant = ownership.current_assistant
+        next unless assistant&.auto_completion_enabled?
+
+        Current.executed_by = assistant
+        yield assistant
+      end
+    end
+  end
+
+  def control_fence_current?(conversation, fence)
+    conversation.current_captain_control_generation.to_i == fence[:control_generation].to_i &&
+      conversation.status_transitions.maximum(:id).to_i == fence[:status_transition_id].to_i
+  end
+
+  def resolve_conversation(conversation, assistant, reason, generated_message: nil)
+    create_private_note(conversation, assistant, "Auto-resolved: #{reason}")
+    create_resolution_message(conversation, assistant, generated_message: generated_message)
+    transition_conversation_status!(conversation, 'resolved', actor: assistant, source: 'system')
     conversation.dispatch_captain_inference_resolved_event
   end
 
@@ -111,20 +156,17 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
   # System safety net, independent of the handoff tool: the note, the
   # assistant's own handoff message (when enabled and configured) and the open
   # transition happen once, under the same fence.
-  def handoff_conversation(conversation, inbox, reason, fence, generated_message: nil)
-    assistant = inbox.captain_assistant
-    result = conversation.with_captain_activity_context(reason: CAPTAIN_INFERENCE_HANDOFF_ACTIVITY_REASON, reason_type: :inference) do
-      conversation.bot_handoff!(actor: assistant, source: 'system', fence: fence) do
-        create_private_note(conversation, inbox, "Auto-handoff: #{reason}")
-        next if assistant.blank?
+  def handoff_conversation(conversation, assistant, reason, fence, generated_message: nil)
+    result = conversation.bot_handoff!(actor: assistant, source: 'system', fence: fence) do
+      create_private_note(conversation, assistant, "Auto-handoff: #{reason}")
 
-        Captain::SystemHandoffMessageService.new(conversation: conversation, assistant: assistant, generated_message: generated_message).perform
-      end
+      Captain::SystemHandoffMessageService.new(conversation: conversation, assistant: assistant, generated_message: generated_message).perform
     end
     return unless result == :applied
 
     conversation.dispatch_captain_inference_handoff_event
-    send_out_of_office_message_if_applicable(conversation.reload)
+    # Reloading here would clear the status change before after_commit activity.
+    send_out_of_office_message_if_applicable(conversation)
   end
 
   def send_out_of_office_message_if_applicable(conversation)
@@ -144,22 +186,21 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
     ).perform
   end
 
-  def create_private_note(conversation, inbox, content)
+  def create_private_note(conversation, assistant, content)
     conversation.messages.create!(
       message_type: :outgoing,
       private: true,
-      sender: inbox.captain_assistant,
+      sender: assistant,
       account_id: conversation.account_id,
       inbox_id: conversation.inbox_id,
       content: content
     )
   end
 
-  def create_resolution_message(conversation, inbox, generated_message: nil)
-    assistant = inbox.captain_assistant
+  def create_resolution_message(conversation, assistant, generated_message: nil)
     return unless assistant&.resolution_message_enabled?
 
-    I18n.with_locale(inbox.account.locale) do
+    I18n.with_locale(conversation.account.locale) do
       content = resolution_message_content(assistant, generated_message: generated_message)
       return if content.blank?
 

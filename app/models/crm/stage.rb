@@ -100,7 +100,6 @@ class Crm::Stage < ApplicationRecord
   validate :pipeline_belongs_to_account
   validate :default_stage_must_be_active_open
   validate :closing_reason_required_requires_options
-  validate :transition_reason_required_requires_options
 
   scope :ordered, -> { order(SYSTEM_STAGE_SORT_SQL, :position, :id) }
   scope :active, -> { where(active: true) }
