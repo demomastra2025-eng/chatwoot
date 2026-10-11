@@ -17,7 +17,7 @@ class Captain::AssistantSafetyPreferences
   def self.for(assistant:, feature:, account: assistant&.account)
     account ||= assistant&.account
     preferences = account&.captain_runtime_preferences.to_h.stringify_keys
-    settings = settings_for(assistant, feature, account)
+    settings = settings_for(assistant, feature)
 
     SETTINGS_BY_FEATURE.fetch(feature.to_s, {}).each do |setting_key, (runtime_key, allowed_values)|
       value = runtime_value(settings[setting_key], setting_key, feature)
@@ -27,7 +27,7 @@ class Captain::AssistantSafetyPreferences
     preferences
   end
 
-  def self.settings_for(assistant, feature, account)
+  def self.settings_for(assistant, feature)
     return assistant.account_settings.section('safety') if feature.to_s == 'assistant' && assistant
 
     assistant&.config.to_h.deep_stringify_keys['safety_settings'].to_h
