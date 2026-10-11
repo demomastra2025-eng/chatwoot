@@ -729,7 +729,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_11_100000) do
     t.index ["account_id"], name: "index_captain_knowledge_grants_on_account_id"
     t.index ["assistant_id"], name: "index_captain_knowledge_grants_on_assistant_id"
     t.index ["knowledge_record_type", "knowledge_record_id", "assistant_id"], name: "idx_captain_knowledge_grants_record_assistant", unique: true
-    t.check_constraint "knowledge_record_type::text = ANY (ARRAY['Captain::Document'::character varying::text, 'Captain::AssistantResponse'::character varying::text])", name: "captain_knowledge_grants_record_type"
+    t.check_constraint "knowledge_record_type::text = ANY (ARRAY['Captain::Document'::character varying, 'Captain::AssistantResponse'::character varying]::text[])", name: "captain_knowledge_grants_record_type"
   end
 
   create_table "captain_mcp_servers", force: :cascade do |t|

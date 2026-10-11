@@ -14,7 +14,7 @@ RSpec.describe Captain::Runtime::CoordinationPrompt do
   let(:context) { { state: { assistant_id: 91 }, agent_graph: [entry, specialist], agent_tasks: tasks } }
 
   def data_line(prompt, label)
-    JSON.parse(prompt.lines.find { |line| line.start_with?("#{label}: ") }.delete_prefix("#{label}: "))
+    JSON.parse(prompt.lines.find { |line| line.start_with?("#{label} (data): ") }.delete_prefix("#{label} (data): "))
   end
 
   it 'renders the current actor and only their task assignments after a handoff, retaining the shared queue' do
