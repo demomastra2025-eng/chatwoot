@@ -95,9 +95,7 @@ describe('AgentModelBlock', () => {
   it('shows temperature and reasoning only when the selected model supports them', () => {
     const wrapper = mountBlock({ model: 'smart-model', effort: 'low' });
 
-    expect(wrapper.find('[data-test="model-temperature"]').exists()).toBe(
-      true
-    );
+    expect(wrapper.find('[data-test="model-temperature"]').exists()).toBe(true);
     expect(
       wrapper
         .get('[data-test="model-reasoning"]')

@@ -27,7 +27,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['open', 'toggle-active']);
+const emit = defineEmits(['open', 'toggleActive']);
 
 const { t } = useI18n();
 
@@ -79,7 +79,7 @@ const handleOpen = () => {
 
 const handleToggle = value => {
   pendingActive.value = Boolean(value);
-  emit('toggle-active', Boolean(value));
+  emit('toggleActive', Boolean(value));
 };
 
 watch(

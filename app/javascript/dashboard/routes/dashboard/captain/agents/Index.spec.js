@@ -91,6 +91,8 @@ vi.mock('dashboard/components-next/captain/pageComponents/Paywall.vue', () => ({
   }),
 }));
 
+// The tests emit the card and dialog events themselves, so the card stub and
+// the dialog stub below declare no events of their own.
 vi.mock('dashboard/components-next/captain/agent/AgentGalleryCard.vue', () => ({
   default: defineComponent({
     name: 'AgentGalleryCard',
@@ -100,10 +102,18 @@ vi.mock('dashboard/components-next/captain/agent/AgentGalleryCard.vue', () => ({
       canToggle: Boolean,
       toggling: Boolean,
     },
-    emits: ['open', 'toggle-active'],
     setup(props) {
       return () =>
-        h('div', { 'data-testid': 'agent-card' }, props.assistant.name);
+        h(
+          'div',
+          {
+            'data-testid': 'agent-card',
+            'data-scope': props.stats?.scope,
+            'data-can-toggle': props.canToggle,
+            'data-toggling': props.toggling,
+          },
+          props.assistant.name
+        );
     },
   }),
 }));
@@ -127,7 +137,6 @@ vi.mock(
   () => ({
     default: defineComponent({
       name: 'CreateAgentDialog',
-      emits: ['created', 'close'],
       setup(_props, { expose }) {
         expose({ dialogRef: { open: mocks.dialogOpen } });
         return () => h('div', { 'data-testid': 'create-agent-dialog' });
@@ -208,18 +217,18 @@ describe('Captain agents gallery', () => {
     expect(adminPage.find('[data-testid="agent-new-tile"]').exists()).toBe(
       true
     );
-    expect(
-      adminPage.find('[data-testid="create-agent-dialog"]').exists()
-    ).toBe(true);
+    expect(adminPage.find('[data-testid="create-agent-dialog"]').exists()).toBe(
+      true
+    );
 
     mocks.isAdmin = false;
     const agentPage = await mountPage();
     expect(agentPage.find('[data-testid="agent-new-tile"]').exists()).toBe(
       false
     );
-    expect(
-      agentPage.find('[data-testid="create-agent-dialog"]').exists()
-    ).toBe(false);
+    expect(agentPage.find('[data-testid="create-agent-dialog"]').exists()).toBe(
+      false
+    );
     expect(
       agentPage
         .findAllComponents({ name: 'AgentGalleryCard' })
@@ -326,7 +335,7 @@ describe('Captain agents gallery', () => {
 
     wrapper
       .findAllComponents({ name: 'AgentGalleryCard' })[0]
-      .vm.$emit('toggle-active', false);
+      .vm.$emit('toggleActive', false);
     await flushPromises();
 
     expect(mocks.setActive).toHaveBeenCalledWith(
@@ -344,7 +353,7 @@ describe('Captain agents gallery', () => {
 
     wrapper
       .findAllComponents({ name: 'AgentGalleryCard' })[0]
-      .vm.$emit('toggle-active', false);
+      .vm.$emit('toggleActive', false);
     await flushPromises();
     await nextTick();
 

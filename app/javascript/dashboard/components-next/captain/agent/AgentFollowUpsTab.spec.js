@@ -32,8 +32,6 @@ vi.mock('dashboard/components-next/Settings/SettingsToggleSection.vue', () => ({
     name: 'SettingsToggleSectionStub',
     props: {
       modelValue: Boolean,
-      header: { type: String, default: '' },
-      description: { type: String, default: '' },
       disabled: Boolean,
     },
     emits: ['update:modelValue'],
@@ -56,7 +54,6 @@ vi.mock('dashboard/components-next/Settings/SettingsToggleSection.vue', () => ({
 vi.mock('dashboard/components-next/CardLayout.vue', () => ({
   default: defineComponent({
     name: 'CardLayoutStub',
-    props: { compact: Boolean },
     setup(_props, { slots }) {
       return () => h('div', slots.default?.());
     },
@@ -69,7 +66,6 @@ vi.mock('dashboard/components-next/textarea/TextArea.vue', () => ({
     props: {
       modelValue: { type: String, default: '' },
       id: { type: String, default: '' },
-      label: { type: String, default: '' },
       maxLength: { type: Number, default: 200 },
       disabled: Boolean,
     },
@@ -94,7 +90,6 @@ vi.mock('dashboard/components-next/input/Input.vue', () => ({
       modelValue: { type: [String, Number], default: '' },
       id: { type: String, default: '' },
       type: { type: String, default: 'text' },
-      label: { type: String, default: '' },
       disabled: Boolean,
     },
     emits: ['update:modelValue'],
@@ -425,7 +420,7 @@ describe('AgentFollowUpsTab', () => {
     expect(updateMock).not.toHaveBeenCalled();
   });
 
-  it('emits dirty-change when the draft changes and after it is saved', async () => {
+  it('emits dirtyChange when the draft changes and after it is saved', async () => {
     setSettings({
       enabled: true,
       prompt: 'Saved prompt',
@@ -436,16 +431,16 @@ describe('AgentFollowUpsTab', () => {
 
     await wrapper.get('#follow-up-prompt').setValue('Changed prompt');
     expect(wrapper.vm.isDirty).toBe(true);
-    expect(wrapper.emitted('dirty-change')).toEqual([[true]]);
+    expect(wrapper.emitted('dirtyChange')).toEqual([[true]]);
 
     await wrapper.get('#follow-up-prompt').setValue('Saved prompt');
-    expect(wrapper.emitted('dirty-change')).toEqual([[true], [false]]);
+    expect(wrapper.emitted('dirtyChange')).toEqual([[true], [false]]);
 
     await wrapper.get('#follow-up-prompt').setValue('Changed again');
     expect(await wrapper.vm.save()).toBe(true);
     await flushPromises();
     expect(wrapper.vm.isDirty).toBe(false);
-    expect(wrapper.emitted('dirty-change').at(-1)).toEqual([false]);
+    expect(wrapper.emitted('dirtyChange').at(-1)).toEqual([false]);
   });
 
   it('reports a failed save and keeps the draft dirty', async () => {

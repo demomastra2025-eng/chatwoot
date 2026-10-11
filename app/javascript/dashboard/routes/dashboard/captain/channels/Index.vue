@@ -210,7 +210,6 @@ onBeforeUnmount(() => {
     :feature-flag="FEATURE_FLAGS.CAPTAIN"
     :show-pagination-footer="false"
     :show-know-more="false"
-    :show-assistant-switcher="false"
     @click="saveMatrix"
   >
     <template #paywall>

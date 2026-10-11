@@ -257,7 +257,6 @@ watch(
     :is-empty="!filteredResponses.length"
     :show-pagination-footer="!isFetching && !!filteredResponses.length"
     :show-know-more="false"
-    :show-assistant-switcher="false"
     :feature-flag="FEATURE_FLAGS.CAPTAIN"
     :back-url="backUrl"
     @update:current-page="onPageChange"

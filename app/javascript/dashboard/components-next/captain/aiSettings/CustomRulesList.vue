@@ -153,7 +153,10 @@ defineExpose({ validate });
 </script>
 
 <template>
-  <section :data-testid="`custom-rules-${direction}`" class="flex flex-col gap-4">
+  <section
+    :data-testid="`custom-rules-${direction}`"
+    class="flex flex-col gap-4"
+  >
     <header class="flex flex-col gap-1">
       <h3 class="mb-0 text-heading-3 text-n-slate-12">{{ title }}</h3>
       <p v-if="description" class="mb-0 text-body-main text-n-slate-11">

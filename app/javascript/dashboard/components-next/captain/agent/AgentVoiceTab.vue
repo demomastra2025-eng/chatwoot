@@ -12,7 +12,7 @@ const props = defineProps({
   canEdit: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['dirty-change', 'saved']);
+const emit = defineEmits(['dirtyChange', 'saved']);
 
 // The preview opens a microphone session; load it only with this tab.
 const VoiceAgentPreview = defineAsyncComponent(
@@ -32,7 +32,7 @@ const isSaving = ref(false);
 const setDirty = value => {
   if (isDirty.value === value) return;
   isDirty.value = value;
-  emit('dirty-change', value);
+  emit('dirtyChange', value);
 };
 
 // The voice form keeps its draft to itself and emits nothing while it is

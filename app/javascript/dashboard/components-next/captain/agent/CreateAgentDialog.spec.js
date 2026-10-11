@@ -28,15 +28,10 @@ vi.mock('dashboard/api/captain/assistant', () => ({
   default: { updateAvatar: (...args) => mocks.updateAvatar(...args) },
 }));
 
+// The tests emit the dialog and avatar events themselves, so these stubs
+// declare no events of their own.
 const DialogStub = defineComponent({
-  name: 'Dialog',
-  props: {
-    title: { type: String, default: '' },
-    confirmButtonLabel: { type: String, default: '' },
-    disableConfirmButton: Boolean,
-    isLoading: Boolean,
-  },
-  emits: ['confirm', 'close'],
+  name: 'DialogStub',
   setup(_props, { slots, expose }) {
     expose({ open: vi.fn(), close: mocks.close });
     return () => h('div', slots.default?.());
@@ -58,6 +53,10 @@ const fieldStub = (name, tag) =>
       return () =>
         h(tag, {
           value: props.modelValue,
+          'data-label': props.label,
+          'data-message': props.message,
+          'data-message-type': props.messageType,
+          'data-max-length': props.maxLength,
           onInput: event => emit('update:modelValue', event.target.value),
         });
     },
@@ -71,8 +70,15 @@ const AvatarStub = defineComponent({
     size: { type: Number, default: 32 },
     allowUpload: Boolean,
   },
-  emits: ['upload', 'delete'],
-  setup: () => () => h('span'),
+  setup(props) {
+    return () =>
+      h('span', {
+        'data-src': props.src,
+        'data-name': props.name,
+        'data-size': props.size,
+        'data-allow-upload': props.allowUpload,
+      });
+  },
 });
 
 const mountDialog = () =>
@@ -96,7 +102,7 @@ const fillForm = async (wrapper, { name, description }) => {
 };
 
 const submit = async wrapper => {
-  wrapper.findComponent({ name: 'Dialog' }).vm.$emit('confirm');
+  wrapper.findComponent({ name: 'DialogStub' }).vm.$emit('confirm');
   await flushPromises();
 };
 

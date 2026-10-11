@@ -1,5 +1,12 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch,
+} from 'vue';
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
@@ -190,7 +197,6 @@ onBeforeUnmount(() => {
     :is-fetching="isLoading"
     :show-know-more="false"
     :show-pagination-footer="false"
-    :show-assistant-switcher="false"
     content-width="form"
     @click="save"
   >
@@ -230,10 +236,7 @@ onBeforeUnmount(() => {
           <div class="flex flex-col gap-1">
             <span>{{ t('CAPTAIN.AI_SETTINGS.SAVE_ERROR') }}</span>
             <ul class="m-0 flex list-disc flex-col gap-1 ps-4">
-              <li
-                v-for="(message, index) in serverErrors.general"
-                :key="index"
-              >
+              <li v-for="(message, index) in serverErrors.general" :key="index">
                 {{ message }}
               </li>
             </ul>

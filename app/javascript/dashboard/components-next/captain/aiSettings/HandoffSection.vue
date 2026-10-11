@@ -85,7 +85,10 @@ const removeReason = (list, reasonId) => {
   const reasons = reasonsOf(list.key);
   const reason = reasons.find(item => item.id === reasonId);
   if (props.disabled || !reason || isBuiltInReason(reason)) return;
-  updateField(list.key, reasons.filter(item => item.id !== reasonId));
+  updateField(
+    list.key,
+    reasons.filter(item => item.id !== reasonId)
+  );
 };
 </script>
 

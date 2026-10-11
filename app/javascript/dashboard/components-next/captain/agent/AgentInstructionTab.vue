@@ -118,8 +118,9 @@ const instructionError = computed(() => {
         v-if="!canEdit"
         class="max-h-[40rem] overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-n-alpha-black2 px-3 py-3 text-body-para text-n-slate-12 outline outline-1 -outline-offset-1 outline-n-weak"
         data-test="agent-instruction-readonly"
-        v-text="instruction"
-      />
+      >
+        {{ instruction }}
+      </div>
       <Editor
         v-else
         ref="editorRef"

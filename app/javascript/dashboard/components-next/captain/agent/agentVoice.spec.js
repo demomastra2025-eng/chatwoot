@@ -21,9 +21,9 @@ const textInbox = (id, assistantId) => ({
 
 describe('isVoiceAgent', () => {
   it('is true when a voice channel answers with the agent', () => {
-    expect(
-      isVoiceAgent({ id: 7 }, [textInbox(1, 7), voiceInbox(2, 7)])
-    ).toBe(true);
+    expect(isVoiceAgent({ id: 7 }, [textInbox(1, 7), voiceInbox(2, 7)])).toBe(
+      true
+    );
   });
 
   it('compares ids as numbers', () => {

@@ -202,7 +202,10 @@ const spanStub = name =>
 const passthroughStub = name =>
   defineComponent({
     name,
-    setup: (_, { slots }) => () => h('div', slots.default?.()),
+    setup:
+      (_, { slots }) =>
+      () =>
+        h('div', slots.default?.()),
   });
 
 vi.mock('vue-i18n', () => ({

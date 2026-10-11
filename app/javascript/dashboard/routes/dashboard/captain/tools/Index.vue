@@ -286,7 +286,6 @@ onMounted(() => {
     :is-empty="!customTools.length && !mcpServers.length && !publicTools.length"
     :feature-flag="FEATURE_FLAGS.CAPTAIN_V2"
     :show-know-more="false"
-    :show-assistant-switcher="false"
     @update:current-page="onPageChange"
     @click="openCreateDialog"
   >

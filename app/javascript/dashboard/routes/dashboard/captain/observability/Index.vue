@@ -227,7 +227,6 @@ onMounted(() => {
     :current-page="currentPage"
     :total-count="totalCount"
     :items-per-page="itemsPerPage"
-    :show-assistant-switcher="false"
     :show-know-more="false"
     @update:current-page="fetchEvents"
   >

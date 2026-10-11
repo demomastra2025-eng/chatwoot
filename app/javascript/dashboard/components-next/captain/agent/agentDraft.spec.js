@@ -62,9 +62,9 @@ describe('isAgentDraftDirty', () => {
   it('is clean for an untouched draft and ignores surrounding spaces', () => {
     const base = buildAgentDraft(assistant);
     expect(isAgentDraftDirty(base, { ...base })).toBe(false);
-    expect(
-      isAgentDraftDirty(base, { ...base, name: ' Администратор  ' })
-    ).toBe(false);
+    expect(isAgentDraftDirty(base, { ...base, name: ' Администратор  ' })).toBe(
+      false
+    );
   });
 
   it('detects changes of every editable field', () => {

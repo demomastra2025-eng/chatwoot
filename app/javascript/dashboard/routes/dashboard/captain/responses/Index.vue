@@ -217,7 +217,6 @@ watch(
     :is-fetching="isFetching"
     :is-empty="!responses.length"
     :show-pagination-footer="!isFetching && !!responses.length"
-    :show-assistant-switcher="false"
     :feature-flag="FEATURE_FLAGS.CAPTAIN"
     @update:current-page="onPageChange"
     @click="handleCreate"

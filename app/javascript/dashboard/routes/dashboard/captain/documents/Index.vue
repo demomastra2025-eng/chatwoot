@@ -262,7 +262,6 @@ watch(
     :is-fetching="isFetching"
     :is-empty="!documents.length"
     :show-know-more="false"
-    :show-assistant-switcher="false"
     :feature-flag="FEATURE_FLAGS.CAPTAIN"
     @update:current-page="onPageChange"
     @click="handleCreateDocument"

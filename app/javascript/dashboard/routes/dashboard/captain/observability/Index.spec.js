@@ -1,6 +1,6 @@
 /* eslint-disable vue/one-component-per-file */
 import { defineComponent, h, reactive, ref } from 'vue';
-import { flushPromises, mount } from '@vue/test-utils';
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
 
 const getMock = vi.fn();
 const alertMock = vi.fn();
@@ -151,6 +151,10 @@ const response = {
 
 const agentFilterChip = wrapper =>
   wrapper.find('[data-test-id="logs-agent-filter"]');
+
+// Every page watches the shared route mock. Pages left mounted by earlier tests
+// would refetch whenever a later test changes route.query.
+enableAutoUnmount(afterEach);
 
 describe('AI Agent logs', () => {
   beforeEach(() => {

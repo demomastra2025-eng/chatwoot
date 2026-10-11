@@ -20,12 +20,21 @@ const AvatarStub = defineComponent({
     size: { type: Number, default: 32 },
     roundedFull: Boolean,
   },
-  setup: () => () => h('span', { 'data-testid': 'avatar' }),
+  setup(props) {
+    return () =>
+      h('span', {
+        'data-testid': 'avatar',
+        'data-src': props.src,
+        'data-name': props.name,
+        'data-size': props.size,
+        'data-rounded-full': props.roundedFull,
+      });
+  },
 });
 
 // Renders a real <button> so a click bubbles to the card unless stopped.
 const SwitchStub = defineComponent({
-  name: 'Switch',
+  name: 'SwitchStub',
   props: { modelValue: Boolean, disabled: Boolean },
   emits: ['update:modelValue'],
   setup(props, { emit }) {
@@ -34,6 +43,7 @@ const SwitchStub = defineComponent({
         type: 'button',
         'data-testid': 'agent-active-switch',
         'aria-checked': String(props.modelValue),
+        disabled: props.disabled,
         onClick: () => emit('update:modelValue', !props.modelValue),
       });
   },
@@ -104,7 +114,7 @@ describe('AgentGalleryCard', () => {
   it('gives administrators the active switch instead of the status text', () => {
     const wrapper = mountCard({ canToggle: true });
 
-    const toggle = wrapper.findComponent({ name: 'Switch' });
+    const toggle = wrapper.findComponent({ name: 'SwitchStub' });
     expect(toggle.exists()).toBe(true);
     expect(toggle.props('modelValue')).toBe(true);
     expect(wrapper.find('[data-testid="agent-status"]').exists()).toBe(false);
@@ -125,14 +135,14 @@ describe('AgentGalleryCard', () => {
 
     await wrapper.find('[data-testid="agent-active-switch"]').trigger('click');
 
-    expect(wrapper.emitted('toggle-active')).toEqual([[false]]);
+    expect(wrapper.emitted('toggleActive')).toEqual([[false]]);
     expect(wrapper.emitted('open')).toBeUndefined();
   });
 
   it('shows the picked value while saving and falls back when the save fails', async () => {
     const wrapper = mountCard({ canToggle: true });
     const switchValue = () =>
-      wrapper.findComponent({ name: 'Switch' }).props('modelValue');
+      wrapper.findComponent({ name: 'SwitchStub' }).props('modelValue');
 
     await wrapper.find('[data-testid="agent-active-switch"]').trigger('click');
     await wrapper.setProps({ toggling: true });

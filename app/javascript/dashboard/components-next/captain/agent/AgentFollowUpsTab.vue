@@ -16,7 +16,7 @@ const props = defineProps({
   canEdit: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['dirty-change', 'saved']);
+const emit = defineEmits(['dirtyChange', 'saved']);
 
 const store = useStore();
 const { t } = useI18n();
@@ -101,7 +101,7 @@ const isDirty = computed(
     currentDraftSnapshot() !== draftBaseline.value
 );
 
-watch(isDirty, value => emit('dirty-change', value));
+watch(isDirty, value => emit('dirtyChange', value));
 
 watch(
   () => props.assistant,

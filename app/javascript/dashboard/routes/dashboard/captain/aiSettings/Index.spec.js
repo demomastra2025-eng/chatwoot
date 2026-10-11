@@ -47,27 +47,20 @@ vi.mock('dashboard/store/captain/aiSettings', () => ({
   }),
 }));
 
-vi.mock(
-  'dashboard/components-next/captain/pageComponents/Paywall.vue',
-  () => ({
-    default: defineComponent({
-      name: 'CaptainPaywall',
-      setup: () => () => h('div', { 'data-testid': 'paywall' }),
-    }),
-  })
-);
+vi.mock('dashboard/components-next/captain/pageComponents/Paywall.vue', () => ({
+  default: defineComponent({
+    name: 'CaptainPaywall',
+    setup: () => () => h('div', { 'data-testid': 'paywall' }),
+  }),
+}));
 
 vi.mock('dashboard/components-next/captain/PageLayout.vue', () => ({
   default: defineComponent({
     name: 'PageLayout',
     props: {
-      headerTitle: { type: String, default: '' },
       buttonLabel: { type: String, default: '' },
       buttonDisabled: Boolean,
-      buttonLoading: Boolean,
       isFetching: Boolean,
-      contentWidth: { type: String, default: 'default' },
-      featureFlag: { type: String, default: '' },
     },
     emits: ['click'],
     setup(props, { slots, emit }) {
@@ -221,9 +214,9 @@ describe('Captain AI settings page', () => {
     expect(inbound.find('[data-testid="custom-rule-rule-out"]').exists()).toBe(
       false
     );
-    expect(
-      outbound.find('[data-testid="custom-rule-rule-out"]').exists()
-    ).toBe(true);
+    expect(outbound.find('[data-testid="custom-rule-rule-out"]').exists()).toBe(
+      true
+    );
     expect(wrapper.get('#ai-settings-collapse-window').element.value).toBe(
       '15'
     );
@@ -243,9 +236,7 @@ describe('Captain AI settings page', () => {
       switchIn(wrapper, 'understanding-web_search').attributes('disabled')
     ).toBeDefined();
     expect(
-      switchIn(wrapper, 'understanding-web_page_reading').attributes(
-        'disabled'
-      )
+      switchIn(wrapper, 'understanding-web_page_reading').attributes('disabled')
     ).toBeDefined();
     expect(
       switchIn(wrapper, 'understanding-voice_messages').attributes('disabled')
@@ -261,9 +252,9 @@ describe('Captain AI settings page', () => {
     expect(
       switchIn(wrapper, 'understanding-web_search').attributes('disabled')
     ).toBeUndefined();
-    expect(wrapper.find('[data-testid="understanding-web-hint"]').exists()).toBe(
-      false
-    );
+    expect(
+      wrapper.find('[data-testid="understanding-web-hint"]').exists()
+    ).toBe(false);
   });
 
   it('sends only the changed sections in the contract shape', async () => {
@@ -308,7 +299,9 @@ describe('Captain AI settings page', () => {
         ],
       },
     });
-    expect(testState.useAlert).toHaveBeenCalledWith('CAPTAIN.AI_SETTINGS.SAVED');
+    expect(testState.useAlert).toHaveBeenCalledWith(
+      'CAPTAIN.AI_SETTINGS.SAVED'
+    );
     expect(saveButton(wrapper).attributes('disabled')).toBeDefined();
   });
 
@@ -355,7 +348,9 @@ describe('Captain AI settings page', () => {
     expect(wrapper.text()).toContain(
       'CAPTAIN.ASSISTANTS.FORM.CUSTOM_GUARDRAILS.ERRORS.NAME'
     );
-    expect(wrapper.text()).toContain('CAPTAIN.AI_SETTINGS.HANDOFF.TEXT_REQUIRED');
+    expect(wrapper.text()).toContain(
+      'CAPTAIN.AI_SETTINGS.HANDOFF.TEXT_REQUIRED'
+    );
   });
 
   it('blocks saving an empty reason label', async () => {
@@ -368,9 +363,9 @@ describe('Captain AI settings page', () => {
     await clickSave(wrapper);
 
     expect(testState.save).not.toHaveBeenCalled();
-    expect(
-      within(wrapper, 'outcome-section-handoff_reasons').text()
-    ).toContain('CAPTAIN.ASSISTANTS.OUTCOMES.VALIDATION');
+    expect(within(wrapper, 'outcome-section-handoff_reasons').text()).toContain(
+      'CAPTAIN.ASSISTANTS.OUTCOMES.VALIDATION'
+    );
   });
 
   it('shows 422 field errors inline and the rest in a banner', async () => {
@@ -400,9 +395,9 @@ describe('Captain AI settings page', () => {
     expect(testState.useAlert).toHaveBeenCalledWith(
       'CAPTAIN.AI_SETTINGS.SAVE_ERROR'
     );
-    expect(
-      wrapper.get('[data-testid="custom-rule-rule-in"]').text()
-    ).toContain('Name is taken');
+    expect(wrapper.get('[data-testid="custom-rule-rule-in"]').text()).toContain(
+      'Name is taken'
+    );
     expect(wrapper.get('[data-testid="ai-settings-speed"]').text()).toContain(
       'Window is too long'
     );

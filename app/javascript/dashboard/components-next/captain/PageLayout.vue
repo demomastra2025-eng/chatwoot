@@ -10,12 +10,6 @@ import Policy from 'dashboard/components/policy.vue';
 // Shared shell of the «ИИ-агенты» pages. Agents are picked in the gallery
 // (captain/agents) and created there, so the header has no agent switcher and
 // no create button of its own.
-const CONTENT_WIDTH_CLASSES = {
-  default: 'max-w-5xl',
-  form: 'max-w-3xl',
-  full: 'max-w-none',
-};
-
 const props = defineProps({
   currentPage: {
     type: Number,
@@ -77,11 +71,6 @@ const props = defineProps({
     type: Boolean,
     default: true,
   },
-  // Kept so existing pages can still pass it; the switcher is gone.
-  showAssistantSwitcher: {
-    type: Boolean,
-    default: true,
-  },
   // 'default' (max-w-5xl), 'form' (max-w-3xl) or 'full' (max-w-none).
   contentWidth: {
     type: String,
@@ -91,6 +80,12 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['click', 'close', 'update:currentPage']);
+
+const CONTENT_WIDTH_CLASSES = {
+  default: 'max-w-5xl',
+  form: 'max-w-3xl',
+  full: 'max-w-none',
+};
 
 const { shouldShowPaywall } = usePolicy();
 

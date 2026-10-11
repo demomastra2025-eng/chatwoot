@@ -101,20 +101,18 @@ vi.mock('dashboard/api/captain/assistant', () => ({
   default: { updateAvatar: vi.fn(), deleteAvatar: vi.fn(), delete: vi.fn() },
 }));
 
-vi.mock(
-  'dashboard/components-next/captain/agent/useAgentActiveToggle',
-  () => ({
-    useAgentActiveToggle: () => ({
-      setActive: vi.fn(async () => true),
-      isToggling: () => false,
-    }),
-  })
-);
+vi.mock('dashboard/components-next/captain/agent/useAgentActiveToggle', () => ({
+  useAgentActiveToggle: () => ({
+    setActive: vi.fn(async () => true),
+    isToggling: () => false,
+  }),
+}));
 
 vi.mock('dashboard/components-next/captain/agent/agentVoice', () => ({
   isVoiceAgent: () => false,
 }));
 
+// The tests emit the tab events themselves, so the stub declares none.
 const simpleStub = name =>
   defineComponent({
     name,
@@ -122,9 +120,17 @@ const simpleStub = name =>
       assistant: { type: Object, default: null },
       draft: { type: Object, default: null },
     },
-    emits: ['update:draft', 'dirty-change', 'saved', 'openFollowUps'],
-    setup() {
-      return () => h('div', { 'data-stub': name }, name);
+    setup(props) {
+      return () =>
+        h(
+          'div',
+          {
+            'data-stub': name,
+            'data-assistant-id': props.assistant?.id,
+            'data-draft-name': props.draft?.name,
+          },
+          name
+        );
     },
   });
 
@@ -154,20 +160,13 @@ vi.mock(
     }),
   })
 );
-vi.mock(
-  'dashboard/components-next/captain/pageComponents/Paywall.vue',
-  () => ({
-    default: defineComponent({ name: 'CaptainPaywall', render: () => null }),
-  })
-);
+vi.mock('dashboard/components-next/captain/pageComponents/Paywall.vue', () => ({
+  default: defineComponent({ name: 'CaptainPaywall', render: () => null }),
+}));
 
 vi.mock('dashboard/components-next/captain/PageLayout.vue', () => ({
   default: defineComponent({
     name: 'PageLayout',
-    props: {
-      isFetching: { type: Boolean, default: false },
-      contentWidth: { type: String, default: 'default' },
-    },
     setup(_props, { slots }) {
       return () =>
         h('div', [
@@ -184,7 +183,6 @@ vi.mock('dashboard/components-next/tabbar/TabBar.vue', () => ({
     name: 'TabBar',
     props: {
       tabs: { type: Array, default: () => [] },
-      initialActiveTab: { type: Number, default: 0 },
     },
     emits: ['tabChanged'],
     setup(props, { emit }) {
@@ -204,7 +202,7 @@ vi.mock('dashboard/components-next/tabbar/TabBar.vue', () => ({
 }));
 
 const InputStub = defineComponent({
-  name: 'Input',
+  name: 'InputStub',
   inheritAttrs: false,
   props: {
     modelValue: { type: [String, Number], default: '' },
@@ -225,11 +223,10 @@ const InputStub = defineComponent({
 });
 
 const ButtonStub = defineComponent({
-  name: 'Button',
+  name: 'ButtonStub',
   props: {
     label: { type: String, default: '' },
     disabled: { type: Boolean, default: false },
-    isLoading: { type: Boolean, default: false },
   },
   emits: ['click'],
   setup(props, { emit }) {
