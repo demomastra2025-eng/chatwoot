@@ -6,6 +6,12 @@ RSpec.describe CaptainInbox do
   let(:inbox) { create(:inbox, account: account) }
   let(:assistant) { create(:captain_assistant, account: account) }
 
+  it 'leaves a newly initialized channel disabled by default' do
+    assignment = described_class.new(inbox: inbox, captain_assistant: assistant)
+
+    expect(assignment.ai_enabled).to be false
+  end
+
   it 'rejects new inactive and internal entry agents' do
     assistant.update!(active: false)
     expect(build(:captain_inbox, inbox: inbox, captain_assistant: assistant)).not_to be_valid
@@ -17,8 +23,18 @@ RSpec.describe CaptainInbox do
     expect(build(:captain_inbox, inbox: inbox, captain_assistant: create(:captain_assistant))).not_to be_valid
   end
 
+  it 'requires the enabled text main agent to work on the inbox' do
+    assistant.update!(channel_scope: 'selected')
+    assignment = build(:captain_inbox, inbox: inbox, captain_assistant: assistant)
+
+    expect(assignment).not_to be_valid
+    assistant.agent_channels.create!(account: account, inbox: inbox)
+    expect(assignment).to be_valid
+  end
+
   it 'retains the configured entry when the agent is temporarily deactivated' do
     assignment = create(:captain_inbox, inbox: inbox, captain_assistant: assistant)
+    assignment.update!(ai_enabled: false)
     assistant.update!(active: false)
 
     expect(assignment.reload).to be_valid
@@ -36,6 +52,7 @@ RSpec.describe CaptainInbox do
 
   it 'uses the shared lock when an assistant asynchronously destroys its assignments' do
     captain_inbox = create(:captain_inbox, inbox: inbox, captain_assistant: assistant)
+    captain_inbox.update!(ai_enabled: false)
 
     expect(Telephony::AiVoice::AssistantAssignmentLock).to receive(:acquire!).with(inbox.id).twice.and_call_original
     perform_enqueued_jobs { assistant.destroy! }

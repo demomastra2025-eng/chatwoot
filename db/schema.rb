@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_10_11_100000) do
+ActiveRecord::Schema[7.2].define(version: 2026_10_11_110000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -553,6 +553,17 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_11_100000) do
     t.check_constraint "source_assistant_id <> target_assistant_id", name: "captain_agent_handoffs_no_self"
   end
 
+  create_table "captain_agent_channels", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "assistant_id", null: false
+    t.bigint "inbox_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_captain_agent_channels_on_account_id"
+    t.index ["assistant_id", "inbox_id"], name: "index_captain_agent_channels_on_assistant_id_and_inbox_id", unique: true
+    t.index ["inbox_id"], name: "index_captain_agent_channels_on_inbox_id"
+  end
+
   create_table "captain_assistant_responses", force: :cascade do |t|
     t.string "question", null: false
     t.text "answer", null: false
@@ -590,10 +601,12 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_11_100000) do
     t.boolean "active", default: true, null: false
     t.text "routing_description"
     t.bigint "legacy_scenario_id"
+    t.string "channel_scope", default: "all", null: false
     t.index ["account_id"], name: "index_captain_assistants_on_account_id"
     t.index ["id", "account_id"], name: "index_captain_assistants_on_id_and_account_id", unique: true
     t.index ["legacy_scenario_id"], name: "index_captain_assistants_on_legacy_scenario_id", unique: true
     t.index ["usage_mode"], name: "index_captain_assistants_on_usage_mode"
+    t.check_constraint "channel_scope::text = ANY (ARRAY['all'::character varying, 'selected'::character varying]::text[])", name: "captain_assistants_channel_scope"
   end
 
   create_table "captain_custom_tools", force: :cascade do |t|
@@ -694,9 +707,11 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_11_100000) do
     t.datetime "updated_at", null: false
     t.string "auto_reply_mode", default: "always", null: false
     t.boolean "reply_to_open_conversations", default: false, null: false
+    t.boolean "ai_enabled", default: false, null: false
     t.index ["captain_assistant_id", "inbox_id"], name: "index_captain_inboxes_on_captain_assistant_id_and_inbox_id", unique: true
     t.index ["captain_assistant_id"], name: "index_captain_inboxes_on_captain_assistant_id"
     t.index ["inbox_id"], name: "index_captain_inboxes_on_inbox_id"
+    t.index ["inbox_id"], name: "index_captain_inboxes_on_unique_inbox_id", unique: true
   end
 
   create_table "captain_knowledge_answer_cache_entries", force: :cascade do |t|
@@ -3715,6 +3730,9 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_11_100000) do
   add_foreign_key "campaigns", "campaign_audience_imports", on_delete: :nullify
   add_foreign_key "campaigns", "captain_assistants"
   add_foreign_key "captain_agent_handoffs", "accounts"
+  add_foreign_key "captain_agent_channels", "accounts"
+  add_foreign_key "captain_agent_channels", "captain_assistants", column: ["assistant_id", "account_id"], primary_key: ["id", "account_id"], on_delete: :cascade
+  add_foreign_key "captain_agent_channels", "inboxes", on_delete: :cascade
   add_foreign_key "captain_agent_handoffs", "captain_assistants", column: ["source_assistant_id", "account_id"], primary_key: ["id", "account_id"], name: "captain_agent_handoffs_source_assistant_id_account_fk", on_delete: :cascade
   add_foreign_key "captain_agent_handoffs", "captain_assistants", column: ["target_assistant_id", "account_id"], primary_key: ["id", "account_id"], name: "captain_agent_handoffs_target_assistant_id_account_fk", on_delete: :cascade
   add_foreign_key "captain_assistant_responses", "captain_document_chunks", column: "document_chunk_id", on_delete: :nullify

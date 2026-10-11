@@ -27,6 +27,10 @@ class CaptainInbox < ApplicationRecord
   ].freeze
   DEFAULT_AUTO_REPLY_MODE = AUTO_REPLY_ALWAYS
 
+  scope :enabled_for_runtime, lambda {
+    joins(:inbox).where('captain_inboxes.ai_enabled = TRUE OR inboxes.channel_type = ?', 'Channel::Voice')
+  }
+
   belongs_to :captain_assistant, class_name: 'Captain::Assistant'
   belongs_to :inbox
 
@@ -34,6 +38,8 @@ class CaptainInbox < ApplicationRecord
   validates :auto_reply_mode, inclusion: { in: AUTO_REPLY_MODES }
   validate :assistant_belongs_to_inbox_account
   validate :new_entry_assistant_is_eligible
+  validate :enabled_text_main_agent_is_member
+  validate :enabled_text_main_agent_is_active
 
   before_validation :set_default_auto_reply_mode
 
@@ -48,6 +54,8 @@ class CaptainInbox < ApplicationRecord
   end
 
   def auto_reply_allowed_now?
+    return false unless ai_enabled? || inbox&.channel_type == 'Channel::Voice'
+
     {
       AUTO_REPLY_ALWAYS => true,
       AUTO_REPLY_WORKING_HOURS => inbox&.working_now?,
@@ -83,6 +91,20 @@ class CaptainInbox < ApplicationRecord
     return if captain_assistant&.entry_eligible?
 
     errors.add(:captain_assistant, 'must be an active external agent')
+  end
+
+  def enabled_text_main_agent_is_member
+    return unless ai_enabled? && inbox&.channel_type != 'Channel::Voice' && captain_assistant&.entry_eligible?
+    return if captain_assistant.works_on_inbox?(inbox)
+
+    errors.add(:captain_assistant, I18n.t('captain.channel_matrix.main_agent_not_member'))
+  end
+
+  def enabled_text_main_agent_is_active
+    return unless ai_enabled? && inbox&.channel_type != 'Channel::Voice'
+    return if captain_assistant&.entry_eligible?
+
+    errors.add(:captain_assistant, I18n.t('captain.channel_matrix.main_agent_inactive'))
   end
 
   def lock_voice_assistant_assignment!

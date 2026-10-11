@@ -398,6 +398,21 @@ en:
       short_description: 'Import specialists, cabinets, services, receptions, and patients from Medelement into scheduling.'
       description: 'Connect Medelement to import specialists, cabinets, services, receptions, and patient data into Onelink scheduling while keeping imported data isolated from manual scheduling flows.'
   captain:
+    channel_matrix:
+      main_agent_in_use: Choose another main agent for enabled channels first.
+      default_agent_in_use: Choose another workspace main agent first.
+      main_agent_not_member: The main agent must work on this channel.
+      main_agent_required: Choose a main agent for the enabled channel.
+      main_agent_inactive: The main agent must be active.
+      invalid_default: Choose an active agent in this workspace.
+      invalid_main_agent: Agent not found in this workspace.
+      invalid_assistant: Agent not found in this workspace.
+      invalid_channel: Channel not found in this workspace.
+      duplicate_inbox: Multiple AI records exist for this channel. Contact an administrator.
+      invalid_scope: Choose a valid channel scope.
+      invalid_ai_enabled: Specify whether AI is enabled for the channel.
+      invalid_auto_reply_mode: Choose a valid automatic reply mode.
+      invalid_state: Channel settings could not be saved. Check the data and try again.
     copilot_message_required: Message is required
     copilot_error: 'Please connect an AI agent to this inbox to use Assistant'
     copilot_limit: 'You are out of Assistant credits. You can buy more credits from the billing section.'

@@ -343,6 +343,21 @@ kk:
       short_description: Import specialists, cabinets, services, receptions, and patients from Medelement into scheduling.
       description: Connect Medelement to import specialists, cabinets, services, receptions, and patient data into Onelink scheduling while keeping imported data isolated from manual scheduling flows.
   captain:
+    channel_matrix:
+      main_agent_in_use: Алдымен қосылған арналар үшін басқа негізгі агентті таңдаңыз.
+      default_agent_in_use: Алдымен кеңістік үшін басқа негізгі агентті таңдаңыз.
+      main_agent_not_member: Негізгі агент осы арнада жұмыс істеуі керек.
+      main_agent_required: Қосылған арна үшін негізгі агентті таңдаңыз.
+      main_agent_inactive: Негізгі агент белсенді болуы керек.
+      invalid_default: Осы кеңістіктегі белсенді агентті таңдаңыз.
+      invalid_main_agent: Агент осы кеңістікте табылмады.
+      invalid_assistant: Агент осы кеңістікте табылмады.
+      invalid_channel: Арна осы кеңістікте табылмады.
+      duplicate_inbox: Бұл арна үшін бірнеше ЖИ жазбасы табылды. Әкімшіге хабарласыңыз.
+      invalid_scope: Арнаның жарамды ауқымын таңдаңыз.
+      invalid_ai_enabled: Арна үшін ЖИ қосылғанын көрсетіңіз.
+      invalid_auto_reply_mode: Автоматты жауаптың жарамды режимін таңдаңыз.
+      invalid_state: Арна баптауларын сақтау мүмкін болмады. Деректерді тексеріп, қайталап көріңіз.
     copilot_message_required: Message is required
     copilot_error: Please connect an assistant to this inbox to use Copilot
     copilot_limit: You are out of Copilot credits. You can buy more credits from the billing section.
