@@ -99,6 +99,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     @response = Captain::Assistant::AgentRunnerService.new(
       assistant: @assistant,
       conversation: @conversation,
+      incoming_message_id: @expected_last_message_id,
       callbacks: callbacks,
       response_fence: response_fence
     ).generate_response(

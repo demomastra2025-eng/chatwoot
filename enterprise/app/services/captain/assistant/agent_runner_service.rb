@@ -45,12 +45,13 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def initialize(assistant:, conversation: nil, callbacks: {}, source: nil, response_fence: nil, test_overrides: {}, playground_session: nil,
-                 deal: nil)
+                 deal: nil, incoming_message_id: nil)
     @assistant = assistant
     @conversation = conversation
     @callbacks = callbacks
     @source = source
     @event_deal = deal
+    @incoming_message_id = incoming_message_id
     @playground_session = source.to_s == 'playground' ? playground_session : nil
     @conversation = @playground_session.conversation if @playground_session
     @response_fence = response_fence.to_h.symbolize_keys.compact
@@ -909,6 +910,11 @@ class Captain::Assistant::AgentRunnerService
   def build_conversation_state(state)
     state.merge!(base_conversation_state)
     state[:contact] = slice_attrs(@conversation.contact, Captain::ContextFields::CONTACT_STATE_ATTRIBUTES) if @conversation.contact
+    reply_notification = Captain::ReplyNotificationContext.for(
+      account: @assistant.account, conversation: @conversation, incoming_message_id: @incoming_message_id,
+      assistant: @assistant
+    )
+    state[:conversation][:reply_notification] = reply_notification if reply_notification.present?
     add_related_record_state(state)
     state.compact!
   end

@@ -70,6 +70,8 @@ class Captain::ContextFields
     { key: 'contact_id', title: 'Contact ID', description: 'conversation.contact_id' },
     { key: 'status', title: 'Status', description: 'conversation.status' },
     { key: 'priority', title: 'Priority', description: 'conversation.priority' },
+    { key: 'reply_notification', title: 'Последнее уведомление, на которое отвечает клиент',
+      description: 'Связь текущего ответа с отправленным уведомлением, если она записана' },
     { key: 'label_list', title: 'Labels', description: 'conversation.label_list' }
   ].freeze
   DEAL_FIELD_DEFINITIONS = [
@@ -464,6 +466,7 @@ class Captain::ContextFields
       end
 
       add_appointment_context_blocks(prompt_state, assistant, runtime_state, explicit_field_ids)
+      add_client_deals_block(prompt_state, assistant, runtime_state, explicit_field_ids)
       add_context_summaries(prompt_state)
       add_legacy_context_warnings(prompt_state, definitions, explicit_field_ids)
 
@@ -556,6 +559,22 @@ class Captain::ContextFields
         [scope, summary] if summary
       end.to_h
       prompt_state[:context_summaries] = summaries if summaries.present?
+    end
+
+    def add_client_deals_block(prompt_state, assistant, runtime_state, field_ids)
+      return unless field_ids.include?('deal.client_deals')
+
+      if %w[trial workspace].include?(runtime_state.dig(:playground, :mode))
+        value = runtime_state.dig(:deal, :client_deals)
+      else
+        conversation_id = runtime_state.dig(:conversation, :id)
+        conversation = assistant.account.conversations.find_by(id: conversation_id) if conversation_id.present?
+        return if conversation.blank?
+
+        value = Captain::DealContext.new(account: assistant.account, conversation: conversation).client_deals
+      end
+      prompt_state[:deal] ||= {}
+      prompt_state[:deal]['client_deals'] = value if value.present?
     end
 
     def add_legacy_context_warnings(prompt_state, definitions, field_ids)
@@ -692,7 +711,13 @@ class Captain::ContextFields
     def deal_fields(account)
       return [] unless deal_context_enabled?(account)
 
-      [summary_field('deal')] + legacy_fields(build_field_group('deal', DEAL_FIELD_DEFINITIONS), 'deal')
+      client_deals = {
+        id: 'deal.client_deals', title: 'Сделки клиента',
+        description: 'Открытые сделки, последние выигранные и проигранные сделки, количество в каждой группе',
+        group_name: GROUP_NAMES.fetch('deal'), table_name: 'deal', field_type: 'computed',
+        field_key: 'client_deals', value_type: 'json', selectable: true
+      }
+      [summary_field('deal'), client_deals] + legacy_fields(build_field_group('deal', DEAL_FIELD_DEFINITIONS), 'deal')
     end
 
     def task_fields(account)

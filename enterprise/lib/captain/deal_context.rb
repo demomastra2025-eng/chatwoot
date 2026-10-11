@@ -28,6 +28,24 @@ class Captain::DealContext
     Captain::ContextSummary.build(kind: 'deals', groups: groups, contact_id: @contact_id)
   end
 
+  def client_deals
+    scope = deals.joins(:stage)
+    groups = {
+      open: scope.where(ACTIVE_SQL),
+      won: scope.where(crm_stages: { outcome: 'won' }),
+      lost: scope.where(crm_stages: { outcome: 'lost' })
+    }.map do |key, group_scope|
+      limit = key == :open ? 8 : 2
+      order = key == :open ? 'crm_deals.updated_at DESC, crm_deals.id DESC' : HISTORY_ORDER_SQL
+      records = group_scope.reorder(Arel.sql(order)).limit(limit).includes(:pipeline, :stage)
+      {
+        status: key.to_s, total: group_scope.count,
+        deals: records.map { |deal| card(deal).merge(status: key.to_s) }
+      }
+    end
+    { contact_id: @contact_id, counts: groups.to_h { |group| [group[:status], group[:total]] }, groups: groups }
+  end
+
   def card(deal)
     Captain::ContextSummary.deal_card(
       deal.attributes.merge(
