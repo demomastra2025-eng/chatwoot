@@ -22,6 +22,16 @@ RSpec.describe Captain::Runtime::PartRegistry do
     expect { plan(four, mode: 'council') }.to raise_error(ArgumentError, /one to three/)
   end
 
+  it 'accepts a verified answer with one simple part in the plan call' do
+    accepted = described_class.new(context).accept!(
+      mode: 'answer_myself', parts: [{ fragment: 'Режим работы', executor_agent_id: 1 }],
+      answer: 'Сегодня до 18:00.'
+    )
+
+    expect(accepted[:answer]).to eq('Сегодня до 18:00.')
+    expect(accepted[:parts].sole['executor_agent_id']).to eq(1)
+  end
+
   it 'links an answer to one open part and also creates a separately declared new part' do
     old = plan([{ fragment: 'Visit', executor_agent_id: 1 }])[:parts].sole
     next_message

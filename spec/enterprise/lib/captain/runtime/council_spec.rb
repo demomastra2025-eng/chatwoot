@@ -1,4 +1,5 @@
 require 'rails_helper'
+require 'timeout'
 
 RSpec.describe Captain::Runtime::Council do
   let(:context) { { parts: [], state: { assistant_id: 1 }, agent_graph: [{ id: 1 }, { id: 2 }] } }
@@ -98,5 +99,33 @@ RSpec.describe Captain::Runtime::Council do
     expect(runner).to have_received(:run).twice
     expect(result['_participants']).to eq([1, 2])
     expect(result['status']).to eq('out_of_scope')
+  end
+
+  it 'starts independent consultations before waiting for their results' do
+    items = parts(%w[Анна Борис])
+    started = Queue.new
+    release = Queue.new
+    first = double('first contributor', id: 1, name: 'Первый', avatar_url: nil)
+    second = double('second contributor', id: 2, name: 'Второй', avatar_url: nil)
+    graph = double('graph')
+    allow(graph).to receive(:find).with(1).and_return(first)
+    allow(graph).to receive(:find).with(2).and_return(second)
+    instance = described_class.new(context: context, graph: graph, account: nil)
+    allow(instance).to receive(:consult) do |part|
+      started << part['id']
+      release.pop
+      { 'status' => 'ok', '_participants' => [part['executor_agent_id']] }
+    end
+    allow(instance).to receive(:assemble).and_return('Ответ')
+
+    worker = Thread.new { instance.run(items) }
+    2.times { Timeout.timeout(5) { started.pop } }
+    2.times { release << true }
+
+    expect(worker.value).to eq('Ответ')
+    expect(context[:council_contributors].pluck(:id)).to eq([1, 2])
+  ensure
+    2.times { release << true } if release
+    worker&.join(1)
   end
 end
