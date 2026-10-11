@@ -54,7 +54,8 @@ class Whatsapp::CallRoutingService
   end
 
   def assistant
-    @assistant ||= call.inbox&.captain_assistant
+    link = call.inbox&.captain_inbox
+    @assistant ||= link.captain_assistant if link&.ai_enabled? && link.captain_assistant&.active?
   end
 
   def ai_voice_enabled?

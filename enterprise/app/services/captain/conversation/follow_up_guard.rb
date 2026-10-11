@@ -41,7 +41,7 @@ class Captain::Conversation::FollowUpGuard
   attr_reader :reminder, :conversation, :assistant, :anchor_message, :message
 
   def records_current?
-    records_match? && conversation.pending? && assistant_feature_enabled? &&
+    records_match? && conversation.pending? && conversation.inbox.captain_active? && assistant_feature_enabled? &&
       follow_up_settings_current? && !legacy_conversation_plan_pending?
   end
 

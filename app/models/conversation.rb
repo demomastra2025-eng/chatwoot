@@ -497,6 +497,8 @@ class Conversation < ApplicationRecord
 
     CaptainInbox.joins(:captain_assistant)
                 .where(inbox_id: inbox_id, captain_assistants: { account_id: account_id, active: true })
+                .where('captain_inboxes.ai_enabled = TRUE OR EXISTS (SELECT 1 FROM inboxes WHERE inboxes.id = captain_inboxes.inbox_id ' \
+                       'AND inboxes.channel_type = \'Channel::Voice\')')
                 .exists?
   end
 

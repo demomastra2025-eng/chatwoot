@@ -60,7 +60,7 @@ RSpec.describe Reminder, type: :model do
 
   it 'rejects a specialist whose entry is inactive' do
     reminder
-    entry.update!(active: false)
+    entry.update_columns(active: false)
 
     expect_ownership_rejected
   end

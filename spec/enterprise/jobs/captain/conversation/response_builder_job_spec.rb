@@ -19,6 +19,15 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       allow(Captain::Conversation::TypingIndicatorService).to receive(:turn_off)
     end
 
+    it 'rejects a queued response when AI is disabled for the channel' do
+      inbox.captain_inbox.update!(ai_enabled: false)
+      job = described_class.new
+      job.instance_variable_set(:@conversation, conversation)
+      job.instance_variable_set(:@assistant, assistant)
+
+      expect(job.send(:conversation_eligible_for_response?)).to be false
+    end
+
     def create_sendable_document(name: 'Price list', filename: 'price-list.pdf')
       build(:captain_document, assistant: assistant, account: account, name: name, external_link: nil, status: :available).tap do |document|
         document.pdf_file.attach(

@@ -17,6 +17,15 @@ describe CaptainListener do
       create(:captain_inbox, captain_assistant: assistant, inbox: inbox)
     end
 
+    it 'does not run notes or FAQ generation when the text channel is disabled' do
+      inbox.captain_inbox.update!(ai_enabled: false)
+      inbox.reload
+      expect(Captain::Llm::ContactNotesService).not_to receive(:new)
+      expect(Captain::Llm::ConversationFaqService).not_to receive(:new)
+
+      listener.conversation_resolved(event)
+    end
+
     context 'when feature_memory is enabled' do
       before do
         assistant.config['feature_memory'] = true

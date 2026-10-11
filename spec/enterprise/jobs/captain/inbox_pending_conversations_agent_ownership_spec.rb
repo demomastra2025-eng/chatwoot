@@ -86,7 +86,7 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
   end
 
   it 'does not auto-complete a specialist conversation after the entry is disabled' do
-    entry.update!(active: false)
+    entry.update_columns(active: false)
 
     expect_no_auto_action
     expect(Captain::ConversationCompletionService).not_to have_received(:new)

@@ -11,7 +11,8 @@ module Enterprise::Message
     thread_conversation_ids = ::CommunicationThreadConversation.where(communication_thread_id: thread_ids).select(:conversation_id)
     thread_inbox_ids = ::Conversation.where(account_id: conversation.account_id, id: thread_conversation_ids).select(:inbox_id)
 
-    ::CaptainInbox.where(inbox_id: conversation.inbox_id).or(::CaptainInbox.where(inbox_id: thread_inbox_ids)).exists?
+    ::CaptainInbox.enabled_for_runtime.where(inbox_id: conversation.inbox_id)
+                  .or(::CaptainInbox.enabled_for_runtime.where(inbox_id: thread_inbox_ids)).exists?
   end
 
   def mark_pending_conversation_as_open_for_human_response(runtime_events: true)
@@ -42,7 +43,7 @@ module Enterprise::Message
     conversations = thread ? thread.conversations.where(account_id: conversation.account_id).pending : [conversation].select(&:pending?)
     conversations.filter_map do |candidate|
       # Look the assistant up by inbox: the caller's cached inbox may predate its Captain link.
-      assistant = ::CaptainInbox.find_by(inbox_id: candidate.inbox_id)&.captain_assistant
+      assistant = ::CaptainInbox.enabled_for_runtime.find_by(inbox_id: candidate.inbox_id)&.captain_assistant
       next unless assistant&.account_id == conversation.account_id
 
       Captain::Conversation::ResponseCancellationService.new(conversation: candidate, assistant: assistant, actor: sender)
@@ -74,7 +75,7 @@ module Enterprise::Message
   end
 
   def captain_human_control_candidate?
-    captain_public_human_reply? && ::CaptainInbox.exists?(inbox_id: conversation.inbox_id)
+    captain_public_human_reply? && ::CaptainInbox.enabled_for_runtime.exists?(inbox_id: conversation.inbox_id)
   end
 
   def captain_public_human_reply?
@@ -87,7 +88,7 @@ module Enterprise::Message
   def captain_pending_conversation?
     return false unless conversation.pending?
 
-    ::CaptainInbox.exists?(inbox_id: conversation.inbox_id)
+    ::CaptainInbox.enabled_for_runtime.exists?(inbox_id: conversation.inbox_id)
   end
 
   def template_bootstrap_message?

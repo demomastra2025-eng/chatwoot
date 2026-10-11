@@ -30,7 +30,7 @@ RSpec.describe Account::ConversationsResolutionSchedulerJob, type: :job do
       end
 
       it 'does not enqueue Captain resolution when the existing entry is disabled' do
-        assistant.update!(active: false)
+        assistant.update_columns(active: false)
 
         expect do
           described_class.perform_now

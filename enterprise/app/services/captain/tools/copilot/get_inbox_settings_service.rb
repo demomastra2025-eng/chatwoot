@@ -71,7 +71,7 @@ class Captain::Tools::Copilot::GetInboxSettingsService < Captain::Tools::Copilot
     return { enabled: false } if captain_inbox.blank?
 
     {
-      enabled: true,
+      enabled: captain_inbox.ai_enabled? || captain_inbox.inbox.channel_type == 'Channel::Voice',
       assistant_id: captain_inbox.captain_assistant_id,
       assistant_name: captain_inbox.captain_assistant&.name,
       auto_reply_mode: captain_inbox.auto_reply_mode,

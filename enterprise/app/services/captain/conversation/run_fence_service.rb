@@ -52,7 +52,10 @@ class Captain::Conversation::RunFenceService
   end
 
   def assistant_changed?
-    entry = Captain::Assistant.uncached { conversation.inbox.reload.captain_assistant }
+    entry = Captain::Assistant.uncached do
+      inbox = conversation.inbox.reload
+      inbox.captain_assistant if inbox.captain_active?
+    end
     return true if entry.blank? || entry.id != entry_assistant_id || !entry.active?
     return false if assistant.id == entry_assistant_id
 

@@ -25,8 +25,21 @@ RSpec.describe 'Captain entry activation', type: :model do
     message.save!
   end
 
+  it 'does not assign AI control when a text channel is disabled' do
+    inbox.captain_inbox.update!(ai_enabled: false)
+    inbox.reload
+
+    conversation = create(:conversation, account: account, inbox: inbox)
+
+    expect(inbox.captain_active?).to be false
+    expect(conversation).to be_open
+    expect(conversation.ai_pending_handler_present?(fresh_inbox: true)).to be false
+    expect(Captain::Conversation::ResponseBuilderJob).not_to receive(:perform_later)
+    receive_customer_message(conversation)
+  end
+
   it 'leaves a new incoming conversation open for people when the entry is disabled' do
-    assistant.update!(active: false)
+    assistant.update_columns(active: false)
     inbox.reload
     conversation = create(:conversation, account: account, inbox: inbox)
 
@@ -44,7 +57,7 @@ RSpec.describe 'Captain entry activation', type: :model do
   it 'opens an existing pending conversation on incoming activity after a cached entry is disabled' do
     conversation = create(:conversation, account: account, inbox: inbox)
     expect(conversation.inbox.captain_assistant).to be_active
-    Captain::Assistant.find(assistant.id).update!(active: false)
+    Captain::Assistant.find(assistant.id).update_columns(active: false)
     expect(Captain::Conversation::ResponseBuilderJob).not_to receive(:perform_later)
 
     receive_customer_message(conversation)
@@ -56,7 +69,7 @@ RSpec.describe 'Captain entry activation', type: :model do
   end
 
   it 'rejects a new inbox assignment to a disabled entry' do
-    assistant.update!(active: false)
+    assistant.update_columns(active: false)
     assignment = build(:captain_inbox, captain_assistant: assistant, inbox: create(:inbox, account: account))
 
     expect(assignment).not_to be_valid
@@ -78,7 +91,7 @@ RSpec.describe 'Captain entry activation', type: :model do
 
     it 'opens the conversation without treating a disabled entry as exhausted quota' do
       conversation = create(:conversation, account: account, inbox: inbox)
-      assistant.update!(active: false)
+      assistant.update_columns(active: false)
       conversation.inbox.reload
       expect(Captain::Conversation::ResponseBuilderJob).not_to receive(:perform_later)
 
@@ -88,6 +101,16 @@ RSpec.describe 'Captain entry activation', type: :model do
       expect(conversation.status_transitions.last).to have_attributes(source: 'system', actor_id: nil)
       expect(conversation.messages.where(sender: assistant)).to be_empty
       expect(conversation.captain_handoff_applied_at).to be_nil
+    end
+  end
+
+  context 'with a voice inbox' do
+    let(:inbox) { create(:inbox, account: account, channel: build(:channel_voice, account: account)) }
+
+    it 'keeps the existing voice assignment active independent of the text AI flag' do
+      inbox.captain_inbox.update!(ai_enabled: false)
+
+      expect(inbox.reload.captain_active?).to be true
     end
   end
 end

@@ -27,7 +27,8 @@ json.deletion_recovery resource.deletion_recovery_payload if Current.account_use
 channel_missing = resource.channel_missing?
 json.channel_missing channel_missing
 
-if resource.respond_to?(:captain_assistant) && resource.captain_assistant.present?
+if resource.respond_to?(:captain_assistant) && resource.captain_assistant.present? &&
+   (resource.channel_type == 'Channel::Voice' || resource.captain_inbox&.ai_enabled?)
   json.captain_assistant do
     json.id resource.captain_assistant.id
     json.name resource.captain_assistant.name

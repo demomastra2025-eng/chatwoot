@@ -61,9 +61,13 @@ class Captain::Tools::Copilot::ListInboxesService < Captain::Tools::Copilot::Bas
   def filter_by_captain_enabled(scope, value)
     enabled = cast_boolean(value)
     joined_scope = scope.left_outer_joins(:captain_inbox)
-    return joined_scope.where.not(captain_inboxes: { id: nil }) if enabled
+    if enabled
+      return joined_scope.where("captain_inboxes.ai_enabled = TRUE OR (captain_inboxes.id IS NOT NULL " \
+                                "AND inboxes.channel_type = 'Channel::Voice')")
+    end
 
-    joined_scope.where(captain_inboxes: { id: nil })
+    joined_scope.where("captain_inboxes.id IS NULL OR (captain_inboxes.ai_enabled = FALSE " \
+                       "AND inboxes.channel_type IS DISTINCT FROM 'Channel::Voice')")
   end
 
   def inbox_records(inboxes, include_members:, limit:)
@@ -119,7 +123,7 @@ class Captain::Tools::Copilot::ListInboxesService < Captain::Tools::Copilot::Bas
     return { enabled: false, available_auto_reply_modes: CaptainInbox::AUTO_REPLY_MODES } if captain_inbox.blank?
 
     {
-      enabled: true,
+      enabled: captain_inbox.ai_enabled? || captain_inbox.inbox.channel_type == 'Channel::Voice',
       assistant_id: captain_inbox.captain_assistant_id,
       assistant_name: captain_inbox.captain_assistant&.name,
       auto_reply_mode: captain_inbox.auto_reply_mode,

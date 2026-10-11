@@ -78,6 +78,12 @@ RSpec.describe Whatsapp::CallRoutingService do
       expect(decision.ai?).to be(true)
       expect(decision.human?).to be(false)
     end
+
+    it 'routes the call to a human when AI is disabled for the text channel' do
+      inbox.captain_inbox.update!(ai_enabled: false)
+
+      expect(decision).to have_attributes(action: 'human_ring', reason: 'conversation_pending_captain_missing', assistant: nil)
+    end
   end
 
   context 'when conversation is pending but AI voice is disabled on the WhatsApp inbox' do
