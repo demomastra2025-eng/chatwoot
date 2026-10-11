@@ -105,7 +105,11 @@ RSpec.describe 'Captain entry activation', type: :model do
   end
 
   context 'with a voice inbox' do
-    let(:inbox) { create(:inbox, account: account, channel: build(:channel_voice, account: account)) }
+    let(:inbox) do
+      allow(Twilio::VoiceWebhookSetupService).to receive(:new)
+        .and_return(instance_double(Twilio::VoiceWebhookSetupService, perform: 'APtest'))
+      create(:inbox, account: account, channel: build(:channel_voice, account: account))
+    end
 
     it 'keeps the existing voice assignment active independent of the text AI flag' do
       inbox.captain_inbox.update!(ai_enabled: false)

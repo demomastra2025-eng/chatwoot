@@ -19,7 +19,8 @@ RSpec.describe 'Captain workspace default agent', type: :model do
     account.captain_default_assistant_id = agent.id
     expect(account).not_to be_valid
 
-    agent.update!(active: true, usage_mode: 'internal_assistant')
+    internal = create(:captain_assistant, account: account, usage_mode: 'internal_assistant')
+    account.captain_default_assistant_id = internal.id
     expect(account).not_to be_valid
   end
 

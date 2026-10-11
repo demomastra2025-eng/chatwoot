@@ -26,6 +26,8 @@ RSpec.describe 'Captain channel matrix', type: :request do
   end
 
   it 'excludes voice channels and rejects attempts to change them' do
+    allow(Twilio::VoiceWebhookSetupService).to receive(:new)
+      .and_return(instance_double(Twilio::VoiceWebhookSetupService, perform: 'APtest'))
     voice = create(:inbox, account: account, channel: build(:channel_voice, account: account))
     create(:captain_inbox, inbox: voice, captain_assistant: agent)
 
@@ -97,8 +99,9 @@ RSpec.describe 'Captain channel matrix', type: :request do
   it 'allows only administrators to read or update the matrix' do
     member = create(:user, account: account, role: :agent)
     get path, headers: member.create_new_auth_token
-    expect(response).to have_http_status(:forbidden)
+    expect(response).to have_http_status(:unauthorized)
     patch path, headers: member.create_new_auth_token, as: :json, params: { default_main_assistant_id: agent.id }
-    expect(response).to have_http_status(:forbidden)
+    expect(response).to have_http_status(:unauthorized)
+    expect(account.reload.captain_default_assistant_id).to be_nil
   end
 end

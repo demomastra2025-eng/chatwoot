@@ -20,6 +20,8 @@ RSpec.describe Captain::AgentChannel, type: :model do
   end
 
   it 'keeps voice inboxes outside text channel membership' do
+    allow(Twilio::VoiceWebhookSetupService).to receive(:new)
+      .and_return(instance_double(Twilio::VoiceWebhookSetupService, perform: 'APtest'))
     voice = create(:inbox, account: account, channel: build(:channel_voice, account: account))
     expect(described_class.new(account: account, assistant: agent, inbox: voice)).not_to be_valid
     agent.update!(channel_scope: 'all')

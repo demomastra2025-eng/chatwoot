@@ -1110,7 +1110,18 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
       end
 
       it 'does not allow switching a connected assistant to internal mode' do
-        create(:captain_inbox, captain_assistant: assistant, inbox: create(:inbox, account: account))
+        link = create(:captain_inbox, captain_assistant: assistant, inbox: create(:inbox, account: account))
+
+        patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
+              params: { assistant: { usage_mode: 'internal_assistant' } },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(json_response.dig(:errors, 0, :code)).to eq('MAIN_AGENT_IN_USE')
+        expect(assistant.reload.usage_mode).to eq('external_agent')
+
+        link.update!(ai_enabled: false)
 
         patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
               params: { assistant: { usage_mode: 'internal_assistant' } },
