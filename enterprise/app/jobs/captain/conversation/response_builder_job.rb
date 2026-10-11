@@ -1227,8 +1227,10 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def conversation_eligible_for_response?
-    (conversation_allows_captain_response? || v2_handoff_tool_fired?) &&
-      @conversation.inbox.captain_active? && @conversation.inbox.captain_assistant&.id == @assistant.id
+    return false unless conversation_allows_captain_response? || v2_handoff_tool_fired?
+    return false unless @conversation.inbox.captain_active?
+
+    @conversation.inbox.captain_assistant&.id == @assistant.id
   end
 
   def control_generation_current?
