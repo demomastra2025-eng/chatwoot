@@ -66,6 +66,13 @@ class Captain::Conversation::FollowUpGuard
   end
 
   def assistant_controls_inbox?
+    if follow_up_metadata['part_id'].present?
+      return Captain::Conversation::PartDeliveryGuard.current?(
+        conversation: conversation, assistant: assistant,
+        part_id: follow_up_metadata['part_id'], version: follow_up_metadata['part_version']
+      )
+    end
+
     conversation.inbox_id.present? && agent_ownership.current?(
       expected_entry_id: follow_up_metadata['entry_assistant_id'],
       expected_revision: follow_up_metadata['routing_revision'],
@@ -89,8 +96,13 @@ class Captain::Conversation::FollowUpGuard
   end
 
   def anchor_authored_by_assistant?
-    anchor_message.outgoing? && !anchor_message.private? && !anchor_message.failed? &&
-      anchor_message.sender_type == assistant.class.name && anchor_message.sender_id == assistant.id
+    return false unless anchor_message.outgoing? && !anchor_message.private? && !anchor_message.failed?
+
+    return false unless anchor_message.sender_type == assistant.class.name
+    return true if anchor_message.sender_id == assistant.id
+    return false unless anchor_message.additional_attributes.to_h.dig('captain_ai_reply', 'assistant_id').to_i == anchor_message.sender_id
+
+    Array(anchor_message.content_attributes.to_h['council_contributors']).any? { |participant| participant['id'].to_i == assistant.id }
   end
 
   def eligible_anchor?
@@ -165,6 +177,7 @@ class Captain::Conversation::FollowUpGuard
   def run_fence_current?
     fence = control_fence
     return false unless valid_control_fence?(fence)
+    fence = fence.except('routing_revision', :routing_revision) if follow_up_metadata['part_id'].present?
 
     Captain::Conversation::RunFenceService.new(
       assistant: assistant,

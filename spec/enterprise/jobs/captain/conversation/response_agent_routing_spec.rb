@@ -87,12 +87,46 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
   end
 
   it 'rejects an assistant outside the entry graph even if its ID appears in the result' do
-    outsider = create(:captain_assistant, account: account)
+    outsider = create(:captain_assistant, account: account, channel_scope: 'selected')
     allow(runner).to receive(:generate_response).and_return('response' => 'Unreachable reply', 'agent_id' => outsider.id)
 
     described_class.perform_now(conversation, entry)
 
     expect(conversation.messages.outgoing).to be_empty
+  end
+
+  it 'stores council contributors in public message content attributes' do
+    response_from(entry, 'response' => 'Ответ по двум вопросам.',
+                         'council_contributors' => [{ id: entry.id, name: entry.name, avatar_url: entry.avatar_url },
+                                                    { id: actor.id, name: actor.name, avatar_url: actor.avatar_url }])
+
+    described_class.perform_now(conversation, entry)
+
+    reply = conversation.messages.outgoing.where(private: false).last
+    expect(reply.sender).to eq(entry)
+    expect(reply.content_attributes['council_contributors'].pluck('id')).to eq([entry.id, actor.id])
+    expect(account.reminders.captain_follow_up).to be_empty
+  end
+
+  it 'schedules an unresolved council part through its executor' do
+    part_id = SecureRandom.uuid
+    session = Captain::Conversation::AgentSession.new(entry: entry, conversation: conversation)
+    session.change do |data|
+      data['parts'] = [{ 'id' => part_id, 'version' => 1, 'executor_agent_id' => actor.id,
+                         'state' => 'waiting_customer', 'delivered' => [] }]
+    end
+    response_from(entry, 'response' => 'Уточните дату записи.',
+                         'part_refs' => [{ 'id' => part_id, 'version' => 1 }],
+                         'council_contributors' => [{ id: entry.id, name: entry.name, avatar_url: entry.avatar_url },
+                                                    { id: actor.id, name: actor.name, avatar_url: actor.avatar_url }])
+
+    described_class.perform_now(conversation, entry)
+
+    reply = conversation.messages.outgoing.where(private: false).last
+    reminder = account.reminders.captain_follow_up.last
+    expect(reply.sender).to eq(entry)
+    expect(reminder.metadata.dig('captain_follow_up', 'part_id')).to eq(part_id)
+    expect(reminder.metadata.dig('captain_follow_up', 'assistant_id')).to eq(actor.id)
   end
 
   it 'preserves an existing internal entry conversation without enabling external follow-up' do

@@ -1206,11 +1206,17 @@ class Reminder < ApplicationRecord
 
     errors.add(:account, 'must match the Captain assistant') unless assistant.account_id == account_id
     errors.add(:assistant, 'must be a customer-facing agent') unless assistant.external_agent?
-    owns_conversation = target.present? && Captain::Conversation::AgentOwnership.new(conversation: target, assistant: assistant).current?(
-      expected_entry_id: follow_up['entry_assistant_id'],
-      expected_revision: follow_up['routing_revision'],
-      enforce_revision: true
-    )
+    owns_conversation = if target.present? && follow_up['part_id'].present?
+                          Captain::Conversation::PartDeliveryGuard.current?(
+                            conversation: target, assistant: assistant,
+                            part_id: follow_up['part_id'], version: follow_up['part_version']
+                          )
+                        elsif target.present?
+                          Captain::Conversation::AgentOwnership.new(conversation: target, assistant: assistant).current?(
+                            expected_entry_id: follow_up['entry_assistant_id'],
+                            expected_revision: follow_up['routing_revision'], enforce_revision: true
+                          )
+                        end
     errors.add(:assistant, 'must currently control the follow-up conversation') unless owns_conversation && target.pending?
   end
 
@@ -1231,7 +1237,8 @@ class Reminder < ApplicationRecord
 
   def follow_up_anchor_scope_matches?(anchor, assistant, target)
     anchor.account_id == account_id && anchor.inbox_id == target.inbox_id &&
-      anchor.sender_type == assistant.class.name && anchor.sender_id == assistant.id
+      anchor.sender_type == assistant.class.name &&
+      (anchor.sender_id == assistant.id || council_follow_up_anchor?(anchor, assistant))
   end
 
   def follow_up_anchor_is_public?(anchor)
@@ -1243,8 +1250,16 @@ class Reminder < ApplicationRecord
     ai_reply = attributes['captain_ai_reply'].is_a?(Hash) ? attributes['captain_ai_reply'].deep_stringify_keys : {}
     follow_up = attributes['captain_follow_up'].is_a?(Hash) ? attributes['captain_follow_up'].deep_stringify_keys : {}
 
-    ai_reply['assistant_id'].to_i == assistant.id ||
+    ai_reply['assistant_id'].to_i == assistant.id || council_follow_up_anchor?(anchor, assistant) ||
       (follow_up['assistant_id'].to_i == assistant.id && follow_up['step_index'].present?)
+  end
+
+  def council_follow_up_anchor?(anchor, assistant)
+    return false unless anchor.additional_attributes.to_h.dig('captain_ai_reply', 'assistant_id').to_i == anchor.sender_id
+
+    Array(anchor.content_attributes.to_h['council_contributors']).any? do |participant|
+      participant['id'].to_i == assistant.id
+    end
   end
 
   def validate_delivery_policy

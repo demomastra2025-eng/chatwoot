@@ -84,6 +84,45 @@ RSpec.describe Integrations::Medelement::AiBookingOutcomeJob do
     expect(command.reload.execution_state['ai_booking_staff_note_id']).to eq(staff_notes.first.id)
   end
 
+  it 'accepts a part-bound outcome after a different agent takes ownership' do
+    specialist = create(:captain_assistant, account: account)
+    part_id = SecureRandom.uuid
+    session = Captain::Conversation::AgentSession.new(entry: assistant, conversation: conversation)
+    session.change do |data|
+      data['parts'] = [{ 'id' => part_id, 'version' => 1, 'executor_agent_id' => assistant.id,
+                         'state' => 'open' }]
+    end
+    capture_booking_fence!
+    command.update!(execution_state: command.execution_state.deep_merge(
+      'ai_booking_response_fence' => { 'part_id' => part_id, 'part_version' => 1 }
+    ))
+    session.update_routing(actor_id: specialist.id)
+
+    expect(described_class.new.send(:confirmation_actor_current?, command.reload, conversation, assistant)).to be(true)
+  end
+
+  it 'records a part-bound failed outcome for staff without sending an automatic reply after takeover' do
+    part_id = SecureRandom.uuid
+    Captain::Conversation::AgentSession.new(entry: assistant, conversation: conversation).change do |data|
+      data['parts'] = [{ 'id' => part_id, 'version' => 1, 'executor_agent_id' => assistant.id,
+                         'state' => 'open' }]
+    end
+    bind_failed_provider_status!
+    capture_booking_fence!
+    command.update!(execution_state: command.execution_state.deep_merge(
+      'ai_booking_response_fence' => { 'part_id' => part_id, 'part_version' => 1 }
+    ))
+    create(:message, conversation: conversation, account: account, inbox: inbox, message_type: :outgoing,
+                     sender: agent, private: false, content: 'agent reply')
+    command.update!(status: 'failed')
+
+    described_class.perform_now(command.id)
+
+    expect(staff_notes.count).to eq(1)
+    expect(command.reload.execution_state['ai_booking_staff_note_id']).to eq(staff_notes.first.id)
+    expect(conversation.messages.outgoing.where(private: false).where(sender_type: assistant.class.name)).to be_empty
+  end
+
   it 'leaves a staff note when an agent was already assigned to the pending conversation' do
     bind_failed_provider_status!
     capture_booking_fence!

@@ -13,12 +13,16 @@ class Captain::Conversation::FollowUpJob < ApplicationJob
     ai_reply = attributes['captain_ai_reply'].is_a?(Hash) ? attributes['captain_ai_reply'].deep_stringify_keys : {}
     follow_up = attributes['captain_follow_up'].is_a?(Hash) ? attributes['captain_follow_up'].deep_stringify_keys : {}
 
-    ai_reply['assistant_id'].to_i == assistant.id ||
+    council = Array(anchor_message.content_attributes.to_h['council_contributors'])
+    council_member = anchor_message.sender_type == assistant.class.name &&
+                     ai_reply['assistant_id'].to_i == anchor_message.sender_id &&
+                     council.any? { |participant| participant['id'].to_i == assistant.id }
+    ai_reply['assistant_id'].to_i == assistant.id || council_member ||
       (follow_up['assistant_id'].to_i == assistant.id && follow_up['step_index'].present?)
   end
 
-  def self.schedule!(conversation:, assistant:, anchor_message:, step:, control_fence:)
-    payload = build_schedule_payload(conversation, assistant, anchor_message, step, control_fence)
+  def self.schedule!(conversation:, assistant:, anchor_message:, step:, control_fence:, part_ref: nil)
+    payload = build_schedule_payload(conversation, assistant, anchor_message, step, control_fence, part_ref)
     return unless payload[:step][:delay_seconds].positive?
 
     conversation.with_lock(requires_new: true) { schedule_reminder!(payload) }
@@ -29,7 +33,7 @@ class Captain::Conversation::FollowUpJob < ApplicationJob
     nil
   end
 
-  def self.build_schedule_payload(conversation, assistant, anchor_message, step, control_fence)
+  def self.build_schedule_payload(conversation, assistant, anchor_message, step, control_fence, part_ref = nil)
     normalized_step = step.to_h.with_indifferent_access
     step_data = { index: normalized_step[:index].to_i, delay_seconds: normalized_step[:delay_seconds].to_i }
     {
@@ -37,6 +41,7 @@ class Captain::Conversation::FollowUpJob < ApplicationJob
       assistant: assistant,
       anchor_message: anchor_message,
       step: step_data,
+      part_ref: part_ref,
       control_fence: normalize_control_fence(control_fence),
       idempotency_key: "captain_follow_up:#{assistant.id}:#{anchor_message.id}:#{step_data[:index]}"
     }
@@ -82,12 +87,18 @@ class Captain::Conversation::FollowUpJob < ApplicationJob
 
   def self.reminder_metadata(payload)
     ownership = Captain::Conversation::AgentOwnership.new(conversation: payload[:conversation], assistant: payload[:assistant])
+    anchor = payload[:anchor_message].additional_attributes.to_h.deep_stringify_keys
+    part = payload[:part_ref]&.deep_stringify_keys
+    part ||= Array(anchor['captain_part_refs']).first if Array(anchor['captain_part_refs']).one?
+    part ||= anchor['captain_follow_up'].to_h.slice('part_id', 'part_version')
     {
       'auto_cancel_on_incoming_explicit' => true,
       'captain_follow_up' => {
         'assistant_id' => payload[:assistant].id,
         'entry_assistant_id' => ownership.entry&.id,
         'routing_revision' => ownership.routing_revision,
+        'part_id' => part&.dig('id') || part&.dig('part_id'),
+        'part_version' => part&.dig('version') || part&.dig('part_version'),
         'anchor_message_id' => payload[:anchor_message].id,
         'step_index' => payload[:step][:index],
         'control_fence' => payload[:control_fence]
@@ -617,6 +628,8 @@ class Captain::Conversation::FollowUpJob < ApplicationJob
         'assistant_id' => @assistant.id,
         'entry_assistant_id' => @reminder.metadata.dig('captain_follow_up', 'entry_assistant_id'),
         'routing_revision' => @reminder.metadata.dig('captain_follow_up', 'routing_revision'),
+        'part_id' => @reminder.metadata.dig('captain_follow_up', 'part_id'),
+        'part_version' => @reminder.metadata.dig('captain_follow_up', 'part_version'),
         'step_index' => @step_index,
         'anchor_message_id' => @anchor_message.id,
         'mode' => static_step? ? 'static' : 'ai',

@@ -2,7 +2,7 @@ class Captain::Tools::ProviderBookingHandoffService
   FENCE_KEY = 'ai_booking_response_fence'.freeze
   STAFF_NOTE_ID_KEY = Integrations::Medelement::AiBookingOutcomeJob::STAFF_NOTE_ID_KEY
   CUSTOMER_MESSAGE_ID_KEY = Integrations::Medelement::AiBookingOutcomeJob::CUSTOMER_MESSAGE_ID_KEY
-  FENCE_KEYS = %w[control_generation status_transition_id last_message_id entry_assistant_id routing_revision].freeze
+  FENCE_KEYS = %w[control_generation status_transition_id last_message_id entry_assistant_id routing_revision part_id part_version].freeze
 
   # rubocop:disable Metrics/ParameterLists
   def initialize(assistant:, conversation:, appointment: nil, command: nil, fence: nil, orphaned_write: false)
@@ -68,6 +68,13 @@ class Captain::Tools::ProviderBookingHandoffService
 
   def assistant_allowed?
     return false unless assistant&.active? && assistant.external_agent? && conversation&.account_id == assistant.account_id
+
+    if response_fence['part_id'].present?
+      return Captain::Conversation::PartDeliveryGuard.current?(
+        conversation: conversation, assistant: assistant,
+        part_id: response_fence['part_id'], version: response_fence['part_version'], allow_unknown: true
+      )
+    end
 
     Captain::Conversation::AgentOwnership.new(conversation: conversation, assistant: assistant).current?(
       expected_entry_id: response_fence['entry_assistant_id'],
@@ -149,7 +156,8 @@ class Captain::Tools::ProviderBookingHandoffService
     customer_message = nil
     return :stale_request if slot_conflict? && !current_incoming_request?
 
-    handoff_fence = slot_conflict? ? response_fence.merge('require_current_incoming' => true) : response_fence
+    handoff_fence = response_fence['part_id'].present? ? response_fence.except('routing_revision') : response_fence
+    handoff_fence = handoff_fence.merge('require_current_incoming' => true) if slot_conflict?
     result = conversation.bot_handoff!(source: 'system', actor: assistant, fence: handoff_fence) do
       customer_message = existing_conflict_message || create_conflict_message! if slot_conflict? && current_incoming_request?
       note = existing_staff_note || create_staff_note!

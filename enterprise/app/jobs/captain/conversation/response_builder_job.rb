@@ -121,13 +121,13 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
   def current_input_assistant
     ownership = Captain::Conversation::AgentOwnership.new(conversation: @conversation, assistant: @assistant)
-    Captain::AgentGraph.new(@assistant).find(ownership.current_actor_id) || @assistant
+    Captain::AgentGraph.new(@assistant, inbox: @conversation.inbox).find(ownership.current_actor_id) || @assistant
   end
 
   def resolve_response_assistant!
     ownership = Captain::Conversation::AgentOwnership.new(conversation: @conversation, assistant: @assistant)
     actor_id = @response['agent_id'].presence || ownership.current_actor_id || input_assistant.id
-    @response_assistant = Captain::AgentGraph.new(@assistant.reload).find(actor_id)
+    @response_assistant = Captain::AgentGraph.new(@assistant.reload, inbox: @conversation.inbox).find(actor_id)
     return if @response_assistant
 
     raise Captain::Conversation::ControlGenerationStaleError, 'Captain response agent is no longer reachable'
@@ -680,6 +680,8 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def schedule_first_follow_up(outgoing_message)
+    return schedule_council_follow_ups(outgoing_message) if @response['council_contributors'].present?
+
     settings = response_assistant.config.to_h.deep_stringify_keys.fetch('follow_up_settings', {}).to_h
     first_step = Array(settings['steps']).first.to_h.deep_stringify_keys
     delay_seconds = first_step['delay_seconds'].to_i
@@ -692,6 +694,29 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
       step: { index: 0, delay_seconds: delay_seconds },
       control_fence: current_response_fence
     )
+  end
+
+  def schedule_council_follow_ups(outgoing_message)
+    return unless account.feature_enabled?('captain_integration')
+
+    session = Captain::Conversation::AgentSession.new(entry: @assistant, conversation: @conversation).read
+    Array(@response['part_refs']).each do |ref|
+      part = Array(session['parts']).find { |item| item['id'] == ref['id'] && item['version'].to_i == ref['version'].to_i }
+      next unless part && part['state'].in?(%w[waiting_customer waiting_confirmation])
+
+      actor = Captain::AgentGraph.new(@assistant, inbox: inbox).find(part['executor_agent_id'])
+      next unless actor
+
+      settings = actor.config.to_h.deep_stringify_keys.fetch('follow_up_settings', {}).to_h
+      first_step = Array(settings['steps']).first.to_h.deep_stringify_keys
+      delay = first_step['delay_seconds'].to_i
+      next unless settings['enabled'] == true && delay.positive? && follow_up_step_configured?(settings, first_step)
+
+      Captain::Conversation::FollowUpJob.schedule!(
+        conversation: @conversation, assistant: actor, anchor_message: outgoing_message,
+        step: { index: 0, delay_seconds: delay }, control_fence: current_response_fence, part_ref: ref
+      )
+    end
   end
 
   def first_step_schedulable?(settings, step, outgoing_message, delay_seconds)
@@ -763,7 +788,29 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     message = build_outgoing_message(message_content, options)
     Array(options[:attachment_ids]).each { |attachment_id| build_message_attachment(message, attachment_id) }
     message.save!
+    record_part_delivery(message) if options[:captain_reply]
     message
+  end
+
+  def record_part_delivery(message)
+    refs = Array(@response['part_refs'])
+    return if refs.empty?
+
+    session = Captain::Conversation::AgentSession.new(entry: @assistant, conversation: @conversation)
+    session.change do |data|
+      refs.each do |ref|
+        part = Array(data['parts']).find { |item| item['id'] == ref['id'] && item['version'].to_i == ref['version'].to_i }
+        next unless part
+
+        part['delivered'] ||= []
+        next if part['delivered'].any? { |delivery| delivery['message_id'] == message.id }
+
+        part['delivered'] << { 'message_id' => message.id, 'content' => message.content.to_s,
+                               'at' => message.created_at.iso8601 }
+      end
+    end
+  rescue StandardError => e
+    Rails.logger.warn("[CAPTAIN][PartDelivery] conversation_id=#{@conversation.id} message_id=#{message.id} error_class=#{e.class.name}")
   end
 
   def build_outgoing_message(message_content, options)
@@ -773,6 +820,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
       inbox_id: inbox.id,
       sender: response_assistant,
       content: message_content,
+      content_attributes: council_content_attributes(options),
       additional_attributes: additional_message_attributes(
         agent_name: options[:agent_name],
         include_trace: options.fetch(:include_trace, true),
@@ -782,10 +830,18 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     )
   end
 
+  def council_content_attributes(options)
+    return {} unless options.fetch(:captain_reply, false)
+
+    contributors = @response&.dig('council_contributors')
+    contributors.present? ? { council_contributors: contributors } : {}
+  end
+
   def additional_message_attributes(agent_name:, include_trace:, captain_reply: false)
     {}.tap do |attributes|
       add_agent_name_attributes(attributes, agent_name)
       attributes[:captain_ai_reply] = { assistant_id: response_assistant.id } if captain_reply
+      attributes[:captain_part_refs] = @response['part_refs'] if captain_reply && @response&.dig('part_refs').present?
       attributes[:captain_trace] = @response['captain_trace'] if include_trace && @response&.dig('captain_trace').present?
     end
   end
@@ -974,7 +1030,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def display_agent_name_for(agent_name)
-    Captain::AgentGraph.new(@assistant).resolve(agent_name)&.name ||
+    Captain::AgentGraph.new(@assistant, inbox: @conversation.inbox).resolve(agent_name)&.name ||
       @assistant.scenarios.find { |scenario| scenario.handoff_key == agent_name }&.title
   end
 

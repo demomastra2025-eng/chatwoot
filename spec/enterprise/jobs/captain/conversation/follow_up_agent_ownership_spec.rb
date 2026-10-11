@@ -123,7 +123,7 @@ RSpec.describe 'Captain follow-up agent ownership', type: :job do
     expect(current?(reminder, entry, anchor)).to be(false)
   end
 
-  %w[transfer deactivate remove_route].each do |change|
+  %w[transfer deactivate remove_membership].each do |change|
     it "rechecks #{change} before sending a materialized static follow-up" do
       route_to(actor)
       anchor = anchor_for(actor)
@@ -132,7 +132,7 @@ RSpec.describe 'Captain follow-up agent ownership', type: :job do
       case change
       when 'transfer' then route_to(entry)
       when 'deactivate' then actor.update!(active: false)
-      when 'remove_route' then entry.update!(handoff_agent_ids: [])
+      when 'remove_membership' then actor.update!(channel_scope: 'selected')
       end
       provider = spy('provider')
 
@@ -142,6 +142,26 @@ RSpec.describe 'Captain follow-up agent ownership', type: :job do
       expect(reminder.reload).to be_captain_follow_up_delivery_suppressed
       expect(message.reload).to be_failed
     end
+  end
+
+  it 'keeps a part-bound follow-up eligible after another channel member becomes the owner' do
+    route_to(actor)
+    part_id = SecureRandom.uuid
+    session = Captain::Conversation::AgentSession.new(entry: entry, conversation: conversation)
+    session.change do |data|
+      data['parts'] = [{ 'id' => part_id, 'version' => 1, 'executor_agent_id' => actor.id,
+                         'state' => 'answered', 'delivered' => [] }]
+    end
+    anchor = create(:message, conversation: conversation, sender: actor, message_type: :outgoing,
+                             private: false, content: 'Answer',
+                             additional_attributes: { captain_ai_reply: { assistant_id: actor.id },
+                                                      captain_part_refs: [{ id: part_id, version: 1 }] })
+    reminder = schedule_for(actor, anchor: anchor)
+
+    route_to(entry)
+
+    expect(current?(reminder, actor, anchor)).to be(true)
+    expect(reminder.metadata.dig('captain_follow_up', 'part_id')).to eq(part_id)
   end
 
   it 'keeps sibling physical reminders when one conversation changes while shared human control revokes their delivery' do

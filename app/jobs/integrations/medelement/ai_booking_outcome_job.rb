@@ -201,8 +201,16 @@ class Integrations::Medelement::AiBookingOutcomeJob < ApplicationJob
 
     fence = command.execution_state.to_h[Captain::Tools::ProviderBookingHandoffService::FENCE_KEY].to_h.deep_stringify_keys
     ownership = Captain::Conversation::AgentOwnership.new(conversation: conversation, assistant: assistant)
-    return false unless ownership.current?(expected_entry_id: fence['entry_assistant_id'],
-                                           expected_revision: fence['routing_revision'], enforce_revision: true)
+    if fence['part_id'].present?
+      return false unless Captain::Conversation::PartDeliveryGuard.current?(
+        conversation: conversation, assistant: assistant,
+        part_id: fence['part_id'], version: fence['part_version'], allow_unknown: true
+      )
+      fence = fence.except('routing_revision')
+    else
+      return false unless ownership.current?(expected_entry_id: fence['entry_assistant_id'],
+                                             expected_revision: fence['routing_revision'], enforce_revision: true)
+    end
     return true if fence.blank?
 
     Captain::Conversation::RunFenceService.new(
