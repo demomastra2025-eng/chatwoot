@@ -24,12 +24,12 @@ vi.mock('reka-ui', () => ({
 
 // Tailwind utilities used for the switch geometry, in px (1rem = 16px).
 const PX = {
-  'h-4': 16,
-  'w-7': 28,
-  'size-3': 12,
+  'h-5': 20,
+  'w-9': 36,
+  'size-4': 16,
   'top-0.5': 2,
   'left-0.5': 2,
-  'data-[state=checked]:translate-x-3': 12,
+  'data-[state=checked]:translate-x-4': 16,
   'data-[state=unchecked]:translate-x-0': 0,
 };
 
@@ -53,14 +53,20 @@ const mountSwitch = (options = {}) => {
 };
 
 describe('Switch', () => {
-  it('keeps the upstream Chatwoot size: a 28x16 track and a 12px thumb', () => {
+  it('uses one app-wide size: a 36x20 track and a 16px thumb', () => {
     const { root, thumb } = mountSwitch();
 
     expect(root.classes()).toEqual(
-      expect.arrayContaining(['relative', 'h-4', 'w-7', 'shrink-0', 'p-0'])
+      expect.arrayContaining(['relative', 'h-5', 'w-9', 'shrink-0', 'p-0'])
     );
     expect(thumb.classes()).toEqual(
-      expect.arrayContaining(['absolute', 'top-0.5', 'left-0.5', 'size-3'])
+      expect.arrayContaining([
+        'absolute',
+        'top-0.5',
+        'left-0.5',
+        'size-4',
+        'pointer-events-none',
+      ])
     );
   });
 
@@ -98,13 +104,21 @@ describe('Switch', () => {
     expect(pick(classes, ['p-0.5', 'px-', 'py-', 'border-'])).toEqual([]);
   });
 
-  it('is blue when on and slate when off, in light and dark themes alike', () => {
-    const { root } = mountSwitch();
+  it('uses the primary button brand colour when on, lighter in dark mode', () => {
+    const { root, thumb } = mountSwitch();
     const classes = root.classes();
 
     expect(classes).toContain('bg-n-slate-6');
-    expect(classes).toContain('data-[state=checked]:bg-n-blue-9');
-    expect(classes.join(' ')).not.toMatch(/brand-solid|violet|dark:/);
+    expect(classes).toContain('data-[state=checked]:bg-n-brand-solid');
+    expect(classes).toContain('dark:data-[state=checked]:bg-n-violet-10');
+    expect(classes).not.toContain('data-[state=checked]:bg-n-blue-9');
+    expect(thumb.classes()).toEqual(
+      expect.arrayContaining([
+        'bg-n-background',
+        'dark:bg-n-slate-12',
+        'shadow-md',
+      ])
+    );
   });
 
   it('dims and blocks the pointer when disabled and keeps a focus ring', () => {
@@ -115,7 +129,7 @@ describe('Switch', () => {
     ).toBe(true);
     expect(root.classes()).toEqual(
       expect.arrayContaining([
-        'disabled:opacity-60',
+        'disabled:opacity-50',
         'disabled:cursor-not-allowed',
         'focus-visible:ring-1',
         'focus-visible:ring-n-brand',
