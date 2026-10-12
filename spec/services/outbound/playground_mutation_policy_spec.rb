@@ -97,7 +97,8 @@ RSpec.describe Outbound::PlaygroundMutationPolicy do
       destination.update!(active: false)
       expect(described_class.authorized_action?(delegated)).to be false
       destination.update!(active: true)
-      assistant.update!(handoff_agent_ids: [other.id])
+      # Graph membership is the channel mesh now (active external agents of the workspace), not the entry agent's handoff list.
+      destination.update!(usage_mode: 'internal_assistant')
       expect(described_class.authorized_action?(delegated)).to be false
     end
   end

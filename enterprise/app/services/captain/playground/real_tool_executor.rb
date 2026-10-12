@@ -12,6 +12,7 @@ class Captain::Playground::RealToolExecutor
   ].freeze
   DELIVERY_TOOLS = %w[send_notification send_message_to_conversation retry_failed_message edit_message request_confirmation create_touch].freeze
   CONTEXT_TOOLS = %w[create_deal create_task update_deal update_task update_appointment cancel_appointment create_company update_company update_contact add_contact_note add_private_note
+                     get_my_contact update_my_contact list_my_deals
                      add_label_to_conversation remove_label_from_conversation update_priority resolve_conversation
                      handoff transition_deal_stage change_task_status complete_task assign_conversation send_notification
                      send_message_to_conversation retry_failed_message edit_message cancel_response request_confirmation get_confirmation_request

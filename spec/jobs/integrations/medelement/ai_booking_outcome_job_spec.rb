@@ -531,7 +531,8 @@ RSpec.describe Integrations::Medelement::AiBookingOutcomeJob do
         when 'return_to_same_actor'
           route_booking_actor_to(entry_assistant)
           route_booking_actor_to(assistant)
-        when 'remove_route' then entry_assistant.update!(handoff_agent_ids: [])
+        # Routing is the channel mesh now: the specialist leaves the route when it is no longer a member of the channel.
+        when 'remove_route' then assistant.update!(channel_scope: 'selected')
         when 'deactivate' then assistant.update!(active: false)
         end
 

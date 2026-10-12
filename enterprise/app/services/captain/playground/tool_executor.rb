@@ -15,6 +15,7 @@ class Captain::Playground::ToolExecutor
   include Captain::Playground::CustomFieldTools
   include Captain::Playground::KnowledgeTools
   include Captain::Playground::ContactCompanyTools
+  include Captain::Playground::CustomerProfileTools
   include Captain::Playground::RecordSnapshots
   include Captain::Playground::TouchTools
 
@@ -23,6 +24,7 @@ class Captain::Playground::ToolExecutor
     'search_documentation' => :search_documentation, 'list_captain_documents' => :captain_documents, 'faq_lookup' => :faq_lookup,
     'get_article' => :article_details, 'search_articles' => :search_articles, 'search_canned_responses' => :search_canned_responses,
     'get_contact' => :contact_details, 'search_contacts' => :search_contacts, 'update_contact' => :update_contact,
+    'get_my_contact' => :my_contact_details, 'update_my_contact' => :update_my_contact, 'list_my_deals' => :list_my_deals,
     'get_company' => :company_details, 'search_companies' => :search_companies,
     'create_company' => :create_company, 'update_company' => :update_company,
     'search_scheduling_resources' => :scheduling_resources, 'list_scheduling_resources' => :scheduling_resources,

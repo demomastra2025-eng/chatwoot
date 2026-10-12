@@ -117,7 +117,8 @@ RSpec.describe Captain::Playground::ActionApproval do
       destination.update!(active: false)
       expect { service.confirm(id: preview['id'], digest: preview['digest']) }.to raise_error(Pundit::NotAuthorizedError)
       destination.update!(active: true)
-      assistant.update!(handoff_agent_ids: [])
+      # Routing is the channel mesh now (active external agents of the workspace), not the entry agent's handoff list.
+      destination.update!(usage_mode: 'internal_assistant')
       expect { service.confirm(id: preview['id'], digest: preview['digest']) }.to raise_error(Pundit::NotAuthorizedError)
     end
   end

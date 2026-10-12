@@ -31,10 +31,13 @@ RSpec.describe 'Playground external tool isolation' do
       source_path: @script_directory, script_path: File.join(@script_directory, 'send.rb'),
       parameters_schema: { 'type' => 'object', 'properties' => {} } }
   end
+  # Skill scripts are retired from the agent tool catalog (ToolCatalog.build_tool refuses them), so a stale script tool
+  # object is built directly: the Playground must still keep it away from the subprocess runner.
   let(:external_tools) do
-    [{ id: custom_tool.slug, custom: true }, mcp_definition, script_definition].map do |definition|
+    catalog_tools = [{ id: custom_tool.slug, custom: true }, mcp_definition].map do |definition|
       Captain::ToolCatalog.build_tool(definition, assistant: assistant, scope_name: Captain::ToolAccess::SCOPE_AGENT)
     end
+    catalog_tools << Captain::Tools::SkillScriptTool.new(assistant, script_definition)
   end
 
   before do

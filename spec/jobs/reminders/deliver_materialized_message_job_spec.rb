@@ -162,6 +162,8 @@ RSpec.describe Reminders::DeliverMaterializedMessageJob do
       status: :pending,
       body: 'Existing patient reminder'
     )
+    # A main agent of a channel with AI enabled cannot be deleted (channel rules), so AI is switched off on its channel first.
+    CaptainInbox.find_by!(captain_assistant_id: assistant.id).update!(ai_enabled: false)
     assistant.destroy!
     allow(SendReplyJob).to receive(:perform_now_with_follow_up_finalizer)
 
