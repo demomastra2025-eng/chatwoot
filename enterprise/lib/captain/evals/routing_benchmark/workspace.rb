@@ -30,8 +30,7 @@ class Captain::Evals::RoutingBenchmark::Workspace
     contact = contacts[dialogue['contact']] || create_contact!('name' => 'Тестовый пациент')
     contact_inbox = ContactInbox.create!(contact: contact, inbox: inbox, source_id: SecureRandom.uuid)
     Conversation.create!(account: account, inbox: inbox, contact: contact, contact_inbox: contact_inbox,
-                         status: :pending, additional_attributes: { 'captain_playground_source' => true,
-                                                                    'captain_benchmark_source' => true })
+                         status: :pending, additional_attributes: { 'captain_benchmark_source' => true })
   end
 
   def entry_agent(dialogue)
@@ -76,8 +75,11 @@ class Captain::Evals::RoutingBenchmark::Workspace
   end
 
   def create_contact!(row)
+    # No Playground marker: Captain::Playground::ExecutionBoundary blocks every tool for a marked
+    # record without a live Playground session. The isolated database has no channel webhook or
+    # provider integration, and the guard allows HTTP only to OpenRouter.
     Contact.create!(account: account, name: row.fetch('name'),
-                    additional_attributes: { 'captain_playground_source' => true })
+                    additional_attributes: { 'captain_benchmark_source' => true })
   end
 
   def create_knowledge!

@@ -4,10 +4,11 @@ This harness creates synthetic accounts in an isolated PostgreSQL database, runs
 customer turns through `Captain::Assistant::AgentRunnerService` and the native
 runner/tools path, reads the resulting database rows and monitoring events, and
 rolls back each dialogue. It never sends a channel reply. The synthetic API
-inbox has no webhook. A playground marker on contacts and conversations makes
-`Outbound::PlaygroundDeliveryPolicy` block external delivery and provider writes.
-The account and conversation markers also keep benchmark rows out of customer
-reports. No cleanup query or permanent fixture row is used.
+inbox has no webhook and the isolated database has no provider integration; the
+guard allows outbound HTTP only to OpenRouter. Records are not marked as Playground
+records, because the Playground execution boundary blocks every tool for a marked
+record without a live Playground session. A `captain_benchmark_source` marker
+identifies benchmark rows. No cleanup query or permanent fixture row is used.
 
 Run from a process whose PostgreSQL database name ends in `_benchmark` or `_test`.
 Set `REDIS_URL` and `BENCHMARK_REDIS_URL` to the same **dedicated** loopback Redis
