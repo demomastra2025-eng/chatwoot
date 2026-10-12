@@ -103,12 +103,18 @@ class Captain::Evals::RoutingBenchmark::Runner
         cost = provider_cost(LlmEvent.where(account_id: workspace.account.id).where('id > ?', last_event_id).to_a)
         @spent += cost
         @cases << scored.merge(fixture: path, dialogue: dialogue.fetch('id'), run: run_index, turn: index + 1,
-                               latency_ms: latency_ms, cost_usd: cost.to_f)
+                               latency_ms: latency_ms, cost_usd: cost.to_f, **turn_trace(turn, response, events))
         raise BudgetExceeded, 'budget_reached' if @spent >= @budget_usd
 
         history << { role: 'assistant', content: response['response'].to_s, agent_name: response['agent_name'] }
       end
     end
+  end
+
+  # Synthetic dialogue text only (no real customer data), kept for prompt review.
+  def turn_trace(turn, response, events)
+    completions = events.count { |event| event.event_name == 'llm.chat.complete' }
+    { customer: turn['customer'].to_s, reply: response['response'].to_s.truncate(1200), llm_calls: completions }
   end
 
   def create_incoming!(conversation, content)
