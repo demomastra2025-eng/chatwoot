@@ -12,6 +12,9 @@ namespace :captain do
     # The pinned connection opens an outer transaction that unpinning rolls back.
     pool = ActiveRecord::Base.connection_pool
     pool.pin_connection!(true)
+    # The benchmark runs with RAILS_ENV=test, where the LLM event subscriber is not installed by default.
+    # Tool calls, council events and provider cost (the budget cap) are all read from recorded LlmEvent rows.
+    Llm::EventSubscriber.install!
     begin
       Captain::Evals::RoutingBenchmark::Runner.new(
         fixtures: ENV.fetch('FIXTURES'), runs: ENV.fetch('RUNS', 3),
