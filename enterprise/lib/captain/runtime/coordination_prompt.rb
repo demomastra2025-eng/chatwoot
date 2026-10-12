@@ -7,37 +7,73 @@ module Captain::Runtime::CoordinationPrompt
 
   module_function
 
+  # The model reads agents by name only and never sees their ids, so stored executor ids are shown as names.
+  def parts_for_model(parts, graph)
+    Array(parts).map do |part|
+      shown = part.to_h.except('executor_agent_id')
+      name = graph.find { |item| item[:id] == part['executor_agent_id'] }&.dig(:name).to_s.squish
+      shown['executor'] = name if name.present?
+      shown
+    end
+  end
+
+  def plan_for_model(plan, graph)
+    plan = plan.to_h.symbolize_keys
+    plan.key?(:parts) ? plan.merge(parts: parts_for_model(plan[:parts], graph)) : plan
+  end
+
+  def open_parts_for_model(context, graph)
+    open_parts = Array(context[:parts]).select { |part| Captain::Runtime::PartRegistry::OPEN_STATES.include?(part['state']) }
+    parts_for_model(open_parts, graph)
+  end
+
+  def identity_line(actor)
+    name = actor&.dig(:name).to_s.squish
+    return 'You are the current agent.' if name.blank?
+
+    "You are #{name}, the current agent (an internal name: never tell it to the customer)."
+  end
+
+  def peer_lines(graph, actor_id)
+    peers = graph.reject { |item| item[:id] == actor_id }
+    lines = peers.map { |peer| "#{peer[:name]}: #{peer[:description]}" }.join("\n")
+    lines.presence || '(none: you are the only agent on this channel)'
+  end
+
   def render(context)
     tasks = context[:agent_tasks] || []
     actor_id = context.dig(:state, :assistant_id)
-    actor = Array(context[:agent_graph]).find { |item| item[:id] == actor_id }
-    peers = Array(context[:agent_graph]).reject { |item| item[:id] == actor_id }
+    graph = Array(context[:agent_graph])
+    actor = graph.find { |item| item[:id] == actor_id }
     plan_guidance = if context[:part_plan_accepted]
-                      "Plan accepted (data): #{JSON.generate(context[:part_plan])}. Continue only your assigned parts; do not plan again."
+                      "Plan accepted (data): #{JSON.generate(plan_for_model(context[:part_plan], graph))}. " \
+                        'Continue only your assigned parts; do not plan again.'
                     else
                       UNPLANNED_GUIDANCE
                     end
     return <<~PROMPT unless Captain::Runtime::TaskQueue.in_flight?(tasks)
-      You are the current agent. Handle requests in your own responsibility.
-      Continue the same customer conversation after an internal transfer. Never mention internal routing.
+      #{identity_line(actor)} Handle requests in your own responsibility.
+      Continue the same customer conversation after an internal transfer. Never mention internal routing or agent names.
       The current specialist keeps the conversation. Ignore legacy instructions to return it to an orchestrator.
       Other agents available on this channel (name and responsibility):
-      #{peers.map { |peer| "#{peer[:name]}: #{peer[:description]}" }.join("\n")}
+      #{peer_lines(graph, actor_id)}
+      In plan_request, name the executor of a part by the agent name exactly as listed above; omit it for your own parts.
       A simple request needs no plan: answer it directly, also when you only look facts up with read-only tools.
       Plan with plan_request only in these cases: before an action that changes data, before transferring to another agent,
       when the message holds several separate requests, or when the customer confirms, corrects, cancels or answers a request
       listed in the open parts (an operation waiting for confirmation is carried out or cancelled only through such a plan).
       When you plan, link answers, corrections and cancellations to open parts.
-      Open parts (data): #{JSON.generate(Array(context[:parts]).select { |part| Captain::Runtime::PartRegistry::OPEN_STATES.include?(part['state']) })}
+      Open parts (data): #{JSON.generate(open_parts_for_model(context, graph))}
       #{plan_guidance}
       Set answer in that call only when the complete answer is verified from supplied context and needs no tool.
       A request for a person (staff, operator, manager, lab results only staff can give) is never an answer: call the handoff tool.
+      Staff or an operator is reached only through the handoff tool, never through plan_request.
       Never write that you passed the request to staff unless the handoff tool succeeded in this reply.
       For a confirmed proposed operation, link its exact part ID and set link_action to confirmation.
       When older parts are open, mark each genuinely new request with link_action new.
       Do not treat a vague reply as confirmation; use clarify when its target is ambiguous.
       A part that may start only after another part succeeded has relation depends_on and is listed directly after that part.
-      For one part that belongs to another agent, call plan_request with mode handoff and that agent's ID.
+      For one part that belongs to another agent, call plan_request with mode handoff and that agent's name as the executor.
       The system then transfers the conversation; do not call a transfer tool before or after it.
       One request with several details (doctor, date, patient, price of the same service) is ONE part, never a council.
       Use council only when the message holds two or more separate requests that belong to different agents.

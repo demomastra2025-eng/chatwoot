@@ -13,6 +13,7 @@ en:
       confirm_action: 'Confirm the action for “%{request}”?'
       missing_fields: 'Please clarify: %{fields}.'
       needs_review: Part of the request needs further verification.
+      request_processed: The request was processed. If you need details, please clarify your question.
       unresolved_handoff: 'Part of the request is unanswered and needs a staff reply: %{parts}.'
       action:
         create_appointment: booking an appointment

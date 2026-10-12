@@ -13,6 +13,7 @@ kk:
       confirm_action: '«%{request}» сұрауы бойынша әрекетті растайсыз ба?'
       missing_fields: 'Нақтылаңыз: %{fields}.'
       needs_review: Сұраудың бір бөлігін қосымша тексеру қажет.
+      request_processed: Сұрау өңделді. Толығырақ білу үшін сұрағыңызды нақтылаңыз.
       unresolved_handoff: 'Өтініштің бір бөлігі жауапсыз қалды, қызметкердің жауабы қажет: %{parts}.'
       action:
         create_appointment: қабылдауға жазылу

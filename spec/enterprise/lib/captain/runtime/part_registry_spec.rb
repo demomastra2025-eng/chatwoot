@@ -159,6 +159,48 @@ RSpec.describe Captain::Runtime::PartRegistry do
     expect(receipt['status']).to eq('finished')
   end
 
+  it 'leaves the mode out of a plan that only confirms stored proposals, but not out of a mixed plan' do
+    old = plan([{ fragment: 'Book', executor_agent_id: 2 }], mode: 'handoff')[:parts].sole
+    confirm = [{ fragment: 'Да', executor_agent_id: 2, link_part_id: old['id'], link_action: 'confirmation' }]
+
+    %w[answer_myself handoff council].each_with_index do |mode, index|
+      described_class.new(context).update!(old['id'], state: 'waiting_confirmation',
+                                                      proposed_operation: { 'type' => 'create_appointment', 'params' => { 'slot_id' => 9 } })
+      next_message
+      context[:agent_request_id] = "confirm-#{index}"
+
+      expect(plan(confirm, mode: mode)[:parts].sole).to include('id' => old['id'], 'executor_agent_id' => 2, 'link_action' => 'confirmation')
+    end
+
+    described_class.new(context).update!(old['id'], state: 'waiting_confirmation',
+                                                    proposed_operation: { 'type' => 'create_appointment', 'params' => { 'slot_id' => 9 } })
+    next_message
+    context[:agent_request_id] = 'mixed'
+    mixed = confirm + [{ fragment: 'Ещё', executor_agent_id: 2, link_action: 'new' }]
+    expect { plan(mixed, mode: 'answer_myself') }.to raise_error(ArgumentError, 'This part belongs to another agent')
+  end
+
+  it 'turns the parts through the given block only for a new plan and replays a saved plan as it was' do
+    entry = create(:captain_assistant)
+    session = Captain::Conversation::AgentSession.new(entry: entry)
+    registry_context = { state: { assistant_id: entry.id }, agent_graph: [{ id: entry.id }], agent_session: session,
+                         agent_request_id: 'once', parts: [] }
+    turned = []
+    block = lambda do |items|
+      turned << items
+      items.map { |item| item.merge(executor_agent_id: entry.id) }
+    end
+
+    first = described_class.new(registry_context).accept!(mode: 'answer_myself', parts: [{ fragment: 'Адрес' }], &block)
+    replay_context = registry_context.merge(parts: session.read['parts'])
+    replay_context.delete(:part_plan_accepted)
+    replayed = described_class.new(replay_context).accept!(mode: 'answer_myself', parts: [{ fragment: 'Другое' }], &block)
+
+    expect(first[:parts].sole).to include('executor_agent_id' => entry.id, 'fragment' => 'Адрес')
+    expect(replayed[:parts].sole['fragment']).to eq('Адрес')
+    expect(turned).to eq([[{ fragment: 'Адрес' }]])
+  end
+
   it 'treats a plain confirmation without a stored proposal as an answer to the open part' do
     old = plan([{ fragment: 'Запишите к терапевту', executor_agent_id: 1 }])[:parts].sole
     next_message

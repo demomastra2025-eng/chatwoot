@@ -118,28 +118,67 @@ RSpec.describe Captain::Runtime::Council do
     expect(context[:parts].first['state']).to eq('open')
   end
 
-  it 'reassigns an out-of-scope part at most once' do
-    first_runtime = Captain::Runtime::Agent.new(name: 'assistant_1', instructions: 'First')
-    second_runtime = Captain::Runtime::Agent.new(name: 'assistant_2', instructions: 'Second')
-    first_actor = double('first actor', id: 1, agent: first_runtime)
-    second_actor = double('second actor', id: 2, agent: second_runtime)
-    graph = double('graph', find: second_actor)
-    instance = described_class.new(context: context, graph: graph, account: nil)
-    allow(instance).to receive(:fresh_actor).with(1).and_return(first_actor)
-    allow(instance).to receive(:fresh_actor).with(2).and_return(second_actor)
-    allow(instance).to receive(:consult_snapshot).and_return({})
-    runner = double('runner')
-    allow(Captain::Runtime::Runner).to receive(:new).and_return(runner)
-    allow(runner).to receive(:run).and_return(
-      double(error: nil, output: { status: 'out_of_scope', suggested_agent_id: 2 }.to_json),
-      double(error: nil, output: { status: 'out_of_scope', suggested_agent_id: 1 }.to_json)
-    )
+  describe 'reassigning an out-of-scope part' do
+    let(:first_actor) do
+      double('first actor', id: 1, name: 'Администратор', agent: Captain::Runtime::Agent.new(name: 'assistant_1', instructions: 'First'))
+    end
+    let(:second_actor) do
+      double('second actor', id: 2, name: 'Лаборатория', agent: Captain::Runtime::Agent.new(name: 'assistant_2', instructions: 'Second'))
+    end
+    let(:graph) { double('graph', agents: [first_actor, second_actor]) }
+    let(:instance) { described_class.new(context: context, graph: graph, account: nil) }
+    let(:runner) { double('runner') }
 
-    result = instance.send(:consult, { 'executor_agent_id' => 1, 'fragment' => 'Запрос' })
+    def out_of_scope(**suggestion)
+      double(error: nil, output: { status: 'out_of_scope' }.merge(suggestion).to_json)
+    end
 
-    expect(runner).to have_received(:run).twice
-    expect(result['_participants']).to eq([1, 2])
-    expect(result['status']).to eq('out_of_scope')
+    before do
+      allow(instance).to receive(:fresh_actor).with(1).and_return(first_actor)
+      allow(instance).to receive(:fresh_actor).with(2).and_return(second_actor)
+      allow(instance).to receive(:consult_snapshot).and_return({})
+      allow(Captain::Runtime::Runner).to receive(:new).and_return(runner)
+    end
+
+    it 'follows the agent name the consultant gives, ignoring case and quotes, at most once' do
+      allow(runner).to receive(:run).and_return(out_of_scope(suggested_agent: ' «лаборатория» '), out_of_scope(suggested_agent: 'Администратор'))
+
+      result = instance.send(:consult, { 'executor_agent_id' => 1, 'fragment' => 'Запрос' })
+
+      expect(runner).to have_received(:run).twice
+      expect(result['_participants']).to eq([1, 2])
+      expect(result['status']).to eq('out_of_scope')
+    end
+
+    it 'reassigns nothing for an unknown name, for the consultant itself or for a number that only guesses an agent' do
+      allow(runner).to receive(:run).and_return(out_of_scope(suggested_agent: 'Регистратура'), out_of_scope(suggested_agent: 'Администратор'),
+                                                 out_of_scope(suggested_agent_id: 2, suggested_agent: '2'))
+
+      3.times do
+        result = instance.send(:consult, { 'executor_agent_id' => 1, 'fragment' => 'Запрос' })
+        expect(result['_participants']).to eq([1])
+      end
+      expect(runner).to have_received(:run).exactly(3).times
+    end
+
+    it 'reassigns nothing when two agents share the suggested name' do
+      allow(graph).to receive(:agents).and_return([first_actor, second_actor, double('twin', id: 3, name: ' лаборатория ')])
+      allow(runner).to receive(:run).and_return(out_of_scope(suggested_agent: 'Лаборатория'))
+
+      expect(instance.send(:consult, { 'executor_agent_id' => 1, 'fragment' => 'Запрос' })['_participants']).to eq([1])
+    end
+  end
+
+  it 'gives a consultant the names and responsibilities of the other agents, and never an id' do
+    context[:agent_graph] = [{ id: 1, key: 'assistant_1', name: 'Администратор', description: 'Запись' },
+                             { id: 2, key: 'assistant_2', name: 'Лаборатория', description: 'Анализы' }]
+    actor = double('actor', id: 1, agent_name: 'assistant_1', config: {}, prompt_context_state: {})
+    allow(Captain::AssistantSafetyPreferences).to receive(:for).and_return({})
+
+    snapshot = council.send(:consult_snapshot, actor, { 'id' => 'part-1', 'version' => 1, 'executor_agent_id' => 1 })
+
+    expect(snapshot[:consult_peers]).to eq([{ name: 'Лаборатория', description: 'Анализы' }])
+    expect(snapshot).not_to have_key(:agent_graph)
   end
 
   it 'starts independent consultations before waiting for their results' do

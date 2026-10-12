@@ -66,7 +66,7 @@ class Captain::Runtime::Council
     )
     output = parse_result(result)
     if output['status'] == 'out_of_scope' && !reassigned
-      suggested = @graph.find(output['suggested_agent_id'])
+      suggested = suggested_agent(output)
       if suggested && suggested.id != actor.id
         reassigned_result = consult(part.merge('executor_agent_id' => suggested.id), reassigned: true)
         return reassigned_result.merge('_participants' => ([actor.id] + Array(reassigned_result['_participants'])).uniq)
@@ -79,6 +79,15 @@ class Captain::Runtime::Council
     unavailable
   ensure
     Current.executed_by = nil
+  end
+
+  # The consultant names the agent as it is listed in its prompt and never sees an id; an unknown or ambiguous name reassigns nothing.
+  def suggested_agent(output)
+    wanted = Captain::Runtime::ExecutorResolver.normalize(output['suggested_agent'])
+    return if wanted.empty?
+
+    matches = @graph.agents.select { |agent| Captain::Runtime::ExecutorResolver.normalize(agent.name) == wanted }
+    matches.first if matches.one?
   end
 
   def fresh_actor(id)
@@ -102,7 +111,13 @@ class Captain::Runtime::Council
     state[:prompt_context] = actor.prompt_context_state(state)
     state[:captain_response_fence] = state[:captain_response_fence].to_h.with_indifferent_access.except(:routing_revision)
     snapshot[:consult_part] = part.slice('id', 'version', 'patient', 'relation')
+    snapshot[:consult_peers] = consult_peers(actor)
     snapshot
+  end
+
+  # The other agents of the channel by name and responsibility, so a consultant can say who handles a part that is not its own.
+  def consult_peers(actor)
+    Array(@context[:agent_graph]).reject { |item| item[:id] == actor.id }.map { |item| item.slice(:name, :description) }
   end
 
   def public_history(history)

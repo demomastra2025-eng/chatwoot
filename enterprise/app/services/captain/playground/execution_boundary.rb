@@ -13,7 +13,7 @@ class Captain::Playground::ExecutionBoundary
     return failure('A server-owned Playground session is required') unless session.is_a?(Captain::Playground::Session)
 
     session.assert_context!(state)
-    return yield if tool.is_a?(Captain::Runtime::HandoffTool) || tool.is_a?(Captain::Runtime::TaskQueueTool)
+    return yield if coordination_tool?(tool)
     return Captain::Playground::ExternalToolPolicy.failure if opaque_external_tool?(tool)
     return Captain::Playground::ToolSupport.failure(tool.name) if Captain::Playground::ToolSupport::EXTERNAL_TOOLS.include?(tool.name.to_s)
 
@@ -28,6 +28,12 @@ class Captain::Playground::ExecutionBoundary
                                 data: { code: 'playground_confirmation_required', action_id: preview['id'], delivered: false })
   rescue ArgumentError, Pundit::NotAuthorizedError, ActiveRecord::RecordNotFound, Outbound::PlaygroundDeliveryPolicy::Blocked => e
     failure(e.message)
+  end
+
+  # The agent hand-over, the task queue and the request plan only write the session's own coordination state;
+  # they touch no records, real or synthetic, so they run as they are.
+  def self.coordination_tool?(tool)
+    [Captain::Runtime::HandoffTool, Captain::Runtime::TaskQueueTool, Captain::Runtime::PartPlanTool].any? { |kind| tool.is_a?(kind) }
   end
 
   def self.reject_trial_handles!(value)

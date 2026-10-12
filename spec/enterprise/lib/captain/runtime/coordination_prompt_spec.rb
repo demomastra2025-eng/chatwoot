@@ -72,6 +72,48 @@ RSpec.describe Captain::Runtime::CoordinationPrompt do
     expect(prompt).to include('One request with several details (doctor, date, patient, price of the same service) is ONE part, never a council.')
   end
 
+  it 'tells the agent its own name and asks to name an executor by the agent name, never by an id' do
+    context[:agent_tasks] = []
+
+    prompt = described_class.render(context)
+
+    expect(prompt).to start_with('You are Orders, the current agent')
+    expect(prompt).to include('Never mention internal routing or agent names.')
+    expect(prompt).to include('In plan_request, name the executor of a part by the agent name exactly as listed above; omit it for your own parts.')
+    expect(prompt).to include("call plan_request with mode handoff and that agent's name as the executor.")
+    expect(prompt).not_to include("that agent's ID", 'executor_agent_id', 'assistant_92')
+  end
+
+  it 'shows stored executors by name in the open parts and the accepted plan' do
+    context[:agent_tasks] = []
+    context[:parts] = [{ 'id' => 'open-part', 'state' => 'open', 'executor_agent_id' => 92, 'fragment' => 'Перенести' },
+                       { 'id' => 'done-part', 'state' => 'done', 'executor_agent_id' => 91 }]
+
+    open_parts = data_line(described_class.render(context), 'Open parts')
+    expect(open_parts).to eq([{ 'id' => 'open-part', 'state' => 'open', 'fragment' => 'Перенести', 'executor' => 'Appointments' }])
+
+    context[:part_plan_accepted] = true
+    context[:part_plan] = { mode: 'handoff', parts: [{ 'id' => 'plan-part', 'version' => 1, 'executor_agent_id' => 92 }] }
+    prompt = described_class.render(context)
+    plan = JSON.parse(prompt[/Plan accepted \(data\): (.*?)\. Continue only/, 1])
+
+    expect(plan['parts']).to eq([{ 'id' => 'plan-part', 'version' => 1, 'executor' => 'Appointments' }])
+    expect(prompt).not_to include('executor_agent_id')
+    expect(context[:parts].first).to include('executor_agent_id' => 92)
+  end
+
+  it 'says so when the agent is alone on the channel and does not invent a name for an unnamed agent' do
+    context[:agent_tasks] = []
+    context[:agent_graph] = [entry]
+
+    expect(described_class.render(context)).to start_with('You are Orders, the current agent').and include(
+      '(none: you are the only agent on this channel)'
+    )
+
+    context[:agent_graph] = [{ id: 91 }]
+    expect(described_class.render(context)).to start_with('You are the current agent. Handle requests in your own responsibility.')
+  end
+
   it 'does not ask a specialist to plan the same message after a handoff' do
     context[:agent_tasks] = []
     context[:part_plan_accepted] = true

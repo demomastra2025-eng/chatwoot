@@ -788,14 +788,9 @@ class Captain::Assistant::AgentRunnerService
     }.compact
   end
 
-  def tool_result_fallback_message(records)
-    "Request processed. Completed actions: #{formatted_tool_result_counts(records)}."
-  end
-
-  def formatted_tool_result_counts(records)
-    tool_result_counts(records).map do |tool_name, count|
-      "#{human_tool_name(tool_name)} ×#{count}"
-    end.join(', ')
+  # The customer gets a plain sentence: tool titles and counts are internal and stay in the events.
+  def tool_result_fallback_message(_records)
+    I18n.t('captain.coordination.request_processed', locale: :ru)
   end
 
   def tool_result_counts(records)
@@ -804,15 +799,6 @@ class Captain::Assistant::AgentRunnerService
       counts[tool_name] ||= 0
       counts[tool_name] += 1
     end
-  end
-
-  def human_tool_name(tool_name)
-    definition = Captain::ToolRegistry.definition_for(tool_name)
-    return definition.title.to_s if definition&.title.present?
-
-    'tool action'
-  rescue StandardError
-    'tool action'
   end
 
   def available_artifact_ids(context)

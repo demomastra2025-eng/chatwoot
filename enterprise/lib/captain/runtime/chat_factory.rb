@@ -106,13 +106,26 @@ class Captain::Runtime::ChatFactory
           - missing_fields: what you still need, each with patient, field and purpose; write field as a short polite
             question to the customer in their language (for example "на какой день вам удобно?").
           - proposed_operation: type and exact params, or null.
-          - status: ok, needs_information, out_of_scope or unavailable; contradictions; suggested_agent_id when out of scope.
+          - status: ok, needs_information, out_of_scope or unavailable; contradictions#{consult_suggestion_clause(context_wrapper.context)}
+          #{consult_peer_lines(context_wrapper.context)}
         PROMPT
       elsif context_wrapper.context[:agent_graph].present?
         prompts << Captain::Runtime::CoordinationPrompt.render(context_wrapper.context)
       end
       prompts << FINALIZATION_ONLY_INSTRUCTIONS if finalization_only
       prompts.join("\n\n")
+    end
+
+    # A consultant never sees an agent id: when a part is not its own it names the responsible agent as listed.
+    def consult_suggestion_clause(context)
+      Array(context[:consult_peers]).any? ? '; suggested_agent (the exact agent name from the list below) when out of scope.' : '.'
+    end
+
+    def consult_peer_lines(context)
+      peers = Array(context[:consult_peers])
+      return '' if peers.empty?
+
+      "Other agents (name and responsibility):\n#{peers.map { |peer| "#{peer[:name]}: #{peer[:description]}" }.join("\n")}"
     end
 
     def enforce_openrouter_tool_parameters!(chat, agent_tools, account: nil, schema: nil)

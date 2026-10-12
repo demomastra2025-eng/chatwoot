@@ -281,6 +281,99 @@ RSpec.describe Captain::Runtime::Runner do
       expect(reminders).to be_empty
     end
 
+    describe 'in a single-agent setup' do
+      before do
+        context[:state][:captain_runtime] = {}
+        context[:agent_graph] = [{ id: 92, key: 'assistant_92', name: 'Intermedical — DEV Test', description: 'Клиника' }]
+      end
+
+      def plan_with(**arguments)
+        Captain::Runtime::ToolWrapper.new(Captain::Runtime::PartPlanTool.new, chat.context_wrapper).call(arguments)
+      end
+
+      it 'delivers a greeting in one model call without any plan' do
+        chat.respond_with(reply('Здравствуйте! Чем могу помочь?'))
+        expect_initial_ask
+        expect(Llm::Runtime).not_to receive(:complete)
+
+        result = run_with
+
+        expect(result).to be_success
+        expect(result.output).to eq('Здравствуйте! Чем могу помочь?')
+        expect(chat.requests).to eq([:ask])
+        expect(result.context).not_to include(:part_plan, :part_plan_refused)
+      end
+
+      it 'delivers a plain reply after a plan_request that named an agent which does not exist' do
+        failed = nil
+        chat.respond_with(lambda do |_current_context|
+          failed = plan_with(mode: 'handoff', parts: [{ fragment: 'Анализы', executor: 'Лаборатория' }])
+          reply('Анализы можно сдать в клинике ежедневно.')
+        end)
+        expect_initial_ask
+        expect(Llm::Runtime).not_to receive(:complete)
+
+        result = run_with
+
+        expect(failed).to start_with('ERROR: ').and include('"retryable":true')
+        expect(result).to be_success
+        expect(result.output).to eq('Анализы можно сдать в клинике ежедневно.')
+        expect(chat.requests).to eq([:ask])
+        expect(result.context).not_to include(:part_plan_accepted, :part_plan_refused)
+      end
+
+      it 'delivers the reply after an agreed human handoff was first tried as a plan_request handoff, even when repeated' do
+        failures = []
+        chat.respond_with(lambda do |_current_context|
+          failures << plan_with(mode: 'handoff', parts: [{ fragment: 'Соедините с оператором' }])
+          failures << plan_with(mode: 'handoff', parts: [{ fragment: 'Соедините с оператором', executor: 'Intermedical — DEV Test' }])
+          failures << plan_with(mode: 'handoff', parts: [{ fragment: 'Соедините с оператором' }])
+          reply('Уточните, пожалуйста, чем помочь.')
+        end)
+        expect_initial_ask
+        expect(Llm::Runtime).not_to receive(:complete)
+
+        result = run_with
+
+        expect(failures).to all(start_with('ERROR: ').and(include('"retryable":true', 'call the handoff tool, not plan_request')))
+        expect(result).to be_success
+        expect(result.output).to eq('Уточните, пожалуйста, чем помочь.')
+        expect(result.context).not_to include(Captain::Runtime::ToolWrapper::TERMINAL_TOOL_STOP_KEY, :part_plan_accepted, :part_plan_refused)
+      end
+
+      it 'keeps the human handoff of the model, which follows the rejected plan, intact' do
+        chat.respond_with(lambda do |_current_context|
+          plan_with(mode: 'handoff', parts: [{ fragment: 'Соедините с оператором' }])
+          RubyLLM::Tool::Halt.new('conversation_handoff')
+        end)
+        expect_initial_ask
+        expect(Llm::Runtime).not_to receive(:complete)
+
+        result = run_with
+
+        expect(result).to be_success
+        expect(result.output).to eq('conversation_handoff')
+        expect(result.context).not_to include(Captain::Runtime::ToolWrapper::TERMINAL_TOOL_STOP_KEY, :part_plan_accepted, :transfer_guarded)
+        expect(reminders).to be_empty
+      end
+
+      it 'accepts a guessed executor number as the agent itself and delivers the reply of the planned message' do
+        chat.respond_with(lambda do |_current_context|
+          plan_with(mode: 'answer_myself', parts: [{ fragment: 'Записать на приём', executor_agent_id: 1 }])
+          reply('Выберите удобное время.')
+        end)
+        expect_initial_ask
+        expect(Llm::Runtime).not_to receive(:complete)
+
+        result = run_with
+
+        expect(result).to be_success
+        expect(result.output).to eq('Выберите удобное время.')
+        expect(result.context[:part_plan][:parts].sole).to include('executor_agent_id' => 92)
+        expect(chat.requests).to eq([:ask])
+      end
+    end
+
     describe 'with a proposed operation waiting for the customer' do
       let(:pending_part) do
         { 'id' => 'pending-part', 'state' => 'waiting_confirmation', 'fragment' => 'Book the synthetic scan',

@@ -236,4 +236,29 @@ RSpec.describe Captain::Runtime::ChatFactory do
       described_class.send(:configure, chat, agent, context_wrapper)
     end
   end
+
+  describe 'the consultation prompt' do
+    let(:agent) { Captain::Runtime::Agent.new(name: 'assistant_agent', model: 'openai/gpt-5.4-mini', instructions: 'Base prompt') }
+
+    def prompt_for(context)
+      described_class.send(:system_prompt_for, agent, Captain::Runtime::RunContext.new({ consult_mode: true }.merge(context)))
+    end
+
+    it 'lists the other agents by name and asks for the suggested agent by name, never by an id' do
+      peers = [{ name: 'Лаборатория', description: 'Анализы' }, { name: 'Регистратура', description: 'Запись на приём' }]
+
+      prompt = prompt_for(consult_peers: peers)
+
+      expect(prompt).to include('suggested_agent (the exact agent name from the list below) when out of scope.')
+      expect(prompt).to include("Other agents (name and responsibility):\nЛаборатория: Анализы\nРегистратура: Запись на приём")
+      expect(prompt).not_to include('suggested_agent_id')
+    end
+
+    it 'does not ask for a suggested agent when there is no other agent to suggest' do
+      prompt = prompt_for(consult_peers: [])
+
+      expect(prompt).to include('status: ok, needs_information, out_of_scope or unavailable; contradictions.')
+      expect(prompt).not_to include('suggested_agent', 'Other agents')
+    end
+  end
 end

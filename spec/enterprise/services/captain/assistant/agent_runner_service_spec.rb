@@ -664,7 +664,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
       expect(mock_runner).to have_received(:run).once
       expect(result).to include(
-        'response' => 'Request processed. Completed actions: Create Deal ×1.',
+        'response' => I18n.t('captain.coordination.request_processed', locale: :ru),
         'reasoning' => 'Final assistant response failed after completed tool actions; a deterministic tool-result fallback was used.',
         'agent_name' => 'scenario_agent',
         'handoff_tool_called' => false,
@@ -775,7 +775,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
       result = service.generate_response(message_history: message_history)
 
-      expect(result['response']).to eq('Request processed. Completed actions: tool action ×1.')
+      expect(result['response']).to eq(I18n.t('captain.coordination.request_processed', locale: :ru))
+      expect(result['response']).not_to match(/mutate_secret_thing|tool action|[A-Za-z]/)
     end
 
     it 'does not report planning alone as a completed customer action' do
@@ -794,7 +795,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
       result = service.generate_response(message_history: message_history)
 
-      expect(result['response'].to_s).not_to include('Request processed')
+      expect(result['response'].to_s).not_to include(I18n.t('captain.coordination.request_processed', locale: :ru))
     end
 
     it 'blocks model-invented response cancellation instead of silently suppressing the reply' do
@@ -887,7 +888,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
       expect(mock_runner).to have_received(:run).once
       expect(result).to include(
-        'response' => 'Request processed. Completed actions: Search Deals ×1.',
+        'response' => I18n.t('captain.coordination.request_processed', locale: :ru),
         'error_class' => 'Captain::Assistant::AgentRunnerService::SemanticOutputError',
         'schema_fallback' => true,
         'tool_result_fallback' => true
@@ -1711,7 +1712,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
           )
         )
         expect(Captain::Safety::CustomRulesEvaluator).to receive(:evaluate).with(
-          assistant: assistant, direction: 'output', text: 'Request processed. Completed actions: Create Deal ×1.',
+          assistant: assistant, direction: 'output', text: I18n.t('captain.coordination.request_processed', locale: :ru),
           context: kind_of(Hash)
         ).and_return(custom_check_result(
                        direction: 'output', status: :matched, rule_id: output_rule['id'], action: 'block'
@@ -1742,7 +1743,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
           instance_double(ChatwootExceptionTracker, capture_exception: true)
         )
         expect(Captain::Safety::CustomRulesEvaluator).to receive(:evaluate).with(
-          assistant: assistant, direction: 'output', text: 'Request processed. Completed actions: Update Deal ×1.',
+          assistant: assistant, direction: 'output', text: I18n.t('captain.coordination.request_processed', locale: :ru),
           context: kind_of(Hash)
         ).and_return(custom_check_result(
                        direction: 'output', status: :matched, rule_id: output_rule['id'], action: 'block'
@@ -1904,7 +1905,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         result = service.generate_response(message_history: message_history)
 
         expect(result).to include(
-          'response' => 'Request processed. Completed actions: Update Deal ×1.',
+          'response' => I18n.t('captain.coordination.request_processed', locale: :ru),
           'error_class' => 'StandardError',
           'error_message' => 'Test error',
           'tool_result_fallback' => true
@@ -1988,7 +1989,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         result = service.generate_response(message_history: message_history)
 
         expect(result).to include(
-          'response' => 'Request processed. Completed actions: Search Deals ×1, Update Deal ×2.',
+          'response' => I18n.t('captain.coordination.request_processed', locale: :ru),
           'reasoning' => 'Final assistant response failed after completed tool actions; a deterministic tool-result fallback was used.',
           'agent_name' => 'crm_agent',
           'handoff_tool_called' => false,

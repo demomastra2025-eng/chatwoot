@@ -9,6 +9,7 @@ class Captain::Runtime::PartRegistry
   MODES = %w[answer_myself handoff council clarify].freeze
   RELATIONS = %w[independent conditional depends_on].freeze
   LINK_ACTIONS = %w[new answer correction cancellation confirmation].freeze
+  ALREADY_PLANNED = 'This message already has a plan'
 
   # A confirmed proposal may run unattended when its part is independent, or when it is
   # a dependent part that names the part planned right before it (depends_on_part_id).
@@ -22,6 +23,8 @@ class Captain::Runtime::PartRegistry
     @context = context
   end
 
+  # The optional block turns the model's parts into registry parts (see ExecutorResolver) once the plan is known to be new:
+  # a plan that was already accepted for this request is replayed as it was saved.
   def accept!(mode:, parts:, clarification: nil, answer: nil)
     scope = Captain::Runtime::TaskQueue.new(@context).request_scope
     saved = @context[:agent_session]&.read
@@ -37,8 +40,9 @@ class Captain::Runtime::PartRegistry
     max_parts = mode == 'council' ? MAX_COUNCIL_PARTS : MAX_PARTS_PER_MESSAGE
     raise ArgumentError, 'Council needs one to three parts' if mode == 'council' && (!parts.is_a?(Array) || !parts.size.between?(1, max_parts))
     raise ArgumentError, 'A request needs one to thirty parts' unless parts.is_a?(Array) && parts.size.between?(1, max_parts)
-    raise ArgumentError, 'This message already has a plan' if @context[:part_plan_accepted]
+    raise ArgumentError, ALREADY_PLANNED if @context[:part_plan_accepted]
 
+    parts = yield(parts) if block_given?
     graph_ids = Array(@context[:agent_graph]).pluck(:id)
     previous = Array(@context[:parts])
     open_parts = previous.select { |part| OPEN_STATES.include?(part['state']) }
@@ -81,15 +85,19 @@ class Captain::Runtime::PartRegistry
         'delivered' => prior&.dig('delivered') || [] }.merge(kept_prerequisite(prior, relation))
     end
     link_prerequisites!(normalized)
-    raise ArgumentError, 'Council needs at least two agents' if mode == 'council' && normalized.pluck('executor_agent_id').uniq.size < 2
+    # Only confirmations: the stored proposals run with the executors recorded on them, so the mode decides nothing.
+    confirmations_only = normalized.all? { |part| part['link_action'] == 'confirmation' }
+    if mode == 'council' && !confirmations_only && normalized.pluck('executor_agent_id').uniq.size < 2
+      raise ArgumentError, 'Council needs at least two agents'
+    end
     raise ArgumentError, 'Clarification must be precise' if mode == 'clarify' && clarification.to_s.strip.blank?
     raise ArgumentError, 'An immediate answer needs one own part' if answer.present? &&
                                                                    (mode != 'answer_myself' || normalized.size != 1)
     current_id = @context.dig(:state, :assistant_id)
     wrong_agent = normalized.any? { |part| part['executor_agent_id'] != current_id }
-    raise ArgumentError, 'This part belongs to another agent' if mode == 'answer_myself' && wrong_agent
+    raise ArgumentError, 'This part belongs to another agent' if mode == 'answer_myself' && wrong_agent && !confirmations_only
     handoff_ids = normalized.pluck('executor_agent_id').uniq
-    raise ArgumentError, 'Handoff needs one different agent' if mode == 'handoff' &&
+    raise ArgumentError, 'Handoff needs one different agent' if mode == 'handoff' && !confirmations_only &&
                                                            (handoff_ids.size != 1 || handoff_ids.first == current_id)
 
     plan = { mode: mode, parts: normalized, clarification: clarification.to_s.strip, answer: answer.to_s.strip }

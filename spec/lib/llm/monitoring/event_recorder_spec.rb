@@ -57,6 +57,30 @@ RSpec.describe Llm::Monitoring::EventRecorder do
       end
     end
 
+    it 'persists an event whose synthetic Playground display id does not fit the column, keeping the value in the payload' do
+      synthetic_display_id = -1_400_000_000_000_000
+
+      event = described_class.record_notification(
+        event_name: 'captain.agent.transfer', started_at: Time.current, finished_at: Time.current,
+        payload: { account_id: account.id, request_id: 'synthetic-playground', run_source: 'playground',
+                   conversation_display_id: synthetic_display_id }
+      )
+
+      expect(event).to be_persisted
+      expect(event).to have_attributes(request_id: 'synthetic-playground', conversation_display_id: nil)
+      expect(event.payload).to include('conversation_display_id' => synthetic_display_id)
+    end
+
+    it 'keeps a display id that fits the column in the column and out of the payload' do
+      event = described_class.record_notification(
+        event_name: 'captain.agent.transfer', started_at: Time.current, finished_at: Time.current,
+        payload: { account_id: account.id, request_id: 'synthetic-live', conversation_display_id: 123 }
+      )
+
+      expect(event).to have_attributes(conversation_display_id: 123)
+      expect(event.payload).not_to have_key('conversation_display_id')
+    end
+
     it 'persists outer chat errors without counting another provider usage request' do
       event = nil
       expect do

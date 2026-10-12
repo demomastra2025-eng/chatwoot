@@ -50,6 +50,7 @@ class Llm::Monitoring::EventRecorder
   ).freeze
 
   PERSISTED_PAYLOAD_MAX_BYTES = 8.kilobytes
+  DISPLAY_ID_COLUMN_RANGE = (-2_147_483_648..2_147_483_647)
   ESSENTIAL_PAYLOAD_KEYS = %w[
     canonical_event_name event_name_alias error_class error_code failure_mode openrouter_generation_id parent_request_id
     run_source from_agent_id to_agent_id participants outcome part_id part_version executor_agent_id state
@@ -141,7 +142,7 @@ class Llm::Monitoring::EventRecorder
       account_id: integer_value(@payload['account_id']),
       assistant_id: integer_value(@payload['assistant_id']),
       conversation_id: integer_value(@payload['conversation_id']),
-      conversation_display_id: integer_value(@payload['conversation_display_id']),
+      conversation_display_id: column_display_id,
       copilot_thread_id: integer_value(@payload['copilot_thread_id']),
       prompt_tokens: prompt_tokens,
       completion_tokens: completion_tokens,
@@ -159,7 +160,19 @@ class Llm::Monitoring::EventRecorder
   end
 
   def summarized_payload
-    enforce_payload_budget(@payload.except(*PROMOTED_PAYLOAD_KEYS.to_a).merge(summary_fields).compact)
+    enforce_payload_budget(@payload.except(*PROMOTED_PAYLOAD_KEYS.to_a).merge(summary_fields).merge(oversized_display_id).compact)
+  end
+
+  # The column is a 32-bit integer. A synthetic (Playground) display id can lie outside it: the event is still stored,
+  # with the column empty and the value kept in the payload, instead of being lost to a range error.
+  def column_display_id
+    value = integer_value(@payload['conversation_display_id'])
+    value if value && DISPLAY_ID_COLUMN_RANGE.cover?(value)
+  end
+
+  def oversized_display_id
+    value = integer_value(@payload['conversation_display_id'])
+    value && !DISPLAY_ID_COLUMN_RANGE.cover?(value) ? { 'conversation_display_id' => value } : {}
   end
 
   def enqueue_openrouter_generation_metadata(event)
