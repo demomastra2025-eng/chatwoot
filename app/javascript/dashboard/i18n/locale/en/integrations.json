@@ -605,9 +605,9 @@
         "UPDATE_PRIORITY": "Change priority",
         "RESOLVE_CONVERSATION": "Resolve conversation",
         "HANDOFF": "Hand off to staff",
-        "CANCEL_TOUCH": "Cancel touch",
-        "DELETE_TOUCH": "Delete touch",
-        "CANCEL_TOUCHES": "Cancel touches",
+        "CANCEL_TOUCH": "Cancel reminder",
+        "DELETE_TOUCH": "Delete reminder",
+        "CANCEL_TOUCHES": "Cancel reminders",
         "MERGE_CONTACTS": "Merge contacts"
       },
       "CHANGES": {
@@ -644,7 +644,7 @@
         "EXPECTED_CLOSE_ON": "Expected close date",
         "APPOINTMENT_TYPE": "Appointment type",
         "CLIENT_COMMENT": "Patient comment",
-        "TOUCH_ID": "Scheduled touch",
+        "TOUCH_ID": "Scheduled reminder",
         "CONVERSATION_ID": "Conversation"
       },
       "STATUSES": {

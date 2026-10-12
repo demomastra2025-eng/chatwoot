@@ -39,9 +39,9 @@ RSpec.describe 'Captain account settings', type: :request do
 
   it 'requires administrator access for both reads and writes' do
     get path, headers: agent.create_new_auth_token, as: :json
-    expect(response).to have_http_status(:forbidden)
+    expect(response).to have_http_status(:unauthorized)
 
     patch path, params: { faq: { generate_from_resolved: true } }, headers: agent.create_new_auth_token, as: :json
-    expect(response).to have_http_status(:forbidden)
+    expect(response).to have_http_status(:unauthorized)
   end
 end

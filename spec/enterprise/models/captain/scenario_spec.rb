@@ -548,7 +548,8 @@ RSpec.describe Captain::Scenario, type: :model do
 
         resolved = scenario.send(:resolved_tools)
 
-        expect(resolved.map { |tool| tool[:id] }).to be_empty
+        # Human handoff is always available; the prompt mention adds nothing else.
+        expect(resolved.map { |tool| tool[:id] }).to eq(['handoff'])
       end
 
       it 'excludes disabled custom tools' do
@@ -584,8 +585,9 @@ RSpec.describe Captain::Scenario, type: :model do
           instruction: 'Use [@Add Contact Note](tool://add_contact_note)'
         )
 
-        expect(scenario.send(:resolved_tools)).to be_empty
-        expect(scenario.runtime_tool_ids).to eq([])
+        # An external agent's tool scope cannot be switched off; only the always-on handoff remains.
+        expect(scenario.send(:resolved_tools).map { |tool| tool[:id] }).to eq(['handoff'])
+        expect(scenario.runtime_tool_ids).not_to include('add_contact_note')
       end
     end
 

@@ -50,6 +50,7 @@ RSpec.describe 'Enterprise Conversations API', type: :request do
     let(:conversation) { create(:conversation, account: account, status: :open) }
 
     before do
+      Captain::AccountSettings.new(account).update!('handoff' => { 'auto_reply_on_last_incoming' => true })
       create(:captain_inbox, inbox: conversation.inbox, captain_assistant: assistant)
       create(:message, conversation: conversation, account: account, message_type: :incoming, private: false, content: 'Need help')
       allow(Captain::Conversation::TypingIndicatorService).to receive(:turn_on)

@@ -605,9 +605,9 @@
         "UPDATE_PRIORITY": "Изменить приоритет",
         "RESOLVE_CONVERSATION": "Завершить разговор",
         "HANDOFF": "Передать сотруднику",
-        "CANCEL_TOUCH": "Отменить касание",
-        "DELETE_TOUCH": "Удалить касание",
-        "CANCEL_TOUCHES": "Отменить касания",
+        "CANCEL_TOUCH": "Отменить напоминание",
+        "DELETE_TOUCH": "Удалить напоминание",
+        "CANCEL_TOUCHES": "Отменить напоминания",
         "MERGE_CONTACTS": "Объединить контакты"
       },
       "CHANGES": {
@@ -644,7 +644,7 @@
         "EXPECTED_CLOSE_ON": "Дата закрытия",
         "APPOINTMENT_TYPE": "Тип приёма",
         "CLIENT_COMMENT": "Комментарий пациента",
-        "TOUCH_ID": "Запланированное касание",
+        "TOUCH_ID": "Запланированное напоминание",
         "CONVERSATION_ID": "Диалог"
       },
       "STATUSES": {

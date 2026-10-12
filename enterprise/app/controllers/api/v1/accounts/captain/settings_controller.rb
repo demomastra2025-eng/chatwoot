@@ -13,7 +13,10 @@ class Api::V1::Accounts::Captain::SettingsController < Api::V1::Accounts::BaseCo
 
   private
 
+  SECTIONS = %w[understanding handoff faq conversation safety].freeze
+
+  # Only the known sections reach the strict Captain::AccountSettingsValidation schema check.
   def settings_params
-    params.permit!.to_h.except('controller', 'action', 'account_id', 'format')
+    params.to_unsafe_h.slice(*SECTIONS)
   end
 end
