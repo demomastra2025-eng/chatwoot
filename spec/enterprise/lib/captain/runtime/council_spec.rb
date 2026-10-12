@@ -4,19 +4,19 @@ require 'timeout'
 RSpec.describe Captain::Runtime::Council do
   let(:context) { { parts: [], state: { assistant_id: 1 }, agent_graph: [{ id: 1 }, { id: 2 }] } }
   let(:council) { described_class.new(context: context, graph: nil, account: nil) }
-  let(:composer) { instance_double(Captain::Runtime::CouncilComposer) }
+  let(:editor) { instance_double(Captain::Runtime::CouncilEditor) }
   let(:cannot_answer) { 'На этот вопрос я сейчас не могу ответить.' }
   let(:staff_will_answer) { 'По этому вопросу вам ответит сотрудник клиники.' }
   let(:proposal) { { 'type' => 'create_appointment', 'params' => { 'slot_id' => 9, 'starts_at' => '2026-10-14T10:00' } } }
 
-  def composer_failure(reason = 'timeout')
-    Captain::Runtime::CouncilComposer::Outcome.new(reply: nil, reason: reason)
+  def editor_failure(reason = 'timeout')
+    Captain::Runtime::CouncilEditor::Outcome.new(reply: nil, reason: reason)
   end
 
-  # The assembly specs below check what goes out when the composer produces nothing: the texts of the parts in order.
+  # The assembly specs below check what goes out when the editor produces nothing: the texts of the parts in order.
   before do
-    allow(Captain::Runtime::CouncilComposer).to receive(:new).and_return(composer)
-    allow(composer).to receive(:compose).and_return(composer_failure)
+    allow(Captain::Runtime::CouncilEditor).to receive(:new).and_return(editor)
+    allow(editor).to receive(:edit).and_return(editor_failure)
   end
 
   def parts(patients)
@@ -37,7 +37,7 @@ RSpec.describe Captain::Runtime::Council do
     consulted('', status: 'unavailable', facts: [])
   end
 
-  it 'sends the part texts in the order of the requests, a blank line apart, when the composer produces nothing' do
+  it 'sends the part texts in the order of the requests, a blank line apart, when the editor produces nothing' do
     reply = council.send(:assemble, parts(%w[Анна Борис]), [consulted('Приём стоит 5000 тенге.'), consulted('Мы находимся на улице Абая, 1.')])
 
     expect(reply).to eq("Приём стоит 5000 тенге.\n\nМы находимся на улице Абая, 1.")
@@ -191,7 +191,7 @@ RSpec.describe Captain::Runtime::Council do
     expect(reply).to eq('Бұл сұраққа қазір жауап бере алмаймын.')
   end
 
-  it 'sends the stock line once when several parts have no text and the composer produces nothing' do
+  it 'sends the stock line once when several parts have no text and the editor produces nothing' do
     reply = council.send(:assemble, parts(%w[Анна Борис]), [failed, failed])
 
     expect(reply).to eq(cannot_answer)
@@ -292,7 +292,7 @@ RSpec.describe Captain::Runtime::Council do
     end
   end
 
-  describe 'the composed reply' do
+  describe 'the edited reply' do
     let(:actor) do
       instance_double(Captain::Assistant, id: 1, resolved_agent_model: 'openai/gpt-6-luna', handoff_enabled?: true,
                                           selected_agent_tool_ids: %w[faq_lookup handoff])
@@ -300,7 +300,7 @@ RSpec.describe Captain::Runtime::Council do
     let(:graph) { instance_double(Captain::AgentGraph, find: actor, entry: actor) }
     let(:council) { described_class.new(context: context, graph: graph, account: nil, llm_context: :llm_context) }
     let(:calls) { [] }
-    let(:composed_text) { 'Приём стоит 5000 тенге. Записать вас к терапевту Иванову на 14 октября в 10:00?' }
+    let(:edited_text) { 'Приём стоит 5000 тенге. Записать вас к терапевту Иванову на 14 октября в 10:00?' }
 
     def line(text, confirmation: false, staff: false)
       { 'text' => text, 'needs_confirmation' => confirmation, 'staff_will_answer' => staff }
@@ -309,15 +309,15 @@ RSpec.describe Captain::Runtime::Council do
     before do
       context[:state][:conversation] = { id: 7 }
       context[:captain_v2_current_input] = 'Сколько стоит приём? И запишите Анну завтра'
-      allow(composer).to receive(:compose) do |**kwargs|
+      allow(editor).to receive(:edit) do |**kwargs|
         calls << kwargs
-        Captain::Runtime::CouncilComposer::Outcome.new(reply: composed_text)
+        Captain::Runtime::CouncilEditor::Outcome.new(reply: edited_text)
       end
-      allow(Captain::Runtime::CoordinationEvents).to receive(:council_composed)
-      allow(Captain::Runtime::CoordinationEvents).to receive(:council_composer_fallback)
+      allow(Captain::Runtime::CoordinationEvents).to receive(:council_edited)
+      allow(Captain::Runtime::CoordinationEvents).to receive(:council_editor_fallback)
     end
 
-    it 'is the reply of the composer, written from the part texts without data, identifiers or role labels' do
+    it 'is the reply of the editor, written from the part texts without data, identifiers or role labels' do
       question = 'Записать вас к терапевту Иванову на 14 октября в 10:00?'
       items = parts(%w[собеседник Борис])
       allow(council).to receive(:operation_valid?).and_return(true, false)
@@ -326,14 +326,14 @@ RSpec.describe Captain::Runtime::Council do
       reply = council.send(:assemble, items, [consulted(question, facts: facts, operation: proposal),
                                               consulted('Приём стоит 5000 тенге.')])
 
-      expect(reply).to eq(composed_text)
+      expect(reply).to eq(edited_text)
       expect(calls.sole).to eq(message: 'Сколько стоит приём? И запишите Анну завтра', language: 'ru',
                                parts: [line(question, confirmation: true), line('Приём стоит 5000 тенге.')])
       expect(context[:parts].pluck('state')).to eq(%w[waiting_confirmation answered])
       expect(context).not_to have_key(:council_handoff)
-      expect(Captain::Runtime::CoordinationEvents).to have_received(:council_composed)
+      expect(Captain::Runtime::CoordinationEvents).to have_received(:council_edited)
         .with(context: context, part_ids: %w[part-0 part-1], language: 'ru', handoff: false)
-      expect(Captain::Runtime::CoordinationEvents).not_to have_received(:council_composer_fallback)
+      expect(Captain::Runtime::CoordinationEvents).not_to have_received(:council_editor_fallback)
     end
 
     it 'detects Kazakh from the customer message' do
@@ -342,7 +342,7 @@ RSpec.describe Captain::Runtime::Council do
       council.send(:assemble, parts(%w[Анна]), [consulted('Баға 5000 теңге.')])
 
       expect(calls.sole).to include(language: 'kk')
-      expect(Captain::Runtime::CoordinationEvents).to have_received(:council_composed).with(hash_including(language: 'kk'))
+      expect(Captain::Runtime::CoordinationEvents).to have_received(:council_edited).with(hash_including(language: 'kk'))
     end
 
     it 'passes the questions of the consultants on as part texts, taking the missing field when a consultant wrote no text' do
@@ -365,11 +365,11 @@ RSpec.describe Captain::Runtime::Council do
 
       reply = council.send(:assemble, items, [consulted('Приём стоит 5000 тенге.'), failed])
 
-      expect(reply).to eq(composed_text)
+      expect(reply).to eq(edited_text)
       expect(calls.sole[:parts]).to eq([line('Приём стоит 5000 тенге.'), line(staff_will_answer, staff: true)])
       expect(context[:council_handoff]).to eq(reason: 'council_unresolved', parts: ['Результаты анализов'])
       expect(context[:parts].pluck('state')).to eq(%w[answered unknown])
-      expect(Captain::Runtime::CoordinationEvents).to have_received(:council_composed).with(hash_including(handoff: true))
+      expect(Captain::Runtime::CoordinationEvents).to have_received(:council_edited).with(hash_including(handoff: true))
     end
 
     it 'uses the honest sentence of the consultant for an unresolved part and flags it for staff' do
@@ -419,7 +419,7 @@ RSpec.describe Captain::Runtime::Council do
       expect(calls.sole[:parts]).to eq([line(question, confirmation: true), line(cannot_answer)])
       expect(context).not_to have_key(:council_handoff)
       expect(context[:parts].pluck('state')).to eq(%w[waiting_confirmation unknown])
-      expect(Captain::Runtime::CoordinationEvents).to have_received(:council_composed).with(hash_including(handoff: false))
+      expect(Captain::Runtime::CoordinationEvents).to have_received(:council_edited).with(hash_including(handoff: false))
     end
 
     it 'keeps the sentence of the consultant and requests no handoff when the agent cannot hand off' do
@@ -441,20 +441,20 @@ RSpec.describe Captain::Runtime::Council do
       expect(context).not_to have_key(:council_handoff)
     end
 
-    it 'sends the part texts in order, reports why and still requests the handoff its texts promise when the composer produces nothing' do
-      allow(composer).to receive(:compose).and_return(composer_failure('invalid'))
+    it 'sends the part texts in order, reports why and still requests the handoff its texts promise when the editor produces nothing' do
+      allow(editor).to receive(:edit).and_return(editor_failure('invalid'))
 
       reply = council.send(:assemble, parts(%w[Анна Борис]), [consulted('Приём стоит 5000 тенге.'), failed])
 
       expect(reply).to eq("Приём стоит 5000 тенге.\n\n#{staff_will_answer}")
       expect(context[:council_handoff]).to eq(reason: 'council_unresolved', parts: ['Запрос 1'])
-      expect(Captain::Runtime::CoordinationEvents).to have_received(:council_composer_fallback)
+      expect(Captain::Runtime::CoordinationEvents).to have_received(:council_editor_fallback)
         .with(context: context, part_ids: %w[part-0 part-1], reason: 'invalid')
-      expect(Captain::Runtime::CoordinationEvents).not_to have_received(:council_composed)
+      expect(Captain::Runtime::CoordinationEvents).not_to have_received(:council_edited)
     end
 
-    it 'says once that staff will answer when two unresolved parts have no text and the composer produces nothing' do
-      allow(composer).to receive(:compose).and_return(composer_failure('error'))
+    it 'says once that staff will answer when two unresolved parts have no text and the editor produces nothing' do
+      allow(editor).to receive(:edit).and_return(editor_failure('error'))
 
       reply = council.send(:assemble, parts(%w[Анна Борис]), [failed, failed])
 
@@ -462,8 +462,8 @@ RSpec.describe Captain::Runtime::Council do
       expect(context[:council_handoff]).to eq(reason: 'council_unresolved', parts: ['Запрос 0', 'Запрос 1'])
     end
 
-    it 'sends the confirmation question of the consultant when the composer produces nothing' do
-      allow(composer).to receive(:compose).and_return(composer_failure('empty'))
+    it 'sends the confirmation question of the consultant when the editor produces nothing' do
+      allow(editor).to receive(:edit).and_return(editor_failure('empty'))
       question = 'Записать вас к терапевту Иванову на 14 октября в 10:00?'
       allow(council).to receive(:operation_valid?).and_return(true)
 
@@ -474,24 +474,24 @@ RSpec.describe Captain::Runtime::Council do
       expect(context[:parts].sole['state']).to eq('waiting_confirmation')
     end
 
-    it 'sends the part texts in order when the composer itself fails' do
-      allow(composer).to receive(:compose).and_raise(StandardError, 'boom')
+    it 'sends the part texts in order when the editor itself fails' do
+      allow(editor).to receive(:edit).and_raise(StandardError, 'boom')
 
       reply = council.send(:assemble, parts(%w[Анна Борис]), [consulted('Приём стоит 5000 тенге.'), consulted('Адрес: улица Абая, 1.')])
 
       expect(reply).to eq("Приём стоит 5000 тенге.\n\nАдрес: улица Абая, 1.")
-      expect(Captain::Runtime::CoordinationEvents).to have_received(:council_composer_fallback).with(hash_including(reason: 'error'))
+      expect(Captain::Runtime::CoordinationEvents).to have_received(:council_editor_fallback).with(hash_including(reason: 'error'))
     end
 
-    it 'composes with the model of the acting agent unless the runner passes its own' do
+    it 'edits with the model of the acting agent unless the runner passes its own' do
       council.send(:assemble, parts(%w[Анна]), [consulted('Баға 5000 теңге.')])
-      expect(Captain::Runtime::CouncilComposer).to have_received(:new).with(
+      expect(Captain::Runtime::CouncilEditor).to have_received(:new).with(
         context: context, account: nil, llm_context: :llm_context, model: 'openai/gpt-6-luna'
       )
 
       runner_model = described_class.new(context: context, graph: graph, account: nil, model: 'openai/gpt-6-sol')
       runner_model.send(:assemble, parts(%w[Анна]), [consulted('Баға 5000 теңге.')])
-      expect(Captain::Runtime::CouncilComposer).to have_received(:new).with(hash_including(model: 'openai/gpt-6-sol'))
+      expect(Captain::Runtime::CouncilEditor).to have_received(:new).with(hash_including(model: 'openai/gpt-6-sol'))
     end
   end
 end

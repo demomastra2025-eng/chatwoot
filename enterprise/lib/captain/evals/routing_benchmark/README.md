@@ -195,11 +195,12 @@ includes only live events. The runtime persists `captain.agent.transfer`,
 `captain.agent.reset` with `run_source`. The council event contract is
 `captain.council.started` / `captain.council.finished` with participant IDs
 and an outcome on finish; `Captain::Runtime::Council` calls these producers.
-Each consultant of a council writes the final text of its part; the council coordinator rewrites these texts into the
-single customer reply and adds `captain.council.composed` (part IDs, reply language, `handoff`, and
-`reason: council_unresolved` when staff will answer an unresolved part) and `captain.council.composer_fallback` (part IDs
-and the `reason` the part texts were sent one after another instead: `timeout`, `error`, `invalid`, `empty`, `no_model`,
-`no_parts`, `disabled`). Neither carries text. The composer's reply is never checked or filtered by code.
-The composer is switched off with `CAPTAIN_COUNCIL_COMPOSER=off` (environment or an InstallationConfig row; `off`, `0`,
-`false`, `disabled`): the part texts go out in their original order at once; a handoff still follows for an unresolved
-part, because its text already says that staff will answer.
+Each consultant of a council writes the final text of its part; the council editor (a model call without reasoning and
+without tools) edits these texts into the single customer reply and adds `captain.council.edited` (part IDs, reply language,
+`handoff`, and `reason: council_unresolved` when staff will answer an unresolved part) and
+`captain.council.editor_fallback` (part IDs and the `reason` the part texts were sent one after another instead:
+`timeout`, `error`, `invalid`, `empty`, `no_model`, `no_parts`, `disabled`). Neither carries text. The editor's
+reply is never checked or filtered by code. The editor is switched off with `CAPTAIN_COUNCIL_EDITOR=off` (environment or an
+InstallationConfig row; `off`, `0`, `false`, `disabled`, `no`); the former name `CAPTAIN_COUNCIL_COMPOSER` is still read,
+and off under either name turns the editor off. The part texts then go out in their original order at once; a handoff
+still follows for an unresolved part, because its text already says that staff will answer.

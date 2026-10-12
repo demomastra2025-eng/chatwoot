@@ -1027,7 +1027,7 @@ RSpec.describe Captain::Runtime::ToolWrapper do
         )
         answer = Captain::Runtime::ConfirmedOperations.new(context: context, graph: double('graph', find: actor)).run(plan[:parts])
 
-        expect(answer).to eq(I18n.t('captain.coordination.action_done', locale: Captain::Runtime::CouncilComposer.locale_for(context)))
+        expect(answer).to eq(I18n.t('captain.coordination.action_done', locale: Captain::Runtime::CouncilEditor.locale_for(context)))
         expect(mutating_tool).to have_received(:perform).with(anything, title: 'Stored by the council').once
         expect(agent_session.read.fetch('operations').values).to contain_exactly(
           include('status' => 'finished', 'scope' => 'part:pending-part:v2', 'result' => include('success' => true))

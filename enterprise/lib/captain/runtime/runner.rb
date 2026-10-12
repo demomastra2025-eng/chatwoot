@@ -43,7 +43,7 @@ class Captain::Runtime::Runner
       Captain::Runtime::PartRegistry::OPEN_STATES.include?(part['state'])
     end
     fragments = parts.map { |part| part['fragment'].to_s.first(160) }.reject(&:blank?)
-    locale = Captain::Runtime::CouncilComposer.locale_for(session[:context_wrapper].context)
+    locale = Captain::Runtime::CouncilEditor.locale_for(session[:context_wrapper].context)
     text = I18n.t('captain.coordination.unfinished', locale: locale)
     text += " #{I18n.t('captain.coordination.open_parts', parts: fragments.join('; '), locale: locale)}" if fragments.any?
     { response: text, reasoning: '' }
@@ -202,7 +202,7 @@ class Captain::Runtime::Runner
     context[:part_plan_processed] = true
     if plan[:parts].all? { |part| part['link_action'] == 'cancellation' }
       return finalize_run(session[:chat], session[:context_wrapper], session[:current_agent],
-                          output: { response: I18n.t('captain.coordination.cancelled', locale: Captain::Runtime::CouncilComposer.locale_for(context)),
+                          output: { response: I18n.t('captain.coordination.cancelled', locale: Captain::Runtime::CouncilEditor.locale_for(context)),
                                     reasoning: '' })
     end
     if plan[:parts].all? { |part| part['link_action'] == 'confirmation' }

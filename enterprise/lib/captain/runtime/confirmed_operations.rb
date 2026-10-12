@@ -32,7 +32,7 @@ class Captain::Runtime::ConfirmedOperations
 
   # The customer's language: a Kazakh customer who confirms gets the outcome in Kazakh.
   def locale
-    @locale ||= Captain::Runtime::CouncilComposer.locale_for(@context)
+    @locale ||= Captain::Runtime::CouncilEditor.locale_for(@context)
   end
 
   # Keeps the confirmed order, but never places a part before the part it depends on.

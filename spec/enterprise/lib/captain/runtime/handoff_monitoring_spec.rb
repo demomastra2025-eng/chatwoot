@@ -146,18 +146,18 @@ RSpec.describe Captain::Runtime::CoordinationEvents do
     ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
   end
 
-  it 'publishes the composer events with identifiers, language and reason only' do
+  it 'publishes the editor events with identifiers, language and reason only' do
     context = { agent_request_id: 'synthetic-request', state: { account_id: 1, assistant_id: 2, conversation: { id: 3 } } }
     events = []
     subscriber = ActiveSupport::Notifications.subscribe(/\Acaptain\.council\./) do |*args|
       events << ActiveSupport::Notifications::Event.new(*args)
     end
 
-    described_class.council_composed(context: context, part_ids: %w[part-1 part-2], language: 'kk', handoff: true)
-    described_class.council_composed(context: context, part_ids: %w[part-1], language: 'ru', handoff: false)
-    described_class.council_composer_fallback(context: context, part_ids: %w[part-1], reason: :invalid)
+    described_class.council_edited(context: context, part_ids: %w[part-1 part-2], language: 'kk', handoff: true)
+    described_class.council_edited(context: context, part_ids: %w[part-1], language: 'ru', handoff: false)
+    described_class.council_editor_fallback(context: context, part_ids: %w[part-1], reason: :invalid)
 
-    expect(events.map(&:name)).to eq(%w[captain.council.composed captain.council.composed captain.council.composer_fallback])
+    expect(events.map(&:name)).to eq(%w[captain.council.edited captain.council.edited captain.council.editor_fallback])
     expect(events.first.payload).to include('parts' => %w[part-1 part-2], 'language' => 'kk', 'handoff' => true,
                                             'reason' => 'council_unresolved', 'conversation_id' => 3)
     expect(events.second.payload).to include('language' => 'ru', 'handoff' => false)
@@ -171,8 +171,8 @@ RSpec.describe Captain::Runtime::CoordinationEvents do
     allow(Llm::EventBus).to receive(:publish).and_raise(StandardError, 'bus down')
 
     expect do
-      described_class.council_composed(context: {}, part_ids: [], language: 'ru', handoff: false)
-      described_class.council_composer_fallback(context: {}, part_ids: [], reason: 'error')
+      described_class.council_edited(context: {}, part_ids: [], language: 'ru', handoff: false)
+      described_class.council_editor_fallback(context: {}, part_ids: [], reason: 'error')
     end.not_to raise_error
   end
 

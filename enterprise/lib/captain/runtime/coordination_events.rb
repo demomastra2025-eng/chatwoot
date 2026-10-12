@@ -13,14 +13,14 @@ class Captain::Runtime::CoordinationEvents
                                   parts: Array(part_ids), outcome: outcome.to_s)
     end
 
-    # The composer events carry identifiers, the reply language and a reason only: never the reply or the customer's text.
-    def council_composed(context:, part_ids:, language:, handoff:)
-      publish_quietly('council.composed', context: context, parts: Array(part_ids), language: language.to_s,
-                                          handoff: handoff.present?, reason: ('council_unresolved' if handoff))
+    # The editor events carry identifiers, the reply language and a reason only: never the reply or the customer's text.
+    def council_edited(context:, part_ids:, language:, handoff:)
+      publish_quietly('council.edited', context: context, parts: Array(part_ids), language: language.to_s,
+                                        handoff: handoff.present?, reason: ('council_unresolved' if handoff))
     end
 
-    def council_composer_fallback(context:, part_ids:, reason:)
-      publish_quietly('council.composer_fallback', context: context, parts: Array(part_ids), reason: reason.to_s)
+    def council_editor_fallback(context:, part_ids:, reason:)
+      publish_quietly('council.editor_fallback', context: context, parts: Array(part_ids), reason: reason.to_s)
     end
 
     # Operation events carry identifiers and the outcome state only: no customer text and no parameters.

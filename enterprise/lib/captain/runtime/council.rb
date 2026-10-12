@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # Read-only consultations run against separate snapshots. Each consultant writes the final text of its part; only the
-# assembler produces the customer reply (the composer rewrites the part texts into one message) and updates the durable
+# assembler produces the customer reply (the editor edits the part texts into one message) and updates the durable
 # part registry.
 class Captain::Runtime::Council
   STATUSES = %w[ok needs_information out_of_scope unavailable].freeze
@@ -9,7 +9,7 @@ class Captain::Runtime::Council
   HANDOFF_REASON = 'council_unresolved'
   PART_SEPARATOR = "\n\n"
 
-  # model: the acting agent's runtime model, used by the composer that writes the single customer reply.
+  # model: the acting agent's runtime model, used by the editor that writes the single customer reply.
   def initialize(context:, graph:, account:, llm_context: nil, model: nil)
     @context, @graph, @account, @llm_context, @model = context, graph, account, llm_context, model
   end
@@ -171,7 +171,7 @@ class Captain::Runtime::Council
   def assemble(parts, results)
     registry = Captain::Runtime::PartRegistry.new(@context)
     entries = parts.zip(results).map { |part, result| settle_part(registry, part, result) }
-    composed_reply(parts, entries)
+    edited_reply(parts, entries)
   end
 
   # Records the state of one part and returns what the reply needs of it: the text of the part, whether it waits for the
@@ -217,17 +217,17 @@ class Captain::Runtime::Council
     text.presence || Array(result['missing_fields']).filter_map { |field| field['field'].to_s.strip.presence }.join(' ')
   end
 
-  # The composer rewrites the part texts into one message. Without its reply the texts go out one after another, in the
+  # The editor edits the part texts into one message. Without its reply the texts go out one after another, in the
   # order of the requests. A part left unresolved is promised to staff only when a real handoff will follow: the response
   # builder performs it after the reply is delivered (see context[:council_handoff]). While a part waits for the customer's
   # yes or no there is no handoff: staff would answer that yes, and the stored proposal must stay with the agent that can
   # run it. The unresolved part then stays open and nothing is promised for it.
-  def composed_reply(parts, entries)
+  def edited_reply(parts, entries)
     @context.delete(:council_handoff)
     unresolved = entries.select { |entry| entry[:unresolved] }
     handoff = unresolved.any? && entries.none? { |entry| entry[:confirmation] } && staff_handoff_available?
     lines = entries.map { |entry| part_line(entry, handoff: handoff) }
-    reply = compose_reply(parts.pluck('id'), lines, handoff: handoff) || plain_reply(entries, lines, handoff: handoff)
+    reply = edit_reply(parts.pluck('id'), lines, handoff: handoff) || plain_reply(entries, lines, handoff: handoff)
     @context[:council_handoff] = { reason: HANDOFF_REASON, parts: unresolved.pluck(:request) } if handoff
     reply
   end
@@ -247,7 +247,7 @@ class Captain::Runtime::Council
     I18n.t("captain.coordination.#{handoff ? 'part_staff_will_answer' : 'part_cannot_answer'}", locale: reply_language.to_sym)
   end
 
-  # Without the composer's reply the part texts go out in the order of the requests. Exact repeats are dropped (the same stock
+  # Without the editor's reply the part texts go out in the order of the requests. Exact repeats are dropped (the same stock
   # line for two parts, the same question twice for one person); the same words about different people stay, since they ask
   # about different people.
   def plain_reply(entries, lines, handoff:)
@@ -257,38 +257,38 @@ class Captain::Runtime::Council
     keyed.uniq(&:first).filter_map { |_, text| text.presence }.join(PART_SEPARATOR)
   end
 
-  def compose_reply(ids, lines, handoff:)
-    outcome = Captain::Runtime::CouncilComposer.new(
-      context: @context, account: @account, llm_context: @llm_context, model: composer_model
-    ).compose(message: customer_message, language: reply_language, parts: lines)
+  def edit_reply(ids, lines, handoff:)
+    outcome = Captain::Runtime::CouncilEditor.new(
+      context: @context, account: @account, llm_context: @llm_context, model: editor_model
+    ).edit(message: customer_message, language: reply_language, parts: lines)
     if outcome.reply.blank?
-      Captain::Runtime::CoordinationEvents.council_composer_fallback(context: @context, part_ids: ids, reason: outcome.reason)
+      Captain::Runtime::CoordinationEvents.council_editor_fallback(context: @context, part_ids: ids, reason: outcome.reason)
       return
     end
 
-    Captain::Runtime::CoordinationEvents.council_composed(context: @context, part_ids: ids, language: reply_language, handoff: handoff)
+    Captain::Runtime::CoordinationEvents.council_edited(context: @context, part_ids: ids, language: reply_language, handoff: handoff)
     outcome.reply
   rescue Captain::Conversation::ControlGenerationStaleError
     raise
   rescue StandardError => e
-    Rails.logger.warn("[CAPTAIN][Council] composer unavailable error_class=#{e.class.name}")
-    Captain::Runtime::CoordinationEvents.council_composer_fallback(context: @context, part_ids: ids, reason: 'error')
+    Rails.logger.warn("[CAPTAIN][Council] editor unavailable error_class=#{e.class.name}")
+    Captain::Runtime::CoordinationEvents.council_editor_fallback(context: @context, part_ids: ids, reason: 'error')
     nil
   end
 
   def customer_message
-    @customer_message ||= Captain::Runtime::CouncilComposer.customer_text(@context[:captain_v2_current_input]).strip
+    @customer_message ||= Captain::Runtime::CouncilEditor.customer_text(@context[:captain_v2_current_input]).strip
   end
 
   def reply_language
-    @reply_language ||= Captain::Runtime::CouncilComposer.language_for(customer_message, history: @context[:conversation_history])
+    @reply_language ||= Captain::Runtime::CouncilEditor.language_for(customer_message, history: @context[:conversation_history])
   end
 
   def acting_actor
     @graph&.find(@context[:acting_assistant_id] || @context.dig(:state, :assistant_id)) || @graph&.entry
   end
 
-  def composer_model
+  def editor_model
     @model.presence || acting_actor&.resolved_agent_model
   end
 

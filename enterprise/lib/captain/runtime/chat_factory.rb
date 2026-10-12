@@ -149,7 +149,7 @@ class Captain::Runtime::ChatFactory
       agent.tools.any? { |tool| tool.name.to_s == Captain::Assistant::HANDOFF_TOOL_ID }
     end
 
-    # The consultant writes the final text of its part. The council composer only rewrites the texts of all parts into one
+    # The consultant writes the final text of its part. The council editor only edits the texts of all parts into one
     # message, so what the consultant writes is what the customer reads. It is told whether staff can take a part over.
     def consult_prompt(context)
       code = CONSULT_LANGUAGES.key?(context[:consult_language].to_s) ? context[:consult_language].to_s : 'ru'
