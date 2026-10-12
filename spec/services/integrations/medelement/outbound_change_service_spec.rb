@@ -86,6 +86,66 @@ RSpec.describe Integrations::Medelement::OutboundChangeService do
     expect(appointment.reload.custom_attributes['medelement_provider_sync_status']).to eq('succeeded')
   end
 
+  context 'when a move command ends before the calendar projects its status' do
+    let(:status) { Integrations::Medelement::AppointmentProviderStatus }
+    let(:source_starts_at) { appointment.starts_at }
+    let(:source_ends_at) { appointment.ends_at }
+
+    before do
+      source_starts_at
+      source_ends_at
+      appointment.update!(
+        starts_at: source_starts_at + 1.hour, ends_at: source_ends_at + 1.hour, external_ref: 'medelement:reception:reception-1',
+        custom_attributes: appointment.custom_attributes.merge('medelement_reception_code' => 'reception-1')
+      )
+    end
+
+    def move!
+      described_class.new(
+        entity_type: 'appointment', entity_id: appointment.id, event_name: 'appointment.updated', account_id: account.id,
+        actor_id: actor.id, event_key: 'appointment:moved:early-outcome',
+        change: {
+          changed_attributes: { 'starts_at' => [source_starts_at, appointment.starts_at], 'ends_at' => [source_ends_at, appointment.ends_at] },
+          desired_attributes: described_class.appointment_event_snapshot(appointment)
+        }
+      ).perform
+    end
+
+    def finish_early_with(**attributes)
+      allow(Integrations::Medelement::ProviderCommandConfirmationJob).to receive(:dispatch) do |request_id|
+        early = Integrations::Medelement::ProviderCommand.find_by!(confirmation_request_id: request_id)
+        early.update!(attributes.merge(status: early.status_for_transition(attributes.fetch(:status))))
+      end
+    end
+
+    it 'keeps an ambiguous answer flagged for reconciliation instead of projecting pending' do
+      finish_early_with(status: 'reconciliation_required')
+
+      command = move!
+
+      expect(command.reload).to be_reconciliation_required
+      expect(appointment.reload.custom_attributes).to include(status::ATTRIBUTE_KEY => status::UNKNOWN, status::COMMAND_ID_KEY => command.id)
+      expect(appointment.custom_attributes['medelement_move_request']).to include('state' => 'needs_reconciliation')
+    end
+
+    it 'keeps a rejection as a rejected move request on a reception that stays provider-confirmed' do
+      finish_early_with(status: 'failed', last_error_code: 'provider_http_error', last_error_status: 422)
+
+      command = move!
+
+      expect(command.reload).to be_failed
+      expect(appointment.reload.custom_attributes).to include(status::ATTRIBUTE_KEY => status::SUCCEEDED, status::COMMAND_ID_KEY => command.id)
+      expect(appointment.custom_attributes['medelement_move_request']).to include('state' => 'rejected', 'error_status' => 422)
+    end
+
+    it 'still projects pending for a command that has not ended' do
+      command = move!
+
+      expect(command.reload).to be_queued
+      expect(appointment.reload.custom_attributes).to include(status::ATTRIBUTE_KEY => status::PENDING)
+    end
+  end
+
   it 'binds a Captain booking before execution can acknowledge its create write' do
     assistant = create(:captain_assistant, account: account)
     conversation = create(:conversation, account: account, contact: contact)

@@ -128,7 +128,7 @@ class Integrations::Medelement::OutboundChangeService
         provider_status = projected_status_for(command)
         status = Integrations::Medelement::AppointmentProviderStatus
         provider_status = status::UNKNOWN if preserve_booking_review_status?(appointment, command, provider_status)
-        status.persist!(appointment, provider_status, command: command)
+        persist_projected_status!(appointment, command, provider_status)
         true
       end
     end
@@ -177,13 +177,31 @@ class Integrations::Medelement::OutboundChangeService
     command.create_reception? && command.request_snapshot.dig('actor', 'type') == 'Captain::Assistant'
   end
 
+  # The command starts the moment its confirmation resolves, so a fast outcome can arrive before the calendar projects the
+  # status: the projection then states the outcome instead of overwriting it with pending.
   def projected_status_for(command)
     status = Integrations::Medelement::AppointmentProviderStatus
     case command.logical_status
     when 'succeeded' then status::SUCCEEDED
     when 'provider_status_unknown' then status::UNKNOWN
+    when 'reconciliation_required' then unresolved_move?(command) ? status::UNKNOWN : status::PENDING
     when 'failed', 'declined', 'cancelled' then status::FAILED
     else status::PENDING
+    end
+  end
+
+  # An ambiguous move answer is flagged for reconciliation; a provider-owned appointment is left alone (see Executor).
+  def unresolved_move?(command)
+    command.move_reception? && !command.frozen_imported_source?
+  end
+
+  # A rejected move leaves the reception where it was, so only the move request is marked rejected.
+  def persist_projected_status!(appointment, command, provider_status)
+    status = Integrations::Medelement::AppointmentProviderStatus
+    if command.move_reception? && provider_status == status::FAILED
+      status.persist_rejected_move!(appointment, command: command)
+    else
+      status.persist!(appointment, provider_status, command: command)
     end
   end
 
