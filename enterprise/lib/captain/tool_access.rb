@@ -14,6 +14,14 @@ module Captain::ToolAccess
 
   module_function
 
+  # Some stored configs carry a legacy non-Hash tool_access (e.g. an array of
+  # pairs). Treat any malformed shape as "not configured" instead of raising.
+  def raw_scope(config, scope_name)
+    access = config.is_a?(Hash) ? config['tool_access'] : nil
+    scope = access.is_a?(Hash) ? access[scope_name.to_s] : nil
+    scope.is_a?(Hash) ? scope : nil
+  end
+
   def definitions_for(assistant)
     normalized_access = normalized_access_for(assistant)
 
@@ -35,11 +43,8 @@ module Captain::ToolAccess
   end
 
   def normalized_access_for(assistant)
-    raw_access = assistant.config.is_a?(Hash) ? assistant.config['tool_access'] : {}
-    raw_access = raw_access.to_h.deep_stringify_keys if raw_access.respond_to?(:to_h)
-
     available_tools_for(assistant).each_with_object({}) do |(scope_name, tools), result|
-      raw_scope = raw_access[scope_name].is_a?(Hash) ? raw_access[scope_name] : {}
+      raw_scope = raw_scope(assistant.config.to_h.deep_stringify_keys, scope_name) || {}
       available_ids = tools.pluck(:id)
       default_ids = default_tool_ids_for(scope_name, tools)
       selected = selected_ids_for(assistant, scope_name, raw_scope, default_ids, available_ids)
@@ -81,14 +86,13 @@ module Captain::ToolAccess
     tools = available_tools_for_scope(assistant, scope_name)
     available_ids = tools.pluck(:id)
     if scope_name == SCOPE_AGENT && assistant.external_agent?
-      raw_scope = assistant.config.to_h.dig('tool_access', scope_name).to_h
+      raw_scope = raw_scope(assistant.config.to_h, scope_name) || {}
       defaults = default_tool_ids_for(scope_name, tools)
       return selected_ids_for(assistant, scope_name, raw_scope, defaults, available_ids)
     end
     return sanitize_tool_ids(fallback_ids, available_ids) unless scope_configured?(assistant, scope_name)
 
-    raw_scope = assistant.config['tool_access'][scope_name]
-    raw_scope = {} unless raw_scope.is_a?(Hash)
+    raw_scope = raw_scope(assistant.config, scope_name) || {}
     default_ids = default_tool_ids_for(scope_name, tools)
     enabled = raw_scope.key?('enabled') ? ActiveModel::Type::Boolean.new.cast(raw_scope['enabled']) : default_ids.any?
     return [] unless enabled
@@ -124,8 +128,7 @@ module Captain::ToolAccess
     end
 
     config = assistant.config.to_h.deep_stringify_keys
-    raw_access = config['tool_access'].to_h.deep_stringify_keys
-    raw_scope = raw_access[scope_name.to_s]
+    raw_scope = raw_scope(config, scope_name)
     unless raw_scope.is_a?(Hash)
       return ActiveModel::Type::Boolean.new.cast(config['feature_web']) if config.key?('feature_web')
 

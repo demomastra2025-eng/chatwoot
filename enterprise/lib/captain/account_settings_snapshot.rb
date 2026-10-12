@@ -39,7 +39,7 @@ class Captain::AccountSettingsSnapshot
   end
 
   def legacy_web_enabled?(tool_id)
-    access = config.dig('tool_access', 'agent')
+    access = Captain::ToolAccess.raw_scope(config, 'agent')
     return boolean(config.fetch('feature_web', true)) unless access.is_a?(Hash)
 
     enabled = boolean(access.fetch('enabled', true))

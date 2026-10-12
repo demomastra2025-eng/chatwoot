@@ -91,7 +91,7 @@ module Captain
       original = parent.config.to_h.deep_stringify_keys
       snapshot = original.slice(*INHERITED_CONFIG_KEYS).deep_dup
       own_texts = [scenario.instruction, *shared_rule_texts(parent)]
-      selected = original.dig('tool_access', 'agent').to_h
+      selected = Captain::ToolAccess.raw_scope(original, 'agent') || {}
       selected_ids = Array(selected.fetch('tool_ids', DEFAULT_AGENT_TOOL_IDS)).map(&:to_s)
       referenced_ids = references(own_texts, TOOL_REFERENCE_REGEX) | Array(scenario.tools).map(&:to_s)
       capability_ids = Captain::ToolAccess::CAPABILITY_CONTROLLED_AGENT_TOOL_IDS

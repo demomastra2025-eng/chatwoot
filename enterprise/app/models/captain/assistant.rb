@@ -989,7 +989,7 @@ class Captain::Assistant < ApplicationRecord
   def initialize_context_access_config
     self.config = (config || {}).deep_stringify_keys
     config['context_access'] ||= {}
-    selected_tools = Array(config.dig('tool_access', 'agent', 'tool_ids')).map(&:to_s)
+    selected_tools = Array(Captain::ToolAccess.raw_scope(config, 'agent')&.fetch('tool_ids', nil)).map(&:to_s)
     return unless selected_tools.intersect?(SCHEDULING_CONTEXT_TOOL_IDS)
     return if config['context_access'].key?('appointment')
 
