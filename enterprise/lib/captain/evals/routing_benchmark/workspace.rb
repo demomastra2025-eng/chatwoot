@@ -42,6 +42,8 @@ class Captain::Evals::RoutingBenchmark::Workspace
 
   def data = @fixture.workspace
 
+  # Who can hand a request to whom comes from the channel grid, not from a list per agent: every agent works in
+  # all channels (the default scope), so each benchmark channel has the whole team and its entry agent first.
   def create_agents!
     data.fetch('agents').each do |row|
       config = { 'model' => @model, 'thinking_effort' => @reasoning,
@@ -50,9 +52,6 @@ class Captain::Evals::RoutingBenchmark::Workspace
         account: account, name: row.fetch('name'), routing_description: row.fetch('routing_description'),
         description: row.fetch('instructions'), config: config, active: true
       )
-    end
-    agents.each_value do |actor|
-      actor.update!(handoff_agent_ids: agents.values.filter_map { |other| other.id unless other.id == actor.id })
     end
   end
 

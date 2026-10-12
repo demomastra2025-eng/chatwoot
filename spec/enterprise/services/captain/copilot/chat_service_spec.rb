@@ -353,15 +353,8 @@ RSpec.describe Captain::Copilot::ChatService do
       )
     end
 
-    it 'applies a per-assistant guardrail action in the Copilot runtime' do
-      assistant.update!(
-        config: {
-          'safety_settings' => {
-            'moderation_enabled' => false,
-            'prompt_injection_action' => 'flag'
-          }
-        }
-      )
+    it 'applies the platform guardrail action in the Copilot runtime' do
+      account.update!(captain_runtime: { 'copilot_prompt_injection_guardrail' => 'flag' })
 
       result = described_class.new(assistant, {}).send(
         :moderate_input_response,
@@ -371,8 +364,15 @@ RSpec.describe Captain::Copilot::ChatService do
       expect(result).to be_nil
     end
 
-    it 'inherits account guardrail defaults when an assistant action is unset' do
-      assistant.update!(config: { 'safety_settings' => { 'prompt_injection_action' => nil } })
+    it 'ignores a safety override stored on the assistant itself and keeps the platform default' do
+      assistant.update!(
+        config: {
+          'safety_settings' => {
+            'moderation_enabled' => false,
+            'prompt_injection_action' => 'flag'
+          }
+        }
+      )
 
       result = described_class.new(assistant, {}).send(
         :moderate_input_response,

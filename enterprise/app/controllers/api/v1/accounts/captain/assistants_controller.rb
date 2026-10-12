@@ -11,9 +11,6 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     :use_audio_transcriptions,
     :message_collapse_window_seconds, :history_message_limit
   ].freeze
-  ASSISTANT_SAFETY_SETTINGS_FIELDS = %i[
-    moderation_enabled prompt_injection_action sensitive_info_action
-  ].concat([{ custom_rules: %i[id name direction instruction action enabled message] }]).freeze
   VOICE_SETTINGS_ARRAY_FIELDS = Telephony::AiVoice::VoiceSettingsDefaults::ARRAY_KEYS.index_with { [] }.freeze
   VOICE_SETTINGS_SCALAR_FIELDS = (Telephony::AiVoice::VoiceSettingsDefaults::DEFAULTS.keys - VOICE_SETTINGS_ARRAY_FIELDS.keys).freeze
 
@@ -26,7 +23,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   around_action :with_model_metadata_snapshot, only: :show
 
   def index
-    @assistants = account_assistants.ordered.includes(:outgoing_agent_handoffs)
+    @assistants = account_assistants.ordered
   end
 
   def show
@@ -182,6 +179,11 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     @account_assistants ||= Captain::Assistant.for_account(Current.account.id).with_attached_avatar
   end
 
+  # Safety checks are one workspace-wide setting (Captain::AccountSettings), not
+  # an agent setting, and the agents a channel can transfer to come from the
+  # channel grid. config.safety_settings and handoff_agent_ids are therefore
+  # not permitted here: a legacy client may still send them, they are ignored
+  # and the stored legacy data is left as it is.
   def assistant_params
     permitted = params.require(:assistant).permit(
       :name,
@@ -190,7 +192,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
       :active,
       :channel_scope,
       :routing_description,
-      config: ASSISTANT_CONFIG_FIELDS + [{ safety_settings: ASSISTANT_SAFETY_SETTINGS_FIELDS }]
+      config: ASSISTANT_CONFIG_FIELDS
     )
 
     merge_optional_config_param!(permitted, :context_access)
@@ -198,7 +200,6 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     merge_optional_config_param!(permitted, :follow_up_settings)
     merge_optional_config_param!(permitted, :outcome_reason_settings)
     merge_optional_config_param!(permitted, :voice_settings, voice_settings: true)
-    merge_custom_safety_rules_param!(permitted)
 
     permitted
   end
@@ -223,10 +224,6 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
       incoming_config['voice_settings'] = normalized_voice_settings(existing_config['voice_settings'], incoming_config['voice_settings'])
     end
     normalize_outcome_reason_settings!(incoming_config, existing_config['outcome_reason_settings'])
-    if incoming_config.key?('safety_settings')
-      incoming_config['safety_settings'] = existing_config['safety_settings'].to_h.deep_stringify_keys
-                                                                             .merge(incoming_config['safety_settings'].to_h.deep_stringify_keys)
-    end
 
     attributes.merge(config: normalized_model_config(existing_config.merge(incoming_config)))
   end
@@ -263,11 +260,6 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     return render_main_agent_in_use if error.record.errors.of_kind?(:base, I18n.t('captain.channel_matrix.main_agent_in_use'))
     return render_default_agent_in_use if error.record.errors.of_kind?(:base, I18n.t('captain.channel_matrix.default_agent_in_use'))
 
-    violations = error.record.errors.where(:config, :invalid_custom_safety_rules)
-    if violations.any?
-      fields = violations.map { |item| { path: item.options[:path], code: item.options[:code], message: item.message } }
-      return render json: { error: 'invalid_custom_safety_rules', fields: fields }, status: :unprocessable_content
-    end
     raise error unless error.record.errors.of_kind?(:config, :fish_voice_invalid_reference)
 
     render json: { error: 'fish_voice_invalid_reference' }, status: :unprocessable_content
@@ -313,16 +305,6 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     @assistant.agent_channels.where(inbox_id: current_ids - ids).delete_all
   end
 
-  def merge_custom_safety_rules_param!(permitted)
-    settings = params.dig(:assistant, :config, :safety_settings)
-    return unless settings.respond_to?(:key?) && settings.key?(:custom_rules)
-
-    # Preserve invalid types and unknown rule fields so validation cannot silently discard them.
-    permitted[:config] ||= {}
-    permitted[:config][:safety_settings] ||= {}
-    permitted[:config][:safety_settings][:custom_rules] = normalize_optional_config_value(settings[:custom_rules])
-  end
-
   def merge_optional_config_param!(permitted, field_name, voice_settings: false)
     assistant_config = params.dig(:assistant, :config)
     return unless assistant_config.respond_to?(:key?) && assistant_config.key?(field_name)
@@ -363,6 +345,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
       :playground_session_id,
       :playground_action,
       :real_data_read, :real_data_write, :approval_id, :approval_digest,
+      :inbox_id,
       :live_inbox_id,
       :external_delivery_enabled,
       :controlled_test_number,
@@ -391,7 +374,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     end
     session.with_lock(
       reset: action == 'reset', scenario_input: attributes[:scenario]&.to_h,
-      inbox_id: attributes[:live_inbox_id], delivery_enabled: attributes[:external_delivery_enabled],
+      inbox_id: attributes[:inbox_id].presence || attributes[:live_inbox_id], delivery_enabled: attributes[:external_delivery_enabled],
       delivery_target: attributes[:controlled_test_number]
     ) do
       if action == 'confirm'

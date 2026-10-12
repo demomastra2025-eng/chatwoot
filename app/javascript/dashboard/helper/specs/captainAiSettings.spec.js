@@ -7,12 +7,11 @@ import {
   mapAiSettingsErrors,
   normalizeReason,
   readAiSettingsAvailability,
-  ruleActionsFor,
   toAiSettingsDraft,
   validateAiSettingsDraft,
-  validateCustomRules,
 } from '../captainAiSettings';
 
+// The server still returns the platform safety values; the page ignores them.
 const contractPayload = () => ({
   understanding: {
     voice_messages: true,
@@ -55,26 +54,17 @@ const contractPayload = () => ({
   conversation: { message_collapse_window_seconds: 15 },
   safety: {
     moderation_enabled: true,
-    prompt_injection_action: 'block',
-    sensitive_info_action: 'off',
+    prompt_injection_action: 'off',
+    sensitive_info_action: 'flag',
     custom_rules: [
       {
         id: 'rule-in',
-        name: 'Договор',
+        name: '',
         direction: 'inbound',
-        instruction: 'Если клиент просит изменить договор.',
+        instruction: '',
         action: 'handoff',
         enabled: true,
-        message: '',
-      },
-      {
-        id: 'rule-out',
-        name: 'Гарантии',
-        direction: 'outbound',
-        instruction: 'Если ответ обещает гарантию.',
-        action: 'rewrite_once',
-        enabled: false,
-        message: 'Уточню у коллег.',
+        message: null,
       },
     ],
   },
@@ -84,13 +74,9 @@ const contractPayload = () => ({
 describe('captainAiSettings helper', () => {
   it('writes the contract values through one map', () => {
     expect(AI_SETTINGS_API_VALUES).toMatchObject({
-      direction: { inbound: 'inbound', outbound: 'outbound' },
-      ruleAction: { handoff: 'handoff', rewrite: 'rewrite_once' },
-      safetyAction: { block: 'block', flag: 'flag', off: 'off' },
+      messageMode: { fixed: 'fixed', generated: 'generated' },
       reasonEnabledKey: 'enabled',
     });
-    expect(ruleActionsFor('inbound')).toEqual(['handoff']);
-    expect(ruleActionsFor('outbound')).toEqual(['handoff', 'rewrite']);
   });
 
   it('builds a draft in UI values from the contract payload', () => {
@@ -121,12 +107,6 @@ describe('captainAiSettings helper', () => {
       instruction: 'Коротко и тепло.',
     });
     expect(draft.conversation.message_collapse_window_seconds).toBe(15);
-    expect(draft.safety.sensitive_info_action).toBe('off');
-    expect(draft.safety.custom_rules[1]).toMatchObject({
-      direction: 'outbound',
-      action: 'rewrite',
-      enabled: false,
-    });
     expect(draft).not.toHaveProperty('availability');
     expect(readAiSettingsAvailability(contractPayload())).toEqual({
       web_access_configured: false,
@@ -134,6 +114,12 @@ describe('captainAiSettings helper', () => {
     expect(readAiSettingsAvailability({})).toEqual({
       web_access_configured: true,
     });
+  });
+
+  it('reads only the one safety switch and none of the platform safety values', () => {
+    const draft = toAiSettingsDraft(contractPayload());
+
+    expect(draft.safety).toEqual({ moderation_enabled: true });
   });
 
   it('tolerates the legacy per-agent value sets on read', () => {
@@ -146,37 +132,7 @@ describe('captainAiSettings helper', () => {
         handoff_message: 'Сейчас подключится сотрудник',
         resolution_message: '',
       },
-      safety: {
-        moderation_enabled: 'enabled',
-        prompt_injection_action: 'disabled',
-        sensitive_info_action: 'flag',
-        custom_rules: [
-          {
-            id: 'legacy-in',
-            name: 'Старое',
-            direction: 'input',
-            instruction: 'Условие',
-            action: 'block',
-            enabled: true,
-          },
-          {
-            id: 'legacy-out',
-            name: 'Ответ',
-            direction: 'output',
-            instruction: 'Условие',
-            action: 'rewrite',
-            enabled: true,
-          },
-          {
-            id: 'bad-in',
-            name: 'Ошибка',
-            direction: 'input',
-            instruction: 'Условие',
-            action: 'rewrite',
-            enabled: true,
-          },
-        ],
-      },
+      safety: { moderation_enabled: 'enabled' },
     });
 
     expect(draft.handoff.handoff_reasons).toEqual([
@@ -196,15 +152,6 @@ describe('captainAiSettings helper', () => {
     });
     expect(draft.handoff.resolution_message.enabled).toBe(false);
     expect(draft.safety.moderation_enabled).toBe(true);
-    expect(draft.safety.prompt_injection_action).toBe('off');
-    expect(
-      draft.safety.custom_rules.map(rule => [rule.direction, rule.action])
-    ).toEqual([
-      ['inbound', 'handoff'],
-      ['outbound', 'rewrite'],
-      ['inbound', 'handoff'],
-    ]);
-    expect(draft.safety.custom_rules[0].message).toBe('');
   });
 
   it('localizes the backend fallback label of the system reason', () => {
@@ -238,8 +185,7 @@ describe('captainAiSettings helper', () => {
     expect(draft.handoff.handoff_reasons).toEqual([]);
     expect(draft.handoff.auto_completion_enabled).toBe(true);
     expect(draft.conversation.message_collapse_window_seconds).toBe(0);
-    expect(draft.safety.prompt_injection_action).toBe('block');
-    expect(draft.safety.custom_rules).toEqual([]);
+    expect(draft.safety).toEqual({ moderation_enabled: false });
   });
 
   it('defaults builtin to the known reason ids and keeps an API lock', () => {
@@ -275,37 +221,14 @@ describe('captainAiSettings helper', () => {
     const base = toAiSettingsDraft(contractPayload());
     const draft = toAiSettingsDraft(contractPayload());
     draft.faq.generate_from_resolved = true;
-    draft.safety.custom_rules[0].name = 'Договор и цены';
+    draft.safety.moderation_enabled = false;
 
     const patch = buildAiSettingsPatch(base, draft);
 
     expect(Object.keys(patch).sort()).toEqual(['faq', 'safety']);
     expect(patch.faq).toEqual({ generate_from_resolved: true });
-    expect(patch.safety).toEqual({
-      moderation_enabled: true,
-      prompt_injection_action: 'block',
-      sensitive_info_action: 'off',
-      custom_rules: [
-        {
-          id: 'rule-in',
-          name: 'Договор и цены',
-          direction: 'inbound',
-          instruction: 'Если клиент просит изменить договор.',
-          action: 'handoff',
-          enabled: true,
-          message: '',
-        },
-        {
-          id: 'rule-out',
-          name: 'Гарантии',
-          direction: 'outbound',
-          instruction: 'Если ответ обещает гарантию.',
-          action: 'rewrite_once',
-          enabled: false,
-          message: 'Уточню у коллег.',
-        },
-      ],
-    });
+    // Only the switch: the platform safety values never travel back.
+    expect(patch.safety).toEqual({ moderation_enabled: false });
     expect(patch).not.toHaveProperty('availability');
     expect(isAiSettingsDirty(base, draft)).toBe(true);
   });
@@ -315,19 +238,6 @@ describe('captainAiSettings helper', () => {
       handoff: {
         handoff_reasons: [{ id: 'other', label: 'Other', active: true }],
         handoff_message: 'Передаю',
-      },
-      safety: {
-        prompt_injection_action: 'disabled',
-        custom_rules: [
-          {
-            id: 'legacy-out',
-            name: 'Ответ',
-            direction: 'output',
-            instruction: 'Условие',
-            action: 'rewrite',
-            enabled: true,
-          },
-        ],
       },
     };
     const base = toAiSettingsDraft(legacy);
@@ -346,11 +256,7 @@ describe('captainAiSettings helper', () => {
       text: 'Передаю',
       instruction: '',
     });
-    expect(patch.safety.prompt_injection_action).toBe('off');
-    expect(patch.safety.custom_rules[0]).toMatchObject({
-      direction: 'outbound',
-      action: 'rewrite_once',
-    });
+    expect(patch.safety).toEqual({ moderation_enabled: true });
   });
 
   it('validates reasons, status messages and the collapse window', () => {
@@ -436,106 +342,40 @@ describe('captainAiSettings helper', () => {
     expect(MESSAGE_INSTRUCTION_MAX_LENGTH).toBe(500);
   });
 
-  it('ports the custom rule limits of the backend validator', () => {
-    const rule = (id, changes = {}) => ({
-      id,
-      name: 'Правило',
-      direction: 'inbound',
-      instruction: 'Условие',
-      action: 'handoff',
-      enabled: true,
-      message: '',
-      ...changes,
-    });
+  it('is not blocked by a stored platform rule the page cannot show', () => {
+    // contractPayload() carries a rule with a blank name and instruction.
+    const draft = toAiSettingsDraft(contractPayload());
 
-    expect(validateCustomRules([rule('a'), rule('b')]).valid).toBe(true);
-    expect(
-      validateCustomRules([
-        rule('long', {
-          name: 'n'.repeat(120),
-          instruction: 'i'.repeat(2000),
-          message: 'm'.repeat(2000),
-        }),
-      ]).valid
-    ).toBe(true);
-
-    const fields = validateCustomRules([
-      rule('bad', {
-        name: ' ',
-        instruction: 'i'.repeat(2001),
-        message: 'm'.repeat(2001),
-      }),
-    ]);
-    expect(fields.valid).toBe(false);
-    expect(fields.fields.bad).toEqual({
-      name: true,
-      instruction: true,
-      message: true,
-    });
-
-    const duplicates = validateCustomRules([rule('x'), rule('x')]);
-    const reserved = validateCustomRules([rule('none')]);
-    const badId = validateCustomRules([rule('bad id!')]);
-    const inboundRewrite = validateCustomRules([
-      rule('in-rewrite', { action: 'rewrite' }),
-    ]);
-    const outboundRewrite = validateCustomRules([
-      rule('out-rewrite', { direction: 'outbound', action: 'rewrite' }),
-    ]);
-    expect(duplicates.invalidRuleIds).toEqual(['x', 'x']);
-    expect(reserved.invalidRuleIds).toEqual(['none']);
-    expect(badId.valid).toBe(false);
-    expect(inboundRewrite.invalidRuleIds).toEqual(['in-rewrite']);
-    expect(outboundRewrite.valid).toBe(true);
-    const tooMany = validateCustomRules(
-      Array.from({ length: 21 }, (_, index) => rule(`r-${index}`))
-    );
-    expect(tooMany.tooMany).toBe(true);
-    expect(tooMany.valid).toBe(false);
+    expect(validateAiSettingsDraft(draft)).toEqual({ valid: true, errors: {} });
   });
 
   it('maps server field errors to inline targets and keeps the rest general', () => {
-    const draft = toAiSettingsDraft(contractPayload());
+    const mapped = mapAiSettingsErrors([
+      { field: 'handoff.handoff_message.text', code: 'blank', message: 'C' },
+      {
+        field: 'handoff.resolution_message.instruction',
+        code: 'too_long',
+        message: 'C2',
+      },
+      {
+        field: 'conversation.message_collapse_window_seconds',
+        code: 'invalid',
+        message: 'D',
+      },
+      { field: 'handoff.completion_reasons', code: 'invalid', message: 'E' },
+      { field: 'understanding.web_search', code: 'invalid', message: 'F' },
+      { field: 'safety.moderation_enabled', code: 'invalid', message: 'G' },
+      { field: null, code: 'conflict', message: 'H' },
+      { field: 'unknown.thing', code: 'invalid', message: 'I' },
+    ]);
 
-    const mapped = mapAiSettingsErrors(
-      [
-        { field: 'safety.custom_rules[1].name', code: 'blank', message: 'A' },
-        {
-          field: 'safety_settings.custom_rules.0.instruction',
-          code: 'too_long',
-          message: 'B',
-        },
-        { field: 'handoff.handoff_message.text', code: 'blank', message: 'C' },
-        {
-          field: 'handoff.resolution_message.instruction',
-          code: 'too_long',
-          message: 'C2',
-        },
-        {
-          field: 'conversation.message_collapse_window_seconds',
-          code: 'invalid',
-          message: 'D',
-        },
-        { field: 'handoff.completion_reasons', code: 'invalid', message: 'E' },
-        { field: 'understanding.web_search', code: 'invalid', message: 'F' },
-        { field: 'safety.custom_rules', code: 'too_many', message: 'G' },
-        { field: null, code: 'conflict', message: 'H' },
-        { field: 'unknown.thing', code: 'invalid', message: 'I' },
-      ],
-      draft
-    );
-
-    expect(mapped.rules).toEqual({
-      'rule-out': { name: 'A' },
-      'rule-in': { instruction: 'B' },
-    });
     expect(mapped.fields).toEqual({
       handoff_message: 'C',
       resolution_message_instruction: 'C2',
       collapse_window: 'D',
       completion_reasons: 'E',
       web_search: 'F',
-      custom_rules: 'G',
+      moderation_enabled: 'G',
     });
     expect(mapped.general).toEqual(['H', 'I']);
   });

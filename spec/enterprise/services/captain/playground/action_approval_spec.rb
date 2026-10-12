@@ -4,14 +4,15 @@ RSpec.describe Captain::Playground::ActionApproval do
   let(:account) { create(:account).tap { |item| item.enable_features!('crm_deals') } }
   let(:user) { create(:user, account: account, role: :administrator) }
   let(:assistant) { create(:captain_assistant, account: account) }
+  let(:inbox) { create(:inbox, account: account) }
   let(:session) { Captain::Playground::Session.new(account: account, user: user, assistant: assistant) }
   let(:deal) { create(:crm_deal, account: account) }
 
   before { allow(assistant).to receive(:allowed_agent_tool_ids).and_return(%w[update_deal]) }
   after { Current.reset }
 
-  def with_preview
-    session.with_lock do |workspace|
+  def with_preview(inbox_id: nil)
+    session.with_lock(inbox_id: inbox_id) do |workspace|
       workspace.set_permissions!(read: true, write: true)
       service = described_class.new(workspace)
       preview = service.preview('update_deal', deal_id: deal.id, title: 'Confirmed title')
@@ -94,8 +95,7 @@ RSpec.describe Captain::Playground::ActionApproval do
 
   it 'cannot confirm the entry agent preview after another agent becomes active' do
     destination = create(:captain_assistant, account: account)
-    assistant.update!(handoff_agent_ids: [destination.id])
-    with_preview do |workspace, service, preview|
+    with_preview(inbox_id: inbox.id) do |workspace, service, preview|
       workspace.activate_agent!(destination)
       expect(service.instance_variable_get(:@executor)).not_to receive(:execute)
       expect { service.confirm(id: preview['id'], digest: preview['digest']) }.to raise_error(ArgumentError, /revoked/)
@@ -104,9 +104,8 @@ RSpec.describe Captain::Playground::ActionApproval do
 
   it 'binds a destination preview to its own tools and rechecks routing and activation at confirmation' do
     destination = create(:captain_assistant, account: account)
-    assistant.update!(handoff_agent_ids: [destination.id])
     allow(destination).to receive(:allowed_agent_tool_ids).and_return(%w[update_deal])
-    session.with_lock do |workspace|
+    session.with_lock(inbox_id: inbox.id) do |workspace|
       workspace.set_permissions!(read: true, write: true)
       workspace.activate_agent!(destination)
       service = described_class.new(workspace)
@@ -117,7 +116,7 @@ RSpec.describe Captain::Playground::ActionApproval do
       destination.update!(active: false)
       expect { service.confirm(id: preview['id'], digest: preview['digest']) }.to raise_error(Pundit::NotAuthorizedError)
       destination.update!(active: true)
-      # Routing is the channel mesh now (active external agents of the workspace), not the entry agent's handoff list.
+      # Routing is the grid of the chosen channel (its active external agents), not a stored list of the entry agent.
       destination.update!(usage_mode: 'internal_assistant')
       expect { service.confirm(id: preview['id'], digest: preview['digest']) }.to raise_error(Pundit::NotAuthorizedError)
     end
@@ -125,9 +124,8 @@ RSpec.describe Captain::Playground::ActionApproval do
 
   it 'does not grant a destination the entry agent selected tool list' do
     destination = create(:captain_assistant, account: account)
-    assistant.update!(handoff_agent_ids: [destination.id])
     allow(destination).to receive(:allowed_agent_tool_ids).and_return([])
-    session.with_lock do |workspace|
+    session.with_lock(inbox_id: inbox.id) do |workspace|
       workspace.set_permissions!(read: true, write: true)
       workspace.activate_agent!(destination)
       expect do

@@ -104,9 +104,9 @@ RSpec.describe Captain::Playground::Session do
 
   it 'persists the active agent under the original entry session and restores it before confirmation' do
     destination = create(:captain_assistant, account: account)
-    assistant.update!(handoff_agent_ids: [destination.id])
+    inbox = create(:inbox, account: account)
     id = nil
-    session.with_lock do |workspace|
+    session.with_lock(inbox_id: inbox.id) do |workspace|
       id = workspace.id
       workspace.activate_agent!(destination)
       expect(workspace.assistant).to eq(destination)
@@ -123,8 +123,8 @@ RSpec.describe Captain::Playground::Session do
 
   it 'rejects a disabled, foreign or internal acting agent using the current graph' do
     destination = create(:captain_assistant, account: account)
-    assistant.update!(handoff_agent_ids: [destination.id])
-    session.with_lock do |workspace|
+    inbox = create(:inbox, account: account)
+    session.with_lock(inbox_id: inbox.id) do |workspace|
       expect { workspace.activate_agent!(create(:captain_assistant)) }.to raise_error(Pundit::NotAuthorizedError)
       workspace.activate_agent!(destination)
       destination.update!(active: false)
@@ -145,5 +145,99 @@ RSpec.describe Captain::Playground::Session do
       Captain::AgentChannel.create!(account: account, inbox: inbox, assistant: member)
       expect(workspace.activate_agent!(member)).to eq(member)
     end
+  end
+
+  it 'works alone without a chosen channel: other agents of the workspace are not reachable' do
+    destination = create(:captain_assistant, account: account)
+    session.with_lock do |workspace|
+      expect(workspace.routing_inbox).to be_nil
+      expect { workspace.activate_agent!(destination) }.to raise_error(Pundit::NotAuthorizedError, /no longer reachable/)
+      expect(workspace.assistant).to eq(assistant)
+    end
+  end
+
+  it 'routes by the grid of the chosen channel, not by a stored list of allowed targets' do
+    inbox = create(:inbox, account: account)
+    attached = create(:captain_assistant, account: account, channel_scope: 'selected')
+    detached = create(:captain_assistant, account: account, channel_scope: 'selected')
+    Captain::AgentChannel.create!(account: account, inbox: inbox, assistant: attached)
+    assistant.update!(handoff_agent_ids: [detached.id])
+
+    session.with_lock(inbox_id: inbox.id) do |workspace|
+      expect(workspace.routing_inbox).to eq(inbox)
+      expect { workspace.activate_agent!(detached) }.to raise_error(Pundit::NotAuthorizedError)
+      expect(workspace.activate_agent!(attached)).to eq(attached)
+    end
+  end
+
+  it 'keeps the chosen channel in the session and starts from the entry agent when another channel is chosen' do
+    inbox = create(:inbox, account: account)
+    other_inbox = create(:inbox, account: account)
+    destination = create(:captain_assistant, account: account)
+    id = nil
+    session.with_lock(inbox_id: inbox.id) do |workspace|
+      id = workspace.id
+      workspace.activate_agent!(destination)
+    end
+
+    session(session_id: id).with_lock do |workspace|
+      expect(workspace.routing_inbox).to eq(inbox)
+      expect(workspace.assistant).to eq(destination)
+    end
+    session(session_id: id).with_lock(inbox_id: other_inbox.id) do |workspace|
+      expect(workspace.routing_inbox).to eq(other_inbox)
+      expect(workspace.assistant).to eq(assistant)
+      expect(workspace.data['active_assistant_id']).to eq(assistant.id)
+    end
+  end
+
+  it 'drops the durable agent session of the old grid so a peer present in both channels does not keep the turn' do
+    inbox = create(:inbox, account: account)
+    other_inbox = create(:inbox, account: account)
+    peer = create(:captain_assistant, account: account)
+    id = nil
+    session.with_lock(inbox_id: inbox.id) do |workspace|
+      id = workspace.id
+      workspace.activate_agent!(peer)
+      Captain::Conversation::AgentSession.new(entry: assistant, playground: workspace).update_routing(actor_id: peer.id)
+      expect(workspace.data[Captain::Conversation::AgentSession::ATTRIBUTE]).to include('current_assistant_id' => peer.id)
+    end
+
+    session(session_id: id).with_lock(inbox_id: other_inbox.id) do |workspace|
+      expect(workspace.data).not_to have_key(Captain::Conversation::AgentSession::ATTRIBUTE)
+      context = { state: { account_id: account.id, assistant_id: assistant.id }, conversation_history: [] }
+
+      Captain::AgentRunContext.new(entry: assistant, playground: workspace).prepare(context)
+
+      expect(context[:current_agent]).to eq("assistant_#{assistant.id}")
+      expect(context[:agent_tasks]).to eq([])
+    end
+  end
+
+  it 'keeps the agent session while the same channel is sent again and revokes pending previews on a switch' do
+    inbox = create(:inbox, account: account)
+    other_inbox = create(:inbox, account: account)
+    id = nil
+    session.with_lock(inbox_id: inbox.id) do |workspace|
+      id = workspace.id
+      workspace.data['action_previews'] = [{ 'id' => 'p1', 'status' => 'pending' }]
+      workspace.data[Captain::Conversation::AgentSession::ATTRIBUTE] = { 'entry_assistant_id' => assistant.id, 'marker' => 'kept' }
+    end
+
+    session(session_id: id).with_lock(inbox_id: inbox.id) do |workspace|
+      expect(workspace.data.dig(Captain::Conversation::AgentSession::ATTRIBUTE, 'marker')).to eq('kept')
+      expect(workspace.data['action_previews'].first['status']).to eq('pending')
+    end
+    session(session_id: id).with_lock(inbox_id: other_inbox.id) do |workspace|
+      expect(workspace.data).not_to have_key(Captain::Conversation::AgentSession::ATTRIBUTE)
+      expect(workspace.data['action_previews'].first['status']).to eq('revoked')
+    end
+  end
+
+  it 'rejects a channel of another workspace' do
+    foreign_inbox = create(:inbox)
+
+    expect { session.with_lock(inbox_id: foreign_inbox.id) { true } }
+      .to raise_error(ArgumentError, /channel is not available/)
   end
 end

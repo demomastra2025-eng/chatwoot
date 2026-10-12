@@ -79,14 +79,15 @@ class Captain::AccountSettingsSnapshot
   end
 
   def safety
-    old = config['safety_settings'].to_h
+    # Legacy data is no longer validated on save, so only a hash is read.
+    old = config['safety_settings'].is_a?(Hash) ? config['safety_settings'] : {}
     moderation = old['moderation_enabled']
     moderation = assistant.account.captain_runtime_preferences['assistant_moderation'] if moderation.nil?
     {
       'moderation_enabled' => boolean(moderation),
       'prompt_injection_action' => Captain::AccountSettings::ACTION_TO_API.fetch(old['prompt_injection_action'], 'block'),
       'sensitive_info_action' => Captain::AccountSettings::ACTION_TO_API.fetch(old['sensitive_info_action'], 'block'),
-      'custom_rules' => Array(old['custom_rules']).map { |rule| api_rule(rule) }
+      'custom_rules' => Array(old['custom_rules']).grep(Hash).map { |rule| api_rule(rule) }
     }
   end
 

@@ -60,8 +60,6 @@ class Captain::Assistant < ApplicationRecord
   SYSTEM_TEMPLATE_SLOT_REFERENCE_GLOSSARY = 'reference_glossary_usage'
   MESSAGE_MODE_STATIC = 'static'
   MESSAGE_MODE_AI = 'ai'
-  SAFETY_ACTION_VALUES = %w[disabled flag block].freeze
-  SAFETY_SETTINGS_KEYS = %w[moderation_enabled prompt_injection_action sensitive_info_action custom_rules].freeze
   MESSAGE_MODES = [MESSAGE_MODE_STATIC, MESSAGE_MODE_AI].freeze
   HANDOFF_TOOL_ID = 'handoff'
   CRM_DEAL_PIPELINE_COMPANION_TOOL_IDS = %w[list_deal_pipelines list_deal_stages].freeze
@@ -412,7 +410,6 @@ class Captain::Assistant < ApplicationRecord
   validate :validate_fish_voice_reference
   validate :validate_conversational_model
   validate :validate_follow_up_settings
-  validate :validate_safety_settings
 
   scope :ordered, -> { order(created_at: :desc) }
 
@@ -824,30 +821,6 @@ class Captain::Assistant < ApplicationRecord
     end
   end
 
-  def validate_safety_settings
-    settings = config.to_h.deep_stringify_keys['safety_settings']
-    return if settings.nil?
-    return errors.add(:config, :invalid_safety_settings) unless settings.is_a?(Hash)
-    return errors.add(:config, :invalid_safety_settings) if (settings.keys - SAFETY_SETTINGS_KEYS).any?
-
-    moderation = settings['moderation_enabled']
-    if !moderation.nil? && moderation != true && moderation != false
-      errors.add(:config, :invalid_safety_settings)
-      return
-    end
-
-    action_values = settings.values_at('prompt_injection_action', 'sensitive_info_action')
-    unless action_values.all? { |value| value.nil? || SAFETY_ACTION_VALUES.include?(value.to_s) }
-      errors.add(:config, :invalid_safety_settings)
-    end
-    return unless settings.key?('custom_rules')
-
-    Captain::Safety::CustomRulesConfig.errors(settings['custom_rules']).each do |violation|
-      errors.add(:config, :invalid_custom_safety_rules, path: violation[:path], code: violation[:code],
-                 message: "#{violation[:path]} #{violation[:message]}")
-    end
-  end
-
   def outcome_reason_prompt_context
     Captain::OutcomeReasonConfig.prompt_context_for(self)
   end
@@ -916,7 +889,14 @@ class Captain::Assistant < ApplicationRecord
     assign_attributes(attributes) if attributes.present?
   end
 
-  def prompt_context
+  # A mesh run (every persisted agent) gets its peers from the coordination
+  # prompt and drops this list (Agentable#agent_instructions), so it does not
+  # load them at all.
+  def runtime_prompt_context(state = {})
+    prompt_context(include_peers: !state.to_h[:mesh_routing])
+  end
+
+  def prompt_context(include_peers: true)
     referenced_field_ids = referenced_field_ids_for_texts(prompt_glossary_texts)
 
     {
@@ -926,16 +906,16 @@ class Captain::Assistant < ApplicationRecord
       faq_enabled: faq_enabled?,
       human_handoff_enabled: handoff_enabled? && selected_agent_tool_ids.include?(HANDOFF_TOOL_ID),
       runtime_tool_ids: prompt_runtime_agent_tools.pluck(:id),
-      scenarios: handoff_targets.map do |scenario|
-        {
-          title: scenario.name,
-          key: scenario.handoff_target_name,
-          description: scenario.routing_description
-        }
-      end,
+      scenarios: include_peers ? prompt_peer_entries : [],
       context_glossary: context_glossary_groups(referenced_field_ids),
       tool_glossary: tool_glossary_groups(prompt_runtime_agent_tools)
     }
+  end
+
+  def prompt_peer_entries
+    channel_peers.map do |peer|
+      { title: peer.name, key: peer.handoff_target_name, description: peer.routing_description }
+    end
   end
 
   def scenario_default_tool_ids

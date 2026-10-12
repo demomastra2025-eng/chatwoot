@@ -23,11 +23,20 @@ class CaptainAssistant extends ApiClient {
     });
   }
 
-  playground({ assistantId, messageContent, testOptions = {}, sessionId }) {
+  // `inboxId`: the channel whose grid (agents attached to it) the agent can hand
+  // over to. Without it the agent works alone.
+  playground({
+    assistantId,
+    messageContent,
+    testOptions = {},
+    sessionId,
+    inboxId,
+  }) {
     return axios.post(`${this.url}/${assistantId}/playground`, {
       playground_mode: 'workspace',
       message_content: messageContent,
       playground_session_id: sessionId,
+      ...(inboxId ? { inbox_id: inboxId } : {}),
       ...(testOptions.model ? { test_model: testOptions.model } : {}),
       ...(testOptions.temperature !== null &&
       testOptions.temperature !== undefined
@@ -39,11 +48,19 @@ class CaptainAssistant extends ApiClient {
     });
   }
 
-  playgroundSession({ assistantId, sessionId, reset = false, scenario }) {
+  // A reset starts a new session, so the channel is sent again with it.
+  playgroundSession({
+    assistantId,
+    sessionId,
+    reset = false,
+    scenario,
+    inboxId,
+  }) {
     return axios.post(`${this.url}/${assistantId}/playground`, {
       playground_mode: 'workspace',
       playground_action: reset ? 'reset' : 'session',
       ...(sessionId ? { playground_session_id: sessionId } : {}),
+      ...(inboxId ? { inbox_id: inboxId } : {}),
       ...(scenario ? { scenario } : {}),
     });
   }
@@ -58,11 +75,12 @@ class CaptainAssistant extends ApiClient {
     });
   }
 
-  confirmPlaygroundAction({ assistantId, sessionId, approval }) {
+  confirmPlaygroundAction({ assistantId, sessionId, approval, inboxId }) {
     return axios.post(`${this.url}/${assistantId}/playground`, {
       playground_mode: 'workspace',
       playground_action: 'confirm',
       playground_session_id: sessionId,
+      ...(inboxId ? { inbox_id: inboxId } : {}),
       approval_id: approval.id,
       approval_digest: approval.digest,
     });

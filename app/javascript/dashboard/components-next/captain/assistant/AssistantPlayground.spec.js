@@ -12,9 +12,17 @@ const mocks = vi.hoisted(() => ({
   getModelsForFeature: vi.fn(),
   getSelectedModelForFeature: vi.fn(),
   uiFlags: { fetchError: false },
+  inboxes: [],
 }));
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: key => key, te: () => true }),
+}));
+vi.mock('dashboard/composables/store', () => ({
+  useMapGetter: () => ({
+    get value() {
+      return mocks.inboxes;
+    },
+  }),
 }));
 vi.mock('dashboard/api/captain/assistant', () => ({ default: mocks }));
 vi.mock('dashboard/store/captain/preferences', () => ({
@@ -120,11 +128,18 @@ const isFramed = element => {
 beforeEach(() => {
   Object.values(mocks).forEach(value => value?.mockReset?.());
   mocks.uiFlags.fetchError = false;
+  mocks.inboxes = [
+    { id: 7, name: 'WhatsApp клиники', channel_type: 'Channel::Whatsapp' },
+    { id: 8, name: 'Telegram клиники', channel_type: 'Channel::Telegram' },
+    { id: 9, name: 'Телефон', channel_type: 'Channel::Voice' },
+  ];
   mocks.fetch.mockResolvedValue();
   mocks.show.mockResolvedValue({
     data: {
       id: 4,
       usage_mode: 'external_agent',
+      channel_scope: 'all',
+      inbox_ids: [],
       config: {},
       playground_model: {
         id: 'provider/model',
@@ -550,6 +565,127 @@ describe('one Playground workspace', () => {
       })
     );
     wrapper.unmount();
+  });
+
+  describe('channel of the tested agent', () => {
+    const channelSelect = wrapper =>
+      wrapper.get('[data-test="playground-channel"] select');
+    const channelOptionValues = wrapper =>
+      channelSelect(wrapper)
+        .findAll('option')
+        .map(option => option.element.value);
+
+    it('works alone until a channel is chosen, then sends the channel and starts the chat again', async () => {
+      const wrapper = mountPlayground();
+      await flushPromises();
+      expect(wrapper.get('[data-test="playground-channel-hint"]').text()).toBe(
+        'CAPTAIN.PLAYGROUND.CHANNEL_NONE_HINT'
+      );
+      await send(wrapper, 'Alone');
+      expect(mocks.playground.mock.lastCall[0].inboxId).toBeUndefined();
+      expect(mocks.playgroundSession.mock.lastCall[0].inboxId).toBeUndefined();
+      expect(wrapper.text()).toContain('Alone');
+
+      await channelSelect(wrapper).setValue('7');
+      await flushPromises();
+      expect(mocks.playgroundSession.mock.lastCall[0]).toMatchObject({
+        reset: true,
+        inboxId: 7,
+      });
+      expect(wrapper.text()).not.toContain('Alone');
+      expect(wrapper.get('[data-test="playground-channel-hint"]').text()).toBe(
+        'CAPTAIN.PLAYGROUND.CHANNEL_GRID_HINT'
+      );
+
+      await send(wrapper, 'In the channel');
+      expect(mocks.playground).toHaveBeenLastCalledWith(
+        expect.objectContaining({ assistantId: 4, inboxId: 7 })
+      );
+
+      await wrapper.vm.loadSession();
+      expect(mocks.playgroundSession.mock.lastCall[0]).toMatchObject({
+        reset: false,
+        inboxId: 7,
+      });
+
+      await channelSelect(wrapper).setValue('');
+      await flushPromises();
+      expect(mocks.playgroundSession.mock.lastCall[0].reset).toBe(true);
+      expect(mocks.playgroundSession.mock.lastCall[0].inboxId).toBeUndefined();
+      await send(wrapper, 'Alone again');
+      expect(mocks.playground.mock.lastCall[0].inboxId).toBeUndefined();
+      wrapper.unmount();
+    });
+
+    it('sends the channel with a confirmation of a real change', async () => {
+      const wrapper = mountPlayground();
+      await flushPromises();
+      await channelSelect(wrapper).setValue('8');
+      await flushPromises();
+      await wrapper.vm.setPermissions(true, true);
+      await wrapper.vm.confirmAction(approval());
+
+      expect(mocks.confirmPlaygroundAction).toHaveBeenLastCalledWith(
+        expect.objectContaining({ inboxId: 8 })
+      );
+      wrapper.unmount();
+    });
+
+    it('offers the text channels where the agent works and no voice channel', async () => {
+      const wrapper = mountPlayground();
+      await flushPromises();
+      expect(channelOptionValues(wrapper)).toEqual(['', '7', '8']);
+      wrapper.unmount();
+
+      mocks.show.mockResolvedValue({
+        data: {
+          id: 4,
+          usage_mode: 'external_agent',
+          channel_scope: 'selected',
+          inbox_ids: [8, 9],
+          config: {},
+        },
+      });
+      const selected = mountPlayground();
+      await flushPromises();
+      expect(channelOptionValues(selected)).toEqual(['', '8']);
+      selected.unmount();
+    });
+
+    it('shows no channel control when the agent works in no channel', async () => {
+      mocks.show.mockResolvedValue({
+        data: {
+          id: 4,
+          usage_mode: 'external_agent',
+          channel_scope: 'selected',
+          inbox_ids: [],
+          config: {},
+        },
+      });
+      const wrapper = mountPlayground();
+      await flushPromises();
+
+      expect(wrapper.find('[data-test="playground-channel"]').exists()).toBe(
+        false
+      );
+      await send(wrapper, 'Alone');
+      expect(mocks.playground.mock.lastCall[0].inboxId).toBeUndefined();
+      wrapper.unmount();
+    });
+
+    it('forgets the chosen channel when another agent is opened', async () => {
+      const wrapper = mountPlayground();
+      await flushPromises();
+      await channelSelect(wrapper).setValue('7');
+      await flushPromises();
+
+      await wrapper.setProps({ assistantId: 5 });
+      await flushPromises();
+
+      expect(mocks.playgroundSession.mock.lastCall[0].inboxId).toBeUndefined();
+      expect(channelSelect(wrapper).element.value).toBe('');
+      wrapper.unmount();
+    });
   });
 
   it('frames the chat column once and keeps the side panel unframed', async () => {

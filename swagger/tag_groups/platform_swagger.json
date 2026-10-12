@@ -2355,22 +2355,13 @@
           },
           "active": {
             "type": "boolean",
-            "description": "Only active external agents can be channel entry agents or participate as handoff targets."
+            "description": "Only active external agents can be channel main agents or work in a channel with other agents."
           },
           "routing_description": {
             "type": "string",
             "nullable": true,
             "maxLength": 2000,
             "description": "Describes when another agent should route a request to this agent."
-          },
-          "handoff_agent_ids": {
-            "type": "array",
-            "uniqueItems": true,
-            "items": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "description": "Saved outgoing targets in this account. Runtime routing uses only active external targets. A saved target may remain listed after it becomes inactive."
           },
           "legacy_scenario_id": {
             "type": "integer",
@@ -2392,13 +2383,18 @@
           },
           "config": {
             "type": "object",
-            "description": "Assistant configuration is updated through the existing assistant endpoint. Model, tool access, follow-up settings, and outcome reason settings are account-scoped per assistant. Omitted safety fields retain saved overrides during a partial update; explicit null resets a safety field to inheritance from the workspace policy. Unspecified safety fields on a new assistant inherit workspace policy.",
+            "description": "Assistant configuration is updated through the existing assistant endpoint. Model, tool access, follow-up settings, and outcome reason settings are account-scoped per assistant. Safety checks are one workspace setting (captain/settings, section safety); safety_settings is read-only legacy data that the runtime ignores.",
             "properties": {
               "model": {
                 "type": "string"
               },
               "safety_settings": {
-                "$ref": "#/components/schemas/captain_assistant_safety_settings"
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/captain_assistant_safety_settings"
+                  }
+                ],
+                "readOnly": true
               },
               "tool_access": {
                 "type": "object",
@@ -8713,23 +8709,12 @@
                 "nullable": true,
                 "maxLength": 2000
               },
-              "handoff_agent_ids": {
-                "type": "array",
-                "items": {
-                  "type": "integer",
-                  "minimum": 1
-                },
-                "description": "Explicit outgoing targets from this account. Newly selected targets must be active external agents; the current agent cannot target itself. An empty array saves no outgoing routes."
-              },
               "config": {
                 "type": "object",
-                "description": "Omitted safety fields retain saved overrides during a partial update. Provider-safety fields accept null for workspace inheritance. custom_rules is a complete ordered replacement; [] clears it and null is invalid.",
+                "description": "Safety checks are one workspace setting (captain/settings, section safety); config.safety_settings is ignored.",
                 "properties": {
                   "model": {
                     "type": "string"
-                  },
-                  "safety_settings": {
-                    "$ref": "#/components/schemas/captain_assistant_safety_settings"
                   },
                   "tool_access": {
                     "type": "object",
@@ -8760,7 +8745,7 @@
       },
       "captain_assistant_safety_settings": {
         "type": "object",
-        "description": "Omitted fields retain saved overrides during a partial update. Provider-safety fields accept null to inherit workspace policy. Custom rules are independent of the provider moderation toggle; an omitted custom_rules retains the saved list, an empty array clears it, and null is rejected.",
+        "description": "Legacy per-agent safety data, kept as it was stored and ignored by the runtime. Safety checks are one workspace setting (captain/settings, section safety).",
         "properties": {
           "moderation_enabled": {
             "type": [
@@ -8798,7 +8783,7 @@
           "custom_rules": {
             "type": "array",
             "maxItems": 20,
-            "description": "Replaces the entire ordered list atomically with the assistant profile. The first matching enabled rule for the checked direction wins. IDs must be unique within the list. Disabled rules remain saved but are not evaluated. No rules means no classifier request. Invalid rules return 422 invalid_custom_safety_rules without saving profile or routing changes.",
+            "description": "Legacy per-agent rule list, kept as it was stored, neither validated nor evaluated. Custom rules are a workspace setting (captain/settings, section safety).",
             "items": {
               "$ref": "#/components/schemas/captain_custom_safety_rule"
             }
@@ -8904,60 +8889,6 @@
             }
           }
         ],
-        "additionalProperties": false
-      },
-      "captain_custom_safety_rules_error": {
-        "type": "object",
-        "required": [
-          "error",
-          "fields"
-        ],
-        "properties": {
-          "error": {
-            "type": "string",
-            "enum": [
-              "invalid_custom_safety_rules"
-            ]
-          },
-          "fields": {
-            "type": "array",
-            "minItems": 1,
-            "items": {
-              "type": "object",
-              "required": [
-                "path",
-                "code",
-                "message"
-              ],
-              "properties": {
-                "path": {
-                  "type": "string",
-                  "example": "safety_settings.custom_rules[0].action"
-                },
-                "code": {
-                  "type": "string",
-                  "enum": [
-                    "invalid_type",
-                    "too_many",
-                    "unknown_fields",
-                    "required",
-                    "invalid_id",
-                    "duplicate_id",
-                    "blank",
-                    "too_long",
-                    "invalid_value",
-                    "output_only"
-                  ]
-                },
-                "message": {
-                  "type": "string",
-                  "description": "Concrete validation message without echoing rule text or arbitrary field values."
-                }
-              },
-              "additionalProperties": false
-            }
-          }
-        },
         "additionalProperties": false
       },
       "captain_outcome_reason_settings": {

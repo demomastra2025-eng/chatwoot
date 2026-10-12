@@ -22,7 +22,7 @@ RSpec.describe Captain::AgentRunContext do
   end
 
   it 'builds direct routes in both directions and preserves each agent own prompt' do
-    runtime = described_class.new(entry: entry)
+    runtime = described_class.new(entry: entry, conversation: conversation)
     agents = runtime.runtime_agents
     expect(agents.map(&:name)).to contain_exactly("assistant_#{entry.id}", "assistant_#{specialist.id}")
     expect(agents.first.handoff_agents.map(&:assistant_id)).to eq([specialist.id])
@@ -36,6 +36,108 @@ RSpec.describe Captain::AgentRunContext do
     prompt = specialist.agent_instructions(Captain::Runtime::RunContext.new(context))
     expect(prompt).to include('SPECIALIST OWN PROMPT')
     expect(prompt).not_to include('ENTRY PRIVATE PROMPT')
+  end
+
+  it 'does not load the channel peers for the prompt of a mesh run, which drops the list anyway' do
+    runtime = described_class.new(entry: entry, conversation: conversation)
+    runtime.prepare(context)
+    runtime.activate(specialist, context)
+    expect(context[:state][:mesh_routing]).to be(true)
+    expect(specialist).not_to receive(:channel_peers)
+
+    prompt = specialist.agent_instructions(Captain::Runtime::RunContext.new(context))
+
+    expect(prompt).to include('SPECIALIST OWN PROMPT')
+  end
+
+  it 'still lists the channel peers when the prompt is built outside a mesh run' do
+    expect(entry).to receive(:channel_peers).and_call_original
+
+    expect(entry.send(:runtime_prompt_context, { account_id: account.id })[:scenarios].pluck(:title)).to eq([specialist.name])
+    expect(entry.send(:runtime_prompt_context, { mesh_routing: true })[:scenarios]).to eq([])
+  end
+
+  it 'gives a run without a channel a single agent with no routes' do
+    runtime = described_class.new(entry: entry)
+    agents = runtime.runtime_agents
+
+    expect(agents.map(&:name)).to eq(["assistant_#{entry.id}"])
+    expect(agents.first.handoff_agents).to be_empty
+    runtime.prepare(context)
+    expect(context[:agent_graph]).to eq([])
+    expect(context[:state][:agent_graph_ids]).to eq([entry.id])
+  end
+
+  it 'gives a run the directory of its channel when other agents work there' do
+    described_class.new(entry: entry, conversation: conversation).prepare(context)
+
+    expect(context[:agent_graph].pluck(:id)).to contain_exactly(entry.id, specialist.id)
+    expect(context[:state][:agent_graph_ids]).to contain_exactly(entry.id, specialist.id)
+    expect(context[:state][:entry_assistant_id]).to eq(entry.id)
+  end
+
+  it 'gives the main agent that is alone on its channel no directory and drops a request queue left from other times' do
+    specialist.update!(channel_scope: 'selected')
+    stale = [{ 'id' => 'old', 'title' => 'Old request', 'assistant_id' => entry.id, 'status' => 'waiting', 'result' => nil }]
+    Captain::Conversation::AgentSession.new(entry: entry, conversation: conversation).update_routing(actor_id: entry.id, tasks: stale)
+
+    described_class.new(entry: entry, conversation: conversation).prepare(context)
+
+    expect(context[:agent_graph]).to eq([])
+    expect(context[:agent_tasks]).to eq([])
+    expect(context[:state][:agent_graph_ids]).to eq([entry.id])
+    expect(Captain::Conversation::AgentSession.new(entry: entry, conversation: conversation).read['tasks']).to eq([])
+  end
+
+  describe 'what the model is given for the run' do
+    let(:lone_account) { create(:account) }
+    let(:lone_entry) { create(:captain_assistant, account: lone_account, description: 'LONE PRIVATE PROMPT') }
+    let(:lone_conversation) { create(:conversation, account: lone_account) }
+    let(:lone_context) { { state: { account_id: lone_account.id, assistant_id: lone_entry.id }, conversation_history: [] } }
+
+    def tool_names(runtime, run_context)
+      Captain::Runtime::ChatFactory.send(:build_agent_tools, runtime.runtime_agents.first, run_context).map(&:name)
+    end
+
+    def prompt_of(runtime, run_context)
+      Captain::Runtime::ChatFactory.send(:system_prompt_for, runtime.runtime_agents.first, run_context)
+    end
+
+    it 'gives an agent with peers the plan tool, the transfer tools and the coordination prompt' do
+      runtime = described_class.new(entry: entry, conversation: conversation)
+      runtime.prepare(context)
+      run_context = Captain::Runtime::RunContext.new(context)
+
+      expect(tool_names(runtime, run_context))
+        .to include('plan_request', Captain::HandoffNaming.tool_name_for(specialist.agent_name))
+      expect(prompt_of(runtime, run_context)).to include(
+        'ENTRY PRIVATE PROMPT', "You are #{entry.name}, the current agent", 'plan_request', 'Use council only when'
+      )
+    end
+
+    it 'gives a lone main agent neither a plan, a council nor a transfer: just its own prompt and tools' do
+      runtime = described_class.new(entry: lone_entry, conversation: lone_conversation)
+      runtime.prepare(lone_context)
+      run_context = Captain::Runtime::RunContext.new(lone_context)
+
+      names = tool_names(runtime, run_context)
+      expect(names).not_to include('plan_request', 'manage_agent_tasks')
+      expect(names.select { |name| name.start_with?(Captain::HandoffNaming::TOOL_PREFIX) }).to be_empty
+      prompt = prompt_of(runtime, run_context)
+      expect(prompt).to include('LONE PRIVATE PROMPT')
+      expect(prompt).not_to match(/plan_request|council|manage_agent_tasks|Other agents|main agent|specialist of this channel/)
+    end
+  end
+
+  it 'takes the peers from the channel of the conversation, not from a stored list of the entry agent' do
+    entry.update!(handoff_agent_ids: [])
+    outsider = create(:captain_assistant, account: account, channel_scope: 'selected')
+    runtime = described_class.new(entry: entry, conversation: conversation)
+
+    expect(runtime.runtime_agents.map(&:assistant_id)).to eq([entry.id, specialist.id])
+    expect(runtime.graph.find(outsider.id)).to be_nil
+    Captain::AgentChannel.create!(account: account, inbox: conversation.inbox, assistant: outsider)
+    expect(described_class.new(entry: entry, conversation: conversation).graph.find(outsider.id)).to eq(outsider)
   end
 
   it 'materializes only the acting agent when building the runtime' do

@@ -2239,25 +2239,20 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
       state = service.send(:build_state)
 
-      # The safety choices are workspace settings (here their defaults); every other runtime key is taken as stored.
-      expect(state[:captain_runtime]).to eq(
-        runtime_preferences.to_h.merge(
-          'assistant_moderation' => false,
-          'assistant_prompt_injection_guardrail' => 'block',
-          'assistant_sensitive_info_guardrail' => 'block'
-        )
-      )
+      # The one safety switch is a workspace setting (here its default); every other runtime key is taken as stored.
+      expect(state[:captain_runtime]).to eq(runtime_preferences.to_h.merge('assistant_moderation' => false))
     end
 
-    it 'applies saved workspace safety choices to SafetyPolicy and keeps unset guardrails at their defaults' do
-      workspace_preferences = {
+    it 'applies the workspace switch and the platform guardrail actions to SafetyPolicy' do
+      platform_preferences = {
         'assistant_moderation' => false,
-        'assistant_prompt_injection_guardrail' => 'block',
+        'assistant_prompt_injection_guardrail' => 'flag',
         'assistant_sensitive_info_guardrail' => 'block'
       }
-      allow(account).to receive(:captain_runtime_preferences).and_return(workspace_preferences)
+      allow(account).to receive(:captain_runtime_preferences).and_return(platform_preferences)
+      # The hijacking action stored in the workspace section is not read any more.
       Captain::AccountSettings.new(account).update!(
-        'safety' => { 'moderation_enabled' => true, 'prompt_injection_action' => 'flag' }
+        'safety' => { 'moderation_enabled' => true, 'prompt_injection_action' => 'block' }
       )
       allow(Llm::ModerationService).to receive(:check!).and_return(
         Llm::ModerationService::CheckResult.new(

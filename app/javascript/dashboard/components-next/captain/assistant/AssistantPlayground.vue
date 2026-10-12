@@ -2,11 +2,14 @@
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import Button from 'dashboard/components-next/button/Button.vue';
+import Select from 'dashboard/components-next/select/Select.vue';
 import ToggleSwitch from 'dashboard/components-next/switch/Switch.vue';
 import MessageList from './MessageList.vue';
 import ModelSettings from './ModelSettings.vue';
 import PlaygroundScenarioEditor from './PlaygroundScenarioEditor.vue';
 import CaptainAssistant from 'dashboard/api/captain/assistant';
+import { useMapGetter } from 'dashboard/composables/store';
+import { agentChannelSummary } from 'dashboard/helper/captainChannelMatrix';
 import { useCaptainConfigStore } from 'dashboard/store/captain/preferences';
 
 const props = defineProps({
@@ -15,7 +18,11 @@ const props = defineProps({
 });
 const { t } = useI18n();
 const configStore = useCaptainConfigStore();
+const inboxes = useMapGetter('inboxes/getInboxes');
 const assistant = ref(null);
+// The channel whose grid decides which agents the tested agent can hand over
+// to. Empty: the agent works alone (no handoffs, no council).
+const selectedInboxId = ref(null);
 const session = ref(null);
 const agentTasks = ref([]);
 const messages = ref([]);
@@ -84,6 +91,30 @@ const modelOptions = computed(() => {
   }
   return options;
 });
+// Only the text channels where this agent works: it is part of their grid.
+const channels = computed(() =>
+  assistant.value
+    ? agentChannelSummary({
+        assistant: assistant.value,
+        inboxes: inboxes.value || [],
+      }).channels
+    : []
+);
+const channelOptions = computed(() => [
+  { value: '', label: t('CAPTAIN.PLAYGROUND.CHANNEL_NONE') },
+  ...channels.value.map(channel => ({
+    value: String(channel.inboxId),
+    label: channel.name || `#${channel.inboxId}`,
+  })),
+]);
+const channelDisabled = computed(
+  () =>
+    isLoading.value ||
+    isLoadingSession.value ||
+    isLoadingSettings.value ||
+    isUpdatingPermissions.value ||
+    !session.value
+);
 const messageDisabled = computed(
   () =>
     isLoading.value ||
@@ -210,6 +241,7 @@ const loadSession = async ({
       sessionId: session.value?.session_id,
       reset,
       scenario,
+      inboxId: selectedInboxId.value || undefined,
     });
     if (
       current === identity &&
@@ -287,6 +319,21 @@ const resetConversation = async () => {
   isLoading.value = false;
   await loadSession({ reset: true });
 };
+// Another channel is another grid, so the chat starts again from the tested
+// agent: the server drops the agent session of the old channel, the visible
+// history is cleared with it.
+const changeChannel = async value => {
+  const next = Number(value) || null;
+  if (next === selectedInboxId.value) return;
+  selectedInboxId.value = next;
+  await resetConversation();
+};
+const channelValue = computed({
+  get: () => (selectedInboxId.value ? String(selectedInboxId.value) : ''),
+  set: value => {
+    changeChannel(value);
+  },
+});
 const sendMessage = async () => {
   if (!newMessage.value.trim() || messageDisabled.value) return;
   const current = identity;
@@ -302,6 +349,7 @@ const sendMessage = async () => {
     assistantId: props.assistantId,
     sessionId: session.value.session_id,
     messageContent: content,
+    inboxId: selectedInboxId.value || undefined,
     testOptions: {
       model: selectedModel.value,
       temperature:
@@ -392,6 +440,7 @@ const confirmAction = async approval => {
     assistantId: props.assistantId,
     sessionId: session.value.session_id,
     approval,
+    inboxId: selectedInboxId.value || undefined,
   });
   pendingTurn = flight;
   try {
@@ -440,6 +489,7 @@ watch(
     permissionEpoch += 1;
     assistant.value = null;
     session.value = null;
+    selectedInboxId.value = null;
     agentTasks.value = [];
     messages.value = [];
     newMessage.value = '';
@@ -478,6 +528,7 @@ defineExpose({
   sendMessage,
   setPermissions,
   resetConversation,
+  changeChannel,
   confirmAction,
 });
 </script>
@@ -508,6 +559,27 @@ defineExpose({
           @click="resetConversation"
         />
       </div>
+      <label
+        v-if="channels.length"
+        class="flex min-w-0 shrink-0 flex-col gap-1 text-xs text-n-slate-11"
+        data-test="playground-channel"
+      >
+        {{ t('CAPTAIN.PLAYGROUND.CHANNEL') }}
+        <Select
+          v-model="channelValue"
+          class="w-full min-w-0"
+          :options="channelOptions"
+          :disabled="channelDisabled"
+          data-test="playground-channel-select"
+        />
+        <span class="text-n-slate-10" data-test="playground-channel-hint">
+          {{
+            selectedInboxId
+              ? t('CAPTAIN.PLAYGROUND.CHANNEL_GRID_HINT')
+              : t('CAPTAIN.PLAYGROUND.CHANNEL_NONE_HINT')
+          }}
+        </span>
+      </label>
       <ModelSettings
         v-model:model="selectedModelValue"
         v-model:temperature="temperature"

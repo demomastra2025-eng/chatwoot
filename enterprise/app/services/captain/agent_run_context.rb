@@ -24,12 +24,16 @@ class Captain::AgentRunContext
       )
     end
 
-    context[:agent_graph] = graph.payload
+    # The channel grid decides the routing. When the main agent is the only agent of the channel there is nobody
+    # to transfer to or to bring together: the directory stays empty, so no plan, council, transfer or request
+    # queue exists for it (the runtime and the prompt build those only from a non-empty directory).
+    peers = graph.peers?
+    context[:agent_graph] = peers ? graph.payload : []
     context[:agent_graph_object] = graph
     context[:agent_run_context_object] = self
     context[:agent_inbox_id] = graph.inbox&.id
     context[:agent_session] = @session
-    context[:agent_tasks] = saved['tasks'] || []
+    context[:agent_tasks] = peers ? (saved['tasks'] || []) : []
     context[:parts] = saved['parts'] || []
     context[:agent_tasks].each do |task|
       next if Captain::Runtime::TaskQueue::TERMINAL.include?(task['status']) || graph.find(task['assistant_id'])

@@ -1,41 +1,41 @@
 # frozen_string_literal: true
 
+# Runtime safety preferences of a Captain run. Safety is never a per-agent
+# choice. The client has ONE workspace-wide switch, "moderation_enabled" in the
+# "safety" section of Captain::AccountSettings, and every customer-facing agent
+# of the workspace follows it. Everything else (the instruction-hijacking and
+# credentials checks, their actions, the failure mode) is platform-level and
+# comes from the platform runtime preferences (Account#captain_runtime_preferences).
+# The internal Copilot has no workspace section and uses the platform
+# preferences only.
+#
+# Data that is stored but not read here and kept untouched: a legacy
+# config['safety_settings'] on an agent, and the workspace
+# prompt_injection_action / sensitive_info_action values (the client cannot see
+# or change them any more; the platform default "block" applies).
 class Captain::AssistantSafetyPreferences
-  SETTINGS_BY_FEATURE = {
-    'assistant' => {
-      'moderation_enabled' => ['assistant_moderation', [true, false]],
-      'prompt_injection_action' => ['assistant_prompt_injection_guardrail', Llm::RuntimeGuardrailAction::ACTIONS],
-      'sensitive_info_action' => ['assistant_sensitive_info_guardrail', Llm::RuntimeGuardrailAction::ACTIONS]
-    },
-    'copilot' => {
-      'moderation_enabled' => ['copilot_moderation', [true, false]],
-      'prompt_injection_action' => ['copilot_prompt_injection_guardrail', Llm::RuntimeGuardrailAction::ACTIONS],
-      'sensitive_info_action' => ['copilot_sensitive_info_guardrail', Llm::RuntimeGuardrailAction::ACTIONS]
-    }
+  WORKSPACE_SETTINGS = {
+    'moderation_enabled' => ['assistant_moderation', [true, false]]
   }.freeze
 
   def self.for(assistant:, feature:, account: assistant&.account)
     account ||= assistant&.account
     preferences = account&.captain_runtime_preferences.to_h.stringify_keys
-    settings = settings_for(assistant, feature)
+    return preferences unless feature.to_s == 'assistant'
 
-    SETTINGS_BY_FEATURE.fetch(feature.to_s, {}).each do |setting_key, (runtime_key, allowed_values)|
-      value = runtime_value(settings[setting_key], setting_key, feature)
+    settings = workspace_settings(assistant, account)
+    WORKSPACE_SETTINGS.each do |setting_key, (runtime_key, allowed_values)|
+      value = settings[setting_key]
       preferences[runtime_key] = value if allowed_values.include?(value)
     end
 
     preferences
   end
 
-  def self.settings_for(assistant, feature)
-    return assistant.account_settings.section('safety') if feature.to_s == 'assistant' && assistant
+  def self.workspace_settings(assistant, account)
+    return assistant.account_settings.section('safety') if assistant && assistant.account_id == account&.id
+    return Captain::AccountSettings.new(account).section('safety') if account
 
-    assistant&.config.to_h.deep_stringify_keys['safety_settings'].to_h
-  end
-
-  def self.runtime_value(value, key, feature)
-    return value unless key.end_with?('_action') && feature.to_s == 'assistant'
-
-    Captain::AccountSettings::ACTION_FROM_API.fetch(value, value)
+    {}
   end
 end

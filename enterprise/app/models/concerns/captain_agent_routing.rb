@@ -25,6 +25,22 @@ module Concerns::CaptainAgentRouting
     active? && external_agent?
   end
 
+  # The agents this agent can transfer to or consult come from the channel grid:
+  # every other active agent attached to a channel where this agent works.
+  # Nothing is stored per agent, and the legacy handoff_targets below restrict
+  # nothing at runtime (see Captain::AgentGraph for the graph of one channel).
+  def channel_peers
+    return [] unless entry_eligible?
+
+    peers = Captain::Assistant.entry_eligible.where(account_id: account_id).where.not(id: id).order(:id).to_a
+    return peers if ([self] + peers).all? { |agent| agent.channel_scope == 'all' }
+
+    inbox_ids = selected_inbox_ids_by_agent([self] + peers)
+    peers.select { |peer| shares_channel?(self, peer, inbox_ids) }
+  end
+
+  # Legacy per-agent allowed-targets list. The data is kept, but routing, the
+  # prompt and the council ignore it.
   def handoff_targets
     handoff_agents.entry_eligible.where(account_id: account_id).order(:id)
   end
@@ -42,6 +58,27 @@ module Concerns::CaptainAgentRouting
   end
 
   private
+
+  def selected_inbox_ids_by_agent(agents)
+    Captain::AgentChannel.where(assistant_id: agents.map(&:id)).pluck(:assistant_id, :inbox_id)
+                         .group_by(&:first).transform_values { |rows| rows.map(&:last) }
+  end
+
+  # A selected agent works in its listed channels only; an agent of all channels
+  # works in every channel, so it meets any agent that works in at least one.
+  def shares_channel?(first, second, inbox_ids)
+    mine = channels_of(first, inbox_ids)
+    theirs = channels_of(second, inbox_ids)
+    return true if mine == :all && theirs == :all
+    return mine.any? if theirs == :all
+    return theirs.any? if mine == :all
+
+    mine.intersect?(theirs)
+  end
+
+  def channels_of(agent, inbox_ids)
+    agent.channel_scope == 'all' ? :all : inbox_ids.fetch(agent.id, [])
+  end
 
   def normalized_handoff_agent_ids
     Array(@handoff_agent_ids_input).map { |value| value.to_s.to_i }.uniq.sort

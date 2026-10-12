@@ -9,8 +9,7 @@ RSpec.describe Captain::Assistant::PromptPreviewService do
   describe '#preview' do
     it 'strictly compiles main, copilot and routed prompts with field and tool glossaries' do
       assistant.update!(description: 'Use [Name](field://contact.name).')
-      target = create(:captain_assistant, account: account, description: 'Use [Email](field://contact.email).')
-      assistant.update!(handoff_agent_ids: [target.id])
+      create(:captain_assistant, account: account, description: 'Use [Email](field://contact.email).')
 
       preview = described_class.new(assistant: assistant).preview
 
@@ -94,7 +93,6 @@ RSpec.describe Captain::Assistant::PromptPreviewService do
     it 'shows the routed agent own prompt without importing its tools or instructions into the entry agent' do
       custom = create(:captain_custom_tool, account: account, slug: 'custom_peer_only', title: 'Peer tool')
       target = create(:captain_assistant, account: account, description: "Own peer prompt: [Peer tool](tool://#{custom.slug})")
-      assistant.update!(handoff_agent_ids: [target.id])
       preview = described_class.new(assistant: assistant).preview
       expect(preview.dig(:assistant, :used_tool_ids)).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation')
       expect(preview.dig(:assistant, :compiled_prompt)).not_to include('Own peer prompt', custom.slug)
@@ -102,6 +100,19 @@ RSpec.describe Captain::Assistant::PromptPreviewService do
       expect(preview.dig(:scenarios, 0, :compiled_prompt)).to include('Own peer prompt', custom.slug)
       expect(preview.dig(:scenarios, 0, :compiled_prompt)).not_to include('Handle billing questions only.')
       expect(preview.dig(:scenarios, 0, :used_tool_ids)).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation', custom.slug)
+    end
+
+    it 'lists the agents of the channel grid as routes and never a stored list of allowed targets' do
+      shared = create(:captain_assistant, account: account, name: 'Shared agent', routing_description: 'Prices')
+      stored_only = create(:captain_assistant, account: account, channel_scope: 'selected')
+      assistant.update!(handoff_agent_ids: [stored_only.id])
+
+      preview = described_class.new(assistant: assistant).preview
+
+      expect(preview[:scenarios].pluck(:id)).to eq([shared.id])
+      expect(preview.dig(:assistant, :layers)).to include(
+        include(id: 'scenario_handoffs', enabled: true, values: ['Shared agent: Prices'])
+      )
     end
 
     it 'includes handoff in the assistant preview when the default capability is enabled' do
@@ -118,8 +129,7 @@ RSpec.describe Captain::Assistant::PromptPreviewService do
         slug: 'custom_fetch-order',
         title: 'Fetch Order'
       )
-      target = create(:captain_assistant, account: account, description: 'Use [@Fetch Order](tool://custom_fetch-order)')
-      assistant.update!(handoff_agent_ids: [target.id])
+      create(:captain_assistant, account: account, description: 'Use [@Fetch Order](tool://custom_fetch-order)')
 
       custom_tool.update!(enabled: false)
 

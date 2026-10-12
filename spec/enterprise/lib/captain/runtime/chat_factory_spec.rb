@@ -478,6 +478,46 @@ RSpec.describe Captain::Runtime::ChatFactory do
     end
   end
 
+  describe 'the coordination of agents' do
+    let(:agent) { Captain::Runtime::Agent.new(name: 'assistant_1', model: 'openai/gpt-5.4-mini', instructions: 'Base prompt') }
+    let(:graph) do
+      [{ id: 1, key: 'assistant_1', name: 'Orders', description: 'Order enquiries' },
+       { id: 2, key: 'assistant_2', name: 'Visits', description: 'Appointment changes' }]
+    end
+
+    def run_context(extra = {})
+      Captain::Runtime::RunContext.new({ state: { assistant_id: 1, entry_assistant_id: 1 } }.merge(extra))
+    end
+
+    def tool_names(wrapper)
+      described_class.send(:build_agent_tools, agent, wrapper).map(&:name)
+    end
+
+    it 'gives an agent that has peers the plan tool and the coordination prompt' do
+      wrapper = run_context(agent_graph: graph)
+
+      expect(tool_names(wrapper)).to include('plan_request')
+      expect(described_class.send(:system_prompt_for, agent, wrapper))
+        .to include('Base prompt', 'You are Orders, the current agent', 'plan_request', 'Use council only when')
+    end
+
+    it 'gives an agent without peers neither the plan tool nor any coordination prompt' do
+      wrapper = run_context(agent_graph: [])
+
+      expect(tool_names(wrapper)).not_to include('plan_request')
+      expect(described_class.send(:system_prompt_for, agent, wrapper)).to eq('Base prompt')
+    end
+
+    it 'names the agent that acts now, whichever agent of the channel it is, with no split into a main agent and specialists' do
+      wrapper = run_context(agent_graph: graph, state: { assistant_id: 2, entry_assistant_id: 1 })
+
+      expect(described_class.send(:system_prompt_for, agent, wrapper))
+        .to include('You are Visits, the current agent')
+      expect(described_class.send(:system_prompt_for, agent, wrapper))
+        .not_to include('You are the main agent of this channel', 'You are a specialist of this channel')
+    end
+  end
+
   describe 'the consultation prompt' do
     let(:agent) { Captain::Runtime::Agent.new(name: 'assistant_agent', model: 'openai/gpt-5.4-mini', instructions: 'Base prompt') }
 

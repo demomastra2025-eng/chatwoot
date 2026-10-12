@@ -355,8 +355,6 @@ captain_assistant_safety_settings:
   $ref: ./crm_account_apis.yml#/captain_assistant_safety_settings
 captain_custom_safety_rule:
   $ref: ./crm_account_apis.yml#/captain_custom_safety_rule
-captain_custom_safety_rules_error:
-  $ref: ./crm_account_apis.yml#/captain_custom_safety_rules_error
 captain_outcome_reason_settings:
   $ref: ./crm_account_apis.yml#/captain_outcome_reason_settings
 captain_outcome_reason_option:

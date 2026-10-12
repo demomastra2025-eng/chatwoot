@@ -38,7 +38,6 @@ const { shouldShowPaywall } = usePolicy();
 
 const EMPTY_SERVER_ERRORS = Object.freeze({
   fields: {},
-  rules: {},
   general: [],
 });
 
@@ -133,8 +132,6 @@ const save = async () => {
   const body = patch.value;
   if (!Object.keys(body).length) return;
 
-  // Server rule errors point at positions in the list that was sent.
-  const sentDraft = JSON.parse(JSON.stringify(draft.value));
   isSaving.value = true;
   try {
     const result = await store.save(body);
@@ -143,7 +140,7 @@ const save = async () => {
       useAlert(t('CAPTAIN.AI_SETTINGS.SAVED'));
       return;
     }
-    serverErrors.value = mapAiSettingsErrors(result.errors, sentDraft);
+    serverErrors.value = mapAiSettingsErrors(result.errors);
     useAlert(t('CAPTAIN.AI_SETTINGS.SAVE_ERROR'));
   } finally {
     isSaving.value = false;
@@ -272,8 +269,6 @@ onBeforeUnmount(() => {
         <SafetySection
           v-model="draft.safety"
           :errors="fieldErrors"
-          :rule-errors="serverErrors.rules"
-          :show-errors="showValidation"
           :disabled="isSaving"
         />
       </div>

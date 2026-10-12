@@ -210,7 +210,6 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
     let(:scenario) do
       target = create(:captain_assistant, account: account, name: 'Billing disputes', routing_description: 'Handles disputed charge flows.',
                       description: 'Collect the dispute reason, then use [@Handoff](tool://handoff) if finance approval is needed.')
-      assistant.update!(handoff_agent_ids: [target.id])
       target
     end
 
@@ -1065,7 +1064,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
 
       end
 
-      it 'persists assistant safety selections while retaining omitted checks and unrelated config' do
+      it 'ignores per-agent safety selections: safety is a workspace setting, stored legacy data stays as it is' do
         stub_temperature_supported_assistant_model
         assistant.update!(
           config: {
@@ -1100,7 +1099,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
           },
           'safety_settings' => {
             'moderation_enabled' => true,
-            'prompt_injection_action' => 'flag',
+            'prompt_injection_action' => 'block',
             'sensitive_info_action' => 'block'
           }
         )
@@ -1350,6 +1349,31 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         expect(agent_runner_service).to have_received(:generate_response).with(
           message_history: [{ role: 'user', content: params_without_history[:message_content] }]
         )
+      end
+
+      %i[inbox_id live_inbox_id].each do |param|
+        it "records the channel sent as #{param} in the playground session so its grid decides who the agent can transfer to" do
+          inbox = create(:inbox, account: account)
+
+          post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground",
+               params: { playground_action: 'session', param => inbox.id },
+               headers: agent.create_new_auth_token,
+               as: :json
+
+          expect(response).to have_http_status(:success)
+          store = Captain::Playground::SessionStore.new(account: account, user: agent, assistant: assistant)
+          expect(store.read(session_id: json_response.dig(:playground, :session_id))['inbox_id']).to eq(inbox.id)
+        end
+      end
+
+      it 'rejects a playground channel of another workspace' do
+        post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground",
+             params: { playground_action: 'session', live_inbox_id: create(:inbox).id },
+             headers: agent.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(json_response[:error]).to eq('invalid_playground_scenario')
       end
 
       it 'does not duplicate the latest user message if it is already in history' do

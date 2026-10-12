@@ -4090,7 +4090,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     tags: [Captain Assistants]
     operationId: create-captain-assistant
     summary: Create an account Captain assistant
-    description: Creates an independent agent in this account with its own prompt in assistant.description, model, tools and settings. active, routing_description and handoff_agent_ids are top-level assistant fields. Newly selected targets must be active external agents from the same account. config.safety_settings.custom_rules accepts up to 20 ordered conditions with stable unique IDs; rewrite is output-only. Invalid custom rules return 422 invalid_custom_safety_rules with field paths before saving. response_guidelines, guardrails or config.rules writes are rejected with 422 separate_rules_removed before saving. config.skills is no longer permitted and is ignored. Responses exclude these separate instruction fields and include normalized outcome_reason_options.
+    description: Creates an independent agent in this account with its own prompt in assistant.description, model, tools and settings. active and routing_description are top-level assistant fields. The agents a channel can transfer to and its main agent are set on the channel grid (captain/channel_matrix), not on the agent. Safety checks are one workspace setting (captain/settings, section safety); config.safety_settings is ignored. response_guidelines, guardrails or config.rules writes are rejected with 422 separate_rules_removed before saving. config.skills is no longer permitted and is ignored. Responses exclude these separate instruction fields and include normalized outcome_reason_options.
     security: [{ userApiKey: [] }]
     requestBody:
       required: true
@@ -4110,7 +4110,6 @@ x-scheduling-expense-schema: &scheduling_expense_schema
             schema:
               anyOf:
                 - { $ref: '#/components/schemas/captain_removed_rules_error' }
-                - { $ref: '#/components/schemas/captain_custom_safety_rules_error' }
                 - { type: object, additionalProperties: true }
 /api/v1/accounts/{account_id}/captain/assistants/{id}:
   parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
@@ -4125,7 +4124,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     tags: [Captain Assistants]
     operationId: update-captain-assistant
     summary: Update an account Captain assistant
-    description: Saves the agent's own prompt in assistant.description, activity, routing description, explicit handoff targets and configuration together. Omitted handoff_agent_ids retains saved routes; an empty array clears them. Newly selected targets must be active external agents in this account and cannot include the agent itself. A validation failure rolls back the complete settings save. Model, tools, follow-ups, outcome reasons and runtime safety belong inside assistant.config. Omitted safety fields retain saved overrides; provider-safety fields accept null to inherit workspace policy. custom_rules replaces the complete ordered list; omitted retains it, [] clears it and null is invalid. Invalid custom rules return 422 invalid_custom_safety_rules with concrete field paths and codes. Disabling follow-ups cancels this agent's open reminders. response_guidelines, guardrails or config.rules writes are rejected with 422 separate_rules_removed before saving. config.skills is no longer permitted and is ignored. Responses exclude these separate instruction fields and include normalized outcome_reason_options.
+    description: Saves the agent's own prompt in assistant.description, activity, routing description and configuration together. The agents a channel can transfer to are set on the channel grid (captain/channel_matrix); a handoff_agent_ids value is ignored and the stored legacy list restricts nothing. A validation failure rolls back the complete settings save. Model, tools, follow-ups and outcome reasons belong inside assistant.config. Safety checks are one workspace setting (captain/settings, section safety); config.safety_settings is ignored and any value stored on the agent is left as it is. Disabling follow-ups cancels this agent's open reminders. response_guidelines, guardrails or config.rules writes are rejected with 422 separate_rules_removed before saving. config.skills is no longer permitted and is ignored. Responses exclude these separate instruction fields and include normalized outcome_reason_options.
     security: [{ userApiKey: [] }]
     requestBody:
       required: true
@@ -4143,15 +4142,11 @@ x-scheduling-expense-schema: &scheduling_expense_schema
                   usage_mode: { type: string, enum: [external_agent, internal_assistant] }
                   active: { type: boolean, description: Only active external agents are eligible for channel entry or handoff routing. }
                   routing_description: { type: string, nullable: true, maxLength: 2000 }
-                  handoff_agent_ids:
-                    type: array
-                    items: { type: integer, minimum: 1 }
-                    description: Replaces outgoing routes only when this settings request succeeds. Existing inactive targets may be retained; runtime routing ignores them.
+
                   config:
                     type: object
                     properties:
                       model: { type: string }
-                      safety_settings: { $ref: '#/components/schemas/captain_assistant_safety_settings' }
                       feature_faq: { type: boolean }
                       feature_memory: { type: boolean }
                       feature_citation: { type: boolean }
@@ -4176,13 +4171,12 @@ x-scheduling-expense-schema: &scheduling_expense_schema
           application/json:
             schema: { $ref: '#/components/schemas/captain_assistant' }
       '422':
-        description: Invalid configuration, handoff target or a removed separate instruction field; no settings changes are saved.
+        description: Invalid configuration or a removed separate instruction field; no settings changes are saved.
         content:
           application/json:
             schema:
               anyOf:
                 - { $ref: '#/components/schemas/captain_removed_rules_error' }
-                - { $ref: '#/components/schemas/captain_custom_safety_rules_error' }
                 - { type: object, additionalProperties: true }
   delete:
     tags: [Captain Assistants]

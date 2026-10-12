@@ -28,10 +28,11 @@ RSpec.describe Captain::Runtime::HandoffTool do
   it 'halts neutrally after two transfers without requesting staff or a customer question' do
     entry = create(:captain_assistant)
     specialist = create(:captain_assistant, account: entry.account)
+    inbox = create(:inbox, account: entry.account)
     target = Captain::Runtime::Agent.new(name: "assistant_#{specialist.id}")
     target.assistant_id = specialist.id
     context = { state: { account_id: entry.account_id, assistant_id: entry.id, entry_assistant_id: entry.id },
-                agent_graph: Captain::AgentGraph.new(entry).payload, handoff_count: 2 }
+                agent_graph: Captain::AgentGraph.new(entry, inbox: inbox).payload, agent_inbox_id: inbox.id, handoff_count: 2 }
     tool_context = Captain::Runtime::ToolContext.new(run_context: Captain::Runtime::RunContext.new(context))
 
     result = described_class.new(target).perform(tool_context)
@@ -46,11 +47,12 @@ RSpec.describe Captain::Runtime::HandoffTool do
   it 'prevents an immediate return to the agent that just handed off' do
     entry = create(:captain_assistant)
     specialist = create(:captain_assistant, account: entry.account)
+    inbox = create(:inbox, account: entry.account)
     target = Captain::Runtime::Agent.new(name: "assistant_#{entry.id}")
     target.assistant_id = entry.id
     context = { state: { account_id: entry.account_id, assistant_id: specialist.id,
-                         entry_assistant_id: entry.id }, agent_graph: Captain::AgentGraph.new(entry).payload,
-                handoff_count: 1, previous_handoff_source_id: entry.id }
+                         entry_assistant_id: entry.id }, agent_graph: Captain::AgentGraph.new(entry, inbox: inbox).payload,
+                agent_inbox_id: inbox.id, handoff_count: 1, previous_handoff_source_id: entry.id }
     tool_context = Captain::Runtime::ToolContext.new(run_context: Captain::Runtime::RunContext.new(context))
 
     result = described_class.new(target).perform(tool_context)
@@ -60,13 +62,35 @@ RSpec.describe Captain::Runtime::HandoffTool do
     expect(context).not_to have_key(:pending_handoff)
   end
 
+  it 'refuses a transfer when the channel grid no longer attaches the target' do
+    entry = create(:captain_assistant)
+    specialist = create(:captain_assistant, account: entry.account, channel_scope: 'selected')
+    inbox = create(:inbox, account: entry.account)
+    Captain::AgentChannel.create!(account: entry.account, inbox: inbox, assistant: specialist)
+    target = Captain::Runtime::Agent.new(name: "assistant_#{specialist.id}")
+    target.assistant_id = specialist.id
+    context = { state: { account_id: entry.account_id, assistant_id: entry.id, entry_assistant_id: entry.id },
+                agent_graph: Captain::AgentGraph.new(entry, inbox: inbox).payload, agent_inbox_id: inbox.id }
+    tool_context = Captain::Runtime::ToolContext.new(run_context: Captain::Runtime::RunContext.new(context))
+    Captain::AgentChannel.where(assistant_id: specialist.id).delete_all
+
+    result = described_class.new(target).perform(tool_context)
+
+    expect(Captain::ToolResult.normalize(result)).to include(
+      success: false, error: 'Agent routing changed; this handoff is no longer available'
+    )
+    expect(context).not_to have_key(:pending_handoff)
+  end
+
   describe 'a transfer to one colleague' do
     let!(:entry) { create(:captain_assistant) }
     let!(:specialist) { create(:captain_assistant, account: entry.account) }
+    let!(:inbox) { create(:inbox, account: entry.account) }
     let(:target) { Captain::Runtime::Agent.new(name: "assistant_#{specialist.id}").tap { |agent| agent.assistant_id = specialist.id } }
     let(:context) do
       { state: { account_id: entry.account_id, assistant_id: entry.id, entry_assistant_id: entry.id },
-        agent_graph: Captain::AgentGraph.new(entry).payload, agent_session: Object.new, agent_tasks: [] }
+        agent_graph: Captain::AgentGraph.new(entry, inbox: inbox).payload, agent_inbox_id: inbox.id,
+        agent_session: Object.new, agent_tasks: [] }
     end
     let(:run_context) { Captain::Runtime::RunContext.new(context) }
     let(:tool_context) { Captain::Runtime::ToolContext.new(run_context: run_context) }

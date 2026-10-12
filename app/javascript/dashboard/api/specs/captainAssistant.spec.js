@@ -59,6 +59,56 @@ describe('CaptainAssistant playground API', () => {
     });
   });
 
+  it('sends the chosen channel with a message, a session call, a reset and a confirmation', () => {
+    CaptainAssistant.playground({
+      assistantId: 42,
+      sessionId: 'workspace-session',
+      messageContent: 'Hello',
+      inboxId: 7,
+    });
+    expect(axiosMock.post.mock.lastCall[1]).toMatchObject({ inbox_id: 7 });
+
+    CaptainAssistant.playgroundSession({ assistantId: 42, inboxId: 7 });
+    expect(axiosMock.post.mock.lastCall[1]).toEqual({
+      playground_action: 'session',
+      playground_mode: 'workspace',
+      inbox_id: 7,
+    });
+
+    CaptainAssistant.playgroundSession({
+      assistantId: 42,
+      sessionId: 'workspace-session',
+      reset: true,
+      inboxId: 7,
+    });
+    expect(axiosMock.post.mock.lastCall[1]).toMatchObject({
+      playground_action: 'reset',
+      inbox_id: 7,
+    });
+
+    CaptainAssistant.confirmPlaygroundAction({
+      assistantId: 42,
+      sessionId: 'workspace-session',
+      approval: { id: 'approval-id', digest: 'exact-digest' },
+      inboxId: 7,
+    });
+    expect(axiosMock.post.mock.lastCall[1]).toMatchObject({
+      playground_action: 'confirm',
+      inbox_id: 7,
+    });
+  });
+
+  it('sends no channel when none is chosen, so the agent works alone', () => {
+    CaptainAssistant.playground({
+      assistantId: 42,
+      messageContent: 'Hello',
+      inboxId: null,
+    });
+    expect(axiosMock.post.mock.lastCall[1]).not.toHaveProperty('inbox_id');
+    CaptainAssistant.playgroundSession({ assistantId: 42 });
+    expect(axiosMock.post.mock.lastCall[1]).not.toHaveProperty('inbox_id');
+  });
+
   it('omits model parameters when provider defaults are selected', () => {
     CaptainAssistant.playground({
       assistantId: 42,

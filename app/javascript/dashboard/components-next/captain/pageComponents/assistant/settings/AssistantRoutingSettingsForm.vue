@@ -1,55 +1,35 @@
 <script setup>
-import { computed, reactive, watch, onMounted } from 'vue';
+import { reactive, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useStore, useMapGetter } from 'dashboard/composables/store';
 import Input from 'dashboard/components-next/input/Input.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
-import AgentSelector from 'dashboard/components-next/captain/assistant/AgentSelector.vue';
-import {
-  activeExternalAssistants,
-  normalizeAssistantIds,
-} from 'dashboard/components-next/captain/assistant/assistantAccess';
 
+// Whether the agent works at all, and the sentence the other agents of a
+// channel use to decide when to give a request to this one. Which agents work
+// in a channel (and which one is the main agent) is set on the «Каналы» grid,
+// not here.
 const props = defineProps({
   assistant: { type: Object, default: () => ({}) },
 });
 const { t } = useI18n();
-const store = useStore();
-const assistants = useMapGetter('captainAssistants/getRecords');
-const uiFlags = useMapGetter('captainAssistants/getUIFlags');
 const state = reactive({
   active: true,
   routingDescription: '',
-  handoffIds: [],
 });
-const targets = computed(() =>
-  activeExternalAssistants(assistants.value, props.assistant.id)
-);
 watch(
   () => props.assistant,
   assistant => {
     state.active = assistant.active !== false;
     state.routingDescription = assistant.routing_description || '';
-    state.handoffIds = normalizeAssistantIds(assistant.handoff_agent_ids || []);
   },
   { immediate: true }
 );
-onMounted(() => {
-  if (!uiFlags.value.fetchingList) store.dispatch('captainAssistants/get');
+const buildPayload = () => ({
+  assistant: {
+    active: state.active,
+    routing_description: state.routingDescription.trim(),
+  },
 });
-const buildPayload = () => {
-  if (uiFlags.value.fetchingList) return null;
-  const allowedIds = new Set(
-    targets.value.map(assistant => Number(assistant.id))
-  );
-  return {
-    assistant: {
-      active: state.active,
-      routing_description: state.routingDescription.trim(),
-      handoff_agent_ids: state.handoffIds.filter(id => allowedIds.has(id)),
-    },
-  };
-};
 defineExpose({ buildPayload });
 </script>
 
@@ -70,14 +50,5 @@ defineExpose({ buildPayload });
       :placeholder="t('CAPTAIN.ASSISTANTS.ROUTING.DESCRIPTION_PLACEHOLDER')"
       :max-length="1000"
     />
-    <AgentSelector
-      v-model="state.handoffIds"
-      :assistants="targets"
-      :disabled="uiFlags.fetchingList"
-      :label="t('CAPTAIN.ASSISTANTS.ROUTING.TARGETS')"
-    />
-    <p class="m-0 text-xs text-n-slate-11">
-      {{ t('CAPTAIN.ASSISTANTS.ROUTING.TARGETS_HELP') }}
-    </p>
   </section>
 </template>

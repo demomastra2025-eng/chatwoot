@@ -119,28 +119,20 @@ const settingsPayload = () => ({
   },
   faq: { generate_from_resolved: false },
   conversation: { message_collapse_window_seconds: 15 },
+  // The server also returns platform safety values the page does not show.
   safety: {
     moderation_enabled: true,
-    prompt_injection_action: 'block',
-    sensitive_info_action: 'block',
+    prompt_injection_action: 'off',
+    sensitive_info_action: 'flag',
     custom_rules: [
       {
         id: 'rule-in',
-        name: 'Договор',
+        name: '',
         direction: 'inbound',
-        instruction: 'Если клиент просит изменить договор.',
+        instruction: '',
         action: 'handoff',
         enabled: true,
-        message: '',
-      },
-      {
-        id: 'rule-out',
-        name: 'Гарантии',
-        direction: 'outbound',
-        instruction: 'Если ответ обещает гарантию.',
-        action: 'rewrite_once',
-        enabled: true,
-        message: '',
+        message: null,
       },
     ],
   },
@@ -199,8 +191,6 @@ describe('Captain AI settings page', () => {
 
   it('renders all five sections from the payload with their anchors', async () => {
     const wrapper = await mountPage();
-    const inbound = within(wrapper, 'custom-rules-inbound');
-    const outbound = within(wrapper, 'custom-rules-outbound');
 
     expect(testState.fetch).toHaveBeenCalledWith({ force: false });
     SECTION_IDS.forEach(id => {
@@ -208,23 +198,35 @@ describe('Captain AI settings page', () => {
     });
     expect(reasonRows(wrapper, 'handoff_reasons')).toHaveLength(2);
     expect(reasonRows(wrapper, 'completion_reasons')).toHaveLength(2);
-    expect(inbound.find('[data-testid="custom-rule-rule-in"]').exists()).toBe(
-      true
-    );
-    expect(inbound.find('[data-testid="custom-rule-rule-out"]').exists()).toBe(
-      false
-    );
-    expect(outbound.find('[data-testid="custom-rule-rule-out"]').exists()).toBe(
-      true
-    );
     expect(wrapper.get('#ai-settings-collapse-window').element.value).toBe(
       '15'
     );
     expect(wrapper.get('#handoff-message-text').element.value).toBe('Передаю');
-    expect(
-      wrapper.get('#ai-settings-sensitive_info_action').element.value
-    ).toBe('block');
     expect(saveButton(wrapper).attributes('disabled')).toBeDefined();
+  });
+
+  it('offers exactly one safety switch for all agents and nothing else', async () => {
+    const wrapper = await mountPage();
+    const safety = within(wrapper, 'ai-settings-safety');
+
+    expect(safety.findAll('[role="switch"]')).toHaveLength(1);
+    expect(
+      switchIn(wrapper, 'safety-moderation').attributes('aria-checked')
+    ).toBe('true');
+    expect(safety.findAll('select, textarea')).toHaveLength(0);
+    expect(safety.text()).toContain('CAPTAIN.AI_SETTINGS.SAFETY.CHECK');
+    expect(wrapper.find('[data-testid="custom-rules-inbound"]').exists()).toBe(
+      false
+    );
+    expect(wrapper.find('[data-testid="custom-rules-outbound"]').exists()).toBe(
+      false
+    );
+    expect(wrapper.find('#ai-settings-prompt_injection_action').exists()).toBe(
+      false
+    );
+    expect(wrapper.find('#ai-settings-sensitive_info_action').exists()).toBe(
+      false
+    );
   });
 
   it('disables the web toggles with a hint when web access is not configured', async () => {
@@ -265,44 +267,37 @@ describe('Captain AI settings page', () => {
     const wrapper = await mountPage();
 
     await switchIn(wrapper, 'knowledge-faq-from-resolved').trigger('click');
-    await wrapper.get('#ai-settings-sensitive_info_action').setValue('flag');
+    await switchIn(wrapper, 'safety-moderation').trigger('click');
     expect(saveButton(wrapper).attributes('disabled')).toBeUndefined();
 
     await clickSave(wrapper);
 
+    // The page sends the one switch only: the platform safety values it does
+    // not show are never sent back, so a save cannot reset or overwrite them.
     expect(testState.save).toHaveBeenCalledTimes(1);
     expect(testState.save).toHaveBeenCalledWith({
       faq: { generate_from_resolved: true },
-      safety: {
-        moderation_enabled: true,
-        prompt_injection_action: 'block',
-        sensitive_info_action: 'flag',
-        custom_rules: [
-          {
-            id: 'rule-in',
-            name: 'Договор',
-            direction: 'inbound',
-            instruction: 'Если клиент просит изменить договор.',
-            action: 'handoff',
-            enabled: true,
-            message: '',
-          },
-          {
-            id: 'rule-out',
-            name: 'Гарантии',
-            direction: 'outbound',
-            instruction: 'Если ответ обещает гарантию.',
-            action: 'rewrite_once',
-            enabled: true,
-            message: '',
-          },
-        ],
-      },
+      safety: { moderation_enabled: false },
     });
     expect(testState.useAlert).toHaveBeenCalledWith(
       'CAPTAIN.AI_SETTINGS.SAVED'
     );
     expect(saveButton(wrapper).attributes('disabled')).toBeDefined();
+  });
+
+  it('is not blocked by a stored platform rule that is invalid for the client', async () => {
+    testState.save.mockResolvedValue({ ok: true, settings: settingsPayload() });
+    const wrapper = await mountPage();
+
+    await switchIn(wrapper, 'safety-moderation').trigger('click');
+    await clickSave(wrapper);
+
+    expect(testState.useAlert).not.toHaveBeenCalledWith(
+      'CAPTAIN.AI_SETTINGS.VALIDATION_ERROR'
+    );
+    expect(testState.save).toHaveBeenCalledWith({
+      safety: { moderation_enabled: false },
+    });
   });
 
   it('sends a changed handoff section whole with the reason flags', async () => {
@@ -450,19 +445,15 @@ describe('Captain AI settings page', () => {
     });
   });
 
-  it('blocks saving while a custom rule or a message is invalid', async () => {
+  it('blocks saving while a message is invalid', async () => {
     const wrapper = await mountPage();
 
-    await wrapper.get('#custom-rule-rule-in-name').setValue('');
     await wrapper.get('#handoff-message-text').setValue('');
     await clickSave(wrapper);
 
     expect(testState.save).not.toHaveBeenCalled();
     expect(testState.useAlert).toHaveBeenCalledWith(
       'CAPTAIN.AI_SETTINGS.VALIDATION_ERROR'
-    );
-    expect(wrapper.text()).toContain(
-      'CAPTAIN.ASSISTANTS.FORM.CUSTOM_GUARDRAILS.ERRORS.NAME'
     );
     expect(wrapper.text()).toContain(
       'CAPTAIN.AI_SETTINGS.HANDOFF.TEXT_REQUIRED'
@@ -489,9 +480,9 @@ describe('Captain AI settings page', () => {
       ok: false,
       errors: [
         {
-          field: 'safety.custom_rules[0].name',
-          code: 'taken',
-          message: 'Name is taken',
+          field: 'safety.moderation_enabled',
+          code: 'invalid_type',
+          message: 'Must be a boolean',
         },
         {
           field: 'conversation.message_collapse_window_seconds',
@@ -504,15 +495,15 @@ describe('Captain AI settings page', () => {
     const wrapper = await mountPage();
 
     await wrapper.get('#ai-settings-collapse-window').setValue('600');
-    await wrapper.get('#custom-rule-rule-in-name').setValue('Договор 2');
+    await switchIn(wrapper, 'safety-moderation').trigger('click');
     await clickSave(wrapper);
 
     expect(testState.save).toHaveBeenCalledTimes(1);
     expect(testState.useAlert).toHaveBeenCalledWith(
       'CAPTAIN.AI_SETTINGS.SAVE_ERROR'
     );
-    expect(wrapper.get('[data-testid="custom-rule-rule-in"]').text()).toContain(
-      'Name is taken'
+    expect(wrapper.get('[data-testid="ai-settings-safety"]').text()).toContain(
+      'Must be a boolean'
     );
     expect(wrapper.get('[data-testid="ai-settings-speed"]').text()).toContain(
       'Window is too long'

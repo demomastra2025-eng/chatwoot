@@ -22,15 +22,19 @@ class Captain::Playground::Session
   def conversation = nil
   def deep_dup = self
 
+  # The channel whose grid (the agents attached to it, the main one first)
+  # decides which agents this session can transfer to. Without a chosen
+  # channel the entry agent works alone and has no peers.
   def routing_inbox
     return if data.to_h['inbox_id'].blank?
 
-    account.inboxes.find(data['inbox_id'])
+    account.inboxes.find_by(id: data['inbox_id'])
   end
 
-  def with_lock(reset: false, scenario_input: nil, **)
+  def with_lock(reset: false, scenario_input: nil, inbox_id: nil, **)
     store.with_lock do
       load_data!(reset: reset, scenario_input: scenario_input)
+      select_routing_inbox!(inbox_id)
       begin
         yield self
       ensure
@@ -167,6 +171,25 @@ class Captain::Playground::Session
     { 'id' => SecureRandom.uuid, 'version' => 2, 'mode' => mode,
       'scenario' => Captain::Playground::Scenario.default(timezone: account.reporting_timezone).merge('custom_fields' => configuration),
       'history' => [], 'action_previews' => [], 'active_assistant_id' => entry_assistant.id }
+  end
+
+  def select_routing_inbox!(inbox_id)
+    return if inbox_id.blank?
+
+    inbox = account.inboxes.find_by(id: inbox_id)
+    raise ArgumentError, 'Playground channel is not available' unless inbox
+    return if data['inbox_id'].to_i == inbox.id
+
+    # Another channel has another grid, so the session starts again from the
+    # entry agent: the durable agent session (current agent, task queue, request
+    # parts) belongs to the old grid and is dropped, and pending real-data
+    # previews are revoked.
+    data['inbox_id'] = inbox.id
+    data['active_assistant_id'] = entry_assistant.id
+    data.delete(Captain::Conversation::AgentSession::ATTRIBUTE)
+    Array(data['action_previews']).each { |preview| preview['status'] = 'revoked' if preview['status'] == 'pending' }
+    @assistant = entry_assistant
+    @run_policy = nil
   end
 
   def ensure_membership!

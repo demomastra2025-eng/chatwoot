@@ -65,7 +65,12 @@ class Captain::Assistant::PromptPreviewService
     }
   end
 
-  def scenario_previews = assistant.handoff_targets.map { |agent| scenario_preview(agent) }
+  # The agents of the channels where this agent works (the channel grid), not a stored per-agent list.
+  def scenario_previews = peers.map { |agent| scenario_preview(agent) }
+
+  def peers
+    @peers ||= assistant.channel_peers
+  end
 
   def allowed_copilot_tools
     assistant.allowed_assistant_tools
@@ -83,7 +88,7 @@ class Captain::Assistant::PromptPreviewService
       list_layer(
         'scenario_handoffs',
         'Scenario handoffs',
-        assistant.handoff_targets.map { |agent| "#{agent.name}: #{agent.routing_description}" }
+        peers.map { |agent| "#{agent.name}: #{agent.routing_description}" }
       )
     ]
   end

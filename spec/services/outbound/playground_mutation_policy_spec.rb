@@ -29,8 +29,8 @@ RSpec.describe Outbound::PlaygroundMutationPolicy do
       } }
   end
 
-  def with_approved_policy
-    session.with_lock do |workspace|
+  def with_approved_policy(inbox: nil)
+    session.with_lock(inbox_id: inbox&.id) do |workspace|
       workspace.set_permissions!(read: true, write: true)
       args = { 'resource_id' => 9, 'service_id' => 10, 'starts_at' => starts, 'ends_at' => ends, 'duration_min' => 30,
                'custom_attributes' => { 'medelement_cabinet_code' => 'cabinet-1' } }
@@ -80,8 +80,7 @@ RSpec.describe Outbound::PlaygroundMutationPolicy do
   it 'uses the entry session for a delegated actor and rejects changed graph membership or a substituted actor' do
     destination = create(:captain_assistant, account: account)
     other = create(:captain_assistant, account: account)
-    assistant.update!(handoff_agent_ids: [destination.id, other.id])
-    with_approved_policy do |workspace, policy|
+    with_approved_policy(inbox: create(:inbox, account: account)) do |workspace, policy|
       workspace.activate_agent!(destination)
       action = workspace.data['action_previews'].first
       action['binding'] = workspace.context_reference.stringify_keys
@@ -97,7 +96,7 @@ RSpec.describe Outbound::PlaygroundMutationPolicy do
       destination.update!(active: false)
       expect(described_class.authorized_action?(delegated)).to be false
       destination.update!(active: true)
-      # Graph membership is the channel mesh now (active external agents of the workspace), not the entry agent's handoff list.
+      # Graph membership is the grid of the chosen channel (its active external agents), not a stored list of the entry agent.
       destination.update!(usage_mode: 'internal_assistant')
       expect(described_class.authorized_action?(delegated)).to be false
     end

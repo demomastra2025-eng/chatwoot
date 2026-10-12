@@ -170,10 +170,16 @@ module Concerns::Agentable
   end
 
   def prompt_context_for_runtime_state(state = {})
-    return prompt_context unless voice_ai_runtime_state?(state)
+    return runtime_prompt_context(state) unless voice_ai_runtime_state?(state)
 
-    Rails.cache.fetch(voice_prompt_context_cache_key, expires_in: 2.minutes) { prompt_context }
+    Rails.cache.fetch(voice_prompt_context_cache_key(state), expires_in: 2.minutes) { runtime_prompt_context(state) }
   rescue StandardError
+    runtime_prompt_context(state)
+  end
+
+  # The prompt context of one run. A class whose context has a part that some
+  # runs never use (the peer list of a mesh run) narrows it here.
+  def runtime_prompt_context(_state = {})
     prompt_context
   end
 
@@ -181,10 +187,11 @@ module Concerns::Agentable
     state.to_h[:source].to_s == 'voice_ai' || state.to_h['source'].to_s == 'voice_ai'
   end
 
-  def voice_prompt_context_cache_key
+  def voice_prompt_context_cache_key(state = {})
     [
       'captain',
       'voice_prompt_context',
+      state.to_h[:mesh_routing] ? 'mesh' : 'plain',
       self.class.name,
       respond_to?(:id) ? id : nil,
       respond_to?(:cache_key_with_version) ? cache_key_with_version : nil,

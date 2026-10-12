@@ -77,36 +77,18 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(assistant.errors.details[:description]).to include(error: :too_long, count: Captain::Assistant::DESCRIPTION_MAX_LENGTH)
     end
 
-    it 'accepts only persisted safety settings supported by the runtime policy' do
-      assistant = build(
-        :captain_assistant,
-        account: create(:account),
-        config: {
-          'safety_settings' => {
-            'moderation_enabled' => true,
-            'prompt_injection_action' => 'flag',
-            'sensitive_info_action' => 'block'
-          }
-        }
-      )
+    it 'does not validate the legacy safety settings stored on the agent, because nothing reads them any more' do
+      [
+        { 'moderation_enabled' => true, 'prompt_injection_action' => 'flag' },
+        { 'prompt_injection_action' => 'warn_only' },
+        { 'custom_prompt_rule' => true },
+        'not an object'
+      ].each do |legacy|
+        assistant = create(:captain_assistant, account: create(:account), config: { 'safety_settings' => legacy })
 
-      expect(assistant).to be_valid
-
-      assistant.config['safety_settings']['prompt_injection_action'] = 'warn_only'
-
-      expect(assistant).not_to be_valid
-      expect(assistant.errors.of_kind?(:config, :invalid_safety_settings)).to be(true)
-    end
-
-    it 'rejects unknown assistant safety settings instead of silently persisting them' do
-      assistant = build(
-        :captain_assistant,
-        account: create(:account),
-        config: { 'safety_settings' => { 'custom_prompt_rule' => true } }
-      )
-
-      expect(assistant).not_to be_valid
-      expect(assistant.errors.of_kind?(:config, :invalid_safety_settings)).to be(true)
+        expect(assistant.update(name: 'Renamed')).to be(true)
+        expect(assistant.reload.config['safety_settings']).to eq(legacy)
+      end
     end
 
     it 'rejects a model that is not enabled for Captain assistants' do
@@ -757,10 +739,16 @@ RSpec.describe Captain::Assistant, type: :model do
 
     it 'renders configured independent agent routes using their own scope descriptions' do
       target = create(:captain_assistant, account: account, name: 'Billing Escalations', routing_description: 'Handle complex billing issues and escalations')
-      assistant.update!(handoff_agent_ids: [target.id])
       rendered = assistant.agent_instructions
       expect(rendered).to include('# Available agent routes', 'Billing Escalations: Handle complex billing issues and escalations')
       expect(rendered).to include("\x60#{target.handoff_tool_name}\x60")
+    end
+
+    it 'does not render a route from a stored allowed-targets list that no channel of the agent shares' do
+      stored_only = create(:captain_assistant, account: account, name: 'Detached agent', channel_scope: 'selected')
+      assistant.update!(handoff_agent_ids: [stored_only.id])
+
+      expect(assistant.agent_instructions).not_to include('# Available agent routes', 'Detached agent')
     end
 
     it 'keeps platform constraints mandatory after old system-rule switches are disabled' do
