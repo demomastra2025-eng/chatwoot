@@ -152,8 +152,18 @@ class Scheduling::Appointments::UpsertService
 
     # Only interval evidence is read before the transaction. Selecting and binding
     # a clinical patient acquires transaction locks and stays in apply_attributes!.
-    validate_provider_availability!(resource, projected)
-    @verified_provider_interval = projected
+    free_cabinet_code = validate_provider_availability!(resource, projected)
+    @verified_provider_interval = select_cabinet_automatically(projected, free_cabinet_code)
+  end
+
+  # A new reception without a cabinet gets the cabinet the availability read found free for the interval: the only one, or the
+  # first of several in the order slot search uses (cabinet code), so a booking never depends on the caller knowing cabinets. An
+  # existing appointment is never given a cabinet here.
+  def select_cabinet_automatically(projected, free_cabinet_code)
+    return projected unless appointment.new_record? && projected.cabinet_code.blank? && free_cabinet_code.present?
+
+    @automatically_selected_cabinet_code = free_cabinet_code
+    projected.with(cabinet_code: free_cabinet_code)
   end
 
   # Deterministic draft errors must not depend on provider availability. These
@@ -759,7 +769,7 @@ class Scheduling::Appointments::UpsertService
                             resolve_managed_custom_attributes(incoming, catalog)
                           end
 
-    attributes = apply_intake_system_custom_attributes(resolved_attributes, incoming)
+    attributes = apply_automatically_selected_cabinet(apply_intake_system_custom_attributes(resolved_attributes, incoming))
     attributes[patient_identity_policy::EXPLICIT_IDENTIFIER_KEY] = true if @appointment_identifier_explicit
     attributes[patient_identity_policy::OWNED_IDENTITY_KEY] = true if @appointment_patient_owned
     attributes = attributes.except('medelement_patient_code') if @separate_patient_transition
@@ -767,6 +777,13 @@ class Scheduling::Appointments::UpsertService
     attributes = Scheduling::Appointments::PlaygroundRunStamp.apply(attributes)
     attributes.merge(service_custom_attributes(services))
               .merge(local_service_binding_attributes(resource, services))
+  end
+
+  def apply_automatically_selected_cabinet(attributes)
+    return attributes if @automatically_selected_cabinet_code.blank? || !appointment.new_record?
+    return attributes if attributes['medelement_cabinet_code'].present?
+
+    attributes.merge('medelement_cabinet_code' => @automatically_selected_cabinet_code)
   end
 
   def resolve_unmanaged_custom_attributes(incoming)
@@ -1306,7 +1323,7 @@ class Scheduling::Appointments::UpsertService
     if result.status == 'fresh' && result.slots.one?
       # The fresh provider response confirms this exact interval.
       @provider_working_windows ||= [[projected.starts_at, projected.ends_at]]
-      return
+      return result.slots.first.to_h.with_indifferent_access[:medelement_cabinet_code].to_s.presence
     end
 
     raise provider_availability_error(result)
