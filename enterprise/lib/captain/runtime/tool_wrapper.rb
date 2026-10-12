@@ -18,9 +18,6 @@ class Captain::Runtime::ToolWrapper
   MUTATING_TOOL_EXECUTIONS_KEY = :captain_v2_mutating_tool_executions
   COMPLETED_ACTIONS_KEY = :captain_v2_completed_actions
   SERVICE_SPECIFIC_SCHEDULING_KEY = :captain_v2_service_specific_scheduling
-  VERIFIED_ID_DESCRIPTION = 'Use only an ID verified from the user, current context, or a prior tool result. Never guess an ID.'
-  OPTIONAL_ARGUMENT_DESCRIPTION =
-    'If this value was not explicitly provided or resolved, omit the key entirely; never invent a placeholder value.'
   NULL_SENTINEL_ARGUMENT_KEYS = {
     'search_conversations' => %i[status priority].freeze
   }.freeze
@@ -51,7 +48,7 @@ class Captain::Runtime::ToolWrapper
     @tool = tool
     @context_wrapper = context_wrapper
     @name = tool.name
-    @description = tool.description
+    @description = agent_text_override&.description || tool.description
   end
 
   def call(args)
@@ -94,8 +91,10 @@ class Captain::Runtime::ToolWrapper
     @tool.parameters
   end
 
+  # The schema the model sees: the tool's own schema with the agent text override applied (short English parameter texts, hidden
+  # parameters removed). Arguments are validated against validation_params_schema, which keeps the hidden parameters.
   def params_schema
-    @params_schema ||= schema_with_positive_id_constraints(raw_params_schema)
+    @params_schema ||= agent_params_schema(validation_params_schema)
   end
 
   def provider_params
@@ -262,6 +261,7 @@ class Captain::Runtime::ToolWrapper
 
     normalized = unwrap_nested_tool_call_envelopes(normalized)
     normalized = omit_null_sentinel_arguments(normalized)
+    normalized = omit_hidden_arguments(normalized)
     normalized = normalize_tool_specific_arguments(normalized)
     validate_normalized_args!(normalized)
     normalized
@@ -312,6 +312,50 @@ class Captain::Runtime::ToolWrapper
     @tool.respond_to?(:params_schema) ? @tool.params_schema : nil
   end
 
+  def validation_params_schema
+    @validation_params_schema ||= schema_with_positive_id_constraints(raw_params_schema)
+  end
+
+  # Short English tool texts of the customer-facing agent runtime (config/captain/agent_tool_texts.yml). Only the built-in
+  # registry tools take them: a custom HTTP tool, an MCP tool or a skill script keeps the text its author wrote, whatever its
+  # name is.
+  def agent_text_override
+    return @agent_text_override if defined?(@agent_text_override)
+
+    @agent_text_override = built_in_registry_tool? ? Captain::Runtime::AgentToolTexts.for_tool(@name) : nil
+  end
+
+  def built_in_registry_tool?
+    return true if @tool.is_a?(Captain::Tools::Agent::AccountToolAdapter)
+
+    @tool.is_a?(Captain::Tools::BasePublicTool) &&
+      !@tool.is_a?(Captain::Tools::McpTool) && !@tool.is_a?(Captain::Tools::SkillScriptTool)
+  end
+
+  def agent_params_schema(schema)
+    override = agent_text_override
+    return schema if override.nil? || !schema.is_a?(Hash)
+
+    result = schema.deep_dup
+    properties = result['properties']
+    return result unless properties.is_a?(Hash)
+
+    override.params.each do |param_name, text|
+      properties[param_name]['description'] = text if properties[param_name].is_a?(Hash)
+    end
+    hidden = override.hidden_params
+    properties.except!(*hidden)
+    result['required'] = Array(result['required']).map(&:to_s) - hidden if result.key?('required')
+    result
+  end
+
+  def omit_hidden_arguments(args)
+    hidden = agent_text_override&.hidden_params
+    return args if hidden.blank?
+
+    args.except(*hidden.map(&:to_sym))
+  end
+
   def schema_with_positive_id_constraints(schema)
     return schema unless schema.is_a?(Hash)
 
@@ -324,18 +368,15 @@ class Captain::Runtime::ToolWrapper
     normalized
   end
 
+  # An omitted optional value, an unverified id and the other global argument rules are stated once in the system prompt; the
+  # schema only carries the shape: a null is accepted for an optional value and an id is at least 1.
   def normalize_property_schema!(name, property_schema, required_names)
-    unless required_names.include?(name.to_s)
-      allow_explicit_null!(property_schema)
-      append_optional_argument_description!(property_schema)
-    end
+    allow_explicit_null!(property_schema) unless required_names.include?(name.to_s)
     if positive_id_schema?(name, property_schema)
       constrain_reference_schema!(property_schema)
-      append_verified_id_description!(property_schema)
     elsif id_array_schema?(name, property_schema)
       item_schema = property_schema['items']
       constrain_reference_schema!(item_schema) if Array(item_schema['type']).intersect?(%w[integer number])
-      append_verified_id_description!(property_schema)
     end
   end
 
@@ -380,13 +421,6 @@ class Captain::Runtime::ToolWrapper
     ActiveModel::Type::Boolean.new.cast(normalized['strict'])
   end
 
-  def append_optional_argument_description!(property_schema)
-    existing_description = property_schema['description'].to_s.strip
-    return if existing_description.include?(OPTIONAL_ARGUMENT_DESCRIPTION)
-
-    property_schema['description'] = [existing_description.presence, OPTIONAL_ARGUMENT_DESCRIPTION].compact.join(' ')
-  end
-
   def positive_id_schema?(name, property_schema)
     return false unless name.to_s.end_with?('_id')
     return false unless property_schema.is_a?(Hash)
@@ -401,16 +435,9 @@ class Captain::Runtime::ToolWrapper
     Array(property_schema['type']).include?('array')
   end
 
-  def append_verified_id_description!(property_schema)
-    existing_description = property_schema['description'].to_s.strip
-    return if existing_description.include?(VERIFIED_ID_DESCRIPTION)
-
-    property_schema['description'] = [existing_description.presence, VERIFIED_ID_DESCRIPTION].compact.join(' ')
-  end
-
   def validate_normalized_args!(args)
     playground_session&.namespace&.decode(args)
-    schema = params_schema
+    schema = validation_params_schema
     return unless schema.is_a?(Hash)
 
     error = JSONSchemer.schema(schema).validate(args.deep_stringify_keys).first

@@ -322,7 +322,7 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     provider_tool = RubyLLM::Providers::OpenAI::Tools.tool_for(wrapper)
 
     expect(wrapper.params_schema).not_to have_key('strict')
-    expect(wrapper.params_schema.dig('properties', 'enabled', 'description')).to include('omit the key entirely')
+    expect(wrapper.params_schema.dig('properties', 'enabled')).not_to have_key('description')
     expect(wrapper.params_schema.dig('properties', 'enabled', 'type')).to contain_exactly('boolean', 'null')
     expect(provider_tool.dig(:function, :strict)).to be(false)
     expect(provider_tool.dig(:function, :parameters)).not_to have_key('strict')
@@ -348,11 +348,11 @@ RSpec.describe Captain::Runtime::ToolWrapper do
   it 'adds a positive lower bound to numeric id schemas exposed to the provider' do
     expect(wrapper.params_schema.dig('properties', 'category_id')).to include('minimum' => 1)
     expect(wrapper.params_schema.dig('properties', 'category_id', 'type')).to contain_exactly('integer', 'null')
-    expect(wrapper.params_schema.dig('properties', 'category_id', 'description')).to include('Never guess an ID')
+    expect(wrapper.params_schema.dig('properties', 'category_id')).not_to have_key('description')
     expect(wrapper.params_schema.dig('properties', 'offset')).not_to have_key('minimum')
   end
 
-  it 'adds positive item bounds and verified-id guidance to numeric id arrays' do
+  it 'adds positive item bounds to numeric id arrays without appending text to the description' do
     allow(tool).to receive(:params_schema).and_return(
       type: 'object',
       properties: {
@@ -361,12 +361,12 @@ RSpec.describe Captain::Runtime::ToolWrapper do
       }
     )
 
-    expect(wrapper.params_schema.dig('properties', 'resource_ids')).to include('description' => include('Never guess an ID'))
+    expect(wrapper.params_schema.dig('properties', 'resource_ids')).not_to have_key('description')
     expect(wrapper.params_schema.dig('properties', 'resource_ids', 'items')).to include('minimum' => 1)
     expect(wrapper.params_schema.dig('properties', 'values', 'items')).not_to have_key('minimum')
   end
 
-  it 'adds verified-id guidance without numeric bounds to string id arrays' do
+  it 'adds no numeric bounds to string id arrays' do
     allow(tool).to receive(:params_schema).and_return(
       type: 'object',
       properties: {
@@ -374,7 +374,7 @@ RSpec.describe Captain::Runtime::ToolWrapper do
       }
     )
 
-    expect(wrapper.params_schema.dig('properties', 'resource_ids')).to include('description' => include('Never guess an ID'))
+    expect(wrapper.params_schema.dig('properties', 'resource_ids')).not_to have_key('description')
     expect(wrapper.params_schema.dig('properties', 'resource_ids', 'items')).not_to have_key('minimum')
   end
 
