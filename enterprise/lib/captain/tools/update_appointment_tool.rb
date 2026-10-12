@@ -1,9 +1,12 @@
 class Captain::Tools::UpdateAppointmentTool < Captain::Tools::BasePublicTool
+  include Captain::Tools::Agent::ProviderWriteOutput
+
   description 'Update a specifically identified appointment. For the current customer, an explicit request to move their identified appointment ' \
               'to an exact date/time authorizes that change after checking availability; do not ask them to confirm the same request again. ' \
               'Clarify an ambiguous appointment or requested change. For another patient use the task token returned by search_appointments, ' \
               'confirm the patient, doctor, date/time and requested change, then set patient_confirmed. ' \
-              'Do not claim completion while provider confirmation is pending; do not repeat an uncertain provider write. ' \
+              'The tool answers only after MedElement answered the change: a successful result means the appointment was moved. ' \
+              'On a failure do not claim the change and do not repeat an uncertain provider write: a staff member takes over. ' \
               'Report the local_date and local_time returned by the tool as the current appointment time and never substitute the requested time: ' \
               'requested_local_date and requested_local_time are only a request until provider_confirmed is true, ' \
               'so never say the appointment was moved while it is not.'
@@ -46,26 +49,12 @@ class Captain::Tools::UpdateAppointmentTool < Captain::Tools::BasePublicTool
       custom_attributes: custom_attributes
     )
 
-    capture_reschedule_fence(tool_context, appointment)
-    JSON.generate(Captain::Tools::Agent::AppointmentResult.success(appointment, action: 'update_appointment'))
+    provider_write_output(appointment, action: 'update_appointment', operation: 'move_reception')
   rescue StandardError => e
     Captain::Tools::Agent::AppointmentResult.failure_output(e)
   end
 
   private
-
-  # A MedElement reschedule finishes after this turn. Its outcome job needs this
-  # run's response fence to hand a failed or unknown reschedule to people without
-  # overriding a later human takeover or a newer Captain run. Failing to record
-  # the fence must not turn the saved reschedule into a tool failure.
-  def capture_reschedule_fence(tool_context, appointment)
-    command = appointment&.medelement_provider_command_receipt
-    return unless command&.move_reception?
-
-    Captain::Tools::ProviderBookingHandoffService.capture_fence!(command: command, fence: tool_context.state[:captain_response_fence])
-  rescue StandardError => e
-    Rails.logger.error("[CAPTAIN][Booking] Reschedule fence capture failed command_id=#{command&.id} error=#{e.class}")
-  end
 
   def operations(state)
     Captain::Tools::Operations::AppointmentOperations.new(

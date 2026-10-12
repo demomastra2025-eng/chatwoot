@@ -31,9 +31,15 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
     )
   end
 
-  it 'returns a typed nonretryable tool failure instead of confirming an unknown provider booking' do
+  def expect_conversation_untouched(conversation)
+    expect(conversation.messages.outgoing).to be_empty
+    expect(conversation.reload.status).to eq('pending')
+    expect(conversation.current_captain_control_state).not_to eq('human')
+  end
+
+  it 'returns a typed nonretryable technical failure instead of confirming an unknown provider booking' do
     contact = create(:contact, account: account)
-    conversation = create(:conversation, account: account, contact: contact)
+    conversation = create(:conversation, account: account, contact: contact, status: :pending)
     create(:captain_inbox, inbox: conversation.inbox, captain_assistant: assistant)
     appointment = create(:scheduling_appointment, account: account, contact: contact, conversation: conversation)
     operations = instance_double(Captain::Tools::Operations::AppointmentOperations, create_appointment: appointment)
@@ -43,27 +49,19 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
     )
     allow(tool).to receive(:operations).and_return(operations)
     allow(Captain::Tools::ProviderBookingOutcomeService).to receive(:new).and_return(outcome)
-    incoming = create(:message, conversation: conversation, message_type: :incoming)
-    state = {
-      conversation: { id: conversation.id },
-      captain_response_fence: {
-        control_generation: conversation.current_captain_control_generation,
-        status_transition_id: conversation.status_transitions.maximum(:id).to_i,
-        last_message_id: incoming.id
-      }
-    }
 
-    result = Captain::ToolResult.normalize(tool.perform(Struct.new(:state).new(state), resource_id: 1, starts_at: Time.current.iso8601))
+    result = Captain::ToolResult.normalize(tool.perform(Struct.new(:state).new({ conversation: { id: conversation.id } }),
+                                                        resource_id: 1, starts_at: Time.current.iso8601))
 
-    expect(result).to include(success: false, retryable: false, data: { 'success' => false, 'reason' => 'staff_will_help' })
-    # The conversation was already open (human-owned), so the bot adds nothing to the customer thread.
-    expect(conversation.messages.outgoing.where(private: false)).to be_empty
-    expect(conversation.reload.status).to eq('open')
-    expect(conversation.current_captain_control_state).to eq('human')
-    expect(conversation.messages.outgoing.where(private: true).last.content).to include('Medelement')
+    expect(result).to include(
+      success: false, retryable: false,
+      data: { 'success' => false, 'reason' => 'staff_will_help', 'error_class' => 'technical' }
+    )
+    # The failure carries the flag; the runtime decides about the conversation. Nothing is posted or handed over here.
+    expect_conversation_untouched(conversation)
   end
 
-  it 'hands off a provider booking when receipt verification raises unexpectedly after local creation' do
+  it 'returns a technical failure when receipt verification raises unexpectedly after local creation' do
     contact = create(:contact, account: account)
     conversation = create(:conversation, account: account, contact: contact, status: :pending)
     create(:captain_inbox, inbox: conversation.inbox, captain_assistant: assistant)
@@ -74,22 +72,32 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
     operations = instance_double(Captain::Tools::Operations::AppointmentOperations, create_appointment: appointment)
     allow(tool).to receive(:operations).and_return(operations)
     allow(Captain::Tools::ProviderBookingOutcomeService).to receive(:new).and_raise(StandardError, 'provider receipt read failed')
-    incoming = create(:message, conversation: conversation, message_type: :incoming)
-    state = {
-      conversation: { id: conversation.id },
-      captain_response_fence: {
-        control_generation: conversation.current_captain_control_generation,
-        status_transition_id: conversation.status_transitions.maximum(:id).to_i,
-        last_message_id: incoming.id
-      }
-    }
 
-    result = Captain::ToolResult.normalize(tool.perform(Struct.new(:state).new(state), resource_id: 1, starts_at: Time.current.iso8601))
+    result = Captain::ToolResult.normalize(tool.perform(Struct.new(:state).new({ conversation: { id: conversation.id } }),
+                                                        resource_id: 1, starts_at: Time.current.iso8601))
 
-    expect(result).to include(success: false, retryable: false)
-    expect(conversation.reload.status).to eq('open')
-    expect(conversation.messages.outgoing.where(private: false).count).to eq(1)
-    expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
+    expect(result).to include(success: false, retryable: false, data: include('error_class' => 'technical'))
+    expect_conversation_untouched(conversation)
+  end
+
+  it 'returns a business failure the agent can act on when the provider slot is taken' do
+    contact = create(:contact, account: account)
+    conversation = create(:conversation, account: account, contact: contact, status: :pending)
+    create(:captain_inbox, inbox: conversation.inbox, captain_assistant: assistant)
+    appointment = create(:scheduling_appointment, account: account, contact: contact, conversation: conversation)
+    operations = instance_double(Captain::Tools::Operations::AppointmentOperations, create_appointment: appointment)
+    outcome = instance_double(Captain::Tools::ProviderBookingOutcomeService)
+    allow(outcome).to receive(:perform).and_raise(
+      Scheduling::Error.new(code: 'SLOT_CONFLICT', message: 'The time is not available in Medelement', status: :conflict)
+    )
+    allow(tool).to receive(:operations).and_return(operations)
+    allow(Captain::Tools::ProviderBookingOutcomeService).to receive(:new).and_return(outcome)
+
+    result = Captain::ToolResult.normalize(tool.perform(Struct.new(:state).new({ conversation: { id: conversation.id } }),
+                                                        resource_id: 1, starts_at: Time.current.iso8601))
+
+    expect(result).to include(success: false, data: { 'success' => false, 'reason' => 'time_taken', 'error_class' => 'business' })
+    expect_conversation_untouched(conversation)
   end
 
   it 'recovers a saved provider booking after a receipt error and does not create it twice on retry' do
@@ -107,30 +115,20 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
       Scheduling::Error.new(code: 'MEDELEMENT_COMMAND_RECEIPT_UNAVAILABLE', message: 'Receipt unavailable', status: :service_unavailable)
     )
     allow(Scheduling::Appointments::UpsertService).to receive(:new).and_return(upsert)
-    incoming = create(:message, conversation: conversation, message_type: :incoming)
-    state = {
-      conversation: { id: conversation.id },
-      captain_response_fence: {
-        control_generation: conversation.current_captain_control_generation,
-        status_transition_id: conversation.status_transitions.maximum(:id).to_i,
-        last_message_id: incoming.id
-      }
-    }
-    context = Struct.new(:state).new(state)
+    context = Struct.new(:state).new({ conversation: { id: conversation.id } })
     input = { resource_id: resource.id, starts_at: appointment.starts_at.iso8601 }
 
     first = Captain::ToolResult.normalize(tool.perform(context, **input))
     second = Captain::ToolResult.normalize(tool.perform(context, **input))
 
-    expect(first).to include(success: false, retryable: false, data: { 'success' => false, 'reason' => 'staff_will_help' })
+    expect(first).to include(success: false, retryable: false,
+                             data: { 'success' => false, 'reason' => 'staff_will_help', 'error_class' => 'technical' })
     expect(second).to include(success: false, retryable: false)
-    expect(conversation.reload.status).to eq('open')
-    expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
-    expect(conversation.messages.outgoing.where(private: false).count).to eq(1)
+    expect_conversation_untouched(conversation)
     expect(account.scheduling_appointments.where(conversation: conversation).count).to eq(1)
   end
 
-  it 'returns a typed superseded error and hands an acknowledged orphan to the original conversation' do
+  it 'returns a technical superseded error and leaves the conversation alone' do
     contact = create(:contact, account: account)
     conversation = create(:conversation, account: account, contact: contact, status: :pending)
     create(:captain_inbox, inbox: conversation.inbox, captain_assistant: assistant)
@@ -163,29 +161,19 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
     appointment.update!(resource: replacement)
     operations = instance_double(Captain::Tools::Operations::AppointmentOperations, create_appointment: appointment)
     allow(tool).to receive(:operations).and_return(operations)
-    incoming = create(:message, conversation: conversation, message_type: :incoming)
-    state = {
-      conversation: { id: conversation.id },
-      captain_response_fence: {
-        control_generation: conversation.current_captain_control_generation,
-        status_transition_id: conversation.status_transitions.maximum(:id).to_i,
-        last_message_id: incoming.id
-      }
-    }
-    context = Struct.new(:state).new(state)
+    context = Struct.new(:state).new({ conversation: { id: conversation.id } })
 
     expect(Integrations::Medelement::ProviderCommandJob).not_to receive(:perform_later)
     result = Captain::ToolResult.normalize(tool.perform(context, resource_id: resource.id, starts_at: appointment.starts_at.iso8601))
 
-    expect(result).to include(success: false, retryable: false, data: { 'success' => false, 'reason' => 'staff_will_help' })
-    expect(conversation.reload.status).to eq('open')
-    expect(conversation.messages.outgoing.where(private: false)).to be_empty
-    expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
-    expect(conversation.messages.outgoing.where(private: true).last.additional_attributes['medelement_provider_command_id']).to eq(command.id)
+    expect(result).to include(success: false, retryable: false,
+                              data: { 'success' => false, 'reason' => 'staff_will_help', 'error_class' => 'technical' })
+    expect_conversation_untouched(conversation)
     expect(appointment.reload.resource_id).to eq(replacement.id)
+    expect(command.reload.execution_state.keys).not_to include('ai_booking_staff_note_id', 'ai_booking_customer_message_id')
   end
 
-  it 'does not hand off an ordinary local scheduling validation error' do
+  it 'returns an ordinary local scheduling validation error as a business failure' do
     conversation = create(:conversation, account: account, status: :pending)
     operations = instance_double(Captain::Tools::Operations::AppointmentOperations)
     allow(operations).to receive(:create_appointment).and_raise(
@@ -196,7 +184,7 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
 
     result = Captain::ToolResult.normalize(tool.perform(context, resource_id: 1, starts_at: Time.current.iso8601))
 
-    expect(result).to include(success: false, data: { 'success' => false, 'reason' => 'validation_error' })
+    expect(result).to include(success: false, data: { 'success' => false, 'reason' => 'validation_error', 'error_class' => 'business' })
     expect(conversation.reload.status).to eq('pending')
     expect(conversation.messages.outgoing).to be_empty
   end

@@ -10,7 +10,7 @@ RSpec.describe Captain::Tools::CancelAppointmentTool do
   end
   let(:tool_context) { Captain::Runtime::ToolContext.new(run_context: run_context) }
   let(:missing_id) { 2_147_483_647 }
-  let(:neutral_failure) { { 'success' => false, 'reason' => 'not_found' } }
+  let(:neutral_failure) { { 'success' => false, 'reason' => 'not_found', 'error_class' => 'business' } }
 
   before do
     account.enable_features!('scheduling')

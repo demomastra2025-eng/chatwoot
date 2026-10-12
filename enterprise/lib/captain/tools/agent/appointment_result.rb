@@ -8,6 +8,12 @@ class Captain::Tools::Agent::AppointmentResult
     APPOINTMENT_READ_ONLY APPOINTMENT_SOURCE_READ_ONLY APPOINTMENT_EXTERNAL_REF_RESERVED
   ].freeze
   MAX_SEARCH_RESULTS = 20
+  # Stable machine flag of a failed mutation: the runtime hands the conversation to a human on a technical failure and
+  # lets the agent carry on after a business one (a taken slot, input the agent or the patient can correct).
+  ERROR_CLASS_TECHNICAL = 'technical'.freeze
+  ERROR_CLASS_BUSINESS = 'business'.freeze
+  BUSINESS_REASONS = %w[time_taken not_found validation_error schedule_not_open].freeze
+  TECHNICAL_INPUT_FAILURE_CODES = %w[PROVIDER_UNAVAILABLE INTERNAL_FAILURE].freeze
   PROVIDER_OPERATIONS = {
     'create_appointment' => 'create_reception',
     'update_appointment' => 'move_reception',
@@ -91,7 +97,21 @@ class Captain::Tools::Agent::AppointmentResult
              when provider::UNKNOWN then provider::UNKNOWN
              else 'provider_confirmation_failed'
              end
-    result.merge(success: false, reason: reason, status: status, provider_confirmation_status: state, provider_confirmed: false)
+    result.merge(success: false, reason: reason, status: status, provider_confirmation_status: state, provider_confirmed: false,
+                 error_class: ERROR_CLASS_TECHNICAL)
+  end
+
+  # The result of a mutation MedElement did not confirm (rejected, failed, unknown or no answer in time): the appointment keeps
+  # what the calendar knows and the tool reports a technical failure whatever the stored provider status says.
+  def self.provider_failure(appointment, action:)
+    result = success(appointment, action: action)
+    return result if result[:success] == false
+
+    result.merge(
+      success: false, reason: 'staff_will_help', status: 'provider_confirmation_failed', provider_confirmed: false,
+      provider_confirmation_operation: PROVIDER_OPERATIONS[action], provider_confirmation_scope: 'medelement',
+      error_class: ERROR_CLASS_TECHNICAL
+    ).compact
   end
 
   def self.provider_confirmation(appointment, action: nil)
@@ -144,8 +164,14 @@ class Captain::Tools::Agent::AppointmentResult
     audit = result.delete(:audit)
     return JSON.generate(result) unless audit
 
-    Captain::ToolResult.failure(error: result[:correction], data: result.deep_stringify_keys, retryable: false, audit: audit)
+    Captain::ToolResult.failure(error: result[:correction], data: result.deep_stringify_keys, retryable: false,
+                                audit: audit.merge(error_class: result[:error_class]))
   end
+
+  def self.input_failure_class(code)
+    TECHNICAL_INPUT_FAILURE_CODES.include?(code) ? ERROR_CLASS_TECHNICAL : ERROR_CLASS_BUSINESS
+  end
+  private_class_method :input_failure_class
 
   def self.failure(error)
     code = error.respond_to?(:code) ? error.code.to_s : ''
@@ -157,7 +183,8 @@ class Captain::Tools::Agent::AppointmentResult
       code = cause == 'internal_failure' ? 'INTERNAL_FAILURE' : 'PROVIDER_UNAVAILABLE' if cause.present?
     end
     if INPUT_FAILURE_GUIDANCE.key?(code)
-      result = { success: false, reason: code.downcase, code: code, correction: INPUT_FAILURE_GUIDANCE.fetch(code) }
+      result = { success: false, reason: code.downcase, code: code, correction: INPUT_FAILURE_GUIDANCE.fetch(code),
+                 error_class: input_failure_class(code) }
       if error.is_a?(Scheduling::Error) && error.details.to_h.with_indifferent_access[:mutation_executed] == false
         result[:audit] = { mutation_executed: false, failure_stage: 'tool_arguments' }
       end
@@ -175,7 +202,7 @@ class Captain::Tools::Agent::AppointmentResult
              else
                'staff_will_help'
              end
-    result = { success: false, reason: reason }
+    result = { success: false, reason: reason, error_class: (BUSINESS_REASONS.include?(reason) ? ERROR_CLASS_BUSINESS : ERROR_CLASS_TECHNICAL) }
     if reason == 'schedule_not_open'
       date = error.details.to_h.with_indifferent_access[:last_available_date]
       result[:last_available_date] = date if date.present?

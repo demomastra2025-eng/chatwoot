@@ -47,9 +47,7 @@ class Captain::Tools::Copilot::CreateAppointmentService < Captain::Tools::Copilo
       crm_pipeline_id: crm_pipeline_id
     )
     if patient_scope
-      Captain::Tools::ProviderBookingOutcomeService.new(
-        appointment: appointment, assistant: assistant, response_fence: response_fence
-      ).perform
+      Captain::Tools::ProviderBookingOutcomeService.new(appointment: appointment, assistant: assistant).perform
       return formatted_payload(Captain::Tools::Agent::AppointmentResult.success(appointment, action: self.class.name))
     end
 
@@ -57,16 +55,10 @@ class Captain::Tools::Copilot::CreateAppointmentService < Captain::Tools::Copilo
       ::Scheduling::ToolPayloadBuilder.appointment_payload(action: 'create_appointment', appointment: appointment)
     )
   rescue Scheduling::Error => e
-    if patient_scope
-      handoff_unconfirmed_booking(appointment, e)
-      return formatted_payload(Captain::Tools::Agent::AppointmentResult.failure(e))
-    end
+    return formatted_payload(Captain::Tools::Agent::AppointmentResult.failure(e)) if patient_scope
+
     Captain::ToolResult.failure_output(error: e.message, data: { code: e.code, reason: e.details.to_h[:reason] }.compact, retryable: false)
   rescue StandardError => e
-    if patient_scope
-      appointment ||= operation.persisted_creation if operation.respond_to?(:persisted_creation)
-      handoff_unconfirmed_booking(appointment, e)
-    end
     return formatted_payload(Captain::Tools::Agent::AppointmentResult.failure(e)) if patient_scope
 
     e.is_a?(ArgumentError) || e.is_a?(ActiveRecord::RecordInvalid) || e.is_a?(ActiveRecord::RecordNotFound) ? tool_failure(e) : scheduling_tool_failure(e)
@@ -77,20 +69,6 @@ class Captain::Tools::Copilot::CreateAppointmentService < Captain::Tools::Copilo
   end
 
   private
-
-  def handoff_unconfirmed_booking(appointment, error)
-    return if appointment.blank?
-    provider_failure = error.is_a?(Scheduling::Error) && error.code.in?(%w[
-      MEDELEMENT_COMMAND_RECEIPT_UNAVAILABLE MEDELEMENT_BOOKING_UNKNOWN MEDELEMENT_BOOKING_FAILED MEDELEMENT_BOOKING_SUPERSEDED
-    ])
-    return unless provider_failure || appointment.custom_attributes.to_h[Integrations::Medelement::AppointmentProviderStatus::ATTRIBUTE_KEY].present?
-
-    Captain::Tools::ProviderBookingHandoffService.new(
-      assistant: assistant, conversation: current_conversation, appointment: appointment,
-      command: appointment.medelement_provider_command_receipt, fence: response_fence,
-      orphaned_write: error.is_a?(Scheduling::Error) && error.code == 'MEDELEMENT_BOOKING_SUPERSEDED'
-    ).perform
-  end
 
   def appointment_operations
     Captain::Tools::Operations::AppointmentOperations.new(

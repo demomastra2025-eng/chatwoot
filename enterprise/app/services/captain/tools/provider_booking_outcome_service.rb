@@ -1,8 +1,6 @@
 class Captain::Tools::ProviderBookingOutcomeService
-  WAIT_SECONDS = 45
-  POLL_SECONDS = 0.25
+  POLL_SECONDS = Captain::Tools::ProviderWriteWait::POLL_SECONDS
   STATUS = Integrations::Medelement::AppointmentProviderStatus
-  PATIENT_ACTION_STATUSES = %w[awaiting_patient_selection awaiting_patient_creation awaiting_phone_refresh].freeze
 
   def self.write_receipt?(command)
     state = command.execution_state.to_h
@@ -12,21 +10,20 @@ class Captain::Tools::ProviderBookingOutcomeService
       command.provider_reception_code.to_s == reference.to_s
   end
 
-  def initialize(appointment:, assistant:, response_fence: nil)
+  def initialize(appointment:, assistant:)
     @appointment = appointment
     @assistant = assistant
-    @response_fence = response_fence
   end
 
   # Observe only the command created by this booking. An unknown result must never
-  # trigger another provider write: the first POST may have succeeded.
+  # trigger another provider write: the first POST may have succeeded. The create answer is the provider's OK
+  # to the POST (its reception ID): nothing is read back afterwards and a later read never undoes it.
   def perform
     return unless provider_write_required?
 
     @command = appointment.medelement_provider_command_receipt
     return missing_receipt! if command.blank?
 
-    Captain::Tools::ProviderBookingHandoffService.capture_fence!(command: command, fence: @response_fence)
     wait_for_write!
   end
 
@@ -48,7 +45,7 @@ class Captain::Tools::ProviderBookingOutcomeService
   end
 
   def wait_for_write!
-    deadline = monotonic_now + WAIT_SECONDS
+    deadline = monotonic_now + Captain::Tools::ProviderWriteWait.timeout_seconds
     loop do
       command.reload
       appointment.reload
@@ -67,9 +64,10 @@ class Captain::Tools::ProviderBookingOutcomeService
     raise booking_error('MEDELEMENT_BOOKING_UNKNOWN', 'Medelement booking result is unknown; staff verification is required')
   end
 
+  # A taken slot is a business failure the agent can act on; any other failure is technical.
   def fail_unacknowledged!
     mark_status_if_current!(STATUS::FAILED)
-    raise booking_error('MEDELEMENT_BOOKING_FAILED', 'Medelement booking failed; staff verification is required')
+    raise Captain::Tools::ProviderWriteWait.failure_error(command, technical_code: 'MEDELEMENT_BOOKING_FAILED')
   end
 
   def mark_status_if_current!(status)
@@ -135,11 +133,11 @@ class Captain::Tools::ProviderBookingOutcomeService
   end
 
   def failed?
-    command.status.in?(%w[failed declined cancelled]) || PATIENT_ACTION_STATUSES.include?(command.logical_status)
+    Captain::Tools::ProviderWriteWait.failed?(command)
   end
 
   def unresolved?
-    command.provider_status_unknown? || command.reconciliation_required?
+    Captain::Tools::ProviderWriteWait.unresolved?(command)
   end
 
   def monotonic_now

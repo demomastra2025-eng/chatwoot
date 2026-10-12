@@ -47,7 +47,7 @@ RSpec.describe Captain::Tools::CancelAppointmentTool, type: :model do
 
     result = tool.perform(tool_context, appointment_id: appointment.id + 1_000_000)
 
-    expect(JSON.parse(result)).to eq('success' => false, 'reason' => 'not_found')
+    expect(JSON.parse(result)).to eq('success' => false, 'reason' => 'not_found', 'error_class' => 'business')
     expect(appointment.reload.status).to eq('scheduled')
   end
 
@@ -59,7 +59,7 @@ RSpec.describe Captain::Tools::CancelAppointmentTool, type: :model do
 
     result = tool.perform(tool_context)
 
-    expect(JSON.parse(result)).to eq('success' => false, 'reason' => 'validation_error')
+    expect(JSON.parse(result)).to eq('success' => false, 'reason' => 'validation_error', 'error_class' => 'business')
     expect(appointments.map { |appointment| appointment.reload.status }).to all(eq('scheduled'))
   end
 
@@ -111,18 +111,20 @@ RSpec.describe Captain::Tools::CancelAppointmentTool, type: :model do
     )
     other = create(:scheduling_appointment, account: account, resource: resource, contact: contact, conversation: conversation)
     tool_context = Struct.new(:state).new({ conversation: { id: conversation.id }, appointment: { id: appointment.id } })
+    allow(Captain::Tools::ProviderWriteWait).to receive(:timeout_seconds).and_return(0.3)
 
     result = tool.perform(tool_context, appointment_id: appointment.id)
     raise result if result.start_with?('ERROR:')
 
     payload = JSON.parse(result)
 
+    # No worker answers in this example, so the tool reports that MedElement did not answer in time: a technical failure.
     expect(payload).to include('success' => false, 'appointment_id' => appointment.id, 'status' => 'pending_provider_confirmation',
-                              'provider_confirmed' => false, 'reason' => 'pending_provider_confirmation',
+                              'provider_confirmed' => false, 'reason' => 'pending_provider_confirmation', 'error_class' => 'technical',
                               'provider_confirmation_status' => 'pending', 'provider_confirmation_operation' => 'remove_reception',
                               'provider_confirmation_scope' => 'medelement')
     expect(payload.keys).to match_array(%w[success appointment_id doctor_name local_date local_time status reason provider_confirmed
-                                          provider_confirmation_status provider_confirmation_operation provider_confirmation_scope])
+                                          provider_confirmation_status provider_confirmation_operation provider_confirmation_scope error_class])
     command = Integrations::Medelement::ProviderCommand.find_by!(appointment_id: appointment.id, operation: 'remove_reception')
     expect(command.request_snapshot.dig('actor', 'type')).to eq('Captain::Assistant')
     expect(other.reload.status).to eq('scheduled')
@@ -187,7 +189,7 @@ RSpec.describe Captain::Tools::CancelAppointmentTool, type: :model do
 
     result = tool.perform(tool_context, appointment_id: appointment.id)
 
-    expect(JSON.parse(result)).to eq('success' => false, 'reason' => 'staff_will_help')
+    expect(JSON.parse(result)).to eq('success' => false, 'reason' => 'staff_will_help', 'error_class' => 'technical')
     expect(appointment.reload.status).to eq('scheduled')
     expect(Integrations::Medelement::ProviderCommand.where(appointment_id: appointment.id, operation: 'remove_reception')).to be_empty
   end

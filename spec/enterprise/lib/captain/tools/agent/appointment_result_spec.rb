@@ -180,7 +180,7 @@ RSpec.describe Captain::Tools::Agent::AppointmentResult do
     end
 
     it 'reports a rejection proven by read-back as a failed update even though the reception is provider-confirmed' do
-      appointment = unconfirmed_move(state: 'rejected', sync_status: 'succeeded', error: { 'evidence' => 'provider_readback' })
+      appointment = unconfirmed_move(state: 'rejected', sync_status: 'succeeded', error: { 'evidence' => 'provider_rejected' })
 
       expect(described_class.appointment(appointment)).to include(provider_confirmed: true, move_state: 'rejected')
       expect(described_class.success(appointment, action: 'update_appointment')).to include(
@@ -208,8 +208,8 @@ RSpec.describe Captain::Tools::Agent::AppointmentResult do
     conflict = Scheduling::Error.new(code: 'APPOINTMENT_SLOT_UNAVAILABLE', message: 'Unavailable', status: :conflict)
     unknown = Scheduling::Error.new(code: 'MEDELEMENT_AVAILABILITY_UNVERIFIED', message: 'Unknown', status: :service_unavailable)
 
-    expect(described_class.failure(conflict)).to eq(success: false, reason: 'time_taken')
-    expect(described_class.failure(unknown)).to eq(success: false, reason: 'staff_will_help')
+    expect(described_class.failure(conflict)).to eq(success: false, reason: 'time_taken', error_class: 'business')
+    expect(described_class.failure(unknown)).to eq(success: false, reason: 'staff_will_help', error_class: 'technical')
   end
 
   it 'maps the provider horizon and includes only the last bookable date' do
@@ -218,14 +218,52 @@ RSpec.describe Captain::Tools::Agent::AppointmentResult do
       details: { last_available_date: '2026-10-15', provider_code: 'internal' }
     )
 
-    expect(described_class.failure(error)).to eq(success: false, reason: 'schedule_not_open', last_available_date: '2026-10-15')
+    expect(described_class.failure(error)).to eq(success: false, reason: 'schedule_not_open', last_available_date: '2026-10-15',
+                                                 error_class: 'business')
   end
 
-  it 'maps the 45-second unknown and failed outcomes to staff_will_help' do
-    %w[MEDELEMENT_BOOKING_UNKNOWN MEDELEMENT_BOOKING_FAILED].each do |code|
+  it 'maps the unknown, failed, timed-out and superseded provider outcomes to a technical staff_will_help failure' do
+    %w[MEDELEMENT_BOOKING_UNKNOWN MEDELEMENT_BOOKING_FAILED MEDELEMENT_BOOKING_SUPERSEDED MEDELEMENT_WRITE_FAILED MEDELEMENT_WRITE_UNKNOWN
+       MEDELEMENT_WRITE_TIMEOUT MEDELEMENT_COMMAND_RECEIPT_UNAVAILABLE].each do |code|
       error = Scheduling::Error.new(code: code, message: 'Provider details', status: :unprocessable_content)
-      expect(described_class.failure(error)).to eq(success: false, reason: 'staff_will_help')
+      expect(described_class.failure(error)).to eq(success: false, reason: 'staff_will_help', error_class: 'technical')
     end
+  end
+
+  it 'classes every failure as business or technical, with a stable machine flag' do
+    business = [
+      Scheduling::Error.new(code: 'SLOT_CONFLICT', message: 'x', status: :conflict),
+      Scheduling::Error.new(code: 'VALIDATION_ERROR', message: 'x', status: :unprocessable_content),
+      Scheduling::Error.new(code: 'APPOINTMENT_NOT_FOUND', message: 'x', status: :not_found),
+      ArgumentError.new('Record is not available'),
+      Scheduling::Error.new(code: 'INVALID_DATE', message: 'x', status: :unprocessable_content)
+    ]
+    technical = [
+      Scheduling::Error.new(code: 'MEDELEMENT_WRITE_FAILED', message: 'x', status: :unprocessable_content),
+      Scheduling::Error.new(code: 'PROVIDER_UNAVAILABLE', message: 'x', status: :service_unavailable),
+      Scheduling::Error.new(code: 'INTERNAL_FAILURE', message: 'x', status: :internal_server_error),
+      StandardError.new('boom')
+    ]
+
+    expect(business.map { |error| described_class.failure(error)[:error_class] }).to all(eq('business'))
+    expect(technical.map { |error| described_class.failure(error)[:error_class] }).to all(eq('technical'))
+  end
+
+  it 'carries the flag through the tool result of an input failure and keeps it recognised as a failure' do
+    error = Scheduling::Error.new(code: 'INVALID_DATE', message: 'x', status: :unprocessable_content, details: { mutation_executed: false })
+    result = Captain::ToolResult.normalize(described_class.failure_output(error))
+
+    expect(result).to include(success: false, audit: include(error_class: 'business'), data: include(error_class: 'business'))
+  end
+
+  it 'reports a provider failure of an appointment as technical whatever its stored status says' do
+    appointment = create(:scheduling_appointment)
+
+    result = described_class.provider_failure(appointment, action: 'update_appointment')
+
+    expect(result).to include(success: false, reason: 'staff_will_help', provider_confirmed: false, error_class: 'technical',
+                              provider_confirmation_operation: 'move_reception')
+    expect(Captain::ToolResult.normalize(result.to_json)).to include(success: false)
   end
 
   %w[INVALID_DATE INVALID_DATE_RANGE INVALID_SERVICE_ID UNKNOWN_SERVICE PROVIDER_UNAVAILABLE INTERNAL_FAILURE].each do |code|

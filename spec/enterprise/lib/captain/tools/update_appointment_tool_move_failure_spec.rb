@@ -1,8 +1,8 @@
 require 'rails_helper'
 
-# DEV-001 end to end: the agent asks for a reschedule and MedElement rejects the write with HTTP 400. The appointment must
-# keep its confirmed time, the agent must never report the move as done, and the customer must hear once that the
-# change could not be confirmed.
+# The agent asks for a reschedule of a MedElement reception. The tool answers only after MedElement answered the write:
+# the provider's OK is a success even while a cached read still shows the old time, an explicit rejection, an ambiguous
+# answer or silence is a technical failure, a taken slot is a business failure. Nothing here ever touches the conversation.
 RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
   include ActiveSupport::Testing::TimeHelpers
 
@@ -34,16 +34,10 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
                                                          status::ATTRIBUTE_KEY => status::SUCCEEDED })
   end
   let(:client) { instance_double(Integrations::Medelement::Client) }
-  let(:incoming) { create(:message, conversation: conversation, message_type: :incoming) }
-  let(:fence) do
-    { control_generation: conversation.current_captain_control_generation,
-      status_transition_id: conversation.status_transitions.maximum(:id).to_i, last_message_id: incoming.id }
-  end
   let(:tool_context) do
-    Struct.new(:state).new({ conversation: { id: conversation.id }, appointment: { id: appointment.id }, captain_response_fence: fence })
+    Struct.new(:state).new({ conversation: { id: conversation.id }, appointment: { id: appointment.id } })
   end
-  let(:rejection) { Integrations::Medelement::Client::ApiError.new('Medelement reception move request failed', status: 400) }
-  let(:notice) { 'Не получилось подтвердить перенос записи. Администратор проверит и свяжется с вами.' }
+  let(:execute_commands_inline) { true }
 
   before do
     create(:captain_inbox, inbox: conversation.inbox, captain_assistant: assistant)
@@ -58,7 +52,13 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
       .and_return(instance_double(Integrations::Medelement::CronScheduleService, sync!: true))
     allow(Integrations::Medelement::Client).to receive(:new).and_return(client)
     stub_provider_reads
-    allow(client).to receive(:move_reception).and_raise(rejection)
+    allow(Captain::Tools::ProviderWriteWait).to receive(:timeout_seconds).and_return(0.4)
+    # The queue worker: the command that was just dispatched runs right away, like on a free worker.
+    allow(Integrations::Medelement::ProviderCommandJob).to receive(:perform_later) do |command_id|
+      next unless execute_commands_inline
+
+      Integrations::Medelement::ProviderCommands::Executor.new(command: Integrations::Medelement::ProviderCommand.find(command_id)).perform
+    end
   end
 
   def provider_time(value)
@@ -72,7 +72,8 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
     }.merge(cabinet ? { 'COMPANY_CABINET_CODE' => 'cabinet-1' } : {})
   end
 
-  def stub_provider_reads
+  # A cached read server keeps showing the old time: nothing but the preflight ever reads the reception.
+  def stub_provider_reads(occupied: [])
     allow(client).to receive(:get_patient).with(patient_code: 'patient-1').and_return(
       'PROFILE_CODE' => 'patient-1', 'PATIENT_PHONE_2' => contact.phone_number
     )
@@ -82,42 +83,111 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
         'timetable' => [{ 'start' => provider_time(requested_starts_at), 'end' => provider_time(requested_ends_at), 'working' => true }]
       }
     )
-    allow(client).to receive(:get_receptions).and_return([{ 'RECEPTION_CODE' => 'reception-1', 'COMPANY_CABINET_CODE' => 'cabinet-1' }], [])
+    allow(client).to receive(:get_receptions).and_return(
+      [{ 'RECEPTION_CODE' => 'reception-1', 'COMPANY_CABINET_CODE' => 'cabinet-1' }], occupied
+    )
   end
 
-  def request_move!
-    JSON.parse(tool.perform(tool_context, appointment_id: appointment.id, starts_at: requested_starts_at.iso8601)).tap do |payload|
-      raise payload.to_s if payload['reason'].in?(%w[validation_error staff_will_help not_found])
-    end
+  def request_move
+    JSON.parse(tool.perform(tool_context, appointment_id: appointment.id, starts_at: requested_starts_at.iso8601))
   end
 
   def move_command
     Integrations::Medelement::ProviderCommand.find_by!(appointment_id: appointment.id, operation: 'move_reception')
   end
 
-  def execute_move!
-    command = move_command
-    Integrations::Medelement::ProviderCommandConfirmationJob.perform_now(command.confirmation_request_id)
-    Integrations::Medelement::ProviderCommands::Executor.new(command: command.reload).perform
-    command.reload
+  def expect_conversation_untouched
+    expect(conversation.messages.outgoing).to be_empty
+    expect(conversation.reload.status).to eq('pending')
+    expect(conversation.current_captain_control_state).not_to eq('human')
   end
 
-  def public_messages
-    conversation.messages.outgoing.where(private: false)
-  end
+  it 'reports a successful move as soon as MedElement answers OK, although its read still shows the old time' do
+    allow(client).to receive(:move_reception).and_return({})
 
-  it 'tells the agent the move is only requested while MedElement has not answered' do
-    payload = request_move!
+    payload = request_move
 
     expect(payload).to include(
-      'success' => false, 'status' => 'pending_provider_confirmation', 'provider_confirmed' => false, 'move_state' => 'pending',
-      'local_date' => '20.04.2026', 'local_time' => '09:00', 'requested_local_date' => '20.04.2026', 'requested_local_time' => '10:00'
+      'success' => true, 'status' => 'updated', 'provider_confirmed' => true, 'local_date' => '20.04.2026', 'local_time' => '10:00'
     )
-    expect(appointment.reload).to have_attributes(starts_at: original_starts_at, ends_at: original_ends_at)
-    expect(public_messages).to be_empty
+    expect(payload).not_to include('error_class', 'move_state')
+    expect(move_command).to be_succeeded
+    expect(appointment.reload).to have_attributes(starts_at: requested_starts_at, ends_at: requested_ends_at)
+    expect(appointment.custom_attributes).not_to have_key('medelement_move_request')
+    expect(client).to have_received(:move_reception).once
+    expect(client).to have_received(:get_reception).once
+    expect_conversation_untouched
+  end
+
+  it 'reports an explicit MedElement rejection as a technical failure and keeps the confirmed time' do
+    allow(client).to receive(:move_reception).and_raise(Integrations::Medelement::Client::ApiError.new('rejected', status: 400))
+
+    payload = request_move
+
+    expect(payload).to include(
+      'success' => false, 'status' => 'provider_confirmation_failed', 'provider_confirmed' => false, 'error_class' => 'technical',
+      'move_state' => 'rejected', 'local_date' => '20.04.2026', 'local_time' => '09:00', 'requested_local_time' => '10:00'
+    )
+    expect(move_command).to be_failed
+    expect(appointment.reload).to have_attributes(starts_at: original_starts_at, ends_at: original_ends_at, status: 'scheduled')
+    expect(appointment.custom_attributes['medelement_move_request']).to include('state' => 'rejected', 'evidence' => 'provider_rejected')
+    expect(client).to have_received(:move_reception).once
+    expect_conversation_untouched
+  end
+
+  it 'reports an ambiguous MedElement answer as a technical failure that is still unconfirmed' do
+    allow(client).to receive(:move_reception).and_raise(
+      Integrations::Medelement::Client::ApiError.new('Medelement reception move request failed', status: 503, ambiguous: true)
+    )
+
+    payload = request_move
+
+    expect(payload).to include('success' => false, 'provider_confirmed' => false, 'error_class' => 'technical',
+                               'move_state' => 'needs_reconciliation', 'local_time' => '09:00')
+    expect(move_command).to be_reconciliation_required
+    expect(appointment.reload).to have_attributes(starts_at: original_starts_at)
+    expect_conversation_untouched
+  end
+
+  context 'when MedElement does not answer in time' do
+    let(:execute_commands_inline) { false }
+
+    it 'reports a technical failure, and the late OK only updates the calendar' do
+      allow(client).to receive(:move_reception).and_return({})
+
+      payload = request_move
+
+      expect(payload).to include('success' => false, 'status' => 'pending_provider_confirmation', 'provider_confirmed' => false,
+                                 'error_class' => 'technical', 'move_state' => 'pending', 'local_time' => '09:00')
+      expect(appointment.reload).to have_attributes(starts_at: original_starts_at)
+      expect_conversation_untouched
+
+      Integrations::Medelement::ProviderCommands::Executor.new(command: move_command).perform
+
+      expect(move_command).to be_succeeded
+      expect(appointment.reload).to have_attributes(starts_at: requested_starts_at, ends_at: requested_ends_at)
+      expect_conversation_untouched
+    end
+  end
+
+  context 'when the requested time is already taken in MedElement' do
+    before { stub_provider_reads(occupied: [{ 'RECEPTION_CODE' => 'other-1', 'STARTTIME' => provider_time(requested_starts_at), 'ENDTIME' => provider_time(requested_ends_at), 'REMOVED' => 0 }]) }
+
+    it 'reports a business failure the agent can act on' do
+      allow(client).to receive(:move_reception)
+
+      payload = request_move
+
+      expect(payload).to eq('success' => false, 'reason' => 'time_taken', 'error_class' => 'business')
+      expect(move_command).to have_attributes(status: 'failed', last_error_code: 'slot_conflict')
+      expect(appointment.reload).to have_attributes(starts_at: original_starts_at)
+      expect(client).not_to have_received(:move_reception)
+      expect_conversation_untouched
+    end
   end
 
   it 'cannot change the specialist of a linked reception and leaves the appointment and the provider untouched' do
+    allow(client).to receive(:move_reception)
     replacement = create(:scheduling_resource, account: account, timezone: 'Asia/Almaty', custom_attributes: {
                            'medelement_specialist_code' => 'specialist-2', 'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }]
                          })
@@ -125,11 +195,21 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
     payload = JSON.parse(tool.perform(tool_context, appointment_id: appointment.id, resource_id: replacement.id,
                                                     starts_at: requested_starts_at.iso8601))
 
-    expect(payload).to include('success' => false, 'reason' => 'staff_will_help')
+    expect(payload).to include('success' => false, 'reason' => 'staff_will_help', 'error_class' => 'technical')
     expect(appointment.reload).to have_attributes(resource_id: resource.id, starts_at: original_starts_at, ends_at: original_ends_at)
     expect(appointment.custom_attributes).not_to have_key('medelement_move_request')
     expect(Integrations::Medelement::ProviderCommand.where(appointment_id: appointment.id, operation: 'move_reception')).to be_empty
     expect(client).not_to have_received(:move_reception)
   end
 
+  it 'does not wait for MedElement when the change starts no provider command' do
+    allow(client).to receive(:move_reception)
+    appointment.update!(custom_attributes: appointment.custom_attributes.merge('medelement_provider_operation' => 'create_reception'))
+
+    payload = JSON.parse(tool.perform(tool_context, appointment_id: appointment.id, client_comment: 'Please call before the visit'))
+
+    expect(payload).to include('success' => true, 'status' => 'updated')
+    expect(Integrations::Medelement::ProviderCommand.where(appointment_id: appointment.id)).to be_empty
+    expect(client).not_to have_received(:move_reception)
+  end
 end

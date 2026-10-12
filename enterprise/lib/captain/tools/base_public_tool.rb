@@ -23,7 +23,7 @@ class Captain::Tools::BasePublicTool < Captain::Runtime::Tool
     result
   rescue Captain::Tools::Agent::PatientScope::Denied
     result = if name.in?(%w[create_appointment update_appointment cancel_appointment])
-               JSON.generate(success: false, reason: 'not_found')
+               JSON.generate(success: false, reason: 'not_found', error_class: Captain::Tools::Agent::AppointmentResult::ERROR_CLASS_BUSINESS)
              else
                Captain::Tools::Agent::PatientScope::FAILURE
              end

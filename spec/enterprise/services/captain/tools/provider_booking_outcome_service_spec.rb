@@ -86,7 +86,7 @@ RSpec.describe Captain::Tools::ProviderBookingOutcomeService do
 
   it 'does not confirm a zero ID returned by a create POST' do
     acknowledge_write!('0')
-    allow(service).to receive(:monotonic_now).and_return(0, described_class::WAIT_SECONDS + 1)
+    allow(service).to receive(:monotonic_now).and_return(0, Captain::Tools::ProviderWriteWait.timeout_seconds + 1)
 
     expect { service.perform }.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_BOOKING_UNKNOWN') }
     expect(appointment.reload.custom_attributes[status::ATTRIBUTE_KEY]).to eq(status::UNKNOWN)
@@ -102,7 +102,7 @@ RSpec.describe Captain::Tools::ProviderBookingOutcomeService do
   end
 
   it 'keeps the local slot red and does not retry a timed-out create' do
-    allow(service).to receive(:monotonic_now).and_return(0, described_class::WAIT_SECONDS + 1)
+    allow(service).to receive(:monotonic_now).and_return(0, Captain::Tools::ProviderWriteWait.timeout_seconds + 1)
     expect(Integrations::Medelement::ProviderCommandJob).not_to receive(:perform_later)
     expect { service.perform }.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_BOOKING_UNKNOWN') }
     expect(appointment.reload.status).to eq('scheduled')
@@ -111,7 +111,7 @@ RSpec.describe Captain::Tools::ProviderBookingOutcomeService do
 
   it 'waits for asynchronous command confirmation rather than declaring an immediate rejection' do
     command.update!(status: 'awaiting_confirmation')
-    allow(service).to receive(:monotonic_now).and_return(0, described_class::WAIT_SECONDS + 1)
+    allow(service).to receive(:monotonic_now).and_return(0, Captain::Tools::ProviderWriteWait.timeout_seconds + 1)
     expect { service.perform }.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_BOOKING_UNKNOWN') }
     expect(appointment.reload.custom_attributes[status::ATTRIBUTE_KEY]).to eq(status::UNKNOWN)
   end
@@ -122,6 +122,26 @@ RSpec.describe Captain::Tools::ProviderBookingOutcomeService do
     expect(appointment.reload.status).to eq('scheduled')
     expect(appointment.custom_attributes[status::ATTRIBUTE_KEY]).to eq(status::FAILED)
     expect(conversation.messages.outgoing.where(private: false)).to be_empty
+  end
+
+  %w[slot_conflict slot_unavailable].each do |last_error_code|
+    it "reports #{last_error_code} as a business failure the agent can act on, and still marks the local slot red" do
+      command.update!(status: 'failed', last_error_code: last_error_code)
+      expected = Captain::Tools::ProviderWriteWait::BUSINESS_FAILURES.fetch(last_error_code)
+
+      expect { service.perform }.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq(expected) }
+      expect(appointment.reload.custom_attributes[status::ATTRIBUTE_KEY]).to eq(status::FAILED)
+      expect(conversation.messages.outgoing).to be_empty
+    end
+  end
+
+  it 'waits no longer than the configured write timeout' do
+    allow(Captain::Tools::ProviderWriteWait).to receive(:timeout_seconds).and_return(2.5)
+    allow(service).to receive(:monotonic_now).and_return(0, 2.4, 2.6)
+    allow(service).to receive(:sleep)
+
+    expect { service.perform }.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_BOOKING_UNKNOWN') }
+    expect(service).to have_received(:sleep).once
   end
 
   it 'does not mistake a patient-action-required state for a confirmed booking' do
@@ -275,7 +295,7 @@ RSpec.describe Captain::Tools::ProviderBookingOutcomeService do
 
   it 'still checks an existing provider command if the doctor mapping later changes' do
     resource.update!(custom_attributes: {})
-    allow(service).to receive(:monotonic_now).and_return(0, described_class::WAIT_SECONDS + 1)
+    allow(service).to receive(:monotonic_now).and_return(0, Captain::Tools::ProviderWriteWait.timeout_seconds + 1)
     expect { service.perform }.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_BOOKING_UNKNOWN') }
   end
 end

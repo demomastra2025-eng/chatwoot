@@ -91,7 +91,7 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
 
     result = tool.perform(tool_context, appointment_id: unauthorized.id, client_comment: 'Must not be applied')
 
-    expect(JSON.parse(result)).to eq('success' => false, 'reason' => 'not_found')
+    expect(JSON.parse(result)).to eq('success' => false, 'reason' => 'not_found', 'error_class' => 'business')
     expect(linked.reload.client_comment).to be_nil
     expect(unauthorized.reload.client_comment).to be_nil
   end
@@ -107,7 +107,7 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
 
     result = tool.perform(tool_context, appointment_id: foreign.id, client_comment: 'Must not be applied')
 
-    expect(JSON.parse(result)).to eq('success' => false, 'reason' => 'not_found')
+    expect(JSON.parse(result)).to eq('success' => false, 'reason' => 'not_found', 'error_class' => 'business')
     expect(linked.reload.client_comment).to be_nil
     expect(foreign.reload.client_comment).to be_nil
   end
@@ -121,7 +121,7 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
     ['', false, 0, -1, 'invalid', '1.5'].each do |appointment_id|
       result = tool.perform(tool_context, appointment_id: appointment_id, client_comment: 'Must not be applied')
 
-      expect(JSON.parse(result)).to eq('success' => false, 'reason' => 'validation_error')
+      expect(JSON.parse(result)).to eq('success' => false, 'reason' => 'validation_error', 'error_class' => 'business')
     end
 
     expect(appointment.reload.client_comment).to be_nil
@@ -140,7 +140,7 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
       result = tool.perform(tool_context, client_comment: 'Must not be applied')
     end.not_to change(Integrations::Medelement::ProviderCommand, :count)
 
-      expect(JSON.parse(result)).to eq('success' => false, 'reason' => 'validation_error')
+      expect(JSON.parse(result)).to eq('success' => false, 'reason' => 'validation_error', 'error_class' => 'business')
     expect(appointments.map { |appointment| appointment.reload.client_comment }).to all(be_nil)
   end
 
@@ -161,7 +161,7 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
 
     result = tool.perform(tool_context, client_comment: 'Changed by Captain')
 
-    expect(JSON.parse(result)).to eq('success' => false, 'reason' => 'validation_error')
+    expect(JSON.parse(result)).to eq('success' => false, 'reason' => 'validation_error', 'error_class' => 'business')
     expect(appointment.reload.client_comment).to be_nil
   end
 
@@ -206,19 +206,21 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
     other_starts_at = other.starts_at
     tool_context = Struct.new(:state).new({ conversation: { id: conversation.id }, appointment: { id: appointment.id } })
 
+    allow(Captain::Tools::ProviderWriteWait).to receive(:timeout_seconds).and_return(0.3)
     moved_starts_at = Time.zone.parse('2026-04-20 10:00:00 +0500').iso8601
     result = tool.perform(tool_context, appointment_id: appointment.id, starts_at: moved_starts_at)
     raise result if result.start_with?('ERROR:')
 
     payload = JSON.parse(result)
 
+    # No worker answers in this example, so the tool reports that MedElement did not answer in time: a technical failure.
     expect(payload).to include('success' => false, 'appointment_id' => appointment.id, 'status' => 'pending_provider_confirmation',
-                              'provider_confirmed' => false, 'reason' => 'pending_provider_confirmation',
+                              'provider_confirmed' => false, 'reason' => 'pending_provider_confirmation', 'error_class' => 'technical',
                               'provider_confirmation_status' => 'pending', 'provider_confirmation_operation' => 'move_reception',
                               'provider_confirmation_scope' => 'medelement')
     expect(payload.keys).to match_array(%w[success appointment_id doctor_name local_date local_time status reason provider_confirmed
                                           provider_confirmation_status provider_confirmation_operation provider_confirmation_scope
-                                          move_state requested_local_date requested_local_time move_guidance])
+                                          move_state requested_local_date requested_local_time move_guidance error_class])
     # The appointment is still at the confirmed time; the requested time is reported only as a request.
     expect(payload).to include('local_date' => '20.04.2026', 'local_time' => '09:00', 'move_state' => 'pending',
                                'requested_local_date' => '20.04.2026', 'requested_local_time' => '10:00')
@@ -249,13 +251,13 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
                                       starts_at: Time.zone.parse('2026-04-20 09:00:00 +0500'), ends_at: Time.zone.parse('2026-04-20 09:30:00 +0500'),
                                       custom_attributes: { 'medelement_reception_code' => 'reception-1', 'medelement_cabinet_code' => 'cabinet-1' })
     end
-    let(:fence) { { control_generation: 0, status_transition_id: 0, last_message_id: 42 } }
     let(:tool_context) do
-      Struct.new(:state).new({ conversation: { id: conversation.id }, appointment: { id: appointment.id }, captain_response_fence: fence })
+      Struct.new(:state).new({ conversation: { id: conversation.id }, appointment: { id: appointment.id } })
     end
 
     before do
       stub_provider_availability
+      allow(Captain::Tools::ProviderWriteWait).to receive(:timeout_seconds).and_return(0.3)
       settings = attributes_for(:integrations_hook, :medelement)[:settings].merge('write_enabled' => true)
       create(:integrations_hook, :medelement, account: account, settings: settings)
     end
@@ -264,24 +266,26 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
       tool.perform(tool_context, appointment_id: appointment.id, starts_at: Time.zone.parse('2026-04-20 10:00:00 +0500').iso8601)
     end
 
-    it "records this run's response fence on the move command for its late outcome" do
+    it 'starts the move command right away and waits for MedElement to answer it' do
+      allow(Integrations::Medelement::ProviderCommandJob).to receive(:perform_later)
+      allow(Captain::Tools::ProviderWriteWait).to receive(:new).and_call_original
+
       result = move!
       raise result if result.start_with?('ERROR:')
 
       command = Integrations::Medelement::ProviderCommand.find_by!(appointment_id: appointment.id, operation: 'move_reception')
-      expect(command.execution_state[Captain::Tools::ProviderBookingHandoffService::FENCE_KEY]).to eq(fence.stringify_keys)
+      expect(command).to be_queued
+      expect(Integrations::Medelement::ProviderCommandJob).to have_received(:perform_later).with(command.id)
+      expect(Captain::Tools::ProviderWriteWait).to have_received(:new).with(command: command)
     end
 
-    it 'keeps the queued reschedule pending when the response fence cannot be recorded' do
-      allow(Captain::Tools::ProviderBookingHandoffService).to receive(:capture_fence!).and_raise(ActiveRecord::StatementInvalid, 'lock timeout')
+    it 'records nothing about the conversation on the move command' do
+      move!
 
-      result = move!
-
-      expect(result).not_to start_with('ERROR:')
-      expect(JSON.parse(result)).to include('success' => false, 'appointment_id' => appointment.id, 'status' => 'pending_provider_confirmation')
+      command = Integrations::Medelement::ProviderCommand.find_by!(appointment_id: appointment.id, operation: 'move_reception')
+      expect(command.execution_state.keys).not_to include('ai_booking_response_fence')
     end
   end
-
   def create_other_appointment(account:, resource:, contact:, conversation:, service:)
     create(
       :scheduling_appointment,
