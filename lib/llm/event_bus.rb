@@ -59,6 +59,11 @@ class Llm::EventBus
       current_context['request_id']
     end
 
+    # A copy of the context of the calling thread, for work that continues on another thread (the context stack is per thread).
+    def snapshot_context
+      current_context.dup
+    end
+
     private
 
     def full_event_name(event_name)

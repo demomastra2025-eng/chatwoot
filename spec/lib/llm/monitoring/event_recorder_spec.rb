@@ -60,18 +60,30 @@ RSpec.describe Llm::Monitoring::EventRecorder do
       expect(fallback.payload).to include('kind' => 'resolution')
     end
 
-    it 'persists operation events with their identifiers and outcome state' do
-      %w[captain.operation.started captain.operation.finished].each do |name|
+    it 'persists the events of a council part with their identifiers, state and counts' do
+      %w[captain.council.part_started captain.council.part_finished].each do |name|
         event = described_class.record_notification(
           event_name: name, started_at: Time.current, finished_at: Time.current,
-          payload: { account_id: account.id, run_source: 'live', part_id: 'synthetic-part', part_version: 2,
-                     executor_agent_id: 7, tool_name: 'create_appointment', state: 'unknown' }
+          payload: { account_id: account.id, run_source: 'live', part_id: 'synthetic-part', part_version: 2, executor_agent_id: 7,
+                     lane: 'writer', inline: true, state: 'done', status: 'answered', acted: true, mutations_succeeded: 1,
+                     mutations_failed: 0, mutations_unknown: 0, tools_called: 4, turns: 3, duration_ms: 1200,
+                     fragment: 'PRIVATE_TEXT' }
         )
 
-        expect(event).to have_attributes(event_name: name, account_id: account.id, tool_name: 'create_appointment')
-        expect(event.payload).to include('part_id' => 'synthetic-part', 'part_version' => 2, 'executor_agent_id' => 7,
-                                         'state' => 'unknown')
+        expect(event).to have_attributes(event_name: name, account_id: account.id)
+        expect(event.payload).to include('part_id' => 'synthetic-part', 'part_version' => 2, 'executor_agent_id' => 7, 'lane' => 'writer',
+                                         'state' => 'done', 'acted' => true, 'mutations_succeeded' => 1, 'tools_called' => 4, 'turns' => 3,
+                                         'duration_ms' => 1200)
       end
+    end
+
+    it 'no longer persists the events of the removed confirmed operations' do
+      event = described_class.record_notification(
+        event_name: 'captain.operation.started', started_at: Time.current, finished_at: Time.current,
+        payload: { account_id: account.id, run_source: 'live', part_id: 'synthetic-part' }
+      )
+
+      expect(event).to be_nil
     end
 
     it 'persists an event whose synthetic Playground display id does not fit the column, keeping the value in the payload' do

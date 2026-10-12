@@ -7,6 +7,7 @@ require 'digest'
 class Captain::Conversation::AgentSession
   ATTRIBUTE = 'captain_agent_session'
   MAX_OPERATIONS = 100
+  BLOCKED = { 'status' => 'blocked', 'reason' => 'mutation_retry_blocked' }.freeze
 
   def initialize(entry:, conversation: nil, playground: nil, fence: {})
     @entry, @playground = entry, playground
@@ -99,7 +100,9 @@ class Captain::Conversation::AgentSession
     end
   end
 
-  def reserve_operation(scope:, tool:, arguments:, actor_id:)
+  # peer_part: the actor is the owner of a council part, which does not hold the conversation. Its part is still checked
+  # against its own executor, only the current agent of the conversation is not.
+  def reserve_operation(scope:, tool:, arguments:, actor_id:, peer_part: false)
     key = operation_key(scope, tool)
     digest = Digest::SHA256.hexdigest(JSON.generate(canonical(arguments)))
     change do |data|
@@ -123,19 +126,22 @@ class Captain::Conversation::AgentSession
         part_id, version = scope.to_s.match(/\Apart:([^:]+):v(\d+)\z/)&.captures
         part = Array(data['parts']).find { |item| item['id'] == part_id }
         unless part && part['version'].to_i == version.to_i && part['executor_agent_id'] == actor_id &&
-               data['current_assistant_id'] == actor_id && part['cancelled'] != true
+               (peer_part || data['current_assistant_id'] == actor_id) && part['cancelled'] != true
           raise Captain::Conversation::ControlGenerationStaleError, 'Request part is no longer executable'
         end
       end
       operations = data['operations'] ||= {}
       prior = operations[key]
       next [:existing, prior.deep_dup] if prior
-      # A new version of a part (confirmation, correction) must not repeat an action that an earlier
-      # version started without ever recording its outcome: that call may already have reached the provider.
-      next [:existing, { 'status' => 'blocked', 'reason' => 'mutation_retry_blocked' }] if earlier_version_unresolved?(operations, scope, tool)
 
+      # A new version of a part (an answer, a correction) must not repeat an action that an earlier version did, or may have
+      # done: that call may already have reached the provider.
+      earlier = earlier_version_receipt(operations, scope, tool, digest)
+      next earlier if earlier
+
+      # The receipts of every version of every part that is still in the registry stay: they are that memory.
       retained_scopes = Array(data['tasks']).map { |item| "task:#{item['id']}" } +
-                        Array(data['parts']).map { |item| "part:#{item['id']}:v#{item['version']}" } + [scope]
+                        Array(data['parts']).flat_map { |item| (1..item['version'].to_i).map { |number| "part:#{item['id']}:v#{number}" } } + [scope]
       operations.delete_if { |_id, operation| operation['status'] == 'finished' && !retained_scopes.include?(operation['scope']) }
       raise ArgumentError, 'Too many actions in this conversation session' if operations.size >= MAX_OPERATIONS
 
@@ -144,10 +150,13 @@ class Captain::Conversation::AgentSession
     end
   end
 
-  def finish_operation(key, result)
+  # outcome: success, not_executed (the call was rejected, nothing changed) or unknown (it may or may not have happened); read
+  # from the result when it is not given.
+  def finish_operation(key, result, outcome: nil)
     record do |data|
       operation = data.fetch('operations').fetch(key)
       operation['status'] = 'finished'
+      operation['outcome'] = (outcome.presence || Captain::Runtime::ToolFailure.outcome(result)).to_s
       operation['result'] = JSON.parse(JSON.generate(result.as_json))
     end
   end
@@ -177,11 +186,34 @@ class Captain::Conversation::AgentSession
     Digest::SHA256.hexdigest(JSON.generate([scope, tool]))
   end
 
-  def earlier_version_unresolved?(operations, scope, tool)
+  # What the receipts of the earlier versions of the same part say about the same tool, newest first:
+  #   executing                      -> blocked (the call may already have reached the provider)
+  #   finished, success              -> the same call is answered with the stored result, another one is blocked
+  #   finished, not_executed         -> nothing happened, the next version may try (this is skipped)
+  #   finished, unknown or no outcome (a receipt of an older release) -> blocked
+  # nil when no earlier version decides.
+  def earlier_version_receipt(operations, scope, tool, digest)
     part_id, version = scope.to_s.match(/\Apart:([^:]+):v(\d+)\z/)&.captures
-    return false unless part_id
+    return unless part_id
 
-    (1...version.to_i).any? { |earlier| operations.dig(operation_key("part:#{part_id}:v#{earlier}", tool), 'status') == 'executing' }
+    (1...version.to_i).to_a.reverse_each do |earlier|
+      receipt = operations[operation_key("part:#{part_id}:v#{earlier}", tool)]
+      next unless receipt
+
+      decision = receipt_decision(receipt, digest)
+      return decision if decision
+    end
+    nil
+  end
+
+  def receipt_decision(receipt, digest)
+    return [:existing, BLOCKED.deep_dup] unless receipt['status'] == 'finished'
+
+    case receipt['outcome']
+    when 'not_executed' then nil
+    when 'success' then [:existing, receipt['arguments_digest'] == digest ? receipt.deep_dup : BLOCKED.deep_dup]
+    else [:existing, BLOCKED.deep_dup]
+    end
   end
 
   def refresh_epoch(data)

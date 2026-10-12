@@ -170,7 +170,10 @@ class Captain::Runtime::EventBusCallbacks
       run_source: %w[playground benchmark].include?(state[:source].to_s) ? state[:source] : 'live',
       project_case_id: state[:project_case_id] || context_wrapper&.context&.dig(:project_case_id),
       current_agent: context_wrapper&.context&.dig(:current_agent),
-      session_id: context_wrapper&.context&.dig(:session_id)
+      session_id: context_wrapper&.context&.dig(:session_id),
+      # Set in the run of a council part, and in the run of an agent on its own single part.
+      part_id: context_wrapper&.context&.dig(:active_part_id),
+      part_version: context_wrapper&.context&.dig(:active_part_version)
     }.merge(trace_payload(context_wrapper))
   end
 

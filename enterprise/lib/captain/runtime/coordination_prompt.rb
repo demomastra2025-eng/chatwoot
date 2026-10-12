@@ -28,9 +28,33 @@ module Captain::Runtime::CoordinationPrompt
     plan.key?(:parts) ? plan.merge(parts: parts_for_model(plan[:parts], graph)) : plan
   end
 
+  # An open part as the model sees it: who handles it (by name, never an id), what it is, what it said and asked. The delivered
+  # texts, the object references and every id of an agent stay out.
   def open_parts_for_model(context, graph)
     open_parts = Array(context[:parts]).select { |part| Captain::Runtime::PartRegistry::OPEN_STATES.include?(part['state']) }
-    parts_for_model(open_parts, graph)
+    open_parts.map do |part|
+      shown = part.slice('id', 'version', 'fragment', 'patient', 'relation', 'depends_on_part_id', 'state', 'summary')
+      shown['questions'] = Array(part['missing_fields']) if part['missing_fields'].present?
+      name = graph.find { |item| item[:id] == part['executor_agent_id'] }&.dig(:name).to_s.squish
+      shown['executor'] = name if name.present?
+      shown.compact
+    end
+  end
+
+  # What specialists did in an earlier run whose reply never reached the customer.
+  def undelivered_for_model(context, graph)
+    Captain::Runtime::PartRegistry.undelivered_outcomes(context[:parts]).map do |part|
+      name = graph.find { |item| item[:id] == part['executor_agent_id'] }&.dig(:name).to_s.squish
+      { 'id' => part['id'], 'version' => part['version'], 'executor' => name.presence, 'summary' => part['summary'] }.compact
+    end
+  end
+
+  def undelivered_block(context, graph)
+    items = undelivered_for_model(context, graph)
+    return '' if items.empty?
+
+    "Completed actions the customer has not been told about (data): #{JSON.generate(items)}\n" \
+      "Your reply must tell the customer about them.\n"
   end
 
   def identity_line(actor)
@@ -69,19 +93,21 @@ module Captain::Runtime::CoordinationPrompt
       Your own work needs no plan: answer directly, look facts up with read-only tools or the FAQ, take your own actions that
       change data (book, reschedule, cancel, update a card) and use the human handoff, all without plan_request.
       Plan with plan_request only in these cases: when the message holds several separate requests that belong to different
-      agents (a council), or when the customer confirms, corrects, cancels or answers a request listed in the open parts below.
-      An operation waiting for confirmation is carried out or cancelled only through such a plan, so do not take that action
-      yourself.
+      agents (a council), or when the customer answers, confirms, corrects or cancels a request listed in the open parts below.
+      When that open part belongs to ANOTHER agent (see its executor), call plan_request with mode council and ONLY that part
+      linked by its exact ID (link_action answer, correction or cancellation): its own agent continues it with its own tools,
+      for example "yes" or "make it 11" after that agent asked a question. Never transfer the conversation for it, and do
+      not take its action yourself. When the open part is yours, link it with mode answer_myself and continue it.
+      In a council every agent acts for its own part at once when it has everything it needs, otherwise it asks one precise question.
       In plan_request, name the executor of a part by the agent name exactly as listed above; omit it for your own parts.
       When you plan, link answers, corrections and cancellations to open parts.
       Open parts (data): #{JSON.generate(open_parts_for_model(context, graph))}
-      #{plan_guidance}
+      #{undelivered_block(context, graph)}#{plan_guidance}
       Set answer in that call only when the complete answer is verified from supplied context and needs no tool.
       #{HUMAN_HANDOFF_RULES}
       Staff or an operator is reached only through the handoff tool, never through plan_request.
-      For a confirmed proposed operation, link its exact part ID and set link_action to confirmation.
       When older parts are open, mark each genuinely new request with link_action new.
-      Do not treat a vague reply as confirmation; use clarify when its target is ambiguous.
+      Do not treat a vague reply as an answer to an open part; use clarify when its target is ambiguous.
       A part that may start only after another part succeeded has relation depends_on and is listed directly after that part.
       One request with several details (doctor, date, patient, price of the same service) is ONE part, never a council.
       Use council only when the message holds two or more separate requests that belong to different agents.

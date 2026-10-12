@@ -15,6 +15,7 @@ class Captain::Runtime::ToolWrapper
   TOOL_REQUEST_COUNTS_KEY = Captain::Runtime::ToolLoopGuard::REQUEST_COUNTS_KEY
   TERMINAL_TOOL_STOP_KEY = Captain::Runtime::ToolLoopGuard::TERMINAL_STOP_KEY
   MUTATING_TOOL_EXECUTIONS_KEY = :captain_v2_mutating_tool_executions
+  COMPLETED_ACTIONS_KEY = :captain_v2_completed_actions
   SERVICE_SPECIFIC_SCHEDULING_KEY = :captain_v2_service_specific_scheduling
   VERIFIED_ID_DESCRIPTION = 'Use only an ID verified from the user, current context, or a prior tool result. Never guess an ID.'
   OPTIONAL_ARGUMENT_DESCRIPTION =
@@ -182,11 +183,29 @@ class Captain::Runtime::ToolWrapper
     cache_successful_mutating_tool_result(normalized_args, final_result)
     cache_non_retryable_failure(normalized_args, final_result)
     record_mutating_tool_result(final_result)
+    record_completed_action(final_result)
     @context_wrapper.callback_manager.emit_tool_complete(@tool.name, final_result, @context_wrapper)
     return final_result if halt_result?(final_result)
     return halt_completed_result(final_result) if terminal_failure_result?(final_result)
 
     Captain::ToolResult.render(final_result)
+  end
+
+  # The names of the actions this run has performed (a successful write that is not an annotation): the report of a council and
+  # the notes for staff say which of them were done.
+  def record_completed_action(result)
+    return unless domain_mutating_tool? && reportable_failure_tool? && !halt_result?(result)
+    return if Captain::Runtime::ToolFailure.annotation_tool?(@tool.name) || Captain::Runtime::ToolFailure.failure?(result)
+
+    (context_wrapper_context[COMPLETED_ACTIONS_KEY] ||= []) << Captain::Runtime::ToolFailure.canonical_name(@tool.name)
+  end
+
+  # The tools that move the conversation (a transfer, the plan, the task queue, the human handoff, the resolution, a cancelled
+  # reply) are not business tools: what they report is not an action of the work for the customer. A Playground run has no
+  # customer and no staff to hand over to: its simulated tools are scenario outcomes that the person who tests sees as they are.
+  def reportable_failure_tool?
+    !coordination_tool? && !terminal_control_tool? && !@tool.is_a?(Captain::Tools::CancelResponseTool) &&
+      context_wrapper_context[:playground_session].nil?
   end
 
   def invalid_tool_arguments_result(error)
@@ -375,47 +394,13 @@ class Captain::Runtime::ToolWrapper
     raise InvalidToolArgumentsError, "Invalid tool arguments at #{pointer}: #{error_type}"
   end
 
+  # An agent's own actions (booking, rescheduling, card updates, the human handoff) and its transfer of the conversation to one
+  # colleague (HandoffTool) need no request plan: the plan only coordinates several agents (councils, answers to open parts).
+  # The owner of a council part acts with its own tools in the same way, so nothing here looks at the part.
   def pre_execution_error(normalized_args)
     bound_tool_error_for_current_agent ||
-      consult_mode_error ||
-      pending_confirmation_error ||
       tool_safety_error_for(:tool_arguments, normalized_args) ||
       scheduling_context_error(normalized_args)
-  end
-
-  # An agent's own actions (booking, rescheduling, card updates, the human handoff) and its transfer of the conversation to
-  # one colleague (HandoffTool) need no request plan: the plan only coordinates several agents (councils, answers to open
-  # parts). A consultation can only read, so it has no transfer tool either.
-  def consult_mode_error
-    return unless context_wrapper_context[:consult_mode] && !Captain::Runtime::ConsultTools.allowed?(@tool)
-
-    Captain::ToolResult.failure(error: 'Tool is unavailable in consult mode', retryable: false)
-  end
-
-  # The one exception to "own actions need no plan": while an operation proposed by a council waits for the customer's
-  # answer, that answer is linked with plan_request and ConfirmedOperations runs the stored proposal once, with its frozen
-  # params. An own call here would repeat the action under another operation scope with params the model typed itself.
-  # This is a state check (a stored part waits), the same one that holds back a plain reply in the runner.
-  def pending_confirmation_error
-    return unless plan_awaited_for_confirmation? && mutating_tool?
-    # Escalating to a human is never blocked behind planning: staff take over and nothing is executed for the customer.
-    return if @tool.is_a?(Captain::Tools::HandoffTool)
-
-    Captain::ToolResult.failure(
-      error: 'An operation proposed earlier waits for the customer\'s answer; link the answer with plan_request first',
-      retryable: false,
-      audit: { failure_reason: 'part_plan_required', mutation_executed: false }
-    )
-  end
-
-  # Only where plan_request is bound (agent peers, no inherited task queue, message not planned yet) and a proposal waits.
-  def plan_awaited_for_confirmation?
-    context = context_wrapper_context
-    return false unless context[:agent_session] && !context[:part_plan_accepted] && !context[:consult_mode]
-    return false if Captain::Runtime::TaskQueue.in_flight?(context[:agent_tasks])
-
-    registry = Captain::Runtime::PartRegistry
-    registry.planning_available?(context) && registry.awaiting_confirmation?(context)
   end
 
   def scheduling_context_error(normalized_args)

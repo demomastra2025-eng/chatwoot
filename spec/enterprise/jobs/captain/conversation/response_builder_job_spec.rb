@@ -1628,6 +1628,134 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       end
     end
 
+    context 'when a tool of the agent failed technically and the run ended without a reply' do
+      let(:failure) do
+        { 'tool' => 'create_appointment', 'kind' => 'technical', 'stage' => 'tool_execution', 'reason' => 'provider_unavailable',
+          'completed' => ['cancel_appointment'] }
+      end
+      let(:failed_turn) do
+        { 'response' => Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_RESPONSE,
+          Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_AUTHORIZED_KEY => true,
+          'error_class' => Captain::Assistant::AgentRunnerService::TECHNICAL_FAILURE_ERROR_CLASS, 'technical_failure' => failure }
+      end
+      let(:note) do
+        'Automatic reply was stopped by a technical error (create_appointment / tool_execution / provider_unavailable). ' \
+          'Handoff to human agent was triggered. Completed before the error: cancel_appointment.'
+      end
+
+      before { allow(agent_runner_service).to receive(:generate_response).and_return(failed_turn) }
+
+      it 'hands the conversation to staff at once with a note that names what failed, and writes nothing to the customer' do
+        described_class.perform_now(conversation, assistant)
+
+        expect(conversation.reload.status).to eq('open')
+        expect(conversation.status_transitions.last).to have_attributes(source: 'system', actor: assistant, from_status: 'pending', to_status: 'open')
+        expect(conversation.messages.where(private: true).pluck(:content)).to eq([note])
+        expect(conversation.messages.outgoing.where(private: false)).to be_empty
+      end
+
+      it 'names the tool and the codes only: no argument, no message, no patient' do
+        failure['error'] = 'Patient Айгуль +77010000000 rejected'
+        failure['arguments'] = { 'phone' => '+77010000000' }
+
+        described_class.perform_now(conversation, assistant)
+
+        expect(conversation.reload.messages.where(private: true).pluck(:content).join).not_to include('Айгуль', '7701')
+      end
+
+      it 'sends the handoff notice of the workspace through the notice service, as for any handoff of the system' do
+        save_account_handoff_message(text: 'Сотрудник продолжит диалог с вами.')
+
+        described_class.perform_now(conversation, assistant)
+
+        expect(conversation.reload.messages.outgoing.where(private: false).pluck(:content)).to eq(['Сотрудник продолжит диалог с вами.'])
+        expect(conversation.status).to eq('open')
+      end
+
+      it 'hands over although the agent has no handoff tool: it is the system that does it' do
+        allow_any_instance_of(Captain::Assistant).to receive(:handoff_enabled?).and_return(false)
+
+        described_class.perform_now(conversation, assistant)
+
+        expect(conversation.reload.status).to eq('open')
+        expect(conversation.messages.where(private: true).pluck(:content)).to eq([note])
+      end
+
+      it 'says nothing about the failure to the customer, whatever the notice is' do
+        save_account_handoff_message(text: 'Сотрудник продолжит диалог с вами.')
+
+        described_class.perform_now(conversation, assistant)
+
+        public_text = conversation.reload.messages.outgoing.where(private: false).pluck(:content).join
+        expect(public_text).not_to include('create_appointment', 'ошибк', 'не получилось', 'Не удалось')
+      end
+
+      it 'records the staff handoff like any other handoff' do
+        allow(Llm::EventBus).to receive(:publish)
+
+        described_class.perform_now(conversation, assistant)
+
+        expect(Llm::EventBus).to have_received(:publish).with('captain.agent.staff_handoff', hash_including(conversation_id: conversation.id))
+      end
+    end
+
+    context 'when a council reply left out a part whose tool failed technically' do
+      let(:council_response) do
+        { 'response' => 'Приём стоит 5000 тенге.',
+          'council_handoff' => { 'reason' => 'council_technical_failure', 'parts' => [], 'technical' => true,
+                                 'failures' => [{ 'tool' => 'create_appointment', 'stage' => 'tool_execution', 'reason' => 'provider_unavailable' }] } }
+      end
+      let(:technical_note) do
+        I18n.t('captain.coordination.technical_failure_note', details: 'create_appointment / tool_execution / provider_unavailable',
+                                                              locale: account.locale)
+      end
+
+      before { allow(agent_runner_service).to receive(:generate_response).and_return(council_response) }
+
+      it 'delivers the reply first, then hands the conversation to staff with a note that names what failed' do
+        described_class.perform_now(conversation, assistant)
+
+        conversation.reload
+        reply = conversation.messages.outgoing.where(private: false).sole
+        note = conversation.messages.outgoing.where(private: true).last
+        expect(reply.content).to eq('Приём стоит 5000 тенге.')
+        expect(note.content).to eq(technical_note)
+        expect(note.id).to be > reply.id
+        expect(conversation.status).to eq('open')
+      end
+
+      it 'follows the reply with the handoff notice of the workspace' do
+        save_account_handoff_message(text: 'Сотрудник продолжит диалог с вами.')
+
+        described_class.perform_now(conversation, assistant)
+
+        public_messages = conversation.reload.messages.outgoing.where(private: false).order(:id)
+        expect(public_messages.pluck(:content)).to eq(['Приём стоит 5000 тенге.', 'Сотрудник продолжит диалог с вами.'])
+        expect(conversation.status).to eq('open')
+      end
+
+      it 'sends no notice when the workspace has none' do
+        described_class.perform_now(conversation, assistant)
+
+        expect(conversation.reload.messages.outgoing.where(private: false).pluck(:content)).to eq(['Приём стоит 5000 тенге.'])
+      end
+
+      it 'hands over although the agent cannot hand off to staff: the failure is the system\'s, not the agent\'s request' do
+        allow_any_instance_of(Captain::Assistant).to receive(:handoff_enabled?).and_return(false)
+
+        described_class.perform_now(conversation, assistant)
+
+        expect(conversation.reload.status).to eq('open')
+        expect(conversation.messages.where(private: true).pluck(:content)).to eq([technical_note])
+      end
+
+      it 'does not say a word about the failure in the reply' do
+        described_class.perform_now(conversation, assistant)
+
+        expect(conversation.reload.messages.outgoing.where(private: false).pluck(:content).join).not_to include('create_appointment')
+      end
+    end
+
     # Regression (PR #13417): wrapping create_handoff_message and bot_handoff! in the
     # same transaction defers the message's after_create_commit until commit, at which
     # point it clears waiting_since (bot_response). The handoff path must stay outside

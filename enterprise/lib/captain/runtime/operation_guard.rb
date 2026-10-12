@@ -18,9 +18,10 @@ class Captain::Runtime::OperationGuard
     return if @tool.is_a?(Captain::Tools::HandoffTool) || @tool.is_a?(Captain::Tools::ResolveConversationTool)
     return if @context[:playground_session] # Real Playground actions have their own exact approval ledger.
 
+    # The owner of a council part is not the agent that holds the conversation: its part is checked against its own executor.
     status, entry = @session.reserve_operation(
       scope: @scope,
-      tool: @tool.name.to_s, arguments: @arguments, actor_id: actor_id
+      tool: @tool.name.to_s, arguments: @arguments, actor_id: actor_id, peer_part: @context[:part_run] == true
     )
     if status == :reserved
       @key = entry
@@ -51,7 +52,8 @@ class Captain::Runtime::OperationGuard
        normalized.dig(:audit, :failure_stage) == 'tool_arguments'
       @session.release_unexecuted_operation(@key)
     else
-      @session.finish_operation(@key, normalized)
+      # The receipt remembers whether the action happened: a later version of the same part may repeat only what did not.
+      @session.finish_operation(@key, normalized, outcome: Captain::Runtime::ToolFailure.outcome(result))
     end
   end
 

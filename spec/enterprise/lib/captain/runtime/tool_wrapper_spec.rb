@@ -181,7 +181,7 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     end
 
     it 'blocks a generic downgrade after a failed service-specific attempt before executing the tool' do
-      failure = Captain::ToolResult.failure(error: 'Service is not available for the requested specialists', retryable: false)
+      failure = Captain::ToolResult.failure(error: 'Service is not available for the requested specialists', retryable: false, audit: { error_class: 'business' })
       scheduling_tool.result = failure
 
       expect_tool_error(scheduling_wrapper.call(service_id: 469, resource_ids: ['157']),
@@ -209,7 +209,7 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     end
 
     it 'allows a different positive service id after a failed service-specific attempt' do
-      failure = Captain::ToolResult.failure(error: 'Service is not available for the requested specialists', retryable: false)
+      failure = Captain::ToolResult.failure(error: 'Service is not available for the requested specialists', retryable: false, audit: { error_class: 'business' })
       scheduling_tool.result = failure
 
       scheduling_wrapper.call(service_id: 469, resource_ids: ['157'])
@@ -565,7 +565,7 @@ RSpec.describe Captain::Runtime::ToolWrapper do
   it 'blocks an identical non-retryable failed call instead of executing it repeatedly' do
     read_only_tool = ToolWrapperSpecReadOnlyTool.new
     read_only_wrapper = described_class.new(read_only_tool, context_wrapper)
-    failure = Captain::ToolResult.failure(error: 'Invalid stage filters', retryable: false)
+    failure = Captain::ToolResult.failure(error: 'Invalid stage filters', retryable: false, audit: { error_class: 'business' })
 
     expect_tool_error(read_only_wrapper.call(result: failure), 'Invalid stage filters', retryable: false)
     terminal_result = read_only_wrapper.call(result: failure)
@@ -585,7 +585,7 @@ RSpec.describe Captain::Runtime::ToolWrapper do
       read_only_tool = ToolWrapperSpecReadOnlyTool.new(tool_name: tool_name)
       isolated_context = Captain::Runtime::RunContext.new({ state: { captain_runtime: runtime_preferences } }, callbacks: {})
       read_only_wrapper = described_class.new(read_only_tool, isolated_context)
-      failure = Captain::ToolResult.failure(error: 'Unknown verified entity id', retryable: false)
+      failure = Captain::ToolResult.failure(error: 'Unknown verified entity id', retryable: false, audit: { error_class: 'business' })
 
       expect_tool_error(read_only_wrapper.call(result: failure, limit: 10), 'Unknown verified entity id', retryable: false)
       terminal_result = read_only_wrapper.call(result: failure, limit: 50)
@@ -620,7 +620,7 @@ RSpec.describe Captain::Runtime::ToolWrapper do
   it 'does not suppress a changed limit for unrelated read-only tools' do
     read_only_tool = ToolWrapperSpecReadOnlyTool.new
     read_only_wrapper = described_class.new(read_only_tool, context_wrapper)
-    failure = Captain::ToolResult.failure(error: 'Page-specific failure', retryable: false)
+    failure = Captain::ToolResult.failure(error: 'Page-specific failure', retryable: false, audit: { error_class: 'business' })
 
     expect_tool_error(read_only_wrapper.call(result: failure, limit: 10), 'Page-specific failure', retryable: false)
     expect_tool_error(read_only_wrapper.call(result: failure, limit: 50), 'Page-specific failure', retryable: false)
@@ -777,7 +777,7 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     later_tool = ToolWrapperSpecReadOnlyTool.new(tool_name: 'later_tool')
     first_wrapper = described_class.new(first_tool, context_wrapper)
     later_wrapper = described_class.new(later_tool, context_wrapper)
-    failure = Captain::ToolResult.failure(error: 'Permanent lookup failure', retryable: false)
+    failure = Captain::ToolResult.failure(error: 'Permanent lookup failure', retryable: false, audit: { error_class: 'business' })
 
     first_wrapper.call(result: failure)
     expect(first_wrapper.call(result: failure)).to be_a(RubyLLM::Tool::Halt)
@@ -983,103 +983,55 @@ RSpec.describe Captain::Runtime::ToolWrapper do
       expect(events.map(&:first)).to eq(%i[start complete])
     end
 
-    describe 'while an operation proposed by a council waits for the customer\'s answer' do
-      let(:peer_graph) { [{ id: assistant.id }, { id: assistant.id + 1 }] }
-      let(:proposal) do
-        { 'id' => 'pending-part', 'state' => 'waiting_confirmation', 'executor_agent_id' => assistant.id,
-          'proposed_operation' => { 'type' => mutating_tool.name, 'params' => { 'title' => 'Stored by the council' } } }
-      end
-      let(:plan_error) { 'An operation proposed earlier waits for the customer\'s answer; link the answer with plan_request first' }
+    describe 'the run of a council part' do
+      let(:other_id) { assistant.id + 1 }
 
       before do
-        context_wrapper.context[:agent_graph] = peer_graph
-        context_wrapper.context[:parts] = [proposal]
+        agent_session.change do |data|
+          data['parts'] = [{ 'id' => 'part-1', 'version' => 1, 'executor_agent_id' => assistant.id, 'state' => 'open' }]
+        end
+        agent_session.update_routing(actor_id: other_id)
+        context_wrapper.context.merge!(part_run: true, part_plan_accepted: true, active_part_id: 'part-1', active_part_version: 1,
+                                       agent_graph: [{ id: assistant.id }, { id: other_id }])
       end
 
-      it 'refuses the agent\'s own mutating call without a receipt, and lets it run once the answer is planned' do
-        refused = mutating_wrapper.call(title: 'Typed by the model')
+      it 'lets the owner of the part act with its own mutating tool, without any plan, while another agent holds the conversation' do
+        result = mutating_wrapper.call(title: 'Booked by the owner')
 
-        expect_tool_error(refused, plan_error, retryable: false)
-        expect(mutating_tool.calls).to eq(0)
-        expect(agent_session.read.fetch('operations')).to be_empty
-        expect(events.last[2]).to include(success: false, audit: include(failure_reason: 'part_plan_required', mutation_executed: false))
-
-        context_wrapper.context[:part_plan_accepted] = true
-        context_wrapper.context[:captain_v2_current_tool_batch_id] = 'planned-batch'
-
-        expect(JSON.parse(mutating_wrapper.call(title: 'Stored by the council'))).to include('message' => 'created Stored by the council')
+        expect(JSON.parse(result)).to include('message' => 'created Booked by the owner')
         expect(mutating_tool.calls).to eq(1)
-        expect(agent_session.read.fetch('operations').values).to contain_exactly(include('status' => 'finished'))
-      end
-
-      it 'still lets ConfirmedOperations run the stored proposal once, with its frozen params, after a plain "yes" is planned' do
-        context = context_wrapper.context
-        stored = proposal.merge('version' => 1, 'fragment' => 'Book the synthetic scan', 'patient' => 'unknown')
-        agent_session.change { |data| data['parts'] = [stored] }
-        context[:parts] = agent_session.read['parts']
-        context[:agent_run_context_object] = instance_double(Captain::AgentRunContext, activate: nil)
-        actor = double('actor', agent_name: "assistant_#{assistant.id}", agent_tools: [mutating_tool])
-        allow(mutating_tool).to receive(:perform).and_call_original
-
-        plan = Captain::Runtime::PartRegistry.new(context).accept!(
-          mode: 'answer_myself',
-          parts: [{ fragment: 'yes', executor_agent_id: assistant.id, link_part_id: 'pending-part', link_action: 'confirmation' }]
-        )
-        answer = Captain::Runtime::ConfirmedOperations.new(context: context, graph: double('graph', find: actor)).run(plan[:parts])
-
-        expect(answer).to eq(I18n.t('captain.coordination.action_done', locale: Captain::Runtime::CouncilEditor.locale_for(context)))
-        expect(mutating_tool).to have_received(:perform).with(anything, title: 'Stored by the council').once
         expect(agent_session.read.fetch('operations').values).to contain_exactly(
-          include('status' => 'finished', 'scope' => 'part:pending-part:v2', 'result' => include('success' => true))
+          include('status' => 'finished', 'scope' => 'part:part-1:v1', 'actor_id' => assistant.id, 'outcome' => 'success')
         )
-        expect(agent_session.read['parts'].first).to include('id' => 'pending-part', 'state' => 'done')
       end
 
-      it 'does not block the human handoff or a read-only lookup' do
-        human_handoff = described_class.new(Captain::Tools::HandoffTool.new(assistant), context_wrapper)
-        lookup = described_class.new(ToolWrapperSpecReadOnlyTool.new, context_wrapper)
+      it 'does not repeat the action of the part: the same call is answered with the stored result, another one is blocked' do
+        mutating_wrapper.call(title: 'Booked by the owner')
+        context_wrapper.context[:captain_v2_current_tool_batch_id] = 'second-batch'
 
-        expect(human_handoff.send(:mutating_tool?)).to be(true)
-        expect(human_handoff.send(:pending_confirmation_error)).to be_nil
-        expect(lookup.send(:pending_confirmation_error)).to be_nil
-        expect(mutating_wrapper.send(:pending_confirmation_error)).to be_present
-      end
+        again = mutating_wrapper.call(title: 'Booked by the owner')
 
-      it 'does not block the transfer of the conversation to one colleague, which needs no plan' do
-        colleague = Captain::Runtime::Agent.new(name: "assistant_#{assistant.id + 1}").tap { |agent| agent.assistant_id = assistant.id + 1 }
-        transfer = described_class.new(Captain::Runtime::HandoffTool.new(colleague), context_wrapper)
-
-        expect(transfer.send(:plan_awaited_for_confirmation?)).to be(true)
-        expect(transfer.send(:mutating_tool?)).to be(false)
-        expect(transfer.send(:pending_confirmation_error)).to be_nil
-      end
-
-      it 'does not block an agent that has no peer to plan with' do
-        context_wrapper.context[:agent_graph] = [{ id: assistant.id }]
-
-        expect(JSON.parse(mutating_wrapper.call(title: 'Own booking'))).to include('message' => 'created Own booking')
+        expect(JSON.parse(again)).to include('data' => include('title' => 'Booked by the owner'))
         expect(mutating_tool.calls).to eq(1)
       end
 
-      it 'does not block an agent while no proposal waits (answered, failed or without an operation)' do
-        context_wrapper.context[:parts] = [
-          proposal.merge('state' => 'done'), proposal.merge('state' => 'waiting_customer', 'proposed_operation' => nil)
-        ]
+      it 'refuses an agent that does not own the part' do
+        agent_session.change { |data| data['parts'].first['executor_agent_id'] = other_id }
 
-        expect(JSON.parse(mutating_wrapper.call(title: 'Own booking'))).to include('message' => 'created Own booking')
-        expect(mutating_tool.calls).to eq(1)
+        expect { mutating_wrapper.call(title: 'Not mine') }.to raise_error(Captain::Conversation::ControlGenerationStaleError)
+        expect(mutating_tool.calls).to eq(0)
       end
 
-      it 'leaves an inherited task queue and a consultation to their own rules' do
-        context_wrapper.context[:agent_tasks] = [{ 'id' => 'visit', 'assistant_id' => assistant.id, 'status' => 'active' }]
+      it 'keeps the check of the current agent for everyone who is not a part of a council' do
+        context_wrapper.context.delete(:part_run)
 
-        expect(mutating_wrapper.send(:pending_confirmation_error)).to be_nil
+        expect { mutating_wrapper.call(title: 'Not the current agent') }.to raise_error(Captain::Conversation::ControlGenerationStaleError)
+      end
 
-        context_wrapper.context[:agent_tasks] = []
-        context_wrapper.context[:consult_mode] = true
+      it 'refuses a part whose version was replaced by a newer one' do
+        agent_session.change { |data| data['parts'].first['version'] = 2 }
 
-        expect(mutating_wrapper.send(:pending_confirmation_error)).to be_nil
-        expect(Captain::ToolResult.normalize(mutating_wrapper.send(:consult_mode_error))).to include(error: /consult mode/)
+        expect { mutating_wrapper.call(title: 'Old version') }.to raise_error(Captain::Conversation::ControlGenerationStaleError)
       end
     end
 
@@ -1208,6 +1160,24 @@ RSpec.describe Captain::Runtime::ToolWrapper do
 
     expect(read_only_tool.calls).to eq(2)
     expect(context_wrapper.context[:captain_v2_tool_result_cache]).to be_blank
+  end
+
+  describe 'the actions a run performed' do
+    let(:read_only_tool) { ToolWrapperSpecReadOnlyTool.new(tool_name: 'faq_lookup') }
+    let(:read_only_wrapper) { described_class.new(read_only_tool, context_wrapper) }
+    let(:mutating_tool) { ToolWrapperSpecMutatingTool.new }
+    let(:mutating_wrapper) { described_class.new(mutating_tool, context_wrapper) }
+
+    it 'records the actions a run performed, in order, without annotations and failures' do
+      annotation = Class.new(ToolWrapperSpecMutatingTool) { def name = 'add_private_note' }.new
+      context_wrapper.context[:captain_v2_current_tool_batch_id] = 'one'
+      mutating_wrapper.call(title: 'Visit')
+      context_wrapper.context[:captain_v2_current_tool_batch_id] = 'two'
+      described_class.new(annotation, context_wrapper).call(title: 'Note')
+      read_only_wrapper.call(result: 'lookup')
+
+      expect(context_wrapper.context[described_class::COMPLETED_ACTIONS_KEY]).to eq(['tool_wrapper_mutating_spec'])
+    end
   end
 
   def expect_tool_error(result, message, retryable:)

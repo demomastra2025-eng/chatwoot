@@ -165,16 +165,41 @@ RSpec.describe Captain::Runtime::ExecutorResolver do
       expect(resolve_ids(['Қабылдау'], mode: 'clarify')).to eq([12])
     end
 
-    it 'does not judge a plan that only confirms stored proposals, whatever its mode' do
-      context[:parts] = [{ 'id' => 'proposal', 'state' => 'waiting_confirmation', 'executor_agent_id' => 12,
-                           'proposed_operation' => { 'type' => 'create_appointment', 'params' => {} } }]
-      confirm = [{ 'fragment' => 'Да', 'link_part_id' => 'proposal', 'link_action' => 'confirmation' }]
+    it 'accepts a council of one part when that part continues an open part of another agent' do
+      context[:parts] = [{ 'id' => 'peer-part', 'state' => 'waiting_customer', 'executor_agent_id' => 12 }]
+      answer = [{ 'fragment' => 'Давайте в 11', 'link_part_id' => 'peer-part', 'link_action' => 'answer' }]
 
-      %w[answer_myself clarify council].each do |mode|
-        expect(described_class.new(context).resolve(confirm, mode: mode).sole['executor_agent_id']).to eq(12)
-      end
-      mixed = confirm + [{ 'fragment' => 'Ещё', 'link_action' => 'new', 'executor' => 'Қабылдау' }]
-      expect { described_class.new(context).resolve(mixed, mode: 'answer_myself') }.to raise_error(described_class::RetryableError)
+      expect(described_class.new(context).resolve(answer, mode: 'council').sole['executor_agent_id']).to eq(12)
+    end
+
+    it 'still asks a council of one NEW part for a second agent, and accepts a continuation next to a part of the current agent' do
+      context[:parts] = [{ 'id' => 'peer-part', 'state' => 'waiting_customer', 'executor_agent_id' => 12 }]
+      new_part = [{ 'fragment' => 'Цена', 'link_part_id' => 'peer-part', 'link_action' => 'new' }]
+      mixed = [{ 'fragment' => 'Давайте в 11', 'link_part_id' => 'peer-part', 'link_action' => 'answer' }, { 'fragment' => 'Цена' }]
+
+      expect { described_class.new(context).resolve(new_part, mode: 'council') }.to raise_error(described_class::RetryableError, /at least two different agents/)
+      expect(described_class.new(context).resolve(mixed, mode: 'council').pluck('executor_agent_id')).to eq([12, 11])
+    end
+
+    it 'names the council when an own part continues the open part of another agent' do
+      context[:parts] = [{ 'id' => 'peer-part', 'state' => 'waiting_customer', 'executor_agent_id' => 12 }]
+      answer = [{ 'fragment' => 'Давайте в 11', 'link_part_id' => 'peer-part', 'link_action' => 'answer' }]
+
+      expect { described_class.new(context).resolve(answer, mode: 'answer_myself') }.to raise_error(
+        described_class::RetryableError, /This part belongs to Қабылдау\. The customer answers, corrects or cancels a part of another agent: call plan_request with mode council/
+      )
+    end
+
+    it 'names the council, not the transfer tool, when the former handoff mode is used for such a continuation' do
+      context[:parts] = [{ 'id' => 'peer-part', 'state' => 'waiting_customer', 'executor_agent_id' => 12 }]
+      answer = [{ 'fragment' => 'Давайте в 11', 'link_part_id' => 'peer-part', 'link_action' => 'answer' }]
+
+      expect { described_class.new(context).reject_transfer_mode!('handoff', answer) }.to raise_error(
+        described_class::TransferToolError, /plan_request has no handoff mode\. The customer answers, corrects or cancels a part of another agent/
+      )
+      expect { described_class.new(context).reject_transfer_mode!('handoff', [{ 'fragment' => 'Цена' }]) }.to raise_error(
+        described_class::TransferToolError, /call that colleague's transfer tool without a plan/
+      )
     end
   end
 
@@ -196,8 +221,10 @@ RSpec.describe Captain::Runtime::ExecutorResolver do
       expect(link_owner({ 'link_action' => 'answer', 'executor' => ' ' })).to eq(12)
     end
 
-    it 'moves the part to the current agent only when the model names it, and starts a new part with the current agent' do
-      expect(link_owner({ 'link_action' => 'answer', 'executor' => 'Администратор' }, mode: 'answer_myself')).to eq(11)
+    it 'ignores an executor the model names for a continuation, and starts a new part with the current agent' do
+      expect(link_owner({ 'link_action' => 'answer', 'executor' => 'Администратор' }, mode: 'council')).to eq(12)
+      expect(link_owner({ 'link_action' => 'answer', 'executor' => 'Лаборатория Анализы' }, mode: 'council')).to eq(12)
+      expect(link_owner({ 'link_action' => 'answer', 'executor' => 'Неизвестный' }, mode: 'council')).to eq(12)
       expect(link_owner({ 'link_action' => 'new' }, mode: 'answer_myself')).to eq(11)
       expect(link_owner({ 'link_part_id' => 'gone' }, mode: 'answer_myself')).to eq(11)
     end
@@ -215,21 +242,19 @@ RSpec.describe Captain::Runtime::ExecutorResolver do
     end
   end
 
-  it 'keeps the executor recorded for a confirmed part when the model omits or garbles the executor, even in a council' do
-    context[:parts] = [{ 'id' => 'proposal', 'state' => 'waiting_confirmation', 'executor_agent_id' => 12,
-                         'proposed_operation' => { 'type' => 'create_appointment', 'params' => {} } }]
-    link = { 'fragment' => 'Да', 'link_part_id' => 'proposal', 'link_action' => 'confirmation' }
+  it 'keeps the executor recorded for a continued part when the model omits, garbles or changes the executor, even in a council' do
+    context[:parts] = [{ 'id' => 'peer-part', 'state' => 'waiting_customer', 'executor_agent_id' => 12 }]
+    link = { 'fragment' => 'Давайте в 11', 'link_part_id' => 'peer-part', 'link_action' => 'answer' }
     resolved = lambda do |part, mode|
       described_class.new(context).resolve([part], mode: mode).sole['executor_agent_id']
     end
 
     expect(resolved.call(link, 'council')).to eq(12)
-    expect(resolved.call(link.merge('executor' => 'Угадай'), 'answer_myself')).to eq(12)
-    expect(resolved.call(link.merge('executor' => 'Лаборатория  анализы'), 'council')).to eq(13)
     expect(resolved.call(link.merge('executor' => 'Угадай'), 'council')).to eq(12)
-    expect(resolved.call(link.merge('link_action' => 'answer'), 'clarify')).to eq(12)
+    expect(resolved.call(link.merge('executor' => 'Лаборатория  анализы'), 'council')).to eq(12)
+    expect(resolved.call(link, 'clarify')).to eq(12)
     expect(resolved.call(link.merge('link_part_id' => 'gone'), 'answer_myself')).to eq(11)
-    expect { resolved.call(link.merge('link_action' => 'answer', 'executor' => 'Угадай'), 'council') }.to raise_error(
+    expect { resolved.call(link.merge('link_action' => 'new', 'executor' => 'Угадай'), 'council') }.to raise_error(
       described_class::UnknownAgentError
     )
   end

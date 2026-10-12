@@ -122,15 +122,11 @@ RSpec.describe Captain::Runtime::HandoffTool do
       expect(tool.description).to start_with('Transfer the conversation to assistant_')
     end
 
-    it 'is refused in a consultation, which can only read' do
-      context[:consult_mode] = true
-      wrapper = Captain::Runtime::ToolWrapper.new(described_class.new(target), run_context)
+    it 'is not offered to a council part, which acts with its own tools and transfers nothing' do
+      context[:part_run] = true
+      acting = Captain::Runtime::Agent.new(name: "assistant_#{entry.id}", handoff_agents: [target])
 
-      result = wrapper.call({})
-      rendered = result.is_a?(RubyLLM::Tool::Halt) ? result.content : result
-
-      expect(JSON.parse(rendered.delete_prefix('ERROR: '))).to include('error' => 'Tool is unavailable in consult mode')
-      expect(context).not_to have_key(:pending_handoff)
+      expect(Captain::Runtime::ChatFactory.send(:build_agent_tools, acting, run_context)).to be_empty
     end
 
     it 'is offered for every colleague of the graph, with plan_request only for the coordination' do
@@ -200,24 +196,47 @@ RSpec.describe Captain::Runtime::CoordinationEvents do
     end.not_to raise_error
   end
 
-  it 'publishes operation events with identifiers and the outcome state, without text or parameters' do
-    context = { agent_request_id: 'synthetic-request',
-                state: { account_id: 1, assistant_id: 4, source: 'benchmark', conversation: { id: 3 } } }
-    part = { 'id' => 'synthetic-part', 'version' => 2, 'executor_agent_id' => 4, 'fragment' => 'PRIVATE_TEXT',
-             'proposed_operation' => { 'type' => 'create_appointment', 'params' => { 'note' => 'PRIVATE_PARAM' } } }
-    events = []
-    subscriber = ActiveSupport::Notifications.subscribe(/\Acaptain\.operation\./) do |*args|
-      events << ActiveSupport::Notifications::Event.new(*args)
+  describe 'the events of a council part' do
+    let(:context) do
+      { agent_request_id: 'synthetic-request', state: { account_id: 1, assistant_id: 4, source: 'benchmark', conversation: { id: 3 } } }
+    end
+    let(:part) do
+      { 'id' => 'synthetic-part', 'version' => 2, 'executor_agent_id' => 4, 'fragment' => 'PRIVATE_TEXT',
+        'summary' => 'PRIVATE_SUMMARY', 'missing_fields' => ['PRIVATE_QUESTION'], 'prior_summary' => 'PRIVATE_PRIOR' }
+    end
+    let(:events) { [] }
+
+    around do |example|
+      subscriber = ActiveSupport::Notifications.subscribe(/\Acaptain\.council\./) do |*args|
+        events << ActiveSupport::Notifications::Event.new(*args)
+      end
+      example.run
+    ensure
+      ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
     end
 
-    described_class.operation_started(context: context, part: part, tool_name: 'create_appointment')
-    described_class.operation_finished(context: context, part: part, tool_name: 'create_appointment', state: :unknown)
+    it 'publishes the start and the end of a part with identifiers, states and counts, without text or parameters' do
+      described_class.part_started(context: context, part: part, lane: 'writer', inline: true)
+      described_class.part_finished(context: context, part: part, state: :done, status: 'answered', acted: true, mutations_succeeded: 1,
+                                    mutations_failed: 0, mutations_unknown: 0, tools_called: 4, turns: 3, duration_ms: 1200)
 
-    expect(events.map(&:name)).to eq(%w[captain.operation.started captain.operation.finished])
-    expect(events.last.payload).to include('part_id' => 'synthetic-part', 'part_version' => 2, 'executor_agent_id' => 4,
-                                           'tool_name' => 'create_appointment', 'state' => 'unknown', 'run_source' => 'benchmark')
-    expect(events.map { |event| event.payload.to_json }.join).not_to include('PRIVATE_TEXT', 'PRIVATE_PARAM')
-  ensure
-    ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+      expect(events.map(&:name)).to eq(%w[captain.council.part_started captain.council.part_finished])
+      expect(events.first.payload).to include('part_id' => 'synthetic-part', 'part_version' => 2, 'executor_agent_id' => 4,
+                                              'lane' => 'writer', 'inline' => true, 'run_source' => 'benchmark', 'conversation_id' => 3)
+      expect(events.last.payload).to include('state' => 'done', 'status' => 'answered', 'acted' => true, 'mutations_succeeded' => 1,
+                                             'mutations_failed' => 0, 'mutations_unknown' => 0, 'tools_called' => 4, 'turns' => 3,
+                                             'duration_ms' => 1200)
+      expect(events.map { |event| event.payload.to_json }.join).not_to include('PRIVATE')
+    end
+
+    it 'never lets a failing monitor break a part' do
+      allow(Llm::EventBus).to receive(:publish).and_raise(StandardError, 'bus down')
+
+      expect { described_class.part_started(context: {}, part: part, lane: 'reader', inline: false) }.not_to raise_error
+    end
+
+    it 'has no operation events any more: a part acts with its own tools' do
+      expect(described_class).not_to respond_to(:operation_started, :operation_finished)
+    end
   end
 end

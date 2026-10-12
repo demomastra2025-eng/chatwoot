@@ -38,10 +38,11 @@ Every dialogue runs in a fresh synthetic workspace (new account, agents, contact
 own savepoint, which is always rolled back. A booking that one dialogue creates, moves or cancels never reaches
 another dialogue of the same file, so combined files and one-dialogue files give the same results. Turns within a
 dialogue share the workspace, as in a real conversation. The runner and the scorer keep no state between
-dialogues. `Captain::Runtime::Council` consults the specialists in threads; because a dialogue lives in an
-uncommitted transaction, the rake task makes the connection pool share one connection between threads
-(`lock_thread`, as transactional specs do). Without that the consultations could not see the synthetic
-workspace and would all come back unavailable.
+dialogues. `Captain::Runtime::Council` runs read-only parts on threads while the parts that write run one after another
+on the calling thread; because a dialogue lives in an uncommitted transaction, the rake task makes the connection pool
+share one connection between threads (`lock_thread`, as transactional specs do). A thread that opens a transaction of its
+own on that connection deadlocks, so the task also sets `CAPTAIN_COUNCIL_PARALLEL=off` (unless it is already set):
+every part of a council then runs in plan order on the calling thread.
 
 ## Tools an agent may use
 
@@ -185,6 +186,22 @@ is a routing error (`wrong_agent`), and `routing_accuracy` ignores both. The rep
 aggregates, plus a `warnings` entry (also printed in the Markdown summary) when expected events are missing, so a
 silent producer is visible at once instead of looking like 31 failing turns.
 
+## Dialogues for a council whose parts act
+
+A council part is a run of the agent that owns it, which books, moves or cancels with its own tools. The dialogues to author
+for it (the scorer needs no change: it reads `llm.tool.complete` and the operations ledger, and counts `duplicate_operation`
+by tool and arguments digest):
+
+1. "Запишите меня к терапевту на завтра + сколько стоит МРТ": the booking is done in the same reply and the price is answered;
+   `duplicate_operation` 0 and `false_success_claim` 0.
+2. Two relatives booked by TWO different agents in one message: the writers run one after another, both appointments exist,
+   `wrong_patient` 0. (One agent that owns both is not a council, and its second `create_appointment` of the run is blocked.)
+3. A part asks one question; the next turn "давайте в 11": the same owner books, under the next version of the part, and the
+   acting agent of the conversation does not change.
+4. A part whose write fails technically: no word about it in the reply, no success claim, and a `council_handoff` note.
+5. The customer writes again while a part runs: the run is stale, and the next turn reports the booking that happened.
+6. A job retry after a successful booking: the part is replayed and there is no second booking.
+
 ## Monitoring contract
 
 The existing AI Agents report response adds `payload.coordination` with
@@ -195,8 +212,13 @@ includes only live events. The runtime persists `captain.agent.transfer`,
 `captain.agent.reset` with `run_source`. The council event contract is
 `captain.council.started` / `captain.council.finished` with participant IDs
 and an outcome on finish; `Captain::Runtime::Council` calls these producers.
-Each consultant of a council writes the final text of its part; the council editor (a model call without reasoning and
-without tools) edits these texts into the single customer reply and adds `captain.council.edited` (part IDs, reply language,
+A council part is a normal run of the agent that owns it: it acts with its own tools (it books, moves or cancels when it
+has what it needs, otherwise it asks one precise question) and writes the final text of its part from its tool results.
+`captain.council.part_started` and `captain.council.part_finished` carry, per part, only IDs, states and counts
+(`part_id`, `part_version`, `executor_agent_id`, `lane` writer or reader, `inline`, `state`, `status`, `acted`,
+`mutations_succeeded`, `mutations_failed`, `mutations_unknown`, `tools_called`, `turns`, `duration_ms`); `llm.tool.*` events of
+the part tools carry the `part_id` and `part_version` of their part. The council editor (a model call without reasoning and
+without tools) edits the part texts into the single customer reply (a council of one part sends its text as it is) and adds `captain.council.edited` (part IDs, reply language,
 `handoff`, and `reason: council_unresolved` when staff will answer an unresolved part) and
 `captain.council.editor_fallback` (part IDs and the `reason` the part texts were sent one after another instead:
 `timeout`, `error`, `invalid`, `empty`, `no_model`, `no_parts`, `disabled`). Neither carries text. The editor's

@@ -97,4 +97,82 @@ RSpec.describe Captain::Runtime::OperationGuard do
     expect(session.read.fetch('operations').size).to eq(1)
     expect(queue.tasks.map { |task| task['status'] }).to eq(%w[active waiting])
   end
+
+  it 'records what an action did on its receipt: success, nothing changed, or unknown' do
+    results = [
+      ['create_appointment', { success: true, data: { appointment_id: 1 } }, 'success'],
+      ['update_appointment', JSON.generate(success: false, reason: 'time_taken'), 'not_executed'],
+      ['cancel_appointment', Captain::ToolResult.failure(error: 'Provider did not answer', retryable: false), 'unknown']
+    ]
+
+    results.each do |name, result, _expected|
+      action = described_class.new(context, double('Mutation', name: name, metadata: { read_only: false }), arguments)
+      action.reserve
+      action.finish(result)
+    end
+
+    expect(session.read.fetch('operations').values.pluck('outcome')).to eq(results.map(&:last))
+  end
+
+  describe 'for the owner of a council part, which does not hold the conversation' do
+    let(:specialist) { create(:captain_assistant, account: assistant.account) }
+    let(:part_context) do
+      { state: { assistant_id: specialist.id }, agent_session: session, agent_request_id: 'same-input', part_run: true,
+        active_part_id: 'part-1', active_part_version: 1 }
+    end
+
+    before do
+      session.change do |data|
+        data['parts'] = [{ 'id' => 'part-1', 'version' => 1, 'executor_agent_id' => specialist.id, 'state' => 'open' },
+                         { 'id' => 'part-2', 'version' => 1, 'executor_agent_id' => specialist.id, 'state' => 'open' }]
+      end
+      session.update_routing(actor_id: assistant.id)
+    end
+
+    it 'reserves the action under the scope of its part, while another agent is the current one of the conversation' do
+      action = described_class.new(part_context, tool, arguments)
+
+      expect(action.reserve).to be_nil
+      expect(session.read.fetch('operations').values).to contain_exactly(
+        include('status' => 'executing', 'scope' => 'part:part-1:v1', 'actor_id' => specialist.id)
+      )
+    end
+
+    it 'is refused without the mark of a part: an agent that is not the current one cannot act under a part of its own' do
+      part_context.delete(:part_run)
+
+      expect { described_class.new(part_context, tool, arguments).reserve }.to raise_error(Captain::Conversation::ControlGenerationStaleError)
+    end
+
+    it 'answers the identical second call with the stored result and blocks the same tool with other arguments, in the same part' do
+      first = described_class.new(part_context, tool, arguments)
+      first.reserve
+      first.finish({ success: true, data: { appointment_id: 17 } })
+
+      replay = described_class.new(part_context, tool, arguments).reserve
+      other = described_class.new(part_context, tool, arguments.merge(service_id: 2)).reserve
+
+      expect(replay.dig(:audit, :cached_result_reused)).to be(true)
+      expect(replay.dig(:data, :appointment_id)).to eq(17)
+      expect(other.dig(:audit, :failure_reason)).to eq('mutation_retry_blocked')
+    end
+
+    it 'lets another part of the same request use the same tool: two patients, two parts' do
+      first = described_class.new(part_context, tool, arguments)
+      first.reserve
+      first.finish({ success: true, data: { appointment_id: 17 } })
+
+      second_part = part_context.merge(active_part_id: 'part-2')
+
+      expect(described_class.new(second_part, tool, arguments.merge(service_id: 2)).reserve).to be_nil
+    end
+
+    it 'gives no protection to a run without the durable session, which is why a writing part is given the session' do
+      bare = part_context.except(:agent_session)
+
+      expect(described_class.new(bare, tool, arguments).reserve).to be_nil
+      expect(described_class.new(bare, tool, arguments).reserve).to be_nil
+      expect(session.read.fetch('operations', {})).to be_empty
+    end
+  end
 end

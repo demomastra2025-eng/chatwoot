@@ -4,14 +4,11 @@ en:
       unfinished: The request could not be completed.
       open_parts: 'Still open: %{parts}.'
       cancelled: The request was cancelled.
-      action_unavailable: 'The action was not completed: the agent or parameters are unavailable.'
-      action_failed: The action was not completed.
       action_pending: The request was sent; a confirmation will follow in a message.
       action_not_started: 'Not started: an earlier step was not completed.'
-      part_result: '“%{request}”: %{result}'
       action_done: The action was completed.
-      needs_review: Part of the request needs further verification.
       request_processed: The request was processed. If you need details, please clarify your question.
       part_staff_will_answer: A clinic staff member will answer this question.
       part_cannot_answer: I cannot answer this question right now.
       unresolved_handoff: 'Part of the request is unanswered and needs a staff reply: %{parts}.'
+      technical_failure_note: 'Part of the request was not completed because of a technical error (%{details}). The conversation was handed to staff.'

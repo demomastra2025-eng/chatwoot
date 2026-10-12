@@ -1,497 +1,823 @@
 require 'rails_helper'
 require 'timeout'
 
+# A council part is a normal run of the agent that owns it, so these examples stub the run of a part (Council::PartRun, which has
+# its own spec) and check what the council does around it: which parts run where, how an outcome is recorded and what the
+# customer reads.
 RSpec.describe Captain::Runtime::Council do
-  let(:context) { { parts: [], state: { assistant_id: 1 }, agent_graph: [{ id: 1 }, { id: 2 }] } }
-  let(:council) { described_class.new(context: context, graph: nil, account: nil) }
-  let(:editor) { instance_double(Captain::Runtime::CouncilEditor) }
   let(:cannot_answer) { 'На этот вопрос я сейчас не могу ответить.' }
   let(:staff_will_answer) { 'По этому вопросу вам ответит сотрудник клиники.' }
-  let(:proposal) { { 'type' => 'create_appointment', 'params' => { 'slot_id' => 9, 'starts_at' => '2026-10-14T10:00' } } }
+  let(:booked) { 'Вы записаны к терапевту Иванову на 14 октября в 10:00.' }
+  let(:editor) { instance_double(Captain::Runtime::CouncilEditor) }
+  let(:runs) { [] }
+  let(:results) { {} }
+  let(:actors) { { 1 => actor(1, writer: true), 2 => actor(2, writer: false), 3 => actor(3, writer: true) } }
+  let(:graph) do
+    instance_double(Captain::AgentGraph, entry: actors[1], inbox: nil, agents: actors.values).tap do |item|
+      allow(item).to receive(:find) { |id| actors[id] }
+    end
+  end
+  let(:context) do
+    { parts: [], state: { assistant_id: 1, conversation: { id: 7 }, captain_response_fence: { last_message_id: 5, routing_revision: 2 } },
+      captain_v2_current_input: 'Запишите меня к терапевту на 14 октября и сколько стоит МРТ',
+      agent_graph: [{ id: 1, name: 'Администратор', description: 'Запись' }, { id: 2, name: 'Прайс', description: 'Цены' },
+                    { id: 3, name: 'Лаборатория', description: 'Анализы' }],
+      conversation_history: [{ role: 'user', content: 'Здравствуйте' }, { role: 'assistant', content: '{"response":"Добрый день!"}' }] }
+  end
+  let(:council) { described_class.new(context: context, graph: graph, account: nil, llm_context: :llm_context) }
 
-  def editor_failure(reason = 'timeout')
-    Captain::Runtime::CouncilEditor::Outcome.new(reply: nil, reason: reason)
+  def actor(id, writer:)
+    tool = if writer
+             double("write tool #{id}", name: 'create_appointment', metadata: { risk_level: 'high', idempotent: false })
+           else
+             double("read tool #{id}", name: 'faq_lookup', metadata: { read_only: true, risk_level: 'low' })
+           end
+    runtime = Captain::Runtime::Agent.new(name: "assistant_#{id}", instructions: 'Owner', tools: [tool])
+    double("actor #{id}", id: id, name: "Агент #{id}", agent_name: "assistant_#{id}", config: {}, prompt_context_state: {}, agent: runtime,
+                          avatar_url: nil, handoff_enabled?: true, selected_agent_tool_ids: %w[faq_lookup handoff],
+                          resolved_agent_model: 'openai/gpt-6-luna')
   end
 
-  # The assembly specs below check what goes out when the editor produces nothing: the texts of the parts in order.
-  before do
-    allow(Captain::Runtime::CouncilEditor).to receive(:new).and_return(editor)
-    allow(editor).to receive(:edit).and_return(editor_failure)
-  end
-
-  def parts(patients)
+  # The registry parts of a request: the part with the index n belongs to the agent n + 1 (1 and 3 write, 2 only reads).
+  def parts(patients = %w[Анна Анна], owners: nil)
     patients.each_with_index.map do |patient, index|
-      { 'id' => "part-#{index}", 'version' => 1, 'executor_agent_id' => index + 1,
-        'fragment' => "Запрос #{index}", 'patient' => patient, 'state' => 'open', 'delivered' => [] }
+      { 'id' => "part-#{index}", 'version' => 1, 'executor_agent_id' => (owners || [1, 2, 3])[index], 'fragment' => "Запрос #{index}",
+        'patient' => patient, 'relation' => 'independent', 'state' => 'open', 'delivered' => [] }
     end.tap { |items| context[:parts] = items.deep_dup }
   end
 
-  # What a consultation returns after it is parsed: the final text of the part and the structured result.
-  def consulted(text, status: 'ok', questions: [], operation: nil, contradictions: [], facts: [{ 'fact' => 'x', 'source' => 'y' }])
-    { 'status' => status, 'customer_text' => text, 'facts' => facts, 'contradictions' => contradictions,
-      'missing_fields' => questions.map { |question| { 'patient' => 'Анна', 'field' => question, 'purpose' => 'запись' } },
-      'proposed_operation' => operation }
+  # What the run of a part returns (see Council::PartRun): the structured answer and what the tools did.
+  def ran(text = '', status: 'answered', sources: ['faq_lookup'], questions: [], acted: false, pending: false, technical: nil, suggested: '',
+          summary: '', tracking: {})
+    output = { 'status' => status, 'customer_text' => text, 'questions' => questions, 'sources' => sources, 'suggested_agent' => suggested,
+               'reasoning' => '' }
+    { output: output, acted: acted, pending: pending, technical: technical, summary: summary, duration_ms: 12, tracking: tracking,
+      mutations_succeeded: acted ? 1 : 0, mutations_failed: 0, mutations_unknown: 0, tools_called: 2, turns: 3 }
   end
 
-  def failed
-    consulted('', status: 'unavailable', facts: [])
+  def unparsable(acted: false)
+    ran.merge(output: nil, acted: acted)
   end
 
-  it 'sends the part texts in the order of the requests, a blank line apart, when the editor produces nothing' do
-    reply = council.send(:assemble, parts(%w[Анна Борис]), [consulted('Приём стоит 5000 тенге.'), consulted('Мы находимся на улице Абая, 1.')])
-
-    expect(reply).to eq("Приём стоит 5000 тенге.\n\nМы находимся на улице Абая, 1.")
-    expect(context[:parts].pluck('state')).to eq(%w[answered answered])
+  def technical_failure(tool: 'create_appointment')
+    { 'tool' => tool, 'kind' => 'technical', 'stage' => 'tool_execution', 'reason' => 'provider_unavailable', 'mutating' => true }
   end
 
-  it 'sends the question of a consultant as it is and keeps the part waiting for the customer' do
-    question = 'На какой день вам удобно?'
-
-    reply = council.send(:assemble, parts(%w[Анна]), [consulted(question, status: 'needs_information', questions: [question])])
-
-    expect(reply).to eq(question)
-    expect(context[:parts].sole['state']).to eq('waiting_customer')
-    expect(context[:parts].sole['missing_fields'].pluck('field')).to eq([question])
-  end
-
-  it 'asks the missing fields itself, without a label, when the consultant wrote no text' do
-    reply = council.send(:assemble, parts(%w[Анна]), [consulted('', status: 'needs_information', questions: ['На какой день вам удобно?'])])
-
-    expect(reply).to eq('На какой день вам удобно?')
-    expect(context[:parts].sole['state']).to eq('waiting_customer')
-  end
-
-  it 'keeps a contradictory part open, never passes its text on and says honestly that it cannot be answered' do
-    question = 'На какую дату?'
-    items = parts(%w[Анна Борис])
-    conflicting = consulted('Непроверенный ответ', contradictions: ['Different source values'])
-
-    reply = council.send(:assemble, items, [consulted('', status: 'needs_information', questions: [question]), conflicting])
-
-    expect(reply).to eq("#{question}\n\n#{cannot_answer}")
-    expect(context[:parts].pluck('state')).to eq(%w[waiting_customer open])
-  end
-
-  it 'asks for confirmation with the question of the consultant and records the proposal without executing it' do
-    question = 'Записать вас к терапевту Иванову на 14 октября в 10:00?'
-    items = parts(%w[Анна Борис])
-    allow(council).to receive(:operation_valid?).and_return(true, false)
-
-    reply = council.send(:assemble, items, [consulted(question, operation: proposal), consulted('Стоимость приёма 5000 тенге.')])
-
-    expect(reply).to eq("#{question}\n\nСтоимость приёма 5000 тенге.")
-    expect(context[:parts].pluck('state')).to eq(%w[waiting_confirmation answered])
-    expect(context[:parts].first['proposed_operation']).to eq(proposal)
-  end
-
-  it 'stores no proposal for a confirmation the customer was not asked about' do
-    allow(council).to receive(:operation_valid?).and_return(true)
-
-    reply = council.send(:assemble, parts(%w[Анна]), [consulted('', operation: proposal)])
-
-    expect(reply).to eq(cannot_answer)
-    expect(context[:parts].sole['state']).to eq('unknown')
-    expect(context[:parts].sole['proposed_operation']).to be_blank
-  end
-
-  it 'asks for confirmation of a dependent part that has a prerequisite but withholds a conditional one' do
-    results = [1, 2].map { |slot| consulted("Записать вас на вариант #{slot}?", operation: proposal.merge('params' => { 'slot_id' => slot })) }
-    allow(council).to receive(:operation_valid?).and_return(true)
-
-    dependent = parts(%w[Анна Анна])
-    dependent.last.merge!('relation' => 'depends_on', 'depends_on_part_id' => dependent.first['id'])
-    council.send(:assemble, dependent, results)
-    expect(context[:parts].pluck('state')).to eq(%w[waiting_confirmation waiting_confirmation])
-
-    conditional = parts(%w[Анна Анна])
-    conditional.last['relation'] = 'conditional'
-    reply = council.send(:assemble, conditional, results)
-    expect(context[:parts].pluck('state')).to eq(%w[waiting_confirmation open])
-    expect(reply).to eq("Записать вас на вариант 1?\n\n#{cannot_answer}")
-  end
-
-  it 'withholds a text when its proposed action is unavailable' do
-    unsafe = consulted('Запись выполнена.', operation: { 'type' => 'unknown_action', 'params' => {} })
-    allow(council).to receive(:operation_valid?).and_return(false)
-
-    reply = council.send(:assemble, parts(%w[Анна Борис]), [unsafe, consulted('Цена подтверждена.')])
-
-    expect(reply).to eq("#{cannot_answer}\n\nЦена подтверждена.")
-    expect(context[:parts].first['state']).to eq('open')
-  end
-
-  describe 'reassigning an out-of-scope part' do
-    let(:first_actor) do
-      double('first actor', id: 1, name: 'Администратор', agent: Captain::Runtime::Agent.new(name: 'assistant_1', instructions: 'First'))
-    end
-    let(:second_actor) do
-      double('second actor', id: 2, name: 'Лаборатория', agent: Captain::Runtime::Agent.new(name: 'assistant_2', instructions: 'Second'))
-    end
-    let(:graph) { double('graph', agents: [first_actor, second_actor]) }
-    let(:instance) { described_class.new(context: context, graph: graph, account: nil) }
-    let(:runner) { double('runner') }
-
-    def out_of_scope(**suggestion)
-      double(error: nil, output: { status: 'out_of_scope' }.merge(suggestion).to_json)
-    end
-
-    before do
-      allow(instance).to receive(:fresh_actor).with(1).and_return(first_actor)
-      allow(instance).to receive(:fresh_actor).with(2).and_return(second_actor)
-      allow(instance).to receive(:consult_snapshot).and_return({})
-      allow(Captain::Runtime::Runner).to receive(:new).and_return(runner)
-    end
-
-    it 'follows the agent name the consultant gives, ignoring case and quotes, at most once' do
-      allow(runner).to receive(:run).and_return(out_of_scope(suggested_agent: ' «лаборатория» '), out_of_scope(suggested_agent: 'Администратор'))
-
-      result = instance.send(:consult, { 'executor_agent_id' => 1, 'fragment' => 'Запрос' })
-
-      expect(runner).to have_received(:run).twice
-      expect(result['_participants']).to eq([1, 2])
-      expect(result['status']).to eq('out_of_scope')
-    end
-
-    it 'reassigns nothing for an unknown name, for the consultant itself or for a number that only guesses an agent' do
-      allow(runner).to receive(:run).and_return(out_of_scope(suggested_agent: 'Регистратура'), out_of_scope(suggested_agent: 'Администратор'),
-                                                 out_of_scope(suggested_agent_id: 2, suggested_agent: '2'))
-
-      3.times do
-        result = instance.send(:consult, { 'executor_agent_id' => 1, 'fragment' => 'Запрос' })
-        expect(result['_participants']).to eq([1])
-      end
-      expect(runner).to have_received(:run).exactly(3).times
-    end
-
-    it 'reassigns nothing when two agents share the suggested name' do
-      allow(graph).to receive(:agents).and_return([first_actor, second_actor, double('twin', id: 3, name: ' лаборатория ')])
-      allow(runner).to receive(:run).and_return(out_of_scope(suggested_agent: 'Лаборатория'))
-
-      expect(instance.send(:consult, { 'executor_agent_id' => 1, 'fragment' => 'Запрос' })['_participants']).to eq([1])
+  def edited(reply = 'Единое сообщение.')
+    allow(editor).to receive(:edit) do |**kwargs|
+      editor_calls << kwargs
+      Captain::Runtime::CouncilEditor::Outcome.new(reply: reply)
     end
   end
 
-  it 'gives a consultant the names and responsibilities of the other agents, and never an id' do
-    context[:agent_graph] = [{ id: 1, key: 'assistant_1', name: 'Администратор', description: 'Запись' },
-                             { id: 2, key: 'assistant_2', name: 'Лаборатория', description: 'Анализы' }]
-    actor = double('actor', id: 1, agent_name: 'assistant_1', config: {}, prompt_context_state: {})
+  let(:editor_calls) { [] }
+
+  before do
     allow(Captain::AssistantSafetyPreferences).to receive(:for).and_return({})
-
-    snapshot = council.send(:consult_snapshot, actor, { 'id' => 'part-1', 'version' => 1, 'executor_agent_id' => 1 })
-
-    expect(snapshot[:consult_peers]).to eq([{ name: 'Лаборатория', description: 'Анализы' }])
-    expect(snapshot).not_to have_key(:agent_graph)
-  end
-
-  it 'uses one short line in the customer language for a part without any text' do
-    context[:captain_v2_current_input] = 'Қабылдау қанша тұрады?'
-
-    reply = council.send(:assemble, parts(%w[Анна]), [failed])
-
-    expect(reply).to eq('Бұл сұраққа қазір жауап бере алмаймын.')
-  end
-
-  it 'sends the stock line once when several parts have no text and the editor produces nothing' do
-    reply = council.send(:assemble, parts(%w[Анна Борис]), [failed, failed])
-
-    expect(reply).to eq(cannot_answer)
-    expect(context[:parts].pluck('state')).to eq(%w[unknown unknown])
-  end
-
-  it 'drops a question repeated for the same person but keeps the same words asked about different people' do
-    question = 'На какую дату?'
-    asked = consulted(question, status: 'needs_information', questions: [question])
-
-    expect(council.send(:assemble, parts(['Анна', ' анна ']), [asked, asked])).to eq(question)
-    expect(council.send(:assemble, parts(%w[Анна Борис]), [asked, asked])).to eq("#{question}\n\n#{question}")
-  end
-
-  it 'starts independent consultations before waiting for their results' do
-    items = parts(%w[Анна Борис])
-    started = Queue.new
-    release = Queue.new
-    first = double('first contributor', id: 1, name: 'Первый', avatar_url: nil)
-    second = double('second contributor', id: 2, name: 'Второй', avatar_url: nil)
-    graph = double('graph')
-    allow(graph).to receive(:find).with(1).and_return(first)
-    allow(graph).to receive(:find).with(2).and_return(second)
-    instance = described_class.new(context: context, graph: graph, account: nil)
-    allow(instance).to receive(:consult) do |part|
-      started << part['id']
-      release.pop
-      { 'status' => 'ok', '_participants' => [part['executor_agent_id']] }
-    end
-    allow(instance).to receive(:assemble).and_return('Ответ')
-
-    worker = Thread.new { instance.run(items) }
-    2.times { Timeout.timeout(5) { started.pop } }
-    2.times { release << true }
-
-    expect(worker.value).to eq('Ответ')
-    expect(context[:council_contributors].pluck(:id)).to eq([1, 2])
-  ensure
-    2.times { release << true } if release
-    worker&.join(1)
-  end
-
-  describe 'the result of a consultation' do
-    def parsed(output)
-      council.send(:parse_result, double(error: nil, output: output.to_json))
-    end
-
-    let(:fact) { { 'fact' => 'Цена 5000', 'source' => 'прайс' } }
-
-    it 'carries the final text of the part, trimmed' do
-      result = parsed(status: 'ok', customer_text: "  Приём стоит 5000 тенге.\n", facts: [fact])
-
-      expect(result).to include('status' => 'ok', 'customer_text' => 'Приём стоит 5000 тенге.')
-    end
-
-    it 'does not pass on the text of an answer without a verified fact' do
-      result = parsed(status: 'ok', customer_text: 'Приём стоит 5000 тенге.', facts: [{ 'fact' => 'Цена 5000' }])
-
-      expect(result).to include('status' => 'unavailable', 'customer_text' => '')
-    end
-
-    it 'keeps the honest sentence of a consultant that cannot resolve the part' do
-      result = parsed(status: 'unavailable', customer_text: 'На этот вопрос я сейчас не могу ответить.')
-
-      expect(result).to include('status' => 'unavailable', 'customer_text' => 'На этот вопрос я сейчас не могу ответить.')
-    end
-
-    it 'treats a missing or malformed text as no text' do
-      expect(parsed(status: 'ok', facts: [fact])).to include('customer_text' => '')
-      expect(parsed(status: 'ok', customer_text: { 'a' => 1 }, facts: [fact])).to include('customer_text' => '')
-    end
-  end
-
-  describe 'what a consultant is told' do
-    let(:actor) { double('consultant', id: 2, agent_name: 'assistant_2', config: {}, prompt_context_state: {}) }
-
-    before { allow(Captain::AssistantSafetyPreferences).to receive(:for).and_return({}) }
-
-    def snapshot_for(instance)
-      instance.send(:consult_snapshot, actor, { 'id' => 'part-0', 'version' => 1 })
-    end
-
-    it 'is the language of the customer and that no staff member can take a part over without a handoff' do
-      context[:captain_v2_current_input] = 'Қабылдау қанша тұрады?'
-
-      expect(snapshot_for(council)).to include(consult_mode: true, consult_language: 'kk', consult_staff_handoff: false)
-    end
-
-    it 'is Russian and that staff can take a part over when the agent has a handoff' do
-      entry = instance_double(Captain::Assistant, id: 1, handoff_enabled?: true, selected_agent_tool_ids: %w[faq_lookup handoff])
-      graph = instance_double(Captain::AgentGraph, find: entry, entry: entry)
-      context[:state][:conversation] = { id: 7 }
-      context[:captain_v2_current_input] = 'Сколько стоит приём?'
-
-      snapshot = snapshot_for(described_class.new(context: context, graph: graph, account: nil))
-
-      expect(snapshot).to include(consult_language: 'ru', consult_staff_handoff: true)
-    end
-  end
-
-  describe 'the edited reply' do
-    let(:actor) do
-      instance_double(Captain::Assistant, id: 1, resolved_agent_model: 'openai/gpt-6-luna', handoff_enabled?: true,
-                                          selected_agent_tool_ids: %w[faq_lookup handoff])
-    end
-    let(:graph) { instance_double(Captain::AgentGraph, find: actor, entry: actor) }
-    let(:council) { described_class.new(context: context, graph: graph, account: nil, llm_context: :llm_context) }
-    let(:calls) { [] }
-    let(:edited_text) { 'Приём стоит 5000 тенге. Записать вас к терапевту Иванову на 14 октября в 10:00?' }
-
-    def line(text, confirmation: false, staff: false)
-      { 'text' => text, 'needs_confirmation' => confirmation, 'staff_will_answer' => staff }
-    end
-
-    before do
-      context[:state][:conversation] = { id: 7 }
-      context[:captain_v2_current_input] = 'Сколько стоит приём? И запишите Анну завтра'
-      allow(editor).to receive(:edit) do |**kwargs|
-        calls << kwargs
-        Captain::Runtime::CouncilEditor::Outcome.new(reply: edited_text)
+    allow(Captain::Runtime::CouncilEditor).to receive(:new).and_return(editor)
+    allow(editor).to receive(:edit).and_return(Captain::Runtime::CouncilEditor::Outcome.new(reply: nil, reason: 'timeout'))
+    allow(council).to receive(:fresh_actor) { |id| actors[id] }
+    allow(Captain::Runtime::CoordinationEvents).to receive(:council_started)
+    allow(Captain::Runtime::CoordinationEvents).to receive(:council_finished)
+    allow(Captain::Runtime::CoordinationEvents).to receive(:council_edited)
+    allow(Captain::Runtime::CoordinationEvents).to receive(:council_editor_fallback)
+    allow(Captain::Runtime::CoordinationEvents).to receive(:part_started)
+    allow(Captain::Runtime::CoordinationEvents).to receive(:part_finished)
+    allow(Captain::Runtime::Council::PartRun).to receive(:new) do |agent:, snapshot:, **|
+      part_id = snapshot[:active_part_id]
+      tracker = double('tracker', acted?: false, summary: '')
+      double("run of #{part_id}", tracker: tracker).tap do |part_run|
+        allow(part_run).to receive(:call) do |fragment|
+          runs << { id: part_id, fragment: fragment, thread: Thread.current, snapshot: snapshot, agent: agent,
+                    executed_by: Current.executed_by, owner_in_registry: context[:parts].find { |part| part['id'] == part_id }&.dig('executor_agent_id') }
+          result = results.fetch(part_id)
+          result.respond_to?(:call) ? result.call : result
+        end
       end
-      allow(Captain::Runtime::CoordinationEvents).to receive(:council_edited)
-      allow(Captain::Runtime::CoordinationEvents).to receive(:council_editor_fallback)
     end
+  end
 
-    it 'is the reply of the editor, written from the part texts without data, identifiers or role labels' do
-      question = 'Записать вас к терапевту Иванову на 14 октября в 10:00?'
-      items = parts(%w[собеседник Борис])
-      allow(council).to receive(:operation_valid?).and_return(true, false)
-      facts = [{ 'fact' => 'Окно 10:00', 'source' => 'расписание', 'slot_id' => 9 }]
+  after { Current.reset }
 
-      reply = council.send(:assemble, items, [consulted(question, facts: facts, operation: proposal),
-                                              consulted('Приём стоит 5000 тенге.')])
+  def run_council(items)
+    council.run(items)
+  end
 
-      expect(reply).to eq(edited_text)
-      expect(calls.sole).to eq(message: 'Сколько стоит приём? И запишите Анну завтра', language: 'ru',
-                               parts: [line(question, confirmation: true), line('Приём стоит 5000 тенге.')])
-      expect(context[:parts].pluck('state')).to eq(%w[waiting_confirmation answered])
+  def state_of(part_id)
+    context[:parts].find { |part| part['id'] == part_id }
+  end
+
+  describe 'a part that acts' do
+    it 'is a run of its owner with its own tools: the owner books at once and its text states what the tools returned' do
+      items = parts
+      results.merge!('part-0' => ran(booked, acted: true, sources: ['create_appointment'], summary: 'create_appointment: ok'),
+                     'part-1' => ran('МРТ стоит 15000 тенге.'))
+      edited('Вы записаны на 14 октября в 10:00. МРТ стоит 15000 тенге.')
+
+      reply = run_council(items)
+
+      expect(reply).to eq('Вы записаны на 14 октября в 10:00. МРТ стоит 15000 тенге.')
+      expect(editor_calls.sole[:parts]).to eq([{ 'text' => booked, 'done' => true, 'staff_will_answer' => false },
+                                               { 'text' => 'МРТ стоит 15000 тенге.', 'done' => false, 'staff_will_answer' => false }])
+      expect(state_of('part-0')).to include('state' => 'done', 'acted' => true, 'summary' => booked)
+      expect(state_of('part-1')).to include('state' => 'answered', 'acted' => false)
       expect(context).not_to have_key(:council_handoff)
-      expect(Captain::Runtime::CoordinationEvents).to have_received(:council_edited)
-        .with(context: context, part_ids: %w[part-0 part-1], language: 'ru', handoff: false)
-      expect(Captain::Runtime::CoordinationEvents).not_to have_received(:council_editor_fallback)
+      expect(defined?(Captain::Runtime::ConfirmedOperations)).to be_nil
     end
 
-    it 'detects Kazakh from the customer message' do
-      context[:captain_v2_current_input] = 'Қабылдау қанша тұрады?'
+    it 'sends the text of a council of one part as it is and does not call the editor' do
+      items = parts(%w[Анна], owners: [1])
+      results['part-0'] = ran(booked, acted: true, sources: ['create_appointment'])
 
-      council.send(:assemble, parts(%w[Анна]), [consulted('Баға 5000 теңге.')])
-
-      expect(calls.sole).to include(language: 'kk')
-      expect(Captain::Runtime::CoordinationEvents).to have_received(:council_edited).with(hash_including(language: 'kk'))
+      expect(run_council(items)).to eq(booked)
+      expect(editor).not_to have_received(:edit)
+      expect(state_of('part-0')['state']).to eq('done')
     end
 
-    it 'passes the questions of the consultants on as part texts, taking the missing field when a consultant wrote no text' do
-      context[:agent_graph] = [{ id: 1 }, { id: 2 }, { id: 3 }]
-      items = parts(%w[Анна Анна собеседник])
-      results = [consulted('На какую дату?', status: 'needs_information', questions: ['На какую дату?']),
-                 consulted('', status: 'needs_information', questions: ['На какую дату?']),
-                 consulted('Удобное время?', status: 'needs_information', questions: ['Удобное время?'])]
+    it 'runs the owner with the tools of its agent minus the control tools, the structured result and no handoff target' do
+      run_council(parts(%w[Анна], owners: [1]).tap { results['part-0'] = ran(booked, acted: true) })
 
-      council.send(:assemble, items, results)
-
-      expect(calls.sole[:parts].pluck('text')).to eq(['На какую дату?', 'На какую дату?', 'Удобное время?'])
-      expect(context[:parts].pluck('state')).to eq(%w[waiting_customer waiting_customer waiting_customer])
+      agent = runs.sole[:agent]
+      expect(agent.name).to eq('assistant_1')
+      expect(agent.tools.map(&:name)).to eq(['create_appointment'])
+      expect(agent.response_schema).to eq(Captain::Runtime::PartSchema)
+      expect(agent.handoff_agents).to be_empty
+      expect(agent.context_preparer).to be_nil
+      expect(runs.sole[:fragment]).to eq('Запрос 0')
     end
 
-    it 'gives an unresolved part without text one line, flags it for staff and requests a real handoff after the reply' do
-      items = parts(%w[Анна Борис])
-      items.last['fragment'] = 'Результаты анализов'
+    it 'gives the part its own context: the owner, the part scope, the full message of the customer and no state of the main run' do
+      context[:agent_tasks] = [{ 'id' => 't', 'status' => 'active' }]
+      context[:agent_run_context_object] = Object.new
+      context[:captain_v2_tool_result_cache] = { 'x' => 1 }
+      context[:captain_v2_bound_tool_ids] = ['plan_request']
+      context[:pending_human_handoff] = { reason: 'x' }
+      items = parts
+      results.merge!('part-0' => ran(booked, acted: true), 'part-1' => ran('МРТ стоит 15000 тенге.'))
+      run_council(items)
+
+      writer = runs.find { |run| run[:id] == 'part-0' }[:snapshot]
+      reader = runs.find { |run| run[:id] == 'part-1' }[:snapshot]
+      expect(writer).to include(part_run: true, part_plan_accepted: true, active_part_id: 'part-0', active_part_version: 1,
+                                current_agent: 'assistant_1', part_language: 'ru', part_staff_handoff: true,
+                                part_customer_message: 'Запишите меня к терапевту на 14 октября и сколько стоит МРТ')
+      expect(writer[:state]).to include(assistant_id: 1)
+      expect(writer[:state][:captain_response_fence]).to include(last_message_id: 5, part_id: 'part-0', part_version: 1)
+      expect(writer[:state][:captain_response_fence]).not_to have_key(:routing_revision)
+      expect(writer[:part_info]).to include(id: 'part-0', patient: 'Анна', fragment: 'Запрос 0')
+      expect(writer[:part_peers]).to eq([{ name: 'Прайс', description: 'Цены' }, { name: 'Лаборатория', description: 'Анализы' }])
+      expect(writer[:conversation_history]).to eq([{ role: 'user', content: 'Здравствуйте' }, { role: 'assistant', content: 'Добрый день!' }])
+      %i[agent_graph agent_graph_object agent_run_context_object agent_tasks parts captain_v2_tool_result_cache captain_v2_bound_tool_ids
+         pending_human_handoff].each { |key| expect(writer).not_to have_key(key) }
+      expect(reader[:state]).to include(assistant_id: 2)
+      expect(reader[:active_part_id]).to eq('part-1')
+    end
+
+    it 'gives a run without a fence (a Playground run) no fence either: a fence of part ids alone would look for a conversation' do
+      context[:state].delete(:captain_response_fence)
+      results['part-0'] = ran(booked, acted: true)
+
+      run_council(parts(%w[Анна], owners: [1]))
+
+      expect(runs.sole[:snapshot][:state]).not_to have_key(:captain_response_fence)
+    end
+
+    it 'gives only a writer the durable session, so that its actions are protected from being repeated' do
+      session = Captain::Conversation::AgentSession.new(entry: create(:captain_assistant))
+      context[:agent_session] = session
+      items = parts
+      results.merge!('part-0' => ran(booked, acted: true), 'part-1' => ran('МРТ стоит 15000 тенге.'))
+      allow(Captain::Runtime::PartRegistry).to receive(:new).and_return(instance_double(Captain::Runtime::PartRegistry, record_result!: nil))
+
+      run_council(items)
+
+      expect(runs.find { |run| run[:id] == 'part-0' }[:snapshot][:agent_session]).to be(session)
+      expect(runs.find { |run| run[:id] == 'part-1' }[:snapshot]).not_to have_key(:agent_session)
+    end
+
+    it 'shows a Playground session to the part as its owner, so that the owner passes the checks of the session' do
+      session = double('playground session')
+      view = double('playground view')
+      allow(session).to receive(:acting_as).with(2).and_return(view)
+      context[:playground_session] = session
+      results['part-0'] = ran('Цена 5000.')
+
+      run_council(parts(%w[Анна], owners: [2]))
+
+      expect(runs.sole[:snapshot][:playground_session]).to be(view)
+    end
+
+    it 'restores the actor of the job after every part' do
+      previous = Object.new
+      Current.executed_by = previous
+      results.merge!('part-0' => ran(booked, acted: true), 'part-1' => ran('Цена'))
+
+      run_council(parts)
+
+      expect(runs.pluck(:executed_by)).to contain_exactly(actors[1], actors[2])
+      expect(Current.executed_by).to be(previous)
+    end
+  end
+
+  describe 'where the parts run' do
+    it 'runs every mutating part on the calling thread and a read-only part on a thread of its own' do
+      results.merge!('part-0' => ran(booked, acted: true), 'part-1' => ran('Цена'))
+
+      run_council(parts)
+
+      expect(runs.find { |run| run[:id] == 'part-0' }[:thread]).to be(Thread.current)
+      expect(runs.find { |run| run[:id] == 'part-1' }[:thread]).not_to be(Thread.current)
+      expect(Captain::Runtime::CoordinationEvents).to have_received(:part_started).with(hash_including(lane: 'writer', inline: true))
+      expect(Captain::Runtime::CoordinationEvents).to have_received(:part_started).with(hash_including(lane: 'reader', inline: false))
+    end
+
+    it 'starts the read-only parts side by side with the writer lane' do
+      started = Queue.new
+      release = Queue.new
+      results.merge!('part-0' => lambda {
+        started << :writer
+        release.pop
+        ran(booked, acted: true)
+      }, 'part-1' => lambda {
+        started << :reader
+        release.pop
+        ran('Цена')
+      })
+      worker = Thread.new { run_council(parts) }
+
+      seen = Array.new(2) { Timeout.timeout(5) { started.pop } }
+      expect(seen).to contain_exactly(:writer, :reader)
+      2.times { release << true }
+      expect(worker.value).to be_present
+    ensure
+      2.times { release << true } if release
+      worker&.join(1)
+    end
+
+    it 'runs the parts of mutating owners one after another in plan order, also for different people' do
+      order = []
+      results.merge!('part-0' => lambda {
+        order << :first_start
+        sleep 0.05
+        order << :first_end
+        ran(booked, acted: true)
+      }, 'part-1' => lambda {
+        order << :second_start
+        ran('Борис записан на 15 октября в 11:00.', acted: true)
+      })
+
+      run_council(parts(%w[Анна Борис], owners: [1, 3]))
+
+      expect(order).to eq(%i[first_start first_end second_start])
+      expect(runs.pluck(:thread).uniq).to eq([Thread.current])
+    end
+
+    it 'runs a read-only dependent part in the lane of its prerequisite, after it' do
+      order = []
+      items = parts(%w[Анна Анна])
+      items.last.merge!('relation' => 'conditional', 'depends_on_part_id' => 'part-0')
       context[:parts] = items.deep_dup
+      results.merge!('part-0' => lambda {
+        order << :prerequisite
+        ran(booked, acted: true)
+      }, 'part-1' => lambda {
+        order << :dependent
+        ran('Цена')
+      })
 
-      reply = council.send(:assemble, items, [consulted('Приём стоит 5000 тенге.'), failed])
+      run_council(items)
 
-      expect(reply).to eq(edited_text)
-      expect(calls.sole[:parts]).to eq([line('Приём стоит 5000 тенге.'), line(staff_will_answer, staff: true)])
-      expect(context[:council_handoff]).to eq(reason: 'council_unresolved', parts: ['Результаты анализов'])
-      expect(context[:parts].pluck('state')).to eq(%w[answered unknown])
-      expect(Captain::Runtime::CoordinationEvents).to have_received(:council_edited).with(hash_including(handoff: true))
+      expect(order).to eq(%i[prerequisite dependent])
+      expect(runs.pluck(:thread).uniq).to eq([Thread.current])
     end
 
-    it 'uses the honest sentence of the consultant for an unresolved part and flags it for staff' do
-      sentence = 'Результаты анализов вам сообщит сотрудник клиники.'
+    it 'runs everything on the calling thread, in plan order, when the threads are switched off' do
+      allow(ENV).to receive(:fetch).and_call_original
+      allow(ENV).to receive(:fetch).with('CAPTAIN_COUNCIL_PARALLEL', nil).and_return('off')
+      results.merge!('part-0' => ran('Цена'), 'part-1' => ran('Адрес'), 'part-2' => ran(booked, acted: true))
 
-      council.send(:assemble, parts(%w[Анна]), [consulted(sentence, status: 'unavailable', facts: [])])
+      run_council(parts(%w[Анна Анна Анна], owners: [2, 2, 1]))
 
-      expect(calls.sole[:parts]).to eq([line(sentence, staff: true)])
-      expect(context[:council_handoff]).to eq(reason: 'council_unresolved', parts: ['Запрос 0'])
+      expect(runs.pluck(:id)).to eq(%w[part-0 part-1 part-2])
+      expect(runs.pluck(:thread).uniq).to eq([Thread.current])
     end
 
-    it 'treats a withheld part as unresolved without its draft and keeps the sentence of an out-of-scope consultant' do
-      items = parts(%w[Анна Борис])
-      conflicting = consulted('Непроверенный ответ', contradictions: ['Другое значение'])
+    it 'runs a lane on the calling thread when no slot for a thread is free' do
+      allow(described_class::SLOTS).to receive(:try_acquire).and_return(false)
+      results.merge!('part-0' => ran(booked, acted: true), 'part-1' => ran('Цена'))
 
-      council.send(:assemble, items, [conflicting, consulted('Не моя тема', status: 'out_of_scope')])
+      run_council(parts)
 
-      expect(calls.sole[:parts]).to eq([line(staff_will_answer, staff: true), line('Не моя тема', staff: true)])
-      expect(context[:council_handoff][:parts]).to eq(['Запрос 0', 'Запрос 1'])
+      expect(runs.pluck(:thread).uniq).to eq([Thread.current])
     end
 
-    it 'sends a consultant question without missing fields to the customer and hands nothing to staff' do
-      question = 'К какому врачу вы хотите записаться?'
+    it 'gives the slot back when the lane is done' do
+      free = described_class::SLOTS.available_permits
+      results.merge!('part-0' => ran(booked, acted: true), 'part-1' => ran('Цена'))
 
-      council.send(:assemble, parts(%w[Анна]), [consulted(question, status: 'needs_information')])
+      run_council(parts)
 
-      expect(calls.sole[:parts]).to eq([line(question)])
-      expect(context).not_to have_key(:council_handoff)
-      expect(context[:parts].sole['state']).to eq('unknown')
+      expect(described_class::SLOTS.available_permits).to eq(free)
     end
 
-    it 'still treats a needs_information result without any question as unresolved' do
-      council.send(:assemble, parts(%w[Анна]), [consulted('', status: 'needs_information')])
-
-      expect(calls.sole[:parts]).to eq([line(staff_will_answer, staff: true)])
-      expect(context[:council_handoff]).to eq(reason: 'council_unresolved', parts: ['Запрос 0'])
+    it 'is switched off by the environment or an installation setting, and on otherwise' do
+      expect(described_class.parallel?).to be(true)
+      %w[off 0 false disabled no].each do |value|
+        allow(ENV).to receive(:fetch).and_call_original
+        allow(ENV).to receive(:fetch).with('CAPTAIN_COUNCIL_PARALLEL', nil).and_return(value)
+        expect(described_class.parallel?).to be(false)
+      end
     end
+  end
 
-    it 'requests no handoff and promises no staff while another part waits for the confirmation of the customer' do
-      question = 'Записать вас на 14 октября в 10:00?'
-      items = parts(%w[Анна Борис])
-      allow(council).to receive(:operation_valid?).and_return(true, false)
+  describe 'the outcome of a part' do
+    it 'keeps the question of the owner, waits for the customer and promises no staff' do
+      question = 'На какой день вам удобно?'
+      results['part-0'] = ran(question, status: 'needs_information', questions: [question], sources: [])
 
-      council.send(:assemble, items, [consulted(question, operation: proposal),
-                                      consulted('Результаты анализов вам сообщит сотрудник клиники.', status: 'unavailable', facts: [])])
+      reply = run_council(parts(%w[Анна], owners: [1]))
 
-      expect(calls.sole[:parts]).to eq([line(question, confirmation: true), line(cannot_answer)])
-      expect(context).not_to have_key(:council_handoff)
-      expect(context[:parts].pluck('state')).to eq(%w[waiting_confirmation unknown])
-      expect(Captain::Runtime::CoordinationEvents).to have_received(:council_edited).with(hash_including(handoff: false))
-    end
-
-    it 'keeps the sentence of the consultant and requests no handoff when the agent cannot hand off' do
-      allow(actor).to receive(:handoff_enabled?).and_return(false)
-      sentence = 'На этот вопрос я сейчас не могу ответить.'
-
-      council.send(:assemble, parts(%w[Анна Борис]), [consulted(sentence, status: 'unavailable', facts: []), failed])
-
-      expect(calls.sole[:parts]).to eq([line(sentence), line(cannot_answer)])
+      expect(reply).to eq(question)
+      expect(state_of('part-0')).to include('state' => 'waiting_customer', 'missing_fields' => [question])
       expect(context).not_to have_key(:council_handoff)
     end
 
-    it 'requests no handoff when the run has no conversation' do
-      context[:state].delete(:conversation)
+    it 'asks the listed questions itself when the owner wrote no text' do
+      results['part-0'] = ran('', status: 'needs_information', questions: ['На какой день вам удобно?'], sources: [])
 
-      council.send(:assemble, parts(%w[Анна]), [failed])
-
-      expect(calls.sole[:parts]).to eq([line(cannot_answer)])
-      expect(context).not_to have_key(:council_handoff)
+      expect(run_council(parts(%w[Анна], owners: [1]))).to eq('На какой день вам удобно?')
     end
 
-    it 'sends the part texts in order, reports why and still requests the handoff its texts promise when the editor produces nothing' do
-      allow(editor).to receive(:edit).and_return(editor_failure('invalid'))
+    it 'reports an action and then asks for what is missing: waiting for the customer, and still done' do
+      text = "#{booked} Нужен ли вам талон на анализы?"
+      results['part-0'] = ran(text, status: 'needs_information', questions: ['Нужен ли вам талон на анализы?'], acted: true)
+      results['part-1'] = ran('Цена')
+      edited
 
-      reply = council.send(:assemble, parts(%w[Анна Борис]), [consulted('Приём стоит 5000 тенге.'), failed])
+      run_council(parts)
 
-      expect(reply).to eq("Приём стоит 5000 тенге.\n\n#{staff_will_answer}")
-      expect(context[:council_handoff]).to eq(reason: 'council_unresolved', parts: ['Запрос 1'])
-      expect(Captain::Runtime::CoordinationEvents).to have_received(:council_editor_fallback)
-        .with(context: context, part_ids: %w[part-0 part-1], reason: 'invalid')
-      expect(Captain::Runtime::CoordinationEvents).not_to have_received(:council_edited)
+      expect(state_of('part-0')).to include('state' => 'waiting_customer', 'acted' => true)
+      expect(editor_calls.sole[:parts].first).to include('text' => text, 'done' => true)
     end
 
-    it 'says once that staff will answer when two unresolved parts have no text and the editor produces nothing' do
-      allow(editor).to receive(:edit).and_return(editor_failure('error'))
+    it 'does not pass on an answer that has no source and acted on nothing: the part is unknown and staff answer it' do
+      results['part-0'] = ran('Приём стоит 5000 тенге.', sources: [])
 
-      reply = council.send(:assemble, parts(%w[Анна Борис]), [failed, failed])
+      reply = run_council(parts(%w[Анна], owners: [2]))
 
       expect(reply).to eq(staff_will_answer)
+      expect(state_of('part-0')['state']).to eq('unknown')
+      expect(context[:council_handoff]).to eq(reason: 'council_unresolved', parts: ['Запрос 0'])
+    end
+
+    it 'says no staff will answer, and hands nothing over, when the agent cannot hand off' do
+      allow(actors[1]).to receive(:handoff_enabled?).and_return(false)
+      results['part-0'] = ran('', status: 'unavailable', sources: [])
+
+      expect(run_council(parts(%w[Анна], owners: [2]))).to eq(cannot_answer)
+      expect(context).not_to have_key(:council_handoff)
+    end
+
+    it 'keeps the honest sentence of an owner that cannot resolve its part and hands the part to staff after the reply' do
+      sentence = 'Результаты анализов вам сообщит сотрудник клиники.'
+      results.merge!('part-0' => ran('Цена'), 'part-1' => ran(sentence, status: 'unavailable', sources: []))
+      edited
+
+      run_council(parts)
+
+      expect(editor_calls.sole[:parts]).to eq([{ 'text' => 'Цена', 'done' => false, 'staff_will_answer' => false },
+                                               { 'text' => sentence, 'done' => false, 'staff_will_answer' => true }])
+      expect(context[:council_handoff]).to eq(reason: 'council_unresolved', parts: ['Запрос 1'])
+      expect(state_of('part-1')['state']).to eq('unknown')
+    end
+
+    it 'reports an action as done also when the owner returned no usable answer' do
+      results['part-0'] = unparsable(acted: true)
+
+      expect(run_council(parts(%w[Анна], owners: [1]))).to eq('Действие выполнено.')
+      expect(state_of('part-0')).to include('state' => 'done', 'acted' => true)
+      expect(context).not_to have_key(:council_handoff)
+    end
+
+    it 'leaves a part without a usable answer and without an action unknown, for staff' do
+      results['part-0'] = unparsable
+
+      expect(run_council(parts(%w[Анна], owners: [2]))).to eq(staff_will_answer)
+      expect(state_of('part-0')['state']).to eq('unknown')
+      expect(context[:council_handoff]).to eq(reason: 'council_unresolved', parts: ['Запрос 0'])
+    end
+
+    it 'counts a write that waits for the confirmation of the provider as done, says the request was sent and hands nothing to staff' do
+      results['part-0'] = ran('', acted: true, pending: true)
+
+      expect(run_council(parts(%w[Анна], owners: [1]))).to eq('Запрос отправлен, подтверждение придёт сообщением.')
+      expect(state_of('part-0')['state']).to eq('done')
+      expect(context).not_to have_key(:council_handoff)
+    end
+
+    it 'keeps the action of a part as the summary when it ended without a text of its own' do
+      results['part-0'] = unparsable(acted: true).merge(summary: 'create_appointment: {"appointment_id":7}')
+
+      run_council(parts(%w[Анна], owners: [1]))
+
+      expect(state_of('part-0')['summary']).to eq('create_appointment: {"appointment_id":7}')
+    end
+
+    it 'uses one short line in the language of the customer for a part without any text' do
+      context[:captain_v2_current_input] = 'Қабылдау қанша тұрады?'
+      results['part-0'] = ran('', status: 'unavailable', sources: [])
+
+      expect(run_council(parts(%w[Анна], owners: [2]))).to eq('Бұл сұрақ бойынша сізге клиника қызметкері жауап береді.')
+    end
+
+    it 'says in the language of the customer that the part cannot be answered when no staff member can take it over' do
+      allow(actors[1]).to receive(:handoff_enabled?).and_return(false)
+      context[:captain_v2_current_input] = 'Қабылдау қанша тұрады?'
+      results['part-0'] = ran('', status: 'unavailable', sources: [])
+
+      expect(run_council(parts(%w[Анна], owners: [2]))).to eq('Бұл сұраққа қазір жауап бере алмаймын.')
+    end
+
+    it 'says it once when several parts have no text and the editor produces nothing' do
+      results.merge!('part-0' => ran('', status: 'unavailable', sources: []), 'part-1' => ran('', status: 'unavailable', sources: []))
+
+      expect(run_council(parts)).to eq(staff_will_answer)
       expect(context[:council_handoff]).to eq(reason: 'council_unresolved', parts: ['Запрос 0', 'Запрос 1'])
     end
 
-    it 'sends the confirmation question of the consultant when the editor produces nothing' do
-      allow(editor).to receive(:edit).and_return(editor_failure('empty'))
-      question = 'Записать вас к терапевту Иванову на 14 октября в 10:00?'
-      allow(council).to receive(:operation_valid?).and_return(true)
+    it 'sends the part texts in order when the editor produces nothing, and drops a question that repeats for the same person' do
+      question = 'На какую дату?'
+      results.merge!('part-0' => ran(question, status: 'needs_information', questions: [question]),
+                     'part-1' => ran(question, status: 'needs_information', questions: [question]))
 
-      reply = council.send(:assemble, parts(%w[Анна]), [consulted(question, operation: proposal)])
+      expect(run_council(parts(%w[Анна анна]))).to eq(question)
+      expect(editor).to have_received(:edit)
+      expect(Captain::Runtime::CoordinationEvents).to have_received(:council_editor_fallback).with(hash_including(reason: 'timeout'))
+    end
 
-      expect(reply).to eq(question)
-      expect(context).not_to have_key(:council_handoff)
-      expect(context[:parts].sole['state']).to eq('waiting_confirmation')
+    it 'keeps the same question for different people' do
+      question = 'На какую дату?'
+      results.merge!('part-0' => ran(question, status: 'needs_information', questions: [question]),
+                     'part-1' => ran(question, status: 'needs_information', questions: [question]))
+
+      expect(run_council(parts(%w[Анна Борис]))).to eq("#{question}\n\n#{question}")
+    end
+
+    it 'reports the reply of the editor and its language' do
+      context[:captain_v2_current_input] = 'Қабылдау қанша тұрады?'
+      results.merge!('part-0' => ran('Баға 5000 теңге.'), 'part-1' => ran('Мекенжай: Абай, 1.'))
+      edited('Баға 5000 теңге, мекенжай: Абай, 1.')
+
+      expect(run_council(parts(%w[Анна Борис], owners: [2, 2]))).to eq('Баға 5000 теңге, мекенжай: Абай, 1.')
+      expect(editor_calls.sole).to include(language: 'kk')
+      expect(Captain::Runtime::CoordinationEvents).to have_received(:council_edited).with(hash_including(language: 'kk', handoff: false))
     end
 
     it 'sends the part texts in order when the editor itself fails' do
       allow(editor).to receive(:edit).and_raise(StandardError, 'boom')
+      results.merge!('part-0' => ran('Приём стоит 5000 тенге.'), 'part-1' => ran('Адрес: улица Абая, 1.'))
 
-      reply = council.send(:assemble, parts(%w[Анна Борис]), [consulted('Приём стоит 5000 тенге.'), consulted('Адрес: улица Абая, 1.')])
-
-      expect(reply).to eq("Приём стоит 5000 тенге.\n\nАдрес: улица Абая, 1.")
+      expect(run_council(parts(%w[Анна Борис], owners: [2, 2]))).to eq("Приём стоит 5000 тенге.\n\nАдрес: улица Абая, 1.")
       expect(Captain::Runtime::CoordinationEvents).to have_received(:council_editor_fallback).with(hash_including(reason: 'error'))
     end
 
     it 'edits with the model of the acting agent unless the runner passes its own' do
-      council.send(:assemble, parts(%w[Анна]), [consulted('Баға 5000 теңге.')])
+      results.merge!('part-0' => ran('Баға'), 'part-1' => ran('Мекенжай'))
+
+      run_council(parts(%w[Анна Борис], owners: [2, 2]))
       expect(Captain::Runtime::CouncilEditor).to have_received(:new).with(
         context: context, account: nil, llm_context: :llm_context, model: 'openai/gpt-6-luna'
       )
 
       runner_model = described_class.new(context: context, graph: graph, account: nil, model: 'openai/gpt-6-sol')
-      runner_model.send(:assemble, parts(%w[Анна]), [consulted('Баға 5000 теңге.')])
+      allow(runner_model).to receive(:fresh_actor) { |id| actors[id] }
+      runner_model.run(parts(%w[Анна Борис], owners: [2, 2]))
       expect(Captain::Runtime::CouncilEditor).to have_received(:new).with(hash_including(model: 'openai/gpt-6-sol'))
+    end
+  end
+
+  describe 'a part that is not for its owner' do
+    let(:named_agents) do
+      [double('first', id: 1, name: 'Администратор'), double('second', id: 2, name: 'Прайс'), double('third', id: 3, name: 'Лаборатория')]
+    end
+
+    before { allow(graph).to receive(:agents).and_return(named_agents) }
+
+    def out_of_scope(name)
+      ran('', status: 'out_of_scope', sources: [], suggested: name)
+    end
+
+    it 'is run again, once, by the agent the owner names, which is stored before the new owner runs' do
+      sequence = [out_of_scope(' «лаборатория» '), ran('Анализы готовы через два дня.')]
+      results['part-0'] = -> { sequence.shift }
+
+      reply = run_council(parts(%w[Анна], owners: [1]))
+
+      expect(reply).to eq('Анализы готовы через два дня.')
+      expect(runs.pluck(:owner_in_registry)).to eq([1, 3])
+      expect(runs.pluck(:executed_by)).to eq([actors[1], actors[3]])
+      expect(state_of('part-0')).to include('executor_agent_id' => 3, 'state' => 'answered')
+      expect(context[:council_contributors].pluck(:id)).to eq([1, 3])
+    end
+
+    it 'is never reassigned twice' do
+      results['part-0'] = -> { out_of_scope('Лаборатория') }
+
+      run_council(parts(%w[Анна], owners: [1]))
+
+      expect(runs.size).to eq(2)
+    end
+
+    it 'names the agent as listed, by name: an unknown name or a number reassigns nothing' do
+      expect(council.send(:suggested_agent, ' «Лаборатория» ')&.id).to eq(3)
+      expect(council.send(:suggested_agent, 'Регистратура')).to be_nil
+      expect(council.send(:suggested_agent, '2')).to be_nil
+      expect(council.send(:suggested_agent, '')).to be_nil
+    end
+
+    %w[Регистратура Администратор].each do |name|
+      it "reassigns nothing for #{name}, which is unknown or the owner itself" do
+        results['part-0'] = out_of_scope(name)
+
+        run_council(parts(%w[Анна], owners: [1]))
+
+        expect(runs.size).to eq(1)
+      end
+    end
+
+    it 'reassigns nothing when two agents share the suggested name' do
+      allow(graph).to receive(:agents).and_return(named_agents + [double('twin', id: 4, name: ' лаборатория ')])
+      results['part-0'] = out_of_scope('Лаборатория')
+
+      run_council(parts(%w[Анна], owners: [1]))
+
+      expect(runs.size).to eq(1)
+    end
+
+    it 'does not reassign after an action: the action stays with the agent that did it' do
+      results['part-0'] = ran('Записал.', status: 'out_of_scope', acted: true, suggested: 'Лаборатория')
+
+      run_council(parts(%w[Анна], owners: [1]))
+
+      expect(runs.size).to eq(1)
+      expect(state_of('part-0')['executor_agent_id']).to eq(1)
+    end
+  end
+
+  describe 'parts that depend on each other' do
+    def dependent(relation)
+      items = parts(%w[Анна Анна], owners: [1, 3])
+      items.last.merge!('relation' => relation, 'depends_on_part_id' => 'part-0')
+      context[:parts] = items.deep_dup
+      items
+    end
+
+    it 'does not start a part that depends on a part which did not finish: it stays open and promises no staff' do
+      results['part-0'] = ran('На какой день?', status: 'needs_information', questions: ['На какой день?'])
+
+      reply = run_council(dependent('depends_on'))
+
+      expect(runs.pluck(:id)).to eq(['part-0'])
+      expect(reply).to eq("На какой день?\n\nНе начато: предыдущий шаг не завершён.")
+      expect(state_of('part-1')['state']).to eq('open')
+      expect(context).not_to have_key(:council_handoff)
+    end
+
+    it 'starts it when the part it depends on is done, and shows its owner how that part ended' do
+      results.merge!('part-0' => ran('Визит отменён.', acted: true), 'part-1' => ran(booked, acted: true))
+
+      run_council(dependent('depends_on'))
+
+      expect(runs.pluck(:id)).to eq(%w[part-0 part-1])
+      expect(runs.last[:snapshot][:part_prior]).to eq([{ text: 'Визит отменён.', status: 'answered', acted: true }])
+    end
+
+    it 'always starts a conditional part after the part before it, which its owner reads and decides on' do
+      results.merge!('part-0' => ran('Пятница занята.', status: 'unavailable', sources: []), 'part-1' => ran(booked, acted: true))
+
+      run_council(dependent('conditional'))
+
+      expect(runs.pluck(:id)).to eq(%w[part-0 part-1])
+      expect(runs.last[:snapshot][:part_prior]).to eq([{ text: 'Пятница занята.', status: 'unavailable', acted: false }])
+    end
+  end
+
+  describe 'a run that turns stale' do
+    let(:stale) { Captain::Conversation::ControlGenerationStaleError.new('newer message') }
+
+    it 'stops, starts no later part and raises the error after every thread was joined' do
+      done = Queue.new
+      reader_running = Queue.new
+      results.merge!('part-0' => lambda {
+        Timeout.timeout(5) { reader_running.pop }
+        raise stale
+      }, 'part-1' => lambda {
+        reader_running << :started
+        sleep 0.05
+        done << :reader_finished
+        ran('Цена')
+      }, 'part-2' => ran(booked, acted: true))
+
+      expect { run_council(parts(%w[Анна Анна Анна], owners: [1, 2, 3])) }.to raise_error(stale)
+
+      expect(runs.pluck(:id)).not_to include('part-2')
+      expect(done.size).to eq(1)
+      expect(Captain::Runtime::CoordinationEvents).to have_received(:council_finished).with(hash_including(outcome: 'unavailable'))
+    end
+
+    it 'raises the error of a thread after the writer lane finished' do
+      results.merge!('part-0' => ran(booked, acted: true), 'part-1' => -> { raise stale })
+
+      expect { run_council(parts) }.to raise_error(stale)
+
+      expect(state_of('part-0')).to include('state' => 'done', 'acted' => true)
+    end
+
+    it 'keeps the write of a part that was interrupted: the booking happened, so the part is done' do
+      tracker = double('tracker', acted?: true, summary: 'create_appointment: {"appointment_id":7}')
+      part_run = double('run of part-0', tracker: tracker)
+      allow(part_run).to receive(:call).and_raise(stale)
+      allow(Captain::Runtime::Council::PartRun).to receive(:new).and_return(part_run)
+
+      expect { run_council(parts(%w[Анна], owners: [1])) }.to raise_error(stale)
+
+      expect(state_of('part-0')).to include('state' => 'done', 'acted' => true, 'summary' => 'create_appointment: {"appointment_id":7}')
+    end
+
+    it 'keeps every write that was recorded before the error' do
+      results.merge!('part-0' => ran(booked, acted: true), 'part-1' => -> { raise stale })
+
+      expect { run_council(parts(%w[Анна Борис], owners: [1, 3])) }.to raise_error(stale)
+
+      expect(state_of('part-0')).to include('state' => 'done', 'acted' => true)
+    end
+  end
+
+  describe 'a technical failure of a part' do
+    it 'is not mentioned: the other parts are answered, and staff take over after the reply with the configured notice' do
+      results.merge!('part-0' => ran('', technical: technical_failure, sources: []), 'part-1' => ran('Цена 15000 тенге.'))
+
+      reply = run_council(parts)
+
+      expect(reply).to eq('Цена 15000 тенге.')
+      expect(editor).not_to have_received(:edit)
+      expect(state_of('part-0')['state']).to eq('unknown')
+      expect(context[:council_handoff]).to eq(reason: 'council_technical_failure', parts: [], technical: true, failures: [technical_failure])
+      expect(context[:council_contributors].pluck(:id)).to eq([2])
+    end
+
+    it 'never puts a word about the failure into the reply or the lines for the editor' do
+      results.merge!('part-0' => ran('', technical: technical_failure, sources: []), 'part-1' => ran('Цена'), 'part-2' => ran('Адрес'))
+      edited
+
+      run_council(parts(%w[Анна Анна Анна], owners: [1, 2, 2]))
+
+      expect(editor_calls.sole[:parts].pluck('text')).to eq(%w[Цена Адрес])
+      expect(editor_calls.sole[:parts].to_json).not_to include('provider', 'ошибк', 'не получилось')
+    end
+
+    it 'treats an internal error of a part as a technical failure of that part only, whether it ran on the calling thread or on another' do
+      [[1, 2], [2, 3]].each do |owners|
+        council_for_owners = described_class.new(context: context, graph: graph, account: nil)
+        allow(council_for_owners).to receive(:fresh_actor) { |id| actors[id] }
+        results.replace('part-0' => -> { raise 'boom' }, 'part-1' => ran('Цена'))
+        context.delete(:council_handoff)
+
+        reply = council_for_owners.run(parts(%w[Анна Анна], owners: owners))
+
+        expect(reply).to eq('Цена')
+        expect(context[:council_handoff]).to include(
+          reason: 'council_technical_failure', technical: true,
+          failures: [include('kind' => 'technical', 'reason' => 'council_error', 'error_class' => 'RuntimeError')]
+        )
+        expect(state_of('part-0')['state']).to eq('unknown')
+      end
+    end
+
+    it 'ends the whole run as a technical failure when every part failed: no reply at all' do
+      results.merge!('part-0' => ran('', technical: technical_failure, sources: []),
+                     'part-1' => ran('', technical: technical_failure(tool: 'faq_lookup'), sources: []))
+
+      reply = run_council(parts)
+
+      expect(reply).to eq('')
+      expect(context[:technical_failure]).to include('tool' => 'create_appointment', 'parts' => 2)
+      expect(context).not_to have_key(:council_handoff)
+    end
+
+    it 'tells the customer about an action that was already performed before the failure, and still hands over to staff' do
+      results.merge!('part-0' => ran('', technical: technical_failure, acted: true, sources: []), 'part-1' => ran('Цена'))
+      edited
+
+      run_council(parts)
+
+      expect(editor_calls.sole[:parts].first).to eq('text' => 'Действие выполнено.', 'done' => true, 'staff_will_answer' => false)
+      expect(context[:council_handoff]).to include(reason: 'council_technical_failure', technical: true)
+      expect(state_of('part-0')).to include('state' => 'done', 'acted' => true)
+    end
+
+    it 'also hands a part to staff when its owner cannot hand off: it is the system that does it' do
+      allow(actors[1]).to receive(:handoff_enabled?).and_return(false)
+      results.merge!('part-0' => ran('', technical: technical_failure, sources: []), 'part-1' => ran('Цена'))
+
+      run_council(parts)
+
+      expect(context[:council_handoff]).to include(technical: true)
+    end
+
+    it 'does not run again for a part that was settled by an earlier attempt of the request' do
+      items = parts
+      items.first.merge!('state' => 'done', 'acted' => true, 'summary' => booked)
+      context[:parts] = items.deep_dup
+      results['part-1'] = ran('Цена')
+      edited
+
+      run_council(items)
+
+      expect(runs.pluck(:id)).to eq(['part-1'])
+      expect(editor_calls.sole[:parts].first).to eq('text' => booked, 'done' => true, 'staff_will_answer' => false)
+    end
+  end
+
+  describe 'replaying settled parts' do
+    it 'answers a cancelled part with the stock line' do
+      items = parts(%w[Анна], owners: [1])
+      items.first.merge!('state' => 'done', 'cancelled' => true)
+      context[:parts] = items.deep_dup
+
+      expect(run_council(items)).to eq('Запрос отменён.')
+      expect(runs).to be_empty
+    end
+
+    it 'hands a settled part that stayed unknown to staff again' do
+      items = parts(%w[Анна], owners: [1])
+      items.first.merge!('state' => 'unknown')
+      context[:parts] = items.deep_dup
+
+      expect(run_council(items)).to eq(staff_will_answer)
+      expect(runs).to be_empty
+    end
+  end
+
+  describe 'what the main run learns' do
+    it 'receives the names, results, actions and artifacts of the tools of the parts, without the appointment evidence' do
+      tracking = { completed_tool_names: ['create_appointment'], completed_actions: ['create_appointment'], artifact_ids: ['doc-1'],
+                   completed_tool_results: [{ tool_name: 'create_appointment', success: true }] }
+      results['part-0'] = ran(booked, acted: true, tracking: tracking)
+      context[:captain_v2_completed_tool_names] = ['faq_lookup']
+
+      run_council(parts(%w[Анна], owners: [1]))
+
+      expect(context[:captain_v2_completed_tool_names]).to eq(%w[faq_lookup create_appointment])
+      expect(context[:captain_v2_completed_actions]).to eq(['create_appointment'])
+      expect(context[:captain_v2_artifact_ids]).to eq(['doc-1'])
+      expect(context[:captain_v2_completed_tool_results]).to eq([{ tool_name: 'create_appointment', success: true }])
+    end
+
+    it 'receives them also when the council raised' do
+      results.merge!('part-0' => ran(booked, acted: true, tracking: { completed_tool_names: ['create_appointment'] }),
+                     'part-1' => -> { raise Captain::Conversation::ControlGenerationStaleError, 'x' })
+
+      expect { run_council(parts(%w[Анна Борис], owners: [1, 3])) }.to raise_error(Captain::Conversation::ControlGenerationStaleError)
+
+      expect(context[:captain_v2_completed_tool_names]).to eq(['create_appointment'])
+    end
+  end
+
+  describe 'events' do
+    it 'publishes the start and the end of every part with identifiers, states and counts only' do
+      results.merge!('part-0' => ran(booked, acted: true), 'part-1' => ran('Цена'))
+
+      run_council(parts)
+
+      expect(Captain::Runtime::CoordinationEvents).to have_received(:part_started).twice
+      expect(Captain::Runtime::CoordinationEvents).to have_received(:part_finished).with(
+        context: context, part: hash_including('id' => 'part-0'), state: 'done', status: 'answered', acted: true, mutations_succeeded: 1,
+        mutations_failed: 0, mutations_unknown: 0, tools_called: 2, turns: 3, duration_ms: 12
+      )
+    end
+
+    it 'logs the end of a part without any text' do
+      allow(Rails.logger).to receive(:info)
+      results['part-0'] = ran(booked, acted: true)
+
+      run_council(parts(%w[Анна], owners: [1]))
+
+      expect(Rails.logger).to have_received(:info).with(/\[CAPTAIN\]\[Council\] part_finished part_id=part-0 version=1 executor_agent_id=1 state=done/)
+      expect(Rails.logger).not_to have_received(:info).with(/#{Regexp.escape(booked)}/)
+    end
+  end
+
+  describe 'the contributors and the participants' do
+    it 'names the agents that wrote a part of the reply' do
+      results.merge!('part-0' => ran(booked, acted: true), 'part-1' => ran('Цена'))
+
+      run_council(parts)
+
+      expect(context[:council_contributors]).to eq([{ id: 1, name: 'Агент 1', avatar_url: nil }, { id: 2, name: 'Агент 2', avatar_url: nil }])
+      expect(Captain::Runtime::CoordinationEvents).to have_received(:council_started).with(
+        context: context, participant_ids: [1, 2], part_ids: %w[part-0 part-1]
+      )
     end
   end
 end

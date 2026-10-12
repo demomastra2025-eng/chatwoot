@@ -20,6 +20,7 @@ class Captain::Runtime::ExecutorResolver
   end
 
   STRICT_MODES = %w[council].freeze
+  COUNCIL_HINT = Captain::Runtime::PartRegistry::COUNCIL_HINT
   EDGE_NOISE = /\A[[:space:]"'`«»“”„‘’‹›]+|[[:space:]"'`«»“”„‘’‹›]+\z/
   PERSON_HINT = 'To pass the customer to a person call the handoff tool, not plan_request.'
 
@@ -43,8 +44,7 @@ class Captain::Runtime::ExecutorResolver
 
     items = parts.map { |raw| raw.to_h.deep_stringify_keys }
     resolved = items.map { |item| with_executor_id(item, mode) }
-    # Confirming a stored proposal runs it with the executor recorded on that part, whatever the mode says.
-    check_mode!(mode, resolved.pluck('executor_agent_id')) unless items.all? { |item| confirmation?(item) }
+    check_mode!(mode, resolved)
     resolved
   end
 
@@ -53,9 +53,11 @@ class Captain::Runtime::ExecutorResolver
   end
 
   # A request that belongs to one colleague is not planned: the model passes the conversation with that colleague's transfer
-  # tool. A model that still asks for the former mode 'handoff' is told so, with the names it can choose from.
-  def reject_transfer_mode!(mode)
+  # tool. A model that still asks for the former mode 'handoff' is told so, with the names it can choose from. The customer's
+  # answer to an open part of another agent is not a transfer either: it is a council of that one part.
+  def reject_transfer_mode!(mode, parts = nil)
     return unless mode.to_s == 'handoff'
+    raise TransferToolError, "plan_request has no handoff mode. #{COUNCIL_HINT}" if continuation_of_peer?(parts)
 
     names = selectable_names(exclude_current: true)
     raise TransferToolError, no_peer_message('handoff') if names.empty?
@@ -67,10 +69,13 @@ class Captain::Runtime::ExecutorResolver
 
   private
 
-  # A confirmation is never strict: the executor recorded on the confirmed part decides, whatever name the model sent.
+  # A part that is linked to an open part keeps the agent that owns it: an answer, a correction or a cancellation is not moved to
+  # the current agent, and the executor the model named is ignored. Every other part is the named agent's.
   def with_executor_id(item, mode)
     rest = item.except('executor', 'executor_agent_id')
-    rest.merge('executor_agent_id' => agent_id_for(reference_for(item), confirmation?(item) ? nil : mode, fallback_id_for(rest)))
+    return rest.merge('executor_agent_id' => fallback_id_for(rest)) if continuation?(item)
+
+    rest.merge('executor_agent_id' => agent_id_for(reference_for(item), mode, fallback_id_for(rest)))
   end
 
   # The agent name; only a model that still answers in the former schema sends the numeric executor_agent_id.
@@ -115,20 +120,29 @@ class Captain::Runtime::ExecutorResolver
     @parts.find { |part| part['id'] == part_id }
   end
 
-  def confirmation?(item)
-    item['link_action'].to_s == 'confirmation' && item['link_part_id'].present? &&
-      stored_part(item['link_part_id'])&.dig('proposed_operation').present?
+  # The customer's answer, correction or cancellation of an open part (not a new request).
+  def continuation?(item)
+    item['link_part_id'].present? && item['link_action'].to_s != 'new' && stored_part(item['link_part_id']).present?
   end
 
-  def check_mode!(mode, ids)
-    case mode
-    when 'council' then check_council!(ids.uniq)
-    when 'answer_myself' then check_own!(ids)
+  def continuation_of_peer?(parts)
+    Array(parts).any? do |raw|
+      item = raw.to_h.deep_stringify_keys
+      continuation?(item) && fallback_id_for(item) != @current_id
     end
   end
 
-  def check_council!(ids)
-    return if ids.size >= 2
+  def check_mode!(mode, resolved)
+    case mode
+    when 'council' then check_council!(resolved)
+    when 'answer_myself' then check_own!(resolved)
+    end
+  end
+
+  # A council is separate requests for at least two agents, or the continuation of open parts (one part is enough: the
+  # customer answers a question of the agent that asked it).
+  def check_council!(resolved)
+    return if resolved.pluck('executor_agent_id').uniq.size >= 2 || resolved.all? { |item| continuation?(item) }
 
     names = selectable_names(exclude_current: true)
     raise RetryableError, no_peer_message('council') if names.empty?
@@ -137,11 +151,14 @@ class Captain::Runtime::ExecutorResolver
                           "Use one of: #{names.join(', ')}"
   end
 
-  def check_own!(ids)
-    foreign = ids.find { |id| id != @current_id }
+  def check_own!(resolved)
+    foreign = resolved.find { |item| item['executor_agent_id'] != @current_id }
     return unless foreign
 
-    raise RetryableError, "This part belongs to #{name_for(foreign) || 'another agent'}. " \
+    name = name_for(foreign['executor_agent_id']) || 'another agent'
+    raise RetryableError, "This part belongs to #{name}. #{COUNCIL_HINT}" if continuation?(foreign)
+
+    raise RetryableError, "This part belongs to #{name}. " \
                           'Pass the conversation to that colleague with its transfer tool (no plan needed), or omit the executor to keep it yourself.'
   end
 

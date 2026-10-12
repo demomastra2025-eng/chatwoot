@@ -14,6 +14,7 @@ class Captain::Assistant::AgentRunnerService
 
   PROVIDER_ERROR_RESPONSE = 'conversation_handoff_due_to_provider_error'.freeze
   PROVIDER_ERROR_AUTHORIZED_KEY = 'provider_error_handoff_authorized'.freeze
+  TECHNICAL_FAILURE_ERROR_CLASS = 'Captain::TechnicalToolFailure'.freeze
   # Marks a turn the safety policy blocked (input or output) or could not check.
   # Only the runtime sets it; a model output never carries it.
   MODERATION_BLOCKED_KEY = 'moderation_blocked'.freeze
@@ -283,6 +284,11 @@ class Captain::Assistant::AgentRunnerService
       @acting_assistant_id = result.error.assistant_id
       return Captain::Safety::CustomRulesRuntime.response_for(result.error)
     end
+    # A technical failure of a tool ended the run (or every part of a council): the customer gets no text about it, the
+    # conversation goes to staff. This is the system handoff of a failed turn, which does not need the handoff tool.
+    if technical_failure_from(result.context).present? && !authorized_handoff_pending?(result.context, handoff_tool_called)
+      return technical_failure_response(technical_failure_from(result.context), result.context)
+    end
     if result.respond_to?(:error) && result.error.present?
       if authorized_handoff_pending?(result.context, handoff_tool_called)
         return human_handoff_response(result.context[:pending_human_handoff],
@@ -318,9 +324,8 @@ class Captain::Assistant::AgentRunnerService
     response['council_contributors'] = result.context[:council_contributors] if result.context&.dig(:council_contributors).present?
     # Set by the council only when its reply promises staff an unresolved part; the response builder then performs the handoff.
     response['council_handoff'] = result.context[:council_handoff].to_h.deep_stringify_keys if result.context&.dig(:council_handoff).present?
-    if result.context&.dig(:part_plan, :parts).present?
-      response['part_refs'] = result.context[:part_plan][:parts].map { |part| part.slice('id', 'version') }
-    end
+    refs = part_refs_for(result.context)
+    response['part_refs'] = refs if refs.any?
     response['handoff_tool_called'] = handoff_tool_called
     sanitize_response_artifact_ids!(response, result.context)
     return suppressed_response(response) if provider_booking_notification_deferred?(result.context)
@@ -343,6 +348,34 @@ class Captain::Assistant::AgentRunnerService
     blocked_by_moderation_response('Agent output blocked by moderation policy')
   rescue Llm::SafetyPolicy::UnavailableError
     blocked_by_moderation_response('Agent output blocked because moderation policy is unavailable')
+  end
+
+  # The parts this reply answers: the plan of the request, and the actions of earlier runs that the customer was not told about
+  # (their reply was dropped) and that this reply reports. They are recorded as delivered with the message.
+  def part_refs_for(context)
+    planned = Array(context&.dig(:part_plan, :parts))
+    undelivered = Captain::Runtime::PartRegistry.undelivered_outcomes(context&.dig(:parts))
+    (planned + undelivered).map { |part| part.slice('id', 'version') }.uniq
+  end
+
+  def technical_failure_from(context)
+    context_value(context, :technical_failure).presence
+  end
+
+  # The response of a failed turn: no text for the customer. The response builder applies the system handoff (status open, the
+  # configured handoff notice, a private note) and the note names what failed: tool, stage and reason codes, never an argument,
+  # a message or a patient.
+  def technical_failure_response(technical, context)
+    completed = Array(context_value(context, Captain::Runtime::ToolWrapper::COMPLETED_ACTIONS_KEY)).uniq
+    failure = technical.to_h.deep_stringify_keys.merge('completed' => completed)
+    {
+      'response' => PROVIDER_ERROR_RESPONSE,
+      'reasoning' => 'Technical failure of a tool ended the run',
+      'error_class' => TECHNICAL_FAILURE_ERROR_CLASS,
+      'error_message' => [failure['tool'], failure['reason']].compact.join(': '),
+      PROVIDER_ERROR_AUTHORIZED_KEY => true,
+      'technical_failure' => failure
+    }
   end
 
   def log_agent_result(result)
@@ -1094,7 +1127,8 @@ class Captain::Assistant::AgentRunnerService
       context_wrapper.context[:captain_v2_artifact_ids] ||= []
       context_wrapper.context[:captain_v2_artifact_ids] |= artifact_ids
     end
-    remember_last_tool_result_context(context_wrapper)
+    # The run of a council part is not "the last run": the error fallback must not be built from one part's results.
+    remember_last_tool_result_context(context_wrapper) unless context_wrapper.context[:part_run]
   end
 
   def remember_last_tool_result_context(context_wrapper)

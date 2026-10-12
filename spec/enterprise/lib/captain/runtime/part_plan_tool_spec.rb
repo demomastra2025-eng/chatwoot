@@ -232,19 +232,18 @@ RSpec.describe Captain::Runtime::PartPlanTool do
         expect(lab_part_of_plan['executor_agent_id']).to eq(lab_agent[:id])
       end
 
-      it 'keeps the executor of a part awaiting confirmation when the confirming plan names no executor' do
+      it 'keeps the executor of a part that waits for the customer when the plan with the answer names no executor' do
         council_with_lab({ fragment: 'Записать на анализ', executor: 'Лаборатория' })
         part = lab_part_of_plan
-        Captain::Runtime::PartRegistry.new(context).update!(
-          part['id'], state: 'waiting_confirmation', proposed_operation: { 'type' => 'create_appointment', 'params' => { 'slot_id' => 9 } }
-        )
+        Captain::Runtime::PartRegistry.new(context).record_result!(part['id'], state: 'waiting_customer', summary: 'На какое время?')
         context.delete(:part_plan_accepted)
         context.delete(:part_plan)
         context[:agent_request_id] = 'next-request'
 
-        rendered = planner.call(mode: 'answer_myself', parts: [{ fragment: 'Да', link_part_id: part['id'], link_action: 'confirmation' }])
+        rendered = planner.call(mode: 'council', parts: [{ fragment: 'Да', link_part_id: part['id'], link_action: 'answer' }])
 
         expect(JSON.parse(rendered)['parts'].sole).to include('id' => part['id'], 'version' => 2, 'executor' => 'Лаборатория')
+        expect(context[:part_plan][:parts].sole).to include('prior_summary' => 'На какое время?')
       end
 
       it 'fails a council that names an unknown agent with the list of valid names' do
@@ -274,18 +273,22 @@ RSpec.describe Captain::Runtime::PartPlanTool do
         expect(JSON.parse(council_with_lab({ fragment: 'Сдать анализы', executor: 'Лаборатория' }))['mode']).to eq('council')
       end
 
-      it 'keeps a peer part with its owner when the answer to it names no executor, and asks for the transfer tool in answer_myself' do
-        council_with_lab({ fragment: 'Записать на анализ', executor: 'Лаборатория' })
-        part = lab_part_of_plan
-        Captain::Runtime::PartRegistry.new(context).update!(part['id'], state: 'waiting_customer')
+      def wait_for_the_customer(part)
+        Captain::Runtime::PartRegistry.new(context).record_result!(part['id'], state: 'waiting_customer')
         context.delete(:part_plan_accepted)
         context.delete(:part_plan)
-        context[:agent_request_id] = 'next-request'
+        context[:agent_request_id] = "next-request-#{SecureRandom.hex(3)}"
+      end
+
+      it 'keeps a peer part with its owner when the answer to it names no executor, and asks for a council in answer_myself' do
+        council_with_lab({ fragment: 'Записать на анализ', executor: 'Лаборатория' })
+        part = lab_part_of_plan
+        wait_for_the_customer(part)
         reply = { fragment: 'Завтра', link_part_id: part['id'], link_action: 'answer' }
 
         own = failure_payload(planner.call(mode: 'answer_myself', parts: [reply]))
         expect(own).to include('retryable' => true)
-        expect(own['error']).to start_with('This part belongs to Лаборатория.').and include('transfer tool')
+        expect(own['error']).to start_with('This part belongs to Лаборатория.').and include('mode council and ONLY that part linked')
 
         rendered = planner.call(mode: 'council', parts: [reply.merge(fragment: 'Завтра в десять'),
                                                           { fragment: 'Адрес клиники', link_action: 'new' }])
@@ -293,23 +296,40 @@ RSpec.describe Captain::Runtime::PartPlanTool do
         expect(context[:part_plan][:parts].first['executor_agent_id']).to eq(lab_agent[:id])
       end
 
-      it 'accepts the confirmation of a peer proposal in answer_myself and council, because the stored executor decides' do
+      it 'plans the answer to a peer part as a council of that one part, and the former handoff mode for it names the council' do
         council_with_lab({ fragment: 'Записать на анализ', executor: 'Лаборатория' })
         part = lab_part_of_plan
+        wait_for_the_customer(part)
+        answer = { fragment: 'Давайте в 11', link_part_id: part['id'], link_action: 'answer' }
 
-        %w[answer_myself council].each_with_index do |mode, index|
-          Captain::Runtime::PartRegistry.new(context).update!(
-            part['id'], state: 'waiting_confirmation', proposed_operation: { 'type' => 'create_appointment', 'params' => { 'slot_id' => 9 } }
-          )
-          context.delete(:part_plan_accepted)
-          context.delete(:part_plan)
-          context[:agent_request_id] = "next-request-#{index}"
+        refused = failure_payload(planner.call(mode: 'handoff', parts: [answer]))
+        expect(refused).to include('retryable' => true)
+        expect(refused['error']).to include('mode council and ONLY that part linked')
+        expect(refused['error']).not_to include('transfer tool')
 
-          rendered = planner.call(mode: mode, parts: [{ fragment: 'Да', link_part_id: part['id'], link_action: 'confirmation' }])
+        rendered = planner.call(mode: 'council', parts: [answer])
 
-          expect(JSON.parse(rendered)['parts'].sole).to include('id' => part['id'], 'executor' => 'Лаборатория')
-          expect(context[:part_plan][:parts].sole).to include('executor_agent_id' => lab_agent[:id], 'link_action' => 'confirmation')
-        end
+        expect(JSON.parse(rendered)).to include('mode' => 'council')
+        expect(JSON.parse(rendered)['parts'].sole).to include('id' => part['id'], 'version' => 2, 'executor' => 'Лаборатория')
+        expect(context[:part_plan][:parts].sole).to include('executor_agent_id' => lab_agent[:id], 'link_action' => 'answer')
+        expect(context).not_to have_key(:active_part_id)
+      end
+
+      it 'understands the former link action confirmation as an answer, before the schema is checked' do
+        council_with_lab({ fragment: 'Записать на анализ', executor: 'Лаборатория' })
+        part = lab_part_of_plan
+        wait_for_the_customer(part)
+
+        rendered = planner.call(mode: 'council', parts: [{ fragment: 'Да', link_part_id: part['id'], link_action: 'confirmation' }])
+
+        expect(JSON.parse(rendered)['parts'].sole).to include('id' => part['id'], 'executor' => 'Лаборатория')
+        expect(context[:part_plan][:parts].sole).to include('link_action' => 'answer')
+      end
+
+      it 'does not offer the link action confirmation to the model' do
+        link_actions = described_class.new.params_schema.deep_stringify_keys.dig('properties', 'parts', 'items', 'properties', 'link_action', 'enum')
+
+        expect(link_actions).to eq(%w[new answer correction cancellation])
       end
 
       it 'plans a council with the current agent left out of the part and one peer named' do
@@ -344,39 +364,10 @@ RSpec.describe Captain::Runtime::PartPlanTool do
     description = described_class.new.description
 
     expect(description).to include('split a message into separate requests for different agents (a council)',
+                                   'route the customer\'s answer, correction or cancellation of an open part of another agent to that agent',
                                    'Not needed for your own lookups, replies or actions',
                                    'that colleague\'s transfer tool does it without a plan')
     expect(description).not_to include('transfer the conversation to another agent', 'before using action tools')
   end
 end
 # rubocop:enable Lint/ConstantDefinitionInBlock
-
-RSpec.describe Captain::Runtime::ToolWrapper do
-  let(:action) { double('action tool', name: 'create_deal', description: 'Create deal', metadata: { risk_level: 'high' }) }
-  let(:context) { { state: { assistant_id: 1 }, agent_session: Object.new, agent_tasks: [] } }
-  let(:wrapper) { described_class.new(action, Captain::Runtime::RunContext.new(context)) }
-
-  it 'does not require a plan for the agent\'s own mutating tool' do
-    expect(context).not_to have_key(:part_plan_accepted)
-
-    expect(wrapper.send(:consult_mode_error)).to be_nil
-    expect(context).not_to have_key(:part_plan_accepted)
-  end
-
-  it 'blocks a mutating tool in a consult, with or without a plan' do
-    context[:consult_mode] = true
-    expect(Captain::ToolResult.normalize(wrapper.send(:consult_mode_error))).to include(success: false, error: /consult mode/)
-
-    context[:part_plan_accepted] = true
-    expect(Captain::ToolResult.normalize(wrapper.send(:consult_mode_error))).to include(success: false, error: /consult mode/)
-  end
-end
-
-RSpec.describe Captain::Runtime::ConsultTools do
-  it 'allows only declared read-only tools' do
-    tool = Struct.new(:name, :metadata)
-    expect(described_class.allowed?(tool.new('list_my_deals', { risk_level: 'low' }))).to be(true)
-    expect(described_class.allowed?(tool.new('create_deal', { risk_level: 'low' }))).to be(false)
-    expect(described_class.allowed?(tool.new('get_my_contact', { risk_level: 'high' }))).to be(false)
-  end
-end

@@ -9,6 +9,9 @@ class Captain::Runtime::Runner
   class AgentNotFoundError < StandardError; end
   class SelfHandoffError < StandardError; end
   class UnresolvedTasksError < StandardError; end
+  # A council whose every part failed technically (see ToolFailure) ends the run. The customer gets no text: the result is an
+  # error, which the runner of the conversation turns into the system handoff to staff.
+  class TechnicalFailure < StandardError; end
 
   def self.with_agents(*agents)
     Captain::Runtime::AgentRunner.new(agents)
@@ -19,7 +22,7 @@ class Captain::Runtime::Runner
     session = build_session(starting_agent, input, options)
     process_session(session)
   rescue MaxTurnsExceeded => e
-    if part_run?(session)
+    if planned_run?(session)
       return finalize_run(session[:chat], session[:context_wrapper], session[:current_agent], output: open_parts_response(session))
     end
 
@@ -33,9 +36,11 @@ class Captain::Runtime::Runner
 
   private
 
-  def part_run?(session)
+  # A planned run of an agent that has no task queue: it continues the conversation when a transfer cannot happen. A council
+  # part is not one: it has its own context and no plan of its own.
+  def planned_run?(session)
     context = session&.dig(:context_wrapper)&.context
-    context && context[:agent_session] && !Captain::Runtime::TaskQueue.in_flight?(context[:agent_tasks])
+    context && context[:agent_session] && !context[:part_run] && !Captain::Runtime::TaskQueue.in_flight?(context[:agent_tasks])
   end
 
   def open_parts_response(session)
@@ -151,11 +156,7 @@ class Captain::Runtime::Runner
     return if response.tool_call?
     return if continue_unresolved_tasks?(session, response)
 
-    plan_state = ensure_part_plan(session, response)
-    return if plan_state == :retry
-    if plan_state == :unavailable
-      return finalize_run(session[:chat], session[:context_wrapper], session[:current_agent], output: open_parts_response(session))
-    end
+    return if ensure_part_plan(session, response) == :retry
 
     finalize_run(
       session[:chat],
@@ -167,31 +168,40 @@ class Captain::Runtime::Runner
 
   # A plain reply needs no request plan, and neither do the agent's own actions or a transfer to one colleague (HandoffTool):
   # a plan only coordinates several agents. The coordination prompt asks for it when the message holds separate requests
-  # for different agents, or when the customer answers an open part. One case is guarded here, because a plain reply would
-  # be wrong there: an operation proposed by a council waits for the customer's answer (only a plan confirms or cancels
-  # it, and a plain "done" would claim an action that no tool performed).
+  # for different agents, or when the customer answers an open part of another agent. One case is guarded here, once: the last
+  # thing the customer was told is the question of such a part, so this message is probably its answer, and only a plan
+  # gives it to the agent that asked. The draft is dropped and the agent is asked to plan or to reply; its second plain reply
+  # is accepted, whatever it is.
   def ensure_part_plan(session, response)
     return unless plan_required_before_reply?(session)
 
     # The unplanned draft is never published, so it must not stay in the stored dialogue either.
     discard_unpublished_draft(session[:chat], response)
-    if session[:plan_repairs].to_i.zero?
-      session[:plan_repairs] = 1
-      session[:chat].add_message(role: :system, content: 'Call plan_request for this message before replying.')
-      return :retry
+    session[:plan_repairs] = 1
+    session[:chat].add_message(role: :system, content: plan_repair_prompt(session[:context_wrapper].context))
+    :retry
+  end
+
+  def plan_repair_prompt(context)
+    waiting = Array(context[:parts]).select do |part|
+      part['state'] == 'waiting_customer' && part['executor_agent_id'] != context.dig(:state, :assistant_id)
     end
-    :unavailable
+    names = waiting.filter_map do |part|
+      Array(context[:agent_graph]).find { |agent| agent[:id] == part['executor_agent_id'] }&.dig(:name).to_s.squish.presence
+    end.uniq
+    "An open part of #{names.join(', ').presence || 'another agent'} waits for the customer's answer: its question was the last " \
+      'thing the customer was told. If this message answers, corrects or cancels that part, call plan_request with mode council ' \
+      'and ONLY that part linked by its exact id (see the open parts). Otherwise reply normally.'
   end
 
   def plan_required_before_reply?(session)
     context = session[:context_wrapper].context
-    # A lone agent has no plan_request to call.
+    # A lone agent has no plan_request to call; a council part and a finalization-only continuation cannot call it.
     return false if !Captain::Runtime::PartRegistry.planning_available?(context) || context[:part_plan_accepted]
     return false if Captain::Runtime::TaskQueue.in_flight?(context[:agent_tasks])
-    # A consultation, and a finalization-only continuation (no tools are exposed), cannot call plan_request.
-    return false if context[:consult_mode] || session[:finalization_only]
+    return false if context[:part_run] || session[:finalization_only] || session[:plan_repairs].to_i.positive?
 
-    Captain::Runtime::PartRegistry.awaiting_confirmation?(context)
+    Captain::Runtime::PartRegistry.awaiting_peer_answer?(context)
   end
 
   def handle_plan(session)
@@ -200,22 +210,22 @@ class Captain::Runtime::Runner
     return if plan.blank? || context[:part_plan_processed]
 
     context[:part_plan_processed] = true
+    # A cancellation of a part that never acted needs no agent: there is nothing to undo. (A part that acted is planned as a
+    # correction, see PartRegistry#accept!, so its owner runs and undoes the action with its own tools.)
     if plan[:parts].all? { |part| part['link_action'] == 'cancellation' }
       return finalize_run(session[:chat], session[:context_wrapper], session[:current_agent],
                           output: { response: I18n.t('captain.coordination.cancelled', locale: Captain::Runtime::CouncilEditor.locale_for(context)),
                                     reasoning: '' })
     end
-    if plan[:parts].all? { |part| part['link_action'] == 'confirmation' }
-      answer = Captain::Runtime::ConfirmedOperations.new(context: context, graph: context[:agent_graph_object]).run(plan[:parts])
-      session[:current_agent] = session[:registry]["assistant_#{context.dig(:state, :assistant_id)}"] || session[:current_agent]
-      return finalize_run(session[:chat], session[:context_wrapper], session[:current_agent],
-                          output: { response: answer, reasoning: '' })
-    end
 
     case plan[:mode]
     when 'council'
+      # The conversation never changes hands: the current agent stays the current agent while the owners of the parts act.
       answer = Captain::Runtime::Council.new(context: context, graph: context[:agent_graph_object], account: session[:account],
-                                             llm_context: session[:llm_context], model: session[:current_agent].model).run(plan[:parts])
+                                             llm_context: session[:llm_context], model: session[:current_agent].model,
+                                             callbacks: session[:context_wrapper].callbacks).run(plan[:parts])
+      return technical_failure_result(session) if answer.blank? && context[:technical_failure].present?
+
       finalize_run(session[:chat], session[:context_wrapper], session[:current_agent],
                    output: { response: answer, reasoning: '' })
     when 'handoff'
@@ -285,8 +295,15 @@ class Captain::Runtime::Runner
     halt_response?(response) && terminal_tool_stop_state(session).present?
   end
 
+  # Every part of a council failed technically: no text for the customer, the conversation goes to staff (see ToolFailure).
+  def technical_failure_result(session)
+    failure = session[:context_wrapper].context[:technical_failure].to_h.with_indifferent_access
+    error = TechnicalFailure.new("Technical failure #{[failure[:tool], failure[:reason]].compact.join(' ')}".squish)
+    finalize_run(session[:chat], session[:context_wrapper], session[:current_agent], output: nil, error: error)
+  end
+
   def terminal_tool_stop_result(session)
-    if part_run?(session)
+    if planned_run?(session)
       return finalize_run(session[:chat], session[:context_wrapper], session[:current_agent], output: open_parts_response(session))
     end
 
@@ -350,7 +367,7 @@ class Captain::Runtime::Runner
 
   def missing_agent_result(session, target_name)
     record_transfer_guard(session, 'target_missing')
-    return continue_after_transfer_guard(session) if part_run?(session)
+    return continue_after_transfer_guard(session) if planned_run?(session)
 
     message = target_name.present? ? "Handoff failed: Agent '#{target_name}' not found in registry" : 'Handoff failed: target agent is missing'
     error = AgentNotFoundError.new(message)
@@ -364,7 +381,7 @@ class Captain::Runtime::Runner
 
   def self_handoff_result(session, next_agent)
     record_transfer_guard(session, 'self_transfer', next_agent)
-    return continue_after_transfer_guard(session) if part_run?(session)
+    return continue_after_transfer_guard(session) if planned_run?(session)
 
     error = SelfHandoffError.new("Agent #{next_agent.name} attempted to hand off to itself")
     finalize_run(session[:chat], session[:context_wrapper], session[:current_agent], output: nil, error: error)

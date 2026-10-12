@@ -59,7 +59,7 @@ RSpec.describe Captain::Runtime::CoordinationPrompt do
                             'take your own actions that change data (book, reschedule, cancel, update a card) ' \
                             'and use the human handoff, all without plan_request.')
     expect(text).to include('Plan with plan_request only in these cases: when the message holds several separate requests that ' \
-                            'belong to different agents (a council), or when the customer confirms, corrects, cancels or answers ' \
+                            'belong to different agents (a council), or when the customer answers, confirms, corrects or cancels ' \
                             'a request listed in the open parts below')
     expect(text).to include('When you plan, link answers, corrections and cancellations to open parts.')
     expect(text).to include('reply directly without plan_request')
@@ -81,13 +81,26 @@ RSpec.describe Captain::Runtime::CoordinationPrompt do
     expect(text).to include('Staff or an operator is reached only through the handoff tool, never through plan_request.')
   end
 
-  it 'tells the agent not to carry out an operation that waits for confirmation itself, and keeps the human handoff rules' do
+  it 'tells the agent to route the answer to an open part of another agent to that agent with a council of that one part' do
     context[:agent_tasks] = []
 
     prompt = described_class.render(context)
 
-    expect(prompt.squish).to include('An operation waiting for confirmation is carried out or cancelled only through such a plan, ' \
-                                     'so do not take that action yourself.')
+    expect(prompt.squish).to include(
+      'When that open part belongs to ANOTHER agent (see its executor), call plan_request with mode council and ONLY that part linked ' \
+      'by its exact ID (link_action answer, correction or cancellation): its own agent continues it with its own tools, for example ' \
+      '"yes" or "make it 11" after that agent asked a question. Never transfer the conversation for it, and do not take its ' \
+      'action yourself. When the open part is yours, link it with mode answer_myself and continue it.',
+      'In a council every agent acts for its own part at once when it has everything it needs, otherwise it asks one precise question.'
+    )
+  end
+
+  it 'has no word about confirming a proposed operation, and keeps the human handoff rules' do
+    context[:agent_tasks] = []
+
+    prompt = described_class.render(context)
+
+    expect(prompt).not_to include('waiting for confirmation', 'confirmed proposed operation', 'link_action to confirmation')
     expect(prompt).to include(described_class::HUMAN_HANDOFF_RULES)
     expect(prompt.scan('call the handoff tool').size).to eq(1)
   end
@@ -128,6 +141,45 @@ RSpec.describe Captain::Runtime::CoordinationPrompt do
     expect(plan['parts']).to eq([{ 'id' => 'plan-part', 'version' => 1, 'executor' => 'Appointments' }])
     expect(prompt).not_to include('executor_agent_id')
     expect(context[:parts].first).to include('executor_agent_id' => 92)
+  end
+
+  it 'shows an open part with what it said and asked, but without the texts delivered, its object references or any id of an agent' do
+    context[:agent_tasks] = []
+    context[:parts] = [{ 'id' => 'open-part', 'version' => 2, 'state' => 'waiting_customer', 'executor_agent_id' => 92, 'fragment' => 'Запись',
+                         'patient' => 'Анна', 'relation' => 'independent', 'summary' => 'На какое время вас записать?',
+                         'missing_fields' => ['На какое время вас записать?'], 'object_refs' => [{ 'type' => 'deal', 'id' => 9 }],
+                         'delivered' => [{ 'message_id' => 5, 'content' => 'На какое время вас записать?', 'at' => '2026-10-12T10:00:00Z' }],
+                         'prior_summary' => 'старое', 'acted' => false }]
+
+    prompt = described_class.render(context)
+
+    expect(data_line(prompt, 'Open parts')).to eq(
+      [{ 'id' => 'open-part', 'version' => 2, 'state' => 'waiting_customer', 'fragment' => 'Запись', 'patient' => 'Анна',
+         'relation' => 'independent', 'summary' => 'На какое время вас записать?', 'questions' => ['На какое время вас записать?'],
+         'executor' => 'Appointments' }]
+    )
+    expect(prompt).not_to include('message_id', 'object_refs', 'executor_agent_id', 'prior_summary')
+  end
+
+  it 'lists the actions the customer has not been told about and asks to tell them' do
+    context[:agent_tasks] = []
+    context[:parts] = [{ 'id' => 'booked', 'version' => 1, 'state' => 'done', 'executor_agent_id' => 92, 'acted' => true,
+                         'summary' => 'Вы записаны на 14 октября в 10:00.', 'delivered' => [] },
+                       { 'id' => 'told', 'version' => 1, 'state' => 'done', 'executor_agent_id' => 92, 'acted' => true,
+                         'summary' => 'Уже сказано.', 'delivered' => [{ 'message_id' => 1 }] }]
+
+    prompt = described_class.render(context)
+
+    expect(data_line(prompt, 'Completed actions the customer has not been told about')).to eq(
+      [{ 'id' => 'booked', 'version' => 1, 'executor' => 'Appointments', 'summary' => 'Вы записаны на 14 октября в 10:00.' }]
+    )
+    expect(prompt).to include('Your reply must tell the customer about them.')
+  end
+
+  it 'has no such block when every performed action was told' do
+    context[:agent_tasks] = []
+
+    expect(described_class.render(context)).not_to include('Completed actions the customer has not been told about')
   end
 
   it 'says so when the agent is alone on the channel and does not invent a name for an unnamed agent' do

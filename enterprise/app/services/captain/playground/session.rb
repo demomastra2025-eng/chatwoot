@@ -64,7 +64,28 @@ class Captain::Playground::Session
 
   def context_reference
     { session_id: id, mode: mode, account_id: account.id, user_id: user.id,
-      entry_assistant_id: entry_assistant.id, assistant_id: assistant.id }
+      entry_assistant_id: entry_assistant.id, assistant_id: @reference_assistant_id || assistant.id }
+  end
+
+  # The same session, with the owner of a council part as the acting agent. The part's owner is not the agent that holds the
+  # conversation, so it passes the checks of the session as itself (it must still be reachable from the entry agent), while the
+  # session keeps its active agent and the references of the run. Data, ledger and scenario are the session's own.
+  def acting_as(actor_id)
+    ensure_membership!
+    actor = account.captain_assistants.find_by(id: actor_id)
+    raise Pundit::NotAuthorizedError, 'Agent belongs to another workspace' unless actor
+    unless Captain::AgentGraph.new(entry_assistant, inbox: routing_inbox).find(actor.id)
+      raise Pundit::NotAuthorizedError, 'Agent is disabled or no longer reachable from the Playground entry agent'
+    end
+
+    dup.tap { |view| view.part_view!(actor, reference_assistant_id: @reference_assistant_id || assistant.id) }
+  end
+
+  def part_view!(actor, reference_assistant_id:)
+    @assistant = actor
+    @reference_assistant_id = reference_assistant_id
+    @part_view = true
+    @run_policy = nil
   end
 
   def activate_agent!(actor)
@@ -85,8 +106,9 @@ class Captain::Playground::Session
     ensure_membership!
     entry_assistant.reload
     assistant.reload unless assistant.equal?(entry_assistant)
-    unless data.fetch('active_assistant_id', entry_assistant.id).to_i == assistant.id &&
-           Captain::AgentGraph.new(entry_assistant, inbox: routing_inbox).find(assistant.id)
+    # The owner of a council part is not the session's active agent; it only has to be reachable from the entry agent.
+    active = @part_view || data.fetch('active_assistant_id', entry_assistant.id).to_i == assistant.id
+    unless active && Captain::AgentGraph.new(entry_assistant, inbox: routing_inbox).find(assistant.id)
       raise Pundit::NotAuthorizedError, 'Agent is disabled or no longer reachable from the Playground entry agent'
     end
     assistant

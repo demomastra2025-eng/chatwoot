@@ -7,9 +7,11 @@ namespace :captain do
 
   desc 'Run isolated Captain routing benchmarks against the real agent runtime'
   task routing_benchmark: %i[routing_benchmark_preflight environment] do
-    # Council consultations run in threads. Each dialogue lives in an uncommitted, rolled-back transaction, so the
-    # threads must share its connection (as transactional specs do) or they cannot see the synthetic workspace.
-    # The pinned connection opens an outer transaction that unpinning rolls back.
+    # Each dialogue lives in an uncommitted, rolled-back transaction, so everything that runs on another thread would have to share
+    # its connection (as transactional specs do) or it could not see the synthetic workspace. The pinned connection opens an outer
+    # transaction that unpinning rolls back. A thread that opens a transaction of its own on the pinned connection deadlocks, so
+    # the council runs all its parts on the calling thread, in plan order (the read-only lanes would otherwise use threads).
+    ENV['CAPTAIN_COUNCIL_PARALLEL'] ||= 'off'
     pool = ActiveRecord::Base.connection_pool
     pool.pin_connection!(true)
     # The benchmark runs with RAILS_ENV=test, where the LLM event subscriber is not installed by default.

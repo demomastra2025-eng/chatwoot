@@ -222,14 +222,17 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
   # A council reply that tells the customer staff will answer an unresolved part is followed by a real handoff.
   # The reply is already delivered, so the handoff adds a private note only; the reply is the customer's notice.
+  # A part that failed technically (a tool of its owner failed) is not mentioned in the reply: its handoff is the system's, so it
+  # does not depend on the handoff tool, and it also sends the configured handoff notice (see Captain::CustomerNoticeService).
   def hand_off_after_council_reply
     request = @response&.dig('council_handoff')
-    return if request.blank? || !council_handoff_allowed?
+    return if request.blank?
 
-    parts = Array(request['parts']).map { |part| part.to_s.squish.first(160) }.reject(&:blank?).join('; ')
-    @response['handoff_reason'] = I18n.with_locale(account.locale) do
-      I18n.t('captain.coordination.unresolved_handoff', parts: parts.presence || request['reason'])
-    end
+    technical = request['technical'] == true
+    return unless technical || council_handoff_allowed?
+
+    prepare_handoff_notice if technical
+    @response['handoff_reason'] = council_handoff_reason(request, technical)
     process_action('council_handoff')
   rescue Captain::Conversation::ControlGenerationStaleError => e
     Rails.logger.info("[CAPTAIN][RunFence] Skipped council handoff conversation_id=#{@conversation.id}: #{e.message}")
@@ -240,6 +243,27 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
   def council_handoff_allowed?
     response_assistant.handoff_enabled? && response_assistant.selected_agent_tool_ids.include?('handoff')
+  end
+
+  # The staff-facing reason: what was left unanswered, or what failed technically (names and codes, no arguments, no patient).
+  def council_handoff_reason(request, technical)
+    I18n.with_locale(account.locale) do
+      if technical
+        I18n.t('captain.coordination.technical_failure_note', details: technical_failure_details(request['failures']))
+      else
+        parts = Array(request['parts']).map { |part| part.to_s.squish.first(160) }.reject(&:blank?).join('; ')
+        I18n.t('captain.coordination.unresolved_handoff', parts: parts.presence || request['reason'])
+      end
+    end
+  end
+
+  def technical_failure_details(failures)
+    Array(failures).map { |failure| technical_failure_label(failure) }.uniq.join('; ').presence || 'unknown'
+  end
+
+  def technical_failure_label(failure)
+    failure = failure.to_h
+    [failure['tool'], failure['stage'], failure['reason']].filter_map { |value| value.to_s.squish.first(80).presence }.join(' / ')
   end
 
   def with_response_persistence_lock(stage:)
@@ -635,8 +659,13 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   def create_council_handoff_notifications
     I18n.with_locale(response_assistant.account.locale) do
       create_handoff_private_note
+      create_handoff_message(preserve_waiting_since: true) if technical_council_handoff?
       send_out_of_office_message_if_applicable
     end
+  end
+
+  def technical_council_handoff?
+    @response&.dig('council_handoff', 'technical') == true
   end
 
   def create_handoff_notifications
@@ -760,7 +789,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     session = Captain::Conversation::AgentSession.new(entry: @assistant, conversation: @conversation).read
     Array(@response['part_refs']).each do |ref|
       part = Array(session['parts']).find { |item| item['id'] == ref['id'] && item['version'].to_i == ref['version'].to_i }
-      next unless part && part['state'].in?(%w[answered waiting_customer waiting_confirmation done])
+      next unless part && part['state'].in?(%w[answered waiting_customer done])
 
       actor = Captain::AgentGraph.new(@assistant, inbox: inbox).find(part['executor_agent_id'])
       next unless actor
@@ -833,8 +862,18 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
   def provider_error_note_content
     return CUSTOM_GUARDRAIL_HANDOFF_NOTE if @response&.dig(CUSTOM_GUARDRAIL_KEY).is_a?(Hash)
+    return technical_failure_note if @response&.dig('technical_failure').present?
 
     @response&.dig(MODERATION_BLOCKED_KEY) == true ? MODERATION_HANDOFF_NOTE : FAILED_TURN_HANDOFF_NOTE
+  end
+
+  # A tool of the agent failed technically and the customer got no reply: the note says which tool and what kind of failure, and
+  # which actions had already been performed, so that staff know the state of the request. Names and codes only.
+  def technical_failure_note
+    failure = @response['technical_failure'].to_h
+    note = "Automatic reply was stopped by a technical error (#{technical_failure_label(failure)}). Handoff to human agent was triggered."
+    completed = Array(failure['completed']).map { |name| name.to_s.first(80) }.uniq
+    completed.any? ? "#{note} Completed before the error: #{completed.join(', ')}." : note
   end
 
   def validate_message_content!(content, attachment_ids: [])

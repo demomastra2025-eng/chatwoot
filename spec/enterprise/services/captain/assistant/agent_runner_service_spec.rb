@@ -1881,6 +1881,91 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       expect(service.send(:process_agent_result, spoofed)).not_to have_key('council_handoff')
     end
 
+    describe 'a technical failure of a tool' do
+      let(:failure) { { 'tool' => 'create_appointment', 'kind' => 'technical', 'stage' => 'tool_execution', 'reason' => 'provider_unavailable' } }
+
+      def result_with(context, output: nil, error: nil)
+        Struct.new(:output, :context, :error).new(output, { current_agent: 'assistant' }.merge(context), error)
+      end
+
+      it 'answers with the system handoff of a failed turn and no text for the customer, also when earlier tools succeeded' do
+        context = { technical_failure: failure, captain_v2_completed_actions: %w[cancel_appointment cancel_appointment],
+                    captain_v2_completed_tool_results: [{ tool_name: 'cancel_appointment', success: true }] }
+
+        response = service.send(:process_agent_result, result_with(context, error: Captain::Runtime::Runner::TechnicalFailure.new('x')))
+
+        expect(response).to include(
+          'response' => described_class::PROVIDER_ERROR_RESPONSE, described_class::PROVIDER_ERROR_AUTHORIZED_KEY => true,
+          'error_class' => described_class::TECHNICAL_FAILURE_ERROR_CLASS,
+          'technical_failure' => failure.merge('completed' => ['cancel_appointment'])
+        )
+        expect(response['response']).not_to include(I18n.t('captain.coordination.request_processed', locale: :ru))
+      end
+
+      it 'is not given a second chance by the finalization retry or the tool result fallback' do
+        context = { technical_failure: failure, conversation_history: [{ role: 'tool', content: 'done' }],
+                    captain_v2_completed_tool_results: [{ tool_name: 'cancel_appointment', success: true }] }
+        allow(service).to receive(:finalization_only_retry_response)
+        allow(service).to receive(:deterministic_tool_result_fallback_response)
+
+        service.send(:process_agent_result, result_with(context, error: Captain::Runtime::Runner::TechnicalFailure.new('x')))
+
+        expect(service).not_to have_received(:finalization_only_retry_response)
+        expect(service).not_to have_received(:deterministic_tool_result_fallback_response)
+      end
+
+      it 'also ends a council that has no reply left, which returns no error' do
+        response = service.send(:process_agent_result, result_with({ technical_failure: failure.merge('parts' => 2) }, output: { 'response' => '' }))
+
+        expect(response).to include('response' => described_class::PROVIDER_ERROR_RESPONSE, 'technical_failure' => include('parts' => 2))
+      end
+
+      it 'leaves a human handoff that the agent made through its tool first' do
+        pending = { reason: 'asked for a person' }
+        context = { technical_failure: failure, captain_v2_handoff_tool_called: true, pending_human_handoff: pending }
+        allow(service).to receive(:handoff_tool_called_from_context).and_return(true)
+
+        response = service.send(:process_agent_result, result_with(context, error: Captain::Runtime::Runner::TechnicalFailure.new('x')))
+
+        expect(response).to include('response' => 'conversation_handoff', 'handoff_authorized' => true)
+      end
+    end
+
+    it 'lists in the refs of the reply the parts of the plan and the actions of earlier runs that the customer was never told about' do
+      allow(Llm::SafetyPolicy).to receive(:check!).and_return(nil)
+      context = { current_agent: 'assistant', part_plan: { parts: [{ 'id' => 'a', 'version' => 1, 'executor_agent_id' => 2 }] },
+                  parts: [{ 'id' => 'b', 'version' => 3, 'acted' => true, 'delivered' => [] },
+                          { 'id' => 'a', 'version' => 1, 'acted' => true, 'delivered' => [] },
+                          { 'id' => 'c', 'version' => 1, 'acted' => true, 'delivered' => [{ 'message_id' => 1 }] },
+                          { 'id' => 'd', 'version' => 1, 'acted' => false, 'delivered' => [] }] }
+
+      response = service.send(:process_agent_result, Struct.new(:output, :context, :error).new({ 'response' => 'Готово.' }, context, nil))
+
+      expect(response['part_refs']).to eq([{ 'id' => 'a', 'version' => 1 }, { 'id' => 'b', 'version' => 3 }])
+    end
+
+    it 'gives no refs to a reply without a plan and without undelivered actions' do
+      allow(Llm::SafetyPolicy).to receive(:check!).and_return(nil)
+
+      response = service.send(:process_agent_result, Struct.new(:output, :context, :error).new({ 'response' => 'Готово.' }, { current_agent: 'assistant' }, nil))
+
+      expect(response).not_to have_key('part_refs')
+    end
+
+    it 'does not take the run of a council part for the last tool context, but still counts its tools' do
+      part_wrapper = Captain::Runtime::RunContext.new({ part_run: true })
+      main_wrapper = Captain::Runtime::RunContext.new({ current_agent: 'assistant' })
+
+      service.send(:track_completed_tool_usage, 'faq_lookup', Captain::ToolResult.success(message: 'ok'), part_wrapper)
+
+      expect(service.instance_variable_get(:@last_tool_result_context)).to be_nil
+      expect(part_wrapper.context[:captain_v2_completed_tool_names]).to eq(['faq_lookup'])
+
+      service.send(:track_completed_tool_usage, 'create_appointment', Captain::ToolResult.success(message: 'ok'), main_wrapper)
+
+      expect(service.instance_variable_get(:@last_tool_result_context)).to include(captain_v2_completed_tool_names: ['create_appointment'])
+    end
+
     it 'builds a scoped RubyLLM context for the runner when an account OpenAI hook is configured' do
       hook = create(:integrations_hook, account: account, app_id: 'openai', status: 'enabled', settings: { api_key: 'account-key' })
       allow(account.hooks).to receive(:find_by).and_call_original

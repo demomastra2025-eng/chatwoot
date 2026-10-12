@@ -23,13 +23,17 @@ class Captain::Runtime::CoordinationEvents
       publish_quietly('council.editor_fallback', context: context, parts: Array(part_ids), reason: reason.to_s)
     end
 
-    # Operation events carry identifiers and the outcome state only: no customer text and no parameters.
-    def operation_started(context:, part:, tool_name:)
-      publish_operation('operation.started', context, part, tool_name)
+    # Part events carry identifiers, states and counts only: never a text, a parameter or a tool result.
+    def part_started(context:, part:, lane:, inline:)
+      publish_part('council.part_started', context, part, lane: lane.to_s, inline: inline == true)
     end
 
-    def operation_finished(context:, part:, tool_name:, state:)
-      publish_operation('operation.finished', context, part, tool_name, state: state.to_s)
+    def part_finished(context:, part:, state:, status:, acted:, mutations_succeeded:, mutations_failed:, mutations_unknown:,
+                      tools_called:, turns:, duration_ms:)
+      publish_part('council.part_finished', context, part, state: state.to_s, status: status.to_s.presence, acted: acted == true,
+                                                           mutations_succeeded: mutations_succeeded, mutations_failed: mutations_failed,
+                                                           mutations_unknown: mutations_unknown, tools_called: tools_called, turns: turns,
+                                                           duration_ms: duration_ms)
     end
 
     def publish(name, context:, **details)
@@ -57,11 +61,11 @@ class Captain::Runtime::CoordinationEvents
       Rails.logger.warn("[CAPTAIN][CoordinationEvents] Failed to publish #{name}: #{e.class}")
     end
 
-    def publish_operation(name, context, part, tool_name, **details)
+    def publish_part(name, context, part, **details)
       publish(name, context: context, part_id: part['id'], part_version: part['version'],
-                    executor_agent_id: part['executor_agent_id'], tool_name: tool_name.to_s.presence, **details)
+                    executor_agent_id: part['executor_agent_id'], **details)
     rescue StandardError => e
-      # Monitoring must never change the outcome of an operation.
+      # Monitoring must never change the outcome of a part.
       Rails.logger.warn("[CAPTAIN][CoordinationEvents] Failed to publish #{name}: #{e.class}")
     end
   end
