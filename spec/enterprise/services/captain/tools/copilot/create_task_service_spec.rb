@@ -53,7 +53,9 @@ RSpec.describe Captain::Tools::Copilot::CreateTaskService do
       expect(task.outcome).to eq('answered')
       expect(task.outcome_note).to eq('Customer confirmed they can talk tomorrow')
       expect(task.priority).to eq('high')
-      expect(task.deal_id).to eq(deal.id)
+      # A deal is never selected implicitly: the chat's deal is linked only when its ID is passed.
+      expect(task.deal_id).to be_nil
+      expect(account.crm_tasks.where(deal_id: deal.id)).to be_empty
       expect(task.originating_conversation_id).to eq(conversation.id)
       expect(task.custom_attributes).to include(
         'source' => 'captain',
@@ -124,7 +126,8 @@ RSpec.describe Captain::Tools::Copilot::CreateTaskService do
       task = account.crm_tasks.order(:id).last
       expect(payload).to include('action' => 'create_task', 'task_id' => task.id)
       expect(task.title).to eq('Zero placeholder task')
-      expect(task.deal_id).to eq(deal.id)
+      expect(task.deal_id).to be_nil
+      expect(account.crm_tasks.where(deal_id: deal.id)).to be_empty
       expect(task.originating_conversation_id).to eq(conversation.id)
       expect(task.assignee_id).to be_nil
       expect(task.team_id).to be_nil

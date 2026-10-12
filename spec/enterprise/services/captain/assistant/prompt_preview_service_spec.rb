@@ -61,7 +61,7 @@ RSpec.describe Captain::Assistant::PromptPreviewService do
 
       preview = described_class.new(assistant: assistant).preview
 
-      expect(preview.dig(:assistant, :used_tool_ids)).to eq(%w[faq_lookup handoff resolve_conversation])
+      expect(preview.dig(:assistant, :used_tool_ids)).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation')
       expect(preview.dig(:assistant, :used_field_ids)).to contain_exactly(
         'contact.name',
         'conversation.display_id'
@@ -81,7 +81,7 @@ RSpec.describe Captain::Assistant::PromptPreviewService do
 
       preview = described_class.new(assistant: assistant).preview
 
-      expect(preview.dig(:assistant, :used_tool_ids)).to contain_exactly('faq_lookup', 'handoff', 'custom_fetch-order')
+      expect(preview.dig(:assistant, :used_tool_ids)).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation', 'custom_fetch-order')
       expect(preview.dig(:assistant, :layers)).to include(
         include(
           id: 'available_runtime_tools',
@@ -125,13 +125,13 @@ RSpec.describe Captain::Assistant::PromptPreviewService do
 
       preview = described_class.new(assistant: assistant).preview
 
-      expect(preview.dig(:scenarios, 0, :used_tool_ids)).to eq(%w[faq_lookup handoff resolve_conversation])
+      expect(preview.dig(:scenarios, 0, :used_tool_ids)).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation')
       expect(preview.dig(:scenarios, 0, :layers)).to include(
         include(
           id: 'tool_ids',
           title: 'Runtime tool IDs',
           enabled: true,
-          values: %w[faq_lookup handoff resolve_conversation]
+          values: contain_exactly('faq_lookup', 'handoff', 'resolve_conversation')
         )
       )
     end

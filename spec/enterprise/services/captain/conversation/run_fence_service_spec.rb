@@ -87,11 +87,11 @@ RSpec.describe Captain::Conversation::RunFenceService do
 
   it 'fences a removed route after an earlier successful check in the same run' do
     peer = create(:captain_assistant, account: account)
-    assistant.update!(handoff_agent_ids: [peer.id])
     current = state.deep_dup.merge(assistant_id: peer.id, entry_assistant_id: assistant.id)
     fence = described_class.new(assistant: peer, state: current)
     fence.ensure_current!
-    assistant.outgoing_agent_handoffs.delete_all
+    # Routes are channel memberships now: taking the peer off this channel removes its route while it stays active.
+    peer.update!(channel_scope: 'selected')
 
     expect { fence.ensure_current! }
       .to raise_error(Captain::Conversation::ControlGenerationStaleError, /assistant_changed/)

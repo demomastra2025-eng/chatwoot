@@ -225,6 +225,8 @@ RSpec.describe Captain::Copilot::ChatService do
         captain_models: { 'copilot' => 'gpt-5.2' },
         captain_runtime: { 'copilot_thinking_effort' => 'high' }
       )
+      # The provider catalog is the contract: an effort is sent only for a model that declares it.
+      allow(Llm::Models).to receive(:reasoning_efforts_for).with('gpt-5.2', account: account).and_return(%w[none low medium high])
 
       expect(Llm::Runtime).to receive(:build_chat).with(
         feature: 'copilot',

@@ -103,10 +103,16 @@ RSpec.describe 'Captain CRM custom field catalog tools' do
       field_type: 'text',
       rules: { 'contexts' => ['standalone_task'] }
     )
+    copilot_service = Captain::Tools::Copilot::ListTaskCustomFieldsService.new(assistant, user: user, conversation: conversation)
 
-    copilot_result = JSON.parse(
-      Captain::Tools::Copilot::ListTaskCustomFieldsService.new(assistant, user: user, conversation: conversation).execute
-    )
+    # A deal is never selected implicitly: one that only started in this chat does not switch the context.
+    implicit_result = JSON.parse(copilot_service.execute)
+    expect(implicit_result.fetch('fields')).to include(include('key' => 'standalone_channel'))
+    expect(implicit_result.fetch('fields')).not_to include(include('key' => 'deal_task_channel'))
+
+    # A task of this chat that belongs to a deal does.
+    create(:crm_task, account: account, deal: deal, originating_conversation_id: conversation.id)
+    copilot_result = JSON.parse(copilot_service.execute)
     public_result = JSON.parse(
       Captain::Tools::ListTaskCustomFieldsTool.new(assistant).perform(Struct.new(:state).new({ deal: { id: deal.id } }))
     )
