@@ -4,16 +4,7 @@ require 'yaml'
 
 class Captain::Evals::RoutingBenchmark::Fixture
   class Invalid < ArgumentError; end
-  SAFE_TOOL_IDS = %w[
-    faq_lookup search_documentation get_contact search_contacts create_contact update_contact
-    get_company search_companies create_company update_company
-    get_deal search_deals list_deal_pipelines list_deal_stages get_deal_timeline
-    create_deal update_deal transition_deal_stage get_task search_tasks create_task update_task
-    get_appointment list_my_appointments search_appointments list_scheduling_resources
-    search_scheduling_resources get_scheduling_resource_schedule get_scheduling_resource_availability
-    search_scheduling_services search_available_slots create_appointment update_appointment
-    cancel_appointment get_appointment_provider_status handoff
-  ].freeze
+  HARD_ZERO_COUNTERS = %w[false_success_claim duplicate_operation wrong_patient internal_text_leak wrong_language].freeze
 
   attr_reader :data
 
@@ -27,6 +18,9 @@ class Captain::Evals::RoutingBenchmark::Fixture
   rescue Psych::Exception => e
     raise Invalid, "Invalid YAML: #{e.message}"
   end
+
+  # Derived from Captain::ToolRegistry (see SafeTools), never a hand-kept list.
+  def self.safe_tool_ids = Captain::Evals::RoutingBenchmark::SafeTools.ids
 
   def workspace = data.fetch('workspace')
   def dialogues = data.fetch('dialogues')
@@ -42,8 +36,7 @@ class Captain::Evals::RoutingBenchmark::Fixture
       require_string!(agent['name'], 'agent.name')
       require_string!(agent['routing_description'], 'agent.routing_description')
       require_string!(agent['instructions'], 'agent.instructions')
-      require_array!(agent['tool_ids'], 'agent.tool_ids')
-      raise Invalid, 'Unsupported benchmark tool' unless (agent['tool_ids'] - SAFE_TOOL_IDS).empty?
+      validate_tool_ids!(require_array!(agent['tool_ids'], 'agent.tool_ids'))
       raise Invalid, 'Only openai/gpt-6-luna is allowed' if agent['model'].present? && agent['model'] != 'openai/gpt-6-luna'
 
       agent['name']
@@ -111,7 +104,7 @@ class Captain::Evals::RoutingBenchmark::Fixture
           require_string!(operation['ledger_tool'], 'operation.ledger_tool') if operation.key?('ledger_tool')
         end
         Array(turn.dig('expect', 'forbidden')).each do |counter|
-          raise Invalid, 'Unknown hard-zero counter' unless %w[false_success_claim duplicate_operation wrong_patient internal_text_leak wrong_language].include?(counter)
+          raise Invalid, 'Unknown hard-zero counter' unless HARD_ZERO_COUNTERS.include?(counter)
         end
         Time.iso8601(turn['at']) if turn['at']
         if turn.key?('delay_seconds') && (!turn['delay_seconds'].is_a?(Numeric) || turn['delay_seconds'].negative?)
@@ -131,6 +124,11 @@ class Captain::Evals::RoutingBenchmark::Fixture
     raise if e.is_a?(Invalid)
 
     raise Invalid, "Invalid fixture value: #{e.message}"
+  end
+
+  def validate_tool_ids!(tool_ids)
+    unsupported = tool_ids.map(&:to_s) - self.class.safe_tool_ids
+    raise Invalid, "Unsupported benchmark tool: #{unsupported.join(', ')}" unless unsupported.empty?
   end
 
   def validate_workspace_records!(agent_names, contact_keys)

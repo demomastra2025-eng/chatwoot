@@ -1,6 +1,9 @@
 # frozen_string_literal: true
 
 class Captain::Evals::RoutingBenchmark::Workspace
+  # Account features of the synthetic workspace; SafeTools refuses registry tools that need any other feature.
+  FEATURES = %w[captain_integration crm_deals crm_tasks scheduling companies].freeze
+
   attr_reader :account, :agents, :channels, :contacts
 
   def initialize(fixture, model:, reasoning:)
@@ -11,7 +14,7 @@ class Captain::Evals::RoutingBenchmark::Workspace
   def create!
     @account = Account.create!(name: "Benchmark #{SecureRandom.uuid}", locale: 'ru',
                                internal_attributes: { 'captain_benchmark_source' => true })
-    @account.enable_features!('captain_integration', 'crm_deals', 'crm_tasks', 'scheduling', 'companies')
+    @account.enable_features!(*FEATURES)
     create_agents!
     create_channels!
     create_contacts!

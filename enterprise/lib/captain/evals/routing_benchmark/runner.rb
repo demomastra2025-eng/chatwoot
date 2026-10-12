@@ -46,15 +46,21 @@ class Captain::Evals::RoutingBenchmark::Runner
   private
 
   def execute_fixture(path, fixture, run_index)
+    fixture.dialogues.each do |dialogue|
+      raise BudgetExceeded, 'budget_reached' if @spent >= @budget_usd
+
+      execute_dialogue(path, fixture, dialogue, run_index)
+    end
+  end
+
+  # Every dialogue gets its own synthetic workspace (account, agents, contacts, calendar seeds) inside its own
+  # savepoint, which is always rolled back, so a booking moved or cancelled by one dialogue never reaches the next.
+  def execute_dialogue(path, fixture, dialogue, run_index)
     ActiveRecord::Base.transaction(requires_new: true) do
       workspace = Current.with_runtime_events_suppressed do
         Captain::Evals::RoutingBenchmark::Workspace.new(fixture, model: @model, reasoning: @reasoning).create!
       end
-      fixture.dialogues.each do |dialogue|
-        raise BudgetExceeded, 'budget_reached' if @spent >= @budget_usd
-
-        run_dialogue(workspace, dialogue, path: path, run_index: run_index)
-      end
+      run_dialogue(workspace, dialogue, path: path, run_index: run_index)
       raise ActiveRecord::Rollback
     end
   end
@@ -151,21 +157,48 @@ class Captain::Evals::RoutingBenchmark::Runner
   end
 
   def build_report
+    {
+      model: @model, reasoning: @reasoning, runs: @runs, aborted: @aborted, abort_reason: @abort_reason,
+      aborted_at_budget: @abort_reason == 'budget_reached', isolation: 'workspace_per_dialogue',
+      budget_usd: @budget_usd.to_f, cost_usd: @spent.to_f,
+      warnings: council_warnings,
+      cases: @cases,
+      aggregates: aggregates
+    }
+  end
+
+  def aggregates
     latencies = @cases.pluck(:latency_ms).sort
     total = @cases.size
     {
-      model: @model, reasoning: @reasoning, runs: @runs, aborted: @aborted, abort_reason: @abort_reason,
-      aborted_at_budget: @abort_reason == 'budget_reached',
-      budget_usd: @budget_usd.to_f, cost_usd: @spent.to_f,
-      cases: @cases,
-      aggregates: {
-        total: total, passed: @cases.count { |item| item[:status] == 'pass' },
-        routing_accuracy: ratio(@cases.count { |item| item[:reasons].exclude?('wrong_agent') }, total),
-        council_detection: ratio(@cases.count { |item| item[:reasons].exclude?('council_mismatch') }, total),
-        hard_zero: @cases.flat_map { |item| item[:hard_zero].to_a }.group_by(&:first).transform_values { |pairs| pairs.sum(&:last) },
-        latency_p50_ms: percentile(latencies, 0.5), latency_p95_ms: percentile(latencies, 0.95)
-      }
+      total: total, passed: @cases.count { |item| item[:status] == 'pass' },
+      # Turns that pass once the council signal is ignored: separates a silent council producer from real failures.
+      passed_ignoring_council_signal: @cases.count { |item| (item[:reasons] - council_reasons).empty? },
+      routing_accuracy: ratio(@cases.count { |item| item[:reasons].exclude?('wrong_agent') }, total),
+      council_detection: ratio(@cases.count { |item| (item[:reasons] & council_reasons).empty? }, total),
+      council_expected: @cases.count { |item| item[:council_expected] },
+      council_event_missing: count_reason('council_event_missing'),
+      council_unexpected: count_reason('council_unexpected'),
+      hard_zero: @cases.flat_map { |item| item[:hard_zero].to_a }.group_by(&:first).transform_values { |pairs| pairs.sum(&:last) },
+      latency_p50_ms: percentile(latencies, 0.5), latency_p95_ms: percentile(latencies, 0.95)
     }
+  end
+
+  def council_reasons = Captain::Evals::RoutingBenchmark::Scorer::COUNCIL_REASONS
+
+  def count_reason(reason)
+    @cases.count { |item| item[:reasons].include?(reason) }
+  end
+
+  # A silent council producer would make every council turn fail with council_event_missing; say so explicitly.
+  def council_warnings
+    missing = count_reason('council_event_missing')
+    return [] if missing.zero?
+
+    expected = @cases.count { |item| item[:council_expected] }
+    signal = Captain::Evals::RoutingBenchmark::Scorer::COUNCIL_STARTED
+    ["council_event_missing: #{missing} of #{expected} turns expecting a council saw no #{signal} event; " \
+     'check that the runtime emits it before reading the routing results']
   end
 
   def ratio(count, total)
@@ -180,15 +213,22 @@ class Captain::Evals::RoutingBenchmark::Runner
 
   def write_report(report)
     File.open(@out, File::WRONLY | File::CREAT | File::EXCL, 0o600) { |file| file.write(JSON.pretty_generate(report)) }
-    summary = <<~MARKDOWN
+    File.open("#{@out}.md", File::WRONLY | File::CREAT | File::EXCL, 0o600) { |file| file.write(summary_markdown(report)) }
+  end
+
+  def summary_markdown(report)
+    agg = report[:aggregates]
+    <<~MARKDOWN
       # Routing benchmark
 
-      Model: #{@model}; runs: #{@runs}; cases: #{report.dig(:aggregates, :total)}; passed: #{report.dig(:aggregates, :passed)}.
-      Routing accuracy: #{report.dig(:aggregates, :routing_accuracy)}; council detection: #{report.dig(:aggregates, :council_detection)}.
-      Hard-zero counters: #{report.dig(:aggregates, :hard_zero).to_json}.
-      Latency p50/p95: #{report.dig(:aggregates, :latency_p50_ms)}/#{report.dig(:aggregates, :latency_p95_ms)} ms.
+      Model: #{@model}; runs: #{@runs}; cases: #{agg[:total]}; passed: #{agg[:passed]}.
+      Routing accuracy: #{agg[:routing_accuracy]}; council detection: #{agg[:council_detection]}.
+      Council turns: #{agg[:council_expected]}; event missing: #{agg[:council_event_missing]}; unexpected: #{agg[:council_unexpected]}.
+      Passed when the council signal is ignored: #{agg[:passed_ignoring_council_signal]}.
+      Hard-zero counters: #{agg[:hard_zero].to_json}.
+      Latency p50/p95: #{agg[:latency_p50_ms]}/#{agg[:latency_p95_ms]} ms.
       Estimated provider cost: $#{report[:cost_usd]}; budget reached: #{report[:aborted_at_budget]}.
+      #{report[:warnings].map { |warning| "WARNING: #{warning}" }.join("\n")}
     MARKDOWN
-    File.open("#{@out}.md", File::WRONLY | File::CREAT | File::EXCL, 0o600) { |file| file.write(summary) }
   end
 end
