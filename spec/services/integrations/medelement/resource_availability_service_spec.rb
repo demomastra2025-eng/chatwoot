@@ -76,6 +76,18 @@ RSpec.describe Integrations::Medelement::ResourceAvailabilityService do
     )
   end
 
+  it 'offers the first free cabinet in cabinet-code order whatever order the specialist lists them in' do
+    resource.update!(
+      custom_attributes: resource.custom_attributes.merge(
+        'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-2' }, { 'companyCabinetCode' => 'cabinet-1' }]
+      )
+    )
+    allow(client).to receive(:get_receptions).and_return([])
+
+    result = described_class.new(resource: resource, from: from_time, to: to_time, slots: slots, client: client).perform
+
+    expect(result.slots).to all(include(medelement_cabinet_code: 'cabinet-1'))
+  end
   it 'uses split timetable reads for a live search longer than seven calendar days' do
     payload = (Date.new(2026, 9, 7)..Date.new(2026, 9, 15)).to_h do |date|
       [date.strftime('%d.%m.%Y'), { 'specialistWorkingHours' => 'day off', 'timetable' => [] }]
