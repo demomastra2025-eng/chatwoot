@@ -629,7 +629,10 @@ export default {
         ];
       }
 
+      // AI agents of text channels are set only in «ИИ-агенты → Каналы». Voice
+      // channels are not in that grid, so the voice agent stays here.
       if (
+        this.isAVoiceChannel &&
         this.isFeatureEnabledonAccount(this.accountId, FEATURE_FLAGS.CAPTAIN)
       ) {
         visibleToAllChannelTabs = [

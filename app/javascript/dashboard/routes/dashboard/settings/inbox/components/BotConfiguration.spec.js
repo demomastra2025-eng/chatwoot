@@ -1,6 +1,6 @@
 /* eslint-disable vue/one-component-per-file */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { computed, defineComponent, h, reactive } from 'vue';
+import { computed, defineComponent, h } from 'vue';
 import { flushPromises, mount } from '@vue/test-utils';
 
 import assistantStore from 'dashboard/store/captain/assistant';
@@ -10,13 +10,10 @@ const VOICE_CHANNEL_TYPE = 'Channel::Voice';
 const mockState = vi.hoisted(() => ({
   dispatch: vi.fn(),
   useAlert: vi.fn(),
-  routerPush: vi.fn(),
-  isAdmin: true,
   routeParams: { accountId: '1', inboxId: '4593' },
   assistantFlags: { fetchingList: false },
   inbox: {},
   assistants: [],
-  matrixStore: null,
 }));
 
 const voiceInbox = () => ({
@@ -50,27 +47,6 @@ const defaultAssistants = () => [
     usage_mode: 'external_agent',
   },
 ];
-
-const buildMatrixStore = () =>
-  reactive({
-    getChannels: [
-      {
-        inbox_id: 4593,
-        name: 'WhatsApp clinic',
-        channel_type: 'Channel::Whatsapp',
-        ai_enabled: true,
-        main_assistant_id: 101,
-        assistant_ids: [101, 102],
-        auto_reply_mode: 'always',
-      },
-    ],
-    getAssistants: [
-      { id: 101, name: 'Sales assistant', avatar_url: '', active: true },
-      { id: 102, name: 'Support assistant', avatar_url: '', active: true },
-    ],
-    getUIFlags: { isFetching: false, isSaving: false, fetchError: false },
-    fetch: vi.fn(() => Promise.resolve(null)),
-  });
 
 const passthroughStub = name =>
   defineComponent({
@@ -143,18 +119,6 @@ const AvatarStub = defineComponent({
   },
 });
 
-const StatusDotStub = defineComponent({
-  name: 'DsStatusDot',
-  props: {
-    status: { type: String, default: 'neutral' },
-    label: { type: String, default: '' },
-  },
-  setup(props, { attrs }) {
-    return () =>
-      h('span', { ...attrs, 'data-status': props.status }, props.label);
-  },
-});
-
 const OnClickOutsideStub = defineComponent({
   name: 'OnClickOutside',
   setup(_, { slots }) {
@@ -164,7 +128,6 @@ const OnClickOutsideStub = defineComponent({
 
 vi.mock('vue-router', () => ({
   useRoute: () => ({ params: mockState.routeParams }),
-  useRouter: () => ({ push: mockState.routerPush }),
 }));
 
 vi.mock('@vueuse/components', () => ({
@@ -183,14 +146,6 @@ vi.mock('vue-i18n', () => ({
 
 vi.mock('dashboard/composables', () => ({
   useAlert: (...args) => mockState.useAlert(...args),
-}));
-
-vi.mock('dashboard/composables/usePolicy', () => ({
-  usePolicy: () => ({ checkPermissions: () => mockState.isAdmin }),
-}));
-
-vi.mock('dashboard/store/captain/channelMatrix', () => ({
-  useCaptainChannelMatrixStore: () => mockState.matrixStore,
 }));
 
 vi.mock('dashboard/composables/store', () => ({
@@ -225,9 +180,6 @@ vi.mock('dashboard/components-next/avatar/Avatar.vue', () => ({
 vi.mock('dashboard/components-next/button/Button.vue', () => ({
   default: ButtonStub,
 }));
-vi.mock('dashboard/components-next/ds/DsStatusDot.vue', () => ({
-  default: StatusDotStub,
-}));
 vi.mock('dashboard/components/policy.vue', () => ({
   default: passthroughStub('Policy'),
 }));
@@ -250,105 +202,33 @@ describe('Inbox BotConfiguration', () => {
     mockState.dispatch.mockReset();
     mockState.dispatch.mockResolvedValue({});
     mockState.useAlert.mockReset();
-    mockState.routerPush.mockReset();
-    mockState.isAdmin = true;
     mockState.routeParams = { accountId: '1', inboxId: '4593' };
     mockState.assistantFlags = { fetchingList: false };
     mockState.inbox = voiceInbox();
     mockState.assistants = defaultAssistants();
-    mockState.matrixStore = buildMatrixStore();
   });
 
-  describe('text inbox: read-only summary of the «Каналы» matrix', () => {
+  describe('text inbox: AI agents are set only in «ИИ-агенты → Каналы»', () => {
     beforeEach(() => {
       mockState.inbox = textInbox();
     });
 
-    it('shows AI state, main agent and other agents from the matrix for admins', async () => {
+    it('renders no agent picker, summary or link and loads nothing', async () => {
       const wrapper = buildWrapper({ inbox: mockState.inbox });
       await flushPromises();
 
-      expect(mockState.matrixStore.fetch).toHaveBeenCalledTimes(1);
-      expect(mockState.dispatch).not.toHaveBeenCalledWith(
-        'captainAssistants/get'
-      );
-      expect(
-        wrapper.find('[data-testid="captain-inbox-summary"]').exists()
-      ).toBe(true);
-      expect(
-        wrapper.find('[data-testid="captain-inbox-assistant"]').exists()
-      ).toBe(false);
-      expect(wrapper.find('[data-testid="captain-inbox-save"]').exists()).toBe(
-        false
-      );
-
-      const status = wrapper.get('[data-testid="captain-inbox-ai-status"]');
-      expect(status.attributes('data-status')).toBe('good');
-      expect(status.text()).toBe('CAPTAIN.CHANNEL_MATRIX.BOT_CONFIG.AI_ON');
-      expect(
-        wrapper.get('[data-testid="captain-inbox-main-agent"]').text()
-      ).toContain('Sales assistant');
-      const others = wrapper.get('[data-testid="captain-inbox-other-agents"]');
-      expect(others.text()).toContain('Support assistant');
-      expect(others.text()).not.toContain('Sales assistant');
+      expect(wrapper.html()).toBe('<!--v-if-->');
+      expect(wrapper.text()).toBe('');
+      expect(mockState.dispatch).not.toHaveBeenCalled();
     });
 
-    it('shows AI off when the matrix row has AI disabled', async () => {
-      mockState.matrixStore.getChannels[0].ai_enabled = false;
-      const wrapper = buildWrapper({ inbox: mockState.inbox });
+    it('renders nothing while the inbox is still unknown', async () => {
+      mockState.inbox = {};
+      const wrapper = buildWrapper({ inbox: {} });
       await flushPromises();
 
-      const status = wrapper.get('[data-testid="captain-inbox-ai-status"]');
-      expect(status.attributes('data-status')).toBe('neutral');
-      expect(status.text()).toBe('CAPTAIN.CHANNEL_MATRIX.BOT_CONFIG.AI_OFF');
-    });
-
-    it('links admins to the channel matrix page', async () => {
-      const wrapper = buildWrapper({ inbox: mockState.inbox });
-      await flushPromises();
-
-      await wrapper
-        .get('[data-testid="captain-inbox-open-matrix"]')
-        .trigger('click');
-
-      expect(mockState.routerPush).toHaveBeenCalledWith({
-        name: 'captain_channels_index',
-        params: { accountId: '1' },
-      });
-    });
-
-    it('falls back to the inbox payload for agents without matrix access', async () => {
-      mockState.isAdmin = false;
-      const wrapper = buildWrapper({ inbox: mockState.inbox });
-      await flushPromises();
-
-      expect(mockState.matrixStore.fetch).not.toHaveBeenCalled();
-      expect(
-        wrapper.get('[data-testid="captain-inbox-main-agent"]').text()
-      ).toContain('Sales assistant');
-      expect(
-        wrapper.get('[data-testid="captain-inbox-ai-status"]').text()
-      ).toBe('CAPTAIN.CHANNEL_MATRIX.BOT_CONFIG.AI_ON');
-      expect(
-        wrapper.find('[data-testid="captain-inbox-other-agents"]').exists()
-      ).toBe(false);
-      expect(
-        wrapper.find('[data-testid="captain-inbox-open-matrix"]').exists()
-      ).toBe(false);
-    });
-
-    it('shows no main agent and AI off for an inbox without a captain agent', async () => {
-      mockState.isAdmin = false;
-      mockState.inbox = { ...textInbox(), captain_assistant: null };
-      const wrapper = buildWrapper({ inbox: mockState.inbox });
-      await flushPromises();
-
-      expect(
-        wrapper.get('[data-testid="captain-inbox-main-agent"]').text()
-      ).toContain('CAPTAIN.CHANNEL_MATRIX.BOT_CONFIG.MAIN_NONE');
-      expect(
-        wrapper.get('[data-testid="captain-inbox-ai-status"]').text()
-      ).toBe('CAPTAIN.CHANNEL_MATRIX.BOT_CONFIG.AI_OFF');
+      expect(wrapper.html()).toBe('<!--v-if-->');
+      expect(mockState.dispatch).not.toHaveBeenCalled();
     });
   });
 
@@ -358,7 +238,6 @@ describe('Inbox BotConfiguration', () => {
       await flushPromises();
 
       expect(wrapper.text()).toContain('+771****5175');
-      expect(mockState.matrixStore.fetch).not.toHaveBeenCalled();
       expect(
         wrapper.find('[data-testid="captain-inbox-summary"]').exists()
       ).toBe(false);

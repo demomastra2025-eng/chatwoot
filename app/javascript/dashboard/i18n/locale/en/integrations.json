@@ -4014,19 +4014,7 @@
       "SAVE": "Save",
       "SAVED": "Channels saved",
       "SAVE_ERROR": "Could not save. Fix the marked rows and save again.",
-      "LEAVE_CONFIRM": "You have unsaved changes. Leave without saving?",
-      "BOT_CONFIG": {
-        "SUMMARY_TITLE": "AI agents in this channel",
-        "SUMMARY_DESCRIPTION": "The agents of “{inboxName}” and its main agent are set up on the Channels page for all channels at once.",
-        "AI": "AI in the channel",
-        "AI_ON": "On",
-        "AI_OFF": "Off",
-        "MAIN": "Main agent",
-        "MAIN_NONE": "Not selected",
-        "OTHERS": "Other agents",
-        "OTHERS_NONE": "None",
-        "OPEN_MATRIX": "Set up on the Channels page"
-      }
+      "LEAVE_CONFIRM": "You have unsaved changes. Leave without saving?"
     },
     "CHAT_AVATARS": {
       "COUNCIL_CAPTION": "Council reply: {names}",
