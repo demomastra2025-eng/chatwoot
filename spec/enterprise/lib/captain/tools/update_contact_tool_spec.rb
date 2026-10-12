@@ -22,6 +22,17 @@ RSpec.describe Captain::Tools::UpdateContactTool, type: :model do
     )
   end
 
+  it 'rejects a non-existent birth date, names the field and leaves the contact unchanged' do
+    contact = create(:contact, account: account, name: 'Old Name', custom_attributes: { 'birth_date' => '1994-07-20' })
+    conversation = create(:conversation, account: account, contact: contact)
+    tool_context = Struct.new(:state).new({ conversation: { id: conversation.id }, contact: { id: contact.id } })
+
+    result = tool.perform(tool_context, name: 'New Name', custom_attributes: { birth_date: '1990-13-40' })
+
+    expect(result).to include('custom_attributes.birth_date')
+    expect(contact.reload).to have_attributes(name: 'Old Name', custom_attributes: { 'birth_date' => '1994-07-20' })
+  end
+
   it 'exposes custom_attributes as an object parameter' do
     expect(described_class.parameters[:custom_attributes].type).to eq('object')
   end

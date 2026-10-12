@@ -44,7 +44,6 @@ RSpec.describe Captain::Tools::Copilot::GetMyContactService do
   it 'uses contact validations and returns neutral failures without changing the record' do
     expect(call_tool('update_my_contact', email: 'invalid')).to eq('success' => false, 'reason' => 'validation_error')
     expect(call_tool('update_my_contact', iin: '123456789012')).to eq('success' => false, 'reason' => 'validation_error')
-    expect(call_tool('update_my_contact', birth_date: '2026-02-30')).to eq('success' => false, 'reason' => 'validation_error')
     expect(call_tool('update_my_contact', contact_id: 2_147_483_647, first_name: 'Wrong'))
       .to eq('success' => false, 'reason' => 'validation_error')
     expect(contact.reload.name).to eq('Aruzhan')
@@ -52,5 +51,17 @@ RSpec.describe Captain::Tools::Copilot::GetMyContactService do
     context = Struct.new(:state, :context).new({ conversation: { id: 2_147_483_647 } }, {})
     expect(call_tool('get_my_contact', context: context)).to eq('success' => false, 'reason' => 'not_found')
     expect(call_tool('update_my_contact', context: context, first_name: 'Wrong')).to eq('success' => false, 'reason' => 'not_found')
+  end
+
+  it 'names the birth date when it is not an existing date, keeps the card and leaves other failures neutral' do
+    contact.update!(custom_attributes: contact.custom_attributes.merge('birth_date' => '1994-07-20'))
+
+    ['2026-02-30', '1990-13-40', '30.02.1990', '1990-3-5'].each do |value|
+      expect(call_tool('update_my_contact', birth_date: value, first_name: 'Wrong'))
+        .to eq('success' => false, 'reason' => 'validation_error', 'field' => 'birth_date')
+    end
+    expect(contact.reload.name).to eq('Aruzhan')
+    expect(contact.custom_attributes['birth_date']).to eq('1994-07-20')
+    expect(call_tool('update_my_contact', gender: 'other')).to eq('success' => false, 'reason' => 'validation_error')
   end
 end

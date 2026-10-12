@@ -1,7 +1,27 @@
 module Scheduling::InputValidation
-  DATETIME_FORMAT = /\A\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z| ?[+-]\d{2}:?\d{2})?)?\z/
+  # The offset is range-checked: Time.zone.parse drops an impossible one (+25:00, +05:99) and reads the instant as UTC.
+  DATETIME_FORMAT = /\A\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z| ?[+-](?:[01]\d|2[0-3]):?[0-5]\d)?)?\z/
+  DATE_FORMAT = /\A(\d{4})-(\d{2})-(\d{2})\z/
 
   module_function
+
+  # An existing calendar date written exactly as YYYY-MM-DD, or nil. Date.iso8601 would complete '2031-10' to 1 October,
+  # read '31-10-14' as 2031-10-14 and '60-05-01' as 2060-05-01.
+  def parse_date(value)
+    match = DATE_FORMAT.match(value.to_s.strip)
+    return unless match
+
+    year, month, day = match.captures.map(&:to_i)
+    Date.new(year, month, day) if Date.valid_date?(year, month, day)
+  end
+
+  def date(value, field_name:)
+    parsed = parse_date(value)
+    return parsed if parsed
+
+    raise Scheduling::Error.new(code: 'INVALID_DATE', message: "#{field_name} must be an existing calendar date in YYYY-MM-DD format",
+                                status: :unprocessable_content, details: { field: field_name, reason: 'invalid_date' })
+  end
 
   def datetime(value, field_name:)
     text = value.to_s.strip

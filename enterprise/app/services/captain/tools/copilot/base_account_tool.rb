@@ -141,10 +141,8 @@ class Captain::Tools::Copilot::BaseAccountTool < Captain::Tools::BaseTool
       return nil
     end
 
-    parsed = Time.zone.parse(value.to_s)
-    raise ArgumentError, "#{field_name} must be a valid datetime" if parsed.blank?
-
-    parsed
+    # Time.zone.parse moves a non-existent day such as 31 November to the next month, so the calendar is checked first.
+    Scheduling::InputValidation.datetime(value, field_name: field_name)
   end
 
   def parse_limit(value, default: MAX_RESULTS, max: MAX_RESULTS)

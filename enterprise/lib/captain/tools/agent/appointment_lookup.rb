@@ -47,10 +47,9 @@ class Captain::Tools::Agent::AppointmentLookup
 
   def range
     @range ||= if params[:from].present?
-                 from = Time.zone.parse(params[:from].to_s)
-                 to = params[:to].present? ? Time.zone.parse(params[:to].to_s) : from&.+(1.day)
-                 raise ArgumentError, 'Appointment lookup requires a valid range of at most one day' unless from && to &&
-                                                                                                          to > from && to - from <= 1.day
+                 from = Scheduling::InputValidation.datetime(params[:from], field_name: 'from')
+                 to = params[:to].present? ? Scheduling::InputValidation.datetime(params[:to], field_name: 'to') : from + 1.day
+                 raise ArgumentError, 'Appointment lookup requires a valid range of at most one day' unless to > from && to - from <= 1.day
 
                  [from, to]
                else

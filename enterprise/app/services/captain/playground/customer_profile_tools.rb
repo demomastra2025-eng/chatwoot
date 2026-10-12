@@ -28,6 +28,8 @@ module Captain::Playground::CustomerProfileTools
     customer_profile_arguments!
     commit_my_contact!(my_contact_candidate(my_contact_changes))
     { success: true, contact: my_contact_payload, simulated: true }
+  rescue Captain::Tools::Copilot::UpdateMyContactService::InvalidBirthDate
+    { success: false, reason: 'validation_error', field: 'birth_date', simulated: true }
   rescue ArgumentError
     { success: false, reason: 'validation_error', simulated: true }
   end

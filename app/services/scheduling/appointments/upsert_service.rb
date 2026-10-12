@@ -397,9 +397,8 @@ class Scheduling::Appointments::UpsertService
     return resolve_date(:client_birth_date, current: appointment.client_birth_date) if params.key?(:client_birth_date)
 
     current_value = client_birth_date_fallback(contact)
-    current_value.is_a?(String) ? Date.iso8601(current_value) : current_value
-  rescue Date::Error
-    nil
+    # A stored value that is not an existing date is left out instead of being guessed into one.
+    current_value.is_a?(String) ? Scheduling::InputValidation.parse_date(Scheduling::BirthDate.normalize(current_value)) : current_value
   end
 
   def client_birth_date_fallback(contact)
@@ -850,16 +849,18 @@ class Scheduling::Appointments::UpsertService
     value = params[key]
     return current unless params.key?(key)
     return nil if value.blank?
+    return value if value.is_a?(Date)
 
-    value.is_a?(Date) ? value : Date.iso8601(value.to_s)
-  rescue Date::Error
-    raise ArgumentError, "#{key} must be YYYY-MM-DD"
+    # Date.iso8601 would complete '1990-05' to 1 May 1990 and read '60-05-01' as 2060-05-01 on a patient identity field.
+    Scheduling::InputValidation.parse_date(value) || raise(ArgumentError, "#{key} must be YYYY-MM-DD")
   end
 
   def resolve_datetime(key, current:)
     value = params[key]
     return current unless params.key?(key)
     raise ArgumentError, "#{key} is required" if value.blank?
+    # Time.zone.parse would move a non-existent day such as 31 November to 1 December and book that day.
+    return Scheduling::InputValidation.datetime(value, field_name: key.to_s) if value.is_a?(String)
 
     Time.zone.parse(value.to_s) || raise(ArgumentError, "#{key} must be a valid datetime")
   end

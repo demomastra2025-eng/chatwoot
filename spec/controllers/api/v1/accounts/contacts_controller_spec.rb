@@ -751,6 +751,31 @@ RSpec.describe 'Contacts API', type: :request do
         expect(json_response['message']).to eq('Name is too long (maximum is 255 characters)')
       end
 
+      it 'rejects a non-existent birth date custom attribute without creating the contact' do
+        auth = admin.create_new_auth_token
+        %w[2026-02-30 2026-04-31 1990-13-40].each do |value|
+          expect do
+            post "/api/v1/accounts/#{account.id}/contacts", headers: auth,
+                                                            params: { name: 'Patient', custom_attributes: { birth_date: value } }, as: :json
+          end.not_to change(Contact, :count)
+
+          expect(response).to have_http_status(:unprocessable_content), value
+          expect(response.parsed_body).to include('code' => 'INVALID_BIRTH_DATE')
+          expect(response.parsed_body['error']).to include('custom_attributes.birth_date')
+        end
+      end
+
+      it 'accepts an existing birth date, also with the dashboard time part' do
+        auth = admin.create_new_auth_token
+        ['1990-03-05', '1990-03-05T00:00:00.000Z'].each do |value|
+          post "/api/v1/accounts/#{account.id}/contacts", headers: auth,
+                                                          params: { name: "Patient #{value}", custom_attributes: { birth_date: value } }, as: :json
+
+          expect(response).to have_http_status(:success), value
+          expect(response.parsed_body.dig('payload', 'contact', 'custom_attributes', 'birth_date')).to eq(value)
+        end
+      end
+
       it 'creates the contact inbox when inbox id is passed' do
         expect do
           post "/api/v1/accounts/#{account.id}/contacts", headers: admin.create_new_auth_token,
@@ -832,6 +857,50 @@ RSpec.describe 'Contacts API', type: :request do
         expect(response).to have_http_status(:unprocessable_content)
         expect(response.parsed_body['code']).to eq('VALIDATION_ERROR')
         expect(contact.reload.custom_attributes['secondary_phones']).to eq(['+770****0001'])
+      end
+
+      it 'rejects a non-existent birth date custom attribute and leaves the contact unchanged' do
+        contact.update!(custom_attributes: contact.custom_attributes.merge('birth_date' => '1994-07-20'))
+        before_update = contact.reload.attributes
+        auth = admin.create_new_auth_token
+
+        # A time part is range-checked and needs the T: a card must stay readable when it is copied into a booking.
+        (%w[2026-02-30 2026-04-31 1990-13-40 1990-05-01T25:99:00Z 1990-05-01T00:00:00+99:99] + ['1990-05-01 00:00:00']).each do |value|
+          patch "/api/v1/accounts/#{account.id}/contacts/#{contact.id}",
+                headers: auth,
+                params: { name: 'Changed', custom_attributes: { birth_date: value, test2: 'x' } },
+                as: :json
+
+          expect(response).to have_http_status(:unprocessable_content), value
+          expect(response.parsed_body).to include('code' => 'INVALID_BIRTH_DATE')
+          expect(response.parsed_body['details']).to include('field' => 'custom_attributes.birth_date')
+          expect(contact.reload.attributes).to eq(before_update)
+        end
+      end
+
+      it 'lets a legacy contact keep the birth date it already holds while other attributes change' do
+        contact.update!(custom_attributes: contact.custom_attributes.merge('birth_date' => '1990-02-30'))
+        auth = admin.create_new_auth_token
+
+        patch "/api/v1/accounts/#{account.id}/contacts/#{contact.id}",
+              headers: auth, params: { custom_attributes: { birth_date: '1990-02-30', test2: 'x' } }, as: :json
+        expect(response).to have_http_status(:success), response.body
+        expect(contact.reload.custom_attributes).to include('birth_date' => '1990-02-30', 'test2' => 'x')
+
+        patch "/api/v1/accounts/#{account.id}/contacts/#{contact.id}",
+              headers: auth, params: { custom_attributes: { birth_date: '1990-02-31' } }, as: :json
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(contact.reload.custom_attributes['birth_date']).to eq('1990-02-30')
+      end
+
+      it 'saves an existing birth date custom attribute' do
+        patch "/api/v1/accounts/#{account.id}/contacts/#{contact.id}",
+              headers: admin.create_new_auth_token,
+              params: { custom_attributes: { birth_date: '2024-02-29' } },
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(contact.reload.custom_attributes['birth_date']).to eq('2024-02-29')
       end
 
       it 'updates the contact owner and serializes it' do

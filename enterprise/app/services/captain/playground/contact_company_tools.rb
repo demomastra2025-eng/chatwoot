@@ -40,6 +40,7 @@ module Captain::Playground::ContactCompanyTools
     fields.delete(:phone_number) if synthetic_reserved_phone?(fields[:phone_number])
     if @args['custom_attributes'].present?
       incoming = operations.send(:parsed_hash, @args['custom_attributes'], field_name: 'custom_attributes')
+      Scheduling::BirthDate.validate_attributes!(incoming, current: caller['custom_attributes'])
       fields[:custom_attributes] = CustomAttributes::MutationService.merge(caller['custom_attributes'], Contacts::ServerOwnedAttributes.strip(incoming))
     end
     candidate = contact_projection(caller.merge(fields.stringify_keys))

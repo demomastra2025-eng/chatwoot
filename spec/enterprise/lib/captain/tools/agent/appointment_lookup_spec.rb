@@ -38,6 +38,13 @@ RSpec.describe Captain::Tools::Agent::AppointmentLookup do
     expect(lookup(client_name: 'Test S', resource_id: resource.id, from: starts_at.iso8601)[:appointments]).to eq([])
   end
 
+  it 'rejects a non-existent day with a field-naming date error instead of looking at the next month' do
+    expect { lookup(client_name: 'Test Son', resource_id: resource.id, from: '2026-11-31') }
+      .to raise_error(Scheduling::Error) { |error| expect(error).to have_attributes(code: 'INVALID_DATE', details: include(field: 'from')) }
+    expect { lookup(client_name: 'Test Son', resource_id: resource.id, from: '2026-11-30', to: '2026-02-30T00:00:00Z') }
+      .to raise_error(Scheduling::Error) { |error| expect(error.details).to include(field: 'to') }
+  end
+
   it 'does not disclose past appointments for an IIN-only task and requests clarification for many matches' do
     create(:scheduling_appointment, account: account, contact: patient, client_identifier: '940720300129',
                                      starts_at: 2.days.ago, ends_at: 2.days.ago + 30.minutes)

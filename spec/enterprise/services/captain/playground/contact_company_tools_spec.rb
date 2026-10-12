@@ -177,6 +177,22 @@ RSpec.describe Captain::Playground::ContactCompanyTools, 'through the production
     end
   end
 
+  it 'rejects a non-existent birth date like the production update_contact tool and changes nothing' do
+    session.with_lock do |workspace|
+      before_data = workspace.scenario.data.deep_dup
+
+      ['1990-02-30', '2026-04-31', '1990-13-40', '1990-05-01T25:99:00Z'].each do |value|
+        result = invoke(workspace, 'update_contact', name: 'Changed', custom_attributes: { birth_date: value })
+
+        expect(result['success']).to be(false), value
+        expect(workspace.scenario.data).to eq(before_data)
+      end
+
+      result = invoke(workspace, 'update_contact', custom_attributes: { birth_date: '1990-03-05' })
+      expect(result.dig('contact', 'custom_attributes')).to include('birth_date' => '1990-03-05')
+    end
+  end
+
   it 'keeps another caller reserved family number out of the current contact while accepting unrelated edits' do
     session.with_lock do |workspace|
       caller = workspace.scenario.contact

@@ -1,4 +1,8 @@
 class Api::V1::Accounts::Scheduling::BaseController < Api::V1::Accounts::BaseController
+  # An unencoded "+" in a query string reaches the server as a space, so "T10:00:00+05:00" arrives as "T10:00:00 05:00".
+  # Without the repair the offset is dropped and the instant moves by five hours.
+  SPACE_BEFORE_OFFSET = /\A(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?) (\d{2}:?\d{2})\z/
+
   before_action :ensure_scheduling_enabled!
   around_action :with_scheduling_actor
 
@@ -54,6 +58,8 @@ class Api::V1::Accounts::Scheduling::BaseController < Api::V1::Accounts::BaseCon
     Scheduling::IdListParamParser.parse(value, field_name: field_name)
   end
 
+  # Time.zone.parse rolls a non-existent day (31 November) over to the next month, so a date or ISO 8601 datetime is
+  # checked against the calendar first; the error is a 422 that names the field.
   def parse_datetime_param!(value, field_name:, required: true)
     if value.blank?
       raise ArgumentError, "#{field_name} is required" if required
@@ -61,10 +67,31 @@ class Api::V1::Accounts::Scheduling::BaseController < Api::V1::Accounts::BaseCon
       return nil
     end
 
-    parsed = Time.zone.parse(value.to_s)
-    raise ArgumentError, "#{field_name} must be a valid datetime" if parsed.blank?
+    Scheduling::InputValidation.datetime(value.to_s.strip.sub(SPACE_BEFORE_OFFSET, '\1+\2'), field_name: field_name)
+  end
 
-    parsed
+  def ensure_ascending_range!(from, to)
+    return if to > from
+
+    raise Scheduling::Error.new(code: 'INVALID_DATE_RANGE', message: 'to must be greater than from', status: :unprocessable_content,
+                                details: { field: 'to', reason: 'invalid_date_range' })
+  end
+
+  # Exactly YYYY-MM-DD: Date.iso8601 completes '2031-10' to 1 October and reads '31-10-14' as 2031-10-14.
+  def parse_date_param!(value, field_name:)
+    Scheduling::InputValidation.date(value, field_name: field_name)
+  end
+
+  # duration_min is documented as an integer from the minimum to the maximum appointment length; a smaller value is
+  # rejected instead of being raised to the minimum when slots are built.
+  def parse_duration_min_param!(value)
+    return if value.blank?
+
+    duration = Integer(value.to_s, 10, exception: false)
+    allowed = Scheduling::Constants::MIN_DURATION_MINUTES..Scheduling::Constants::MAX_DURATION_MINUTES
+    raise ArgumentError, "duration_min must be between #{allowed.min} and #{allowed.max}" unless duration && allowed.cover?(duration)
+
+    duration
   end
 
   def normalize_integer_numeric_params!(attrs, *field_names)

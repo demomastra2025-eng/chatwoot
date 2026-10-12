@@ -98,5 +98,22 @@ RSpec.describe Captain::Tools::Copilot::SearchAppointmentsService do
     it 'rejects an invalid IIN before querying appointments' do
       expect(service.execute(client_identifier: '123456789012')).to include('Invalid IIN')
     end
+
+    it 'rejects a non-existent day instead of searching the next month' do
+      expect(service.execute(from: '2026-11-31', to: '2026-12-02')).to include('from must be a valid date or ISO 8601 datetime')
+      expect(service.execute(from: '2026-11-29', to: '2026-02-30T00:00:00Z')).to include('to must be a valid date or ISO 8601 datetime')
+
+      service.patient_scope = Captain::Tools::Agent::PatientScope.new(assistant: assistant, conversation: conversation)
+      result = JSON.parse(service.execute(client_identifier: '940720300129', from: '2026-11-31'))
+      expect(result).to include('success' => false, 'reason' => 'invalid_date', 'code' => 'INVALID_DATE')
+    end
+
+    it 'keeps filtering by an existing day range' do
+      appointment1.update!(starts_at: Time.utc(2030, 11, 30, 10), ends_at: Time.utc(2030, 11, 30, 10, 30))
+
+      payload = JSON.parse(service.execute(from: '2030-11-30', to: '2030-12-01'))
+
+      expect(payload['appointments'].pluck('id')).to eq([appointment1.id])
+    end
   end
 end

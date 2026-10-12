@@ -11,6 +11,13 @@ RSpec.describe Captain::ToolResult do
       expect(described_class.render(payload)).to eq(payload)
     end
 
+    it 'keeps a compact validation failure that names the field a failure' do
+      payload = '{"success":false,"reason":"validation_error","field":"birth_date"}'
+
+      expect(described_class.normalize(payload)).to include(success: false, retryable: false)
+      expect(described_class.render(payload)).to eq(payload)
+    end
+
     it 'wraps plain strings as success messages' do
       result = described_class.normalize('Done')
 

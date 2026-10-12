@@ -95,6 +95,31 @@ RSpec.describe 'Scheduling patient context', type: :request do
     end
   end
 
+  it 'rejects a non-existent birth date instead of creating a card without it' do
+    path = patients_path
+    authentication = headers
+    # birth_date is documented as a plain date: a time part is not taken either.
+    (%w[2026-02-30 2026-04-31 1990-13-40 not-a-date] + ['1990-03-05T00:00:00.000Z', '1990-03-05 00:00:00']).each do |value|
+      expect do
+        post path, params: { first_name: 'Child', last_name: 'Patient', iin: '940720300129', birth_date: value,
+                             idempotency_key: "invalid-birth-date-#{value}" }, headers: authentication, as: :json
+      end.not_to change(Contact, :count)
+
+      expect(response).to have_http_status(:unprocessable_content), value
+      expect(response.parsed_body).to include('code' => 'INVALID_BIRTH_DATE')
+      expect(response.parsed_body['error']).to include('birth_date')
+    end
+  end
+
+  it 'stores an existing birth date on the new card' do
+    post patients_path, params: { first_name: 'Child', last_name: 'Patient', iin: '940720300129', birth_date: '1994-07-20',
+                                  idempotency_key: 'valid-birth-date' }, headers: headers, as: :json
+
+    expect(response).to have_http_status(:created)
+    expect(response.parsed_body.dig('payload', 'birth_date')).to eq('1994-07-20')
+    expect(account.contacts.find(response.parsed_body.dig('payload', 'id')).custom_attributes['birth_date']).to eq('1994-07-20')
+  end
+
   it 'keeps an explicitly created card with its own number in the patient group and makes network retries idempotent' do
     params = { first_name: 'Child', last_name: 'Patient', phone: '+77002223344', idempotency_key: 'own-number-card' }
     post patients_path, params: params, headers: headers, as: :json
@@ -122,6 +147,15 @@ RSpec.describe 'Scheduling patient context', type: :request do
     expect(response.parsed_body.fetch('payload')).to include('patient_context_contact_id' => patient.id,
                                                             'conversation_display_id' => conversation.display_id)
     expect(owner.reload.attributes).to eq(owner_before)
+  end
+
+  it 'books a selected card whose birth date was stored by the dashboard date widget with a time part' do
+    patient.update!(custom_attributes: patient.custom_attributes.merge('birth_date' => '1994-07-20T00:00:00.000Z'))
+
+    post appointments_path, params: new_appointment_params, headers: headers, as: :json
+
+    expect(response).to have_http_status(:created), response.parsed_body.inspect
+    expect(account.scheduling_appointments.find(response.parsed_body.dig('payload', 'id')).client_birth_date).to eq(Date.new(1994, 7, 20))
   end
 
   it 'rejects a foreign card and an unrecorded public identity as the selected patient' do

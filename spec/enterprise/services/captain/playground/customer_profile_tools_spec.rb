@@ -56,10 +56,11 @@ RSpec.describe Captain::Playground::CustomerProfileTools, 'through the Playgroun
       expect(trial.scenario.contact).to include('name' => 'Updated', 'email' => 'new@example.test')
 
       original = trial.scenario.data.deep_dup
-      [{ iin: '123456789012' }, { birth_date: '2026-02-30' }, { gender: 'other' }, { email: 'invalid-email' },
-       { contact_id: 102, first_name: 'Wrong' }].each do |arguments|
-        expect(invoke(trial, 'update_my_contact', **arguments)).to include(success: false, reason: 'validation_error')
+      [{ iin: '123456789012' }, { gender: 'other' }, { email: 'invalid-email' }, { contact_id: 102, first_name: 'Wrong' }].each do |arguments|
+        expect(invoke(trial, 'update_my_contact', **arguments)).to eq(success: false, reason: 'validation_error', simulated: true)
       end
+      expect(invoke(trial, 'update_my_contact', birth_date: '2026-02-30'))
+        .to eq(success: false, reason: 'validation_error', field: 'birth_date', simulated: true)
       expect(trial.scenario.data).to eq(original)
     end
   end

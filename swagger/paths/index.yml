@@ -245,6 +245,9 @@ x-scheduling-error-schema: &scheduling_error_schema
         - SLOT_CONFLICT
         - SERVICE_NOT_AVAILABLE_FOR_RESOURCE
         - INVALID_IIN
+        - INVALID_DATE
+        - INVALID_DATE_RANGE
+        - INVALID_BIRTH_DATE
         - DUPLICATE_EXTERNAL_REF
         - DUPLICATE_IDEMPOTENCY_KEY
         - APPOINTMENT_NOT_FOUND
@@ -486,10 +489,12 @@ x-scheduling-expense-schema: &scheduling_expense_schema
       - in: query
         name: from
         required: true
+        description: Range start, an ISO 8601 datetime or a YYYY-MM-DD date. A non-existent date such as 31 November is rejected with 422, never moved to another day.
         schema: { type: string, format: date-time }
       - in: query
         name: to
         required: true
+        description: Range end, later than from (otherwise 422). Same format rules as from.
         schema: { type: string, format: date-time }
       - in: query
         name: resource_ids
@@ -500,7 +505,8 @@ x-scheduling-expense-schema: &scheduling_expense_schema
         schema: { type: boolean, default: false }
       - in: query
         name: duration_min
-        schema: { type: integer, minimum: 5 }
+        description: Slot length in minutes; a value outside the range is rejected with 422, never rounded.
+        schema: { type: integer, minimum: 5, maximum: 1440 }
       - in: query
         name: custom_attribute_filters
         description: Deep-object map of managed appointment custom field keys to selected filter values or advanced operator payloads.
@@ -562,7 +568,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
           application/json:
             schema: *scheduling_error_schema
       '422':
-        description: Invalid view or date-range params
+        description: Invalid view, a malformed or non-existent from/to date (code INVALID_DATE, details.field names the param), to not later than from (INVALID_DATE_RANGE), or duration_min outside 5..1440
         content:
           application/json:
             schema: *scheduling_error_schema
@@ -955,12 +961,13 @@ x-scheduling-expense-schema: &scheduling_expense_schema
               phone_number: { type: string }
               identifier: { type: string }
               iin: { type: string, description: Validates checksum when it looks like a 12-digit IIN }
-              birth_date: { type: string, format: date }
+              birth_date: { type: string, format: date, description: "An existing calendar date written as YYYY-MM-DD; any other value, including a non-existent date, is rejected with 422 INVALID_BIRTH_DATE and nothing is saved." }
               gender: { type: string }
               company_id: { type: integer }
               custom_attributes:
                 type: object
                 additionalProperties: true
+                description: A birth_date entry follows the same rule as birth_date.
     responses:
       '201':
         description: Contact created
@@ -976,7 +983,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
           application/json:
             schema: *scheduling_error_schema
       '422':
-        description: Invalid contact payload or IIN
+        description: Invalid contact payload, IIN or birth date
         content:
           application/json:
             schema: *scheduling_error_schema
@@ -1007,12 +1014,13 @@ x-scheduling-expense-schema: &scheduling_expense_schema
               phone_number: { type: string }
               identifier: { type: string }
               iin: { type: string }
-              birth_date: { type: string, format: date }
+              birth_date: { type: string, format: date, description: "An existing calendar date written as YYYY-MM-DD; any other value, including a non-existent date, is rejected with 422 INVALID_BIRTH_DATE and the card is not changed." }
               gender: { type: string }
               company_id: { type: integer }
               custom_attributes:
                 type: object
                 additionalProperties: true
+                description: A birth_date entry follows the same rule as birth_date.
     responses:
       '200':
         description: Contact updated
@@ -1033,7 +1041,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
           application/json:
             schema: *scheduling_error_schema
       '422':
-        description: Invalid contact payload or IIN
+        description: Invalid contact payload, IIN or birth date
         content:
           application/json:
             schema: *scheduling_error_schema

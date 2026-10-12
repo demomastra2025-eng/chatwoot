@@ -5,8 +5,8 @@ class Api::V1::Accounts::Scheduling::WorkdayOverridesController < Api::V1::Accou
   def index
     overrides = Current.account.scheduling_workday_overrides.ordered
     overrides = overrides.where(resource_id: params[:resource_id]) if params[:resource_id].present?
-    overrides = overrides.where(date: Date.iso8601(params[:from])..) if params[:from].present?
-    overrides = overrides.where(date: ..Date.iso8601(params[:to])) if params[:to].present?
+    overrides = overrides.where(date: parse_date_param!(params[:from], field_name: 'from')..) if params[:from].present?
+    overrides = overrides.where(date: ..parse_date_param!(params[:to], field_name: 'to')) if params[:to].present?
 
     render_payload(
       overrides.map { |item| Scheduling::PayloadBuilder.workday_override(item) },

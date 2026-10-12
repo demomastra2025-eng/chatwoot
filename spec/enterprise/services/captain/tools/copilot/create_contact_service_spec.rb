@@ -48,6 +48,19 @@ RSpec.describe Captain::Tools::Copilot::CreateContactService do
       expect(account.contacts.where(email: 'repeat@example.com').count).to eq(1)
     end
 
+    it 'rejects a non-existent birth date custom attribute with a failure that names the field and creates nothing' do
+      result = service.execute(name: 'Patient', email: 'patient@example.com', custom_attributes: { 'birth_date' => '2026-02-30' })
+
+      expect(result).to include('custom_attributes.birth_date')
+      expect(account.contacts.where(email: 'patient@example.com')).to be_empty
+    end
+
+    it 'stores an existing birth date custom attribute' do
+      payload = JSON.parse(service.execute(name: 'Patient', email: 'patient@example.com', custom_attributes: { 'birth_date' => '1990-03-05' }))
+
+      expect(payload.dig('contact', 'custom_attributes', 'birth_date')).to eq('1990-03-05')
+    end
+
     it 'rejects contacts without any identifying fields' do
       result = service.execute(name: 'Only Name')
 

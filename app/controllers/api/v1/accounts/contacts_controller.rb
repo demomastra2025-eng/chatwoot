@@ -1,6 +1,6 @@
 class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
   include Sift
-  rescue_from ::Crm::Error, with: :render_crm_error
+  rescue_from ::Crm::Error, ::Scheduling::Error, with: :render_crm_error
   sort_on :email, type: :string
   sort_on :name, internal_name: :order_on_name, type: :scope, scope_params: [:direction]
   sort_on :phone_number, type: :string
@@ -95,7 +95,7 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
   end
 
   def create
-    validate_medelement_custom_attributes!(current: {})
+    validate_custom_attributes!(current: {})
     ActiveRecord::Base.transaction do
       @contact = Current.account.contacts.new(permitted_params.except(:avatar_url))
       @contact.save!
@@ -226,17 +226,18 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
   end
 
   def contact_update_params
-    validate_medelement_custom_attributes!(current: @contact.custom_attributes)
+    validate_custom_attributes!(current: @contact.custom_attributes)
     permitted_params.except(:custom_attributes, :avatar_url)
                     .merge({ custom_attributes: contact_custom_attributes })
                     .merge({ additional_attributes: contact_additional_attributes })
   end
 
-  def validate_medelement_custom_attributes!(current:)
+  def validate_custom_attributes!(current:)
     Integrations::Medelement::ProviderOwnedAttributesGuard.validate!(
       incoming: permitted_params[:custom_attributes],
       current: current
     )
+    Scheduling::BirthDate.validate_attributes!(permitted_params[:custom_attributes], current: current)
   end
 
   def storage_limit_available?(extra_bytes)

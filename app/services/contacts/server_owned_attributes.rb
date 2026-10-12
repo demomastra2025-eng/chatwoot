@@ -2,6 +2,7 @@
 # transfer log (the revert task relies on it), plus доп. номера and phone conflict notes. The dashboard contacts API
 # refuses changes to them (Integrations::Medelement::ProviderOwnedAttributesGuard); untrusted writers (widget visitors,
 # public API clients, Captain tools, CSV imports) can never set, change or delete them, their values are dropped.
+# The same writers cannot store a birth date written as a calendar date that does not exist.
 module Contacts::ServerOwnedAttributes
   PREFIX = Integrations::Medelement::ProviderOwnedAttributesGuard::PREFIX
   KEYS = %w[secondary_phones phone_conflict_comment].freeze
@@ -13,7 +14,15 @@ module Contacts::ServerOwnedAttributes
   def strip(incoming)
     return incoming if incoming.blank?
 
-    incoming.to_h.stringify_keys.reject { |key, _value| managed_key?(key) }
+    incoming.to_h.stringify_keys.reject { |key, value| managed_key?(key) || nonexistent_birth_date?(key, value) }
+  end
+
+  # A birth date written as a calendar date that does not exist (30.02.1990, 1990-02-30) is dropped like the managed keys,
+  # so an untrusted writer cannot put one on a patient card; the card keeps the value it has. Free text that is not a date
+  # at all is left alone, as before. Writers that must answer with an error (Captain tools) check the value with
+  # Scheduling::BirthDate.validate_attributes! before they strip.
+  def nonexistent_birth_date?(key, value)
+    key.to_s == Scheduling::BirthDate::FIELD && value.present? && Scheduling::BirthDate.nonexistent_date?(value)
   end
 
   def strip_keys(keys) = Array(keys).reject { |key| managed_key?(key) }

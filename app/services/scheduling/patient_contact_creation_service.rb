@@ -15,6 +15,8 @@ class Scheduling::PatientContactCreationService
     last_name = params[:last_name].to_s.strip.presence
     raise ArgumentError, 'Patient first and last name are required' if first_name.blank? || last_name.blank?
 
+    # The appointment's date column would silently turn a non-existent date into nil and create a card without it.
+    birth_date = Scheduling::BirthDate.validate!(params[:birth_date], plain: true).presence
     if params[:iin].present? && !Scheduling::IinValidator.valid?(params[:iin])
       raise Scheduling::Error.new(code: 'INVALID_IIN', message: 'Invalid IIN', status: :unprocessable_content)
     end
@@ -24,7 +26,7 @@ class Scheduling::PatientContactCreationService
       contact: contact, conversation: conversation, client_first_name: first_name, client_last_name: last_name,
       client_middle_name: params[:middle_name].to_s.strip.presence,
       client_name: [first_name, last_name, params[:middle_name]].compact_blank.join(' '),
-      client_identifier: identifier, client_birth_date: params[:birth_date], client_gender: params[:gender],
+      client_identifier: identifier, client_birth_date: birth_date, client_gender: params[:gender],
       client_phone: params[:phone].presence || params[:phone_number].presence || contact.phone_number,
       custom_attributes: { Integrations::Medelement::AppointmentPatientIdentity::OWNED_IDENTITY_KEY => true }
     )

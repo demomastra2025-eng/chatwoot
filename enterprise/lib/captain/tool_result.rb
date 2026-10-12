@@ -196,7 +196,7 @@ class Captain::ToolResult
       result.is_a?(Hash) && result['success'] == false && result['reason'].in?(%w[
         time_taken staff_will_help not_found validation_error schedule_not_open
         invalid_date invalid_date_range invalid_duration invalid_service_id unknown_service provider_unavailable internal_failure
-      ]) && (result.keys - %w[success reason last_available_date code correction]).empty?
+      ]) && (result.keys - %w[success reason last_available_date code correction field]).empty?
     end
 
     def compact_appointment_failure?(result)

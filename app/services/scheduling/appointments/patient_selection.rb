@@ -107,11 +107,17 @@ class Scheduling::Appointments::PatientSelection
     names = policy.contact_names(card)
     policy::NAME_KEYS.each { |key| params["client_#{key}".to_sym] = names[key] unless params.key?("client_#{key}".to_sym) }
     params[:client_identifier] = policy.contact_iin(card) unless params.key?(:client_identifier)
-    params[:client_birth_date] = card.custom_attributes.to_h['medelement_birth_date'].presence || card.custom_attributes.to_h['birth_date'] unless params.key?(:client_birth_date)
+    params[:client_birth_date] = card_birth_date(card) unless params.key?(:client_birth_date)
     params[:client_gender] = card.custom_attributes.to_h['medelement_gender'].presence || card.custom_attributes.to_h['gender'] unless params.key?(:client_gender)
     params[:client_name] = [params[:client_first_name], params[:client_last_name], params[:client_middle_name]].compact_blank.join(' ')
     params[:client_phone] = appointment.client_phone.presence || card.phone_number.presence || Contacts::SharedPhone.share_of(card)&.phone ||
                             contact&.phone_number unless params.key?(:client_phone)
+  end
+
+  # The dashboard date attribute stores 1990-05-01T00:00:00.000Z; the appointment date takes only YYYY-MM-DD.
+  def card_birth_date(card)
+    attributes = card.custom_attributes.to_h
+    Scheduling::BirthDate.normalize(attributes['medelement_birth_date'].presence || attributes['birth_date'])
   end
 
   def conflict!(message)

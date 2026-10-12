@@ -113,8 +113,10 @@ class Api::V1::Accounts::Scheduling::ContactsController < Api::V1::Accounts::Sch
       incoming: incoming,
       current: contact.custom_attributes
     )
+    Scheduling::BirthDate.validate_attributes!(incoming, current: contact.custom_attributes)
+    birth_date = Scheduling::BirthDate.validate!(params[:birth_date], plain: true)
     merged = CustomAttributes::MutationService.merge(contact.custom_attributes, incoming)
-    merged['birth_date'] = params[:birth_date] if params[:birth_date].present?
+    merged['birth_date'] = birth_date if birth_date.present?
     merged['gender'] = params[:gender] if params[:gender].present?
     merged['iin'] = normalized_iin if normalized_iin.present?
     merged

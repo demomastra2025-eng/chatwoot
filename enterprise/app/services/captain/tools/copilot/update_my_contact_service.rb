@@ -1,6 +1,9 @@
 class Captain::Tools::Copilot::UpdateMyContactService < Captain::Tools::Copilot::BaseAccountTool
   FIELDS = %i[first_name last_name middle_name iin birth_date gender phone_number email].freeze
 
+  # The failure names the birth date, so the agent can ask the patient for a correct one instead of retrying blindly.
+  class InvalidBirthDate < ArgumentError; end
+
   def self.name
     'update_my_contact'
   end
@@ -22,6 +25,8 @@ class Captain::Tools::Copilot::UpdateMyContactService < Captain::Tools::Copilot:
 
     contact.update!(contact_updates(contact, fields))
     formatted_payload(success: true, contact: Captain::Tools::Copilot::GetMyContactService.payload(contact.reload))
+  rescue InvalidBirthDate
+    formatted_payload(success: false, reason: 'validation_error', field: 'birth_date')
   rescue ArgumentError, ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique
     formatted_payload(success: false, reason: 'validation_error')
   end
@@ -68,11 +73,11 @@ class Captain::Tools::Copilot::UpdateMyContactService < Captain::Tools::Copilot:
   def validated_birth_date(value)
     return nil if value.blank?
 
-    raise ArgumentError, 'Invalid birth date' unless value.to_s.match?(/\A\d{4}-\d{2}-\d{2}\z/)
+    raise InvalidBirthDate, 'Invalid birth date' unless value.to_s.match?(/\A\d{4}-\d{2}-\d{2}\z/)
 
     Date.iso8601(value.to_s).iso8601
   rescue Date::Error
-    raise ArgumentError, 'Invalid birth date'
+    raise InvalidBirthDate, 'Invalid birth date'
   end
 
   def validated_gender(value)

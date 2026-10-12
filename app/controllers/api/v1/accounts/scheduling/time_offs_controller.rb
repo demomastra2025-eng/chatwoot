@@ -36,6 +36,13 @@ class Api::V1::Accounts::Scheduling::TimeOffsController < Api::V1::Accounts::Sch
   end
 
   def time_off_params
-    params.permit(:resource_id, :kind, :starts_at, :ends_at, :title, :notes, custom_attributes: {})
+    attrs = params.permit(:resource_id, :kind, :starts_at, :ends_at, :title, :notes, custom_attributes: {})
+    # The attribute cast would move a non-existent day such as 31 November to the next month, and would drop the offset of a
+    # form-encoded "+05:00" (the plus arrives as a space); the checked value is the one that is stored.
+    %w[starts_at ends_at].each do |key|
+      parsed = parse_datetime_param!(attrs[key], field_name: key, required: false)
+      attrs[key] = parsed if parsed
+    end
+    attrs
   end
 end

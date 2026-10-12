@@ -37,24 +37,15 @@ class Api::V1::Accounts::Scheduling::AvailabilityController < Api::V1::Accounts:
   end
 
   def requested_dates
-    values = if params[:date].present?
-               [params[:date], params[:date]]
-             else
-               [params.require(:date_from), params.require(:date_to)]
-             end
-    dates = values.map { |value| Date.iso8601(value.to_s) }
+    fields = params[:date].present? ? %w[date date] : %w[date_from date_to]
+    dates = fields.map { |field| parse_date_param!(params.require(field), field_name: field) }
     raise ArgumentError, 'date_to must be on or after date_from' if dates.last < dates.first
 
     dates
   end
 
   def duration_min(resource, service)
-    return service&.duration_min || resource.slot_duration_min if params[:duration_min].blank?
-
-    duration = Integer(params[:duration_min], exception: false)
-    raise ArgumentError, 'duration_min must be between 5 and 1440' unless duration&.between?(5, 1440)
-
-    duration
+    parse_duration_min_param!(params[:duration_min]) || service&.duration_min || resource.slot_duration_min
   end
 
   def validate_service_link!(resource, service)

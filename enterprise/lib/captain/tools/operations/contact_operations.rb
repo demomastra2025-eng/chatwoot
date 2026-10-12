@@ -36,9 +36,12 @@ class Captain::Tools::Operations::ContactOperations < Captain::Tools::Operations
     update_attributes.delete(:phone_number) if reserved_phone?(update_attributes[:phone_number])
 
     if custom_attributes.present?
+      # Validated before the server-owned strip, which would otherwise drop a bad birth date and report success.
+      incoming = Scheduling::BirthDate.validate_attributes!(
+        parsed_hash(custom_attributes, field_name: 'custom_attributes'), current: current_contact.custom_attributes
+      )
       update_attributes[:custom_attributes] = CustomAttributes::MutationService.merge(
-        current_contact.custom_attributes,
-        Contacts::ServerOwnedAttributes.strip(parsed_hash(custom_attributes, field_name: 'custom_attributes'))
+        current_contact.custom_attributes, Contacts::ServerOwnedAttributes.strip(incoming)
       )
     end
 
@@ -50,6 +53,7 @@ class Captain::Tools::Operations::ContactOperations < Captain::Tools::Operations
     params = params.symbolize_keys
     raise ArgumentError, 'At least one of email, phone_number, or identifier is required' if contact_identifier_blank?(params)
 
+    Scheduling::BirthDate.validate_attributes!(parsed_hash(params[:custom_attributes], field_name: 'custom_attributes'))
     existing_contact = find_existing_contact(params.slice(:email, :phone_number, :identifier))
     return { contact: existing_contact, status: 'existing' } if existing_contact.present?
 

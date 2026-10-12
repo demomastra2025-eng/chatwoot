@@ -262,6 +262,118 @@ RSpec.describe 'Scheduling Contacts API', type: :request do
     expect(contact.reload.custom_attributes).to eq(response_body.dig('payload', 'custom_attributes'))
   end
 
+  describe 'birth date validation' do
+    # The birth_date parameter is a plain date; a time part is refused as well.
+    let(:invalid_dates) { %w[2026-02-30 2026-04-31 1990-13-40 1990-13-01 20.07.1994 not-a-date] + ['1990-03-05T00:00:00.000Z', '1990-03-05 10:30'] }
+    let(:invalid_attribute_dates) do
+      %w[2026-02-30 1990-13-40 1990-05-01T25:99:00Z 1990-05-01T00:00:00+99:99] + ['1990-05-01 00:00:00', '1990-05-01T99:99:99Z']
+    end
+    let!(:card) do
+      create(:contact, account: account, name: 'Patient', custom_attributes: { 'birth_date' => '1994-07-20', 'keep' => 'me' })
+    end
+
+    it 'rejects a non-existent birth date on create without creating the contact' do
+      invalid_dates.each do |value|
+        expect do
+          post path, params: { first_name: 'Ivan', phone: valid_phone, birth_date: value }, headers: headers, as: :json
+        end.not_to change(Contact, :count)
+
+        expect(response).to have_http_status(:unprocessable_content), value
+        expect(response_body).to include('code' => 'INVALID_BIRTH_DATE')
+        expect(response_body['error']).to include('birth_date')
+        expect(response_body['details']).to eq('field' => 'birth_date', 'reason' => 'invalid_birth_date')
+      end
+    end
+
+    it 'rejects a non-existent birth date sent inside custom_attributes on create' do
+      expect do
+        post path, params: { first_name: 'Ivan', phone: valid_phone, custom_attributes: { birth_date: '2026-02-30' } },
+                   headers: headers, as: :json
+      end.not_to change(Contact, :count)
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response_body).to include('code' => 'INVALID_BIRTH_DATE')
+      expect(response_body['details']).to include('field' => 'custom_attributes.birth_date')
+    end
+
+    it 'rejects a non-existent birth date on update and leaves the card unchanged' do
+      before_update = card.reload.attributes
+
+      invalid_dates.each do |value|
+        patch "#{path}/#{card.id}", params: { first_name: 'Changed', birth_date: value }, headers: headers, as: :json
+
+        expect(response).to have_http_status(:unprocessable_content), value
+        expect(response_body).to include('code' => 'INVALID_BIRTH_DATE')
+        expect(response_body['error']).to include('birth_date')
+        expect(card.reload.attributes).to eq(before_update)
+      end
+    end
+
+    it 'rejects a non-existent birth date sent inside custom_attributes on update' do
+      before_update = card.reload.attributes
+
+      patch "#{path}/#{card.id}", params: { custom_attributes: { birth_date: '1990-13-40', other: 'x' } }, headers: headers, as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response_body).to include('code' => 'INVALID_BIRTH_DATE')
+      expect(response_body['details']).to include('field' => 'custom_attributes.birth_date')
+      expect(card.reload.attributes).to eq(before_update)
+    end
+
+    it 'rejects a birth date inside custom_attributes with an impossible time, UTC offset or a space instead of the T' do
+      before_update = card.reload.attributes
+
+      invalid_attribute_dates.each do |value|
+        patch "#{path}/#{card.id}", params: { custom_attributes: { birth_date: value } }, headers: headers, as: :json
+
+        expect(response).to have_http_status(:unprocessable_content), value
+        expect(response_body).to include('code' => 'INVALID_BIRTH_DATE')
+        expect(card.reload.attributes).to eq(before_update)
+      end
+    end
+
+    it 'saves the dashboard time form inside custom_attributes' do
+      patch "#{path}/#{card.id}", params: { custom_attributes: { birth_date: '1990-03-05T00:00:00.000Z' } }, headers: headers, as: :json
+
+      expect(response).to have_http_status(:ok), response_body.inspect
+      expect(card.reload.custom_attributes['birth_date']).to eq('1990-03-05T00:00:00.000Z')
+    end
+
+    it 'accepts the value a legacy card already holds, so the card stays editable, but not a different bad one' do
+      card.update!(custom_attributes: card.custom_attributes.merge('birth_date' => '2026-02-30'))
+
+      patch "#{path}/#{card.id}", params: { first_name: 'Renamed', custom_attributes: { birth_date: '2026-02-30', other: 'x' } },
+                                  headers: headers, as: :json
+      expect(response).to have_http_status(:ok), response_body.inspect
+      expect(card.reload.custom_attributes).to include('birth_date' => '2026-02-30', 'other' => 'x')
+
+      patch "#{path}/#{card.id}", params: { custom_attributes: { birth_date: '2026-02-31' } }, headers: headers, as: :json
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(card.reload.custom_attributes['birth_date']).to eq('2026-02-30')
+    end
+
+    it 'saves an existing date as before, including a leap day, and keeps the other attributes' do
+      patch "#{path}/#{card.id}", params: { birth_date: '2024-02-29' }, headers: headers, as: :json
+
+      expect(response).to have_http_status(:ok), response_body.inspect
+      expect(card.reload.custom_attributes).to eq('birth_date' => '2024-02-29', 'keep' => 'me')
+
+      post path, params: { first_name: 'Ivan', phone: valid_phone, birth_date: '1990-03-05' }, headers: headers, as: :json
+      expect(response).to have_http_status(:created), response_body.inspect
+      expect(response_body.dig('payload', 'custom_attributes', 'birth_date')).to eq('1990-03-05')
+    end
+
+    it 'does not touch a stored birth date when an unrelated field is updated' do
+      card.update!(custom_attributes: card.custom_attributes.merge('birth_date' => '2026-02-30'))
+
+      patch "#{path}/#{card.id}", params: { first_name: 'Renamed' }, headers: headers, as: :json
+
+      expect(response).to have_http_status(:ok), response_body.inspect
+      expect(card.reload).to have_attributes(name: 'Renamed')
+      expect(card.custom_attributes['birth_date']).to eq('2026-02-30')
+    end
+  end
+
   it 'initializes scheduling contact custom attributes when persisted value is nil' do
     contact = create(:contact, account: account, name: 'Patient')
     contact.update_columns(custom_attributes: nil)
