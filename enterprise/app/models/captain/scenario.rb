@@ -25,7 +25,7 @@ class Captain::Scenario < ApplicationRecord
   include Concerns::Agentable
 
   # OpenAI enforces a 64-char limit on function names. Our handoff tool names
-  # prepend "handoff_to_" (11 chars), so we keep a safety margin and cap
+  # prepend "transfer_to_" (12 chars), so we keep a safety margin and cap
   # the full tool name to MAX_HANDOFF_TOOL_NAME_LENGTH (60 chars).
   # Format: "scenario_{id}_{slug}_agent" for persisted records (stable + readable),
   # and "scenario_draft_{slug}_agent" for unsaved records, with slug truncated
@@ -143,7 +143,7 @@ class Captain::Scenario < ApplicationRecord
   end
 
   def dynamic_slug_max_length
-    # handoff_to_#{scenario_<id>_<slug>_agent}
+    # transfer_to_#{scenario_<id>_<slug>_agent}
     MAX_AGENT_NAME_LENGTH - handoff_id_key.length - HANDOFF_KEY_SUFFIX.length - 2
   end
 

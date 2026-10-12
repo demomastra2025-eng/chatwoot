@@ -358,6 +358,33 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       described_class.perform_now(conversation, assistant)
     end
 
+    it 'infers the agent key from a transfer in the captain trace under the new and the former tool name' do
+      conversation.messages.destroy_all
+      create(:message, conversation: conversation, content: 'Start', message_type: :incoming)
+      %w[transfer_to_agent_35 handoff_to_assistant_36].each do |tool_name|
+        create(
+          :message,
+          conversation: conversation,
+          content: "Answer after #{tool_name}",
+          message_type: :outgoing,
+          sender: assistant,
+          additional_attributes: { captain_trace: { version: 1, tool_steps: [{ event: 'complete', tool_name: tool_name }] } }
+        )
+      end
+      create(:message, conversation: conversation, content: 'Continue please', message_type: :incoming)
+
+      expect(agent_runner_service).to receive(:generate_response).with(
+        message_history: [
+          { content: 'Start', role: 'user' },
+          { content: 'Answer after transfer_to_agent_35', role: 'assistant', agent_name: 'assistant_35' },
+          { content: 'Answer after handoff_to_assistant_36', role: 'assistant', agent_name: 'assistant_36' },
+          { content: 'Continue please', role: 'user' }
+        ]
+      )
+
+      described_class.perform_now(conversation, assistant)
+    end
+
     it 'infers scenario agent_name from captain trace when legacy messages are missing explicit attribution' do
       conversation.messages.destroy_all
       create(

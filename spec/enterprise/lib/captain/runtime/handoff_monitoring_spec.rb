@@ -118,8 +118,24 @@ RSpec.describe Captain::Runtime::HandoffTool do
       tool = described_class.new(target)
 
       expect(tool.parameters).to be_empty
-      expect(tool.name).to eq(Captain::HandoffNaming.tool_name_for("assistant_#{specialist.id}"))
-      expect(tool.description).to start_with('Transfer the conversation to assistant_')
+      expect(tool.name).to eq("transfer_to_agent_#{specialist.id}")
+      expect(tool.name).to eq(Captain::HandoffNaming.tool_name_for('any name', record_id: specialist.id))
+      expect(tool.description).to eq(%(Transfer the conversation to colleague "assistant_#{specialist.id}".))
+    end
+
+    it 'names the colleague and its responsibility in one sentence, and names a Cyrillic colleague by its id' do
+      specialist.assign_attributes(name: 'Анализы', routing_description: "Подготовка к анализам,\nцены")
+
+      tool = described_class.new(Captain::Runtime::LazyAgent.new(specialist))
+
+      expect(tool.name).to eq("transfer_to_agent_#{specialist.id}")
+      expect(tool.description).to eq(%(Transfer the conversation to colleague "Анализы": Подготовка к анализам, цены))
+    end
+
+    it 'is still named by its normalized name when the colleague has no id' do
+      nameless = Captain::Runtime::Agent.new(name: 'scenario_35_billing_agent')
+
+      expect(described_class.new(nameless).name).to eq('transfer_to_scenario_35_billing_agent')
     end
 
     it 'is not offered to a council part, which acts with its own tools and transfers nothing' do
@@ -135,7 +151,7 @@ RSpec.describe Captain::Runtime::HandoffTool do
 
       tools = Captain::Runtime::ChatFactory.send(:build_agent_tools, acting, run_context)
 
-      expect(tools.map(&:name)).to eq([Captain::HandoffNaming.tool_name_for(colleague.name), 'plan_request'])
+      expect(tools.map(&:name)).to eq(["transfer_to_agent_#{specialist.id}", 'plan_request'])
     end
 
     it 'is not offered to a lone agent, which has no colleague to transfer to and no plan to make' do

@@ -335,7 +335,7 @@ class Captain::Runtime::TracingCallbacks
   end
 
   def handoff_tool?(tool_name)
-    tool_name.to_s.start_with?('handoff_to_')
+    Captain::HandoffNaming.transfer_tool_name?(tool_name)
   end
 
   def build_root_attributes(agent_name, input, context_wrapper)

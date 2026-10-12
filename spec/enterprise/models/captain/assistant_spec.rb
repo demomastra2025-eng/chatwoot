@@ -166,7 +166,7 @@ RSpec.describe Captain::Assistant, type: :model do
 
       expect(assistant).to be_valid
       expect(assistant.handoff_target_name).to match(/\Aassistant_[a-f0-9]{12}\z/)
-      expect(assistant.handoff_tool_name).to match(/\Ahandoff_to_assistant_[a-f0-9]{12}\z/)
+      expect(assistant.handoff_tool_name).to match(/\Atransfer_to_assistant_[a-f0-9]{12}\z/)
     end
 
     it 'truncates long external assistant names to stay within the runtime limit' do
@@ -207,7 +207,8 @@ RSpec.describe Captain::Assistant, type: :model do
       assistant.update_column(:name, '!!!')
 
       expect(assistant.handoff_target_name).to eq("assistant_#{assistant.id}")
-      expect(assistant.handoff_tool_name).to eq("handoff_to_assistant_#{assistant.id}")
+      expect(assistant.handoff_tool_name).to eq("transfer_to_agent_#{assistant.id}")
+      expect(assistant.handoff_tool_name).to eq(Captain::Runtime::HandoffTool.new(Captain::Runtime::LazyAgent.new(assistant)).name)
       expect(assistant.agent.name).to eq("assistant_#{assistant.id}")
     end
 
@@ -741,7 +742,7 @@ RSpec.describe Captain::Assistant, type: :model do
       target = create(:captain_assistant, account: account, name: 'Billing Escalations', routing_description: 'Handle complex billing issues and escalations')
       rendered = assistant.agent_instructions
       expect(rendered).to include('# Available agent routes', 'Billing Escalations: Handle complex billing issues and escalations')
-      expect(rendered).to include("\x60#{target.handoff_tool_name}\x60")
+      expect(target.handoff_tool_name).to eq("transfer_to_agent_#{target.id}")
     end
 
     it 'does not render a route from a stored allowed-targets list that no channel of the agent shares' do

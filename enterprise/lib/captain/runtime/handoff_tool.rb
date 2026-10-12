@@ -7,12 +7,18 @@
 class Captain::Runtime::HandoffTool < Captain::Runtime::Tool
   attr_reader :target_agent
 
+  # The name the model calls the transfer to this colleague by. ChatFactory records the same name as bound.
+  def self.tool_name_for(target_agent)
+    record_id = target_agent.assistant_id if target_agent.respond_to?(:assistant_id)
+    Captain::HandoffNaming.tool_name_for(target_agent.name, record_id: record_id)
+  end
+
   def initialize(target_agent)
     @target_agent = target_agent
-    @tool_name = Captain::HandoffNaming.tool_name_for(target_agent.name)
+    @tool_name = self.class.tool_name_for(target_agent)
     display_name = target_agent.respond_to?(:display_name) ? target_agent.display_name : target_agent.name
-    responsibility = target_agent.respond_to?(:routing_description) ? target_agent.routing_description.to_s.strip : ''
-    @tool_description = ["Transfer the conversation to #{display_name}.", responsibility.presence].compact.join(' ')
+    responsibility = target_agent.respond_to?(:routing_description) ? target_agent.routing_description.to_s.squish : ''
+    @tool_description = transfer_description(display_name, responsibility)
     super()
   end
 
@@ -57,6 +63,12 @@ class Captain::Runtime::HandoffTool < Captain::Runtime::Tool
   end
 
   private
+
+  # One sentence: whom the conversation goes to and what that colleague answers.
+  def transfer_description(display_name, responsibility)
+    title = %(Transfer the conversation to colleague "#{display_name.to_s.squish.tr('"', "'")}")
+    responsibility.present? ? "#{title}: #{responsibility}" : "#{title}."
+  end
 
   # An agent without an assistant ID has no routing identity, so it is never "the previous source".
   def return_to_previous_source?(context)

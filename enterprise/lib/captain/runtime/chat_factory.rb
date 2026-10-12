@@ -274,9 +274,7 @@ class Captain::Runtime::ChatFactory
     end
 
     def handoff_tool_names(agent)
-      agent.handoff_agents.map do |target_agent|
-        Captain::HandoffNaming.tool_name_for(target_agent.name)
-      end
+      agent.handoff_agents.map { |target_agent| Captain::Runtime::HandoffTool.tool_name_for(target_agent) }
     end
 
     def regular_tool_names(agent)

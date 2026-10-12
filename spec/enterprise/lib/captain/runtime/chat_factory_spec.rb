@@ -336,8 +336,8 @@ RSpec.describe Captain::Runtime::ChatFactory do
       end
 
       it 'binds the transfer tool of each colleague next to plan_request, and sends a single request to the colleague without a plan' do
-        agent.register_handoffs(Captain::Runtime::Agent.new(name: 'assistant_91'))
-        transfer = Captain::HandoffNaming.tool_name_for('assistant_91')
+        agent.register_handoffs(Captain::Runtime::Agent.new(name: 'assistant_91').tap { |colleague| colleague.assistant_id = 91 })
+        transfer = 'transfer_to_agent_91'
 
         expect(built_tool_names).to eq([transfer, 'plan_request'])
         expect(bound_tool_names).to eq([transfer, 'plan_request'])

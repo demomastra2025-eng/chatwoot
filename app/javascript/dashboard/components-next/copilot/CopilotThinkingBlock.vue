@@ -34,8 +34,11 @@ const props = defineProps({
 
 const { t } = useI18n();
 
+// A scenario transfer is named transfer_to_scenario_*; stored traces still carry the former handoff_to_scenario_*.
+const SCENARIO_TRANSFER_PREFIX = /^(?:transfer|handoff)_to_scenario_/;
+
 const isScenarioHandoff = computed(() =>
-  props.toolName.startsWith('handoff_to_scenario_')
+  SCENARIO_TRANSFER_PREFIX.test(props.toolName)
 );
 
 const isReasoningBlock = computed(() => props.reasoning && !props.toolName);
@@ -51,7 +54,7 @@ const humanizedScenarioName = computed(() => {
   if (!isScenarioHandoff.value) return '';
 
   return props.toolName
-    .replace(/^handoff_to_scenario_/, '')
+    .replace(SCENARIO_TRANSFER_PREFIX, '')
     .replace(/_agent$/, '')
     .replace(/^\d+_/, '')
     .replace(/_/g, ' ')

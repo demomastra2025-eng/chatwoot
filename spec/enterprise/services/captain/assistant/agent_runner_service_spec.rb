@@ -599,55 +599,58 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
     end
 
-    it 'retries once from the post-handoff context when structured agent output is blank' do
-      retry_history = [
-        { role: :user, content: 'I need help with my account' },
-        { role: :assistant, content: '', agent_name: 'assistant_agent', tool_calls: [{ name: 'handoff_to_scenario_agent' }] },
-        { role: :tool, content: 'Transferred to scenario', tool_call_id: 'call_1' }
-      ]
-      blank_context = {
-        current_agent: 'scenario_agent',
-        conversation_history: retry_history,
-        captain_v2_handoff_tool_called: true,
-        captain_v2_completed_tool_names: ['handoff_to_scenario_agent']
-      }
-      blank_result = instance_double(
-        Captain::Runtime::Result,
-        output: { 'response' => '', 'handoff_message' => '' },
-        context: blank_context,
-        error: nil
-      )
-      recovered_result = instance_double(
-        Captain::Runtime::Result,
-        output: { 'response' => 'Recovered answer' },
-        context: { current_agent: 'scenario_agent' },
-        error: nil
-      )
-      run_contexts = []
-      allow(mock_runner).to receive(:run) do |_input, context:, **_kwargs|
-        run_contexts << context
-        run_contexts.one? ? blank_result : recovered_result
+    # A transfer is the tool transfer_to_agent_<id>; stored runs still carry the former name handoff_to_*.
+    %w[transfer_to_agent_7 handoff_to_scenario_agent].each do |transfer_tool|
+      it "retries once from the post-handoff context when structured agent output is blank (transfer tool #{transfer_tool})" do
+        retry_history = [
+          { role: :user, content: 'I need help with my account' },
+          { role: :assistant, content: '', agent_name: 'assistant_agent', tool_calls: [{ name: transfer_tool }] },
+          { role: :tool, content: 'Transferred to scenario', tool_call_id: 'call_1' }
+        ]
+        blank_context = {
+          current_agent: 'scenario_agent',
+          conversation_history: retry_history,
+          captain_v2_handoff_tool_called: true,
+          captain_v2_completed_tool_names: [transfer_tool]
+        }
+        blank_result = instance_double(
+          Captain::Runtime::Result,
+          output: { 'response' => '', 'handoff_message' => '' },
+          context: blank_context,
+          error: nil
+        )
+        recovered_result = instance_double(
+          Captain::Runtime::Result,
+          output: { 'response' => 'Recovered answer' },
+          context: { current_agent: 'scenario_agent' },
+          error: nil
+        )
+        run_contexts = []
+        allow(mock_runner).to receive(:run) do |_input, context:, **_kwargs|
+          run_contexts << context
+          run_contexts.one? ? blank_result : recovered_result
+        end
+
+        result = service.generate_response(message_history: message_history)
+
+        expect(mock_runner).to have_received(:run).twice
+        expect(run_contexts.second).to include(
+          current_agent: 'scenario_agent',
+          conversation_history: retry_history
+        )
+        expect(run_contexts.second).not_to have_key(:captain_v2_handoff_tool_called)
+        expect(run_contexts.second).not_to have_key(:captain_v2_completed_tool_names)
+        expect(result).to match(
+          {
+            'response' => 'Recovered answer',
+            'agent_name' => 'scenario_agent',
+            'handoff_tool_called' => false,
+            'blank_response_retry' => true,
+            'zero_completion_recovered' => true,
+            'zero_completion_recovery_kind' => described_class::ZERO_COMPLETION_BLANK_RETRY
+          }.merge(entry_agent_identity)
+        )
       end
-
-      result = service.generate_response(message_history: message_history)
-
-      expect(mock_runner).to have_received(:run).twice
-      expect(run_contexts.second).to include(
-        current_agent: 'scenario_agent',
-        conversation_history: retry_history
-      )
-      expect(run_contexts.second).not_to have_key(:captain_v2_handoff_tool_called)
-      expect(run_contexts.second).not_to have_key(:captain_v2_completed_tool_names)
-      expect(result).to match(
-        {
-          'response' => 'Recovered answer',
-          'agent_name' => 'scenario_agent',
-          'handoff_tool_called' => false,
-          'blank_response_retry' => true,
-          'zero_completion_recovered' => true,
-          'zero_completion_recovery_kind' => described_class::ZERO_COMPLETION_BLANK_RETRY
-        }.merge(entry_agent_identity)
-      )
     end
 
     it 'hands a blank structured output over to staff, with no text of the system, after non-handoff tools completed' do

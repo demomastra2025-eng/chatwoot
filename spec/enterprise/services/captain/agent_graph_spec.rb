@@ -75,4 +75,32 @@ RSpec.describe Captain::AgentGraph do
     expect(graph.agents).to eq([entry])
     expect(graph.peers?).to be(false)
   end
+
+  describe '#resolve' do
+    let(:graph) do
+      member
+      described_class.new(entry)
+    end
+
+    it 'finds an agent by its runtime key assistant_<id> and by agent_<id>, the key in its transfer tool name' do
+      expect(graph.resolve("assistant_#{member.id}")).to eq(member)
+      expect(graph.resolve("agent_#{member.id}")).to eq(member)
+      expect(graph.resolve("assistant_#{member.id + 1000}")).to be_nil
+      expect(graph.resolve("agent_#{member.id + 1000}")).to be_nil
+    end
+
+    it 'reads a key that still carries a transfer prefix, under the new or the former name of the tool' do
+      expect(graph.resolve("transfer_to_agent_#{member.id}")).to eq(member)
+      expect(graph.resolve("handoff_to_assistant_#{member.id}")).to eq(member)
+      expect(graph.resolve("handoff_to_agent_#{member.id}")).to eq(member)
+    end
+
+    it 'finds an agent by its normalized name and returns nothing for an unknown key' do
+      member.update!(name: 'Lab consultant')
+
+      expect(described_class.new(entry).resolve('lab_consultant')).to eq(member)
+      expect(graph.resolve('nobody')).to be_nil
+      expect(graph.resolve(nil)).to be_nil
+    end
+  end
 end

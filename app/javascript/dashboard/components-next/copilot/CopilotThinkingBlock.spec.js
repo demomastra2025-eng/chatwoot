@@ -79,15 +79,20 @@ describe('CopilotThinkingBlock', () => {
     expect(useAlert).toHaveBeenCalledWith('Copied');
   });
 
-  it('renders scenario handoff tool calls with a readable title and route icon', () => {
-    const wrapper = mountComponent({
-      toolName: 'handoff_to_scenario_12_billing_agent',
-      status: 'finish',
-    });
+  it.each([
+    'transfer_to_scenario_12_billing_agent',
+    'handoff_to_scenario_12_billing_agent',
+  ])(
+    'renders scenario transfer tool call %s with a readable title and route icon',
+    toolName => {
+      const wrapper = mountComponent({ toolName, status: 'finish' });
 
-    expect(wrapper.text()).toContain('Scenario handoff: Billing Agent');
-    expect(wrapper.find('icon-stub').attributes('icon')).toBe('i-lucide-route');
-  });
+      expect(wrapper.text()).toContain('Scenario handoff: Billing Agent');
+      expect(wrapper.find('icon-stub').attributes('icon')).toBe(
+        'i-lucide-route'
+      );
+    }
+  );
 
   it('renders reasoning text for non-tool thinking blocks', () => {
     const wrapper = mountComponent({

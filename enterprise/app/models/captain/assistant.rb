@@ -444,8 +444,9 @@ class Captain::Assistant < ApplicationRecord
     id.present? ? "assistant_#{id}" : Captain::HandoffNaming.safe_target_name(name, fallback_prefix: 'assistant')
   end
 
+  # The transfer tool that hands a conversation to this assistant (the one Captain::Runtime::HandoffTool gives it).
   def handoff_tool_name
-    Captain::HandoffNaming.tool_name_for(handoff_target_name)
+    Captain::HandoffNaming.tool_name_for(handoff_target_name, record_id: id)
   end
 
   def available_agent_tools

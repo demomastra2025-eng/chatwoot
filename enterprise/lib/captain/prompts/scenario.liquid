@@ -28,7 +28,7 @@ If the prompt and current facts do not answer the business question and FAQ look
 # Available agent routes
 Transfer an active task only when another agent's configured scope fits it. Continue naturally without announcing internal routing.
 {% for scenario in scenarios -%}
-- {{ scenario.title }}: {{ scenario.description }}. Use the `handoff_to_{{ scenario.key }}` tool.
+- {{ scenario.title }}: {{ scenario.description }}. Use the `transfer_to_{{ scenario.key }}` tool.
 {% endfor -%}
 {% endif -%}
 

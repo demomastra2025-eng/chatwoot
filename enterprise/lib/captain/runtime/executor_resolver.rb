@@ -101,10 +101,11 @@ class Captain::Runtime::ExecutorResolver
     raise UnknownAgentError, unknown_message(reference, named.many?)
   end
 
-  # A plain number is never taken for an agent: the model does not see ids, so a number can only be a guess.
+  # A plain number is never taken for an agent: the model does not see ids, so a number can only be a guess. The key of an agent
+  # (assistant_4, or agent_4 as in its transfer tool name) is read.
   def agent_by_key(key)
-    id = key[/\Aassistant_(\d+)\z/, 1]
-    @agents.find { |agent| agent[:id] == id.to_i } if id
+    id = Captain::HandoffNaming.agent_id_from_key(key)
+    @agents.find { |agent| agent[:id] == id } if id
   end
 
   # The current agent. A part linked to an open part keeps the executor recorded on it: an answer, a correction or a

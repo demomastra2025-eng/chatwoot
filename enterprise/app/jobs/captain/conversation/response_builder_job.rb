@@ -1132,7 +1132,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def inferred_agent_name_from_trace(trace_payload)
-    last_handoff_tool_name(trace_payload)&.delete_prefix('handoff_to_')&.presence
+    Captain::HandoffNaming.target_key_for(last_handoff_tool_name(trace_payload))
   end
 
   def last_handoff_tool_name(trace_payload)
@@ -1144,7 +1144,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     return unless tool_value(step, 'event').to_s == 'complete'
 
     name = tool_value(step, 'tool_name').to_s
-    name if name.start_with?('handoff_to_')
+    name if Captain::HandoffNaming.transfer_tool_name?(name)
   end
 
   def handle_error(error)

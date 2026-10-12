@@ -54,7 +54,7 @@ RSpec.describe Captain::Scenario, type: :model do
 
       expect(scenario.handoff_key).to start_with("scenario_#{scenario.id}_")
       expect(scenario.handoff_key).to end_with('_agent')
-      expect("handoff_to_#{scenario.handoff_key}".length).to be <= 60
+      expect("transfer_to_#{scenario.handoff_key}".length).to be <= 60
     end
 
     it 'uses a truncated slug key for unsaved scenarios' do
@@ -62,7 +62,7 @@ RSpec.describe Captain::Scenario, type: :model do
                                           title: 'Troubleshoot payment gateway errors for recurring subscription charges')
 
       expect(scenario.handoff_key).to match(/\Ascenario_draft_[a-z0-9_]+_agent\z/)
-      expect("handoff_to_#{scenario.handoff_key}".length).to be <= 60
+      expect("transfer_to_#{scenario.handoff_key}".length).to be <= 60
     end
 
     it 'stays within length budget even for large ids' do
@@ -70,7 +70,7 @@ RSpec.describe Captain::Scenario, type: :model do
                                           title: 'A very long scenario title used only for budget verification')
       allow(scenario).to receive(:id).and_return(1_234_567_890_123_456_789)
 
-      expect("handoff_to_#{scenario.handoff_key}".length).to be <= 60
+      expect("transfer_to_#{scenario.handoff_key}".length).to be <= 60
     end
 
     it 'exposes the converted independent agent route in assistant prompt context' do
@@ -233,8 +233,8 @@ RSpec.describe Captain::Scenario, type: :model do
 
       rendered = scenario.agent_instructions
 
-      expect(rendered).to include("`handoff_to_#{peer_scenario.handoff_key}`")
-      expect(rendered).not_to include('`handoff_to_sales_&_support`')
+      expect(rendered).to include("`transfer_to_#{peer_scenario.handoff_key}`")
+      expect(rendered).not_to include('`transfer_to_sales_&_support`')
     end
 
     it 'uses a stable peer route when a legacy title has no valid slug' do
@@ -242,8 +242,8 @@ RSpec.describe Captain::Scenario, type: :model do
 
       rendered = scenario.agent_instructions
 
-      expect(rendered).to include("`handoff_to_scenario_#{peer_scenario.id}_agent`")
-      expect(rendered).not_to include('`handoff_to_`')
+      expect(rendered).to include("`transfer_to_scenario_#{peer_scenario.id}_agent`")
+      expect(rendered).not_to include('`transfer_to_`')
     end
 
     it 'renders custom attribute labels together with raw keys' do
@@ -284,8 +284,8 @@ RSpec.describe Captain::Scenario, type: :model do
 
       expect(rendered).to include("Transfer an active task only when another agent's configured scope fits it.")
       expect(rendered).to include(peer_scenario.title)
-      expect(rendered).to include("`handoff_to_#{peer_scenario.handoff_key}`")
-      expect(rendered).not_to include("`handoff_to_#{scenario.handoff_key}`")
+      expect(rendered).to include("`transfer_to_#{peer_scenario.handoff_key}`")
+      expect(rendered).not_to include("`transfer_to_#{scenario.handoff_key}`")
     end
 
     it 'uses a compact identity and its own editable instructions' do

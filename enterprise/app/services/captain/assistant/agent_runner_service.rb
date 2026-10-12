@@ -240,7 +240,7 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def handoff_tool_name?(tool_name)
-    tool_name.start_with?(Captain::HandoffNaming::TOOL_PREFIX)
+    Captain::HandoffNaming.transfer_tool_name?(tool_name)
   end
 
   def publish_blank_response_retry(result, attempt)
@@ -383,7 +383,7 @@ class Captain::Assistant::AgentRunnerService
 
   def publish_tool_omission_event(response, context)
     bound_tool_ids = Array(context&.dig(:captain_v2_bound_tool_ids)).map(&:to_s).reject(&:blank?).uniq
-    bound_tool_ids.reject! { |tool_id| tool_id.start_with?(Captain::HandoffNaming::TOOL_PREFIX) }
+    bound_tool_ids.reject! { |tool_id| Captain::HandoffNaming.transfer_tool_name?(tool_id) }
     # The planning tools are bound to graph runs with other agents; a plain reply that skips them is not a skipped business tool.
     bound_tool_ids -= COORDINATION_TOOL_NAMES
     return if bound_tool_ids.blank? || completed_tool_names(context).any?

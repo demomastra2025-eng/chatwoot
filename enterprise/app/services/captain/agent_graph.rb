@@ -41,9 +41,12 @@ class Captain::AgentGraph
     agents.size > 1
   end
 
+  # An agent by its key: assistant_<id> (the runtime key) or agent_<id> (as it appears in a transfer tool name), a legacy
+  # scenario key, or its normalized name. A key that still carries a transfer prefix (a stored tool name) is read as well.
   def resolve(key)
-    key = key.to_s
-    return find(key.delete_prefix('assistant_')) if key.match?(/\Aassistant_\d+\z/)
+    key = Captain::HandoffNaming.target_key_for(key) || key.to_s
+    agent_id = Captain::HandoffNaming.agent_id_from_key(key)
+    return find(agent_id) if agent_id
 
     legacy_id = key[/\Ascenario_(\d+)_/, 1]
     return agents.find { |actor| actor.legacy_scenario_id == legacy_id.to_i } if legacy_id
