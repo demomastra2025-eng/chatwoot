@@ -126,9 +126,8 @@ class Integrations::Medelement::AiBookingOutcomeJob < ApplicationJob
     false
   end
 
-  # A definitively rejected move is handed over at once; its read-back only decides which time the appointment keeps.
   def failed_or_unknown?(command)
-    command.failed? || command.declined? || command.cancelled? || command.provider_status_unknown? || command.move_rejection_under_review?
+    command.failed? || command.declined? || command.cancelled? || command.provider_status_unknown?
   end
 
   def ai_booking?(command)

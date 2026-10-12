@@ -173,28 +173,15 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
     merged_scoped_reception(detail, destination_receptions, reception_code)
   end
 
+  # Only an ambiguous move reaches this read. A read that shows the new time is positive evidence and applies it. A read
+  # that still shows the old time proves nothing (a slower cached server shows it for a while), so the move stays unresolved.
   def reconcile_reception_move
     detail = client.get_reception(reception_code: provider_reception_code)
     return success_applier.reception_moved! if reception_verifier.moved_match?(detail)
-    return reject_unmoved_reception(detail) if reception_verifier.cabinet_matches?(detail)
+    return if reception_verifier.cabinet_matches?(detail)
 
     reception = merged_scoped_reception(detail, destination_receptions, provider_reception_code)
-    return success_applier.reception_moved! if reception_verifier.moved_match?(reception)
-    return unless definitive_write_rejection?
-
-    reject_unmoved_reception(merged_scoped_reception(detail, source_receptions, provider_reception_code))
-  end
-
-  # Only a definitive provider rejection can be closed by a read that still shows the original interval. After an
-  # ambiguous result that read may simply precede the provider applying the write, so it stays unresolved.
-  def reject_unmoved_reception(reception)
-    return unless definitive_write_rejection? && reception_verifier.unmoved_match?(reception)
-
-    success_applier.reception_move_rejected!
-  end
-
-  def definitive_write_rejection?
-    command.execution_state.to_h['write_failure'].to_h['definitive'] == true
+    success_applier.reception_moved! if reception_verifier.moved_match?(reception)
   end
 
   def reconcile_reception_remove
@@ -232,22 +219,8 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
     )
   end
 
-  def source_receptions
-    range = source_calendar_range
-    client.get_receptions(
-      company_cabinet_code: command.request_snapshot.fetch('company_cabinet_code'),
-      specialist_code: specialist_code,
-      begin_datetime: provider_datetime(range.begin),
-      end_datetime: provider_datetime(range.end)
-    )
-  end
-
   def destination_calendar_range
     calendar_range('destination')
-  end
-
-  def source_calendar_range
-    calendar_range('source')
   end
 
   def calendar_range(prefix)

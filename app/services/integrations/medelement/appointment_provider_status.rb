@@ -52,6 +52,23 @@ class Integrations::Medelement::AppointmentProviderStatus
       end
     end
 
+    # A rejected move leaves the reception where it was. The appointment stays provider-confirmed at its confirmed time (later
+    # syncs keep treating it as the provider's reception) and only the move request is marked rejected, with the reason.
+    def persist_rejected_move!(appointment, command:)
+      return if appointment.blank?
+
+      appointment.with_lock do
+        bound_id = appointment.custom_attributes.to_h[COMMAND_ID_KEY]
+        next unless bound_id.blank? || bound_id.to_s == command.id.to_s
+
+        updated = attributes(appointment, FAILED, command).merge(ATTRIBUTE_KEY => SUCCEEDED)
+        next if appointment.custom_attributes.to_h == updated
+
+        appointment.mark_medelement_provider_reconciled!
+        appointment.update!(custom_attributes: updated)
+      end
+    end
+
     def bound_to_command?(appointment, command)
       command.present? && appointment.custom_attributes.to_h[COMMAND_ID_KEY].present? && command_current?(appointment, command)
     end

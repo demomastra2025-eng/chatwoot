@@ -48,7 +48,24 @@ class Integrations::Medelement::ProviderCommands::Preflight
     return unless command.move_reception?
 
     raise StateChanged, 'Medelement reception has been removed' if remote['REMOVED'].to_i == 1
-    raise StateChanged, 'Medelement reception time changed' unless reception_verifier.source_time_matches?(remote)
+    raise StateChanged, 'Medelement reception time changed' unless source_time_current?(remote)
+  end
+
+  # The reception is where this command expects it, or a slower cached server still shows the interval it had before a move
+  # MedElement already answered OK to a moment ago. That read is stale, not a change made in MedElement.
+  def source_time_current?(remote)
+    reception_verifier.source_time_matches?(remote) || stale_after_acknowledged_move?(remote)
+  end
+
+  def stale_after_acknowledged_move?(remote)
+    appointment = command.appointment
+    return false if appointment.blank?
+
+    Integrations::Medelement::AcknowledgedMoveWindow.stale_read?(
+      appointment, starts_at: parse_provider_time(remote['STARTTIME']), ends_at: parse_provider_time(remote['ENDTIME'])
+    )
+  rescue ArgumentError, TypeError
+    false
   end
 
   def destination_receptions
@@ -64,7 +81,7 @@ class Integrations::Medelement::ProviderCommands::Preflight
   end
 
   def verify_remove_state!(remote)
-    raise StateChanged, 'Medelement reception time changed' unless reception_verifier.source_time_matches?(remote)
+    raise StateChanged, 'Medelement reception time changed' unless source_time_current?(remote)
     raise StateChanged, 'Medelement reception services changed' unless reception_verifier.services_match?(remote)
     return if remote['REMOVED'].to_i == 1
 

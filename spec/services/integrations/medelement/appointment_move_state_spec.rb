@@ -16,7 +16,7 @@ RSpec.describe Integrations::Medelement::AppointmentMoveState do
       },
       execution_state: {
         'write_phase' => 'reception_move',
-        'write_failure' => { 'code' => 'provider_http_error', 'status' => 400, 'definitive' => true }
+        'write_failure' => { 'code' => 'provider_http_error', 'status' => 400 }
       }
     )
   end
@@ -44,7 +44,7 @@ RSpec.describe Integrations::Medelement::AppointmentMoveState do
     expect(unknown[described_class::ATTRIBUTE_KEY]).not_to have_key('evidence')
 
     rejected = described_class.projected(unknown, command: command, provider_status: status::FAILED)
-    expect(rejected[described_class::ATTRIBUTE_KEY]).to include('state' => 'rejected', 'evidence' => 'provider_readback')
+    expect(rejected[described_class::ATTRIBUTE_KEY]).to include('state' => 'rejected', 'evidence' => 'provider_rejected')
     expect(described_class.rejected?(rejected)).to be(true)
     expect(described_class.open?(rejected)).to be(false)
   end

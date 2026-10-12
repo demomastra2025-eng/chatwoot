@@ -117,52 +117,6 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
     expect(public_messages).to be_empty
   end
 
-  it 'keeps the confirmed time, flags the reschedule and tells the customer once that it could not be confirmed' do
-    request_move!
-    command = execute_move!
-
-    expect(command).to be_reconciliation_required
-    expect(command).to have_attributes(last_error_code: 'provider_http_error', last_error_status: 400)
-    expect(appointment.reload).to have_attributes(starts_at: original_starts_at, ends_at: original_ends_at, status: 'scheduled')
-    expect(appointment.custom_attributes).to include(status::ATTRIBUTE_KEY => status::UNKNOWN)
-    expect(appointment.custom_attributes['medelement_move_request']).to include('state' => 'needs_reconciliation')
-
-    2.times { Integrations::Medelement::AiBookingOutcomeJob.perform_now(command.id) }
-
-    expect(conversation.reload).to be_open
-    expect(public_messages.pluck(:content)).to eq([notice])
-    expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
-    expect(client).to have_received(:move_reception).once
-
-    result = Captain::Tools::Agent::AppointmentResult.success(appointment.reload, action: 'update_appointment')
-    expect(result).to include(success: false, provider_confirmed: false, move_state: 'needs_reconciliation',
-                              local_date: '20.04.2026', local_time: '09:00', requested_local_time: '10:00')
-    expect(result[:status]).not_to eq('updated')
-  end
-
-  it 'ends in the provider state after the read-back and sends no second message' do
-    request_move!
-    command = execute_move!
-    Integrations::Medelement::AiBookingOutcomeJob.perform_now(command.id)
-    allow(client).to receive(:get_reception).and_return(reception_readback(original_starts_at, original_ends_at))
-
-    Integrations::Medelement::ProviderCommands::ReconciliationService.new(command: command.reload).perform
-    Integrations::Medelement::AiBookingOutcomeJob.perform_now(command.id)
-
-    expect(command.reload).to be_failed
-    expect(appointment.reload).to have_attributes(starts_at: original_starts_at, ends_at: original_ends_at)
-    expect(appointment.custom_attributes['medelement_move_request']).to include('state' => 'rejected', 'evidence' => 'provider_readback')
-    expect(appointment.custom_attributes).to include(status::ATTRIBUTE_KEY => status::SUCCEEDED)
-    expect(public_messages.pluck(:content)).to eq([notice])
-    expect(client).to have_received(:move_reception).once
-
-    # The reception is confirmed at its previous time, which still must not read as a successful reschedule.
-    expect(Captain::Tools::Agent::AppointmentResult.success(appointment, action: 'update_appointment')).to include(
-      success: false, status: 'provider_confirmation_failed', move_state: 'rejected', provider_confirmed: false,
-      local_date: '20.04.2026', local_time: '09:00'
-    )
-  end
-
   it 'cannot change the specialist of a linked reception and leaves the appointment and the provider untouched' do
     replacement = create(:scheduling_resource, account: account, timezone: 'Asia/Almaty', custom_attributes: {
                            'medelement_specialist_code' => 'specialist-2', 'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }]
@@ -178,18 +132,4 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
     expect(client).not_to have_received(:move_reception)
   end
 
-  it 'applies the time MedElement reports when the read-back shows the move happened anyway, without a contradicting confirmation' do
-    request_move!
-    command = execute_move!
-    Integrations::Medelement::AiBookingOutcomeJob.perform_now(command.id)
-    allow(client).to receive(:get_reception).and_return(reception_readback(requested_starts_at, requested_ends_at))
-
-    Integrations::Medelement::ProviderCommands::ReconciliationService.new(command: command.reload).perform
-    Integrations::Medelement::AiBookingOutcomeJob.perform_now(command.id)
-
-    expect(command.reload).to be_succeeded
-    expect(appointment.reload).to have_attributes(starts_at: requested_starts_at, ends_at: requested_ends_at)
-    expect(appointment.custom_attributes).not_to have_key('medelement_move_request')
-    expect(public_messages.pluck(:content)).to eq([notice])
-  end
 end

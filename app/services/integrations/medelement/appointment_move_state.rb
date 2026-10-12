@@ -1,6 +1,8 @@
-# A MedElement reschedule is a request until the provider confirms it. The appointment row keeps the interval the
+# A MedElement reschedule is a request until the provider answers OK. The appointment row keeps the interval the
 # provider last confirmed; this state records the requested interval, the command that carries it and its outcome.
-# It never says a move succeeded: a successful move replaces the interval on the row and removes the state.
+# It never says a move succeeded: the provider's OK replaces the interval on the row at once and removes the state
+# (no read-back is awaited, a slower cached server may keep showing the old time for a while). A rejected state is an
+# explicit provider rejection; a state that needs reconciliation is an ambiguous answer that no read has confirmed yet.
 class Integrations::Medelement::AppointmentMoveState
   ATTRIBUTE_KEY = 'medelement_move_request'.freeze
   PENDING = 'pending'.freeze
@@ -9,7 +11,7 @@ class Integrations::Medelement::AppointmentMoveState
   STATES = [PENDING, NEEDS_RECONCILIATION, REJECTED].freeze
   OPEN_STATES = [PENDING, NEEDS_RECONCILIATION].freeze
   EVIDENCE_NOT_SENT = 'not_sent'.freeze
-  EVIDENCE_PROVIDER_READBACK = 'provider_readback'.freeze
+  EVIDENCE_PROVIDER_REJECTED = 'provider_rejected'.freeze
   PROVIDER_STATUS_STATES = {
     Integrations::Medelement::AppointmentProviderStatus::PENDING => PENDING,
     Integrations::Medelement::AppointmentProviderStatus::UNKNOWN => NEEDS_RECONCILIATION,
@@ -142,7 +144,7 @@ class Integrations::Medelement::AppointmentMoveState
     end
 
     def rejection_evidence(command)
-      write_started?(command) ? EVIDENCE_PROVIDER_READBACK : EVIDENCE_NOT_SENT
+      write_started?(command) ? EVIDENCE_PROVIDER_REJECTED : EVIDENCE_NOT_SENT
     end
 
     # A move command carries the reception it moves from creation, so only the write phase proves the request was sent.

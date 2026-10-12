@@ -70,11 +70,6 @@ class Integrations::Medelement::ProviderCommand < ApplicationRecord
                    .values.any?(&:present?) || provider_reception_code.present?
   end
 
-  # The provider answered a move write with a definitive rejection and the result is still being verified by read-back.
-  def move_rejection_under_review?
-    move_reception? && reconciliation_required? && execution_state.to_h.dig('write_failure', 'definitive') == true
-  end
-
   # A command on a provider-owned (imported) appointment carries a frozen copy of the appointment it was confirmed against.
   # The appointment must stay as it was until the command is applied, or the applier refuses the result as stale.
   def frozen_imported_source?
@@ -164,7 +159,7 @@ class Integrations::Medelement::ProviderCommand < ApplicationRecord
   end
 
   def ai_booking_outcome_relevant?
-    terminal? || provider_status_unknown? || move_rejection_under_review? ||
+    terminal? || provider_status_unknown? ||
       (reconciliation_required? && execution_state.to_h['write_provider_reception_code'].present?)
   end
 

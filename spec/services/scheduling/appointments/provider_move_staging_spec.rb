@@ -125,14 +125,10 @@ RSpec.describe 'MedElement-linked reschedule' do
     )
   end
 
-  it 'applies the requested interval only when the provider confirms the move' do
+  it 'applies the requested interval as soon as the provider answers OK, although a cached read still shows the old time' do
     perform(starts_at: requested_starts_at.iso8601)
     stub_preflight
     allow(client).to receive(:move_reception).and_return({})
-    allow(client).to receive(:get_reception).and_return(
-      reception_readback(original_starts_at, original_ends_at, cabinet: false),
-      reception_readback(requested_starts_at, requested_ends_at)
-    )
     allow(Reminders::SyncRemindableService).to receive(:new).and_call_original
 
     command = execute_move!
@@ -143,6 +139,8 @@ RSpec.describe 'MedElement-linked reschedule' do
     expect(appointment.custom_attributes).to include(status::ATTRIBUTE_KEY => status::SUCCEEDED)
     expect(appointment.custom_attributes).not_to have_key(move_state::ATTRIBUTE_KEY)
     expect(client).to have_received(:move_reception).once
+    # Nothing but the preflight read the reception: the OK is final and no read-back is awaited.
+    expect(client).to have_received(:get_reception).once
   end
 
   it 'repeats the same request without a second command and refuses a different one while the first is unfinished' do
@@ -179,20 +177,21 @@ RSpec.describe 'MedElement-linked reschedule' do
       allow(client).to receive(:move_reception).and_raise(rejection)
     end
 
-    it 'keeps the original time confirmed, flags the request for reconciliation and never repeats the write' do
-      command = execute_move!
+    it 'fails the command at once, keeps the original time and shows the rejection, without any read-back' do
+      expect { execute_move! }.not_to have_enqueued_job(Integrations::Medelement::ProviderCommandReconciliationJob)
+      command = move_commands.sole
 
-      expect(command).to be_reconciliation_required
+      expect(command).to be_failed
       expect(command).to have_attributes(last_error_code: 'provider_http_error', last_error_status: 400)
-      expect(command.execution_state['write_failure']).to include(
-        'code' => 'provider_http_error', 'status' => 400, 'definitive' => true, 'provider_message' => 'Bad time'
-      )
+      expect(command.execution_state['write_failure']).to include('code' => 'provider_http_error', 'status' => 400, 'provider_message' => 'Bad time')
       expect(appointment.reload).to have_attributes(starts_at: original_starts_at, ends_at: original_ends_at, status: 'scheduled')
-      expect(appointment.custom_attributes).to include(status::ATTRIBUTE_KEY => status::UNKNOWN)
+      # The rejection leaves the reception where it was: the appointment stays provider-confirmed, only the move request is rejected.
+      expect(appointment.custom_attributes).to include(status::ATTRIBUTE_KEY => status::SUCCEEDED, status::COMMAND_ID_KEY => command.id)
       expect(move_entry).to include(
-        'state' => 'needs_reconciliation', 'error_code' => 'provider_http_error', 'error_status' => 400,
+        'state' => 'rejected', 'evidence' => 'provider_rejected', 'error_code' => 'provider_http_error', 'error_status' => 400,
         'confirmed_starts_at' => original_starts_at.utc.iso8601(6), 'requested_starts_at' => requested_starts_at.utc.iso8601(6)
       )
+      expect(client).to have_received(:get_reception).once
 
       Integrations::Medelement::ProviderCommands::Executor.new(command: command).perform
       expect(client).to have_received(:move_reception).once
@@ -204,39 +203,20 @@ RSpec.describe 'MedElement-linked reschedule' do
       result = Captain::Tools::Agent::AppointmentResult.success(appointment.reload, action: 'update_appointment')
 
       expect(result).to include(
-        success: false, provider_confirmed: false, status: 'provider_status_unknown', move_state: 'needs_reconciliation',
+        success: false, provider_confirmed: false, status: 'provider_confirmation_failed', move_state: 'rejected',
         local_date: '20.04.2026', local_time: '09:00', requested_local_date: '20.04.2026', requested_local_time: '10:00'
       )
-      expect(result[:move_guidance]).to include('Do not tell the patient it was moved')
+      expect(result[:move_guidance]).to include('did not apply the reschedule')
     end
 
-    it 'closes the move as not applied only after the read-back shows the original interval' do
-      command = execute_move!
-      allow(client).to receive(:get_reception).and_return(reception_readback(original_starts_at, original_ends_at))
-
-      command = reconcile!(command)
-
-      expect(command).to be_failed
-      expect(command).to have_attributes(last_error_code: 'provider_http_error', last_error_status: 400)
-      expect(command.execution_state).to include('result' => 'rejected')
-      expect(appointment.reload).to have_attributes(starts_at: original_starts_at, ends_at: original_ends_at)
-      # The read-back proved the reception is active at the confirmed interval, so the appointment stays provider-confirmed
-      # there; the rejection lives in the move state and on the failed command.
-      expect(appointment.custom_attributes).to include(status::ATTRIBUTE_KEY => status::SUCCEEDED, status::COMMAND_ID_KEY => command.id)
-      expect(move_entry).to include('state' => 'rejected', 'evidence' => 'provider_readback', 'error_status' => 400)
-      expect(client).to have_received(:move_reception).once
-    end
-
-    context 'when the read-back closed the move as rejected' do
+    context 'after the rejection' do
       before do
         Integrations::Medelement::ProviderCommand.create!(
           account: account, appointment: appointment, contact: contact, operation: 'create_reception', status: 'succeeded',
           idempotency_key: 'original-create', company_cabinet_code: 'cabinet-1',
           desired_starts_at: original_starts_at, desired_ends_at: original_ends_at
         )
-        command = execute_move!
-        allow(client).to receive(:get_reception).and_return(reception_readback(original_starts_at, original_ends_at))
-        reconcile!(command)
+        execute_move!
       end
 
       def import!(starts_at, ends_at)
@@ -259,7 +239,7 @@ RSpec.describe 'MedElement-linked reschedule' do
 
         expect(imported.reload).to have_attributes(id: appointment.id, source: 'manual', starts_at: original_starts_at, ends_at: original_ends_at)
         expect(imported.custom_attributes).to include(status::ATTRIBUTE_KEY => status::SUCCEEDED, 'source_mode' => 'outbound')
-        expect(move_entry).to include('state' => 'rejected', 'evidence' => 'provider_readback')
+        expect(move_entry).to include('state' => 'rejected', 'evidence' => 'provider_rejected')
       end
 
       it 'follows the provider when it shows another interval and drops the rejection that is no longer true' do
@@ -271,9 +251,7 @@ RSpec.describe 'MedElement-linked reschedule' do
     end
 
     it 'treats a new request after the rejection as a new explicit move, not as a retry of the failed command' do
-      command = execute_move!
-      allow(client).to receive(:get_reception).and_return(reception_readback(original_starts_at, original_ends_at))
-      rejected_command = reconcile!(command)
+      rejected_command = execute_move!
       expect(rejected_command).to be_failed
 
       travel 1.minute
@@ -285,8 +263,59 @@ RSpec.describe 'MedElement-linked reschedule' do
       expect(move_entry).to include('state' => 'pending')
       expect(move_entry).not_to have_key('evidence')
     end
+  end
 
-    it 'applies the provider time when the read-back shows the move was applied despite the error' do
+  context 'when the result of the move write is ambiguous' do
+    before do
+      perform(starts_at: requested_starts_at.iso8601)
+      stub_preflight
+      allow(client).to receive(:move_reception).and_raise(
+        Integrations::Medelement::Client::ApiError.new('Medelement reception move request failed', status: 503, ambiguous: true)
+      )
+    end
+
+    it 'keeps the original time confirmed and flags the request for reconciliation, never repeating the write' do
+      command = execute_move!
+
+      expect(command).to be_reconciliation_required
+      expect(command).to have_attributes(last_error_code: 'provider_http_error', last_error_status: 503)
+      expect(appointment.reload).to have_attributes(starts_at: original_starts_at, ends_at: original_ends_at, status: 'scheduled')
+      expect(appointment.custom_attributes).to include(status::ATTRIBUTE_KEY => status::UNKNOWN)
+      expect(move_entry).to include(
+        'state' => 'needs_reconciliation', 'error_code' => 'provider_http_error', 'error_status' => 503,
+        'confirmed_starts_at' => original_starts_at.utc.iso8601(6), 'requested_starts_at' => requested_starts_at.utc.iso8601(6)
+      )
+
+      Integrations::Medelement::ProviderCommands::Executor.new(command: command).perform
+      expect(client).to have_received(:move_reception).once
+    end
+
+    it 'tells the agent the move is not applied and not established' do
+      execute_move!
+
+      result = Captain::Tools::Agent::AppointmentResult.success(appointment.reload, action: 'update_appointment')
+
+      expect(result).to include(
+        success: false, provider_confirmed: false, status: 'provider_status_unknown', move_state: 'needs_reconciliation',
+        local_date: '20.04.2026', local_time: '09:00', requested_local_time: '10:00'
+      )
+      expect(result[:move_guidance]).to include('Do not tell the patient it was moved')
+    end
+
+    it 'does not close the move on a read that still shows the old time, because a cached server shows it for a while' do
+      command = execute_move!
+      allow(client).to receive(:get_reception).and_return(reception_readback(original_starts_at, original_ends_at))
+
+      command = reconcile!(command)
+
+      expect(command).to be_reconciliation_required
+      expect(appointment.reload).to have_attributes(starts_at: original_starts_at)
+      expect(appointment.custom_attributes).to include(status::ATTRIBUTE_KEY => status::UNKNOWN)
+      expect(move_entry).to include('state' => 'needs_reconciliation')
+      expect(client).to have_received(:move_reception).once
+    end
+
+    it 'applies the provider time when a read shows the move happened anyway' do
       command = execute_move!
       allow(client).to receive(:get_reception).and_return(reception_readback(requested_starts_at, requested_ends_at))
 
@@ -299,7 +328,7 @@ RSpec.describe 'MedElement-linked reschedule' do
       expect(client).to have_received(:move_reception).once
     end
 
-    it 'keeps the request flagged when the provider cannot be read back' do
+    it 'keeps the request flagged when the provider cannot be read' do
       command = execute_move!
       command.update!(execution_state: command.execution_state.merge('reconciliation_attempts' => 5))
       allow(client).to receive(:get_reception).and_raise(Integrations::Medelement::Client::ApiError.new('unavailable', status: 503))
@@ -313,7 +342,7 @@ RSpec.describe 'MedElement-linked reschedule' do
       expect(client).to have_received(:move_reception).once
     end
 
-    it 'does not treat a read-back at an unrelated time as evidence either way' do
+    it 'does not treat a read at an unrelated time as evidence either way' do
       command = execute_move!
       allow(client).to receive(:get_reception).and_return(reception_readback(original_starts_at + 3.hours, original_ends_at + 3.hours))
 
@@ -322,30 +351,6 @@ RSpec.describe 'MedElement-linked reschedule' do
       expect(command).to be_reconciliation_required
       expect(appointment.reload).to have_attributes(starts_at: original_starts_at)
       expect(move_entry).to include('state' => 'needs_reconciliation')
-    end
-  end
-
-  context 'when the result of the move write is ambiguous' do
-    before do
-      perform(starts_at: requested_starts_at.iso8601)
-      stub_preflight
-      allow(client).to receive(:move_reception).and_raise(
-        Integrations::Medelement::Client::ApiError.new('Medelement reception move request failed', status: 503, ambiguous: true)
-      )
-    end
-
-    it 'does not close the move on a read-back that may precede the provider applying the write' do
-      command = execute_move!
-      expect(command.execution_state['write_failure']).to include('definitive' => false)
-      allow(client).to receive(:get_reception).and_return(reception_readback(original_starts_at, original_ends_at))
-
-      command = reconcile!(command)
-
-      expect(command).to be_reconciliation_required
-      expect(appointment.reload).to have_attributes(starts_at: original_starts_at)
-      expect(appointment.custom_attributes).to include(status::ATTRIBUTE_KEY => status::UNKNOWN)
-      expect(move_entry).to include('state' => 'needs_reconciliation')
-      expect(client).to have_received(:move_reception).once
     end
   end
 
@@ -366,24 +371,8 @@ RSpec.describe 'MedElement-linked reschedule' do
       expect(command.last_error_code).to eq('slot_conflict')
       expect(client).not_to have_received(:move_reception)
       expect(appointment.reload).to have_attributes(starts_at: original_starts_at, ends_at: original_ends_at)
-      expect(appointment.custom_attributes).to include(status::ATTRIBUTE_KEY => status::FAILED)
+      expect(appointment.custom_attributes).to include(status::ATTRIBUTE_KEY => status::SUCCEEDED)
       expect(move_entry).to include('state' => 'rejected', 'evidence' => 'not_sent', 'error_code' => 'slot_conflict')
-    end
-  end
-
-  context 'when the appointment row already shows the requested interval (a write that bypassed staging)' do
-    it 'regains the confirmed interval only with read-back evidence that the provider kept it' do
-      perform(starts_at: requested_starts_at.iso8601)
-      stub_preflight
-      allow(client).to receive(:move_reception).and_raise(Integrations::Medelement::Client::ApiError.new('rejected', status: 400))
-      command = execute_move!
-      appointment.update_columns(starts_at: requested_starts_at, ends_at: requested_ends_at) # rubocop:disable Rails/SkipsModelValidations
-      allow(client).to receive(:get_reception).and_return(reception_readback(original_starts_at, original_ends_at))
-
-      reconcile!(command)
-
-      expect(appointment.reload).to have_attributes(starts_at: original_starts_at, ends_at: original_ends_at, duration_min: 30)
-      expect(move_entry).to include('state' => 'rejected')
     end
   end
 

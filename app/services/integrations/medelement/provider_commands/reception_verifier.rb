@@ -24,11 +24,6 @@ class Integrations::Medelement::ProviderCommands::ReceptionVerifier
       services_match?(reception)
   end
 
-  # The reception is still at the interval the move started from: the read-back shows the write was not applied.
-  def unmoved_match?(reception)
-    active?(reception) && source_identity_matches?(reception) && source_time_matches?(reception) && services_match?(reception)
-  end
-
   def removed_match?(reception)
     removed?(reception) && source_identity_matches?(reception) && source_time_matches?(reception) &&
       services_match?(reception)

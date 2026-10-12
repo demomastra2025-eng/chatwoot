@@ -108,31 +108,39 @@ RSpec.describe 'Move of an imported MedElement appointment' do
     expect(client).to have_received(:move_reception).once
   end
 
-  it 'applies the move when the provider accepted the write but the read-back lagged' do
-    stub_const('Integrations::Medelement::ProviderCommands::Executor::READBACK_DELAYS', [0].freeze)
+  it 'applies the move at once when the provider answers OK, although its read still shows the old interval' do
     allow(client).to receive(:move_reception).and_return({})
-    command = unresolved_command!
-    expect(command.last_error_code).to eq('reception_move_pending_materialization')
-    allow(client).to receive(:get_reception).and_return(reception_readback(requested_starts_at, requested_ends_at))
 
-    command = reconcile!(command)
+    command = execute_move!
 
     expect(command).to be_succeeded
     expect(appointment.reload).to have_attributes(starts_at: requested_starts_at, ends_at: requested_ends_at)
+    expect(appointment.custom_attributes).not_to have_key('medelement_move_request')
     expect(client).to have_received(:move_reception).once
+    expect(client).to have_received(:get_reception).once
   end
 
-  it 'closes a definitively rejected move once the read-back shows the original interval' do
+  it 'fails an explicit rejection without a read-back and keeps the confirmed interval' do
     allow(client).to receive(:move_reception).and_raise(Integrations::Medelement::Client::ApiError.new('rejected', status: 400))
+
+    command = execute_move!
+
+    expect(command).to be_failed
+    expect(appointment.reload).to have_attributes(starts_at: original_starts_at, ends_at: original_ends_at)
+    expect(appointment.custom_attributes['medelement_move_request']).to include('state' => 'rejected', 'evidence' => 'provider_rejected')
+    expect(client).to have_received(:move_reception).once
+    expect(client).to have_received(:get_reception).once
+  end
+
+  it 'keeps an ambiguous move unresolved while the read still shows the old interval' do
+    allow(client).to receive(:move_reception).and_raise(
+      Integrations::Medelement::Client::ApiError.new('Medelement reception move request failed', status: 503, ambiguous: true)
+    )
     command = unresolved_command!
-    allow(client).to receive(:get_reception).and_return(reception_readback(original_starts_at, original_ends_at))
 
     command = reconcile!(command)
 
-    expect(command).to be_failed
-    expect(command.execution_state).to include('result' => 'rejected')
+    expect(command).to be_reconciliation_required
     expect(appointment.reload).to have_attributes(starts_at: original_starts_at, ends_at: original_ends_at)
-    expect(appointment.custom_attributes['medelement_move_request']).to include('state' => 'rejected', 'evidence' => 'provider_readback')
-    expect(client).to have_received(:move_reception).once
   end
 end

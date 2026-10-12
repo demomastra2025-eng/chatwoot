@@ -56,6 +56,8 @@ class Integrations::Medelement::AppointmentImporterService
       snapshot_version: import_context[:snapshot_version], reception_code: reception['RECEPTION_CODE']
     ).validate!
     provider_binding(appointment, reception).validate!
+    return appointment if stale_after_acknowledged_move?(appointment, import_context)
+
     subject = import_subject(appointment, contact, reception)
     contact = subject.contact
     record_unresolved_patient_conflict(reception) if contact.blank?
@@ -71,6 +73,13 @@ class Integrations::Medelement::AppointmentImporterService
     assign_import_subject!(appointment, subject)
     persist_imported_appointment!(appointment, restore_paid_local_cancellation_expense)
     appointment
+  end
+
+  # The provider answered OK to a move a moment ago; a slower cached read server may still show the old interval.
+  def stale_after_acknowledged_move?(appointment, import_context)
+    Integrations::Medelement::AcknowledgedMoveWindow.stale_read?(
+      appointment, starts_at: import_context[:starts_at], ends_at: import_context[:ends_at]
+    )
   end
 
   def persist_imported_appointment!(appointment, restore_paid_local_cancellation_expense)

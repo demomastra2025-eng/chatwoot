@@ -188,8 +188,10 @@ class Integrations::Medelement::ProviderCommands::PatientResolver
     code = patient_code(response)
     raise reconciliation_error('patient_create_missing_ref') if code.blank?
 
-    patient = created_patient_response(response, code) || created_patient_readback(code)
-    link_patient!(code, patient: patient, verify_phone: true)
+    # The provider answered OK with the new patient code: the card exists. A slower read cache may not show it yet,
+    # so nothing is read back; the complete answer, when the provider sends one, is validated like a read would be.
+    patient = created_patient_response(response, code)
+    link_patient!(code, patient: patient, verify_phone: patient.present?)
   end
 
   def created_patient_response(response, code)
@@ -238,27 +240,6 @@ class Integrations::Medelement::ProviderCommands::PatientResolver
       "identifier = :iin OR custom_attributes ->> 'iin' = :iin OR custom_attributes ->> 'medelement_iin' = :iin",
       iin: desired_iin
     ).where("COALESCE(custom_attributes ->> 'medelement_patient_code', '') <> ''").first
-  end
-
-  def created_patient_readback(code)
-    patient = patient_by_code(code)
-    return patient if patient.present?
-
-    patient = created_patient_indexed_readback(code)
-    return patient if patient.present?
-
-    raise reconciliation_error('patient_create_readback_missing')
-  rescue Integrations::Medelement::Client::ApiError
-    patient = created_patient_indexed_readback(code)
-    return patient if patient.present?
-
-    raise reconciliation_error('patient_create_readback_failed')
-  end
-
-  def created_patient_indexed_readback(code)
-    lookup_candidates.find { |patient| patient_code(patient).to_s == code.to_s }
-  rescue Integrations::Medelement::Client::ApiError
-    nil
   end
 
   def patient_by_code(code)

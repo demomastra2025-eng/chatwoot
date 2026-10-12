@@ -409,27 +409,6 @@ RSpec.describe Integrations::Medelement::AiBookingOutcomeJob do
         .to eq('Жазылуды ауыстыруды растау мүмкін болмады. Әкімші тексеріп, сізбен байланысады.')
     end
 
-    it 'sends the notice once for a provider rejection under read-back and again sends nothing when the move fails for good' do
-      bind_provider_status!('provider_status_unknown')
-      capture_booking_fence!
-      command.update!(
-        status: 'reconciliation_required',
-        execution_state: command.execution_state.merge('write_failure' => { 'code' => 'provider_http_error', 'status' => 400, 'definitive' => true })
-      )
-
-      described_class.perform_now(command.id)
-
-      expect(conversation.reload.status).to eq('open')
-      expect(conversation.messages.outgoing.where(private: false).pluck(:content))
-        .to eq(['Не получилось подтвердить перенос записи. Администратор проверит и свяжется с вами.'])
-
-      command.update!(status: 'failed')
-      described_class.perform_now(command.id)
-
-      expect(conversation.messages.outgoing.where(private: false).count).to eq(1)
-      expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
-    end
-
     it 'waits for the read-back result of an ambiguous move write before telling the customer anything' do
       bind_provider_status!('provider_status_unknown')
       capture_booking_fence!
@@ -442,18 +421,6 @@ RSpec.describe Integrations::Medelement::AiBookingOutcomeJob do
 
       expect(conversation.reload.status).to eq('pending')
       expect(conversation.messages.outgoing).to be_empty
-    end
-
-    it 'enqueues the outcome for a definitive rejection that is read back, but not for an ambiguous result' do
-      command.update!(status: 'processing')
-      command.update!(status: 'reconciliation_required',
-                      execution_state: command.execution_state.merge('write_failure' => { 'definitive' => false }))
-      expect(described_class).not_to have_received(:perform_later)
-
-      command.update!(status: 'processing')
-      command.update!(status: 'reconciliation_required',
-                      execution_state: command.execution_state.merge('write_failure' => { 'definitive' => true }))
-      expect(described_class).to have_received(:perform_later).with(command.id).once
     end
 
     it 'does not reopen a failed reschedule after a human took over, but notes it for staff' do

@@ -1,9 +1,7 @@
 # rubocop:disable Metrics/ClassLength
 class Integrations::Medelement::ProviderCommands::Executor
   class ClaimLost < StandardError; end
-  READBACK_DELAYS = [0, 0.25, 0.5, 1, 2, 4, 4].freeze
   BOOKABLE_APPOINTMENT_STATUSES = %w[scheduled confirmed].freeze
-  PATIENT_WRITE_RESPONSE_KEYS = Integrations::Medelement::ProviderCommands::PatientResolver::WRITE_RESPONSE_KEYS
 
   def initialize(command:, client: nil)
     @command = command
@@ -25,10 +23,11 @@ class Integrations::Medelement::ProviderCommands::Executor
   rescue Integrations::Medelement::ProviderCommands::PatientActionRequired => e
     await_patient_action!(e)
   rescue Integrations::Medelement::Client::ApiError => e
-    # A move the provider rejected may still have changed the reception, so it is read back instead of trusted or retried.
+    # An explicit provider rejection is a failure. Only an ambiguous answer (timeout, 5xx, dropped connection) is read
+    # back, and then only a positive match can apply the change.
     fail_command!(
-      code: 'provider_http_error', status: e.status, reconciliation: e.ambiguous? || move_write_rejected?,
-      failure: { 'definitive' => !e.ambiguous?, 'provider_message' => e.provider_message }
+      code: 'provider_http_error', status: e.status, reconciliation: e.ambiguous?,
+      failure: { 'provider_message' => e.provider_message }
     )
   rescue Integrations::Medelement::ProviderCommands::ExecutionError => e
     fail_command!(code: e.code, reconciliation: e.reconciliation?)
@@ -157,10 +156,8 @@ class Integrations::Medelement::ProviderCommands::Executor
     remote = patient_by_code(patient_code)
     Integrations::Medelement::ProviderScope.validate!(remote, organization_id: payload['company_code'])
     mark_write_phase!('patient_update', provider_patient_code: patient_code)
-    response = client.update_patient(params: payload)
-    remote = updated_patient_readback(response, patient_code)
-    raise reconciliation_error('patient_update_pending_materialization') unless patient_snapshot_matches?(remote)
-
+    client.update_patient(params: payload)
+    # The provider answered OK, so the update is final. A slower read cache may keep showing the old card for a while.
     success_applier.patient!(patient_code: patient_code)
   end
 
@@ -248,13 +245,8 @@ class Integrations::Medelement::ProviderCommands::Executor
     preflight_result = preflight.perform
     mark_write_phase!('reception_move', preflight_reception_codes: preflight_result.reception_codes, provider_patient_code: patient_code)
     client.move_reception(params: reception_payload_builder.move_payload(patient_code: patient_code))
-    remote = bounded_readback do
-      candidate = read_reception_after_write(command.request_snapshot.fetch('provider_reception_code'))
-      candidate = preflight_result.remote_reception.to_h.merge(candidate.to_h)
-      candidate if moved_reception_matches?(candidate, patient_code)
-    end
-    raise reconciliation_error('reception_move_pending_materialization') unless remote
-
+    # The provider answered OK, so the move is final and the requested time becomes the appointment time at once.
+    # A read of a slower cached server may still show the old time; that is not a rejection and is never awaited.
     success_applier.reception_moved!
   end
 
@@ -264,9 +256,6 @@ class Integrations::Medelement::ProviderCommands::Executor
 
     begin_reception_removal_write!
     client.remove_reception(reception_code: command.request_snapshot.fetch('provider_reception_code'))
-    remote = await_removed_reception(result)
-    raise reconciliation_error('reception_remove_pending_materialization') unless remote
-
     success_applier.reception_removed!
   end
 
@@ -392,64 +381,6 @@ class Integrations::Medelement::ProviderCommands::Executor
     command.reload
   end
 
-  def read_reception_after_write(reception_code, version: :v2)
-    client.get_reception(reception_code: reception_code, version: version)
-  rescue Integrations::Medelement::Client::ApiError
-    nil
-  end
-
-  def merged_destination_readback(detail, reception_code)
-    scoped = destination_receptions_after_write.find do |candidate|
-      candidate['RECEPTION_CODE'].to_s == reception_code.to_s
-    end
-    scoped&.merge(detail.to_h) || detail
-  end
-
-  def destination_receptions_after_write
-    snapshot = command.request_snapshot.fetch('reception')
-    range_start, range_end = destination_calendar_bounds(snapshot)
-
-    client.get_receptions(
-      company_cabinet_code: command.request_snapshot.fetch('company_cabinet_code'),
-      specialist_code: snapshot.fetch('specialist_code'),
-      begin_datetime: range_start.strftime('%d.%m.%Y %H:%M:%S'),
-      end_datetime: range_end.strftime('%d.%m.%Y %H:%M:%S')
-    )
-  rescue Integrations::Medelement::Client::ApiError
-    []
-  end
-
-  def destination_calendar_bounds(snapshot)
-    zone = ActiveSupport::TimeZone[snapshot.fetch('time_zone')]
-    starts_on = Time.iso8601(snapshot.fetch('destination_starts_at')).in_time_zone(zone).to_date
-    exclusive_end = Time.iso8601(snapshot.fetch('destination_ends_at')).in_time_zone(zone).to_date + 1.day
-    [zone.local(starts_on.year, starts_on.month, starts_on.day),
-     zone.local(exclusive_end.year, exclusive_end.month, exclusive_end.day)]
-  end
-
-  def bounded_readback
-    READBACK_DELAYS.each do |delay|
-      sleep(delay) if delay.positive?
-      result = yield
-      return result if result
-    end
-    nil
-  end
-
-  def await_removed_reception(preflight_result)
-    bounded_readback do
-      candidate = read_reception_after_write(command.request_snapshot.fetch('provider_reception_code'), version: :v1)
-      candidate = preflight_result.remote_reception.to_h.merge(candidate.to_h)
-      candidate if removed_reception_matches?(candidate)
-    end
-  end
-
-  def read_patient_after_write(patient_code)
-    patient_by_code(patient_code)
-  rescue Integrations::Medelement::Client::ApiError
-    nil
-  end
-
   def patient_by_code(patient_code)
     client.get_patient(patient_code: patient_code)
   rescue Integrations::Medelement::Client::ApiError => e
@@ -468,10 +399,6 @@ class Integrations::Medelement::ProviderCommands::Executor
     nil
   end
 
-  def moved_reception_matches?(remote, patient_code)
-    reception_verifier(patient_code).moved_match?(remote)
-  end
-
   def removed_reception_matches?(remote)
     reception_verifier(command.request_snapshot['provider_patient_code']).removed_match?(remote)
   end
@@ -481,45 +408,6 @@ class Integrations::Medelement::ProviderCommands::Executor
       command: command,
       provider_patient_code: patient_code
     )
-  end
-
-  def patient_snapshot_matches?(patient)
-    return false unless patient.is_a?(Hash)
-
-    patient_data = command.request_snapshot.fetch('patient')
-    desired = patient_data.fetch('payload')
-    fields_match = {
-      'name' => 'NAME',
-      'lastname' => 'LASTNAME',
-      'middlename' => 'MIDDLENAME',
-      'patient_email' => 'PATIENT_EMAIL',
-      'birthday' => 'BIRTHDAY',
-      'gender' => 'GENDER',
-      'iin' => 'IIN'
-    }.all? do |local_key, remote_key|
-      desired[local_key].blank? || desired[local_key].to_s == patient[remote_key].to_s
-    end
-
-    fields_match && Integrations::Medelement::PhoneNumber.new(patient_data.fetch('phone_number')).matches_patient?(patient)
-  end
-
-  def normalized_patient_write_response(response)
-    response.to_h.transform_keys { |key| PATIENT_WRITE_RESPONSE_KEYS.fetch(key.to_s, key.to_s) }
-  end
-
-  def updated_patient_readback(response, patient_code)
-    remote = normalized_patient_write_response(response)
-    return remote if patient_reference_matches?(remote, patient_code) && patient_snapshot_matches?(remote)
-
-    remote = read_patient_after_write(patient_code)
-    return remote if patient_snapshot_matches?(remote)
-
-    indexed_patient_after_write(patient_code)
-  end
-
-  def patient_reference_matches?(patient, expected_code)
-    code = patient['PROFILE_CODE'].presence || patient['PATIENT_CODE'].presence
-    code.to_s == expected_code.to_s
   end
 
   def write_started?
@@ -554,16 +442,11 @@ class Integrations::Medelement::ProviderCommands::Executor
     Integrations::Medelement::ProviderCommandReconciliationJob.perform_later(command.id) if reconciliation_enqueued
   end
 
-  # A started move write is remembered with its failure so reconciliation can tell a definitive provider rejection
-  # (verifiable by read-back) from an ambiguous transport result (never proven by a read that may lag behind the write).
+  # A started move write is remembered with its failure: the move state shows the provider's own answer to staff.
   def execution_state_with_write_failure(code, status, failure)
     return command.execution_state unless command.move_reception? && write_started?
 
     command.execution_state.merge('write_failure' => { 'code' => code, 'status' => status }.merge(failure.to_h).compact)
-  end
-
-  def move_write_rejected?
-    command.move_reception? && write_started?
   end
 
   def project_failed_appointment_status!
@@ -571,14 +454,14 @@ class Integrations::Medelement::ProviderCommands::Executor
     if command.create_reception? && command.request_snapshot.dig('actor', 'type') == 'Captain::Assistant'
       provider_status.persist_if_bound!(command.appointment, provider_status::FAILED, command: command)
     elsif command.move_reception?
-      provider_status.persist_for_command!(command.appointment, provider_status::FAILED, command: command)
+      provider_status.persist_rejected_move!(command.appointment, command: command)
     else
       provider_status.persist!(command.appointment, provider_status::FAILED)
     end
   end
 
-  # The move outcome is not established until the read-back proves it, so the appointment is flagged for reconciliation.
-  # A provider-owned appointment is left alone: writing the flag would invalidate the source snapshot the command is
+  # An ambiguous move answer (timeout, 5xx, dropped connection) is not established until a read shows the new time, so
+  # the appointment is flagged for reconciliation. A provider-owned appointment is left alone: writing the flag would invalidate the source snapshot the command is
   # applied against, and the reconciliation could then never finish the move.
   def project_unresolved_move_status!
     return if command.frozen_imported_source?
