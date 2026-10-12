@@ -275,7 +275,7 @@ RSpec.describe Captain::Scenario, type: :model do
       rendered = scenario.agent_instructions
 
       expect(rendered).to include('# Human handoff')
-      expect(rendered).to include('`captain--tools--handoff`')
+      expect(rendered).to include('`handoff`')
       expect(rendered).to include('Handoff to Human (handoff): Hand off the current conversation to a human team')
     end
 
