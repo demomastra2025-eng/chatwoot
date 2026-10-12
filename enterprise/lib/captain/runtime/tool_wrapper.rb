@@ -389,6 +389,8 @@ class Captain::Runtime::ToolWrapper
     end
     return unless context[:agent_session] && !Captain::Runtime::TaskQueue.in_flight?(context[:agent_tasks]) && mutating_tool?
     return if context[:part_plan_accepted]
+    # Escalating to a human is never blocked behind planning: staff take over and nothing is executed for the customer.
+    return if @tool.is_a?(Captain::Tools::HandoffTool)
 
     Captain::ToolResult.failure(error: 'Plan the request before taking an action', retryable: false,
                                 audit: { failure_reason: 'part_plan_required', mutation_executed: false })

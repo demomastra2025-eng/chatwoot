@@ -24,8 +24,9 @@ class Captain::ResponseSchema < RubyLLM::Schema
     ].join
   ).freeze
   RESPONSE_MODE_DESCRIPTION = (
-    'Use reply when a customer-facing response is required. Use suppress when the correct outcome is to send nothing, ' \
-      'for example after a simple acknowledgement or when a human already answered.'
+    'Exactly reply or suppress. Use reply when a customer-facing response is required, including a human handoff ' \
+      '(call the handoff tool; the handoff value belongs in response, never here). Use suppress when the correct outcome ' \
+      'is to send nothing, for example after a simple acknowledgement or when a human already answered.'
   ).freeze
 
   string :response, description: 'The message to send to the user'

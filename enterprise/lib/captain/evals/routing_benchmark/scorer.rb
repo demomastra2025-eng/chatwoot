@@ -191,7 +191,8 @@ class Captain::Evals::RoutingBenchmark::Scorer
     spoken = detector.detect(customer)
     @language = spoken if %i[ru kk].include?(spoken)
     reply = detector.detect(content)
-    wrong = content.present? && (script_mismatch?(detector.script(customer), content) || language_mismatch?(reply))
+    reserved = content.to_s.start_with?('conversation_handoff')
+    wrong = content.present? && !reserved && (script_mismatch?(detector.script(customer), content) || language_mismatch?(reply))
     { customer_language: spoken, dialogue_language: @language, reply_language: reply, wrong_language: wrong }
   end
 

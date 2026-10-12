@@ -23,6 +23,8 @@ module Captain::Runtime::CoordinationPrompt
       Open parts (data): #{JSON.generate(Array(context[:parts]).select { |part| Captain::Runtime::PartRegistry::OPEN_STATES.include?(part['state']) })}
       #{plan_guidance}
       Set answer in that call only when the complete answer is verified from supplied context and needs no tool.
+      A request for a person (staff, operator, manager, lab results only staff can give) is never an answer: call the handoff tool.
+      Never write that you passed the request to staff unless the handoff tool succeeded in this reply.
       For a confirmed proposed operation, link its exact part ID and set link_action to confirmation.
       When older parts are open, mark each genuinely new request with link_action new.
       Do not treat a vague reply as confirmation; use clarify when its target is ambiguous.
