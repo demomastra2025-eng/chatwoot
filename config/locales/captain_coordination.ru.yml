@@ -1,8 +1,6 @@
 ru:
   captain:
     coordination:
-      unfinished: Не удалось завершить обработку запроса.
-      open_parts: 'Остаётся открытым: %{parts}.'
       cancelled: Запрос отменён.
       action_pending: Запрос отправлен, подтверждение придёт сообщением.
       action_not_started: 'Не начато: предыдущий шаг не завершён.'

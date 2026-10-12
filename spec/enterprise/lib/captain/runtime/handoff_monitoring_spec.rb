@@ -207,7 +207,7 @@ RSpec.describe Captain::Runtime::CoordinationEvents do
     let(:events) { [] }
 
     around do |example|
-      subscriber = ActiveSupport::Notifications.subscribe(/\Acaptain\.council\./) do |*args|
+      subscriber = ActiveSupport::Notifications.subscribe(/\Acaptain\.(council|tool)\./) do |*args|
         events << ActiveSupport::Notifications::Event.new(*args)
       end
       example.run
@@ -229,10 +229,25 @@ RSpec.describe Captain::Runtime::CoordinationEvents do
       expect(events.map { |event| event.payload.to_json }.join).not_to include('PRIVATE')
     end
 
+    it 'publishes a technical failure with the names and codes of what failed, never an argument or a message' do
+      failure = { 'tool' => 'create_appointment', 'kind' => 'technical', 'stage' => 'tool_execution', 'reason' => 'provider_unavailable',
+                  'mutating' => true, 'error' => 'PRIVATE_MESSAGE' }
+
+      described_class.technical_failure(context: context, failure: failure)
+
+      expect(events.map(&:name)).to eq(%w[captain.tool.technical_failure])
+      expect(events.sole.payload).to include('tool_name' => 'create_appointment', 'stage' => 'tool_execution',
+                                             'reason' => 'provider_unavailable', 'mutating' => true, 'run_source' => 'benchmark')
+      expect(events.sole.payload.to_json).not_to include('PRIVATE')
+    end
+
     it 'never lets a failing monitor break a part' do
       allow(Llm::EventBus).to receive(:publish).and_raise(StandardError, 'bus down')
 
-      expect { described_class.part_started(context: {}, part: part, lane: 'reader', inline: false) }.not_to raise_error
+      expect do
+        described_class.part_started(context: {}, part: part, lane: 'reader', inline: false)
+        described_class.technical_failure(context: {}, failure: {})
+      end.not_to raise_error
     end
 
     it 'has no operation events any more: a part acts with its own tools' do

@@ -1,8 +1,6 @@
 kk:
   captain:
     coordination:
-      unfinished: Сұрауды өңдеу аяқталмады.
-      open_parts: 'Ашық қалғаны: %{parts}.'
       cancelled: Сұрау тоқтатылды.
       action_pending: Сұрау жіберілді, растау хабарлама арқылы келеді.
       action_not_started: 'Басталмады: алдыңғы қадам аяқталмады.'

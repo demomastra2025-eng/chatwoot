@@ -8,6 +8,7 @@ class Captain::Runtime::ToolWrapper
 
   TOOL_NOT_BOUND_ERROR = 'Tool is not available for the current agent runtime'
   PARALLEL_MUTATING_TOOL_ERROR = 'Only one action tool can run per assistant tool-call batch'
+  TECHNICAL_STOP_MESSAGE = 'A technical failure ended this run; staff take over the conversation. Write nothing to the customer.'
   DUPLICATE_FAILED_TOOL_ERROR = 'This exact tool call already failed. Change the arguments or stop retrying it.'
   TOOL_RESULT_CACHE_KEY = :captain_v2_tool_result_cache
   TOOL_FAILURE_CACHE_KEY = :captain_v2_tool_failure_cache
@@ -56,7 +57,7 @@ class Captain::Runtime::ToolWrapper
   def call(args)
     ensure_response_run_current!
     if context_wrapper_context[:pending_handoff] || context_wrapper_context[:pending_human_handoff] ||
-       context_wrapper_context[:pending_response_cancellation]
+       context_wrapper_context[:pending_response_cancellation] || context_wrapper_context[:technical_failure]
       return RubyLLM::Tool::Halt.new('Control has been transferred; remaining calls in this batch were not executed.')
     end
     @operation_scope = Captain::Runtime::TaskQueue.new(context_wrapper_context).operation_scope if context_wrapper_context[:agent_session]
@@ -143,8 +144,11 @@ class Captain::Runtime::ToolWrapper
     execute_tool(tool_context, normalized_args)
   end
 
+  # An exception of a tool (or of the code around it) is an internal failure: the run ends and staff take over.
   def handle_execution_error(error)
     record_mutating_tool_result(Captain::ToolResult.failure(error: error, retryable: false))
+    register_technical_failure('tool' => Captain::Runtime::ToolFailure.canonical_name(@tool.name), 'kind' => Captain::Runtime::ToolFailure::TECHNICAL,
+                               'reason' => 'exception', 'error_class' => error.class.name)
     @context_wrapper.callback_manager.emit_tool_complete(
       @tool.name,
       Captain::ToolResult.failure(error: error),
@@ -186,13 +190,26 @@ class Captain::Runtime::ToolWrapper
     record_completed_action(final_result)
     @context_wrapper.callback_manager.emit_tool_complete(@tool.name, final_result, @context_wrapper)
     return final_result if halt_result?(final_result)
+
+    technical_stop = technical_failure_halt(final_result)
+    return technical_stop if technical_stop
     return halt_completed_result(final_result) if terminal_failure_result?(final_result)
 
     Captain::ToolResult.render(final_result)
   end
 
-  # The names of the actions this run has performed (a successful write that is not an annotation): the report of a council and
-  # the notes for staff say which of them were done.
+  # A technical failure of a tool (the provider rejected the call or did not answer, a timeout, an unknown outcome; see
+  # ToolFailure) ends the run at once. The customer gets no text about it: the conversation goes to staff, who are told what
+  # failed. A business outcome (a taken slot, a patient who was not found, an argument to fix) is rendered to the agent as before.
+  def technical_failure_halt(result)
+    return unless reportable_failure_tool? && Captain::Runtime::ToolFailure.technical?(result)
+
+    register_technical_failure(Captain::Runtime::ToolFailure.summary(@tool.name, result))
+    RubyLLM::Tool::Halt.new(TECHNICAL_STOP_MESSAGE)
+  end
+
+  # The names of the actions this run has performed (a successful write that is not an annotation): staff are told which of them
+  # came before a failure.
   def record_completed_action(result)
     return unless domain_mutating_tool? && reportable_failure_tool? && !halt_result?(result)
     return if Captain::Runtime::ToolFailure.annotation_tool?(@tool.name) || Captain::Runtime::ToolFailure.failure?(result)
@@ -200,9 +217,19 @@ class Captain::Runtime::ToolWrapper
     (context_wrapper_context[COMPLETED_ACTIONS_KEY] ||= []) << Captain::Runtime::ToolFailure.canonical_name(@tool.name)
   end
 
+  # The first failure of a run is the one that is reported. The record holds names and codes only, never arguments or messages.
+  def register_technical_failure(summary)
+    return unless reportable_failure_tool?
+    return if context_wrapper_context[:technical_failure].present?
+
+    context_wrapper_context[:technical_failure] = summary.merge('mutating' => mutating_tool?)
+    Captain::Runtime::CoordinationEvents.technical_failure(context: context_wrapper_context, failure: context_wrapper_context[:technical_failure])
+  end
+
   # The tools that move the conversation (a transfer, the plan, the task queue, the human handoff, the resolution, a cancelled
-  # reply) are not business tools: what they report is not an action of the work for the customer. A Playground run has no
-  # customer and no staff to hand over to: its simulated tools are scenario outcomes that the person who tests sees as they are.
+  # reply) are not business tools: what they report is not a failure of the work for the customer. A Playground run has no
+  # customer and no staff to hand over to: the failures of its simulated tools are scenario outcomes that the person who tests
+  # sees as they are.
   def reportable_failure_tool?
     !coordination_tool? && !terminal_control_tool? && !@tool.is_a?(Captain::Tools::CancelResponseTool) &&
       context_wrapper_context[:playground_session].nil?
@@ -529,7 +556,10 @@ class Captain::Runtime::ToolWrapper
     bound_ids = bound_tool_ids_for_current_agent
     return nil if bound_ids.include?(@tool.name.to_s)
 
-    Captain::ToolResult.failure(error: TOOL_NOT_BOUND_ERROR, retryable: false)
+    Captain::ToolResult.failure(
+      error: TOOL_NOT_BOUND_ERROR, retryable: false,
+      audit: { failure_stage: 'tool_execution', failure_reason: 'tool_not_bound', mutation_executed: false }
+    )
   end
 
   def enforce_bound_tools?

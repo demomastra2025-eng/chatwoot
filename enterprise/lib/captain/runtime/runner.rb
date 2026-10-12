@@ -9,22 +9,23 @@ class Captain::Runtime::Runner
   class AgentNotFoundError < StandardError; end
   class SelfHandoffError < StandardError; end
   class UnresolvedTasksError < StandardError; end
-  # A council whose every part failed technically (see ToolFailure) ends the run. The customer gets no text: the result is an
-  # error, which the runner of the conversation turns into the system handoff to staff.
+  # A technical failure of a tool ended the run (see ToolFailure). The customer gets no text: the result is an error, which the
+  # runner of the conversation turns into the system handoff to staff.
   class TechnicalFailure < StandardError; end
 
   def self.with_agents(*agents)
     Captain::Runtime::AgentRunner.new(agents)
   end
 
+  # An error ends the run as a result with an error, never as a text for the customer: the caller hands the conversation to staff.
+  # A run of a live conversation that runs out of turns, or that is stopped by the loop guard, is a technical failure of the run:
+  # it ends the same way as the failure of a tool, with the conversation handed to staff and no text about it.
   def run(starting_agent, input, **options)
     session = nil
     session = build_session(starting_agent, input, options)
     process_session(session)
   rescue MaxTurnsExceeded => e
-    if planned_run?(session)
-      return finalize_run(session[:chat], session[:context_wrapper], session[:current_agent], output: open_parts_response(session))
-    end
+    return technical_run_result(session, 'max_turns') if planned_run?(session)
 
     finalize_run(session&.dig(:chat), session&.dig(:context_wrapper), session&.dig(:current_agent),
                  output: "Conversation ended: #{e.message}", error: e)
@@ -41,17 +42,6 @@ class Captain::Runtime::Runner
   def planned_run?(session)
     context = session&.dig(:context_wrapper)&.context
     context && context[:agent_session] && !context[:part_run] && !Captain::Runtime::TaskQueue.in_flight?(context[:agent_tasks])
-  end
-
-  def open_parts_response(session)
-    parts = Array(session[:context_wrapper].context[:parts]).select do |part|
-      Captain::Runtime::PartRegistry::OPEN_STATES.include?(part['state'])
-    end
-    fragments = parts.map { |part| part['fragment'].to_s.first(160) }.reject(&:blank?)
-    locale = Captain::Runtime::CouncilEditor.locale_for(session[:context_wrapper].context)
-    text = I18n.t('captain.coordination.unfinished', locale: locale)
-    text += " #{I18n.t('captain.coordination.open_parts', parts: fragments.join('; '), locale: locale)}" if fragments.any?
-    { response: text, reasoning: '' }
   end
 
   def build_session(starting_agent, input, options)
@@ -147,6 +137,7 @@ class Captain::Runtime::Runner
   end
 
   def resolve_response(session, response)
+    return technical_failure_result(session) if technical_failure_stop?(session, response)
     return terminal_tool_stop_result(session) if terminal_tool_stop?(session, response)
     return continue_after_transfer_guard(session) if session[:context_wrapper].context.delete(:transfer_guard_active)
     return handle_handoff(session) if handoff_requested?(session, response)
@@ -295,17 +286,25 @@ class Captain::Runtime::Runner
     halt_response?(response) && terminal_tool_stop_state(session).present?
   end
 
-  # Every part of a council failed technically: no text for the customer, the conversation goes to staff (see ToolFailure).
+  # A tool failure that ended the run: no text for the customer, the conversation goes to staff (see ToolFailure).
+  def technical_failure_stop?(session, response)
+    halt_response?(response) && session[:context_wrapper].context[:technical_failure].present?
+  end
+
   def technical_failure_result(session)
     failure = session[:context_wrapper].context[:technical_failure].to_h.with_indifferent_access
     error = TechnicalFailure.new("Technical failure #{[failure[:tool], failure[:reason]].compact.join(' ')}".squish)
     finalize_run(session[:chat], session[:context_wrapper], session[:current_agent], output: nil, error: error)
   end
 
+  def technical_run_result(session, reason)
+    context = session[:context_wrapper].context
+    context[:technical_failure] ||= { 'kind' => Captain::Runtime::ToolFailure::TECHNICAL, 'reason' => reason }
+    technical_failure_result(session)
+  end
+
   def terminal_tool_stop_result(session)
-    if planned_run?(session)
-      return finalize_run(session[:chat], session[:context_wrapper], session[:current_agent], output: open_parts_response(session))
-    end
+    return technical_run_result(session, 'tool_loop') if planned_run?(session)
 
     terminal_state = terminal_tool_stop_state(session).to_h.with_indifferent_access
     message = terminal_state.dig(:result, :error).presence || 'Captain stopped a repeated tool-call loop'

@@ -441,6 +441,19 @@ RSpec.describe Captain::Runtime::Runner do
         expect(reminders.map(&:content).sole).to include('waits for the customer\'s answer')
       end
 
+      it 'ends a run of a live conversation that ran out of turns as a technical failure, never as a text for the customer' do
+        context[:agent_session] = Object.new
+        chat.respond_with(reply('Записала.'))
+        expect_initial_ask
+
+        result = run_with(max_turns: 1)
+
+        expect(result.error).to be_a(described_class::TechnicalFailure)
+        expect(result.error.message).to eq('Technical failure max_turns')
+        expect(result.context[:technical_failure]).to eq('kind' => 'technical', 'reason' => 'max_turns')
+        expect(result.output).to be_nil
+      end
+
       it 'keeps the plain error for a run that ran out of turns without a live conversation' do
         chat.respond_with(reply('Записала.'))
         expect_initial_ask
@@ -497,7 +510,25 @@ RSpec.describe Captain::Runtime::Runner do
       end
     end
 
-    describe 'a run that ends without a reply for the customer' do
+    describe 'a technical failure of a tool' do
+      it 'ends the run with an error and no output, and leaves the record of the failure for the response builder' do
+        failure = { 'tool' => 'create_appointment', 'kind' => 'technical', 'reason' => 'provider_unavailable' }
+        chat.respond_with(lambda do |current_context|
+          current_context[:technical_failure] = failure
+          RubyLLM::Tool::Halt.new('A technical failure ended this run')
+        end)
+        expect_initial_ask
+        expect(Llm::Runtime).not_to receive(:complete)
+
+        result = run_with
+
+        expect(result).to be_failed
+        expect(result.output).to be_nil
+        expect(result.error).to be_a(described_class::TechnicalFailure)
+        expect(result.error.message).to eq('Technical failure create_appointment provider_unavailable')
+        expect(result.context[:technical_failure]).to eq(failure)
+      end
+
       it 'ends a council that has no reply left as the same error' do
         council = instance_double(Captain::Runtime::Council)
         allow(Captain::Runtime::Council).to receive(:new).and_return(council)
@@ -519,6 +550,21 @@ RSpec.describe Captain::Runtime::Runner do
         result = run_with
 
         expect(result.error).to be_a(described_class::TechnicalFailure)
+        expect(result.output).to be_nil
+      end
+
+      it 'ends a repeated tool-call loop of a live conversation as a technical failure too, with no text for the customer' do
+        context[:agent_session] = Object.new
+        chat.respond_with(lambda do |current_context|
+          current_context[Captain::Runtime::ToolWrapper::TERMINAL_TOOL_STOP_KEY] = { tool_name: 'x', result: { error: 'Tool request limit reached' } }
+          RubyLLM::Tool::Halt.new('stop')
+        end)
+        expect_initial_ask
+
+        result = run_with
+
+        expect(result.error).to be_a(described_class::TechnicalFailure)
+        expect(result.context[:technical_failure]).to eq('kind' => 'technical', 'reason' => 'tool_loop')
         expect(result.output).to be_nil
       end
 

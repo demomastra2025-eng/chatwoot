@@ -270,5 +270,42 @@ RSpec.describe Captain::Runtime::Council, 'with parts that act' do
     expect(run_council(second_context, second_parts)).to eq('Вы записаны на 11:00.')
     expect(booking.calls).to eq(['Анна, 10:00', 'Анна, 11:00'])
   end
+
+  it 'does not mention a part whose tool failed technically: the other part is answered and staff take over after the reply' do
+    booking.result = Captain::ToolResult.failure(error: 'Provider did not answer', retryable: false,
+                                                 audit: { failure_stage: 'tool_execution', failure_reason: 'provider_unavailable' })
+    writer_chat.script(lambda do |chat|
+      Captain::Runtime::ToolWrapper.new(booking, chat.context_wrapper).call(title: 'Анна, 14 октября')
+    end)
+    reader_chat.script(looks_up_the_price)
+
+    reply = run_council(first_context, first_parts)
+
+    failed = session.read['parts'].first
+    expect(reply).to eq('МРТ стоит 15000 тенге.')
+    expect(failed['state']).to eq('unknown')
+    expect(first_context[:council_handoff]).to include(
+      reason: 'council_technical_failure', technical: true,
+      failures: [include('tool' => 'create_appointment', 'kind' => 'technical', 'stage' => 'tool_execution', 'reason' => 'provider_unavailable')]
+    )
+    expect(operations).to contain_exactly(include('outcome' => 'unknown'))
+    expect(booking.calls.size).to eq(1)
+  end
+
+  it 'ends the whole run as a technical failure when every part of the council failed' do
+    failure = Captain::ToolResult.failure(error: 'Provider did not answer', retryable: false)
+    booking.result = failure
+    writer_chat.script(lambda do |chat|
+      Captain::Runtime::ToolWrapper.new(booking, chat.context_wrapper).call(title: 'Анна, 14 октября')
+    end)
+    broken_price = Captain::ToolResult.failure(error: 'Price list is down', retryable: false)
+    allow(price).to receive(:perform).and_return(broken_price)
+    reader_chat.script(->(chat) { Captain::Runtime::ToolWrapper.new(price, chat.context_wrapper).call({}) })
+
+    reply = run_council(first_context, first_parts)
+
+    expect(reply).to eq('')
+    expect(first_context[:technical_failure]).to include('tool' => 'create_appointment', 'parts' => 2)
+  end
 end
 # rubocop:enable Lint/ConstantDefinitionInBlock

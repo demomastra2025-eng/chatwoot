@@ -16,6 +16,7 @@ class Llm::Monitoring::EventRecorder
       captain.council.part_finished
       captain.customer_notice.fallback
       captain.customer_notice.generated
+      captain.tool.technical_failure
       llm.agent.handoff
       llm.budget.blocked
       llm.budget.warning
@@ -56,7 +57,7 @@ class Llm::Monitoring::EventRecorder
   ESSENTIAL_PAYLOAD_KEYS = %w[
     canonical_event_name event_name_alias error_class error_code failure_mode openrouter_generation_id parent_request_id
     run_source from_agent_id to_agent_id participants outcome part_id part_version executor_agent_id state
-    lane inline acted mutations_succeeded mutations_failed mutations_unknown tools_called turns duration_ms
+    lane inline acted mutations_succeeded mutations_failed mutations_unknown tools_called turns duration_ms stage mutating
     payload_bytes payload_budget_bytes project_case_id queue_wait_ms retry_count schema_invalid_count status
     snippet_hash thinking_tokens tool_calls_count usage_scope provider_response_count provider_observability_error_count
     cached_tokens cache_creation_tokens actual_model endpoint_provider requested_model

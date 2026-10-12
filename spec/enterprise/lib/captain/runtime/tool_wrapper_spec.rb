@@ -1069,11 +1069,8 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     end
 
     {
-      'an unknown provider outcome' => {},
       'an action that already executed' => { failure_stage: 'tool_arguments', mutation_executed: true },
-      'a failure outside argument validation' => { failure_stage: 'provider_request', mutation_executed: false },
-      'an argument failure without execution evidence' => { failure_stage: 'tool_arguments' },
-      'an unexecuted failure without its validation stage' => { mutation_executed: false }
+      'an argument failure without execution evidence' => { failure_stage: 'tool_arguments' }
     }.each do |outcome, audit|
       it "blocks alternate arguments after #{outcome}" do
         failure = Captain::ToolResult.failure(error: 'Action could not be confirmed', retryable: false, audit: audit).deep_stringify_keys
@@ -1087,6 +1084,29 @@ RSpec.describe Captain::Runtime::ToolWrapper do
         expect_tool_error(
           alternate_result, 'This action tool already ran in the current assistant run. Do not retry it with alternate arguments.', retryable: false
         )
+        expect(mutating_tool).to have_received(:perform).once
+        expect(agent_session.read.fetch('operations').values).to contain_exactly(include('status' => 'finished'))
+      end
+    end
+
+    # A final failure that is no answer to the arguments (the provider rejected the call, an unknown outcome) is technical: the run
+    # ends at once, so there is no alternate attempt to block, and nothing else runs after it.
+    {
+      'an unknown provider outcome' => {},
+      'a failure outside argument validation' => { failure_stage: 'provider_request', mutation_executed: false },
+      'an unexecuted failure without its validation stage' => { mutation_executed: false }
+    }.each do |outcome, audit|
+      it "ends the run at once after #{outcome}, and no alternate attempt runs" do
+        failure = Captain::ToolResult.failure(error: 'Action could not be confirmed', retryable: false, audit: audit).deep_stringify_keys
+        allow(mutating_tool).to receive(:perform).and_return(failure)
+
+        first_result = mutating_wrapper.call(title: 'First attempt')
+        context_wrapper.context[:captain_v2_current_tool_batch_id] = 'alternate-arguments-batch'
+        alternate_result = mutating_wrapper.call(title: 'Alternate attempt')
+
+        expect(first_result).to be_a(RubyLLM::Tool::Halt)
+        expect(alternate_result).to be_a(RubyLLM::Tool::Halt)
+        expect(context_wrapper.context[:technical_failure]).to include('tool' => 'tool_wrapper_mutating_spec', 'kind' => 'technical')
         expect(mutating_tool).to have_received(:perform).once
         expect(agent_session.read.fetch('operations').values).to contain_exactly(include('status' => 'finished'))
       end
@@ -1162,11 +1182,111 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     expect(context_wrapper.context[:captain_v2_tool_result_cache]).to be_blank
   end
 
-  describe 'the actions a run performed' do
+  describe 'a technical failure of a tool' do
     let(:read_only_tool) { ToolWrapperSpecReadOnlyTool.new(tool_name: 'faq_lookup') }
     let(:read_only_wrapper) { described_class.new(read_only_tool, context_wrapper) }
     let(:mutating_tool) { ToolWrapperSpecMutatingTool.new }
     let(:mutating_wrapper) { described_class.new(mutating_tool, context_wrapper) }
+    let(:provider_down) do
+      Captain::ToolResult.failure(error: 'Provider did not answer for Айгуль +77010000000', retryable: false,
+                                  audit: { failure_stage: 'tool_execution', failure_reason: 'provider_unavailable' })
+    end
+
+    before { allow(Captain::Runtime::CoordinationEvents).to receive(:technical_failure) }
+
+    it 'ends the run at once and records what failed, by names and codes only' do
+      result = read_only_wrapper.call(result: provider_down)
+
+      expect(result).to be_a(RubyLLM::Tool::Halt)
+      expect(result.content).not_to include('Айгуль', '7701')
+      expect(context_wrapper.context[:technical_failure]).to eq(
+        'tool' => 'faq_lookup', 'kind' => 'technical', 'stage' => 'tool_execution', 'reason' => 'provider_unavailable', 'mutating' => false
+      )
+      expect(Captain::Runtime::CoordinationEvents).to have_received(:technical_failure).with(
+        context: context_wrapper.context, failure: hash_including('tool' => 'faq_lookup')
+      )
+    end
+
+    it 'stops every later call of the run, also of another tool, without executing it' do
+      read_only_wrapper.call(result: provider_down)
+      later = ToolWrapperSpecReadOnlyTool.new(tool_name: 'later_tool')
+
+      expect(described_class.new(later, context_wrapper).call(result: 'must not execute')).to be_a(RubyLLM::Tool::Halt)
+      expect(later.calls).to eq(0)
+    end
+
+    it 'ends the run for a write with an unknown outcome and keeps its receipt as unknown' do
+      assistant = build_stubbed(:captain_assistant)
+      session = Captain::Conversation::AgentSession.new(entry: assistant)
+      context_wrapper.context[:state].merge!(assistant_id: assistant.id, account_id: assistant.account_id)
+      context_wrapper.context[:agent_session] = session
+      context_wrapper.context[:agent_request_id] = 'technical-request'
+      allow(mutating_tool).to receive(:perform).and_return(provider_down)
+
+      result = mutating_wrapper.call(title: 'Visit')
+
+      expect(result).to be_a(RubyLLM::Tool::Halt)
+      expect(context_wrapper.context[:technical_failure]).to include('tool' => 'tool_wrapper_mutating_spec', 'mutating' => true)
+      expect(session.read.fetch('operations').values).to contain_exactly(include('status' => 'finished', 'outcome' => 'unknown'))
+      expect(context_wrapper.context[described_class::COMPLETED_ACTIONS_KEY]).to be_nil
+    end
+
+    it 'does not end the run for a business outcome: the agent sees it and answers' do
+      taken = JSON.generate(success: false, reason: 'time_taken')
+
+      result = read_only_wrapper.call(result: taken)
+
+      expect(result).not_to be_a(RubyLLM::Tool::Halt)
+      expect(result).to include('time_taken')
+      expect(context_wrapper.context).not_to have_key(:technical_failure)
+    end
+
+    it 'does not end the run for a failure that may be retried, or one that declares itself business' do
+      retryable = Captain::ToolResult.failure(error: 'Temporary provider timeout', retryable: true)
+      declared = Captain::ToolResult.failure(error: 'Patient not found', retryable: false, audit: { error_class: 'business' })
+
+      [retryable, declared].each { |failure| expect(read_only_wrapper.call(result: failure)).not_to be_a(RubyLLM::Tool::Halt) }
+      expect(context_wrapper.context).not_to have_key(:technical_failure)
+    end
+
+    it 'ends the run for a failure that declares itself technical, however it is marked' do
+      declared = Captain::ToolResult.failure(error: 'Provider answered 500', retryable: true, audit: { error_class: 'technical' })
+
+      expect(read_only_wrapper.call(result: declared)).to be_a(RubyLLM::Tool::Halt)
+      expect(context_wrapper.context[:technical_failure]).to include('kind' => 'technical')
+    end
+
+    it 'ends the run for an exception of a tool, and still raises it' do
+      allow(read_only_tool).to receive(:perform).and_raise(RuntimeError, 'boom')
+
+      expect { read_only_wrapper.call(result: 'x') }.to raise_error(RuntimeError, 'boom')
+      expect(context_wrapper.context[:technical_failure]).to eq(
+        'tool' => 'faq_lookup', 'kind' => 'technical', 'reason' => 'exception', 'error_class' => 'RuntimeError', 'mutating' => false
+      )
+    end
+
+    it 'does not take the failure of a coordination or control tool for a failure of the work' do
+      target = Captain::Runtime::Agent.new(name: 'billing_specialist')
+      transfer = described_class.new(Captain::Runtime::HandoffTool.new(target), context_wrapper)
+      allow(transfer.instance_variable_get(:@tool)).to receive(:perform).and_raise(RuntimeError, 'boom')
+
+      expect { transfer.call({}) }.to raise_error(RuntimeError)
+      expect(context_wrapper.context).not_to have_key(:technical_failure)
+    end
+
+    it 'leaves a Playground run alone: its failures are scenario outcomes' do
+      context_wrapper.context[:playground_session] = Object.new
+
+      expect(read_only_wrapper.send(:reportable_failure_tool?)).to be(false)
+    end
+
+    it 'does not end a run for a result that the safety policy blocked, which is no failure of a system' do
+      blocked = Captain::ToolResult.failure(error: 'Tool result blocked by safety policy', retryable: false,
+                                            audit: { failure_stage: 'tool_results', failure_reason: 'custom_blocklist' })
+
+      expect(read_only_wrapper.call(result: blocked)).not_to be_a(RubyLLM::Tool::Halt)
+      expect(context_wrapper.context).not_to have_key(:technical_failure)
+    end
 
     it 'records the actions a run performed, in order, without annotations and failures' do
       annotation = Class.new(ToolWrapperSpecMutatingTool) { def name = 'add_private_note' }.new

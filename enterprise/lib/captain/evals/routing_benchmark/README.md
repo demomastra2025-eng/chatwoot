@@ -217,7 +217,9 @@ has what it needs, otherwise it asks one precise question) and writes the final 
 `captain.council.part_started` and `captain.council.part_finished` carry, per part, only IDs, states and counts
 (`part_id`, `part_version`, `executor_agent_id`, `lane` writer or reader, `inline`, `state`, `status`, `acted`,
 `mutations_succeeded`, `mutations_failed`, `mutations_unknown`, `tools_called`, `turns`, `duration_ms`); `llm.tool.*` events of
-the part tools carry the `part_id` and `part_version` of their part. The council editor (a model call without reasoning and
+the part tools carry the `part_id` and `part_version` of their part. A technical failure of a tool ends the part
+without a text for the customer and hands the conversation to staff (`captain.tool.technical_failure`: tool, stage and reason
+codes). The council editor (a model call without reasoning and
 without tools) edits the part texts into the single customer reply (a council of one part sends its text as it is) and adds `captain.council.edited` (part IDs, reply language,
 `handoff`, and `reason: council_unresolved` when staff will answer an unresolved part) and
 `captain.council.editor_fallback` (part IDs and the `reason` the part texts were sent one after another instead:

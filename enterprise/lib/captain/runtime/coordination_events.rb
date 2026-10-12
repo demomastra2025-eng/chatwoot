@@ -23,6 +23,15 @@ class Captain::Runtime::CoordinationEvents
       publish_quietly('council.editor_fallback', context: context, parts: Array(part_ids), reason: reason.to_s)
     end
 
+    # A technical failure that ends a run and hands the conversation to staff. Names and codes only: never an argument, a message
+    # or a tool result.
+    def technical_failure(context:, failure:)
+      failure = failure.to_h.with_indifferent_access
+      publish_quietly('tool.technical_failure', context: context, tool_name: failure[:tool].to_s.presence,
+                                                stage: failure[:stage].to_s.presence, reason: failure[:reason].to_s.presence,
+                                                mutating: failure[:mutating] == true)
+    end
+
     # Part events carry identifiers, states and counts only: never a text, a parameter or a tool result.
     def part_started(context:, part:, lane:, inline:)
       publish_part('council.part_started', context, part, lane: lane.to_s, inline: inline == true)

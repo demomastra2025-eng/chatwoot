@@ -1,8 +1,6 @@
 en:
   captain:
     coordination:
-      unfinished: The request could not be completed.
-      open_parts: 'Still open: %{parts}.'
       cancelled: The request was cancelled.
       action_pending: The request was sent; a confirmation will follow in a message.
       action_not_started: 'Not started: an earlier step was not completed.'

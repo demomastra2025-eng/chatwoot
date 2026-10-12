@@ -77,6 +77,18 @@ RSpec.describe Llm::Monitoring::EventRecorder do
       end
     end
 
+    it 'persists a technical failure of a tool with the tool and the codes' do
+      event = described_class.record_notification(
+        event_name: 'captain.tool.technical_failure', started_at: Time.current, finished_at: Time.current,
+        payload: { account_id: account.id, run_source: 'live', tool_name: 'create_appointment', stage: 'tool_execution',
+                   reason: 'provider_unavailable', mutating: true }
+      )
+
+      expect(event).to have_attributes(event_name: 'captain.tool.technical_failure', account_id: account.id, tool_name: 'create_appointment',
+                                       reason: 'provider_unavailable')
+      expect(event.payload).to include('stage' => 'tool_execution', 'mutating' => true)
+    end
+
     it 'no longer persists the events of the removed confirmed operations' do
       event = described_class.record_notification(
         event_name: 'captain.operation.started', started_at: Time.current, finished_at: Time.current,
