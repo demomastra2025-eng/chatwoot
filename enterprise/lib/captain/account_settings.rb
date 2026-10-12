@@ -11,6 +11,8 @@ class Captain::AccountSettings
     'safety' => %w[moderation_enabled]
   }.freeze
   MESSAGE_FIELDS = %w[handoff_message resolution_message].freeze
+  # The owner's short "how to write" guide for an AI-written handoff or closing message.
+  MESSAGE_INSTRUCTION_MAX_LENGTH = 500
   REASON_FIELDS = %w[handoff_reasons completion_reasons].freeze
   ACTION_TO_API = { 'disabled' => 'off', 'flag' => 'flag', 'block' => 'block' }.freeze
   ACTION_FROM_API = ACTION_TO_API.invert.freeze
@@ -95,7 +97,7 @@ class Captain::AccountSettings
   end
 
   def default_message(enabled)
-    { 'enabled' => enabled, 'mode' => 'fixed', 'text' => '' }
+    { 'enabled' => enabled, 'mode' => 'fixed', 'text' => '', 'instruction' => '' }
   end
 
   def web_access_configured?

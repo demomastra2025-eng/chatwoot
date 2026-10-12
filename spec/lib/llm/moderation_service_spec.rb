@@ -21,6 +21,7 @@ RSpec.describe Llm::ModerationService do
       allow(Llm::RuntimePolicy).to receive(:fail_closed_moderation?).and_return(false)
       allow(Llm::RuntimePolicy).to receive(:moderation_failure_mode).and_return('fail_open')
       allow(Llm::Config).to receive(:api_key).with('openrouter').and_return('openrouter-key')
+      allow(Llm::RuntimePolicy).to receive(:no_thinking_options).and_return(nil)
       allow(Llm::Config).to receive(:moderation_model).and_return(model)
       allow(Llm::Config).to receive(:provider_for_model).with(model, account: nil).and_return('openrouter')
       allow(Llm::OpenRouterModelMigration).to receive(:resolve).and_return(model)
@@ -76,6 +77,20 @@ RSpec.describe Llm::ModerationService do
       expect(result.result.flagged).to be(false)
       expect(result.result.categories).to eq([])
       expect(result.result.reason).to eq('safe')
+    end
+
+    it 'asks for no reasoning when the moderation model can be told so' do
+      allow(Llm::RuntimePolicy).to receive(:no_thinking_options).with(model: model, account: nil).and_return(effort: 'none')
+      expect(Llm::Runtime).to receive(:build_chat).with(
+        feature: :moderation,
+        account: nil,
+        model: model,
+        options: { temperature: 0, thinking: { effort: 'none' } }
+      ).and_return(chat)
+
+      result = described_class.check!(feature: :assistant, stage: :input, content: 'Hello')
+
+      expect(result.status).to eq(:allowed)
     end
 
     context 'when the moderation response is malformed' do

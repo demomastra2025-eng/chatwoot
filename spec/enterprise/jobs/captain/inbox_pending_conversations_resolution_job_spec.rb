@@ -16,10 +16,8 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
 
   # Completion and handoff texts are account-wide Captain settings, shared by
   # every agent of the account.
-  def configure_account_message(field, enabled:, mode:, text:)
-    Captain::AccountSettings.new(inbox.account).update!(
-      'handoff' => { field => { 'enabled' => enabled, 'mode' => mode, 'text' => text } }
-    )
+  def configure_account_message(field, enabled:, mode:, text:, instruction: '')
+    configure_notice(inbox.account, field, enabled: enabled, mode: mode, text: text, instruction: instruction)
   end
 
   it 'queues the job' do
@@ -159,18 +157,72 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
       end.not_to(change { resolvable_pending_conversation.messages.where(private: false).outgoing.count })
     end
 
-    it 'uses generated resolution text when AI resolution message mode is enabled' do
+    it 'uses the text the notice model wrote when AI resolution message mode is enabled, not the evaluation message' do
       mock_service = instance_double(Captain::ConversationCompletionService)
       allow(mock_service).to receive(:perform).and_return(
         { complete: true, reason: 'Customer question was answered', message: 'I’m closing this because your question has been answered.' }
       )
       allow(Captain::ConversationCompletionService).to receive(:new).and_return(mock_service)
-      configure_account_message('resolution_message', enabled: true, mode: 'generated', text: '')
+      configure_account_message('resolution_message', enabled: true, mode: 'generated', text: '', instruction: 'Поблагодарите клиента.')
+      request = {}
+      stub_notice_model
+      allow(Llm::Runtime).to receive(:chat).with(hash_including(feature: :customer_notice)) do |**attributes|
+        request.merge!(attributes)
+        Struct.new(:content).new('Диалог закрыт, спасибо за обращение.')
+      end
 
       described_class.perform_now(inbox)
 
       public_message = resolvable_pending_conversation.messages.where(private: false).outgoing.last
-      expect(public_message.content).to eq('I’m closing this because your question has been answered.')
+      expect(public_message.content).to eq('Диалог закрыт, спасибо за обращение.')
+      expect(public_message.sender).to eq(captain_assistant)
+      expect(JSON.parse(request[:messages].last[:content])).to include('kind' => 'resolution', 'style_guide' => 'Поблагодарите клиента.')
+      expect(request.to_s).not_to include('Customer question was answered')
+    end
+
+    it 'falls back to the fixed closing text, then to a neutral sentence, when the notice model fails' do
+      configure_account_message('resolution_message', enabled: true, mode: 'generated', text: 'Диалог закрыт.')
+      stub_notice_model(error: StandardError.new('boom'))
+
+      described_class.perform_now(inbox)
+
+      expect(resolvable_pending_conversation.messages.where(private: false).outgoing.pluck(:content)).to eq(['Диалог закрыт.'])
+    end
+
+    it 'writes the closing notice before the conversation lock is taken' do
+      configure_account_message('resolution_message', enabled: true, mode: 'generated', text: '')
+      baseline = ActiveRecord::Base.connection.open_transactions
+      depths = []
+      stub_notice_model
+      allow(Llm::Runtime).to receive(:chat).with(hash_including(feature: :customer_notice)) do
+        depths << ActiveRecord::Base.connection.open_transactions
+        Struct.new(:content).new('Диалог закрыт, спасибо за обращение.')
+      end
+
+      described_class.perform_now(inbox)
+
+      expect(depths).to eq([baseline])
+      expect(resolvable_pending_conversation.messages.where(private: false).outgoing.pluck(:content))
+        .to eq(['Диалог закрыт, спасибо за обращение.'])
+    end
+
+    it 'sends the neutral closing sentence when AI mode failed and there is no fixed text' do
+      configure_account_message('resolution_message', enabled: true, mode: 'generated', text: '')
+      stub_notice_model(error: StandardError.new('boom'))
+
+      described_class.perform_now(inbox)
+
+      expect(resolvable_pending_conversation.messages.where(private: false).outgoing.pluck(:content))
+        .to eq(['Диалог закрыт. Если появятся вопросы, напишите нам снова.'])
+    end
+
+    it 'never calls the notice model while the closing message is disabled, even in AI mode' do
+      configure_account_message('resolution_message', enabled: false, mode: 'generated', text: 'Диалог закрыт.')
+      expect(Llm::Runtime).not_to receive(:chat)
+
+      expect do
+        described_class.perform_now(inbox)
+      end.not_to(change { resolvable_pending_conversation.messages.where(private: false).outgoing.count })
     end
 
     it 'adds the correct activity message after resolution' do
@@ -270,18 +322,46 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
       expect(public_message.sender).to eq(captain_assistant)
     end
 
-    it 'uses generated handoff text when AI handoff message mode is enabled' do
+    it 'uses the text the notice model wrote when AI handoff message mode is enabled, not the evaluation message' do
       mock_service = instance_double(Captain::ConversationCompletionService)
       allow(mock_service).to receive(:perform).and_return(
         { complete: false, reason: handoff_reason, message: 'A specialist will continue with your request.' }
       )
       allow(Captain::ConversationCompletionService).to receive(:new).and_return(mock_service)
-      configure_account_message('handoff_message', enabled: true, mode: 'generated', text: '')
+      configure_account_message('handoff_message', enabled: true, mode: 'generated', text: '', instruction: 'Коротко.')
+      request = {}
+      stub_notice_model
+      allow(Llm::Runtime).to receive(:chat).with(hash_including(feature: :customer_notice)) do |**attributes|
+        request.merge!(attributes)
+        Struct.new(:content).new('Сотрудник продолжит диалог с вами.')
+      end
 
       described_class.perform_now(inbox)
 
       public_message = resolvable_pending_conversation.messages.where(private: false).outgoing.last
-      expect(public_message.content).to eq('A specialist will continue with your request.')
+      expect(public_message.content).to eq('Сотрудник продолжит диалог с вами.')
+      expect(JSON.parse(request[:messages].last[:content])).to include('kind' => 'handoff', 'style_guide' => 'Коротко.')
+      expect(request.to_s).not_to include(handoff_reason)
+    end
+
+    it 'falls back to the fixed handoff text when the notice model fails' do
+      configure_account_message('handoff_message', enabled: true, mode: 'generated', text: 'Подключаем сотрудника.')
+      stub_notice_model(error: Timeout::Error.new('slow'))
+
+      described_class.perform_now(inbox)
+
+      expect(resolvable_pending_conversation.messages.where(private: false).outgoing.pluck(:content)).to eq(['Подключаем сотрудника.'])
+      expect(resolvable_pending_conversation.reload.status).to eq('open')
+    end
+
+    it 'never calls the notice model while the handoff message is disabled, even in AI mode' do
+      configure_account_message('handoff_message', enabled: false, mode: 'generated', text: 'Подключаем сотрудника.')
+      expect(Llm::Runtime).not_to receive(:chat)
+
+      described_class.perform_now(inbox)
+
+      expect(resolvable_pending_conversation.messages.where(private: false).outgoing).to be_empty
+      expect(resolvable_pending_conversation.reload.status).to eq('open')
     end
 
     it 'preserves existing waiting_since when handoff message is configured' do

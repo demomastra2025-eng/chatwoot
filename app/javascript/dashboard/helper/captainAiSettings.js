@@ -63,6 +63,9 @@ export const WEB_UNDERSTANDING_KEYS = Object.freeze([
 
 export const SAFETY_ACTIONS = Object.freeze(['block', 'flag', 'off']);
 export const MESSAGE_MODES = Object.freeze(['fixed', 'generated']);
+// Same limit as Captain::AccountSettings::MESSAGE_INSTRUCTION_MAX_LENGTH: the
+// "how to write" guide of an AI-written handoff or closing message.
+export const MESSAGE_INSTRUCTION_MAX_LENGTH = 500;
 export const CUSTOM_RULE_DIRECTIONS = Object.freeze(['inbound', 'outbound']);
 
 // Same limits as Captain::Safety::CustomRulesConfig.
@@ -174,13 +177,19 @@ export const normalizeReasons = (raw, { otherLabel = '' } = {}) => {
 // Legacy per-agent messages were plain strings; an empty one meant "off".
 export const normalizeStatusMessage = raw => {
   if (typeof raw === 'string') {
-    return { enabled: raw.trim().length > 0, mode: 'fixed', text: raw };
+    return {
+      enabled: raw.trim().length > 0,
+      mode: 'fixed',
+      text: raw,
+      instruction: '',
+    };
   }
   const value = asObject(raw);
   return {
     enabled: readBoolean(value.enabled, false),
     mode: readValue('messageMode', value.mode, 'fixed'),
     text: readText(value.text),
+    instruction: readText(value.instruction),
   };
 };
 
@@ -281,6 +290,7 @@ const serializeStatusMessage = message => ({
   enabled: message?.enabled === true,
   mode: writeValue('messageMode', message?.mode || 'fixed'),
   text: readText(message?.text),
+  instruction: readText(message?.instruction),
 });
 
 const serializeCustomRule = rule => ({
@@ -409,6 +419,10 @@ export const statusMessageNeedsText = message =>
   message?.mode === 'fixed' &&
   !readText(message?.text).trim();
 
+// The "how to write" guide is optional and only matters for an AI-written message.
+export const statusMessageInstructionTooLong = message =>
+  readText(message?.instruction).length > MESSAGE_INSTRUCTION_MAX_LENGTH;
+
 export const validCollapseWindow = value =>
   value !== '' &&
   value !== null &&
@@ -417,7 +431,9 @@ export const validCollapseWindow = value =>
   Number(value) >= 0;
 
 // { valid, errors: { handoff_reasons, completion_reasons, handoff_message,
-//   resolution_message, collapse_window }, rules: validateCustomRules(...) }
+//   resolution_message, handoff_message_instruction,
+//   resolution_message_instruction, collapse_window },
+//   rules: validateCustomRules(...) }
 export const validateAiSettingsDraft = draft => {
   const handoff = asObject(draft?.handoff);
   const errors = {};
@@ -430,6 +446,12 @@ export const validateAiSettingsDraft = draft => {
   }
   if (statusMessageNeedsText(handoff.resolution_message)) {
     errors.resolution_message = true;
+  }
+  if (statusMessageInstructionTooLong(handoff.handoff_message)) {
+    errors.handoff_message_instruction = true;
+  }
+  if (statusMessageInstructionTooLong(handoff.resolution_message)) {
+    errors.resolution_message_instruction = true;
   }
   if (
     !validCollapseWindow(draft?.conversation?.message_collapse_window_seconds)
@@ -460,6 +482,11 @@ const FIELD_KEYS = [
   ...UNDERSTANDING_KEYS,
 ];
 const RULE_PATH = /custom_rules\.(\d+)(?:\.([a-z_]+))?/;
+// `handoff.handoff_message.instruction` belongs to the guide field, not the text.
+const INSTRUCTION_ERROR_KEYS = [
+  { message: 'handoff_message', key: 'handoff_message_instruction' },
+  { message: 'resolution_message', key: 'resolution_message_instruction' },
+];
 
 const fieldTarget = (field, draft) => {
   const path = String(field || '')
@@ -476,6 +503,10 @@ const fieldTarget = (field, draft) => {
   if (path.includes('message_collapse_window_seconds')) {
     return { key: 'collapse_window' };
   }
+  const instructionKey = INSTRUCTION_ERROR_KEYS.find(
+    item => path.includes(item.message) && path.endsWith('.instruction')
+  );
+  if (instructionKey) return { key: instructionKey.key };
   const key = FIELD_KEYS.find(item => path.includes(item));
   return key ? { key } : null;
 };

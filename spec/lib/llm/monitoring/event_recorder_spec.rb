@@ -43,6 +43,23 @@ RSpec.describe Llm::Monitoring::EventRecorder do
       end
     end
 
+    it 'persists customer notice events with the kind and the fallback reason' do
+      generated = described_class.record_notification(
+        event_name: 'captain.customer_notice.generated', started_at: Time.current, finished_at: Time.current,
+        payload: { account_id: account.id, feature: 'customer_notice', kind: 'handoff' }
+      )
+      fallback = described_class.record_notification(
+        event_name: 'captain.customer_notice.fallback', started_at: Time.current, finished_at: Time.current,
+        payload: { account_id: account.id, feature: 'customer_notice', kind: 'resolution', reason: 'timeout' }
+      )
+
+      expect(generated).to have_attributes(event_name: 'captain.customer_notice.generated', account_id: account.id,
+                                           feature: 'customer_notice')
+      expect(generated.payload).to include('kind' => 'handoff')
+      expect(fallback).to have_attributes(event_name: 'captain.customer_notice.fallback', reason: 'timeout')
+      expect(fallback.payload).to include('kind' => 'resolution')
+    end
+
     it 'persists operation events with their identifiers and outcome state' do
       %w[captain.operation.started captain.operation.finished].each do |name|
         event = described_class.record_notification(

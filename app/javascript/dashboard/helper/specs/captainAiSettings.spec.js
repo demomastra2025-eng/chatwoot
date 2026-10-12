@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   AI_SETTINGS_API_VALUES,
+  MESSAGE_INSTRUCTION_MAX_LENGTH,
   buildAiSettingsPatch,
   isAiSettingsDirty,
   mapAiSettingsErrors,
@@ -35,8 +36,18 @@ const contractPayload = () => ({
       { id: 'goal_achieved', label: 'Цель', enabled: true, builtin: true },
       { id: 'other', label: 'Другое', enabled: true, builtin: true },
     ],
-    handoff_message: { enabled: true, mode: 'fixed', text: 'Передаю' },
-    resolution_message: { enabled: false, mode: 'generated', text: '' },
+    handoff_message: {
+      enabled: true,
+      mode: 'fixed',
+      text: 'Передаю',
+      instruction: '',
+    },
+    resolution_message: {
+      enabled: false,
+      mode: 'generated',
+      text: '',
+      instruction: 'Коротко и тепло.',
+    },
     auto_completion_enabled: true,
     auto_reply_on_last_incoming: false,
   },
@@ -107,6 +118,7 @@ describe('captainAiSettings helper', () => {
       enabled: false,
       mode: 'generated',
       text: '',
+      instruction: 'Коротко и тепло.',
     });
     expect(draft.conversation.message_collapse_window_seconds).toBe(15);
     expect(draft.safety.sensitive_info_action).toBe('off');
@@ -180,6 +192,7 @@ describe('captainAiSettings helper', () => {
       enabled: true,
       mode: 'fixed',
       text: 'Сейчас подключится сотрудник',
+      instruction: '',
     });
     expect(draft.handoff.resolution_message.enabled).toBe(false);
     expect(draft.safety.moderation_enabled).toBe(true);
@@ -331,6 +344,7 @@ describe('captainAiSettings helper', () => {
       enabled: true,
       mode: 'fixed',
       text: 'Передаю',
+      instruction: '',
     });
     expect(patch.safety.prompt_injection_action).toBe('off');
     expect(patch.safety.custom_rules[0]).toMatchObject({
@@ -359,6 +373,67 @@ describe('captainAiSettings helper', () => {
       handoff_message: true,
       collapse_window: true,
     });
+  });
+
+  it('keeps the "how to write" instruction of both messages through draft, patch and validation', () => {
+    const base = toAiSettingsDraft(contractPayload());
+    const draft = toAiSettingsDraft(contractPayload());
+
+    expect(draft.handoff.handoff_message.instruction).toBe('');
+    expect(draft.handoff.resolution_message.instruction).toBe(
+      'Коротко и тепло.'
+    );
+    expect(toAiSettingsDraft({ handoff: {} }).handoff.handoff_message).toEqual({
+      enabled: false,
+      mode: 'fixed',
+      text: '',
+      instruction: '',
+    });
+
+    draft.handoff.handoff_message = {
+      enabled: true,
+      mode: 'generated',
+      text: 'Запасной текст',
+      instruction: 'Обращайтесь на «вы».',
+    };
+    const patch = buildAiSettingsPatch(base, draft);
+
+    expect(Object.keys(patch)).toEqual(['handoff']);
+    expect(patch.handoff.handoff_message).toEqual({
+      enabled: true,
+      mode: 'generated',
+      text: 'Запасной текст',
+      instruction: 'Обращайтесь на «вы».',
+    });
+    expect(patch.handoff.resolution_message).toEqual({
+      enabled: false,
+      mode: 'generated',
+      text: '',
+      instruction: 'Коротко и тепло.',
+    });
+    expect(validateAiSettingsDraft(draft).valid).toBe(true);
+  });
+
+  it('needs no fixed text for an AI-written message and limits the instruction to 500 characters', () => {
+    const draft = toAiSettingsDraft(contractPayload());
+    draft.handoff.handoff_message = {
+      enabled: true,
+      mode: 'generated',
+      text: '',
+      instruction: 'я'.repeat(500),
+    };
+    draft.handoff.resolution_message = {
+      enabled: true,
+      mode: 'generated',
+      text: '',
+      instruction: 'я'.repeat(501),
+    };
+
+    const result = validateAiSettingsDraft(draft);
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toEqual({ resolution_message_instruction: true });
+    expect(MESSAGE_INSTRUCTION_MAX_LENGTH).toBe(500);
   });
 
   it('ports the custom rule limits of the backend validator', () => {
@@ -432,6 +507,11 @@ describe('captainAiSettings helper', () => {
         },
         { field: 'handoff.handoff_message.text', code: 'blank', message: 'C' },
         {
+          field: 'handoff.resolution_message.instruction',
+          code: 'too_long',
+          message: 'C2',
+        },
+        {
           field: 'conversation.message_collapse_window_seconds',
           code: 'invalid',
           message: 'D',
@@ -451,6 +531,7 @@ describe('captainAiSettings helper', () => {
     });
     expect(mapped.fields).toEqual({
       handoff_message: 'C',
+      resolution_message_instruction: 'C2',
       collapse_window: 'D',
       completion_reasons: 'E',
       web_search: 'F',

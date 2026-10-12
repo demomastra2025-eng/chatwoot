@@ -131,6 +131,7 @@ const removeReason = (list, reasonId) => {
       :description="t(message.descriptionKey)"
       :show-errors="showErrors"
       :error="errors[message.key] || ''"
+      :instruction-error="errors[`${message.key}_instruction`] || ''"
       :disabled="disabled"
       @update:model-value="updateField(message.key, $event)"
     />

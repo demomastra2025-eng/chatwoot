@@ -5,12 +5,9 @@ class Captain::ResponseSchema < RubyLLM::Schema
       'Return an empty array when no files should be attached.'
     ].join
   ).freeze
-  HANDOFF_MESSAGE_DESCRIPTION = (
-    [
-      'Customer-facing handoff message when response is conversation_handoff and ',
-      'AI handoff message mode is enabled. Return an empty string when no handoff message should be sent.'
-    ].join
-  ).freeze
+  # Kept in the schema (the structured output is strict and older runs may still carry it), but the agent is no longer
+  # asked for a customer message: Captain::CustomerNoticeService writes the handoff text from the workspace settings.
+  HANDOFF_MESSAGE_DESCRIPTION = 'Reserved. Always return an empty string; the handoff message is written elsewhere.'.freeze
   HANDOFF_REASON_DESCRIPTION = (
     [
       'Concise internal reason for opening the conversation / handing it to a human agent when ',

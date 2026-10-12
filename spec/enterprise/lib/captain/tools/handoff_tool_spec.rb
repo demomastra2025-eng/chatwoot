@@ -19,12 +19,12 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
 
   describe '#parameters' do
     it 'returns the correct parameters' do
-      expect(tool.parameters.keys).to contain_exactly(:reason, :message)
+      # The customer text of a handoff is written by the notice service, so the agent is not asked for a message.
+      expect(tool.parameters.keys).to contain_exactly(:reason)
       expect(tool.parameters[:reason].name).to eq(:reason)
       expect(tool.parameters[:reason].type).to eq('string')
       expect(tool.parameters[:reason].description).to eq('Optional handoff reason for the human team')
       expect(tool.parameters[:reason].required).to be false
-      expect(tool.parameters[:message]).to have_attributes(type: 'string', required: false)
     end
   end
 
@@ -148,10 +148,9 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
             expect(result.content).to eq("Conversation handed off to human support team (Reason: #{reason})")
           end.not_to change(Message, :count)
 
-          expect(run_context.context[:pending_human_handoff]).to include(
-            reason: reason,
-            message: message
-          )
+          # A message from an older tool call is accepted but never kept: the notice service writes the customer text.
+          expect(run_context.context[:pending_human_handoff]).to include(reason: reason)
+          expect(run_context.context[:pending_human_handoff]).not_to have_key(:message)
           expect(run_context.context[:pending_human_handoff]).not_to have_key(:status_reason)
         end
 

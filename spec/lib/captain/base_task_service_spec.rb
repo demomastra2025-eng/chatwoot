@@ -316,6 +316,24 @@ RSpec.describe Captain::BaseTaskService do
         service.send(:make_api_call, model: model, messages: messages)
       end
     end
+
+    # Owner rule: tasks (editor, label hints, completion checks, summaries) never reason; only customer-facing agents do.
+    context 'with reasoning' do
+      let(:messages) { [{ role: 'user', content: 'Hello' }] }
+
+      it 'says "none" when the model can be told not to reason' do
+        allow(Llm::RuntimePolicy).to receive(:no_thinking_options).with(model: model, account: account).and_return(effort: 'none')
+        expect(Llm::ChatRequestRunner).to receive(:new).with(hash_including(thinking: { effort: 'none' })).and_return(mock_runner)
+
+        service.send(:make_api_call, model: model, messages: messages)
+      end
+
+      it 'sends no reasoning at all to a model that cannot reason' do
+        expect(Llm::ChatRequestRunner).to receive(:new).with(hash_including(thinking: nil)).and_return(mock_runner)
+
+        service.send(:make_api_call, model: model, messages: messages)
+      end
+    end
   end
 
   describe 'error handling' do

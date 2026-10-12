@@ -41,6 +41,23 @@ RSpec.describe Llm::ChatRequestRunner do
     expect(result).to eq(response)
   end
 
+  it 'passes the thinking option on to the chat client' do
+    expect(Llm::ChatClient).to receive(:build).with(hash_including(thinking: { effort: 'none' })).and_return(chat)
+
+    described_class.new(
+      context: context, model: 'gpt-4', messages: [{ role: 'user', content: 'Hello' }], thinking: { effort: 'none' }
+    ).call
+  end
+
+  it 'leaves the thinking option out when none is given' do
+    expect(Llm::ChatClient).to receive(:build) do |**options|
+      expect(options).not_to have_key(:thinking)
+      chat
+    end
+
+    described_class.new(context: context, model: 'gpt-4', messages: [{ role: 'user', content: 'Hello' }]).call
+  end
+
   it 'restores assistant tool calls and tool results from history', :aggregate_failures do
     messages = [
       {

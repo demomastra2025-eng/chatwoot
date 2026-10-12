@@ -20,6 +20,25 @@ RSpec.describe Llm::BaseAiService do
 
       expect(service.chat).to eq(chat)
     end
+
+    # Owner rule: the generators (FAQ, notes, contact attributes, search terms) never reason; the copilot asks for its own effort.
+    it 'says "none" for reasoning when the model can be told so' do
+      allow(Llm::RuntimePolicy).to receive(:no_thinking_options).and_return(effort: 'none')
+      expect(Llm::Runtime).to receive(:build_chat).with(
+        hash_including(options: { temperature: service.temperature, thinking: { effort: 'none' } })
+      ).and_return(chat)
+
+      service.chat
+    end
+
+    it 'keeps a reasoning effort the caller asks for' do
+      allow(Llm::RuntimePolicy).to receive(:no_thinking_options).and_return(effort: 'none')
+      expect(Llm::Runtime).to receive(:build_chat).with(
+        hash_including(options: { temperature: service.temperature, thinking: { effort: 'high' } })
+      ).and_return(chat)
+
+      service.chat(thinking: { effort: 'high' })
+    end
   end
 
   describe '#ask_chat' do

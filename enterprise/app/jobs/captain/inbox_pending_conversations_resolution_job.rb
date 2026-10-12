@@ -28,8 +28,9 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
       context = auto_completion_context(conversation)
       next unless context
 
+      notice = notice_for(conversation, context[:assistant], true)
       with_current_agent(conversation, context) do |assistant|
-        create_resolution_message(conversation, assistant)
+        create_resolution_message(conversation, assistant, notice)
         transition_conversation_status!(conversation, 'resolved', actor: assistant, source: 'system')
       end
     end
@@ -47,18 +48,34 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
       evaluation = evaluate_conversation(conversation, inbox)
 
       activity_reason = evaluation[:complete] ? CAPTAIN_INFERENCE_RESOLVE_ACTIVITY_REASON : CAPTAIN_INFERENCE_HANDOFF_ACTIVITY_REASON
+      # The customer notice is written by its own model (never taken from the evaluation) before any lock is held.
+      notice = notice_for(conversation, context[:assistant], evaluation[:complete])
       # Status activity is created after commit, so its context must outlive the
       # transaction opened by the final ownership check.
       conversation.with_captain_activity_context(reason: activity_reason, reason_type: :inference) do
         with_current_agent(conversation, context) do |assistant|
           if evaluation[:complete]
-            resolve_conversation(conversation, assistant, evaluation[:reason], generated_message: evaluation[:message])
+            resolve_conversation(conversation, assistant, evaluation[:reason], notice)
           else
-            handoff_conversation(conversation, assistant, evaluation[:reason], context[:fence], generated_message: evaluation[:message])
+            handoff_conversation(conversation, assistant, evaluation[:reason], context[:fence], notice)
           end
         end
       end
     end
+  end
+
+  # The closing notice (complete) or the system handoff notice, with its text already written here, outside the
+  # conversation lock, because the notice model can take seconds; a failure only means that it is written again under the lock.
+  def notice_for(conversation, assistant, complete)
+    notice = if complete
+               Captain::CustomerNoticeService.new(conversation: conversation, assistant: assistant, kind: :resolution)
+             else
+               Captain::SystemHandoffMessageService.new(conversation: conversation, assistant: assistant)
+             end
+    notice.prepare
+  rescue StandardError => e
+    Rails.logger.warn("[CAPTAIN][CustomerNotice] could not prepare a notice: #{e.class.name}")
+    notice
   end
 
   def evaluate_conversation(conversation, inbox)
@@ -135,9 +152,9 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
       conversation.status_transitions.maximum(:id).to_i == fence[:status_transition_id].to_i
   end
 
-  def resolve_conversation(conversation, assistant, reason, generated_message: nil)
+  def resolve_conversation(conversation, assistant, reason, notice)
     create_private_note(conversation, assistant, "Auto-resolved: #{reason}")
-    create_resolution_message(conversation, assistant, generated_message: generated_message)
+    create_resolution_message(conversation, assistant, notice)
     transition_conversation_status!(conversation, 'resolved', actor: assistant, source: 'system')
     conversation.dispatch_captain_inference_resolved_event
   end
@@ -154,13 +171,13 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
   end
 
   # System safety net, independent of the handoff tool: the note, the
-  # assistant's own handoff message (when enabled and configured) and the open
-  # transition happen once, under the same fence.
-  def handoff_conversation(conversation, assistant, reason, fence, generated_message: nil)
+  # workspace handoff message (when enabled and configured; written beforehand
+  # by the notice service) and the open transition happen once, under the same fence.
+  def handoff_conversation(conversation, assistant, reason, fence, notice)
     result = conversation.bot_handoff!(actor: assistant, source: 'system', fence: fence) do
       create_private_note(conversation, assistant, "Auto-handoff: #{reason}")
 
-      Captain::SystemHandoffMessageService.new(conversation: conversation, assistant: assistant, generated_message: generated_message).perform
+      notice.perform
     end
     return unless result == :applied
 
@@ -197,28 +214,21 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
     )
   end
 
-  def create_resolution_message(conversation, assistant, generated_message: nil)
-    return unless assistant&.resolution_message_enabled?
+  # The text is the workspace closing message from the notice service: nothing while it is disabled or has no text.
+  def create_resolution_message(conversation, assistant, notice)
+    content = notice.text
+    return if content.blank?
 
     I18n.with_locale(conversation.account.locale) do
-      content = resolution_message_content(assistant, generated_message: generated_message)
-      return if content.blank?
-
       conversation.messages.create!(
         {
           message_type: :outgoing,
           account_id: conversation.account_id,
           inbox_id: conversation.inbox_id,
-          content: assistant.render_runtime_text(content, conversation: conversation),
+          content: content,
           sender: assistant
         }
       )
     end
-  end
-
-  def resolution_message_content(assistant, generated_message: nil)
-    return generated_message.presence if assistant.resolution_message_mode_value == Captain::Assistant::MESSAGE_MODE_AI
-
-    assistant.resolution_message_text.presence
   end
 end

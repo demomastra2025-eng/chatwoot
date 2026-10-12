@@ -54,7 +54,9 @@ class Captain::Safety::ResponseRewriteEngine
   def build_chat(account, model)
     Llm::Runtime.build_chat(
       feature: :moderation, account: account, model: model, models: [model], server_tools: [], transform_policy: 'disabled',
-      options: Llm::ModelParameters.for(model, account: account).compile(temperature: 0)
+      options: Llm::ModelParameters.for(model, account: account).compile(
+        temperature: 0, thinking: Llm::RuntimePolicy.no_thinking_options(model: model, account: account)
+      )
     )
   end
 

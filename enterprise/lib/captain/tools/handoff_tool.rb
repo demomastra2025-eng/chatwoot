@@ -3,9 +3,10 @@ class Captain::Tools::HandoffTool < Captain::Tools::BasePublicTool
 
   description 'Hand off the current conversation to a human team'
   param :reason, type: 'string', desc: 'Optional handoff reason for the human team', required: false
-  param :message, type: 'string', desc: 'Optional customer-facing handoff message to send when AI handoff message mode is enabled', required: false
 
-  def perform(tool_context, reason: nil, message: nil, **_legacy_options)
+  # The customer-facing text of a handoff is written by Captain::CustomerNoticeService from the workspace settings, so
+  # the agent is no longer asked for a `message`; one from an older tool call is accepted with the legacy options and ignored.
+  def perform(tool_context, reason: nil, **_legacy_options)
     unless assistant.handoff_enabled? && assistant.selected_agent_tool_ids.include?('handoff')
       return tool_failure('Handoff tool is not enabled for this assistant')
     end
@@ -18,7 +19,7 @@ class Captain::Tools::HandoffTool < Captain::Tools::BasePublicTool
                      conversation_id: conversation.id,
                      reason: reason || 'Agent requested handoff'
                    })
-    request_handoff(tool_context, reason, message)
+    request_handoff(tool_context, reason)
 
     halt("Conversation handed off to human support team#{" (Reason: #{reason})" if reason}")
   rescue StandardError => e
@@ -28,13 +29,12 @@ class Captain::Tools::HandoffTool < Captain::Tools::BasePublicTool
 
   private
 
-  def request_handoff(tool_context, reason, message)
+  def request_handoff(tool_context, reason)
     faq_result = tool_context.context[:captain_faq_outcome].to_h
     faq_miss = faq_result[:assistant_id] == assistant.id && faq_result[:result] == 'not_found' && !faq_result[:unavailable]
     tool_context.context[:pending_human_handoff] = {
       reason: reason.presence,
       outcome_signal: faq_miss ? 'faq_no_answer' : nil,
-      message: message.presence,
       timestamp: Time.current
     }.compact
     tool_context.context[AUTHORIZED_CONTEXT_KEY] = true

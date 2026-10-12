@@ -14,6 +14,7 @@ module Llm::Config
     'help_center_search' => 'CAPTAIN_EMBEDDING_MODEL',
     'moderation' => 'CAPTAIN_MODERATION_MODEL',
     'custom_guardrail' => 'CAPTAIN_CUSTOM_GUARDRAIL_MODEL',
+    'customer_notice' => 'CAPTAIN_CUSTOMER_NOTICE_MODEL',
     'label_suggestion' => 'CAPTAIN_LABEL_SUGGESTION_MODEL',
     'outcome_classification' => 'CAPTAIN_OUTCOME_CLASSIFIER_MODEL'
   }.freeze

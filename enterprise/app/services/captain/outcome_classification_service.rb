@@ -149,6 +149,7 @@ class Captain::OutcomeClassificationService
       feature: :outcome_classification, account: transition.account, assistant: transition.actor,
       conversation: transition.conversation, model: @model, schema: Captain::OutcomeClassificationSchema,
       max_tokens: 350,
+      reasoning: Llm::RuntimePolicy.no_reasoning_params(model: @model, account: transition.account),
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: { outcome: @snapshot['type'], locale: @snapshot['locale'], allowed_reasons: reasons,

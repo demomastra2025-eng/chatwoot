@@ -5,19 +5,23 @@ import SettingsToggleSection from 'dashboard/components-next/Settings/SettingsTo
 import RadioCard from 'dashboard/components-next/radioCard/RadioCard.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
 import {
+  MESSAGE_INSTRUCTION_MAX_LENGTH,
   MESSAGE_MODES,
+  statusMessageInstructionTooLong,
   statusMessageNeedsText,
 } from 'dashboard/helper/captainAiSettings';
 
 // A message sent to the customer on handoff or on resolution:
-// { enabled, mode: 'fixed' | 'generated', text }. The text is required for a
-// fixed message and is an optional hint for a generated one.
+// { enabled, mode: 'fixed' | 'generated', text, instruction }. A fixed message
+// is the text. An AI-written one is written by a separate model from the
+// short "how to write" instruction; the text stays as the fallback.
 const props = defineProps({
   kind: { type: String, required: true },
   title: { type: String, required: true },
   description: { type: String, default: '' },
   showErrors: { type: Boolean, default: false },
   error: { type: String, default: '' },
+  instructionError: { type: String, default: '' },
   disabled: { type: Boolean, default: false },
 });
 
@@ -61,6 +65,13 @@ const textError = computed(() => {
   }
   return props.error;
 });
+
+const instructionMessage = computed(() => {
+  if (statusMessageInstructionTooLong(model.value)) {
+    return t('CAPTAIN.AI_SETTINGS.HANDOFF.INSTRUCTION_TOO_LONG');
+  }
+  return props.instructionError;
+});
 </script>
 
 <template>
@@ -90,24 +101,33 @@ const textError = computed(() => {
           />
         </div>
         <TextArea
+          v-if="isFixed"
           :id="`${kind}-message-text`"
           :model-value="model.text || ''"
-          :label="
-            isFixed
-              ? t('CAPTAIN.AI_SETTINGS.HANDOFF.TEXT_LABEL_FIXED')
-              : t('CAPTAIN.AI_SETTINGS.HANDOFF.TEXT_LABEL_GENERATED')
-          "
-          :placeholder="
-            isFixed
-              ? t('CAPTAIN.AI_SETTINGS.HANDOFF.TEXT_PLACEHOLDER_FIXED')
-              : t('CAPTAIN.AI_SETTINGS.HANDOFF.TEXT_PLACEHOLDER_GENERATED')
-          "
+          :label="t('CAPTAIN.AI_SETTINGS.HANDOFF.TEXT_LABEL_FIXED')"
+          :placeholder="t('CAPTAIN.AI_SETTINGS.HANDOFF.TEXT_PLACEHOLDER_FIXED')"
           :max-length="MAX_TEXT_LENGTH"
           :disabled="disabled"
           :message="textError"
           :message-type="textError ? 'error' : 'info'"
           auto-height
           @update:model-value="update({ text: $event })"
+        />
+        <TextArea
+          v-else
+          :id="`${kind}-message-instruction`"
+          :model-value="model.instruction || ''"
+          :label="t('CAPTAIN.AI_SETTINGS.HANDOFF.INSTRUCTION_LABEL')"
+          :placeholder="
+            t('CAPTAIN.AI_SETTINGS.HANDOFF.INSTRUCTION_PLACEHOLDER')
+          "
+          :max-length="MESSAGE_INSTRUCTION_MAX_LENGTH"
+          :disabled="disabled"
+          :message="instructionMessage"
+          :message-type="instructionMessage ? 'error' : 'info'"
+          show-character-count
+          auto-height
+          @update:model-value="update({ instruction: $event })"
         />
       </div>
     </template>

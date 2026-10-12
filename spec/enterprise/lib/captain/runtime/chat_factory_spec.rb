@@ -190,6 +190,65 @@ RSpec.describe Captain::Runtime::ChatFactory do
         runtime_params: {}
       )
     end
+
+    # Owner rule: reasoning is for the agents that talk to customers (the runtime and the council consultations), at
+    # `low` unless the agent or the workspace chose an effort.
+    describe 'reasoning effort' do
+      let(:account) { create(:account) }
+      let(:reasoning_model) do
+        {
+          'provider' => 'openrouter', 'type' => 'chat', 'capabilities' => %w[reasoning],
+          'supported_parameters' => %w[temperature reasoning],
+          'reasoning' => { 'supported_efforts' => %w[low medium high], 'mandatory' => false }
+        }
+      end
+
+      before do
+        allow(chat).to receive(:with_instructions).and_return(chat)
+        allow(chat).to receive(:with_tools).and_return(chat)
+        allow(Llm::Models).to receive(:model_config).with('openai/gpt-5.4-mini', account: account).and_return(reasoning_model)
+      end
+
+      def thinking_sent(state: {}, consult_mode: false)
+        sent = nil
+        allow(Llm::Runtime).to receive(:build_chat) do |**attributes|
+          sent = attributes.fetch(:options)[:thinking]
+          chat
+        end
+        runtime = account.captain_runtime_preferences.to_h.stringify_keys
+        wrapper = Captain::Runtime::RunContext.new({ state: { captain_runtime: runtime }.merge(state), consult_mode: consult_mode })
+        described_class.build(
+          agent: agent, context_wrapper: wrapper, llm_context: :llm_context, runtime_headers: {}, runtime_params: {}, account: account
+        )
+        sent
+      end
+
+      it 'is low when neither the agent nor the workspace chose an effort' do
+        expect(thinking_sent).to eq(effort: 'low')
+      end
+
+      it 'is low for a council consultation too' do
+        expect(thinking_sent(consult_mode: true)).to eq(effort: 'low')
+      end
+
+      it 'keeps the explicit effort of the agent' do
+        expect(thinking_sent(state: { assistant_config: { 'thinking_effort' => 'high' } })).to eq(effort: 'high')
+        expect(thinking_sent(state: { assistant_config: { 'thinking_effort' => 'high' } }, consult_mode: true)).to eq(effort: 'high')
+      end
+
+      it 'keeps the effort the workspace stored' do
+        account.update!(captain_runtime: { 'assistant_thinking_effort' => 'medium' })
+
+        expect(thinking_sent).to eq(effort: 'medium')
+      end
+
+      it 'sends no reasoning to a model that cannot reason' do
+        allow(Llm::Models).to receive(:model_config).with('openai/gpt-5.4-mini', account: account)
+                                                    .and_return('supported_parameters' => %w[temperature])
+
+        expect(thinking_sent).to be_nil
+      end
+    end
   end
 
   describe '.configure' do

@@ -219,12 +219,12 @@ class Captain::Runtime::ChatFactory
       end
       return contract.thinking(saved) if saved.present?
 
-      Llm::RuntimePolicy.thinking_options(
-        feature: :assistant,
+      # The agent has no effort of its own: the workspace's stored choice, else `low` (an agent that talks to
+      # customers is the only caller that reasons; the council consultations run through this same factory).
+      Llm::RuntimePolicy.conversation_thinking_options(
         model: agent.model,
         account: account,
-        preferences: context_wrapper.context.dig(:state, :captain_runtime),
-        effort_override: nil
+        preferences: context_wrapper.context.dig(:state, :captain_runtime)
       )
     end
 

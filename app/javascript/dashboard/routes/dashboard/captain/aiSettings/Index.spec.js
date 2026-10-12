@@ -331,6 +331,122 @@ describe('Captain AI settings page', () => {
       enabled: true,
       mode: 'fixed',
       text: 'Передаю',
+      instruction: '',
+    });
+  });
+
+  describe('handoff and closing messages', () => {
+    const messageBlock = (wrapper, kind) =>
+      within(wrapper, `status-message-${kind}`);
+
+    it('offers the switch, the mode and the text for a fixed message, and no guide', async () => {
+      const wrapper = await mountPage();
+      const block = messageBlock(wrapper, 'handoff');
+
+      expect(block.find('[role="switch"]').exists()).toBe(true);
+      expect(block.find('[role="radiogroup"]').exists()).toBe(true);
+      expect(block.get('#handoff-message-text').element.value).toBe('Передаю');
+      expect(block.find('#handoff-message-instruction').exists()).toBe(false);
+      expect(block.text()).toContain(
+        'CAPTAIN.AI_SETTINGS.HANDOFF.TEXT_LABEL_FIXED'
+      );
+      // A switched-off message shows only its switch.
+      const closing = messageBlock(wrapper, 'resolution');
+      expect(closing.find('[role="radiogroup"]').exists()).toBe(false);
+      expect(closing.find('textarea').exists()).toBe(false);
+    });
+
+    it('shows "how to write" with a counter and a 500 character limit for an AI-written message', async () => {
+      const payload = settingsPayload();
+      payload.handoff.resolution_message = {
+        enabled: true,
+        mode: 'generated',
+        text: '',
+        instruction: 'Коротко.',
+      };
+      const wrapper = await mountPage(payload);
+      const block = messageBlock(wrapper, 'resolution');
+      const instruction = block.get('#resolution-message-instruction');
+
+      expect(instruction.element.value).toBe('Коротко.');
+      expect(instruction.attributes('maxlength')).toBe('500');
+      expect(block.text()).toContain(
+        'CAPTAIN.AI_SETTINGS.HANDOFF.INSTRUCTION_LABEL'
+      );
+      expect(block.text()).toContain('8 / 500');
+      expect(block.find('#resolution-message-text').exists()).toBe(false);
+
+      await instruction.setValue('Тепло и коротко, на «вы».');
+      expect(block.text()).toContain('25 / 500');
+      testState.save.mockResolvedValue({ ok: true, settings: payload });
+      await clickSave(wrapper);
+
+      expect(testState.save).toHaveBeenCalledTimes(1);
+      expect(
+        testState.save.mock.calls[0][0].handoff.resolution_message
+      ).toEqual({
+        enabled: true,
+        mode: 'generated',
+        text: '',
+        instruction: 'Тепло и коротко, на «вы».',
+      });
+    });
+
+    it('swaps the text for the guide when the mode becomes AI, keeps the text and needs no text to save', async () => {
+      const wrapper = await mountPage();
+      const block = messageBlock(wrapper, 'handoff');
+
+      await block
+        .get('[data-testid="handoff-message-generated"]')
+        .trigger('click');
+
+      expect(block.find('#handoff-message-text').exists()).toBe(false);
+      await block
+        .get('#handoff-message-instruction')
+        .setValue('Спокойным тоном, без обещаний.');
+      testState.save.mockResolvedValue({
+        ok: true,
+        settings: settingsPayload(),
+      });
+      await clickSave(wrapper);
+
+      expect(testState.save.mock.calls[0][0].handoff.handoff_message).toEqual({
+        enabled: true,
+        mode: 'generated',
+        text: 'Передаю',
+        instruction: 'Спокойным тоном, без обещаний.',
+      });
+    });
+
+    it('shows a server error of the guide under the guide', async () => {
+      const payload = settingsPayload();
+      payload.handoff.handoff_message = {
+        enabled: true,
+        mode: 'generated',
+        text: '',
+        instruction: '',
+      };
+      testState.save.mockResolvedValue({
+        ok: false,
+        errors: [
+          {
+            field: 'handoff.handoff_message.instruction',
+            code: 'too_long',
+            message: 'Guide is too long',
+          },
+        ],
+      });
+      const wrapper = await mountPage(payload);
+
+      await wrapper.get('#handoff-message-instruction').setValue('Коротко.');
+      await clickSave(wrapper);
+
+      expect(messageBlock(wrapper, 'handoff').text()).toContain(
+        'Guide is too long'
+      );
+      expect(wrapper.find('[data-testid="ai-settings-errors"]').exists()).toBe(
+        false
+      );
     });
   });
 

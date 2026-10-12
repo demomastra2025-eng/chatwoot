@@ -65,10 +65,17 @@ class Captain::AccountSettingsSnapshot
     end
   end
 
+  # In AI mode the old per-agent text was the owner's wishes for the message ("Пожелания к сообщению"), never a sentence for the
+  # customer. The new settings send `text` to a customer as the fallback when the notice model fails, so the wishes move to
+  # `instruction` (the "how to write" guide) and the fallback text stays empty. Only a fixed message keeps its text.
   def api_message(key)
+    mode = Captain::AccountSettings::MESSAGE_MODE_TO_API.fetch(config["#{key}_mode"], 'fixed')
+    text = config[key].to_s
+    generated = mode == 'generated'
     { 'enabled' => boolean(config.fetch("#{key}_enabled", true)),
-      'mode' => Captain::AccountSettings::MESSAGE_MODE_TO_API.fetch(config["#{key}_mode"], 'fixed'),
-      'text' => config[key].to_s }
+      'mode' => mode,
+      'text' => generated ? '' : text,
+      'instruction' => generated ? text.squish.first(Captain::AccountSettings::MESSAGE_INSTRUCTION_MAX_LENGTH) : '' }
   end
 
   def safety

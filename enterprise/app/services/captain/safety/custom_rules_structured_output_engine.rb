@@ -32,7 +32,9 @@ class Captain::Safety::CustomRulesStructuredOutputEngine
     chat = Llm::Runtime.build_chat(
       feature: :moderation, account: @account, model: model, models: [model],
       server_tools: [], transform_policy: 'disabled',
-      options: Llm::ModelParameters.for(model, account: @account).compile(temperature: 0)
+      options: Llm::ModelParameters.for(model, account: @account).compile(
+        temperature: 0, thinking: Llm::RuntimePolicy.no_thinking_options(model: model, account: @account)
+      )
     )
     chat = chat.with_instructions(system_prompt(rules, direction))
     chat = Llm::StructuredOutputPolicy.bind!(chat: chat, schema: selection_schema(rules))

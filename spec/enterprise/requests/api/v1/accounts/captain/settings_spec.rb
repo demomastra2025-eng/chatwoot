@@ -28,6 +28,45 @@ RSpec.describe 'Captain account settings', type: :request do
     expect(assistant.reload.config['feature_faq']).to be(false)
   end
 
+  describe 'the "how to write" instruction of the handoff and closing messages' do
+    %w[handoff_message resolution_message].each do |key|
+      it "returns an empty #{key} instruction by default" do
+        get path, headers: admin.create_new_auth_token, as: :json
+
+        expect(JSON.parse(response.body).dig('handoff', key)).to eq('enabled' => key == 'handoff_message', 'mode' => 'fixed', 'text' => '',
+                                                                    'instruction' => '')
+      end
+
+      it "saves the #{key} instruction up to 500 characters and keeps the other fields" do
+        headers = admin.create_new_auth_token
+        patch path, params: { handoff: { key => { mode: 'generated', instruction: 'я' * 500 } } }, headers: headers, as: :json
+
+        expect(response).to have_http_status(:ok)
+        expect(JSON.parse(response.body).dig('handoff', key)).to include('mode' => 'generated', 'instruction' => 'я' * 500)
+        expect(Captain::AccountSettings.new(account.reload).section('handoff')[key]).to include('mode' => 'generated', 'instruction' => 'я' * 500)
+
+        patch path, params: { handoff: { key => { text: 'Готовый текст' } } }, headers: headers, as: :json
+
+        expect(response).to have_http_status(:ok)
+        expect(JSON.parse(response.body).dig('handoff', key)).to include('text' => 'Готовый текст', 'instruction' => 'я' * 500)
+      end
+
+      it "rejects a #{key} instruction longer than 500 characters or not a string, and saves nothing" do
+        headers = admin.create_new_auth_token
+        patch path, params: { handoff: { key => { instruction: 'я' * 501 } } }, headers: headers, as: :json
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(JSON.parse(response.body)['errors']).to include(include('field' => "handoff.#{key}.instruction", 'code' => 'too_long'))
+
+        patch path, params: { handoff: { key => { instruction: 42 } } }, headers: headers, as: :json
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(JSON.parse(response.body)['errors']).to include(include('field' => "handoff.#{key}.instruction", 'code' => 'invalid_value'))
+        expect(account.reload.captain_agent_settings).to be_nil
+      end
+    end
+  end
+
   it 'rejects invalid custom rules with the exact errors envelope and leaves settings intact' do
     patch path, params: { safety: { custom_rules: [{ id: 'bad', direction: 'inbound', action: 'rewrite_once' }] } },
                 headers: admin.create_new_auth_token, as: :json

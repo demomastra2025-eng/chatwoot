@@ -287,6 +287,31 @@ RSpec.describe MessageTemplates::HookExecutionService do
         expect(public_messages.first.sender).to eq(assistant)
       end
 
+      # The customer's own message waits for this handoff (a widget request or a webhook), so there is no notice model call.
+      it 'sends the fixed text in AI mode without calling the notice model' do
+        stub_notice_model
+        configure_handoff_message(enabled: true, mode: 'generated', text: 'Сейчас подключим администратора.')
+
+        create(:message, conversation: conversation, message_type: :incoming, account: account)
+
+        public_messages = conversation.reload.messages.outgoing.where(private: false)
+        expect(conversation.status).to eq('open')
+        expect(public_messages.pluck(:content)).to eq(['Сейчас подключим администратора.'])
+        expect(public_messages.first.sender).to eq(assistant)
+        expect(Llm::Runtime).not_to have_received(:chat).with(hash_including(feature: :customer_notice))
+      end
+
+      it 'sends the neutral sentence in AI mode without a fixed text and without calling the notice model' do
+        stub_notice_model
+        configure_handoff_message(enabled: true, mode: 'generated', text: '')
+
+        create(:message, conversation: conversation, message_type: :incoming, account: account, content: 'Мне нужна помощь')
+
+        expect(conversation.reload.status).to eq('open')
+        expect(conversation.messages.outgoing.where(private: false).pluck(:content)).to eq(['Сотрудник продолжит диалог с вами.'])
+        expect(Llm::Runtime).not_to have_received(:chat).with(hash_including(feature: :customer_notice))
+      end
+
       it 'sends no public handoff text when the handoff message is not configured or disabled' do
         configure_handoff_message(enabled: true, mode: 'fixed', text: '')
         create(:message, conversation: conversation, message_type: :incoming, account: account)

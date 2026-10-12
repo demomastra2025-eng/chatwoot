@@ -71,10 +71,8 @@ RSpec.describe 'Captain pending conversation safety nets' do # rubocop:disable R
   end
 
   # The handoff message is a workspace AI setting shared by every agent (API modes: fixed | generated).
-  def configure_handoff_message!(enabled: true, mode: 'fixed', text: '')
-    Captain::AccountSettings.new(account).update!(
-      'handoff' => { 'handoff_message' => { 'enabled' => enabled, 'mode' => mode, 'text' => text } }
-    )
+  def configure_handoff_message!(enabled: true, mode: 'fixed', text: '', instruction: '')
+    configure_notice(account, 'handoff_message', enabled: enabled, mode: mode, text: text, instruction: instruction)
   end
 
   def expect_visible_to_people(conversation)
@@ -430,6 +428,75 @@ RSpec.describe 'Captain pending conversation safety nets' do # rubocop:disable R
 
           expect_visible_to_people(conversation)
           expect(customer_texts(conversation)).to be_empty
+        end
+
+        if path == 'quota_used_up'
+          # The customer's own message waits for this handoff, so AI mode goes straight to the fixed text: no model call.
+          it 'sends the configured text without calling the notice model in AI mode' do
+            configure_handoff_message!(enabled: true, mode: 'generated', text: handoff_text, instruction: 'Коротко.')
+            stub_notice_model('Сотрудник продолжит диалог с вами.')
+
+            conversation = system_handoff!(path)
+
+            expect_visible_to_people(conversation)
+            expect(customer_texts(conversation)).to eq([handoff_text])
+            expect(Llm::Runtime).not_to have_received(:chat).with(hash_including(feature: :customer_notice))
+          end
+        else
+          it 'sends the text the notice model wrote, once, in AI mode, never a text from the turn itself' do
+            configure_handoff_message!(enabled: true, mode: 'generated', text: handoff_text, instruction: 'Коротко.')
+            stub_notice_model('Сотрудник продолжит диалог с вами.')
+
+            conversation = system_handoff!(path)
+
+            expect_visible_to_people(conversation)
+            expect(customer_texts(conversation)).to eq(['Сотрудник продолжит диалог с вами.'])
+          end
+
+          it 'writes the notice text before any conversation lock or transaction is taken' do
+            configure_handoff_message!(enabled: true, mode: 'generated', text: handoff_text)
+            baseline = ActiveRecord::Base.connection.open_transactions
+            depths = []
+            stub_notice_model
+            allow(Llm::Runtime).to receive(:chat).with(hash_including(feature: :customer_notice)) do
+              depths << ActiveRecord::Base.connection.open_transactions
+              Struct.new(:content).new('Сотрудник продолжит диалог с вами.')
+            end
+
+            system_handoff!(path)
+
+            expect(depths).to eq([baseline])
+          end
+        end
+
+        it 'falls back to the configured text when the notice model fails in AI mode' do
+          configure_handoff_message!(enabled: true, mode: 'generated', text: handoff_text)
+          stub_notice_model(error: StandardError.new('boom'))
+
+          conversation = system_handoff!(path)
+
+          expect_visible_to_people(conversation)
+          expect(customer_texts(conversation)).to eq([handoff_text])
+        end
+
+        it 'falls back to a neutral sentence when the notice model fails in AI mode and there is no configured text' do
+          configure_handoff_message!(enabled: true, mode: 'generated', text: '')
+          stub_notice_model(error: StandardError.new('boom'))
+
+          conversation = system_handoff!(path)
+
+          expect_visible_to_people(conversation)
+          expect(customer_texts(conversation)).to eq(['Сотрудник продолжит диалог с вами.'])
+        end
+
+        it 'sends no text and never calls the notice model while the toggle is off in AI mode' do
+          configure_handoff_message!(enabled: false, mode: 'generated', text: handoff_text)
+          stub_notice_model
+          conversation = system_handoff!(path)
+
+          expect_visible_to_people(conversation)
+          expect(customer_texts(conversation)).to be_empty
+          expect(Llm::Runtime).not_to have_received(:chat).with(hash_including(feature: :customer_notice))
         end
       end
     end

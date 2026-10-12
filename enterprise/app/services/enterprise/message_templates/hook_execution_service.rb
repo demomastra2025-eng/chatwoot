@@ -131,8 +131,15 @@ module Enterprise::MessageTemplates::HookExecutionService
   # that came first wins.
   def handoff_without_captain_quota
     Rails.logger.info("[CAPTAIN][AutoReply] Handing conversation #{conversation.id} to people because Captain quota is used up")
-    conversation.bot_handoff!(actor: nil, source: 'system', fence: { last_message_id: message.id }) do
-      Captain::SystemHandoffMessageService.new(conversation: conversation, assistant: inbox.captain_assistant).perform
+    # This runs in the request or webhook thread of the customer's own message, for an account whose Captain quota is
+    # used up: no notice model call (generate: false), so the message never waits for it. In AI mode the fixed text,
+    # else the neutral sentence, goes out. The text is still written before the handoff takes the conversation lock.
+    notice = Captain::SystemHandoffMessageService.new(conversation: conversation, assistant: inbox.captain_assistant, generate: false)
+    begin
+      notice.prepare
+    rescue StandardError => e
+      Rails.logger.warn("[CAPTAIN][CustomerNotice] could not prepare the quota handoff notice: #{e.class.name}")
     end
+    conversation.bot_handoff!(actor: nil, source: 'system', fence: { last_message_id: message.id }) { notice.perform }
   end
 end

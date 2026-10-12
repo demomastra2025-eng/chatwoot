@@ -34,6 +34,30 @@ class Captain::AccountSettingsBackfill
     end
   end
 
+  # Account settings that were saved while an AI-mode message still kept the owner's wishes in `text` (the old per-agent
+  # "Пожелания к сообщению"): `text` is now the sentence a customer gets when the notice model fails, so the wishes move to
+  # `instruction` and `text` is cleared. Idempotent; returns the names of the messages moved (nothing is written on a dry run).
+  def self.move_message_guidance!(account, dry_run: false)
+    account.with_lock do
+      account.reload
+      settings = Captain::AccountSettings.new(account)
+      patch = message_guidance_patch(settings.section('handoff'))
+      settings.update!('handoff' => patch) if patch.any? && !dry_run
+      patch.keys
+    end
+  end
+
+  def self.message_guidance_patch(handoff)
+    Captain::AccountSettings::MESSAGE_FIELDS.each_with_object({}) do |key, patch|
+      message = handoff.fetch(key).to_h
+      next unless message['mode'] == 'generated' && message['text'].to_s.strip.present? && message['instruction'].to_s.strip.blank?
+
+      patch[key] = { 'text' => '',
+                     'instruction' => message['text'].to_s.squish.first(Captain::AccountSettings::MESSAGE_INSTRUCTION_MAX_LENGTH) }
+    end
+  end
+  private_class_method :message_guidance_patch
+
   def self.conflicts(account)
     main = main_assistant(account)
     return [] unless main

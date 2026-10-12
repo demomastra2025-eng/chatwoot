@@ -53,15 +53,26 @@ class Captain::AccountSettingsValidation
   def message_errors(value, path)
     return [error(path, 'invalid_type', 'must be an object')] unless value.is_a?(Hash)
 
-    value.filter_map do |key, item|
-      valid = case key
-              when 'enabled' then BOOL.include?(item)
-              when 'mode' then Captain::AccountSettings::MESSAGE_MODE_FROM_API.key?(item)
-              when 'text' then item.is_a?(String)
-              else false
-              end
-      error("#{path}.#{key}", 'invalid_value', 'has an invalid value') unless valid
+    value.filter_map { |key, item| message_field_error("#{path}.#{key}", key, item) }
+  end
+
+  def message_field_error(path, key, item)
+    return error(path, 'too_long', 'is too long') if key == 'instruction' && instruction_too_long?(item)
+
+    error(path, 'invalid_value', 'has an invalid value') unless message_field_valid?(key, item)
+  end
+
+  def message_field_valid?(key, item)
+    case key
+    when 'enabled' then BOOL.include?(item)
+    when 'mode' then Captain::AccountSettings::MESSAGE_MODE_FROM_API.key?(item)
+    when 'text', 'instruction' then item.is_a?(String)
+    else false
     end
+  end
+
+  def instruction_too_long?(item)
+    item.is_a?(String) && item.length > Captain::AccountSettings::MESSAGE_INSTRUCTION_MAX_LENGTH
   end
 
   def integer_errors(value, path)

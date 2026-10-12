@@ -1,32 +1,54 @@
 # Posts the public text for a handoff that the system applies because Captain
 # could not answer by itself (quota used up, no valid reply, an unfinished
-# conversation). It is only the assistant's own handoff message and only while
-# that message is enabled; in AI mode a text generated for this handoff comes
-# first. There is no built-in wording, so an assistant without a configured
-# message hands off without public text.
+# conversation). The text comes from Captain::CustomerNoticeService: nothing
+# while the workspace handoff message is disabled or has no text, the fixed
+# text, or, in AI mode, a text written by the separate notice model (with the
+# fixed text, then a neutral sentence, as the fallback). The model can take
+# seconds, so a caller that holds a lock asks #prepare first and calls #perform
+# inside the lock. A caller that must not wait for a model (the incoming message
+# of a customer whose Captain quota is used up) passes generate: false and gets
+# the fallback text at once.
 class Captain::SystemHandoffMessageService
-  pattr_initialize [:conversation!, :assistant!, { generated_message: nil }]
+  def initialize(conversation:, assistant:, reason_label: nil, generate: true)
+    @conversation = conversation
+    @assistant = assistant
+    @reason_label = reason_label
+    @generate = generate
+  end
+
+  # Writes the notice text now (at most one model call per service object) and returns self.
+  def prepare
+    content
+    self
+  end
 
   def perform
-    I18n.with_locale(conversation.account.locale) do
-      text = content
-      next if text.blank?
+    text = content
+    return if text.blank?
 
+    I18n.with_locale(conversation.account.locale) do
       conversation.messages.create!(
         message_type: :outgoing,
         account_id: conversation.account_id,
         inbox_id: conversation.inbox_id,
         sender: assistant,
-        content: assistant.render_runtime_text(text, conversation: conversation),
+        content: text,
         preserve_waiting_since: true
       )
     end
   end
 
   def content
-    return unless assistant.handoff_message_enabled?
-
-    generated = generated_message.to_s.strip.presence if assistant.handoff_message_mode_value == Captain::Assistant::MESSAGE_MODE_AI
-    generated || assistant.handoff_message_text.to_s.strip.presence
+    notice.text
   end
+
+  def notice
+    @notice ||= Captain::CustomerNoticeService.new(
+      conversation: conversation, assistant: assistant, kind: :handoff, reason_label: reason_label, generate: generate
+    )
+  end
+
+  private
+
+  attr_reader :conversation, :assistant, :reason_label, :generate
 end

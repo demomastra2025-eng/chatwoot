@@ -63,6 +63,97 @@ RSpec.describe Llm::RuntimePolicy do
     end
   end
 
+  describe 'reasoning scope' do
+    let(:optional_reasoning) do
+      { 'provider' => 'openrouter', 'supported_parameters' => ['reasoning'],
+        'reasoning' => { 'supported_efforts' => %w[low medium high], 'mandatory' => false } }
+    end
+    let(:native_none_reasoning) do
+      { 'provider' => 'openrouter', 'supported_parameters' => ['reasoning'],
+        'reasoning' => { 'supported_efforts' => %w[none low medium high], 'mandatory' => false } }
+    end
+    let(:mandatory_reasoning) do
+      { 'provider' => 'openrouter', 'supported_parameters' => ['reasoning'],
+        'reasoning' => { 'supported_efforts' => %w[low medium high], 'mandatory' => true } }
+    end
+
+    def use_model_config(name, config)
+      allow(Llm::Models).to receive(:model_config).with(name, account: account).and_return(config)
+    end
+
+    describe '.no_thinking_options' do
+      it 'says "none" when the model can be told not to reason' do
+        use_model_config('vendor/optional', optional_reasoning)
+        use_model_config('vendor/native-none', native_none_reasoning)
+
+        expect(described_class.no_thinking_options(model: 'vendor/optional', account: account)).to eq(effort: 'none')
+        expect(described_class.no_thinking_options(model: 'vendor/native-none', account: account)).to eq(effort: 'none')
+      end
+
+      it 'sends nothing for a model that must reason, cannot reason or is unknown' do
+        use_model_config('vendor/mandatory', mandatory_reasoning)
+        use_model_config('vendor/plain', 'provider' => 'openrouter', 'supported_parameters' => ['temperature'])
+
+        expect(described_class.no_thinking_options(model: 'vendor/mandatory', account: account)).to be_nil
+        expect(described_class.no_thinking_options(model: 'vendor/plain', account: account)).to be_nil
+        expect(described_class.no_thinking_options(model: '', account: account)).to be_nil
+      end
+    end
+
+    describe '.no_reasoning_params' do
+      it 'switches reasoning off with the enabled flag for a model whose efforts have no "none"' do
+        use_model_config('vendor/optional', optional_reasoning)
+
+        expect(described_class.no_reasoning_params(model: 'vendor/optional', account: account)).to eq(enabled: false)
+      end
+
+      it 'uses the "none" effort for a model that supports it natively' do
+        use_model_config('vendor/native-none', native_none_reasoning)
+
+        expect(described_class.no_reasoning_params(model: 'vendor/native-none', account: account)).to eq(effort: 'none')
+      end
+
+      it 'sends nothing when reasoning cannot be switched off' do
+        use_model_config('vendor/mandatory', mandatory_reasoning)
+
+        expect(described_class.no_reasoning_params(model: 'vendor/mandatory', account: account)).to be_nil
+      end
+    end
+
+    describe '.conversation_thinking_options' do
+      before { use_model_config('vendor/optional', optional_reasoning) }
+
+      it 'is low when the workspace stored no effort' do
+        expect(described_class.conversation_thinking_options(model: 'vendor/optional', account: account)).to eq(effort: 'low')
+        expect(
+          described_class.conversation_thinking_options(
+            model: 'vendor/optional', account: account, preferences: account.captain_runtime_preferences.to_h
+          )
+        ).to eq(effort: 'low')
+      end
+
+      it 'keeps the effort the workspace stored' do
+        account.update!(captain_runtime: { 'assistant_thinking_effort' => 'high' })
+
+        expect(described_class.conversation_thinking_options(model: 'vendor/optional', account: account)).to eq(effort: 'high')
+      end
+
+      it 'keeps an effort that the run carries' do
+        expect(
+          described_class.conversation_thinking_options(
+            model: 'vendor/optional', account: account, preferences: { 'assistant_thinking_effort' => 'medium' }
+          )
+        ).to eq(effort: 'medium')
+      end
+
+      it 'sends nothing to a model that cannot reason' do
+        use_model_config('vendor/plain', 'provider' => 'openrouter', 'supported_parameters' => ['temperature'])
+
+        expect(described_class.conversation_thinking_options(model: 'vendor/plain', account: account)).to be_nil
+      end
+    end
+  end
+
   describe '.moderation_enabled?' do
     it 'defaults runtime assistant and copilot moderation to disabled' do
       expect(described_class.moderation_enabled?(feature: :assistant, account: account)).to be false

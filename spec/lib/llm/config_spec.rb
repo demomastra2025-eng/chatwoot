@@ -228,6 +228,7 @@ RSpec.describe Llm::Config do
         'help_center_search' => 'CAPTAIN_EMBEDDING_MODEL',
         'moderation' => 'CAPTAIN_MODERATION_MODEL',
         'custom_guardrail' => 'CAPTAIN_CUSTOM_GUARDRAIL_MODEL',
+        'customer_notice' => 'CAPTAIN_CUSTOMER_NOTICE_MODEL',
         'label_suggestion' => 'CAPTAIN_LABEL_SUGGESTION_MODEL',
         'outcome_classification' => 'CAPTAIN_OUTCOME_CLASSIFIER_MODEL'
       )
@@ -310,6 +311,19 @@ RSpec.describe Llm::Config do
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(transcription_catalog)
 
       expect(described_class.model_for(feature: 'label_suggestion', account: account)).to eq('openai/gpt-5.4-mini')
+    end
+
+    it 'uses the installation customer notice model, and follows the general default when it is blank' do
+      account = create(:account)
+      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
+      upsert_installation_config('CAPTAIN_CUSTOMER_NOTICE_MODEL', 'openai/gpt-5.4-mini')
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(transcription_catalog)
+
+      expect(described_class.model_for(feature: 'customer_notice', account: account)).to eq('openai/gpt-5.4-mini')
+
+      upsert_installation_config('CAPTAIN_CUSTOMER_NOTICE_MODEL', '')
+      upsert_installation_config('CAPTAIN_DEFAULT_MODEL', 'openai/gpt-5.4-mini')
+      expect(described_class.model_for(feature: 'customer_notice', account: account)).to eq('openai/gpt-5.4-mini')
     end
 
     it 'falls back to the feature default when the installation value is blank, still ignoring the account override' do

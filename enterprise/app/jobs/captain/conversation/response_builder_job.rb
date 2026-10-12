@@ -156,6 +156,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
   def process_public_response
     if handoff_requested?
+      prepare_handoff_notice
       handoff_applied = process_action(handoff_action_name)
       account.increment_token_usage(@response.dig('usage', 'total_tokens')) if handoff_applied
       handoff_applied
@@ -489,6 +490,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   # on the handoff tool. It is fenced like every Captain result: a human reply,
   # a status or control change, or a newer customer message wins.
   def handoff_failed_turn
+    prepare_system_handoff_message
     result = @conversation.with_captain_activity_context(reason: provider_error_note_content, reason_type: :inference) do
       with_response_persistence_lock(stage: 'failed_turn_handoff') do
         audit = outcome_reason_config.pending_transition_options(:handoff, explanation: provider_error_note_content).fetch(:audit)
@@ -510,10 +512,28 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
       if custom_guardrail_message.present?
         create_outgoing_message(custom_guardrail_message, preserve_waiting_since: true)
       else
-        Captain::SystemHandoffMessageService.new(conversation: @conversation, assistant: response_assistant).perform
+        system_handoff_message_service.perform
       end
       send_out_of_office_message_if_applicable unless @response[CUSTOM_GUARDRAIL_KEY].is_a?(Hash)
     end
+  end
+
+  # The notice model can take seconds, so the text is written before the response persistence lock is taken. A failure
+  # here only means the text is written again under the lock.
+  def prepare_system_handoff_message
+    system_handoff_message_service.prepare unless custom_guardrail_message.present?
+  rescue StandardError => e
+    Rails.logger.warn("[CAPTAIN][CustomerNotice] could not prepare the system handoff notice: #{e.class.name}")
+  end
+
+  def prepare_handoff_notice
+    handoff_notice.text if response_assistant.handoff_message_enabled?
+  rescue StandardError => e
+    Rails.logger.warn("[CAPTAIN][CustomerNotice] could not prepare the handoff notice: #{e.class.name}")
+  end
+
+  def system_handoff_message_service
+    @system_handoff_message_service ||= Captain::SystemHandoffMessageService.new(conversation: @conversation, assistant: response_assistant)
   end
 
   def custom_guardrail_message
@@ -686,23 +706,30 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     ::MessageTemplates::Template::OutOfOffice.perform_if_applicable(@conversation)
   end
 
+  # The text is the workspace handoff message: nothing while it is disabled or has no text, the fixed text, or the text
+  # the notice model wrote. There is no built-in wording here, and the agent's own `handoff_message` is not used.
   def create_handoff_message(preserve_waiting_since: false)
-    handoff_message = handoff_message_content
+    text = handoff_notice.text
+    return if text.blank?
 
     I18n.with_locale(response_assistant.account.locale) do
-      create_outgoing_message(
-        response_assistant.render_runtime_text(handoff_message, conversation: @conversation),
-        preserve_waiting_since: preserve_waiting_since
-      )
+      create_outgoing_message(text, preserve_waiting_since: preserve_waiting_since)
     end
   end
 
-  def handoff_message_content
-    if response_assistant.handoff_message_mode_value == Captain::Assistant::MESSAGE_MODE_AI
-      return @response['handoff_message'].presence || response_assistant.handoff_message_text.presence || I18n.t('conversations.captain.handoff')
-    end
+  def handoff_notice
+    @handoff_notice ||= Captain::CustomerNoticeService.new(
+      conversation: @conversation, assistant: response_assistant, kind: :handoff, reason_label: handoff_notice_reason_label
+    )
+  end
 
-    response_assistant.handoff_message_text.presence || I18n.t('conversations.captain.handoff')
+  # Only the configured label of the reason the system knows at this point (the FAQ had no answer); never the agent's
+  # own internal handoff reason.
+  def handoff_notice_reason_label
+    return unless @response['handoff_outcome_signal'] == 'faq_no_answer'
+
+    reason = outcome_reason_config.resolve('handoff', 'faq_no_answer')
+    reason['label'] if reason && reason['id'] == 'faq_no_answer'
   end
 
   def create_handoff_private_note

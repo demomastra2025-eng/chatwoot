@@ -72,6 +72,7 @@ class Captain::BaseTaskService
       schema: schema,
       tools: tools,
       account: account,
+      thinking: task_thinking_options(model),
       on_end_message: build_generation_callback(model, tools),
       observability: chat_observability_payload(model)
     ).call
@@ -82,6 +83,12 @@ class Captain::BaseTaskService
   rescue StandardError => e
     capture_llm_exception(e, credential: credential)
     { error: e.message, request_messages: messages }
+  end
+
+  # Tasks (editor, label hints, summaries, completion checks) never reason: only the agents that talk to
+  # customers do. The request says "none" when the model can be told so, else it carries no reasoning.
+  def task_thinking_options(model)
+    Llm::RuntimePolicy.no_thinking_options(model: model, account: account)
   end
 
   def build_generation_callback(model, tools)

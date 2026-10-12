@@ -133,6 +133,22 @@ RSpec.describe Captain::OutcomeClassificationService do
     expect(conversation.reload.status).to eq('open') # A later incoming message reopened it; classification must not undo that.
   end
 
+  it 'asks the classifier chat model for no reasoning when it can be told so, and sends none otherwise' do
+    add_message('Спасибо, всё понятно.')
+    allow(Llm::RuntimePolicy).to receive(:no_reasoning_params).with(model: 'openai/gpt-6-luna', account: account).and_return(enabled: false)
+    described_class.new(transition).perform
+    expect(Llm::Runtime).to have_received(:chat).with(hash_including(feature: :outcome_classification, reasoning: { enabled: false })).once
+
+    other = create(:conversation, account: account, status: 'resolved')
+    add_message('Спасибо.', conversation: other, inbox: other.inbox)
+    other.update!(status: 'resolved')
+    other_transition = ConversationStatusTransition.create!(account: account, conversation: other, actor: assistant,
+                                                            from_status: 'pending', to_status: 'resolved', source: 'captain')
+    allow(Llm::RuntimePolicy).to receive(:no_reasoning_params).and_return(nil)
+    described_class.new(other_transition).perform
+    expect(Llm::Runtime).to have_received(:chat).with(hash_including(feature: :outcome_classification, reasoning: nil)).once
+  end
+
   it 'permits one bounded expansion and falls back to other if the classifier still requests more' do
     25.times { |index| add_message("Message #{index} " + ('x' * 1500)) }
     allow(Llm::Runtime).to receive(:chat).and_return(classification.merge('needs_more_context' => true))

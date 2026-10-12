@@ -64,7 +64,7 @@ class Llm::OpenRouterRoutingProfile
   }.freeze
   LUNA_PRIMARY_MODEL = 'openai/gpt-6-luna'
   LUNA_FALLBACK_MODEL = 'openai/gpt-5.6-luna'
-  LUNA_CHAT_FEATURES = %w[copilot editor label_suggestion image_recognition].freeze
+  LUNA_CHAT_FEATURES = %w[copilot editor label_suggestion image_recognition customer_notice].freeze
   EXCLUDED_CAPTAIN_PROVIDER_ENDPOINTS = %w[openai/fast openai/priority openai/flex].freeze
 
   NATIVE_ENDPOINTS = {
@@ -203,6 +203,8 @@ class Llm::OpenRouterRoutingProfile
                             { require_parameters: true }
                           when 'copilot'
                             { require_parameters: true, sort: { by: 'latency', partition: 'none' } }
+                          when 'customer_notice'
+                            { require_parameters: false, sort: { by: 'latency', partition: 'none' } }
                           when 'editor', 'label_suggestion'
                             { require_parameters: false, sort: { by: 'price', partition: 'none' } }
                           else

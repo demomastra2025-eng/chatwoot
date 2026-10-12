@@ -4,7 +4,7 @@ class Llm::ChatRequestRunner
   OBSERVABILITY_NON_CRITICAL_ERRORS = [StandardError, SystemStackError].freeze
 
   attr_reader :context, :model, :messages, :schema, :tools, :params, :headers, :chat, :account, :feature, :temperature, :on_end_message,
-              :on_tool_call, :on_tool_result, :content_builder, :observability
+              :on_tool_call, :on_tool_result, :content_builder, :observability, :thinking
 
   def initialize(messages:, **options)
     @messages = messages
@@ -18,6 +18,7 @@ class Llm::ChatRequestRunner
     @account = options[:account]
     @feature = options[:feature].presence || observability_feature(options[:observability])
     @temperature = options[:temperature]
+    @thinking = options[:thinking]
     @on_end_message = options[:on_end_message]
     @on_tool_call = options[:on_tool_call]
     @on_tool_result = options[:on_tool_result]
@@ -71,6 +72,7 @@ class Llm::ChatRequestRunner
       routing_metadata: observability
     }.tap do |kwargs|
       kwargs[:account] = account if account.present?
+      kwargs[:thinking] = thinking if thinking.present?
     end
   end
 

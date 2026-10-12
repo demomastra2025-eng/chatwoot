@@ -36,8 +36,44 @@ class Llm::RuntimePolicy
     'medium' => 4_096,
     'high' => 8_192
   }.freeze
+  # Reasoning belongs to the agents that talk to customers (the agent runtime and the council consultations), and
+  # they think at `low` unless the agent or the workspace chose an effort. Every other call states "none".
+  CONVERSATION_THINKING_EFFORT = 'low'
+  NO_THINKING_EFFORT = 'none'
 
   class << self
+    # { effort: 'none' } when the model can be told not to reason, else nil (the request then carries no reasoning at all).
+    def no_thinking_options(model:, account: nil)
+      return if model.blank?
+
+      Llm::ModelParameters.for(model, account: account).thinking(NO_THINKING_EFFORT)
+    rescue StandardError
+      nil
+    end
+
+    # The raw OpenRouter `reasoning` body value that switches reasoning off for a request that cannot carry a
+    # `thinking` option (the feature runtime), or nil when the model cannot be told so.
+    def no_reasoning_params(model:, account: nil)
+      return if model.blank?
+
+      contract = Llm::ModelParameters.for(model, account: account)
+      return unless contract.reasoning_efforts.include?(NO_THINKING_EFFORT)
+
+      contract.disabled_reasoning_uses_flag? ? { enabled: false } : { effort: NO_THINKING_EFFORT }
+    rescue StandardError
+      nil
+    end
+
+    # What the customer-facing agent runtime thinks with when the agent itself has no `thinking_effort`: the
+    # workspace's own stored choice, else `low`.
+    def conversation_thinking_options(model:, account: nil, preferences: nil)
+      if explicit_assistant_effort?(account, preferences)
+        return thinking_options(feature: :assistant, model: model, account: account, preferences: preferences)
+      end
+
+      Llm::ModelParameters.for(model, account: account).thinking(CONVERSATION_THINKING_EFFORT)
+    end
+
     def thinking_options(feature:, model:, account: nil, preferences: nil, effort_override: nil)
       effort = (effort_override || runtime_preferences(account, preferences)["#{feature}_thinking_effort"]).to_s
       return nil if effort.blank?
@@ -212,6 +248,15 @@ class Llm::RuntimePolicy
     end
 
     private
+
+    # The workspace stored an effort, or the run carries one other than the built-in default.
+    def explicit_assistant_effort?(account, preferences)
+      stored = account.captain_runtime.to_h.with_indifferent_access['assistant_thinking_effort'] if account.respond_to?(:captain_runtime)
+      return true if stored.present?
+
+      effort = preferences.to_h.stringify_keys['assistant_thinking_effort'].to_s
+      effort.present? && effort != CaptainFeaturable::RUNTIME_DEFAULTS['assistant_thinking_effort']
+    end
 
     def runtime_preferences(account, preferences)
       return preferences.to_h.stringify_keys if preferences.present?

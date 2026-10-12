@@ -179,6 +179,14 @@ RSpec.describe Llm::OpenRouterRoutingProfile do
       end
     end
 
+    it 'routes the customer notice by latency, Luna 6 first and Luna 5.6 as its only fallback' do
+      profile = described_class.for(feature: :customer_notice, model: 'openai/gpt-6-luna')
+
+      expect(profile.models).to eq(%w[openai/gpt-6-luna openai/gpt-5.6-luna])
+      expect(profile.provider_preferences).to include(require_parameters: false, sort: { by: 'latency', partition: 'model' })
+      expect(described_class.for(feature: :customer_notice, model: 'openai/gpt-5.4-mini').models).to eq(['openai/gpt-5.4-mini'])
+    end
+
     it 'does not fall back from Luna 6 for another chat feature when the workspace forbids model fallbacks' do
       profile = described_class.for(feature: :editor, model: 'openai/gpt-6-luna', runtime_preferences: { openrouter_allow_model_fallbacks: false })
 

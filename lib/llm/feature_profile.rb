@@ -64,6 +64,20 @@ class Llm::FeatureProfile
       cost_policy: 'speed_cost',
       fallback_strategy: 'fast_background'
     },
+    'customer_notice' => {
+      config_feature_key: 'customer_notice',
+      required_capabilities: %w[text_input text_output],
+      timeout_seconds: 8,
+      max_retries: 1,
+      streaming: false,
+      native_endpoint: nil,
+      structured_output: false,
+      response_healing: false,
+      reasoning_policy: 'disabled',
+      privacy_policy: 'standard',
+      cost_policy: 'latency_first',
+      fallback_strategy: 'fast_background'
+    },
     'label_suggestion' => {
       config_feature_key: 'label_suggestion',
       required_capabilities: %w[text_input text_output],

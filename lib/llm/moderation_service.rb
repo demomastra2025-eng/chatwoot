@@ -273,13 +273,18 @@ class Llm::ModerationService
         feature: :moderation,
         account: account,
         model: model,
-        options: { temperature: 0 }.tap do |options|
-          next if account.blank?
-
-          context = chat_context_for(model: model, provider: 'openrouter', account: account)
-          options[:context] = context if context.present?
-        end
+        options: chat_options(model: model, account: account)
       }
+    end
+
+    # The safety check never reasons: it says "none" when the model can be told so.
+    def chat_options(model:, account:)
+      { temperature: 0, thinking: Llm::RuntimePolicy.no_thinking_options(model: model, account: account) }.compact.tap do |options|
+        next if account.blank?
+
+        context = chat_context_for(model: model, provider: 'openrouter', account: account)
+        options[:context] = context if context.present?
+      end
     end
 
     def chat_context_for(model:, provider:, account:)

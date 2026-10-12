@@ -22,7 +22,7 @@ class Llm::BaseAiService
       feature: llm_feature_key,
       account: llm_model_account,
       model: model,
-      options: runtime_chat_options(model: model, temperature: temperature, thinking: thinking)
+      options: runtime_chat_options(model: model, temperature: temperature, thinking: thinking || no_thinking_options(model))
     )
   end
 
@@ -54,6 +54,12 @@ class Llm::BaseAiService
 
   def setup_temperature
     @temperature = DEFAULT_TEMPERATURE
+  end
+
+  # Only a caller that asks for an effort (the copilot with its workspace choice) reasons. The generators (FAQ, notes,
+  # contact attributes, search terms) say "none" when the model can be told so, else the request carries no reasoning.
+  def no_thinking_options(model)
+    Llm::RuntimePolicy.no_thinking_options(model: model, account: llm_model_account)
   end
 
   def runtime_chat_options(model:, temperature:, thinking:)

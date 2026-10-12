@@ -93,6 +93,19 @@ RSpec.describe Captain::Safety::CustomRulesStructuredOutputEngine do
     select
   end
 
+  it 'asks for no reasoning when the model can be told so, and sends none otherwise' do
+    expect(Llm::Runtime).to receive(:build_chat).with(hash_including(options: hash_excluding(:thinking))).and_return(chat)
+    select
+
+    allow(Llm::Models).to receive(:model_config).with(model, account: account).and_return(
+      'provider' => 'openrouter', 'supported_parameters' => %w[temperature response_format reasoning],
+      'reasoning' => { 'supported_efforts' => %w[low medium high], 'mandatory' => false }
+    )
+    expect(Llm::Runtime).to receive(:build_chat)
+      .with(hash_including(options: hash_including(thinking: { effort: 'none' }))).and_return(chat)
+    select
+  end
+
   it 'uses the native compiler without adding the moderation Safeguard fallback to Luna' do
     allow(Llm::Runtime).to receive(:build_chat).and_call_original
     allow(Llm::Config).to receive(:context).and_return(instance_double(RubyLLM::Context))

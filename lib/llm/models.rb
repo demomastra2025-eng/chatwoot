@@ -22,6 +22,7 @@ module Llm::Models
     'label_suggestion' => [],
     'outcome_classification' => %w[structured_output],
     'custom_guardrail' => %w[structured_output],
+    'customer_notice' => [],
     'assistant' => %w[structured_output tool_calling tool_choice],
     'copilot' => %w[structured_output tool_calling tool_choice],
     'audio_transcription' => %w[audio_input transcription],
