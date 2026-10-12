@@ -565,7 +565,7 @@ class Captain::Assistant < ApplicationRecord
     select_tools_by_ids(available_agent_tools, direct_agent_tool_ids)
   end
 
-  # Public on purpose: the multi-agent runtime (LazyAgent, council, confirmed operations) reads
+  # Public on purpose: the multi-agent runtime (LazyAgent, council parts) reads
   # the runtime name and the built tool instances of other agents from outside the model.
   def agent_name
     handoff_target_name

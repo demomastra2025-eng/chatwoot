@@ -1,6 +1,9 @@
 # Error codes at the scheduling tool boundary let the model correct inputs without confusing
 # an invalid range or unknown service with a provider outage or a server failure.
 module Captain::Tools::Copilot::SchedulingQueryValidation
+  # Codes that are failures of the system or of the provider, whatever status they carry.
+  TECHNICAL_SCHEDULING_CODES = %w[INTERNAL_FAILURE PROVIDER_UNAVAILABLE MEDELEMENT_AVAILABILITY_UNVERIFIED].freeze
+
   private
 
   def scheduling_datetime(value, field_name:)
@@ -48,7 +51,18 @@ module Captain::Tools::Copilot::SchedulingQueryValidation
       error = Scheduling::Error.new(code: 'INTERNAL_FAILURE', message: 'Scheduling could not be read because of an internal failure',
                                     status: :internal_server_error, details: { reason: 'internal_failure' })
     end
-    Captain::ToolResult.failure_output(error: error.message, retryable: false,
-                                      data: { code: error.code, reason: error.details.to_h[:reason], details: error.details }.compact)
+    Captain::ToolResult.failure_output(
+      error: error.message, retryable: false,
+      data: { code: error.code, reason: error.details.to_h[:reason], details: error.details, error_class: scheduling_error_class(error) }.compact
+    )
+  end
+
+  # Declares what the agent runtime must do with the failure (see Captain::Runtime::ToolFailure): a failure of the server or of
+  # the provider is technical and hands the conversation to staff; everything the model can answer or correct is a business
+  # outcome: a resource, a service or a range that does not exist or is not allowed, a malformed id. The declaration wins over
+  # any inference from the shape of the result.
+  def scheduling_error_class(error)
+    technical = error.status.to_i >= 500 || TECHNICAL_SCHEDULING_CODES.include?(error.code.to_s)
+    technical ? Captain::Runtime::ToolFailure::TECHNICAL : Captain::Runtime::ToolFailure::BUSINESS
   end
 end

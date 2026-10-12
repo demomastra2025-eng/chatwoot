@@ -36,7 +36,7 @@ class Llm::RuntimePolicy
     'medium' => 4_096,
     'high' => 8_192
   }.freeze
-  # Reasoning belongs to the agents that talk to customers (the agent runtime and the council consultations), and
+  # Reasoning belongs to the agents that talk to customers (the agent runtime and the council parts), and
   # they think at `low` unless the agent or the workspace chose an effort. Every other call states "none".
   CONVERSATION_THINKING_EFFORT = 'low'
   NO_THINKING_EFFORT = 'none'

@@ -5,6 +5,8 @@ class Captain::Runtime::PartRegistry
   MAX_COUNCIL_PARTS = 3
   MAX_PARTS_PER_MESSAGE = 30
   SUMMARY_LIMIT = 600
+  # The sentence told to the customer for a part stays whole up to the length of one message.
+  REPLY_TEXT_LIMIT = 3000
   STATES = %w[open answered waiting_customer done failed unknown].freeze
   OPEN_STATES = %w[open waiting_customer unknown].freeze
   # The modes a new plan can have. Passing the conversation to one colleague is that colleague's transfer tool, not a plan.
@@ -35,8 +37,15 @@ class Captain::Runtime::PartRegistry
 
     Array(context[:parts]).any? do |part|
       part['state'] == 'waiting_customer' && part['executor_agent_id'] != actor_id &&
-        Array(part['delivered']).any? { |delivery| delivery['content'].to_s.strip == last }
+        deliveries_of_version(part).any? { |delivery| delivery['content'].to_s.strip == last }
     end
+  end
+
+  # What was sent to the customer for THIS version of the part. A new version starts from the deliveries of the one before it, so
+  # each delivery records the version it reported (see ResponseBuilderJob#record_part_delivery); one written before versions were
+  # recorded counts for every version.
+  def self.deliveries_of_version(part)
+    Array(part['delivered']).select { |delivery| delivery['version'].nil? || delivery['version'].to_i == part['version'].to_i }
   end
 
   def self.last_reply_text(history)
@@ -51,9 +60,10 @@ class Captain::Runtime::PartRegistry
   end
 
   # Actions a specialist performed in an earlier run whose reply never reached the customer (the reply was dropped because a
-  # newer message arrived): the next reply must tell the customer.
+  # newer message arrived): the next reply must tell the customer. The action of a follow-up version (the customer answered, the
+  # version booked) is reported by a delivery of that version, not by the question that an earlier version delivered.
   def self.undelivered_outcomes(parts)
-    Array(parts).select { |part| part['acted'] == true && part['cancelled'] != true && Array(part['delivered']).empty? }
+    Array(parts).select { |part| part['acted'] == true && part['cancelled'] != true && deliveries_of_version(part).empty? }
   end
 
   def initialize(context)
@@ -98,11 +108,17 @@ class Captain::Runtime::PartRegistry
   # that nothing written meanwhile (for example deliveries) is lost. It does not require the run to be current: the action of a
   # part (a booking) has already happened, and it must be on record even when the reply is later dropped. A council part runs
   # with a context that has neither the parts nor the graph, so nothing here may depend on them.
-  def record_result!(part_id, state: nil, summary: nil, missing_fields: nil, executor_agent_id: nil, acted: nil)
+  #
+  # summary is what the tools of the part returned, for the model and for staff. reply_text is the sentence the customer is told
+  # for the part: a retried request replays it. technical is the failure that stopped the part (names and codes only), so that the
+  # replay hands the conversation to staff as the first attempt did.
+  def record_result!(part_id, state: nil, summary: nil, missing_fields: nil, executor_agent_id: nil, acted: nil, reply_text: nil, technical: nil)
     raise ArgumentError, 'Invalid part state' if state && !STATES.include?(state)
 
     changes = { 'state' => state, 'executor_agent_id' => executor_agent_id, 'acted' => acted }.compact
     changes['summary'] = summary.to_s.first(SUMMARY_LIMIT) unless summary.nil?
+    changes['reply_text'] = reply_text.to_s.first(REPLY_TEXT_LIMIT) unless reply_text.nil?
+    changes['technical'] = technical.to_h.deep_stringify_keys if technical.present?
     changes['missing_fields'] = Array(missing_fields) unless missing_fields.nil?
     session = @context[:agent_session]
     return merge_into_context!(part_id, changes) unless session

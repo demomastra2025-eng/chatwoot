@@ -44,6 +44,12 @@ RSpec.describe Captain::Runtime::PartRegistry do
       expect(described_class.awaiting_peer_answer?(context.merge(parts: [waiting], conversation_history: stored))).to be(true)
     end
 
+    it 'reads only the deliveries of the current version: the question of an earlier version is not the one just asked' do
+      earlier = waiting.merge('version' => 2, 'delivered' => [{ 'message_id' => 5, 'content' => question, 'version' => 1 }])
+
+      expect(described_class.awaiting_peer_answer?(context.merge(parts: [earlier], conversation_history: history))).to be(false)
+    end
+
     it 'is false for the part of the current agent, for a part that does not wait, and when something else was said last' do
       expect(described_class.awaiting_peer_answer?(context.merge(parts: [waiting.merge('executor_agent_id' => 1)], conversation_history: history))).to be(false)
       expect(described_class.awaiting_peer_answer?(context.merge(parts: [waiting.merge('state' => 'done')], conversation_history: history))).to be(false)
@@ -60,6 +66,30 @@ RSpec.describe Captain::Runtime::PartRegistry do
 
       expect(described_class.undelivered_outcomes(parts).pluck('id')).to eq(%w[a e])
       expect(described_class.undelivered_outcomes(nil)).to eq([])
+    end
+
+    it 'reports the action of a follow-up version whose reply was dropped, not hidden by the question an earlier version delivered' do
+      question = { 'message_id' => 1, 'content' => 'На какое время?', 'version' => 1 }
+      parts = [{ 'id' => 'dropped', 'version' => 2, 'acted' => true, 'delivered' => [question] },
+               { 'id' => 'told', 'version' => 2, 'acted' => true, 'delivered' => [question, { 'message_id' => 2, 'version' => 2 }] },
+               { 'id' => 'first', 'version' => 1, 'acted' => true, 'delivered' => [question] }]
+
+      expect(described_class.undelivered_outcomes(parts).pluck('id')).to eq(['dropped'])
+    end
+
+    it 'counts a delivery written before versions were recorded for the version it belongs to' do
+      parts = [{ 'id' => 'old', 'version' => 1, 'acted' => true, 'delivered' => [{ 'message_id' => 1 }] }]
+
+      expect(described_class.undelivered_outcomes(parts)).to be_empty
+    end
+  end
+
+  describe '.deliveries_of_version' do
+    it 'keeps only what was sent for the current version of the part' do
+      part = { 'version' => 2, 'delivered' => [{ 'message_id' => 1, 'version' => 1 }, { 'message_id' => 2, 'version' => 2 }] }
+
+      expect(described_class.deliveries_of_version(part).pluck('message_id')).to eq([2])
+      expect(described_class.deliveries_of_version({})).to eq([])
     end
   end
 
@@ -300,6 +330,32 @@ RSpec.describe Captain::Runtime::PartRegistry do
 
       expect(context[:parts].sole).to include('state' => 'answered', 'acted' => true)
       expect(context[:parts].sole['summary'].size).to eq(described_class::SUMMARY_LIMIT)
+    end
+
+    it 'stores the sentence told to the customer apart from the summary, and the failure that stopped the part by names and codes' do
+      registry = described_class.new(context)
+      failure = { 'tool' => 'create_appointment', 'kind' => 'technical', 'reason' => 'provider_unavailable' }
+
+      registry.record_result!(part['id'], state: 'done', summary: 'create_appointment: {"id":7}', reply_text: 'Вы записаны.',
+                                          acted: true, technical: failure)
+
+      expect(context[:parts].sole).to include('summary' => 'create_appointment: {"id":7}', 'reply_text' => 'Вы записаны.',
+                                              'technical' => failure)
+      registry.record_result!(part['id'], state: 'done', reply_text: 'x' * (described_class::REPLY_TEXT_LIMIT + 10))
+      expect(context[:parts].sole['reply_text'].size).to eq(described_class::REPLY_TEXT_LIMIT)
+      expect(context[:parts].sole['technical']).to eq(failure)
+    end
+
+    it 'starts a new version of a part without the reply text and the failure of the one before' do
+      stored = part
+      described_class.new(context).record_result!(stored['id'], state: 'waiting_customer', reply_text: 'Когда?',
+                                                                technical: { 'reason' => 'invalid_output' })
+      next_message
+
+      second = plan([{ fragment: 'в 11', executor_agent_id: 1, link_part_id: stored['id'], link_action: 'answer' }]).fetch(:parts).first
+
+      expect(second).to include('id' => stored['id'], 'version' => 2)
+      expect(second).not_to include('reply_text', 'technical')
     end
 
     it 'validates the state and the part, and nothing else' do

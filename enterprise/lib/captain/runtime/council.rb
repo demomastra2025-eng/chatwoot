@@ -332,7 +332,7 @@ class Captain::Runtime::Council
   end
 
   def run_one(plan, prior)
-    return [plan, not_started_entry(plan), nil] unless prerequisite_ready?(plan, prior)
+    return [plan, not_started_entry(plan, prerequisite_failure(plan, prior)), nil] unless prerequisite_ready?(plan, prior)
 
     publish_part_started(plan, lane: plan.writer ? 'writer' : 'reader', inline: true) if Thread.current == @calling_thread
     plan.snapshot[:part_prior] = prior.map { |entry| entry.slice(:text, :status, :acted) }
@@ -364,10 +364,22 @@ class Captain::Runtime::Council
   end
 
   def prior_state(part_id, prior)
-    entry = prior.find { |item| item[:id] == part_id } || @entries[part_id]
+    entry = prior_entry(part_id, prior)
     return entry[:state] if entry
 
     Array(@context[:parts]).find { |item| item['id'] == part_id }&.dig('state')
+  end
+
+  def prior_entry(part_id, prior)
+    prior.find { |item| item[:id] == part_id } || @entries[part_id]
+  end
+
+  # The technical failure of the part that a dependent part waits for, when it has one (a dependent of a dependent inherits it).
+  def prerequisite_failure(plan, prior)
+    part_id = plan.part['depends_on_part_id']
+    return if part_id.blank?
+
+    prior_entry(part_id, prior)&.dig(:technical)
   end
 
   # The write of a part that ran before the run went stale is kept: the provider call already happened.
@@ -489,18 +501,38 @@ class Captain::Runtime::Council
     technical_entry(entry_base(part).merge(acted: acted, summary: summary.to_s), technical)
   end
 
-  def not_started_entry(plan)
-    entry_base(plan.part).merge(state: 'open', text: stock_text_for('action_not_started'), status: 'unavailable', not_started: true)
+  # A dependent part whose prerequisite has not finished does not run, and the customer is not told about it: the line of the
+  # prerequisite (its question, or that staff will answer) carries the reply, and the part stays open for the next message. When
+  # the prerequisite failed technically, that failure is the dependent's too, so the note for staff names it and the handoff
+  # follows the reply. The stock line is kept only for the one case where nothing else is left to say (see #assemble).
+  def not_started_entry(plan, failure = nil)
+    entry = entry_base(plan.part).merge(state: 'open', text: stock_text_for('action_not_started'), status: 'unavailable',
+                                        not_started: true, omit: true)
+    failure ? entry.merge(technical: failure) : entry
   end
 
-  # A part of an earlier attempt of the request, or a part whose owner is no longer there.
+  # A part of an earlier attempt of the request, or a part whose owner is no longer there. It is replayed with the text that was
+  # sent for it, and with its technical failure, so that a retried job tells and does the same as the first attempt.
   def immediate_entry(plan)
     stored = plan.settled
     return unavailable_entry(plan.part) unless stored
 
-    text = stored['cancelled'] ? stock_text_for('cancelled') : stored['summary'].to_s
-    entry_base(plan.part).merge(state: stored['state'], text: text, acted: stored['acted'] == true, questions: Array(stored['missing_fields']),
-                                unresolved: UNRESOLVED_STATES.include?(stored['state']), settled: true)
+    entry = entry_base(plan.part).merge(state: stored['state'], text: settled_text(stored), acted: stored['acted'] == true,
+                                        questions: Array(stored['missing_fields']),
+                                        unresolved: UNRESOLVED_STATES.include?(stored['state']), settled: true)
+    return entry if stored['technical'].blank?
+
+    entry.merge(technical: stored['technical'], omit: !entry[:acted])
+  end
+
+  # What the customer was told for a stored part: the text that was sent. A part stored without it (an older record, or a part
+  # whose run was interrupted after it acted) says that the action was done; the summary holds the raw results of its tools for the
+  # model and for staff, and is never sent.
+  def settled_text(stored)
+    return stock_text_for('cancelled') if stored['cancelled']
+    return stored['reply_text'].to_s if stored.key?('reply_text')
+
+    stored['acted'] == true ? stock_text_for('action_done') : stored['summary'].to_s
   end
 
   def unavailable_entry(part)
@@ -519,8 +551,11 @@ class Captain::Runtime::Council
     return if entry[:settled]
 
     unless entry[:not_started]
+      # reply_text is what the customer is told for this part, kept apart from the summary (which holds what the tools returned,
+      # for the model and for staff), so that a retried job replays the sentence and never a tool dump.
       registry.record_result!(plan.part['id'], state: entry[:state], summary: entry[:stored], missing_fields: entry[:questions],
-                                                executor_agent_id: plan.part['executor_agent_id'], acted: entry[:acted])
+                                               executor_agent_id: plan.part['executor_agent_id'], acted: entry[:acted],
+                                               reply_text: entry[:text].to_s, technical: entry[:technical])
     end
     publish_part_finished(plan, entry, result)
   end
@@ -568,6 +603,9 @@ class Captain::Runtime::Council
     @context.delete(:council_handoff)
     failures = entries.filter_map { |entry| entry[:technical] }
     shown = entries.reject { |entry| entry[:omit] }
+    # Dependent parts that did not start are left out of the reply. When nothing else is left to say and nothing failed (the
+    # prerequisite is a part of an earlier message that still waits), the customer is told that much instead of nothing.
+    shown = entries.select { |entry| entry[:not_started] } if shown.empty? && failures.empty?
     return no_reply(failures) if shown.empty?
 
     unresolved = shown.select { |entry| entry[:unresolved] }

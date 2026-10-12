@@ -89,7 +89,8 @@ RSpec.describe Captain::Runtime::Council do
       double("run of #{part_id}", tracker: tracker).tap do |part_run|
         allow(part_run).to receive(:call) do |fragment|
           runs << { id: part_id, fragment: fragment, thread: Thread.current, snapshot: snapshot, agent: agent,
-                    executed_by: Current.executed_by, owner_in_registry: context[:parts].find { |part| part['id'] == part_id }&.dig('executor_agent_id') }
+                    executed_by: Current.executed_by, owner_in_registry: context[:parts].find { |part| part['id'] == part_id }&.dig('executor_agent_id'),
+                    scope: { policy: Current.playground_run_policy, account: Current.account, locale: I18n.locale, zone: Time.zone.name } }
           result = results.fetch(part_id)
           result.respond_to?(:call) ? result.call : result
         end
@@ -229,6 +230,36 @@ RSpec.describe Captain::Runtime::Council do
       expect(runs.find { |run| run[:id] == 'part-1' }[:thread]).not_to be(Thread.current)
       expect(Captain::Runtime::CoordinationEvents).to have_received(:part_started).with(hash_including(lane: 'writer', inline: true))
       expect(Captain::Runtime::CoordinationEvents).to have_received(:part_started).with(hash_including(lane: 'reader', inline: false))
+    end
+
+    it 'gives the thread of a read-only part the scope of the calling thread: the delivery policy of a Playground run, the locale, the zone' do
+      results.merge!('part-0' => ran(booked, acted: true), 'part-1' => ran('Цена'))
+      policy = { 'token' => 'synthetic-playground-token' }
+      account = create(:account)
+      Current.playground_run_policy = policy
+      Current.account = account
+
+      I18n.with_locale(:kk) { Time.use_zone('Asia/Almaty') { run_council(parts) } }
+
+      writer = runs.find { |run| run[:id] == 'part-0' }
+      reader = runs.find { |run| run[:id] == 'part-1' }
+      expect(reader[:thread]).not_to be(Thread.current)
+      expect(reader[:scope]).to eq(policy: policy, account: account, locale: :kk, zone: 'Asia/Almaty')
+      expect(reader[:scope]).to eq(writer[:scope])
+    end
+
+    it 'does not hand the thread the policy of the calling thread by reference: the part cannot change it' do
+      policy = { 'token' => 'synthetic-playground-token' }
+      Current.playground_run_policy = policy
+      results.merge!('part-0' => ran(booked, acted: true), 'part-1' => lambda {
+        Current.playground_run_policy['token'] = 'changed'
+        ran('Цена')
+      })
+
+      run_council(parts)
+
+      expect(runs.find { |run| run[:id] == 'part-1' }[:thread]).not_to be(Thread.current)
+      expect(Current.playground_run_policy).to eq('token' => 'synthetic-playground-token')
     end
 
     it 'starts the read-only parts side by side with the writer lane' do
@@ -572,15 +603,81 @@ RSpec.describe Captain::Runtime::Council do
       items
     end
 
-    it 'does not start a part that depends on a part which did not finish: it stays open and promises no staff' do
+    it 'does not start a part that depends on a part which did not finish: it stays open, is not mentioned and promises no staff' do
       results['part-0'] = ran('На какой день?', status: 'needs_information', questions: ['На какой день?'])
 
       reply = run_council(dependent('depends_on'))
 
       expect(runs.pluck(:id)).to eq(['part-0'])
-      expect(reply).to eq("На какой день?\n\nНе начато: предыдущий шаг не завершён.")
+      expect(reply).to eq('На какой день?')
       expect(state_of('part-1')['state']).to eq('open')
       expect(context).not_to have_key(:council_handoff)
+    end
+
+    it 'leaves a dependent part out of the lines for the editor too, so that the reply holds only what was answered' do
+      items = dependent('depends_on')
+      items << { 'id' => 'part-2', 'version' => 1, 'executor_agent_id' => 2, 'fragment' => 'Запрос 2', 'patient' => 'Анна',
+                 'relation' => 'independent', 'state' => 'open', 'delivered' => [] }
+      context[:parts] = items.deep_dup
+      results.merge!('part-0' => ran('На какой день?', status: 'needs_information', questions: ['На какой день?']), 'part-2' => ran('Цена'))
+      edited
+
+      run_council(items)
+
+      expect(editor_calls.sole[:parts].pluck('text')).to eq(['На какой день?', 'Цена'])
+      expect(editor_calls.sole[:parts].to_json).not_to include('Не начато')
+    end
+
+    it 'does not show or mention a dependent part whose prerequisite failed technically, and hands it over with the failure' do
+      items = dependent('depends_on')
+      items << { 'id' => 'part-2', 'version' => 1, 'executor_agent_id' => 2, 'fragment' => 'Запрос 2', 'patient' => 'Анна',
+                 'relation' => 'independent', 'state' => 'open', 'delivered' => [] }
+      context[:parts] = items.deep_dup
+      results.merge!('part-0' => ran('', technical: technical_failure, sources: []), 'part-2' => ran('Цена 15000 тенге.'))
+
+      reply = run_council(items)
+
+      expect(runs.pluck(:id)).to contain_exactly('part-0', 'part-2')
+      expect(reply).to eq('Цена 15000 тенге.')
+      expect(reply).not_to include('Не начато')
+      expect(state_of('part-1')['state']).to eq('open')
+      expect(context[:council_handoff]).to include(reason: 'council_technical_failure', technical: true,
+                                                   failures: [technical_failure, technical_failure])
+      expect(context[:council_contributors].pluck(:id)).to eq([2])
+    end
+
+    it 'ends the run as a technical failure, with no word to the customer, when only a dependent part is left after the failure' do
+      items = dependent('depends_on')
+      results['part-0'] = ran('', technical: technical_failure, sources: [])
+
+      reply = run_council(items)
+
+      expect(reply).to eq('')
+      expect(context[:technical_failure]).to include('tool' => 'create_appointment', 'parts' => 2)
+    end
+
+    it 'passes the failure on along a chain of dependent parts' do
+      items = parts(%w[Анна Анна Анна], owners: [1, 3, 1])
+      items[1].merge!('relation' => 'depends_on', 'depends_on_part_id' => 'part-0')
+      items[2].merge!('relation' => 'depends_on', 'depends_on_part_id' => 'part-1')
+      context[:parts] = items.deep_dup
+      results['part-0'] = ran('', technical: technical_failure, sources: [])
+
+      expect(run_council(items)).to eq('')
+      expect(context[:technical_failure]).to include('parts' => 3)
+      expect(runs.pluck(:id)).to eq(['part-0'])
+    end
+
+    it 'tells the customer that the step did not start only when nothing else is left to say: the part it waits for is of an earlier message' do
+      items = parts(%w[Анна], owners: [3])
+      items.first.merge!('relation' => 'depends_on', 'depends_on_part_id' => 'earlier-part')
+      context[:parts] = items.deep_dup + [{ 'id' => 'earlier-part', 'version' => 1, 'state' => 'waiting_customer', 'executor_agent_id' => 1 }]
+
+      reply = run_council(items)
+
+      expect(reply).to eq('Не начато: предыдущий шаг не завершён.')
+      expect(runs).to be_empty
+      expect(state_of('part-0')['state']).to eq('open')
     end
 
     it 'starts it when the part it depends on is done, and shows its owner how that part ended' do
@@ -727,7 +824,7 @@ RSpec.describe Captain::Runtime::Council do
 
     it 'does not run again for a part that was settled by an earlier attempt of the request' do
       items = parts
-      items.first.merge!('state' => 'done', 'acted' => true, 'summary' => booked)
+      items.first.merge!('state' => 'done', 'acted' => true, 'summary' => 'create_appointment: {"appointment_id":7}', 'reply_text' => booked)
       context[:parts] = items.deep_dup
       results['part-1'] = ran('Цена')
       edited
@@ -747,6 +844,74 @@ RSpec.describe Captain::Runtime::Council do
 
       expect(run_council(items)).to eq('Запрос отменён.')
       expect(runs).to be_empty
+    end
+
+    def retry_run(items)
+      retried = described_class.new(context: context, graph: graph, account: nil)
+      allow(retried).to receive(:fresh_actor) { |id| actors[id] }
+      runs.clear
+      context.delete(:council_handoff)
+      retried.run(items)
+    end
+
+    it 'replays the sentence that was sent for a part that acted and wrote no text, never the results of its tools' do
+      dump = 'create_appointment: {"success":true,"appointment_id":7}'
+      results['part-0'] = unparsable(acted: true).merge(summary: dump)
+      items = parts(%w[Анна], owners: [1])
+
+      first = run_council(items)
+      expect(state_of('part-0')).to include('summary' => dump, 'reply_text' => 'Действие выполнено.')
+
+      replay = retry_run(items)
+
+      expect(first).to eq('Действие выполнено.')
+      expect(replay).to eq('Действие выполнено.')
+      expect(replay).not_to include('create_appointment', '{', 'appointment_id')
+      expect(runs).to be_empty
+    end
+
+    it 'says that the action was done for a stored part that acted and has no stored sentence (an older record, an interrupted run)' do
+      items = parts(%w[Анна], owners: [1])
+      items.first.merge!('state' => 'done', 'acted' => true, 'summary' => 'create_appointment: {"appointment_id":7}')
+      context[:parts] = items.deep_dup
+
+      expect(run_council(items)).to eq('Действие выполнено.')
+    end
+
+    it 'replays a part that waits for the customer with the question it asked' do
+      question = 'На какой день вам удобно?'
+      results['part-0'] = ran(question, status: 'needs_information', questions: [question], sources: [])
+      items = parts(%w[Анна], owners: [1])
+      run_council(items)
+
+      expect(retry_run(items)).to eq(question)
+      expect(runs).to be_empty
+    end
+
+    it 'hands a part that failed technically to staff again when the job is retried, and still does not mention it' do
+      items = parts
+      results.merge!('part-0' => ran('', technical: technical_failure, sources: []), 'part-1' => ran('Цена'))
+      first = run_council(items)
+      expect(state_of('part-0')).to include('state' => 'unknown', 'technical' => technical_failure)
+
+      replay = retry_run(items)
+
+      expect(first).to eq('Цена')
+      expect(replay).to eq('Цена')
+      expect(runs).to be_empty
+      expect(context[:council_handoff]).to include(reason: 'council_technical_failure', technical: true, failures: [technical_failure])
+    end
+
+    it 'tells a part that acted before its technical failure the same way when the job is retried' do
+      items = parts
+      results.merge!('part-0' => ran('', technical: technical_failure, acted: true, sources: []), 'part-1' => ran('Цена'))
+      run_council(items)
+      edited
+
+      retry_run(items)
+
+      expect(editor_calls.last[:parts].first).to eq('text' => 'Действие выполнено.', 'done' => true, 'staff_will_answer' => false)
+      expect(context[:council_handoff]).to include(technical: true)
     end
 
     it 'hands a settled part that stayed unknown to staff again' do

@@ -56,7 +56,7 @@ class Captain::Runtime::PartPlanTool < Captain::Runtime::Tool
     context = tool_context.run_context.context
     resolver = Captain::Runtime::ExecutorResolver.new(context)
     resolver.reject_transfer_mode!(mode, parts)
-    plan =Captain::Runtime::PartRegistry.new(context).accept!(
+    plan = Captain::Runtime::PartRegistry.new(context).accept!(
       mode: mode, parts: parts, clarification: clarification, answer: answer
     ) { |items| resolver.resolve(items, mode: mode) }
     { mode: plan[:mode], parts: plan[:parts].map { |part| presented(part, resolver) } }.to_json

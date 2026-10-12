@@ -44,8 +44,12 @@ class Outbound::PlaygroundMutationPolicy
       entry_id = payload[:entry_assistant_id].presence || assistant.id
       entry = Captain::Assistant.find_by(id: entry_id, account_id: account.id)
       return false unless entry
-      return false unless Captain::Playground::ToolSelection.include?(assistant, payload[:tool])
-      return false unless operator_authorized?(account, user, assistant, payload)
+
+      # The agent whose tools make the action: the active agent of the session, or the owner of a council part (see ActionApproval).
+      actor = acting_agent(payload, assistant, account)
+      return false unless actor
+      return false unless Captain::Playground::ToolSelection.include?(actor, payload[:tool])
+      return false unless operator_authorized?(account, user, actor, payload)
 
       store = Captain::Playground::SessionStore.new(account: account, user: user, assistant: entry)
       permissions = store.permissions(session_id: payload[:session_id])
@@ -55,16 +59,25 @@ class Outbound::PlaygroundMutationPolicy
       return false unless session && (session['active_assistant_id'].presence || entry.id).to_i == assistant.id
       inbox = account.inboxes.find_by(id: session['inbox_id']) if session['inbox_id'].present?
       return false if session['inbox_id'].present? && inbox.blank?
-      return false unless Captain::AgentGraph.new(entry, inbox: inbox).find(assistant.id)
+      graph = Captain::AgentGraph.new(entry, inbox: inbox)
+      return false unless graph.find(assistant.id) && (actor.id == assistant.id || graph.find(actor.id))
       action = Array(session&.dig('action_previews')).find { |item| item['id'] == payload[:action_id] }
       binding = { 'session_id' => payload[:session_id], 'mode' => 'workspace', 'account_id' => account.id,
                   'user_id' => user.id, 'entry_assistant_id' => entry.id, 'assistant_id' => assistant.id }
       action && %w[executing completed].include?(action['status']) && action['digest'] == payload[:action_digest] &&
-        action['binding'] == binding &&
+        action['binding'] == binding && (action['actor_id'].presence || assistant.id).to_i == actor.id &&
         action['tool'] == payload[:tool] && action['arguments'] == payload[:arguments].to_h.deep_stringify_keys &&
         action['target'] == payload[:target].to_h.deep_stringify_keys
     rescue Captain::Playground::SessionStore::Stale, ArgumentError
       false
+    end
+
+    # The policy names the acting agent only when it is not the active agent of the session. The stored action must name the same
+    # agent, so a policy cannot be moved to the profile of another agent.
+    def acting_agent(payload, assistant, account)
+      return assistant if payload[:actor_id].blank?
+
+      Captain::Assistant.find_by(id: payload[:actor_id], account_id: account.id)
     end
 
     def operator_authorized?(account, user, assistant, payload)

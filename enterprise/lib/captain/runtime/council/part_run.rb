@@ -118,8 +118,13 @@ class Captain::Runtime::Council::PartRun
     context = result.context || {}
     technical = context[:technical_failure].presence
     technical ||= { 'kind' => Captain::Runtime::ToolFailure::TECHNICAL, 'reason' => 'run_error', 'error_class' => result.error.class.name } if result.error
+    output = self.class.parse_output(result.output) unless technical
+    # A part that did nothing and gave no usable answer (the model or the schema failed) is a technical failure, as the same
+    # output of a single agent is a failed turn: the other parts are answered and the conversation goes to staff. A part that
+    # acted is still reported as done.
+    technical ||= { 'kind' => Captain::Runtime::ToolFailure::TECHNICAL, 'reason' => 'invalid_output' } if output.nil? && !@tracker.acted?
     {
-      output: (self.class.parse_output(result.output) unless technical), acted: @tracker.acted?, pending: @tracker.pending?,
+      output: output, acted: @tracker.acted?, pending: @tracker.pending?,
       technical: technical, summary: @tracker.summary, duration_ms: duration_ms, tracking: tracking_of(context),
       mutations_succeeded: @tracker.mutations_succeeded, mutations_failed: @tracker.mutations_failed,
       mutations_unknown: @tracker.mutations_unknown, tools_called: @tracker.tools_called, turns: @tracker.turns

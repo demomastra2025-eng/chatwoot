@@ -102,6 +102,29 @@ RSpec.describe Outbound::PlaygroundMutationPolicy do
     end
   end
 
+  it 'authorizes the owner of a council part as the acting agent when the stored action names it, and nobody else' do
+    owner = create(:captain_assistant, account: account)
+    other = create(:captain_assistant, account: account)
+    assistant.update!(handoff_agent_ids: [owner.id, other.id])
+    allow_any_instance_of(Captain::Assistant).to receive(:allowed_agent_tool_ids).and_return(%w[create_appointment])
+    with_approved_policy do |workspace, policy|
+      workspace.data['action_previews'].first['actor_id'] = owner.id
+      workspace.save!
+      payload = Outbound::PlaygroundDeliveryPolicy.verified(policy).to_h
+      as_owner = Outbound::PlaygroundDeliveryPolicy.issue(payload.merge('actor_id' => owner.id))
+
+      expect(described_class.authorized_action?(as_owner)).to be true
+      expect(described_class.authorized_action?(policy)).to be false
+      expect(described_class.authorized_action?(Outbound::PlaygroundDeliveryPolicy.issue(payload.merge('actor_id' => other.id)))).to be false
+      expect(described_class.authorized_action?(Outbound::PlaygroundDeliveryPolicy.issue(payload.merge('actor_id' => 0)))).to be false
+      allow_any_instance_of(Captain::Assistant).to receive(:allowed_agent_tool_ids) { |agent| agent.id == owner.id ? [] : %w[create_appointment] }
+      expect(described_class.authorized_action?(as_owner)).to be false
+      allow_any_instance_of(Captain::Assistant).to receive(:allowed_agent_tool_ids).and_return(%w[create_appointment])
+      owner.update!(usage_mode: 'internal_assistant')
+      expect(described_class.authorized_action?(as_owner)).to be false
+    end
+  end
+
   it 'revokes a queued exact binding when the member loses current patient-card permission' do
     with_approved_policy do |_workspace, policy|
       bound = described_class.for_command(policy, snapshot)

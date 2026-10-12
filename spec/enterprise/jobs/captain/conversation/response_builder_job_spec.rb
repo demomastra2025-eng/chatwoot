@@ -160,6 +160,28 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       job.send(:schedule_council_follow_ups, reply)
     end
 
+    it 'records the version of the part with each delivery, so that the action of a follow-up version is not hidden by an earlier question' do
+      part_id = SecureRandom.uuid
+      question = { 'message_id' => 1, 'content' => 'На какое время вас записать?', 'at' => Time.current.iso8601, 'version' => 1 }
+      session = Captain::Conversation::AgentSession.new(entry: assistant, conversation: conversation)
+      session.change do |data|
+        data['parts'] = [{ 'id' => part_id, 'version' => 2, 'executor_agent_id' => assistant.id, 'state' => 'done', 'acted' => true,
+                           'delivered' => [question] }]
+      end
+      expect(Captain::Runtime::PartRegistry.undelivered_outcomes(session.read['parts']).pluck('id')).to eq([part_id])
+      reply = create(:message, conversation: conversation, sender: assistant, message_type: :outgoing, content: 'Вы записаны на 11:00.')
+      job = described_class.new
+      job.instance_variable_set(:@conversation, conversation)
+      job.instance_variable_set(:@assistant, assistant)
+      job.instance_variable_set(:@response, { 'part_refs' => [{ 'id' => part_id, 'version' => 2 }] })
+
+      job.send(:record_part_delivery, reply)
+
+      parts = session.read['parts']
+      expect(parts.first['delivered'].pluck('version', 'message_id')).to eq([[1, 1], [2, reply.id]])
+      expect(Captain::Runtime::PartRegistry.undelivered_outcomes(parts)).to be_empty
+    end
+
     it 'uses Captain::Assistant::AgentRunnerService with runtime callbacks' do
       expect(Captain::Assistant::AgentRunnerService).to receive(:new).with(
         assistant: assistant,
@@ -1753,6 +1775,73 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         described_class.perform_now(conversation, assistant)
 
         expect(conversation.reload.messages.outgoing.where(private: false).pluck(:content).join).not_to include('create_appointment')
+      end
+    end
+
+    # The whole path of a live run, with only the provider faked: the real booking tool fails with an unknown outcome inside the real
+    # tool wrapper, the runner service builds the failed turn from what the run left in its context, and this job answers it. The tool
+    # leaves the conversation pending (only its note for staff), so the reply is not dropped by its own fence and the handoff of the
+    # failed turn applies and sends the notice.
+    context 'when create_appointment of the live run ends with an unknown provider outcome' do
+      let(:notice) { 'Сотрудник продолжит диалог с вами.' }
+      let(:real_tool) { Captain::Tools::CreateAppointmentTool.new(assistant) }
+      let(:booking_tool) do
+        real = real_tool
+        Class.new(Captain::Runtime::Tool) do
+          define_method(:name) { 'create_appointment' }
+          define_method(:description) { 'Create an appointment' }
+          define_method(:metadata) { { risk_level: 'high', idempotent: false } }
+          define_method(:perform) { |tool_context, **| real.perform(tool_context, resource_id: 1, starts_at: Time.current.iso8601) }
+        end.new
+      end
+
+      def run_live_booking(fence)
+        account.enable_features!('scheduling')
+        appointment = create(:scheduling_appointment, account: account, contact: conversation.contact, conversation: conversation)
+        operations = instance_double(Captain::Tools::Operations::AppointmentOperations, create_appointment: appointment)
+        outcome = instance_double(Captain::Tools::ProviderBookingOutcomeService)
+        allow(outcome).to receive(:perform).and_raise(
+          Scheduling::Error.new(code: 'MEDELEMENT_BOOKING_UNKNOWN', message: 'Staff verification required', status: :unprocessable_content)
+        )
+        allow(real_tool).to receive(:operations).and_return(operations)
+        allow(Captain::Tools::ProviderBookingOutcomeService).to receive(:new).and_return(outcome)
+        run = Captain::Runtime::RunContext.new(
+          { current_agent: 'assistant', state: { account_id: account.id, assistant_id: assistant.id, conversation: { id: conversation.id },
+                                                 captain_response_fence: fence } }
+        )
+
+        expect(Captain::Runtime::ToolWrapper.new(booking_tool, run).call({})).to be_a(RubyLLM::Tool::Halt)
+        Struct.new(:output, :context, :error).new(nil, run.context, Captain::Runtime::Runner::TechnicalFailure.new('technical failure'))
+      end
+
+      before do
+        allow(Captain::Assistant::AgentRunnerService).to receive(:new).and_call_original
+        allow_any_instance_of(Captain::Assistant::AgentRunnerService).to receive(:generate_response) do |service, **|
+          service.send(:process_agent_result, run_live_booking(service.instance_variable_get(:@response_fence)))
+        end
+      end
+
+      it 'hands the conversation to staff once, with the notice of the workspace, the note about the booking and nothing else public' do
+        save_account_handoff_message(text: notice)
+
+        described_class.perform_now(conversation, assistant)
+
+        conversation.reload
+        expect(conversation.status).to eq('open')
+        expect(conversation.messages.outgoing.where(private: false).pluck(:content)).to eq([notice])
+        notes = conversation.messages.outgoing.where(private: true).order(:id).pluck(:content)
+        expect(notes.size).to eq(2)
+        expect(notes.first).to include('Medelement')
+        expect(notes.last).to include('Automatic reply was stopped by a technical error (create_appointment')
+        expect(conversation.status_transitions.last).to have_attributes(source: 'system', from_status: 'pending', to_status: 'open')
+      end
+
+      it 'says nothing to the customer when the workspace has no notice, and still hands the conversation to staff' do
+        described_class.perform_now(conversation, assistant)
+
+        expect(conversation.reload.status).to eq('open')
+        expect(conversation.messages.outgoing.where(private: false)).to be_empty
+        expect(conversation.messages.outgoing.where(private: true).count).to eq(2)
       end
     end
 

@@ -32,8 +32,25 @@ RSpec.describe 'Native scheduling query error contracts' do
         expect(Integrations::Medelement::Client).not_to receive(:new)
         [from, '2026-11-14T09:00:00+05:00'].each do |invalid_to|
           payload = error_payload(tool.execute(**args.merge(to: invalid_to)))
-          expect(payload).to include('code' => 'INVALID_DATE_RANGE', 'reason' => 'invalid_date_range')
+          expect(payload).to include('code' => 'INVALID_DATE_RANGE', 'reason' => 'invalid_date_range', 'error_class' => 'business')
         end
+      end
+
+      # The agent runtime ends a run at a technical failure and hands the conversation to staff (Captain::Runtime::ToolFailure). A
+      # specialist the model got wrong is an answer it can fix by searching again, so the tool declares it.
+      it 'declares a specialist that does not exist a business answer, and the runtime takes it for one' do
+        missing = defaults.key?(:resource_ids) ? { resource_ids: [999_999_999] } : { resource_id: 999_999_999 }
+        result = tool.execute(**args.merge(missing))
+
+        expect(error_payload(result)).to include('error_class' => 'business')
+        expect(Captain::Runtime::ToolFailure.classify(result)).to eq('business')
+      end
+
+      it 'declares a malformed date a business answer too' do
+        result = tool.execute(**args.merge(from: '2026-02-30T09:00:00+05:00'))
+
+        expect(error_payload(result)).to include('error_class' => 'business')
+        expect(Captain::Runtime::ToolFailure.classify(result)).to eq('business')
       end
     end
   end
@@ -73,7 +90,8 @@ RSpec.describe 'Native scheduling query error contracts' do
     result = Captain::Tools::Copilot::GetSchedulingResourceScheduleService.new(assistant, user: user)
                                                                       .execute(resource_id: resource.id, from: from, to: to)
 
-    expect(error_payload(result)).to include('code' => 'INTERNAL_FAILURE', 'reason' => 'internal_failure')
+    expect(error_payload(result)).to include('code' => 'INTERNAL_FAILURE', 'reason' => 'internal_failure', 'error_class' => 'technical')
+    expect(Captain::Runtime::ToolFailure.classify(result)).to eq('technical')
     expect(result).not_to include('PRIVATE', 'patient data', 'ArgumentError')
   end
 end

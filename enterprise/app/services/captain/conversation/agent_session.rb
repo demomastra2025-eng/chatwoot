@@ -132,7 +132,7 @@ class Captain::Conversation::AgentSession
       end
       operations = data['operations'] ||= {}
       prior = operations[key]
-      next [:existing, prior.deep_dup] if prior
+      next [:existing, prior.deep_dup] if prior && !corrected_call?(prior, digest)
 
       # A new version of a part (an answer, a correction) must not repeat an action that an earlier version did, or may have
       # done: that call may already have reached the provider.
@@ -204,6 +204,15 @@ class Captain::Conversation::AgentSession
       return decision if decision
     end
     nil
+  end
+
+  # The receipt of this scope says that the call changed nothing (a business answer such as a taken slot, or a rejection for its
+  # arguments) and the new call is a different one: it is the correction the agent makes in the same run, so it takes the
+  # place of that receipt. The same rule lets a later version of a part repeat what did not happen (earlier_version_receipt).
+  # A receipt of a call that is executing, succeeded or has an unknown outcome stays: that call may have reached the provider.
+  def corrected_call?(receipt, digest)
+    receipt['status'] == 'finished' && receipt['outcome'] == Captain::Runtime::ToolFailure::NOT_EXECUTED &&
+      receipt['arguments_digest'] != digest
   end
 
   def receipt_decision(receipt, digest)

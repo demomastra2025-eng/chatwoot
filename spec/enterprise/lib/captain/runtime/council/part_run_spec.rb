@@ -95,6 +95,20 @@ RSpec.describe Captain::Runtime::Council::PartRun do
     end
   end
 
+  it 'treats an output that is not a structured result as a technical failure when the part did nothing, as a single agent does' do
+    ['not json', { 'status' => 'done' }, nil, { 'customer_text' => 'x' }, ''].each do |output|
+      stub_run(output: output)
+
+      expect(part_run.call('x')).to include(output: nil, acted: false, technical: { 'kind' => 'technical', 'reason' => 'invalid_output' })
+    end
+  end
+
+  it 'still reports an action as done when the output is not a structured result' do
+    stub_run(output: 'not json', tools: [['create_appointment', created]])
+
+    expect(part_run.call('x')).to include(output: nil, acted: true, technical: nil)
+  end
+
   it 'reads the answer from a JSON string and drops anything but strings from the lists' do
     stub_run(output: JSON.generate(status: 'needs_information', customer_text: ' На какое время? ', questions: ['На какое время?', 5, nil],
                                    sources: 'x', suggested_agent: 3))

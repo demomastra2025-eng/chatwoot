@@ -122,6 +122,59 @@ RSpec.describe Captain::Playground::ActionApproval do
     end
   end
 
+  describe 'a real action of the owner of a council part, which is not the active agent of the session' do
+    let(:owner) { create(:captain_assistant, account: account) }
+
+    before do
+      assistant.update!(handoff_agent_ids: [owner.id])
+      # Only the owner has the tool in its profile; the record that the session loads for the owner is a fresh one.
+      allow(assistant).to receive(:allowed_agent_tool_ids).and_return([])
+      allow_any_instance_of(Captain::Assistant).to receive(:allowed_agent_tool_ids) { |agent| agent.id == owner.id ? %w[update_deal] : [] }
+    end
+
+    it 'records the owner in the preview, keeps the references of the session, and confirms the action as the owner' do
+      session.with_lock do |workspace|
+        workspace.set_permissions!(read: true, write: true)
+        preview = described_class.new(workspace.acting_as(owner.id)).preview('update_deal', deal_id: deal.id, title: 'Owner title')
+
+        expect(preview).to include('actor_id' => owner.id)
+        expect(preview['binding']).to include('assistant_id' => assistant.id, 'entry_assistant_id' => assistant.id)
+
+        result = described_class.new(workspace).confirm(id: preview['id'], digest: preview['digest'])
+
+        expect(result).to include(success: true, delivered: false)
+        expect(deal.reload.title).to eq('Owner title')
+        expect(preview['status']).to eq('completed')
+      end
+    end
+
+    it 'cannot be confirmed as another agent: the digest covers the owner' do
+      allow(assistant).to receive(:allowed_agent_tool_ids).and_return(%w[update_deal])
+      session.with_lock do |workspace|
+        workspace.set_permissions!(read: true, write: true)
+        preview = described_class.new(workspace.acting_as(owner.id)).preview('update_deal', deal_id: deal.id, title: 'Owner title')
+        preview['actor_id'] = assistant.id
+
+        expect { described_class.new(workspace).confirm(id: preview['id'], digest: preview['digest']) }
+          .to raise_error(ArgumentError, /target or payload changed/)
+        expect(deal.reload.title).not_to eq('Owner title')
+      end
+    end
+
+    it 'still confirms a preview that was made before the owner was recorded: its digest did not cover it' do
+      allow_any_instance_of(Captain::Assistant).to receive(:allowed_agent_tool_ids).and_return(%w[update_deal])
+      with_preview do |workspace, service, preview|
+        preview.delete('actor_id')
+        legacy = preview.slice('tool', 'arguments', 'target', 'generation', 'binding')
+        preview['digest'] = Digest::SHA256.hexdigest(JSON.generate(service.send(:canonical, legacy)))
+        workspace.save!
+
+        expect(service.confirm(id: preview['id'], digest: preview['digest'])).to include(success: true)
+        expect(deal.reload.title).to eq('Confirmed title')
+      end
+    end
+  end
+
   it 'does not grant a destination the entry agent selected tool list' do
     destination = create(:captain_assistant, account: account)
     allow(destination).to receive(:allowed_agent_tool_ids).and_return([])

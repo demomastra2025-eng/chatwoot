@@ -1068,6 +1068,38 @@ RSpec.describe Captain::Runtime::ToolWrapper do
       expect(agent_session.read.fetch('operations')).to be_empty
     end
 
+    # A business answer is not a failed attempt but the result of the action: the slot is taken, the agent offers or chooses another.
+    it 'lets the agent book another slot in the same run after a business answer, and claims the booking that went through' do
+      taken = JSON.generate(success: false, reason: 'time_taken')
+      allow(mutating_tool).to receive(:perform).and_return(taken, Captain::ToolResult.success(message: 'Appointment created'))
+
+      first = mutating_wrapper.call(title: '10:00')
+      context_wrapper.context[:captain_v2_current_tool_batch_id] = 'another-slot-batch'
+      second = mutating_wrapper.call(title: '11:00')
+      context_wrapper.context[:captain_v2_current_tool_batch_id] = 'third-slot-batch'
+      third = mutating_wrapper.call(title: '12:00')
+
+      expect(first).not_to be_a(RubyLLM::Tool::Halt)
+      expect(first).to include('time_taken')
+      expect(second).to eq('Appointment created')
+      expect(third).to be_a(RubyLLM::Tool::Halt)
+      expect_tool_error(third, 'This action tool already ran in the current assistant run. Do not retry it with alternate arguments.',
+                        retryable: false)
+      expect(mutating_tool).to have_received(:perform).twice
+      expect(context_wrapper.context).not_to have_key(:technical_failure)
+      expect(agent_session.read.fetch('operations').values).to contain_exactly(include('status' => 'finished', 'outcome' => 'success'))
+    end
+
+    it 'lets the agent correct a business answer of the validation of the provider, such as a time outside working hours' do
+      outside = JSON.generate(success: false, reason: 'validation_error')
+      allow(mutating_tool).to receive(:perform).and_return(outside, Captain::ToolResult.success(message: 'Appointment created'))
+
+      mutating_wrapper.call(title: '23:00')
+      context_wrapper.context[:captain_v2_current_tool_batch_id] = 'working-hours-batch'
+
+      expect(mutating_wrapper.call(title: '10:00')).to eq('Appointment created')
+    end
+
     {
       'an action that already executed' => { failure_stage: 'tool_arguments', mutation_executed: true },
       'an argument failure without execution evidence' => { failure_stage: 'tool_arguments' }
@@ -1247,6 +1279,26 @@ RSpec.describe Captain::Runtime::ToolWrapper do
 
       [retryable, declared].each { |failure| expect(read_only_wrapper.call(result: failure)).not_to be_a(RubyLLM::Tool::Halt) }
       expect(context_wrapper.context).not_to have_key(:technical_failure)
+    end
+
+    it 'does not end the run for a lookup of a specialist that does not exist or cannot be scheduled: the agent searches again' do
+      reader = Class.new { include Captain::Tools::Copilot::SchedulingQueryValidation }.new
+      missing = reader.send(:scheduling_tool_failure, Scheduling::Error.new(code: 'RESOURCE_NOT_FOUND', message: 'Resource not found',
+                                                                           status: :not_found, details: { reason: 'unknown_resource' }))
+      bad_ids = reader.send(:scheduling_tool_failure, Scheduling::Error.new(code: 'INVALID_RESOURCE_IDS', message: 'resource_ids must be integers',
+                                                                           status: :unprocessable_content,
+                                                                           details: { field: 'resource_ids', reason: 'invalid_resource_ids' }))
+
+      [missing, bad_ids].each { |failure| expect(read_only_wrapper.call(result: failure)).not_to be_a(RubyLLM::Tool::Halt) }
+      expect(context_wrapper.context).not_to have_key(:technical_failure)
+    end
+
+    it 'still ends the run for an internal failure of a scheduling read tool' do
+      reader = Class.new { include Captain::Tools::Copilot::SchedulingQueryValidation }.new
+      broken = reader.send(:scheduling_tool_failure, RuntimeError.new('boom'))
+
+      expect(read_only_wrapper.call(result: broken)).to be_a(RubyLLM::Tool::Halt)
+      expect(context_wrapper.context[:technical_failure]).to include('tool' => 'faq_lookup', 'kind' => 'technical')
     end
 
     it 'ends the run for a failure that declares itself technical, however it is marked' do

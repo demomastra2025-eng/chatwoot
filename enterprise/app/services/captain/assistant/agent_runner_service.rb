@@ -8,8 +8,8 @@ class Captain::Assistant::AgentRunnerService
   include Captain::Assistant::RunnerCallbacksHelper
   include Captain::Assistant::TracePayloadHelper
 
-  # Coordination tools (planning, task bookkeeping) are not customer actions: a run that only planned has nothing
-  # to report, so it must not produce the completed-actions fallback text.
+  # Coordination tools (planning, task bookkeeping) are not customer actions: a run that only planned has no completed
+  # work, so it must not count as one when a failed finalization is retried or a skipped tool is reported.
   COORDINATION_TOOL_NAMES = %w[plan_request manage_agent_tasks].freeze
 
   PROVIDER_ERROR_RESPONSE = 'conversation_handoff_due_to_provider_error'.freeze
@@ -30,13 +30,8 @@ class Captain::Assistant::AgentRunnerService
   APPOINTMENT_STATUS_TOOL_NAME = 'get_appointment_provider_status'.freeze
   APPOINTMENT_PROVIDER_OPERATIONS = { 'create_appointment' => 'create_reception', 'update_appointment' => 'move_reception' }.freeze
   MCP_TOOL_ID_PREFIX = 'mcp__'.freeze
-  TOOL_RESULT_FALLBACK_REASONING = [
-    'Final assistant response failed after completed tool actions; ',
-    'a deterministic tool-result fallback was used.'
-  ].join.freeze
   ZERO_COMPLETION_BLANK_RETRY = 'blank_response_retry'.freeze
   ZERO_COMPLETION_FINALIZATION_RETRY = 'finalization_only_retry'.freeze
-  ZERO_COMPLETION_TOOL_RESULT_FALLBACK = 'tool_result_fallback'.freeze
 
   class BlankResponseError < StandardError; end
 
@@ -410,21 +405,20 @@ class Captain::Assistant::AgentRunnerService
     (message[:role] || message['role']).to_s
   end
 
+  # An error that ends a run (a failure of the provider or of the model, an internal error) is a failed turn: the customer gets no
+  # text of the system, the conversation goes to staff through the standard handoff (see ResponseBuilderJob#handoff_failed_turn).
   def error_response(error)
     message = error.respond_to?(:message) ? error.message : error.to_s
-    fallback_response = deterministic_tool_result_fallback_response(error, @last_tool_result_context, handoff_tool_called: false)
-    return fallback_response if fallback_response
-
-    {
-      'response' => PROVIDER_ERROR_RESPONSE,
-      'reasoning' => "Error occurred: #{message}",
-      'error_class' => error.class.name,
-      'error_message' => message,
-      PROVIDER_ERROR_AUTHORIZED_KEY => true
-    }
+    with_completed_actions({
+                             'response' => PROVIDER_ERROR_RESPONSE,
+                             'reasoning' => "Error occurred: #{message}",
+                             'error_class' => error.class.name,
+                             'error_message' => message,
+                             PROVIDER_ERROR_AUTHORIZED_KEY => true
+                           }, @last_tool_result_context, error)
   end
 
-  def provider_error_response(error, handoff_tool_called: false)
+  def provider_error_response(error, context, handoff_tool_called: false)
     response = {
       'response' => PROVIDER_ERROR_RESPONSE,
       'reasoning' => "Provider error occurred: #{error.message}",
@@ -433,7 +427,18 @@ class Captain::Assistant::AgentRunnerService
     }
     response[PROVIDER_ERROR_AUTHORIZED_KEY] = true if error.is_a?(RubyLLM::Error)
     response['handoff_tool_called'] = true if handoff_tool_called
-    response
+    with_completed_actions(response, context, error)
+  end
+
+  # What the run had already done before it failed goes to the staff note (names only), as for a failure of a tool: staff must know
+  # the state of the request, for example that the booking was made although the reply was not. Nothing of it reaches the customer.
+  def with_completed_actions(response, context, error)
+    completed = Array(context_value(context, Captain::Runtime::ToolWrapper::COMPLETED_ACTIONS_KEY)).uniq
+    return response if completed.blank?
+
+    failure = { 'kind' => Captain::Runtime::ToolFailure::TECHNICAL, 'reason' => 'run_error', 'error_class' => error.class.name,
+                'completed' => completed }
+    response.merge('technical_failure' => failure)
   end
 
   def final_error_response(error, context, handoff_tool_called: false)
@@ -442,8 +447,7 @@ class Captain::Assistant::AgentRunnerService
     finalization_response = finalization_only_retry_response(error, context, handoff_tool_called: handoff_tool_called)
     return finalization_response if finalization_response
 
-    deterministic_tool_result_fallback_response(error, context, handoff_tool_called: handoff_tool_called) ||
-      provider_error_response(error, handoff_tool_called: handoff_tool_called)
+    provider_error_response(error, context, handoff_tool_called: handoff_tool_called)
   end
 
   def finalization_only_retry_response(error, context, handoff_tool_called: false)
@@ -496,8 +500,7 @@ class Captain::Assistant::AgentRunnerService
   def finalization_retry_recovered?(response)
     response['response'].present? &&
       response['response'] != PROVIDER_ERROR_RESPONSE &&
-      response['error_class'].blank? &&
-      response['tool_result_fallback'].blank?
+      response['error_class'].blank?
   end
 
   def finalization_only_retry_eligible?(context)
@@ -577,49 +580,6 @@ class Captain::Assistant::AgentRunnerService
     return unless context.respond_to?(:[])
 
     context[key] || context[key.to_s]
-  end
-
-  def deterministic_tool_result_fallback_response(error, context, handoff_tool_called: false)
-    successful_records = successful_non_handoff_tool_records(context)
-    return if successful_records.blank?
-
-    publish_tool_result_fallback_event(error, context, successful_records)
-
-    {
-      'response' => tool_result_fallback_message(successful_records),
-      'reasoning' => TOOL_RESULT_FALLBACK_REASONING,
-      'system_fallback_reason' => TOOL_RESULT_FALLBACK_REASONING,
-      'agent_name' => context&.dig(:current_agent),
-      'handoff_tool_called' => handoff_tool_called,
-      'schema_fallback' => true,
-      'tool_result_fallback' => true,
-      'zero_completion_recovered' => true,
-      'zero_completion_recovery_kind' => ZERO_COMPLETION_TOOL_RESULT_FALLBACK,
-      'error_class' => error.class.name,
-      'error_message' => error.message
-    }
-  end
-
-  def publish_tool_result_fallback_event(error, context, records)
-    Llm::EventBus.publish(
-      'schema.fallback',
-      schema_name: Captain::ResponseSchema.name,
-      current_agent: context&.dig(:current_agent),
-      status: 'fallback',
-      reason: error.message,
-      error_class: error.class.name,
-      completed_tools_count: records.size,
-      completed_tool_names: tool_result_counts(records).keys,
-      fallback_kind: 'completed_tool_result_summary'
-    )
-    publish_zero_completion_event(
-      'recovered',
-      error,
-      context,
-      status: 'recovered',
-      recovery_kind: ZERO_COMPLETION_TOOL_RESULT_FALLBACK,
-      fallback_kind: 'completed_tool_result_summary'
-    )
   end
 
   def publish_zero_completion_detected_event(error, context)
@@ -819,11 +779,6 @@ class Captain::Assistant::AgentRunnerService
       error_type: hash[:error_type],
       appointment_evidence: hash[:appointment_evidence]
     }.compact
-  end
-
-  # The customer gets a plain sentence: tool titles and counts are internal and stay in the events.
-  def tool_result_fallback_message(_records)
-    I18n.t('captain.coordination.request_processed', locale: :ru)
   end
 
   def tool_result_counts(records)

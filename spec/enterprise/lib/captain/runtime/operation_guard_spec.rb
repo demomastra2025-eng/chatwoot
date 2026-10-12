@@ -52,9 +52,43 @@ RSpec.describe Captain::Runtime::OperationGuard do
     expect(described_class.new(context, tool, arguments).reserve.dig(:audit, :failure_reason)).to eq('mutation_retry_blocked')
   end
 
-  it 'keeps failed provider actions claimed even with an input-looking failure code' do
+  it 'lets the agent correct a call that ended in a business answer: another slot after a taken one takes the place of the receipt' do
     guard.reserve
-    guard.finish({ success: false, reason: 'unknown_service' })
+    guard.finish(JSON.generate(success: false, reason: 'time_taken'))
+    expect(session.read.fetch('operations').values).to contain_exactly(include('status' => 'finished', 'outcome' => 'not_executed'))
+
+    corrected = described_class.new(context, tool, arguments.merge(start_at: '2026-10-15T11:00:00Z'))
+    expect(corrected.reserve).to be_nil
+    expect(session.read.fetch('operations').values).to contain_exactly(include('status' => 'executing'))
+
+    corrected.finish({ success: true, data: { appointment_id: 18 } })
+    expect(session.read.fetch('operations').values).to contain_exactly(include('status' => 'finished', 'outcome' => 'success'))
+    # the booking that happened is claimed again: a third call is refused
+    third = described_class.new(context, tool, arguments.merge(start_at: '2026-10-15T12:00:00Z')).reserve
+    expect(third.dig(:audit, :failure_reason)).to eq('mutation_retry_blocked')
+  end
+
+  it 'answers the identical call after a business answer with the stored result, without executing again' do
+    guard.reserve
+    guard.finish({ success: false, reason: 'time_taken' })
+
+    replay = described_class.new(context, tool, arguments).reserve
+
+    expect(replay[:success]).to be(false)
+    expect(replay.dig(:audit, :cached_result_reused)).to be(true)
+  end
+
+  it 'keeps a call that may have gone through claimed, whatever the next call asks: the provider did not answer' do
+    guard.reserve
+    guard.finish(Captain::ToolResult.failure(error: 'Provider did not answer', retryable: false))
+    expect(session.read.fetch('operations').values).to contain_exactly(include('outcome' => 'unknown'))
+
+    expect(described_class.new(context, tool, arguments.merge(service_id: 2)).reserve.dig(:audit, :failure_reason)).to eq('mutation_retry_blocked')
+  end
+
+  it 'keeps a call that is still executing claimed' do
+    guard.reserve
+
     expect(described_class.new(context, tool, arguments.merge(service_id: 2)).reserve.dig(:audit, :failure_reason)).to eq('mutation_retry_blocked')
   end
 

@@ -902,8 +902,10 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
         part['delivered'] ||= []
         next if part['delivered'].any? { |delivery| delivery['message_id'] == message.id }
 
+        # The version is recorded: a new version of the part starts with the deliveries of the one before it, and only a delivery
+        # of its own version tells that its action reached the customer (see PartRegistry.undelivered_outcomes).
         part['delivered'] << { 'message_id' => message.id, 'content' => message.content.to_s,
-                               'at' => message.created_at.iso8601 }
+                               'at' => message.created_at.iso8601, 'version' => part['version'].to_i }
       end
     end
   end

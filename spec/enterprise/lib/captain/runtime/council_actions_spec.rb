@@ -8,11 +8,13 @@ RSpec.describe Captain::Runtime::Council, 'with parts that act' do
     param :title, type: :string, required: true
 
     attr_reader :calls
-    attr_writer :result
+    # result: what every call returns. results: what the next calls return, one each, before result is used.
+    attr_writer :result, :results
 
     def initialize
       super
       @calls = []
+      @results = []
     end
 
     def name = 'create_appointment'
@@ -21,6 +23,8 @@ RSpec.describe Captain::Runtime::Council, 'with parts that act' do
 
     def perform(_tool_context, title:)
       @calls << title
+      return @results.shift if @results.any?
+
       @result || Captain::ToolResult.success(data: { appointment_id: @calls.size, doctor_name: 'Иванов', local_date: '14.10.2026', local_time: '10:00' })
     end
   end
@@ -271,6 +275,50 @@ RSpec.describe Captain::Runtime::Council, 'with parts that act' do
     expect(booking.calls).to eq(['Анна, 10:00', 'Анна, 11:00'])
   end
 
+  it 'lets the owner book another time in the same run after a business answer: the first time was taken, and the booking is made once' do
+    booking.results = [JSON.generate(success: false, reason: 'time_taken')]
+    writer_chat.script(lambda do |chat|
+      Captain::Runtime::ToolWrapper.new(booking, chat.context_wrapper).call(title: 'Анна, 10:00')
+      Captain::Runtime::ToolWrapper.new(booking, chat.context_wrapper).call(title: 'Анна, 11:00')
+      answer('Вы записаны к терапевту Иванову на 11:00.', sources: ['create_appointment'])
+    end)
+    reader_chat.script(looks_up_the_price)
+
+    reply = run_council(first_context, first_parts)
+
+    expect(reply).to eq('Вы записаны к терапевту Иванову на 11:00. МРТ стоит 15000 тенге.')
+    expect(booking.calls).to eq(['Анна, 10:00', 'Анна, 11:00'])
+    expect(operations).to contain_exactly(include('scope' => "part:#{first_parts.first['id']}:v1", 'status' => 'finished', 'outcome' => 'success'))
+    expect(session.read['parts'].pluck('state', 'acted')).to eq([['done', true], ['answered', false]])
+    expect(first_context).not_to have_key(:technical_failure)
+    expect(first_context).not_to have_key(:council_handoff)
+  end
+
+  it 'reports the booking of a follow-up version whose reply was dropped, not hidden by the question that an earlier version delivered' do
+    writer_chat.script(asks('На какое время вас записать?'))
+    reader_chat.script(looks_up_the_price)
+    run_council(first_context, first_parts)
+    waiting = session.read['parts'].first
+    # The reply with the question reached the customer: this is what the response job records with the message.
+    session.change do |data|
+      data['parts'].first['delivered'] = [{ 'message_id' => 1, 'content' => 'На какое время вас записать?', 'at' => Time.current.iso8601,
+                                            'version' => 1 }]
+    end
+
+    second_context = new_context('request-2', 'давайте в 11')
+    second_parts = plan_for(second_context, [{ fragment: 'давайте в 11', executor_agent_id: current_id, link_part_id: waiting['id'], link_action: 'answer' }])
+    writer_chat.script(books('Анна, 11:00', text: 'Вы записаны к терапевту Иванову на 14 октября в 11:00.'))
+    run_council(second_context, second_parts)
+    # The customer wrote again while the booking ran: the reply of this run is dropped, so nothing was delivered for version 2.
+
+    parts = session.read['parts']
+    booked = parts.first
+    expect(booked).to include('version' => 2, 'acted' => true)
+    expect(Captain::Runtime::PartRegistry.undelivered_outcomes(parts).pluck('id', 'version')).to eq([[booked['id'], 2]])
+    next_prompt = Captain::Runtime::CoordinationPrompt.render(new_context('request-3', 'Ну что, записали?').merge(agent_tasks: []))
+    expect(next_prompt).to include('Completed actions the customer has not been told about (data): ', booked['id'])
+  end
+
   it 'does not mention a part whose tool failed technically: the other part is answered and staff take over after the reply' do
     booking.result = Captain::ToolResult.failure(error: 'Provider did not answer', retryable: false,
                                                  audit: { failure_stage: 'tool_execution', failure_reason: 'provider_unavailable' })
@@ -306,6 +354,90 @@ RSpec.describe Captain::Runtime::Council, 'with parts that act' do
 
     expect(reply).to eq('')
     expect(first_context[:technical_failure]).to include('tool' => 'create_appointment', 'parts' => 2)
+  end
+
+  # A live conversation, the real booking tool of the platform and the real fence of the run: only the provider is faked. The
+  # failed booking must not hand the conversation over inside the council: the next tool call of another part (and the reply
+  # itself) would then find a run that is no longer current and the whole council would be dropped.
+  context 'with a provider booking that ends in an unknown outcome, in a live conversation' do
+    let(:account) { entry.account }
+    let(:real_writer) { create(:captain_assistant, account: account) }
+    let(:real_reader) { create(:captain_assistant, account: account) }
+    let(:writer_id) { real_writer.id }
+    let(:reader_id) { real_reader.id }
+    let(:conversation) { create(:conversation, account: account, status: :pending) }
+    let(:session) { Captain::Conversation::AgentSession.new(entry: entry, conversation: conversation) }
+    let(:real_tool) { Captain::Tools::CreateAppointmentTool.new(real_writer) }
+    let(:booking) do
+      real = real_tool
+      Class.new(Captain::Runtime::Tool) do
+        param :title, type: :string, required: true
+        define_method(:name) { 'create_appointment' }
+        define_method(:description) { 'Create an appointment' }
+        define_method(:metadata) { { risk_level: 'high', idempotent: false } }
+        define_method(:perform) { |tool_context, **| real.perform(tool_context, resource_id: 1, starts_at: Time.current.iso8601) }
+      end.new
+    end
+    # The owners are the real records (a message created for the note is dispatched with the executor of the job); only what the
+    # council reads from the runtime of the owner is given.
+    let(:actors) { { writer_id => owner(real_writer, [booking]), reader_id => owner(real_reader, [price]) } }
+
+    # Singleton methods, not stubs: the council calls them with arguments that the real signatures do not take.
+    def owner(record, tools)
+      {
+        agent: Captain::Runtime::Agent.new(name: "assistant_#{record.id}", instructions: 'Owner', tools: tools),
+        agent_name: "assistant_#{record.id}", config: {}, avatar_url: nil, handoff_enabled?: true,
+        selected_agent_tool_ids: %w[handoff], resolved_agent_model: 'openai/gpt-6-luna'
+      }.each { |name, value| record.define_singleton_method(name) { value } }
+      record.define_singleton_method(:prompt_context_state) { |*_args, **_options| {} }
+      record
+    end
+
+    # The state of the main run carries the identity and the fence that every part is checked against.
+    def new_context(request_id, input)
+      incoming = conversation.messages.incoming.last || create(:message, conversation: conversation, message_type: :incoming)
+      super.deep_merge(
+        state: {
+          account_id: account.id, conversation: { id: conversation.id },
+          captain_response_fence: { control_generation: conversation.current_captain_control_generation,
+                                    status_transition_id: conversation.status_transitions.maximum(:id).to_i, last_message_id: incoming.id }
+        }
+      )
+    end
+
+    before do
+      account.enable_features!('scheduling')
+      create(:captain_inbox, inbox: conversation.inbox, captain_assistant: entry)
+      entry.update!(handoff_agent_ids: [real_writer.id, real_reader.id])
+      appointment = create(:scheduling_appointment, account: account, contact: conversation.contact, conversation: conversation)
+      outcome = instance_double(Captain::Tools::ProviderBookingOutcomeService)
+      allow(outcome).to receive(:perform).and_raise(
+        Scheduling::Error.new(code: 'MEDELEMENT_BOOKING_UNKNOWN', message: 'Staff verification required', status: :unprocessable_content)
+      )
+      allow(real_tool).to receive(:operations).and_return(
+        instance_double(Captain::Tools::Operations::AppointmentOperations, create_appointment: appointment)
+      )
+      allow(Captain::Tools::ProviderBookingOutcomeService).to receive(:new).and_return(outcome)
+    end
+
+    it 'answers the other part, leaves the conversation pending with the note for staff, and lets the run hand over after the reply' do
+      writer_chat.script(lambda do |chat|
+        Captain::Runtime::ToolWrapper.new(booking, chat.context_wrapper).call(title: 'Анна, 14 октября')
+      end)
+      reader_chat.script(looks_up_the_price)
+
+      reply = run_council(first_context, first_parts)
+
+      expect(reply).to eq('МРТ стоит 15000 тенге.')
+      expect(conversation.reload.status).to eq('pending')
+      expect(conversation.messages.outgoing.where(private: false)).to be_empty
+      expect(conversation.messages.outgoing.where(private: true).sole.content).to include('Medelement')
+      expect(first_context[:council_handoff]).to include(
+        reason: 'council_technical_failure', technical: true, failures: [include('tool' => 'create_appointment', 'kind' => 'technical')]
+      )
+      expect(session.read['parts'].pluck('state')).to eq(%w[unknown answered])
+      expect(first_context).not_to have_key(:technical_failure)
+    end
   end
 end
 # rubocop:enable Lint/ConstantDefinitionInBlock

@@ -94,6 +94,58 @@ RSpec.describe Captain::Runtime::ToolFailure do
     end
   end
 
+  # The failure of a scheduling read tool, as the tool renders it (Captain::Tools::Copilot::SchedulingQueryValidation).
+  def scheduling_read_failure(code: nil, status: :unprocessable_content, reason: nil, raised: nil)
+    reader = Class.new { include Captain::Tools::Copilot::SchedulingQueryValidation }.new
+    raised ||= Scheduling::Error.new(code: code, message: 'The tool failed', status: status, details: { reason: reason }.compact)
+    reader.send(:scheduling_tool_failure, raised)
+  end
+
+  describe '.classify for the failures of the scheduling read tools' do
+    it 'takes a specialist that does not exist or cannot be scheduled, and malformed ids, for business answers the agent fixes' do
+      {
+        'RESOURCE_NOT_FOUND' => [:not_found, 'unknown_resource'],
+        'INVALID_RESOURCE_IDS' => [:unprocessable_content, 'invalid_resource_ids'],
+        'SERVICE_NOT_AVAILABLE_FOR_RESOURCE' => [:unprocessable_content, 'service_not_linked'],
+        'INVALID_DATE_RANGE' => [:unprocessable_content, 'invalid_date_range'],
+        'INVALID_SERVICE_ID' => [:unprocessable_content, 'invalid_service_id']
+      }.each do |code, (status, reason)|
+        expect(described_class.classify(scheduling_read_failure(code: code, status: status, reason: reason))).to eq('business'), code
+      end
+    end
+
+    it 'takes an internal failure and a failure of the provider for technical ones, whatever the status says' do
+      expect(described_class.classify(scheduling_read_failure(raised: RuntimeError.new('boom')))).to eq('technical')
+      expect(described_class.classify(scheduling_read_failure(code: 'INTERNAL_FAILURE', status: :internal_server_error, reason: 'internal_failure')))
+        .to eq('technical')
+      expect(described_class.classify(scheduling_read_failure(code: 'PROVIDER_UNAVAILABLE'))).to eq('technical')
+      expect(described_class.classify(scheduling_read_failure(code: 'MEDELEMENT_AVAILABILITY_UNVERIFIED'))).to eq('technical')
+      expect(described_class.classify(scheduling_read_failure(code: 'ANYTHING', status: :service_unavailable))).to eq('technical')
+    end
+
+    it 'declares the class in the failure, so that the declaration and not the shape of the result decides' do
+      rendered = scheduling_read_failure(code: 'RESOURCE_NOT_FOUND', status: :not_found, reason: 'unknown_resource')
+
+      expect(described_class.describe(rendered)).to include(declared: 'business', failure: true, retryable: false)
+    end
+  end
+
+  describe '.business_answer?' do
+    it 'is true for a failure that is an answer of the tool and changed nothing' do
+      expect(described_class.business_answer?(JSON.generate(success: false, reason: 'time_taken'))).to be(true)
+      expect(described_class.business_answer?(failure(retryable: false, audit: { error_class: 'business' }))).to be(true)
+      expect(described_class.business_answer?(Captain::ToolResult.failure_output(error: 'Taken', data: { code: 'SLOT_CONFLICT' }, retryable: false))).to be(true)
+    end
+
+    it 'is false for a success, a pending write, a technical failure and a bare rejection stage' do
+      expect(described_class.business_answer?(Captain::ToolResult.success(data: { id: 1 }))).to be(false)
+      expect(described_class.business_answer?(JSON.generate(success: false, reason: 'pending_provider_confirmation'))).to be(false)
+      expect(described_class.business_answer?(JSON.generate(success: false, reason: 'staff_will_help'))).to be(false)
+      expect(described_class.business_answer?(failure(retryable: false, audit: { error_class: 'technical', failure_reason: 'time_taken' }))).to be(false)
+      expect(described_class.business_answer?(failure(retryable: false, audit: { failure_stage: 'tool_arguments' }))).to be(false)
+    end
+  end
+
   describe '.outcome' do
     it 'is success for a success, also a pending one' do
       expect(described_class.outcome(Captain::ToolResult.success(data: { id: 1 }))).to eq('success')

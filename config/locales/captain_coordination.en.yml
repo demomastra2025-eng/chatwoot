@@ -5,7 +5,6 @@ en:
       action_pending: The request was sent; a confirmation will follow in a message.
       action_not_started: 'Not started: an earlier step was not completed.'
       action_done: The action was completed.
-      request_processed: The request was processed. If you need details, please clarify your question.
       part_staff_will_answer: A clinic staff member will answer this question.
       part_cannot_answer: I cannot answer this question right now.
       unresolved_handoff: 'Part of the request is unanswered and needs a staff reply: %{parts}.'

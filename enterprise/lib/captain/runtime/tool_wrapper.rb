@@ -744,10 +744,17 @@ class Captain::Runtime::ToolWrapper
     entry[:retryable] = normalized_result[:retryable] == true
     entry[:failure_stage] = normalized_result.dig(:audit, :failure_stage).to_s.presence
     entry[:failure_reason] = normalized_result.dig(:audit, :failure_reason).to_s.presence
-    entry[:safe_to_correct] = normalized_result[:success] == false && normalized_result.dig(:audit, :mutation_executed) == false &&
-                              normalized_result.dig(:audit, :failure_stage) == 'tool_arguments'
+    entry[:safe_to_correct] = unexecuted_argument_failure?(normalized_result) || Captain::Runtime::ToolFailure.business_answer?(result)
   rescue StandardError
     entry[:retryable] = false
+  end
+
+  # A call that changed nothing may be answered with a corrected call of the same tool in the same run: validation proved that
+  # nothing began, or the tool gave a business answer (the slot is taken, the patient was not found, the time is outside working
+  # hours) that the agent acts on by choosing another slot or by asking. A call that may have changed something stays claimed.
+  def unexecuted_argument_failure?(normalized_result)
+    normalized_result[:success] == false && normalized_result.dig(:audit, :mutation_executed) == false &&
+      normalized_result.dig(:audit, :failure_stage) == 'tool_arguments'
   end
 
   def mutating_tool_executions

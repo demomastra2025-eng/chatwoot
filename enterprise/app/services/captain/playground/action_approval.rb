@@ -2,6 +2,8 @@ require 'digest'
 
 class Captain::Playground::ActionApproval
   MAX_PREVIEWS = 20
+  # What the digest of a preview covers. An older preview has no actor_id: its digest was made without it, and slice leaves it out.
+  FINGERPRINT_KEYS = %w[tool arguments target generation binding actor_id].freeze
 
   def initialize(session)
     @session = session
@@ -15,10 +17,12 @@ class Captain::Playground::ActionApproval
     prepared = @executor.prepare(tool_id, arguments)
     current = @session.permissions
     raise ArgumentError, 'Changing real data is disabled' unless current['read'] == true && current['write'] == true
+    # actor_id: the agent whose profile the action belongs to. It is the owner of a council part, which is not always the session's
+    # active agent, so the confirmation runs the action as that agent and not as the one that holds the conversation.
     action = {
       'tool' => tool_id.to_s, 'arguments' => prepared[:arguments].deep_stringify_keys,
       'target' => prepared[:target].deep_stringify_keys, 'generation' => current['generation'],
-      'binding' => @session.context_reference.stringify_keys
+      'binding' => @session.context_reference.stringify_keys, 'actor_id' => @session.assistant.id
     }
     digest = fingerprint(action)
     previews = @session.data['action_previews'] ||= []
@@ -46,13 +50,14 @@ class Captain::Playground::ActionApproval
       raise ArgumentError, 'The real-action preview expired, changed, or was revoked'
     end
     @session.validate_active_agent!
-    prepared = @executor.prepare(action['tool'], action['arguments'])
+    executor = executor_for(action['actor_id'])
+    prepared = executor.prepare(action['tool'], action['arguments'])
     current = @session.permissions
     unless current['read'] == true && current['write'] == true && current['generation'] == action['generation'] &&
            action['binding'] == @session.context_reference.stringify_keys
       raise ArgumentError, 'The real-action confirmation was revoked'
     end
-    unless prepared[:target].deep_stringify_keys == action['target'] && fingerprint(action.slice('tool', 'arguments', 'target', 'generation', 'binding')) == digest
+    unless prepared[:target].deep_stringify_keys == action['target'] && fingerprint(action.slice(*FINGERPRINT_KEYS)) == digest
       raise ArgumentError, 'The target or payload changed; review a new preview'
     end
 
@@ -67,10 +72,11 @@ class Captain::Playground::ActionApproval
     policy = Outbound::PlaygroundDeliveryPolicy.issue(
       @session.context_reference.merge(mode: 'workspace', run_id: SecureRandom.uuid, delivery_enabled: false,
                                        action_id: action['id'], action_digest: digest, generation: action['generation'],
-                                       tool: action['tool'], arguments: action['arguments'], target: action['target'])
+                                       tool: action['tool'], arguments: action['arguments'], target: action['target'],
+                                       actor_id: action['actor_id']).compact
     )
     result = Outbound::PlaygroundDeliveryPolicy.with(policy) do
-      with_actor { @executor.execute(action['tool'], action['arguments'], prepared: prepared) }
+      with_actor { executor.execute(action['tool'], action['arguments'], prepared: prepared) }
     end
     action['status'] = Captain::ToolResult.error?(result) ? 'failed' : 'completed'
     action['result'] = result.to_s.first(12_000)
@@ -81,6 +87,14 @@ class Captain::Playground::ActionApproval
   end
 
   private
+
+  # The executor of the agent the preview was made for. A preview without an actor (made before it was recorded) belongs to the
+  # session's own agent.
+  def executor_for(actor_id)
+    return @executor if actor_id.blank? || actor_id.to_i == @session.assistant.id
+
+    Captain::Playground::RealToolExecutor.new(@session.acting_as(actor_id.to_i))
+  end
 
   def with_actor
     previous = Current.executed_by

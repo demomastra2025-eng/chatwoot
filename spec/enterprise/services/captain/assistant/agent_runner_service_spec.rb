@@ -650,7 +650,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       )
     end
 
-    it 'uses a deterministic public fallback for blank structured output after non-handoff tools completed' do
+    it 'hands a blank structured output over to staff, with no text of the system, after non-handoff tools completed' do
       allow(mock_runner).to receive(:run).and_return(
         instance_double(
           Captain::Runtime::Result,
@@ -664,16 +664,11 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
       expect(mock_runner).to have_received(:run).once
       expect(result).to include(
-        'response' => I18n.t('captain.coordination.request_processed', locale: :ru),
-        'reasoning' => 'Final assistant response failed after completed tool actions; a deterministic tool-result fallback was used.',
-        'agent_name' => 'scenario_agent',
-        'handoff_tool_called' => false,
-        'schema_fallback' => true,
-        'zero_completion_recovered' => true,
-        'zero_completion_recovery_kind' => described_class::ZERO_COMPLETION_TOOL_RESULT_FALLBACK,
+        'response' => described_class::PROVIDER_ERROR_RESPONSE,
         'error_class' => 'Captain::Assistant::AgentRunnerService::BlankResponseError',
         'error_message' => 'Assistant runtime returned a blank response'
       )
+      expect(result).not_to include('tool_result_fallback', 'schema_fallback')
     end
 
     it 'retries final response generation without tools after successful tool results before deterministic fallback', :aggregate_failures do
@@ -760,7 +755,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       )
     end
 
-    it 'does not expose unknown raw tool identifiers in deterministic public fallback text' do
+    it 'sends no text of the system after a read-only tool succeeded: a blank output is a failed turn, never a stock sentence' do
       allow(mock_runner).to receive(:run).and_return(
         instance_double(
           Captain::Runtime::Result,
@@ -775,8 +770,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
       result = service.generate_response(message_history: message_history)
 
-      expect(result['response']).to eq(I18n.t('captain.coordination.request_processed', locale: :ru))
-      expect(result['response']).not_to match(/mutate_secret_thing|tool action|[A-Za-z]/)
+      expect(result['response']).to eq(described_class::PROVIDER_ERROR_RESPONSE)
+      expect(result.to_json).not_to include('Запрос обработан', 'Сұрау өңделді', 'was processed')
     end
 
     it 'does not report planning alone as a completed customer action' do
@@ -795,7 +790,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
       result = service.generate_response(message_history: message_history)
 
-      expect(result['response'].to_s).not_to include(I18n.t('captain.coordination.request_processed', locale: :ru))
+      expect(result['response']).to eq(described_class::PROVIDER_ERROR_RESPONSE)
+      expect(result).not_to have_key('technical_failure')
     end
 
     it 'blocks model-invented response cancellation instead of silently suppressing the reply' do
@@ -871,7 +867,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       )
     end
 
-    it 'uses deterministic public fallback for semantic output errors after successful tools' do
+    it 'hands semantic output errors over to staff after successful tools, with no text of the system' do
       allow(mock_runner).to receive(:run).and_return(
         instance_double(
           Captain::Runtime::Result,
@@ -888,10 +884,29 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
       expect(mock_runner).to have_received(:run).once
       expect(result).to include(
-        'response' => I18n.t('captain.coordination.request_processed', locale: :ru),
-        'error_class' => 'Captain::Assistant::AgentRunnerService::SemanticOutputError',
-        'schema_fallback' => true,
-        'tool_result_fallback' => true
+        'response' => described_class::PROVIDER_ERROR_RESPONSE,
+        'error_class' => 'Captain::Assistant::AgentRunnerService::SemanticOutputError'
+      )
+      expect(result).not_to include('schema_fallback', 'tool_result_fallback')
+    end
+
+    it 'tells staff what an action completed before a failed final answer, by its name only' do
+      allow(mock_runner).to receive(:run).and_return(
+        instance_double(
+          Captain::Runtime::Result,
+          output: { 'response' => '', 'handoff_message' => '' },
+          context: { current_agent: 'scenario_agent', captain_v2_completed_actions: %w[create_appointment create_appointment],
+                     captain_v2_completed_tool_results: [{ tool_name: 'create_appointment', success: true }] },
+          error: nil
+        )
+      )
+
+      result = service.generate_response(message_history: message_history)
+
+      expect(result).to include('response' => described_class::PROVIDER_ERROR_RESPONSE)
+      expect(result['technical_failure']).to eq(
+        'kind' => 'technical', 'reason' => 'run_error', 'error_class' => 'Captain::Assistant::AgentRunnerService::BlankResponseError',
+        'completed' => ['create_appointment']
       )
     end
 
@@ -1699,7 +1714,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         expect(response).not_to have_key('custom_guardrail')
       end
 
-      it 'checks the deterministic blank-response fallback before returning public text' do
+      it 'runs no output rule on a blank output after tools: it is a failed turn with no public text' do
         save_custom_rules(assistant, output_rule)
         allow(mock_runner).to receive(:run).and_return(
           instance_double(
@@ -1711,48 +1726,14 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
             }
           )
         )
-        expect(Captain::Safety::CustomRulesEvaluator).to receive(:evaluate).with(
-          assistant: assistant, direction: 'output', text: I18n.t('captain.coordination.request_processed', locale: :ru),
-          context: kind_of(Hash)
-        ).and_return(custom_check_result(
-                       direction: 'output', status: :matched, rule_id: output_rule['id'], action: 'block'
-                     ))
+        allow(Captain::Safety::CustomRulesEvaluator).to receive(:evaluate).and_call_original
 
         response = service.generate_response(message_history: message_history)
 
         expect(response['response']).to eq(described_class::PROVIDER_ERROR_RESPONSE)
-        expect(response.dig('custom_guardrail', 'rule_id')).to eq(output_rule['id'])
+        expect(response).not_to have_key('custom_guardrail')
+        expect(Captain::Safety::CustomRulesEvaluator).not_to have_received(:evaluate).with(hash_including(direction: 'output'))
         expect(mock_runner).to have_received(:run).once
-      end
-
-      it 'checks the public tool-result fallback after the runner raises' do
-        save_custom_rules(assistant, output_rule)
-        tool_complete_callbacks = []
-        wrapper = Struct.new(:context).new({ current_agent: "assistant_#{assistant.id}" })
-        allow(mock_runner).to receive(:on_tool_complete) do |&callback|
-          tool_complete_callbacks << callback
-          mock_runner
-        end
-        allow(mock_runner).to receive(:run) do
-          tool_complete_callbacks.each do |callback|
-            callback.call('update_deal', Captain::ToolResult.success(message: 'ok'), wrapper)
-          end
-          raise StandardError, 'Provider failed after the completed action'
-        end
-        allow(ChatwootExceptionTracker).to receive(:new).and_return(
-          instance_double(ChatwootExceptionTracker, capture_exception: true)
-        )
-        expect(Captain::Safety::CustomRulesEvaluator).to receive(:evaluate).with(
-          assistant: assistant, direction: 'output', text: I18n.t('captain.coordination.request_processed', locale: :ru),
-          context: kind_of(Hash)
-        ).and_return(custom_check_result(
-                       direction: 'output', status: :matched, rule_id: output_rule['id'], action: 'block'
-                     ))
-
-        response = service.generate_response(message_history: message_history)
-
-        expect(response['response']).to eq(described_class::PROVIDER_ERROR_RESPONSE)
-        expect(response.dig('custom_guardrail', 'rule_id')).to eq(output_rule['id'])
       end
     end
 
@@ -1899,19 +1880,17 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
           'error_class' => described_class::TECHNICAL_FAILURE_ERROR_CLASS,
           'technical_failure' => failure.merge('completed' => ['cancel_appointment'])
         )
-        expect(response['response']).not_to include(I18n.t('captain.coordination.request_processed', locale: :ru))
+        expect(response['response']).to eq(described_class::PROVIDER_ERROR_RESPONSE)
       end
 
-      it 'is not given a second chance by the finalization retry or the tool result fallback' do
+      it 'is not given a second chance by the finalization retry' do
         context = { technical_failure: failure, conversation_history: [{ role: 'tool', content: 'done' }],
                     captain_v2_completed_tool_results: [{ tool_name: 'cancel_appointment', success: true }] }
         allow(service).to receive(:finalization_only_retry_response)
-        allow(service).to receive(:deterministic_tool_result_fallback_response)
 
         service.send(:process_agent_result, result_with(context, error: Captain::Runtime::Runner::TechnicalFailure.new('x')))
 
         expect(service).not_to have_received(:finalization_only_retry_response)
-        expect(service).not_to have_received(:deterministic_tool_result_fallback_response)
       end
 
       it 'also ends a council that has no reply left, which returns no error' do
@@ -2031,7 +2010,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         )
       end
 
-      it 'uses deterministic public fallback when the runner raises after a successful tool callback' do
+      it 'hands over to staff, with no stock text, when the runner raises after a successful tool callback' do
         tool_complete_callbacks = []
         context_wrapper = Struct.new(:context).new({ current_agent: 'crm_agent' })
         allow(mock_runner).to receive(:on_tool_complete) do |&block|
@@ -2048,11 +2027,29 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         result = service.generate_response(message_history: message_history)
 
         expect(result).to include(
-          'response' => I18n.t('captain.coordination.request_processed', locale: :ru),
+          'response' => described_class::PROVIDER_ERROR_RESPONSE,
           'error_class' => 'StandardError',
           'error_message' => 'Test error',
-          'tool_result_fallback' => true
+          described_class::PROVIDER_ERROR_AUTHORIZED_KEY => true
         )
+        expect(result).not_to include('tool_result_fallback', 'schema_fallback')
+      end
+
+      it 'names the actions the run completed before it raised, for the staff note' do
+        tool_complete_callbacks = []
+        context_wrapper = Struct.new(:context).new({ current_agent: 'crm_agent', captain_v2_completed_actions: %w[update_deal] })
+        allow(mock_runner).to receive(:on_tool_complete) do |&block|
+          tool_complete_callbacks << block
+          mock_runner
+        end
+        allow(mock_runner).to receive(:run) do
+          tool_complete_callbacks.each { |callback| callback.call('update_deal', Captain::ToolResult.success(message: 'ok'), context_wrapper) }
+          raise error
+        end
+
+        result = service.generate_response(message_history: message_history)
+
+        expect(result['technical_failure']).to include('reason' => 'run_error', 'error_class' => 'StandardError', 'completed' => ['update_deal'])
       end
 
       it 'logs error details' do
@@ -2108,7 +2105,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         )
       end
 
-      it 'uses a deterministic public fallback when final response generation fails after successful tools' do
+      it 'hands over to staff when final response generation fails after successful tools: no stock sentence for the customer' do
         schema_error = Llm::StructuredOutputPolicy::InvalidStructuredOutputError.new(
           'Captain response reasoning must be present for schema Captain::ResponseSchema'
         )
@@ -2132,14 +2129,11 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         result = service.generate_response(message_history: message_history)
 
         expect(result).to include(
-          'response' => I18n.t('captain.coordination.request_processed', locale: :ru),
-          'reasoning' => 'Final assistant response failed after completed tool actions; a deterministic tool-result fallback was used.',
-          'agent_name' => 'crm_agent',
-          'handoff_tool_called' => false,
-          'schema_fallback' => true,
+          'response' => described_class::PROVIDER_ERROR_RESPONSE,
           'error_class' => 'Llm::StructuredOutputPolicy::InvalidStructuredOutputError',
           'error_message' => 'Captain response reasoning must be present for schema Captain::ResponseSchema'
         )
+        expect(result).not_to include('tool_result_fallback', 'schema_fallback')
       end
     end
   end
