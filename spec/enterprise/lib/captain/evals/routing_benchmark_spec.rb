@@ -95,7 +95,10 @@ RSpec.describe Captain::Evals::RoutingBenchmark do
       allow(Dir).to receive(:glob).with('synthetic/*.yml').and_return(['synthetic/case.yml'])
       allow(Captain::Evals::RoutingBenchmark::Fixture).to receive(:load).and_return(fixture)
       allow(Captain::Assistant::AgentRunnerService).to receive(:new) do |assistant:, conversation:, **|
-        expect(Outbound::PlaygroundDeliveryPolicy.policy_for(conversation: conversation)).to eq({})
+        # Benchmark rows are not Playground rows (the Playground boundary would block every tool); they carry
+        # their own marker, and the isolated database has no webhook or provider to deliver to.
+        expect(conversation.additional_attributes).to include('captain_benchmark_source' => true)
+        expect(Outbound::PlaygroundDeliveryPolicy.policy_for(conversation: conversation)).to be_nil
         instance_double(Captain::Assistant::AgentRunnerService,
                         generate_response: { 'agent_id' => assistant.id, 'response' => 'Здравствуйте!',
                                              'captain_request_id' => 'synthetic-request' })
