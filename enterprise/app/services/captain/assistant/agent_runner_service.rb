@@ -8,6 +8,10 @@ class Captain::Assistant::AgentRunnerService
   include Captain::Assistant::RunnerCallbacksHelper
   include Captain::Assistant::TracePayloadHelper
 
+  # Coordination tools (planning, task bookkeeping) are not customer actions: a run that only planned has nothing
+  # to report, so it must not produce the completed-actions fallback text.
+  COORDINATION_TOOL_NAMES = %w[plan_request manage_agent_tasks].freeze
+
   PROVIDER_ERROR_RESPONSE = 'conversation_handoff_due_to_provider_error'.freeze
   PROVIDER_ERROR_AUTHORIZED_KEY = 'provider_error_handoff_authorized'.freeze
   # Marks a turn the safety policy blocked (input or output) or could not check.
@@ -751,7 +755,8 @@ class Captain::Assistant::AgentRunnerService
 
   def successful_non_handoff_tool_records(context)
     tool_result_records(context).select do |record|
-      record[:success] && !handoff_tool_name?(record[:tool_name].to_s)
+      tool_name = record[:tool_name].to_s
+      record[:success] && !handoff_tool_name?(tool_name) && COORDINATION_TOOL_NAMES.exclude?(tool_name)
     end
   end
 

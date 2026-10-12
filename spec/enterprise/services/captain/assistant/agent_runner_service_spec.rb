@@ -751,6 +751,25 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       expect(result['response']).to eq('Request processed. Completed actions: tool action ×1.')
     end
 
+    it 'does not report planning alone as a completed customer action' do
+      allow(mock_runner).to receive(:run).and_return(
+        instance_double(
+          Captain::Runtime::Result,
+          output: { 'response' => '', 'handoff_message' => '' },
+          context: {
+            current_agent: 'scenario_agent',
+            captain_v2_completed_tool_results: [{ tool_name: 'plan_request', success: true },
+                                                { tool_name: 'manage_agent_tasks', success: true }]
+          },
+          error: nil
+        )
+      )
+
+      result = service.generate_response(message_history: message_history)
+
+      expect(result['response'].to_s).not_to include('Request processed')
+    end
+
     it 'blocks model-invented response cancellation instead of silently suppressing the reply' do
       allow(mock_runner).to receive(:run).and_return(
         instance_double(
