@@ -146,7 +146,8 @@ class Captain::OpenAiMessageBuilderService
     return '' unless @message.account.audio_transcriptions_enabled?
     return '' if @assistant.present? && !@assistant.use_audio_transcriptions?
 
-    audio_attachments = attachments.where(file_type: :audio)
+    # Keep the customer's order: several voice notes must read in the order they were sent.
+    audio_attachments = attachments.where(file_type: :audio).order(:id)
     return '' if audio_attachments.blank?
 
     audio_attachments.filter_map do |attachment|
