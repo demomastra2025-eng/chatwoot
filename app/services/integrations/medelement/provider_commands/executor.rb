@@ -2,6 +2,7 @@
 class Integrations::Medelement::ProviderCommands::Executor
   class ClaimLost < StandardError; end
   BOOKABLE_APPOINTMENT_STATUSES = %w[scheduled confirmed].freeze
+  RATE_LIMIT_REQUEUE_ATTEMPTS = 5
 
   def initialize(command:, client: nil)
     @command = command
@@ -22,6 +23,8 @@ class Integrations::Medelement::ProviderCommands::Executor
     execute_operation!
   rescue Integrations::Medelement::ProviderCommands::PatientActionRequired => e
     await_patient_action!(e)
+  rescue Integrations::Medelement::Client::RateLimitedError => e
+    requeue_after_rate_limit!(e)
   rescue Integrations::Medelement::Client::ApiError => e
     # An explicit provider rejection is a failure. Only an ambiguous answer (timeout, 5xx, dropped connection) is read
     # back, and then only a positive match can apply the change.
@@ -310,7 +313,7 @@ class Integrations::Medelement::ProviderCommands::Executor
   end
 
   def client
-    @client ||= Integrations::Medelement::Client.new(configuration: configuration)
+    @client ||= Integrations::Medelement::Client.new(configuration: configuration, retry_profile: :command)
   end
 
   def mark_write_phase!(phase, preflight_reception_codes: nil, provider_patient_code: nil)
@@ -468,6 +471,29 @@ class Integrations::Medelement::ProviderCommands::Executor
 
     provider_status = Integrations::Medelement::AppointmentProviderStatus
     provider_status.persist_for_command!(command.appointment, provider_status::UNKNOWN, command: command)
+  end
+
+  # The request slot of one request type stayed busy for too long and the request was not sent. A command that has not
+  # written anything yet goes back to the queue and starts again in a moment; one that already wrote reads the provider
+  # instead (reconciliation) and never repeats a write.
+  def requeue_after_rate_limit!(error)
+    return fail_command!(code: 'provider_rate_limited', reconciliation: true) if write_started?
+    return fail_command!(code: 'provider_rate_limited') if command.attempt_count >= RATE_LIMIT_REQUEUE_ATTEMPTS
+
+    requeued = command.with_lock do
+      next false unless owns_claim?
+
+      command.update!(
+        status: command.status_for_transition('queued'),
+        last_error_code: 'provider_rate_limited',
+        execution_state: command.execution_state.to_h.except('claim_token')
+      )
+      true
+    end
+    return unless requeued
+
+    delay = (error.retry_after_ms.to_i / 1000.0).clamp(1, 10).seconds
+    Integrations::Medelement::ProviderCommandJob.set(wait: delay).perform_later(command.id)
   end
 
   def await_patient_action!(action)

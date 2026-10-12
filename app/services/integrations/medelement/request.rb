@@ -16,11 +16,13 @@ class Integrations::Medelement::Request
     sleeper: ->(seconds) { Kernel.sleep(seconds) },
     randomizer: ->(minimum, maximum) { Kernel.rand(minimum..maximum) },
     rate_limiter: nil,
-    clock: nil
+    clock: nil,
+    retry_profile: nil
   )
     @configuration = configuration
     limiter = rate_limiter || Integrations::Medelement::RequestRateLimiter.new(
       integrator_key: configuration.integrator_key,
+      account_login: configuration.company_login,
       interval_ms: configuration.throttle_ms,
       sleeper: sleeper
     )
@@ -29,7 +31,8 @@ class Integrations::Medelement::Request
       transport_errors: TRANSPORT_ERRORS,
       sleeper: sleeper,
       randomizer: randomizer,
-      clock: clock
+      clock: clock,
+      **retry_options_for(retry_profile)
     )
   end
 
@@ -53,6 +56,8 @@ class Integrations::Medelement::Request
       "Medelement #{operation} transport failed: #{e.class}",
       ambiguous: write
     )
+  rescue Integrations::Medelement::RequestRateLimiter::BusyError => e
+    raise rate_limited_error(e)
   end
 
   # rubocop:enable Metrics/CyclomaticComplexity, Metrics/ParameterLists
@@ -74,6 +79,8 @@ class Integrations::Medelement::Request
     raise_api_error(operation, response.code.to_i)
   rescue *TRANSPORT_ERRORS => e
     raise Integrations::Medelement::Client::ApiError, "Medelement #{operation} transport failed: #{e.class}"
+  rescue Integrations::Medelement::RequestRateLimiter::BusyError => e
+    raise rate_limited_error(e)
   end
 
   # rubocop:enable Metrics/AbcSize
@@ -92,11 +99,18 @@ class Integrations::Medelement::Request
     raise_api_error('receptions', response.code.to_i)
   rescue *TRANSPORT_ERRORS => e
     raise Integrations::Medelement::Client::ApiError, "Medelement receptions transport failed: #{e.class}"
+  rescue Integrations::Medelement::RequestRateLimiter::BusyError => e
+    raise rate_limited_error(e)
   end
 
   private
 
   attr_reader :configuration, :retry_policy
+
+  # A latency-sensitive caller (a command with someone waiting) retries a failing read only briefly.
+  def retry_options_for(profile)
+    profile.to_s == 'command' ? Integrations::Medelement::RequestRetryPolicy::COMMAND_PROFILE : {}
+  end
 
   def perform_indexed_get(uri, request)
     Net::HTTP.start(
@@ -158,6 +172,12 @@ class Integrations::Medelement::Request
     }
     values['Content-Type'] = 'application/x-www-form-urlencoded' if form_encoded
     values
+  end
+
+  def rate_limited_error(error)
+    Integrations::Medelement::Client::RateLimitedError.new(
+      "Medelement #{error.operation} request slot is busy", operation: error.operation, retry_after_ms: error.retry_after_ms
+    )
   end
 
   def raise_api_error(operation, status, write: false, body: nil)

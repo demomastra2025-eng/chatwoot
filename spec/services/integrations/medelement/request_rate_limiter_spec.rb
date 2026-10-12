@@ -9,28 +9,46 @@ RSpec.describe Integrations::Medelement::RequestRateLimiter do
     allow(connection_pool).to receive(:with).and_yield(connection)
   end
 
-  it 'reserves a distributed request slot and sleeps for the returned delay' do
-    expected_key = format(
+  def lane_key(login:, operation:)
+    format(
       described_class::KEY_TEMPLATE,
-      fingerprint: Digest::SHA256.hexdigest('provider-secret').first(32)
+      fingerprint: Digest::SHA256.hexdigest("provider-secret\n#{login}").first(32),
+      operation: operation
     )
+  end
+
+  it 'reserves a distributed slot of the request type and sleeps for the returned delay' do
     expect(connection).to receive(:call_with_namespace) do |command, script, keys:, argv:|
       expect(command).to eq(:eval)
       expect(script).to eq(described_class::RESERVE_SCRIPT)
-      expect(keys).to eq([expected_key])
+      expect(keys).to eq([lane_key(login: 'clinic-1', operation: 'reception_create')])
       expect(keys.first).not_to include('provider-secret')
-      expect(argv).to eq([275])
+      expect(keys.first).not_to include('clinic-1')
+      expect(argv).to eq([275, described_class::MAX_INLINE_WAIT_MS])
       425
     end
 
     described_class.new(
       integrator_key: 'provider-secret',
+      account_login: 'clinic-1',
       interval_ms: 275,
       sleeper: ->(seconds) { sleeps << seconds },
       connection_pool: connection_pool
-    ).wait!
+    ).wait!(operation: 'reception create')
 
     expect(sleeps).to eq([0.425])
+  end
+
+  it 'allows a write to wait longer for its slot than a read' do
+    expect(connection).to receive(:call_with_namespace) do |_command, _script, keys:, argv:|
+      expect(keys).to eq([lane_key(login: 'clinic-1', operation: 'reception_move')])
+      expect(argv).to eq([200, described_class::MAX_INLINE_WRITE_WAIT_MS])
+      0
+    end
+
+    described_class.new(
+      integrator_key: 'provider-secret', account_login: 'clinic-1', interval_ms: 200, connection_pool: connection_pool
+    ).wait!(operation: 'reception move', write: true)
   end
 
   it 'does not touch Redis or sleep when pacing is disabled' do
@@ -41,7 +59,7 @@ RSpec.describe Integrations::Medelement::RequestRateLimiter do
       interval_ms: 0,
       sleeper: ->(seconds) { sleeps << seconds },
       connection_pool: connection_pool
-    ).wait!
+    ).wait!(operation: 'timetable')
 
     expect(sleeps).to be_empty
   end
@@ -52,29 +70,92 @@ RSpec.describe Integrations::Medelement::RequestRateLimiter do
     expect do
       described_class.new(
         integrator_key: 'provider-secret',
-        interval_ms: 275,
+        interval_ms: 200,
         connection_pool: connection_pool
-      ).wait!
+      ).wait!(operation: 'timetable')
     end.to raise_error(described_class::UnavailableError) { |error| expect(error.message).not_to include('provider-secret') }
   end
 
-  it 'serializes reservations from separate limiter instances sharing the same key' do
-    redis = MockRedis.new
-    namespace = Redis::Namespace.new(:medelement_rate_limiter_spec, redis: redis)
-    pool = ConnectionPool.new(size: 1, timeout: 1) { namespace }
-    clock = -> { Time.zone.at(1_700_000_000) }
-    limiter_options = {
-      integrator_key: 'provider-secret',
-      interval_ms: 275,
-      sleeper: ->(seconds) { sleeps << seconds },
-      connection_pool: pool,
-      clock: clock
-    }
+  it 'defaults to the 200 ms spacing that keeps an account within five requests per second' do
+    expect(described_class::DEFAULT_INTERVAL_MS).to eq(200)
+    expect(Integrations::Medelement::Configuration::DEFAULT_THROTTLE_MS).to eq(200)
+  end
 
-    described_class.new(**limiter_options).wait!
-    described_class.new(**limiter_options).wait!
-    described_class.new(**limiter_options).wait!
+  describe 'spacing across processes' do
+    let(:redis) { MockRedis.new }
+    let(:namespace) { Redis::Namespace.new(:medelement_rate_limiter_spec, redis: redis) }
+    let(:pool) { ConnectionPool.new(size: 1, timeout: 1) { namespace } }
+    let(:now) { Time.zone.at(1_700_000_000) }
+    let(:clock) { -> { now } }
 
-    expect(sleeps).to eq([0.275, 0.55])
+    def limiter(login: 'clinic-1', interval_ms: 200)
+      described_class.new(
+        integrator_key: 'provider-secret', account_login: login, interval_ms: interval_ms,
+        sleeper: ->(seconds) { sleeps << seconds }, connection_pool: pool, clock: clock
+      )
+    end
+
+    it 'spaces requests of the same type of the same account by the interval, from separate limiter instances' do
+      3.times { limiter.wait!(operation: 'reception create') }
+
+      expect(sleeps).to eq([0.2, 0.4])
+    end
+
+    it 'does not make one request type wait for another' do
+      limiter.wait!(operation: 'reception create')
+      limiter.wait!(operation: 'timetable')
+      limiter.wait!(operation: 'receptions')
+      limiter.wait!(operation: 'reception create')
+
+      expect(sleeps).to eq([0.2])
+    end
+
+    it 'does not make one account wait for another' do
+      limiter(login: 'clinic-1').wait!(operation: 'timetable')
+      limiter(login: 'clinic-2').wait!(operation: 'timetable')
+
+      expect(sleeps).to be_empty
+    end
+
+    it 'lets the next request through once the interval has passed' do
+      limiter.wait!(operation: 'timetable')
+      later = now + 0.2.seconds
+      allow(clock).to receive(:call).and_return(later)
+
+      limiter.wait!(operation: 'timetable')
+
+      expect(sleeps).to be_empty
+    end
+
+    it 'treats the request type as the endpoint operation whatever its spelling' do
+      limiter.wait!(operation: 'Reception Create')
+      limiter.wait!(operation: 'reception-create')
+
+      expect(sleeps).to eq([0.2])
+    end
+
+    it 'refuses to sleep past the cap and reserves nothing for the refused caller' do
+      ((described_class::MAX_INLINE_WAIT_MS / 200) + 1).times { limiter.wait!(operation: 'receptions') }
+      sleeps.clear
+
+      retry_after = []
+      2.times do
+        expect { limiter.wait!(operation: 'receptions') }.to raise_error(described_class::BusyError) do |error|
+          expect(error.operation).to eq('receptions')
+          retry_after << error.retry_after_ms
+        end
+      end
+
+      expect(retry_after.first).to be > described_class::MAX_INLINE_WAIT_MS
+      expect(retry_after.uniq).to eq([retry_after.first])
+      expect(sleeps).to be_empty
+    end
+
+    it 'lets a write queue behind more requests than a read before it is refused' do
+      ((described_class::MAX_INLINE_WAIT_MS / 200) + 5).times { limiter.wait!(operation: 'reception move', write: true) }
+
+      expect { limiter.wait!(operation: 'reception move') }.to raise_error(described_class::BusyError)
+      expect { limiter.wait!(operation: 'reception move', write: true) }.not_to raise_error
+    end
   end
 end

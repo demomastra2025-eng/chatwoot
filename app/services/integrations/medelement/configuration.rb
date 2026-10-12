@@ -2,7 +2,8 @@ class Integrations::Medelement::Configuration
   INTEGRATOR_KEY_ENV = 'MEDELEMENT_INTEGRATOR_KEY'.freeze
   DEFAULT_DAYS_BACK = 3
   DEFAULT_DAYS_FORWARD = 89
-  DEFAULT_THROTTLE_MS = 275
+  # MedElement allows five requests per second for each request type of an account.
+  DEFAULT_THROTTLE_MS = Integrations::Medelement::RequestRateLimiter::DEFAULT_INTERVAL_MS
   DEFAULT_SYNC_INTERVAL_HOURS = 0.25
   CATALOG_SYNC_INTERVAL_HOURS = 6
   RECEPTIONS_SYNC_INTERVAL_MINUTES = 2

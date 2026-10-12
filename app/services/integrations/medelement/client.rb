@@ -19,6 +19,21 @@ class Integrations::Medelement::Client
     end
   end
 
+  # The slot of this request type was busy for too long to wait for it. The request was not sent; try again shortly.
+  class RateLimitedError < ApiError
+    attr_reader :operation, :retry_after_ms
+
+    def initialize(message = 'Medelement request slot is busy', operation: nil, retry_after_ms: nil)
+      super(message, status: nil, ambiguous: false)
+      @operation = operation
+      @retry_after_ms = retry_after_ms
+    end
+
+    def retryable?
+      true
+    end
+  end
+
   class CatalogUnavailableError < ApiError; end
   class InvalidTimetableError < ApiError; end
 
@@ -26,8 +41,9 @@ class Integrations::Medelement::Client
   # The provider accepts at most seven calendar days, including both endpoints.
   MAX_TIMETABLE_DAYS = 7
 
-  def initialize(configuration:)
-    @request = Integrations::Medelement::Request.new(configuration: configuration)
+  # retry_profile: :command for a caller that has someone waiting for the answer (see Request).
+  def initialize(configuration:, retry_profile: nil)
+    @request = Integrations::Medelement::Request.new(configuration: configuration, retry_profile: retry_profile)
   end
 
   def get_patient(patient_code:)

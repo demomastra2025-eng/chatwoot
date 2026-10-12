@@ -650,10 +650,10 @@ medelement:
         'value_type': 'integer',
       },
       {
-        'label': 'Пауза между запросами (мс)',
+        'label': 'Пауза между запросами одного типа (мс)',
         'type': 'number',
         'name': 'throttle_ms',
-        'value': 275,
+        'value': 200,
         'value_type': 'integer',
       },
     ]

@@ -147,7 +147,6 @@ class Integrations::Medelement::ReceptionsSyncService
 
     reception_code = reception['RECEPTION_CODE'].to_s
     detail = client.get_reception(reception_code: reception_code, version: :v2)
-    throttle!
     validate_reception_detail!(detail, reception)
 
     enriched_reception(reception, detail, fingerprint)
@@ -248,7 +247,6 @@ class Integrations::Medelement::ReceptionsSyncService
       end_datetime: to.in_time_zone(configuration.time_zone).strftime('%d.%m.%Y %H:%M:%S')
     )
 
-    throttle!
     return receptions if receptions.size < MAX_RECEPTIONS_PER_REQUEST
 
     raise IncompleteSnapshotError, "Medelement reception snapshot is saturated for account=#{account.id}" if (to - from) <= 1.day
@@ -322,12 +320,6 @@ class Integrations::Medelement::ReceptionsSyncService
       window_start: range_start.iso8601,
       window_end: range_end.iso8601
     }
-  end
-
-  def throttle!
-    return unless configuration.throttle_ms.to_i.positive?
-
-    sleep(configuration.throttle_ms.to_f / 1000)
   end
 
   def cleanup_missing_appointments!(desired_external_refs)

@@ -1793,6 +1793,40 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
       )
     end
   end
+  context 'when the request slot of a request type stays busy for too long' do
+    let(:busy) { Integrations::Medelement::Client::RateLimitedError.new(operation: 'patient search', retry_after_ms: 4200) }
+
+    it 'puts a command that has not written anything back in the queue and starts it again shortly' do
+      allow(client).to receive(:search_patients_by_phone).and_raise(busy)
+      allow(client).to receive(:create_patient)
+
+      expect { perform }.to have_enqueued_job(Integrations::Medelement::ProviderCommandJob).with(command.id)
+
+      expect(command.reload).to have_attributes(status: 'queued', last_error_code: 'provider_rate_limited', attempt_count: 1)
+      expect(command.execution_state.keys).not_to include('claim_token', 'write_phase')
+      expect(client).not_to have_received(:create_patient)
+    end
+
+    it 'gives up after a few busy attempts, having sent nothing' do
+      command.update!(attempt_count: described_class::RATE_LIMIT_REQUEUE_ATTEMPTS - 1)
+      allow(client).to receive(:search_patients_by_phone).and_raise(busy)
+
+      expect { perform }.not_to have_enqueued_job(Integrations::Medelement::ProviderCommandJob)
+
+      expect(command.reload).to have_attributes(status: 'failed', last_error_code: 'provider_rate_limited')
+    end
+
+    it 'reads the provider instead of repeating a write when the command had already written' do
+      allow(executor).to receive(:execute_operation!) do
+        command.update!(execution_state: command.execution_state.merge('write_phase' => 'patient_create'))
+        raise busy
+      end
+
+      expect { perform }.to have_enqueued_job(Integrations::Medelement::ProviderCommandReconciliationJob).with(command.id)
+      expect(command.reload).to have_attributes(status: 'reconciliation_required', last_error_code: 'provider_rate_limited')
+    end
+  end
+
   def allow_materialized_reception(starts_at: appointment.starts_at, ends_at: appointment.ends_at, service_codes: [])
     allow(client).to receive(:get_reception).with(reception_code: 'reception-1', version: :v2).and_return(
       'RECEPTION_CODE' => 'reception-1',
