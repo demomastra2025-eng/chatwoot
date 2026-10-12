@@ -56,14 +56,14 @@ RSpec.describe Captain::Runtime::ExecutorResolver do
       %w[answer_myself clarify].each do |mode|
         expect(resolve_ids([12, '13', '1', 'Агент 7'], mode: mode)).to eq([11, 11, 11, 11])
       end
-      expect { resolve_ids(['12'], mode: 'handoff') }.to raise_error(described_class::UnknownAgentError, /Unknown agent "12"/)
+      expect { resolve_ids(['12']) }.to raise_error(described_class::UnknownAgentError, /Unknown agent "12"/)
       expect { resolve_ids([13, 'Қабылдау']) }.to raise_error(described_class::UnknownAgentError, /Unknown agent "13"/)
     end
 
-    it 'does not accept an id or key that is not an agent of the channel in a handoff or a council' do
-      expect { resolve_ids(['assistant_99'], mode: 'handoff') }.to raise_error(described_class::UnknownAgentError, /Unknown agent "assistant_99"/)
+    it 'does not accept an id or key that is not an agent of the channel in a council' do
+      expect { resolve_ids(['assistant_99']) }.to raise_error(described_class::UnknownAgentError, /Unknown agent "assistant_99"/)
       parts = [{ 'fragment' => 'A', 'executor_agent_id' => 999 }]
-      expect { described_class.new(context).resolve(parts, mode: 'handoff') }.to raise_error(described_class::UnknownAgentError)
+      expect { described_class.new(context).resolve(parts, mode: 'council') }.to raise_error(described_class::UnknownAgentError)
     end
   end
 
@@ -73,10 +73,7 @@ RSpec.describe Captain::Runtime::ExecutorResolver do
     end
   end
 
-  it 'fails with the valid names for an unknown name in a handoff or a council' do
-    expect { resolve_ids(['Регистратура'], mode: 'handoff') }.to raise_error(
-      described_class::UnknownAgentError, "Unknown agent \"Регистратура\". Use one of: Қабылдау, Лаборатория Анализы, Приём. #{person_hint}"
-    )
+  it 'fails with the valid names for an unknown name in a council' do
     expect { resolve_ids(%w[Қабылдау Регистратура]) }.to raise_error(
       described_class::UnknownAgentError,
       'Unknown agent "Регистратура". Use one of: Администратор, Қабылдау, Лаборатория Анализы, Приём'
@@ -87,31 +84,29 @@ RSpec.describe Captain::Runtime::ExecutorResolver do
     graph << { id: 15, key: 'assistant_15', name: ' «КАБЫЛДАУ» ', description: 'Дубликат' }
     graph[1][:name] = 'кабылдау'
 
-    expect(resolve_ids(['Приём'], mode: 'handoff')).to eq([14])
+    expect(resolve_ids(['Приём', 'Администратор'])).to eq([14, 11])
     expect(resolve_ids(['Кабылдау'], mode: 'answer_myself')).to eq([11])
-    expect { resolve_ids(['Кабылдау'], mode: 'handoff') }.to raise_error(
+    expect { resolve_ids(['Приём', 'Кабылдау']) }.to raise_error(
       described_class::UnknownAgentError,
-      "Unknown agent \"Кабылдау\" (several agents share this name). Use one of: Лаборатория Анализы, Приём. #{person_hint}"
+      "Unknown agent \"Кабылдау\" (several agents share this name). Use one of: Администратор, Лаборатория Анализы, Приём"
     )
   end
 
   describe 'on a channel with only one agent' do
     before { context[:agent_graph] = [graph.first] }
 
-    it 'sends a person to the handoff tool, not to the plan, for an unknown name in a handoff' do
-      expect { resolve_ids(['Любой'], mode: 'handoff') }.to raise_error(
-        described_class::UnknownAgentError,
-        "Unknown agent \"Любой\". No other agent can be chosen on this channel. #{person_hint} For your own work use mode answer_myself."
+    it 'names no colleague for an unknown agent of a council' do
+      expect { resolve_ids(['Любой', nil]) }.to raise_error(
+        described_class::UnknownAgentError, 'Unknown agent "Любой". Use one of: Администратор'
       )
     end
 
-    it 'fails a handoff whose executor is omitted or is the agent itself, with a retryable error that names the handoff tool' do
-      [nil, 'Администратор', ' «администратор» '].each do |executor|
-        expect { resolve_ids([executor], mode: 'handoff') }.to raise_error(
-          described_class::RetryableError,
-          "No other agent can be chosen on this channel. #{person_hint} For your own work use mode answer_myself."
-        )
-      end
+    it 'sends a person to the handoff tool, not to the plan, for the former handoff mode, whatever the executor' do
+      expect { described_class.new(context).reject_transfer_mode!('handoff') }.to raise_error(
+        described_class::TransferToolError,
+        "No other agent can be chosen on this channel. #{person_hint} For your own work use mode answer_myself."
+      )
+      expect(described_class::TransferToolError.ancestors).to include(described_class::RetryableError)
       expect(described_class::UnknownAgentError.ancestors).to include(described_class::RetryableError)
     end
 
@@ -134,20 +129,21 @@ RSpec.describe Captain::Runtime::ExecutorResolver do
       e
     end
 
-    it 'asks a handoff to the agent itself to name another agent and to use the handoff tool for a person' do
-      [nil, 'Администратор'].each do |executor|
-        error = fail_with('handoff', [executor])
-
-        expect(error).to be_a(described_class::RetryableError).and have_attributes(
-          message: "Handoff needs another agent. Use one of: Қабылдау, Лаборатория Анализы, Приём. #{person_hint}", reason: 'plan_conflict'
+    it 'sends the former handoff mode to the transfer tool of one colleague and to the handoff tool for a person' do
+      expect { described_class.new(context).reject_transfer_mode!('handoff') }.to raise_error(described_class::TransferToolError) do |error|
+        expect(error.reason).to eq('use_transfer_tool')
+        expect(error.message).to eq(
+          'plan_request has no handoff mode. To pass the conversation to one colleague, call that colleague\'s transfer tool ' \
+          'without a plan. Colleagues: Қабылдау, Лаборатория Анализы, Приём. ' \
+          "#{person_hint} plan_request is only for a council (separate requests for different agents) and for the answer to an open part."
         )
       end
     end
 
-    it 'rejects a handoff that names several agents' do
-      expect(fail_with('handoff', %w[Қабылдау Приём]).message).to start_with('A handoff names one agent for all its parts; use council')
-      expect(fail_with('handoff', [nil, 'Қабылдау']).message).to include(person_hint)
-      expect(resolve_ids(%w[Қабылдау Қабылдау], mode: 'handoff')).to eq([12, 12])
+    it 'lets every other mode through the transfer check' do
+      %w[answer_myself council clarify].each do |mode|
+        expect(described_class.new(context).reject_transfer_mode!(mode)).to be_nil
+      end
     end
 
     it 'asks a council of one agent for a part of a second agent' do
@@ -160,9 +156,10 @@ RSpec.describe Captain::Runtime::ExecutorResolver do
       expect(resolve_ids([nil, 'Қабылдау'], mode: 'council')).to eq([11, 12])
     end
 
-    it 'asks an own part that names a peer to use a handoff or to keep the part' do
+    it 'asks an own part that names a peer to use the transfer tool of that peer or to keep the part' do
       expect(fail_with('answer_myself', ['Қабылдау']).message).to eq(
-        'This part belongs to Қабылдау. Use mode handoff for it, or omit the executor to keep it yourself.'
+        'This part belongs to Қабылдау. Pass the conversation to that colleague with its transfer tool (no plan needed), ' \
+        'or omit the executor to keep it yourself.'
       )
       expect(fail_with('answer_myself', ['assistant_13']).message).to start_with('This part belongs to Лаборатория Анализы.')
       expect(resolve_ids(['Қабылдау'], mode: 'clarify')).to eq([12])
@@ -173,7 +170,7 @@ RSpec.describe Captain::Runtime::ExecutorResolver do
                            'proposed_operation' => { 'type' => 'create_appointment', 'params' => {} } }]
       confirm = [{ 'fragment' => 'Да', 'link_part_id' => 'proposal', 'link_action' => 'confirmation' }]
 
-      %w[answer_myself handoff council].each do |mode|
+      %w[answer_myself clarify council].each do |mode|
         expect(described_class.new(context).resolve(confirm, mode: mode).sole['executor_agent_id']).to eq(12)
       end
       mixed = confirm + [{ 'fragment' => 'Ещё', 'link_action' => 'new', 'executor' => 'Қабылдау' }]
@@ -186,7 +183,7 @@ RSpec.describe Captain::Runtime::ExecutorResolver do
 
     before { context[:parts] = [peer_part] }
 
-    def link_owner(attributes, mode: 'handoff')
+    def link_owner(attributes, mode: 'clarify')
       part = { 'fragment' => 'Ответ', 'link_part_id' => 'peer-part' }.merge(attributes)
       described_class.new(context).resolve([part], mode: mode).sole['executor_agent_id']
     end
@@ -218,7 +215,7 @@ RSpec.describe Captain::Runtime::ExecutorResolver do
     end
   end
 
-  it 'keeps the executor recorded for a confirmed part when the model omits or garbles the executor, even in a handoff' do
+  it 'keeps the executor recorded for a confirmed part when the model omits or garbles the executor, even in a council' do
     context[:parts] = [{ 'id' => 'proposal', 'state' => 'waiting_confirmation', 'executor_agent_id' => 12,
                          'proposed_operation' => { 'type' => 'create_appointment', 'params' => {} } }]
     link = { 'fragment' => 'Да', 'link_part_id' => 'proposal', 'link_action' => 'confirmation' }
@@ -226,13 +223,13 @@ RSpec.describe Captain::Runtime::ExecutorResolver do
       described_class.new(context).resolve([part], mode: mode).sole['executor_agent_id']
     end
 
-    expect(resolved.call(link, 'handoff')).to eq(12)
+    expect(resolved.call(link, 'council')).to eq(12)
     expect(resolved.call(link.merge('executor' => 'Угадай'), 'answer_myself')).to eq(12)
-    expect(resolved.call(link.merge('executor' => 'Лаборатория  анализы'), 'handoff')).to eq(13)
-    expect(resolved.call(link.merge('executor' => 'Угадай'), 'handoff')).to eq(12)
-    expect(resolved.call(link.merge('link_action' => 'answer'), 'handoff')).to eq(12)
+    expect(resolved.call(link.merge('executor' => 'Лаборатория  анализы'), 'council')).to eq(13)
+    expect(resolved.call(link.merge('executor' => 'Угадай'), 'council')).to eq(12)
+    expect(resolved.call(link.merge('link_action' => 'answer'), 'clarify')).to eq(12)
     expect(resolved.call(link.merge('link_part_id' => 'gone'), 'answer_myself')).to eq(11)
-    expect { resolved.call(link.merge('link_action' => 'answer', 'executor' => 'Угадай'), 'handoff') }.to raise_error(
+    expect { resolved.call(link.merge('link_action' => 'answer', 'executor' => 'Угадай'), 'council') }.to raise_error(
       described_class::UnknownAgentError
     )
   end
@@ -240,10 +237,10 @@ RSpec.describe Captain::Runtime::ExecutorResolver do
   it 'does not change the given parts and leaves a malformed list to the registry' do
     parts = [{ 'fragment' => 'Запрос', 'executor' => 'Қабылдау' }]
 
-    described_class.new(context).resolve(parts, mode: 'handoff')
+    described_class.new(context).resolve(parts, mode: 'clarify')
 
     expect(parts).to eq([{ 'fragment' => 'Запрос', 'executor' => 'Қабылдау' }])
-    expect(described_class.new(context).resolve('not a list', mode: 'handoff')).to eq('not a list')
+    expect(described_class.new(context).resolve('not a list', mode: 'clarify')).to eq('not a list')
     expect(described_class.new(context).resolve([], mode: 'council')).to eq([])
   end
 

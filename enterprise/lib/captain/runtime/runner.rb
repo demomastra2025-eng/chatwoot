@@ -165,12 +165,11 @@ class Captain::Runtime::Runner
     )
   end
 
-  # A plain reply needs no request plan, and neither do the agent's own actions: a plan only coordinates agents. It is
-  # demanded before a transfer to another agent (HandoffTool) and, by the coordination prompt, when the message holds
-  # several separate requests for different agents. Two cases are guarded here as well, because a plain reply would be
-  # wrong there: a transfer was just refused for lack of a plan (the reply must not claim a transfer that did not happen), or
-  # an operation proposed by a council waits for the customer's answer (only a plan confirms or cancels it, and a plain
-  # "done" would claim an action that no tool performed).
+  # A plain reply needs no request plan, and neither do the agent's own actions or a transfer to one colleague (HandoffTool):
+  # a plan only coordinates several agents. The coordination prompt asks for it when the message holds separate requests
+  # for different agents, or when the customer answers an open part. One case is guarded here, because a plain reply would
+  # be wrong there: an operation proposed by a council waits for the customer's answer (only a plan confirms or cancels
+  # it, and a plain "done" would claim an action that no tool performed).
   def ensure_part_plan(session, response)
     return unless plan_required_before_reply?(session)
 
@@ -192,7 +191,7 @@ class Captain::Runtime::Runner
     # A consultation, and a finalization-only continuation (no tools are exposed), cannot call plan_request.
     return false if context[:consult_mode] || session[:finalization_only]
 
-    context[:part_plan_refused].present? || Captain::Runtime::PartRegistry.awaiting_confirmation?(context)
+    Captain::Runtime::PartRegistry.awaiting_confirmation?(context)
   end
 
   def handle_plan(session)
@@ -220,6 +219,7 @@ class Captain::Runtime::Runner
       finalize_run(session[:chat], session[:context_wrapper], session[:current_agent],
                    output: { response: answer, reasoning: '' })
     when 'handoff'
+      # Only a plan stored with the former mode: a new plan never has it, a transfer is the colleague's own tool.
       target_id = plan[:parts].first['executor_agent_id']
       context[:pending_handoff] = { target_agent: "assistant_#{target_id}" }
       handle_handoff(session)

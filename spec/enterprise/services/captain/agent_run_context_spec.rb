@@ -28,6 +28,7 @@ RSpec.describe Captain::AgentRunContext do
     expect(agents.first.handoff_agents.map(&:assistant_id)).to eq([specialist.id])
     expect(agents.last.handoff_agents.map(&:assistant_id)).to eq([entry.id])
     description = Captain::Runtime::HandoffTool.new(agents.last).description
+    expect(description).to start_with("Transfer the conversation to #{specialist.name}.")
     expect(description).to include(specialist.name, specialist.routing_description.to_s)
     expect(description).not_to include("assistant_#{specialist.id}")
     runtime.prepare(context)

@@ -1,5 +1,9 @@
 # frozen_string_literal: true
 
+# The transfer of the conversation to one colleague: one tool per peer of the agent graph, with no parameters. The tool name
+# identifies the colleague (Captain::HandoffNaming) and the description names it for the model. It needs no request plan: the
+# plan only coordinates several agents (a council) or links an answer to an open part. The runner hands the whole
+# conversation to the colleague, who continues it without mentioning the transfer.
 class Captain::Runtime::HandoffTool < Captain::Runtime::Tool
   attr_reader :target_agent
 
@@ -7,8 +11,8 @@ class Captain::Runtime::HandoffTool < Captain::Runtime::Tool
     @target_agent = target_agent
     @tool_name = Captain::HandoffNaming.tool_name_for(target_agent.name)
     display_name = target_agent.respond_to?(:display_name) ? target_agent.display_name : target_agent.name
-    description = target_agent.respond_to?(:routing_description) ? target_agent.routing_description : ''
-    @tool_description = "#{display_name}: #{description}"
+    responsibility = target_agent.respond_to?(:routing_description) ? target_agent.routing_description.to_s.strip : ''
+    @tool_description = ["Transfer the conversation to #{display_name}.", responsibility.presence].compact.join(' ')
     super()
   end
 
@@ -22,13 +26,6 @@ class Captain::Runtime::HandoffTool < Captain::Runtime::Tool
 
   def perform(tool_context, **_params)
     context = tool_context.run_context.context
-    # A transfer to another agent is the one tool call that needs the request plan.
-    if context[:agent_session] && !Captain::Runtime::TaskQueue.in_flight?(context[:agent_tasks]) &&
-       !context[:part_plan_accepted]
-      # The runner then refuses a plain reply that would claim a transfer that did not happen.
-      context[:part_plan_refused] = true
-      return Captain::ToolResult.failure(error: 'Plan the request before handing it to another agent', retryable: false)
-    end
 
     if context[:agent_graph].present?
       source_id = context.dig(:state, :assistant_id)

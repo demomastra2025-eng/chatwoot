@@ -952,7 +952,7 @@ RSpec.describe Captain::Runtime::ToolWrapper do
 
         expect(JSON.parse(result)).to include('message' => 'created Own booking')
         expect(mutating_tool.calls).to eq(1)
-        expect(context_wrapper.context).not_to include(:part_plan_accepted, :part_plan_refused, :active_part_id)
+        expect(context_wrapper.context).not_to include(:part_plan_accepted, :active_part_id)
         expect(agent_session.read.fetch('operations').values).to contain_exactly(
           include('status' => 'finished', 'scope' => 'request:scheduled-request', 'result' => include('success' => true))
         )
@@ -969,6 +969,18 @@ RSpec.describe Captain::Runtime::ToolWrapper do
       expect(mutating_tool.calls).to eq(1)
       expect(JSON.parse(repeated)).to include('data' => include('title' => 'Own booking', 'id' => 1))
       expect(agent_session.read.fetch('operations').size).to eq(1)
+    end
+
+    it 'transfers the conversation to a colleague without a request plan, in a session with peers' do
+      colleague = Captain::Runtime::Agent.new(name: "assistant_#{assistant.id + 1}").tap { |agent| agent.assistant_id = assistant.id + 1 }
+      transfer = described_class.new(Captain::Runtime::HandoffTool.new(colleague), context_wrapper)
+
+      result = transfer.call({})
+
+      expect(result).to be_a(RubyLLM::Tool::Halt)
+      expect(context_wrapper.context[:pending_handoff]).to include(target_agent: colleague)
+      expect(context_wrapper.context).not_to include(:part_plan_accepted, :active_part_id)
+      expect(events.map(&:first)).to eq(%i[start complete])
     end
 
     describe 'while an operation proposed by a council waits for the customer\'s answer' do
@@ -1031,6 +1043,15 @@ RSpec.describe Captain::Runtime::ToolWrapper do
         expect(human_handoff.send(:pending_confirmation_error)).to be_nil
         expect(lookup.send(:pending_confirmation_error)).to be_nil
         expect(mutating_wrapper.send(:pending_confirmation_error)).to be_present
+      end
+
+      it 'does not block the transfer of the conversation to one colleague, which needs no plan' do
+        colleague = Captain::Runtime::Agent.new(name: "assistant_#{assistant.id + 1}").tap { |agent| agent.assistant_id = assistant.id + 1 }
+        transfer = described_class.new(Captain::Runtime::HandoffTool.new(colleague), context_wrapper)
+
+        expect(transfer.send(:plan_awaited_for_confirmation?)).to be(true)
+        expect(transfer.send(:mutating_tool?)).to be(false)
+        expect(transfer.send(:pending_confirmation_error)).to be_nil
       end
 
       it 'does not block an agent that has no peer to plan with' do

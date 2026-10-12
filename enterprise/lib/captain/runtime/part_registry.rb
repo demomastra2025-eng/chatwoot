@@ -6,7 +6,9 @@ class Captain::Runtime::PartRegistry
   MAX_PARTS_PER_MESSAGE = 30
   STATES = %w[open answered waiting_customer waiting_confirmation done failed unknown].freeze
   OPEN_STATES = %w[open waiting_customer waiting_confirmation unknown].freeze
-  MODES = %w[answer_myself handoff council clarify].freeze
+  # The modes a new plan can have. Passing the conversation to one colleague is that colleague's transfer tool, not a plan.
+  # A plan stored with the former mode 'handoff' is still replayed as it was saved (see Runner#handle_plan), never re-validated.
+  MODES = %w[answer_myself council clarify].freeze
   RELATIONS = %w[independent conditional depends_on].freeze
   LINK_ACTIONS = %w[new answer correction cancellation confirmation].freeze
   ALREADY_PLANNED = 'This message already has a plan'
@@ -19,8 +21,8 @@ class Captain::Runtime::PartRegistry
     relation.blank? || relation == 'independent' || (relation == 'depends_on' && part['depends_on_part_id'].present?)
   end
 
-  # The plan coordinates agents (a transfer, a council, the answer to an open part), so it exists only where another
-  # agent is available. A lone agent has no plan_request and acts with its own tools.
+  # The plan coordinates agents (a council, the answer to an open part), so it exists only where another agent is
+  # available. A lone agent has no plan_request and acts with its own tools.
   def self.planning_available?(context)
     actor_id = context.dig(:state, :assistant_id)
     Array(context[:agent_graph]).any? { |actor| actor[:id] != actor_id }
@@ -109,9 +111,6 @@ class Captain::Runtime::PartRegistry
     current_id = @context.dig(:state, :assistant_id)
     wrong_agent = normalized.any? { |part| part['executor_agent_id'] != current_id }
     raise ArgumentError, 'This part belongs to another agent' if mode == 'answer_myself' && wrong_agent && !confirmations_only
-    handoff_ids = normalized.pluck('executor_agent_id').uniq
-    raise ArgumentError, 'Handoff needs one different agent' if mode == 'handoff' && !confirmations_only &&
-                                                           (handoff_ids.size != 1 || handoff_ids.first == current_id)
 
     plan = { mode: mode, parts: normalized, clarification: clarification.to_s.strip, answer: answer.to_s.strip }
     persist_plan(plan, scope)

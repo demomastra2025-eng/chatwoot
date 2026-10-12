@@ -301,7 +301,7 @@ RSpec.describe Captain::Runtime::Runner do
         expect(result).to be_success
         expect(result.output).to eq('Здравствуйте! Чем могу помочь?')
         expect(chat.requests).to eq([:ask])
-        expect(result.context).not_to include(:part_plan, :part_plan_refused)
+        expect(result.context).not_to include(:part_plan)
       end
 
       it 'delivers a plain reply after a plan_request that named an agent which does not exist' do
@@ -319,7 +319,7 @@ RSpec.describe Captain::Runtime::Runner do
         expect(result).to be_success
         expect(result.output).to eq('Анализы можно сдать в клинике ежедневно.')
         expect(chat.requests).to eq([:ask])
-        expect(result.context).not_to include(:part_plan_accepted, :part_plan_refused)
+        expect(result.context).not_to include(:part_plan_accepted)
       end
 
       it 'delivers the reply after an agreed human handoff was first tried as a plan_request handoff, even when repeated' do
@@ -338,7 +338,7 @@ RSpec.describe Captain::Runtime::Runner do
         expect(failures).to all(start_with('ERROR: ').and(include('"retryable":true', 'call the handoff tool, not plan_request')))
         expect(result).to be_success
         expect(result.output).to eq('Уточните, пожалуйста, чем помочь.')
-        expect(result.context).not_to include(Captain::Runtime::ToolWrapper::TERMINAL_TOOL_STOP_KEY, :part_plan_accepted, :part_plan_refused)
+        expect(result.context).not_to include(Captain::Runtime::ToolWrapper::TERMINAL_TOOL_STOP_KEY, :part_plan_accepted)
       end
 
       it 'keeps the human handoff of the model, which follows the rejected plan, intact' do
@@ -489,23 +489,89 @@ RSpec.describe Captain::Runtime::Runner do
       expect(result.context.slice(:part_plan, :part_plan_accepted)).to be_empty
     end
 
-    it 'does not accept a plain reply right after a transfer to another agent was refused for lack of a plan' do
-      chat.respond_with(lambda do |current_context|
-        current_context[:part_plan_refused] = true
-        reply('I have passed you to a specialist.')
-      end, lambda do |current_context|
-        current_context[:part_plan_accepted] = true
-        reply('I could not transfer you yet; what do you need?')
-      end)
-      expect_initial_ask
-      expect(Llm::Runtime).to receive(:complete).once.and_call_original
+    describe 'a transfer to one colleague' do
+      let(:colleague) do
+        Captain::Runtime::Agent.new(name: 'assistant_91', model: 'gpt-4.1-nano').tap do |agent|
+          agent.assistant_id = 91
+          agent.context_preparer = ->(wrapper) { wrapper.context[:state][:assistant_id] = 91 }
+        end
+      end
+      let(:colleague_chat) { RunnerTaskFinalizationSpecChat.new }
 
-      result = run_with
+      before do
+        chats[colleague.name] = colleague_chat
+        registry[colleague.name] = colleague
+      end
 
-      expect(result.output).to eq('I could not transfer you yet; what do you need?')
-      expect(chat.requests).to eq(%i[ask complete])
-      expect(reminders.map(&:content)).to eq(['Call plan_request for this message before replying.'])
-      expect(result.messages.map { |message| message[:content] }).not_to include('I have passed you to a specialist.')
+      def transfer_to_colleague
+        lambda do |current_context|
+          current_context[:pending_handoff] = { target_agent: colleague }
+          RubyLLM::Tool::Halt.new('')
+        end
+      end
+
+      it 'hands the conversation over without any plan, and the colleague answers without being asked to plan' do
+        chat.respond_with(transfer_to_colleague)
+        colleague_chat.respond_with(reply('Анализы можно сдать в клинике ежедневно.'))
+        expect_initial_ask
+        expect(Llm::Runtime).to receive(:complete).with(
+          colleague_chat, model: colleague.model, observability: hash_including(assistant_id: 91, current_agent: colleague.name)
+        ).once.and_call_original
+
+        result = run_with
+
+        expect(result).to be_success
+        expect(result.output).to eq('Анализы можно сдать в клинике ежедневно.')
+        expect(result.context[:current_agent]).to eq(colleague.name)
+        expect(result.context[:handoff_count]).to eq(1)
+        expect(result.context).not_to include(:part_plan, :part_plan_accepted)
+        expect(chat.requests).to eq([:ask])
+        expect(colleague_chat.requests).to eq([:complete])
+        expect(reminders).to be_empty
+        expect(reminders(colleague_chat)).to be_empty
+      end
+
+      it 'gives the colleague the whole conversation, the customer message included' do
+        chat.respond_with(transfer_to_colleague)
+        colleague_chat.respond_with(reply('Готово.'))
+        expect_initial_ask
+
+        result = run_with
+
+        expect(result.output).to eq('Готово.')
+        expect(colleague_chat.messages.select { |message| message.role == :user }.map(&:content)).to eq([input])
+      end
+
+      it 'stops a transfer loop: the agent answers from what it knows, without a plan or a question' do
+        chat.respond_with(lambda do |current_context|
+          current_context[:transfer_guard_active] = true
+          RubyLLM::Tool::Halt.new('')
+        end, reply('Остальное уточнит администратор клиники.'))
+        expect_initial_ask
+        expect(Llm::Runtime).to receive(:complete).with(chat, model: agent.model, observability: hash_including(assistant_id: 92)).once.and_call_original
+
+        result = run_with
+
+        expect(result.output).to eq('Остальное уточнит администратор клиники.')
+        expect(result.context[:current_agent]).to eq(agent.name)
+        expect(result.context).to include(transfer_guarded: true)
+        expect(result.context).not_to include(:part_plan, :part_plan_accepted, :pending_handoff)
+        expect(reminders.map(&:content).sole).to include('Internal routing is unavailable for this message')
+        expect(colleague_chat.requests).to be_empty
+      end
+
+      it 'transfers although an open part of the conversation waits for the customer' do
+        context[:parts] = [{ 'id' => 'old-part', 'state' => 'waiting_customer', 'fragment' => 'Book a visit', 'proposed_operation' => nil }]
+        chat.respond_with(transfer_to_colleague)
+        colleague_chat.respond_with(reply('Выберите удобное время.'))
+        expect_initial_ask
+
+        result = run_with
+
+        expect(result.output).to eq('Выберите удобное время.')
+        expect(result.context[:current_agent]).to eq(colleague.name)
+        expect(reminders(colleague_chat)).to be_empty
+      end
     end
 
     describe 'a lone agent' do

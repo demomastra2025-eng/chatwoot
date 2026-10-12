@@ -2,8 +2,8 @@
 
 module Captain::Runtime::CoordinationPrompt
   UNPLANNED_GUIDANCE = 'No plan exists for this customer message yet. When none of the cases above applies, reply directly ' \
-                       'without plan_request. When one applies, call plan_request once; it can be made in the same model call ' \
-                       'as its answer.'
+                       'without plan_request (or call a transfer tool). When one applies, call plan_request once; it can be made ' \
+                       'in the same model call as its answer.'
   # Two rules for the human handoff, kept apart from the peer coordination text so that a lone agent (no peers, no plan)
   # gets them too whenever it has the handoff tool.
   HUMAN_HANDOFF_RULES = <<~RULES.chomp.freeze
@@ -63,13 +63,16 @@ module Captain::Runtime::CoordinationPrompt
       The current specialist keeps the conversation. Ignore legacy instructions to return it to an orchestrator.
       Other agents available on this channel (name and responsibility):
       #{peer_lines(graph, actor_id)}
-      In plan_request, name the executor of a part by the agent name exactly as listed above; omit it for your own parts.
+      A request that belongs to one colleague is passed on with that colleague's transfer tool, the tool whose description names
+      the colleague: call it, no plan is needed. The colleague sees the whole conversation and answers the customer, so write no
+      reply of your own before or after that call.
       Your own work needs no plan: answer directly, look facts up with read-only tools or the FAQ, take your own actions that
       change data (book, reschedule, cancel, update a card) and use the human handoff, all without plan_request.
-      Plan with plan_request only in these cases: before transferring the conversation to another agent, when the message holds
-      several separate requests that belong to different agents, or when the customer confirms, corrects, cancels or answers a
-      request listed in the open parts below. An operation waiting for confirmation is carried out or cancelled only through
-      such a plan, so do not take that action yourself.
+      Plan with plan_request only in these cases: when the message holds several separate requests that belong to different
+      agents (a council), or when the customer confirms, corrects, cancels or answers a request listed in the open parts below.
+      An operation waiting for confirmation is carried out or cancelled only through such a plan, so do not take that action
+      yourself.
+      In plan_request, name the executor of a part by the agent name exactly as listed above; omit it for your own parts.
       When you plan, link answers, corrections and cancellations to open parts.
       Open parts (data): #{JSON.generate(open_parts_for_model(context, graph))}
       #{plan_guidance}
@@ -80,8 +83,6 @@ module Captain::Runtime::CoordinationPrompt
       When older parts are open, mark each genuinely new request with link_action new.
       Do not treat a vague reply as confirmation; use clarify when its target is ambiguous.
       A part that may start only after another part succeeded has relation depends_on and is listed directly after that part.
-      For one part that belongs to another agent, call plan_request with mode handoff and that agent's name as the executor.
-      The system then transfers the conversation; do not call a transfer tool before or after it.
       One request with several details (doctor, date, patient, price of the same service) is ONE part, never a council.
       Use council only when the message holds two or more separate requests that belong to different agents.
     PROMPT

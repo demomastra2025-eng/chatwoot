@@ -95,7 +95,7 @@ RSpec.describe Captain::Runtime::PartRegistry do
     next_message
 
     expect do
-      plan([{ fragment: 'Yes', executor_agent_id: 2, link_part_id: old['id'], link_action: 'confirmation' }], mode: 'handoff')
+      plan([{ fragment: 'Yes', executor_agent_id: 2, link_part_id: old['id'], link_action: 'confirmation' }], mode: 'council')
     end.to raise_error(ArgumentError, /executor agent/)
   end
 
@@ -182,10 +182,10 @@ RSpec.describe Captain::Runtime::PartRegistry do
   end
 
   it 'leaves the mode out of a plan that only confirms stored proposals, but not out of a mixed plan' do
-    old = plan([{ fragment: 'Book', executor_agent_id: 2 }], mode: 'handoff')[:parts].sole
+    old = plan([{ fragment: 'Book', executor_agent_id: 2 }, { fragment: 'Price', executor_agent_id: 1 }], mode: 'council')[:parts].first
     confirm = [{ fragment: 'Да', executor_agent_id: 2, link_part_id: old['id'], link_action: 'confirmation' }]
 
-    %w[answer_myself handoff council].each_with_index do |mode, index|
+    %w[answer_myself council].each_with_index do |mode, index|
       described_class.new(context).update!(old['id'], state: 'waiting_confirmation',
                                                       proposed_operation: { 'type' => 'create_appointment', 'params' => { 'slot_id' => 9 } })
       next_message
@@ -200,6 +200,11 @@ RSpec.describe Captain::Runtime::PartRegistry do
     context[:agent_request_id] = 'mixed'
     mixed = confirm + [{ fragment: 'Ещё', executor_agent_id: 2, link_action: 'new' }]
     expect { plan(mixed, mode: 'answer_myself') }.to raise_error(ArgumentError, 'This part belongs to another agent')
+  end
+
+  it 'has no handoff mode: a transfer to one colleague is that colleague\'s own tool, not a plan' do
+    expect(described_class::MODES).to eq(%w[answer_myself council clarify])
+    expect { plan([{ fragment: 'Book', executor_agent_id: 2 }], mode: 'handoff') }.to raise_error(ArgumentError, 'Invalid request mode')
   end
 
   it 'turns the parts through the given block only for a new plan and replays a saved plan as it was' do

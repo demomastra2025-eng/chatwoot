@@ -132,14 +132,14 @@ class Captain::Runtime::ChatFactory
       "Other agents (name and responsibility):\n#{peers.map { |peer| "#{peer[:name]}: #{peer[:description]}" }.join("\n")}"
     end
 
-    # plan_request coordinates agents, so a lone agent (no peers) does not get it. It has no plan to fill, no peers to
-    # name and no transfer to describe.
+    # plan_request coordinates agents (a council, the answer to an open part), so a lone agent (no peers) does not get it. It
+    # has no plan to fill and no peers to name. Its transfer tools are the peers' too: with no peer there is none.
     def plan_request_available?(context)
       Captain::Runtime::PartRegistry.planning_available?(context) && !context[:part_plan_accepted]
     end
 
-    # The coordination block describes peers, transfers and the request plan, or an inherited task queue. A lone agent
-    # without a queue has none of these; it only keeps the two human handoff rules that block carried.
+    # The coordination block describes peers, their transfer tools and the request plan, or an inherited task queue. A lone
+    # agent without a queue has none of these; it only keeps the two human handoff rules that block carried.
     def coordination_prompt?(context)
       Captain::Runtime::PartRegistry.planning_available?(context) ||
         (context[:agent_graph].present? && Captain::Runtime::TaskQueue.in_flight?(context[:agent_tasks]))

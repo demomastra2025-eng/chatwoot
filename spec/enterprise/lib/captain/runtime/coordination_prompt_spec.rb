@@ -49,21 +49,36 @@ RSpec.describe Captain::Runtime::CoordinationPrompt do
     expect(prompt).to include('plan_request')
   end
 
-  it 'asks for a plan only before a transfer, separate requests for different agents or an answer to an open part' do
+  it 'asks for a plan only for separate requests of different agents or an answer to an open part, never for a transfer' do
     context[:agent_tasks] = []
 
     prompt = described_class.render(context)
+    text = prompt.squish
 
-    expect(prompt).to include('Your own work needs no plan: answer directly, look facts up with read-only tools or the FAQ, ' \
-                              "take your own actions that\nchange data (book, reschedule, cancel, update a card) " \
-                              'and use the human handoff, all without plan_request.')
-    expect(prompt).to include('Plan with plan_request only in these cases: before transferring the conversation to another agent, ' \
-                              "when the message holds\nseveral separate requests that belong to different agents, " \
-                              "or when the customer confirms, corrects, cancels or answers a\nrequest listed in the open parts below")
-    expect(prompt).to include('When you plan, link answers, corrections and cancellations to open parts.')
-    expect(prompt).to include('reply directly without plan_request')
+    expect(text).to include('Your own work needs no plan: answer directly, look facts up with read-only tools or the FAQ, ' \
+                            'take your own actions that change data (book, reschedule, cancel, update a card) ' \
+                            'and use the human handoff, all without plan_request.')
+    expect(text).to include('Plan with plan_request only in these cases: when the message holds several separate requests that ' \
+                            'belong to different agents (a council), or when the customer confirms, corrects, cancels or answers ' \
+                            'a request listed in the open parts below')
+    expect(text).to include('When you plan, link answers, corrections and cancellations to open parts.')
+    expect(text).to include('reply directly without plan_request')
+    expect(text).not_to include('before transferring the conversation', 'mode handoff', 'do not call a transfer tool')
     expect(prompt).not_to include('before an action that changes data', 'A simple request needs no plan',
                                   'Plan the customer\'s request before taking any action', 'Use plan_request once')
+  end
+
+  it 'sends a request of one colleague through that colleague\'s transfer tool, with no plan' do
+    context[:agent_tasks] = []
+
+    text = described_class.render(context).squish
+
+    expect(text).to include('A request that belongs to one colleague is passed on with that colleague\'s transfer tool, ' \
+                            'the tool whose description names the colleague: call it, no plan is needed.')
+    expect(text).to include('The colleague sees the whole conversation and answers the customer, so write no reply of your own ' \
+                            'before or after that call.')
+    expect(text.index('transfer tool')).to be < text.index('Plan with plan_request only in these cases')
+    expect(text).to include('Staff or an operator is reached only through the handoff tool, never through plan_request.')
   end
 
   it 'tells the agent not to carry out an operation that waits for confirmation itself, and keeps the human handoff rules' do
@@ -71,8 +86,8 @@ RSpec.describe Captain::Runtime::CoordinationPrompt do
 
     prompt = described_class.render(context)
 
-    expect(prompt).to include("An operation waiting for confirmation is carried out or cancelled only through\nsuch a plan, " \
-                              'so do not take that action yourself.')
+    expect(prompt.squish).to include('An operation waiting for confirmation is carried out or cancelled only through such a plan, ' \
+                                     'so do not take that action yourself.')
     expect(prompt).to include(described_class::HUMAN_HANDOFF_RULES)
     expect(prompt.scan('call the handoff tool').size).to eq(1)
   end
@@ -94,7 +109,6 @@ RSpec.describe Captain::Runtime::CoordinationPrompt do
     expect(prompt).to start_with('You are Orders, the current agent')
     expect(prompt).to include('Never mention internal routing or agent names.')
     expect(prompt).to include('In plan_request, name the executor of a part by the agent name exactly as listed above; omit it for your own parts.')
-    expect(prompt).to include("call plan_request with mode handoff and that agent's name as the executor.")
     expect(prompt).not_to include("that agent's ID", 'executor_agent_id', 'assistant_92')
   end
 
@@ -128,7 +142,7 @@ RSpec.describe Captain::Runtime::CoordinationPrompt do
     expect(described_class.render(context)).to start_with('You are the current agent. Handle requests in your own responsibility.')
   end
 
-  it 'does not ask a specialist to plan the same message after a handoff' do
+  it 'does not ask a specialist to plan the same message after a plan stored with the former handoff mode' do
     context[:agent_tasks] = []
     context[:part_plan_accepted] = true
     context[:part_plan] = { mode: 'handoff', parts: [{ 'id' => 'synthetic-part', 'executor_agent_id' => 92 }] }
@@ -138,5 +152,18 @@ RSpec.describe Captain::Runtime::CoordinationPrompt do
 
     expect(prompt).to include('Plan accepted')
     expect(prompt).not_to include('No plan exists', 'call plan_request once')
+  end
+
+  it 'does not force the colleague that received a transfer without a plan to plan' do
+    context[:agent_tasks] = []
+    context[:state][:assistant_id] = 92
+
+    text = described_class.render(context).squish
+
+    expect(text).to start_with('You are Appointments, the current agent')
+    expect(text).to include('Continue the same customer conversation after an internal transfer. Never mention internal routing or agent names.')
+    expect(text).to include('No plan exists for this customer message yet. When none of the cases above applies, reply directly ' \
+                            'without plan_request (or call a transfer tool).')
+    expect(text).not_to include('Plan accepted', 'before replying', 'Call plan_request for this message')
   end
 end

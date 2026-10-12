@@ -383,8 +383,9 @@ class Captain::Runtime::ToolWrapper
       scheduling_context_error(normalized_args)
   end
 
-  # An agent's own actions (booking, rescheduling, card updates, the human handoff) need no request plan: the plan only
-  # coordinates agents (HandoffTool transfers, councils, answers to open parts). A consultation can only read.
+  # An agent's own actions (booking, rescheduling, card updates, the human handoff) and its transfer of the conversation to
+  # one colleague (HandoffTool) need no request plan: the plan only coordinates several agents (councils, answers to open
+  # parts). A consultation can only read, so it has no transfer tool either.
   def consult_mode_error
     return unless context_wrapper_context[:consult_mode] && !Captain::Runtime::ConsultTools.allowed?(@tool)
 

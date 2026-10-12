@@ -60,7 +60,7 @@ RSpec.describe Captain::Runtime::HandoffTool do
     expect(context).not_to have_key(:pending_handoff)
   end
 
-  describe 'the request plan of a transfer' do
+  describe 'a transfer to one colleague' do
     let!(:entry) { create(:captain_assistant) }
     let!(:specialist) { create(:captain_assistant, account: entry.account) }
     let(:target) { Captain::Runtime::Agent.new(name: "assistant_#{specialist.id}").tap { |agent| agent.assistant_id = specialist.id } }
@@ -68,32 +68,62 @@ RSpec.describe Captain::Runtime::HandoffTool do
       { state: { account_id: entry.account_id, assistant_id: entry.id, entry_assistant_id: entry.id },
         agent_graph: Captain::AgentGraph.new(entry).payload, agent_session: Object.new, agent_tasks: [] }
     end
-    let(:tool_context) { Captain::Runtime::ToolContext.new(run_context: Captain::Runtime::RunContext.new(context)) }
+    let(:run_context) { Captain::Runtime::RunContext.new(context) }
+    let(:tool_context) { Captain::Runtime::ToolContext.new(run_context: run_context) }
 
-    it 'refuses to transfer the conversation before the message is planned' do
-      result = described_class.new(target).perform(tool_context)
-
-      expect(Captain::ToolResult.normalize(result)).to include(success: false, error: 'Plan the request before handing it to another agent')
-      expect(context).not_to have_key(:pending_handoff)
-      # the runner then refuses a plain reply that would claim the transfer that did not happen
-      expect(context[:part_plan_refused]).to be(true)
-    end
-
-    it 'does not mark a refusal when the transfer is planned' do
-      context[:part_plan_accepted] = true
-
-      described_class.new(target).perform(tool_context)
-
-      expect(context).not_to have_key(:part_plan_refused)
-    end
-
-    it 'transfers the conversation once the message is planned' do
-      context[:part_plan_accepted] = true
-
+    it 'transfers the conversation without a request plan' do
       result = described_class.new(target).perform(tool_context)
 
       expect(result).to be_a(RubyLLM::Tool::Halt)
+      expect(result.content).to be_blank
       expect(context[:pending_handoff]).to include(target_agent: target)
+      expect(context).not_to include(:part_plan_accepted, :part_plan, :transfer_guard_active)
+    end
+
+    it 'transfers through the tool wrapper with a session, no plan and no arguments' do
+      wrapper = Captain::Runtime::ToolWrapper.new(described_class.new(target), run_context)
+
+      result = wrapper.call({})
+
+      expect(result).to be_a(RubyLLM::Tool::Halt)
+      expect(context[:pending_handoff]).to include(target_agent: target)
+      expect(context).not_to include(:part_plan_accepted)
+    end
+
+    it 'is a tool without parameters whose name identifies the colleague and whose description names it' do
+      tool = described_class.new(target)
+
+      expect(tool.parameters).to be_empty
+      expect(tool.name).to eq(Captain::HandoffNaming.tool_name_for("assistant_#{specialist.id}"))
+      expect(tool.description).to start_with('Transfer the conversation to assistant_')
+    end
+
+    it 'is refused in a consultation, which can only read' do
+      context[:consult_mode] = true
+      wrapper = Captain::Runtime::ToolWrapper.new(described_class.new(target), run_context)
+
+      result = wrapper.call({})
+      rendered = result.is_a?(RubyLLM::Tool::Halt) ? result.content : result
+
+      expect(JSON.parse(rendered.delete_prefix('ERROR: '))).to include('error' => 'Tool is unavailable in consult mode')
+      expect(context).not_to have_key(:pending_handoff)
+    end
+
+    it 'is offered for every colleague of the graph, with plan_request only for the coordination' do
+      colleague = target
+      acting = Captain::Runtime::Agent.new(name: "assistant_#{entry.id}", handoff_agents: [colleague])
+
+      tools = Captain::Runtime::ChatFactory.send(:build_agent_tools, acting, run_context)
+
+      expect(tools.map(&:name)).to eq([Captain::HandoffNaming.tool_name_for(colleague.name), 'plan_request'])
+    end
+
+    it 'is not offered to a lone agent, which has no colleague to transfer to and no plan to make' do
+      lone = Captain::Runtime::Agent.new(name: "assistant_#{entry.id}")
+      context[:agent_graph] = [{ id: entry.id }]
+
+      expect(lone.handoff_agents).to be_empty
+      expect(Captain::Runtime::ChatFactory.send(:build_agent_tools, lone, run_context)).to be_empty
     end
   end
 end
