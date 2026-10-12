@@ -568,6 +568,22 @@ class Captain::Assistant < ApplicationRecord
     select_tools_by_ids(available_agent_tools, direct_agent_tool_ids)
   end
 
+  # Public on purpose: the multi-agent runtime (LazyAgent, council, confirmed operations) reads
+  # the runtime name and the built tool instances of other agents from outside the model.
+  def agent_name
+    handoff_target_name
+  end
+
+  def agent_tools
+    allowed_agent_tools.filter_map do |tool_metadata|
+      Captain::ToolCatalog.build_tool(
+        tool_metadata,
+        assistant: self,
+        scope_name: Captain::ToolAccess::SCOPE_AGENT
+      )
+    end
+  end
+
   def prompt_runtime_agent_tools
     explicit_tool_ids = prompt_referenced_tool_ids_for_template(:assistant)
 
@@ -898,20 +914,6 @@ class Captain::Assistant < ApplicationRecord
   def merge_legacy_rules_into_prompt
     attributes = Captain::Assistant::MergeLegacyRulesService.attributes_for(self)
     assign_attributes(attributes) if attributes.present?
-  end
-
-  def agent_name
-    handoff_target_name
-  end
-
-  def agent_tools
-    allowed_agent_tools.filter_map do |tool_metadata|
-      Captain::ToolCatalog.build_tool(
-        tool_metadata,
-        assistant: self,
-        scope_name: Captain::ToolAccess::SCOPE_AGENT
-      )
-    end
   end
 
   def prompt_context

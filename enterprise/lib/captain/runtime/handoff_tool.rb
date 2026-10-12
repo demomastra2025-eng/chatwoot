@@ -43,7 +43,7 @@ class Captain::Runtime::HandoffTool < Captain::Runtime::Tool
         return Captain::ToolResult.failure(error: 'Agent routing changed; this handoff is no longer available', retryable: false)
       end
     end
-    if context[:handoff_count].to_i >= 2 || context[:previous_handoff_source_id] == @target_agent.assistant_id
+    if context[:handoff_count].to_i >= 2 || return_to_previous_source?(context)
       record_guard(context, 'handoff_limit')
       context[:transfer_guard_active] = true
       return halt('')
@@ -57,6 +57,12 @@ class Captain::Runtime::HandoffTool < Captain::Runtime::Tool
   end
 
   private
+
+  # An agent without an assistant ID has no routing identity, so it is never "the previous source".
+  def return_to_previous_source?(context)
+    target_id = @target_agent.assistant_id
+    target_id.present? && context[:previous_handoff_source_id] == target_id
+  end
 
   def record_guard(context, reason)
     Captain::Runtime::CoordinationEvents.publish(

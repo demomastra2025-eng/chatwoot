@@ -108,7 +108,10 @@ RSpec.describe Captain::LegacyScenarioConversionService do
                             tools: %w[faq_lookup add_private_note])
     described_class.new.perform
     expect(converted_agent.config.dig('tool_access', 'agent', 'tool_ids')).to eq(['handoff'])
-    expect(converted_agent.allowed_agent_tool_ids).to eq(['handoff'])
+    # FAQ lookup and human handoff are always on for an external agent and resolve_conversation follows the
+    # workspace setting (default on); a legacy mention must still not enable the private-note capability tool.
+    expect(converted_agent.allowed_agent_tool_ids).to contain_exactly('handoff', 'faq_lookup', 'resolve_conversation')
+    expect(converted_agent.allowed_agent_tool_ids).not_to include('add_private_note')
   end
 
   it 'retains a scenario with mismatched workspace ownership without copying it across accounts' do

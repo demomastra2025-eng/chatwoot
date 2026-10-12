@@ -55,9 +55,12 @@ RSpec.describe Captain::Runtime::Runner do
   let(:chat) { RunnerTaskFinalizationSpecChat.new }
   let(:chats) { { agent.name => chat } }
   let(:registry) { { agent.name => agent } }
+  # The message already has its accepted request plan: these examples cover task finalization only, and
+  # a graph run without a plan would otherwise be asked to call plan_request before it may reply.
   let(:context) do
     {
       state: { assistant_id: 92 },
+      part_plan_accepted: true,
       agent_graph: [{ id: 92, name: 'Scheduling' }, { id: 91, name: 'Quotes' }],
       agent_tasks: [
         task('appointment-task', owner: 92, status: 'active'),
@@ -233,6 +236,38 @@ RSpec.describe Captain::Runtime::Runner do
     expect(result).to be_success
     expect(result.output).to eq('A tool limit stopped further work.')
     expect(result.context[:agent_tasks].first['status']).to eq('active')
+    expect(chat.requests).to eq([:complete])
+    expect(reminders).to be_empty
+  end
+
+  it 'asks a graph run without a request plan to plan once before replying, then reports the request as unfinished' do
+    context.delete(:part_plan_accepted)
+    context[:agent_tasks] = []
+    chat.respond_with(reply('Unplanned first draft'), reply('Unplanned second draft'))
+    expect_initial_ask
+    expect(Llm::Runtime).to receive(:complete).once.and_call_original
+
+    result = run_with
+
+    expect(result).to be_success
+    expect(result.output).to eq(response: I18n.t('captain.coordination.unfinished', locale: :ru), reasoning: '')
+    expect(chat.requests).to eq(%i[ask complete])
+    expect(reminders.map(&:content)).to eq(['Call plan_request for this message before replying.'])
+    expect(result.messages.none? { |message| message[:role] == :assistant }).to be(true)
+  end
+
+  it 'does not ask for a request plan during a finalization-only continuation that exposes no tools' do
+    context.delete(:part_plan_accepted)
+    context[:agent_tasks] = []
+    context[:conversation_history] = [{ role: :user, content: input }]
+    chat.respond_with(reply('The verified result is ready.'))
+    expect(Llm::Runtime).not_to receive(:ask)
+    expect(Llm::Runtime).to receive(:complete).once.and_call_original
+
+    result = run_with(finalization_only: true, continue_from_history: true)
+
+    expect(result).to be_success
+    expect(result.output).to eq('The verified result is ready.')
     expect(chat.requests).to eq([:complete])
     expect(reminders).to be_empty
   end

@@ -938,6 +938,22 @@ RSpec.describe Captain::Runtime::ToolWrapper do
       context_wrapper.context[:agent_session] = agent_session
       context_wrapper.context[:agent_request_id] = 'scheduled-request'
       context_wrapper.context[:captain_v2_current_tool_batch_id] = 'invalid-arguments-batch'
+      # Actions are blocked until the request plan is accepted; these examples start from an accepted plan.
+      context_wrapper.context[:part_plan_accepted] = true
+    end
+
+    it 'refuses an action before the request plan is accepted, without reserving or executing it' do
+      context_wrapper.context.delete(:part_plan_accepted)
+      allow(mutating_tool).to receive(:perform)
+
+      refused = mutating_wrapper.call(title: 'Too early')
+
+      expect_tool_error(refused, 'Plan the request before taking an action', retryable: false)
+      expect(mutating_tool).not_to have_received(:perform)
+      expect(agent_session.read.fetch('operations')).to be_empty
+      expect(events.last[2]).to include(
+        success: false, audit: include(failure_reason: 'part_plan_required', mutation_executed: false)
+      )
     end
 
     it 'normalizes the failure audit, releases the reservation, and executes corrected arguments in the next batch' do

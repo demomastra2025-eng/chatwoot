@@ -210,11 +210,13 @@ class Captain::Runtime::Runner
     context = session[:context_wrapper].context
     return true if context[:agent_graph].blank? || Captain::Runtime::TaskQueue.in_flight?(context[:agent_tasks]) ||
                    context[:part_plan_accepted]
-    return true if context[:consult_mode]
+    # A consultation, and a finalization-only continuation (no tools are exposed), cannot call plan_request.
+    return true if context[:consult_mode] || session[:finalization_only]
 
+    # The unplanned draft is never published, so it must not stay in the stored dialogue either.
+    discard_unpublished_draft(session[:chat], response)
     if session[:plan_repairs].to_i.zero?
       session[:plan_repairs] = 1
-      discard_unpublished_draft(session[:chat], response)
       session[:chat].add_message(role: :system, content: 'Call plan_request for this message before replying.')
       return :retry
     end
@@ -297,7 +299,7 @@ class Captain::Runtime::Runner
     return missing_agent_result(session, target_name) unless next_agent
     return self_handoff_result(session, next_agent) if self_handoff?(session, next_agent)
     context = session[:context_wrapper].context
-    if context[:handoff_count].to_i >= 2 || context[:previous_handoff_source_id] == next_agent.assistant_id
+    if handoff_limit_reached?(context, next_agent)
       record_transfer_guard(session, 'handoff_limit', next_agent)
       return continue_after_transfer_guard(session)
     end
@@ -305,6 +307,15 @@ class Captain::Runtime::Runner
     persist_handoff_state(session, next_agent)
     reset_session_for_handoff!(session, next_agent)
     nil
+  end
+
+  # Two transfers per message at most, and no immediate return to the agent that just handed over.
+  # An agent without an assistant ID has no routing identity, so it can never be "the previous source".
+  def handoff_limit_reached?(context, next_agent)
+    return true if context[:handoff_count].to_i >= 2
+
+    target_id = next_agent.assistant_id
+    target_id.present? && context[:previous_handoff_source_id] == target_id
   end
 
   def handoff_target(session)

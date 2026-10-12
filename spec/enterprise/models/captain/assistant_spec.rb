@@ -451,10 +451,12 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(assistant.available_assistant_tool_ids).not_to include('custom_other-tool')
     end
 
-    it 'keeps every built-in agent tool available in the assistant catalog' do
+    it 'keeps every shared built-in agent tool available in the assistant catalog' do
+      # These client-scoped tools act on the customer of the current conversation, which the assistant scope does not have.
+      client_scoped_tool_ids = %w[get_my_contact update_my_contact list_my_deals]
       missing_tool_ids = assistant.available_tool_ids - assistant.available_assistant_tool_ids
 
-      expect(missing_tool_ids).to be_empty
+      expect(missing_tool_ids).to match_array(client_scoped_tool_ids)
       expect(assistant.available_assistant_tool_ids).to include('faq_lookup', 'create_deal', 'create_task', 'create_appointment', 'create_touch')
     end
 
@@ -543,7 +545,7 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(glossary_field_ids).to include('contact.email')
     end
 
-    it 'does not add a handoff tool mentioned in instructions when its checkbox is off' do
+    it 'keeps the always-available handoff and completion tools when instructions mention handoff and the old selection omits it' do
       assistant.description = 'Use [Handoff to Human](tool://handoff) when needed.'
       assistant.config = {
         'context_access' => {},
@@ -556,7 +558,14 @@ RSpec.describe Captain::Assistant, type: :model do
       }
 
       expect(assistant).to be_valid
-      expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup')
+      # Human handoff and FAQ lookup are always on for an external agent; resolve_conversation follows the workspace setting (default on).
+      expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation')
+    end
+
+    it 'drops resolve_conversation from the tool set when workspace auto completion is turned off' do
+      Captain::AccountSettings.new(account).update!('handoff' => { 'auto_completion_enabled' => false })
+
+      expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup', 'handoff')
     end
 
     it 'includes explicitly selected ordinary tools and their required read companions without a prompt mention' do
@@ -564,7 +573,8 @@ RSpec.describe Captain::Assistant, type: :model do
       assistant.update!(config: {
         'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => %w[faq_lookup handoff create_deal] } }
       })
-      expected = %w[faq_lookup handoff create_deal get_deal search_deals list_deal_pipelines list_deal_stages list_deal_custom_fields]
+      expected = %w[faq_lookup handoff resolve_conversation create_deal get_deal search_deals list_deal_pipelines list_deal_stages
+                    list_deal_custom_fields]
       expect(assistant.allowed_agent_tool_ids).to match_array(expected)
       expect(assistant.prompt_runtime_agent_tools.pluck(:id)).to match_array(expected)
     end
@@ -591,8 +601,9 @@ RSpec.describe Captain::Assistant, type: :model do
         }
       )
 
-      expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup', 'custom_fetch-order')
-      expect(assistant.prompt_runtime_agent_tools.pluck(:id)).to contain_exactly('faq_lookup', 'custom_fetch-order')
+      expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation', 'custom_fetch-order')
+      expect(assistant.prompt_runtime_agent_tools.pluck(:id))
+        .to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation', 'custom_fetch-order')
 
       tools = assistant.send(:agent_tools)
       expect(tools.map(&:class)).to include(Captain::Tools::FaqLookupTool)
@@ -615,7 +626,8 @@ RSpec.describe Captain::Assistant, type: :model do
         }
       )
 
-      expected_tool_ids = %w[faq_lookup create_deal get_deal search_deals list_deal_pipelines list_deal_stages list_deal_custom_fields]
+      expected_tool_ids = %w[faq_lookup handoff resolve_conversation create_deal get_deal search_deals list_deal_pipelines list_deal_stages
+                             list_deal_custom_fields]
 
       expect(assistant.allowed_agent_tool_ids).to match_array(expected_tool_ids)
       expect(assistant.prompt_runtime_agent_tools.pluck(:id)).to match_array(expected_tool_ids)
