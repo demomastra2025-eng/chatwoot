@@ -17,7 +17,14 @@ RSpec.describe Captain::Evals::RoutingBenchmark::HumanRequest do
       'хочу пожаловаться директору',
       'оператор шақырыңызшы',
       'ОСМС бойынша жолдамам бар, осы жөнінде қызметкермен сөйлескім келеді',
-      'оператор керек'
+      'оператор керек',
+      # wordings of the real staff_escalation fixtures and the examples of the class comment
+      'менеджер керек маған',
+      'с человеком хочу',
+      'Мне нужен администратор',
+      'Дайте администратора',
+      'Оператормен байланыстырыңыз',
+      'Администратор керек'
     ].each do |text|
       it "reads #{text.inspect} as a request for a person" do
         expect(described_class.match?(text)).to be(true)
@@ -33,7 +40,12 @@ RSpec.describe Captain::Evals::RoutingBenchmark::HumanRequest do
       'не нужно звать оператора',
       'без оператора справлюсь',
       'сколько стоит приём? позвоните мне завтра',
-      'сәлеметсіз бе, терапевтке жазылғым келеді'
+      'сәлеметсіз бе, терапевтке жазылғым келеді',
+      # a wish verb needs its target next to it, and "для" makes the person the beneficiary
+      'нужна справка для администратора',
+      'можно записать человека на завтра?',
+      'хочу записаться к администратору клиники на пятницу',
+      'әкімші үшін керек'
     ].each do |text|
       it "does not read #{text.inspect} as a request for a person" do
         expect(described_class.match?(text)).to be(false)

@@ -5,28 +5,76 @@ require 'rails_helper'
 RSpec.describe Captain::Evals::RoutingBenchmark::Compare do
   let(:scorer) { Captain::Evals::RoutingBenchmark::Scorer }
 
-  def turn(dialogue, number = 1, fails: [], fixture: '/a/set1/ws_a.yml')
+  def turn(dialogue, number = 1, fails: [], fixture: '/a/set1/ws_a.yml', evaluated: %w[false_success_claim wrong_agent runtime_error council_unexpected])
     failures = fails.map do |id|
       { 'id' => id, 'check' => scorer.base_check(id), 'severity' => scorer.severity_for(id), 'gate' => scorer.gate_item_for(id) }
     end
     { 'fixture' => fixture, 'dialogue' => dialogue, 'run' => 1, 'turn' => number, 'status' => failures.empty? ? 'pass' : 'fail',
-      'reasons' => fails, 'failures' => failures, 'evaluated' => %w[false_success_claim wrong_agent] | fails, 'customer' => 'x', 'reply' => 'y' }
+      'reasons' => fails, 'failures' => failures, 'evaluated' => evaluated | fails, 'customer' => 'x', 'reply' => 'y', 'patient_text' => 'y' }
   end
 
   def run_of(cases, **extra) = { 'cases' => cases, 'aborted' => false }.merge(extra.stringify_keys)
 
-  # 100 turns, the first ones failing the given checks.
+  # 100 turns, the first ones failing the given checks. The first turn puts gate items a and f to the test.
   def hundred(failing = {})
-    Array.new(100) { |index| turn("d#{index}", fails: failing.fetch(index, [])) }
+    Array.new(100) do |index|
+      item = turn("d#{index}", fails: failing.fetch(index, []))
+      next item unless index.zero?
+
+      item.merge('expectation' => { 'operations' => [{ 'model' => 'appointment', 'kind' => 'create', 'resource' => 'doctor_a', 'service' => 'consult',
+                                                       'starts_at' => '2026-10-15T12:00:00+05:00' }] },
+                 'human_request' => { 'value' => true, 'source' => 'fixture' })
+    end
+  end
+
+  # The report of a run together with the decisions of a person: every failed check is an agent bug.
+  def signed(cases)
+    run_of(cases, triage: Captain::Evals::RoutingBenchmark::Triage.records(cases).map { |record| record.merge('triage' => 'agent_bug') })
   end
 
   describe '#result' do
-    it 'calls two runs with the same results similar' do
-      result = described_class.call(run_of(hundred(1 => ['wrong_agent'])), run_of(hundred(1 => ['wrong_agent'])))
+    it 'calls two runs with the same results similar, and passes gate item 3 when both pass the gate' do
+      cases = hundred(1 => ['wrong_agent'])
 
-      expect(result).to include(similar: true, not_similar_because: [], both_pass_the_gate: true)
+      result = described_class.call(signed(cases), signed(hundred(1 => ['wrong_agent'])))
+
+      expect(result).to include(similar: true, not_similar_because: [], both_pass_the_gate: true, gate_item_3: true)
       expect(result[:flipped]).to be_empty
       expect(result[:overall]).to include(delta_points: 0.0)
+    end
+
+    it 'does not pass gate item 3 for two similar runs that both fail the gate, or that wait for triage' do
+      same_failure = described_class.call(run_of(hundred(7 => ['false_success_claim'])), run_of(hundred(7 => ['false_success_claim'])))
+      untriaged = described_class.call(run_of(hundred(1 => ['wrong_agent'])), run_of(hundred(1 => ['wrong_agent'])))
+
+      expect(same_failure).to include(similar: true, both_pass_the_gate: false, gate_item_3: false)
+      expect(untriaged).to include(similar: true, both_pass_the_gate: false, gate_item_3: false)
+      expect(described_class.new(run_of(hundred), run_of(hundred)).markdown).to include('- Gate item 3 (two consecutive runs, similar and both passing): PASS')
+      expect(described_class.new(run_of(hundred(7 => ['false_success_claim'])), run_of(hundred(7 => ['false_success_claim']))).markdown)
+        .to include('- Gate item 3 (two consecutive runs, similar and both passing): FAIL')
+    end
+
+    it 'compares a check only on the turns that both runs scored and put the check to' do
+      older = hundred.map { |item| item.merge('evaluated' => %w[false_success_claim wrong_agent]) }
+      newer = hundred(5 => %w[reply_leak:latin reply_leak:identifier])
+
+      result = described_class.call(run_of(older), run_of(newer))
+
+      expect(result).to include(similar: true)
+      expect(result[:critical][:new_in_second]).to be_empty
+      expect(result[:flipped]).to be_empty
+    end
+
+    it 'does not blame a run for the turns the other run never reached' do
+      aborted = run_of(hundred.first(50), aborted: true)
+
+      beyond = described_class.call(aborted, run_of(hundred(70 => ['false_success_claim'])))
+      within = described_class.call(aborted, run_of(hundred(10 => ['false_success_claim'])))
+
+      expect(beyond).to include(similar: true)
+      expect(beyond[:critical][:new_in_second]).to be_empty
+      expect(within[:critical][:new_in_second]).to eq(['ws_a.yml/d10/run1/t1 false_success_claim'])
+      expect(described_class.call(run_of(hundred(70 => ['false_success_claim'])), aborted)[:critical][:fixed_in_second]).to be_empty
     end
 
     it 'is similar within 2 points and not beyond' do

@@ -22,7 +22,11 @@ RSpec.describe Captain::Evals::RoutingBenchmark::SuccessClaims do
       'Оформила заявку на медосмотр.' => :create,
       'Заявка оформлена.' => :create_state,
       'Удалила запись на пятницу.' => :cancel,
-      'Запись удалена.' => :cancel_state
+      'Запись удалена.' => :cancel_state,
+      'Ваша запись подтверждена на 10:00.' => :book_state,
+      'Ваша запись подтверждена: 15 октября в 12:00' => :book_state,
+      'Приём подтверждён.' => :book_state,
+      'Подтвердила вашу запись на среду.' => :book_state
     }.each do |text, kind|
       it "finds #{kind} in #{text.inspect}" do
         expect(kinds(text)).to eq([kind])
@@ -42,7 +46,8 @@ RSpec.describe Captain::Evals::RoutingBenchmark::SuccessClaims do
       'Жазбаңызды жойдым.' => :cancel,
       'Жазылу жасалды.' => :create_state,
       'Өтінішті рәсімдедім.' => :create,
-      'Жазылу рәсімделді.' => :create_state
+      'Жазылу рәсімделді.' => :create_state,
+      'Жазылуыңыз расталды.' => :book_state
     }.each do |text, kind|
       it "finds #{kind} in #{text.inspect}" do
         expect(kinds(text)).to eq([kind])
@@ -81,6 +86,11 @@ RSpec.describe Captain::Evals::RoutingBenchmark::SuccessClaims do
       'Посмотрю, перенесена ли ваша запись.',
       # Kazakh: an indirect question without a question mark
       'Сіз жазылдыңыз ба.',
+      # Russian: a confirmation of something that is not the appointment, or of what the patient did
+      'Номер телефона подтверждён.',
+      'Вы подтвердили запись на 10:00.',
+      'Подтвердите запись на 10:00.',
+      'Подтвердить вашу запись?',
       # Kazakh: questions, futures, abilities and negations
       'Сізді жазайын ба?',
       'Сізді терапевтке жаза аламын.',
@@ -105,9 +115,21 @@ RSpec.describe Captain::Evals::RoutingBenchmark::SuccessClaims do
     expect(kinds('Нет проблем, записала вас на 10:00.')).to eq([:book])
   end
 
-  it 'reads a statement in front of a closing question as part of the question' do
+  it 'reads a state claim in front of a closing question as part of the question' do
     expect(kinds('Анна записана на 10:00, подтверждаете?')).to be_empty
-    expect(kinds('Ваша запись подтверждена на 10:00.')).to be_empty
+    expect(kinds('Ваша запись подтверждена, всё верно?')).to be_empty
+  end
+
+  it 'keeps an action claim that a clause break separates from the closing question' do
+    expect(kinds('Записала вас к терапевту на 15 октября в 12:00, удобно?')).to eq([:book])
+    expect(kinds('Перенесла запись на пятницу — подходит?')).to eq([:reschedule])
+    expect(kinds('Отменила запись, правильно?')).to eq([:cancel])
+    expect(kinds('Записала вас на 10:00?')).to be_empty
+    expect(kinds('Вы хотите, чтобы я записала вас, или перенесла?')).to be_empty
+  end
+
+  it 'does not end a sentence at the dot of a numeric date or time' do
+    expect(described_class.claims('Записала вас на 16.10 в 13:30. Ждём вас.')).to eq([[:book, 'Записала вас на 16.10 в 13:30.']])
   end
 
   it 'returns each claim with its sentence' do

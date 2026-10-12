@@ -11,11 +11,17 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Report do
       'evaluated' => %w[forbidden_tool:create_appointment wrong_agent false_success_claim], 'customer' => 'ок',
       'patient_text' => 'Сізді жаздым.', 'acting_agent' => 'Запись к врачу',
       'tool_calls' => [{ 'tool' => 'create_appointment', 'success' => true, 'arguments' => '{"resource_id":4}', 'result' => '{"success":true}' }],
-      'expectation' => { 'agent' => 'Запись к врачу', 'must_not_call' => ['create_appointment'] } }
+      'expectation' => { 'agent' => 'Запись к врачу', 'must_not_call' => ['create_appointment'] },
+      'db_delta' => [{ 'id' => 12, 'change' => 'updated', 'resource' => 'doctor_b', 'service' => 'consult', 'patient' => 'caller',
+                       'starts_at' => '2026-10-15T12:00:00+05:00', 'previous' => { 'resource' => 'doctor_a', 'starts_at' => '2026-10-13T15:00:00+05:00',
+                                                                                  'status' => 'scheduled' } }] }
   end
+  # A turn that puts gate items a (a booking with its doctor, time and service) and f (a request for a person) to the test.
   let(:fine) do
+    booking = { 'model' => 'appointment', 'kind' => 'create', 'resource' => 'doctor_a', 'service' => 'consult', 'starts_at' => '2026-10-15T12:00:00+05:00' }
     { 'fixture' => '/x/ws_mid__kazakh_mixed_01.yml', 'dialogue' => 'kazakh_mixed_01', 'run' => 1, 'turn' => 1, 'status' => 'pass', 'reasons' => [],
-      'failures' => [], 'evaluated' => %w[wrong_agent false_success_claim], 'customer' => 'Сәлеметсіз бе', 'reply' => 'Сәлеметсіз бе!' }
+      'failures' => [], 'evaluated' => %w[wrong_agent false_success_claim], 'customer' => 'Сәлеметсіз бе', 'reply' => 'Сәлеметсіз бе!',
+      'patient_text' => 'Сәлеметсіз бе!', 'expectation' => { 'operations' => [booking] }, 'human_request' => { 'value' => true, 'source' => 'fixture' } }
   end
   let(:cases) { [fine, risky] }
   let(:report) do
@@ -64,6 +70,29 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Report do
                                '- Tool calls: create_appointment args {"resource_id":4} -> {"success":true}',
                                '- Expectation: {"agent":"Запись к врачу","must_not_call":["create_appointment"]}',
                                '- Triage: ________ (agent_bug | test_bug | judge_error)')
+  end
+
+  it 'shows what the run put to the test for each gate item' do
+    expect(markdown).to include('### Coverage', '| a | 1 of 1 | appointment expectations that name the doctor, the time and the service or patient (blocks the gate) |',
+                                '| f | 1 | turns in which the customer asks for a person (blocks the gate) |')
+  end
+
+  it 'shows the database changes of the turn in each triage record, and says so when there are none' do
+    expect(markdown).to include('- Database changes: appointment 12 updated: doctor_b, consult, caller, 2026-10-15T12:00:00+05:00 ' \
+                                '(was doctor_a, 2026-10-13T15:00:00+05:00, scheduled)')
+    unchanged = fine.merge('failures' => [failure('wrong_agent', 'x')], 'reasons' => ['wrong_agent'], 'status' => 'fail')
+    text = described_class.new(report.merge(cases: [unchanged], gate: Captain::Evals::RoutingBenchmark::Gate.call([unchanged]),
+                                            triage: Captain::Evals::RoutingBenchmark::Triage.records([unchanged]))).markdown
+
+    expect(text).to include('- Database changes: none')
+  end
+
+  it 'reports PENDING_TRIAGE when only the triage of a person is missing' do
+    bad = fine.merge('dialogue' => 'bad', 'failures' => [failure('wrong_agent')], 'reasons' => ['wrong_agent'], 'status' => 'fail')
+    cases = Array.new(20) { |index| fine.merge('dialogue' => "ok#{index}") } + [bad]
+    pending = report.merge(gate: Captain::Evals::RoutingBenchmark::Gate.call(cases))
+
+    expect(described_class.new(pending).markdown).to include('**Verdict: PENDING_TRIAGE**', '- 1 failed check(s) not triaged by a person')
   end
 
   it 'names the blockers, and says so when there are none' do

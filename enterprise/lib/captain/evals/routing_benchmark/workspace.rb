@@ -34,7 +34,8 @@ class Captain::Evals::RoutingBenchmark::Workspace
   # Maps the fixture keys of doctors, services and contacts to the created records, for the scorer.
   def directory
     @directory ||= Captain::Evals::RoutingBenchmark::Directory.new(
-      resources: @resources || {}, services: @services || {}, contacts: contacts, texts: directory_texts
+      resources: @resources || {}, services: @services || {}, contacts: contacts, texts: public_texts,
+      contact_names: data.fetch('contacts', []).pluck('name')
     )
   end
 
@@ -56,10 +57,11 @@ class Captain::Evals::RoutingBenchmark::Workspace
 
   def data = @fixture.workspace
 
-  # What a reply may repeat without leaking: the knowledge base and the names of doctors, services and contacts.
-  def directory_texts
+  # What any reply may repeat without leaking: the knowledge base and the names of doctors and services. The names of the
+  # seeded patients are kept apart (Directory#contact_names): a reply that names another patient is a leak.
+  def public_texts
     knowledge = data.fetch('knowledge', []).flat_map { |row| [row['question'], row['answer']] }
-    names = %w[resources services contacts].flat_map { |kind| data.fetch(kind, []).pluck('name') }
+    names = %w[resources services].flat_map { |kind| data.fetch(kind, []).pluck('name') }
     knowledge + names
   end
 

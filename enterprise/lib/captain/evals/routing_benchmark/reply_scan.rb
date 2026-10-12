@@ -7,12 +7,14 @@
 #
 #   reserved_token       conversation_handoff, plan_request, handoff_to_assistant_7, assistant_12 ...
 #   tool_name            an ID of the tool registry (faq_lookup, create_appointment, handoff)
-#   identifier           a UUID, "#123", "id 123", "appointment_id", an unknown snake_case token
+#   identifier           a UUID, "#123", "id 123", "appointment_id", an unknown snake_case token, a numbered booking
+#                        ("Запись №4821", "Номер записи: 4821") and a number equal to the id of a record the turn handled
 #   json                 a JSON object or array, a YAML-like mapping, a code fence
 #   latin                a Latin word that is neither allowed nor typed by the customer
 #   instruction_overlap  five words in a row that an agent instruction or routing description contains
 #   third_person         "Пользователь сообщает ...", "Пайдаланушы ..." (the council paraphrased the customer)
-#   role_fragment        "дочка — Как зовут ...", "не указан — ...", "Жанна Оспанова — Вы имеете в виду ..."
+#   role_fragment        "дочка — Как зовут ...", "не указан — ...", "Жанна Оспанова — Вы имеете в виду ..." (a family role
+#                        followed by a time, a date or a doctor is a recap and no fragment)
 #   composer_phrase      canned council text ("Часть запроса требует дополнительной проверки")
 class Captain::Evals::RoutingBenchmark::ReplyScan
   KINDS = %i[reserved_token tool_name identifier json latin instruction_overlap third_person role_fragment composer_phrase].freeze
@@ -32,9 +34,23 @@ class Captain::Evals::RoutingBenchmark::ReplyScan
   THIRD_PERSON = /(?<!\p{L})пользовател\p{L}*\s+(?:сообщает|сообщил\p{L}*|просит|попросил\p{L}*|спрашивает|спросил\p{L}*|хочет|
                    хотел\p{L}*|интересуется|уточняет|запрашивает|обращается|отказывается|подтвердил\p{L}*|подтверждает|
                    указал\p{L}*|отметил\p{L}*)|(?<!\p{L})пайдаланушы\p{L}*/ix
-  ROLE_WORDS = 'дочк[аи]|дочь|сын|мама|мать|папа|отец|муж|жена|супруг\p{L}*|ребён\p{L}+|ребен\p{L}+|собеседни\p{L}*|' \
-               'не\s+указан\p{L}*|неизвестн\p{L}+|әңгімелесуші\p{L}*'
-  ROLE_FRAGMENT = /(?:\A|\n|[.!?;:]\s+|,\s+)(?:#{ROLE_WORDS})\s*[—–]\s*\S/i
+  # A placeholder role is a leak whatever follows the dash. A family role is one only when a question or an instruction
+  # follows ("дочка — Как зовут ребёнка?"): "мама — терапевт, 15 октября в 12:00" is a recap of a family booking.
+  PLACEHOLDER_ROLES = 'собеседни\p{L}*|не\s+указан\p{L}*|неизвестн\p{L}+|әңгімелесуші\p{L}*'
+  FAMILY_ROLES = 'дочк[аи]|дочь|сын|мама|мать|папа|отец|муж|жена|супруг\p{L}*|ребён\p{L}+|ребен\p{L}+'
+  ASKING = '(?:Как|Какая|Какой|Какое|Какую|Какие|Когда|Для\s+кого|Уточните|Подтвердите|Подскажите|Назовите|Укажите|Напишите|' \
+           'имя|дата\s+рождения|ФИО)(?![\p{L}])'
+  ROLE_FRAGMENT = /(?:\A|\n|[.!?;:]\s+|,\s+)(?:(?:#{PLACEHOLDER_ROLES})\s*[—–]\s*\S|(?:#{FAMILY_ROLES})\s*[—–]\s*#{ASKING})/i
+  # "Запись №4821", "заявка № 12345": a numbered record next to a word for a booking.
+  NUMBER_SIGN = /№\s*\d{3,}/
+  RECORD_WORD = /(?<!\p{L})(?:запис\p{L}*|заявк\p{L}*|брон\p{L}*|ID)(?!\p{L})/i
+  # "Номер вашей записи: 4821": the booking number, which in this system is the database id.
+  RECORD_NUMBER = /(?<!\p{L})номер\p{L}*\s+(?:\p{L}+\s+){0,2}запис\p{L}*[^\p{L}\d\n]{0,4}\d+/i
+  # A number that is no time, date, price or amount: not next to ":", "/" or "-", not part of a decimal or a date ("1.5",
+  # "15.10.2026"), not the tail of a grouped number ("12 500"), not followed by a unit. A full stop after it is the end of
+  # the sentence ("Ваша запись 4821.").
+  STANDALONE_NUMBER = %r{(?<![\d:/-])(?<!\d[.,])(?<!\d\s)\d{3,}(?![\d:/-])(?![.,]\d)(?!\s?(?:час|мин|₸|тг|тенге|руб|%|мг|мл|лет|год|сум|кг))}i
+  MIN_ID_DIGITS = 3
   NAME_QUESTION_FRAGMENT = /(?<!\p{L})\p{Lu}\p{Ll}+(?:\s+\p{Lu}\p{Ll}+)?\s+[—–]\s+(?:Вы\s|Как\s|Подтвердите|Уточните|Для\s+кого|Какой|Какую)/
   COMPOSER_PHRASES = [
     /Часть\s+запроса\s+требует\s+дополнительной\s+проверки/i, /Не\s+удалось\s+завершить\s+обработку\s+запроса/i,
@@ -47,8 +63,17 @@ class Captain::Evals::RoutingBenchmark::ReplyScan
     # allowed:    Latin words that the workspace or the customer used (case-insensitive)
     # shingles:   Set from .shingles, five-word runs of the agent instructions
     # latin_ok:   skip the Latin check (the customer writes in Latin script)
-    def call(text, tool_ids: [], allowed: [], shingles: Set.new, latin_ok: false)
-      new(text, tool_ids: tool_ids, allowed: allowed, shingles: shingles, latin_ok: latin_ok).findings
+    # internal_ids:  database ids the turn handled (appointment rows, conversation, contact, ids in tool results); a
+    #                standalone number equal to one of them is an identifier
+    # known_numbers: numbers (strings) the customer or the workspace wrote themselves; never an identifier
+    def call(text, tool_ids: [], allowed: [], shingles: Set.new, latin_ok: false, internal_ids: [], known_numbers: [])
+      new(text, tool_ids: tool_ids, allowed: allowed, shingles: shingles, latin_ok: latin_ok,
+                internal_ids: internal_ids, known_numbers: known_numbers).findings
+    end
+
+    # The digit runs of the given texts, for the known-numbers list.
+    def numbers(*texts)
+      texts.flatten.compact.flat_map { |text| text.to_s.scan(/\d+/) }.uniq
     end
 
     # Five-word runs of the given instruction texts, normalised for comparison.
@@ -70,12 +95,14 @@ class Captain::Evals::RoutingBenchmark::ReplyScan
     def trim(word) = word.sub(/['-]+\z/, '')
   end
 
-  def initialize(text, tool_ids:, allowed:, shingles:, latin_ok:)
+  def initialize(text, tool_ids:, allowed:, shingles:, latin_ok:, internal_ids: [], known_numbers: [])
     @text = text.to_s
     @tool_ids = Set.new(tool_ids.map(&:to_s))
     @allowed = Set.new((ALLOWED_LATIN + Array(allowed)).map { |word| word.to_s.downcase })
     @shingles = shingles
     @latin_ok = latin_ok
+    @internal_ids = Set.new(Array(internal_ids).filter_map { |id| Integer(id, exception: false) })
+    @known_numbers = Set.new(Array(known_numbers).map(&:to_s))
   end
 
   def findings
@@ -83,7 +110,7 @@ class Captain::Evals::RoutingBenchmark::ReplyScan
 
     found = Hash.new { |hash, kind| hash[kind] = [] }
     found[:reserved_token].concat(scan(RESERVED_TOKEN))
-    found[:identifier].concat(scan(IDENTIFIER))
+    found[:identifier].concat(scan(IDENTIFIER) + numbered_records + internal_id_numbers)
     found[:json].concat(scan(JSON_LIKE))
     snake_case(found)
     latin_words_in_text.each { |word| (@tool_ids.include?(word.downcase) ? found[:tool_name] : found[:latin]) << word }
@@ -98,6 +125,27 @@ class Captain::Evals::RoutingBenchmark::ReplyScan
 
   def scan(pattern)
     @text.to_enum(:scan, pattern).map { Regexp.last_match(0).strip }
+  end
+
+  # "Запись №4821 создана", "Номер вашей записи: 4821": the number of a booking is its database id.
+  def numbered_records
+    signed = @text.to_enum(:scan, NUMBER_SIGN).filter_map do
+      match = Regexp.last_match
+      near = @text[[match.begin(0) - 30, 0].max...(match.end(0) + 30)]
+      match[0].strip if near.match?(RECORD_WORD)
+    end
+    signed + scan(RECORD_NUMBER)
+  end
+
+  # A standalone number that is the id of a record the turn handled (3 digits or more: a shorter number is too often a
+  # day, an hour or a cabinet to tell from an id; "#7" and "id 7" are found by IDENTIFIER). Numbers the customer or the
+  # workspace wrote are never ids.
+  def internal_id_numbers
+    return [] if @internal_ids.empty?
+
+    @text.scan(STANDALONE_NUMBER).filter_map do |number|
+      number if number.length >= MIN_ID_DIGITS && @internal_ids.include?(number.to_i) && @known_numbers.exclude?(number)
+    end
   end
 
   # A snake_case token that is not a runtime marker is a tool name when the registry knows it, else an identifier.

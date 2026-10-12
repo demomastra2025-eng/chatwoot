@@ -19,7 +19,16 @@ RSpec.describe Captain::Evals::RoutingBenchmark::HandoffClaims do
       'С вами свяжутся по заявке.' => :handoff_staff,
       'Администратор свяжется с вами сегодня.' => :handoff_staff,
       'Вам перезвонят в течение часа.' => :handoff_staff,
-      'Сізбен менеджер байланысады.' => :handoff_staff
+      'Сізбен менеджер байланысады.' => :handoff_staff,
+      # A question handed over with no addressee, a callback of one person, a wait for a call, a doctor as the addressee
+      'Ваш вопрос передан, ожидайте ответа.' => :handoff_staff,
+      'Ваша заявка передана.' => :handoff_staff,
+      'Администратор перезвонит вам в течение часа.' => :handoff_staff,
+      'Менеджер ответит вам сегодня.' => :handoff_staff,
+      'Ожидайте звонка администратора.' => :handoff_staff,
+      'Передала ваш вопрос врачу.' => :handoff_staff,
+      'Сообщила коллегам.' => :handoff_staff,
+      'Сұрағыңыз жеткізілді.' => :handoff_staff
     }.each do |text, kind|
       it "reads #{text.inspect}" do
         expect(kinds(text)).to eq(Array(kind))
@@ -60,7 +69,14 @@ RSpec.describe Captain::Evals::RoutingBenchmark::HandoffClaims do
       'Справку об оплате готовит бухгалтерия за 1 рабочий день.',
       'Запрос на оформление медосмотра для 15 сотрудников принят.',
       'Сотрудник лаборатории проверит статус и ответит в течение рабочего дня.',
-      'Күтеміз.'
+      'Күтеміз.',
+      # a doctor the patient is referred to, a doctor who answers at the visit, a wait with nobody named
+      'Направила вас к врачу.',
+      'Направляю вас к врачу-кардиологу.',
+      'Врач ответит на ваши вопросы на приёме.',
+      'Ожидайте ответа.',
+      'Ваша заявка передана на обработку.',
+      'Администратор перезвонит вам, если понадобится?'
     ].each do |text|
       it "finds nothing in #{text.inspect}" do
         expect(kinds(text)).to be_empty

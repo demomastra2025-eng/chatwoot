@@ -13,6 +13,13 @@ RSpec.describe Captain::Evals::RoutingBenchmark::ReplyFacts do
       expect(described_class.times('15.10.2026, 7 000 ₸, 1.5 часа, 30 минут')).to be_empty
     end
 
+    it 'reads an hour as a time only after a preposition that names a moment, not a lead time or a duration' do
+      text = 'Записала вас на 15 октября в 12:00, напомним за 2 часа до приёма. Приём длится 1 час, через 3 часа результат.'
+
+      expect(described_class.times(text)).to contain_exactly([12, 0])
+      expect(described_class.times('Ждём вас в 10 часов, а не в 9 ч.')).to contain_exactly([10, 0], [9, 0])
+    end
+
     it 'reads each time once' do
       expect(described_class.times('с 10:00 до 10:30 и снова 10:00')).to contain_exactly([10, 0], [10, 30])
     end

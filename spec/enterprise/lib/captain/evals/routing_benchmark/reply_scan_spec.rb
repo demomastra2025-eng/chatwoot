@@ -35,6 +35,33 @@ RSpec.describe Captain::Evals::RoutingBenchmark::ReplyScan do
     expect(kinds('Номер заявки: 545 на 20 ноября 2026 года')).to be_empty
   end
 
+  describe 'the number of a booking' do
+    it 'finds a numbered booking in the Russian forms that an agent writes' do
+      expect(matches('Готово! Запись №4821 создана.', :identifier)).to eq(['№4821'])
+      expect(matches('Номер вашей записи: 4821.', :identifier)).to be_present
+      expect(matches('Заявка № 12345 принята.', :identifier)).to eq(['№ 12345'])
+    end
+
+    it 'finds a number that is the id of a record the turn handled, and only that' do
+      expect(matches('Ваша запись 4821 создана на 15 октября в 12:00.', :identifier, internal_ids: [4821])).to eq(['4821'])
+      expect(kinds('Ваша запись создана на 15 октября в 12:00.', internal_ids: [4821])).to be_empty
+      expect(kinds('Запись создана, номер кабинета 305', internal_ids: [4821])).to be_empty
+    end
+
+    it 'does not read a time, a date, a price or a number the customer wrote as an id' do
+      text = 'Запись на 15.10.2026 в 12:00, приём стоит 5000 ₸ или 12 500 тенге, длится 120 минут, кабинет 305.'
+
+      expect(kinds(text, internal_ids: [2026, 1200, 5000, 500, 120])).to eq([])
+      expect(kinds('Ждём вас в кабинете 305.', internal_ids: [305], known_numbers: %w[305])).to be_empty
+      expect(matches('Ждём вас в кабинете 305.', :identifier, internal_ids: [305])).to eq(['305'])
+    end
+
+    it 'does not take a number below three digits for an id unless it is marked' do
+      expect(kinds('Ваш визит 15 октября.', internal_ids: [15])).to be_empty
+      expect(matches('Запись #15 создана', :identifier, internal_ids: [15])).to eq(['#15'])
+    end
+  end
+
   it 'finds JSON, a YAML-like mapping and a code fence' do
     expect(kinds('Итог: {"success": true, "id": 5}')).to include(:json)
     expect(kinds('Итог: {status: scheduled}')).to include(:json)
@@ -102,6 +129,17 @@ RSpec.describe Captain::Evals::RoutingBenchmark::ReplyScan do
 
     it 'does not take a recap line with a patient role for a fragment' do
       expect(kinds('Пациент — Арсен, 7 лет. Врач — педиатр.')).to be_empty
+    end
+
+    it 'does not take the recap of a family booking for a fragment: a time, a date or a doctor follows the role' do
+      expect(kinds("Готово, записала обеих:\nмама — терапевт, 15 октября в 12:00\nдочь — педиатр, 15 октября в 12:30")).to be_empty
+      expect(kinds('Записала: вы — 15 октября в 12:00, дочка — 15 октября в 12:30.')).to be_empty
+      expect(kinds('Записала сына — Арсена — к педиатру на 15 октября.')).to be_empty
+    end
+
+    it 'still finds a family role that is followed by a question or an instruction' do
+      expect(kinds("Уточните:\nсын — Подскажите имя и дату рождения.")).to eq([:role_fragment])
+      expect(kinds('Уточните: мама — Для кого оформить запись?')).to eq([:role_fragment])
     end
   end
 

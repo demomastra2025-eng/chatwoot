@@ -2,8 +2,9 @@
 
 require 'digest'
 
-# Scores one customer turn. A Scorer instance belongs to one dialogue: it remembers the successful tool calls, the
-# handoffs and the language of the earlier turns, so a follow-up that restates a confirmed operation is not a false claim.
+# Scores one customer turn. A Scorer instance belongs to one dialogue: it remembers the successful tool calls, the rows
+# written, the handoffs and the language of the earlier turns, so a follow-up that restates a confirmed operation with
+# the time, the date and the doctor of the rows written is not a false claim (a claim of a new operation still is).
 #
 # Every check carries a severity (CHECKS, the one table; README.md documents it):
 #   critical   a release blocker. The owner's gate items a-f: a booking, move or cancellation with the wrong doctor, time,
@@ -36,6 +37,19 @@ class Captain::Evals::RoutingBenchmark::Scorer
                       қайырлы күн таң кеш түн амансыз ба саламатсызба чем могу помочь как вам помочь].freeze
   # The claim kinds whose time, date and doctor are compared with the booked row.
   RECORD_CLAIM_KINDS = %i[book reschedule cancel create reschedule_state cancel_state create_state].freeze
+  STATE_CLAIMS = %i[book_state reschedule_state cancel_state create_state].freeze
+  # The claim kinds that are about an appointment, whose time, date and doctor can be compared with the rows.
+  APPOINTMENT_CLAIMS = %i[book book_state reschedule reschedule_state cancel cancel_state].freeze
+  # The change of an appointment row that each claim kind reports, and the fixture operation kind that would expect it.
+  CLAIM_CHANGE = { book: :created, book_state: :created, create: :created, create_state: :created, reschedule: :updated,
+                   reschedule_state: :updated, cancel: :cancelled, cancel_state: :cancelled }.freeze
+  CLAIM_OPERATION = { book: 'create', book_state: 'create', create: 'create', create_state: 'create', reschedule: 'update',
+                      reschedule_state: 'update', cancel: 'cancel', cancel_state: 'cancel' }.freeze
+  # A line of a reply that gives one detail of the booking ("Дата: 16 октября", "- Врач: Омаров").
+  DETAIL_LINE = /\A\s*(?:[-•*–—]\s*)?\p{L}[\p{L} ]{0,24}:\s*\S/
+  # Opening hours, offers and questions in the lines after a claim are not statements about the booking.
+  NOT_A_DETAIL = /\?\s*\z|работа(?:ем|ет)|график|режим\s+работы|(?<!\p{L})с\s+\d{1,2}(?::\d{2})?\s+до\s+\d{1,2}|
+                  (?<!\p{L})(?:могу|можем|можно|давайте|если|предлож\p{L}*|свободн\p{L}*)(?!\p{L})/ix
 
   # One table for the severity of every check. `gate` names the owner's gate item it serves (a-f), `overall` for the
   # 95% score only, `none` for an internal signal. `variants` override the severity for one argument of the reason
@@ -113,8 +127,12 @@ class Captain::Evals::RoutingBenchmark::Scorer
       ids.each { |id| @evaluated << id unless @evaluated.include?(id) }
     end
 
+    # A failure "reply_leak:latin" is the failed form of the evaluated check "reply_leak": the plain id leaves the list, so
+    # the gate does not count one check as passed and as failed on the same turn.
     def fail!(id, detail = nil, severity: nil)
       evaluate(id)
+      base, argument = id.to_s.split(':', 2)
+      @evaluated.delete(base) if argument
       return if @failures.any? { |failure| failure[:id] == id }
 
       @failures << Captain::Evals::RoutingBenchmark::Scorer.failure_record(id, detail, severity)
@@ -138,7 +156,7 @@ class Captain::Evals::RoutingBenchmark::Scorer
     @tool_ids = tool_ids
     @earlier_successes = []
     @earlier_handoff = false
-    @earlier_rows = { created: false, updated: false, cancelled: false }
+    @written = []
     @language = nil
   end
 
@@ -322,37 +340,95 @@ class Captain::Evals::RoutingBenchmark::Scorer
   # Unsupported claims of a done action, by the claim kinds found in the reply.
   def claim_check(context, outcome)
     outcome.evaluate('false_success_claim')
-    claimed = Captain::Evals::RoutingBenchmark::SuccessClaims.claims(context.text).map(&:first).uniq
-    @unsupported = claimed.reject { |kind| claim_supported?(kind, context) }
-    @claimed = claimed
+    claims = Captain::Evals::RoutingBenchmark::SuccessClaims.claims(context.text)
+    @claimed = claims.map(&:first).uniq
+    notes = []
+    @unsupported = @claimed.reject do |kind|
+      claim_supported?(kind, claims.filter_map { |found, sentence| sentence if found == kind }.uniq, context, notes)
+    end
     return 0 if @unsupported.empty?
 
-    outcome.fail!('false_success_claim', "claims #{@unsupported.join(', ')}; successful tools: #{context.successful_tools.join(', ').presence || 'none'}")
+    tools = context.successful_tools.join(', ').presence || 'none'
+    outcome.fail!('false_success_claim', "claims #{@unsupported.join(', ')}; successful tools: #{tools}#{notes.map { |note| "; #{note}" }.join}")
     1
   end
 
-  # A claim is supported by a successful matching tool call in this turn. A call from an earlier turn of the
-  # dialogue also supports it (the follow-up restates a confirmed operation) unless the same turn tried the
-  # operation again and failed. A row the turn wrote, or the state of the caller's appointments for a state claim
-  # ("вы записаны"), supports it too: the database, not the tool name, decides what is true.
-  def claim_supported?(kind, context)
+  # A claim is supported by a successful matching tool call in this turn, or by a row the turn wrote: the database, not
+  # the tool name, decides what is true. A lookup in this turn supports a state claim ("вы записаны") only when the
+  # sentence agrees with the appointments of the caller. A claim that restates an earlier turn is supported by #restated?
+  # unless the same turn tried the operation and failed.
+  def claim_supported?(kind, sentences, context, notes)
     supporting = Captain::Evals::RoutingBenchmark::SuccessClaims::KIND_TOOLS.fetch(kind)
-    return true if (supporting & context.successful_tools).any?
-    return false unless (supporting & context.failed_tools).empty?
+    done = supporting & context.successful_tools
+    if done.any?
+      return true unless (done - Captain::Evals::RoutingBenchmark::SuccessClaims::LOOKUP_TOOLS).empty?
 
-    (supporting & @earlier_successes).any? || record_supports?(kind, context.changes)
+      return agrees?(kind, sentences, candidate_rows(kind, context), notes, 'the appointments of the caller')
+    end
+    return false unless (supporting & context.failed_tools).empty?
+    return true if row_written?(kind, context.changes)
+
+    restated?(kind, supporting, sentences, context, notes)
   end
 
-  def record_supports?(kind, changes)
+  def row_written?(kind, changes)
+    return changes.created.any? || changes.updated.any? if kind == :book_state
+
+    changes.rows.any? { |row| row.change == CLAIM_CHANGE.fetch(kind) }
+  end
+
+  # The follow-up restates what an earlier turn did ("Вы записаны на среду в 10:00. Жду вас!"). It holds only when
+  #   - this turn's fixture does not expect a new operation of that kind (a claim of a second booking with no tool call is
+  #     false even though the first booking succeeded),
+  #   - an earlier turn succeeded with a matching tool, or (a state claim) the database holds an appointment of that
+  #     state, and
+  #   - the time, the date and the doctor the sentence names are those of the rows in question. A success that left no
+  #     row to compare with cannot be disproved.
+  def restated?(kind, supporting, sentences, context, notes)
+    return false if operation_expected?(kind, context)
+
+    rows = candidate_rows(kind, context)
+    earlier_tool = (supporting & @earlier_successes).any?
+    return false unless earlier_tool || (STATE_CLAIMS.include?(kind) && rows.any?)
+    return true if rows.empty?
+
+    agrees?(kind, sentences, rows, notes, %i[book_state cancel_state].include?(kind) ? 'the appointments of the caller' : 'the rows written earlier')
+  end
+
+  # The claim sentences name no time, date or doctor that the rows do not have. A claim of "создана / оформлена" may be about
+  # a deal, a task or a company: the appointment rows say nothing about it.
+  def agrees?(kind, sentences, rows, notes, label)
+    return true if rows.empty? || APPOINTMENT_CLAIMS.exclude?(kind)
+
+    mismatches = sentences.flat_map { |sentence| sentence_mismatches(sentence, rows) }
+    return true if mismatches.empty?
+
+    notes << "#{label} do not agree: #{mismatches.first(3).join('; ')}"
+    false
+  end
+
+  # The rows a claim of the kind may be about: what the caller's appointments are now (state claims about a booking or a
+  # cancellation), else the rows of that change written in this dialogue.
+  def candidate_rows(kind, context)
     case kind
-    when :book, :create then changes.created.any?
-    when :reschedule then changes.updated.any?
-    when :cancel then changes.cancelled.any?
-    when :book_state then changes.created.any? || changes.updated.any? || caller_appointments.where.not(status: 'cancelled').exists?
-    when :reschedule_state then changes.updated.any? || @earlier_rows[:updated]
-    when :cancel_state then changes.cancelled.any? || @earlier_rows[:cancelled] || caller_appointments.where(status: 'cancelled').exists?
-    when :create_state then changes.created.any? || @earlier_rows[:created]
-    else false
+    when :book_state then existing_rows(caller_appointments.where.not(status: 'cancelled'))
+    when :cancel_state then existing_rows(caller_appointments.where(status: 'cancelled'))
+    else (@written + context.changes.rows).select { |row| row.change == CLAIM_CHANGE.fetch(kind) }.uniq(&:id)
+    end
+  end
+
+  def existing_rows(scope)
+    scope.includes(:resource).map { |record| Captain::Evals::RoutingBenchmark::BookingChanges::Row.new(record: record, change: :existing) }
+  end
+
+  # The fixture expects a new operation of the kind a claim reports in this turn.
+  def operation_expected?(kind, context)
+    wanted = CLAIM_OPERATION.fetch(kind)
+    Array(context.expected['operations']).any? do |operation|
+      next false if operation.key?('count') && operation['count'].to_i.zero?
+      next false unless operation['model'] == 'appointment' || %i[create create_state].include?(kind)
+
+      Captain::Evals::RoutingBenchmark::OperationCheck.kind_of(operation) == wanted
     end
   end
 
@@ -513,9 +589,8 @@ class Captain::Evals::RoutingBenchmark::Scorer
     handoff_claim_checks(context, outcome, evidence)
     reply_record_check(context, outcome, evidence)
     outcome.evaluate('double_booking')
-    context.changes.conflicts.each do |conflict|
-      outcome.fail!('double_booking', "#{conflict[:kind]}: appointments #{conflict[:ids].join(' and ')}")
-    end
+    conflicts = context.changes.conflicts(@directory)
+    outcome.fail!('double_booking', conflicts.pluck(:detail).join('; ')) if conflicts.any?
     human_handoff_check(context, outcome)
   end
 
@@ -545,10 +620,40 @@ class Captain::Evals::RoutingBenchmark::Scorer
     outcome.fail!('reply_record_mismatch', mismatches.join('; ')) if mismatches.any?
   end
 
+  # The sentences that claim a booking, a move or a cancellation, each with the detail lines that follow it up to a blank
+  # line or the next claim ("Записала вас.\nДата: 16 октября\nВремя: 13:30"). When the claim sentence itself names no
+  # time or date, the plain sentences after it are read as well ("Записала вас. Ваш визит 16 октября в 13:30.").
   def record_claim_sentences(text, rows)
     kinds = RECORD_CLAIM_KINDS.dup
     kinds << :book_state if rows.all? { |row| row.change == :created }
-    Captain::Evals::RoutingBenchmark::SuccessClaims.claims(text).filter_map { |kind, sentence| sentence if kinds.include?(kind) }.uniq
+    claims = Captain::Evals::RoutingBenchmark::SuccessClaims.claims(text)
+    claim_sentences = claims.map(&:last).uniq
+    claims.filter_map { |kind, sentence| sentence if kinds.include?(kind) }.uniq
+          .flat_map { |sentence| [sentence] + lines_after(text, sentence, claim_sentences) }.uniq
+  end
+
+  def lines_after(text, sentence, claim_sentences)
+    start = text.index(sentence)
+    return [] unless start
+
+    paragraph = text[(start + sentence.length)..].split(/\n[ \t]*\n/, 2).first.to_s
+    plain_too = reply_facts.times(sentence).empty? && reply_facts.dates(sentence).empty?
+    followers = []
+    paragraph.lines.each do |line|
+      pieces(line).each do |piece|
+        return followers if claim_sentences.include?(piece)
+
+        followers << piece if !piece.match?(NOT_A_DETAIL) && (plain_too || piece.match?(DETAIL_LINE))
+      end
+    end
+    followers
+  end
+
+  # A detail line is read whole ("Дата: 16 октября"); any other line sentence by sentence.
+  def pieces(line)
+    return [line.strip] if line.match?(DETAIL_LINE)
+
+    line.scan(Captain::Evals::RoutingBenchmark::SuccessClaims::SENTENCE).map(&:strip).reject(&:empty?)
   end
 
   def sentence_mismatches(sentence, rows)
@@ -619,10 +724,11 @@ class Captain::Evals::RoutingBenchmark::Scorer
   end
 
   # The final patient text: internal material, another patient's data, an empty or greeting-only reply.
+  # A runtime marker is no patient text: the checks that read the text are not put to such a turn.
   def reply_checks(context, outcome)
-    outcome.evaluate('reply_leak', 'foreign_patient_data', 'empty_reply', 'greeting_only_reply')
     return unless context.text
 
+    outcome.evaluate('reply_leak', 'foreign_patient_data', 'empty_reply', 'greeting_only_reply')
     reply_leak_check(context, outcome)
     foreign_data_check(context, outcome)
     empty_reply_check(context, outcome)
@@ -631,18 +737,57 @@ class Captain::Evals::RoutingBenchmark::Scorer
   def reply_leak_check(context, outcome)
     findings = Captain::Evals::RoutingBenchmark::ReplyScan.call(
       context.text, tool_ids: tool_ids, allowed: allowed_latin, shingles: shingles,
-                    latin_ok: Captain::Evals::RoutingBenchmark::Language.script(context.customer) == :latin
+                    latin_ok: Captain::Evals::RoutingBenchmark::Language.script(context.customer) == :latin,
+                    internal_ids: internal_ids(context), known_numbers: known_numbers
     )
     findings.each { |finding| outcome.fail!("reply_leak:#{finding[:kind]}", finding[:matches].join(' | ')) }
   end
 
+  # The ids the turn handled: the appointment rows it changed, the conversation, the contact and every id in the arguments
+  # and results of its tool calls. None of them belongs in the text of a patient.
+  def internal_ids(context)
+    ids = context.changes.rows.map(&:id) + [@conversation.id, @conversation.display_id, @conversation.contact_id, @account.id]
+    ids + Array(context.tool_calls).flat_map { |call| ids_in([call[:arguments], call[:result]]) }
+  end
+
+  def ids_in(values)
+    values.flat_map { |value| value.to_s.scan(/(?<![\p{L}\d])(?:\p{L}+_)*id["']?\s*(?:=>|:|=)\s*["']?(\d+)/i).flatten.map(&:to_i) }
+  end
+
+  # Numbers that the customer or the workspace wrote themselves ("кабинет 305", "7 000"): not an internal id.
+  def known_numbers
+    Captain::Evals::RoutingBenchmark::ReplyScan.numbers(dialogue_texts, @directory&.public_texts)
+  end
+
+  # Another contact of the account is another patient: the reply may repeat only what the customer wrote, the caller's own
+  # name, the people the caller booked for, and the public workspace text (knowledge base, doctors, services). The names of
+  # the other seeded patients are not "known": a directory that listed them would hide exactly the leak this check looks for.
   def foreign_data_check(context, outcome)
-    others = Contact.where(account_id: @account.id).where.not(id: @conversation.contact_id).pluck(:name)
-    known = (dialogue_texts + Array(@directory&.texts)).join("\n")
-    findings = Captain::Evals::RoutingBenchmark::ForeignData.call(context.text, others: others, known: known)
+    findings = Captain::Evals::RoutingBenchmark::ForeignData.call(context.text, others: other_patient_names,
+                                                                  known: (dialogue_texts + callers_family_names + Array(@directory&.public_texts)).join("\n"))
     return if findings.empty?
 
     outcome.fail!('foreign_patient_data', findings.map { |finding| "#{finding[:kind]}: #{finding[:match]}" }.join('; '))
+  end
+
+  def other_patient_names
+    own = [@conversation.contact_id] + linked_card_ids
+    Contact.where(account_id: @account.id).where.not(id: own).pluck(:name)
+  end
+
+  # Patient cards that the contact book records as the caller's own (children, relatives).
+  def linked_card_ids
+    key = Scheduling::PatientContextQuery::CONTACT_IDS_KEY
+    Contact.where(account_id: @account.id).where.not(id: @conversation.contact_id).pluck(:id, :custom_attributes).filter_map do |id, attributes|
+      id if Array(attributes.to_h[key]).map(&:to_i).include?(@conversation.contact_id)
+    end
+  end
+
+  # The names on the appointments the caller made: the caller's family is no stranger.
+  def callers_family_names
+    Scheduling::Appointment.where(account_id: @account.id, contact_id: @conversation.contact_id).includes(:patient_contact).flat_map do |appointment|
+      [appointment.patient_contact&.name, appointment.client_name, appointment.client_first_name, appointment.client_last_name]
+    end.compact
   end
 
   def empty_reply_check(context, outcome)
@@ -675,9 +820,7 @@ class Captain::Evals::RoutingBenchmark::Scorer
   def remember(context)
     @earlier_successes |= context.successful_tools
     @earlier_handoff ||= context.handoff[:truth]
-    @earlier_rows[:created] ||= context.changes.created.any?
-    @earlier_rows[:updated] ||= context.changes.updated.any?
-    @earlier_rows[:cancelled] ||= context.changes.cancelled.any?
+    @written.concat(context.changes.rows)
   end
 
   def result(context, outcome, counters, evidence)

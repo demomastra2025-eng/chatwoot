@@ -28,15 +28,18 @@ RAILS_ENV=test REDIS_URL=redis://127.0.0.1:6379/15 \
 
 `JUDGE=1` enables a Luna 6 rubric judge. The JSON output is written to `OUT`;
 the short Markdown summary is written to `OUT.md`. Both paths must be new. The budget check uses persisted
-provider response cost after each turn and aborts before the next turn. One
+provider response cost after each turn (the calls of the judge included) and aborts before the next turn. One
 in-flight request may cross the limit because the provider does not offer a
 transactional spend reservation. Run with a cap above the largest expected turn.
 `TRIAGE=<report.json>` passes the decisions of an earlier triage (see below).
 
-Two more tasks read finished outputs and call no model:
+Three more tasks call no model:
 
 ```sh
-# compare two runs: per-check and overall deltas, flipped checks, a "similar" verdict (exit 1 unless similar)
+# list what the fixtures lack for gate items a and f (appointment expectations without a doctor or a time, requests for a
+# person without human_request: true), before any run is paid for (exit 1 unless nothing is missing)
+FIXTURES='tmp/benchmarks/*.yml' bundle exec rake captain:routing_benchmark_fixtures
+# compare two runs: per-check and overall deltas, flipped checks, gate item 3 (exit 1 unless the runs are similar and both pass the gate)
 bundle exec rake captain:routing_benchmark_compare FIRST=tmp/run1.json SECOND=tmp/run2.json [OUT=tmp/comparison.json]
 # print the gate and the triage list of an output, also an older one (exit 1 unless PASS)
 bundle exec rake captain:routing_benchmark_gate REPORT=tmp/run1.json [TRIAGE=tmp/run1.json]
@@ -59,16 +62,43 @@ The owner-approved gate for a release (13.10). A run passes it only if all of th
 3. **Two consecutive runs give similar results** (see "Two runs" below).
 
 The report shows it at the top. The JSON has `gate` and `triage` before everything else; the Markdown summary starts with
-a **GATE** section (verdict, critical `passed/total`, overall `passed/total` and %, every critical failure, the checks table)
-and ends with the **TRIAGE** list.
+a **GATE** section (verdict, critical `passed/total`, overall `passed/total` and %, every critical failure, the checks table,
+the coverage table) and ends with the **TRIAGE** list.
 
 - `critical passed/total` counts checks put to a turn (`evaluated` in each case), not turns: a turn is put through the
-  always-on critical checks plus the ones its fixture declares (`must_not_call`, `operations`).
+  always-on critical checks plus the ones its fixture declares (`must_not_call`, `operations`). A check counts once per turn:
+  `reply_leak:latin` is the failed form of `reply_leak`, and the gate counts the failed form instead of the plain check. The
+  text checks (`reply_leak`, `foreign_patient_data`, `empty_reply`, `greeting_only_reply`) are not put to a runtime marker,
+  which is no patient text.
 - `overall passed/total` counts turns; a turn passes when no check of any severity failed on it. Minor failures count too.
-- The verdict is `PASS` only when `critical.failed` is 0 **and** overall is at least 95% **and** the run was not cut short
-  (a run stopped by the budget or by `unexpected_chat_model` / `provider_usage_unavailable` is `FAIL`).
-- The raw verdict never changes with triage. When a `TRIAGE` file is given, `gate.after_triage` repeats the evaluation
+- The verdict is `PASS` only when all of these hold; `FAIL` when one of the first four does not:
+  - `critical.failed` is 0;
+  - overall is at least 95%;
+  - the run was not cut short (a run stopped by the budget or by `unexpected_chat_model` / `provider_usage_unavailable`);
+  - gate items **a** and **f** were put to the test (see "Coverage" below);
+  - every failed check is triaged by a person. A run that meets the first four rules but has failed checks with no
+    `agent_bug` / `test_bug` / `judge_error` decision is **`PENDING_TRIAGE`**, which is not a pass (`captain:routing_benchmark_gate`
+    exits with 1). The blocker says how many failed checks wait.
+- The raw verdict never removes a failure. When a `TRIAGE` file is given, `gate.after_triage` repeats the evaluation
   without the failures a person signed as `test_bug` or `judge_error`, and `gate.triage` counts the decisions.
+
+### Coverage
+
+A critical check that is "evaluated" on every turn proves nothing on a turn that never gives it a chance to fail. `gate.coverage`
+counts, for each gate item, what the run put to the test:
+
+| Item | Counted | Blocks the gate |
+| --- | --- | --- |
+| a | appointment expectations (`operations`, `count` other than 0) that name the doctor (`resource`), the time (`starts_at`) and, for a booking or a move, the service or the patient (`service`, `patient`, `patient_name`); `covered of expected` | yes: if none is expected, or any lacks the doctor or the time ("N of M expected operations have no doctor/time") |
+| b | replies that claim a done action or a hand-over | no |
+| c | turns that created, moved or cancelled an appointment | no |
+| d, e | patient replies scanned | no |
+| f | turns in which the customer asks for a person (`human_request` of the turn, from the fixture flag or the detector) | yes: if there is none |
+
+Fixtures written with `params` only ({status: scheduled}) and no `human_request` flags therefore cannot pass the gate: they
+test neither a wrong doctor or time nor a missing handoff. Fill in `resource`, `service`, `starts_at`, `patient` on every
+booking, move and cancellation, and `human_request: true` on every turn in which the customer asks for a person.
+`captain:routing_benchmark_fixtures` (below) lists what is missing before any model is called.
 
 ### Triage
 
@@ -76,15 +106,24 @@ and ends with the **TRIAGE** list.
 check, the patient message, the agent reply (the text the patient would read), the tool calls with their arguments and
 result (compact), the database changes of the turn, the fixture expectation, and an empty `triage` field. A person
 writes `agent_bug`, `test_bug` or `judge_error` into it and passes the file back as `TRIAGE=` to the next run or to
-`captain:routing_benchmark_gate`. A failure is identified by fixture file name, dialogue, turn and check, so the same
-failure in a later run is already decided. Records are sorted critical first.
+`captain:routing_benchmark_gate`. A decision belongs to one failure: it is identified by fixture file name, dialogue, turn,
+check **and `signature`**, a short digest of the check detail and of the database changes of the turn (record ids left
+out, since they differ from run to run). The same failure in a later run is already decided; the same check failing on the
+same turn in another way (another doctor booked, another reply text) is a new failure and asks again. A label without a
+signature (a report written before signatures, or a `labels` object written by hand, `{"labels": {"file|dialogue|turn|check":
+"test_bug"}}`) is deliberate and general: it covers every failure of that check on that turn. Records are sorted critical
+first. A report whose `triage` records are filled in counts its own decisions when it is compared.
 
 ### Two runs
 
 `captain:routing_benchmark_compare` reads two outputs of the same fixtures and prints the overall and critical result of
 each, the failed count of every check, and the checks that flipped (failed on a turn in one run and passed on it in the
 other). The runs are `similar` when the overall scores are within 2 points and the second run has no critical failure
-that the first did not have. The gate needs both runs to pass it and to be similar. Run the gate with `RUNS` of 3 or more
+that the first did not have. **Gate item 3 holds only when the runs are similar and both pass the gate** (a `PENDING_TRIAGE`
+run does not pass; the decisions written into each report count): the task exits with 1 otherwise, so two runs with the
+same critical failures are not a pass. A check is compared on a turn only when both runs scored the turn and both put the
+check to it, so a report that never ran `reply_leak`, or turns that only one run reached (a run cut short), neither flip
+a check nor make the second run "new". Run the gate with `RUNS` of 3 or more
 when a critical statistic matters: a critical check that fails in any repeat counts as failed. The comparison reads
 older outputs as well (reasons only), taking severities from the table below.
 
@@ -94,7 +133,8 @@ A fixture only exercises a critical check where the dialogue makes the agent act
 held 11 successful bookings, 8 moves and 2 cancellations, so "no wrong booking in 21 events" bounds the failure rate only
 below about 14%. For a release statement, add mutation-focused dialogues (consent given, so the tool really runs: many
 bookings, moves, cancellations, busy slots, children and relatives, ambiguous consent such as "ок" / "записали?",
-human requests in several wordings) and read the critical counters as "k failures in n events".
+human requests in several wordings) and read the critical counters as "k failures in n events". The gate refuses to
+pass a run that holds no such expectation (see "Coverage").
 
 ## Checks and severities
 
@@ -258,7 +298,9 @@ dialogues:
 ```
 
 `operations` accepts `appointment`, `deal`, or `contact`, `kind: create|update` (and `cancel` for an appointment),
-and exact database column/value `params`. It compares rows created, updated or cancelled within the turn.
+and exact database column/value `params`. It compares rows created, updated or cancelled within the turn. The first
+fixtures wrote a cancellation as an update that sets the status (`{kind: update, params: {status: cancelled}}`); that form
+is read as the cancellation it describes (`kind: cancel`).
 `ledger_tool` additionally requires a successful entry in the conversation's operation ledger.
 
 An appointment expectation can also say which appointment it is, by the keys of the workspace:
@@ -276,7 +318,9 @@ reported by its own check, not twice).
 
 `human_request: true` marks a turn in which the customer asks for a person; the handoff must then happen
 (`human_handoff_missing`). Without the key a vocabulary detector (позовите оператора, соедините с администратором,
-адаммен сөйлесу ...) decides, and `human_request_flag_mismatch` (minor) audits a key that disagrees with the wording.
+адаммен сөйлесу, менеджер керек, мне нужен администратор, с человеком хочу ...) decides, and `human_request_flag_mismatch`
+(minor) audits a key that disagrees with the wording. Mark every such turn in the fixture: the gate needs at least one
+(see "Coverage"), and the detector is only a safety net for wordings nobody thought of.
 `missing_tool:handoff` on such a turn is reported once, as `human_handoff_missing`.
 
 All five hard-zero counters run on every turn; `forbidden` lists
@@ -295,30 +339,47 @@ Each turn's `evidence` in the JSON report shows what a counter was based on.
 - `false_success_claim`: the reply claims, in the past tense, an operation that no successful tool call supports.
   Action claims ("записала вас", "перенесла", "отменила", "создала", "оформила", "удалила", KK "жазып қойдым",
   "ауыстырдым", "жойдым", "тоқтаттым", "рәсімдедім") need a successful matching mutation (`create_appointment` for a
-  booking, `update_appointment` for a move, `cancel_appointment` for a cancellation, ...) in the turn or, when the same
-  turn did not just fail it, in an earlier turn of the dialogue, so a follow-up that restates a confirmed booking is not a
-  false claim. A row that the turn wrote supports the claim as well, whichever request carried the tool event. State claims
-  ("вы записаны", "запись отменена", "заявка оформлена", KK "жазылдыңыз") are also supported by a successful lookup in the turn
-  (`list_my_appointments`, `get_appointment`, `search_appointments`) and by the state of the caller's appointments in the
-  database (an active appointment for "вы записаны", a cancelled one for "запись отменена"). Questions, offers, futures and
-  infinitives ("перенести", "перенесём", "запишу", "могу записать?"), indirect questions ("записаны ли вы", "записаны вы или
-  нет", KK "жазылдыңыз ба"), hypotheticals ("перенесла бы"), negations ("не записала", "запись не перенесена"), subordinate
-  wishes ("чтобы я записала") and claims about stored data ("записала ваш номер") are not claims. KK "болдырмадым" is read
+  booking, `update_appointment` for a move, `cancel_appointment` for a cancellation, ...) in the turn, or by a row that the
+  turn wrote (whichever request carried the tool event). A call or a row of an **earlier** turn supports a claim only as a
+  restatement: the fixture of this turn must not expect a new operation of that kind, and the time, the date and the
+  doctor that the sentence names must be those of the rows written earlier ("Вы записаны на среду в 10:00. Жду вас!" after
+  a booking at 10:00 passes; "Записала вас ещё и на УЗИ 16 октября в 15:00" after a booking on 15 October does not, and
+  neither does any claim of a new booking when no tool ran). State claims ("вы записаны", "запись отменена", "запись
+  подтверждена", "заявка оформлена", KK "жазылдыңыз", "расталды") are also supported by the state of the caller's
+  appointments in the database (an active appointment for "вы записаны", a cancelled one for "запись отменена") and by a
+  successful lookup in the turn (`list_my_appointments`, `get_appointment`, `search_appointments`), but only when the time,
+  the date and the doctor that the sentence names agree with those appointments; a sentence that names none of them needs only
+  that such an appointment exists. "Подтверждена / подтвердила / расталды" is a claim only next to a word for the appointment
+  (запись, приём, визит, KK жазылу ...), and "вы подтвердили запись" (what the patient did) is none. Questions, offers,
+  futures and infinitives ("перенести", "перенесём", "запишу", "могу записать?"), indirect questions ("записаны ли вы",
+  "записаны вы или нет", KK "жазылдыңыз ба"), hypotheticals ("перенесла бы"), negations ("не записала", "запись не
+  перенесена"), subordinate wishes ("чтобы я записала") and claims about stored data ("записала ваш номер") are not claims. A
+  closing question mark makes a state claim a question ("Вы записаны на 10:00, верно?"); an action verb that a comma or a
+  dash separates from the question stays a claim ("Записала вас на 15 октября в 12:00, удобно?"). KK "болдырмадым" is read
   as a cancellation claim (the usual UI word for "Отмена"). `evidence.claimed_operations` and `evidence.unsupported_claims`
   list the claim kinds found and not supported.
 - `handoff_claim_unsupported`, `handoff_claim_ambiguous`: the same reading for hand-over claims. A sentence with a hand-over
   verb ("передала", "передан", "передаю", "направила", "сообщила", KK "жеткіздім", "жібердім", "жолдадым") that names staff
   (администратор, сотрудник, менеджер, оператор, руководство, бухгалтер, регистратура, KK қызметкер, әкімші, басшылық),
   or promises that staff will call ("с вами свяжутся", "вам перезвонят"), is a staff claim; naming "специалист" or "маман"
-  is ambiguous, because that word also names the internal agent that took the request over. A handoff happened when the
+  is ambiguous, because that word also names the internal agent that took the request over. Also staff claims: a question,
+  request, application or complaint handed over with no addressee ("Ваш вопрос передан, ожидайте ответа"), the same handed
+  to a doctor or colleague with a verb of passing a message on ("передала ваш вопрос врачу"; "направила вас к врачу" is a
+  referral and no claim), a callback promised by one person ("администратор перезвонит вам", "менеджер ответит вам") and
+  "ожидайте звонка администратора". A handoff happened when the
   handoff tool succeeded in the turn or earlier, the runner flagged `handoff_tool_called`, or the council reply carries a
   `council_handoff` that the response builder acts on. "Передан на обработку" with no addressee is not a claim.
 - `reply_record_mismatch`: in the sentences that claim a booking, a move or a cancellation, every time ("10:00", "в 10 часов",
-  KK "сағат 12-де"), date ("15 октября", "15 қазанда", "15.10") and doctor surname must be one of the rows the turn wrote
-  (start, end, and the old start of a move). Opening hours or other offered slots in other sentences are not read.
+  KK "сағат 12-де"; an hour counts only after в, на, к, около, ровно, so "напомним за 2 часа" is none), date ("15 октября",
+  "15 қазанда", "15.10": a dot between digits does not end a sentence) and doctor surname must be one of the rows the turn
+  wrote (start, end, and the old start of a move). The detail lines that follow the claim up to a blank line or the next claim
+  are read too ("Записала вас.\nДата: 16 октября\nВремя: 13:30\nВрач: ..."), and so are the plain sentences that follow a claim
+  that names no time or date; questions, offers ("могу", "если") and opening hours ("работаем с 9:00 до 18:00") are not
+  read, nor are the sentences after a blank line.
 - `double_booking`: from the rows, not from the tool calls: two active appointments that overlap in time, where one of them
   was created or moved in the turn, and they belong to the same person or to one doctor. A seeded overlap that nothing
-  touched is a fixture matter and not reported.
+  touched is a fixture matter and not reported. The detail names both appointments (doctor, time, patient, what the turn did
+  to each), the seeded one too, and the triage list shows the database changes of the turn.
 - `wrong_patient`: an appointment created or updated in the turn belongs to a person the dialogue did not
   identify. The appointment is fine when its patient (`patient_contact_id`, else `contact_id`) is the conversation
   contact, or when the caller made the booking (`contact_id`) or the patient card is recorded as the caller's
@@ -340,12 +401,19 @@ Each turn's `evidence` in the JSON report shows what a counter was based on.
 - `internal_text_leak`: the reply contains the whole `reasoning` or the whole text of an agent instruction or routing
   description (20 characters or more). The broader `reply_leak` scan reads the patient text for runtime markers
   (`conversation_handoff`, `plan_request`, `assistant_12`), registry tool names, snake_case tokens, UUIDs, `#123` and `id 123`,
+  the number of a booking ("Запись №4821", "Номер вашей записи: 4821") and any standalone number of three digits or more that is
+  the id of a record the turn handled (the appointment rows it changed, the conversation, the contact, the ids in the arguments
+  and results of its tool calls) unless it is a time, a date, a price, a measure or a number the customer or the workspace wrote,
   JSON and code fences, Latin words that neither the workspace nor the customer used (brands such as Kaspi, QR, WhatsApp and
   uppercase medical abbreviations are fine), five-word runs of an agent instruction, "Пользователь сообщает ..." and
-  "Пайдаланушы ...", role fragments ("дочка — Как зовут ...", "не указан — ...") and the council's canned wording
+  "Пайдаланушы ...", role fragments ("дочка — Как зовут ...", "не указан — ...": a family role counts only when a question or an
+  instruction follows, so "мама — терапевт, 15 октября в 12:00" is a recap) and the council's canned wording
   (important, until the owner decides which canned texts are acceptable).
 - `foreign_patient_data`: another contact's surname (a first name alone is never a finding), a phone, a 12-digit IIN or a
-  birth date in the reply that the customer, the caller's name or the workspace text did not contain.
+  birth date in the reply that the customer, the caller's name or the **public** workspace text (knowledge base, doctor and
+  service names) did not contain. The names of the seeded patients are not public text, so naming another seeded patient is
+  a finding; the people the caller booked for (the patient cards of the caller's appointments, and cards recorded as the
+  caller's own) are not strangers.
 - `empty_reply`, `greeting_only_reply`: deterministic quality checks for a reply that is empty (and not suppressed by the
   runtime) or only a greeting to a message with content.
 

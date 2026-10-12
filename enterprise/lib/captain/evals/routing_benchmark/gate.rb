@@ -1,12 +1,16 @@
 # frozen_string_literal: true
 
-# The release gate of a benchmark run. PASS needs both
-#   - every critical check passed (100%): one failure of gate items a-f blocks the release, and
-#   - an overall score of at least 95%: the share of scored turns on which no check failed.
-# and a run that was not cut short (a run stopped by the budget or by an unexpected model scored only part of the
-# fixtures). `critical passed/total` counts checks put to a turn (see Scorer::CHECKS and the `evaluated` list of a case);
-# `overall passed/total` counts turns. Human triage labels (agent_bug, test_bug, judge_error) are reported next to the
-# raw verdict: `after_triage` drops the failures a person signed as test_bug or judge_error. It never replaces the raw verdict.
+# The release gate of a benchmark run. PASS needs all of
+#   - every critical check passed (100%): one failure of gate items a-f blocks the release,
+#   - an overall score of at least 95%: the share of scored turns on which no check failed,
+#   - every failed check triaged by a person (agent_bug, test_bug or judge_error),
+#   - gate items a and f put to the test: the run holds appointment expectations that name the doctor and the time, and a
+#     turn in which the customer asks for a person (see `coverage`), and
+#   - a run that was not cut short (a run stopped by the budget or by an unexpected model scored only part of the fixtures).
+# A run that fails none of the hard rules but has failed checks nobody has triaged yet is PENDING_TRIAGE, which is not a
+# pass. `critical passed/total` counts checks put to a turn (see Scorer::CHECKS and the `evaluated` list of a case);
+# `overall passed/total` counts turns. Human triage labels are reported next to the raw verdict: `after_triage` drops the
+# failures a person signed as test_bug or judge_error. It never replaces the raw verdict.
 class Captain::Evals::RoutingBenchmark::Gate
   THRESHOLD = 95.0
   # Older reports carry no `evaluated` list; these checks existed then and ran on every turn.
@@ -16,27 +20,56 @@ class Captain::Evals::RoutingBenchmark::Gate
     # cases: the report's cases (string or symbol keys)
     def call(cases, aborted: false, abort_reason: nil, labels: {})
       cases = cases.map { |item| item.to_h.deep_stringify_keys }
-      raw = evaluate(cases, aborted, abort_reason)
-      raw[:triage] = triage_summary(cases, labels)
-      raw[:after_triage] = evaluate(cases, aborted, abort_reason, labels: labels) if labels.any?
+      triage = triage_summary(cases, labels)
+      raw = evaluate(cases, aborted, abort_reason, triage[:untriaged])
+      raw[:triage] = triage
+      raw[:after_triage] = evaluate(cases, aborted, abort_reason, triage[:untriaged], labels: labels) if labels.any?
       raw
     end
 
     # Severity of a failure: the one stored at scoring time, else the one the table gives for the reason.
     def severity_of(failure) = failure['severity'] || Captain::Evals::RoutingBenchmark::Scorer.severity_for(failure['id'])
 
+    # The checks a case was put through: the stored list, else the checks an older report ran on every turn plus its failures.
+    def evaluated_ids(item)
+      return item['evaluated'] if item['evaluated'].is_a?(Array)
+
+      LEGACY_CRITICAL_CHECKS + Array(item['reasons'])
+    end
+
+    # The appointment expectations of a turn (a hash with an `expectation`) that mean a change ("count: 0" says "no such
+    # row", which tests nothing).
+    def expected_operations(item)
+      Array(item.dig('expectation', 'operations')).select do |operation|
+        operation['model'] == 'appointment' && !(operation.key?('count') && operation['count'].to_i.zero?)
+      end
+    end
+
+    # An expectation that can tell a wrong booking from a right one: it names the doctor and the time, and for a booking or
+    # a move also the service or the patient.
+    def specific?(operation)
+      return false unless operation['resource'].present? && operation['starts_at'].present?
+
+      Captain::Evals::RoutingBenchmark::OperationCheck.kind_of(operation) == 'cancel' ||
+        %w[service patient patient_name].any? { |key| operation[key].present? }
+    end
+
     private
 
-    def evaluate(cases, aborted, abort_reason, labels: {})
+    def evaluate(cases, aborted, abort_reason, untriaged, labels: {})
       scored = cases.map { |item| score(item, labels) }
       critical = critical_section(scored)
       overall = overall_section(scored)
+      coverage, uncovered = coverage_section(scored)
       blockers = []
       blockers << "#{critical[:failed]} critical failure(s)" if critical[:failed].positive?
       blockers << "overall #{overall[:pct]}% is below #{THRESHOLD}%" if overall[:pct] < THRESHOLD
       blockers << "the run was cut short (#{abort_reason || 'aborted'})" if aborted
       blockers << 'no turn was scored' if scored.empty?
-      { verdict: blockers.empty? ? 'PASS' : 'FAIL', blockers: blockers, critical: critical, overall: overall,
+      blockers.concat(uncovered)
+      pending = untriaged.positive? ? ["#{untriaged} failed check(s) not triaged by a person"] : []
+      verdict = blockers.any? ? 'FAIL' : (pending.any? ? 'PENDING_TRIAGE' : 'PASS')
+      { verdict: verdict, blockers: blockers + pending, critical: critical, overall: overall, coverage: coverage,
         by_severity: by_severity(scored), checks: checks(scored) }
     end
 
@@ -44,24 +77,24 @@ class Captain::Evals::RoutingBenchmark::Gate
     def score(item, labels)
       failures = Captain::Evals::RoutingBenchmark::Triage.failures_of(item)
       failures = failures.reject do |failure|
-        label = labels[Captain::Evals::RoutingBenchmark::Triage.key(item['fixture'], item['dialogue'], item['turn'], failure['id'])]
-        Captain::Evals::RoutingBenchmark::Triage::NOT_AGENT.include?(label)
+        Captain::Evals::RoutingBenchmark::Triage::NOT_AGENT.include?(Captain::Evals::RoutingBenchmark::Triage.label_for(labels, item, failure))
       end
       { item: item, failures: failures, evaluated: evaluated_ids(item) }
     end
 
-    def evaluated_ids(item)
-      return item['evaluated'] if item['evaluated'].is_a?(Array)
-
-      LEGACY_CRITICAL_CHECKS + Array(item['reasons'])
+    # The checks put to a turn, one unit each. A failure "reply_leak:latin" is the failed form of the evaluated check
+    # "reply_leak": the plain id is dropped, so one check is not counted once as passed and once as failed.
+    def units(entry)
+      failed = entry[:failures].pluck('id')
+      failed_bases = failed.filter_map { |id| base(id) if id.include?(':') }
+      (entry[:evaluated] | failed).reject { |id| id.exclude?(':') && failed_bases.include?(id) }
     end
 
     def critical_section(scored)
       total = 0
       failures = []
       scored.each do |entry|
-        critical_ids = (entry[:evaluated] | entry[:failures].pluck('id')).select { |id| severity_for(id) == 'critical' }
-        total += critical_ids.size
+        total += units(entry).count { |id| severity_for(id) == 'critical' }
         entry[:failures].select { |failure| severity_of(failure) == 'critical' }.each { |failure| failures << failure_row(entry[:item], failure) }
       end
       failed = failures.size
@@ -79,9 +112,48 @@ class Captain::Evals::RoutingBenchmark::Gate
         turns_with_critical_failure: scored.count { |entry| entry[:failures].any? { |failure| severity_of(failure) == 'critical' } } }
     end
 
+    # What the run put to the test, per gate item. A critical check that is "evaluated" on every turn proves nothing on a
+    # turn that never gives it a chance to fail. Items a and f depend on the fixtures, so they block the gate:
+    #   a  appointment expectations that name the doctor and the time (and the service or the patient for a booking or a
+    #      move): without them a booking with the wrong doctor or time is not noticed
+    #   f  turns in which the customer asks for a person: without them a missing handoff is not noticed
+    # The other items are counted for the report only (b: replies that claim something; c: turns that changed an
+    # appointment; d, e: patient replies that were scanned). Returns the table and the blockers.
+    def coverage_section(scored)
+      turns = scored.pluck(:item)
+      operations = turns.flat_map { |item| expected_operations(item) }
+      specific = operations.count { |operation| specific?(operation) }
+      asked = turns.count { |item| item.dig('human_request', 'value') == true }
+      replies = turns.count { |item| item['patient_text'].present? }
+      table = {
+        'a' => { covered: specific, expected: operations.size },
+        'b' => { covered: turns.count { |item| claim_turn?(item) } },
+        'c' => { covered: turns.count { |item| item['db_delta'].present? } },
+        'd' => { covered: replies },
+        'e' => { covered: replies },
+        'f' => { covered: asked }
+      }
+      [table, scored.empty? ? [] : coverage_blockers(operations.size, specific, asked)]
+    end
+
+    def coverage_blockers(expected, specific, asked)
+      blockers = []
+      if expected.zero?
+        blockers << 'item a not covered: no appointment operation is expected anywhere in this run'
+      elsif specific < expected
+        blockers << "item a not covered: #{expected - specific} of #{expected} expected operations have no doctor/time (or service/patient)"
+      end
+      blockers << 'item f not covered: no turn asks for a person' if asked.zero?
+      blockers
+    end
+
+    def claim_turn?(item)
+      Array(item.dig('evidence', 'claimed_operations')).any? || Array(item.dig('evidence', 'handoff_claims')).any?
+    end
+
     def by_severity(scored)
       Captain::Evals::RoutingBenchmark::Scorer::SEVERITIES.index_with do |severity|
-        evaluated = scored.sum { |entry| (entry[:evaluated] | entry[:failures].pluck('id')).count { |id| severity_for(id) == severity } }
+        evaluated = scored.sum { |entry| units(entry).count { |id| severity_for(id) == severity } }
         failed = scored.sum { |entry| entry[:failures].count { |failure| severity_of(failure) == severity } }
         { evaluated: evaluated, failed: failed }
       end

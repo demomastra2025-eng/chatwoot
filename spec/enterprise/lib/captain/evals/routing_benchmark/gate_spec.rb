@@ -13,26 +13,83 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Gate do
         'detail' => "detail of #{id}" }
     end
     { 'fixture' => '/tmp/set/ws_a.yml', 'dialogue' => dialogue, 'run' => run, 'turn' => number, 'status' => failures.empty? ? 'pass' : 'fail',
-      'reasons' => fails, 'failures' => failures, 'evaluated' => evaluated | fails, 'customer' => 'Здравствуйте', 'reply' => 'Здравствуйте!' }
+      'reasons' => fails, 'failures' => failures, 'evaluated' => evaluated | fails, 'customer' => 'Здравствуйте', 'reply' => 'Здравствуйте!',
+      'patient_text' => 'Здравствуйте!' }
   end
 
-  def passing(count) = Array.new(count) { |index| turn(dialogue: "ok_#{index}") }
+  def operation(extra = {})
+    { 'model' => 'appointment', 'kind' => 'create', 'resource' => 'doctor_a', 'service' => 'consult',
+      'starts_at' => '2026-10-15T12:00:00+05:00' }.merge(extra)
+  end
+
+  # A turn whose fixture names the doctor, the time and the service of the booking it expects (gate item a), and one in
+  # which the customer asks for a person (gate item f).
+  def booking_turn(dialogue = 'booking', operations: [operation], **options)
+    turn(dialogue: dialogue, **options).merge('expectation' => { 'operations' => operations })
+  end
+
+  def person_turn(dialogue = 'person', **options)
+    turn(dialogue: dialogue, **options).merge('human_request' => { 'value' => true, 'source' => 'fixture' })
+  end
+
+  # `count` clean turns; the first two put gate items a and f to the test.
+  def passing(count)
+    Array.new(count) do |index|
+      case index
+      when 0 then booking_turn
+      when 1 then person_turn
+      else turn(dialogue: "ok_#{index}")
+      end
+    end
+  end
+
+  def bad_turns(count, check = 'wrong_agent') = Array.new(count) { |index| turn(dialogue: "bad_#{index}", fails: [check]) }
+
+  # The decisions of a person: every failed check of the given turns is signed with the label.
+  def signed_off(cases, label = 'agent_bug')
+    cases.flat_map { |item| item['failures'].map { |failure| [triage.key(item['fixture'], item['dialogue'], item['turn'], failure['id']), label] } }.to_h
+  end
 
   describe '.call' do
-    it 'passes when every critical check passed and the overall score is at least 95%' do
-      cases = passing(95) + Array.new(5) { |index| turn(dialogue: "bad_#{index}", fails: ['wrong_agent']) }
+    it 'passes when every critical check passed, the overall score is at least 95% and every failed check is triaged' do
+      bad = bad_turns(5)
+      cases = passing(95) + bad
 
-      gate = described_class.call(cases)
+      gate = described_class.call(cases, labels: signed_off(bad))
 
       expect(gate).to include(verdict: 'PASS', blockers: [])
       expect(gate[:overall]).to include(passed: 95, total: 100, pct: 95.0, threshold: 95.0)
       expect(gate[:critical]).to include(failed: 0, passed: 100, total: 100, pct: 100.0, failures: [])
     end
 
-    it 'fails below 95% overall, however clean the critical checks are' do
-      cases = passing(94) + Array.new(6) { |index| turn(dialogue: "bad_#{index}", fails: ['wrong_agent']) }
+    it 'is not a pass while a failed check waits for the triage of a person: 96% with untriaged failures is PENDING_TRIAGE' do
+      gate = described_class.call(passing(96) + bad_turns(4))
 
-      gate = described_class.call(cases)
+      expect(gate).to include(verdict: 'PENDING_TRIAGE', blockers: ['4 failed check(s) not triaged by a person'])
+      expect(gate[:triage]).to include(failed_checks: 4, triaged: 0, untriaged: 4)
+      expect(gate[:overall][:pct]).to eq(96.0)
+    end
+
+    it 'turns PENDING_TRIAGE into PASS once a person signed every failed check, with any of the three labels' do
+      bad = bad_turns(3) + [turn(dialogue: 'minor', fails: ['council_unexpected'])]
+      labels = signed_off(bad).keys.zip(triage::LABELS.cycle).to_h
+
+      expect(described_class.call(passing(96) + bad).fetch(:verdict)).to eq('PENDING_TRIAGE')
+      expect(described_class.call(passing(96) + bad, labels: labels)).to include(verdict: 'PASS', blockers: [])
+    end
+
+    it 'keeps FAIL for a hard blocker, and lists the untriaged failures next to it' do
+      gate = described_class.call(passing(10) + bad_turns(2))
+
+      expect(gate[:verdict]).to eq('FAIL')
+      expect(gate[:blockers]).to eq(['overall 83.33% is below 95.0%', '2 failed check(s) not triaged by a person'])
+    end
+
+    it 'fails below 95% overall, however clean the critical checks are' do
+      bad = bad_turns(6)
+      cases = passing(94) + bad
+
+      gate = described_class.call(cases, labels: signed_off(bad))
 
       expect(gate[:verdict]).to eq('FAIL')
       expect(gate[:blockers]).to eq(['overall 94.0% is below 95.0%'])
@@ -40,9 +97,10 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Gate do
     end
 
     it 'fails on a single critical failure and lists it' do
-      cases = passing(99) + [turn(dialogue: 'risky', number: 3, fails: ['operation_mismatch:starts_at'])]
+      risky = turn(dialogue: 'risky', number: 3, fails: ['operation_mismatch:starts_at'])
+      cases = passing(99) + [risky]
 
-      gate = described_class.call(cases)
+      gate = described_class.call(cases, labels: signed_off([risky]))
 
       expect(gate[:verdict]).to eq('FAIL')
       expect(gate[:blockers]).to eq(['1 critical failure(s)'])
@@ -102,6 +160,18 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Gate do
       expect(described_class.call([symbolized])[:overall]).to include(passed: 0, total: 1)
     end
 
+    it 'counts one critical check once on a turn: the plain check and its failed form are not both counted' do
+      leaky = turn(dialogue: 'leaky', fails: %w[reply_leak:identifier reply_leak:latin], evaluated: %w[reply_leak wrong_agent])
+      cases = passing(2) + [leaky]
+
+      gate = described_class.call(cases, labels: signed_off([leaky]))
+
+      # false_success_claim on the two clean turns; on the leaky one only reply_leak, in its two failed forms
+      expect(gate[:critical]).to include(total: 2 + 2, failed: 2, passed: 2)
+      expect(gate[:by_severity]['critical']).to eq(evaluated: 4, failed: 2)
+      expect(gate[:checks]['reply_leak']).to include(evaluated: 1, failed: 1)
+    end
+
     it 'reads an older report that has only reasons' do
       old = { 'fixture' => 'a.yml', 'dialogue' => 'old', 'turn' => 1, 'status' => 'fail',
               'reasons' => %w[false_success_claim missing_operation:appointment] }
@@ -110,6 +180,75 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Gate do
 
       expect(gate[:critical]).to include(failed: 1, total: 8)
       expect(gate[:checks]['missing_operation']).to include(severity: 'important', failed: 1)
+    end
+  end
+
+  describe 'coverage of gate items a and f' do
+    it 'counts the expectations that name the doctor, the time and the service or patient, and the turns that ask for a person' do
+      cases = passing(10) + [booking_turn('cancelled', operations: [operation('kind' => 'cancel', 'service' => nil, 'patient' => nil)])]
+
+      gate = described_class.call(cases)
+
+      expect(gate[:verdict]).to eq('PASS')
+      expect(gate[:coverage]).to include('a' => { covered: 2, expected: 2 }, 'f' => { covered: 1 }, 'c' => { covered: 0 }, 'd' => { covered: 11 })
+    end
+
+    it 'blocks the gate when a clean run holds no expectation with a doctor and a time: a wrong booking could not be noticed' do
+      old_form = { 'model' => 'appointment', 'kind' => 'create', 'params' => { 'status' => 'scheduled' } }
+      cases = [turn(dialogue: 'old_form').merge('expectation' => { 'operations' => [old_form] }), person_turn] +
+              Array.new(18) { |index| turn(dialogue: "d#{index}") }
+
+      gate = described_class.call(cases)
+
+      expect(gate[:verdict]).to eq('FAIL')
+      expect(gate[:blockers]).to eq(['item a not covered: 1 of 1 expected operations have no doctor/time (or service/patient)'])
+      expect(gate[:critical][:failed]).to eq(0)
+    end
+
+    it 'names how many of the expected operations lack the doctor or the time' do
+      vague = [operation('resource' => nil), operation('starts_at' => nil), operation('service' => nil), operation]
+
+      gate = described_class.call(passing(10) + [booking_turn('vague', operations: vague)])
+
+      expect(gate[:blockers]).to eq(['item a not covered: 3 of 5 expected operations have no doctor/time (or service/patient)'])
+      expect(gate[:coverage]['a']).to eq(covered: 2, expected: 5)
+    end
+
+    it 'does not count count: 0 ("no such row") or an operation on a deal' do
+      cases = passing(10) + [booking_turn('none', operations: [operation('count' => 0), { 'model' => 'deal', 'kind' => 'create' }])]
+
+      expect(described_class.call(cases)).to include(verdict: 'PASS')
+      expect(described_class.call(cases)[:coverage]['a']).to eq(covered: 1, expected: 1)
+    end
+
+    it 'reads the old form of a cancellation as a cancellation, which needs no service or patient' do
+      old = { 'model' => 'appointment', 'kind' => 'update', 'resource' => 'doctor_a', 'starts_at' => '2026-10-15T12:00:00+05:00',
+              'params' => { 'status' => 'cancelled' } }
+
+      expect(described_class.call(passing(10) + [booking_turn('old', operations: [old])])).to include(verdict: 'PASS')
+    end
+
+    it 'blocks the gate when no turn asks for a person: a missing handoff could not be noticed' do
+      cases = passing(10).reject { |item| item['human_request'] }
+
+      gate = described_class.call(cases)
+
+      expect(gate).to include(verdict: 'FAIL', blockers: ['item f not covered: no turn asks for a person'])
+    end
+
+    it 'blocks a run of the first harness version, which carries no expectations: it can prove nothing' do
+      old = { 'fixture' => 'a.yml', 'dialogue' => 'old', 'turn' => 1, 'status' => 'pass', 'reasons' => [] }
+
+      gate = described_class.call([old])
+
+      expect(gate[:verdict]).to eq('FAIL')
+      expect(gate[:blockers]).to include(a_string_starting_with('item a not covered'), 'item f not covered: no turn asks for a person')
+    end
+
+    it 'counts the replies with a claim for item b and the changed appointments for item c' do
+      claiming = booking_turn('claim').merge('evidence' => { 'claimed_operations' => ['book'] }, 'db_delta' => [{ 'change' => 'created' }])
+
+      expect(described_class.call(passing(3) + [claiming])[:coverage]).to include('b' => { covered: 1 }, 'c' => { covered: 1 })
     end
   end
 

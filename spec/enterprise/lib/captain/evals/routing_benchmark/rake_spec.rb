@@ -40,7 +40,56 @@ RSpec.describe 'routing benchmark rake tasks' do
     [stdout.string, status]
   end
 
-  let(:clean) { Array.new(100) { |index| turn("d#{index}") } }
+  # 100 clean turns; the first puts gate items a (a booking with its doctor, time and service) and f (a request for a person) to the test.
+  let(:clean) do
+    Array.new(100) { |index| turn("d#{index}") }.tap do |list|
+      booking = { 'model' => 'appointment', 'kind' => 'create', 'resource' => 'doctor_a', 'service' => 'consult', 'starts_at' => '2026-10-15T12:00:00+05:00' }
+      list[0] = list[0].merge('expectation' => { 'operations' => [booking] }, 'human_request' => { 'value' => true, 'source' => 'fixture' })
+    end
+  end
+
+  describe 'captain:routing_benchmark_fixtures' do
+    def write_fixture(dir, operations:, customer: 'позовите оператора', human_request: true)
+      turn = ->(text, expect) { { 'customer' => text, 'expect' => { 'agent' => 'Регистратор', 'council' => false }.merge(expect) } }
+      data = {
+        'workspace' => {
+          'agents' => [{ 'name' => 'Регистратор', 'routing_description' => 'Запись', 'instructions' => 'Отвечай.', 'tool_ids' => %w[faq_lookup] }],
+          'contacts' => [{ 'key' => 'patient', 'name' => 'Дана Нурланова' }], 'resources' => [{ 'key' => 'doctor_a', 'name' => 'Терапевт Иванов Иван' }],
+          'services' => [{ 'key' => 'consult', 'name' => 'Консультация' }]
+        },
+        'dialogues' => [{ 'id' => 'd1', 'contact' => 'patient',
+                          'turns' => [turn.call('Запишите меня', 'operations' => operations), turn.call(customer, human_request ? { 'human_request' => true } : {})] }]
+      }
+      File.write(File.join(dir, 'ws_a.yml'), data.to_yaml)
+    end
+
+    let(:booking) do
+      { 'model' => 'appointment', 'kind' => 'create', 'resource' => 'doctor_a', 'service' => 'consult', 'starts_at' => '2026-10-15T12:00:00+05:00' }
+    end
+
+    it 'prints what is missing and exits with 1' do
+      Dir.mktmpdir do |dir|
+        write_fixture(dir, operations: [{ 'model' => 'appointment', 'kind' => 'create', 'params' => { 'status' => 'scheduled' } }], human_request: false)
+
+        output, status = run_task('captain:routing_benchmark_fixtures', FIXTURES: File.join(dir, '*.yml'))
+
+        expect(output).to include('Ready for the gate: no.', '- ws_a.yml d1 turn 1: create expectation lacks resource, starts_at, service or patient',
+                                  '- ws_a.yml d1 turn 2: the customer asks for a person: add human_request: true')
+        expect(status).to eq(1)
+      end
+    end
+
+    it 'exits quietly for fixtures that are ready for the gate' do
+      Dir.mktmpdir do |dir|
+        write_fixture(dir, operations: [booking])
+
+        output, status = run_task('captain:routing_benchmark_fixtures', FIXTURES: File.join(dir, '*.yml'))
+
+        expect(output).to include('Ready for the gate: yes.')
+        expect(status).to be_nil
+      end
+    end
+  end
 
   describe 'captain:routing_benchmark_compare' do
     it 'prints the comparison and exits quietly for two similar runs' do
@@ -67,6 +116,19 @@ RSpec.describe 'routing benchmark rake tasks' do
         expect(status).to eq(1)
         expect(JSON.parse(File.read(out))).to include('similar' => false)
         expect(File.read("#{out}.md")).to start_with('# Benchmark comparison')
+      end
+    end
+
+    it 'exits with 1 for two similar runs that both fail the gate: the same critical failure twice is no pass of gate item 3' do
+      Dir.mktmpdir do |dir|
+        failing = clean.each_with_index.map { |item, index| index == 5 ? turn('d5', ['false_success_claim']) : item }
+        first = report_file(dir, 'first.json', failing)
+        second = report_file(dir, 'second.json', failing)
+
+        output, status = run_task('captain:routing_benchmark_compare', FIRST: first, SECOND: second)
+
+        expect(output).to include('**Similar: yes**', 'Both runs pass the gate: no', 'Gate item 3 (two consecutive runs, similar and both passing): FAIL')
+        expect(status).to eq(1)
       end
     end
 

@@ -28,7 +28,17 @@ namespace :captain do
     end
   end
 
-  desc 'Compare two routing benchmark outputs: FIRST=a.json SECOND=b.json [OUT=comparison.json] (exit 1 unless similar)'
+  desc 'List what the fixtures lack for gate items a and f, without calling a model: FIXTURES=glob (exit 1 unless nothing is missing)'
+  task routing_benchmark_fixtures: %i[routing_benchmark_preflight environment] do
+    paths = Dir.glob(ENV.fetch('FIXTURES'))
+    raise ArgumentError, 'No fixtures matched FIXTURES' if paths.empty?
+
+    audit = Captain::Evals::RoutingBenchmark::FixtureAudit.load(paths)
+    puts audit.markdown
+    exit(1) unless audit.ok?
+  end
+
+  desc 'Compare two routing benchmark outputs: FIRST=a.json SECOND=b.json [OUT=comparison.json] (exit 1 unless similar and both pass the gate)'
   task routing_benchmark_compare: %i[routing_benchmark_preflight environment] do
     first = Captain::Evals::RoutingBenchmark::Compare.load(ENV.fetch('FIRST'))
     second = Captain::Evals::RoutingBenchmark::Compare.load(ENV.fetch('SECOND'))
@@ -40,7 +50,8 @@ namespace :captain do
       File.write(ENV['OUT'], JSON.pretty_generate(comparison.result), perm: 0o600)
       File.write("#{ENV['OUT']}.md", comparison.markdown, perm: 0o600)
     end
-    exit(1) unless comparison.result[:similar]
+    # Gate item 3: two similar runs that both pass the gate. Two runs with the same critical failures are similar, too.
+    exit(1) unless comparison.result[:gate_item_3]
   end
 
   desc 'Print the release gate and the triage list of a routing benchmark output: REPORT=out.json [TRIAGE=labels.json]'

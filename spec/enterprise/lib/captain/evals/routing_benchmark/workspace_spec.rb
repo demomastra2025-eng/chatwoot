@@ -65,9 +65,16 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Workspace do
       expect { workspace.directory.resource_id('nobody') }.to raise_error(ArgumentError, /Unknown resource key.*nobody/)
     end
 
-    it 'holds the text a reply may repeat: knowledge, doctors, services and contacts' do
-      expect(workspace.directory.texts).to include('Kaspi QR или наличные.', 'Терапевт Абдрахманова Сауле', 'Консультация терапевта',
-                                                   'Дана Нурланова')
+    it 'holds the text a reply may repeat: knowledge, doctors and services; the names of the seeded patients are kept apart' do
+      directory = workspace.directory
+
+      expect(directory.public_texts).to include('Kaspi QR или наличные.', 'Терапевт Абдрахманова Сауле', 'Консультация терапевта')
+      expect(directory.public_texts).not_to include('Дана Нурланова')
+      expect(directory.contact_names).to eq(['Дана Нурланова'])
+    end
+
+    it 'lists everything the workspace wrote, contact names included, for the Latin-word allow-list' do
+      expect(workspace.directory.texts).to include('Kaspi QR или наличные.', 'Терапевт Абдрахманова Сауле', 'Дана Нурланова')
     end
   end
 end

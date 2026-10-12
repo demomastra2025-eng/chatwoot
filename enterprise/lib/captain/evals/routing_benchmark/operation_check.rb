@@ -8,7 +8,8 @@
 #    patient: m_marat | patient_name: Арсен, count: 1,                               # who, and how many rows
 #    previous_starts_at: '2026-10-13T15:00:00+05:00', previous_resource: doctor_b}   # the row an update must start from
 #
-# `params` alone (the old form) accepts any row of the kind with those column values. The symbolic keys compare the
+# `params` alone (the old form) accepts any row of the kind with those column values; the old form of a cancellation,
+# {kind: update, params: {status: cancelled}}, is read as kind cancel (see .kind_of). The symbolic keys compare the
 # doctor, the service, the start, the patient and the old appointment with the row, so a booking with the wrong
 # doctor, time, service or patient is an `operation_mismatch:<field>` and not a pass. `count` is the exact number of
 # matching rows (default 1): a second row for one request is `operation_mismatch:count`.
@@ -17,6 +18,16 @@
 class Captain::Evals::RoutingBenchmark::OperationCheck
   KIND_VERBS = { 'create' => 'created', 'update' => 'updated', 'cancel' => 'cancelled' }.freeze
   Result = Struct.new(:failures, :explained_ids, keyword_init: true)
+
+  class << self
+    # The kind an appointment expectation stands for. The first fixtures wrote a cancellation as an update that sets the
+    # status to cancelled ({kind: update, params: {status: cancelled}}); BookingChanges files such a row under `cancelled`,
+    # not under `updated`, so the old form is read as the cancellation it describes.
+    def kind_of(operation)
+      kind = operation.fetch('kind', 'create')
+      kind == 'update' && operation.dig('params', 'status').to_s == 'cancelled' ? 'cancel' : kind
+    end
+  end
 
   def initialize(changes:, directory: nil)
     @changes = changes
@@ -38,7 +49,7 @@ class Captain::Evals::RoutingBenchmark::OperationCheck
 
   # Appends the failures of one expectation; returns the ids of the rows it accounts for.
   def check(operation, failures)
-    kind = operation.fetch('kind', 'create')
+    kind = self.class.kind_of(operation)
     count = Integer(operation.fetch('count', 1))
     rows = with_params(@changes.for_kind(kind), operation)
     return [] if rows.empty? && count.zero?

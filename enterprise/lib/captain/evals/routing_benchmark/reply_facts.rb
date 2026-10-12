@@ -15,7 +15,9 @@ class Captain::Evals::RoutingBenchmark::ReplyFacts
     'қыркүйек' => 9, 'қазан' => 10, 'қараша' => 11, 'желтоқсан' => 12
   }.freeze
   CLOCK = /(?<![\d:.])([01]?\d|2[0-3]):([0-5]\d)(?![\d:])/
-  HOURS_RU = /(?<![\d:.])([01]?\d|2[0-3])\s*(?:час(?:а|ов)?|ч)(?![\p{L}\d])/i
+  # "в 10 часов", "на 15 ч": an hour is a time only after the preposition that names a moment. A lead time or a duration
+  # ("напомним за 2 часа", "через 2 часа", "длится 1 час") is none.
+  HOURS_RU = /(?<![\p{L}\d:.])(?:в|на|к|около|ровно)\s+([01]?\d|2[0-3])\s*(?:час(?:а|ов)?|ч)(?![\p{L}\d])/i
   HOURS_KK = /сағат\s+([01]?\d|2[0-3])(?![\d:])/i
   WORD_DATE = /(?<![\d.])(\d{1,2})\s+(\p{L}+)/
   # The month has two digits ("15.10"), so a decimal such as "1.5 часа" is not a date.

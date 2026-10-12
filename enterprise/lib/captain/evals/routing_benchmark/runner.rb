@@ -126,7 +126,9 @@ class Captain::Evals::RoutingBenchmark::Runner
     )
     scored = scorer.call(turn: turn, response: response, events: events, before: before, before_state: before_state, tool_calls: tool_calls)
     scored = judge_turn(account, dialogue, turn, response, scored, history, tool_calls) if @judge && dialogue['rubric'].present?
-    cost = provider_cost(events)
+    # The cost is read after the judge ran: its calls are provider spend of this turn too, and the next turn starts its own
+    # window after the newest event, so a call left out here would never be counted against the budget.
+    cost = provider_cost(LlmEvent.where(account_id: account.id).where('id > ?', last_event_id).order(:id).to_a)
     @spent += cost
     history << { role: 'assistant', content: response['response'].to_s, agent_name: response['agent_name'] }
     scored.merge(latency_ms: latency_ms, cost_usd: cost.to_f, expectation: turn['expect'],

@@ -34,13 +34,18 @@ class Captain::Evals::RoutingBenchmark::BookingChanges
   #   same_patient_same_slot  the same person, doctor and start twice
   #   same_patient_overlap    the same person booked twice at the same time (any doctor)
   #   resource_overlap        two people booked with one doctor at the same time
-  def conflicts
+  #
+  # Each conflict names both appointments (doctor, time, patient, what the turn did to it), so the report can be read
+  # without a re-run: the other row of the pair is often a seeded one that db_delta does not list.
+  def conflicts(directory = nil)
     active = @all.reject { |record| record.status == 'cancelled' }
     active.combination(2).filter_map do |first, second|
       next unless (changed_ids & [first.id, second.id]).any? && overlap?(first, second)
 
       kind = conflict_kind(first, second)
-      { kind: kind, ids: [first.id, second.id] } if kind
+      next unless kind
+
+      { kind: kind, ids: [first.id, second.id], detail: "#{kind}: #{brief(first, directory)} and #{brief(second, directory)}" }
     end
   end
 
@@ -73,6 +78,16 @@ class Captain::Evals::RoutingBenchmark::BookingChanges
   end
 
   def patient_of(record) = record.patient_contact_id || record.contact_id
+
+  # "appointment 12 (doctor_a, 2026-10-15T12:00:00+05:00-12:30, patient caller, created)"
+  def brief(record, directory)
+    zone = record.resource&.timezone || Scheduling::Constants::DEFAULT_TIMEZONE
+    doctor = directory&.resource_key(record.resource_id) || record.resource&.name
+    patient = directory&.contact_key(patient_of(record)) || record.client_name
+    change = rows.find { |row| row.id == record.id }&.change || :unchanged
+    "appointment #{record.id} (#{doctor}, #{record.starts_at.in_time_zone(zone).iso8601}-#{record.ends_at.in_time_zone(zone).strftime('%H:%M')}, " \
+      "patient #{patient}, #{change})"
+  end
 
   def describe(row, directory)
     record = row.record
