@@ -4,6 +4,7 @@ class Llm::CaptainResponseContentNormalizer
   SCHEMA_NAME = 'Captain::ResponseSchema'
   DEFAULT_REASONING = 'Response generated from the current conversation and available tool results.'
   INVALID_PUBLIC_RESPONSE_LITERALS = %w[true false null response].freeze
+  RETIRED_HANDOFF_KEYS = %w[handoff_message handoff_reason].freeze
 
   class << self
     def apply_defaults(schema, content)
@@ -14,11 +15,12 @@ class Llm::CaptainResponseContentNormalizer
       # Outcome reasons belong to the classification pipeline.
       payload.delete('handoff_status_reason')
       payload.delete('handoff_outcome_reason_id')
+      # The model is no longer asked for the handoff text or reason (the handoff tool and the platform write them), and the strict
+      # schema rejects unknown keys: drop what an older prompt, a cached reply or a provider still sends.
+      RETIRED_HANDOFF_KEYS.each { |key| payload.delete(key) }
       payload['response_mode'] = normalized_response_mode(payload['response_mode'])
       apply_reasoning_default!(payload)
       payload['artifact_ids'] = normalized_artifact_ids(payload['artifact_ids'])
-      apply_text_default!(payload, 'handoff_message')
-      apply_text_default!(payload, 'handoff_reason')
       payload
     end
 
@@ -33,9 +35,7 @@ class Llm::CaptainResponseContentNormalizer
         response: text,
         response_mode: 'reply',
         reasoning: DEFAULT_REASONING,
-        artifact_ids: [],
-        handoff_message: '',
-        handoff_reason: ''
+        artifact_ids: []
       }
     end
 

@@ -309,6 +309,10 @@ class Captain::Assistant::AgentRunnerService
     output = result.output
     response = output.is_a?(Hash) ? output.with_indifferent_access : { 'response' => output.to_s, 'reasoning' => '' }
     response.delete('handoff_authorized')
+    # The model is not asked for either of these any more (a handoff goes through the handoff tool, the notice is written by the
+    # platform); an older or stray value must not reach the response builder.
+    response.delete('handoff_message')
+    response.delete('handoff_reason')
     response.delete('council_handoff')
     response.delete('council_note')
     response.delete(PROVIDER_ERROR_AUTHORIZED_KEY)
@@ -1374,14 +1378,13 @@ class Captain::Assistant::AgentRunnerService
   def human_handoff_response(handoff_payload, agent_name, handoff_tool_called: false)
     reason = handoff_payload[:reason].presence || handoff_payload['reason'].presence
     outcome_signal = handoff_payload[:outcome_signal].presence || handoff_payload['outcome_signal'].presence
-    message = handoff_payload[:message].presence || handoff_payload['message'].presence
 
+    # The customer notice is written by Captain::CustomerNoticeService from the workspace settings, never by the agent.
     response = {
       'response' => 'conversation_handoff',
       'reasoning' => reason.present? ? "Human handoff requested: #{reason}" : 'Human handoff requested',
       'handoff_reason' => reason,
       'handoff_outcome_signal' => outcome_signal,
-      'handoff_message' => message,
       'handoff_authorized' => true,
       'agent_name' => agent_name
     }

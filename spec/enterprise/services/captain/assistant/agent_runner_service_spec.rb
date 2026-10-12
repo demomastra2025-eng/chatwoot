@@ -615,7 +615,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         }
         blank_result = instance_double(
           Captain::Runtime::Result,
-          output: { 'response' => '', 'handoff_message' => '' },
+          output: { 'response' => '' },
           context: blank_context,
           error: nil
         )
@@ -657,7 +657,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       allow(mock_runner).to receive(:run).and_return(
         instance_double(
           Captain::Runtime::Result,
-          output: { 'response' => '', 'handoff_message' => '' },
+          output: { 'response' => '' },
           context: { current_agent: 'scenario_agent', captain_v2_completed_tool_names: ['create_deal'] },
           error: nil
         )
@@ -762,7 +762,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       allow(mock_runner).to receive(:run).and_return(
         instance_double(
           Captain::Runtime::Result,
-          output: { 'response' => '', 'handoff_message' => '' },
+          output: { 'response' => '' },
           context: {
             current_agent: 'scenario_agent',
             captain_v2_completed_tool_results: [{ tool_name: 'mcp__internal_server__mutate_secret_thing', success: true }]
@@ -781,7 +781,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       allow(mock_runner).to receive(:run).and_return(
         instance_double(
           Captain::Runtime::Result,
-          output: { 'response' => '', 'handoff_message' => '' },
+          output: { 'response' => '' },
           context: {
             current_agent: 'scenario_agent',
             captain_v2_completed_tool_results: [{ tool_name: 'plan_request', success: true },
@@ -897,7 +897,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       allow(mock_runner).to receive(:run).and_return(
         instance_double(
           Captain::Runtime::Result,
-          output: { 'response' => '', 'handoff_message' => '' },
+          output: { 'response' => '' },
           context: { current_agent: 'scenario_agent', captain_v2_completed_actions: %w[create_appointment create_appointment],
                      captain_v2_completed_tool_results: [{ tool_name: 'create_appointment', success: true }] },
           error: nil
@@ -911,6 +911,23 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         'kind' => 'technical', 'reason' => 'run_error', 'error_class' => 'Captain::Assistant::AgentRunnerService::BlankResponseError',
         'completed' => ['create_appointment']
       )
+    end
+
+    it 'drops a handoff message or reason the model wrote: the model has no handoff fields' do
+      allow(mock_runner).to receive(:run).and_return(
+        instance_double(
+          Captain::Runtime::Result,
+          output: { 'response' => 'Готово.', 'reasoning' => 'Answered from the FAQ.',
+                    'handoff_message' => 'Model text', 'handoff_reason' => 'Model reason' },
+          context: { current_agent: 'assistant_agent' },
+          error: nil
+        )
+      )
+
+      result = service.generate_response(message_history: message_history)
+
+      expect(result).to include('response' => 'Готово.')
+      expect(result).not_to include('handoff_message', 'handoff_reason')
     end
 
     it 'drops hallucinated artifact ids when no tool completed' do
@@ -943,7 +960,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       allow(mock_runner).to receive(:run).and_return(
         instance_double(
           Captain::Runtime::Result,
-          output: { 'response' => 'conversation_handoff', 'handoff_message' => 'I will transfer you.' },
+          output: { 'response' => 'conversation_handoff' },
           context: { current_agent: 'assistant_agent' },
           error: nil
         )
@@ -1115,7 +1132,6 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
           'response' => 'conversation_handoff',
           'reasoning' => 'Human handoff requested: Needs manual review',
           'handoff_reason' => 'Needs manual review',
-          'handoff_message' => 'I’m connecting you with a human support specialist.',
           'handoff_authorized' => true,
           'agent_name' => 'assistant_agent',
           'handoff_tool_called' => true
@@ -2907,7 +2923,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
   end
 
   def allow_finalization_retry_runner(failed_context, run_calls)
-    blank_result = agent_result(output: { 'response' => '', 'handoff_message' => '' }, context: failed_context)
+    blank_result = agent_result(output: { 'response' => '' }, context: failed_context)
     recovered_result = agent_result(
       output: { 'response' => 'Deal created.', 'reasoning' => 'Used the completed create_deal tool result.' },
       context: failed_context.merge(current_agent: 'scenario_agent')
