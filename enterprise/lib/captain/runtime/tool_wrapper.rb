@@ -859,20 +859,38 @@ class Captain::Runtime::ToolWrapper
     )
   end
 
+  # The runtime guardrails scan tool data only for external tools (see Captain::ToolSafety.external_tool?); built-in system
+  # tools are skipped.
   def check_tool_arguments!(arguments)
+    return unless external_content_tool?
+
     Captain::ToolSafety.check_arguments!(
       feature: :assistant,
       arguments: arguments,
-      preferences: captain_runtime_preferences
+      preferences: tool_data_preferences
     )
   end
 
   def check_tool_results!(result)
+    return unless external_content_tool?
+
     Captain::ToolSafety.check_result!(
       feature: :assistant,
       result: result,
-      preferences: captain_runtime_preferences
+      preferences: tool_data_preferences
     )
+  end
+
+  def external_content_tool?
+    return @external_content_tool unless @external_content_tool.nil?
+
+    @external_content_tool = Captain::ToolSafety.external_tool?(@tool)
+  end
+
+  # Provider moderation (an LLM call) covers the customer input and the agent output, never tool data, so it is switched off
+  # for these checks whatever the workspace chose for the input and output.
+  def tool_data_preferences
+    captain_runtime_preferences.to_h.merge('assistant_moderation' => false)
   end
 
   def captain_runtime_preferences

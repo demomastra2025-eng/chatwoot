@@ -39,6 +39,23 @@ module Captain::Assistant::RunPayloadHelper
     message_history.reject.with_index { |_msg, index| index == last_user_index }
   end
 
+  # The customer messages after the agent's last reply, other than the one being answered, reach the model as history
+  # (a document followed by "ok", several messages sent in a row). The input guardrails read them with the current message.
+  # With none of them the current message is returned unchanged.
+  def input_with_unanswered_messages(message_to_process, context)
+    earlier_texts = unanswered_user_texts(context)
+    return message_to_process if earlier_texts.empty?
+
+    current_text = message_to_process.is_a?(RubyLLM::Content) ? message_to_process.text : message_to_process
+    # The current message goes first because the moderation call keeps only the start of a long text.
+    [current_text, *earlier_texts].map { |text| { type: 'text', text: text.to_s } }
+  end
+
+  def unanswered_user_texts(context)
+    unanswered = Array(context[:conversation_history]).reverse.take_while { |entry| message_role(entry) == 'user' }
+    unanswered.reverse.filter_map { |entry| extract_text_from_content(message_value(entry, :content)).to_s.presence }
+  end
+
   def extract_text_from_content(content)
     return content[:response] || content['response'] || content.to_s if content.is_a?(Hash)
     return content unless content.is_a?(Array) || content.is_a?(RubyLLM::Content)

@@ -1,5 +1,10 @@
 class Captain::ToolRegistry
   class Definition
+    # `external_content: true` marks a built-in tool that brings third-party content into the run (web search, web page
+    # reading, integrations) or delivers model-written text to a customer or an outside system (send_message_to_conversation,
+    # edit_message, create_touch: that text never passes the output guardrail, which reads only the final reply). Only those
+    # tools have their arguments and results scanned by the runtime guardrails (see Captain::ToolSafety.external_tool?);
+    # every other registered tool is a system tool and is not scanned.
     ATTRIBUTES = %i[
       id
       title
@@ -18,6 +23,7 @@ class Captain::ToolRegistry
       requires_confirmation
       idempotent
       selected_by_default
+      external_content
     ].freeze
 
     attr_reader(*ATTRIBUTES)
@@ -46,6 +52,11 @@ class Captain::ToolRegistry
                              else
                                true
                              end
+      @external_content = ActiveModel::Type::Boolean.new.cast(attributes[:external_content]) == true
+    end
+
+    def external_content?
+      external_content
     end
 
     def supports_scope?(scope_name)
@@ -434,7 +445,8 @@ class Captain::ToolRegistry
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
           assistant_tool_class: Captain::Tools::Copilot::WebSearchService,
           risk_level: 'low',
-          idempotent: true
+          idempotent: true,
+          external_content: true
         ),
         definition(
           id: 'web_scrape_url',
@@ -447,7 +459,8 @@ class Captain::ToolRegistry
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
           assistant_tool_class: Captain::Tools::Copilot::WebScrapeUrlService,
           risk_level: 'low',
-          idempotent: true
+          idempotent: true,
+          external_content: true
         ),
         definition(
           id: 'add_contact_note',
@@ -973,7 +986,8 @@ class Captain::ToolRegistry
           assistant_tool_class: Captain::Tools::Copilot::CreateTouchService,
           required_permissions: %w[outbound_manage],
           risk_level: 'high',
-          idempotent: true
+          idempotent: true,
+          external_content: true
         ),
         definition(
           id: 'cancel_touch',
@@ -1312,7 +1326,8 @@ class Captain::ToolRegistry
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
           assistant_tool_class: Captain::Tools::Copilot::SearchLinearIssuesService,
-          risk_level: 'low'
+          risk_level: 'low',
+          external_content: true
         ),
         definition(
           id: 'send_message_to_conversation',
@@ -1329,7 +1344,8 @@ class Captain::ToolRegistry
             conversation_participating_manage
           ],
           risk_level: 'high',
-          requires_confirmation: true
+          requires_confirmation: true,
+          external_content: true
         ),
         definition(
           id: 'assign_conversation',
@@ -1677,7 +1693,8 @@ class Captain::ToolRegistry
             conversation_participating_manage
           ],
           risk_level: 'high',
-          requires_confirmation: true
+          requires_confirmation: true,
+          external_content: true
         ),
         definition(
           id: 'translate_message',

@@ -1321,7 +1321,7 @@ class Captain::Assistant::AgentRunnerService
     Llm::SafetyPolicy.check!(
       feature: :assistant,
       stage: :input,
-      content: message_to_process,
+      content: input_with_unanswered_messages(message_to_process, context),
       account: @assistant.account,
       preferences: context.dig(:state, :captain_runtime)
     )
