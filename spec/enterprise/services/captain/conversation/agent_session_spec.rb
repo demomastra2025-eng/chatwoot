@@ -36,7 +36,7 @@ RSpec.describe Captain::Conversation::AgentSession do
     expect { session.change { |data| data } }
       .to raise_error(Captain::Conversation::ControlGenerationStaleError, /status_changed/)
     expect { session.finish_operation(key, { success: true, data: { appointment_id: 17 } }) }
-      .not_to change { conversation.messages.outgoing.count }
+      .not_to(change { conversation.messages.outgoing.count })
     expect(stored_operations[key]).to include('status' => 'finished', 'result' => hash_including('success' => true))
   end
 
