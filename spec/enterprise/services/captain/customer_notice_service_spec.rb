@@ -63,6 +63,15 @@ RSpec.describe Captain::CustomerNoticeService do
       expect(service.source).to eq('fixed')
       expect(assistant).to have_received(:render_runtime_text).with('Сейчас подключится сотрудник.', conversation: conversation)
     end
+
+    it 'writes a $ field as the value alone, so the customer never reads a label or a field id' do
+      conversation.contact.update!(name: 'Айгерим', phone_number: nil)
+      text = '[$Имя](field://contact.name), сотрудник скоро подключится. Ваш номер: [$Телефон](field://contact.phone_number).'
+      configure_notice(account, handoff_key, mode: 'fixed', text: text)
+
+      expect(service.text).to eq('Айгерим, сотрудник скоро подключится. Ваш номер: .')
+      expect(service.text).not_to include('contact.', '(', 'не указано', 'not specified')
+    end
   end
 
   describe 'an AI-written message' do

@@ -7,16 +7,17 @@ RSpec.describe Captain::Assistant::PromptPreviewService do
   let(:assistant) { create(:captain_assistant, account: account, description: 'Handle billing questions only.') }
 
   describe '#preview' do
-    it 'strictly compiles main, copilot and routed prompts with field and tool glossaries' do
-      assistant.update!(description: 'Use [Name](field://contact.name).')
+    it 'strictly compiles main, copilot and routed prompts with the rules and the instruction, and no glossary' do
+      assistant.update!(description: 'Use [Name](field://contact.name) and [@FAQ](tool://faq_lookup).')
       create(:captain_assistant, account: account, description: 'Use [Email](field://contact.email).')
 
       preview = described_class.new(assistant: assistant).preview
 
-      expect(preview.dig(:assistant, :compiled_prompt)).to include('# Reference Glossary', 'Name (contact.name)', 'FAQ Lookup (faq_lookup)')
+      expect(preview.dig(:assistant, :compiled_prompt)).to start_with('# Platform rules')
+      expect(preview.dig(:assistant, :compiled_prompt)).to include("# Clinic instructions\nUse not specified and `faq_lookup`.")
       expect(preview.dig(:copilot, :compiled_prompt)).to include(assistant.system_instruction)
-      expect(preview.dig(:scenarios, 0, :compiled_prompt)).to include('# Reference Glossary', 'Email (contact.email)', 'Handoff to Human (handoff)')
-      expect(preview.dig(:assistant, :compiled_prompt)).not_to include('Use the glossary below to understand the exact fields and tools')
+      expect(preview.dig(:scenarios, 0, :compiled_prompt)).to include("# Clinic instructions\nUse not specified.")
+      expect(preview.dig(:assistant, :compiled_prompt)).not_to include('# Reference Glossary', '# Now', '# Patient')
     end
 
     it 'builds main prompt and compiled platform previews without separate rule layers' do
@@ -26,7 +27,8 @@ RSpec.describe Captain::Assistant::PromptPreviewService do
       )
       expect(preview.dig(:assistant, :layers).pluck(:id)).not_to include('system_prompt_structure', 'system_rules', 'response_guidelines', 'guardrails')
       expect(preview.dig(:assistant, :used_tool_ids)).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation')
-      expect(preview.dig(:assistant, :compiled_prompt)).to include('FAQ Lookup (faq_lookup)', 'Handoff to Human (handoff)', '# Platform constraints')
+      expect(preview.dig(:assistant, :compiled_prompt)).to include('# Platform rules', '# Clinic instructions')
+      expect(preview.dig(:assistant, :compiled_prompt)).not_to include('# Platform constraints', '# Reference Glossary')
       expect(preview.dig(:copilot, :layers)).to include(
         include(id: 'assistant_instruction', title: 'System instruction', enabled: true, value: 'Handle billing questions only.')
       )
@@ -119,7 +121,7 @@ RSpec.describe Captain::Assistant::PromptPreviewService do
       preview = described_class.new(assistant: assistant).preview
 
       expect(preview.dig(:assistant, :used_tool_ids)).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation')
-      expect(preview.dig(:assistant, :compiled_prompt)).to include('Handoff to Human (handoff)')
+      expect(preview.dig(:assistant, :compiled_prompt)).to include('hand the conversation to staff with `handoff`')
     end
 
     it 'reports only runtime-available scenario tools in preview metadata' do

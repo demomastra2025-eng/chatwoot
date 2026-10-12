@@ -21,6 +21,7 @@ module Concerns::Agentable
     prompt_state = state[:prompt_context] || {}
     enhanced_context = time_agent_phase('prompt_context') { prompt_context_for_runtime_state(state) }.merge(default_prompt_runtime_context)
     enhanced_context[:scenarios] = [] if state[:mesh_routing]
+    return compact_agent_instructions(enhanced_context, state, prompt_state) if compact_prompt_template?
 
     if state.present?
       explicit_prompt_context = state.key?(:prompt_context)
@@ -79,6 +80,23 @@ module Concerns::Agentable
   end
 
   private
+
+  # The agent template (assistant.liquid) is the compact prompt: the rules, the clinic instruction, the time and the patient.
+  # The prompt-text parts are built by Captain::AssistantPrompt; the run state itself (prompt_state, runtime_clock) stays complete
+  # data for tools and notices. Every other template (the legacy scenario one) keeps its snippets and the path below.
+  def compact_prompt_template?
+    template_name == 'assistant'
+  end
+
+  def compact_agent_instructions(enhanced_context, state, prompt_state)
+    variables = time_agent_phase('prompt_variables') do
+      Captain::AssistantPrompt.new(assistant: self, context: enhanced_context, state: state, prompt_state: prompt_state).variables
+    end
+
+    time_agent_phase('prompt_render') do
+      Captain::PromptRenderer.render(template_name, enhanced_context.merge(variables).with_indifferent_access)
+    end
+  end
 
   def append_context_summaries(context, prompt_state)
     lines = prompt_state[:context_summaries].to_h.map do |scope, summary|

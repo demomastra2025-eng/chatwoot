@@ -664,18 +664,34 @@ class Captain::Assistant < ApplicationRecord
     )
   end
 
+  # A text that a customer reads (a fixed handoff or closing notice): each $ field is its plain value, an empty field is empty
+  # text, and a mentioned tool is only its label. The time zone is the one of the conversation's inbox.
   def render_runtime_text(text, conversation: nil)
     runtime_state = runtime_state_for(conversation)
     field_ids = referenced_field_ids_for_texts(prompt_glossary_texts + [text])
     prompt_state = prompt_context_state(runtime_state, field_ids: field_ids)
 
-    resolve_runtime_value(text, prompt_state, field_ids: field_ids)
+    resolve_runtime_value(
+      text, prompt_state, field_ids: field_ids, mode: :customer, bound_tool_ids: [],
+                          time_zone: Captain::PromptClock.zone_for(conversation&.inbox&.timezone, account&.reporting_timezone)
+    )
   end
 
   def resolve_runtime_prompt_context(context, prompt_state, field_ids: nil)
     effective_field_ids = field_ids || referenced_field_ids_for_texts(prompt_glossary_texts)
 
     resolve_runtime_value(context, prompt_state, field_ids: effective_field_ids)
+  end
+
+  # The texts of the agent prompt (the clinic instruction, the shared rules) with every $ field written as its plain value in
+  # time_zone and every @ tool as the function name, or as the bare label when the tool is not in bound_tool_ids.
+  def resolve_prompt_texts(texts, prompt_state, bound_tool_ids: nil, time_zone: nil)
+    field_ids = referenced_field_ids_for_texts(prompt_glossary_texts)
+
+    resolve_runtime_value(
+      texts, prompt_state, field_ids: field_ids, allowed_fields: (field_ids.empty? ? [] : nil),
+                           bound_tool_ids: bound_tool_ids, time_zone: time_zone
+    )
   end
 
   def push_event_data
@@ -890,33 +906,16 @@ class Captain::Assistant < ApplicationRecord
     assign_attributes(attributes) if attributes.present?
   end
 
-  # A mesh run (every persisted agent) gets its peers from the coordination
-  # prompt and drops this list (Agentable#agent_instructions), so it does not
-  # load them at all.
-  def runtime_prompt_context(state = {})
-    prompt_context(include_peers: !state.to_h[:mesh_routing])
-  end
-
-  def prompt_context(include_peers: true)
-    referenced_field_ids = referenced_field_ids_for_texts(prompt_glossary_texts)
-
+  # What the agent prompt template reads from the agent itself. The peers of the channel are not here: they are described by the
+  # coordination prompt, and the tools are described by their own schema (no glossary).
+  def prompt_context
     {
-      name: name,
       global_system_instruction: Llm::Config.global_agent_system_prompt,
       instruction: system_instruction,
       faq_enabled: faq_enabled?,
       human_handoff_enabled: handoff_enabled? && selected_agent_tool_ids.include?(HANDOFF_TOOL_ID),
-      runtime_tool_ids: prompt_runtime_agent_tools.pluck(:id),
-      scenarios: include_peers ? prompt_peer_entries : [],
-      context_glossary: context_glossary_groups(referenced_field_ids),
-      tool_glossary: tool_glossary_groups(prompt_runtime_agent_tools)
+      runtime_tool_ids: prompt_runtime_agent_tools.pluck(:id)
     }
-  end
-
-  def prompt_peer_entries
-    channel_peers.map do |peer|
-      { title: peer.name, key: peer.handoff_target_name, description: peer.routing_description }
-    end
   end
 
   def scenario_default_tool_ids
@@ -931,19 +930,26 @@ class Captain::Assistant < ApplicationRecord
     config.delete('feature_contact_attributes')
   end
 
-  def resolve_runtime_value(value, prompt_state, field_ids: nil, allowed_fields: nil)
+  # Writes the $ field and @ tool references of a text (or of every text inside a hash or array). The options only say how:
+  # mode (:prompt for the model, :customer for a text a customer reads), the zone of times, and the tools bound for the run
+  # (nil when unknown).
+  def resolve_runtime_value(value, prompt_state, field_ids: nil, allowed_fields: nil, mode: :prompt, bound_tool_ids: nil, time_zone: nil)
     allowed_fields ||= allowed_context_fields(field_ids)
+    options = { field_ids: field_ids, allowed_fields: allowed_fields, mode: mode, bound_tool_ids: bound_tool_ids, time_zone: time_zone }
 
     case value
     when String
       text_without_scripts = value.gsub(%r{\[([^\]]+)\]\(tool://skill_script_[^)]+\)}, '\\1')
-      text_with_tools = render_tool_references(text_without_scripts)
+      text_with_tools = render_tool_references(text_without_scripts, bound_tool_ids: bound_tool_ids)
       text_without_skill_links = text_with_tools.gsub(%r{\[([^\]]+)\]\(skill://[^)]+\)}, '\\1')
-      Captain::ContextFields.render_references(text_without_skill_links, prompt_state: prompt_state, allowed_fields: allowed_fields)
+      Captain::ContextFields.render_references(
+        text_without_skill_links, prompt_state: prompt_state, allowed_fields: allowed_fields,
+                                  mode: mode, time_zone: time_zone, bound_tool_ids: bound_tool_ids
+      )
     when Array
-      value.map { |item| resolve_runtime_value(item, prompt_state, field_ids: field_ids, allowed_fields: allowed_fields) }
+      value.map { |item| resolve_runtime_value(item, prompt_state, **options) }
     when Hash
-      value.transform_values { |item| resolve_runtime_value(item, prompt_state, field_ids: field_ids, allowed_fields: allowed_fields) }
+      value.transform_values { |item| resolve_runtime_value(item, prompt_state, **options) }
     else
       value
     end

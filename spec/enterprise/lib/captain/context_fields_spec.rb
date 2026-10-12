@@ -366,7 +366,7 @@ RSpec.describe Captain::ContextFields do
       prompt = described_class.prompt_state_for(assistant: assistant, runtime_state: state, field_ids: ['deal.title'])
       rendered = described_class.render_references('[Title](field://deal.title)', prompt_state: prompt, allowed_fields: [definition])
 
-      expect(rendered).to eq('Title (deal.title: Exact event title)')
+      expect(rendered).to eq('Exact event title')
       expect(prompt[:context_warnings]).to include(include(field_id: 'deal.title', replacement_field_id: 'deal.summary'))
       expect(prompt.dig(:deal, 'summary')).to be_nil
     end
@@ -777,12 +777,119 @@ RSpec.describe Captain::ContextFields do
         allowed_fields: described_class.effective_definitions_for(assistant, field_ids: field_ids)
       )
 
-      expect(rendered_text).to include('Phone Number (contact.phone_number: +123456789)')
-      expect(rendered_text).to include('VIP Level (contact.custom_attributes.vip_level: gold)')
-      expect(rendered_text).to include('Order ID (conversation.custom_attributes.order_id: ORD-1)')
-      expect(rendered_text).to include('Sales Region (deal.custom_attributes.sales_region: EMEA)')
-      expect(rendered_text).to include('Follow Up Channel (task.custom_attributes.follow_up_channel: phone)')
-      expect(rendered_text).to include('Visit Room (appointment.custom_attributes.visit_room: B12)')
+      expect(rendered_text).to eq('Use +123456789, gold, ORD-1, EMEA, phone, and B12.')
+    end
+
+    describe 'plain values' do
+      def render(text, state, **)
+        fields = text.scan(%r{field://([^)]+)}).flatten.map { |id| { id: id } }
+        described_class.render_references(text, prompt_state: state, allowed_fields: fields, **)
+      end
+
+      it 'writes only the value, with neither the label nor the field id' do
+        state = { contact: { 'name' => 'Aigerim' }, deal: { 'amount' => 1500, 'win' => false } }
+
+        expect(render('Hi [$Name](field://contact.name), [$Amount](field://deal.amount) [$Won](field://deal.win)', state))
+          .to eq('Hi Aigerim, 1500 false')
+      end
+
+      it 'writes not specified for an empty value in a prompt and an empty string for a customer' do
+        state = { contact: { 'name' => '  ', 'email' => nil } }
+        text = '[$Name](field://contact.name)|[$Email](field://contact.email)|[$Phone](field://contact.phone_number)'
+
+        expect(render(text, state)).to eq('not specified|not specified|not specified')
+        expect(render(text, state, mode: :customer)).to eq('||')
+      end
+
+      it 'writes the bare label of a field that is unknown or not allowed, and nothing for a customer' do
+        text = 'A [$Secret](field://contact.secret) B'
+
+        expect(described_class.render_references(text, prompt_state: {}, allowed_fields: [])).to eq('A Secret B')
+        expect(described_class.render_references('A [Plain label](field://contact.secret) B', prompt_state: {}, allowed_fields: []))
+          .to eq('A Plain label B')
+        expect(described_class.render_references(text, prompt_state: {}, allowed_fields: [], mode: :customer)).to eq('A  B')
+      end
+
+      it 'squishes a multi-line value to one line so it cannot start a heading' do
+        state = { appointment: { 'client_comment' => "first\n# Heading\r\n  second   third" } }
+
+        expect(render('[$Comment](field://appointment.client_comment)', state)).to eq('first # Heading second third')
+      end
+
+      it 'writes a time in the zone of the run as DD.MM.YYYY HH:MM and a date as DD.MM.YYYY, never in UTC' do
+        state = { task: { 'due_at' => Time.utc(2026, 10, 12, 20, 30), 'day' => Date.new(2026, 10, 13) } }
+        text = '[$Due](field://task.due_at) / [$Day](field://task.day)'
+
+        expect(render(text, state, time_zone: 'Asia/Almaty')).to eq('13.10.2026 01:30 / 13.10.2026')
+        expect(render(text, state, time_zone: 'Europe/Moscow')).to eq('12.10.2026 23:30 / 13.10.2026')
+        expect(render(text, state)).to eq('13.10.2026 01:30 / 13.10.2026')
+        expect(render(text, state, time_zone: 'Asia/Almaty', mode: :customer)).to eq('13.10.2026 01:30 / 13.10.2026')
+      end
+
+      it 'joins a list and writes other JSON for the model only' do
+        state = { conversation: { 'label_list' => ['vip', ' repeat visit '], 'extra' => { 'a' => 1 } } }
+        text = '[$Labels](field://conversation.label_list)|[$Extra](field://conversation.extra)'
+
+        expect(render(text, state)).to eq('vip, repeat visit|{"a":1}')
+        expect(render(text, state, mode: :customer)).to eq('vip, repeat visit|')
+      end
+
+      it 'writes an appointment summary as one short line and a deal summary the same way' do
+        item = { id: 5, status: 'scheduled', date: '15.10.2026', time: '10:30', doctor: 'Иванов', service: 'Приём' }
+        appointments = {
+          kind: 'appointments',
+          groups: [{ key: 'upcoming', total: 1, items: [item] }, { key: 'past', total: 0, items: [] }, { key: 'cancelled', total: 0, items: [] }]
+        }
+        state = { appointment: { 'summary' => appointments }, deal: { 'summary' => { 'kind' => 'deals', 'groups' => [] } } }
+
+        expect(render('Records: [$Summary](field://appointment.summary).', state))
+          .to eq('Records: upcoming: Thu 15.10.2026 10:30, «Приём», Иванов; no past or cancelled appointments.')
+        expect(render('Deals: [$Summary](field://deal.summary)', state)).to eq('Deals: no deals')
+      end
+
+      it 'writes a summary with the number of a record only when a bound tool takes that number' do
+        appointments = {
+          kind: 'appointments',
+          groups: [{ key: 'upcoming', total: 1, items: [{ id: 5, status: 'scheduled', date: '15.10.2026', time: '10:30', doctor: 'Иванов' }] }]
+        }
+        state = { appointment: { 'summary' => appointments } }
+        text = '[$Summary](field://appointment.summary)'
+
+        expect(render(text, state, bound_tool_ids: %w[get_appointment])).to start_with('upcoming: #5 Thu 15.10.2026 10:30')
+        expect(render(text, state, bound_tool_ids: %w[list_my_appointments])).to start_with('upcoming: Thu 15.10.2026 10:30')
+        expect(render(text, state)).to start_with('upcoming: Thu 15.10.2026 10:30')
+      end
+
+      it 'leaves a summary out of a text a customer reads' do
+        state = { appointment: { 'summary' => { kind: 'appointments', groups: [] } } }
+
+        expect(render('Records: [$Summary](field://appointment.summary).', state, mode: :customer)).to eq('Records: .')
+      end
+
+      it 'writes a hash that is not a summary shape as JSON when the field is a summary field' do
+        state = { appointment: { 'summary' => { 'unknown' => 'shape' } } }
+
+        expect(render('[$Summary](field://appointment.summary)', state)).to eq('{"unknown":"shape"}')
+      end
+    end
+  end
+
+  describe '.conversation_state_for' do
+    let(:account) { create(:account) }
+    let(:conversation) { create(:conversation, account: account) }
+
+    it 'adds the labels of the conversation to its state when it has labels' do
+      expect(described_class.conversation_state_for(conversation)[:label_list]).to be_nil
+
+      conversation.update!(label_list: %w[vip repeat])
+
+      expect(described_class.conversation_state_for(conversation.reload)).to include(
+        id: conversation.id, display_id: conversation.display_id, label_list: %w[vip repeat]
+      )
+    end
+
+    it 'returns nothing for a missing conversation' do
+      expect(described_class.conversation_state_for(nil)).to be_nil
     end
   end
 end

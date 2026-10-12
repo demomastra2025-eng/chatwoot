@@ -80,3 +80,17 @@ only `appointment.summary`. No destructive SQL migration is required.
 Saved-production-template/profile usage must be audited through a separately
 authorized read-only environment before rollout; this local change does not
 inspect or edit customer data.
+
+## Text in the agent prompt
+
+The agent prompt never carries this JSON. Where the clinic instruction references
+`appointment.summary`, `deal.summary` or `deal.client_deals` with a `$` field, the
+prompt gets one short English line written by `Captain::PromptSummaryText`, for
+example `upcoming: Thu 15.10.2026 10:30, «Приём терапевта», Иванов Алексей;
+no past or cancelled appointments`. Titles and names stay as stored. Dates are
+local to the run, never UTC. A group that is cut ends with `(and N more)`, and a
+status word is written only when it is not the usual one of the group. A record
+number (`#123`) is written only when a tool bound for the run takes that id as a
+required or main parameter (`Captain::PromptNumbers`). The renderer only reads
+the hash; the hash itself, `ContextSummary` and the prompt state stay unchanged.
+A text sent to a customer leaves a summary out.

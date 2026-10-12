@@ -915,7 +915,7 @@ class Captain::Assistant::AgentRunnerService
 
   def base_conversation_state
     {
-      conversation: slice_attrs(@conversation, Captain::ContextFields::CONVERSATION_STATE_ATTRIBUTES),
+      conversation: Captain::ContextFields.conversation_state_for(@conversation),
       channel_type: @conversation.inbox&.channel_type,
       reply_window: reply_window_state
     }

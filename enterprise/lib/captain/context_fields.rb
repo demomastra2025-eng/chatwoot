@@ -1,5 +1,6 @@
 class Captain::ContextFields
   FIELD_REFERENCE_REGEX = %r{\[([^\]]+)\]\(field://([^)]+)\)}
+  NOT_SPECIFIED = 'not specified'.freeze
   SCOPES = %i[contact conversation deal task appointment].freeze
   CONTACT_STATE_ATTRIBUTES = %i[
     id name email phone_number identifier contact_type
@@ -321,7 +322,7 @@ class Captain::ContextFields
       return {} if conversation.blank? || conversation.account_id != account.id
 
       runtime_state = {
-        conversation: slice_record_attributes(conversation, CONVERSATION_STATE_ATTRIBUTES),
+        conversation: conversation_state_for(conversation),
         contact: slice_record_attributes(conversation.contact, CONTACT_STATE_ATTRIBUTES),
         channel_type: channel_type
       }.compact
@@ -518,7 +519,12 @@ class Captain::ContextFields
       normalized_text.scan(FIELD_REFERENCE_REGEX).map { |_label, field_id| normalize_field_id(field_id) }.uniq
     end
 
-    def render_references(text, prompt_state:, allowed_fields:)
+    # Writes each [$Label](field://id) reference as the plain value, with no label and no field id.
+    #   mode :prompt   - for the model. An empty value is "not specified"; an unknown or not allowed field is its bare label.
+    #                    Times are written in time_zone. A summary is written as one short line (Captain::PromptSummaryText).
+    #   mode :customer - for a text a customer reads. An empty or unknown value is an empty string and never a label or an id;
+    #                    a summary is left out.
+    def render_references(text, prompt_state:, allowed_fields:, mode: :prompt, time_zone: nil, bound_tool_ids: nil)
       return text if text.blank?
 
       allowed_fields_by_id = allowed_fields.index_by { |field| field[:id] }
@@ -527,15 +533,20 @@ class Captain::ContextFields
         label = Regexp.last_match(1)
         field_id = normalize_field_id(Regexp.last_match(2))
         definition = allowed_fields_by_id[field_id]
-        cleaned_label = clean_reference_label(label, definition)
 
-        next cleaned_label if definition.blank?
-
-        value = value_for(prompt_state, field_id)
-        formatted_value = format_value(value)
-
-        formatted_value.present? ? "#{cleaned_label} (#{field_id}: #{formatted_value})" : "#{cleaned_label} (#{field_id})"
+        if definition.present?
+          reference_text(value_for(prompt_state, field_id), field_id, mode: mode, time_zone: time_zone, bound_tool_ids: bound_tool_ids)
+        else
+          mode == :customer ? '' : clean_reference_label(label, definition)
+        end
       end
+    end
+
+    # The conversation part of the run state: its columns and, when it has any, its labels.
+    def conversation_state_for(conversation)
+      state = slice_record_attributes(conversation, CONVERSATION_STATE_ATTRIBUTES)
+      labels = conversation&.cached_label_list_array
+      state && labels.present? ? state.merge(label_list: labels) : state
     end
 
     def value_for_field_id(prompt_state, field_id)
@@ -988,21 +999,41 @@ class Captain::ContextFields
       end
     end
 
-    def format_value(value)
-      case value
-      when nil
-        nil
-      when Array
-        value.map { |item| Captain::EncodingNormalizer.string(item.to_s) }.join(', ')
-      when Hash
-        JSON.generate(Captain::EncodingNormalizer.utf8(value))
-      when String
-        Captain::EncodingNormalizer.string(value).presence
-      else
-        value.to_s.presence
+    def reference_text(value, field_id, mode:, time_zone:, bound_tool_ids:)
+      customer = mode == :customer
+      if value.is_a?(Hash) && summary_field_id?(field_id)
+        return '' if customer
+
+        summary = Captain::PromptSummaryText.render(value, time_zone: time_zone, bound_tool_ids: bound_tool_ids)
+        return summary if summary.present?
       end
+
+      plain_value(value, time_zone, json: !customer).presence || (customer ? '' : NOT_SPECIFIED)
+    end
+
+    def summary_field_id?(field_id)
+      field_id.end_with?('.summary') || field_id == 'deal.client_deals'
+    end
+
+    # One line of plain text. A time is written in the zone of the run (DD.MM.YYYY HH:MM), a date as DD.MM.YYYY.
+    def plain_value(value, time_zone, json:)
+      case value
+      when nil then nil
+      when Array then value.filter_map { |item| plain_value(item, time_zone, json: json).presence }.join(', ')
+      when Hash then json_text(value) if json
+      else
+        Captain::PromptClock.time_value?(value) ? Captain::PromptClock.format_time(value, time_zone) : one_line_text(value)
+      end
+    end
+
+    def json_text(hash)
+      JSON.generate(Captain::EncodingNormalizer.utf8(hash))
     rescue JSON::GeneratorError
-      Captain::EncodingNormalizer.string(value.to_s).presence
+      one_line_text(hash)
+    end
+
+    def one_line_text(value)
+      Captain::EncodingNormalizer.string(value.to_s).squish.presence
     end
 
     def clean_reference_label(label, definition)

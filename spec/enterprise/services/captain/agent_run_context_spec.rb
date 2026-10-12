@@ -38,23 +38,19 @@ RSpec.describe Captain::AgentRunContext do
     expect(prompt).not_to include('ENTRY PRIVATE PROMPT')
   end
 
-  it 'does not load the channel peers for the prompt of a mesh run, which drops the list anyway' do
+  it 'does not load the channel peers for the agent prompt: the coordination prompt describes them' do
     runtime = described_class.new(entry: entry, conversation: conversation)
     runtime.prepare(context)
     runtime.activate(specialist, context)
     expect(context[:state][:mesh_routing]).to be(true)
     expect(specialist).not_to receive(:channel_peers)
+    expect(entry).not_to receive(:channel_peers)
 
     prompt = specialist.agent_instructions(Captain::Runtime::RunContext.new(context))
 
     expect(prompt).to include('SPECIALIST OWN PROMPT')
-  end
-
-  it 'still lists the channel peers when the prompt is built outside a mesh run' do
-    expect(entry).to receive(:channel_peers).and_call_original
-
-    expect(entry.send(:runtime_prompt_context, { account_id: account.id })[:scenarios].pluck(:title)).to eq([specialist.name])
-    expect(entry.send(:runtime_prompt_context, { mesh_routing: true })[:scenarios]).to eq([])
+    expect(entry.agent_instructions).not_to include(specialist.name)
+    expect(entry.send(:runtime_prompt_context, { account_id: account.id })).not_to have_key(:scenarios)
   end
 
   it 'gives a run without a channel a single agent with no routes' do

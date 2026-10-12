@@ -2436,6 +2436,16 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         status: conversation.status
       )
       expect(state[:channel_type]).to eq(inbox.channel_type)
+      expect(state[:conversation][:label_list]).to be_nil
+    end
+
+    it 'includes the labels of the conversation in its state and in the prompt context' do
+      conversation.update!(label_list: %w[vip repeat])
+
+      state = described_class.new(assistant: assistant, conversation: conversation.reload).send(:build_state)
+
+      expect(state[:conversation]).to include(label_list: %w[vip repeat])
+      expect(state.dig(:prompt_context, :conversation, 'label_list')).to eq(%w[vip repeat])
     end
 
     it 'includes the response fence used before runtime tool execution' do

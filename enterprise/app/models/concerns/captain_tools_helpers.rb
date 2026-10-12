@@ -57,15 +57,22 @@ module Concerns::CaptainToolsHelpers
     tool_matches.flatten.map { |tool_id| normalize_tool_id(tool_id) }.uniq
   end
 
-  def render_tool_references(text)
+  # Writes each [@Label](tool://id) mention as the name the model calls (the tool id) in backticks. A tool that is not bound for
+  # this run cannot be called, so its mention is the bare label (without the editor's "@") and no function name. Without
+  # bound_tool_ids (the tools are unknown) every mention is written as its function name.
+  def render_tool_references(text, bound_tool_ids: nil)
     return text if text.blank?
 
+    bound = bound_tool_ids&.map(&:to_s)
     text.gsub(TOOL_REFERENCE_RENDER_REGEX) do
-      label = Regexp.last_match(1).to_s.strip
+      label = Regexp.last_match(1).to_s
       tool_id = normalize_tool_id(Regexp.last_match(2))
-      reference_name = label.presence || tool_id
 
-      "`#{reference_name}` tool"
+      if bound.nil? || bound.include?(tool_id)
+        "`#{tool_id}`"
+      else
+        label.sub(/\A\s*@\s*/, '').squish.presence || tool_id
+      end
     end
   end
 

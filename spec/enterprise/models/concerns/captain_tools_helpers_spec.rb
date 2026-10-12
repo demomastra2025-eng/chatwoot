@@ -106,4 +106,31 @@ RSpec.describe Concerns::CaptainToolsHelpers, type: :concern do
       expect(result).to eq(['custom_fetch_characters'])
     end
   end
+
+  describe '#render_tool_references' do
+    let(:text) { 'Find it with [@Search Services](tool://search_scheduling_services), then [Create](tool://create_appointment).' }
+
+    it 'writes each mention as the function name in backticks, never the label or the word tool' do
+      expect(test_instance.render_tool_references(text, bound_tool_ids: %w[search_scheduling_services create_appointment]))
+        .to eq('Find it with `search_scheduling_services`, then `create_appointment`.')
+    end
+
+    it 'writes a mention as the function name when the bound tools are unknown' do
+      expect(test_instance.render_tool_references(text))
+        .to eq('Find it with `search_scheduling_services`, then `create_appointment`.')
+    end
+
+    it 'writes the bare label, without backticks and the editor at sign, for a tool that is not bound' do
+      expect(test_instance.render_tool_references(text, bound_tool_ids: ['create_appointment']))
+        .to eq('Find it with Search Services, then `create_appointment`.')
+      expect(test_instance.render_tool_references(text, bound_tool_ids: [])).to eq('Find it with Search Services, then Create.')
+    end
+
+    it 'unescapes a markdown-escaped tool id and keeps a blank text as it is' do
+      expect(test_instance.render_tool_references('Use [@Fetch](tool://custom\\_fetch)', bound_tool_ids: ['custom_fetch']))
+        .to eq('Use `custom_fetch`')
+      expect(test_instance.render_tool_references(nil)).to be_nil
+      expect(test_instance.render_tool_references('')).to eq('')
+    end
+  end
 end

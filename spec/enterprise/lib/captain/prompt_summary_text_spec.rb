@@ -80,6 +80,12 @@ RSpec.describe Captain::PromptSummaryText do
       expect(render(appointments_summary)).to eq('no appointments')
     end
 
+    it 'never calls a group empty when it has a count but no readable rows' do
+      summary = appointments_summary(past: [{ id: 3, status: 'completed' }], totals: { 'past' => 4, 'cancelled' => 2 })
+
+      expect(render(summary)).to eq('past: 4 not shown; cancelled: 2 not shown; no upcoming appointments')
+    end
+
     it 'writes an English status word only when it is not the usual status of the group' do
       summary = appointments_summary(
         upcoming: [appointment(id: 5, status: 'confirmed')],

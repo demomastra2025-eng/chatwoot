@@ -73,12 +73,13 @@ RSpec.describe Captain::Scenario, type: :model do
       expect("transfer_to_#{scenario.handoff_key}".length).to be <= 60
     end
 
-    it 'exposes the converted independent agent route in assistant prompt context' do
+    it 'exposes the converted independent agent as a channel peer of the assistant' do
       scenario = create(:captain_scenario, assistant: assistant, account: account)
       Captain::LegacyScenarioConversionService.new.convert!(scenario.id)
       target = Captain::Assistant.find_by!(legacy_scenario_id: scenario.id)
-      route = assistant.send(:prompt_context)[:scenarios].find { |entry| entry[:title] == target.name }
-      expect(route[:key]).to eq(target.handoff_target_name)
+      peer = assistant.channel_peers.find { |entry| entry.name == target.name }
+      expect(peer.handoff_target_name).to eq(target.handoff_target_name)
+      expect(assistant.send(:prompt_context)).not_to have_key(:scenarios)
     end
   end
 

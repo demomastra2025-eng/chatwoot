@@ -7,7 +7,16 @@
 #
 # An internal number ("#101") is written only when a tool bound for the run takes that record's id (Captain::PromptNumbers).
 class Captain::PromptSummaryText
-  Entry = Struct.new(:label, :group, :items)
+  Entry = Struct.new(:label, :group, :items) do
+    def total
+      group.to_h['total'].to_i
+    end
+
+    # A group with a count but no readable rows is still a group that exists: it is never reported as empty.
+    def present?
+      items.any? || total.positive?
+    end
+  end
 
   APPOINTMENT_GROUPS = %w[upcoming past cancelled].freeze
   DEFAULT_APPOINTMENT_STATUSES = {
@@ -78,14 +87,16 @@ class Captain::PromptSummaryText
 
   # The groups with rows, each as "label: row; row (and N more)", then one part naming the empty groups.
   def compose(entries, noun)
-    listed, empty = entries.partition { |entry| entry.items.any? }
+    listed, empty = entries.partition(&:present?)
     parts = listed.map { |entry| group_text(entry) }
     parts << empty_text(empty.map(&:label), noun, entries.size) if empty.any?
     parts.join('; ')
   end
 
   def group_text(entry)
-    hidden = entry.group['total'].to_i - entry.items.size
+    return "#{entry.label}: #{entry.total} not shown" if entry.items.empty?
+
+    hidden = entry.total - entry.items.size
     "#{entry.label}: #{entry.items.join('; ')}#{" (and #{hidden} more)" if hidden.positive?}"
   end
 
