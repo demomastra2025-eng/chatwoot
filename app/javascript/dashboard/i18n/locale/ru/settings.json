@@ -166,7 +166,7 @@
           "FULL_TITLE": "Полный"
         },
         "SOURCES": {
-          "captain": "Тулзы",
+          "captain": "Инструменты OneLink",
           "openapi_read": "Чтение API",
           "openapi_write": "Изменения API"
         }
@@ -1248,8 +1248,8 @@
       "LATENCY_VALUE": "{count} мс",
       "THROUGHPUT": "Скорость",
       "THROUGHPUT_VALUE": "{count} ток/с",
-      "TOOLS": "Тулзы",
-      "TOOL_CHOICE": "Выбор тулзов",
+      "TOOLS": "Инструменты",
+      "TOOL_CHOICE": "Выбор инструментов",
       "STRUCTURED_OUTPUT": "Схема",
       "REASONING": "Рассуждения",
       "SUPPORTED": "Да",
