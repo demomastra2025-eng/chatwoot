@@ -301,6 +301,29 @@
     {
       "warning_type": "SQL Injection",
       "warning_code": 0,
+      "fingerprint": "1eb303d30990467c6068ea140837ad7de6489875d7d6ec6934f47343cf101609",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "enterprise/app/models/captain/assistant_response.rb",
+      "line": 73,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "where(\"(#{\"captain_assistant_responses.documentable_type = 'Captain::Document'\\nAND captain_assistant_responses.documentable_id IN (#{Captain::Document.visible_to_assistant(assistant_id).select(:id).to_sql})\\n\".squish} AND (\\n  (captain_assistant_responses.restricted_to_assistants = FALSE AND\\n    (captain_assistant_responses.visibility = #{visibilities[:general]} OR\\n     captain_assistant_responses.assistant_id IS NULL OR\\n     captain_assistant_responses.assistant_id =\\n       (SELECT assistant_id FROM captain_documents WHERE id = captain_assistant_responses.documentable_id))) OR\\n  (#{local_knowledge_access_sql(assistant_id)})\\n)) OR\\n(COALESCE(captain_assistant_responses.documentable_type, '') <> 'Captain::Document' AND (#{local_knowledge_access_sql(assistant_id)}))\\n\".squish)",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Captain::AssistantResponse",
+        "method": "visible_to_assistant"
+      },
+      "user_input": "visibilities[:general]",
+      "confidence": "Medium",
+      "cwe_id": [
+        89
+      ],
+      "note": "Safe: the interpolated fragments are a relation to_sql, the integer general visibility enum value and local_knowledge_access_sql, which binds assistant_id and the record type with sanitize_sql_array; the table name is a constant."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
       "fingerprint": "20adfd0ea662a1eedcdf34f90e29d3ec3016fefa88c97aa86b5e06c413cca87e",
       "check_name": "SQL",
       "message": "Possible SQL injection",
@@ -550,6 +573,29 @@
         89
       ],
       "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "3a738758dd0043c21af0fc85e22a68af7cac3d767a1bdfb0c267674c3b2abb16",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "enterprise/app/models/captain/document.rb",
+      "line": 94,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "where(\"(#{\"COALESCE(captain_documents.metadata -> 'firecrawl' ->> 'root_document_id', '')\"} = '' AND (#{local_knowledge_access_sql(assistant_id)})) OR\\nEXISTS (\\n  SELECT 1 FROM captain_documents knowledge_source_documents\\n  WHERE knowledge_source_documents.id::text = #{\"COALESCE(captain_documents.metadata -> 'firecrawl' ->> 'root_document_id', '')\"}\\n    AND knowledge_source_documents.account_id = captain_documents.account_id\\n    AND COALESCE(knowledge_source_documents.metadata -> 'firecrawl' ->> 'root_document_id', '') = ''\\n    AND (#{local_knowledge_access_sql(assistant_id, :table => \"knowledge_source_documents\")})\\n)\\n\".squish)",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Captain::Document",
+        "method": "visible_to_assistant"
+      },
+      "user_input": "local_knowledge_access_sql(assistant_id)",
+      "confidence": "Medium",
+      "cwe_id": [
+        89
+      ],
+      "note": "Safe: the interpolated fragments are a constant JSON path expression and local_knowledge_access_sql, which binds assistant_id and the record type with sanitize_sql_array; the table alias is a literal."
     },
     {
       "warning_type": "SQL Injection",
