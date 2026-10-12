@@ -251,6 +251,92 @@ RSpec.describe Captain::Runtime::ChatFactory do
     end
   end
 
+  describe 'the request plan tool' do
+    let(:tools) { [] }
+    let(:agent) do
+      Captain::Runtime::Agent.new(name: 'assistant_92', model: 'openai/gpt-5.4-mini', instructions: 'Agent instructions', tools: tools)
+    end
+    let(:lone_graph) { [{ id: 92, name: 'Scheduling', description: 'Visits' }] }
+    let(:peer_graph) { lone_graph + [{ id: 91, name: 'Quotes', description: 'Price quotes' }] }
+    let(:graph) { lone_graph }
+    let(:tasks) { [] }
+    let(:context_wrapper) do
+      Captain::Runtime::RunContext.new({ state: { assistant_id: 92 }, agent_graph: graph, agent_tasks: tasks, parts: [] })
+    end
+
+    def bound_tool_names
+      described_class.send(:record_bound_agent_tools, agent, context_wrapper)
+      context_wrapper.context[:captain_v2_bound_tool_ids]
+    end
+
+    def built_tool_names
+      described_class.send(:build_agent_tools, agent, context_wrapper).map(&:name)
+    end
+
+    def system_prompt
+      described_class.send(:system_prompt_for, agent, context_wrapper)
+    end
+
+    context 'with a lone agent' do
+      it 'binds no plan_request and adds no coordination block to its prompt' do
+        expect(built_tool_names).to be_empty
+        expect(bound_tool_names).to be_empty
+        expect(system_prompt).to eq('Agent instructions')
+      end
+
+      it 'keeps the task queue tool and prompt of an inherited queue' do
+        tasks.replace([{ 'id' => 'visit', 'assistant_id' => 92, 'status' => 'active', 'title' => 'Book a visit', 'result' => nil }])
+
+        expect(built_tool_names).to eq(['manage_agent_tasks'])
+        expect(bound_tool_names).to eq(['manage_agent_tasks'])
+        expect(system_prompt).to include('Agent instructions', 'Task queue (data)')
+      end
+
+      context 'with the human handoff tool' do
+        let(:tools) { [ChatFactorySpecTool.new('handoff', 'Hand off the conversation to a human team')] }
+        let(:rules) { Captain::Runtime::CoordinationPrompt::HUMAN_HANDOFF_RULES }
+
+        it 'keeps the two human handoff rules and nothing about plans or peers' do
+          expect(rules).to include('is never an answer: call the handoff tool', 'unless the handoff tool succeeded in this reply')
+          expect(system_prompt).to eq("Agent instructions\n\n#{rules}")
+          expect(system_prompt).not_to include('plan_request', 'Other agents available')
+          expect(bound_tool_names).to eq(['handoff'])
+        end
+
+        it 'adds the rules once with peers, inside the coordination block' do
+          context_wrapper.context[:agent_graph] = peer_graph
+
+          expect(system_prompt.scan(rules).size).to eq(1)
+          expect(system_prompt).to include('Quotes: Price quotes')
+        end
+      end
+
+      context 'without the human handoff tool' do
+        let(:tools) { [ChatFactorySpecTool.new('search_deals', 'Search CRM deals')] }
+
+        it 'adds no handoff rules' do
+          expect(system_prompt).to eq('Agent instructions')
+        end
+      end
+    end
+
+    context 'with other agents in the channel' do
+      let(:graph) { peer_graph }
+
+      it 'binds plan_request and describes the coordination until the message is planned' do
+        expect(built_tool_names).to eq(['plan_request'])
+        expect(bound_tool_names).to eq(['plan_request'])
+        expect(system_prompt).to include('Agent instructions', 'Quotes: Price quotes', 'Plan with plan_request only in these cases')
+
+        context_wrapper.context[:part_plan_accepted] = true
+
+        expect(built_tool_names).to be_empty
+        expect(bound_tool_names).to be_empty
+        expect(system_prompt).to include('Plan accepted')
+      end
+    end
+  end
+
   describe '.configure' do
     let(:chat) { instance_double(RubyLLM::Chat) }
     let(:tool) { ChatFactorySpecTool.new('search_deals', 'Search CRM deals') }

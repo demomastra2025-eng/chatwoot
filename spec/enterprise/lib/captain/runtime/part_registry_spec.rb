@@ -15,6 +15,28 @@ RSpec.describe Captain::Runtime::PartRegistry do
     context.delete(:part_plan)
   end
 
+  describe '.planning_available?' do
+    it 'is available only when the channel holds an agent other than the current one' do
+      expect(described_class.planning_available?(context)).to be(true)
+      expect(described_class.planning_available?(context.merge(state: { assistant_id: 2 }))).to be(true)
+      expect(described_class.planning_available?(context.merge(agent_graph: [{ id: 1 }]))).to be(false)
+      expect(described_class.planning_available?(context.merge(agent_graph: []))).to be(false)
+      expect(described_class.planning_available?(context.except(:agent_graph))).to be(false)
+    end
+  end
+
+  describe '.awaiting_confirmation?' do
+    let(:proposal) { { 'id' => 'p', 'state' => 'waiting_confirmation', 'proposed_operation' => { 'type' => 'create_appointment' } } }
+
+    it 'is true only while a stored part waits for confirmation with a proposed operation' do
+      expect(described_class.awaiting_confirmation?(parts: [proposal])).to be(true)
+      expect(described_class.awaiting_confirmation?(parts: [proposal.merge('state' => 'done')])).to be(false)
+      expect(described_class.awaiting_confirmation?(parts: [proposal.merge('proposed_operation' => nil)])).to be(false)
+      expect(described_class.awaiting_confirmation?(parts: [])).to be(false)
+      expect(described_class.awaiting_confirmation?({})).to be(false)
+    end
+  end
+
   it 'validates the channel and allows at most three council parts' do
     invalid = [{ fragment: 'One', executor_agent_id: 3 }]
     expect { plan(invalid) }.to raise_error(ArgumentError, /unavailable/)

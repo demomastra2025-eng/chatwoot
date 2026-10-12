@@ -19,6 +19,19 @@ class Captain::Runtime::PartRegistry
     relation.blank? || relation == 'independent' || (relation == 'depends_on' && part['depends_on_part_id'].present?)
   end
 
+  # The plan coordinates agents (a transfer, a council, the answer to an open part), so it exists only where another
+  # agent is available. A lone agent has no plan_request and acts with its own tools.
+  def self.planning_available?(context)
+    actor_id = context.dig(:state, :assistant_id)
+    Array(context[:agent_graph]).any? { |actor| actor[:id] != actor_id }
+  end
+
+  # An operation a council proposed waits for the customer's answer. Only a plan can confirm or cancel it: ConfirmedOperations
+  # runs the stored proposal with its frozen params, once.
+  def self.awaiting_confirmation?(context)
+    Array(context[:parts]).any? { |part| part['state'] == 'waiting_confirmation' && part['proposed_operation'].present? }
+  end
+
   def initialize(context)
     @context = context
   end

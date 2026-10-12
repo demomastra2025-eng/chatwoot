@@ -377,25 +377,44 @@ class Captain::Runtime::ToolWrapper
 
   def pre_execution_error(normalized_args)
     bound_tool_error_for_current_agent ||
-      part_plan_error ||
+      consult_mode_error ||
+      pending_confirmation_error ||
       tool_safety_error_for(:tool_arguments, normalized_args) ||
       scheduling_context_error(normalized_args)
   end
 
-  def part_plan_error
-    context = context_wrapper_context
-    if context[:consult_mode] && !Captain::Runtime::ConsultTools.allowed?(@tool)
-      return Captain::ToolResult.failure(error: 'Tool is unavailable in consult mode', retryable: false)
-    end
-    return unless context[:agent_session] && !Captain::Runtime::TaskQueue.in_flight?(context[:agent_tasks]) && mutating_tool?
-    return if context[:part_plan_accepted]
+  # An agent's own actions (booking, rescheduling, card updates, the human handoff) need no request plan: the plan only
+  # coordinates agents (HandoffTool transfers, councils, answers to open parts). A consultation can only read.
+  def consult_mode_error
+    return unless context_wrapper_context[:consult_mode] && !Captain::Runtime::ConsultTools.allowed?(@tool)
+
+    Captain::ToolResult.failure(error: 'Tool is unavailable in consult mode', retryable: false)
+  end
+
+  # The one exception to "own actions need no plan": while an operation proposed by a council waits for the customer's
+  # answer, that answer is linked with plan_request and ConfirmedOperations runs the stored proposal once, with its frozen
+  # params. An own call here would repeat the action under another operation scope with params the model typed itself.
+  # This is a state check (a stored part waits), the same one that holds back a plain reply in the runner.
+  def pending_confirmation_error
+    return unless plan_awaited_for_confirmation? && mutating_tool?
     # Escalating to a human is never blocked behind planning: staff take over and nothing is executed for the customer.
     return if @tool.is_a?(Captain::Tools::HandoffTool)
 
-    # The runner then asks for a plan before it accepts a plain reply, which must not claim that the refused action happened.
-    context[:part_plan_refused] = true
-    Captain::ToolResult.failure(error: 'Plan the request before taking an action', retryable: false,
-                                audit: { failure_reason: 'part_plan_required', mutation_executed: false })
+    Captain::ToolResult.failure(
+      error: 'An operation proposed earlier waits for the customer\'s answer; link the answer with plan_request first',
+      retryable: false,
+      audit: { failure_reason: 'part_plan_required', mutation_executed: false }
+    )
+  end
+
+  # Only where plan_request is bound (agent peers, no inherited task queue, message not planned yet) and a proposal waits.
+  def plan_awaited_for_confirmation?
+    context = context_wrapper_context
+    return false unless context[:agent_session] && !context[:part_plan_accepted] && !context[:consult_mode]
+    return false if Captain::Runtime::TaskQueue.in_flight?(context[:agent_tasks])
+
+    registry = Captain::Runtime::PartRegistry
+    registry.planning_available?(context) && registry.awaiting_confirmation?(context)
   end
 
   def scheduling_context_error(normalized_args)

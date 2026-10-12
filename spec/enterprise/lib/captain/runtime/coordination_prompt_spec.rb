@@ -49,18 +49,32 @@ RSpec.describe Captain::Runtime::CoordinationPrompt do
     expect(prompt).to include('plan_request')
   end
 
-  it 'asks for a plan only before an action, a transfer, several separate requests or an answer to an open part' do
+  it 'asks for a plan only before a transfer, separate requests for different agents or an answer to an open part' do
     context[:agent_tasks] = []
 
     prompt = described_class.render(context)
 
-    expect(prompt).to include('A simple request needs no plan')
-    expect(prompt).to include('Plan with plan_request only in these cases: before an action that changes data, ' \
-                              "before transferring to another agent,\nwhen the message holds several separate requests, " \
-                              "or when the customer confirms, corrects, cancels or answers a request\nlisted in the open parts")
+    expect(prompt).to include('Your own work needs no plan: answer directly, look facts up with read-only tools or the FAQ, ' \
+                              "take your own actions that\nchange data (book, reschedule, cancel, update a card) " \
+                              'and use the human handoff, all without plan_request.')
+    expect(prompt).to include('Plan with plan_request only in these cases: before transferring the conversation to another agent, ' \
+                              "when the message holds\nseveral separate requests that belong to different agents, " \
+                              "or when the customer confirms, corrects, cancels or answers a\nrequest listed in the open parts below")
     expect(prompt).to include('When you plan, link answers, corrections and cancellations to open parts.')
     expect(prompt).to include('reply directly without plan_request')
-    expect(prompt).not_to include('Plan the customer\'s request before taking any action', 'Use plan_request once')
+    expect(prompt).not_to include('before an action that changes data', 'A simple request needs no plan',
+                                  'Plan the customer\'s request before taking any action', 'Use plan_request once')
+  end
+
+  it 'tells the agent not to carry out an operation that waits for confirmation itself, and keeps the human handoff rules' do
+    context[:agent_tasks] = []
+
+    prompt = described_class.render(context)
+
+    expect(prompt).to include("An operation waiting for confirmation is carried out or cancelled only through\nsuch a plan, " \
+                              'so do not take that action yourself.')
+    expect(prompt).to include(described_class::HUMAN_HANDOFF_RULES)
+    expect(prompt.scan('call the handoff tool').size).to eq(1)
   end
 
   it 'keeps the answer shortcut of the plan and the council limit' do

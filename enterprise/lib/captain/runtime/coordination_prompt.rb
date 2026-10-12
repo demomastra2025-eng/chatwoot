@@ -4,6 +4,12 @@ module Captain::Runtime::CoordinationPrompt
   UNPLANNED_GUIDANCE = 'No plan exists for this customer message yet. When none of the cases above applies, reply directly ' \
                        'without plan_request. When one applies, call plan_request once; it can be made in the same model call ' \
                        'as its answer.'
+  # Two rules for the human handoff, kept apart from the peer coordination text so that a lone agent (no peers, no plan)
+  # gets them too whenever it has the handoff tool.
+  HUMAN_HANDOFF_RULES = <<~RULES.chomp.freeze
+    A request for a person (staff, operator, manager, lab results only staff can give) is never an answer: call the handoff tool.
+    Never write that you passed the request to staff unless the handoff tool succeeded in this reply.
+  RULES
 
   module_function
 
@@ -58,17 +64,18 @@ module Captain::Runtime::CoordinationPrompt
       Other agents available on this channel (name and responsibility):
       #{peer_lines(graph, actor_id)}
       In plan_request, name the executor of a part by the agent name exactly as listed above; omit it for your own parts.
-      A simple request needs no plan: answer it directly, also when you only look facts up with read-only tools.
-      Plan with plan_request only in these cases: before an action that changes data, before transferring to another agent,
-      when the message holds several separate requests, or when the customer confirms, corrects, cancels or answers a request
-      listed in the open parts (an operation waiting for confirmation is carried out or cancelled only through such a plan).
+      Your own work needs no plan: answer directly, look facts up with read-only tools or the FAQ, take your own actions that
+      change data (book, reschedule, cancel, update a card) and use the human handoff, all without plan_request.
+      Plan with plan_request only in these cases: before transferring the conversation to another agent, when the message holds
+      several separate requests that belong to different agents, or when the customer confirms, corrects, cancels or answers a
+      request listed in the open parts below. An operation waiting for confirmation is carried out or cancelled only through
+      such a plan, so do not take that action yourself.
       When you plan, link answers, corrections and cancellations to open parts.
       Open parts (data): #{JSON.generate(open_parts_for_model(context, graph))}
       #{plan_guidance}
       Set answer in that call only when the complete answer is verified from supplied context and needs no tool.
-      A request for a person (staff, operator, manager, lab results only staff can give) is never an answer: call the handoff tool.
+      #{HUMAN_HANDOFF_RULES}
       Staff or an operator is reached only through the handoff tool, never through plan_request.
-      Never write that you passed the request to staff unless the handoff tool succeeded in this reply.
       For a confirmed proposed operation, link its exact part ID and set link_action to confirmation.
       When older parts are open, mark each genuinely new request with link_action new.
       Do not treat a vague reply as confirmation; use clarify when its target is ambiguous.

@@ -84,9 +84,6 @@ RSpec.describe Captain::Runtime::PartPlanTool do
       booking = PartPlanToolSpecBookingTool.new
       book = Captain::Runtime::ToolWrapper.new(booking, run_context)
 
-      refused = book.call(title: 'synthetic visit')
-      expect(failure_payload(refused)).to include('error' => 'Plan the request before taking an action')
-
       rendered = planner.call(mode: 'answer_myself', parts: [{ fragment: 'Записать на приём', executor_agent_id: 1 }])
       plan = JSON.parse(rendered)
 
@@ -304,6 +301,13 @@ RSpec.describe Captain::Runtime::PartPlanTool do
       end
     end
   end
+
+  it 'describes a coordination tool between agents, not a step before the agent\'s own actions' do
+    description = described_class.new.description
+
+    expect(description).to include('transfer the conversation to another agent', 'Not needed for your own lookups, replies or actions')
+    expect(description).not_to include('before using action tools')
+  end
 end
 # rubocop:enable Lint/ConstantDefinitionInBlock
 
@@ -312,30 +316,20 @@ RSpec.describe Captain::Runtime::ToolWrapper do
   let(:context) { { state: { assistant_id: 1 }, agent_session: Object.new, agent_tasks: [] } }
   let(:wrapper) { described_class.new(action, Captain::Runtime::RunContext.new(context)) }
 
-  it 'blocks a mutating tool before the plan is accepted' do
-    result = wrapper.send(:part_plan_error)
-    expect(Captain::ToolResult.normalize(result)).to include(success: false, error: /Plan the request/)
-    # the runner then refuses a plain reply that would claim the refused action
-    expect(context[:part_plan_refused]).to be(true)
-    context[:part_plan_accepted] = true
-    expect(wrapper.send(:part_plan_error)).to be_nil
-  end
+  it 'does not require a plan for the agent\'s own mutating tool' do
+    expect(context).not_to have_key(:part_plan_accepted)
 
-  it 'does not mark a refusal for a plan when the plan exists or the tool is only blocked in a consult' do
-    context[:part_plan_accepted] = true
-    wrapper.send(:part_plan_error)
-    context[:consult_mode] = true
-    wrapper.send(:part_plan_error)
-
+    expect(wrapper.send(:consult_mode_error)).to be_nil
+    # nothing is left behind for the runner to act on
     expect(context).not_to have_key(:part_plan_refused)
   end
 
-  it 'blocks a mutating tool in a consult even with an accepted plan' do
-    context[:part_plan_accepted] = true
+  it 'blocks a mutating tool in a consult, with or without a plan' do
     context[:consult_mode] = true
+    expect(Captain::ToolResult.normalize(wrapper.send(:consult_mode_error))).to include(success: false, error: /consult mode/)
 
-    result = wrapper.send(:part_plan_error)
-    expect(Captain::ToolResult.normalize(result)).to include(success: false, error: /consult mode/)
+    context[:part_plan_accepted] = true
+    expect(Captain::ToolResult.normalize(wrapper.send(:consult_mode_error))).to include(success: false, error: /consult mode/)
   end
 end
 

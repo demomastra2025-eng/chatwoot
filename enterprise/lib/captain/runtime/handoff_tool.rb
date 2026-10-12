@@ -22,8 +22,10 @@ class Captain::Runtime::HandoffTool < Captain::Runtime::Tool
 
   def perform(tool_context, **_params)
     context = tool_context.run_context.context
+    # A transfer to another agent is the one tool call that needs the request plan.
     if context[:agent_session] && !Captain::Runtime::TaskQueue.in_flight?(context[:agent_tasks]) &&
        !context[:part_plan_accepted]
+      # The runner then refuses a plain reply that would claim a transfer that did not happen.
       context[:part_plan_refused] = true
       return Captain::ToolResult.failure(error: 'Plan the request before handing it to another agent', retryable: false)
     end

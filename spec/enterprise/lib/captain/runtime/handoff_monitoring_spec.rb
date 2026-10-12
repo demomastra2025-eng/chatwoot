@@ -75,8 +75,16 @@ RSpec.describe Captain::Runtime::HandoffTool do
 
       expect(Captain::ToolResult.normalize(result)).to include(success: false, error: 'Plan the request before handing it to another agent')
       expect(context).not_to have_key(:pending_handoff)
-      # the runner then refuses a plain reply that would claim the transfer
+      # the runner then refuses a plain reply that would claim the transfer that did not happen
       expect(context[:part_plan_refused]).to be(true)
+    end
+
+    it 'does not mark a refusal when the transfer is planned' do
+      context[:part_plan_accepted] = true
+
+      described_class.new(target).perform(tool_context)
+
+      expect(context).not_to have_key(:part_plan_refused)
     end
 
     it 'transfers the conversation once the message is planned' do

@@ -938,22 +938,128 @@ RSpec.describe Captain::Runtime::ToolWrapper do
       context_wrapper.context[:agent_session] = agent_session
       context_wrapper.context[:agent_request_id] = 'scheduled-request'
       context_wrapper.context[:captain_v2_current_tool_batch_id] = 'invalid-arguments-batch'
-      # Actions are blocked until the request plan is accepted; these examples start from an accepted plan.
-      context_wrapper.context[:part_plan_accepted] = true
     end
 
-    it 'refuses an action before the request plan is accepted, without reserving or executing it' do
-      context_wrapper.context.delete(:part_plan_accepted)
-      allow(mutating_tool).to receive(:perform)
+    # The agent's own actions need no request plan, alone or in a channel with other agents.
+    {
+      'a lone agent' => ->(assistant) { [{ id: assistant.id }] },
+      'an agent with peers' => ->(assistant) { [{ id: assistant.id }, { id: assistant.id + 1 }] }
+    }.each do |channel, graph|
+      it "executes an own action of #{channel} without a request plan and keeps its receipt under the request scope" do
+        context_wrapper.context[:agent_graph] = graph.call(assistant)
 
-      refused = mutating_wrapper.call(title: 'Too early')
+        result = mutating_wrapper.call(title: 'Own booking')
 
-      expect_tool_error(refused, 'Plan the request before taking an action', retryable: false)
-      expect(mutating_tool).not_to have_received(:perform)
-      expect(agent_session.read.fetch('operations')).to be_empty
-      expect(events.last[2]).to include(
-        success: false, audit: include(failure_reason: 'part_plan_required', mutation_executed: false)
-      )
+        expect(JSON.parse(result)).to include('message' => 'created Own booking')
+        expect(mutating_tool.calls).to eq(1)
+        expect(context_wrapper.context).not_to include(:part_plan_accepted, :part_plan_refused, :active_part_id)
+        expect(agent_session.read.fetch('operations').values).to contain_exactly(
+          include('status' => 'finished', 'scope' => 'request:scheduled-request', 'result' => include('success' => true))
+        )
+        expect(events.map(&:first)).to eq(%i[start complete])
+      end
+    end
+
+    it 'does not run the same own action twice in one request without a plan' do
+      mutating_wrapper.call(title: 'Own booking')
+      context_wrapper.context[:captain_v2_current_tool_batch_id] = 'repeat-batch'
+
+      repeated = mutating_wrapper.call(title: 'Own booking')
+
+      expect(mutating_tool.calls).to eq(1)
+      expect(JSON.parse(repeated)).to include('data' => include('title' => 'Own booking', 'id' => 1))
+      expect(agent_session.read.fetch('operations').size).to eq(1)
+    end
+
+    describe 'while an operation proposed by a council waits for the customer\'s answer' do
+      let(:peer_graph) { [{ id: assistant.id }, { id: assistant.id + 1 }] }
+      let(:proposal) do
+        { 'id' => 'pending-part', 'state' => 'waiting_confirmation', 'executor_agent_id' => assistant.id,
+          'proposed_operation' => { 'type' => mutating_tool.name, 'params' => { 'title' => 'Stored by the council' } } }
+      end
+      let(:plan_error) { 'An operation proposed earlier waits for the customer\'s answer; link the answer with plan_request first' }
+
+      before do
+        context_wrapper.context[:agent_graph] = peer_graph
+        context_wrapper.context[:parts] = [proposal]
+      end
+
+      it 'refuses the agent\'s own mutating call without a receipt, and lets it run once the answer is planned' do
+        refused = mutating_wrapper.call(title: 'Typed by the model')
+
+        expect_tool_error(refused, plan_error, retryable: false)
+        expect(mutating_tool.calls).to eq(0)
+        expect(agent_session.read.fetch('operations')).to be_empty
+        expect(events.last[2]).to include(success: false, audit: include(failure_reason: 'part_plan_required', mutation_executed: false))
+
+        context_wrapper.context[:part_plan_accepted] = true
+        context_wrapper.context[:captain_v2_current_tool_batch_id] = 'planned-batch'
+
+        expect(JSON.parse(mutating_wrapper.call(title: 'Stored by the council'))).to include('message' => 'created Stored by the council')
+        expect(mutating_tool.calls).to eq(1)
+        expect(agent_session.read.fetch('operations').values).to contain_exactly(include('status' => 'finished'))
+      end
+
+      it 'still lets ConfirmedOperations run the stored proposal once, with its frozen params, after a plain "yes" is planned' do
+        context = context_wrapper.context
+        stored = proposal.merge('version' => 1, 'fragment' => 'Book the synthetic scan', 'patient' => 'unknown')
+        agent_session.change { |data| data['parts'] = [stored] }
+        context[:parts] = agent_session.read['parts']
+        context[:agent_run_context_object] = instance_double(Captain::AgentRunContext, activate: nil)
+        actor = double('actor', agent_name: "assistant_#{assistant.id}", agent_tools: [mutating_tool])
+        allow(mutating_tool).to receive(:perform).and_call_original
+
+        plan = Captain::Runtime::PartRegistry.new(context).accept!(
+          mode: 'answer_myself',
+          parts: [{ fragment: 'yes', executor_agent_id: assistant.id, link_part_id: 'pending-part', link_action: 'confirmation' }]
+        )
+        answer = Captain::Runtime::ConfirmedOperations.new(context: context, graph: double('graph', find: actor)).run(plan[:parts])
+
+        expect(answer).to eq(I18n.t('captain.coordination.action_done', locale: Captain::Runtime::CouncilComposer.locale_for(context)))
+        expect(mutating_tool).to have_received(:perform).with(anything, title: 'Stored by the council').once
+        expect(agent_session.read.fetch('operations').values).to contain_exactly(
+          include('status' => 'finished', 'scope' => 'part:pending-part:v2', 'result' => include('success' => true))
+        )
+        expect(agent_session.read['parts'].first).to include('id' => 'pending-part', 'state' => 'done')
+      end
+
+      it 'does not block the human handoff or a read-only lookup' do
+        human_handoff = described_class.new(Captain::Tools::HandoffTool.new(assistant), context_wrapper)
+        lookup = described_class.new(ToolWrapperSpecReadOnlyTool.new, context_wrapper)
+
+        expect(human_handoff.send(:mutating_tool?)).to be(true)
+        expect(human_handoff.send(:pending_confirmation_error)).to be_nil
+        expect(lookup.send(:pending_confirmation_error)).to be_nil
+        expect(mutating_wrapper.send(:pending_confirmation_error)).to be_present
+      end
+
+      it 'does not block an agent that has no peer to plan with' do
+        context_wrapper.context[:agent_graph] = [{ id: assistant.id }]
+
+        expect(JSON.parse(mutating_wrapper.call(title: 'Own booking'))).to include('message' => 'created Own booking')
+        expect(mutating_tool.calls).to eq(1)
+      end
+
+      it 'does not block an agent while no proposal waits (answered, failed or without an operation)' do
+        context_wrapper.context[:parts] = [
+          proposal.merge('state' => 'done'), proposal.merge('state' => 'waiting_customer', 'proposed_operation' => nil)
+        ]
+
+        expect(JSON.parse(mutating_wrapper.call(title: 'Own booking'))).to include('message' => 'created Own booking')
+        expect(mutating_tool.calls).to eq(1)
+      end
+
+      it 'leaves an inherited task queue and a consultation to their own rules' do
+        context_wrapper.context[:agent_tasks] = [{ 'id' => 'visit', 'assistant_id' => assistant.id, 'status' => 'active' }]
+
+        expect(mutating_wrapper.send(:pending_confirmation_error)).to be_nil
+
+        context_wrapper.context[:agent_tasks] = []
+        context_wrapper.context[:consult_mode] = true
+
+        expect(mutating_wrapper.send(:pending_confirmation_error)).to be_nil
+        expect(Captain::ToolResult.normalize(mutating_wrapper.send(:consult_mode_error))).to include(error: /consult mode/)
+      end
     end
 
     it 'normalizes the failure audit, releases the reservation, and executes corrected arguments in the next batch' do

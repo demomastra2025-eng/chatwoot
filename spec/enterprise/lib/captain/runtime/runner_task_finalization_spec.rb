@@ -411,6 +411,34 @@ RSpec.describe Captain::Runtime::Runner do
         expect(result.messages.map { |message| message[:content] }).not_to include('Booked.', 'Booked, really.')
       end
 
+      it 'carries out the proposal only through the confirmed operations once the answer is planned as a confirmation' do
+        context[:parts] = [pending_part.merge('executor_agent_id' => 92, 'version' => 1)]
+        executed = []
+        operations = instance_double(Captain::Runtime::ConfirmedOperations)
+        allow(Captain::Runtime::ConfirmedOperations).to receive(:new).and_return(operations)
+        allow(operations).to receive(:run) do |parts|
+          executed.concat(parts)
+          'The synthetic scan is booked.'
+        end
+        chat.respond_with(reply('Booked.'), lambda do |current_context|
+          Captain::Runtime::PartRegistry.new(current_context).accept!(
+            mode: 'answer_myself',
+            parts: [{ fragment: 'yes', executor_agent_id: 92, link_part_id: 'pending-part', link_action: 'confirmation' }]
+          )
+          reply('Text that the confirmed operation replaces.')
+        end)
+        expect_initial_ask
+        expect(Llm::Runtime).to receive(:complete).once.and_call_original
+
+        result = run_with
+
+        expect(result.output).to eq({ response: 'The synthetic scan is booked.', reasoning: '' })
+        expect(executed.map { |part| part.slice('id', 'link_action', 'proposed_operation') }).to eq(
+          [{ 'id' => 'pending-part', 'link_action' => 'confirmation', 'proposed_operation' => pending_part['proposed_operation'] }]
+        )
+        expect(reminders.map(&:content)).to eq(['Call plan_request for this message before replying.'])
+      end
+
       it 'does not ask again once the message is planned' do
         context[:part_plan_accepted] = true
         chat.respond_with(reply('Nothing to confirm yet.'))
@@ -439,22 +467,59 @@ RSpec.describe Captain::Runtime::Runner do
       end
     end
 
-    it 'does not accept a plain reply right after a data-changing call was refused for lack of a plan' do
+    it 'accepts the reply after the agent\'s own data-changing call without asking for a plan' do
+      chat.respond_with(lambda do |_current_context|
+        call_params = Captain::Runtime::HistoryRestorer.build_message_params(
+          role: :assistant, content: '',
+          tool_calls: [{ id: 'book_once', name: 'create_appointment', arguments: { service_id: 1 } }]
+        )
+        chat.add_message(call_params)
+        chat.add_message(role: :tool, content: 'Appointment created', tool_call_id: 'book_once')
+        reply('You are booked for the synthetic scan.')
+      end)
+      expect_initial_ask
+      expect(Llm::Runtime).not_to receive(:complete)
+
+      result = run_with
+
+      expect(result).to be_success
+      expect(result.output).to eq('You are booked for the synthetic scan.')
+      expect(chat.requests).to eq([:ask])
+      expect(reminders).to be_empty
+      expect(result.context.slice(:part_plan, :part_plan_accepted)).to be_empty
+    end
+
+    it 'does not accept a plain reply right after a transfer to another agent was refused for lack of a plan' do
       chat.respond_with(lambda do |current_context|
         current_context[:part_plan_refused] = true
-        reply('I have booked you in.')
+        reply('I have passed you to a specialist.')
       end, lambda do |current_context|
         current_context[:part_plan_accepted] = true
-        reply('I could not book it yet; which day suits you?')
+        reply('I could not transfer you yet; what do you need?')
       end)
       expect_initial_ask
       expect(Llm::Runtime).to receive(:complete).once.and_call_original
 
       result = run_with
 
-      expect(result.output).to eq('I could not book it yet; which day suits you?')
+      expect(result.output).to eq('I could not transfer you yet; what do you need?')
       expect(chat.requests).to eq(%i[ask complete])
-      expect(result.messages.map { |message| message[:content] }).not_to include('I have booked you in.')
+      expect(reminders.map(&:content)).to eq(['Call plan_request for this message before replying.'])
+      expect(result.messages.map { |message| message[:content] }).not_to include('I have passed you to a specialist.')
+    end
+
+    describe 'a lone agent' do
+      before { context[:agent_graph] = [{ id: 92, name: 'Scheduling' }] }
+
+      it 'is not asked for a plan it cannot make, even when an old proposal still waits for the customer' do
+        context[:parts] = [{ 'id' => 'old-part', 'state' => 'waiting_confirmation', 'fragment' => 'Book the synthetic scan',
+                             'proposed_operation' => { 'type' => 'create_appointment', 'params' => { 'service_id' => 1 } } }]
+        chat.respond_with(reply('Yes, I will book it now.'))
+        expect_initial_ask
+        expect(Llm::Runtime).not_to receive(:complete)
+
+        expect(run_with.output).to eq('Yes, I will book it now.')
+      end
     end
   end
 

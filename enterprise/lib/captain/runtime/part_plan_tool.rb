@@ -4,8 +4,9 @@ class Captain::Runtime::PartPlanTool < Captain::Runtime::Tool
   EXECUTOR_DESCRIPTION = 'Name of the agent that handles this part, exactly as listed. Omit it for your own parts. ' \
                          'Staff or an operator is not an agent: reach them with the handoff tool.'
 
-  description 'Plan this customer message before using action tools. Split only genuinely separate requests. ' \
-              'Link answers, corrections, or cancellations to an existing open part by its exact ID.'
+  description 'Coordinate with other agents: transfer the conversation to another agent, or split a message into separate requests ' \
+              'for different agents. Link answers, corrections, or cancellations to an existing open part by its exact ID. ' \
+              'Not needed for your own lookups, replies or actions.'
   param :mode, type: 'string', desc: 'answer_myself, handoff, council, or clarify', required: true
   param :parts, type: 'array', required: true,
                 desc: 'Request parts with fragment, patient, relation, optional executor (the agent name exactly as listed; omit it ' \
