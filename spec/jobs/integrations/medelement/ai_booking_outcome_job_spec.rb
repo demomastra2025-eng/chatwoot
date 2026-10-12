@@ -1,6 +1,10 @@
 require 'rails_helper'
 
+# The AI agent talks only to the calendar and the calendar talks to MedElement. A MedElement outcome, early or late,
+# never reaches the conversation: no message, no staff note, no handoff, no status change. The retired job only drains.
 RSpec.describe Integrations::Medelement::AiBookingOutcomeJob do
+  include ActiveJob::TestHelper
+
   let(:account) { create(:account, locale: 'ru').tap { |record| record.enable_features!('scheduling') } }
   let(:assistant) { create(:captain_assistant, account: account, usage_mode: 'external_agent') }
   let(:contact) { create(:contact, account: account) }
@@ -9,22 +13,19 @@ RSpec.describe Integrations::Medelement::AiBookingOutcomeJob do
   let(:resource) { create(:scheduling_resource, account: account, custom_attributes: { 'medelement_specialist_code' => 'specialist-1' }) }
   let(:appointment) { create(:scheduling_appointment, account: account, contact: contact, conversation: conversation, resource: resource) }
   let(:hook) { create(:integrations_hook, :medelement, account: account) }
-  let(:actor_type) { 'Captain::Assistant' }
   let(:operation) { 'create_reception' }
   let(:command) do
     Integrations::Medelement::ProviderCommand.create!(
       account: account, hook: hook, appointment: appointment, contact: contact,
       operation: operation, status: 'queued',
       desired_starts_at: appointment.starts_at, desired_ends_at: appointment.ends_at,
-      company_cabinet_code: 'cab-1', idempotency_key: 'ai-booking-1',
-      provider_reception_code: 'reception-1',
+      company_cabinet_code: 'cab-1', idempotency_key: 'ai-booking-1', provider_reception_code: 'reception-1',
       execution_state: {
         'request_fingerprint' => 'booking-fingerprint', 'dispatch_identity' => 'booking-dispatch-1',
         'request_snapshot' => {
-          'version' => 2,
-          'actor' => { 'type' => actor_type, 'id' => assistant.id },
-          'account_id' => account.id, 'appointment_id' => appointment.id,
-          'contact_id' => contact.id, 'conversation_id' => conversation.id,
+          'version' => 2, 'actor' => { 'type' => 'Captain::Assistant', 'id' => assistant.id },
+          'account_id' => account.id, 'appointment_id' => appointment.id, 'contact_id' => contact.id,
+          'conversation_id' => conversation.id,
           'reception' => {
             'resource_id' => resource.id, 'destination_starts_at' => appointment.starts_at.utc.iso8601(6),
             'destination_ends_at' => appointment.ends_at.utc.iso8601(6), 'nomenclature_codes' => []
@@ -35,612 +36,49 @@ RSpec.describe Integrations::Medelement::AiBookingOutcomeJob do
   end
 
   before do
-    allow(described_class).to receive(:perform_later)
     create(:captain_inbox, inbox: inbox, captain_assistant: assistant)
+    command
+    clear_enqueued_jobs
   end
 
-  def bind_provider_status!(value)
-    status = Integrations::Medelement::AppointmentProviderStatus
-    appointment.update!(custom_attributes: appointment.custom_attributes.to_h.merge(
-      'medelement_cabinet_code' => 'cab-1',
-      status::ATTRIBUTE_KEY => value,
-      status::COMMAND_ID_KEY => command.id,
-      status::COMMAND_IDEMPOTENCY_KEY => command.idempotency_key,
-      status::COMMAND_FINGERPRINT_KEY => 'booking-fingerprint',
-      status::COMMAND_DISPATCH_IDENTITY_KEY => 'booking-dispatch-1'
-    ))
+  def expect_conversation_untouched
+    expect(conversation.messages.outgoing).to be_empty
+    expect(conversation.reload.status).to eq('pending')
+    expect(conversation.current_captain_control_state).not_to eq('human')
   end
 
-  def capture_booking_fence!
-    incoming = create(:message, conversation: conversation, message_type: :incoming)
-    Captain::Tools::ProviderBookingHandoffService.capture_fence!(
-      command: command,
-      fence: {
-        control_generation: conversation.current_captain_control_generation,
-        status_transition_id: conversation.status_transitions.maximum(:id).to_i,
-        last_message_id: incoming.id
-      }
+  %w[succeeded failed provider_status_unknown reconciliation_required declined cancelled].each do |outcome|
+    it "does not enqueue an outcome job or touch the conversation when an AI create ends #{outcome}" do
+      command.update!(status: outcome, provider_patient_code: 'patient-1',
+                      execution_state: command.execution_state.merge('write_provider_reception_code' => 'reception-1'))
+
+      expect(described_class).not_to have_been_enqueued
+      expect_conversation_untouched
+    end
+  end
+
+  it 'does not enqueue an outcome job or touch the conversation when an AI move ends in failure' do
+    command.update!(status: 'succeeded')
+    clear_enqueued_jobs
+    move = Integrations::Medelement::ProviderCommand.create!(
+      account: account, hook: hook, appointment: appointment, contact: contact, operation: 'move_reception', status: 'queued',
+      desired_starts_at: appointment.starts_at + 1.day, desired_ends_at: appointment.ends_at + 1.day, company_cabinet_code: 'cab-1',
+      idempotency_key: 'ai-move-1', provider_reception_code: 'reception-1',
+      execution_state: { 'request_snapshot' => { 'actor' => { 'type' => 'Captain::Assistant', 'id' => assistant.id } } }
     )
+
+    move.update!(status: 'failed', last_error_code: 'slot_conflict')
+
+    expect(described_class).not_to have_been_enqueued
+    expect_conversation_untouched
   end
 
-  it 'never sends a template or hands off a successful create with a write ID' do
-    bind_provider_status!('succeeded')
-    capture_booking_fence!
-    command.update!(execution_state: command.execution_state.merge('write_provider_reception_code' => 'reception-1'))
-    command.update!(status: 'succeeded')
-
-    described_class.perform_now(command.id)
-    expect(described_class).to have_received(:perform_later).with(command.id)
-    expect(conversation.messages.outgoing).to be_empty
-    expect(conversation.reload.status).to eq('pending')
-    expect(command.reload.execution_state[described_class::CUSTOMER_MESSAGE_ID_KEY]).to be_nil
-  end
-
-  it 'does not enqueue an outcome when the executor saves an ID before read-back' do
-    executor = Integrations::Medelement::ProviderCommands::Executor.new(command: command)
-    command.update!(status: 'processing', execution_state: command.execution_state.merge('claim_token' => executor.send(:claim_token)))
-
-    executor.send(:record_write_reference!, provider_reception_code: 'reception-2')
-
-    expect(command.reload.provider_reception_code).to eq('reception-2')
-    expect(described_class).not_to have_received(:perform_later)
-  end
-
-  it 'does not hand off while a create is still queued' do
-    bind_provider_status!('pending')
-    capture_booking_fence!
-    described_class.perform_now(command.id)
-    expect(conversation.reload.status).to eq('pending')
-    expect(conversation.messages.outgoing).to be_empty
-  end
-
-  it 'does not hand off a current acknowledged create only because its read-back remains delayed' do
-    bind_provider_status!('pending')
-    capture_booking_fence!
-    command.update!(provider_patient_code: 'patient-1', status: 'reconciliation_required',
-                    execution_state: command.execution_state.merge('write_provider_reception_code' => 'reception-1'))
-
-    described_class.perform_now(command.id)
-
-    expect(conversation.reload.status).to eq('pending')
-    expect(conversation.messages.outgoing).to be_empty
-  end
-
-  %w[failed provider_status_unknown].each do |outcome|
-    it "hands off #{outcome} create once with a staff note and one customer notice, but never confirms it to the customer" do
-      bind_provider_status!(outcome)
-      capture_booking_fence!
-      command.update!(status: outcome)
-
-      described_class.perform_now(command.id)
-      described_class.perform_now(command.id)
-
-      expect(conversation.reload.status).to eq('open')
-      expect(conversation.current_captain_control_state).to eq('human')
-      notice = conversation.messages.outgoing.where(private: false).sole
-      expect(notice.content).to eq('Не получилось подтвердить запись на приём. Администратор проверит и свяжется с вами.')
-      expect(notice.sender).to eq(assistant)
-      expect(notice.additional_attributes['medelement_provider_command_id']).to eq(command.id)
-      expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
-      state = command.reload.execution_state
-      expect(state[described_class::CUSTOMER_MESSAGE_ID_KEY]).to eq(notice.id)
-      expect(state[described_class::STAFF_NOTE_ID_KEY]).to eq(conversation.messages.outgoing.where(private: true).sole.id)
-    end
-  end
-
-  it 'hands off a succeeded create without a write-acknowledged reception ID' do
-    bind_provider_status!('succeeded')
-    capture_booking_fence!
-    command.update!(status: 'succeeded')
-
-    described_class.perform_now(command.id)
-    expect(conversation.reload.status).to eq('open')
-    expect(conversation.messages.outgoing.where(private: false).pluck(:content)).to eq(
-      ['Не получилось подтвердить запись на приём. Администратор проверит и свяжется с вами.']
-    )
-  end
-
-  context 'when the account language is Kazakh' do
-    let(:account) { create(:account, locale: 'kk').tap { |record| record.enable_features!('scheduling') } }
-
-    it 'tells the customer in Kazakh that the booking could not be confirmed' do
-      bind_provider_status!('failed')
-      capture_booking_fence!
-      command.update!(status: 'failed')
-
-      described_class.perform_now(command.id)
-
-      expect(conversation.messages.outgoing.where(private: false).sole.content)
-        .to eq('Қабылдауға жазылуды растау мүмкін болмады. Әкімші тексеріп, сізбен байланысады.')
-    end
-  end
-
-  context 'when the provider rejects the selected interval' do
-    before do
-      bind_provider_status!('failed')
-      capture_booking_fence!
-      command.update!(status: 'failed', last_error_code: 'slot_conflict')
-    end
-
-    it 'commits one public explanation with the handoff and preserves it on retries' do
-      2.times { described_class.perform_now(command.id) }
-
-      reply = conversation.messages.outgoing.where(private: false).sole
-      expect(reply.content).to eq('Это время уже занято, поэтому запись не оформлена. Поможем подобрать другое время.')
-      expect(reply.additional_attributes['medelement_provider_command_id']).to eq(command.id)
-      expect(conversation.reload).to be_open
-      expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
-      expect(command.reload.execution_state[described_class::CUSTOMER_MESSAGE_ID_KEY]).to eq(reply.id)
-    end
-
-    it 'does not send an old conflict explanation or take over a newer request' do
-      create(:message, conversation: conversation, message_type: :incoming, skip_runtime_events: true)
-
-      described_class.perform_now(command.id)
-
-      expect(conversation.messages.outgoing).to be_empty
-      expect(conversation.reload).to be_pending
-    end
-
-    it 'rechecks the incoming request under the handoff locks before changing status or generation' do
-      generation = conversation.current_captain_control_generation
-      # Inject the competing commit after the early request check, before the
-      # real handoff acquires its conversation and control-owner locks.
-      # rubocop:disable RSpec/AnyInstance
-      allow_any_instance_of(Captain::Tools::ProviderBookingHandoffService).to receive(:current_incoming_request?).and_wrap_original do |method|
-        result = method.call
-        create(:message, conversation: conversation, message_type: :incoming, skip_runtime_events: true) if result
-        result
-      end
-      # rubocop:enable RSpec/AnyInstance
-
-      described_class.perform_now(command.id)
-
-      expect(conversation.reload).to be_pending
-      expect(conversation.current_captain_control_generation).to eq(generation)
-      expect(conversation.messages.outgoing).to be_empty
-    end
-
-    it 'does not send a second explanation after a staff reply' do
-      create(:message, conversation: conversation, message_type: :outgoing, sender: create(:user, account: account), content: 'Подберём время')
-
-      described_class.perform_now(command.id)
-
-      expect(conversation.messages.outgoing.where(private: false).pluck(:content)).to eq(['Подберём время'])
-    end
-
-    context 'when the failed operation was a move' do
-      let(:operation) { 'move_reception' }
-
-      it 'describes the failed move without claiming the original appointment was cancelled' do
-        2.times { described_class.perform_now(command.id) }
-
-        expect(conversation.messages.outgoing.where(private: false).sole.content)
-          .to eq('Это время уже занято, поэтому перенести запись не удалось. Поможем подобрать другое время.')
-      end
-    end
-  end
-
-  it 'hands off an acknowledged create orphan once without touching a replacement booking' do
-    bind_provider_status!('pending')
-    capture_booking_fence!
-    command.update!(provider_patient_code: 'patient-1')
-    command.update!(execution_state: command.execution_state.merge('write_provider_reception_code' => 'reception-1'))
-    replacement = create(:scheduling_resource, account: account)
-    appointment.update!(resource: replacement)
-    command.update!(status: 'succeeded')
-
-    expect(Integrations::Medelement::ProviderCommandJob).not_to receive(:perform_later)
-    described_class.perform_now(command.id)
-    described_class.perform_now(command.id)
-
-    expect(conversation.reload.status).to eq('open')
-    expect(conversation.current_captain_control_state).to eq('human')
-    expect(conversation.messages.outgoing.where(private: false)).to be_empty
-    expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
-    expect(command.reload.execution_state[described_class::STAFF_NOTE_ID_KEY]).to eq(conversation.messages.outgoing.last.id)
-    expect(appointment.reload.resource_id).to eq(replacement.id)
-  end
-
-  it 'notes an acknowledged orphan after human takeover without reopening it' do
-    bind_provider_status!('pending')
-    capture_booking_fence!
-    command.update!(provider_patient_code: 'patient-1')
-    command.update!(execution_state: command.execution_state.merge('write_provider_reception_code' => 'reception-1'))
-    appointment.update!(resource: create(:scheduling_resource, account: account))
-    conversation.update!(status: :open)
-    command.update!(status: 'succeeded')
-
-    described_class.perform_now(command.id)
-    expect(conversation.reload.status).to eq('open')
-    expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
-    expect(conversation.messages.outgoing.where(private: false)).to be_empty
-  end
-
-  it 'keeps an acknowledged orphan in the original conversation when the local appointment moves to another contact' do
-    bind_provider_status!('pending')
-    capture_booking_fence!
-    command.update!(provider_patient_code: 'patient-1',
-                    execution_state: command.execution_state.merge('write_provider_reception_code' => 'reception-1'))
-    other_contact = create(:contact, account: account)
-    other_conversation = create(:conversation, account: account, inbox: inbox, contact: other_contact, status: :pending)
-    appointment.update!(contact: other_contact, conversation: other_conversation)
-    command.update!(status: 'succeeded')
-
-    described_class.perform_now(command.id)
-
-    expect(conversation.reload.status).to eq('open')
-    expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
-    expect(other_conversation.reload.status).to eq('pending')
-    expect(other_conversation.messages.outgoing).to be_empty
-    expect(appointment.reload).to have_attributes(contact_id: other_contact.id, conversation_id: other_conversation.id)
-  end
-
-  it 'reviews a failed read-back with an acknowledged write even when the appointment was replaced' do
-    bind_provider_status!('pending')
-    capture_booking_fence!
-    command.update!(provider_patient_code: 'patient-1',
-                    execution_state: command.execution_state.merge('write_provider_reception_code' => 'reception-1'))
-    appointment.update!(resource: create(:scheduling_resource, account: account))
+  it 'does nothing for a job that was enqueued before the change' do
     command.update!(status: 'failed')
 
-    described_class.perform_now(command.id)
+    expect { described_class.perform_now(command.id) }.not_to(change { conversation.messages.count })
 
-    expect(conversation.reload.status).to eq('open')
-    expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
-    expect(conversation.messages.outgoing.where(private: false)).to be_empty
-  end
-
-  it 'does not steal a later Captain run for an acknowledged orphan' do
-    bind_provider_status!('pending')
-    capture_booking_fence!
-    command.update!(provider_patient_code: 'patient-1')
-    command.update!(execution_state: command.execution_state.merge('write_provider_reception_code' => 'reception-1'))
-    appointment.update!(resource: create(:scheduling_resource, account: account))
-    conversation.update!(status: :open)
-    conversation.prepare_captain_ai_control!
-    conversation.update!(status: :pending)
-    command.update!(status: 'succeeded')
-
-    described_class.perform_now(command.id)
-    expect(conversation.reload.status).to eq('pending')
-    expect(conversation.messages.outgoing).to be_empty
-  end
-
-  it 'does not reassign a superseded create to the human team without a provider receipt' do
-    bind_provider_status!('failed')
-    capture_booking_fence!
-    appointment.update!(custom_attributes: appointment.custom_attributes.merge(
-      Integrations::Medelement::AppointmentProviderStatus::COMMAND_ID_KEY => command.id + 1
-    ))
-    command.update!(status: 'failed')
-
-    described_class.perform_now(command.id)
-    expect(conversation.reload.status).to eq('pending')
-    expect(conversation.messages.outgoing).to be_empty
-  end
-
-  it 'does not reassign a failed booking after the inbox is switched to another Captain assistant' do
-    bind_provider_status!('failed')
-    capture_booking_fence!
-    replacement = create(:captain_assistant, account: account, usage_mode: 'external_agent')
-    conversation.inbox.captain_inbox.update!(captain_assistant: replacement)
-    command.update!(status: 'failed')
-
-    described_class.perform_now(command.id)
-    expect(conversation.reload.status).to eq('pending')
-    expect(conversation.messages.outgoing).to be_empty
-  end
-
-  it 'does not reopen after a human takes over, but makes the failed booking visible to staff' do
-    bind_provider_status!('failed')
-    capture_booking_fence!
-    conversation.update!(status: :open)
-    command.update!(status: 'failed')
-
-    described_class.perform_now(command.id)
-
-    expect(conversation.reload.status).to eq('open')
-    expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
-    expect(conversation.messages.outgoing.where(private: false)).to be_empty
-  end
-
-  context 'when MedElement confirms a reschedule' do
-    let(:operation) { 'move_reception' }
-
-    it 'replies once after read-back, not just because the old reception had an ID' do
-      bind_provider_status!('pending')
-      command.update!(status: 'processing')
-      described_class.perform_now(command.id)
-      expect(conversation.messages.outgoing.where(private: false)).to be_empty
-
-      bind_provider_status!('succeeded')
-      command.update!(status: 'succeeded')
-      described_class.perform_now(command.id)
-      described_class.perform_now(command.id)
-
-      expect(conversation.messages.outgoing.where(private: false).count).to eq(1)
-      expect(conversation.messages.outgoing.where(private: false).last.content).to include('Ваша запись перенесена')
-    end
-
-    it 'does not send the late reschedule confirmation after a human reply' do
-      bind_provider_status!('succeeded')
-      command.update!(status: 'succeeded')
-      conversation.update!(status: :open)
-
-      described_class.perform_now(command.id)
-
-      expect(conversation.messages.outgoing.where(private: false)).to be_empty
-    end
-
-    %w[failed provider_status_unknown].each do |outcome|
-      it "hands a #{outcome} reschedule to people once with a staff note and one customer notice, but never tells the customer it moved" do
-        bind_provider_status!(outcome)
-        capture_booking_fence!
-        command.update!(status: outcome)
-
-        described_class.perform_now(command.id)
-        described_class.perform_now(command.id)
-
-        expect(conversation.reload.status).to eq('open')
-        expect(conversation.captain_handoff_applied_at).to be_present
-        expect(conversation.status_transitions.last).to have_attributes(source: 'system', actor: assistant)
-        notice = conversation.messages.outgoing.where(private: false).sole
-        expect(notice.content).to eq('Не получилось подтвердить перенос записи. Администратор проверит и свяжется с вами.')
-        expect(notice.content).not_to match(/перенесена|MedElement|успешно/i)
-        expect(notice.additional_attributes['medelement_provider_command_id']).to eq(command.id)
-        note = conversation.messages.outgoing.where(private: true).sole
-        expect(note.content).to include('Запись в MedElement не подтверждена')
-        state = command.reload.execution_state
-        expect(state[described_class::STAFF_NOTE_ID_KEY]).to eq(note.id)
-        expect(state[described_class::CUSTOMER_MESSAGE_ID_KEY]).to eq(notice.id)
-      end
-    end
-
-    it 'tells the customer in Kazakh that the reschedule could not be confirmed' do
-      account.update!(locale: 'kk')
-      bind_provider_status!('failed')
-      capture_booking_fence!
-      command.update!(status: 'failed')
-
-      described_class.perform_now(command.id)
-
-      expect(conversation.messages.outgoing.where(private: false).sole.content)
-        .to eq('Жазылуды ауыстыруды растау мүмкін болмады. Әкімші тексеріп, сізбен байланысады.')
-    end
-
-    it 'waits for the read-back result of an ambiguous move write before telling the customer anything' do
-      bind_provider_status!('provider_status_unknown')
-      capture_booking_fence!
-      command.update!(
-        status: 'reconciliation_required',
-        execution_state: command.execution_state.merge('write_failure' => { 'code' => 'provider_http_error', 'status' => 503, 'definitive' => false })
-      )
-
-      described_class.perform_now(command.id)
-
-      expect(conversation.reload.status).to eq('pending')
-      expect(conversation.messages.outgoing).to be_empty
-    end
-
-    it 'does not reopen a failed reschedule after a human took over, but notes it for staff' do
-      bind_provider_status!('failed')
-      capture_booking_fence!
-      conversation.update!(status: :open)
-      command.update!(status: 'failed')
-
-      described_class.perform_now(command.id)
-
-      expect(conversation.reload.status).to eq('open')
-      expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
-      expect(conversation.messages.outgoing.where(private: false)).to be_empty
-    end
-
-    # Rule 3.2: a system-authorized outcome may leave one private note but never
-    # takes over a newer Captain run. Every failed or unknown reschedule got that
-    # note before the handoff existed, so a stale run fence still leaves it.
-    def expect_no_takeover(generation:, transitions:)
-      expect(conversation.reload).to have_attributes(status: 'pending', current_captain_control_generation: generation,
-                                                     captain_handoff_applied_at: nil)
-      expect(conversation.status_transitions.count).to eq(transitions)
-    end
-
-    def expect_one_staff_note
-      expect(conversation.messages.outgoing.pluck(:private)).to eq([true])
-      expect(command.reload.execution_state[described_class::STAFF_NOTE_ID_KEY]).to eq(conversation.messages.outgoing.last.id)
-    end
-
-    it 'does not steal a later Captain run for a failed reschedule, but notes it for staff once' do
-      bind_provider_status!('failed')
-      capture_booking_fence!
-      conversation.update!(status: :open)
-      conversation.prepare_captain_ai_control!
-      conversation.update!(status: :pending)
-      command.update!(status: 'failed')
-      generation = conversation.reload.current_captain_control_generation
-      transitions = conversation.status_transitions.count
-
-      described_class.perform_now(command.id)
-      described_class.perform_now(command.id)
-
-      expect_no_takeover(generation: generation, transitions: transitions)
-      expect_one_staff_note
-    end
-
-    it 'notes an unknown reschedule for staff without taking over the run the customer reopened after a resolve' do
-      bind_provider_status!('provider_status_unknown')
-      capture_booking_fence!
-      Conversations::StatusTransitionService.new(conversation: conversation, params: { status: 'resolved' }, source: 'system').perform
-      Conversations::StatusTransitionService.new(conversation: conversation.reload, params: { status: 'pending' }, source: 'contact').perform
-      command.update!(status: 'provider_status_unknown')
-      generation = conversation.reload.current_captain_control_generation
-      transitions = conversation.status_transitions.count
-
-      described_class.perform_now(command.id)
-      described_class.perform_now(command.id)
-
-      expect_no_takeover(generation: generation, transitions: transitions)
-      expect_one_staff_note
-    end
-
-    it 'notes a failed reschedule for staff without handing off when the appointment is bound to a newer command' do
-      bind_provider_status!('failed')
-      capture_booking_fence!
-      appointment.update!(custom_attributes: appointment.custom_attributes.merge(
-        Integrations::Medelement::AppointmentProviderStatus::COMMAND_ID_KEY => command.id + 1
-      ))
-      command.update!(status: 'failed')
-      generation = conversation.reload.current_captain_control_generation
-      transitions = conversation.status_transitions.count
-
-      described_class.perform_now(command.id)
-      described_class.perform_now(command.id)
-
-      expect_no_takeover(generation: generation, transitions: transitions)
-      expect_one_staff_note
-    end
-
-    it 'waits for the run fence, then keeps only the staff note for a reschedule that never got one' do
-      bind_provider_status!('failed')
-      command.update!(status: 'failed')
-
-      described_class.perform_now(command.id)
-      expect(conversation.messages.outgoing).to be_empty
-
-      job = described_class.new(command.id)
-      job.executions = described_class::BINDING_ATTEMPTS - 1
-      job.perform_now
-
-      expect(conversation.reload.status).to eq('pending')
-      expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
-      expect(conversation.messages.outgoing.where(private: false)).to be_empty
-    end
-
-    context 'when a staff member replied in a non-Captain channel of the same communication thread' do
-      let(:sibling) { create(:conversation, account: account, contact: contact, status: :open) }
-      let(:thread) { create(:communication_thread, account: account, contact: contact) }
-
-      before do
-        [conversation, sibling].each do |candidate|
-          create(:communication_thread_conversation, communication_thread: thread, conversation: candidate)
-          candidate.association(:communication_thread_conversation).reset
-          candidate.association(:communication_thread).reset
-        end
-        allow(Captain::Conversation::TypingIndicatorService).to receive(:turn_off)
-      end
-
-      after { Redis::Alfred.delete(format(Redis::Alfred::CAPTAIN_RESPONSE_CANCELLATION_STATE, conversation_id: conversation.id)) }
-
-      it 'notes the reschedule for staff instead of confirming it while the Captain conversation stays pending' do
-        bind_provider_status!('succeeded')
-        command.update!(status: 'succeeded')
-        create(:message, conversation: sibling, account: account, inbox: sibling.inbox, message_type: :outgoing,
-                         sender: create(:user, account: account), private: false, content: 'agent reply')
-
-        described_class.perform_now(command.id)
-
-        expect(conversation.reload).to be_pending
-        expect(conversation.messages.outgoing.pluck(:private)).to eq([true])
-        expect(command.reload.execution_state[described_class::STAFF_NOTE_ID_KEY]).to eq(conversation.messages.outgoing.last.id)
-      end
-    end
-  end
-
-  context 'when a delegated specialist created the provider command' do
-    let(:entry_assistant) { create(:captain_assistant, account: account) }
-
-    before do
-      conversation.inbox.captain_inbox.update!(captain_assistant: entry_assistant)
-      entry_assistant.update!(handoff_agent_ids: [assistant.id])
-      route_booking_actor_to(assistant)
-    end
-
-    def route_booking_actor_to(actor)
-      Captain::Conversation::AgentSession.new(entry: entry_assistant, conversation: conversation).update_routing(actor_id: actor.id)
-    end
-
-    it 'hands an unknown specialist booking to staff without requiring the specialist to own the inbox' do
-      bind_provider_status!('provider_status_unknown')
-      capture_booking_fence!
-      command.update!(status: 'provider_status_unknown')
-
-      2.times { described_class.perform_now(command.id) }
-
-      expect(assistant.inboxes).to be_empty
-      expect(command.reload.execution_state['ai_booking_response_fence']).to include(
-        'entry_assistant_id' => entry_assistant.id, 'routing_revision' => 1
-      )
-      expect(conversation.reload).to be_open
-      expect(conversation.status_transitions.last.actor).to eq(assistant)
-      expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
-      expect(conversation.messages.outgoing.where(private: false).pluck(:sender_id)).to eq([assistant.id])
-    end
-
-    %w[transfer return_to_same_actor remove_route deactivate].each do |change|
-      it "does not let a late unknown booking take control after #{change}" do
-        bind_provider_status!('provider_status_unknown')
-        capture_booking_fence!
-        command.update!(status: 'provider_status_unknown')
-        case change
-        when 'transfer' then route_booking_actor_to(entry_assistant)
-        when 'return_to_same_actor'
-          route_booking_actor_to(entry_assistant)
-          route_booking_actor_to(assistant)
-        # Routing is the channel mesh now: the specialist leaves the route when it is no longer a member of the channel.
-        when 'remove_route' then assistant.update!(channel_scope: 'selected')
-        when 'deactivate' then assistant.update!(active: false)
-        end
-
-        described_class.perform_now(command.id)
-
-        expect(conversation.reload).to be_pending
-        expect(conversation.messages.outgoing).to be_empty
-      end
-    end
-
-    context 'with a successful reschedule' do
-      let(:operation) { 'move_reception' }
-
-      before do
-        bind_provider_status!('succeeded')
-        capture_booking_fence!
-        command.update!(status: 'succeeded')
-      end
-
-      it 'sends a current specialist confirmation under its original routing and control fence' do
-        described_class.perform_now(command.id)
-
-        reply = conversation.messages.outgoing.where(private: false).sole
-        expect(reply.sender).to eq(assistant)
-        expect(reply.content).to include('Ваша запись перенесена')
-      end
-
-      it 'keeps the original routing stamp immutable and stops a confirmation after the same actor returns' do
-        original_fence = command.execution_state['ai_booking_response_fence'].deep_dup
-        route_booking_actor_to(entry_assistant)
-        route_booking_actor_to(assistant)
-        Captain::Tools::ProviderBookingHandoffService.capture_fence!(command: command, fence: original_fence)
-
-        described_class.perform_now(command.id)
-
-        expect(command.reload.execution_state['ai_booking_response_fence']).to eq(original_fence)
-        expect(conversation.messages.outgoing.where(private: false)).to be_empty
-        expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
-        expect(conversation.reload).to be_pending
-      end
-    end
-  end
-
-  context 'when a human created the provider command' do
-    let(:actor_type) { 'User' }
-
-    it 'does not enqueue or send a customer message' do
-      bind_provider_status!('succeeded')
-      command.update!(status: 'succeeded')
-      described_class.perform_now(command.id)
-
-      expect(described_class).not_to have_received(:perform_later)
-      expect(conversation.messages.outgoing.where(private: false)).to be_empty
-    end
+    expect_conversation_untouched
+    expect(command.reload.execution_state.keys).not_to include('ai_booking_customer_message_id', 'ai_booking_staff_note_id')
   end
 end
