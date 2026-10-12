@@ -158,4 +158,14 @@ RSpec.describe Captain::Runtime::PartRegistry do
     expect(second_status).to eq(:existing)
     expect(receipt['status']).to eq('finished')
   end
+
+  it 'treats a plain confirmation without a stored proposal as an answer to the open part' do
+    old = plan([{ fragment: 'Запишите к терапевту', executor_agent_id: 1 }])[:parts].sole
+    next_message
+
+    part = plan([{ fragment: 'Да', executor_agent_id: 1, link_part_id: old['id'], link_action: 'confirmation' }])[:parts].sole
+
+    expect(part).to include('id' => old['id'], 'version' => 2, 'link_action' => 'answer')
+    expect(part['proposed_operation']).to be_nil
+  end
 end

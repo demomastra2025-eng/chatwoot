@@ -22,7 +22,9 @@ RSpec.describe Captain::Runtime::Council do
     items = parts(%w[Анна Анна])
     reply = council.send(:assemble, items, [result(field: 'дата', patient: 'Анна'), result(field: 'дата', patient: 'Анна')])
 
-    expect(reply.scan('Анна — дата').size).to eq(1)
+    # One patient: the question is asked once and needs no name prefix.
+    expect(reply.scan('дата').size).to eq(1)
+    expect(reply).not_to include('Анна — ')
     expect(context[:parts].pluck('state')).to eq(%w[waiting_customer waiting_customer])
   end
 
@@ -32,8 +34,8 @@ RSpec.describe Captain::Runtime::Council do
     conflicting['contradictions'] = ['Different source values']
     reply = council.send(:assemble, items, [result(field: 'дата', patient: 'Анна'), conflicting])
 
-    expect(reply).to include('Анна — дата')
-    expect(reply).not_to include('Борис — дата', 'Непроверенный ответ')
+    expect(reply).to include('дата')
+    expect(reply).not_to include('Борис', 'Непроверенный ответ')
     expect(context[:parts].last['state']).to eq('open')
   end
 
@@ -43,6 +45,15 @@ RSpec.describe Captain::Runtime::Council do
                                             result(field: 'дата', patient: 'Борис')])
 
     expect(reply).to include('Анна — дата', 'Борис — дата')
+  end
+
+  it 'sends consultant questions as they are and never shows role labels' do
+    items = parts(%w[собеседник Аружан])
+    reply = council.send(:assemble, items, [result(field: 'На какой день вам удобно?', patient: 'собеседник'),
+                                            result(field: 'Какая дата рождения Аружан?', patient: 'Аружан')])
+
+    expect(reply).to include('На какой день вам удобно?', 'Какая дата рождения Аружан?')
+    expect(reply).not_to include('собеседник', 'Уточните:')
   end
 
   it 'asks for confirmation and records the proposal without executing it' do

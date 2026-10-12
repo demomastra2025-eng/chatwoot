@@ -56,6 +56,9 @@ class Captain::Runtime::PartRegistry
       raise ArgumentError, 'Invalid part relation' unless RELATIONS.include?(relation)
       link_action = item['link_action'].presence || 'answer'
       raise ArgumentError, 'Invalid link action' unless LINK_ACTIONS.include?(link_action)
+      # Only a stored proposal can be confirmed for execution with frozen params. A customer's "да" to a question
+      # the agent asked in plain text is an answer: the agent continues and acts through its own guarded tools.
+      link_action = (prior ? 'answer' : 'new') if link_action == 'confirmation' && prior&.dig('proposed_operation').blank?
       if prior.nil? && open_parts.any? && mode != 'clarify' && link_action != 'new'
         raise ArgumentError, 'Identify this as a new request or link an open part'
       end

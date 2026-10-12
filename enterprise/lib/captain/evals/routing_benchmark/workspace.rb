@@ -74,6 +74,17 @@ class Captain::Evals::RoutingBenchmark::Workspace
     end
   end
 
+  # Clinics record which resource performs which service (price list / MedElement sync); slot search refuses a
+  # service without that link. Fixtures do not list links, so every synthetic resource is linked to every service.
+  def link_services_to_resources!
+    @services.each_value do |service|
+      @resources.each_value do |resource|
+        Scheduling::ServicePrice.create!(account: account, service_id: service.id, resource_id: resource.id,
+                                         price: service.base_price)
+      end
+    end
+  end
+
   def create_contact!(row)
     # No Playground marker: Captain::Playground::ExecutionBoundary blocks every tool for a marked
     # record without a live Playground session. The isolated database has no channel webhook or
@@ -104,6 +115,7 @@ class Captain::Evals::RoutingBenchmark::Workspace
         base_price: row.fetch('base_price', 0)
       )
     end
+    link_services_to_resources!
     data.fetch('slots', []).each do |row|
       Scheduling::WorkRule.create!(resource: @resources.fetch(row.fetch('resource')),
                                    weekday: row.fetch('weekday'), start_minute: row.fetch('start_minute'),

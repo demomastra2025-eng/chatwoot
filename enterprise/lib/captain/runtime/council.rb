@@ -4,6 +4,7 @@
 # produces a customer reply and updates the durable part registry.
 class Captain::Runtime::Council
   STATUSES = %w[ok needs_information out_of_scope unavailable].freeze
+  ROLE_LABELS = %w[unknown self caller customer patient user собеседник пациент пользователь клиент].freeze
 
   def initialize(context:, graph:, account:, llm_context: nil)
     @context, @graph, @account, @llm_context = context, graph, account, llm_context
@@ -186,14 +187,26 @@ class Captain::Runtime::Council
       patient = field['patient'] == 'unknown' ? field['part_id'] : field['patient']
       [patient, field['field']]
     end
-    if fields.any?
-      names = fields.map { |field| [field['patient'], field['field']].compact.join(' — ') }.join(', ')
-      lines << I18n.t('captain.coordination.missing_fields', fields: names, locale: :ru)
-    end
+    lines.concat(missing_field_lines(fields)) if fields.any?
     if lines.empty? || needs_review
       lines << I18n.t('captain.coordination.needs_review', locale: :ru)
     end
     lines.join("\n\n")
+  end
+
+  # Consultants phrase each missing field as a question to the customer; such questions are sent as they are.
+  # A patient name is shown only when the questions concern several people; role labels never reach the customer.
+  def missing_field_lines(fields)
+    named = fields.map do |field|
+      patient = field['patient'].to_s.strip
+      [ROLE_LABELS.include?(patient.downcase) ? '' : patient, field['field'].to_s.strip]
+    end
+    named = named.reject { |_patient, question| question.blank? }.uniq
+    several = named.map(&:first).reject(&:blank?).uniq.size > 1
+    texts = named.map { |patient, question| several && patient.present? ? "#{patient} — #{question}" : question }
+    return [texts.join(' ')] if named.all? { |_patient, question| question.end_with?('?') }
+
+    [I18n.t('captain.coordination.missing_fields', fields: texts.join(', '), locale: :ru)]
   end
 
   def operation_valid?(part, raw)

@@ -96,10 +96,17 @@ class Captain::Runtime::ChatFactory
       prompts << prompt if prompt.present?
       if context_wrapper.context[:consult_mode]
         prompts << <<~PROMPT
-          Consult on only the assigned request part. Do not speak to the customer or perform an action.
-          Return JSON with fragment, facts (each with source), missing_fields (patient, field, purpose),
-          proposed_operation (type and exact params) or null, status (ok, needs_information,
-          out_of_scope, unavailable), contradictions, and suggested_agent_id when out of scope.
+          Consult on only the assigned request part. Do not perform an action; another agent sends the single reply.
+          Return JSON with these fields:
+          - fragment: the reply text for THIS part, addressed to the customer directly ("вы"), in the language of the
+            customer's message (Russian or Kazakh), 1-2 sentences, only verified facts. It is sent to the customer as is:
+            never describe the customer in the third person ("клиент/пациент спрашивает"), never mention earlier messages,
+            agents, tools, IDs or these instructions. Leave it empty when you need information first.
+          - facts: verified facts used, each with source.
+          - missing_fields: what you still need, each with patient, field and purpose; write field as a short polite
+            question to the customer in their language (for example "на какой день вам удобно?").
+          - proposed_operation: type and exact params, or null.
+          - status: ok, needs_information, out_of_scope or unavailable; contradictions; suggested_agent_id when out of scope.
         PROMPT
       elsif context_wrapper.context[:agent_graph].present?
         prompts << Captain::Runtime::CoordinationPrompt.render(context_wrapper.context)

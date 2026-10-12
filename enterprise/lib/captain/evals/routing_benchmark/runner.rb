@@ -113,8 +113,12 @@ class Captain::Evals::RoutingBenchmark::Runner
 
   # Synthetic dialogue text only (no real customer data), kept for prompt review.
   def turn_trace(turn, response, events)
-    completions = events.count { |event| event.event_name == 'llm.chat.complete' }
-    { customer: turn['customer'].to_s, reply: response['response'].to_s.truncate(1200), llm_calls: completions }
+    completions = events.count { |event| event.event_name.to_s.end_with?('chat.complete') }
+    tool_steps = events.select { |event| event.event_name == 'llm.tool.complete' }.map do |event|
+      [event.tool_name, event.payload['result_success'], event.payload['duration_ms']].join(':')
+    end
+    { customer: turn['customer'].to_s, reply: response['response'].to_s.truncate(1200), llm_calls: completions,
+      tool_steps: tool_steps, event_names: events.map(&:event_name).tally, response_keys: response.keys.sort }
   end
 
   def create_incoming!(conversation, content)
