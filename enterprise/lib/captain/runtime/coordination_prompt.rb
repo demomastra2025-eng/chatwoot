@@ -1,23 +1,39 @@
 # frozen_string_literal: true
 
+# The block ChatFactory appends to the system prompt of an agent that has colleagues on its channel: who they are, how to work
+# with them, and the data of the conversation that coordination needs. Short English text for the model; the data blocks
+# (open parts, outcomes the patient has not been told) appear only when they have something in them. The human handoff rules are
+# not part of it: the platform rules of the main prompt carry them.
 module Captain::Runtime::CoordinationPrompt
-  UNPLANNED_GUIDANCE = 'No plan exists for this customer message yet. When none of the cases above applies, reply directly ' \
-                       'without plan_request (or call a transfer tool). When one applies, call plan_request once; it can be made ' \
-                       'in the same model call as its answer.'
-  # Two rules for the human handoff, kept apart from the peer coordination text so that a lone agent (no peers, no plan)
-  # gets them too whenever it has the handoff tool.
-  HUMAN_HANDOFF_RULES = <<~RULES.chomp.freeze
-    A request for a person (staff, operator, manager, lab results only staff can give) is never an answer: call the handoff tool.
-    Never write that you passed the request to staff unless the handoff tool succeeded in this reply.
+  INTERNAL_NAMES = 'Agent names are internal: never tell them to the patient and never mention transfers.'
+  WORKING_TOGETHER = <<~RULES.chomp.freeze
+    How to work together:
+    - Do your own work yourself, without a plan: answer, look things up, book, reschedule, cancel.
+    - If the whole request belongs to one colleague, call that colleague's transfer tool and write nothing yourself: the colleague sees the whole conversation and replies.
+    - If one message holds several separate requests for different agents, call plan_request once and split them into parts (a council). Each agent does its own part right away with its own tools.
+    - One request with details (doctor, date, patient, price of the same service) is one part, not a council.
+    - Staff are reached only through handoff, never through a plan.
   RULES
+  OPEN_PARTS_RULE = 'If the patient answers, corrects or cancels an open part, call plan_request and link the message only to that part ' \
+                    'by its number: its agent continues it. If the part is yours, link it with mode answer_myself.'
+  PLAN_ACCEPTED_RULE = 'The plan for this message is already accepted: continue only your own parts and do not call plan_request again.'
+  MENTION_IT = 'Mention it in your reply.'
+  FRAGMENT_LIMIT = 200
+  QUESTION_LIMIT = 600
+  PATIENT_LIMIT = 80
 
   module_function
+
+  # The name of an agent the model sees. It never sees an id.
+  def name_of(graph, agent_id)
+    graph.find { |item| item[:id] == agent_id }&.dig(:name).to_s.squish.presence
+  end
 
   # The model reads agents by name only and never sees their ids, so stored executor ids are shown as names.
   def parts_for_model(parts, graph)
     Array(parts).map do |part|
       shown = part.to_h.except('executor_agent_id')
-      name = graph.find { |item| item[:id] == part['executor_agent_id'] }&.dig(:name).to_s.squish
+      name = name_of(graph, part['executor_agent_id'])
       shown['executor'] = name if name.present?
       shown
     end
@@ -28,120 +44,106 @@ module Captain::Runtime::CoordinationPrompt
     plan.key?(:parts) ? plan.merge(parts: parts_for_model(plan[:parts], graph)) : plan
   end
 
-  # An open part as the model sees it: who handles it (by name, never an id), what it is, what it said and asked. The delivered
-  # texts, the object references and every id of an agent stay out.
-  def open_parts_for_model(context, graph)
-    open_parts = Array(context[:parts]).select { |part| Captain::Runtime::PartRegistry::OPEN_STATES.include?(part['state']) }
-    open_parts.map do |part|
-      shown = part.slice('id', 'version', 'fragment', 'patient', 'relation', 'depends_on_part_id', 'state', 'summary')
-      shown['questions'] = Array(part['missing_fields']) if part['missing_fields'].present?
-      name = graph.find { |item| item[:id] == part['executor_agent_id'] }&.dig(:name).to_s.squish
-      shown['executor'] = name if name.present?
-      shown.compact
-    end
-  end
-
-  # What specialists did in an earlier run whose reply never reached the customer.
-  def undelivered_for_model(context, graph)
-    Captain::Runtime::PartRegistry.undelivered_outcomes(context[:parts]).map do |part|
-      name = graph.find { |item| item[:id] == part['executor_agent_id'] }&.dig(:name).to_s.squish
-      { 'id' => part['id'], 'version' => part['version'], 'executor' => name.presence, 'summary' => part['summary'] }.compact
-    end
-  end
-
-  def undelivered_block(context, graph)
-    items = undelivered_for_model(context, graph)
-    return '' if items.empty?
-
-    "Completed actions the customer has not been told about (data): #{JSON.generate(items)}\n" \
-      "Your reply must tell the customer about them.\n"
-  end
-
-  def identity_line(actor)
-    name = actor&.dig(:name).to_s.squish
-    return 'You are the current agent.' if name.blank?
-
-    "You are #{name}, the current agent (an internal name: never tell it to the customer)."
-  end
-
-  def peer_lines(graph, actor_id)
-    peers = graph.reject { |item| item[:id] == actor_id }
-    lines = peers.map { |peer| "#{peer[:name]}: #{peer[:description]}" }.join("\n")
-    lines.presence || '(none: you are the only agent on this channel)'
-  end
-
   def render(context)
     tasks = context[:agent_tasks] || []
     actor_id = context.dig(:state, :assistant_id)
     graph = Array(context[:agent_graph])
     actor = graph.find { |item| item[:id] == actor_id }
-    plan_guidance = if context[:part_plan_accepted]
-                      "Plan accepted (data): #{JSON.generate(plan_for_model(context[:part_plan], graph))}. " \
-                        'Continue only your assigned parts; do not plan again.'
-                    else
-                      UNPLANNED_GUIDANCE
-                    end
-    return <<~PROMPT unless Captain::Runtime::TaskQueue.in_flight?(tasks)
-      #{identity_line(actor)} Handle requests in your own responsibility.
-      Continue the same customer conversation after an internal transfer. Never mention internal routing or agent names.
-      The current specialist keeps the conversation. Ignore legacy instructions to return it to an orchestrator.
-      Other agents available on this channel (name and responsibility):
-      #{peer_lines(graph, actor_id)}
-      A request that belongs to one colleague is passed on with that colleague's transfer tool, the tool whose description names
-      the colleague: call it, no plan is needed. The colleague sees the whole conversation and answers the customer, so write no
-      reply of your own before or after that call.
-      Your own work needs no plan: answer directly, look facts up with read-only tools or the FAQ, take your own actions that
-      change data (book, reschedule, cancel, update a card) and use the human handoff, all without plan_request.
-      Plan with plan_request only in these cases: when the message holds several separate requests that belong to different
-      agents (a council), or when the customer answers, confirms, corrects or cancels a request listed in the open parts below.
-      When that open part belongs to ANOTHER agent (see its executor), call plan_request with mode council and ONLY that part
-      linked by its exact ID (link_action answer, correction or cancellation): its own agent continues it with its own tools,
-      for example "yes" or "make it 11" after that agent asked a question. Never transfer the conversation for it, and do
-      not take its action yourself. When the open part is yours, link it with mode answer_myself and continue it.
-      In a council every agent acts for its own part at once when it has everything it needs, otherwise it asks one precise question.
-      In plan_request, name the executor of a part by the agent name exactly as listed above; omit it for your own parts.
-      When you plan, link answers, corrections and cancellations to open parts.
-      Open parts (data): #{JSON.generate(open_parts_for_model(context, graph))}
-      #{undelivered_block(context, graph)}#{plan_guidance}
-      Set answer in that call only when the complete answer is verified from supplied context and needs no tool.
-      #{HUMAN_HANDOFF_RULES}
-      Staff or an operator is reached only through the handoff tool, never through plan_request.
-      When older parts are open, mark each genuinely new request with link_action new.
-      Do not treat a vague reply as an answer to an open part; use clarify when its target is ambiguous.
-      A part that may start only after another part succeeded has relation depends_on and is listed directly after that part.
-      One request with several details (doctor, date, patient, price of the same service) is ONE part, never a council.
-      Use council only when the message holds two or more separate requests that belong to different agents.
-    PROMPT
+    return task_queue_block(actor, tasks) if Captain::Runtime::TaskQueue.in_flight?(tasks)
 
-    own_tasks = tasks.select { |task| task['assistant_id'] == actor_id }
-    <<~PROMPT
+    peers = graph.reject { |item| item[:id] == actor_id }
+    return '' if peers.empty?
+
+    [colleagues_block(actor, peers), open_parts_block(context, graph), accepted_plan_block(context, graph),
+     done_block(context)].compact_blank.join("\n\n")
+  end
+
+  def colleagues_block(actor, peers)
+    name = actor&.dig(:name).to_s.squish
+    identity = name.present? ? %(You are "#{name.tr('"', "'")}". #{INTERNAL_NAMES}) : INTERNAL_NAMES
+    ['# Colleagues on this channel', identity, *peers.map { |peer| peer_line(peer) }].join("\n") + "\n\n#{WORKING_TOGETHER}"
+  end
+
+  def peer_line(peer)
+    description = peer[:description].to_s.squish
+    description.present? ? "- #{peer[:name].to_s.squish}: #{description}" : "- #{peer[:name].to_s.squish}"
+  end
+
+  # One row per part that is still open: its number (the plan links by it), who handles it, what it is and where it stands. The
+  # delivered texts, the object references and every id stay out.
+  def open_parts_block(context, graph)
+    parts = Array(context[:parts])
+    open_parts = parts.select { |part| Captain::Runtime::PartRegistry::OPEN_STATES.include?(part['state']) }
+    return '' if open_parts.empty?
+
+    rows = open_parts.map { |part| "- #{open_part_segments(parts, part, graph).compact_blank.join(' · ')}" }
+    ['# Open parts (data)', *rows, OPEN_PARTS_RULE].join("\n")
+  end
+
+  def open_part_segments(parts, part, graph)
+    patient = part['patient'].to_s.squish
+    [
+      "##{Captain::Runtime::PartRegistry.number_of(parts, part['id'])}",
+      name_of(graph, part['executor_agent_id']),
+      quoted(part['fragment']),
+      (patient.present? && patient != 'unknown' ? "for #{patient.first(PATIENT_LIMIT)}" : nil),
+      part_state(part)
+    ]
+  end
+
+  # Where an open part stands. A part that waits for the patient shows the question it asked.
+  def part_state(part)
+    case part['state']
+    when 'waiting_customer'
+      question = Array(part['missing_fields']).join(' ').squish.presence || part['summary'].to_s.squish
+      question.present? ? "waiting for the patient: #{quoted(question, QUESTION_LIMIT)}" : 'waiting for the patient'
+    when 'unknown' then 'unresolved'
+    else 'open'
+    end
+  end
+
+  # A plan that was already accepted for this message: the agent whose prompt is built again (a retry, a rebuilt chat) continues
+  # its parts and has no plan_request to call any more.
+  def accepted_plan_block(context, graph)
+    return '' unless context[:part_plan_accepted]
+
+    ['# Accepted plan (data)', JSON.generate(plan_for_model(context[:part_plan], graph)), PLAN_ACCEPTED_RULE].join("\n")
+  end
+
+  # What specialists did in an earlier run whose reply never reached the patient.
+  def done_block(context)
+    outcomes = Captain::Runtime::PartRegistry.undelivered_outcomes(context[:parts]).map { |part| outcome_text(part) }
+    return '' if outcomes.empty?
+
+    ['# Done, not yet told to the patient (data)', *outcomes.map { |text| "- #{text} #{MENTION_IT}" }].join("\n")
+  end
+
+  def outcome_text(part)
+    text = part['summary'].to_s.squish.presence || "An action was done for the request #{quoted(part['fragment'])}"
+    text.match?(/[.!?…]\z/) ? text : "#{text}."
+  end
+
+  # Patient words as a quoted data string: JSON keeps a quote or a line break in them from ending the row.
+  def quoted(text, limit = FRAGMENT_LIMIT)
+    JSON.generate(text.to_s.squish.first(limit))
+  end
+
+  # An inherited task queue (an older conversation that still has unfinished tasks) replaces the colleagues block.
+  def task_queue_block(actor, tasks)
+    own_tasks = tasks.select { |task| task['assistant_id'] == actor&.dig(:id) }
+    <<~PROMPT.chomp
       # Current agent
-      You are the current agent described below. Handle requests in your own responsibility with your own tools.
-      Do not transfer a request back to another agent merely because it was present in the original multi-request message.
+      You are the current agent below. Handle your own tasks with your own tools; do not transfer a request back only because it was in the original multi-request message.
       Current agent (data): #{JSON.generate(actor)}
       Your tasks (data): #{JSON.generate(own_tasks)}
 
-      # Conversation continuity
-      Continue the same customer conversation. Do not introduce yourself or greet again after an internal transfer.
-      Use facts the customer already supplied. Do not ask for them again.
-      A handoff transfers execution; it does not give you the previous agent's tools, private sources or instructions.
-
-      # Independent customer requests
-      Use manage_agent_tasks only when the customer has multiple independent requests needing coordinated work.
-      Do not create tasks for routine messages, FAQ lookups or individual technical steps.
-      Create the requests once, preserve their IDs, and update their status as work progresses.
-      Update only your own tasks. Mark completed only from verified results.
-      Completed means the whole customer request is fulfilled. A draft that still needs information the customer will provide later remains waiting.
-      Before marking waiting, check the customer's supplied facts and your lookup tools for the missing information.
-      If information still requires a customer answer, mark waiting and ask for that specific fact.
-      When your waiting task has enough information, use manage_agent_tasks to set that same task to active before acting.
-      Other independent requests may proceed; do not execute a request that depends on missing information.
-      Before handing off or replying, use manage_agent_tasks to record your verified result and task status.
-      Transfer to the next assigned agent with awaiting work; a waiting task alone is not a reason to transfer back.
-      If all remaining tasks are waiting, answer the customer with the results and needed clarification.
-      If no handoff is available, explain the remaining work or use your configured human handoff.
-      Your final customer response must account for the completed tasks and explain any unresolved requests.
-      Completed actions must never be repeated. Cancellation or correction from the customer supersedes pending requests.
+      # Task queue
+      Continue the same conversation: do not greet or introduce yourself again, and use the facts the patient already gave.
+      Use manage_agent_tasks to record your verified result and status before you reply or transfer; update only your own tasks.
+      - completed: the whole request is done. waiting: a patient answer is still missing, so ask for that one fact; when it is known, set the task to active before acting.
+      - Transfer only to an agent that has awaiting work; a waiting task alone is no reason to transfer back. When every remaining task is waiting, answer with the results and the needed question.
+      - Never repeat a completed action. A cancellation or correction from the patient replaces pending requests.
+      - Your final reply covers the completed tasks and explains any unresolved request.
       Task queue (data): #{JSON.generate(tasks)}
     PROMPT
   end

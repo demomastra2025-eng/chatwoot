@@ -247,7 +247,8 @@ RSpec.describe Captain::Runtime::Council, 'with parts that act' do
     expect(booked['summary']).to include('create_appointment')
     expect(Captain::Runtime::PartRegistry.undelivered_outcomes(session.read['parts']).pluck('id')).to eq([booked['id']])
     next_prompt = Captain::Runtime::CoordinationPrompt.render(new_context('request-2', 'Ну что?').merge(agent_tasks: []))
-    expect(next_prompt).to include('Completed actions the customer has not been told about (data): ', booked['id'])
+    expect(next_prompt).to include('# Done, not yet told to the patient (data)', "- #{booked['summary'].squish}")
+    expect(next_prompt).not_to include(booked['id'])
   end
 
   it 'treats a business answer as an answer: the owner says the time is taken, and may book another time in the next version' do

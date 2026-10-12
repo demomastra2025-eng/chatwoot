@@ -1,20 +1,20 @@
 # frozen_string_literal: true
 
 class Captain::Runtime::PartPlanTool < Captain::Runtime::Tool
-  EXECUTOR_DESCRIPTION = 'Name of the agent that handles this part, exactly as listed. Omit it for your own parts. ' \
-                         'Staff or an operator is not an agent: reach them with the handoff tool.'
+  EXECUTOR_DESCRIPTION = 'Agent name exactly as listed. Omit it for your own parts. Staff are not an agent: use the handoff tool.'
 
-  description 'Coordinate with other agents: split a message into separate requests for different agents (a council), or route ' \
-              'the customer\'s answer, correction or cancellation of an open part of another agent to that agent (a council with ' \
-              'that one part linked by its exact ID). The agents carry their parts out with their own tools. ' \
-              'Not needed for your own lookups, replies or actions, nor to pass the conversation to one colleague: ' \
-              'that colleague\'s transfer tool does it without a plan.'
-  param :mode, type: 'string', desc: 'answer_myself, council, or clarify', required: true
+  description 'Coordinate with other agents: split one message into parts for different agents (a council), or send the patient\'s ' \
+              'answer, correction or cancellation of an open part to the agent that owns it. Not for your own work, and not for ' \
+              'passing the whole conversation to one colleague: use that colleague\'s transfer tool.'
+  param :mode, type: 'string', required: true,
+               desc: 'council: parts for different agents, or one linked part of another agent. answer_myself: only your own part. ' \
+                     'clarify: one question when it is unclear which open part the message answers.'
   param :parts, type: 'array', required: true,
-                desc: 'Request parts with fragment, patient, relation, optional executor (the agent name exactly as listed; omit it ' \
-                      'for your own parts) and optional link_part_id; council permits at most three, and one linked part is enough'
-  param :clarification, type: 'string', desc: 'One precise question only for clarify mode', required: false
-  param :answer, type: 'string', desc: 'For one simple part only: final answer verified from supplied context without tools', required: false
+                desc: 'The parts of the message. A council has at most three; one linked part of another agent is enough.'
+  param :clarification, type: 'string', desc: 'The one precise question, for clarify only.', required: false
+  param :answer, type: 'string', required: false,
+                 desc: 'For one simple part of your own: the final answer, only when it is fully verified from the data you have ' \
+                       'and needs no tool.'
 
   def name = 'plan_request'
 
@@ -22,26 +22,14 @@ class Captain::Runtime::PartPlanTool < Captain::Runtime::Tool
     super.deep_stringify_keys.tap do |schema|
       schema['properties']['parts']['items'] = {
         'type' => 'object', 'additionalProperties' => false,
-        'properties' => {
-          'fragment' => { 'type' => 'string' },
-          'executor' => { 'type' => %w[string null], 'description' => EXECUTOR_DESCRIPTION },
-          'patient' => { 'type' => 'string' },
-          'relation' => { 'type' => 'string', 'enum' => Captain::Runtime::PartRegistry::RELATIONS },
-          'object_refs' => { 'type' => 'array', 'items' => {
-            'type' => 'object', 'additionalProperties' => false,
-            'properties' => { 'type' => { 'type' => 'string' }, 'id' => { 'type' => 'integer', 'minimum' => 1 } },
-            'required' => %w[type id]
-          } },
-          'link_part_id' => { 'type' => %w[string null] },
-          'link_action' => { 'type' => 'string', 'enum' => Captain::Runtime::PartRegistry::LINK_ACTIONS }
-        },
+        'properties' => part_properties.merge(link_properties),
         'required' => %w[fragment]
       }
     end
   end
 
   # A model that still sends the former numeric executor_agent_id (or a number as the executor) or the former link action
-  # 'confirmation' is understood, not rejected.
+  # 'confirmation' is understood, not rejected. A part number written as a number is read as text.
   def normalize_runtime_arguments(arguments, **_options)
     normalized = arguments.to_h.deep_symbolize_keys
     return normalized unless normalized[:parts].is_a?(Array)
@@ -54,6 +42,7 @@ class Captain::Runtime::PartPlanTool < Captain::Runtime::Tool
   # Only a second, different plan for a message that is already planned cannot be corrected.
   def perform(tool_context, mode:, parts:, clarification: nil, answer: nil)
     context = tool_context.run_context.context
+    parts = with_part_ids(parts, context[:parts])
     resolver = Captain::Runtime::ExecutorResolver.new(context)
     resolver.reject_transfer_mode!(mode, parts)
     plan = Captain::Runtime::PartRegistry.new(context).accept!(
@@ -68,10 +57,56 @@ class Captain::Runtime::PartPlanTool < Captain::Runtime::Tool
 
   private
 
+  def part_properties
+    {
+      'fragment' => { 'type' => 'string', 'description' => 'The patient\'s words that make this part.' },
+      'executor' => { 'type' => %w[string null], 'description' => EXECUTOR_DESCRIPTION },
+      'patient' => { 'type' => 'string', 'description' => 'Whom the part is about, when it is not the person writing.' },
+      'relation' => { 'type' => 'string', 'enum' => Captain::Runtime::PartRegistry::RELATIONS,
+                      'description' => 'independent (default); depends_on: starts only after the part before it succeeded; ' \
+                                       'conditional: its owner decides from the result of the part before it.' }
+    }
+  end
+
+  def link_properties
+    {
+      'object_refs' => { 'type' => 'array', 'description' => 'Records this part is about, when you know their type and id.',
+                         'items' => {
+                           'type' => 'object', 'additionalProperties' => false,
+                           'properties' => { 'type' => { 'type' => 'string' }, 'id' => { 'type' => 'integer', 'minimum' => 1 } },
+                           'required' => %w[type id]
+                         } },
+      'link_part_id' => { 'type' => %w[string integer null],
+                          'description' => 'Number of the open part that this message answers, corrects or cancels, as listed ' \
+                                           '(for #3 write 3).' },
+      'link_action' => { 'type' => 'string', 'enum' => Captain::Runtime::PartRegistry::LINK_ACTIONS,
+                         'description' => 'new: a separate new request, also while other parts are open. answer, correction, ' \
+                                          'cancellation: the patient\'s reaction to the linked part.' }
+    }
+  end
   def rejected(message, retryable:, reason: nil)
     audit = { failure_stage: 'tool_arguments', mutation_executed: false }
     audit[:failure_reason] = reason if reason
     Captain::ToolResult.failure(error: message, retryable: retryable, audit: audit)
+  end
+
+  # The model links a part by the number it is listed with (#3); the registry stores the exact id. A reference that points at no
+  # stored part is refused here, as the registry refuses a part that is not open, so that the model is told what is wrong with the
+  # link and not, for example, that a council needs a second agent.
+  def with_part_ids(parts, stored)
+    return parts unless parts.is_a?(Array)
+
+    parts.map { |part| part.is_a?(Hash) ? with_part_id(part, stored) : part }
+  end
+
+  def with_part_id(part, stored)
+    key = part.key?(:link_part_id) ? :link_part_id : 'link_part_id'
+    return part if part[key].blank?
+
+    id = Captain::Runtime::PartRegistry.part_id_for(stored, part[key])
+    raise ArgumentError, 'Linked part is not open' if Array(stored).none? { |item| item['id'] == id }
+
+    part.merge(key => id)
   end
 
   # The model reads agents by name only: an accepted part shows its executor's name, never a numeric id.
@@ -82,6 +117,7 @@ class Captain::Runtime::PartPlanTool < Captain::Runtime::Tool
   def with_current_names(part)
     renamed = with_text_executor(part)
     renamed[:link_action] = 'answer' if renamed[:link_action].to_s == 'confirmation'
+    renamed[:link_part_id] = renamed[:link_part_id].to_s if renamed[:link_part_id].is_a?(Integer)
     renamed
   end
 

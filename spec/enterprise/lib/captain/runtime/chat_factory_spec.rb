@@ -294,20 +294,19 @@ RSpec.describe Captain::Runtime::ChatFactory do
 
       context 'with the human handoff tool' do
         let(:tools) { [ChatFactorySpecTool.new('handoff', 'Hand off the conversation to a human team')] }
-        let(:rules) { Captain::Runtime::CoordinationPrompt::HUMAN_HANDOFF_RULES }
+        let(:rules) { ['is never an answer: call the handoff tool', 'unless the handoff tool succeeded in this reply'] }
 
-        it 'keeps the two human handoff rules and nothing about plans or peers' do
-          expect(rules).to include('is never an answer: call the handoff tool', 'unless the handoff tool succeeded in this reply')
-          expect(system_prompt).to eq("Agent instructions\n\n#{rules}")
-          expect(system_prompt).not_to include('plan_request', 'Other agents available')
+        it 'adds no human handoff rules of its own: the platform rules of the main prompt carry them' do
+          expect(system_prompt).to eq('Agent instructions')
           expect(bound_tool_names).to eq(['handoff'])
         end
 
-        it 'adds the rules once with peers, inside the coordination block' do
+        it 'adds only the colleagues block with peers, and no handoff rules' do
           context_wrapper.context[:agent_graph] = peer_graph
 
-          expect(system_prompt.scan(rules).size).to eq(1)
-          expect(system_prompt).to include('Quotes: Price quotes')
+          expect(system_prompt).to start_with("Agent instructions\n\n# Colleagues on this channel\n")
+          expect(system_prompt).to include('- Quotes: Price quotes', 'Staff are reached only through handoff, never through a plan.')
+          expect(system_prompt).not_to include(*rules)
         end
       end
 
@@ -326,13 +325,14 @@ RSpec.describe Captain::Runtime::ChatFactory do
       it 'binds plan_request and describes the coordination until the message is planned' do
         expect(built_tool_names).to eq(['plan_request'])
         expect(bound_tool_names).to eq(['plan_request'])
-        expect(system_prompt).to include('Agent instructions', 'Quotes: Price quotes', 'Plan with plan_request only in these cases')
+        expect(system_prompt).to include('Agent instructions', '- Quotes: Price quotes', 'call plan_request once')
+        expect(system_prompt).not_to include('Accepted plan')
 
         context_wrapper.context[:part_plan_accepted] = true
 
         expect(built_tool_names).to be_empty
         expect(bound_tool_names).to be_empty
-        expect(system_prompt).to include('Plan accepted')
+        expect(system_prompt).to include('# Accepted plan (data)', 'do not call plan_request again')
       end
 
       it 'binds the transfer tool of each colleague next to plan_request, and sends a single request to the colleague without a plan' do
@@ -341,7 +341,9 @@ RSpec.describe Captain::Runtime::ChatFactory do
 
         expect(built_tool_names).to eq([transfer, 'plan_request'])
         expect(bound_tool_names).to eq([transfer, 'plan_request'])
-        expect(system_prompt.squish).to include('call it, no plan is needed. The colleague sees the whole conversation')
+        expect(system_prompt.squish).to include(
+          "call that colleague's transfer tool and write nothing yourself: the colleague sees the whole conversation"
+        )
         expect(system_prompt).not_to include('mode handoff')
 
         context_wrapper.context[:part_plan_accepted] = true

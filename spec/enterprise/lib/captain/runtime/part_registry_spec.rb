@@ -27,6 +27,26 @@ RSpec.describe Captain::Runtime::PartRegistry do
     end
   end
 
+  describe 'part numbers' do
+    let(:stored) { [{ 'id' => 'first-uuid' }, { 'id' => 'second-uuid' }, { 'id' => 'third-uuid' }] }
+
+    it 'numbers a part by its place among the stored parts, from 1, and knows no number for a part that is not stored' do
+      expect(%w[first-uuid second-uuid third-uuid].map { |id| described_class.number_of(stored, id) }).to eq([1, 2, 3])
+      expect(described_class.number_of(stored, 'gone')).to be_nil
+      expect(described_class.number_of(nil, 'first-uuid')).to be_nil
+    end
+
+    it 'turns the number the model writes (2, "2" or "#2") into the exact id, and leaves an exact id as it is' do
+      expect([2, '2', ' #2 '].map { |reference| described_class.part_id_for(stored, reference) }).to eq(['second-uuid'] * 3)
+      expect(described_class.part_id_for(stored, 'third-uuid')).to eq('third-uuid')
+    end
+
+    it 'returns a number that points at no stored part as it was written, so the plan is refused as not open' do
+      expect(%w[0 4 #0].map { |reference| described_class.part_id_for(stored, reference) }).to eq(%w[0 4 #0])
+      expect(described_class.part_id_for(nil, '1')).to eq('1')
+    end
+  end
+
   describe '.awaiting_peer_answer?' do
     let(:question) { 'На какое время вас записать?' }
     let(:waiting) do

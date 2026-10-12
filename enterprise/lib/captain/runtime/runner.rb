@@ -182,7 +182,7 @@ class Captain::Runtime::Runner
     end.uniq
     "An open part of #{names.join(', ').presence || 'another agent'} waits for the customer's answer: its question was the last " \
       'thing the customer was told. If this message answers, corrects or cancels that part, call plan_request with mode council ' \
-      'and ONLY that part linked by its exact id (see the open parts). Otherwise reply normally.'
+      'and ONLY that part linked by its number (see the open parts). Otherwise reply normally.'
   end
 
   def plan_required_before_reply?(session)

@@ -19,7 +19,7 @@ class Captain::Runtime::PartRegistry
   LEGACY_LINK_ACTIONS = { 'confirmation' => 'answer' }.freeze
   ALREADY_PLANNED = 'This message already has a plan'
   COUNCIL_HINT = 'The customer answers, corrects or cancels a part of another agent: call plan_request with mode council and ' \
-                 'ONLY that part linked by its exact id. Its own agent continues it with its own tools.'
+                 'ONLY that part linked by its number. Its own agent continues it with its own tools.'
 
   # The plan coordinates agents (a council, the answer to an open part), so it exists only where another agent is
   # available. A lone agent has no plan_request and acts with its own tools.
@@ -64,6 +64,23 @@ class Captain::Runtime::PartRegistry
   # version booked) is reported by a delivery of that version, not by the question that an earlier version delivered.
   def self.undelivered_outcomes(parts)
     Array(parts).select { |part| part['acted'] == true && part['cancelled'] != true && deliveries_of_version(part).empty? }
+  end
+
+  # The number a part is listed with in the prompt (#3) and linked by: its position among the stored parts of the conversation.
+  # The list only grows (a part is replaced in place), so a number does not change while the part is open.
+  def self.number_of(parts, part_id)
+    index = Array(parts).index { |item| item['id'] == part_id }
+    index + 1 if index
+  end
+
+  # The exact id of the stored part that the model means: it writes the number ("3" or "#3"), or still the exact id. A number
+  # that points at no stored part is returned as written, and the plan is refused as linking a part that is not open.
+  def self.part_id_for(parts, reference)
+    text = reference.to_s.strip
+    number = text.delete_prefix('#')[/\A\d+\z/]
+    return text if number.nil? || number.to_i < 1
+
+    Array(parts)[number.to_i - 1]&.dig('id') || text
   end
 
   def initialize(context)

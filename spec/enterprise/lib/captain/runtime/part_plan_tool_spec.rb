@@ -37,16 +37,42 @@ RSpec.describe Captain::Runtime::PartPlanTool do
   end
 
   it 'describes the executor as an agent name to the model and never mentions an agent id' do
-    description = described_class.new.parameters[:parts].description
+    schema = described_class.new.params_schema.deep_stringify_keys
+    executor = schema.dig('properties', 'parts', 'items', 'properties', 'executor')
 
-    expect(description).to include('executor (the agent name exactly as listed')
-    expect(description).not_to include('executor_agent_id')
+    expect(executor['description']).to eq(described_class::EXECUTOR_DESCRIPTION)
+    expect(executor['description']).to include('Agent name exactly as listed', 'Omit it for your own parts')
+    expect(schema.to_json).not_to include('executor_agent_id')
   end
 
   it 'tells the model that a person is reached with the handoff tool and is not an executor' do
     executor = described_class.new.params_schema.deep_stringify_keys.dig('properties', 'parts', 'items', 'properties', 'executor')
 
-    expect(executor['description']).to include('Staff or an operator is not an agent: reach them with the handoff tool.')
+    expect(executor['description']).to include('Staff are not an agent: use the handoff tool.')
+  end
+
+  it 'describes every field of a part to the model in a few plain words, without internal jargon' do
+    properties = described_class.new.params_schema.deep_stringify_keys.dig('properties', 'parts', 'items', 'properties')
+    link = properties.fetch('link_part_id')
+
+    expect(properties.keys).to match_array(%w[fragment executor patient relation object_refs link_part_id link_action])
+    expect(properties.values.map { |item| item['description'] }).to all(be_present)
+    expect(link['description']).to eq('Number of the open part that this message answers, corrects or cancels, as listed (for #3 write 3).')
+    expect(link['type']).to eq(%w[string integer null])
+    expect(properties.values.map { |item| item['description'] }.join(' ')).not_to match(/executor_agent_id|UUID|exact ID/i)
+  end
+
+  it 'describes the modes and the optional fields briefly' do
+    parameters = described_class.new.parameters
+
+    expect(parameters[:mode].description).to include(
+      'council: parts for different agents, or one linked part of another agent', 'answer_myself: only your own part', 'clarify: one question'
+    )
+    expect(parameters[:parts].description).to eq(
+      'The parts of the message. A council has at most three; one linked part of another agent is enough.'
+    )
+    expect(parameters[:clarification].description).to eq('The one precise question, for clarify only.')
+    expect(parameters[:answer].description).to include('fully verified from the data you have and needs no tool')
   end
 
   it 'turns the former executor_agent_id into an agent key and a number in the executor into plain text before validation' do
@@ -214,7 +240,7 @@ RSpec.describe Captain::Runtime::PartPlanTool do
 
       it 'does not list handoff among the modes a plan can have' do
         expect(Captain::Runtime::PartRegistry::MODES).to eq(%w[answer_myself council clarify])
-        expect(described_class.new.parameters[:mode].description).to eq('answer_myself, council, or clarify')
+        expect(described_class.new.parameters[:mode].description).not_to include('handoff')
       end
 
       it 'plans a part of a peer named like in the agent list and reports the peer by name' do
@@ -315,6 +341,34 @@ RSpec.describe Captain::Runtime::PartPlanTool do
         expect(context).not_to have_key(:active_part_id)
       end
 
+      it 'links an open part by the number it is listed with, written as 2, "2" or "#2", and still by its exact id' do
+        council_with_lab({ fragment: 'Записать на анализ', executor: 'Лаборатория' })
+        part = lab_part_of_plan
+
+        expect(Captain::Runtime::PartRegistry.number_of(context[:parts], part['id'])).to eq(2)
+        [2, '2', '#2', part['id']].each do |reference|
+          wait_for_the_customer(part)
+
+          rendered = planner.call(mode: 'council', parts: [{ fragment: 'Да', link_part_id: reference, link_action: 'answer' }])
+
+          expect(JSON.parse(rendered)['parts'].sole).to include('id' => part['id'], 'executor' => 'Лаборатория')
+          expect(context[:part_plan][:parts].sole).to include('id' => part['id'], 'executor_agent_id' => lab_agent[:id])
+        end
+      end
+
+      it 'refuses a number that is no open part, as a retryable error' do
+        council_with_lab({ fragment: 'Записать на анализ', executor: 'Лаборатория' })
+        wait_for_the_customer(lab_part_of_plan)
+
+        unknown_numbers = ['9', '#0', 0]
+        unknown_numbers.each do |reference|
+          payload = failure_payload(planner.call(mode: 'council', parts: [{ fragment: 'Да', link_part_id: reference, link_action: 'answer' }]))
+
+          expect(payload).to include('retryable' => true)
+          expect(payload['error']).to eq('Linked part is not open')
+        end
+      end
+
       it 'understands the former link action confirmation as an answer, before the schema is checked' do
         council_with_lab({ fragment: 'Записать на анализ', executor: 'Лаборатория' })
         part = lab_part_of_plan
@@ -363,11 +417,12 @@ RSpec.describe Captain::Runtime::PartPlanTool do
   it 'describes a coordination tool between agents, not a step before the agent\'s own actions or a transfer' do
     description = described_class.new.description
 
-    expect(description).to include('split a message into separate requests for different agents (a council)',
-                                   'route the customer\'s answer, correction or cancellation of an open part of another agent to that agent',
-                                   'Not needed for your own lookups, replies or actions',
-                                   'that colleague\'s transfer tool does it without a plan')
-    expect(description).not_to include('transfer the conversation to another agent', 'before using action tools')
+    expect(description).to eq(
+      'Coordinate with other agents: split one message into parts for different agents (a council), or send the patient\'s answer, ' \
+      'correction or cancellation of an open part to the agent that owns it. Not for your own work, and not for passing the whole ' \
+      'conversation to one colleague: use that colleague\'s transfer tool.'
+    )
+    expect(description).not_to include('transfer the conversation to another agent', 'before using action tools', 'exact ID')
   end
 end
 # rubocop:enable Lint/ConstantDefinitionInBlock

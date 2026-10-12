@@ -114,9 +114,8 @@ class Captain::Runtime::ChatFactory
       if context_wrapper.context[:part_run]
         prompts << part_prompt(context_wrapper.context)
       elsif coordination_prompt?(context_wrapper.context)
-        prompts << Captain::Runtime::CoordinationPrompt.render(context_wrapper.context)
-      elsif context_wrapper.context[:agent_graph].present? && human_handoff_tool?(agent)
-        prompts << Captain::Runtime::CoordinationPrompt::HUMAN_HANDOFF_RULES
+        coordination = Captain::Runtime::CoordinationPrompt.render(context_wrapper.context)
+        prompts << coordination if coordination.present?
       end
       prompts << FINALIZATION_ONLY_INSTRUCTIONS if finalization_only
       prompts.join("\n\n")
@@ -151,14 +150,10 @@ class Captain::Runtime::ChatFactory
     end
 
     # The coordination block describes peers, their transfer tools and the request plan, or an inherited task queue. A lone
-    # agent without a queue has none of these; it only keeps the two human handoff rules that block carried.
+    # agent without a queue has none of these, so its prompt gets no block.
     def coordination_prompt?(context)
       Captain::Runtime::PartRegistry.planning_available?(context) ||
         (context[:agent_graph].present? && Captain::Runtime::TaskQueue.in_flight?(context[:agent_tasks]))
-    end
-
-    def human_handoff_tool?(agent)
-      agent.tools.any? { |tool| tool.name.to_s == Captain::Assistant::HANDOFF_TOOL_ID }
     end
 
     # The owner of a part is a normal agent run on one request part: it acts with its own tools and writes the final text of its
