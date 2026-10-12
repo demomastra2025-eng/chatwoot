@@ -2,6 +2,7 @@
 import { computed, ref, watch, onUnmounted, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useWhatsappCallSession } from 'dashboard/composables/useWhatsappCallSession';
+import { useIncomingCallAttention } from 'dashboard/composables/useIncomingCallAttention';
 import { useIncomingCallRingtone } from 'dashboard/composables/useIncomingCallRingtone';
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 import { useI18n } from 'vue-i18n';
@@ -60,6 +61,17 @@ const shouldPlayIncomingCallRingtone = computed(
 );
 
 useIncomingCallRingtone('whatsapp', shouldPlayIncomingCallRingtone);
+useIncomingCallAttention(
+  'whatsapp',
+  computed(() =>
+    shouldPlayIncomingCallRingtone.value
+      ? visibleIncomingCalls.value.map(call => ({
+          key: callIdFor(call),
+          body: `${call.caller?.name || call.caller?.phone || t('CONVERSATION.VOICE_WIDGET.UNKNOWN_CALLER')} · WhatsApp`,
+        }))
+      : []
+  )
+);
 
 // Same words as the phone widget microphone (translated in ru/en/kk).
 const microphoneLabel = computed(() =>

@@ -74,6 +74,8 @@ export class IncomingCallRingtone {
   syncPlayback() {
     const tone = this.activeTone();
     if (!tone) {
+      // The ringing is over: the next call warns again if sound stays blocked.
+      this.hasWarnedSoundPermission = false;
       this.stopPlayback();
       return;
     }

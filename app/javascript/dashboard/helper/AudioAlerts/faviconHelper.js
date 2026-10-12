@@ -1,7 +1,14 @@
 const FAVICON_BLINK_INTERVAL = 1000;
+const DEFAULT_BLINK_HOLDER = 'notification';
 
 let faviconBlinkTimer = null;
+// Who asked for the blinking. A named holder stops only its own request, so
+// one feature (a ringing call) cannot cancel a blink another still needs.
+const blinkHolders = new Set();
 let isBadgeVisible = false;
+// An unread badge shown before the blinking began, which comes back when a
+// named holder stops the blinking.
+let badgeShownBeforeBlink = false;
 let isFaviconSwitcherInitialized = false;
 const originalFaviconHrefs = new WeakMap();
 
@@ -43,12 +50,22 @@ export const restoreFavicon = () => {
   isBadgeVisible = false;
 };
 
-export const stopFaviconBlinking = () => {
+export const stopFaviconBlinking = holder => {
+  if (typeof holder === 'string') {
+    if (!blinkHolders.delete(holder) || blinkHolders.size) return;
+  } else {
+    blinkHolders.clear();
+    badgeShownBeforeBlink = false;
+  }
   if (faviconBlinkTimer) {
     clearInterval(faviconBlinkTimer);
     faviconBlinkTimer = null;
   }
-  restoreFavicon();
+  if (badgeShownBeforeBlink) {
+    showBadgeOnFavicon();
+  } else {
+    restoreFavicon();
+  }
 };
 
 export const initFaviconSwitcher = () => {
@@ -60,10 +77,14 @@ export const initFaviconSwitcher = () => {
   isFaviconSwitcherInitialized = true;
 };
 
-export const startFaviconBlinking = () => {
+export const startFaviconBlinking = (holder = DEFAULT_BLINK_HOLDER) => {
   initFaviconSwitcher();
-  if (document.visibilityState !== 'hidden' || faviconBlinkTimer) return;
+  if (document.visibilityState !== 'hidden') return;
 
+  blinkHolders.add(holder);
+  if (faviconBlinkTimer) return;
+
+  badgeShownBeforeBlink = isBadgeVisible;
   showBadgeOnFavicon();
   faviconBlinkTimer = setInterval(() => {
     if (isBadgeVisible) {

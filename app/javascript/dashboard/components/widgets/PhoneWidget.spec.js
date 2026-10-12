@@ -1556,4 +1556,104 @@ describe('PhoneWidget', () => {
       expect(usePhoneWidgetStore().available).toBe(false);
     });
   });
+
+  describe('call notifications button', () => {
+    const requestPermission = vi.fn();
+    const buttonOf = wrapper =>
+      wrapper.find('[data-testid="phone-widget-enable-notifications"]');
+    const stubNotification = permission => {
+      class FakeNotification {
+        static permission = permission;
+
+        static requestPermission = requestPermission;
+      }
+      vi.stubGlobal('Notification', FakeNotification);
+      return FakeNotification;
+    };
+
+    beforeEach(() => {
+      requestPermission.mockReset();
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('offers to enable the notifications while the browser still has to be asked', async () => {
+      stubNotification('default');
+      const wrapper = mountComponent();
+      await flushPromises();
+
+      const button = buttonOf(wrapper);
+      expect(button.exists()).toBe(true);
+      expect(button.text()).toBe('PHONE_WIDGET.ENABLE_CALL_NOTIFICATIONS');
+      expect(wrapper.get('[data-testid="phone-widget-dialer"]').element).toBe(
+        button.element.parentElement
+      );
+      // The browser asks only after the click, never on its own.
+      expect(requestPermission).not.toHaveBeenCalled();
+    });
+
+    it.each(['granted', 'denied'])(
+      'does not offer it once the notifications are %s',
+      async permission => {
+        stubNotification(permission);
+        const wrapper = mountComponent();
+        await flushPromises();
+
+        expect(buttonOf(wrapper).exists()).toBe(false);
+      }
+    );
+
+    it('does not offer it in a browser without notifications', async () => {
+      const wrapper = mountComponent();
+      await flushPromises();
+
+      expect('Notification' in window).toBe(false);
+      expect(buttonOf(wrapper).exists()).toBe(false);
+    });
+
+    it('asks the browser on click and hides the button once the answer is given', async () => {
+      const FakeNotification = stubNotification('default');
+      requestPermission.mockImplementation(async () => {
+        FakeNotification.permission = 'granted';
+        return 'granted';
+      });
+      const wrapper = mountComponent();
+      await flushPromises();
+
+      await buttonOf(wrapper).trigger('click');
+      await flushPromises();
+
+      expect(requestPermission).toHaveBeenCalledOnce();
+      expect(buttonOf(wrapper).exists()).toBe(false);
+    });
+
+    it('hides the button after a refusal too', async () => {
+      const FakeNotification = stubNotification('default');
+      requestPermission.mockImplementation(async () => {
+        FakeNotification.permission = 'denied';
+        return 'denied';
+      });
+      const wrapper = mountComponent();
+      await flushPromises();
+
+      await buttonOf(wrapper).trigger('click');
+      await flushPromises();
+
+      expect(buttonOf(wrapper).exists()).toBe(false);
+    });
+
+    it('keeps the button when the browser prompt is closed without an answer', async () => {
+      stubNotification('default');
+      requestPermission.mockResolvedValue('default');
+      const wrapper = mountComponent();
+      await flushPromises();
+
+      await buttonOf(wrapper).trigger('click');
+      await flushPromises();
+
+      expect(buttonOf(wrapper).exists()).toBe(true);
+    });
+  });
 });

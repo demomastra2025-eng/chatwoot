@@ -42,6 +42,11 @@ const ringtoneState = vi.hoisted(() => ({
   isActive: null,
 }));
 
+const attentionState = vi.hoisted(() => ({
+  sourceId: null,
+  calls: null,
+}));
+
 const whatsappCallsState = vi.hoisted(() => ({
   hasActiveCall: false,
   isAccepting: false,
@@ -161,6 +166,12 @@ vi.mock('dashboard/composables/useIncomingCallRingtone', () => ({
     ringtoneState.isActive = isActive;
   },
 }));
+vi.mock('dashboard/composables/useIncomingCallAttention', () => ({
+  useIncomingCallAttention: (sourceId, calls) => {
+    attentionState.sourceId = sourceId;
+    attentionState.calls = calls;
+  },
+}));
 vi.mock('dashboard/composables/useSipMicrophone', () => ({
   useSipMicrophone: () => ({
     microphoneAvailable: microphoneState.available,
@@ -217,6 +228,8 @@ describe('FloatingCallWidget', () => {
     storeGetters.getCurrentUser = null;
     ringtoneState.sourceId = null;
     ringtoneState.isActive = null;
+    attentionState.sourceId = null;
+    attentionState.calls = null;
   });
 
   afterEach(() => {
@@ -436,6 +449,162 @@ describe('FloatingCallWidget', () => {
 
     expect(ringtoneState.isActive.value).toBe(false);
     wrapper.unmount();
+  });
+
+  describe('signals for a ringing call (notification, blinking tab)', () => {
+    const ringingCall = (overrides = {}) => ({
+      callSid: 'sipuni:attention-1',
+      conversationId: 31,
+      inboxId: 7,
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      status: 'ringing',
+      fromNumber: '+77070001003',
+      toNumber: '+77070001001',
+      ...overrides,
+    });
+
+    beforeEach(() => {
+      storeGetters.getConversationById.mockReturnValue({
+        inbox_id: 7,
+        meta: { sender: { name: 'Айгерим' } },
+      });
+      storeGetters.getInbox.mockReturnValue({
+        id: 7,
+        name: 'Sipuni',
+        provider: 'sipuni',
+      });
+    });
+
+    it('reports the ringing call with the contact name and the line', () => {
+      mockSession.incomingCalls = [ringingCall()];
+
+      const wrapper = mountComponent();
+
+      expect(attentionState.sourceId).toBe('voice');
+      expect(attentionState.calls.value).toEqual([
+        { key: 'sipuni:attention-1', body: 'Айгерим · Sipuni' },
+      ]);
+      wrapper.unmount();
+    });
+
+    it('reports the number when the contact has no name', () => {
+      storeGetters.getConversationById.mockReturnValue({
+        inbox_id: 7,
+        meta: { sender: { name: '+77070001003' } },
+      });
+      mockSession.incomingCalls = [ringingCall()];
+
+      const wrapper = mountComponent();
+
+      expect(attentionState.calls.value[0].body).toBe('+77070001003 · Sipuni');
+      wrapper.unmount();
+    });
+
+    it('leaves the line out when the card does not know the inbox', () => {
+      storeGetters.getInbox.mockReturnValue(undefined);
+      mockSession.incomingCalls = [ringingCall()];
+
+      const wrapper = mountComponent();
+
+      expect(attentionState.calls.value[0].body).toBe('Айгерим');
+      wrapper.unmount();
+    });
+
+    it('reports every ringing call', () => {
+      mockSession.incomingCalls = [
+        ringingCall(),
+        ringingCall({ callSid: 'sipuni:attention-2' }),
+      ];
+
+      const wrapper = mountComponent();
+
+      expect(attentionState.calls.value.map(call => call.key)).toEqual([
+        'sipuni:attention-1',
+        'sipuni:attention-2',
+      ]);
+      wrapper.unmount();
+    });
+
+    it('reports the ringing call inside the phone as well', () => {
+      mockSession.incomingCalls = [ringingCall()];
+
+      const wrapper = mountComponent({ embedded: true });
+
+      expect(attentionState.calls.value).toHaveLength(1);
+      wrapper.unmount();
+    });
+
+    it.each([
+      [
+        'an informational card',
+        () =>
+          mockSession.isIncomingCallActionableInBrowser.mockReturnValue(false),
+        ringingCall(),
+      ],
+      [
+        'an outbound call',
+        () => {},
+        ringingCall({ callDirection: 'outbound' }),
+      ],
+      [
+        'a call that is already in progress',
+        () => {},
+        ringingCall({ status: 'in_progress' }),
+      ],
+      [
+        'a call the AI voice agent handles',
+        () => {},
+        ringingCall({ aiVoice: true }),
+      ],
+      [
+        'a call a colleague took',
+        () => {},
+        ringingCall({
+          browserJoinSupported: false,
+          browserJoinUnsupportedReason: 'CALL_ALREADY_CLAIMED',
+        }),
+      ],
+    ])('does not report %s', (_, arrange, call) => {
+      arrange();
+      mockSession.incomingCalls = [call];
+
+      const wrapper = mountComponent();
+
+      expect(attentionState.calls.value).toEqual([]);
+      wrapper.unmount();
+    });
+
+    it('does not report a ringing call of a hidden phone', () => {
+      mockSession.incomingCalls = [ringingCall()];
+
+      const wrapper = mountComponent({ embedded: true, silent: true });
+
+      expect(attentionState.calls.value).toEqual([]);
+      wrapper.unmount();
+    });
+
+    it('does not report a call while this browser joins it', () => {
+      mockSession.isJoining = true;
+      mockSession.incomingCalls = [ringingCall()];
+
+      const wrapper = mountComponent();
+
+      expect(attentionState.calls.value).toEqual([]);
+      wrapper.unmount();
+    });
+
+    it('stops reporting a call whose card the employee closed', async () => {
+      mockSession.incomingCalls = [ringingCall()];
+      const wrapper = mountComponent();
+      expect(attentionState.calls.value).toHaveLength(1);
+
+      await wrapper.get('[aria-label="Close"]').trigger('click');
+      await flushPromises();
+
+      expect(attentionState.calls.value).toEqual([]);
+      wrapper.unmount();
+    });
   });
 
   it('does not auto-join an outbound call card', async () => {

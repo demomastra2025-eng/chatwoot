@@ -140,6 +140,65 @@ describe('IncomingCallRingtone', () => {
     expect(audio.play).toHaveBeenCalledTimes(2);
   });
 
+  describe('when the browser blocks the sound', () => {
+    const notAllowedError = () =>
+      Object.assign(new Error('blocked'), { name: 'NotAllowedError' });
+
+    it('warns once for a ringing call however often playback is retried', async () => {
+      audio.play.mockRejectedValue(notAllowedError());
+
+      ringtone.setSourceState('voice', { active: true });
+      await flushPromises();
+      ringtone.setSourceState('whatsapp', { active: true });
+      await flushPromises();
+      ringtone.setSourceState('voice', { active: true });
+      await flushPromises();
+
+      expect(permissionBlocked).toHaveBeenCalledTimes(1);
+    });
+
+    it('warns again for every next call while the sound stays blocked', async () => {
+      audio.play.mockRejectedValue(notAllowedError());
+
+      ringtone.setSourceState('voice', { active: true });
+      await flushPromises();
+      ringtone.setSourceState('voice', { active: false });
+      ringtone.setSourceState('voice', { active: true });
+      await flushPromises();
+      ringtone.removeSource('voice');
+      ringtone.setSourceState('whatsapp', { active: true });
+      await flushPromises();
+
+      expect(permissionBlocked).toHaveBeenCalledTimes(3);
+    });
+
+    it('stays quiet for the next call once a gesture unblocked the sound', async () => {
+      audio.play
+        .mockRejectedValueOnce(notAllowedError())
+        .mockResolvedValue(undefined);
+
+      ringtone.setSourceState('voice', { active: true });
+      await flushPromises();
+      eventTarget.dispatch('pointerdown');
+      await flushPromises();
+      ringtone.setSourceState('voice', { active: false });
+      ringtone.setSourceState('voice', { active: true });
+      await flushPromises();
+
+      expect(audio.play).toHaveBeenCalledTimes(3);
+      expect(permissionBlocked).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not warn for a call that rings silently by the profile setting', async () => {
+      audio.play.mockRejectedValue(notAllowedError());
+
+      ringtone.setSourceState('voice', { active: false });
+      await flushPromises();
+
+      expect(permissionBlocked).not.toHaveBeenCalled();
+    });
+  });
+
   it('does not retry or warn when a blocked play settles after the call ended', async () => {
     let rejectPlayback;
     audio.play.mockReturnValue(

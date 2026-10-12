@@ -25,6 +25,8 @@ const ringtoneState = vi.hoisted(() => ({
   isActive: null,
 }));
 
+const attentionState = vi.hoisted(() => ({ sourceId: null, calls: null }));
+
 const voiceCallsState = vi.hoisted(() => ({ hasActiveCall: false }));
 
 vi.mock('vue-router', () => ({
@@ -66,6 +68,13 @@ vi.mock('dashboard/composables/useIncomingCallRingtone', () => ({
   },
 }));
 
+vi.mock('dashboard/composables/useIncomingCallAttention', () => ({
+  useIncomingCallAttention: (sourceId, calls) => {
+    attentionState.sourceId = sourceId;
+    attentionState.calls = calls;
+  },
+}));
+
 vi.mock('dashboard/stores/calls', () => ({
   useCallsStore: () => voiceCallsState,
 }));
@@ -89,6 +98,48 @@ describe('WhatsappCallWidget ringtone', () => {
     voiceCallsState.hasActiveCall = false;
     ringtoneState.sourceId = null;
     ringtoneState.isActive = null;
+    attentionState.sourceId = null;
+    attentionState.calls = null;
+  });
+
+  it('reports a ringing WhatsApp call for the notification and the blinking tab', () => {
+    mockSession.incomingCalls = [
+      { callId: 'wa-incoming-attention', caller: { name: 'Customer' } },
+      { callId: 'wa-incoming-number', caller: { phone: '+77070001003' } },
+      { callId: 'wa-incoming-unknown', caller: {} },
+    ];
+
+    const wrapper = mountComponent();
+
+    expect(attentionState.sourceId).toBe('whatsapp');
+    expect(attentionState.calls.value).toEqual([
+      { key: 'wa-incoming-attention', body: 'Customer · WhatsApp' },
+      { key: 'wa-incoming-number', body: '+77070001003 · WhatsApp' },
+      {
+        key: 'wa-incoming-unknown',
+        body: 'CONVERSATION.VOICE_WIDGET.UNKNOWN_CALLER · WhatsApp',
+      },
+    ]);
+    wrapper.unmount();
+  });
+
+  it('reports nothing during a WhatsApp call or after the card is closed', async () => {
+    mockSession.incomingCalls = [
+      { callId: 'wa-incoming-quiet', caller: { name: 'Customer' } },
+    ];
+    const wrapper = mountComponent();
+    expect(attentionState.calls.value).toHaveLength(1);
+
+    await wrapper.get('[aria-label="WHATSAPP_CALL.CLOSE"]').trigger('click');
+    await nextTick();
+    expect(attentionState.calls.value).toEqual([]);
+    wrapper.unmount();
+
+    mockSession.hasActiveCall = true;
+    mockSession.activeCall = { callId: 'wa-active', caller: { name: 'Mine' } };
+    const busy = mountComponent();
+    expect(attentionState.calls.value).toEqual([]);
+    busy.unmount();
   });
 
   it('rings for a visible incoming WhatsApp call', () => {

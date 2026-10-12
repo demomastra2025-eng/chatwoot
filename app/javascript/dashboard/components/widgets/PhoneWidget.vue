@@ -5,6 +5,7 @@ import { useAlert } from 'dashboard/composables';
 import { useMapGetter } from 'dashboard/composables/store';
 import { useUISettings } from 'dashboard/composables/useUISettings';
 import { useSipMicrophone } from 'dashboard/composables/useSipMicrophone';
+import { useCallNotificationPermission } from 'dashboard/composables/useIncomingCallAttention';
 import { usePhoneWidgetVisibility } from 'dashboard/composables/usePhoneWidgetVisibility';
 import { usePhoneWidgetPosition } from 'dashboard/composables/usePhoneWidgetPosition';
 import { INBOX_TYPES } from 'dashboard/helper/inbox';
@@ -160,6 +161,8 @@ const ringtoneLabel = computed(() =>
 const toggleRingtone = () => {
   updateUISettings({ voice_call_ringtone_enabled: !ringtoneEnabled.value });
 };
+const { canRequestCallNotifications, requestCallNotifications } =
+  useCallNotificationPermission();
 
 const clearHandoverTimer = () => {
   if (handoverTimer) clearTimeout(handoverTimer);
@@ -538,6 +541,18 @@ onUnmounted(() => {
           class="px-4 py-3"
           data-testid="phone-widget-dialer"
         >
+          <Button
+            v-if="canRequestCallNotifications"
+            type="button"
+            variant="faded"
+            color="slate"
+            size="sm"
+            icon="i-lucide-bell-ring"
+            class="mb-2 w-full"
+            :label="t('PHONE_WIDGET.ENABLE_CALL_NOTIFICATIONS')"
+            data-testid="phone-widget-enable-notifications"
+            @click="requestCallNotifications"
+          />
           <div v-if="availableVoiceInboxes.length > 1" class="mb-2">
             <Select
               id="phone-widget-inbox"

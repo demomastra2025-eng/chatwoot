@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router';
 import { useStore } from 'vuex';
 import { useAlert } from 'dashboard/composables';
 import { useCallSession } from 'dashboard/composables/useCallSession';
+import { useIncomingCallAttention } from 'dashboard/composables/useIncomingCallAttention';
 import { useIncomingCallRingtone } from 'dashboard/composables/useIncomingCallRingtone';
 import { useSipMicrophone } from 'dashboard/composables/useSipMicrophone';
 import { useWhatsappCallsStore } from 'dashboard/stores/whatsappCalls';
@@ -155,15 +156,17 @@ const visibleCalls = computed(() =>
     )
   )
 );
+const ringingCalls = computed(() =>
+  props.silent || isJoining.value
+    ? []
+    : visibleCalls.value.filter(
+        call =>
+          isVoiceCallRingtoneEligible(call) &&
+          isIncomingCallActionableInBrowser(call)
+      )
+);
 const shouldPlayIncomingCallRingtone = computed(
-  () =>
-    !props.silent &&
-    !isJoining.value &&
-    visibleCalls.value.some(
-      call =>
-        isVoiceCallRingtoneEligible(call) &&
-        isIncomingCallActionableInBrowser(call)
-    )
+  () => ringingCalls.value.length > 0
 );
 
 useIncomingCallRingtone('voice', shouldPlayIncomingCallRingtone);
@@ -763,6 +766,23 @@ const callContactName = call => {
   const text = typeof name === 'string' ? name.trim() : '';
   return LETTER_PATTERN.test(text) ? text : '';
 };
+
+// Besides the ringtone, the calls that ring here show a system notification
+// and blink the tab, so a muted computer does not hide them.
+useIncomingCallAttention(
+  'voice',
+  computed(() =>
+    ringingCalls.value.map(call => ({
+      key: callSidFor(call),
+      body: [
+        callContactName(call) || getCallParties(call).customerParty,
+        getCallInfo(call).inbox?.name,
+      ]
+        .filter(Boolean)
+        .join(' · '),
+    }))
+  )
+);
 
 const handleJoinCall = async (call, { notifyOnUnavailable = true } = {}) => {
   const { conversation } = getCallInfo(call);
