@@ -714,6 +714,7 @@ RSpec.describe Captain::Scenario, type: :model do
 
     it 'keeps explicitly referenced built-in tools in the scenario runtime set' do
       account.enable_features!('crm_deals')
+      create(:crm_field_definition, account: account, entity_kind: 'deal')
       scenario = create(
         :captain_scenario,
         assistant: assistant,

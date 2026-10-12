@@ -600,6 +600,7 @@ RSpec.describe Captain::Assistant, type: :model do
 
     it 'includes explicitly selected ordinary tools and their required read companions without a prompt mention' do
       account.enable_features!('crm_deals')
+      create(:crm_field_definition, account: account, entity_kind: 'deal')
       assistant.update!(config: {
         'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => %w[faq_lookup handoff create_deal] } }
       })
@@ -642,6 +643,7 @@ RSpec.describe Captain::Assistant, type: :model do
 
     it 'keeps explicitly referenced non-default built-in tools in the final runtime tool set without extra runtime policy gates' do
       account.enable_features!('crm_deals')
+      create(:crm_field_definition, account: account, entity_kind: 'deal')
 
       assistant.update!(
         description: 'Use [@Create Deal](tool://create_deal) when greeted.',
@@ -682,8 +684,10 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(assistant.prompt_runtime_agent_tools.pluck(:id)).to include('send_message_to_conversation', 'list_captain_documents')
     end
 
-    it 'adds CRM custom-field catalog companions for task and appointment write tools' do
+    it 'adds CRM custom-field catalog companions for task and appointment write tools when the account has such fields' do
       account.enable_features!('crm_tasks', 'scheduling')
+      create(:crm_field_definition, account: account, entity_kind: 'task')
+      create(:crm_field_definition, account: account, entity_kind: 'appointment')
 
       assistant.update!(
         description: 'Use [@Create Task](tool://create_task) and [@Create Appointment](tool://create_appointment) when needed.',
@@ -708,6 +712,59 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(assistant.allowed_agent_tool_ids).not_to include('get_appointment_provider_status')
       expect(assistant.allowed_agent_tools.pluck(:id)).not_to include('get_appointment_provider_status')
       expect(assistant.prompt_runtime_agent_tools.pluck(:id)).not_to include('get_appointment_provider_status')
+    end
+
+    context 'with custom-field catalog companions' do
+      let(:mention_description) do
+        'Use [@Create Task](tool://create_task), [@Create Appointment](tool://create_appointment) and [@Create Deal](tool://create_deal).'
+      end
+
+      before do
+        account.enable_features!('crm_tasks', 'crm_deals', 'scheduling')
+        assistant.update!(
+          description: mention_description,
+          config: { 'context_access' => {}, 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['faq_lookup'] } } }
+        )
+      end
+
+      it 'does not add a field catalog tool for an entity without an active field definition' do
+        expect(assistant.allowed_agent_tool_ids).to include('create_task', 'create_appointment', 'create_deal')
+        expect(assistant.allowed_agent_tool_ids)
+          .not_to include('list_task_custom_fields', 'list_appointment_custom_fields', 'list_deal_custom_fields')
+        expect(assistant.prompt_runtime_agent_tools.pluck(:id))
+          .not_to include('list_task_custom_fields', 'list_appointment_custom_fields', 'list_deal_custom_fields')
+      end
+
+      it 'does not count an inactive definition or a definition of another entity' do
+        create(:crm_field_definition, account: account, entity_kind: 'appointment', active: false)
+        create(:crm_field_definition, account: account, entity_kind: 'deal')
+
+        expect(assistant.allowed_agent_tool_ids).to include('list_deal_custom_fields')
+        expect(assistant.allowed_agent_tool_ids).not_to include('list_appointment_custom_fields', 'list_task_custom_fields')
+      end
+
+      it 'adds the field catalog tool of exactly the entities that have an active definition' do
+        create(:crm_field_definition, account: account, entity_kind: 'appointment')
+
+        expect(assistant.allowed_agent_tool_ids).to include('list_appointment_custom_fields')
+        expect(assistant.allowed_agent_tool_ids).not_to include('list_task_custom_fields', 'list_deal_custom_fields')
+      end
+
+      it 'does not count the definitions of another account' do
+        create(:crm_field_definition, account: create(:account), entity_kind: 'appointment')
+
+        expect(assistant.allowed_agent_tool_ids).not_to include('list_appointment_custom_fields')
+      end
+
+      it 'still binds the field catalog tool when it is selected or mentioned explicitly' do
+        assistant.update!(
+          description: "#{mention_description} Use [@List Appointment Fields](tool://list_appointment_custom_fields).",
+          config: { 'context_access' => {},
+                    'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => %w[faq_lookup list_task_custom_fields] } } }
+        )
+
+        expect(assistant.allowed_agent_tool_ids).to include('list_appointment_custom_fields', 'list_task_custom_fields')
+      end
     end
 
     it 'keeps already saved provider-status references without offering the tool to patients' do

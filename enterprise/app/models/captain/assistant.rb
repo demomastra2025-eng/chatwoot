@@ -1124,6 +1124,7 @@ class Captain::Assistant < ApplicationRecord
 
     CRM_CUSTOM_FIELD_AWARE_TOOL_IDS_BY_ENTITY.each do |entity_kind, aware_tool_ids|
       next unless normalized_tool_ids.intersect?(aware_tool_ids)
+      next unless custom_field_definitions?(entity_kind)
 
       expanded_tool_ids << CRM_CUSTOM_FIELD_COMPANION_TOOL_IDS_BY_ENTITY.fetch(entity_kind)
     end
@@ -1131,6 +1132,12 @@ class Captain::Assistant < ApplicationRecord
     expanded_tool_ids.concat(DOCUMENT_ATTACHMENT_COMPANION_TOOL_IDS) if normalized_tool_ids.intersect?(DOCUMENT_ATTACHMENT_AWARE_TOOL_IDS)
 
     expanded_tool_ids.uniq
+  end
+
+  # A list_*_custom_fields tool is a companion only for an account that has at least one active field definition of the kind:
+  # without one it would always answer with an empty list. Selecting the tool or mentioning it in the instruction still binds it.
+  def custom_field_definitions?(entity_kind)
+    account.crm_field_definitions.active.for_entity_kind(entity_kind.to_s).exists?
   end
 
   def tool_scope_enabled?(scope_name)
