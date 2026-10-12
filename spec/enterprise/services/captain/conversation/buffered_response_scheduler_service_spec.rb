@@ -3,13 +3,8 @@ require 'rails_helper'
 RSpec.describe Captain::Conversation::BufferedResponseSchedulerService do
   let(:account) { create(:account, custom_attributes: { plan_name: 'startups' }) }
   let(:inbox) { create(:inbox, account: account) }
-  let(:assistant) do
-    create(
-      :captain_assistant,
-      account: account,
-      config: { 'message_collapse_window_seconds' => 3 }
-    )
-  end
+  # The collapse window is a workspace-level AI setting; the per-agent config value is no longer read.
+  let(:assistant) { create(:captain_assistant, account: account) }
   let(:conversation) { create(:conversation, inbox: inbox, account: account, status: :pending) }
   let(:configured_job) { instance_double(ActiveJob::ConfiguredJob) }
   let(:scheduled_waits) { [] }
@@ -17,6 +12,7 @@ RSpec.describe Captain::Conversation::BufferedResponseSchedulerService do
   let(:state_key) { format(Redis::Alfred::CAPTAIN_MESSAGE_BUFFER_STATE, conversation_id: conversation.id) }
 
   before do
+    Captain::AccountSettings.new(account).update!('conversation' => { 'message_collapse_window_seconds' => 3 })
     allow(Captain::Conversation::ResponseBuilderJob).to receive(:set) do |wait:|
       scheduled_waits << wait
       configured_job

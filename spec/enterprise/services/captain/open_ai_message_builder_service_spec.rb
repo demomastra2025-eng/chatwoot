@@ -230,13 +230,24 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
         expect(result).to include({ type: 'text', text: 'Audio transcription text' })
       end
 
-      it 'omits stored transcription when the AI agent capability is disabled' do
-        assistant = create(:captain_assistant, account: message.account, config: { 'use_audio_transcriptions' => false })
+      it 'omits stored transcription when the workspace AI voice understanding is disabled' do
+        # Voice understanding is a workspace-level AI setting (understanding.voice_messages) shared by every agent.
+        Captain::AccountSettings.new(message.account).update!('understanding' => { 'voice_messages' => false })
+        assistant = create(:captain_assistant, account: message.account)
         audio_attachment.update!(meta: { 'transcribed_text' => 'Hidden from this agent' })
 
         result = described_class.new(message: message, assistant: assistant).send(:attachment_parts, attachments)
 
         expect(result).not_to include({ type: 'text', text: 'Hidden from this agent' })
+      end
+
+      it 'ignores a legacy per-agent audio flag and follows the workspace setting' do
+        assistant = create(:captain_assistant, account: message.account, config: { 'use_audio_transcriptions' => false })
+        audio_attachment.update!(meta: { 'transcribed_text' => 'Visible to this agent' })
+
+        result = described_class.new(message: message, assistant: assistant).send(:attachment_parts, attachments)
+
+        expect(result).to include({ type: 'text', text: 'Visible to this agent' })
       end
     end
 

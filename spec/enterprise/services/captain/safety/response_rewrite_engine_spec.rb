@@ -9,8 +9,11 @@ RSpec.describe Captain::Safety::ResponseRewriteEngine do
       'instruction' => 'The answer promises a guaranteed outcome.', 'action' => 'rewrite', 'enabled' => true,
       'message' => 'private-approved-handoff-text' }
   end
+  # Custom rules are a workspace-level AI setting (Captain::AccountSettings), no longer a per-agent config value.
+  let(:account_settings) { instance_double(Captain::AccountSettings, runtime_rules: [rule]) }
   let(:assistant) do
-    instance_double(Captain::Assistant, active?: true, account: account, config: { 'safety_settings' => { 'custom_rules' => [rule] } })
+    instance_double(Captain::Assistant, active?: true, account: account, account_settings: account_settings,
+                                       config: { 'safety_settings' => { 'custom_rules' => [] } })
   end
   let(:chat) { instance_double(RubyLLM::Chat) }
   let(:model) { 'openai/gpt-6-luna' }
@@ -79,9 +82,17 @@ RSpec.describe Captain::Safety::ResponseRewriteEngine do
     end
   end
 
+  it 'ignores legacy per-agent custom rules that are not in the workspace settings' do
+    allow(account_settings).to receive(:runtime_rules).and_return([])
+    allow(assistant).to receive(:config).and_return('safety_settings' => { 'custom_rules' => [rule] })
+    expect(Llm::Runtime).not_to receive(:ask)
+
+    expect(rewrite).to be_nil
+  end
+
   [{ 'enabled' => false }, { 'action' => 'handoff' }, { 'direction' => 'input' }, { 'enabled' => 'true' }].each do |override|
     it "does not request a rewrite when the selected saved rule is #{override.inspect}" do
-      allow(assistant).to receive(:config).and_return('safety_settings' => { 'custom_rules' => [rule.merge(override)] })
+      allow(account_settings).to receive(:runtime_rules).and_return([rule.merge(override)])
       expect(Llm::Runtime).not_to receive(:ask)
 
       expect(rewrite).to be_nil

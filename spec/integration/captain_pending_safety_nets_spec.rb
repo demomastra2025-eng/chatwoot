@@ -18,6 +18,9 @@ RSpec.describe 'Captain pending conversation safety nets' do # rubocop:disable R
   let(:transfer_text) { 'Transferring to another agent for further assistance.' }
 
   before do
+    # The collapse window is a workspace AI setting (default 15 s = buffered scheduling); 0 selects the direct scheduling
+    # path that the ResponseBuilderJob.perform_later stub below observes.
+    Captain::AccountSettings.new(account).update!('conversation' => { 'message_collapse_window_seconds' => 0 })
     create(:inbox_member, user: agent, inbox: inbox)
     OnlineStatusTracker.update_presence(account.id, 'User', agent.id)
     OnlineStatusTracker.set_status(account.id, agent.id, 'online')
@@ -65,6 +68,13 @@ RSpec.describe 'Captain pending conversation safety nets' do # rubocop:disable R
 
   def public_texts(conversation)
     conversation.messages.outgoing.where(private: false).pluck(:content)
+  end
+
+  # The handoff message is a workspace AI setting shared by every agent (API modes: fixed | generated).
+  def configure_handoff_message!(enabled: true, mode: 'fixed', text: '')
+    Captain::AccountSettings.new(account).update!(
+      'handoff' => { 'handoff_message' => { 'enabled' => enabled, 'mode' => mode, 'text' => text } }
+    )
   end
 
   def expect_visible_to_people(conversation)
@@ -148,9 +158,7 @@ RSpec.describe 'Captain pending conversation safety nets' do # rubocop:disable R
     end
 
     it 'b2: hands a pending conversation to people at night with the out-of-office template and the assistant handoff message' do
-      assistant.update!(config: assistant.config.merge(
-        'handoff_message_enabled' => true, 'handoff_message_mode' => 'static', 'handoff_message' => 'Передаю администратору.'
-      ))
+      configure_handoff_message!(enabled: true, mode: 'fixed', text: 'Передаю администратору.')
       working_hours!(open: false)
       conversation = pending_conversation!
       exhaust_quota!
@@ -206,9 +214,7 @@ RSpec.describe 'Captain pending conversation safety nets' do # rubocop:disable R
     end
 
     it 'h3: hands the conversation to people when the model emits conversation_handoff instead of calling the tool' do
-      assistant.update!(config: assistant.config.merge(
-        'handoff_message_enabled' => true, 'handoff_message_mode' => 'ai', 'handoff_message' => 'Передаю администратору.'
-      ))
+      configure_handoff_message!(enabled: true, mode: 'generated', text: 'Передаю администратору.')
       conversation = pending_conversation!
       message = incoming!(conversation, 'Позовите администратора')
       response = model_output(conversation, { 'response' => 'conversation_handoff', 'handoff_message' => 'Model text' })
@@ -338,9 +344,7 @@ RSpec.describe 'Captain pending conversation safety nets' do # rubocop:disable R
     end
 
     def handoff_message!(enabled:, text: handoff_text)
-      assistant.update!(config: assistant.config.merge(
-        'handoff_message_enabled' => enabled, 'handoff_message_mode' => 'static', 'handoff_message' => text
-      ))
+      configure_handoff_message!(enabled: enabled, mode: 'fixed', text: text)
     end
 
     def customer_texts(conversation)
@@ -438,12 +442,26 @@ RSpec.describe 'Captain pending conversation safety nets' do # rubocop:disable R
       with_events { Captain::Conversation::ResponseBuilderJob.perform_now(conversation, assistant, expected_last_message_id: message.id) }
     end
 
-    it 'f2: the AI never hands off without the enabled handoff tool' do
+    # The human handoff tool is always part of an external agent's tool set (it cannot be switched off through the
+    # agent tool selection), so an authorized tool call hands off even when the selection lists only other tools.
+    it 'f2: the handoff tool is always available, so an authorized handoff tool call hands off' do
       assistant.update!(config: assistant.config.merge('tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['faq_lookup'] } }))
+      expect(assistant.selected_agent_tool_ids).to include('handoff')
       conversation = pending_conversation!
       message = incoming!(conversation)
 
       run_captain_turn!(conversation, message, { 'response' => 'conversation_handoff', 'handoff_tool_called' => true, 'handoff_authorized' => true })
+
+      expect(conversation.reload.status).to eq('open')
+      expect(conversation.captain_handoff_applied_at).to be_present
+    end
+
+    it 'f2b: the AI never hands off without an authorized handoff tool call' do
+      conversation = pending_conversation!
+      message = incoming!(conversation)
+
+      unauthorized = { 'response' => 'conversation_handoff', 'handoff_tool_called' => true, 'handoff_authorized' => false }
+      run_captain_turn!(conversation, message, unauthorized)
 
       expect(conversation.reload.status).to eq('pending')
       expect(conversation.captain_handoff_applied_at).to be_nil

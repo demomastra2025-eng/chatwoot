@@ -17,7 +17,8 @@ RSpec.describe Messages::DocumentParsingService, type: :service do
   let(:firecrawl_service) { instance_double(Captain::Tools::FirecrawlService) }
 
   before do
-    account.enable_features('captain_integration')
+    # Persist the flag: AccountSettings#update! locks (and reloads) the account, which Rails refuses for unsaved changes.
+    account.enable_features!('captain_integration')
   end
 
   describe '.reading_enabled_for?' do

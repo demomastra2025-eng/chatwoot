@@ -9,8 +9,17 @@ RSpec.describe MessageTemplates::HookExecutionService do
   let!(:captain_inbox) { create(:captain_inbox, captain_assistant: assistant, inbox: inbox) }
 
   before do
+    # The collapse window is a workspace AI setting (default 15 s = buffered scheduling); 0 selects the direct scheduling path.
+    Captain::AccountSettings.new(account).update!('conversation' => { 'message_collapse_window_seconds' => 0 })
     allow(Captain::Conversation::TypingIndicatorService).to receive(:turn_on)
     allow(Captain::Conversation::TypingIndicatorService).to receive(:turn_off)
+  end
+
+  # The handoff message is a workspace AI setting shared by every agent (API modes: fixed | generated).
+  def configure_handoff_message(enabled:, mode: 'fixed', text: '')
+    Captain::AccountSettings.new(account).update!(
+      'handoff' => { 'handoff_message' => { 'enabled' => enabled, 'mode' => mode, 'text' => text } }
+    )
   end
 
   context 'when captain assistant is configured' do
@@ -267,9 +276,7 @@ RSpec.describe MessageTemplates::HookExecutionService do
       end
 
       it 'sends only the assistant handoff message when quota is exceeded' do
-        assistant.update!(config: assistant.config.merge(
-          'handoff_message_enabled' => true, 'handoff_message_mode' => 'static', 'handoff_message' => 'Сейчас подключим администратора.'
-        ))
+        configure_handoff_message(enabled: true, mode: 'fixed', text: 'Сейчас подключим администратора.')
 
         create(:message, conversation: conversation, message_type: :incoming, account: account)
         create(:message, conversation: conversation, message_type: :incoming, account: account)
@@ -280,17 +287,30 @@ RSpec.describe MessageTemplates::HookExecutionService do
         expect(public_messages.first.sender).to eq(assistant)
       end
 
-      it 'sends no public handoff text when the assistant handoff message is not configured or disabled' do
-        assistant.update!(config: assistant.config.merge('handoff_message_enabled' => true, 'handoff_message' => ''))
+      it 'sends no public handoff text when the handoff message is not configured or disabled' do
+        configure_handoff_message(enabled: true, mode: 'fixed', text: '')
         create(:message, conversation: conversation, message_type: :incoming, account: account)
         disabled_conversation = create(:conversation, inbox: inbox, account: account, contact: contact, status: :pending)
-        assistant.update!(config: assistant.config.merge('handoff_message_enabled' => false, 'handoff_message' => 'Handoff text'))
+        configure_handoff_message(enabled: false, mode: 'fixed', text: 'Handoff text')
+        # The inbox caches its assistant (and the assistant its account); reload so the new workspace setting is read.
+        inbox.reload
         create(:message, conversation: disabled_conversation, message_type: :incoming, account: account)
 
         [conversation, disabled_conversation].each do |candidate|
           expect(candidate.reload.status).to eq('open')
           expect(candidate.messages.outgoing).to be_empty
         end
+      end
+
+      it 'ignores a legacy per-agent handoff message and sends only the workspace one' do
+        assistant.update!(config: assistant.config.merge(
+          'handoff_message_enabled' => true, 'handoff_message_mode' => 'static', 'handoff_message' => 'Legacy agent text'
+        ))
+
+        create(:message, conversation: conversation, message_type: :incoming, account: account)
+
+        expect(conversation.reload.status).to eq('open')
+        expect(conversation.messages.outgoing).to be_empty
       end
 
       it 'hands off on quota exhaustion even when the handoff tool is disabled, without the hard-coded transfer text' do
@@ -354,11 +374,8 @@ RSpec.describe MessageTemplates::HookExecutionService do
         channel = create(*Array(factory_name), account: channel_account, **factory_options)
         channel_inbox = channel.reload.inbox
         channel_contact = create(:contact, account: channel_account)
-        channel_assistant = create(
-          :captain_assistant,
-          account: channel_account,
-          config: { 'message_collapse_window_seconds' => 3 }
-        )
+        Captain::AccountSettings.new(channel_account).update!('conversation' => { 'message_collapse_window_seconds' => 3 })
+        channel_assistant = create(:captain_assistant, account: channel_account)
         scheduler = instance_double(Captain::Conversation::BufferedResponseSchedulerService, perform: true)
 
         create(:captain_inbox, captain_assistant: channel_assistant, inbox: channel_inbox)
