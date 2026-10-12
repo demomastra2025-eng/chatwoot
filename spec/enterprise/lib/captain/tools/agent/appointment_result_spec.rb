@@ -285,4 +285,47 @@ RSpec.describe Captain::Tools::Agent::AppointmentResult do
       expect(described_class.failure(error)).to include(reason: cause, code: cause.upcase)
     end
   end
+
+  describe 'a required appointment field the booking lacks' do
+    let(:account) { create(:account) }
+    let(:error) do
+      Crm::Error.new(code: 'VALIDATION_ERROR', message: 'custom_attributes.insurance_number is required', status: :unprocessable_content,
+                     details: { 'custom_attributes.insurance_number' => ['is required'] })
+    end
+
+    before do
+      create(:crm_field_definition, account: account, entity_kind: 'appointment', key: 'insurance_number', label: 'Номер полиса',
+                                    required: true)
+    end
+
+    it 'is a business failure that names the field by its label, with nothing written and no id' do
+      payload = described_class.failure(error, account: account)
+
+      expect(payload).to include(success: false, reason: 'validation_error', code: 'CUSTOM_FIELD_REQUIRED', error_class: 'business',
+                                 audit: { mutation_executed: false, failure_stage: 'tool_arguments' })
+      expect(payload[:correction]).to include('"Номер полиса"', 'Ask the patient', 'list_appointment_custom_fields')
+      expect(payload[:correction]).not_to match(/insurance_number|\d/)
+    end
+
+    it 'falls back to the key when the field is unknown or inactive, and without an account' do
+      expect(described_class.failure(error)[:correction]).to include('"insurance_number"')
+      account.crm_field_definitions.update_all(active: false) # rubocop:disable Rails/SkipsModelValidations
+      expect(described_class.failure(error, account: account)[:correction]).to include('"insurance_number"')
+    end
+
+    it 'reaches the agent as a failure it can correct in the same run' do
+      result = Captain::ToolResult.normalize(described_class.failure_output(error, account: account))
+
+      expect(result).to include(success: false, retryable: false, error: include('Номер полиса'),
+                                audit: include(error_class: 'business', failure_stage: 'tool_arguments', mutation_executed: false),
+                                data: include(code: 'CUSTOM_FIELD_REQUIRED', error_class: 'business'))
+    end
+
+    it 'keeps the plain validation failure for any other field error' do
+      other = Crm::Error.new(code: 'VALIDATION_ERROR', message: 'custom_attributes.insurance_number is not a known active field',
+                             status: :unprocessable_content)
+
+      expect(described_class.failure(other, account: account)).to eq(success: false, reason: 'validation_error', error_class: 'business')
+    end
+  end
 end

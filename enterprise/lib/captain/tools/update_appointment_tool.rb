@@ -51,7 +51,7 @@ class Captain::Tools::UpdateAppointmentTool < Captain::Tools::BasePublicTool
 
     provider_write_output(appointment, action: 'update_appointment', operation: 'move_reception')
   rescue StandardError => e
-    Captain::Tools::Agent::AppointmentResult.failure_output(e)
+    Captain::Tools::Agent::AppointmentResult.failure_output(e, account: account)
   end
 
   private

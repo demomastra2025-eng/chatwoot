@@ -189,6 +189,28 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
     expect(conversation.messages.outgoing).to be_empty
   end
 
+  it 'names a required appointment field the booking lacks, writes nothing, and books once the agent passes it' do
+    resource = create(:scheduling_resource, account: account, timezone: 'Asia/Almaty', slot_duration_min: 30)
+    contact = create(:contact, account: account)
+    conversation = create(:conversation, account: account, contact: contact)
+    create(:scheduling_work_rule, resource: resource, weekday: 1, start_minute: 9 * 60, end_minute: 18 * 60)
+    create(:crm_field_definition, account: account, entity_kind: 'appointment', key: 'insurance_number', label: 'Номер полиса',
+                                  required: true)
+    tool_context = Struct.new(:state).new({ conversation: { id: conversation.id }, contact: { id: contact.id } })
+    booking = { resource_id: resource.id, starts_at: '2026-04-20T09:00:00+05:00', duration_min: 30 }
+
+    result = Captain::ToolResult.normalize(tool.perform(tool_context, **booking))
+
+    expect(result).to include(success: false, retryable: false, error: include('"Номер полиса"'),
+                              data: include(reason: 'validation_error', code: 'CUSTOM_FIELD_REQUIRED', error_class: 'business'))
+    expect(result[:error]).not_to match(/insurance_number|\d/)
+    expect(account.scheduling_appointments.count).to eq(0)
+
+    booked = JSON.parse(tool.perform(tool_context, **booking, custom_attributes: { insurance_number: 'AB-1' }))
+
+    expect(booked).to include('success' => true, 'status' => 'created')
+    expect(account.scheduling_appointments.count).to eq(1)
+  end
   it 'returns only patient booking fields in the doctors local time and marks the source' do
     resource = create(:scheduling_resource, account: account, timezone: 'Asia/Almaty', slot_duration_min: 30)
     contact = create(:contact, account: account)

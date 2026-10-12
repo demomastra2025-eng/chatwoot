@@ -52,7 +52,7 @@ class Captain::Tools::CreateAppointmentTool < Captain::Tools::BasePublicTool
   rescue StandardError => e
     # The tool answers only after MedElement answered; a failure carries its error_class (technical or business) and the
     # runtime decides what a technical failure means for the conversation. Nothing is posted or handed over from here.
-    Captain::Tools::Agent::AppointmentResult.failure_output(e)
+    Captain::Tools::Agent::AppointmentResult.failure_output(e, account: account)
   end
   # rubocop:enable Metrics/ParameterLists
 

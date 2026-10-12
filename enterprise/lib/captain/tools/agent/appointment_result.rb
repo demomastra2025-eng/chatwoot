@@ -8,6 +8,8 @@ class Captain::Tools::Agent::AppointmentResult
     APPOINTMENT_READ_ONLY APPOINTMENT_SOURCE_READ_ONLY APPOINTMENT_EXTERNAL_REF_RESERVED
   ].freeze
   MAX_SEARCH_RESULTS = 20
+  # Message of Crm::FieldCatalog when a required custom field has no value: "custom_attributes.<key> is required".
+  REQUIRED_CUSTOM_FIELD_MESSAGE = /\Acustom_attributes\.(?<key>\S+) is required\z/
   # Stable machine flag of a failed mutation: the runtime hands the conversation to a human on a technical failure and
   # lets the agent carry on after a business one (a taken slot, input the agent or the patient can correct).
   ERROR_CLASS_TECHNICAL = 'technical'.freeze
@@ -159,8 +161,8 @@ class Captain::Tools::Agent::AppointmentResult
   end
   private_class_method :crm_link_result
 
-  def self.failure_output(error)
-    result = failure(error)
+  def self.failure_output(error, account: nil)
+    result = failure(error, account: account)
     audit = result.delete(:audit)
     return JSON.generate(result) unless audit
 
@@ -173,7 +175,32 @@ class Captain::Tools::Agent::AppointmentResult
   end
   private_class_method :input_failure_class
 
-  def self.failure(error)
+  # A required appointment field (a custom field the clinic marked as required) that the booking did not carry: the agent fixes it by
+  # asking the patient. The failure names the field by its label, never by an id, and nothing was written before it.
+  def self.required_custom_field_failure(error, account)
+    return unless error.is_a?(::Crm::Error) && error.code.to_s == 'VALIDATION_ERROR'
+
+    key = error.message.to_s[REQUIRED_CUSTOM_FIELD_MESSAGE, :key]
+    return if key.blank?
+
+    label = required_custom_field_label(account, key)
+    { success: false, reason: 'validation_error', code: 'CUSTOM_FIELD_REQUIRED', error_class: ERROR_CLASS_BUSINESS,
+      correction: "Required appointment field \"#{label}\" is missing. Ask the patient for it, then retry with its value in " \
+                  'custom_attributes (keys: list_appointment_custom_fields).',
+      audit: { mutation_executed: false, failure_stage: 'tool_arguments' } }
+  end
+  private_class_method :required_custom_field_failure
+
+  def self.required_custom_field_label(account, key)
+    definition = account&.crm_field_definitions&.active&.for_entity_kind('appointment')&.find_by(key: key)
+    definition&.label.presence || key
+  end
+  private_class_method :required_custom_field_label
+
+  def self.failure(error, account: nil)
+    required_field_failure = required_custom_field_failure(error, account)
+    return required_field_failure if required_field_failure
+
     code = error.respond_to?(:code) ? error.code.to_s : ''
     if code.blank? && !error.is_a?(ArgumentError) && !error.is_a?(ActiveRecord::RecordInvalid) && !error.is_a?(ActiveRecord::RecordNotFound)
       code = 'INTERNAL_FAILURE'
