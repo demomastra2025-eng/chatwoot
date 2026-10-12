@@ -26,6 +26,7 @@ module Captain::Runtime::CoordinationPrompt
       For a confirmed proposed operation, link its exact part ID and set link_action to confirmation.
       When older parts are open, mark each genuinely new request with link_action new.
       Do not treat a vague reply as confirmation; use clarify when its target is ambiguous.
+      A part that may start only after another part succeeded has relation depends_on and is listed directly after that part.
       Use a handoff for one part assigned to another agent. Several parts assigned to different agents require council.
     PROMPT
 

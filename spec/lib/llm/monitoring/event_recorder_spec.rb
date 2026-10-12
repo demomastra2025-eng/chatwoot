@@ -29,6 +29,20 @@ RSpec.describe Llm::Monitoring::EventRecorder do
       expect(event.payload.to_json).not_to include('PRIVATE_RESPONSE')
     end
 
+    it 'persists operation events with their identifiers and outcome state' do
+      %w[captain.operation.started captain.operation.finished].each do |name|
+        event = described_class.record_notification(
+          event_name: name, started_at: Time.current, finished_at: Time.current,
+          payload: { account_id: account.id, run_source: 'live', part_id: 'synthetic-part', part_version: 2,
+                     executor_agent_id: 7, tool_name: 'create_appointment', state: 'unknown' }
+        )
+
+        expect(event).to have_attributes(event_name: name, account_id: account.id, tool_name: 'create_appointment')
+        expect(event.payload).to include('part_id' => 'synthetic-part', 'part_version' => 2, 'executor_agent_id' => 7,
+                                         'state' => 'unknown')
+      end
+    end
+
     it 'persists outer chat errors without counting another provider usage request' do
       event = nil
       expect do

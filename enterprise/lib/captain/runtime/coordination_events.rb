@@ -13,6 +13,15 @@ class Captain::Runtime::CoordinationEvents
                                   parts: Array(part_ids), outcome: outcome.to_s)
     end
 
+    # Operation events carry identifiers and the outcome state only: no customer text and no parameters.
+    def operation_started(context:, part:, tool_name:)
+      publish_operation('operation.started', context, part, tool_name)
+    end
+
+    def operation_finished(context:, part:, tool_name:, state:)
+      publish_operation('operation.finished', context, part, tool_name, state: state.to_s)
+    end
+
     def publish(name, context:, **details)
       context = context.to_h.with_indifferent_access
       state = context[:state].to_h.with_indifferent_access
@@ -27,6 +36,16 @@ class Captain::Runtime::CoordinationEvents
           source: source.presence, run_source: %w[playground benchmark].include?(source) ? source : 'live'
         }.merge(details).compact
       )
+    end
+
+    private
+
+    def publish_operation(name, context, part, tool_name, **details)
+      publish(name, context: context, part_id: part['id'], part_version: part['version'],
+                    executor_agent_id: part['executor_agent_id'], tool_name: tool_name.to_s.presence, **details)
+    rescue StandardError => e
+      # Monitoring must never change the outcome of an operation.
+      Rails.logger.warn("[CAPTAIN][CoordinationEvents] Failed to publish #{name}: #{e.class}")
     end
   end
 end

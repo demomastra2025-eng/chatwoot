@@ -77,6 +77,47 @@ RSpec.describe Captain::Runtime::PartRegistry do
     end.to raise_error(ArgumentError, /executor agent/)
   end
 
+  it 'links a new dependent part to the part planned right before it and keeps that link when confirming' do
+    first, second = plan([{ fragment: 'Отменить визит', executor_agent_id: 1 },
+                          { fragment: 'Записать на другое время', executor_agent_id: 1, relation: 'depends_on' }])[:parts]
+    registry = described_class.new(context)
+    registry.update!(first['id'], state: 'waiting_confirmation',
+                                  proposed_operation: { 'type' => 'cancel_appointment', 'params' => { 'id' => 1 } })
+    registry.update!(second['id'], state: 'waiting_confirmation',
+                                   proposed_operation: { 'type' => 'create_appointment', 'params' => { 'slot_id' => 9 } })
+    next_message
+    confirmed = plan([{ fragment: 'Да', executor_agent_id: 1, link_part_id: second['id'], link_action: 'confirmation' },
+                      { fragment: 'Да', executor_agent_id: 1, link_part_id: first['id'], link_action: 'confirmation' }])[:parts]
+
+    expect(first).not_to have_key('depends_on_part_id')
+    expect(second['depends_on_part_id']).to eq(first['id'])
+    expect(confirmed.first).to include('id' => second['id'], 'version' => 2, 'depends_on_part_id' => first['id'])
+    expect(described_class.executable_relation?(confirmed.first)).to be(true)
+  end
+
+  it 'does not run a dependent part that has no prerequisite or a conditional part' do
+    lone = plan([{ fragment: 'Записать после отмены', executor_agent_id: 1, relation: 'depends_on' }])[:parts].sole
+
+    expect(lone).not_to have_key('depends_on_part_id')
+    expect(described_class.executable_relation?(lone)).to be(false)
+    expect(described_class.executable_relation?(lone.merge('relation' => 'conditional'))).to be(false)
+    expect(described_class.executable_relation?(lone.merge('relation' => 'independent'))).to be(true)
+  end
+
+  it 'cannot confirm an operation again after its outcome became unknown' do
+    old = plan([{ fragment: 'Book', executor_agent_id: 1 }])[:parts].sole
+    registry = described_class.new(context)
+    registry.update!(old['id'], state: 'waiting_confirmation',
+                                proposed_operation: { 'type' => 'create_appointment', 'params' => { 'slot_id' => 9 } })
+    registry.record_outcome!(old['id'], 'unknown')
+    next_message
+
+    expect do
+      plan([{ fragment: 'Да', executor_agent_id: 1, link_part_id: old['id'], link_action: 'confirmation' }])
+    end.to raise_error(ArgumentError, /no operation awaiting confirmation/)
+    expect(context[:parts].sole['state']).to eq('unknown')
+  end
+
   it 'persists a part across messages and an agent ownership change' do
     entry = create(:captain_assistant)
     specialist = create(:captain_assistant, account: entry.account)

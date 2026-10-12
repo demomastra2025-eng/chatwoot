@@ -147,8 +147,10 @@ class Captain::Runtime::Council
     parts.zip(results).each do |part, result|
       part['executor_agent_id'] = result['_executor_agent_id'] if result['_executor_agent_id'].present?
       contradictions = Array(result['contradictions']).reject(&:blank?)
-      dependent = part['relation'].present? && part['relation'] != 'independent'
-      operation = result['proposed_operation'] if !dependent && operation_valid?(part, result['proposed_operation'])
+      # Independent parts and dependent parts with a resolved prerequisite may be confirmed; the
+      # executor runs a dependent part only after its prerequisite is done. Conditional parts stay withheld.
+      runnable = Captain::Runtime::PartRegistry.executable_relation?(part)
+      operation = result['proposed_operation'] if runnable && operation_valid?(part, result['proposed_operation'])
       invalid_operation = result['proposed_operation'].present? && operation.nil?
       withheld = contradictions.any? || invalid_operation
       state = if withheld || result['status'] == 'out_of_scope'

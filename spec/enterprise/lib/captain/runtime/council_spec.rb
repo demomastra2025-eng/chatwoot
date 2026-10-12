@@ -62,6 +62,25 @@ RSpec.describe Captain::Runtime::Council do
     expect(context[:parts].first['proposed_operation']).to eq(results.first['proposed_operation'])
   end
 
+  it 'asks for confirmation of a dependent part that has a prerequisite but withholds a conditional one' do
+    results = [1, 2].map do |slot|
+      { 'status' => 'ok', 'fragment' => "Вариант #{slot}.", 'missing_fields' => [], 'contradictions' => [],
+        'proposed_operation' => { 'type' => 'create_appointment', 'params' => { 'slot_id' => slot } } }
+    end
+    allow(council).to receive(:operation_valid?).and_return(true)
+
+    dependent = parts(%w[Анна Анна])
+    dependent.last.merge!('relation' => 'depends_on', 'depends_on_part_id' => dependent.first['id'])
+    council.send(:assemble, dependent, results)
+    expect(context[:parts].pluck('state')).to eq(%w[waiting_confirmation waiting_confirmation])
+
+    conditional = parts(%w[Анна Анна])
+    conditional.last['relation'] = 'conditional'
+    reply = council.send(:assemble, conditional, results)
+    expect(context[:parts].pluck('state')).to eq(%w[waiting_confirmation open])
+    expect(reply).to include('Часть запроса требует дополнительной проверки.')
+  end
+
   it 'withholds a fragment when its proposed action is unavailable' do
     items = parts(%w[Анна Борис])
     unsafe = { 'status' => 'ok', 'fragment' => 'Запись выполнена.', 'missing_fields' => [],

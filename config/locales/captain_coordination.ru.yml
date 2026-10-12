@@ -6,7 +6,9 @@ ru:
       cancelled: Запрос отменён.
       action_unavailable: 'Действие не выполнено: исполнитель или параметры недоступны.'
       action_failed: Действие не выполнено.
-      action_pending: Результат действия проверяется.
+      action_pending: Запрос отправлен, подтверждение придёт сообщением.
+      action_not_started: 'Не начато: предыдущий шаг не завершён.'
+      part_result: '«%{request}»: %{result}'
       action_done: Действие выполнено.
       confirm_action: 'Подтвердите действие по запросу «%{request}»?'
       missing_fields: 'Уточните: %{fields}.'

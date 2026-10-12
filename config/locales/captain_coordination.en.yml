@@ -6,7 +6,9 @@ en:
       cancelled: The request was cancelled.
       action_unavailable: 'The action was not completed: the agent or parameters are unavailable.'
       action_failed: The action was not completed.
-      action_pending: The action result is being checked.
+      action_pending: The request was sent; a confirmation will follow in a message.
+      action_not_started: 'Not started: an earlier step was not completed.'
+      part_result: '“%{request}”: %{result}'
       action_done: The action was completed.
       confirm_action: 'Confirm the action for “%{request}”?'
       missing_fields: 'Please clarify: %{fields}.'

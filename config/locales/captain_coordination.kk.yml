@@ -6,7 +6,9 @@ kk:
       cancelled: Сұрау тоқтатылды.
       action_unavailable: 'Әрекет орындалмады: орындаушы немесе параметрлер қолжетімсіз.'
       action_failed: Әрекет орындалмады.
-      action_pending: Әрекет нәтижесі тексеріліп жатыр.
+      action_pending: Сұрау жіберілді, растау хабарлама арқылы келеді.
+      action_not_started: 'Басталмады: алдыңғы қадам аяқталмады.'
+      part_result: '«%{request}»: %{result}'
       action_done: Әрекет орындалды.
       confirm_action: '«%{request}» сұрауы бойынша әрекетті растайсыз ба?'
       missing_fields: 'Нақтылаңыз: %{fields}.'

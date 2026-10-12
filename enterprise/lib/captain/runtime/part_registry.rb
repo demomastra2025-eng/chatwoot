@@ -10,6 +10,14 @@ class Captain::Runtime::PartRegistry
   RELATIONS = %w[independent conditional depends_on].freeze
   LINK_ACTIONS = %w[new answer correction cancellation confirmation].freeze
 
+  # A confirmed proposal may run unattended when its part is independent, or when it is
+  # a dependent part that names the part planned right before it (depends_on_part_id).
+  # Conditional parts carry no verifiable condition yet and always need review.
+  def self.executable_relation?(part)
+    relation = part['relation']
+    relation.blank? || relation == 'independent' || (relation == 'depends_on' && part['depends_on_part_id'].present?)
+  end
+
   def initialize(context)
     @context = context
   end
@@ -67,8 +75,9 @@ class Captain::Runtime::PartRegistry
         'cancelled' => link_action == 'cancellation',
         'link_action' => link_action,
         'missing_fields' => [], 'proposed_operation' => link_action == 'confirmation' ? prior['proposed_operation'] : nil,
-        'delivered' => prior&.dig('delivered') || [] }
+        'delivered' => prior&.dig('delivered') || [] }.merge(kept_prerequisite(prior, relation))
     end
+    link_prerequisites!(normalized)
     raise ArgumentError, 'Council needs at least two agents' if mode == 'council' && normalized.pluck('executor_agent_id').uniq.size < 2
     raise ArgumentError, 'Clarification must be precise' if mode == 'clarify' && clarification.to_s.strip.blank?
     raise ArgumentError, 'An immediate answer needs one own part' if answer.present? &&
@@ -89,6 +98,26 @@ class Captain::Runtime::PartRegistry
   end
 
   def update!(part_id, attributes)
+    persist([changed_part(part_id, attributes)])
+  end
+
+  # The outcome of a provider call that already happened is persisted even when the run is
+  # no longer current (staff took over or a newer message arrived). Only the state is written,
+  # onto the stored part, so nothing else that changed meanwhile (for example deliveries) is lost.
+  def record_outcome!(part_id, state)
+    changed = changed_part(part_id, { state: state })
+    return persist([changed]) unless @context[:agent_session]
+
+    @context[:agent_session].record do |data|
+      stored = Array(data['parts']).find { |item| item['id'] == part_id }
+      stored['state'] = state if stored
+      @context[:parts] = Array(data['parts']).deep_dup
+    end
+  end
+
+  private
+
+  def changed_part(part_id, attributes)
     part = @context[:parts].find { |item| item['id'] == part_id }
     raise ArgumentError, 'Part not found' unless part
 
@@ -99,10 +128,23 @@ class Captain::Runtime::PartRegistry
       raise ArgumentError, 'Agent is unavailable on this channel'
     end
 
-    persist([part.merge(changes)])
+    part.merge(changes)
   end
 
-  private
+  def kept_prerequisite(prior, relation)
+    pointer = prior&.dig('depends_on_part_id')
+    relation == 'depends_on' && pointer.present? ? { 'depends_on_part_id' => pointer } : {}
+  end
+
+  # A new dependent part waits for the part planned directly before it in the same plan.
+  # The code, not the model, fixes this link once, so a later confirmation cannot reorder it.
+  def link_prerequisites!(normalized)
+    normalized.each_cons(2) do |previous, part|
+      next unless part['version'] == 1 && part['relation'] == 'depends_on'
+
+      part['depends_on_part_id'] = previous['id']
+    end
+  end
 
   def activate_single_part(parts)
     return unless parts.one?

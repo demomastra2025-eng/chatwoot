@@ -55,6 +55,24 @@ class Captain::Conversation::AgentSession
     end
   end
 
+  # Bookkeeping for a provider call that already happened. Unlike `change` it does not require
+  # the run to be current: staff may have taken over or a newer message arrived meanwhile, and
+  # the outcome must still be stored. It does not refresh the epoch, so nothing else is paused.
+  def record
+    return change { |data| yield(data) } unless @conversation
+
+    @conversation.with_lock do
+      attributes = @conversation.additional_attributes.to_h.deep_dup
+      data = attributes[ATTRIBUTE].to_h.deep_stringify_keys
+      next unless compatible?(data)
+
+      result = yield(data)
+      attributes[ATTRIBUTE] = data
+      @conversation.update_column(:additional_attributes, attributes)
+      result
+    end
+  end
+
   def update_routing(actor_id:, tasks: nil, new_queue_request_scope: nil)
     change do |data|
       expected = @task_revision || data['task_revision'].to_i
@@ -82,7 +100,7 @@ class Captain::Conversation::AgentSession
   end
 
   def reserve_operation(scope:, tool:, arguments:, actor_id:)
-    key = Digest::SHA256.hexdigest(JSON.generate([scope, tool]))
+    key = operation_key(scope, tool)
     digest = Digest::SHA256.hexdigest(JSON.generate(canonical(arguments)))
     change do |data|
       if @task_revision && data['task_revision'].to_i != @task_revision
@@ -112,6 +130,9 @@ class Captain::Conversation::AgentSession
       operations = data['operations'] ||= {}
       prior = operations[key]
       next [:existing, prior.deep_dup] if prior
+      # A new version of a part (confirmation, correction) must not repeat an action that an earlier
+      # version started without ever recording its outcome: that call may already have reached the provider.
+      next [:existing, { 'status' => 'blocked', 'reason' => 'mutation_retry_blocked' }] if earlier_version_unresolved?(operations, scope, tool)
 
       retained_scopes = Array(data['tasks']).map { |item| "task:#{item['id']}" } +
                         Array(data['parts']).map { |item| "part:#{item['id']}:v#{item['version']}" } + [scope]
@@ -124,7 +145,7 @@ class Captain::Conversation::AgentSession
   end
 
   def finish_operation(key, result)
-    change do |data|
+    record do |data|
       operation = data.fetch('operations').fetch(key)
       operation['status'] = 'finished'
       operation['result'] = JSON.parse(JSON.generate(result.as_json))
@@ -136,7 +157,7 @@ class Captain::Conversation::AgentSession
   end
 
   def release_unexecuted_operation(key)
-    change do |data|
+    record do |data|
       operations = data.fetch('operations')
       operations.delete(key) if operations.dig(key, 'status') == 'executing'
     end
@@ -150,6 +171,17 @@ class Captain::Conversation::AgentSession
 
   def compatible?(data)
     data['entry_assistant_id'] == @entry.id
+  end
+
+  def operation_key(scope, tool)
+    Digest::SHA256.hexdigest(JSON.generate([scope, tool]))
+  end
+
+  def earlier_version_unresolved?(operations, scope, tool)
+    part_id, version = scope.to_s.match(/\Apart:([^:]+):v(\d+)\z/)&.captures
+    return false unless part_id
+
+    (1...version.to_i).any? { |earlier| operations.dig(operation_key("part:#{part_id}:v#{earlier}", tool), 'status') == 'executing' }
   end
 
   def refresh_epoch(data)

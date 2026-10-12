@@ -78,4 +78,25 @@ RSpec.describe Captain::Runtime::CoordinationEvents do
   ensure
     ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
   end
+
+  it 'publishes operation events with identifiers and the outcome state, without text or parameters' do
+    context = { agent_request_id: 'synthetic-request',
+                state: { account_id: 1, assistant_id: 4, source: 'benchmark', conversation: { id: 3 } } }
+    part = { 'id' => 'synthetic-part', 'version' => 2, 'executor_agent_id' => 4, 'fragment' => 'PRIVATE_TEXT',
+             'proposed_operation' => { 'type' => 'create_appointment', 'params' => { 'note' => 'PRIVATE_PARAM' } } }
+    events = []
+    subscriber = ActiveSupport::Notifications.subscribe(/\Acaptain\.operation\./) do |*args|
+      events << ActiveSupport::Notifications::Event.new(*args)
+    end
+
+    described_class.operation_started(context: context, part: part, tool_name: 'create_appointment')
+    described_class.operation_finished(context: context, part: part, tool_name: 'create_appointment', state: :unknown)
+
+    expect(events.map(&:name)).to eq(%w[captain.operation.started captain.operation.finished])
+    expect(events.last.payload).to include('part_id' => 'synthetic-part', 'part_version' => 2, 'executor_agent_id' => 4,
+                                           'tool_name' => 'create_appointment', 'state' => 'unknown', 'run_source' => 'benchmark')
+    expect(events.map { |event| event.payload.to_json }.join).not_to include('PRIVATE_TEXT', 'PRIVATE_PARAM')
+  ensure
+    ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+  end
 end
