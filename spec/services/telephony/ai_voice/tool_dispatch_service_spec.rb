@@ -501,7 +501,10 @@ RSpec.describe Telephony::AiVoice::ToolDispatchService do
       state = service.send(:captain_runtime_state)
 
       expect(state.dig(:appointment, :id)).to eq(own.id)
-      expect(state.fetch(:appointment).keys).to contain_exactly(:id, :resource_name, :start_date, :start_time, :status)
+      expect(state.fetch(:appointment).keys).to contain_exactly(:id, :resource_name, :start_date, :start_time, :status, :summary)
+      summary = state.dig(:appointment, :summary)
+      expect(summary).to include(shown: 1, total: 1, scope: { kind: 'current_contact', contact_id: conversation.contact_id })
+      expect(summary[:groups].flat_map { |group| group[:items].pluck(:id) }).to eq([own.id])
       expect(state.to_json).not_to include('Private child clinical comment')
     end
   end

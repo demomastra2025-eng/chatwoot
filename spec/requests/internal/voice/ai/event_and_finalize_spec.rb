@@ -578,8 +578,11 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
     expect(conversation.reload.additional_attributes['ai_voice_final_status']).to eq('completed')
   end
 
-  it 'runs enabled Captain post-call memory and FAQ once with the voice transcript context' do
-    assistant = create(:captain_assistant, account: account, config: { 'feature_memory' => true, 'feature_faq' => true })
+  # The post-call FAQ is one workspace setting now (Captain::AccountSettings faq.generate_from_resolved); the per-agent
+  # feature_faq / feature_memory values are legacy and not read. Client memory is not generated after a call.
+  it 'runs the workspace post-call FAQ once with the voice transcript context and never the client memory' do
+    enable_workspace_post_call_faq!
+    assistant = create(:captain_assistant, account: account)
     create(:captain_inbox, inbox: voice_inbox, captain_assistant: assistant)
     create(
       :message,
@@ -599,17 +602,9 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
       message_type: :incoming,
       content: 'Старые данные из другого обращения'
     )
-    contact_notes_service = instance_double(Captain::Llm::ContactNotesService, generate_and_update_notes: nil)
     faq_service = instance_double(Captain::Llm::ConversationFaqService, generate_and_deduplicate: [])
 
-    allow(Captain::Llm::ContactNotesService).to receive(:new) do |received_assistant, received_conversation, conversation_content:, raise_on_error:|
-      expect(received_assistant).to eq(assistant)
-      expect(received_conversation).to eq(conversation)
-      expect(conversation_content).to include('Caller: Запомните, что я люблю доставку утром')
-      expect(conversation_content).not_to include('Старые данные из другого обращения')
-      expect(raise_on_error).to be(true)
-      contact_notes_service
-    end
+    allow(Captain::Llm::ContactNotesService).to receive(:new)
     allow(Captain::Llm::ConversationFaqService).to receive(:new) do |received_assistant, received_conversation, content:, raise_on_error:|
       expect(received_assistant).to eq(assistant)
       expect(received_conversation).to eq(conversation)
@@ -650,34 +645,49 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
       expect(response).to have_http_status(:ok)
     end
 
-    expect(Captain::Llm::ContactNotesService).to have_received(:new).once
-    expect(contact_notes_service).to have_received(:generate_and_update_notes).once
+    expect(Captain::Llm::ContactNotesService).not_to have_received(:new)
     expect(Captain::Llm::ConversationFaqService).to have_received(:new).once
     expect(faq_service).to have_received(:generate_and_deduplicate).once
     expect(call_session.reload.metadata.dig('ai_voice', 'post_call_captain_features')).to include(
-      'memory' => include('completed_at' => be_present, 'assistant_id' => assistant.id),
       'faq' => include('completed_at' => be_present, 'assistant_id' => assistant.id)
     )
+    expect(call_session.metadata.dig('ai_voice', 'post_call_captain_features', 'memory')).to be_blank
   end
 
-  it 'runs enabled Captain post-call memory without FAQ when only voice memory is enabled' do
+  it 'does not run the legacy per-agent memory flag after the call even when the workspace FAQ is enabled' do
+    enable_workspace_post_call_faq!
     assistant = create(:captain_assistant, account: account, config: { 'feature_memory' => true, 'feature_faq' => false })
     create(:captain_inbox, inbox: voice_inbox, captain_assistant: assistant)
     create_voice_call_message!
-    contact_notes_service = instance_double(Captain::Llm::ContactNotesService, generate_and_update_notes: nil)
+    faq_service = instance_double(Captain::Llm::ConversationFaqService, generate_and_deduplicate: [])
 
-    allow(Captain::Llm::ContactNotesService).to receive(:new).and_return(contact_notes_service)
-    allow(Captain::Llm::ConversationFaqService).to receive(:new)
+    allow(Captain::Llm::ContactNotesService).to receive(:new)
+    allow(Captain::Llm::ConversationFaqService).to receive(:new).and_return(faq_service)
 
     post_finalize_twice(finalize_payload_for('evt-finalize-captain-memory-only-1'))
 
-    expect(Captain::Llm::ContactNotesService).to have_received(:new).once
-    expect(contact_notes_service).to have_received(:generate_and_update_notes).once
-    expect(Captain::Llm::ConversationFaqService).not_to have_received(:new)
+    expect(Captain::Llm::ContactNotesService).not_to have_received(:new)
+    expect(Captain::Llm::ConversationFaqService).to have_received(:new).once
+    expect(faq_service).to have_received(:generate_and_deduplicate).once
     expect(call_session.reload.metadata.dig('ai_voice', 'post_call_captain_features')).to include(
-      'memory' => include('completed_at' => be_present, 'assistant_id' => assistant.id)
+      'faq' => include('completed_at' => be_present, 'assistant_id' => assistant.id)
     )
-    expect(call_session.metadata.dig('ai_voice', 'post_call_captain_features', 'faq')).to be_blank
+    expect(call_session.metadata.dig('ai_voice', 'post_call_captain_features', 'memory')).to be_blank
+  end
+
+  it 'ignores the legacy per-agent post-call flags while the workspace FAQ setting is off' do
+    assistant = create(:captain_assistant, account: account, config: { 'feature_memory' => true, 'feature_faq' => true })
+    create(:captain_inbox, inbox: voice_inbox, captain_assistant: assistant)
+    create_voice_call_message!
+
+    allow(Captain::Llm::ContactNotesService).to receive(:new)
+    allow(Captain::Llm::ConversationFaqService).to receive(:new)
+
+    post_finalize_twice(finalize_payload_for('evt-finalize-captain-legacy-flags-1'))
+
+    expect(Captain::Llm::ContactNotesService).not_to have_received(:new)
+    expect(Captain::Llm::ConversationFaqService).not_to have_received(:new)
+    expect(call_session.reload.metadata.dig('ai_voice', 'post_call_captain_features')).to be_blank
   end
 
   it 'does not run Captain post-call features when assistant feature flags are absent' do
@@ -711,6 +721,7 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
   end
 
   it 'does not run Captain post-call features without voice transcript context' do
+    enable_workspace_post_call_faq!
     assistant = create(:captain_assistant, account: account, config: { 'feature_memory' => true, 'feature_faq' => true })
     create(:captain_inbox, inbox: voice_inbox, captain_assistant: assistant)
     create_voice_call_message!
@@ -727,16 +738,16 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
     expect(call_session.reload.metadata.dig('ai_voice', 'post_call_captain_features')).to be_blank
   end
 
-  it 'retries failed Captain post-call features on a duplicate finalize without rerunning completed features', :aggregate_failures do
-    assistant = create(:captain_assistant, account: account, config: { 'feature_memory' => true, 'feature_faq' => true })
+  it 'retries a failed Captain post-call FAQ on a duplicate finalize without rerunning it once completed', :aggregate_failures do
+    enable_workspace_post_call_faq!
+    assistant = create(:captain_assistant, account: account)
     create(:captain_inbox, inbox: voice_inbox, captain_assistant: assistant)
     create_voice_call_message!
-    contact_notes_service = instance_double(Captain::Llm::ContactNotesService, generate_and_update_notes: nil)
     failed_faq_service = instance_double(Captain::Llm::ConversationFaqService)
     successful_faq_service = instance_double(Captain::Llm::ConversationFaqService)
     exception_tracker = instance_double(ChatwootExceptionTracker, capture_exception: nil)
 
-    allow(Captain::Llm::ContactNotesService).to receive(:new).and_return(contact_notes_service)
+    allow(Captain::Llm::ContactNotesService).to receive(:new)
     allow(Captain::Llm::ConversationFaqService).to receive(:new).and_return(failed_faq_service, successful_faq_service)
     allow(failed_faq_service).to receive(:generate_and_deduplicate).and_raise(StandardError, 'temporary faq failure')
     allow(successful_faq_service).to receive(:generate_and_deduplicate).and_return([])
@@ -744,14 +755,12 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
 
     post_finalize_twice(finalize_payload_for('evt-finalize-captain-features-retry-1'))
 
-    expect(Captain::Llm::ContactNotesService).to have_received(:new).once
-    expect(contact_notes_service).to have_received(:generate_and_update_notes).once
+    expect(Captain::Llm::ContactNotesService).not_to have_received(:new)
     expect(Captain::Llm::ConversationFaqService).to have_received(:new).twice
     expect(failed_faq_service).to have_received(:generate_and_deduplicate).once
     expect(successful_faq_service).to have_received(:generate_and_deduplicate).once
     expect(exception_tracker).to have_received(:capture_exception).once
     expect(call_session.reload.metadata.dig('ai_voice', 'post_call_captain_features')).to include(
-      'memory' => include('completed_at' => be_present, 'assistant_id' => assistant.id),
       'faq' => include('completed_at' => be_present, 'assistant_id' => assistant.id)
     )
     expect(call_session.metadata.dig('ai_voice', 'post_call_captain_features', 'faq')).not_to include(
@@ -760,7 +769,8 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
   end
 
   it 'retries a Captain post-call feature left with a stale started marker', :aggregate_failures do
-    assistant = create(:captain_assistant, account: account, config: { 'feature_faq' => true })
+    enable_workspace_post_call_faq!
+    assistant = create(:captain_assistant, account: account)
     create(:captain_inbox, inbox: voice_inbox, captain_assistant: assistant)
     create_voice_call_message!
     call_session.update!(
@@ -791,13 +801,13 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
     )
   end
 
-  it 'inherits enabled Captain post-call memory and FAQ from the routing-policy assistant without a Captain inbox link' do
-    assistant = create(:captain_assistant, account: account, config: { 'feature_memory' => true, 'feature_faq' => true })
+  it 'runs the workspace post-call FAQ for the routing-policy assistant without a Captain inbox link' do
+    enable_workspace_post_call_faq!
+    assistant = create(:captain_assistant, account: account)
     voice_inbox.telephony_number_binding.routing_policy.update!(captain_assistant: assistant)
-    contact_notes_service = instance_double(Captain::Llm::ContactNotesService, generate_and_update_notes: nil)
     faq_service = instance_double(Captain::Llm::ConversationFaqService, generate_and_deduplicate: [])
 
-    allow(Captain::Llm::ContactNotesService).to receive(:new).and_return(contact_notes_service)
+    allow(Captain::Llm::ContactNotesService).to receive(:new)
     allow(Captain::Llm::ConversationFaqService).to receive(:new).and_return(faq_service)
 
     perform_enqueued_jobs(only: Telephony::AiVoice::PostCallCaptainFeaturesJob) do
@@ -824,12 +834,10 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
     end
 
     expect(response).to have_http_status(:ok)
-    expect(Captain::Llm::ContactNotesService).to have_received(:new).once
-    expect(contact_notes_service).to have_received(:generate_and_update_notes).once
+    expect(Captain::Llm::ContactNotesService).not_to have_received(:new)
     expect(Captain::Llm::ConversationFaqService).to have_received(:new).once
     expect(faq_service).to have_received(:generate_and_deduplicate).once
     expect(call_session.reload.metadata.dig('ai_voice', 'post_call_captain_features')).to include(
-      'memory' => include('completed_at' => be_present, 'assistant_id' => assistant.id),
       'faq' => include('completed_at' => be_present, 'assistant_id' => assistant.id)
     )
   end
@@ -1139,6 +1147,10 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
     expect(data.dig('recording', 'recording_status')).to eq('ready')
     expect(data.dig('ai_voice', 'answered')).to be(true)
     expect(data.dig('ai_voice', 'state')).to eq('completed')
+  end
+
+  def enable_workspace_post_call_faq!
+    Captain::AccountSettings.new(account).update!('faq' => { 'generate_from_resolved' => true })
   end
 
   def create_voice_call_message!

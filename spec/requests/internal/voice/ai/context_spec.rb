@@ -204,6 +204,7 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     expect(system_prompt).not_to include('artifact_ids')
     expect(body.dig('captain', 'assistant_id')).to eq(assistant.id)
     expect(body.dig('captain', 'system_prompt')).to include('Answer callers using OneLink account context.')
+    expect(body.dig('captain', 'rules')).to include(a_string_including('Do not invent business facts'))
     expect(body['transfer']).to include(
       'enabled' => true,
       'mode' => 'callback',
@@ -567,6 +568,7 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     expect(system_prompt).to include('Answer callers using OneLink account context.')
     expect(system_prompt).to include('Answer shortly')
     expect(system_prompt).to include('Do not reveal private data')
+    expect(system_prompt).to include('Do not invent business facts')
     expect(system_prompt).to include('Current caller context')
     expect(system_prompt).to include('ai-context-call-1')
     expect(system_prompt).to include('Voice Response Contract')
