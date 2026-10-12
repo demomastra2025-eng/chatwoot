@@ -108,6 +108,36 @@ RSpec.describe Captain::Runtime::CoordinationEvents do
     ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
   end
 
+  it 'publishes the composer events with identifiers, language and reason only' do
+    context = { agent_request_id: 'synthetic-request', state: { account_id: 1, assistant_id: 2, conversation: { id: 3 } } }
+    events = []
+    subscriber = ActiveSupport::Notifications.subscribe(/\Acaptain\.council\./) do |*args|
+      events << ActiveSupport::Notifications::Event.new(*args)
+    end
+
+    described_class.council_composed(context: context, part_ids: %w[part-1 part-2], language: 'kk', handoff: true)
+    described_class.council_composed(context: context, part_ids: %w[part-1], language: 'ru', handoff: false)
+    described_class.council_composer_fallback(context: context, part_ids: %w[part-1], reason: :success_claim)
+
+    expect(events.map(&:name)).to eq(%w[captain.council.composed captain.council.composed captain.council.composer_fallback])
+    expect(events.first.payload).to include('parts' => %w[part-1 part-2], 'language' => 'kk', 'handoff' => true,
+                                            'reason' => 'council_unresolved', 'conversation_id' => 3)
+    expect(events.second.payload).to include('language' => 'ru', 'handoff' => false)
+    expect(events.second.payload).not_to have_key('reason')
+    expect(events.last.payload).to include('parts' => %w[part-1], 'reason' => 'success_claim')
+  ensure
+    ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+  end
+
+  it 'never lets a failing monitor break the council reply' do
+    allow(Llm::EventBus).to receive(:publish).and_raise(StandardError, 'bus down')
+
+    expect do
+      described_class.council_composed(context: {}, part_ids: [], language: 'ru', handoff: false)
+      described_class.council_composer_fallback(context: {}, part_ids: [], reason: 'error')
+    end.not_to raise_error
+  end
+
   it 'publishes operation events with identifiers and the outcome state, without text or parameters' do
     context = { agent_request_id: 'synthetic-request',
                 state: { account_id: 1, assistant_id: 4, source: 'benchmark', conversation: { id: 3 } } }

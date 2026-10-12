@@ -215,7 +215,30 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
         account.increment_token_usage(@response.dig('usage', 'total_tokens'))
       end
     end
+    hand_off_after_council_reply
     true
+  end
+
+  # A council reply that tells the customer staff will answer an unresolved part is followed by a real handoff.
+  # The reply is already delivered, so the handoff adds a private note only; the reply is the customer's notice.
+  def hand_off_after_council_reply
+    request = @response&.dig('council_handoff')
+    return if request.blank? || !council_handoff_allowed?
+
+    parts = Array(request['parts']).map { |part| part.to_s.squish.first(160) }.reject(&:blank?).join('; ')
+    @response['handoff_reason'] = I18n.with_locale(account.locale) do
+      I18n.t('captain.coordination.unresolved_handoff', parts: parts.presence || request['reason'])
+    end
+    process_action('council_handoff')
+  rescue Captain::Conversation::ControlGenerationStaleError => e
+    Rails.logger.info("[CAPTAIN][RunFence] Skipped council handoff conversation_id=#{@conversation.id}: #{e.message}")
+  rescue StandardError => e
+    # The customer already has the reply. A failed handoff must not run the failed-turn path (a second public message).
+    log_error(e)
+  end
+
+  def council_handoff_allowed?
+    response_assistant.handoff_enabled? && response_assistant.selected_agent_tool_ids.include?('handoff')
   end
 
   def with_response_persistence_lock(stage:)
@@ -585,6 +608,14 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   def create_action_notifications(action)
     case action
     when 'handoff', 'v2_handoff' then create_handoff_notifications
+    when 'council_handoff' then create_council_handoff_notifications
+    end
+  end
+
+  def create_council_handoff_notifications
+    I18n.with_locale(response_assistant.account.locale) do
+      create_handoff_private_note
+      send_out_of_office_message_if_applicable
     end
   end
 

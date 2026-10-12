@@ -1563,6 +1563,71 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       expect(conversation.messages.outgoing.where(sender: assistant)).to be_empty
     end
 
+    context 'when a council reply promises an unresolved part to staff' do
+      let(:council_response) do
+        { 'response' => 'Приём стоит 5000 тенге, а на остальное ответит сотрудник.',
+          'council_handoff' => { 'reason' => 'council_unresolved', 'parts' => ['Результаты анализов'] } }
+      end
+
+      before { allow(agent_runner_service).to receive(:generate_response).and_return(council_response) }
+
+      it 'delivers the reply first, then hands the conversation to staff with a private note and no second public message' do
+        expect { described_class.perform_now(conversation, assistant) }
+          .to change { conversation.messages.outgoing.where(private: false).count }.by(1)
+
+        conversation.reload
+        reply = conversation.messages.outgoing.where(private: false).sole
+        note = conversation.messages.outgoing.where(private: true).last
+        expect(reply.content).to eq(council_response['response'])
+        expect(note.content).to include('Результаты анализов')
+        expect(note.id).to be > reply.id
+        expect(conversation.status).to eq('open')
+      end
+
+      it 'records the staff handoff like any other handoff' do
+        allow(Llm::EventBus).to receive(:publish)
+
+        described_class.perform_now(conversation, assistant)
+
+        expect(Llm::EventBus).to have_received(:publish).with('captain.agent.staff_handoff', hash_including(conversation_id: conversation.id))
+      end
+
+      it 'keeps the delivered reply and sends no failed-turn message when the handoff itself fails' do
+        allow_any_instance_of(described_class).to receive(:process_action).and_raise(ActiveRecord::Deadlocked)
+        allow(ChatwootExceptionTracker).to receive(:new).and_call_original
+
+        expect { described_class.perform_now(conversation, assistant) }.not_to raise_error
+
+        expect(ChatwootExceptionTracker).to have_received(:new).with(an_instance_of(ActiveRecord::Deadlocked), account: account)
+        expect(conversation.reload.messages.outgoing.where(private: false).pluck(:content)).to eq([council_response['response']])
+        expect(conversation.status).to eq('pending')
+      end
+
+      it 'keeps the conversation with the agent when the agent cannot hand off to staff' do
+        allow_any_instance_of(Captain::Assistant).to receive(:handoff_enabled?).and_return(false)
+
+        described_class.perform_now(conversation, assistant)
+
+        expect(conversation.reload.messages.outgoing.where(private: false).pluck(:content)).to eq([council_response['response']])
+        expect(conversation.messages.outgoing.where(private: true)).to be_empty
+        expect(conversation.status).to eq('pending')
+      end
+
+      it 'does not hand off when a human replied during generation and the reply was not delivered' do
+        agent = create(:user, account: account, role: :agent)
+        expected_generation = conversation.captain_control_generation
+        allow(agent_runner_service).to receive(:generate_response) do
+          create(:message, conversation: conversation, message_type: :outgoing, sender: agent, account: account, inbox: inbox)
+          council_response
+        end
+
+        described_class.perform_now(conversation, assistant, expected_control_generation: expected_generation)
+
+        expect(conversation.messages.outgoing.where(sender: assistant)).to be_empty
+        expect(conversation.reload.status).to eq('open')
+      end
+    end
+
     # Regression (PR #13417): wrapping create_handoff_message and bot_handoff! in the
     # same transaction defers the message's after_create_commit until commit, at which
     # point it clears waiting_since (bot_response). The handoff path must stay outside

@@ -195,3 +195,10 @@ includes only live events. The runtime persists `captain.agent.transfer`,
 `captain.agent.reset` with `run_source`. The council event contract is
 `captain.council.started` / `captain.council.finished` with participant IDs
 and an outcome on finish; `Captain::Runtime::Council` calls these producers.
+The council coordinator that writes the single customer reply adds `captain.council.composed` (part IDs, reply
+language, `handoff`, and `reason: council_unresolved` when staff will answer an unresolved part) and
+`captain.council.composer_fallback` (part IDs and the `reason` the fixed templates were used instead: `timeout`,
+`error`, `empty`, `too_long`, `json`, `internal_token`, `success_claim`, `language`, `staff_promise`, `staff_missing`,
+`no_confirmation_question`, `unsupported_number`, `latin`, `no_model`, `no_parts`, `disabled`). Neither carries text.
+The composer is switched off with `CAPTAIN_COUNCIL_COMPOSER=off` (environment or an InstallationConfig row; `off`, `0`,
+`false`, `disabled`): the fixed templates apply at once and no handoff follows.

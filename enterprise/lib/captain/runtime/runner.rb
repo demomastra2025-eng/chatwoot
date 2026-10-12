@@ -43,8 +43,9 @@ class Captain::Runtime::Runner
       Captain::Runtime::PartRegistry::OPEN_STATES.include?(part['state'])
     end
     fragments = parts.map { |part| part['fragment'].to_s.first(160) }.reject(&:blank?)
-    text = I18n.t('captain.coordination.unfinished', locale: :ru)
-    text += " #{I18n.t('captain.coordination.open_parts', parts: fragments.join('; '), locale: :ru)}" if fragments.any?
+    locale = Captain::Runtime::CouncilComposer.locale_for(session[:context_wrapper].context)
+    text = I18n.t('captain.coordination.unfinished', locale: locale)
+    text += " #{I18n.t('captain.coordination.open_parts', parts: fragments.join('; '), locale: locale)}" if fragments.any?
     { response: text, reasoning: '' }
   end
 
@@ -204,7 +205,8 @@ class Captain::Runtime::Runner
     context[:part_plan_processed] = true
     if plan[:parts].all? { |part| part['link_action'] == 'cancellation' }
       return finalize_run(session[:chat], session[:context_wrapper], session[:current_agent],
-                          output: { response: I18n.t('captain.coordination.cancelled', locale: :ru), reasoning: '' })
+                          output: { response: I18n.t('captain.coordination.cancelled', locale: Captain::Runtime::CouncilComposer.locale_for(context)),
+                                    reasoning: '' })
     end
     if plan[:parts].all? { |part| part['link_action'] == 'confirmation' }
       answer = Captain::Runtime::ConfirmedOperations.new(context: context, graph: context[:agent_graph_object]).run(plan[:parts])
@@ -215,8 +217,8 @@ class Captain::Runtime::Runner
 
     case plan[:mode]
     when 'council'
-      answer = Captain::Runtime::Council.new(context: context, graph: context[:agent_graph_object],
-                                             account: session[:account], llm_context: session[:llm_context]).run(plan[:parts])
+      answer = Captain::Runtime::Council.new(context: context, graph: context[:agent_graph_object], account: session[:account],
+                                             llm_context: session[:llm_context], model: session[:current_agent].model).run(plan[:parts])
       finalize_run(session[:chat], session[:context_wrapper], session[:current_agent],
                    output: { response: answer, reasoning: '' })
     when 'handoff'

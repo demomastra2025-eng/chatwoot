@@ -10,6 +10,8 @@ class Llm::Monitoring::EventRecorder
       captain.agent.staff_handoff
       captain.council.started
       captain.council.finished
+      captain.council.composed
+      captain.council.composer_fallback
       captain.operation.started
       captain.operation.finished
       llm.agent.handoff

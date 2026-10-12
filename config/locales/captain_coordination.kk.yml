@@ -13,3 +13,9 @@ kk:
       confirm_action: '«%{request}» сұрауы бойынша әрекетті растайсыз ба?'
       missing_fields: 'Нақтылаңыз: %{fields}.'
       needs_review: Сұраудың бір бөлігін қосымша тексеру қажет.
+      unresolved_handoff: 'Өтініштің бір бөлігі жауапсыз қалды, қызметкердің жауабы қажет: %{parts}.'
+      action:
+        create_appointment: қабылдауға жазылу
+        update_appointment: жазылуды өзгерту
+        cancel_appointment: жазылуды болдырмау
+        update_my_contact: байланыс деректеріңізді жаңарту

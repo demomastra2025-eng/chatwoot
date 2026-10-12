@@ -36,6 +36,25 @@ RSpec.describe Captain::Runtime::ConfirmedOperations do
     expect(response.scan('Действие выполнено.').size).to eq(2)
   end
 
+  it 'reports the outcome in Kazakh to a customer who writes Kazakh' do
+    allow(graph).to receive(:find).with(1).and_return(first_actor)
+    allow(graph).to receive(:find).with(2).and_return(second_actor)
+    allow(Captain::Runtime::ToolWrapper).to receive(:new) do |_tool, wrapper|
+      double('wrapped tool').tap do |wrapped|
+        allow(wrapped).to receive(:call) do
+          wrapper.callback_manager.emit_tool_complete('create_deal', Captain::ToolResult.success(data: { id: 1 }), wrapper)
+        end
+      end
+    end
+    kazakh = context.merge(captain_v2_current_input: 'Иә',
+                           conversation_history: [{ role: 'user', content: 'Қабылдауға жазылғым келеді' }])
+
+    response = described_class.new(context: kazakh, graph: graph).run(parts)
+
+    expect(response.scan('Әрекет орындалды.').size).to eq(2)
+    expect(response).not_to include('Действие')
+  end
+
   describe 'dependent parts' do
     let(:slot_taken) { { success: false, error: 'Slot is taken', audit: { mutation_executed: false } } }
     let(:chain) do

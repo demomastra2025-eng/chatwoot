@@ -308,6 +308,7 @@ class Captain::Assistant::AgentRunnerService
     output = result.output
     response = output.is_a?(Hash) ? output.with_indifferent_access : { 'response' => output.to_s, 'reasoning' => '' }
     response.delete('handoff_authorized')
+    response.delete('council_handoff')
     response.delete(PROVIDER_ERROR_AUTHORIZED_KEY)
     response.delete(MODERATION_BLOCKED_KEY)
     response.delete(Captain::Safety::CustomRulesRuntime::RESPONSE_KEY)
@@ -315,6 +316,8 @@ class Captain::Assistant::AgentRunnerService
     response['agent_id'] = @acting_assistant_id
     response['agent_tasks'] = @agent_tasks if @agent_tasks.present?
     response['council_contributors'] = result.context[:council_contributors] if result.context&.dig(:council_contributors).present?
+    # Set by the council only when its reply promises staff an unresolved part; the response builder then performs the handoff.
+    response['council_handoff'] = result.context[:council_handoff].to_h.deep_stringify_keys if result.context&.dig(:council_handoff).present?
     if result.context&.dig(:part_plan, :parts).present?
       response['part_refs'] = result.context[:part_plan][:parts].map { |part| part.slice('id', 'version') }
     end

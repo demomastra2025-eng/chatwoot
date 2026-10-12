@@ -13,6 +13,16 @@ class Captain::Runtime::CoordinationEvents
                                   parts: Array(part_ids), outcome: outcome.to_s)
     end
 
+    # The composer events carry identifiers, the reply language and a reason only: never the reply or the customer's text.
+    def council_composed(context:, part_ids:, language:, handoff:)
+      publish_quietly('council.composed', context: context, parts: Array(part_ids), language: language.to_s,
+                                          handoff: handoff.present?, reason: ('council_unresolved' if handoff))
+    end
+
+    def council_composer_fallback(context:, part_ids:, reason:)
+      publish_quietly('council.composer_fallback', context: context, parts: Array(part_ids), reason: reason.to_s)
+    end
+
     # Operation events carry identifiers and the outcome state only: no customer text and no parameters.
     def operation_started(context:, part:, tool_name:)
       publish_operation('operation.started', context, part, tool_name)
@@ -39,6 +49,13 @@ class Captain::Runtime::CoordinationEvents
     end
 
     private
+
+    def publish_quietly(name, context:, **details)
+      publish(name, context: context, **details)
+    rescue StandardError => e
+      # Monitoring must never change the reply.
+      Rails.logger.warn("[CAPTAIN][CoordinationEvents] Failed to publish #{name}: #{e.class}")
+    end
 
     def publish_operation(name, context, part, tool_name, **details)
       publish(name, context: context, part_id: part['id'], part_version: part['version'],

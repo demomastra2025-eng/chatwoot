@@ -27,7 +27,12 @@ class Captain::Runtime::ConfirmedOperations
     text = execute_part(part)
     return text unless labelled && part['fragment'].present?
 
-    I18n.t('captain.coordination.part_result', request: part['fragment'].to_s.first(160), result: text, locale: :ru)
+    I18n.t('captain.coordination.part_result', request: part['fragment'].to_s.first(160), result: text, locale: locale)
+  end
+
+  # The customer's language: a Kazakh customer who confirms gets the outcome in Kazakh.
+  def locale
+    @locale ||= Captain::Runtime::CouncilComposer.locale_for(@context)
   end
 
   # Keeps the confirmed order, but never places a part before the part it depends on.
@@ -116,7 +121,7 @@ class Captain::Runtime::ConfirmedOperations
   def settle(part, state, text_key)
     mark(part, REGISTRY_STATES[state]) if REGISTRY_STATES.key?(state)
     Captain::Runtime::CoordinationEvents.operation_finished(context: @context, part: part, tool_name: operation_type(part), state: state)
-    I18n.t("captain.coordination.#{text_key}", locale: :ru)
+    I18n.t("captain.coordination.#{text_key}", locale: locale)
   end
 
   # The provider call already happened: its outcome is stored even if the run is no longer current.

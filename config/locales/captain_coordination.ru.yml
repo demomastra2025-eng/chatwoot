@@ -13,3 +13,9 @@ ru:
       confirm_action: 'Подтвердите действие по запросу «%{request}»?'
       missing_fields: 'Уточните: %{fields}.'
       needs_review: Часть запроса требует дополнительной проверки.
+      unresolved_handoff: 'Часть обращения осталась без ответа, нужен ответ сотрудника: %{parts}.'
+      action:
+        create_appointment: запись на приём
+        update_appointment: изменение записи
+        cancel_appointment: отмена записи
+        update_my_contact: обновление ваших контактных данных

@@ -29,6 +29,20 @@ RSpec.describe Llm::Monitoring::EventRecorder do
       expect(event.payload.to_json).not_to include('PRIVATE_RESPONSE')
     end
 
+    it 'persists the council composer events with their reason and without the reply' do
+      %w[captain.council.composed captain.council.composer_fallback].each do |name|
+        event = described_class.record_notification(
+          event_name: name, started_at: Time.current, finished_at: Time.current,
+          payload: { account_id: account.id, run_source: 'live', parts: %w[part-1], language: 'kk', handoff: true,
+                     reason: 'council_unresolved', response: 'PRIVATE_REPLY' }
+        )
+
+        expect(event).to have_attributes(event_name: name, account_id: account.id, reason: 'council_unresolved')
+        expect(event.payload).to include('parts' => %w[part-1], 'language' => 'kk')
+        expect(event.payload.to_json).not_to include('PRIVATE_REPLY')
+      end
+    end
+
     it 'persists operation events with their identifiers and outcome state' do
       %w[captain.operation.started captain.operation.finished].each do |name|
         event = described_class.record_notification(
