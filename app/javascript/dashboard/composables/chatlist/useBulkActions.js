@@ -319,6 +319,12 @@ export function useBulkActions() {
     return isCommunicationThreadMode ? 'communication_thread' : 'conversation';
   }
 
+  // The conversation card context menu emits its id already wrapped in an array
+  // ([props.chat.id]); keep the request a flat id list either way.
+  function contextMenuIds(conversationId) {
+    return conversationId ? [conversationId].flat() : null;
+  }
+
   async function onAssignAgent(
     agent,
     conversationId = null,
@@ -329,7 +335,7 @@ export function useBulkActions() {
         ...selectionActionPayload(
           bulkType(isCommunicationThreadMode),
           { fields: { assignee_id: agent.id } },
-          conversationId ? [conversationId] : null
+          contextMenuIds(conversationId)
         ),
       });
       if (!conversationId) resetBulkActions();
@@ -364,7 +370,7 @@ export function useBulkActions() {
         ...selectionActionPayload(
           bulkType(isCommunicationThreadMode),
           { labels: { add: newLabels } },
-          conversationId ? [conversationId] : null
+          contextMenuIds(conversationId)
         ),
       });
       if (!conversationId) resetBulkActions();
@@ -397,7 +403,7 @@ export function useBulkActions() {
         ...selectionActionPayload(
           'Conversation',
           { labels: { remove: labelsToRemove } },
-          conversationId ? [conversationId] : null
+          contextMenuIds(conversationId)
         ),
       });
 

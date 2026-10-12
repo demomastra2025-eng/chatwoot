@@ -1,4 +1,6 @@
 class Api::V1::Accounts::BulkActionsController < Api::V1::Accounts::BaseController
+  before_action :flatten_ids_param, only: :create
+
   def create
     case normalized_type
     when 'Conversation', 'CommunicationThread'
@@ -56,6 +58,13 @@ class Api::V1::Accounts::BulkActionsController < Api::V1::Accounts::BaseControll
 
   def normalized_type
     params[:type].to_s.camelize
+  end
+
+  # The conversation card context menu emits its id already wrapped in an array, so clients
+  # can post `ids: [[id]]`. `permit(ids: [])` would silently drop that nested list and the
+  # run would complete with zero records.
+  def flatten_ids_param
+    params[:ids] = params[:ids].flatten if params[:ids].is_a?(Array)
   end
 
   def enqueue_conversation_job(bulk_action_run, selection: nil)

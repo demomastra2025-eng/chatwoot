@@ -459,6 +459,26 @@ RSpec.describe 'Api::V1::Accounts::BulkActionsController', type: :request do
         expect(Conversation.first.label_list).to contain_exactly('support', 'priority_customer')
         expect(Conversation.second.label_list).to contain_exactly('support', 'priority_customer')
       end
+
+      # The conversation card context menu emits its id already wrapped in an array.
+      it 'labels a context-menu conversation whose id arrives wrapped twice' do
+        conversation = Conversation.first
+
+        perform_enqueued_jobs do
+          post "/api/v1/accounts/#{account.id}/bulk_actions",
+               headers: agent.create_new_auth_token,
+               params: { type: 'Conversation', ids: [[conversation.display_id]], labels: { add: %w[support] } },
+               as: :json
+
+          expect(response).to have_http_status(:success)
+        end
+
+        run = account.bulk_action_runs.last
+        expect(conversation.reload.label_list).to contain_exactly('support')
+        expect(run).to be_completed
+        expect(run).to have_attributes(action_name: 'add_labels', total_count: 1, processed_count: 1, failed_count: 0)
+        expect(run.metadata).to include('selected_count' => 1)
+      end
     end
   end
 

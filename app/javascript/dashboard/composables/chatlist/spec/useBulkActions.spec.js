@@ -81,6 +81,23 @@ describe('useBulkActions', () => {
     );
   });
 
+  it('sends a flat id list for context-menu actions that pass the card id as an array', async () => {
+    const { onAssignLabels, onAssignAgent, onRemoveLabels } = useBulkActions();
+
+    await onAssignLabels(['vip'], [9]);
+    await onAssignAgent({ id: 4, name: 'Agent' }, [9]);
+    await onRemoveLabels(['vip'], [9]);
+
+    const payloads = store.dispatch.mock.calls
+      .filter(([action]) => action === 'bulkActions/process')
+      .map(([, payload]) => payload);
+    expect(payloads).toEqual([
+      { type: 'Conversation', ids: [9], labels: { add: ['vip'] } },
+      { type: 'Conversation', ids: [9], fields: { assignee_id: 4 } },
+      { type: 'Conversation', ids: [9], labels: { remove: ['vip'] } },
+    ]);
+  });
+
   it('updates selected conversations locally after bulk status change', async () => {
     const { onUpdateConversations } = useBulkActions();
 
