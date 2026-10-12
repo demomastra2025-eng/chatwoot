@@ -163,6 +163,15 @@ export default function useAutomationValues() {
     }))
   );
 
+  const appointmentCabinetOptions = computed(() =>
+    (schedulingReferencesStore.cabinets || []).map(cabinet => ({
+      id: cabinet.code,
+      name:
+        [cabinet.name, cabinet.number].filter(Boolean).join(' · ') ||
+        cabinet.code,
+    }))
+  );
+
   const appointmentWeekdayOptions = computed(() => [
     { id: '1', name: t('AUTOMATION.WEEKDAYS.1') },
     { id: '2', name: t('AUTOMATION.WEEKDAYS.2') },
@@ -230,6 +239,7 @@ export default function useAutomationValues() {
   const getConditionDropdownValues = (type, eventName = null) => {
     return getConditionOptions({
       agents: agents.value,
+      appointmentCabinetOptions: appointmentCabinetOptions.value,
       appointmentFieldDefinitions: appointmentFieldDefinitions.value,
       appointmentPaymentStatusOptions: appointmentPaymentStatusOptions.value,
       appointmentSourceOptions: appointmentSourceOptions.value,
@@ -301,6 +311,7 @@ export default function useAutomationValues() {
     appointmentStatusOptions,
     appointmentPaymentStatusOptions,
     appointmentServiceOptions,
+    appointmentCabinetOptions,
     appointmentTypeOptions,
     appointmentWeekdayOptions,
     appointmentFieldDefinitions,

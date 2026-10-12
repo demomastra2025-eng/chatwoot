@@ -218,6 +218,7 @@ const BACKEND_APPOINTMENT_CONDITIONS = [
   'starts_at_weekday',
   'starts_at_time',
   'service_id',
+  'medelement_cabinet_code',
 ];
 
 const BACKEND_DEAL_CONDITIONS = [
@@ -349,6 +350,23 @@ describe('AUTOMATIONS backend parity', () => {
     });
   });
 
+  it('offers the cabinet as a searchable multi-select with equality operators for every appointment event', () => {
+    APPOINTMENT_EVENTS.forEach(eventName => {
+      expect(
+        AUTOMATIONS[eventName].conditions.find(
+          ({ key }) => key === 'medelement_cabinet_code'
+        )
+      ).toEqual({
+        key: 'medelement_cabinet_code',
+        name: 'APPOINTMENT_CABINET',
+        inputType: 'multi_select',
+        filterOperators: OPERATOR_TYPES_1,
+        searchable: true,
+        hideWhenNoOptions: true,
+      });
+    });
+  });
+
   it('exposes public deal actions and backend-backed conditions for every deal event', () => {
     DEAL_EVENTS.forEach(eventName => {
       expectSameMembers(
@@ -431,6 +449,102 @@ describe('legacy-only appointment conditions', () => {
         ])
       )
     ).toContain('payment_status');
+  });
+});
+
+describe('getVisibleConditionAttributes', () => {
+  const attributes = AUTOMATIONS.appointment_created.conditions;
+  const offered = list => list.map(({ key }) => key);
+  const cabinetOptions = [{ id: '501', name: 'Терапевт' }];
+  const optionsFor = options => attribute =>
+    attribute.key === 'medelement_cabinet_code' ? options : [{ id: 1 }];
+
+  it('offers the cabinet condition when the account has cabinets', () => {
+    expect(
+      offered(
+        helpers.getVisibleConditionAttributes(
+          attributes,
+          [],
+          optionsFor(cabinetOptions)
+        )
+      )
+    ).toContain('medelement_cabinet_code');
+  });
+
+  it('hides the cabinet condition when the account has no cabinets', () => {
+    [[], undefined, null].forEach(options => {
+      expect(
+        offered(
+          helpers.getVisibleConditionAttributes(
+            attributes,
+            [],
+            optionsFor(options)
+          )
+        )
+      ).not.toContain('medelement_cabinet_code');
+    });
+  });
+
+  it('keeps the cabinet condition for a rule that already uses it', () => {
+    expect(
+      offered(
+        helpers.getVisibleConditionAttributes(
+          attributes,
+          [{ attribute_key: 'medelement_cabinet_code' }],
+          optionsFor([])
+        )
+      )
+    ).toContain('medelement_cabinet_code');
+  });
+
+  it('only filters by options when the caller can resolve them', () => {
+    expect(
+      offered(helpers.getVisibleConditionAttributes(attributes, []))
+    ).toContain('medelement_cabinet_code');
+  });
+
+  it('hides archived custom fields and their section header unless a rule uses them', () => {
+    const header = {
+      key: 'appointment_custom_attribute',
+      name: 'Custom fields',
+      disabled: true,
+    };
+    const fields = helpers.generateManagedCustomAttributeTypes(
+      [
+        { ...appointmentFieldDefinitions[0], active: true },
+        { ...appointmentFieldDefinitions[1], active: false },
+      ],
+      'appointment_attribute'
+    );
+    const archivedOnly = helpers.generateManagedCustomAttributeTypes(
+      [{ ...appointmentFieldDefinitions[1], active: false }],
+      'appointment_attribute'
+    );
+
+    expect(
+      offered(
+        helpers.getVisibleConditionAttributes(
+          [{ key: 'status' }, header, ...fields],
+          []
+        )
+      )
+    ).toEqual(['status', 'appointment_custom_attribute', 'visit_reason']);
+    expect(
+      offered(
+        helpers.getVisibleConditionAttributes(
+          [{ key: 'status' }, header, ...archivedOnly],
+          []
+        )
+      )
+    ).toEqual(['status']);
+    expect(
+      offered(
+        helpers.getVisibleConditionAttributes(
+          [{ key: 'status' }, header, ...archivedOnly],
+          [{ attribute_key: 'visit_tags' }]
+        )
+      )
+    ).toEqual(['status', 'appointment_custom_attribute', 'visit_tags']);
   });
 });
 
@@ -692,6 +806,24 @@ describe('getConditionOptions', () => {
         type: 'starts_at_weekday',
       })
     ).toEqual(appointmentWeekdayOptions);
+  });
+
+  it('returns the cabinet options for every appointment event', () => {
+    const appointmentCabinetOptions = [
+      { id: '501', name: 'Терапевт · 1' },
+      { id: '502', name: 'Процедурный' },
+    ];
+
+    APPOINTMENT_EVENTS.forEach(eventName => {
+      expect(
+        helpers.getConditionOptions({
+          appointmentCabinetOptions,
+          customAttributes,
+          eventName,
+          type: 'medelement_cabinet_code',
+        })
+      ).toEqual(appointmentCabinetOptions);
+    });
   });
 
   it('returns managed appointment field options when the event is appointment-based', () => {
@@ -1003,6 +1135,53 @@ describe('generateManagedCustomAttributeTypes', () => {
         customAttributeType: 'task_attribute',
       },
     ]);
+  });
+
+  it('flags archived field definitions as legacy-only because the backend rejects them', () => {
+    const [active, archived, untouched] =
+      helpers.generateManagedCustomAttributeTypes(
+        [
+          { ...appointmentFieldDefinitions[0], active: true },
+          { ...appointmentFieldDefinitions[1], active: false },
+          appointmentFieldDefinitions[3],
+        ],
+        'appointment_attribute'
+      );
+
+    expect(active).not.toHaveProperty('legacyOnly');
+    expect(archived).toMatchObject({
+      key: 'visit_tags',
+      inputType: 'multi_select',
+      legacyOnly: true,
+    });
+    expect(untouched).not.toHaveProperty('legacyOnly');
+  });
+
+  it('offers appointment custom fields with inputs that match their type', () => {
+    const types = helpers.generateManagedCustomAttributeTypes(
+      [
+        { key: 'a_text', label: 'A', fieldType: 'text' },
+        { key: 'a_number', label: 'B', fieldType: 'number' },
+        { key: 'a_date', label: 'C', fieldType: 'date' },
+        { key: 'a_datetime', label: 'D', fieldType: 'datetime' },
+        { key: 'a_flag', label: 'E', fieldType: 'checkbox' },
+        { key: 'a_select', label: 'F', fieldType: 'select' },
+        { key: 'a_multi', label: 'G', fieldType: 'multiselect' },
+      ],
+      'appointment_attribute'
+    );
+
+    expect(
+      Object.fromEntries(types.map(type => [type.key, type.inputType]))
+    ).toEqual({
+      a_text: 'plain_text',
+      a_number: 'plain_text',
+      a_date: 'date',
+      a_datetime: 'datetime',
+      a_flag: 'search_select',
+      a_select: 'search_select',
+      a_multi: 'multi_select',
+    });
   });
 });
 

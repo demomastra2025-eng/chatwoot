@@ -165,6 +165,94 @@ RSpec.describe AutomationRules::AppointmentConditionService do
     expect(described_class.new(rule, appointment).perform).to be(true)
   end
 
+  describe 'cabinet conditions' do
+    before do
+      appointment.resource.update!(
+        custom_attributes: {
+          'medelement_cabinets' => [
+            { 'companyCabinetCode' => '501', 'cabinetName' => 'Кабинет 1' },
+            { 'companyCabinetCode' => '502', 'cabinetName' => 'Кабинет 2' }
+          ]
+        }
+      )
+      appointment.update!(custom_attributes: { 'medelement_cabinet_code' => '501' })
+    end
+
+    def cabinet_rule(operator, values, query_operator: nil)
+      create(
+        :automation_rule,
+        account: account,
+        event_name: 'appointment_updated',
+        conditions: [{ attribute_key: 'medelement_cabinet_code', filter_operator: operator, values: values, query_operator: query_operator }],
+        actions: [{ action_name: 'send_webhook_event', action_params: ['https://example.com/hooks/appointments'] }]
+      )
+    end
+
+    def perform(rule)
+      described_class.new(rule, appointment).perform
+    end
+
+    it 'matches the cabinet code stored on the appointment' do
+      expect(perform(cabinet_rule('equal_to', ['501']))).to be(true)
+      expect(perform(cabinet_rule('equal_to', ['502']))).to be(false)
+      expect(perform(cabinet_rule('equal_to', %w[502 501]))).to be(true)
+    end
+
+    it 'negates the match with not_equal_to' do
+      expect(perform(cabinet_rule('not_equal_to', ['501']))).to be(false)
+      expect(perform(cabinet_rule('not_equal_to', ['502']))).to be(true)
+      expect(perform(cabinet_rule('not_equal_to', %w[502 501]))).to be(false)
+    end
+
+    it 'treats an appointment without a cabinet as outside every selected cabinet' do
+      rule = cabinet_rule('equal_to', ['501'])
+      negated = cabinet_rule('not_equal_to', ['501'])
+
+      [{}, { 'medelement_cabinet_code' => nil }, { 'medelement_cabinet_code' => '  ' }].each do |attributes|
+        appointment.update!(custom_attributes: attributes)
+
+        expect(perform(rule)).to be(false)
+        expect(perform(negated)).to be(true)
+      end
+    end
+
+    it 'compares codes as trimmed strings' do
+      appointment.update!(custom_attributes: { 'medelement_cabinet_code' => 501 })
+
+      expect(perform(cabinet_rule('equal_to', ['501']))).to be(true)
+
+      appointment.update!(custom_attributes: { 'medelement_cabinet_code' => ' 501 ' })
+
+      expect(perform(cabinet_rule('equal_to', [501]))).to be(true)
+    end
+
+    it 'never matches without selected cabinets or with an unsupported operator' do
+      rule = cabinet_rule('equal_to', ['501'])
+      rule.conditions = [{ attribute_key: 'medelement_cabinet_code', filter_operator: 'equal_to', values: [], query_operator: nil }]
+
+      expect(perform(rule)).to be(false)
+
+      rule.conditions = [{ attribute_key: 'medelement_cabinet_code', filter_operator: 'contains', values: ['501'], query_operator: nil }]
+
+      expect(perform(rule)).to be(false)
+    end
+
+    it 'combines with other conditions through AND and OR groups' do
+      starts_at = Time.iso8601('2026-08-23T20:30:00Z')
+      appointment.update!(starts_at: starts_at, ends_at: starts_at + 30.minutes)
+      rule = cabinet_rule('equal_to', ['501'], query_operator: 'AND')
+      rule.conditions = rule.conditions + [
+        { attribute_key: 'starts_at_weekday', filter_operator: 'equal_to', values: ['3'], query_operator: nil }
+      ]
+
+      expect(perform(rule)).to be(false)
+
+      rule.conditions.first['query_operator'] = 'OR'
+
+      expect(perform(rule)).to be(true)
+    end
+  end
+
   it 'returns false for unsupported operators' do
     rule = build(
       :automation_rule,

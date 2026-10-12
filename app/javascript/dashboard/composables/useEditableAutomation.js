@@ -14,7 +14,10 @@ export function useEditableAutomation() {
   const isStageReference = (eventName, type) =>
     eventName?.startsWith('deal_') && type === 'stage_id';
 
-  const buildLegacyStageOptions = (selectedIds, dropdownValues) => {
+  const isCabinetReference = (eventName, type) =>
+    eventName?.startsWith('appointment_') && type === 'medelement_cabinet_code';
+
+  const buildLegacyOptions = (selectedIds, dropdownValues, buildName) => {
     const activeIds = new Set(dropdownValues.map(item => String(item.id)));
 
     return selectedIds
@@ -22,27 +25,41 @@ export function useEditableAutomation() {
       .map(id => ({
         id,
         legacy: true,
-        name: `Archived stage #${id}`,
+        name: buildName(id),
       }));
   };
 
+  // A cabinet can disappear from the catalog after a rule picked it: keep it
+  // selected (by its code) instead of silently dropping it on the next save.
   const hydrateDropdownValues = ({
     selectedIds,
     dropdownValues,
     legacyStage,
+    legacyCabinet,
   }) => {
     const hydratedValues = dropdownValues.filter(item =>
       selectedIds.map(String).includes(String(item.id))
     );
 
-    if (!legacyStage) {
-      return hydratedValues;
+    if (legacyStage) {
+      return [
+        ...hydratedValues,
+        ...buildLegacyOptions(
+          selectedIds,
+          dropdownValues,
+          id => `Archived stage #${id}`
+        ),
+      ];
     }
 
-    return [
-      ...hydratedValues,
-      ...buildLegacyStageOptions(selectedIds, dropdownValues),
-    ];
+    if (legacyCabinet) {
+      return [
+        ...hydratedValues,
+        ...buildLegacyOptions(selectedIds, dropdownValues, id => `№ ${id}`),
+      ];
+    }
+
+    return hydratedValues;
   };
 
   /**
@@ -103,6 +120,10 @@ export function useEditableAutomation() {
           selectedIds: [...condition.values],
           dropdownValues,
           legacyStage: isStageReference(
+            automation.event_name,
+            condition.attribute_key
+          ),
+          legacyCabinet: isCabinetReference(
             automation.event_name,
             condition.attribute_key
           ),

@@ -1,5 +1,6 @@
 class AutomationRules::AppointmentDerivedConditionService
-  FIELD_KEYS = %w[starts_at_weekday starts_at_time service_id].freeze
+  CABINET_CODE_KEY = AutomationRules::AppointmentFieldCatalog::CABINET_CODE_KEY
+  FIELD_KEYS = ['starts_at_weekday', 'starts_at_time', 'service_id', CABINET_CODE_KEY].freeze
 
   def initialize(rule, appointment)
     @rule = rule
@@ -14,6 +15,8 @@ class AutomationRules::AppointmentDerivedConditionService
       evaluate_time(condition, operator)
     when 'service_id'
       evaluate_service(condition, operator)
+    when CABINET_CODE_KEY
+      evaluate_cabinet(condition, operator)
     else
       false
     end
@@ -26,6 +29,16 @@ class AutomationRules::AppointmentDerivedConditionService
   private
 
   attr_reader :appointment, :rule
+
+  def evaluate_cabinet(condition, operator)
+    expected_codes = normalize_values(condition['values'])
+    return false if expected_codes.blank?
+
+    cabinet_code = appointment.custom_attributes.to_h[CABINET_CODE_KEY].to_s.strip
+    matches = cabinet_code.present? && expected_codes.include?(cabinet_code)
+
+    { 'equal_to' => matches, 'not_equal_to' => !matches }.fetch(operator, false)
+  end
 
   def evaluate_service(condition, operator)
     expected_ids = normalize_values(condition['values'])

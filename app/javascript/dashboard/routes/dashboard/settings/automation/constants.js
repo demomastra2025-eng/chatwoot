@@ -53,6 +53,14 @@ const APPOINTMENT_AUTOMATION_CONDITIONS = [
     inputType: 'search_select',
     filterOperators: SERVICE_SET_OPERATOR_TYPES,
   },
+  {
+    key: 'medelement_cabinet_code',
+    name: 'APPOINTMENT_CABINET',
+    inputType: 'multi_select',
+    filterOperators: OPERATOR_TYPES_1,
+    searchable: true,
+    hideWhenNoOptions: true,
+  },
 ];
 
 const APPOINTMENT_AUTOMATION_ACTIONS = [

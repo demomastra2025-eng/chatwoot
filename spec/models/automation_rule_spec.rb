@@ -526,6 +526,107 @@ RSpec.describe AutomationRule do
       end
     end
 
+    context 'with the appointment cabinet condition' do
+      let(:webhook_action) { { action_name: :send_webhook_event, action_params: ['https://example.com/hooks/appointments'] } }
+
+      def cabinet_condition(values, operator: 'equal_to')
+        { attribute_key: 'medelement_cabinet_code', filter_operator: operator, values: values, query_operator: nil }
+      end
+
+      before do
+        account.enable_features!('scheduling')
+        create(
+          :scheduling_resource,
+          account: account,
+          custom_attributes: { 'medelement_cabinets' => [{ 'companyCabinetCode' => '501', 'cabinetName' => 'Кабинет 1' },
+                                                         { 'companyCabinetCode' => '502', 'cabinetName' => 'Кабинет 2' }] }
+        )
+        params[:event_name] = 'appointment_created'
+        params[:actions] = [webhook_action]
+      end
+
+      it 'allows known cabinet codes with equality operators' do
+        operators = %w[equal_to not_equal_to]
+
+        aggregate_failures do
+          [%w[501], %w[501 502], [501]].each do |values|
+            operators.each do |operator|
+              params[:conditions] = [cabinet_condition(values, operator: operator)]
+
+              expect(FactoryBot.build(:automation_rule, params)).to be_valid
+            end
+          end
+        end
+      end
+
+      it 'rejects unknown, empty, nested and oversized cabinet values' do
+        aggregate_failures do
+          [[], [''], ['   '], ['999'], %w[501 999], [%w[501]], [{ 'code' => '501' }], [nil], ['5' * 129]].each do |values|
+            params[:conditions] = [cabinet_condition(values)]
+
+            rule = FactoryBot.build(:automation_rule, params)
+
+            expect(rule).not_to be_valid
+            expect(rule.errors[:conditions]).to include('Automation condition values medelement_cabinet_code not supported.')
+          end
+        end
+      end
+
+      it 'rejects operators the cabinet condition does not support' do
+        params[:conditions] = [cabinet_condition(['501'], operator: 'is_present')]
+
+        rule = FactoryBot.build(:automation_rule, params)
+
+        expect(rule).not_to be_valid
+        expect(rule.errors[:conditions]).to include('Automation condition operators medelement_cabinet_code:is_present not supported.')
+      end
+
+      it 'accepts a cabinet that only appointments still carry' do
+        archived = create(:scheduling_resource, account: account, active: false)
+        create(:scheduling_appointment, account: account, resource: archived, custom_attributes: { 'medelement_cabinet_code' => '777' })
+        params[:conditions] = [cabinet_condition(['777'])]
+
+        expect(FactoryBot.build(:automation_rule, params)).to be_valid
+      end
+
+      it 'is not offered for other event families' do
+        params[:event_name] = 'conversation_created'
+        params[:conditions] = [cabinet_condition(['501'])]
+        params[:actions] = [{ action_name: :send_message, action_params: ['Hello'] }]
+
+        rule = FactoryBot.build(:automation_rule, params)
+
+        expect(rule).not_to be_valid
+        expect(rule.errors[:conditions]).to include('Automation conditions medelement_cabinet_code not supported.')
+      end
+
+      it 'keeps a saved rule valid when its cabinet later leaves the catalog, until its conditions change' do
+        params[:conditions] = [cabinet_condition(['501'])]
+        rule = create(:automation_rule, params)
+        account.scheduling_resources.find_each { |resource| resource.update!(active: false) }
+
+        expect(rule.reload.update(active: false)).to be(true)
+
+        rule.conditions = [cabinet_condition(%w[501 502])]
+        expect(rule).not_to be_valid
+      end
+
+      it 'does not clash with an appointment custom field' do
+        create(:crm_field_definition, account: account, entity_kind: 'appointment', key: 'visit_reason', label: 'Visit reason', field_type: 'text')
+        params[:conditions] = [
+          cabinet_condition(['501']).merge(query_operator: 'AND'),
+          { attribute_key: 'visit_reason', filter_operator: 'equal_to', values: ['checkup'], query_operator: nil,
+            custom_attribute_type: 'appointment_attribute' }
+        ]
+
+        expect(FactoryBot.build(:automation_rule, params)).to be_valid
+      end
+
+      it 'lists the cabinet condition among the supported appointment conditions' do
+        expect(described_class::APPOINTMENT_CONDITION_ATTRIBUTES).to include('medelement_cabinet_code')
+      end
+    end
+
     it 'allows appointment automation rules with native status change action' do
       account.enable_features!('scheduling')
       params[:event_name] = 'appointment_created'

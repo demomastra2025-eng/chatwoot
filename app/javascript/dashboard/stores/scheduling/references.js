@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia';
+import SchedulingCabinetsAPI from 'dashboard/api/scheduling/cabinets';
 import SchedulingExceptionsAPI from 'dashboard/api/scheduling/exceptions';
 import SchedulingResourcesAPI from 'dashboard/api/scheduling/resources';
 import SchedulingServicesAPI from 'dashboard/api/scheduling/services';
@@ -16,12 +17,14 @@ export const useSchedulingReferencesStore = defineStore(
   {
     state: () => ({
       breakRulesByResource: {},
+      cabinets: [],
       holidays: [],
       resources: [],
       services: [],
       timeOffs: [],
       ui: {
         error: null,
+        isLoadingCabinets: false,
         isLoadingExceptions: false,
         isLoadingResources: false,
         isLoadingServices: false,
@@ -186,6 +189,22 @@ export const useSchedulingReferencesStore = defineStore(
           throw error;
         } finally {
           this.ui.isLoadingServices = false;
+        }
+      },
+
+      async loadCabinets(params = {}) {
+        this.ui.isLoadingCabinets = true;
+        this.ui.error = null;
+
+        try {
+          const { data } = await SchedulingCabinetsAPI.get(params);
+          this.cabinets = normalizePayload(data);
+          return this.cabinets;
+        } catch (error) {
+          this.ui.error = extractSchedulingError(error);
+          throw error;
+        } finally {
+          this.ui.isLoadingCabinets = false;
         }
       },
 

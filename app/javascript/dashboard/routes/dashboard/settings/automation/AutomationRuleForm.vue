@@ -170,7 +170,8 @@ const filterTypes = computed(() => {
 
   const attributes = getVisibleConditionAttributes(
     getTranslatedAttributes(props.automationTypes, event),
-    automation.value?.conditions
+    automation.value?.conditions,
+    attr => props.getConditionDropdownValues(attr.key, event)
   );
 
   return attributes.map(attr => {
@@ -201,6 +202,7 @@ const filterTypes = computed(() => {
       label: attr.name,
       inputType: mappedInputType,
       options,
+      searchable: Boolean(attr.searchable),
       filterOperators,
       dataType: 'text',
       attributeModel: attr.customAttributeType || 'standard',

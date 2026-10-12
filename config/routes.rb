@@ -217,6 +217,7 @@ Rails.application.routes.draw do
               post :patients, action: :create_patient, on: :member
             end
             resources :services, only: [:index, :show, :create, :update, :destroy]
+            resources :cabinets, only: [:index]
             resources :appointments, only: [:index, :show, :create, :update, :destroy] do
               post :cancel, on: :member
               post :conversation, action: :create_conversation, on: :member

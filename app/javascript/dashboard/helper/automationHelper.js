@@ -168,6 +168,9 @@ export const generateManagedCustomAttributeTypes = (
     inputType: getManagedFieldInputType(fieldDefinition.fieldType),
     filterOperators: getManagedFieldOperatorTypes(fieldDefinition.fieldType),
     customAttributeType: type,
+    // The backend only accepts active fields: an archived one is offered
+    // just to the rules that already use it.
+    ...(fieldDefinition.active === false ? { legacyOnly: true } : {}),
   }));
 };
 
@@ -193,6 +196,7 @@ const getManagedFieldDefinitionsForEvent = (
 };
 
 const getManagedConditionFilterMaps = ({
+  appointmentCabinetOptions,
   appointmentPaymentStatusOptions,
   appointmentSourceOptions,
   appointmentServiceOptions,
@@ -214,6 +218,7 @@ const getManagedConditionFilterMaps = ({
     source: appointmentSourceOptions,
     starts_at_weekday: appointmentWeekdayOptions,
     service_id: appointmentServiceOptions,
+    medelement_cabinet_code: appointmentCabinetOptions,
   },
   deal: {
     pipeline_id: crmPipelineOptions,
@@ -280,6 +285,7 @@ export const getActionOptions = ({
 
 export const getConditionOptions = ({
   agents,
+  appointmentCabinetOptions,
   appointmentFieldDefinitions,
   appointmentPaymentStatusOptions,
   appointmentSourceOptions,
@@ -341,6 +347,7 @@ export const getConditionOptions = ({
   }
 
   const managedConditionFilterMaps = getManagedConditionFilterMaps({
+    appointmentCabinetOptions,
     appointmentPaymentStatusOptions,
     appointmentSourceOptions,
     appointmentServiceOptions,
@@ -504,19 +511,39 @@ export const getAttributes = (automationTypes, key) => {
 };
 
 /**
- * Drop legacy-only conditions from the picker unless the rule being edited
- * already uses them (the backend still evaluates those conditions).
+ * Drop conditions that make no sense in the picker unless the rule being edited
+ * already uses them (the backend still evaluates those conditions):
+ * - legacy-only conditions;
+ * - conditions flagged `hideWhenNoOptions` while they have nothing to choose from
+ *   (for example "Cabinet" on an account without MedElement cabinets).
  * @param {Array} attributes - Condition definitions of an event.
  * @param {Array} conditions - Conditions of the automation being edited.
+ * @param {Function} [getOptions] - Returns the dropdown options of a condition definition.
  * @returns {Array} The conditions the editor should offer.
  */
-export const getVisibleConditionAttributes = (attributes, conditions = []) => {
+export const getVisibleConditionAttributes = (
+  attributes,
+  conditions = [],
+  getOptions = null
+) => {
   const usedKeys = new Set(
     (conditions || []).map(condition => condition.attribute_key)
   );
-  return attributes.filter(
-    attribute => !attribute.legacyOnly || usedKeys.has(attribute.key)
-  );
+  const visible = attributes.filter(attribute => {
+    if (usedKeys.has(attribute.key)) return true;
+    if (attribute.legacyOnly) return false;
+    if (attribute.hideWhenNoOptions && getOptions) {
+      return (getOptions(attribute) || []).length > 0;
+    }
+    return true;
+  });
+
+  // A section header is pointless when every field below it was dropped.
+  return visible.filter((attribute, index) => {
+    if (!attribute.disabled) return true;
+    const next = visible[index + 1];
+    return Boolean(next) && !next.disabled;
+  });
 };
 
 /**

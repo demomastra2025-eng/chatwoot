@@ -116,7 +116,7 @@ class AutomationRule < ApplicationRecord
     mail_subject phone_number priority conversation_language labels private_note
   ].freeze
   APPOINTMENT_CONDITION_ATTRIBUTES = %w[
-    status payment_status appointment_type source starts_at_weekday starts_at_time service_id
+    status payment_status appointment_type source starts_at_weekday starts_at_time service_id medelement_cabinet_code
   ].freeze
 
   include Rails.application.routes.url_helpers
@@ -286,16 +286,26 @@ class AutomationRule < ApplicationRecord
     return if conditions.blank?
 
     unsupported_conditions = conditions.filter_map do |condition|
-      key = condition['attribute_key'].to_s
-      next unless appointment_condition_catalog.standard_field?(key)
-      next if appointment_condition_catalog.values_supported?(key, condition['values'])
-
-      key
+      condition['attribute_key'].to_s unless appointment_condition_value_supported?(condition)
     end
 
     return if unsupported_conditions.blank?
 
     errors.add(:conditions, "Automation condition values #{unsupported_conditions.uniq.join(',')} not supported.")
+  end
+
+  def appointment_condition_value_supported?(condition)
+    key = condition['attribute_key'].to_s
+    return true unless appointment_condition_catalog.standard_field?(key)
+    return true if stored_cabinet_condition?(key)
+
+    appointment_condition_catalog.values_supported?(key, condition['values'])
+  end
+
+  # MedElement can drop a cabinet from the catalog after a rule picked it: such a rule still has to
+  # save (for example when it is switched off), only newly submitted cabinets are checked.
+  def stored_cabinet_condition?(key)
+    key == AutomationRules::AppointmentFieldCatalog::CABINET_CODE_KEY && persisted? && !will_save_change_to_conditions?
   end
 
   def crm_condition_operators_supported

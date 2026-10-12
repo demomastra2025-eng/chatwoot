@@ -330,6 +330,14 @@ export function useAutomation(startValue = null) {
     }
   };
 
+  const loadAppointmentCabinets = async () => {
+    try {
+      return await schedulingReferencesStore.loadCabinets();
+    } catch (_error) {
+      return schedulingReferencesStore.cabinets || [];
+    }
+  };
+
   const loadAutomationReferences = async eventNameToLoad => {
     const jobs = [];
 
@@ -339,6 +347,7 @@ export function useAutomation(startValue = null) {
     ) {
       jobs.push(loadFieldDefinitions('appointment'));
       jobs.push(loadAppointmentServices());
+      jobs.push(loadAppointmentCabinets());
     }
 
     if (isCrmDealsEnabled.value || eventNameToLoad?.startsWith('deal_')) {

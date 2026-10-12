@@ -1,6 +1,7 @@
 <script setup>
-import { defineModel, computed } from 'vue';
+import { defineModel, computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { picoSearch } from '@scmmishra/pico-search';
 import Icon from 'next/icon/Icon.vue';
 import Button from 'next/button/Button.vue';
 import DropdownContainer from 'next/dropdown-menu/base/DropdownContainer.vue';
@@ -12,6 +13,11 @@ const { options, maxChips, dropdownMaxHeight, dropdownPosition } = defineProps({
   options: {
     type: Array,
     required: true,
+  },
+  // Adds a search box above the options (long lists such as cabinets).
+  searchable: {
+    type: Boolean,
+    default: false,
   },
   maxChips: {
     type: Number,
@@ -32,6 +38,11 @@ const selected = defineModel({
   type: [Array, String],
   required: true,
 });
+
+const searchTerm = ref('');
+const visibleOptions = computed(() =>
+  searchTerm.value ? picoSearch(options, searchTerm.value, ['name']) : options
+);
 
 const hasItems = computed(() => {
   if (!selected.value) return false;
@@ -109,7 +120,8 @@ const toggleOption = option => {
       >
         <div
           v-for="item in selectedVisibleItems"
-          :key="item.name"
+          :key="item.id ?? item.name"
+          v-tooltip.top="item.name"
           class="px-3 border-r rtl:border-l rtl:border-r-0 border-n-weak text-n-slate-12 text-sm flex gap-2 items-center max-w-[100px]"
         >
           <Icon v-if="item.icon" :icon="item.icon" class="flex-shrink-0" />
@@ -136,9 +148,21 @@ const toggleOption = option => {
       </Button>
     </template>
     <DropdownBody class="min-w-56 z-[1200]" strong>
+      <div v-if="searchable" class="relative">
+        <Icon
+          class="absolute size-4 top-2 ltr:right-2 rtl:left-2"
+          icon="i-lucide-search"
+        />
+        <input
+          v-model="searchTerm"
+          autofocus
+          class="w-full rounded-lg bg-n-alpha-1 p-1.5 text-n-slate-11 ltr:pl-3 rtl:pr-3 ltr:pr-8 rtl:pl-8"
+          :placeholder="t('COMBOBOX.SEARCH_PLACEHOLDER')"
+        />
+      </div>
       <DropdownSection :height="dropdownMaxHeight">
         <DropdownItem
-          v-for="option in options"
+          v-for="option in visibleOptions"
           :key="option.id"
           :icon="option.icon"
           preserve-open
@@ -152,6 +176,9 @@ const toggleOption = option => {
               class="bg-n-blue-text pointer-events-none"
             />
           </template>
+        </DropdownItem>
+        <DropdownItem v-if="searchTerm && !visibleOptions.length" disabled>
+          {{ t('COMBOBOX.EMPTY_SEARCH_RESULTS', { searchTerm: searchTerm }) }}
         </DropdownItem>
       </DropdownSection>
     </DropdownBody>

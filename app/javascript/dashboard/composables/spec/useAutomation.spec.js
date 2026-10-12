@@ -61,6 +61,12 @@ describe('useAutomation', () => {
     schedulingReferencesStore.loadServices = vi
       .fn()
       .mockResolvedValue(schedulingReferencesStore.services);
+    schedulingReferencesStore.cabinets = [
+      { code: '501', name: 'Терапевт', number: '1', type: null },
+    ];
+    schedulingReferencesStore.loadCabinets = vi
+      .fn()
+      .mockResolvedValue(schedulingReferencesStore.cabinets);
 
     useStoreGetters.mockReturnValue({
       'attributes/getAttributes': { value: customAttributes },
@@ -110,6 +116,8 @@ describe('useAutomation', () => {
             return options.appointmentWeekdayOptions;
           case 'service_id':
             return options.appointmentServiceOptions;
+          case 'medelement_cabinet_code':
+            return options.appointmentCabinetOptions;
           default:
             return [];
         }
@@ -354,6 +362,7 @@ describe('useAutomation', () => {
       'starts_at_weekday',
       'starts_at_time',
       'service_id',
+      'medelement_cabinet_code',
       'appointment_custom_attribute',
       'visit_reason',
     ]);
@@ -397,6 +406,12 @@ describe('useAutomation', () => {
     expect(
       getConditionDropdownValues('service_id', 'appointment_created')
     ).toEqual([{ id: 7, name: 'Consultation' }]);
+    expect(
+      getConditionDropdownValues(
+        'medelement_cabinet_code',
+        'appointment_created'
+      )
+    ).toEqual([{ id: '501', name: 'Терапевт · 1' }]);
     expect(getConditionDropdownValues('team_id')).toEqual(teams);
     expect(getConditionDropdownValues('assignee_id')).toEqual(agents);
     expect(getConditionDropdownValues('contact')).toEqual(contacts);
@@ -494,5 +509,33 @@ describe('useAutomation', () => {
     expect(schedulingReferencesStore.loadServices).toHaveBeenCalledWith({
       include_inactive: true,
     });
+    expect(schedulingReferencesStore.loadCabinets).toHaveBeenCalled();
+  });
+
+  it('keeps the automation form usable when the cabinet list cannot be loaded', async () => {
+    const schedulingReferencesStore = useSchedulingReferencesStore();
+    schedulingReferencesStore.loadCabinets = vi
+      .fn()
+      .mockRejectedValue(new Error('403'));
+    const { loadAutomationReferences } = useAutomation();
+
+    await expect(
+      loadAutomationReferences('appointment_created')
+    ).resolves.toBeDefined();
+    expect(schedulingReferencesStore.loadCabinets).toHaveBeenCalled();
+  });
+
+  it('does not load cabinets for non-appointment events of an account without scheduling', async () => {
+    const schedulingReferencesStore = useSchedulingReferencesStore();
+    useStoreGetters.mockReturnValue({
+      'attributes/getAttributes': { value: customAttributes },
+      getCurrentAccountId: { value: 1 },
+      'accounts/isFeatureEnabledonAccount': { value: () => false },
+    });
+    const { loadAutomationReferences } = useAutomation();
+
+    await loadAutomationReferences('conversation_created');
+
+    expect(schedulingReferencesStore.loadCabinets).not.toHaveBeenCalled();
   });
 });

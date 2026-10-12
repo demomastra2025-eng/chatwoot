@@ -15,6 +15,7 @@ const EXPECTED_ATTRIBUTE_LABELS = {
     APPOINTMENT_START_WEEKDAY: 'День недели начала записи',
     APPOINTMENT_START_TIME: 'Время начала записи',
     APPOINTMENT_SERVICE: 'Услуга',
+    APPOINTMENT_CABINET: 'Кабинет',
   },
   kk: {
     APPOINTMENT_START_WEEKDAY: 'Жазба басталатын апта күні',

@@ -1,4 +1,6 @@
 class AutomationRules::AppointmentFieldCatalog
+  CABINET_CODE_KEY = 'medelement_cabinet_code'.freeze
+  CABINET_CODE_MAX_LENGTH = 128
   POSITIVE_INTEGER_PATTERN = /\A[1-9]\d*\z/
   TIME_OF_DAY_PATTERN = /\A(?:[01]\d|2[0-3]):[0-5]\d\z/
   WEEKDAY_VALUES = (0..6).map(&:to_s).freeze
@@ -41,6 +43,11 @@ class AutomationRules::AppointmentFieldCatalog
     'service_id' => {
       field_type: 'service',
       operators: %w[equal_to not_equal_to contains_only not_contains_only]
+    },
+    # The code MedElement stamps on an appointment; the prefix is reserved, so no custom field can shadow it.
+    CABINET_CODE_KEY => {
+      field_type: 'cabinet',
+      operators: %w[equal_to not_equal_to]
     }
   }.freeze
 
@@ -51,6 +58,13 @@ class AutomationRules::AppointmentFieldCatalog
   def self.normalize_service_id(value)
     return value if value.is_a?(Integer) && value.positive?
     return value.to_i if value.is_a?(String) && value.match?(POSITIVE_INTEGER_PATTERN)
+  end
+
+  def self.normalize_cabinet_code(value)
+    return unless value.is_a?(String) || value.is_a?(Integer)
+
+    code = value.to_s.strip
+    code if code.present? && code.length <= CABINET_CODE_MAX_LENGTH
   end
 
   def custom_definition_for(key)
@@ -102,11 +116,13 @@ class AutomationRules::AppointmentFieldCatalog
 
     case key.to_s
     when 'starts_at_weekday'
-      normalized_values.present? && normalized_values.all? { |value| value.to_s.in?(WEEKDAY_VALUES) }
+      weekday_values_supported?(normalized_values)
     when 'starts_at_time'
       normalized_values.one? && normalized_values.first.to_s.match?(TIME_OF_DAY_PATTERN)
     when 'service_id'
       service_values_supported?(normalized_values)
+    when CABINET_CODE_KEY
+      cabinet_values_supported?(normalized_values)
     else
       true
     end
@@ -126,6 +142,17 @@ class AutomationRules::AppointmentFieldCatalog
 
   def standard_definition_for(key)
     STANDARD_CONDITIONS[key.to_s]
+  end
+
+  def weekday_values_supported?(values)
+    values.present? && values.all? { |value| value.to_s.in?(WEEKDAY_VALUES) }
+  end
+
+  def cabinet_values_supported?(values)
+    codes = values.map { |value| self.class.normalize_cabinet_code(value) }
+    return false if codes.blank? || codes.any?(&:nil?)
+
+    Scheduling::CabinetCatalog.new(account: account).all_known?(codes)
   end
 
   def service_values_supported?(values)

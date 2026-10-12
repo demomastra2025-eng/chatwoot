@@ -25,6 +25,16 @@ const getConditionDropdownValues = vi.fn((type, eventName) => {
     return [{ id: 7, name: 'Consultation' }];
   }
 
+  if (
+    eventName === 'appointment_created' &&
+    type === 'medelement_cabinet_code'
+  ) {
+    return [
+      { id: '501', name: 'Терапевт · 1' },
+      { id: '502', name: 'Процедурный' },
+    ];
+  }
+
   if (eventName === 'deal_created' && type === 'stage_id') {
     return [{ id: 11, name: 'Sales / Qualified' }];
   }
@@ -203,6 +213,60 @@ describe('useEditableAutomation', () => {
         values: [{ id: 7, name: 'Consultation' }],
         query_operator: 'and',
       }),
+    ]);
+  });
+
+  it('shows the selected cabinets of a saved rule by name', () => {
+    const { formatAutomation } = useEditableAutomation();
+    const automation = {
+      event_name: 'appointment_created',
+      conditions: [
+        {
+          attribute_key: 'medelement_cabinet_code',
+          filter_operator: 'not_equal_to',
+          values: ['502', '501'],
+          query_operator: null,
+          custom_attribute_type: '',
+        },
+      ],
+      actions: [],
+    };
+
+    const formatted = formatAutomation(automation, [], AUTOMATIONS, []);
+
+    expect(formatted.conditions).toEqual([
+      {
+        attribute_key: 'medelement_cabinet_code',
+        filter_operator: 'not_equal_to',
+        values: [
+          { id: '501', name: 'Терапевт · 1' },
+          { id: '502', name: 'Процедурный' },
+        ],
+        query_operator: 'and',
+        custom_attribute_type: '',
+      },
+    ]);
+  });
+
+  it('keeps a saved cabinet that left the catalog selected instead of dropping it', () => {
+    const { formatAutomation } = useEditableAutomation();
+    const automation = {
+      event_name: 'appointment_updated',
+      conditions: [
+        {
+          attribute_key: 'medelement_cabinet_code',
+          filter_operator: 'equal_to',
+          values: ['777'],
+          query_operator: null,
+        },
+      ],
+      actions: [],
+    };
+
+    const formatted = formatAutomation(automation, [], AUTOMATIONS, []);
+
+    expect(formatted.conditions[0].values).toEqual([
+      { id: '777', legacy: true, name: '№ 777' },
     ]);
   });
 

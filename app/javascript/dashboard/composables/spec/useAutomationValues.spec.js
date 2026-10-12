@@ -2,6 +2,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { useMapGetter, useStoreGetters } from 'dashboard/composables/store';
 import { useI18n } from 'vue-i18n';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
+import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/references';
 import useAutomationValues from '../useAutomationValues';
 
 vi.mock('dashboard/composables/store');
@@ -39,6 +40,44 @@ describe('useAutomationValues', () => {
       id: 'captain',
       name: 'SCHEDULING.APPOINTMENT_SOURCE.captain',
     });
+  });
+
+  it('lists the account cabinets by name and number with the cabinet code as the value', () => {
+    const schedulingReferencesStore = useSchedulingReferencesStore();
+    schedulingReferencesStore.cabinets = [
+      { code: '501', name: 'Терапевт', number: '1', type: 'consulting' },
+      { code: '502', name: 'Процедурный', number: null, type: null },
+      { code: '503', name: null, number: '3', type: null },
+      { code: '504', name: null, number: null, type: null },
+    ];
+    const { appointmentCabinetOptions, getConditionDropdownValues } =
+      useAutomationValues();
+
+    const expected = [
+      { id: '501', name: 'Терапевт · 1' },
+      { id: '502', name: 'Процедурный' },
+      { id: '503', name: '3' },
+      { id: '504', name: '504' },
+    ];
+
+    expect(appointmentCabinetOptions.value).toEqual(expected);
+    expect(
+      getConditionDropdownValues(
+        'medelement_cabinet_code',
+        'appointment_created'
+      )
+    ).toEqual(expected);
+  });
+
+  it('offers no cabinets before they are loaded', () => {
+    const { getConditionDropdownValues } = useAutomationValues();
+
+    expect(
+      getConditionDropdownValues(
+        'medelement_cabinet_code',
+        'appointment_updated'
+      )
+    ).toEqual([]);
   });
 
   it('renders only active CRM stages from active pipelines in automation dropdowns', () => {

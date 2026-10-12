@@ -9,6 +9,7 @@ const {
   createHolidayMock,
   deleteServiceMock,
   getBreakRulesMock,
+  getCabinetsMock,
   getHolidaysMock,
   getResourcesMock,
   getServicesMock,
@@ -36,6 +37,7 @@ const {
   deleteTimeOffMock: vi.fn(),
   deleteWorkdayOverrideMock: vi.fn(),
   getBreakRulesMock: vi.fn(),
+  getCabinetsMock: vi.fn(),
   getHolidaysMock: vi.fn(),
   getResourcesMock: vi.fn(),
   getServicesMock: vi.fn(),
@@ -61,6 +63,12 @@ vi.mock('dashboard/api/scheduling/resources', () => ({
     update: updateResourceMock,
     updateBreakRules: updateBreakRulesMock,
     updateWorkRules: updateWorkRulesMock,
+  },
+}));
+
+vi.mock('dashboard/api/scheduling/cabinets', () => ({
+  default: {
+    get: getCabinetsMock,
   },
 }));
 
@@ -177,6 +185,48 @@ describe('useSchedulingReferencesStore', () => {
     expect(deleteServiceMock).toHaveBeenCalledWith(10);
     expect(store.services).toEqual([{ id: 20, name: 'Diagnostics' }]);
     expect(store.ui.error).toBe(null);
+  });
+
+  it('loads the account cabinets for dropdowns', async () => {
+    getCabinetsMock.mockResolvedValue({
+      data: {
+        payload: [
+          { code: '501', name: 'Терапевт', number: '1', type: 'consulting' },
+          { code: '502', name: 'Процедурный', number: null, type: null },
+        ],
+        meta: { count: 2 },
+      },
+    });
+    const store = useSchedulingReferencesStore();
+    store.ui.error = { code: 'GENERIC', message: 'stale' };
+
+    const cabinets = await store.loadCabinets();
+
+    expect(getCabinetsMock).toHaveBeenCalledWith({});
+    expect(cabinets).toEqual([
+      { code: '501', name: 'Терапевт', number: '1', type: 'consulting' },
+      { code: '502', name: 'Процедурный', number: null, type: null },
+    ]);
+    expect(store.cabinets).toEqual(cabinets);
+    expect(store.ui.isLoadingCabinets).toBe(false);
+    expect(store.ui.error).toBe(null);
+  });
+
+  it('records a cabinet load failure and keeps the loading flag consistent', async () => {
+    const error = {
+      response: { status: 403, data: { code: 'FEATURE_DISABLED' } },
+    };
+    getCabinetsMock.mockRejectedValue(error);
+    const store = useSchedulingReferencesStore();
+
+    await expect(store.loadCabinets()).rejects.toBe(error);
+
+    expect(store.cabinets).toEqual([]);
+    expect(store.ui.isLoadingCabinets).toBe(false);
+    expect(store.ui.error).toMatchObject({
+      code: 'FEATURE_DISABLED',
+      status: 403,
+    });
   });
 
   it('keeps a failed resource delete out of page-level load errors', async () => {
