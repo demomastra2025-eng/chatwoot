@@ -2,6 +2,8 @@ class Captain::Tools::Copilot::SearchSchedulingResourcesService < Captain::Tools
   NAME_DIFFERS_INSTRUCTION = 'The resource name differs from the request. Tell the patient the exact name of the specialist or room ' \
                              'and ask to confirm it; never book on a non-exact name.'.freeze
   SAME_NAME_INSTRUCTION = 'Several resources have exactly this name. Ask the patient which one is meant; never book on a guess.'.freeze
+  SINGLE_MATCH_INSTRUCTION = 'Exactly one specialist or room matches; you may book it when the customer asked to book, and name ' \
+                             'this exact specialist or room in your booking confirmation.'.freeze
 
   def self.name
     'search_scheduling_resources'
@@ -9,7 +11,10 @@ class Captain::Tools::Copilot::SearchSchedulingResourcesService < Captain::Tools
 
   description 'Search scheduling resources (specialists and diagnostic rooms) by name words in any order or by stored specialty; ' \
               'a service_id filter uses recorded price links, which are not clinical proof; page through results with offset'
-  param :query, type: :string, desc: 'Resource name or stored specialty query', required: false
+  param :query, type: :string,
+                desc: 'Resource name or stored specialty query. Write a surname and a specialty as a staff list does, not in the ' \
+                      'case of the customer\'s sentence: "Асланова", not "Аслановой"; "хирург", not "хирургу"',
+                required: false
   param :search_by, type: :string, desc: 'Search mode: name, specialty, or all', required: false
   param :service_id, type: :number, desc: 'Optional service ID to filter recorded active price links (not clinical eligibility)', required: false
   param :include_inactive, type: :boolean, desc: 'Whether to include inactive resources', required: false
@@ -43,7 +48,8 @@ class Captain::Tools::Copilot::SearchSchedulingResourcesService < Captain::Tools
   private
 
   def formatted_search_payload(result, filters)
-    status = search_status(result, filters)
+    sole = sole_match?(result, filters)
+    status = search_status(result, filters, sole)
     payload = {
       filters: filters,
       total_count: result[:total_count],
@@ -57,13 +63,14 @@ class Captain::Tools::Copilot::SearchSchedulingResourcesService < Captain::Tools
       link_status: link_status(status, filters[:service_id]),
       resources: result[:resources]
     }
-    payload[:instruction] = instruction_for(result) if status == 'ambiguous'
+    instruction = instruction_for(status, result, sole)
+    payload[:instruction] = instruction if instruction
     formatted_payload(payload)
   end
 
-  def search_status(result, filters)
+  def search_status(result, filters, sole)
     total_count = result[:total_count]
-    return matched_status(result, filters) if total_count.positive?
+    return matched_status(result, filters, sole) if total_count.positive?
     return 'no_recorded_link' if filters[:service_id].present? && filters[:query].blank?
     return 'no_match_with_recorded_link_filter' if filters[:service_id].present?
     return 'catalog_empty' if filters[:query].blank?
@@ -71,14 +78,33 @@ class Captain::Tools::Copilot::SearchSchedulingResourcesService < Captain::Tools
     'no_name_or_specialty_match'
   end
 
-  # candidate: exactly one resource whose name has exactly the words of the request; ambiguous: every other text match.
-  def matched_status(result, filters)
+  # Every text match holds all words of the request. candidate: the one active resource that matched (sole), or exactly one
+  # resource whose name has exactly the words of the request among several; ambiguous: every other text match.
+  def matched_status(result, filters, sole)
     return 'candidates' if filters[:query].blank?
+    return 'candidate' if sole || (result[:exact_name_matches] == 1 && !result[:exact_name_truncated])
 
-    result[:exact_name_matches] == 1 && !result[:exact_name_truncated] ? 'candidate' : 'ambiguous'
+    'ambiguous'
   end
 
-  def instruction_for(result)
+  # The only active resource that matched is a confident candidate even when its name is longer than the request: the
+  # customer is told its exact name in the booking confirmation. The search finds a word anywhere inside a name, so every word
+  # of the request must also stand as a whole word of the name (and of the specialty unless only names were searched),
+  # numbers in the same order: "Асланов" is not "Асланова", and "Кабинет 2" is not "Кабинет 12".
+  def sole_match?(result, filters)
+    row = result[:resources].first
+    return false unless filters[:query].present? && result[:total_count] == 1 && row && row[:active] == true
+    return false if Scheduling::SearchText.truncated?(filters[:query])
+
+    text = [row[:name], (row[:specialty] unless filters[:search_by] == 'name')].compact_blank.join(' ')
+    Scheduling::SearchText.request_covered?(Scheduling::SearchText.normalize(filters[:query]),
+                                            [Scheduling::SearchText.normalize(text, max_length: nil)])
+  end
+
+  def instruction_for(status, result, sole)
+    return SINGLE_MATCH_INSTRUCTION if status == 'candidate' && sole
+    return unless status == 'ambiguous'
+
     result[:exact_name_matches].to_i > 1 ? SAME_NAME_INSTRUCTION : NAME_DIFFERS_INSTRUCTION
   end
 

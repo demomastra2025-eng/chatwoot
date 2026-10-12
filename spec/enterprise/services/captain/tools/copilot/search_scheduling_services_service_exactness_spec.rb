@@ -1,7 +1,9 @@
 require 'rails_helper'
 
-# A service may be reported as the confident match (match_status "candidate") only when its name, or one of its aliases,
-# has exactly the words of the request. Every other text hit is offered with the instruction to confirm the exact name.
+# A service may be reported as the confident match (match_status "candidate") in two cases only: its name, or one of its
+# aliases, has exactly the words of the request, or it is the one active service found and its name holds every word of the
+# request as written, qualifiers and numbers in the same order (then the instruction says to name the exact service in the
+# booking confirmation). Every other text hit is offered with the instruction to confirm the exact name.
 # All data is synthetic.
 RSpec.describe Captain::Tools::Copilot::SearchSchedulingServicesService do
   let(:account) { create(:account) }
@@ -41,6 +43,8 @@ RSpec.describe Captain::Tools::Copilot::SearchSchedulingServicesService do
       ['Гепатит II', 'Гепатит I'],
       ['Витамин D', 'Витамин D3'],
       ['Витамин D3', 'Витамин D'],
+      ['Анализ натощак', 'Анализ не натощак'],
+      ['Анализ не натощак', 'Анализ натощак'],
       ['МРТ головного мозга сосудов шеи и позвоночника расширенная без контраста',
        'МРТ головного мозга сосудов шеи и позвоночника расширенная с контрастом']
     ].each do |query, sole_name|
@@ -72,15 +76,24 @@ RSpec.describe Captain::Tools::Copilot::SearchSchedulingServicesService do
       expect_name_confirmation(search(query: 'МРТ головного мозга нейровизуализация'))
     end
 
-    it 'does not report a longer name as the match for a shorter request, nor a shorter name for a longer one' do
-      create_service('УЗИ органов малого таза')
-
-      expect_name_confirmation(search(query: 'УЗИ малого таза'))
-
-      Scheduling::Service.delete_all
+    it 'does not report a shorter name as the match for a longer request' do
       create_service('УЗИ малого таза')
 
       expect_name_confirmation(search(query: 'УЗИ органов малого таза'))
+    end
+
+    it 'does not take another word form for the word of the request' do
+      create_service('МРТ кисты')
+
+      expect_name_confirmation(search(query: 'МРТ кисти'))
+    end
+
+    it 'keeps asking when a qualifier or a number of the request is missing in the only service found' do
+      create_service('Приём врача до 14 лет')
+
+      expect_name_confirmation(search(query: 'Приём врача после 14 лет'))
+      expect_name_confirmation(search(query: 'Приём врача для 14 лет'))
+      expect_name_confirmation(search(query: 'Приём врача до 18 лет'))
     end
 
     it 'keeps the answer unverified and still lists the service so that the model can name it to the patient' do
@@ -102,7 +115,7 @@ RSpec.describe Captain::Tools::Copilot::SearchSchedulingServicesService do
 
         expect(payload).to include('match_status' => 'candidate', 'exact_name_matches' => 1, 'ambiguous' => false)
         expect(payload['services'].pluck('id')).to eq([service.id])
-        expect(payload).not_to have_key('instruction')
+        expect(payload['instruction']).to eq(described_class::SINGLE_MATCH_INSTRUCTION)
       end
     end
 
@@ -151,6 +164,94 @@ RSpec.describe Captain::Tools::Copilot::SearchSchedulingServicesService do
       payload = search(query: long_name)
 
       expect(payload['match_status']).not_to eq('candidate')
+    end
+  end
+
+  describe 'the only service found' do
+    def expect_single_match(payload, service)
+      expect(payload).to include('match_status' => 'candidate', 'total_count' => 1, 'ambiguous' => false)
+      expect(payload['instruction']).to eq(described_class::SINGLE_MATCH_INSTRUCTION)
+      expect(payload['instruction']).to include('Exactly one service matches').and include('you may book it').and include('exact service')
+      expect(payload['services'].pluck('id')).to eq([service.id])
+    end
+
+    it 'is the confident candidate when its longer name holds every word of the request, and the name stays in the answer' do
+      service = create_service('УЗИ органов малого таза')
+
+      payload = search(query: 'УЗИ малого таза')
+
+      expect_single_match(payload, service)
+      expect(payload['exact_name_matches']).to eq(0)
+      expect(names_of(payload)).to eq(['УЗИ органов малого таза'])
+    end
+
+    it 'is the confident candidate for words that stand in an alias of the service' do
+      service = create_service('Исследование А', custom_attributes: { 'aliases' => ['Ультразвук почек и надпочечников'] })
+
+      expect_single_match(search(query: 'ультразвук почек'), service)
+    end
+
+    it 'is the confident candidate when the other services that fit the request are not active' do
+      service = create_service('УЗИ почек и надпочечников')
+      create_service('УЗИ почек и мочевого пузыря', active: false)
+
+      expect_single_match(search(query: 'УЗИ почек'), service)
+    end
+
+    it 'asks to confirm the name when several services fit the request' do
+      create_service('УЗИ почек и надпочечников')
+      create_service('УЗИ почек и мочевого пузыря')
+
+      payload = search(query: 'УЗИ почек')
+
+      expect(payload['total_count']).to eq(2)
+      expect_name_confirmation(payload)
+    end
+
+    it 'asks to confirm the name when the only service found is not active' do
+      create_service('УЗИ почек и надпочечников', active: false)
+
+      expect_name_confirmation(search(query: 'УЗИ почек', include_inactive: true))
+    end
+
+    it 'asks to confirm the name when only some words of the request match' do
+      create_service('УЗИ почек')
+
+      payload = search(query: 'УЗИ почек и печени')
+
+      expect(payload['match_status']).to eq('partial_candidates')
+      expect_name_confirmation(payload)
+    end
+
+    it 'asks to confirm the name when the request has more words than the search reads' do
+      create_service('альфа бета гамма дельта эпсилон дзета эта тета йота каппа')
+
+      expect_name_confirmation(search(query: 'альфа бета гамма дельта эпсилон дзета эта тета йота'))
+    end
+
+    it 'asks to confirm the name when the request holds no word, only punctuation' do
+      create_service('МРТ - голова')
+
+      expect_name_confirmation(search(query: '-'))
+    end
+
+    it 'is still the confident candidate when the longer name adds a negated word that the request does not mention' do
+      service = create_service('МРТ без контраста')
+
+      expect_single_match(search(query: 'МРТ'), service)
+    end
+
+    it 'asks the model to write the words of the query as a catalog title does' do
+      expect(described_class.parameters[:query].description).to include('catalog title').and include('консультация терапевта')
+    end
+
+    it 'adds no instruction to a plain listing of one service' do
+      create_service('УЗИ почек')
+
+      payload = search
+
+      expect(payload).to include('match_status' => 'catalog_listing', 'total_count' => 1)
+      expect(payload).not_to have_key('instruction')
     end
   end
 

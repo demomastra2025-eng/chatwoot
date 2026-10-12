@@ -353,6 +353,8 @@ class Captain::Assistant::AgentRunnerService
   def publish_tool_omission_event(response, context)
     bound_tool_ids = Array(context&.dig(:captain_v2_bound_tool_ids)).map(&:to_s).reject(&:blank?).uniq
     bound_tool_ids.reject! { |tool_id| tool_id.start_with?(Captain::HandoffNaming::TOOL_PREFIX) }
+    # The planning tools are bound to every graph run; a plain reply that skips them is not a skipped business tool.
+    bound_tool_ids -= COORDINATION_TOOL_NAMES
     return if bound_tool_ids.blank? || completed_tool_names(context).any?
 
     reasoning = response['reasoning'].to_s.squish

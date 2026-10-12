@@ -55,8 +55,7 @@ RSpec.describe Captain::Runtime::Runner do
   let(:chat) { RunnerTaskFinalizationSpecChat.new }
   let(:chats) { { agent.name => chat } }
   let(:registry) { { agent.name => agent } }
-  # The message already has its accepted request plan: these examples cover task finalization only, and
-  # a graph run without a plan would otherwise be asked to call plan_request before it may reply.
+  # The message already has its accepted request plan: these examples cover task finalization only.
   let(:context) do
     {
       state: { assistant_id: 92 },
@@ -240,36 +239,130 @@ RSpec.describe Captain::Runtime::Runner do
     expect(reminders).to be_empty
   end
 
-  it 'asks a graph run without a request plan to plan once before replying, then reports the request as unfinished' do
-    context.delete(:part_plan_accepted)
-    context[:agent_tasks] = []
-    chat.respond_with(reply('Unplanned first draft'), reply('Unplanned second draft'))
-    expect_initial_ask
-    expect(Llm::Runtime).to receive(:complete).once.and_call_original
+  describe 'a graph run without a request plan' do
+    before do
+      context.delete(:part_plan_accepted)
+      context[:agent_tasks] = []
+    end
 
-    result = run_with
+    it 'answers a plain reply in one model call, without asking for a plan' do
+      chat.respond_with(reply('The clinic opens at nine.'))
+      expect_initial_ask
+      expect(Llm::Runtime).not_to receive(:complete)
 
-    expect(result).to be_success
-    expect(result.output).to eq(response: I18n.t('captain.coordination.unfinished', locale: :ru), reasoning: '')
-    expect(chat.requests).to eq(%i[ask complete])
-    expect(reminders.map(&:content)).to eq(['Call plan_request for this message before replying.'])
-    expect(result.messages.none? { |message| message[:role] == :assistant }).to be(true)
-  end
+      result = run_with
 
-  it 'does not ask for a request plan during a finalization-only continuation that exposes no tools' do
-    context.delete(:part_plan_accepted)
-    context[:agent_tasks] = []
-    context[:conversation_history] = [{ role: :user, content: input }]
-    chat.respond_with(reply('The verified result is ready.'))
-    expect(Llm::Runtime).not_to receive(:ask)
-    expect(Llm::Runtime).to receive(:complete).once.and_call_original
+      expect(result).to be_success
+      expect(result.output).to eq('The clinic opens at nine.')
+      expect(chat.requests).to eq([:ask])
+      expect(reminders).to be_empty
+      expect(result.context.slice(:part_plan, :part_plan_accepted)).to be_empty
+      expect(result.messages.map { |message| message[:content] }).to include('The clinic opens at nine.')
+    end
 
-    result = run_with(finalization_only: true, continue_from_history: true)
+    it 'answers after read-only tool calls without asking for a plan' do
+      chat.respond_with(lambda do |_current_context|
+        call_params = Captain::Runtime::HistoryRestorer.build_message_params(
+          role: :assistant, content: '',
+          tool_calls: [{ id: 'lookup_once', name: 'search_scheduling_services', arguments: { query: 'synthetic' } }]
+        )
+        chat.add_message(call_params)
+        chat.add_message(role: :tool, content: 'Exactly one service matches', tool_call_id: 'lookup_once')
+        reply('The synthetic service costs 5000.')
+      end)
+      expect_initial_ask
+      expect(Llm::Runtime).not_to receive(:complete)
 
-    expect(result).to be_success
-    expect(result.output).to eq('The verified result is ready.')
-    expect(chat.requests).to eq([:complete])
-    expect(reminders).to be_empty
+      result = run_with
+
+      expect(result).to be_success
+      expect(result.output).to eq('The synthetic service costs 5000.')
+      expect(chat.requests).to eq([:ask])
+      expect(reminders).to be_empty
+    end
+
+    describe 'with a proposed operation waiting for the customer' do
+      let(:pending_part) do
+        { 'id' => 'pending-part', 'state' => 'waiting_confirmation', 'fragment' => 'Book the synthetic scan',
+          'proposed_operation' => { 'type' => 'create_appointment', 'params' => { 'service_id' => 1 } } }
+      end
+
+      before { context[:parts] = [pending_part] }
+
+      it 'withholds a plain answer and asks for the plan that confirms or cancels the operation' do
+        chat.respond_with(reply('Booked.'), lambda do |current_context|
+          current_context[:part_plan_accepted] = true
+          reply('The synthetic scan is confirmed.')
+        end)
+        expect_initial_ask
+        expect(Llm::Runtime).to receive(:complete).once.and_call_original
+
+        result = run_with
+
+        expect(result).to be_success
+        expect(result.output).to eq('The synthetic scan is confirmed.')
+        expect(chat.requests).to eq(%i[ask complete])
+        expect(reminders.map(&:content)).to eq(['Call plan_request for this message before replying.'])
+        expect(result.messages.map { |message| message[:content] }).not_to include('Booked.')
+      end
+
+      it 'answers with the open requests when the model still gives no plan' do
+        chat.respond_with(reply('Booked.'), reply('Booked, really.'))
+        expect_initial_ask
+        expect(Llm::Runtime).to receive(:complete).once.and_call_original
+
+        result = run_with
+
+        expect(result.output[:response]).to start_with(I18n.t('captain.coordination.unfinished', locale: :ru))
+        expect(result.output[:response]).to include('Book the synthetic scan')
+        expect(result.messages.map { |message| message[:content] }).not_to include('Booked.', 'Booked, really.')
+      end
+
+      it 'does not ask again once the message is planned' do
+        context[:part_plan_accepted] = true
+        chat.respond_with(reply('Nothing to confirm yet.'))
+        expect_initial_ask
+        expect(Llm::Runtime).not_to receive(:complete)
+
+        expect(run_with.output).to eq('Nothing to confirm yet.')
+      end
+
+      it 'does not ask for a plan in a consultation, which cannot call plan_request' do
+        context[:consult_mode] = true
+        chat.respond_with(reply('Consultation fragment.'))
+        expect_initial_ask
+        expect(Llm::Runtime).not_to receive(:complete)
+
+        expect(run_with.output).to eq('Consultation fragment.')
+      end
+
+      it 'does not ask for a plan for a part that holds no proposed operation' do
+        context[:parts] = [pending_part.merge('state' => 'waiting_customer', 'proposed_operation' => nil)]
+        chat.respond_with(reply('The clinic opens at nine.'))
+        expect_initial_ask
+        expect(Llm::Runtime).not_to receive(:complete)
+
+        expect(run_with.output).to eq('The clinic opens at nine.')
+      end
+    end
+
+    it 'does not accept a plain reply right after a data-changing call was refused for lack of a plan' do
+      chat.respond_with(lambda do |current_context|
+        current_context[:part_plan_refused] = true
+        reply('I have booked you in.')
+      end, lambda do |current_context|
+        current_context[:part_plan_accepted] = true
+        reply('I could not book it yet; which day suits you?')
+      end)
+      expect_initial_ask
+      expect(Llm::Runtime).to receive(:complete).once.and_call_original
+
+      result = run_with
+
+      expect(result.output).to eq('I could not book it yet; which day suits you?')
+      expect(chat.requests).to eq(%i[ask complete])
+      expect(result.messages.map { |message| message[:content] }).not_to include('I have booked you in.')
+    end
   end
 
   it 'bounds noncompliance to two continuations and returns no final reply' do

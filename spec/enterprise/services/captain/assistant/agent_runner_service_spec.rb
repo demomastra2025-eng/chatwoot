@@ -479,6 +479,33 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       service.generate_response(message_history: message_history)
     end
 
+    describe 'the omission reason of a graph run' do
+      def omission_result(bound_tool_ids)
+        instance_double(
+          Captain::Runtime::Result,
+          output: { 'response' => 'The clinic opens at nine.', 'reasoning' => '' },
+          context: { current_agent: 'assistant_agent', captain_v2_bound_tool_ids: bound_tool_ids, captain_v2_completed_tool_names: [] },
+          error: nil
+        )
+      end
+
+      it 'is not recorded for a plain reply when only the planning tool was bound' do
+        allow(mock_runner).to receive(:run).and_return(omission_result(%w[plan_request manage_agent_tasks]))
+        allow(Llm::EventBus).to receive(:publish).and_call_original
+        expect(Llm::EventBus).not_to receive(:publish).with('tool.omitted', anything)
+
+        service.generate_response(message_history: message_history)
+      end
+
+      it 'is recorded without counting the planning tool when a business tool was bound and skipped' do
+        allow(mock_runner).to receive(:run).and_return(omission_result(%w[search_scheduling_services plan_request]))
+        allow(Llm::EventBus).to receive(:publish).and_call_original
+        expect(Llm::EventBus).to receive(:publish).with('tool.omitted', hash_including(available_tool_count: 1)).and_call_original
+
+        service.generate_response(message_history: message_history)
+      end
+    end
+
     it 'does not persist native provider reasoning from runtime history' do
       result = instance_double(
         Captain::Runtime::Result,

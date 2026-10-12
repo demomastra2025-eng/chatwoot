@@ -4,10 +4,25 @@ require 'rails_helper'
 # search which drops short words or merges partial overlaps would present the wrong service as the one clear match.
 # For every pair, with A and B named by the patient:
 # - both present: each name is the confident candidate for its own text;
-# - only the other one present: the text never produces a confident candidate. The other service may still be listed for
-#   confirmation.
+# - only the other one present: the text never produces an exact name match. The other service may still be listed for
+#   confirmation, and it is the confident candidate only as the sole match whose name holds every word of the text (the
+#   pairs where one name is the other plus words, see sole_matches), together with the instruction to name it exactly.
 # All data is synthetic.
 RSpec.describe Captain::Tools::Copilot::SearchSchedulingServicesService do
+  # text => the only service that may then be offered as the confident candidate
+  # ("Анализ натощак" is no sole match of "Анализ не натощак": a negation of a word of the text turns its meaning around)
+  sole_matches = {
+    'ЭКГ' => 'ЭКГ суточное мониторирование',
+    'УЗИ малого таза' => 'УЗИ органов малого таза',
+    'МРТ головного мозга' => 'МРТ головного мозга с ангиографией',
+    'УЗИ щитовидной железы' => 'УЗИ щитовидной железы с цветным картированием',
+    'Анализ крови' => 'Анализ крови биохимический',
+    'Консультация терапевта' => 'Консультация терапевта онлайн',
+    'Рентген' => 'Рентген черепа',
+    'Гепатит' => 'Гепатит В',
+    'МРТ ладони' => 'МРТ ладони и предплечья'
+  }.freeze
+
   pairs = [
     # with / without
     ['МРТ головного мозга с контрастом', 'МРТ головного мозга без контраста'],
@@ -134,15 +149,33 @@ RSpec.describe Captain::Tools::Copilot::SearchSchedulingServicesService do
     expect(pairs.flatten.uniq.size).to eq(pairs.flatten.size)
   end
 
-  it 'does not confidently offer another body part or a broader service for МРТ кисти' do
+  it 'takes the sole matches from the pairs of the corpus' do
+    sole_matches.each do |text, longer|
+      expect(pairs.any? { |pair| pair.sort == [text, longer].sort }).to be(true), "#{text.inspect} and #{longer.inspect} are no pair"
+    end
+  end
+
+  it 'does not confidently offer another body part or a broader service for МРТ кисти when several services fit' do
     create(:scheduling_service, account: account, name: 'МРТ стопы')
     create(:scheduling_service, account: account, name: 'МРТ кисти и предплечья')
+    create(:scheduling_service, account: account, name: 'МРТ кисти и запястья')
 
     payload = search('МРТ кисти')
 
     expect(payload['match_status']).not_to eq('candidate')
     expect(payload['exact_name_matches']).to eq(0)
     expect(payload['instruction']).to include('exact name') if payload['total_count'].positive?
+  end
+
+  it 'offers the one broader service as the sole match for МРТ кисти, not another body part' do
+    create(:scheduling_service, account: account, name: 'МРТ стопы')
+    broader = create(:scheduling_service, account: account, name: 'МРТ кисти и предплечья')
+
+    payload = search('МРТ кисти')
+
+    expect(payload).to include('match_status' => 'candidate', 'total_count' => 1, 'exact_name_matches' => 0,
+                               'instruction' => described_class::SINGLE_MATCH_INSTRUCTION)
+    expect(payload['services'].pluck('id')).to eq([broader.id])
   end
 
   pairs.each do |name_a, name_b|
@@ -162,9 +195,15 @@ RSpec.describe Captain::Tools::Copilot::SearchSchedulingServicesService do
 
         payload = search(name)
 
-        expect(payload['match_status']).not_to eq('candidate'), "only #{other.name.inspect} present, query #{name.inspect}"
+        expect(payload['exact_name_matches']).to eq(0), "only #{other.name.inspect} present, query #{name.inspect}"
         expect(payload['services'].pluck('id')).to all(eq(other.id))
-        expect(payload['instruction']).to include('never book') if payload['total_count'].positive?
+        if sole_matches[name] == other.name
+          expect(payload).to include('match_status' => 'candidate', 'total_count' => 1,
+                                     'instruction' => described_class::SINGLE_MATCH_INSTRUCTION), "sole match, query #{name.inspect}"
+        else
+          expect(payload['match_status']).not_to eq('candidate'), "only #{other.name.inspect} present, query #{name.inspect}"
+          expect(payload['instruction']).to include('never book') if payload['total_count'].positive?
+        end
 
         own.update!(active: true)
       end

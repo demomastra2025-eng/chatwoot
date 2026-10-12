@@ -59,6 +59,35 @@ RSpec.describe Captain::Runtime::HandoffTool do
     expect(context[:transfer_guard_active]).to be(true)
     expect(context).not_to have_key(:pending_handoff)
   end
+
+  describe 'the request plan of a transfer' do
+    let!(:entry) { create(:captain_assistant) }
+    let!(:specialist) { create(:captain_assistant, account: entry.account) }
+    let(:target) { Captain::Runtime::Agent.new(name: "assistant_#{specialist.id}").tap { |agent| agent.assistant_id = specialist.id } }
+    let(:context) do
+      { state: { account_id: entry.account_id, assistant_id: entry.id, entry_assistant_id: entry.id },
+        agent_graph: Captain::AgentGraph.new(entry).payload, agent_session: Object.new, agent_tasks: [] }
+    end
+    let(:tool_context) { Captain::Runtime::ToolContext.new(run_context: Captain::Runtime::RunContext.new(context)) }
+
+    it 'refuses to transfer the conversation before the message is planned' do
+      result = described_class.new(target).perform(tool_context)
+
+      expect(Captain::ToolResult.normalize(result)).to include(success: false, error: 'Plan the request before handing it to another agent')
+      expect(context).not_to have_key(:pending_handoff)
+      # the runner then refuses a plain reply that would claim the transfer
+      expect(context[:part_plan_refused]).to be(true)
+    end
+
+    it 'transfers the conversation once the message is planned' do
+      context[:part_plan_accepted] = true
+
+      result = described_class.new(target).perform(tool_context)
+
+      expect(result).to be_a(RubyLLM::Tool::Halt)
+      expect(context[:pending_handoff]).to include(target_agent: target)
+    end
+  end
 end
 
 RSpec.describe Captain::Runtime::CoordinationEvents do

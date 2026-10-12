@@ -392,6 +392,8 @@ class Captain::Runtime::ToolWrapper
     # Escalating to a human is never blocked behind planning: staff take over and nothing is executed for the customer.
     return if @tool.is_a?(Captain::Tools::HandoffTool)
 
+    # The runner then asks for a plan before it accepts a plain reply, which must not claim that the refused action happened.
+    context[:part_plan_refused] = true
     Captain::ToolResult.failure(error: 'Plan the request before taking an action', retryable: false,
                                 audit: { failure_reason: 'part_plan_required', mutation_executed: false })
   end

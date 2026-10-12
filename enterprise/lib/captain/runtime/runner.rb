@@ -149,6 +149,7 @@ class Captain::Runtime::Runner
     return finalize_run(session[:chat], session[:context_wrapper], session[:current_agent], output: response.content) if halt_response?(response)
     return if response.tool_call?
     return if continue_unresolved_tasks?(session, response)
+
     plan_state = ensure_part_plan(session, response)
     return if plan_state == :retry
     if plan_state == :unavailable
@@ -161,6 +162,38 @@ class Captain::Runtime::Runner
       session[:current_agent],
       output: response.content
     )
+  end
+
+  # A plain reply, or one that only used read-only tools, needs no request plan. The plan is demanded where it matters:
+  # before a mutating tool (ToolWrapper), before a transfer to another agent (HandoffTool) and, by the coordination
+  # prompt, when the message holds several separate requests. Two cases are guarded here as well, because a plain reply
+  # would be wrong there: an operation proposed earlier waits for the customer's answer (only a plan confirms or cancels
+  # it, and a plain "done" would claim an action no tool performed), or a data-changing call was just refused for lack of a plan.
+  def ensure_part_plan(session, response)
+    return unless plan_required_before_reply?(session)
+
+    # The unplanned draft is never published, so it must not stay in the stored dialogue either.
+    discard_unpublished_draft(session[:chat], response)
+    if session[:plan_repairs].to_i.zero?
+      session[:plan_repairs] = 1
+      session[:chat].add_message(role: :system, content: 'Call plan_request for this message before replying.')
+      return :retry
+    end
+    :unavailable
+  end
+
+  def plan_required_before_reply?(session)
+    context = session[:context_wrapper].context
+    return false if context[:agent_graph].blank? || context[:part_plan_accepted]
+    return false if Captain::Runtime::TaskQueue.in_flight?(context[:agent_tasks])
+    # A consultation, and a finalization-only continuation (no tools are exposed), cannot call plan_request.
+    return false if context[:consult_mode] || session[:finalization_only]
+
+    context[:part_plan_refused].present? || awaiting_confirmation?(context)
+  end
+
+  def awaiting_confirmation?(context)
+    Array(context[:parts]).any? { |part| part['state'] == 'waiting_confirmation' && part['proposed_operation'].present? }
   end
 
   def handle_plan(session)
@@ -204,23 +237,6 @@ class Captain::Runtime::Runner
                      output: { response: plan[:answer], reasoning: '' })
       end
     end
-  end
-
-  def ensure_part_plan(session, response)
-    context = session[:context_wrapper].context
-    return true if context[:agent_graph].blank? || Captain::Runtime::TaskQueue.in_flight?(context[:agent_tasks]) ||
-                   context[:part_plan_accepted]
-    # A consultation, and a finalization-only continuation (no tools are exposed), cannot call plan_request.
-    return true if context[:consult_mode] || session[:finalization_only]
-
-    # The unplanned draft is never published, so it must not stay in the stored dialogue either.
-    discard_unpublished_draft(session[:chat], response)
-    if session[:plan_repairs].to_i.zero?
-      session[:plan_repairs] = 1
-      session[:chat].add_message(role: :system, content: 'Call plan_request for this message before replying.')
-      return :retry
-    end
-    :unavailable
   end
 
   def continue_after_transfer_guard(session)

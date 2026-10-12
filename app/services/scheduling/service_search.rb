@@ -41,6 +41,18 @@ class Scheduling::ServiceSearch
     call.reorder(nil).where(id: exact_ids).count
   end
 
+  # True when the name, or an alias, of the service holds every word of the request as a whole word, with qualifiers and
+  # numbers in the same order (see SearchText.request_covered?). The search stems words and ignores short ones, so only this
+  # check keeps "МРТ без контраста" from being the sole match for "МРТ с контрастом". A cut-off request is never covered.
+  def request_covered_by?(service)
+    return false if normalized_query.blank? || Scheduling::SearchText.truncated?(query)
+
+    texts = [service.name, *alias_texts(service.custom_attributes.to_h['aliases'])]
+    Scheduling::SearchText.request_covered?(
+      normalized_query, texts.map { |text| Scheduling::SearchText.normalize(text, max_length: nil) }
+    )
+  end
+
   # True when so many services share the words of the query that the equal-name test could not read them all, so that
   # uniqueness of the equal name is not proven.
   def exact_name_truncated?

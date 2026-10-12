@@ -106,6 +106,77 @@ RSpec.describe Scheduling::SearchText do
     end
   end
 
+  describe '.request_covered?' do
+    def covered?(query, *texts)
+      described_class.request_covered?(normalized(query), texts.map { |text| normalized(text) })
+    end
+
+    it 'is true when the text holds every word of the request, also as part of a longer name' do
+      expect(covered?('УЗИ малого таза', 'УЗИ органов малого таза')).to be(true)
+      expect(covered?('Мурад Асланов', 'Асланов Мурад Тестович')).to be(true)
+      expect(covered?('ЭКГ', 'ЭКГ с нагрузкой')).to be(true)
+    end
+
+    it 'accepts any order of words that tie nothing to their neighbours' do
+      expect(covered?('таза малого УЗИ', 'УЗИ органов малого таза')).to be(true)
+    end
+
+    it 'is false when a word of the request is missing, or only a form or a part of it stands in the text' do
+      expect(covered?('УЗИ органов малого таза', 'УЗИ малого таза')).to be(false)
+      expect(covered?('МРТ кисти', 'МРТ кисты')).to be(false)
+      expect(covered?('Асланов', 'Асланова Мария')).to be(false)
+      expect(covered?('Кабинет 2', 'Кабинет 12')).to be(false)
+    end
+
+    it 'is false when a qualifier, a number or a code of the request is missing' do
+      expect(covered?('МРТ с контрастом', 'МРТ без контраста')).to be(false)
+      expect(covered?('Анализ крови при беременности', 'Анализ крови после беременности')).to be(false)
+      expect(covered?('Гепатит I', 'Гепатит II')).to be(false)
+      expect(covered?('Витамин B1', 'Витамин B12')).to be(false)
+      expect(covered?('УЗИ для детей', 'УЗИ детей')).to be(false)
+    end
+
+    it 'keeps the order of the words once a qualifier or a number takes part in the request' do
+      expect(covered?('МРТ с контрастом без седации', 'МРТ без контраста с седацией')).to be(false)
+      expect(covered?('Кабинет 2 этаж 3', 'Кабинет 3 этаж 2')).to be(false)
+      expect(covered?('этаж 3 Кабинет 2', 'Кабинет 3 этаж 2')).to be(false)
+      expect(covered?('МРТ с контрастом', 'МРТ головного мозга с контрастом')).to be(true)
+      expect(covered?('МРТ 1,5 Тл', 'МРТ головы 1.5 Тл')).to be(true)
+    end
+
+    it 'is true when one of several texts covers the request, and false without a text' do
+      expect(covered?('МРТ шеи', 'МРТ шейного отдела', 'МРТ шеи и плечевого пояса')).to be(true)
+      expect(covered?('МРТ шеи')).to be(false)
+    end
+
+    it 'is false for a request without any word, however many texts hold its punctuation' do
+      expect(covered?('-', 'Анти-HCV')).to be(false)
+      expect(covered?('...', 'Иванов И.И.')).to be(false)
+      expect(covered?('', 'abc')).to be(false)
+    end
+
+    it 'is false when the text negates a word of the request that the request does not negate' do
+      expect(covered?('Анализ натощак', 'Анализ не натощак')).to be(false)
+      expect(covered?('Анализ не натощак', 'Анализ натощак')).to be(false)
+      expect(covered?('Ходжкинская лимфома', 'Не-Ходжкинская лимфома')).to be(false)
+      expect(covered?('Приём ЭКГ', 'Приём без ЭКГ')).to be(false)
+    end
+
+    it 'keeps a negation the request repeats, and an extra negated word the request does not mention' do
+      expect(covered?('Анализ не натощак', 'Анализ не натощак')).to be(true)
+      expect(covered?('Консультация без очереди', 'Консультация без очереди онлайн')).to be(true)
+      expect(covered?('МРТ', 'МРТ без контраста')).to be(true)
+      expect(covered?('Анализ крови', 'Анализ крови не натощак')).to be(true)
+    end
+
+    it 'is false for a request with more different words than the search reads' do
+      words = (1..9).map { |index| "слово#{index}" }
+
+      expect(covered?(words.join(' '), words.join(' '))).to be(false)
+      expect(covered?(words.first(8).join(' '), words.join(' '))).to be(true)
+    end
+  end
+
   describe '.truncated?' do
     it 'tells that a text is longer than the normalised length limit' do
       expect(described_class.truncated?('мрт кисти')).to be(false)

@@ -1,6 +1,10 @@
 # frozen_string_literal: true
 
 module Captain::Runtime::CoordinationPrompt
+  UNPLANNED_GUIDANCE = 'No plan exists for this customer message yet. When none of the cases above applies, reply directly ' \
+                       'without plan_request. When one applies, call plan_request once; it can be made in the same model call ' \
+                       'as its answer.'
+
   module_function
 
   def render(context)
@@ -11,7 +15,7 @@ module Captain::Runtime::CoordinationPrompt
     plan_guidance = if context[:part_plan_accepted]
                       "Plan accepted (data): #{JSON.generate(context[:part_plan])}. Continue only your assigned parts; do not plan again."
                     else
-                      'Use plan_request once for this customer message. A simple request can be planned in the same model call as its answer.'
+                      UNPLANNED_GUIDANCE
                     end
     return <<~PROMPT unless Captain::Runtime::TaskQueue.in_flight?(tasks)
       You are the current agent. Handle requests in your own responsibility.
@@ -19,7 +23,11 @@ module Captain::Runtime::CoordinationPrompt
       The current specialist keeps the conversation. Ignore legacy instructions to return it to an orchestrator.
       Other agents available on this channel (name and responsibility):
       #{peers.map { |peer| "#{peer[:name]}: #{peer[:description]}" }.join("\n")}
-      Plan the customer's request before taking any action. Link answers, corrections and cancellations to open parts.
+      A simple request needs no plan: answer it directly, also when you only look facts up with read-only tools.
+      Plan with plan_request only in these cases: before an action that changes data, before transferring to another agent,
+      when the message holds several separate requests, or when the customer confirms, corrects, cancels or answers a request
+      listed in the open parts (an operation waiting for confirmation is carried out or cancelled only through such a plan).
+      When you plan, link answers, corrections and cancellations to open parts.
       Open parts (data): #{JSON.generate(Array(context[:parts]).select { |part| Captain::Runtime::PartRegistry::OPEN_STATES.include?(part['state']) })}
       #{plan_guidance}
       Set answer in that call only when the complete answer is verified from supplied context and needs no tool.

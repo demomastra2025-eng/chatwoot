@@ -27,6 +27,7 @@ module Scheduling::SearchText
     через между вне около кроме вместо против вокруг
   ].freeze
   ROMAN_NUMERAL = /\A[ivxlcdm]+\z/
+  NEGATIONS = %w[не без].freeze
 
   module_function
 
@@ -72,6 +73,49 @@ module Scheduling::SearchText
     return false unless left_sequence.to_set == right_sequence.to_set
 
     !order_matters?([left, right]) || left_sequence == right_sequence
+  end
+
+  # True when one of the texts found for the request holds every word of the request as a whole word, as written (case and ё
+  # aside). When the request has a word that ties a qualifier or a number to its neighbours (see ORDER_WORDS), the words must
+  # also stand in the same order; otherwise any order is fine. A search that stems words and ignores short ones would
+  # otherwise find "МРТ без контраста" for "МРТ с контрастом" and "МРТ кисты" for "МРТ кисти". A request with more words than
+  # the search reads (MAX_TOKENS) is never covered: its tail was not matched at all. A request without any word (only
+  # punctuation) covers nothing: it was matched as a bare substring.
+  def request_covered?(normalized_query, normalized_texts)
+    return false if normalized_query.to_s.scan(/[[:alnum:]]+/).uniq.size > MAX_TOKENS
+
+    required = word_sequence(normalized_query, false)
+    return false if required.empty?
+
+    Array(normalized_texts).any? { |text| text_covers?(required, word_sequence(text, false)) }
+  end
+
+  def text_covers?(required, available)
+    return false if (required - available).any? || negated_by_text?(required, available)
+
+    required.none? { |word| order_word?(word) } || in_order?(required, available)
+  end
+
+  # "Анализ натощак" is the opposite of "Анализ не натощак": a word of the request that the text negates ("не", "без" right
+  # before it) is not covered unless the request negates it the same way. An extra qualifier elsewhere in the text is fine.
+  def negated_by_text?(required, available)
+    available.each_cons(2).any? do |negation, word|
+      NEGATIONS.include?(negation) && required.include?(word) && !negated_in?(required, word)
+    end
+  end
+
+  def negated_in?(sequence, word)
+    sequence.each_cons(2).any? { |negation, current| current == word && NEGATIONS.include?(negation) }
+  end
+
+  # True when the words stand in the sequence in the given order; other words may stand between them.
+  def in_order?(needle, sequence)
+    rest = sequence
+    needle.all? do |word|
+      index = rest.index(word)
+      rest = rest.drop(index + 1) if index
+      !index.nil?
+    end
   end
 
   def word_sequence(normalized_text, stemmed)

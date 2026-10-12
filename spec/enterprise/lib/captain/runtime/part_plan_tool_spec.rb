@@ -18,8 +18,19 @@ RSpec.describe Captain::Runtime::ToolWrapper do
   it 'blocks a mutating tool before the plan is accepted' do
     result = wrapper.send(:part_plan_error)
     expect(Captain::ToolResult.normalize(result)).to include(success: false, error: /Plan the request/)
+    # the runner then refuses a plain reply that would claim the refused action
+    expect(context[:part_plan_refused]).to be(true)
     context[:part_plan_accepted] = true
     expect(wrapper.send(:part_plan_error)).to be_nil
+  end
+
+  it 'does not mark a refusal for a plan when the plan exists or the tool is only blocked in a consult' do
+    context[:part_plan_accepted] = true
+    wrapper.send(:part_plan_error)
+    context[:consult_mode] = true
+    wrapper.send(:part_plan_error)
+
+    expect(context).not_to have_key(:part_plan_refused)
   end
 
   it 'blocks a mutating tool in a consult even with an accepted plan' do

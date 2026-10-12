@@ -49,6 +49,29 @@ RSpec.describe Captain::Runtime::CoordinationPrompt do
     expect(prompt).to include('plan_request')
   end
 
+  it 'asks for a plan only before an action, a transfer, several separate requests or an answer to an open part' do
+    context[:agent_tasks] = []
+
+    prompt = described_class.render(context)
+
+    expect(prompt).to include('A simple request needs no plan')
+    expect(prompt).to include('Plan with plan_request only in these cases: before an action that changes data, ' \
+                              "before transferring to another agent,\nwhen the message holds several separate requests, " \
+                              "or when the customer confirms, corrects, cancels or answers a request\nlisted in the open parts")
+    expect(prompt).to include('When you plan, link answers, corrections and cancellations to open parts.')
+    expect(prompt).to include('reply directly without plan_request')
+    expect(prompt).not_to include('Plan the customer\'s request before taking any action', 'Use plan_request once')
+  end
+
+  it 'keeps the answer shortcut of the plan and the council limit' do
+    context[:agent_tasks] = []
+
+    prompt = described_class.render(context)
+
+    expect(prompt).to include('Set answer in that call only when the complete answer is verified from supplied context and needs no tool.')
+    expect(prompt).to include('One request with several details (doctor, date, patient, price of the same service) is ONE part, never a council.')
+  end
+
   it 'does not ask a specialist to plan the same message after a handoff' do
     context[:agent_tasks] = []
     context[:part_plan_accepted] = true
@@ -58,6 +81,6 @@ RSpec.describe Captain::Runtime::CoordinationPrompt do
     prompt = described_class.render(context)
 
     expect(prompt).to include('Plan accepted')
-    expect(prompt).not_to include('Use plan_request once')
+    expect(prompt).not_to include('No plan exists', 'call plan_request once')
   end
 end

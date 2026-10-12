@@ -24,6 +24,7 @@ class Captain::Runtime::HandoffTool < Captain::Runtime::Tool
     context = tool_context.run_context.context
     if context[:agent_session] && !Captain::Runtime::TaskQueue.in_flight?(context[:agent_tasks]) &&
        !context[:part_plan_accepted]
+      context[:part_plan_refused] = true
       return Captain::ToolResult.failure(error: 'Plan the request before handing it to another agent', retryable: false)
     end
 
