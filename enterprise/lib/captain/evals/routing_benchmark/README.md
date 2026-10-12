@@ -195,10 +195,11 @@ includes only live events. The runtime persists `captain.agent.transfer`,
 `captain.agent.reset` with `run_source`. The council event contract is
 `captain.council.started` / `captain.council.finished` with participant IDs
 and an outcome on finish; `Captain::Runtime::Council` calls these producers.
-The council coordinator that writes the single customer reply adds `captain.council.composed` (part IDs, reply
-language, `handoff`, and `reason: council_unresolved` when staff will answer an unresolved part) and
-`captain.council.composer_fallback` (part IDs and the `reason` the fixed templates were used instead: `timeout`,
-`error`, `empty`, `too_long`, `json`, `internal_token`, `success_claim`, `language`, `staff_promise`, `staff_missing`,
-`no_confirmation_question`, `unsupported_number`, `latin`, `no_model`, `no_parts`, `disabled`). Neither carries text.
+Each consultant of a council writes the final text of its part; the council coordinator rewrites these texts into the
+single customer reply and adds `captain.council.composed` (part IDs, reply language, `handoff`, and
+`reason: council_unresolved` when staff will answer an unresolved part) and `captain.council.composer_fallback` (part IDs
+and the `reason` the part texts were sent one after another instead: `timeout`, `error`, `invalid`, `empty`, `no_model`,
+`no_parts`, `disabled`). Neither carries text. The composer's reply is never checked or filtered by code.
 The composer is switched off with `CAPTAIN_COUNCIL_COMPOSER=off` (environment or an InstallationConfig row; `off`, `0`,
-`false`, `disabled`): the fixed templates apply at once and no handoff follows.
+`false`, `disabled`): the part texts go out in their original order at once; a handoff still follows for an unresolved
+part, because its text already says that staff will answer.

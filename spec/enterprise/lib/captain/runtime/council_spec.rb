@@ -5,12 +5,15 @@ RSpec.describe Captain::Runtime::Council do
   let(:context) { { parts: [], state: { assistant_id: 1 }, agent_graph: [{ id: 1 }, { id: 2 }] } }
   let(:council) { described_class.new(context: context, graph: nil, account: nil) }
   let(:composer) { instance_double(Captain::Runtime::CouncilComposer) }
+  let(:cannot_answer) { 'На этот вопрос я сейчас не могу ответить.' }
+  let(:staff_will_answer) { 'По этому вопросу вам ответит сотрудник клиники.' }
+  let(:proposal) { { 'type' => 'create_appointment', 'params' => { 'slot_id' => 9, 'starts_at' => '2026-10-14T10:00' } } }
 
   def composer_failure(reason = 'timeout')
     Captain::Runtime::CouncilComposer::Outcome.new(reply: nil, reason: reason)
   end
 
-  # The assembly specs below check the fixed templates, the fallback of the composer: it is never available here.
+  # The assembly specs below check what goes out when the composer produces nothing: the texts of the parts in order.
   before do
     allow(Captain::Runtime::CouncilComposer).to receive(:new).and_return(composer)
     allow(composer).to receive(:compose).and_return(composer_failure)
@@ -23,72 +26,76 @@ RSpec.describe Captain::Runtime::Council do
     end.tap { |items| context[:parts] = items.deep_dup }
   end
 
-  def result(field:, patient:, fragment: '')
-    { 'status' => 'needs_information', 'fragment' => fragment, 'missing_fields' => [
-      { 'patient' => patient, 'field' => field, 'purpose' => 'запись' }
-    ], 'contradictions' => [], 'proposed_operation' => nil }
+  # What a consultation returns after it is parsed: the final text of the part and the structured result.
+  def consulted(text, status: 'ok', questions: [], operation: nil, contradictions: [], facts: [{ 'fact' => 'x', 'source' => 'y' }])
+    { 'status' => status, 'customer_text' => text, 'facts' => facts, 'contradictions' => contradictions,
+      'missing_fields' => questions.map { |question| { 'patient' => 'Анна', 'field' => question, 'purpose' => 'запись' } },
+      'proposed_operation' => operation }
   end
 
-  it 'asks the same field for one patient once' do
-    items = parts(%w[Анна Анна])
-    reply = council.send(:assemble, items, [result(field: 'дата', patient: 'Анна'), result(field: 'дата', patient: 'Анна')])
-
-    # One patient: the question is asked once and needs no name prefix.
-    expect(reply.scan('дата').size).to eq(1)
-    expect(reply).not_to include('Анна — ')
-    expect(context[:parts].pluck('state')).to eq(%w[waiting_customer waiting_customer])
+  def failed
+    consulted('', status: 'unavailable', facts: [])
   end
 
-  it 'keeps two patients separate and leaves a contradictory part open' do
+  it 'sends the part texts in the order of the requests, a blank line apart, when the composer produces nothing' do
+    reply = council.send(:assemble, parts(%w[Анна Борис]), [consulted('Приём стоит 5000 тенге.'), consulted('Мы находимся на улице Абая, 1.')])
+
+    expect(reply).to eq("Приём стоит 5000 тенге.\n\nМы находимся на улице Абая, 1.")
+    expect(context[:parts].pluck('state')).to eq(%w[answered answered])
+  end
+
+  it 'sends the question of a consultant as it is and keeps the part waiting for the customer' do
+    question = 'На какой день вам удобно?'
+
+    reply = council.send(:assemble, parts(%w[Анна]), [consulted(question, status: 'needs_information', questions: [question])])
+
+    expect(reply).to eq(question)
+    expect(context[:parts].sole['state']).to eq('waiting_customer')
+    expect(context[:parts].sole['missing_fields'].pluck('field')).to eq([question])
+  end
+
+  it 'asks the missing fields itself, without a label, when the consultant wrote no text' do
+    reply = council.send(:assemble, parts(%w[Анна]), [consulted('', status: 'needs_information', questions: ['На какой день вам удобно?'])])
+
+    expect(reply).to eq('На какой день вам удобно?')
+    expect(context[:parts].sole['state']).to eq('waiting_customer')
+  end
+
+  it 'keeps a contradictory part open, never passes its text on and says honestly that it cannot be answered' do
+    question = 'На какую дату?'
     items = parts(%w[Анна Борис])
-    conflicting = result(field: 'дата', patient: 'Борис', fragment: 'Непроверенный ответ')
-    conflicting['contradictions'] = ['Different source values']
-    reply = council.send(:assemble, items, [result(field: 'дата', patient: 'Анна'), conflicting])
+    conflicting = consulted('Непроверенный ответ', contradictions: ['Different source values'])
 
-    expect(reply).to include('дата')
-    expect(reply).not_to include('Борис', 'Непроверенный ответ')
-    expect(context[:parts].last['state']).to eq('open')
+    reply = council.send(:assemble, items, [consulted('', status: 'needs_information', questions: [question]), conflicting])
+
+    expect(reply).to eq("#{question}\n\n#{cannot_answer}")
+    expect(context[:parts].pluck('state')).to eq(%w[waiting_customer open])
   end
 
-  it 'asks separately for the same field for different patients' do
-    items = parts(%w[Анна Борис])
-    reply = council.send(:assemble, items, [result(field: 'дата', patient: 'Анна'),
-                                            result(field: 'дата', patient: 'Борис')])
-
-    expect(reply).to include('Анна — дата', 'Борис — дата')
-  end
-
-  it 'sends consultant questions as they are and never shows role labels' do
-    items = parts(%w[собеседник Аружан])
-    reply = council.send(:assemble, items, [result(field: 'На какой день вам удобно?', patient: 'собеседник'),
-                                            result(field: 'Какая дата рождения Аружан?', patient: 'Аружан')])
-
-    expect(reply).to include('На какой день вам удобно?', 'Какая дата рождения Аружан?')
-    expect(reply).not_to include('собеседник', 'Уточните:')
-  end
-
-  it 'asks for confirmation and records the proposal without executing it' do
+  it 'asks for confirmation with the question of the consultant and records the proposal without executing it' do
+    question = 'Записать вас к терапевту Иванову на 14 октября в 10:00?'
     items = parts(%w[Анна Борис])
     allow(council).to receive(:operation_valid?).and_return(true, false)
-    results = [
-      { 'status' => 'ok', 'fragment' => 'Время свободно.', 'missing_fields' => [],
-        'contradictions' => [], 'proposed_operation' => { 'type' => 'create_appointment', 'params' => { 'slot_id' => 9 } } },
-      { 'status' => 'ok', 'fragment' => 'Стоимость уточнена.', 'missing_fields' => [],
-        'contradictions' => [], 'proposed_operation' => nil }
-    ]
 
-    reply = council.send(:assemble, items, results)
+    reply = council.send(:assemble, items, [consulted(question, operation: proposal), consulted('Стоимость приёма 5000 тенге.')])
 
-    expect(reply).to include('Время свободно.', 'Стоимость уточнена.', 'Подтвердите действие')
-    expect(context[:parts].first['state']).to eq('waiting_confirmation')
-    expect(context[:parts].first['proposed_operation']).to eq(results.first['proposed_operation'])
+    expect(reply).to eq("#{question}\n\nСтоимость приёма 5000 тенге.")
+    expect(context[:parts].pluck('state')).to eq(%w[waiting_confirmation answered])
+    expect(context[:parts].first['proposed_operation']).to eq(proposal)
+  end
+
+  it 'stores no proposal for a confirmation the customer was not asked about' do
+    allow(council).to receive(:operation_valid?).and_return(true)
+
+    reply = council.send(:assemble, parts(%w[Анна]), [consulted('', operation: proposal)])
+
+    expect(reply).to eq(cannot_answer)
+    expect(context[:parts].sole['state']).to eq('unknown')
+    expect(context[:parts].sole['proposed_operation']).to be_blank
   end
 
   it 'asks for confirmation of a dependent part that has a prerequisite but withholds a conditional one' do
-    results = [1, 2].map do |slot|
-      { 'status' => 'ok', 'fragment' => "Вариант #{slot}.", 'missing_fields' => [], 'contradictions' => [],
-        'proposed_operation' => { 'type' => 'create_appointment', 'params' => { 'slot_id' => slot } } }
-    end
+    results = [1, 2].map { |slot| consulted("Записать вас на вариант #{slot}?", operation: proposal.merge('params' => { 'slot_id' => slot })) }
     allow(council).to receive(:operation_valid?).and_return(true)
 
     dependent = parts(%w[Анна Анна])
@@ -100,21 +107,16 @@ RSpec.describe Captain::Runtime::Council do
     conditional.last['relation'] = 'conditional'
     reply = council.send(:assemble, conditional, results)
     expect(context[:parts].pluck('state')).to eq(%w[waiting_confirmation open])
-    expect(reply).to include('Часть запроса требует дополнительной проверки.')
+    expect(reply).to eq("Записать вас на вариант 1?\n\n#{cannot_answer}")
   end
 
-  it 'withholds a fragment when its proposed action is unavailable' do
-    items = parts(%w[Анна Борис])
-    unsafe = { 'status' => 'ok', 'fragment' => 'Запись выполнена.', 'missing_fields' => [],
-               'contradictions' => [], 'proposed_operation' => { 'type' => 'unknown_action', 'params' => {} } }
-    safe = { 'status' => 'ok', 'fragment' => 'Цена подтверждена.', 'missing_fields' => [],
-             'contradictions' => [], 'proposed_operation' => nil }
+  it 'withholds a text when its proposed action is unavailable' do
+    unsafe = consulted('Запись выполнена.', operation: { 'type' => 'unknown_action', 'params' => {} })
     allow(council).to receive(:operation_valid?).and_return(false)
 
-    reply = council.send(:assemble, items, [unsafe, safe])
+    reply = council.send(:assemble, parts(%w[Анна Борис]), [unsafe, consulted('Цена подтверждена.')])
 
-    expect(reply).to include('Цена подтверждена.', 'Часть запроса требует дополнительной проверки.')
-    expect(reply).not_to include('Запись выполнена.')
+    expect(reply).to eq("#{cannot_answer}\n\nЦена подтверждена.")
     expect(context[:parts].first['state']).to eq('open')
   end
 
@@ -181,6 +183,29 @@ RSpec.describe Captain::Runtime::Council do
     expect(snapshot).not_to have_key(:agent_graph)
   end
 
+  it 'uses one short line in the customer language for a part without any text' do
+    context[:captain_v2_current_input] = 'Қабылдау қанша тұрады?'
+
+    reply = council.send(:assemble, parts(%w[Анна]), [failed])
+
+    expect(reply).to eq('Бұл сұраққа қазір жауап бере алмаймын.')
+  end
+
+  it 'sends the stock line once when several parts have no text and the composer produces nothing' do
+    reply = council.send(:assemble, parts(%w[Анна Борис]), [failed, failed])
+
+    expect(reply).to eq(cannot_answer)
+    expect(context[:parts].pluck('state')).to eq(%w[unknown unknown])
+  end
+
+  it 'drops a question repeated for the same person but keeps the same words asked about different people' do
+    question = 'На какую дату?'
+    asked = consulted(question, status: 'needs_information', questions: [question])
+
+    expect(council.send(:assemble, parts(['Анна', ' анна ']), [asked, asked])).to eq(question)
+    expect(council.send(:assemble, parts(%w[Анна Борис]), [asked, asked])).to eq("#{question}\n\n#{question}")
+  end
+
   it 'starts independent consultations before waiting for their results' do
     items = parts(%w[Анна Борис])
     started = Queue.new
@@ -209,21 +234,62 @@ RSpec.describe Captain::Runtime::Council do
     worker&.join(1)
   end
 
-  it 'falls back to the templates in the customer language when the composer produces nothing' do
-    context[:captain_v2_current_input] = 'Қабылдау қанша тұрады?'
-    unavailable = { 'status' => 'unavailable', 'fragment' => '', 'missing_fields' => [], 'contradictions' => [], 'proposed_operation' => nil }
+  describe 'the result of a consultation' do
+    def parsed(output)
+      council.send(:parse_result, double(error: nil, output: output.to_json))
+    end
 
-    reply = council.send(:assemble, parts(%w[Анна]), [unavailable])
+    let(:fact) { { 'fact' => 'Цена 5000', 'source' => 'прайс' } }
 
-    expect(reply).to eq('Сұраудың бір бөлігін қосымша тексеру қажет.')
+    it 'carries the final text of the part, trimmed' do
+      result = parsed(status: 'ok', customer_text: "  Приём стоит 5000 тенге.\n", facts: [fact])
+
+      expect(result).to include('status' => 'ok', 'customer_text' => 'Приём стоит 5000 тенге.')
+    end
+
+    it 'does not pass on the text of an answer without a verified fact' do
+      result = parsed(status: 'ok', customer_text: 'Приём стоит 5000 тенге.', facts: [{ 'fact' => 'Цена 5000' }])
+
+      expect(result).to include('status' => 'unavailable', 'customer_text' => '')
+    end
+
+    it 'keeps the honest sentence of a consultant that cannot resolve the part' do
+      result = parsed(status: 'unavailable', customer_text: 'На этот вопрос я сейчас не могу ответить.')
+
+      expect(result).to include('status' => 'unavailable', 'customer_text' => 'На этот вопрос я сейчас не могу ответить.')
+    end
+
+    it 'treats a missing or malformed text as no text' do
+      expect(parsed(status: 'ok', facts: [fact])).to include('customer_text' => '')
+      expect(parsed(status: 'ok', customer_text: { 'a' => 1 }, facts: [fact])).to include('customer_text' => '')
+    end
   end
 
-  it 'asks for missing fields in Kazakh in the fallback template when the customer writes Kazakh' do
-    context[:captain_v2_current_input] = 'Қабылдау қанша тұрады?'
+  describe 'what a consultant is told' do
+    let(:actor) { double('consultant', id: 2, agent_name: 'assistant_2', config: {}, prompt_context_state: {}) }
 
-    reply = council.send(:assemble, parts(%w[Анна]), [result(field: 'күні', patient: 'Анна')])
+    before { allow(Captain::AssistantSafetyPreferences).to receive(:for).and_return({}) }
 
-    expect(reply).to eq('Нақтылаңыз: күні.')
+    def snapshot_for(instance)
+      instance.send(:consult_snapshot, actor, { 'id' => 'part-0', 'version' => 1 })
+    end
+
+    it 'is the language of the customer and that no staff member can take a part over without a handoff' do
+      context[:captain_v2_current_input] = 'Қабылдау қанша тұрады?'
+
+      expect(snapshot_for(council)).to include(consult_mode: true, consult_language: 'kk', consult_staff_handoff: false)
+    end
+
+    it 'is Russian and that staff can take a part over when the agent has a handoff' do
+      entry = instance_double(Captain::Assistant, id: 1, handoff_enabled?: true, selected_agent_tool_ids: %w[faq_lookup handoff])
+      graph = instance_double(Captain::AgentGraph, find: entry, entry: entry)
+      context[:state][:conversation] = { id: 7 }
+      context[:captain_v2_current_input] = 'Сколько стоит приём?'
+
+      snapshot = snapshot_for(described_class.new(context: context, graph: graph, account: nil))
+
+      expect(snapshot).to include(consult_language: 'ru', consult_staff_handoff: true)
+    end
   end
 
   describe 'the composed reply' do
@@ -234,11 +300,10 @@ RSpec.describe Captain::Runtime::Council do
     let(:graph) { instance_double(Captain::AgentGraph, find: actor, entry: actor) }
     let(:council) { described_class.new(context: context, graph: graph, account: nil, llm_context: :llm_context) }
     let(:calls) { [] }
-    let(:composed_text) { 'Приём стоит 5000 тенге. Подтверждаете запись Анны?' }
+    let(:composed_text) { 'Приём стоит 5000 тенге. Записать вас к терапевту Иванову на 14 октября в 10:00?' }
 
-    def answered(fragment, facts: [], operation: nil, status: 'ok')
-      { 'status' => status, 'fragment' => fragment, 'facts' => facts, 'missing_fields' => [],
-        'contradictions' => [], 'proposed_operation' => operation }
+    def line(text, confirmation: false, staff: false)
+      { 'text' => text, 'needs_confirmation' => confirmation, 'staff_will_answer' => staff }
     end
 
     before do
@@ -252,203 +317,180 @@ RSpec.describe Captain::Runtime::Council do
       allow(Captain::Runtime::CoordinationEvents).to receive(:council_composer_fallback)
     end
 
-    it 'is the reply when the composer produced one, built from part data without identifiers or role labels' do
+    it 'is the reply of the composer, written from the part texts without data, identifiers or role labels' do
+      question = 'Записать вас к терапевту Иванову на 14 октября в 10:00?'
       items = parts(%w[собеседник Борис])
       allow(council).to receive(:operation_valid?).and_return(true, false)
-      operation = { 'type' => 'create_appointment',
-                    'params' => { 'slot_id' => 9, 'doctor_id' => 4, 'starts_at' => '2026-10-14T10:00', 'service_name' => 'Приём терапевта' } }
-      results = [answered('Время свободно.',
-                          facts: [{ 'fact' => 'Окно 10:00', 'source' => 'расписание', 'slot_id' => 9, 'slotId' => 9, 'doctorUuid' => 'x' }],
-                          operation: operation),
-                 answered('Приём стоит 5000 тенге.', facts: [{ 'fact' => 'Цена 5000', 'source' => 'прайс' }])]
+      facts = [{ 'fact' => 'Окно 10:00', 'source' => 'расписание', 'slot_id' => 9 }]
 
-      reply = council.send(:assemble, items, results)
+      reply = council.send(:assemble, items, [consulted(question, facts: facts, operation: proposal),
+                                              consulted('Приём стоит 5000 тенге.')])
 
       expect(reply).to eq(composed_text)
-      expect(calls.sole).to include(message: 'Сколько стоит приём? И запишите Анну завтра', language: 'ru', staff_handoff: false)
-      expect(calls.sole[:parts]).to eq(
-        [
-          { 'request' => 'Запрос 0', 'answer' => 'Время свободно.', 'facts' => [{ 'fact' => 'Окно 10:00', 'source' => 'расписание' }],
-            'confirm' => { 'action' => 'запись на приём',
-                           'details' => { 'starts_at' => '2026-10-14T10:00', 'service_name' => 'Приём терапевта' } } },
-          { 'request' => 'Запрос 1', 'patient' => 'Борис', 'answer' => 'Приём стоит 5000 тенге.',
-            'facts' => [{ 'fact' => 'Цена 5000', 'source' => 'прайс' }] }
-        ]
-      )
+      expect(calls.sole).to eq(message: 'Сколько стоит приём? И запишите Анну завтра', language: 'ru',
+                               parts: [line(question, confirmation: true), line('Приём стоит 5000 тенге.')])
       expect(context[:parts].pluck('state')).to eq(%w[waiting_confirmation answered])
+      expect(context).not_to have_key(:council_handoff)
       expect(Captain::Runtime::CoordinationEvents).to have_received(:council_composed)
         .with(context: context, part_ids: %w[part-0 part-1], language: 'ru', handoff: false)
-    end
-
-    it 'names the patient in the confirmation data of a waiting operation' do
-      items = parts(%w[Анна])
-      allow(council).to receive(:operation_valid?).and_return(true)
-      operation = { 'type' => 'update_appointment', 'params' => { 'appointment_id' => 3, 'new_time' => '11:00' } }
-
-      council.send(:assemble, items, [answered('Время свободно.', operation: operation)])
-
-      expect(calls.sole[:parts].sole['confirm']).to eq(
-        'action' => 'изменение записи', 'patient' => 'Анна', 'details' => { 'new_time' => '11:00' }
-      )
-    end
-
-    it 'names the action in Kazakh for a Kazakh customer and never by the English title of the tool' do
-      context[:captain_v2_current_input] = 'Қабылдау қанша тұрады?'
-      allow(council).to receive(:operation_valid?).and_return(true)
-      operation = { 'type' => 'cancel_appointment', 'params' => { 'appointment_id' => 3 } }
-
-      council.send(:assemble, parts(%w[Анна]), [answered('Уақыт бос.', operation: operation)])
-
-      expect(calls.sole[:parts].sole['confirm']).to eq('action' => 'жазылуды болдырмау', 'patient' => 'Анна')
-    end
-
-    it 'leaves the action out for a tool without a label and still marks the part as awaiting yes or no' do
-      allow(council).to receive(:operation_valid?).and_return(true)
-      operation = { 'type' => 'create_deal', 'params' => { 'deal_id' => 3 } }
-
-      council.send(:assemble, parts(%w[собеседник]), [answered('Готово к оформлению.', operation: operation)])
-
-      expect(calls.sole[:parts].sole['confirm']).to eq('yes_no' => true)
-    end
-
-    it 'shows a UTC timestamp as the local clock of the clinic' do
-      account = instance_double(Account, reporting_timezone: 'Asia/Almaty')
-      local = described_class.new(context: context, graph: graph, account: account, llm_context: :llm_context)
-      allow(local).to receive(:operation_valid?).and_return(true)
-      operation = { 'type' => 'create_appointment', 'params' => { 'starts_at' => '2026-10-14T05:00:00Z', 'ends_at' => '2026-10-14T10:30' } }
-
-      local.send(:assemble, parts(%w[Анна]), [answered('Время свободно.', operation: operation)])
-
-      expect(calls.sole[:parts].sole.dig('confirm', 'details')).to eq('starts_at' => '2026-10-14T10:00', 'ends_at' => '2026-10-14T10:30')
+      expect(Captain::Runtime::CoordinationEvents).not_to have_received(:council_composer_fallback)
     end
 
     it 'detects Kazakh from the customer message' do
       context[:captain_v2_current_input] = 'Қабылдау қанша тұрады?'
 
-      council.send(:assemble, parts(%w[Анна]), [answered('Баға 5000.')])
+      council.send(:assemble, parts(%w[Анна]), [consulted('Баға 5000 теңге.')])
 
       expect(calls.sole).to include(language: 'kk')
       expect(Captain::Runtime::CoordinationEvents).to have_received(:council_composed).with(hash_including(language: 'kk'))
     end
 
-    it 'asks each missing item once per patient and shows no role label' do
+    it 'passes the questions of the consultants on as part texts, taking the missing field when a consultant wrote no text' do
       context[:agent_graph] = [{ id: 1 }, { id: 2 }, { id: 3 }]
       items = parts(%w[Анна Анна собеседник])
-      results = [result(field: 'На какую дату?', patient: 'Анна'), result(field: 'На какую дату?', patient: 'Анна'),
-                 result(field: 'Удобное время?', patient: 'собеседник')]
+      results = [consulted('На какую дату?', status: 'needs_information', questions: ['На какую дату?']),
+                 consulted('', status: 'needs_information', questions: ['На какую дату?']),
+                 consulted('Удобное время?', status: 'needs_information', questions: ['Удобное время?'])]
 
       council.send(:assemble, items, results)
 
-      questions = calls.sole[:parts].flat_map { |part| part['questions'].to_a }
-      expect(questions).to eq([{ 'patient' => 'Анна', 'question' => 'На какую дату?' }, { 'question' => 'Удобное время?' }])
+      expect(calls.sole[:parts].pluck('text')).to eq(['На какую дату?', 'На какую дату?', 'Удобное время?'])
+      expect(context[:parts].pluck('state')).to eq(%w[waiting_customer waiting_customer waiting_customer])
     end
 
-    it 'marks an unresolved part, lets the composer offer staff and requests a real handoff after the reply' do
+    it 'gives an unresolved part without text one line, flags it for staff and requests a real handoff after the reply' do
       items = parts(%w[Анна Борис])
       items.last['fragment'] = 'Результаты анализов'
       context[:parts] = items.deep_dup
 
-      reply = council.send(:assemble, items, [answered('Приём стоит 5000 тенге.'), answered('', status: 'unavailable')])
+      reply = council.send(:assemble, items, [consulted('Приём стоит 5000 тенге.'), failed])
 
       expect(reply).to eq(composed_text)
-      expect(calls.sole).to include(staff_handoff: true)
-      expect(calls.sole[:parts].last).to eq('request' => 'Результаты анализов', 'patient' => 'Борис', 'unresolved' => true)
+      expect(calls.sole[:parts]).to eq([line('Приём стоит 5000 тенге.'), line(staff_will_answer, staff: true)])
       expect(context[:council_handoff]).to eq(reason: 'council_unresolved', parts: ['Результаты анализов'])
       expect(context[:parts].pluck('state')).to eq(%w[answered unknown])
       expect(Captain::Runtime::CoordinationEvents).to have_received(:council_composed).with(hash_including(handoff: true))
     end
 
-    it 'treats a withheld and an out-of-scope part as unresolved and never passes their draft on' do
+    it 'uses the honest sentence of the consultant for an unresolved part and flags it for staff' do
+      sentence = 'Результаты анализов вам сообщит сотрудник клиники.'
+
+      council.send(:assemble, parts(%w[Анна]), [consulted(sentence, status: 'unavailable', facts: [])])
+
+      expect(calls.sole[:parts]).to eq([line(sentence, staff: true)])
+      expect(context[:council_handoff]).to eq(reason: 'council_unresolved', parts: ['Запрос 0'])
+    end
+
+    it 'treats a withheld part as unresolved without its draft and keeps the sentence of an out-of-scope consultant' do
       items = parts(%w[Анна Борис])
-      conflicting = answered('Непроверенный ответ', facts: [{ 'fact' => 'x', 'source' => 'y' }]).merge('contradictions' => ['Другое значение'])
-      out_of_scope = answered('Не моя тема', status: 'out_of_scope')
+      conflicting = consulted('Непроверенный ответ', contradictions: ['Другое значение'])
 
-      council.send(:assemble, items, [conflicting, out_of_scope])
+      council.send(:assemble, items, [conflicting, consulted('Не моя тема', status: 'out_of_scope')])
 
-      expect(calls.sole[:parts]).to eq([{ 'request' => 'Запрос 0', 'patient' => 'Анна', 'unresolved' => true },
-                                        { 'request' => 'Запрос 1', 'patient' => 'Борис', 'unresolved' => true }])
+      expect(calls.sole[:parts]).to eq([line(staff_will_answer, staff: true), line('Не моя тема', staff: true)])
       expect(context[:council_handoff][:parts]).to eq(['Запрос 0', 'Запрос 1'])
     end
 
     it 'sends a consultant question without missing fields to the customer and hands nothing to staff' do
-      council.send(:assemble, parts(%w[Анна]), [answered('К какому врачу вы хотите записаться?', status: 'needs_information')])
+      question = 'К какому врачу вы хотите записаться?'
 
-      expect(calls.sole).to include(staff_handoff: false)
-      expect(calls.sole[:parts].sole).to eq('request' => 'Запрос 0', 'patient' => 'Анна', 'answer' => 'К какому врачу вы хотите записаться?')
+      council.send(:assemble, parts(%w[Анна]), [consulted(question, status: 'needs_information')])
+
+      expect(calls.sole[:parts]).to eq([line(question)])
       expect(context).not_to have_key(:council_handoff)
       expect(context[:parts].sole['state']).to eq('unknown')
     end
 
     it 'still treats a needs_information result without any question as unresolved' do
-      council.send(:assemble, parts(%w[Анна]), [answered('', status: 'needs_information')])
+      council.send(:assemble, parts(%w[Анна]), [consulted('', status: 'needs_information')])
 
-      expect(calls.sole).to include(staff_handoff: true)
-      expect(calls.sole[:parts].sole).to include('unresolved' => true)
+      expect(calls.sole[:parts]).to eq([line(staff_will_answer, staff: true)])
       expect(context[:council_handoff]).to eq(reason: 'council_unresolved', parts: ['Запрос 0'])
     end
 
-    it 'requests no handoff and promises no staff while another part waits for the customer’s confirmation' do
+    it 'requests no handoff and promises no staff while another part waits for the confirmation of the customer' do
+      question = 'Записать вас на 14 октября в 10:00?'
       items = parts(%w[Анна Борис])
       allow(council).to receive(:operation_valid?).and_return(true, false)
-      operation = { 'type' => 'create_appointment', 'params' => { 'starts_at' => '2026-10-14T10:00' } }
 
-      council.send(:assemble, items, [answered('Время свободно.', operation: operation), answered('', status: 'unavailable')])
+      council.send(:assemble, items, [consulted(question, operation: proposal),
+                                      consulted('Результаты анализов вам сообщит сотрудник клиники.', status: 'unavailable', facts: [])])
 
-      expect(calls.sole).to include(staff_handoff: false)
-      expect(calls.sole[:parts].last).to include('unresolved' => true)
+      expect(calls.sole[:parts]).to eq([line(question, confirmation: true), line(cannot_answer)])
       expect(context).not_to have_key(:council_handoff)
       expect(context[:parts].pluck('state')).to eq(%w[waiting_confirmation unknown])
+      expect(Captain::Runtime::CoordinationEvents).to have_received(:council_composed).with(hash_including(handoff: false))
     end
 
-    it 'promises staff nothing and requests no handoff when the agent cannot hand off' do
+    it 'keeps the sentence of the consultant and requests no handoff when the agent cannot hand off' do
       allow(actor).to receive(:handoff_enabled?).and_return(false)
+      sentence = 'На этот вопрос я сейчас не могу ответить.'
 
-      council.send(:assemble, parts(%w[Анна]), [answered('', status: 'unavailable')])
+      council.send(:assemble, parts(%w[Анна Борис]), [consulted(sentence, status: 'unavailable', facts: []), failed])
 
-      expect(calls.sole).to include(staff_handoff: false)
+      expect(calls.sole[:parts]).to eq([line(sentence), line(cannot_answer)])
       expect(context).not_to have_key(:council_handoff)
     end
 
     it 'requests no handoff when the run has no conversation' do
       context[:state].delete(:conversation)
 
-      council.send(:assemble, parts(%w[Анна]), [answered('', status: 'unavailable')])
+      council.send(:assemble, parts(%w[Анна]), [failed])
 
-      expect(calls.sole).to include(staff_handoff: false)
+      expect(calls.sole[:parts]).to eq([line(cannot_answer)])
       expect(context).not_to have_key(:council_handoff)
     end
 
-    it 'keeps the template reply, requests no handoff and reports why when the composer produces nothing' do
-      allow(composer).to receive(:compose).and_return(composer_failure('success_claim'))
-      allow(council).to receive(:operation_valid?).and_return(true)
-      operation = { 'type' => 'create_appointment', 'params' => { 'slot_id' => 9 } }
+    it 'sends the part texts in order, reports why and still requests the handoff its texts promise when the composer produces nothing' do
+      allow(composer).to receive(:compose).and_return(composer_failure('invalid'))
 
-      reply = council.send(:assemble, parts(%w[Анна Борис]), [answered('Время свободно.', operation: operation), answered('', status: 'unavailable')])
+      reply = council.send(:assemble, parts(%w[Анна Борис]), [consulted('Приём стоит 5000 тенге.'), failed])
 
-      expect(reply).to eq("Время свободно.\n\nПодтвердите действие по запросу «Запрос 0»?\n\nЧасть запроса требует дополнительной проверки.")
-      expect(context).not_to have_key(:council_handoff)
+      expect(reply).to eq("Приём стоит 5000 тенге.\n\n#{staff_will_answer}")
+      expect(context[:council_handoff]).to eq(reason: 'council_unresolved', parts: ['Запрос 1'])
       expect(Captain::Runtime::CoordinationEvents).to have_received(:council_composer_fallback)
-        .with(context: context, part_ids: %w[part-0 part-1], reason: 'success_claim')
+        .with(context: context, part_ids: %w[part-0 part-1], reason: 'invalid')
       expect(Captain::Runtime::CoordinationEvents).not_to have_received(:council_composed)
     end
 
-    it 'keeps the template reply when the composer itself fails' do
+    it 'says once that staff will answer when two unresolved parts have no text and the composer produces nothing' do
+      allow(composer).to receive(:compose).and_return(composer_failure('error'))
+
+      reply = council.send(:assemble, parts(%w[Анна Борис]), [failed, failed])
+
+      expect(reply).to eq(staff_will_answer)
+      expect(context[:council_handoff]).to eq(reason: 'council_unresolved', parts: ['Запрос 0', 'Запрос 1'])
+    end
+
+    it 'sends the confirmation question of the consultant when the composer produces nothing' do
+      allow(composer).to receive(:compose).and_return(composer_failure('empty'))
+      question = 'Записать вас к терапевту Иванову на 14 октября в 10:00?'
+      allow(council).to receive(:operation_valid?).and_return(true)
+
+      reply = council.send(:assemble, parts(%w[Анна]), [consulted(question, operation: proposal)])
+
+      expect(reply).to eq(question)
+      expect(context).not_to have_key(:council_handoff)
+      expect(context[:parts].sole['state']).to eq('waiting_confirmation')
+    end
+
+    it 'sends the part texts in order when the composer itself fails' do
       allow(composer).to receive(:compose).and_raise(StandardError, 'boom')
 
-      reply = council.send(:assemble, parts(%w[Анна]), [answered('Приём стоит 5000 тенге.')])
+      reply = council.send(:assemble, parts(%w[Анна Борис]), [consulted('Приём стоит 5000 тенге.'), consulted('Адрес: улица Абая, 1.')])
 
-      expect(reply).to eq('Приём стоит 5000 тенге.')
+      expect(reply).to eq("Приём стоит 5000 тенге.\n\nАдрес: улица Абая, 1.")
       expect(Captain::Runtime::CoordinationEvents).to have_received(:council_composer_fallback).with(hash_including(reason: 'error'))
     end
 
     it 'composes with the model of the acting agent unless the runner passes its own' do
-      council.send(:assemble, parts(%w[Анна]), [answered('Баға 5000.')])
+      council.send(:assemble, parts(%w[Анна]), [consulted('Баға 5000 теңге.')])
       expect(Captain::Runtime::CouncilComposer).to have_received(:new).with(
-        context: context, graph: graph, account: nil, llm_context: :llm_context, model: 'openai/gpt-6-luna'
+        context: context, account: nil, llm_context: :llm_context, model: 'openai/gpt-6-luna'
       )
 
       runner_model = described_class.new(context: context, graph: graph, account: nil, model: 'openai/gpt-6-sol')
-      runner_model.send(:assemble, parts(%w[Анна]), [answered('Баға 5000.')])
+      runner_model.send(:assemble, parts(%w[Анна]), [consulted('Баға 5000 теңге.')])
       expect(Captain::Runtime::CouncilComposer).to have_received(:new).with(hash_including(model: 'openai/gpt-6-sol'))
     end
   end

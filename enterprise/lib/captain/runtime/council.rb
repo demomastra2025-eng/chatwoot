@@ -1,17 +1,13 @@
 # frozen_string_literal: true
 
-# Read-only consultations run against separate snapshots. Only the assembler
-# produces a customer reply and updates the durable part registry.
+# Read-only consultations run against separate snapshots. Each consultant writes the final text of its part; only the
+# assembler produces the customer reply (the composer rewrites the part texts into one message) and updates the durable
+# part registry.
 class Captain::Runtime::Council
   STATUSES = %w[ok needs_information out_of_scope unavailable].freeze
-  ROLE_LABELS = %w[unknown self caller customer patient user собеседник пациент пользователь клиент].freeze
   UNRESOLVED_STATES = %w[open unknown].freeze
   HANDOFF_REASON = 'council_unresolved'
-  MAX_FACTS = 8
-  MAX_VALUE_LENGTH = 300
-  # Keys that name an identifier or a secret, in snake_case (slot_id) and camelCase (slotId).
-  IDENTIFIER_KEY = Regexp.union(/(\A|_)(ids?|uuid|token|secret)\z/i, /[a-z](Ids?|Uuid|Token|Secret)\z/)
-  UTC_TIMESTAMP = /\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]00:?00)\z/
+  PART_SEPARATOR = "\n\n"
 
   # model: the acting agent's runtime model, used by the composer that writes the single customer reply.
   def initialize(context:, graph:, account:, llm_context: nil, model: nil)
@@ -22,6 +18,9 @@ class Captain::Runtime::Council
     ids = parts.pluck('id')
     participants = parts.pluck('executor_agent_id').uniq
     Captain::Runtime::CoordinationEvents.council_started(context: @context, participant_ids: participants, part_ids: ids)
+    # What the consultants are told is read once, before the threads start.
+    reply_language
+    staff_handoff_available?
     results = parts.map do |part|
       Thread.new do
         Rails.application.executor.wrap { consult(part) }
@@ -102,6 +101,8 @@ class Captain::Runtime::Council
                                          :agent_tasks, :parts, :part_plan, :pending_handoff,
                                          :captain_v2_completed_tool_results)
     snapshot[:consult_mode] = true
+    snapshot[:consult_language] = reply_language
+    snapshot[:consult_staff_handoff] = staff_handoff_available?
     snapshot[:conversation_history] = public_history(@context[:conversation_history])
     snapshot[:current_agent] = actor.agent_name
     state = snapshot[:state] ||= {}
@@ -151,185 +152,128 @@ class Captain::Runtime::Council
     end
     parsed['contradictions'] = Array(parsed['contradictions']).reject(&:blank?)
     parsed['proposed_operation'] = nil unless parsed['proposed_operation'].is_a?(Hash)
-    parsed['status'] = 'unavailable' if parsed['status'] == 'ok' && parsed['facts'].empty? && parsed['fragment'].present?
+    parsed['customer_text'] = parsed['customer_text'].is_a?(String) ? parsed['customer_text'].strip : ''
+    # An answer without a verified fact is not an answer: its text is not passed on.
+    if parsed['status'] == 'ok' && parsed['facts'].empty? && parsed['customer_text'].present?
+      parsed['status'] = 'unavailable'
+      parsed['customer_text'] = ''
+    end
     parsed
   rescue JSON::ParserError
     unavailable
   end
 
   def unavailable
-    { 'status' => 'unavailable', 'fragment' => '', 'facts' => [], 'missing_fields' => [],
+    { 'status' => 'unavailable', 'customer_text' => '', 'facts' => [], 'missing_fields' => [],
       'proposed_operation' => nil, 'contradictions' => [] }
   end
 
   def assemble(parts, results)
     registry = Captain::Runtime::PartRegistry.new(@context)
-    answers = []
-    operations = []
-    missing = []
-    reports = {}
-    unresolved = []
-    needs_review = false
-    parts.zip(results).each do |part, result|
-      part['executor_agent_id'] = result['_executor_agent_id'] if result['_executor_agent_id'].present?
-      contradictions = Array(result['contradictions']).reject(&:blank?)
-      # Independent parts and dependent parts with a resolved prerequisite may be confirmed; the
-      # executor runs a dependent part only after its prerequisite is done. Conditional parts stay withheld.
-      runnable = Captain::Runtime::PartRegistry.executable_relation?(part)
-      operation = result['proposed_operation'] if runnable && operation_valid?(part, result['proposed_operation'])
-      invalid_operation = result['proposed_operation'].present? && operation.nil?
-      withheld = contradictions.any? || invalid_operation
-      state = if withheld || result['status'] == 'out_of_scope'
-                'open'
-              elsif Array(result['missing_fields']).any?
-                'waiting_customer'
-              elsif result['status'] == 'ok' && operation.present?
-                'waiting_confirmation'
-              elsif result['status'] == 'ok'
-                'answered'
-              else
-                'unknown'
-              end
-      needs_review ||= state.in?(UNRESOLVED_STATES)
-      fragment = result['fragment'].to_s.strip
-      usable = !withheld && result['status'].in?(%w[ok needs_information])
-      # A consultant's clarifying question for the customer is a reply to send, not a part that staff has to answer.
-      unresolved_part = state.in?(UNRESOLVED_STATES) && !(usable && result['status'] == 'needs_information' && fragment.present?)
-      answers << fragment if usable && fragment.present?
-      operations << part if state == 'waiting_confirmation'
-      unresolved << part['fragment'].to_s.strip.first(160) if unresolved_part
-      unless withheld
-        missing.concat(Array(result['missing_fields']).map do |field|
-          field.to_h.deep_stringify_keys.merge('patient' => field.to_h['patient'].presence || part['patient'],
-                                               'part_id' => part['id'])
-        end)
-      end
-      registry.update!(part['id'], state: state, missing_fields: result['missing_fields'] || [],
-                                    proposed_operation: state == 'waiting_confirmation' ? operation : nil,
-                                    executor_agent_id: part['executor_agent_id'])
-      reports[part['id']] = part_report(part, result, state: state, usable: usable, operation: operation, unresolved: unresolved_part)
-    end
-    fields = missing.uniq do |field|
-      patient = field['patient'] == 'unknown' ? field['part_id'] : field['patient']
-      [patient, field['field']]
-    end
-    template = template_reply(answers, operations, fields, needs_review)
-    composed_reply(parts, reports, fields, unresolved, pending_confirmation: operations.any?) || template
+    entries = parts.zip(results).map { |part, result| settle_part(registry, part, result) }
+    composed_reply(parts, entries)
   end
 
-  # The fixed-template reply: the fallback whenever the composer does not produce a valid reply.
-  def template_reply(answers, operations, fields, needs_review)
-    lines = answers.dup
-    operations.each do |part|
-      lines << I18n.t('captain.coordination.confirm_action', request: part['fragment'].first(160), locale: reply_language.to_sym)
-    end
-    lines.concat(missing_field_lines(fields)) if fields.any?
-    lines << I18n.t('captain.coordination.needs_review', locale: reply_language.to_sym) if lines.empty? || needs_review
-    lines.join("\n\n")
+  # Records the state of one part and returns what the reply needs of it: the text of the part, whether it waits for the
+  # customer's yes or no, and whether it stays unresolved.
+  def settle_part(registry, part, result)
+    part['executor_agent_id'] = result['_executor_agent_id'] if result['_executor_agent_id'].present?
+    contradictions = Array(result['contradictions']).reject(&:blank?)
+    # Independent parts and dependent parts with a resolved prerequisite may be confirmed; the
+    # executor runs a dependent part only after its prerequisite is done. Conditional parts stay withheld.
+    runnable = Captain::Runtime::PartRegistry.executable_relation?(part)
+    operation = result['proposed_operation'] if runnable && operation_valid?(part, result['proposed_operation'])
+    invalid_operation = result['proposed_operation'].present? && operation.nil?
+    withheld = contradictions.any? || invalid_operation
+    # The text of a withheld part is an unverified answer: it is never passed on.
+    text = withheld ? '' : result['customer_text'].to_s.strip
+    state = part_state(result, text: text, operation: operation, withheld: withheld)
+    # A consultant's question for the customer is a reply to send, not a part that staff has to answer.
+    unresolved = state.in?(UNRESOLVED_STATES) && !(result['status'] == 'needs_information' && text.present?)
+    registry.update!(part['id'], state: state, missing_fields: result['missing_fields'] || [],
+                                  proposed_operation: state == 'waiting_confirmation' ? operation : nil,
+                                  executor_agent_id: part['executor_agent_id'])
+    { text: part_text(state, text, result), confirmation: state == 'waiting_confirmation', unresolved: unresolved,
+      request: part['fragment'].to_s.strip.first(160), patient: part['patient'].to_s.strip.downcase }
   end
 
-  # One model call writes the single customer reply from the results of the consultations. Any failure keeps the
-  # template reply and publishes why. A part left unresolved is promised to staff only when a real handoff will follow:
-  # the response builder performs it after the reply is delivered (see context[:council_handoff]). While a part waits for
-  # the customer's yes or no there is no handoff: staff would answer that yes, and the stored proposal must stay with the
-  # agent that can run it. The unresolved part then stays open and nothing is promised for it.
-  def composed_reply(parts, reports, fields, unresolved, pending_confirmation: false)
+  # An answer or a confirmation question needs the text that tells the customer so: without it the part is unknown.
+  def part_state(result, text:, operation:, withheld:)
+    if withheld || result['status'] == 'out_of_scope'
+      'open'
+    elsif Array(result['missing_fields']).any?
+      'waiting_customer'
+    elsif result['status'] == 'ok' && text.present?
+      operation.present? ? 'waiting_confirmation' : 'answered'
+    else
+      'unknown'
+    end
+  end
+
+  # A consultant phrases each missing field as a question to the customer; they stand in for a missing text.
+  def part_text(state, text, result)
+    return text unless state == 'waiting_customer'
+
+    text.presence || Array(result['missing_fields']).filter_map { |field| field['field'].to_s.strip.presence }.join(' ')
+  end
+
+  # The composer rewrites the part texts into one message. Without its reply the texts go out one after another, in the
+  # order of the requests. A part left unresolved is promised to staff only when a real handoff will follow: the response
+  # builder performs it after the reply is delivered (see context[:council_handoff]). While a part waits for the customer's
+  # yes or no there is no handoff: staff would answer that yes, and the stored proposal must stay with the agent that can
+  # run it. The unresolved part then stays open and nothing is promised for it.
+  def composed_reply(parts, entries)
     @context.delete(:council_handoff)
-    ids = parts.pluck('id')
-    handoff = unresolved.any? && !pending_confirmation && staff_handoff_available?
+    unresolved = entries.select { |entry| entry[:unresolved] }
+    handoff = unresolved.any? && entries.none? { |entry| entry[:confirmation] } && staff_handoff_available?
+    lines = entries.map { |entry| part_line(entry, handoff: handoff) }
+    reply = compose_reply(parts.pluck('id'), lines, handoff: handoff) || plain_reply(entries, lines, handoff: handoff)
+    @context[:council_handoff] = { reason: HANDOFF_REASON, parts: unresolved.pluck(:request) } if handoff
+    reply
+  end
+
+  # The consultants were told whether staff can take an unresolved part over, so their sentence is true unless a pending
+  # confirmation withdrew the handoff. A part without any text gets one short line that says the same.
+  def part_line(entry, handoff:)
+    text = stock_line?(entry, handoff: handoff) ? stock_text(handoff) : entry[:text]
+    { 'text' => text, 'needs_confirmation' => entry[:confirmation], 'staff_will_answer' => entry[:unresolved] && handoff }
+  end
+
+  def stock_line?(entry, handoff:)
+    entry[:unresolved] && (entry[:text].blank? || (staff_handoff_available? && !handoff))
+  end
+
+  def stock_text(handoff)
+    I18n.t("captain.coordination.#{handoff ? 'part_staff_will_answer' : 'part_cannot_answer'}", locale: reply_language.to_sym)
+  end
+
+  # Without the composer's reply the part texts go out in the order of the requests. Exact repeats are dropped (the same stock
+  # line for two parts, the same question twice for one person); the same words about different people stay, since they ask
+  # about different people.
+  def plain_reply(entries, lines, handoff:)
+    keyed = entries.zip(lines).map do |entry, line|
+      [[stock_line?(entry, handoff: handoff) ? nil : entry[:patient], line['text']], line['text']]
+    end
+    keyed.uniq(&:first).filter_map { |_, text| text.presence }.join(PART_SEPARATOR)
+  end
+
+  def compose_reply(ids, lines, handoff:)
     outcome = Captain::Runtime::CouncilComposer.new(
-      context: @context, graph: @graph, account: @account, llm_context: @llm_context, model: composer_model
-    ).compose(message: customer_message, language: reply_language, parts: attach_questions(reports, fields), staff_handoff: handoff)
+      context: @context, account: @account, llm_context: @llm_context, model: composer_model
+    ).compose(message: customer_message, language: reply_language, parts: lines)
     if outcome.reply.blank?
       Captain::Runtime::CoordinationEvents.council_composer_fallback(context: @context, part_ids: ids, reason: outcome.reason)
       return
     end
 
-    @context[:council_handoff] = { reason: HANDOFF_REASON, parts: unresolved } if handoff
     Captain::Runtime::CoordinationEvents.council_composed(context: @context, part_ids: ids, language: reply_language, handoff: handoff)
     outcome.reply
   rescue Captain::Conversation::ControlGenerationStaleError
     raise
   rescue StandardError => e
     Rails.logger.warn("[CAPTAIN][Council] composer unavailable error_class=#{e.class.name}")
-    Captain::Runtime::CoordinationEvents.council_composer_fallback(context: @context, part_ids: ids || [], reason: 'error')
+    Captain::Runtime::CoordinationEvents.council_composer_fallback(context: @context, part_ids: ids, reason: 'error')
     nil
-  end
-
-  # What the composer may know about one part: customer-facing data only, never identifiers or role labels.
-  def part_report(part, result, state:, usable:, operation:, unresolved:)
-    {
-      'request' => part['fragment'].to_s.strip.first(300),
-      'patient' => patient_name(part['patient']),
-      'answer' => (result['fragment'].to_s.strip.presence if usable),
-      'facts' => (compact_facts(result['facts']) if usable),
-      'confirm' => (confirmation(part, operation) if state == 'waiting_confirmation'),
-      'unresolved' => (true if unresolved)
-    }.compact_blank
-  end
-
-  # Each missing item is asked once: the fields are already de-duplicated per patient across all parts.
-  def attach_questions(reports, fields)
-    fields.group_by { |field| field['part_id'] }.each do |part_id, items|
-      next unless reports[part_id]
-
-      reports[part_id]['questions'] = items.filter_map do |field|
-        question = field['field'].to_s.strip
-        { 'patient' => patient_name(field['patient']), 'question' => question }.compact_blank if question.present?
-      end
-    end
-    reports.values
-  end
-
-  def patient_name(value)
-    name = value.to_s.strip
-    name if name.present? && !ROLE_LABELS.include?(name.downcase)
-  end
-
-  def compact_facts(facts)
-    Array(facts).first(MAX_FACTS).filter_map { |fact| compact_value(fact, hide_identifiers: true) if fact.is_a?(Hash) }
-  end
-
-  # The action is named in the customer's language ("запись на приём"), never by the tool's title. A tool without a label
-  # is described by the request and the details alone. The marker keeps a bare confirmation visible to the composer.
-  def confirmation(part, operation)
-    details = operation.to_h.deep_stringify_keys
-    described = { 'action' => action_label(details['type'].to_s), 'patient' => patient_name(part['patient']),
-                  'details' => compact_value(details['params'], hide_identifiers: true) }.compact_blank
-    described.presence || { 'yes_no' => true }
-  end
-
-  def action_label(type)
-    key = "captain.coordination.action.#{type}"
-    I18n.t(key, locale: reply_language.to_sym) if type.match?(/\A[a-z][a-z_]*\z/) && I18n.exists?(key, reply_language.to_sym)
-  end
-
-  def compact_value(value, depth = 0, hide_identifiers: false)
-    case value
-    when Hash
-      return if depth > 2
-
-      value.each_with_object({}) do |(key, item), clean|
-        next if hide_identifiers && key.to_s.match?(IDENTIFIER_KEY)
-
-        cleaned = compact_value(item, depth + 1, hide_identifiers: hide_identifiers)
-        clean[key.to_s] = cleaned unless cleaned.nil? || cleaned == ''
-      end
-    when Array then value.first(MAX_FACTS).filter_map { |item| compact_value(item, depth + 1, hide_identifiers: hide_identifiers) }
-    when String then local_clock(value.strip.first(MAX_VALUE_LENGTH))
-    when Numeric, true, false then value
-    end
-  end
-
-  # A UTC timestamp is shown as the clinic's local clock, so that the composer never has to convert a time.
-  def local_clock(text)
-    return text unless text.match?(UTC_TIMESTAMP)
-
-    name = @account&.reporting_timezone.presence
-    zone = ActiveSupport::TimeZone[name] if name
-    zone ? Time.zone.parse(text).in_time_zone(zone).strftime('%Y-%m-%dT%H:%M') : text
-  rescue ArgumentError
-    text
   end
 
   def customer_message
@@ -350,26 +294,15 @@ class Captain::Runtime::Council
 
   # The same conditions the response builder checks before it hands the conversation to staff.
   def staff_handoff_available?
-    actor = acting_actor
-    @context.dig(:state, :conversation, :id).present? && actor.present? && actor.handoff_enabled? &&
-      Array(actor.selected_agent_tool_ids).include?('handoff')
-  rescue StandardError
-    false
-  end
+    return @staff_handoff_available if defined?(@staff_handoff_available)
 
-  # Consultants phrase each missing field as a question to the customer; such questions are sent as they are.
-  # A patient name is shown only when the questions concern several people; role labels never reach the customer.
-  def missing_field_lines(fields)
-    named = fields.map do |field|
-      patient = field['patient'].to_s.strip
-      [ROLE_LABELS.include?(patient.downcase) ? '' : patient, field['field'].to_s.strip]
+    @staff_handoff_available = begin
+      actor = acting_actor
+      (@context.dig(:state, :conversation, :id).present? && actor.present? && actor.handoff_enabled? &&
+        Array(actor.selected_agent_tool_ids).include?('handoff')).present?
+    rescue StandardError
+      false
     end
-    named = named.reject { |_patient, question| question.blank? }.uniq
-    several = named.map(&:first).reject(&:blank?).uniq.size > 1
-    texts = named.map { |patient, question| several && patient.present? ? "#{patient} — #{question}" : question }
-    return [texts.join(' ')] if named.all? { |_patient, question| question.end_with?('?') }
-
-    [I18n.t('captain.coordination.missing_fields', fields: texts.join(', '), locale: reply_language.to_sym)]
   end
 
   def operation_valid?(part, raw)

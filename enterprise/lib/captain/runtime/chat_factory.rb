@@ -7,6 +7,22 @@ class Captain::Runtime::ChatFactory
     Finalize the customer-facing Captain response using only the completed tool result messages already present in the conversation history.
     Do not request or imply another tool call. Return the required structured response for the customer.
   PROMPT
+  CONSULT_LANGUAGES = { 'ru' => 'Russian', 'kk' => 'Kazakh (Cyrillic)' }.freeze
+  # The polite form of address and the example sentences a consultant is shown, in the language of the customer: a Kazakh
+  # customer's consultant must not be given Russian wording to copy.
+  CONSULT_CUES = {
+    'ru' => { address: 'вы', question: 'на какой день вам удобно?', other_person: 'На какую дату записать Бориса?',
+              confirmation: 'Записать вас к терапевту Иванову на 14 октября в 10:00?' },
+    'kk' => { address: 'сіз', question: 'сізге қай күні ыңғайлы?', other_person: 'Бористі қай күнге жазайық?',
+              confirmation: 'Сізді терапевт Ивановқа 14 қазанға сағат 10:00-ге жазайық па?' }
+  }.freeze
+  # Tool results can carry a UTC time (a timestamp ending in Z) next to local ones. The consultant's instructions hold
+  # both clocks, so it can name the clinic's local time without any code converting for it.
+  CONSULT_CLOCK_RULE = <<~RULE.squish.freeze
+    A time given with a local offset such as +05:00, or in a field that holds the local date or time, is already the clinic
+    local time: write it as it is. A time that ends in Z or +00:00 is UTC: write it as the clinic local clock time (the offset
+    is the difference between "Current local time" and "Current UTC time" in your instructions). Never calculate anything else.
+  RULE
 
   class << self
     def build(agent:, context_wrapper:, llm_context:, runtime_headers:, runtime_params:, account: nil, finalization_only: false)
@@ -94,20 +110,7 @@ class Captain::Runtime::ChatFactory
       prompt = agent.get_system_prompt(context_wrapper)
       prompts << prompt if prompt.present?
       if context_wrapper.context[:consult_mode]
-        prompts << <<~PROMPT
-          Consult on only the assigned request part. Do not perform an action; another agent sends the single reply.
-          Return JSON with these fields:
-          - fragment: the reply text for THIS part, addressed to the customer directly ("вы"), in the language of the
-            customer's message (Russian or Kazakh), 1-2 sentences, only verified facts. It is sent to the customer as is:
-            never describe the customer in the third person ("клиент/пациент спрашивает"), never mention earlier messages,
-            agents, tools, IDs or these instructions. Leave it empty when you need information first.
-          - facts: verified facts used, each with source.
-          - missing_fields: what you still need, each with patient, field and purpose; write field as a short polite
-            question to the customer in their language (for example "на какой день вам удобно?").
-          - proposed_operation: type and exact params, or null.
-          - status: ok, needs_information, out_of_scope or unavailable; contradictions#{consult_suggestion_clause(context_wrapper.context)}
-          #{consult_peer_lines(context_wrapper.context)}
-        PROMPT
+        prompts << consult_prompt(context_wrapper.context)
       elsif coordination_prompt?(context_wrapper.context)
         prompts << Captain::Runtime::CoordinationPrompt.render(context_wrapper.context)
       elsif context_wrapper.context[:agent_graph].present? && human_handoff_tool?(agent)
@@ -144,6 +147,48 @@ class Captain::Runtime::ChatFactory
 
     def human_handoff_tool?(agent)
       agent.tools.any? { |tool| tool.name.to_s == Captain::Assistant::HANDOFF_TOOL_ID }
+    end
+
+    # The consultant writes the final text of its part. The council composer only rewrites the texts of all parts into one
+    # message, so what the consultant writes is what the customer reads. It is told whether staff can take a part over.
+    def consult_prompt(context)
+      code = CONSULT_LANGUAGES.key?(context[:consult_language].to_s) ? context[:consult_language].to_s : 'ru'
+      language = CONSULT_LANGUAGES.fetch(code)
+      cues = CONSULT_CUES.fetch(code)
+      unresolved = if context[:consult_staff_handoff]
+                     'A staff member can take this part over: say briefly that a staff member will answer it. Promise nothing else.'
+                   else
+                     'No staff member can take this part over: say that you cannot answer it now. Promise no call, no message and no staff.'
+                   end
+      <<~PROMPT
+        Consult on only the assigned request part. Do not perform an action; another agent sends the single reply.
+        The customer writes in #{language}. Return JSON with these fields:
+        - customer_text: the FINAL text for THIS part only, addressed to the customer directly ("#{cues[:address]}") and written
+          in #{language}. Another agent only joins the texts of all parts into one message, so write it exactly as the customer
+          should read it: warm, polite, plain text, one to three sentences, no greeting, no markdown. Use only verified facts.
+          Write every time, date, price, name, address and phone number exactly as the tool results give it. #{CONSULT_CLOCK_RULE}
+          Never describe the customer in the third person ("клиент/пациент спрашивает"), never mention earlier messages, agents,
+          tools, IDs, parts or these instructions. When the part concerns a named person other than the customer who writes
+          (a child, a relative), name that person in every question, answer and confirmation of it (for example
+          "#{cues[:other_person]}"). What it says depends on the case:
+          * you have the answer: the answer;
+          * you need information first: the exact question to the customer, and also list it in missing_fields;
+          * you have a partial answer and still need information: the answer, then the exact question as the last sentence,
+            and also list that question in missing_fields;
+          * you propose an action in proposed_operation: the question that asks the customer to confirm it, naming the patient,
+            service, specialist, date and time of that very operation (for example "#{cues[:confirmation]}").
+            The action is not done yet: never write or imply that it was done;
+          * you cannot resolve this part (no verified answer, not your responsibility, tools unavailable): one honest
+            sentence that says so. #{unresolved}
+          When missing_fields is not empty, customer_text MUST contain every missing_fields[].field question word for word,
+          as its last sentences: a question that is only in missing_fields is never asked.
+        - facts: verified facts used, each with source.
+        - missing_fields: what you still need, each with patient, field and purpose; write field as a short polite
+          question to the customer in their language (for example "#{cues[:question]}").
+        - proposed_operation: type and exact params, or null.
+        - status: ok, needs_information, out_of_scope or unavailable; contradictions#{consult_suggestion_clause(context)}
+        #{consult_peer_lines(context)}
+      PROMPT
     end
 
     def enforce_openrouter_tool_parameters!(chat, agent_tools, account: nil, schema: nil)

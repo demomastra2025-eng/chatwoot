@@ -10,13 +10,8 @@ en:
       action_not_started: 'Not started: an earlier step was not completed.'
       part_result: '“%{request}”: %{result}'
       action_done: The action was completed.
-      confirm_action: 'Confirm the action for “%{request}”?'
-      missing_fields: 'Please clarify: %{fields}.'
       needs_review: Part of the request needs further verification.
       request_processed: The request was processed. If you need details, please clarify your question.
+      part_staff_will_answer: A clinic staff member will answer this question.
+      part_cannot_answer: I cannot answer this question right now.
       unresolved_handoff: 'Part of the request is unanswered and needs a staff reply: %{parts}.'
-      action:
-        create_appointment: booking an appointment
-        update_appointment: changing an appointment
-        cancel_appointment: cancelling an appointment
-        update_my_contact: updating your contact details

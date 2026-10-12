@@ -125,14 +125,14 @@ RSpec.describe Captain::Runtime::CoordinationEvents do
 
     described_class.council_composed(context: context, part_ids: %w[part-1 part-2], language: 'kk', handoff: true)
     described_class.council_composed(context: context, part_ids: %w[part-1], language: 'ru', handoff: false)
-    described_class.council_composer_fallback(context: context, part_ids: %w[part-1], reason: :success_claim)
+    described_class.council_composer_fallback(context: context, part_ids: %w[part-1], reason: :invalid)
 
     expect(events.map(&:name)).to eq(%w[captain.council.composed captain.council.composed captain.council.composer_fallback])
     expect(events.first.payload).to include('parts' => %w[part-1 part-2], 'language' => 'kk', 'handoff' => true,
                                             'reason' => 'council_unresolved', 'conversation_id' => 3)
     expect(events.second.payload).to include('language' => 'ru', 'handoff' => false)
     expect(events.second.payload).not_to have_key('reason')
-    expect(events.last.payload).to include('parts' => %w[part-1], 'reason' => 'success_claim')
+    expect(events.last.payload).to include('parts' => %w[part-1], 'reason' => 'invalid')
   ensure
     ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
   end

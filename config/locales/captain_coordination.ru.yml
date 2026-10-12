@@ -10,13 +10,8 @@ ru:
       action_not_started: 'Не начато: предыдущий шаг не завершён.'
       part_result: '«%{request}»: %{result}'
       action_done: Действие выполнено.
-      confirm_action: 'Подтвердите действие по запросу «%{request}»?'
-      missing_fields: 'Уточните: %{fields}.'
       needs_review: Часть запроса требует дополнительной проверки.
       request_processed: Запрос обработан. Если нужны подробности, уточните, пожалуйста, вопрос.
+      part_staff_will_answer: По этому вопросу вам ответит сотрудник клиники.
+      part_cannot_answer: На этот вопрос я сейчас не могу ответить.
       unresolved_handoff: 'Часть обращения осталась без ответа, нужен ответ сотрудника: %{parts}.'
-      action:
-        create_appointment: запись на приём
-        update_appointment: изменение записи
-        cancel_appointment: отмена записи
-        update_my_contact: обновление ваших контактных данных

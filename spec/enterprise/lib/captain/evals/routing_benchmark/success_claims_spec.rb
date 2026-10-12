@@ -93,37 +93,9 @@ RSpec.describe Captain::Evals::RoutingBenchmark::SuccessClaims do
     expect(kinds('Нет проблем, записала вас на 10:00.')).to eq([:book])
   end
 
-  describe 'the runtime mode of the council composer' do
-    def runtime(text) = described_class.runtime_kinds(text)
-
-    [
-      'Ваша запись подтверждена на 10:00.', 'Запись оформлена на 14 октября в 10:00.', 'Приём назначен на 10:00.',
-      'Я оформила запись.', 'Мы подтвердили вашу запись.', 'Запись изменена на 11:00.', 'Вы зарегистрированы на приём.',
-      'Запись удалена.', 'Выполнено.', 'Я добавила вас в список.', 'Жазылымыз расталды.', 'Қабылдау тағайындалды.',
-      'Сіздің жазылуыңыз расталды.', 'Жазылуыңыз рәсімделді.', 'Жазылу өзгертілді.', 'Я передала ваш вопрос коллеге.',
-      'Хабарладым.', 'Анна записана на 10:00 к терапевту, подтверждаете?'
-    ].each do |text|
-      it "finds a claim in #{text.inspect}" do
-        expect(runtime(text)).not_to be_empty
-      end
-    end
-
-    [
-      'Подтверждаете запись на 10:00?', 'Подтвердите, пожалуйста, перенос записи.', 'Могу оформить запись на 10:00, подтверждаете?',
-      'Запись не оформлена, время занято.', 'Врач назначит время после осмотра.', 'Изменение записи возможно за сутки.',
-      'Хотите, чтобы я оформила запись?', 'Передам вопрос сотруднику.'
-    ].each do |text|
-      it "finds nothing in #{text.inspect}" do
-        expect(runtime(text)).to be_empty
-      end
-    end
-
-    it 'reads the statement in front of a closing question, which the benchmark scoring does not' do
-      expect(runtime('Анна записана на 10:00, подтверждаете?')).to eq([:book_state])
-      expect(runtime('Вы записаны на 10:00 — подтверждаете?')).to eq([:book_state])
-      expect(kinds('Анна записана на 10:00, подтверждаете?')).to be_empty
-      expect(kinds('Ваша запись подтверждена на 10:00.')).to be_empty
-    end
+  it 'reads a statement in front of a closing question as part of the question' do
+    expect(kinds('Анна записана на 10:00, подтверждаете?')).to be_empty
+    expect(kinds('Ваша запись подтверждена на 10:00.')).to be_empty
   end
 
   it 'maps every claim kind to the tools that support it' do

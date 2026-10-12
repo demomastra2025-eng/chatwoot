@@ -10,13 +10,8 @@ kk:
       action_not_started: 'Басталмады: алдыңғы қадам аяқталмады.'
       part_result: '«%{request}»: %{result}'
       action_done: Әрекет орындалды.
-      confirm_action: '«%{request}» сұрауы бойынша әрекетті растайсыз ба?'
-      missing_fields: 'Нақтылаңыз: %{fields}.'
       needs_review: Сұраудың бір бөлігін қосымша тексеру қажет.
       request_processed: Сұрау өңделді. Толығырақ білу үшін сұрағыңызды нақтылаңыз.
+      part_staff_will_answer: Бұл сұрақ бойынша сізге клиника қызметкері жауап береді.
+      part_cannot_answer: Бұл сұраққа қазір жауап бере алмаймын.
       unresolved_handoff: 'Өтініштің бір бөлігі жауапсыз қалды, қызметкердің жауабы қажет: %{parts}.'
-      action:
-        create_appointment: қабылдауға жазылу
-        update_appointment: жазылуды өзгерту
-        cancel_appointment: жазылуды болдырмау
-        update_my_contact: байланыс деректеріңізді жаңарту

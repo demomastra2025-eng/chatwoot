@@ -337,6 +337,79 @@ RSpec.describe Captain::Runtime::ChatFactory do
     end
   end
 
+  describe 'the prompt of a council consultation' do
+    let(:agent) { Captain::Runtime::Agent.new(name: 'assistant_agent', instructions: 'Specialist instructions') }
+
+    def prompt(**context)
+      described_class.send(:system_prompt_for, agent, Captain::Runtime::RunContext.new({ consult_mode: true }.merge(context))).squish
+    end
+
+    it 'asks for the final text of the part in the language of the customer, with the confirmation question and no claim of a done action' do
+      text = prompt(consult_language: 'ru', consult_staff_handoff: false)
+
+      expect(text).to include('Specialist instructions', 'The customer writes in Russian',
+                              'customer_text: the FINAL text for THIS part only', 'addressed to the customer directly ("вы")',
+                              'written in Russian', 'you have the answer: the answer', 'the exact question to the customer',
+                              'the question that asks the customer to confirm it, naming the patient, service, specialist, date and time',
+                              'Записать вас к терапевту Иванову на 14 октября в 10:00?',
+                              'The action is not done yet: never write or imply that it was done',
+                              'exactly as the tool results give it', '(for example "на какой день вам удобно?")')
+      expect(text).not_to include('fragment')
+    end
+
+    it 'gives a consultant of a Kazakh customer Kazakh wording to follow and no Russian example sentences' do
+      text = prompt(consult_language: 'kk', consult_staff_handoff: false)
+
+      expect(text).to include('The customer writes in Kazakh (Cyrillic)', 'addressed to the customer directly ("сіз")',
+                              'written in Kazakh (Cyrillic)', 'Сізді терапевт Ивановқа 14 қазанға сағат 10:00-ге жазайық па?',
+                              '(for example "сізге қай күні ыңғайлы?")', '(for example "Бористі қай күнге жазайық?")')
+      expect(text).not_to include('Записать вас к терапевту', 'на какой день вам удобно?', 'На какую дату записать Бориса?', '("вы")')
+    end
+
+    it 'asks to name a person other than the writer, in every question, answer and confirmation' do
+      expect(prompt(consult_language: 'ru')).to include(
+        'When the part concerns a named person other than the customer who writes (a child, a relative), name that person ' \
+        'in every question, answer and confirmation of it (for example "На какую дату записать Бориса?")'
+      )
+    end
+
+    it 'asks for a partial answer to end with its question and for every missing field question to stand in the text' do
+      text = prompt
+
+      expect(text).to include('you have a partial answer and still need information: the answer, then the exact question as the last sentence, ' \
+                              'and also list that question in missing_fields',
+                              'When missing_fields is not empty, customer_text MUST contain every missing_fields[].field question ' \
+                              'word for word, as its last sentences')
+    end
+
+    it 'tells the consultant to name the clinic local clock time and to read a UTC time against the two clocks it is given' do
+      expect(prompt).to include(
+        'A time given with a local offset such as +05:00, or in a field that holds the local date or time, is already the clinic ' \
+        'local time: write it as it is. A time that ends in Z or +00:00 is UTC: write it as the clinic local clock time (the offset ' \
+        'is the difference between "Current local time" and "Current UTC time" in your instructions). Never calculate anything else.'
+      )
+      expect(prompt).not_to include('never convert or calculate them')
+    end
+
+    it 'tells the consultant that staff will answer an unresolved part only when a handoff is available' do
+      with_handoff = prompt(consult_language: 'ru', consult_staff_handoff: true)
+      without_handoff = prompt(consult_language: 'ru', consult_staff_handoff: false)
+
+      expect(with_handoff).to include('one honest sentence that says so',
+                                      'A staff member can take this part over: say briefly that a staff member will answer it')
+      expect(with_handoff).not_to include('No staff member can take this part over')
+      expect(without_handoff).to include('No staff member can take this part over: say that you cannot answer it now. ' \
+                                         'Promise no call, no message and no staff.')
+      expect(without_handoff).not_to include('A staff member can take this part over')
+    end
+
+    it 'defaults to Russian and to no staff handoff' do
+      text = prompt
+
+      expect(text).to include('The customer writes in Russian', 'No staff member can take this part over')
+    end
+  end
+
   describe '.configure' do
     let(:chat) { instance_double(RubyLLM::Chat) }
     let(:tool) { ChatFactorySpecTool.new('search_deals', 'Search CRM deals') }
