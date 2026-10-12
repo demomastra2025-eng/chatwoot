@@ -34,7 +34,6 @@ const error = ref(null);
 const slideRefs = ref([]);
 const showShareModal = ref(false);
 const shareModalRef = ref(null);
-const drumrollAudio = ref(null);
 
 const hasConversations = computed(() => {
   return yearData.value?.total_conversations > 0;
@@ -65,24 +64,6 @@ const slideBackgrounds = [
   'bg-[#f87171]',
   'bg-[#fbbf24]',
 ];
-
-const playDrumroll = () => {
-  try {
-    if (!drumrollAudio.value) {
-      drumrollAudio.value = new Audio('/audio/dashboard/drumroll.mp3');
-      drumrollAudio.value.volume = 0.5;
-    }
-
-    drumrollAudio.value.currentTime = 0;
-    drumrollAudio.value.play().catch(err => {
-      // eslint-disable-next-line no-console
-      console.log('Could not play drumroll:', err);
-    });
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.log('Error playing drumroll:', err);
-  }
-};
 
 const fetchYearInReviewData = async () => {
   const year = 2025;
@@ -147,7 +128,6 @@ const open = () => {
   useTrack(YEAR_IN_REVIEW_EVENTS.MODAL_OPENED);
   isOpen.value = true;
   fetchYearInReviewData();
-  playDrumroll();
 };
 
 const currentSlideBackground = computed(

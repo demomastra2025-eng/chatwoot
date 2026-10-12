@@ -15,13 +15,7 @@ const props = defineProps({
   },
   tones: {
     type: Array,
-    default: () => [
-      { value: 'ding', label: 'Ding' },
-      { value: 'bell', label: 'Bell' },
-      { value: 'chime', label: 'Chime' },
-      { value: 'magic', label: 'Magic' },
-      { value: 'ping', label: 'Ping' },
-    ],
+    default: () => [],
   },
   name: {
     type: String,

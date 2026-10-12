@@ -11,13 +11,18 @@ import {
   isMessageFromCurrentUser,
 } from './AudioMessageHelper';
 import WindowVisibilityHelper from './WindowVisibilityHelper';
+import {
+  DEFAULT_NOTIFICATION_TONE,
+  notificationToneUrl,
+  resolveAudioAlertType,
+  resolveNotificationTone,
+} from './notificationSound';
 import { useAlert } from 'dashboard/composables';
 
 const NOTIFICATION_TIME = 30000;
 const ALERT_DURATION = 10000;
-const ALERT_PATH_PREFIX = '/audio/dashboard/';
-const DEFAULT_TONE = 'ding';
-const DEFAULT_ALERT_TYPE = ['none'];
+// Until the user settings are applied nothing rings.
+const INITIAL_ALERT_TYPE = ['none'];
 
 export class DashboardAudioNotificationHelper {
   constructor(store) {
@@ -27,7 +32,7 @@ export class DashboardAudioNotificationHelper {
     this.store = new AudioNotificationStore(store);
 
     this.notificationConfig = {
-      audioAlertType: DEFAULT_ALERT_TYPE,
+      audioAlertType: INITIAL_ALERT_TYPE,
       playAlertOnlyWhenHidden: true,
       alertIfUnreadConversationExist: false,
     };
@@ -36,7 +41,7 @@ export class DashboardAudioNotificationHelper {
 
     this.audioConfig = {
       audio: null,
-      tone: DEFAULT_TONE,
+      tone: DEFAULT_NOTIFICATION_TONE,
       hasSentSoundPermissionsRequest: false,
     };
 
@@ -44,7 +49,7 @@ export class DashboardAudioNotificationHelper {
   }
 
   intializeAudio = () => {
-    const resourceUrl = `${ALERT_PATH_PREFIX}${this.audioConfig.tone}.mp3`;
+    const resourceUrl = notificationToneUrl(this.audioConfig.tone);
     this.audioConfig.audio = new Audio(resourceUrl);
     return this.audioConfig.audio.load();
   };
@@ -70,12 +75,14 @@ export class DashboardAudioNotificationHelper {
     currentUser,
     alwaysPlayAudioAlert,
     alertIfUnreadConversationExist,
-    audioAlertType = DEFAULT_ALERT_TYPE,
-    audioAlertTone = DEFAULT_TONE,
+    audioAlertType,
+    audioAlertTone,
   }) => {
     this.notificationConfig = {
       ...this.notificationConfig,
-      audioAlertType: audioAlertType.split('+').filter(Boolean),
+      audioAlertType: resolveAudioAlertType(audioAlertType)
+        .split('+')
+        .filter(Boolean),
       playAlertOnlyWhenHidden: !alwaysPlayAudioAlert,
       alertIfUnreadConversationExist: alertIfUnreadConversationExist,
     };
@@ -83,12 +90,14 @@ export class DashboardAudioNotificationHelper {
     this.currentUser = currentUser;
 
     const previousAudioTone = this.audioConfig.tone;
+    const tone = resolveNotificationTone(audioAlertTone);
     this.audioConfig = {
       ...this.audioConfig,
-      tone: audioAlertTone,
+      tone,
     };
 
-    if (previousAudioTone !== audioAlertTone) {
+    // The audio element does not exist before the first call, whatever the tone.
+    if (!this.audioConfig.audio || previousAudioTone !== tone) {
       this.intializeAudio();
     }
 
@@ -144,11 +153,12 @@ export class DashboardAudioNotificationHelper {
     if (audioAlertType.includes('none')) return false;
     if (audioAlertType.includes('all')) return true;
 
+    const visibleMessage = this.store.withVisibleAssignee(message);
     const assignedToMe = isConversationAssignedToMe(
-      message,
+      visibleMessage,
       this.currentUser.id
     );
-    const isUnassigned = isConversationUnassigned(message);
+    const isUnassigned = isConversationUnassigned(visibleMessage);
 
     const shouldPlayAudio = [];
 
@@ -193,6 +203,12 @@ export class DashboardAudioNotificationHelper {
     // If the message type is not incoming or private, then dismiss the alert
     const { message_type: messageType, private: isPrivate } = message;
     if (messageType !== MESSAGE_TYPE.INCOMING && !isPrivate) {
+      return;
+    }
+
+    // Private notes of automations, macros and AI jobs have no human sender.
+    // They must not ring for everyone now that sounds are on by default.
+    if (isPrivate && message.sender?.type !== 'user') {
       return;
     }
 

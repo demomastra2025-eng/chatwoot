@@ -16,6 +16,13 @@ import {
   INCOMING_CALL_RINGTONES,
   resolveIncomingCallRingtone,
 } from 'dashboard/helper/AudioAlerts/ringtone';
+import {
+  DEFAULT_AUDIO_ALERT_TYPE,
+  DEFAULT_NOTIFICATION_TONE,
+  NOTIFICATION_TONES,
+  resolveAudioAlertType,
+  resolveNotificationTone,
+} from 'dashboard/helper/AudioAlerts/notificationSound';
 
 const getters = useStoreGetters();
 const currentUser = computed(() => getters.getCurrentUser.value);
@@ -23,13 +30,41 @@ const currentUser = computed(() => getters.getCurrentUser.value);
 const { uiSettings, updateUISettings } = useUISettings();
 
 const { t } = useI18n();
-const audioAlert = ref('');
+const audioAlert = ref(DEFAULT_AUDIO_ALERT_TYPE);
 const playAudioWhenTabIsInactive = ref(false);
 const alertIfUnreadConversationExist = ref(false);
 const incomingCallRingtone = ref(DEFAULT_INCOMING_CALL_RINGTONE);
-const alertTone = ref('ding');
+const alertTone = ref(DEFAULT_NOTIFICATION_TONE);
 const audioAlertConditions = ref([]);
 const i18nKeyPrefix = 'PROFILE_SETTINGS.FORM.AUDIO_NOTIFICATIONS_SECTION';
+const alertToneOptions = computed(() => [
+  {
+    value: NOTIFICATION_TONES[0],
+    label: t('PROFILE_SETTINGS.FORM.AUDIO_NOTIFICATIONS_SECTION.TONES.DING'),
+  },
+  {
+    value: NOTIFICATION_TONES[1],
+    label: t('PROFILE_SETTINGS.FORM.AUDIO_NOTIFICATIONS_SECTION.TONES.PING'),
+  },
+  {
+    value: NOTIFICATION_TONES[2],
+    label: t('PROFILE_SETTINGS.FORM.AUDIO_NOTIFICATIONS_SECTION.TONES.DUET'),
+  },
+  {
+    value: NOTIFICATION_TONES[3],
+    label: t('PROFILE_SETTINGS.FORM.AUDIO_NOTIFICATIONS_SECTION.TONES.BIPBOP'),
+  },
+  {
+    value: NOTIFICATION_TONES[4],
+    label: t('PROFILE_SETTINGS.FORM.AUDIO_NOTIFICATIONS_SECTION.TONES.SIGNAL'),
+  },
+  {
+    value: NOTIFICATION_TONES[5],
+    label: t(
+      'PROFILE_SETTINGS.FORM.AUDIO_NOTIFICATIONS_SECTION.TONES.SOFTBELL'
+    ),
+  },
+]);
 const incomingCallRingtoneOptions = computed(() => [
   {
     value: INCOMING_CALL_RINGTONES[0],
@@ -60,7 +95,7 @@ const incomingCallRingtoneOptions = computed(() => [
 const initializeNotificationUISettings = newUISettings => {
   const updatedUISettings = camelcaseKeys(newUISettings);
 
-  audioAlert.value = updatedUISettings.enableAudioAlerts;
+  audioAlert.value = resolveAudioAlertType(updatedUISettings.enableAudioAlerts);
   playAudioWhenTabIsInactive.value = !updatedUISettings.alwaysPlayAudioAlert;
   alertIfUnreadConversationExist.value =
     updatedUISettings.alertIfUnreadAssignedConversationExist;
@@ -81,7 +116,7 @@ const initializeNotificationUISettings = newUISettings => {
   incomingCallRingtone.value = resolveIncomingCallRingtone(
     updatedUISettings.incomingCallRingtone
   );
-  alertTone.value = updatedUISettings.notificationTone || 'ding';
+  alertTone.value = resolveNotificationTone(updatedUISettings.notificationTone);
 };
 
 watch(
@@ -120,7 +155,9 @@ const handleAudioAlertConditions = (id, value) => {
   }
 };
 const handleAudioToneChange = value => {
-  handleAudioConfigChange({ notification_tone: value });
+  handleAudioConfigChange({
+    notification_tone: resolveNotificationTone(value),
+  });
 };
 const handleIncomingCallRingtoneChange = value => {
   handleAudioConfigChange({
@@ -146,6 +183,7 @@ const handleIncomingCallRingtoneChange = value => {
       :value="alertTone"
       name="alertTone"
       audio-path="/audio/dashboard"
+      :tones="alertToneOptions"
       :label="$t(`${i18nKeyPrefix}.DEFAULT_TONE.TITLE`)"
       @change="handleAudioToneChange"
     />

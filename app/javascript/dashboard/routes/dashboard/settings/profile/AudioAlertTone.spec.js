@@ -2,6 +2,12 @@ import { mount } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import AudioAlertTone from './AudioAlertTone.vue';
+import { NOTIFICATION_TONES } from 'dashboard/helper/AudioAlerts/notificationSound';
+
+const messageTones = NOTIFICATION_TONES.map(tone => ({
+  value: tone,
+  label: `label ${tone}`,
+}));
 
 const audio = {
   currentTime: 3,
@@ -64,6 +70,27 @@ describe('AudioAlertTone', () => {
     expect(wrapper.get('select').attributes('name')).toBe(
       'incomingCallRingtone'
     );
+  });
+
+  it.each(NOTIFICATION_TONES)(
+    'previews the message tone %s from /audio/dashboard by default',
+    async tone => {
+      const wrapper = mountComponent({ value: tone, tones: messageTones });
+
+      await wrapper.get('button').trigger('click');
+
+      expect(audio.src).toBe(`/audio/dashboard/${tone}.mp3`);
+      expect(audio.play).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it('lists only the tones it is given', () => {
+    const wrapper = mountComponent({ value: 'bipbop', tones: messageTones });
+
+    expect(
+      wrapper.findAll('option').map(option => option.element.value)
+    ).toEqual(['ding', 'ping', 'duet', 'bipbop', 'signal', 'softbell']);
+    expect(mountComponent({ value: 'ding' }).findAll('option')).toHaveLength(0);
   });
 
   it('falls back to the first allowed option for an invalid stored value', async () => {

@@ -4,6 +4,10 @@ import {
   CHATWOOT_SET_USER,
 } from '../constants/appEvents';
 import { emitter } from 'shared/helpers/mitt';
+import {
+  resolveAudioAlertType,
+  resolveNotificationTone,
+} from './AudioAlerts/notificationSound';
 
 let analyticsHelperPromise;
 let audioNotificationHelperPromise;
@@ -53,8 +57,8 @@ export const initializeAudioAlerts = user => {
     .then(DashboardAudioNotificationHelper => {
       DashboardAudioNotificationHelper.set({
         currentUser: user,
-        audioAlertType: audioAlertType || 'none',
-        audioAlertTone: audioAlertTone || 'ding',
+        audioAlertType: resolveAudioAlertType(audioAlertType),
+        audioAlertTone: resolveNotificationTone(audioAlertTone),
         alwaysPlayAudioAlert: alwaysPlayAudioAlert || false,
         alertIfUnreadConversationExist: alertIfUnreadConversationExist || false,
       });

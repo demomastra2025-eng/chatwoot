@@ -210,6 +210,14 @@
         "DEFAULT_TONE": {
           "TITLE": "Alert tone:"
         },
+        "TONES": {
+          "DING": "Ding",
+          "PING": "Ping",
+          "DUET": "Duet",
+          "BIPBOP": "Bip-bop",
+          "SIGNAL": "Signal",
+          "SOFTBELL": "Soft bell"
+        },
         "CONDITIONS": {
           "TITLE": "Alert conditions:",
           "CONDITION_ONE": "Send audio alerts only if the browser window is not active",

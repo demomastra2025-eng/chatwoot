@@ -210,6 +210,14 @@
         "DEFAULT_TONE": {
           "TITLE": "Хабарландыру дыбысы:"
         },
+        "TONES": {
+          "DING": "Ding",
+          "PING": "Ping",
+          "DUET": "Дуэт",
+          "BIPBOP": "Бип-боп",
+          "SIGNAL": "Сигнал",
+          "SOFTBELL": "Жұмсақ қоңырау"
+        },
         "CONDITIONS": {
           "TITLE": "Alert conditions:",
           "CONDITION_ONE": "Send audio alerts only if the browser window is not active",
