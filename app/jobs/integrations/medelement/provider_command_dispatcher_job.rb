@@ -1,14 +1,19 @@
+# Commands are started the moment their confirmation resolves (ProviderCommandConfirmationJob.dispatch) and executed from
+# the queue right away. This minute job is only the recovery net: it picks up a command whose start was lost (a process
+# died between the commit and the enqueue, the queue dropped the job) and runs the due reconciliations. It leaves a
+# command alone while the normal path can still be carrying it, so it never doubles that path.
 class Integrations::Medelement::ProviderCommandDispatcherJob < ApplicationJob
   queue_as :medelement_provider_commands
 
   BATCH_SIZE = 200
   STALE_PROCESSING_AGE = 15.minutes
+  RECOVERY_AGE = 30.seconds
 
   def perform
-    mark_stale_processing_commands!
+    requeued_ids = mark_stale_processing_commands!
     mark_exhausted_reconciliation_commands_unknown!
     dispatch_resolved_confirmations
-    dispatch_queued_commands
+    dispatch_queued_commands(requeued_ids)
     dispatch_reconciliation_commands
   end
 
@@ -22,7 +27,7 @@ class Integrations::Medelement::ProviderCommandDispatcherJob < ApplicationJob
 
     # Each conditional update is atomic. Once one dispatcher changes the status, competing runs no longer match it.
     # A command that crashed before recording a write phase is safe to retry; a started write must be reconciled.
-    transition_stale_commands!(
+    requeued_ids = transition_stale_commands!(
       stale_commands.where("NULLIF(execution_state ->> 'write_phase', '') IS NULL"),
       to: 'queued',
       error_code: 'executor_stale_before_write'
@@ -32,6 +37,7 @@ class Integrations::Medelement::ProviderCommandDispatcherJob < ApplicationJob
       to: 'reconciliation_required',
       error_code: 'executor_stale'
     )
+    requeued_ids
   end
 
   def dispatch_resolved_confirmations
@@ -43,17 +49,20 @@ class Integrations::Medelement::ProviderCommandDispatcherJob < ApplicationJob
         pending: 'pending',
         now: Time.current
       )
+      .where('confirmation_requests.resolved_at IS NULL OR confirmation_requests.resolved_at <= ?', RECOVERY_AGE.ago)
       .limit(BATCH_SIZE)
       .pluck(:confirmation_request_id)
       .each { |id| Integrations::Medelement::ProviderCommandConfirmationJob.perform_later(id) }
   end
 
-  def dispatch_queued_commands
-    Integrations::Medelement::ProviderCommand
-      .where(status: Integrations::Medelement::ProviderCommand.execution_statuses('queued'))
-      .limit(BATCH_SIZE)
-      .pluck(:id)
-      .each { |id| Integrations::Medelement::ProviderCommandJob.perform_later(id) }
+  # A command that the stale-processing recovery just put back is started at once; the others only after RECOVERY_AGE.
+  def dispatch_queued_commands(requeued_ids = [])
+    ids = Integrations::Medelement::ProviderCommand
+          .where(status: Integrations::Medelement::ProviderCommand.execution_statuses('queued'))
+          .where(updated_at: ...RECOVERY_AGE.ago)
+          .limit(BATCH_SIZE)
+          .pluck(:id)
+    (ids | requeued_ids).each { |id| Integrations::Medelement::ProviderCommandJob.perform_later(id) }
   end
 
   def dispatch_reconciliation_commands
@@ -99,15 +108,18 @@ class Integrations::Medelement::ProviderCommandDispatcherJob < ApplicationJob
   def transition_stale_commands!(commands, to:, error_code:)
     source_statuses = Integrations::Medelement::ProviderCommand.execution_statuses('processing')
     target_statuses = Integrations::Medelement::ProviderCommand.execution_statuses(to)
-    source_statuses.zip(target_statuses).each do |source_status, target_status|
+    source_statuses.zip(target_statuses).flat_map do |source_status, target_status|
+      scope = commands.where(status: source_status)
+      ids = scope.pluck(:id)
       # rubocop:disable Rails/SkipsModelValidations
-      commands.where(status: source_status).update_all(
+      scope.update_all(
         status: target_status,
         last_error_code: error_code,
         last_error_status: nil,
         updated_at: Time.current
       )
       # rubocop:enable Rails/SkipsModelValidations
+      ids
     end
   end
 end

@@ -1,6 +1,8 @@
 require 'rails_helper'
 
 RSpec.describe Integrations::Medelement::ProviderCommandDispatcherJob do
+  include ActiveSupport::Testing::TimeHelpers
+
   let(:account) { create(:account) }
   let(:contact) { create(:contact, account: account) }
   let(:hook) { create(:integrations_hook, :medelement, account: account) }
@@ -39,7 +41,7 @@ RSpec.describe Integrations::Medelement::ProviderCommandDispatcherJob do
     stale = create_command(status: 'processing', execution_state: { 'write_phase' => 'patient_create' })
     stale.update!(updated_at: 20.minutes.ago)
 
-    described_class.perform_now
+    travel(described_class::RECOVERY_AGE + 1.second) { described_class.perform_now }
 
     expect(Integrations::Medelement::ProviderCommandConfirmationJob)
       .to have_received(:perform_later).with(awaiting.confirmation_request_id)
@@ -56,6 +58,24 @@ RSpec.describe Integrations::Medelement::ProviderCommandDispatcherJob do
       last_error_code: 'provider_status_unknown'
     )
     expect(exhausted_reconciliation.reconciliation_next_at).to be > 23.hours.from_now
+  end
+
+  it 'leaves a command alone while the normal path is still carrying it, and picks it up once that path was lost' do
+    confirmed_request = create(
+      :confirmation_request, account: account, conversation: nil, contact: contact, status: 'confirmed', resolved_at: Time.current
+    )
+    awaiting = create_command(status: 'awaiting_confirmation', confirmation_request: confirmed_request)
+    queued = create_command(status: 'queued')
+
+    described_class.perform_now
+
+    expect(Integrations::Medelement::ProviderCommandConfirmationJob).not_to have_received(:perform_later)
+    expect(Integrations::Medelement::ProviderCommandJob).not_to have_received(:perform_later)
+
+    travel(described_class::RECOVERY_AGE + 1.second) { described_class.perform_now }
+
+    expect(Integrations::Medelement::ProviderCommandConfirmationJob).to have_received(:perform_later).with(awaiting.confirmation_request_id)
+    expect(Integrations::Medelement::ProviderCommandJob).to have_received(:perform_later).with(queued.id)
   end
 
   it 'reserves unknown reconciliation before enqueueing it' do
@@ -80,7 +100,7 @@ RSpec.describe Integrations::Medelement::ProviderCommandDispatcherJob do
     stale = create_command(status: 'processing')
     stale.update!(updated_at: 20.minutes.ago)
 
-    described_class.perform_now
+    travel(described_class::RECOVERY_AGE + 1.second) { described_class.perform_now }
 
     expect(Integrations::Medelement::ProviderCommandJob).to have_received(:perform_later).with(stale.id)
     expect(Integrations::Medelement::ProviderCommandReconciliationJob).not_to have_received(:perform_later).with(stale.id)
@@ -102,12 +122,14 @@ RSpec.describe Integrations::Medelement::ProviderCommandDispatcherJob do
     stale_before_write = create_command(status: 'v2_processing')
     stale_after_write = create_command(status: 'v2_processing', execution_state: { 'write_phase' => 'patient_create' })
     [stale_before_write, stale_after_write].each { |command| command.update!(updated_at: 20.minutes.ago) }
+    travel_to(Time.current + described_class::RECOVERY_AGE + 1.second)
 
     expect(Integrations::Medelement::ProviderCommand.where(status: 'awaiting_confirmation')).not_to include(awaiting)
     expect(Integrations::Medelement::ProviderCommand.where(status: 'queued')).not_to include(queued)
     expect(Integrations::Medelement::ProviderCommand.where(status: 'reconciliation_required')).not_to include(reconciliation)
 
     described_class.perform_now
+    travel_back
 
     expect(Integrations::Medelement::ProviderCommandConfirmationJob)
       .to have_received(:perform_later).with(awaiting.confirmation_request_id)

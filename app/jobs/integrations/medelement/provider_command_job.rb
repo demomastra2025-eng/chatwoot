@@ -5,7 +5,8 @@ class Integrations::Medelement::ProviderCommandJob < MutexApplicationJob
 
   LOCK_TIMEOUT = 2.minutes
 
-  retry_on LockAcquisitionError, wait: 15.seconds, attempts: 3
+  # The reception or patient is locked by another command or a reconciliation read: try again in seconds, not in a quarter minute.
+  retry_on LockAcquisitionError, wait: 3.seconds, attempts: 15
 
   def perform(command_id)
     command = Integrations::Medelement::ProviderCommand.includes(appointment: :resource).find_by(id: command_id)

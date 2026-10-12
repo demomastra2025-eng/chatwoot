@@ -44,21 +44,21 @@ RSpec.describe Confirmations::ResolveService do
     expect(resolved.resolution_source).to eq('manual')
   end
 
-  it 'enqueues Medelement command resolution only for a linked provider command' do
-    allow(Integrations::Medelement::ProviderCommandConfirmationJob).to receive(:perform_later)
+  it 'starts Medelement command resolution right away, only for a linked provider command' do
+    allow(Integrations::Medelement::ProviderCommandConfirmationJob).to receive(:dispatch)
     request.update!(metadata: request.metadata.to_h.merge('medelement_provider_command_id' => 123))
 
     described_class.new(account: account, confirmation_request: request, decision: 'confirmed', source: 'manual', actor: user).perform
 
-    expect(Integrations::Medelement::ProviderCommandConfirmationJob).to have_received(:perform_later).with(request.id)
+    expect(Integrations::Medelement::ProviderCommandConfirmationJob).to have_received(:dispatch).with(request.id)
   end
 
-  it 'does not enqueue Medelement command resolution for an unrelated confirmation' do
-    allow(Integrations::Medelement::ProviderCommandConfirmationJob).to receive(:perform_later)
+  it 'does not start Medelement command resolution for an unrelated confirmation' do
+    allow(Integrations::Medelement::ProviderCommandConfirmationJob).to receive(:dispatch)
 
     described_class.new(account: account, confirmation_request: request, decision: 'confirmed', source: 'manual', actor: user).perform
 
-    expect(Integrations::Medelement::ProviderCommandConfirmationJob).not_to have_received(:perform_later)
+    expect(Integrations::Medelement::ProviderCommandConfirmationJob).not_to have_received(:dispatch)
   end
 
   it 'marks a request as requiring reschedule' do
@@ -68,7 +68,7 @@ RSpec.describe Confirmations::ResolveService do
   end
 
   it 'is idempotent when the same final decision is applied again' do
-    allow(Integrations::Medelement::ProviderCommandConfirmationJob).to receive(:perform_later)
+    allow(Integrations::Medelement::ProviderCommandConfirmationJob).to receive(:dispatch)
     request.update!(metadata: request.metadata.to_h.merge('medelement_provider_command_id' => 123))
     first = described_class.new(account: account, confirmation_request: request, decision: 'confirmed', source: 'manual', actor: user).perform
     resolved_at = first.resolved_at
@@ -78,12 +78,12 @@ RSpec.describe Confirmations::ResolveService do
     expect(second).to be_confirmed
     expect(second.resolved_at.to_i).to eq(resolved_at.to_i)
     expect(second.resolution_source).to eq('manual')
-    expect(Integrations::Medelement::ProviderCommandConfirmationJob).to have_received(:perform_later).with(request.id).once
+    expect(Integrations::Medelement::ProviderCommandConfirmationJob).to have_received(:dispatch).with(request.id).once
   end
 
   it 're-enqueues linked provider command resolution after an enqueue failure' do
     attempts = 0
-    allow(Integrations::Medelement::ProviderCommandConfirmationJob).to receive(:perform_later) do
+    allow(Integrations::Medelement::ProviderCommandConfirmationJob).to receive(:dispatch) do
       attempts += 1
       raise ActiveJob::EnqueueError, 'queue unavailable' if attempts == 1
     end
@@ -97,7 +97,7 @@ RSpec.describe Confirmations::ResolveService do
     expect do
       described_class.new(account: account, confirmation_request: request, decision: 'confirmed', source: 'manual', actor: user).perform
     end.not_to raise_error
-    expect(Integrations::Medelement::ProviderCommandConfirmationJob).to have_received(:perform_later).with(request.id).twice
+    expect(Integrations::Medelement::ProviderCommandConfirmationJob).to have_received(:dispatch).with(request.id).twice
   end
 
   it 'rejects conflicting decisions after a request is already resolved' do

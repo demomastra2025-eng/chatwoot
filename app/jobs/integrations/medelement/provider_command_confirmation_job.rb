@@ -1,6 +1,18 @@
 class Integrations::Medelement::ProviderCommandConfirmationJob < ApplicationJob
   queue_as :medelement_provider_commands
 
+  # A resolved confirmation starts its command at once, right after the transaction that resolved it commits: the
+  # command is released and handed to the execution queue on the calling thread (a few quick database writes), so
+  # nothing waits for a queue turn or for the recovery dispatcher. A failure here only falls back to the queue.
+  def self.dispatch(confirmation_request_id)
+    ActiveRecord.after_all_transactions_commit do
+      perform_now(confirmation_request_id)
+    rescue StandardError => e
+      Rails.logger.warn("[MEDELEMENT::CONFIRMATION] immediate dispatch failed error=#{e.class.name}")
+      perform_later(confirmation_request_id)
+    end
+  end
+
   def perform(confirmation_request_id)
     confirmation_request = ConfirmationRequest.find_by(id: confirmation_request_id)
     return if confirmation_request.blank?

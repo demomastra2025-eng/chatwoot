@@ -195,7 +195,7 @@ RSpec.describe 'Medelement Provider Commands API', type: :request do
 
     expect do
       post "#{path}/#{command.id}/confirm", headers: headers, as: :json
-    end.to have_enqueued_job(Integrations::Medelement::ProviderCommandConfirmationJob)
+    end.to have_enqueued_job(Integrations::Medelement::ProviderCommandJob).with(command.id)
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('payload', 'confirmation', 'status')).to eq('confirmed')
@@ -221,7 +221,7 @@ RSpec.describe 'Medelement Provider Commands API', type: :request do
            params: { automatic: true },
            headers: headers,
            as: :json
-    end.to have_enqueued_job(Integrations::Medelement::ProviderCommandConfirmationJob)
+    end.to have_enqueued_job(Integrations::Medelement::ProviderCommandJob).with(command.id)
 
     expect(response).to have_http_status(:ok)
     expect(command.confirmation_request.reload).to have_attributes(

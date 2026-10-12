@@ -66,7 +66,8 @@ RSpec.describe Scheduling::Appointments::CancelService do
       requested_by_id: actor.id
     )
     expect(command.confirmation_request).to have_attributes(status: 'confirmed', resolution_source: 'system')
-    expect(Integrations::Medelement::ProviderCommandConfirmationJob).to have_been_enqueued.with(command.confirmation_request_id)
+    expect(command.reload).to be_queued
+    expect(Integrations::Medelement::ProviderCommandJob).to have_been_enqueued.with(command.id)
     expect(result).to have_attributes(status: 'scheduled', payment_status: 'awaiting_payment')
     expect(result.custom_attributes['medelement_provider_sync_status']).to eq('pending')
   end
@@ -92,9 +93,8 @@ RSpec.describe Scheduling::Appointments::CancelService do
 
     expect(retry_command.id).not_to eq(first_command.id)
     expect(retry_command.idempotency_key).not_to eq(first_command.idempotency_key)
-    expect(Integrations::Medelement::ProviderCommandConfirmationJob).to have_been_enqueued.with(
-      retry_command.confirmation_request_id
-    )
+    expect(retry_command.reload).to be_queued
+    expect(Integrations::Medelement::ProviderCommandJob).to have_been_enqueued.with(retry_command.id)
   end
 
   it 'normalizes payment state for an appointment that is already cancelled' do
@@ -228,7 +228,7 @@ RSpec.describe Scheduling::Appointments::CancelService do
       expect(result.medelement_provider_command_receipt).to be_nil
       expect(result.custom_attributes[marker_key]).to include('reception_code' => 'reception-1')
       expect(Integrations::Medelement::ProviderCommand.where(appointment: appointment)).to be_empty
-      expect(Integrations::Medelement::ProviderCommandConfirmationJob).not_to have_been_enqueued
+      expect(Integrations::Medelement::ProviderCommandJob).not_to have_been_enqueued
     end
 
     it 'rejects stale local-only confirmation after the hook switches to provider removal' do

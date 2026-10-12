@@ -102,6 +102,35 @@ RSpec.describe Integrations::Medelement::ProviderCommandConfirmationJob do
     end
   end
 
+  describe '.dispatch' do
+    let(:confirmation_status) { 'confirmed' }
+
+    it 'releases the command and starts its executor right away, without a trip through the queue' do
+      expect { described_class.dispatch(confirmation_request.id) }.not_to have_enqueued_job(described_class)
+
+      expect(command.reload).to be_queued
+      expect(Integrations::Medelement::ProviderCommandJob).to have_received(:perform_later).with(command.id).once
+    end
+
+    it 'starts nothing until the surrounding transaction has committed' do
+      ApplicationRecord.transaction do
+        described_class.dispatch(confirmation_request.id)
+
+        expect(command.reload).to be_awaiting_confirmation
+        expect(Integrations::Medelement::ProviderCommandJob).not_to have_received(:perform_later)
+      end
+
+      expect(command.reload).to be_queued
+      expect(Integrations::Medelement::ProviderCommandJob).to have_received(:perform_later).with(command.id).once
+    end
+
+    it 'falls back to the queue when the immediate start fails, so the command is still released' do
+      allow(described_class).to receive(:perform_now).and_raise(StandardError, 'database unavailable')
+
+      expect { described_class.dispatch(confirmation_request.id) }.to have_enqueued_job(described_class).with(confirmation_request.id)
+    end
+  end
+
   context 'when the request is declined' do
     let(:confirmation_status) { 'declined' }
 

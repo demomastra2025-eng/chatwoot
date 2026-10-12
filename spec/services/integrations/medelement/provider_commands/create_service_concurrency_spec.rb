@@ -80,7 +80,7 @@ RSpec.describe Integrations::Medelement::ProviderCommands::CreateService do
         command: Integrations::Medelement::ProviderCommand.find(command_id)
       ).perform
     end
-    expect(Integrations::Medelement::ProviderCommandConfirmationJob).to have_been_enqueued.exactly(:once)
+    expect(Integrations::Medelement::ProviderCommandJob).to have_been_enqueued.with(command_ids.first).exactly(:once)
   ensure
     2.times { release&.push(true) }
     threads&.each do |thread|

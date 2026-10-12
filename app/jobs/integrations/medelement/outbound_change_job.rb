@@ -4,7 +4,8 @@ class Integrations::Medelement::OutboundChangeJob < ApplicationJob
 
   queue_as :medelement_provider_commands
 
-  retry_on BusyError, wait: 30.seconds, attempts: 20
+  # Another command owns the reception right now. Commands finish in seconds, so check back quickly (about 5 minutes in all).
+  retry_on BusyError, wait: 5.seconds, attempts: 60
   discard_on ActiveRecord::RecordNotFound
 
   # rubocop:disable Metrics/ParameterLists

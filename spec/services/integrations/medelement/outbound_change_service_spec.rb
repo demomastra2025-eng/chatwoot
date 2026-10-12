@@ -56,12 +56,13 @@ RSpec.describe Integrations::Medelement::OutboundChangeService do
     expect(command.request_snapshot.dig('reception', 'resource_id')).to eq(appointment.resource_id)
     expect(command.confirmation_request).to have_attributes(status: 'confirmed', resolution_source: 'system')
     expect(command.confirmation_request.resolution_metadata).to include('medelement_auto_sync' => true)
-    expect(Integrations::Medelement::ProviderCommandConfirmationJob).to have_been_enqueued.with(command.confirmation_request_id)
+    expect(command.reload).to be_queued
+    expect(Integrations::Medelement::ProviderCommandJob).to have_been_enqueued.with(command.id)
     expect(appointment.reload.custom_attributes['medelement_provider_sync_status']).to eq('pending')
   end
 
   it 'does not regress the provider status when execution finishes before status projection' do
-    allow(Integrations::Medelement::ProviderCommandConfirmationJob).to receive(:perform_later) do |confirmation_request_id|
+    allow(Integrations::Medelement::ProviderCommandConfirmationJob).to receive(:dispatch) do |confirmation_request_id|
       completed_command = Integrations::Medelement::ProviderCommand.find_by!(
         confirmation_request_id: confirmation_request_id
       )
@@ -91,7 +92,7 @@ RSpec.describe Integrations::Medelement::OutboundChangeService do
     appointment.update!(conversation: conversation)
     provider_status = Integrations::Medelement::AppointmentProviderStatus
 
-    allow(Integrations::Medelement::ProviderCommandConfirmationJob).to receive(:perform_later) do |request_id|
+    allow(Integrations::Medelement::ProviderCommandConfirmationJob).to receive(:dispatch) do |request_id|
       dispatched = Integrations::Medelement::ProviderCommand.find_by!(confirmation_request_id: request_id)
       expect(provider_status.bound_to_command?(appointment.reload, dispatched)).to be(true)
 
@@ -148,7 +149,7 @@ RSpec.describe Integrations::Medelement::OutboundChangeService do
       command
     end
 
-    expect(Integrations::Medelement::ProviderCommandConfirmationJob).not_to receive(:perform_later)
+    expect(Integrations::Medelement::ProviderCommandConfirmationJob).not_to receive(:dispatch)
     command = service.perform
 
     expect(command.reload).to be_cancelled
@@ -326,7 +327,8 @@ RSpec.describe Integrations::Medelement::OutboundChangeService do
       requested_by_id: nil
     )
     expect(command.confirmation_request).to have_attributes(status: 'confirmed', requested_by_id: nil, resolution_source: 'system')
-    expect(Integrations::Medelement::ProviderCommandConfirmationJob).to have_been_enqueued.with(command.confirmation_request_id)
+    expect(command.reload).to be_queued
+    expect(Integrations::Medelement::ProviderCommandJob).to have_been_enqueued.with(command.id)
   end
 
   it 'accepts new producer metadata through the legacy worker service call' do
@@ -566,7 +568,7 @@ RSpec.describe Integrations::Medelement::OutboundChangeService do
       ).perform
     end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_COMMAND_IN_PROGRESS') }
 
-    expect(first.reload).to be_awaiting_confirmation
+    expect(first.reload).to be_queued
     expect(Integrations::Medelement::ProviderCommand.where(appointment: appointment).count).to eq(1)
   end
 
@@ -653,7 +655,7 @@ RSpec.describe Integrations::Medelement::OutboundChangeService do
 
       expect(result).to be_nil
       expect(Integrations::Medelement::ProviderCommand.where(appointment: appointment)).to be_empty
-      expect(Integrations::Medelement::ProviderCommandConfirmationJob).not_to have_been_enqueued
+      expect(Integrations::Medelement::ProviderCommandJob).not_to have_been_enqueued
     end
   end
 
@@ -711,7 +713,7 @@ RSpec.describe Integrations::Medelement::OutboundChangeService do
       ).perform
       expect(command).to have_attributes(operation: 'move_reception', appointment_id: appointment.id)
     end.to change(Integrations::Medelement::ProviderCommand, :count).by(1)
-    expect(Integrations::Medelement::ProviderCommandConfirmationJob).to have_been_enqueued.exactly(:once)
+    expect(Integrations::Medelement::ProviderCommandJob).to have_been_enqueued.exactly(:once)
   end
 
   it 'does not create a removal command while the hook keeps receptions on cancel (default)' do
@@ -730,7 +732,7 @@ RSpec.describe Integrations::Medelement::OutboundChangeService do
       ).perform
       expect(command).to be_nil
     end.not_to change(Integrations::Medelement::ProviderCommand, :count)
-    expect(Integrations::Medelement::ProviderCommandConfirmationJob).not_to have_been_enqueued
+    expect(Integrations::Medelement::ProviderCommandJob).not_to have_been_enqueued
   end
 
   it 'creates an immediate removal command for a locally cancelled provider reception' do

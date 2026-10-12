@@ -113,6 +113,9 @@ RSpec.describe 'MedElement-linked reschedule' do
       'destination_starts_at' => requested_starts_at.utc.iso8601(6), 'destination_ends_at' => requested_ends_at.utc.iso8601(6)
     )
     expect(result.medelement_provider_command_receipt).to eq(command)
+    # The change goes out right after it commits: the command is released and handed to the queue, not left for a cron.
+    expect(command.reload).to be_queued
+    expect(Integrations::Medelement::ProviderCommandJob).to have_been_enqueued.with(command.id)
     expect(result.custom_attributes).to include(status::ATTRIBUTE_KEY => status::PENDING, status::COMMAND_ID_KEY => command.id)
     expect(move_entry).to include(
       'state' => 'pending', 'command_id' => command.id,

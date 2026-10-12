@@ -73,7 +73,7 @@ class Confirmations::ResolveService
   end
 
   def enqueue_provider_command_resolution(resolved_request)
-    Integrations::Medelement::ProviderCommandConfirmationJob.perform_later(resolved_request.id)
+    Integrations::Medelement::ProviderCommandConfirmationJob.dispatch(resolved_request.id)
     persist_provider_enqueue_state!(resolved_request, 'enqueued')
   rescue StandardError
     persist_provider_enqueue_state!(resolved_request, nil)
