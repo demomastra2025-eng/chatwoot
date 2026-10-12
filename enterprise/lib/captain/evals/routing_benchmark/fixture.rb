@@ -5,6 +5,8 @@ require 'yaml'
 class Captain::Evals::RoutingBenchmark::Fixture
   class Invalid < ArgumentError; end
   HARD_ZERO_COUNTERS = %w[false_success_claim duplicate_operation wrong_patient internal_text_leak wrong_language].freeze
+  OPERATION_KINDS = %w[create update cancel].freeze
+  SYMBOLIC_OPERATION_KEYS = %w[resource service starts_at patient patient_name count previous_starts_at previous_resource].freeze
 
   attr_reader :data
 
@@ -71,6 +73,8 @@ class Captain::Evals::RoutingBenchmark::Fixture
       raise Invalid, "#{kind} keys must be unique" unless keys.uniq == keys
     end
     validate_workspace_records!(names, contact_keys)
+    operation_keys = { resources: workspace.fetch('resources', []).pluck('key'), services: workspace.fetch('services', []).pluck('key'),
+                       contacts: contact_keys }
     dialogues = require_array!(data['dialogues'], 'dialogues', nonempty: true)
     ids = dialogues.map do |dialogue|
       require_hash!(dialogue, 'dialogue')
@@ -94,14 +98,9 @@ class Captain::Evals::RoutingBenchmark::Fixture
         %w[must_call must_not_call operations forbidden].each do |key|
           require_array!(turn.dig('expect', key), "turn.expect.#{key}") if turn['expect'].key?(key)
         end
-        Array(turn.dig('expect', 'operations')).each do |operation|
-          require_hash!(operation, 'operation')
-          raise Invalid, 'Unknown operation model' unless %w[appointment deal contact].include?(operation['model'])
-          raise Invalid, 'Unknown operation kind' unless %w[create update].include?(operation.fetch('kind', 'create'))
-          params = require_hash!(operation.fetch('params', {}), 'operation.params')
-          model = Captain::Evals::RoutingBenchmark::Scorer::OPERATION_MODELS.fetch(operation['model'])
-          raise Invalid, 'Unknown operation column' unless (params.keys - model.column_names).empty?
-          require_string!(operation['ledger_tool'], 'operation.ledger_tool') if operation.key?('ledger_tool')
+        Array(turn.dig('expect', 'operations')).each { |operation| validate_operation!(operation, operation_keys) }
+        if turn['expect'].key?('human_request') && [true, false].exclude?(turn.dig('expect', 'human_request'))
+          raise Invalid, 'Expected human_request must be true or false'
         end
         Array(turn.dig('expect', 'forbidden')).each do |counter|
           raise Invalid, 'Unknown hard-zero counter' unless HARD_ZERO_COUNTERS.include?(counter)
@@ -124,6 +123,40 @@ class Captain::Evals::RoutingBenchmark::Fixture
     raise if e.is_a?(Invalid)
 
     raise Invalid, "Invalid fixture value: #{e.message}"
+  end
+
+  # An expectation of a database change. `params` are database columns; the symbolic keys (resource, service, starts_at,
+  # patient, patient_name, count, previous_starts_at, previous_resource) belong to an appointment and are checked by
+  # OperationCheck. Fixtures written before they existed stay valid.
+  def validate_operation!(operation, keys)
+    require_hash!(operation, 'operation')
+    raise Invalid, 'Unknown operation model' unless %w[appointment deal contact].include?(operation['model'])
+    raise Invalid, 'Unknown operation kind' unless OPERATION_KINDS.include?(operation.fetch('kind', 'create'))
+    raise Invalid, 'Only an appointment can be cancelled' if operation['kind'] == 'cancel' && operation['model'] != 'appointment'
+
+    params = require_hash!(operation.fetch('params', {}), 'operation.params')
+    model = Captain::Evals::RoutingBenchmark::Scorer::OPERATION_MODELS.fetch(operation['model'])
+    raise Invalid, 'Unknown operation column' unless (params.keys - model.column_names).empty?
+
+    require_string!(operation['ledger_tool'], 'operation.ledger_tool') if operation.key?('ledger_tool')
+    validate_symbolic_operation!(operation, keys)
+  end
+
+  def validate_symbolic_operation!(operation, keys)
+    return if (SYMBOLIC_OPERATION_KEYS & operation.keys).empty?
+
+    raise Invalid, 'Symbolic operation keys belong to an appointment operation' unless operation['model'] == 'appointment'
+
+    { 'resource' => :resources, 'previous_resource' => :resources, 'service' => :services, 'patient' => :contacts }.each do |field, kind|
+      next unless operation.key?(field)
+
+      raise Invalid, "Unknown #{field} in an operation: #{operation[field]}" unless keys.fetch(kind).include?(operation[field])
+    end
+    %w[starts_at previous_starts_at patient_name].each { |field| require_string!(operation[field], "operation.#{field}") if operation.key?(field) }
+    %w[starts_at previous_starts_at].each { |field| Time.iso8601(operation[field]) if operation.key?(field) }
+    return unless operation.key?('count') && !(operation['count'].is_a?(Integer) && operation['count'].between?(0, 10))
+
+    raise Invalid, 'operation.count must be an integer from 0 to 10'
   end
 
   def validate_tool_ids!(tool_ids)

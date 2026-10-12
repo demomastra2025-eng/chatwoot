@@ -7,8 +7,9 @@
 #   - a state claim ("вы записаны", "запись отменена", "жазылдыңыз"), which is also true when the same turn read
 #     the appointment back with a successful lookup tool.
 # Questions, offers, futures, infinitives ("перенести", "перенесём", "запишу"), hypotheticals ("перенесла бы"),
-# negations ("не записала", "запись не перенесена") and claims about stored data ("записала ваш номер")
-# are not claims. #kinds returns the claim kinds found; KIND_TOOLS lists the successful tool calls that support each.
+# negations ("не записала", "запись не перенесена"), indirect questions ("записаны ли вы", "жазылдыңыз ба") and
+# claims about stored data ("записала ваш номер") are not claims. #kinds returns the claim kinds found;
+# KIND_TOOLS lists the successful tool calls that support each.
 #
 # Only the benchmark scorer uses this detector, to score replies after the fact. The runtime never reads it: no reply
 # is filtered or rewritten by it.
@@ -23,11 +24,11 @@ class Captain::Evals::RoutingBenchmark::SuccessClaims
     reschedule: words('перен[её]с(?:ла|ли|ло)?', 'перезаписал(?:а|и)?', 'rescheduled', 'ауыстыр(?:дым|дық)', 'ауыстырып\s+қойдым',
                       'көшірдім'),
     reschedule_state: words('перенес[её]н(?:а|о|ы)?', 'перезаписан(?:а|о|ы)?', 'ауыстырылды', 'көшірілді'),
-    cancel: words('отменил(?:а|и)?', 'аннулировал(?:а|и)?', 'cancell?ed', 'жой(?:дым|дық)', 'бас\s+тарттым', 'болдырмадым',
-                  'тоқтаттым'),
-    cancel_state: words('отмен[её]н(?:а|о|ы)?', 'аннулирован(?:а|о|ы)?', 'жойылды', 'тоқтатылды'),
-    create: words('создал(?:а|и)?', 'created', 'жаса(?:дым|дық)', 'құрдым'),
-    create_state: words('создан(?:а|о|ы)?', 'жасалды', 'құрылды')
+    cancel: words('отменил(?:а|и)?', 'аннулировал(?:а|и)?', 'удалил(?:а|и)?', 'cancell?ed', 'жой(?:дым|дық)', 'бас\s+тарттым',
+                  'болдырмадым', 'тоқтаттым'),
+    cancel_state: words('отмен[её]н(?:а|о|ы)?', 'аннулирован(?:а|о|ы)?', 'удален(?:а|о|ы)?', 'жойылды', 'тоқтатылды'),
+    create: words('создал(?:а|и)?', 'оформил(?:а|и)?', 'created', 'жаса(?:дым|дық)', 'құрдым', 'рәсімде(?:дім|дік)'),
+    create_state: words('создан(?:а|о|ы)?', 'оформлен(?:а|о|ы)?', 'жасалды', 'құрылды', 'рәсімделді')
   }.freeze
 
   LOOKUP_TOOLS = %w[list_my_appointments get_appointment search_appointments].freeze
@@ -50,6 +51,8 @@ class Captain::Evals::RoutingBenchmark::SuccessClaims
   IRREALIS = words('чтобы', 'если')
   # What may follow the claim word without making it a claim: "перенесла бы", "создана не была".
   HYPOTHETICAL = /\A\s*(?:бы|(?:(?:ещё|еще|пока|уже)\s+)?(?:не|нет))(?!\p{L})/i
+  # An indirect question: "записаны ли вы", "записаны вы или нет", "жазылдыңыз ба".
+  INDIRECT_QUESTION = /\A\s*(?:ли|(?:\p{L}+\s+)?или\s+нет|ба|бе|па|пе|ма|ме)(?!\p{L})/i
   RECORDED_DATA = words(
     'номер(?:а|у|ом|е)?', 'телефон(?:а|у|ом|е)?', 'данны(?:е|х|м|ми)', 'имя', 'имени', 'фамили(?:я|ю|и)', 'иин',
     'контакт(?:ы|ов)?', 'коммент\p{L}*', 'пожелани(?:е|я|й)', 'информаци(?:я|ю|и)', 'адрес(?:а|у)?', 'запрос(?:а|у)?'
@@ -57,12 +60,19 @@ class Captain::Evals::RoutingBenchmark::SuccessClaims
 
   def self.kinds(text) = new(text).kinds
 
+  # [[kind, sentence], ...] for every claim found, in text order.
+  def self.claims(text) = new(text).claims
+
   def initialize(text)
     @text = text.to_s
   end
 
   def kinds
-    sentences.flat_map { |sentence| sentence_kinds(sentence) }.uniq
+    claims.map(&:first).uniq
+  end
+
+  def claims
+    sentences.flat_map { |sentence| sentence_kinds(sentence).map { |kind| [kind, sentence] } }
   end
 
   private
@@ -71,11 +81,13 @@ class Captain::Evals::RoutingBenchmark::SuccessClaims
     @text.scan(SENTENCE).map(&:strip).reject(&:empty?)
   end
 
+  def patterns = self.class::PATTERNS
+
   # A question is never a claim.
   def sentence_kinds(sentence)
     return [] if sentence.match?(QUESTION)
 
-    PATTERNS.filter_map { |kind, pattern| kind if claim?(sentence, pattern, kind) }
+    patterns.filter_map { |kind, pattern| kind if claim?(sentence, pattern, kind) }
   end
 
   def claim?(sentence, pattern, kind)
@@ -95,9 +107,10 @@ class Captain::Evals::RoutingBenchmark::SuccessClaims
   def genuine?(sentence, match, kind)
     before = clause(sentence[0...match.begin(0)], :last)
     after = clause(sentence[match.end(0)..], :first)
-    return false if before.match?(IRREALIS) || before.split.last(4).join(' ').match?(NEGATION) || after.match?(HYPOTHETICAL)
+    return false if before.match?(IRREALIS) || before.split.last(4).join(' ').match?(NEGATION)
+    return false if after.match?(HYPOTHETICAL) || after.match?(INDIRECT_QUESTION)
 
-    !(kind.start_with?('book') && recorded_data?(before, after))
+    !(kind.to_s.start_with?('book') && recorded_data?(before, after))
   end
 
   # "записала ваш номер", "ваш номер записан": the verb is about stored data, not about an appointment.

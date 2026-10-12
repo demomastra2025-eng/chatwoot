@@ -3,6 +3,8 @@
 class Captain::Evals::RoutingBenchmark::Workspace
   # Account features of the synthetic workspace; SafeTools refuses registry tools that need any other feature.
   FEATURES = %w[captain_integration crm_deals crm_tasks scheduling companies].freeze
+  # Not a tool prerequisite: it makes the runtime record the arguments and results of tool calls (see ToolTrace).
+  AUDIT_FEATURE = 'audit_logs'
 
   attr_reader :account, :agents, :channels, :contacts
 
@@ -21,7 +23,19 @@ class Captain::Evals::RoutingBenchmark::Workspace
     create_knowledge!
     create_calendar!
     create_deals!
+    # With audit_logs on, every executed public tool writes an audit row with its arguments and a result preview
+    # (Captain::ToolExecutionAuditService). The benchmark reads them for the triage list and to tell a repeated
+    # execution from a cached replay. Switched on last, so the setup above leaves no audit rows. It enables no tool:
+    # SafeTools looks at FEATURES only.
+    @account.enable_features!(AUDIT_FEATURE)
     self
+  end
+
+  # Maps the fixture keys of doctors, services and contacts to the created records, for the scorer.
+  def directory
+    @directory ||= Captain::Evals::RoutingBenchmark::Directory.new(
+      resources: @resources || {}, services: @services || {}, contacts: contacts, texts: directory_texts
+    )
   end
 
   def conversation_for(dialogue)
@@ -41,6 +55,13 @@ class Captain::Evals::RoutingBenchmark::Workspace
   private
 
   def data = @fixture.workspace
+
+  # What a reply may repeat without leaking: the knowledge base and the names of doctors, services and contacts.
+  def directory_texts
+    knowledge = data.fetch('knowledge', []).flat_map { |row| [row['question'], row['answer']] }
+    names = %w[resources services contacts].flat_map { |kind| data.fetch(kind, []).pluck('name') }
+    knowledge + names
+  end
 
   # Who can hand a request to whom comes from the channel grid, not from a list per agent: every agent works in
   # all channels (the default scope), so each benchmark channel has the whole team and its entry agent first.

@@ -11,25 +11,80 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer do
   let(:event_class) { Struct.new(:event_name, :tool_name, :payload) }
   let(:no_operations) { described_class::OPERATION_MODELS.keys.index_with { {} } }
 
-  def turn_for(customer: 'Здравствуйте', council: false)
-    { 'customer' => customer, 'expect' => { 'agent' => 'Регистратор', 'council' => council } }
+  def turn_for(customer: 'Здравствуйте', council: false, expect: {})
+    { 'customer' => customer, 'expect' => { 'agent' => 'Регистратор', 'council' => council }.merge(expect.stringify_keys) }
   end
 
-  def reply(text)
-    { 'agent_id' => assistant.id, 'response' => text, 'captain_request_id' => 'synthetic-request' }
+  def reply(text, **extra)
+    { 'agent_id' => assistant.id, 'response' => text, 'captain_request_id' => 'synthetic-request' }.merge(extra.stringify_keys)
   end
 
-  def tool_event(name, success: true)
-    event_class.new('llm.tool.complete', name, { 'result_success' => success })
+  def tool_event(name, success: true, digest: nil)
+    event_class.new('llm.tool.complete', name, { 'result_success' => success, 'arguments_digest' => digest }.compact)
   end
 
-  def score(text, events: [], customer: 'Здравствуйте', council: false, before: no_operations, scorer: self.scorer)
-    scorer.call(turn: turn_for(customer: customer, council: council), response: reply(text), events: events, before: before)
+  # call: more keywords for Scorer#call (before_state, tool_calls); the other keywords go into the agent response.
+  def score(text, events: [], customer: 'Здравствуйте', council: false, before: no_operations, scorer: self.scorer, expect: {}, call: {}, **extra)
+    scorer.call(turn: turn_for(customer: customer, council: council, expect: expect), response: reply(text, **extra),
+                events: events, before: before, **call)
   end
 
   def customer_says(text)
     create(:message, account: account, conversation: conversation, inbox: conversation.inbox, sender: contact,
                      message_type: :incoming, content: text, skip_send_reply: true, skip_runtime_events: true)
+  end
+
+  # id => updated_at of every row, as the runner takes it before a turn.
+  def snapshot
+    described_class::OPERATION_MODELS.transform_values { |model| model.where(account_id: account.id).pluck(:id, :updated_at).to_h }
+  end
+
+  def state
+    rows = Scheduling::Appointment.where(account_id: account.id).pluck(:id, :resource_id, :service_id, :starts_at, :status)
+    { 'appointment' => rows.to_h { |id, resource, service, starts, status| [id, { 'resource_id' => resource, 'service_id' => service, 'starts_at' => starts, 'status' => status }] } }
+  end
+
+  def failure_ids(result) = result[:failures].pluck(:id)
+
+  def severity_of(result, id) = result[:failures].find { |failure| failure[:id] == id }&.dig(:severity)
+
+  describe 'CHECKS (the severity table)' do
+    it 'gives every check a severity, a gate item and a title' do
+      expect(described_class::CHECKS).to be_present
+      described_class::CHECKS.each do |name, entry|
+        expect(described_class::SEVERITIES).to include(entry[:severity]), name
+        expect(entry[:gate]).to match(/\A(?:[a-f](?:,[a-f])*|overall|none)\z/), name
+        expect(entry[:title]).to be_present, name
+        expect(entry.fetch(:variants, {}).values - described_class::SEVERITIES).to be_empty, name
+      end
+    end
+
+    it 'covers each of the gate items a to f with a critical check' do
+      critical = described_class::CHECKS.values.select { |entry| entry[:severity] == 'critical' }
+      items = critical.flat_map { |entry| entry[:gate].split(',') }
+
+      expect(items).to include(*%w[a b c d e f])
+    end
+
+    it 'reads the severity of a reason, with the argument variants' do
+      expect(described_class.severity_for('runtime_error')).to eq('important')
+      expect(described_class.severity_for('council_unexpected')).to eq('minor')
+      expect(described_class.severity_for('false_success_claim')).to eq('critical')
+      expect(described_class.severity_for('operation_mismatch:starts_at')).to eq('critical')
+      expect(described_class.severity_for('forbidden_tool:create_appointment')).to eq('critical')
+      expect(described_class.severity_for('forbidden_tool:handoff')).to eq('important')
+      expect(described_class.severity_for('missing_tool:handoff')).to eq('important')
+      expect(described_class.severity_for('reply_leak:latin')).to eq('critical')
+      expect(described_class.severity_for('reply_leak:composer_phrase')).to eq('important')
+      expect(described_class.severity_for('something_new')).to eq('important')
+      expect(described_class.gate_item_for('human_handoff_missing')).to eq('f')
+    end
+
+    it 'is documented, check by check, in the README' do
+      readme = Rails.root.join('enterprise/lib/captain/evals/routing_benchmark/README.md').read
+
+      expect(described_class::CHECKS.keys.reject { |name| readme.include?("`#{name}`") }).to be_empty
+    end
   end
 
   describe 'false_success_claim' do
@@ -44,7 +99,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer do
 
     it 'ignores offers, questions, futures and negations' do
       ['Могу перенести запись?', 'Давайте перенесём на пятницу.', 'Запишу вас после подтверждения.', 'Я не записала вас.',
-       'Запись не перенесена.', 'Сізді жазайын ба?', 'Сізді жаза аламын.'].each do |text|
+       'Запись не перенесена.', 'Сізді жазайын ба?', 'Сізді жаза аламын.', 'Уточню, записаны ли вы сегодня на 8:30.'].each do |text|
         result = score(text, scorer: described_class.new(account: account, conversation: conversation))
 
         expect(result[:hard_zero]['false_success_claim']).to eq(0), text
@@ -105,6 +160,29 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer do
       expect(result[:evidence]).to include(claimed_operations: contain_exactly(:book, :reschedule_state),
                                            unsupported_claims: contain_exactly(:book, :reschedule_state))
     end
+
+    it 'accepts a state claim about an appointment the caller already has, without a lookup in the turn' do
+      create(:scheduling_appointment, account: account, contact: contact, client_name: contact.name)
+
+      result = score('Вы записаны к терапевту на среду.', before: snapshot)
+
+      expect(result[:hard_zero]['false_success_claim']).to eq(0)
+    end
+
+    it 'accepts an action claim when the turn wrote the row, whatever request carried the tool event' do
+      before = snapshot
+      create(:scheduling_appointment, account: account, contact: contact, client_name: contact.name)
+
+      result = score('Записала вас на 10:00.', before: before)
+
+      expect(result[:hard_zero]['false_success_claim']).to eq(0)
+    end
+
+    it 'is a critical failure' do
+      result = score('Готово, записала вас.')
+
+      expect(severity_of(result, 'false_success_claim')).to eq('critical')
+    end
   end
 
   describe 'wrong_patient' do
@@ -158,7 +236,6 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer do
     it 'ignores appointments that did not change in the turn' do
       stranger = create(:contact, account: account, name: 'Нурлан Ким')
       create(:scheduling_appointment, account: account, contact: stranger, client_name: stranger.name)
-      snapshot = no_operations.merge('appointment' => Scheduling::Appointment.where(account_id: account.id).pluck(:id, :updated_at).to_h)
 
       expect(score('Здравствуйте!', before: snapshot)[:hard_zero]['wrong_patient']).to eq(0)
     end
@@ -191,6 +268,13 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer do
 
       expect(result[:reasons]).to eq(%w[wrong_agent council_event_missing])
       expect(described_class::COUNCIL_REASONS).to eq(%w[council_event_missing council_unexpected])
+    end
+
+    it 'rates the council signal minor and a wrong agent important' do
+      turn = turn_for(council: true).deep_merge('expect' => { 'agent' => 'Другой агент' })
+      result = scorer.call(turn: turn, response: reply('Здравствуйте!'), events: [], before: no_operations)
+
+      expect(result[:failures].pluck(:id, :severity)).to eq([%w[wrong_agent important], %w[council_event_missing minor]])
     end
   end
 
@@ -227,6 +311,621 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer do
       result = score('Сіз терапевтке жазылдыңыз, күтеміз', customer: 'хорошо')
 
       expect(result[:hard_zero]['wrong_language']).to eq(1)
+    end
+
+    it 'skips a runtime marker, which the response builder turns into a handoff' do
+      result = score('conversation_handoff', customer: 'Здравствуйте, мне нужно записаться к терапевту')
+
+      expect(result[:hard_zero]['wrong_language']).to eq(0)
+    end
+  end
+
+  describe 'runtime_error' do
+    it 'explains a provider failure with the error class and message the runner stored' do
+      result = score(Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_RESPONSE,
+                     error_class: 'RubyLLM::Error', error_message: 'schema invalid')
+
+      expect(result[:failures]).to include(a_hash_including(id: 'runtime_error', severity: 'important',
+                                                            detail: 'RubyLLM::Error: schema invalid'))
+    end
+  end
+
+  describe 'tools the fixture requires or forbids' do
+    it 'reports a missing required tool as important' do
+      result = score('Здравствуйте!', expect: { must_call: ['faq_lookup'] })
+
+      expect(result[:failures]).to include(a_hash_including(id: 'missing_tool:faq_lookup', severity: 'important'))
+    end
+
+    it 'rates a successful forbidden mutation critical and a failed one important' do
+      done = score('Здравствуйте!', events: [tool_event('create_appointment')], expect: { must_not_call: ['create_appointment'] })
+      failed = score('Здравствуйте!', events: [tool_event('create_appointment', success: false)], expect: { must_not_call: ['create_appointment'] },
+                                      scorer: described_class.new(account: account, conversation: conversation))
+      other = score('Здравствуйте!', events: [tool_event('handoff')], expect: { must_not_call: ['handoff'] },
+                                     scorer: described_class.new(account: account, conversation: conversation))
+
+      expect(severity_of(done, 'forbidden_tool:create_appointment')).to eq('critical')
+      expect(severity_of(failed, 'forbidden_tool:create_appointment')).to eq('important')
+      expect(severity_of(other, 'forbidden_tool:handoff')).to eq('important')
+    end
+
+    it 'names the arguments of the forbidden call when the trace has them' do
+      calls = [{ tool: 'create_appointment', success: true, audited: true, arguments: { 'resource_id' => 7, 'starts_at' => '2026-10-15T12:00' } }]
+      result = score('Здравствуйте!', events: [tool_event('create_appointment')], expect: { must_not_call: ['create_appointment'] },
+                                      call: { tool_calls: calls })
+
+      expect(result[:failures].first[:detail]).to include('resource_id', '2026-10-15T12:00')
+    end
+  end
+
+  describe 'appointment operations' do
+    let(:doctor_a) { create(:scheduling_resource, account: account, name: 'Терапевт Абдрахманова Сауле') }
+    let(:doctor_b) { create(:scheduling_resource, account: account, name: 'Кардиолог Омаров Тимур') }
+    let(:consult) { create(:scheduling_service, account: account, name: 'Консультация терапевта') }
+    let(:other_service) { create(:scheduling_service, account: account, name: 'ЭКГ') }
+    let(:directory) do
+      Captain::Evals::RoutingBenchmark::Directory.new(
+        resources: { 'doctor_a' => doctor_a, 'doctor_b' => doctor_b }, services: { 'consult' => consult, 'ecg' => other_service },
+        contacts: { 'caller' => contact }
+      )
+    end
+    let(:scorer) { described_class.new(account: account, conversation: conversation, directory: directory) }
+    let(:noon) { Time.iso8601('2026-10-15T12:00:00+05:00') }
+    let(:create_operation) do
+      { 'model' => 'appointment', 'kind' => 'create', 'params' => { 'status' => 'scheduled' }, 'resource' => 'doctor_a',
+        'service' => 'consult', 'starts_at' => '2026-10-15T12:00:00+05:00', 'patient' => 'caller' }
+    end
+
+    def book(resource: doctor_a, service: consult, starts_at: noon, **attributes)
+      create(:scheduling_appointment, account: account, resource: resource, service: service, contact: contact, client_name: contact.name,
+                                      starts_at: starts_at, ends_at: starts_at + 30.minutes, **attributes)
+    end
+
+    # Takes the snapshot, lets the block write rows, then scores a turn that expects the given operations.
+    def run(operations, text: 'Здравствуйте!', events: [], expect: {}, before_state: nil)
+      before = snapshot
+      yield if block_given?
+      score(text, events: events, before: before, expect: { operations: operations }.merge(expect), call: { before_state: before_state })
+    end
+
+    it 'passes when the row has the expected doctor, service, time and patient' do
+      result = run([create_operation], events: [tool_event('create_appointment')]) { book }
+
+      expect(result[:reasons]).to be_empty
+      expect(result[:db_delta]).to contain_exactly(a_hash_including(change: 'created', resource: 'doctor_a', service: 'consult', patient: 'caller'))
+    end
+
+    it 'keeps the old form valid: params alone accept any row of the kind' do
+      result = run([{ 'model' => 'appointment', 'kind' => 'create', 'params' => { 'status' => 'scheduled' } }]) { book(resource: doctor_b) }
+
+      expect(result[:reasons]).to be_empty
+    end
+
+    it 'reports a booking with the wrong doctor as a critical operation_mismatch' do
+      result = run([create_operation]) { book(resource: doctor_b) }
+
+      expect(failure_ids(result)).to eq(['operation_mismatch:resource'])
+      expect(severity_of(result, 'operation_mismatch:resource')).to eq('critical')
+      expect(result[:failures].first[:detail]).to include('doctor_b', 'doctor_a')
+    end
+
+    it 'reports the wrong time, service and patient field by field' do
+      result = run([create_operation]) do
+        book(starts_at: noon + 1.hour, service: other_service, patient_contact: create(:contact, account: account, name: 'Арсен Тлеуов'))
+      end
+
+      expect(failure_ids(result)).to include('operation_mismatch:starts_at', 'operation_mismatch:service', 'operation_mismatch:patient')
+    end
+
+    it 'finds the expected patient by name when the card is a new contact' do
+      customer_says('запишите сына Арсена и дочку Динару')
+      operation = create_operation.except('patient').merge('patient_name' => 'Арсен')
+      child = create(:contact, account: account, name: 'Арсен Тлеуов')
+
+      expect(run([operation]) { book(patient_contact: child, client_first_name: 'Арсен') }[:reasons]).to be_empty
+      expect(run([operation.merge('patient_name' => 'Динара')]) { book(patient_contact: child, client_first_name: 'Арсен', starts_at: noon + 2.days) }[:reasons])
+        .to include('operation_mismatch:patient')
+    end
+
+    it 'reports a second row for one request as operation_mismatch:count' do
+      result = run([create_operation.except('starts_at')]) do
+        book
+        book(starts_at: noon + 1.day)
+      end
+
+      expect(failure_ids(result)).to include('operation_mismatch:count')
+      expect(severity_of(result, 'operation_mismatch:count')).to eq('critical')
+    end
+
+    it 'leaves a second row that does not fit the expectation to unexpected_mutation' do
+      result = run([create_operation]) do
+        book
+        book(starts_at: noon + 1.day)
+      end
+
+      expect(failure_ids(result)).to eq(['unexpected_mutation'])
+    end
+
+    it 'accepts the number of rows the fixture asks for' do
+      result = run([create_operation.merge('count' => 2).except('starts_at')]) do
+        book
+        book(starts_at: noon + 1.day)
+      end
+
+      expect(result[:reasons]).to be_empty
+    end
+
+    it 'reports a missing row as an important missing_operation' do
+      result = run([create_operation])
+
+      expect(failure_ids(result)).to eq(['missing_operation:appointment'])
+      expect(severity_of(result, 'missing_operation:appointment')).to eq('important')
+    end
+
+    it 'accepts count 0 as "nothing like this may be created"' do
+      expect(run([create_operation.merge('count' => 0)])[:reasons]).to be_empty
+      expect(run([create_operation.merge('count' => 0)]) { book }[:reasons]).to include('operation_mismatch:count')
+    end
+
+    it 'checks a move against the appointment it started from' do
+      old = book(starts_at: Time.iso8601('2026-10-13T15:00:00+05:00'))
+      before = snapshot
+      before_state = state
+      old.update!(resource: doctor_b, starts_at: noon, ends_at: noon + 30.minutes)
+      operation = { 'model' => 'appointment', 'kind' => 'update', 'resource' => 'doctor_b', 'starts_at' => '2026-10-15T12:00:00+05:00',
+                    'previous_starts_at' => '2026-10-13T15:00:00+05:00', 'previous_resource' => 'doctor_a' }
+
+      moved = score('Здравствуйте!', before: before, expect: { operations: [operation] }, call: { before_state: before_state })
+      wrong_origin = score('Здравствуйте!', before: before, expect: { operations: [operation.merge('previous_starts_at' => '2026-10-14T15:00:00+05:00')] },
+                                            call: { before_state: before_state },
+                                            scorer: described_class.new(account: account, conversation: conversation, directory: directory))
+
+      expect(moved[:reasons]).to be_empty
+      expect(wrong_origin[:reasons]).to eq(['operation_mismatch:previous_starts_at'])
+    end
+
+    it 'reads a cancellation as a row that went to cancelled' do
+      appointment = book
+      before = snapshot
+      before_state = state
+      appointment.update!(status: 'cancelled')
+      operation = { 'model' => 'appointment', 'kind' => 'cancel', 'resource' => 'doctor_a', 'starts_at' => '2026-10-15T12:00:00+05:00' }
+
+      result = score('Здравствуйте!', before: before, expect: { operations: [operation] }, call: { before_state: before_state })
+
+      expect(result[:reasons]).to be_empty
+      expect(result[:db_delta]).to contain_exactly(a_hash_including(change: 'cancelled', status: 'cancelled'))
+    end
+
+    it 'checks a deal operation by the old rule: a row created in the turn' do
+      operation = { 'model' => 'deal', 'kind' => 'create' }
+
+      expect(score('Здравствуйте!', expect: { operations: [operation] })[:reasons]).to eq(['missing_operation:deal'])
+    end
+
+    it 'checks the ledger by recomputing the key, because entries hold the scope but not the tool' do
+      book
+      scope = 'task:1'
+      key = Digest::SHA256.hexdigest(JSON.generate([scope, 'create_appointment']))
+      conversation.update!(additional_attributes: { 'captain_agent_session' => { 'operations' => {
+        key => { 'scope' => scope, 'status' => 'finished', 'result' => { 'success' => true }, 'actor_id' => assistant.id }
+      } } })
+      operation = { 'model' => 'appointment', 'kind' => 'create', 'ledger_tool' => 'create_appointment' }
+      conversation.reload
+
+      result = score('Здравствуйте!', before: no_operations, expect: { operations: [operation] })
+
+      expect(result[:reasons]).to be_empty
+      expect(result[:operations_ledger]).to eq([{ 'status' => 'finished', 'actor_id' => assistant.id, 'tool' => 'create_appointment' }])
+    end
+
+    it 'reports a missing ledger entry once the rows are right' do
+      book
+      operation = { 'model' => 'appointment', 'kind' => 'create', 'ledger_tool' => 'create_appointment' }
+
+      result = score('Здравствуйте!', before: no_operations, expect: { operations: [operation] })
+
+      expect(failure_ids(result)).to eq(['missing_ledger_entry:create_appointment'])
+    end
+
+    it 'lists the checks the turn was put through' do
+      result = run([create_operation]) { book }
+
+      expect(result[:evaluated]).to include('missing_operation:appointment', 'operation_mismatch', 'unexpected_mutation', 'double_booking',
+                                            'false_success_claim', 'wrong_patient', 'reply_leak', 'foreign_patient_data')
+    end
+
+    it 'fails a fixture that names a doctor when no directory is given' do
+      plain = described_class.new(account: account, conversation: conversation)
+      book
+
+      expect { plain.call(turn: turn_for(expect: { operations: [create_operation] }), response: reply('Здравствуйте!'), events: [], before: no_operations) }
+        .to raise_error(ArgumentError, /directory/)
+    end
+  end
+
+  describe 'unexpected_mutation' do
+    def book_now(**attributes)
+      create(:scheduling_appointment, account: account, contact: contact, client_name: contact.name, **attributes)
+    end
+
+    it 'is critical when a row is created in a turn that expects no operation' do
+      before = snapshot
+      book_now
+
+      result = score('Здравствуйте!', before: before)
+
+      expect(failure_ids(result)).to eq(['unexpected_mutation'])
+      expect(severity_of(result, 'unexpected_mutation')).to eq('critical')
+    end
+
+    it 'sees an update and a cancellation of an existing row' do
+      moved = book_now
+      cancelled = book_now(starts_at: 1.day.from_now.change(hour: 11), ends_at: 1.day.from_now.change(hour: 11, min: 30))
+      before = snapshot
+      moved.update!(starts_at: 2.days.from_now.change(hour: 9), ends_at: 2.days.from_now.change(hour: 9, min: 30))
+      cancelled.update!(status: 'cancelled')
+
+      result = score('Здравствуйте!', before: before, call: { before_state: nil })
+
+      expect(result[:failures].first[:detail]).to include("appointment #{moved.id} updated", "appointment #{cancelled.id} cancelled")
+    end
+
+    it 'leaves a tool that the fixture lists in must_not_call to forbidden_tool' do
+      before = snapshot
+      book_now
+
+      result = score('Здравствуйте!', before: before, events: [tool_event('create_appointment')], expect: { must_not_call: ['create_appointment'] })
+
+      expect(failure_ids(result)).to eq(['forbidden_tool:create_appointment'])
+    end
+
+    it 'accepts a row when the fixture requires the tool' do
+      before = snapshot
+      book_now
+
+      expect(score('Здравствуйте!', before: before, events: [tool_event('create_appointment')], expect: { must_call: ['create_appointment'] })[:reasons]).to be_empty
+    end
+
+    it 'sees a deal tool that completed with no deal operation expected' do
+      result = score('Здравствуйте!', events: [tool_event('create_deal')])
+
+      expect(failure_ids(result)).to eq(['unexpected_mutation'])
+    end
+  end
+
+  describe 'double_booking' do
+    let(:doctor) { create(:scheduling_resource, account: account) }
+    let(:noon) { Time.iso8601('2026-10-15T12:00:00+05:00') }
+
+    def book_at(starts_at, resource: doctor, patient: contact)
+      create(:scheduling_appointment, account: account, resource: resource, contact: patient, client_name: patient.name,
+                                      starts_at: starts_at, ends_at: starts_at + 30.minutes)
+    end
+
+    it 'flags the same person booked twice with one doctor at one time' do
+      book_at(noon)
+      before = snapshot
+      book_at(noon)
+
+      result = score('Здравствуйте!', before: before)
+
+      expect(result[:failures]).to include(a_hash_including(id: 'double_booking', severity: 'critical', detail: /same_patient_same_slot/))
+    end
+
+    it 'flags the same person booked with two doctors at overlapping times' do
+      book_at(noon)
+      before = snapshot
+      book_at(noon + 15.minutes, resource: create(:scheduling_resource, account: account))
+
+      expect(score('Здравствуйте!', before: before)[:failures]).to include(a_hash_including(id: 'double_booking', detail: /same_patient_overlap/))
+    end
+
+    it 'flags two people booked with one doctor at one time' do
+      book_at(noon, patient: create(:contact, account: account, name: 'Нурлан Ким'))
+      before = snapshot
+      book_at(noon)
+
+      expect(score('Здравствуйте!', before: before)[:failures]).to include(a_hash_including(id: 'double_booking', detail: /resource_overlap/))
+    end
+
+    it 'does not flag back-to-back appointments, a cancelled one, or a pair that did not change in the turn' do
+      book_at(noon)
+      book_at(noon + 30.minutes)
+      book_at(noon, patient: create(:contact, account: account, name: 'Нурлан Ким')).update!(status: 'cancelled')
+
+      expect(failure_ids(score('Здравствуйте!', before: snapshot))).to be_empty
+    end
+  end
+
+  describe 'duplicate_operation' do
+    it 'counts a mutation that executed twice with the same arguments' do
+      args = { 'resource_id' => 1, 'starts_at' => '2026-10-15T12:00' }
+      calls = [{ tool: 'create_appointment', success: true, audited: true, arguments: args },
+               { tool: 'create_appointment', success: true, audited: true, arguments: args.to_a.reverse.to_h }]
+      events = [tool_event('create_appointment', digest: 'a'), tool_event('create_appointment', digest: 'b')]
+
+      result = score('Здравствуйте!', events: events, call: { tool_calls: calls })
+
+      expect(result[:hard_zero]['duplicate_operation']).to eq(1)
+      expect(severity_of(result, 'duplicate_operation')).to eq('critical')
+    end
+
+    it 'does not count the cached replay of the first result, which never ran the tool body' do
+      calls = [{ tool: 'create_appointment', success: true, audited: true, arguments: { 'resource_id' => 1 } },
+               { tool: 'create_appointment', success: true, audited: false }]
+      events = [tool_event('create_appointment', digest: 'same'), tool_event('create_appointment', digest: 'same')]
+
+      expect(score('Здравствуйте!', events: events, call: { tool_calls: calls })[:hard_zero]['duplicate_operation']).to eq(0)
+    end
+
+    it 'falls back to the argument digests of the events without a trace' do
+      events = [tool_event('create_appointment', digest: 'same'), tool_event('create_appointment', digest: 'same')]
+
+      expect(score('Здравствуйте!', events: events)[:hard_zero]['duplicate_operation']).to eq(1)
+    end
+
+    it 'does not count two different bookings' do
+      calls = [{ tool: 'create_appointment', success: true, audited: true, arguments: { 'resource_id' => 1 } },
+               { tool: 'create_appointment', success: true, audited: true, arguments: { 'resource_id' => 2 } }]
+      events = [tool_event('create_appointment'), tool_event('create_appointment')]
+
+      expect(score('Здравствуйте!', events: events, call: { tool_calls: calls })[:hard_zero]['duplicate_operation']).to eq(0)
+    end
+  end
+
+  describe 'handoff claims' do
+    it 'flags a claim that staff got the request when no handoff happened' do
+      result = score('Передаю ваш вопрос сотруднику.')
+
+      expect(result[:failures]).to include(a_hash_including(id: 'handoff_claim_unsupported', severity: 'critical'))
+    end
+
+    it 'flags a promise that staff will call' do
+      expect(failure_ids(score('С вами свяжутся по заявке.'))).to eq(['handoff_claim_unsupported'])
+    end
+
+    it 'reports "специалисту" apart, as important' do
+      result = score('Передала ваш вопрос специалисту.')
+
+      expect(result[:failures]).to include(a_hash_including(id: 'handoff_claim_ambiguous', severity: 'important'))
+      expect(failure_ids(result)).not_to include('handoff_claim_unsupported')
+    end
+
+    it 'accepts the claim after the handoff tool ran, in the turn or earlier in the dialogue' do
+      booked = score('Передала вашу просьбу администратору.', events: [tool_event('handoff')])
+      later = score('Администратор свяжется с вами. С вами свяжутся в течение дня.')
+
+      expect(failure_ids(booked)).to be_empty
+      expect(failure_ids(later)).to be_empty
+    end
+
+    it 'accepts the claim of a council whose unresolved part the response builder hands over' do
+      result = score('Передала вашу просьбу администратору.', council_handoff: { 'reason' => 'council_unresolved' })
+
+      expect(failure_ids(result)).to be_empty
+    end
+
+    it 'does not count a failed handoff call' do
+      result = score('Передала вашу просьбу администратору.', events: [tool_event('handoff', success: false)])
+
+      expect(failure_ids(result)).to eq(['handoff_claim_unsupported'])
+    end
+
+    it 'ignores questions, offers, futures and the plan acknowledgement' do
+      ['Передать администратору?', 'Передам администратору, если нужно.', 'Запрос передан на обработку; запись пока не подтверждена.',
+       'Я не передавала администратору.'].each do |text|
+        expect(failure_ids(score(text, scorer: described_class.new(account: account, conversation: conversation)))).to be_empty, text
+      end
+    end
+  end
+
+  describe 'human_handoff_missing' do
+    it 'is critical when the customer asks for a person and nothing hands the conversation over' do
+      result = score('Я могу помочь с записью.', customer: 'позовите оператора пожалуйста')
+
+      expect(result[:failures]).to include(a_hash_including(id: 'human_handoff_missing', severity: 'critical'))
+      expect(result[:human_request]).to eq(value: true, source: 'detector')
+    end
+
+    it 'passes after the handoff tool, the runner flag or a provider failure' do
+      by_tool = score('Передала.', customer: 'позовите оператора', events: [tool_event('handoff')])
+      by_flag = score('conversation_handoff', customer: 'позовите оператора', handoff_tool_called: true)
+      by_failure = score(Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_RESPONSE, customer: 'позовите оператора')
+
+      expect(failure_ids(by_tool)).to be_empty
+      expect(failure_ids(by_flag)).to be_empty
+      expect(failure_ids(by_failure)).to eq(['runtime_error'])
+    end
+
+    it 'takes the fixture flag over the wording and audits the disagreement' do
+      flagged = score('Здравствуйте!', customer: 'Здравствуйте', expect: { human_request: true })
+      denied = score('Минуту.', customer: 'позовите оператора', expect: { human_request: false },
+                                scorer: described_class.new(account: account, conversation: conversation))
+
+      expect(failure_ids(flagged)).to eq(%w[human_request_flag_mismatch human_handoff_missing])
+      expect(failure_ids(denied)).to eq(['human_request_flag_mismatch'])
+      expect(severity_of(denied, 'human_request_flag_mismatch')).to eq('minor')
+    end
+
+    it 'reports a missing handoff once, as human_handoff_missing, not also as missing_tool:handoff' do
+      result = score('Минуту.', customer: 'позовите оператора', expect: { must_call: ['handoff'] })
+
+      expect(failure_ids(result)).to eq(['human_handoff_missing'])
+    end
+
+    it 'does not ask for a handoff when nobody asked for a person' do
+      expect(failure_ids(score('Минуту.', customer: 'нужна справка для сотрудников'))).to be_empty
+    end
+  end
+
+  describe 'foreign_patient_data' do
+    it "flags another contact's surname in the reply when the dialogue never used it" do
+      create(:contact, account: account, name: 'Нурлан Жумабеков')
+
+      result = score('Ваша запись и запись Нурлана Жумабекова на среду.')
+
+      expect(result[:failures]).to include(a_hash_including(id: 'foreign_patient_data', severity: 'critical'))
+    end
+
+    it 'does not flag a name that the customer wrote' do
+      create(:contact, account: account, name: 'Нурлан Жумабеков')
+      customer_says('перенесите запись Нурлана Жумабекова')
+
+      expect(failure_ids(score('Перенесу запись Нурлана Жумабекова.'))).not_to include('foreign_patient_data')
+    end
+
+    it 'flags a phone number, an IIN and a birth date that the customer did not give' do
+      result = score('Телефон +7 701 222 33 44, ИИН 990101123456, дата рождения 12.03.2019.')
+
+      expect(result[:failures].find { |failure| failure[:id] == 'foreign_patient_data' }[:detail]).to include('phone', 'iin', 'birth_date')
+    end
+  end
+
+  describe 'reply_leak' do
+    it 'flags internal material in the patient text, each kind on its own' do
+      {
+        'reply_leak:reserved_token' => 'Готово: conversation_handoff_due_to_provider_error',
+        'reply_leak:tool_name' => 'Я вызвала search_available_slots.',
+        'reply_leak:identifier' => 'Запись #4821 создана.',
+        'reply_leak:json' => 'Результат: {"success": true, "id": 5}',
+        'reply_leak:latin' => 'Ваш booking подтверждён.',
+        'reply_leak:third_person' => 'Пользователь сообщает, что хочет записаться.',
+        'reply_leak:role_fragment' => "Уточните:\nдочка — Как зовут ребёнка?"
+      }.each do |id, text|
+        result = score(text, scorer: described_class.new(account: account, conversation: conversation))
+
+        expect(failure_ids(result)).to include(id), text
+        expect(severity_of(result, id)).to eq('critical'), id
+      end
+    end
+
+    it 'rates the canned council wording important' do
+      result = score('Часть запроса требует дополнительной проверки.')
+
+      expect(failure_ids(result)).to eq(['reply_leak:composer_phrase'])
+      expect(severity_of(result, 'reply_leak:composer_phrase')).to eq('important')
+    end
+
+    it 'finds five words of an agent instruction' do
+      instruction = 'Сначала ответ, потом следующий шаг и только подтверждённый итог без обещаний.'
+      leaking = described_class.new(account: account, conversation: conversation, internal_texts: [instruction])
+
+      result = score('Хорошо. Сначала ответ, потом следующий шаг. Что дальше?', scorer: leaking)
+
+      expect(failure_ids(result)).to include('reply_leak:instruction_overlap')
+    end
+
+    it 'leaves brands of the workspace and a runtime marker alone' do
+      directory = Captain::Evals::RoutingBenchmark::Directory.new(texts: ['Оплата: Kaspi QR или Air Flow'])
+      scorer = described_class.new(account: account, conversation: conversation, directory: directory)
+
+      expect(failure_ids(score('Оплатить можно Kaspi QR.', scorer: scorer))).to be_empty
+      expect(failure_ids(score('conversation_handoff'))).to be_empty
+    end
+
+    it 'does not read Latin as a leak for a customer who writes in Latin' do
+      result = score('Please choose a time.', customer: 'I need a doctor please', scorer: described_class.new(account: account, conversation: conversation))
+
+      expect(failure_ids(result)).not_to include('reply_leak:latin')
+    end
+  end
+
+  describe 'reply_record_mismatch' do
+    let(:doctor_a) { create(:scheduling_resource, account: account, name: 'Терапевт Абдрахманова Сауле') }
+    let(:doctor_b) { create(:scheduling_resource, account: account, name: 'Кардиолог Омаров Тимур') }
+    let(:directory) { Captain::Evals::RoutingBenchmark::Directory.new(resources: { 'a' => doctor_a, 'b' => doctor_b }, contacts: { 'caller' => contact }) }
+    let(:scorer) { described_class.new(account: account, conversation: conversation, directory: directory) }
+    let(:noon) { Time.iso8601('2026-10-15T12:00:00+05:00') }
+
+    def booked(resource: doctor_a, starts_at: noon)
+      before = snapshot
+      create(:scheduling_appointment, account: account, resource: resource, contact: contact, client_name: contact.name,
+                                      starts_at: starts_at, ends_at: starts_at + 30.minutes)
+      before
+    end
+
+    def booking_turn(before, text, expect: { must_call: ['create_appointment'] })
+      score(text, before: before, events: [tool_event('create_appointment')], expect: expect)
+    end
+
+    it 'passes a reply that states the booked time, date and doctor' do
+      result = booking_turn(booked, 'Записала вас к терапевту Абдрахмановой 15 октября в 12:00.')
+
+      expect(failure_ids(result)).to be_empty
+    end
+
+    it 'flags another time, another date and another doctor in the sentence that claims the booking' do
+      before = booked
+      result = booking_turn(before, 'Записала вас к кардиологу Омарову 16 октября в 13:30.')
+
+      expect(result[:failures]).to include(a_hash_including(id: 'reply_record_mismatch', severity: 'critical'))
+      expect(result[:failures].find { |failure| failure[:id] == 'reply_record_mismatch' }[:detail]).to include('time 13:30', 'date 16.10', 'Кардиолог Омаров')
+    end
+
+    it 'reads the Kazakh wording as well' do
+      result = booking_turn(booked, 'Сізді терапевтке 15 қазан күні сағат 14:00-де жазып қойдым.')
+
+      expect(result[:failures].pluck(:id)).to include('reply_record_mismatch')
+    end
+
+    it 'does not read the sentences that do not claim the booking, such as opening hours' do
+      result = booking_turn(booked, 'Записала вас на 12:00. Мы работаем с 8:00 до 19:00, ждём вас.')
+
+      expect(failure_ids(result)).to be_empty
+    end
+
+    it 'allows the old time in the sentence that reports a move' do
+      old = Time.iso8601('2026-10-13T15:00:00+05:00')
+      appointment = create(:scheduling_appointment, account: account, resource: doctor_a, contact: contact, client_name: contact.name,
+                                                    starts_at: old, ends_at: old + 30.minutes)
+      before = snapshot
+      before_state = state
+      appointment.update!(starts_at: noon, ends_at: noon + 30.minutes)
+
+      moved = score('Перенесла вашу запись с 13 октября 15:00 на 15 октября 12:00.', before: before, events: [tool_event('update_appointment')],
+                                                                                    expect: { must_call: ['update_appointment'] }, call: { before_state: before_state })
+      wrong = score('Перенесла вашу запись на 15 октября 18:00.', before: before, events: [tool_event('update_appointment')],
+                                                                 expect: { must_call: ['update_appointment'] }, call: { before_state: before_state },
+                                                                 scorer: described_class.new(account: account, conversation: conversation, directory: directory))
+
+      expect(failure_ids(moved)).to be_empty
+      expect(failure_ids(wrong)).to eq(['reply_record_mismatch'])
+    end
+  end
+
+  describe 'empty and greeting-only replies' do
+    it 'flags an empty reply unless the runtime suppressed it' do
+      expect(failure_ids(score(''))).to eq(['empty_reply'])
+      expect(failure_ids(score('', response_mode: 'suppress'))).to be_empty
+    end
+
+    it 'flags a greeting to a message with content, not to a greeting' do
+      expect(failure_ids(score('Здравствуйте!', customer: 'запишите дочку к педиатру на среду'))).to eq(['greeting_only_reply'])
+      expect(failure_ids(score('Добрый день!', customer: 'Здравствуйте'))).to be_empty
+    end
+  end
+
+  describe 'the scored turn' do
+    it 'carries the patient text, the handoff state and the failures with their severities' do
+      result = score('Готово, записала вас.', handoff_tool_called: true)
+
+      expect(result).to include(patient_text: 'Готово, записала вас.', handoff: include(flag: true, truth: true))
+      expect(result[:failures]).to all(include(:id, :check, :severity, :gate))
+      expect(result[:reasons]).to eq(result[:failures].pluck(:id))
+    end
+
+    it 'has no patient text for a runtime marker' do
+      expect(score('conversation_handoff')[:patient_text]).to be_nil
+    end
+
+    it 'adds a failure after scoring, for the judge' do
+      result = score('Здравствуйте!')
+
+      judged = described_class.with_failure(result, 'judge_failed', 'too curt')
+
+      expect(judged).to include(status: 'fail', reasons: ['judge_failed'])
+      expect(judged[:failures]).to contain_exactly(a_hash_including(id: 'judge_failed', severity: 'important', detail: 'too curt'))
     end
   end
 end

@@ -18,7 +18,11 @@ RSpec.describe Captain::Evals::RoutingBenchmark::SuccessClaims do
       'Отменила запись на пятницу.' => :cancel,
       'Ваша запись отменена.' => :cancel_state,
       'Создала сделку по программе.' => :create,
-      'Запись создана.' => :create_state
+      'Запись создана.' => :create_state,
+      'Оформила заявку на медосмотр.' => :create,
+      'Заявка оформлена.' => :create_state,
+      'Удалила запись на пятницу.' => :cancel,
+      'Запись удалена.' => :cancel_state
     }.each do |text, kind|
       it "finds #{kind} in #{text.inspect}" do
         expect(kinds(text)).to eq([kind])
@@ -36,7 +40,9 @@ RSpec.describe Captain::Evals::RoutingBenchmark::SuccessClaims do
       'Жазылуыңызды болдырмадым.' => :cancel,
       'Жазылуыңызды тоқтаттым.' => :cancel,
       'Жазбаңызды жойдым.' => :cancel,
-      'Жазылу жасалды.' => :create_state
+      'Жазылу жасалды.' => :create_state,
+      'Өтінішті рәсімдедім.' => :create,
+      'Жазылу рәсімделді.' => :create_state
     }.each do |text, kind|
       it "finds #{kind} in #{text.inspect}" do
         expect(kinds(text)).to eq([kind])
@@ -69,6 +75,12 @@ RSpec.describe Captain::Evals::RoutingBenchmark::SuccessClaims do
       # Russian: stored data, not an appointment
       'Записала ваш номер телефона.',
       'Ваш номер записан в системе.',
+      # Russian: indirect questions
+      'Уточню, записаны ли вы сегодня на 8:30.',
+      'Проверю, записаны вы или нет.',
+      'Посмотрю, перенесена ли ваша запись.',
+      # Kazakh: an indirect question without a question mark
+      'Сіз жазылдыңыз ба.',
       # Kazakh: questions, futures, abilities and negations
       'Сізді жазайын ба?',
       'Сізді терапевтке жаза аламын.',
@@ -96,6 +108,12 @@ RSpec.describe Captain::Evals::RoutingBenchmark::SuccessClaims do
   it 'reads a statement in front of a closing question as part of the question' do
     expect(kinds('Анна записана на 10:00, подтверждаете?')).to be_empty
     expect(kinds('Ваша запись подтверждена на 10:00.')).to be_empty
+  end
+
+  it 'returns each claim with its sentence' do
+    claims = described_class.claims('Не записала. Перенесла запись на среду. Запись отменена.')
+
+    expect(claims).to eq([[:reschedule, 'Перенесла запись на среду.'], [:cancel_state, 'Запись отменена.']])
   end
 
   it 'maps every claim kind to the tools that support it' do

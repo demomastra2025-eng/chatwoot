@@ -21,10 +21,37 @@ namespace :captain do
       Captain::Evals::RoutingBenchmark::Runner.new(
         fixtures: ENV.fetch('FIXTURES'), runs: ENV.fetch('RUNS', 3),
         model: ENV.fetch('MODEL', 'openai/gpt-6-luna'), reasoning: ENV.fetch('REASONING', 'none'),
-        budget_usd: ENV.fetch('BUDGET_USD'), out: ENV.fetch('OUT'), judge: ENV['JUDGE'] == '1'
+        budget_usd: ENV.fetch('BUDGET_USD'), out: ENV.fetch('OUT'), judge: ENV['JUDGE'] == '1', triage: ENV['TRIAGE'].presence
       ).call
     ensure
       pool.unpin_connection!
     end
+  end
+
+  desc 'Compare two routing benchmark outputs: FIRST=a.json SECOND=b.json [OUT=comparison.json] (exit 1 unless similar)'
+  task routing_benchmark_compare: %i[routing_benchmark_preflight environment] do
+    first = Captain::Evals::RoutingBenchmark::Compare.load(ENV.fetch('FIRST'))
+    second = Captain::Evals::RoutingBenchmark::Compare.load(ENV.fetch('SECOND'))
+    comparison = Captain::Evals::RoutingBenchmark::Compare.new(first, second)
+    puts comparison.markdown
+    if ENV['OUT'].present?
+      raise ArgumentError, 'OUT already exists' if File.exist?(ENV['OUT']) || File.exist?("#{ENV['OUT']}.md")
+
+      File.write(ENV['OUT'], JSON.pretty_generate(comparison.result), perm: 0o600)
+      File.write("#{ENV['OUT']}.md", comparison.markdown, perm: 0o600)
+    end
+    exit(1) unless comparison.result[:similar]
+  end
+
+  desc 'Print the release gate and the triage list of a routing benchmark output: REPORT=out.json [TRIAGE=labels.json]'
+  task routing_benchmark_gate: %i[routing_benchmark_preflight environment] do
+    report = JSON.parse(File.read(ENV.fetch('REPORT')))
+    labels = Captain::Evals::RoutingBenchmark::Triage.load(ENV['TRIAGE'].presence)
+    cases = report.fetch('cases')
+    gate = Captain::Evals::RoutingBenchmark::Gate.call(cases, aborted: report['aborted'], abort_reason: report['abort_reason'], labels: labels)
+    report['gate'] = gate
+    report['triage'] = Captain::Evals::RoutingBenchmark::Triage.records(cases, labels: labels)
+    puts Captain::Evals::RoutingBenchmark::Report.new(report).markdown
+    exit(1) unless gate[:verdict] == 'PASS'
   end
 end

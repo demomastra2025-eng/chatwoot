@@ -68,6 +68,67 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Fixture do
     end
   end
 
+  describe 'expectations of the release gate' do
+    let(:booking_data) do
+      data.deep_dup.tap do |copy|
+        copy[:workspace].merge!(
+          contacts: [{ key: 'caller', name: 'Дана Нурланова' }],
+          resources: [{ key: 'doctor_a', name: 'Врач А' }, { key: 'doctor_b', name: 'Врач Б' }],
+          services: [{ key: 'consult', name: 'Консультация' }]
+        )
+        copy[:dialogues].first[:contact] = 'caller'
+      end
+    end
+
+    def with_expect(extra)
+      booking_data.deep_dup.tap { |copy| copy[:dialogues].first[:turns].first[:expect].merge!(extra) }
+    end
+
+    def with_operation(**operation)
+      with_expect(operations: [{ model: 'appointment', kind: 'create', params: { status: 'scheduled' } }.merge(operation)])
+    end
+
+    it 'keeps an old operation expectation valid' do
+      expect { described_class.new(with_operation) }.not_to raise_error
+    end
+
+    it 'accepts the doctor, service, start, patient and count of an appointment, and the kinds update and cancel' do
+      expect do
+        described_class.new(with_operation(resource: 'doctor_a', service: 'consult', starts_at: '2026-10-15T12:00:00+05:00', patient: 'caller', count: 2))
+        described_class.new(with_operation(kind: 'update', previous_starts_at: '2026-10-13T15:00:00+05:00', previous_resource: 'doctor_b',
+                                           patient_name: 'Арсен'))
+        described_class.new(with_operation(kind: 'cancel', resource: 'doctor_a'))
+      end.not_to raise_error
+    end
+
+    it 'rejects a doctor, service or patient that the workspace does not have' do
+      expect { described_class.new(with_operation(resource: 'doctor_z')) }.to raise_error(described_class::Invalid, /Unknown resource in an operation: doctor_z/)
+      expect { described_class.new(with_operation(service: 'surgery')) }.to raise_error(described_class::Invalid, /Unknown service/)
+      expect { described_class.new(with_operation(patient: 'stranger')) }.to raise_error(described_class::Invalid, /Unknown patient/)
+      expect { described_class.new(with_operation(previous_resource: 'doctor_z')) }.to raise_error(described_class::Invalid, /Unknown previous_resource/)
+    end
+
+    it 'rejects a start without an offset, a bad count and an unknown kind' do
+      expect { described_class.new(with_operation(starts_at: '2026-10-15 12:00')) }.to raise_error(described_class::Invalid, /Invalid fixture value/)
+      expect { described_class.new(with_operation(count: -1)) }.to raise_error(described_class::Invalid, /count/)
+      expect { described_class.new(with_operation(count: 'two')) }.to raise_error(described_class::Invalid, /count/)
+      expect { described_class.new(with_operation(kind: 'delete')) }.to raise_error(described_class::Invalid, /Unknown operation kind/)
+    end
+
+    it 'allows the symbolic keys and a cancellation only on an appointment' do
+      expect { described_class.new(with_operation(model: 'deal', params: {}, resource: 'doctor_a')) }
+        .to raise_error(described_class::Invalid, /belong to an appointment/)
+      expect { described_class.new(with_operation(model: 'deal', params: {}, kind: 'cancel')) }
+        .to raise_error(described_class::Invalid, /Only an appointment can be cancelled/)
+    end
+
+    it 'accepts the human_request flag as true or false only' do
+      expect { described_class.new(with_expect(human_request: true)) }.not_to raise_error
+      expect { described_class.new(with_expect(human_request: false)) }.not_to raise_error
+      expect { described_class.new(with_expect(human_request: 'yes')) }.to raise_error(described_class::Invalid, /human_request/)
+    end
+  end
+
   describe '.load' do
     let(:yaml) do
       <<~YAML

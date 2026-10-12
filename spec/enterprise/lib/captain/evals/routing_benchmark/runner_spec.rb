@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require 'rails_helper'
+require 'tempfile'
+require 'tmpdir'
 
 RSpec.describe Captain::Evals::RoutingBenchmark::Runner do
   let(:fixture_data) do
@@ -20,12 +22,12 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Runner do
   let(:seen) { [] }
 
   # The scripted runtime reports what the workspace holds when it is called, then leaves rows behind.
-  def script_runtime(&block)
+  def script_runtime(text: 'Здравствуйте!', **extra, &block)
     allow(Captain::Assistant::AgentRunnerService).to receive(:new) do |assistant:, conversation:, **|
       block.call(conversation)
       instance_double(Captain::Assistant::AgentRunnerService,
-                      generate_response: { 'agent_id' => assistant.id, 'response' => 'Здравствуйте!',
-                                           'captain_request_id' => 'synthetic-request' })
+                      generate_response: { 'agent_id' => assistant.id, 'response' => text,
+                                           'captain_request_id' => 'synthetic-request' }.merge(extra.stringify_keys))
     end
   end
 
@@ -38,8 +40,8 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Runner do
     allow(Captain::Evals::RoutingBenchmark::Fixture).to receive(:load).and_return(fixture)
   end
 
-  def run_benchmark(runs: 1)
-    runner = described_class.new(fixtures: 'synthetic/*.yml', runs: runs, budget_usd: 1, out: out)
+  def run_benchmark(runs: 1, **options)
+    runner = described_class.new(fixtures: 'synthetic/*.yml', runs: runs, budget_usd: 1, out: out, **options)
     allow(runner).to receive(:write_report)
     runner.call
   end
@@ -90,5 +92,134 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Runner do
     expect(report[:aggregates]).to include(council_expected: 3, council_event_missing: 3, passed: 0,
                                            passed_ignoring_council_signal: 3, routing_accuracy: 1.0)
     expect(report[:warnings].sole).to match(/council_event_missing: 3 of 3 .*captain\.council\.started/)
+  end
+
+  describe 'the release gate' do
+    it 'comes first in the report, and a clean run passes it' do
+      stub_fixture
+      script_runtime { |_conversation| nil }
+
+      report = run_benchmark
+
+      expect(report.keys.first(2)).to eq(%i[gate triage])
+      expect(report[:gate]).to include(verdict: 'PASS', blockers: [])
+      expect(report[:gate][:overall]).to include(passed: 3, total: 3, pct: 100.0)
+      expect(report[:triage]).to eq([])
+    end
+
+    it 'writes the JSON with the gate and triage first and a Markdown summary that starts with the gate' do
+      stub_fixture
+      script_runtime { |_conversation| nil }
+
+      Dir.mktmpdir do |dir|
+        path = File.join(dir, 'report.json')
+        described_class.new(fixtures: 'synthetic/*.yml', runs: 1, budget_usd: 1, out: path).call
+
+        expect(JSON.parse(File.read(path)).keys.first(2)).to eq(%w[gate triage])
+        expect(File.read("#{path}.md")).to start_with("# Routing benchmark\n\n## GATE\n\n**Verdict: PASS**")
+      end
+    end
+
+    it 'fails a run that the budget cut short' do
+      stub_fixture
+      script_runtime { |_conversation| nil }
+      runner = described_class.new(fixtures: 'synthetic/*.yml', runs: 1, budget_usd: 1, out: out)
+      allow(runner).to receive(:write_report)
+      allow(runner).to receive(:provider_cost).and_raise(described_class::BudgetExceeded, 'budget_reached')
+
+      report = runner.call
+
+      expect(report).to include(aborted: true)
+      expect(report[:gate]).to include(verdict: 'FAIL', blockers: include('the run was cut short (budget_reached)'))
+    end
+
+    context 'with a booking that the agent made with the wrong doctor' do
+      let(:fixture_data) do
+        {
+          workspace: {
+            agents: [{ name: 'Регистратор', routing_description: 'Запись', instructions: 'Отвечай по-русски.',
+                       tool_ids: %w[faq_lookup create_appointment], model: 'openai/gpt-6-luna' }],
+            contacts: [{ key: 'patient', name: 'Дана Нурланова' }],
+            resources: [{ key: 'doctor_a', name: 'Терапевт Абдрахманова Сауле' }, { key: 'doctor_b', name: 'Кардиолог Омаров Тимур' }],
+            services: [{ key: 'consult', name: 'Консультация терапевта' }]
+          },
+          dialogues: [{ id: 'booking', contact: 'patient', turns: [{
+            customer: 'Запишите меня к терапевту на 12:00', at: '2026-10-12T09:00:00+05:00',
+            expect: { agent: 'Регистратор', council: false, must_call: ['create_appointment'],
+                      operations: [{ model: 'appointment', kind: 'create', resource: 'doctor_a', service: 'consult',
+                                    starts_at: '2026-10-15T12:00:00+05:00', patient: 'patient' }] }
+          }] }]
+        }
+      end
+
+      def book_with(doctor_name, conversation)
+        account = conversation.account
+        starts_at = Time.iso8601('2026-10-15T12:00:00+05:00')
+        Scheduling::Appointment.create!(
+          account: account, resource: Scheduling::Resource.find_by!(account_id: account.id, name: doctor_name),
+          service: Scheduling::Service.find_by!(account_id: account.id), contact: conversation.contact, client_name: conversation.contact.name,
+          starts_at: starts_at, ends_at: starts_at + 30.minutes, duration_min: 30
+        )
+        LlmEvent.create!(account_id: account.id, event_name: 'llm.tool.complete', tool_name: 'create_appointment',
+                         payload: { 'result_success' => true }, request_id: 'other-request')
+        LlmEvent.create!(account_id: account.id, event_name: 'llm.chat.runtime_complete', request_id: 'other-request')
+      end
+
+      let(:reply) { 'Записала вас к терапевту на 15 октября в 12:00.' }
+
+      it 'blocks the release with an operation_mismatch, and lists the failure for triage' do
+        stub_fixture
+        script_runtime(text: reply) { |conversation| book_with('Кардиолог Омаров Тимур', conversation) }
+
+        report = run_benchmark
+
+        expect(report[:gate]).to include(verdict: 'FAIL')
+        expect(report.dig(:gate, :critical, :failures)).to contain_exactly(
+          a_hash_including(fixture: 'case.yml', dialogue: 'booking', turn: 1, check: 'operation_mismatch:resource', gate: 'a,c')
+        )
+        expect(report[:triage].sole).to include(
+          'check' => 'operation_mismatch:resource', 'severity' => 'critical', 'patient_message' => 'Запишите меня к терапевту на 12:00',
+          'agent_reply' => reply, 'acting_agent' => 'Регистратор', 'triage' => nil,
+          'tool_calls' => [a_hash_including('tool' => 'create_appointment', 'success' => true)],
+          'expectation' => a_hash_including('must_call' => ['create_appointment'])
+        )
+      end
+
+      it 'reads the tool events of the whole turn and records what the turn did to the database' do
+        stub_fixture
+        script_runtime(text: reply) { |conversation| book_with('Кардиолог Омаров Тимур', conversation) }
+
+        item = run_benchmark[:cases].sole
+
+        expect(item).to include(tools: ['create_appointment'], llm_calls: 1, tool_steps: ['create_appointment:true:'], patient_text: reply)
+        expect(item[:db_delta]).to contain_exactly(a_hash_including(change: 'created', resource: 'doctor_b', service: 'consult', patient: 'patient'))
+        expect(item[:evaluated]).to include('operation_mismatch', 'missing_operation:appointment', 'unexpected_mutation')
+      end
+
+      it 'passes the same turn when the agent booked the right doctor' do
+        stub_fixture
+        script_runtime(text: reply) { |conversation| book_with('Терапевт Абдрахманова Сауле', conversation) }
+
+        report = run_benchmark
+
+        expect(report[:cases].sole[:reasons]).to be_empty
+        expect(report[:gate]).to include(verdict: 'PASS')
+      end
+
+      it 'keeps the raw verdict and reports the verdict after a person signed the failure as a test bug' do
+        stub_fixture
+        script_runtime(text: reply) { |conversation| book_with('Кардиолог Омаров Тимур', conversation) }
+        labels = { Captain::Evals::RoutingBenchmark::Triage.key('case.yml', 'booking', 1, 'operation_mismatch:resource') => 'test_bug' }
+
+        Tempfile.create(['labels', '.json']) do |file|
+          file.write({ labels: labels }.to_json)
+          file.flush
+          report = run_benchmark(triage: file.path)
+
+          expect(report[:gate]).to include(verdict: 'FAIL', after_triage: include(verdict: 'PASS'))
+          expect(report[:triage].sole).to include('triage' => 'test_bug')
+        end
+      end
+    end
   end
 end
