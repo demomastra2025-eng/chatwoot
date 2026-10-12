@@ -2,7 +2,10 @@
 class Integrations::Medelement::ProviderCommands::Executor
   class ClaimLost < StandardError; end
   BOOKABLE_APPOINTMENT_STATUSES = %w[scheduled confirmed].freeze
+  # A command that has written nothing yet starts again this many times when MedElement is busy or cannot answer a read.
   RATE_LIMIT_REQUEUE_ATTEMPTS = 5
+  # The keys a write phase publishes in the execution state (see publish_write_phase!).
+  WRITE_STATE_KEYS = %w[write_phase preflight_reception_codes write_provider_patient_code].freeze
 
   def initialize(command:, client: nil)
     @command = command
@@ -26,12 +29,7 @@ class Integrations::Medelement::ProviderCommands::Executor
   rescue Integrations::Medelement::Client::RateLimitedError => e
     requeue_after_rate_limit!(e)
   rescue Integrations::Medelement::Client::ApiError => e
-    # An explicit provider rejection is a failure. Only an ambiguous answer (timeout, 5xx, dropped connection) is read
-    # back, and then only a positive match can apply the change.
-    fail_command!(
-      code: 'provider_http_error', status: e.status, reconciliation: e.ambiguous?,
-      failure: { 'provider_message' => e.provider_message }
-    )
+    fail_after_api_error!(e)
   rescue Integrations::Medelement::ProviderCommands::ExecutionError => e
     fail_command!(code: e.code, reconciliation: e.reconciliation?)
   rescue Integrations::Medelement::ProviderCommands::RequestSnapshotSchema::DestinationIntervalError => e
@@ -350,6 +348,7 @@ class Integrations::Medelement::ProviderCommands::Executor
   end
 
   def publish_write_phase!(phase, preflight_reception_codes: nil, provider_patient_code: nil)
+    @state_before_write_phase = command.execution_state.to_h.slice(*WRITE_STATE_KEYS)
     state = command.execution_state.merge('write_phase' => phase)
     state['preflight_reception_codes'] = preflight_reception_codes if preflight_reception_codes
     state['write_provider_patient_code'] = provider_patient_code if provider_patient_code
@@ -438,7 +437,7 @@ class Integrations::Medelement::ProviderCommands::Executor
         executed_at: Time.current,
         execution_state: execution_state_with_write_failure(code, status, failure)
       )
-      project_failed_appointment_status! unless reconciliation || code == 'appointment_superseded'
+      Integrations::Medelement::AppointmentProviderStatus.persist_failed_command!(command) unless reconciliation || code == 'appointment_superseded'
       project_unresolved_move_status! if reconciliation && command.move_reception?
       reconciliation_enqueued = reconciliation
     end
@@ -452,17 +451,6 @@ class Integrations::Medelement::ProviderCommands::Executor
     command.execution_state.merge('write_failure' => { 'code' => code, 'status' => status }.merge(failure.to_h).compact)
   end
 
-  def project_failed_appointment_status!
-    provider_status = Integrations::Medelement::AppointmentProviderStatus
-    if command.create_reception? && command.request_snapshot.dig('actor', 'type') == 'Captain::Assistant'
-      provider_status.persist_if_bound!(command.appointment, provider_status::FAILED, command: command)
-    elsif command.move_reception?
-      provider_status.persist_rejected_move!(command.appointment, command: command)
-    else
-      provider_status.persist!(command.appointment, provider_status::FAILED)
-    end
-  end
-
   # An ambiguous move answer (timeout, 5xx, dropped connection) is not established until a read shows the new time, so
   # the appointment is flagged for reconciliation. A provider-owned appointment is left alone: writing the flag would invalidate the source snapshot the command is
   # applied against, and the reconciliation could then never finish the move.
@@ -473,27 +461,70 @@ class Integrations::Medelement::ProviderCommands::Executor
     provider_status.persist_for_command!(command.appointment, provider_status::UNKNOWN, command: command)
   end
 
+  # An explicit provider rejection is a failure. A provider that merely could not answer before anything was written (5xx,
+  # timeout, 429, dropped connection on a read) is not: nothing was sent, so the command starts again in a moment instead of
+  # ending red for a blip. Only an ambiguous answer to a write (timeout, 5xx, dropped connection) is read back, and then only a
+  # positive match can apply the change.
+  def fail_after_api_error!(error)
+    return if error.retryable? && !write_started? && requeue_before_write!(error, code: 'provider_http_error', delay: provider_blip_delay)
+
+    fail_command!(
+      code: 'provider_http_error', status: error.status, reconciliation: error.ambiguous?,
+      failure: { 'provider_message' => error.provider_message }
+    )
+  end
+
+  def provider_blip_delay
+    (command.attempt_count * 3).clamp(3, 10).seconds
+  end
+
   # The request slot of one request type stayed busy for too long and the request was not sent. A command that has not
   # written anything yet goes back to the queue and starts again in a moment; one that already wrote reads the provider
   # instead (reconciliation) and never repeats a write.
   def requeue_after_rate_limit!(error)
+    withdraw_refused_write_phase! if error.write?
     return fail_command!(code: 'provider_rate_limited', reconciliation: true) if write_started?
-    return fail_command!(code: 'provider_rate_limited') if command.attempt_count >= RATE_LIMIT_REQUEUE_ATTEMPTS
+
+    delay = (error.retry_after_ms.to_i / 1000.0).clamp(1, 10).seconds
+    return if requeue_before_write!(error, code: 'provider_rate_limited', delay: delay)
+
+    fail_command!(code: 'provider_rate_limited')
+  end
+
+  # Puts a command that has written nothing back in the queue and starts it again after the delay. False when the attempts
+  # are used up (the caller fails the command). A lost claim ends the attempt quietly.
+  def requeue_before_write!(error, code:, delay:)
+    return false if command.attempt_count >= RATE_LIMIT_REQUEUE_ATTEMPTS
 
     requeued = command.with_lock do
       next false unless owns_claim?
 
       command.update!(
         status: command.status_for_transition('queued'),
-        last_error_code: 'provider_rate_limited',
+        last_error_code: code,
+        last_error_status: error.status,
         execution_state: command.execution_state.to_h.except('claim_token')
       )
       true
     end
-    return unless requeued
+    Integrations::Medelement::ProviderCommandJob.set(wait: delay).perform_later(command.id) if requeued
+    true
+  end
 
-    delay = (error.retry_after_ms.to_i / 1000.0).clamp(1, 10).seconds
-    Integrations::Medelement::ProviderCommandJob.set(wait: delay).perform_later(command.id)
+  # The limiter refused the write request itself, so nothing was sent: the write phase published right before it is taken
+  # back and the command is as it was before that write began.
+  def withdraw_refused_write_phase!
+    return if @state_before_write_phase.nil?
+
+    state = command.execution_state.except(*WRITE_STATE_KEYS).merge(@state_before_write_phase)
+    updated = Integrations::Medelement::ProviderCommand
+              .where(id: command.id, status: command.status_for_transition('processing'))
+              .where("execution_state ->> 'claim_token' = ?", claim_token)
+              # rubocop:disable Rails/SkipsModelValidations
+              .update_all(execution_state: state, updated_at: Time.current)
+    # rubocop:enable Rails/SkipsModelValidations
+    @state_before_write_phase = nil
+    command.reload if updated == 1
   end
 
   def await_patient_action!(action)

@@ -5,6 +5,7 @@ require 'rails_helper'
 # technical failure. Nothing here ever touches the conversation.
 RSpec.describe Captain::Tools::CancelAppointmentTool, type: :model do
   include ActiveSupport::Testing::TimeHelpers
+  include_context 'with a fake provider write wait clock'
 
   around { |example| travel_to(Time.utc(2026, 4, 19, 12)) { example.run } }
 
@@ -114,19 +115,37 @@ RSpec.describe Captain::Tools::CancelAppointmentTool, type: :model do
   context 'when MedElement does not answer in time' do
     let(:execute_commands_inline) { false }
 
-    it 'reports a technical failure, and the late OK only updates the calendar' do
+    it 'reports a technical failure and withdraws the command, so a worker that is late cannot cancel the reception behind the human' do
       allow(client).to receive(:remove_reception).and_return({})
 
       payload = JSON.parse(tool.perform(tool_context, appointment_id: appointment.id))
 
-      expect(payload).to include('success' => false, 'status' => 'pending_provider_confirmation', 'error_class' => 'technical')
+      expect(payload).to include('success' => false, 'status' => 'provider_confirmation_failed', 'error_class' => 'technical')
+      expect(remove_command).to have_attributes(status: 'cancelled', last_error_code: 'agent_wait_timeout')
       expect(appointment.reload.status).to eq('scheduled')
 
       Integrations::Medelement::ProviderCommands::Executor.new(command: remove_command).perform
 
-      expect(remove_command).to be_succeeded
-      expect(appointment.reload.status).to eq('cancelled')
+      expect(remove_command).to be_cancelled
+      expect(client).not_to have_received(:remove_reception)
+      expect(appointment.reload.status).to eq('scheduled')
       expect_conversation_untouched
+    end
+
+    context 'when the command is already being processed when the wait runs out' do
+      before do
+        allow(Integrations::Medelement::ProviderCommandJob).to receive(:perform_later) do |command_id|
+          Integrations::Medelement::ProviderCommand.find(command_id).update!(status: 'processing')
+        end
+      end
+
+      it 'reports a technical failure and leaves the running command to finish: its result is unknown, not absent' do
+        payload = JSON.parse(tool.perform(tool_context, appointment_id: appointment.id))
+
+        expect(payload).to include('success' => false, 'status' => 'pending_provider_confirmation', 'error_class' => 'technical')
+        expect(remove_command).to be_processing
+        expect_conversation_untouched
+      end
     end
   end
 end

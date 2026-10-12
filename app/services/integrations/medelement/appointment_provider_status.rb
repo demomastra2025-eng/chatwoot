@@ -69,6 +69,20 @@ class Integrations::Medelement::AppointmentProviderStatus
       end
     end
 
+    # The appointment shows a command that ended without MedElement accepting it. A booking of the AI agent is marked failed
+    # while it still belongs to that command, a move only marks its move request (the reception stays where it was), and any
+    # other change is marked failed.
+    def persist_failed_command!(command)
+      appointment = command.appointment
+      if command.create_reception? && command.request_snapshot.dig('actor', 'type') == 'Captain::Assistant'
+        persist_if_bound!(appointment, FAILED, command: command)
+      elsif command.move_reception?
+        persist_rejected_move!(appointment, command: command)
+      else
+        persist!(appointment, FAILED)
+      end
+    end
+
     def bound_to_command?(appointment, command)
       command.present? && appointment.custom_attributes.to_h[COMMAND_ID_KEY].present? && command_current?(appointment, command)
     end

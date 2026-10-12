@@ -97,8 +97,8 @@ services:
       - CW_AUTO_PREPARE_DB=false
       - ENABLE_SIDEKIQ_CRON=false
       - DISABLE_SIDEKIQ_ALIVE=true
-      - MEDELEMENT_COMMANDS_SIDEKIQ_CONCURRENCY=${MEDELEMENT_COMMANDS_SIDEKIQ_CONCURRENCY:-2}
-      - SIDEKIQ_DB_POOL=${MEDELEMENT_COMMANDS_DB_POOL:-3}
+      - MEDELEMENT_COMMANDS_SIDEKIQ_CONCURRENCY=${MEDELEMENT_COMMANDS_SIDEKIQ_CONCURRENCY:-5}
+      - SIDEKIQ_DB_POOL=${MEDELEMENT_COMMANDS_DB_POOL:-6}
     entrypoint: docker/entrypoints/rails.sh
     command: ['bundle', 'exec', 'sidekiq', '-C', 'config/sidekiq_medelement_commands.yml']
     networks:

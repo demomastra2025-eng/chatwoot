@@ -1525,18 +1525,22 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
         }
       end
 
-      before do
-        command
-        appointment.update!(custom_attributes: appointment.custom_attributes.merge('medelement_provider_operation' => 'move_reception'))
+      def acknowledged_move(from:, to:, executed_at:, key:)
         Integrations::Medelement::ProviderCommand.create!(
           account: account, appointment: appointment, contact: contact, operation: 'move_reception', status: 'succeeded',
-          idempotency_key: 'earlier-move', provider_reception_code: 'reception-1', company_cabinet_code: 'cabinet-1',
-          desired_starts_at: appointment.starts_at, desired_ends_at: appointment.ends_at, executed_at: 1.minute.ago,
+          idempotency_key: key, provider_reception_code: 'reception-1', company_cabinet_code: 'cabinet-1',
+          desired_starts_at: to.first, desired_ends_at: to.last, executed_at: executed_at,
           execution_state: { 'request_snapshot' => { 'reception' => {
-            'source_starts_at' => earlier_starts_at.utc.iso8601(6), 'source_ends_at' => earlier_ends_at.utc.iso8601(6),
-            'destination_starts_at' => appointment.starts_at.utc.iso8601(6), 'destination_ends_at' => appointment.ends_at.utc.iso8601(6)
+            'source_starts_at' => from.first.utc.iso8601(6), 'source_ends_at' => from.last.utc.iso8601(6),
+            'destination_starts_at' => to.first.utc.iso8601(6), 'destination_ends_at' => to.last.utc.iso8601(6)
           } } }
         )
+      end
+
+      before do
+        command
+        acknowledged_move(from: [earlier_starts_at, earlier_ends_at], to: [appointment.starts_at, appointment.ends_at],
+                          executed_at: 1.minute.ago, key: 'earlier-move')
         allow(client).to receive(:get_reception).and_return(reception_at(earlier_starts_at, earlier_ends_at))
         allow_available_destination(starts_at: new_starts_at, ends_at: new_ends_at)
         allow(client).to receive(:get_receptions).and_return([{ 'RECEPTION_CODE' => 'reception-1', 'COMPANY_CABINET_CODE' => 'cabinet-1' }], [])
@@ -1551,6 +1555,30 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
         expect(appointment.reload).to have_attributes(starts_at: new_starts_at, ends_at: new_ends_at)
       end
 
+      it 'does so after the calendar projected this command onto the appointment, as it does before the executor runs' do
+        Integrations::Medelement::AppointmentProviderStatus.persist!(
+          appointment, Integrations::Medelement::AppointmentProviderStatus::PENDING, command: command
+        )
+
+        perform
+
+        expect(command.reload).to be_succeeded
+        expect(client).to have_received(:move_reception).once
+      end
+
+      it 'recognises the time before an earlier move too when the reception was moved twice inside the window' do
+        first_starts_at = earlier_starts_at - 2.hours
+        first_ends_at = earlier_ends_at - 2.hours
+        acknowledged_move(from: [first_starts_at, first_ends_at], to: [earlier_starts_at, earlier_ends_at],
+                          executed_at: 2.minutes.ago, key: 'first-move')
+        allow(client).to receive(:get_reception).and_return(reception_at(first_starts_at, first_ends_at))
+
+        perform
+
+        expect(command.reload).to be_succeeded
+        expect(client).to have_received(:move_reception).once
+      end
+
       it 'still refuses a reception that really sits at another time' do
         allow(client).to receive(:get_reception).and_return(reception_at(appointment.starts_at + 3.hours, appointment.ends_at + 3.hours))
 
@@ -1558,6 +1586,85 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
 
         expect(command.reload).to have_attributes(status: 'failed', last_error_code: 'remote_state_changed')
         expect(client).not_to have_received(:move_reception)
+      end
+    end
+
+    context 'when the reception was created a moment ago and a cached read server does not show it yet' do
+      let(:created_at) { 1.minute.ago }
+
+      before do
+        command
+        Integrations::Medelement::ProviderCommand.create!(
+          account: account, appointment: appointment, contact: contact, operation: 'create_reception', status: 'succeeded',
+          idempotency_key: 'earlier-create', provider_reception_code: 'reception-1', provider_patient_code: 'patient-1',
+          company_cabinet_code: 'cabinet-1', desired_starts_at: appointment.starts_at, desired_ends_at: appointment.ends_at,
+          executed_at: created_at,
+          execution_state: { 'request_snapshot' => {
+            'company_cabinet_code' => 'cabinet-1', 'provider_patient_code' => 'patient-1',
+            'reception' => {
+              'specialist_code' => 'specialist-1',
+              'destination_starts_at' => appointment.starts_at.utc.iso8601(6), 'destination_ends_at' => appointment.ends_at.utc.iso8601(6)
+            }
+          } }
+        )
+        allow_available_destination(starts_at: new_starts_at, ends_at: new_ends_at)
+        allow(client).to receive(:move_reception).and_return({})
+      end
+
+      it 'does not take the missing reception for a rejection and moves it from what MedElement accepted' do
+        allow(client).to receive(:get_reception).and_raise(Integrations::Medelement::Client::ApiError.new('not found', status: 404))
+
+        perform
+
+        expect(command.reload).to be_succeeded
+        expect(client).to have_received(:move_reception).once.with(
+          params: hash_including(patient_code: 'patient-1', reception_code: 'reception-1')
+        )
+        expect(appointment.reload).to have_attributes(starts_at: new_starts_at, ends_at: new_ends_at)
+      end
+
+      it 'does so when the read answers with nothing at all' do
+        allow(client).to receive(:get_reception).and_return(nil)
+
+        perform
+
+        expect(command.reload).to be_succeeded
+        expect(client).to have_received(:move_reception).once
+      end
+
+      it 'still stops when the provider shows the reception removed' do
+        allow(client).to receive(:get_reception).and_return(
+          'RECEPTION_CODE' => 'reception-1', 'PROFILE_CODE' => 'patient-1', 'SPECIALIST_CODE' => 'specialist-1',
+          'COMPANY_CABINET_CODE' => 'cabinet-1', 'STARTTIME' => provider_time(appointment.starts_at),
+          'ENDTIME' => provider_time(appointment.ends_at), 'REMOVED' => 1
+        )
+
+        perform
+
+        expect(command.reload).to have_attributes(status: 'failed', last_error_code: 'remote_state_changed')
+        expect(client).not_to have_received(:move_reception)
+      end
+
+      it 'still fails a provider error other than a missing reception' do
+        allow(client).to receive(:get_reception).and_raise(Integrations::Medelement::Client::ApiError.new('forbidden', status: 403))
+
+        perform
+
+        expect(command.reload).to have_attributes(status: 'failed', last_error_code: 'provider_http_error', last_error_status: 403)
+        expect(client).not_to have_received(:move_reception)
+      end
+
+      context 'when the create was accepted longer ago than the window' do
+        let(:created_at) { 31.minutes.ago }
+
+        it 'trusts the provider again: a missing reception fails the move' do
+          allow(client).to receive(:get_reception).and_raise(Integrations::Medelement::Client::ApiError.new('not found', status: 404))
+
+          perform
+
+          expect(command.reload).to have_attributes(status: 'failed', last_error_code: 'provider_http_error', last_error_status: 404)
+          expect(client).not_to have_received(:move_reception)
+        end
       end
     end
   end
@@ -1794,6 +1901,285 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
       )
     end
   end
+
+  # The contexts below share the command fixture and add the fixtures of one scenario each.
+  # rubocop:disable RSpec/MultipleMemoizedHelpers
+
+  # The cancellation of a reception MedElement accepted a moment ago: a slower cached server may not show the accepted state yet.
+  context 'when cancelling a reception that was changed a moment ago' do
+    let(:hook_settings) { super().merge('remove_reception_on_cancel' => true) }
+    let(:contact_custom_attributes) { { 'medelement_patient_code' => 'patient-1' } }
+    let(:appointment) do
+      create(
+        :scheduling_appointment,
+        account: account, contact: contact, resource: resource, source: 'manual',
+        external_ref: 'medelement:reception:reception-1',
+        custom_attributes: { 'medelement_reception_code' => 'reception-1', 'medelement_cabinet_code' => 'cabinet-1' }
+      )
+    end
+    let(:operation) { 'remove_reception' }
+    let(:command_attributes) do
+      { provider_patient_code: 'patient-1', provider_reception_code: 'reception-1', company_cabinet_code: 'cabinet-1' }
+    end
+    let(:executed_at) { 1.minute.ago }
+    let(:earlier_starts_at) { appointment.starts_at - 2.hours }
+    let(:earlier_ends_at) { appointment.ends_at - 2.hours }
+
+    def cached_reception(starts_at, ends_at)
+      {
+        'RECEPTION_CODE' => 'reception-1', 'PROFILE_CODE' => 'patient-1', 'SPECIALIST_CODE' => 'specialist-1',
+        'COMPANY_CABINET_CODE' => 'cabinet-1', 'STARTTIME' => provider_time(starts_at), 'ENDTIME' => provider_time(ends_at),
+        'ACTIVE' => 1, 'REMOVED' => 0, 'SERVICES' => []
+      }
+    end
+
+    # The calendar projects the cancellation onto the appointment when it creates the command, before the executor runs.
+    def project_cancellation!
+      Integrations::Medelement::AppointmentProviderStatus.persist!(
+        appointment, Integrations::Medelement::AppointmentProviderStatus::PENDING, command: command
+      )
+    end
+
+    before do
+      allow(client).to receive(:get_receptions).and_return(
+        [{ 'RECEPTION_CODE' => 'reception-1', 'COMPANY_CABINET_CODE' => 'cabinet-1', 'PAID' => 'not' }]
+      )
+      allow(client).to receive(:remove_reception).and_return({})
+    end
+
+    context 'when MedElement answered OK to a move and the cached read still shows the time before it' do
+      before do
+        command
+        Integrations::Medelement::ProviderCommand.create!(
+          account: account, appointment: appointment, contact: contact, operation: 'move_reception', status: 'succeeded',
+          idempotency_key: 'earlier-move', provider_reception_code: 'reception-1', company_cabinet_code: 'cabinet-1',
+          desired_starts_at: appointment.starts_at, desired_ends_at: appointment.ends_at, executed_at: executed_at,
+          execution_state: { 'request_snapshot' => { 'reception' => {
+            'source_starts_at' => earlier_starts_at.utc.iso8601(6), 'source_ends_at' => earlier_ends_at.utc.iso8601(6),
+            'destination_starts_at' => appointment.starts_at.utc.iso8601(6), 'destination_ends_at' => appointment.ends_at.utc.iso8601(6)
+          } } }
+        )
+        project_cancellation!
+        allow(client).to receive(:get_reception).and_return(cached_reception(earlier_starts_at, earlier_ends_at))
+      end
+
+      it 'is not refused for that stale read: the reception is removed and the appointment cancelled' do
+        expect(appointment.reload.custom_attributes['medelement_provider_operation']).to eq('remove_reception')
+
+        perform
+
+        expect(command.reload).to be_succeeded
+        expect(client).to have_received(:remove_reception).once.with(reception_code: 'reception-1')
+        expect(appointment.reload).to have_attributes(status: 'cancelled')
+      end
+
+      it 'still refuses a reception that really sits at another time' do
+        allow(client).to receive(:get_reception).and_return(cached_reception(earlier_starts_at - 3.hours, earlier_ends_at - 3.hours))
+
+        perform
+
+        expect(command.reload).to have_attributes(status: 'failed', last_error_code: 'remote_state_changed')
+        expect(client).not_to have_received(:remove_reception)
+      end
+
+      context 'when the move was accepted longer ago than the window' do
+        let(:executed_at) { 31.minutes.ago }
+
+        it 'trusts the provider again' do
+          perform
+
+          expect(command.reload).to have_attributes(status: 'failed', last_error_code: 'remote_state_changed')
+          expect(client).not_to have_received(:remove_reception)
+        end
+      end
+    end
+
+    context 'when MedElement answered OK to the create and the cached read server does not know the reception yet' do
+      before do
+        command
+        Integrations::Medelement::ProviderCommand.create!(
+          account: account, appointment: appointment, contact: contact, operation: 'create_reception', status: 'succeeded',
+          idempotency_key: 'earlier-create', provider_reception_code: 'reception-1', provider_patient_code: 'patient-1',
+          company_cabinet_code: 'cabinet-1', desired_starts_at: appointment.starts_at, desired_ends_at: appointment.ends_at,
+          executed_at: executed_at,
+          execution_state: { 'request_snapshot' => {
+            'company_cabinet_code' => 'cabinet-1', 'provider_patient_code' => 'patient-1',
+            'reception' => {
+              'specialist_code' => 'specialist-1',
+              'destination_starts_at' => appointment.starts_at.utc.iso8601(6), 'destination_ends_at' => appointment.ends_at.utc.iso8601(6)
+            }
+          } }
+        )
+        project_cancellation!
+        # A cached server does not list the reception either.
+        allow(client).to receive(:get_receptions).and_return([])
+      end
+
+      it 'is not refused for the missing reception: the removal goes out from what MedElement accepted' do
+        allow(client).to receive(:get_reception).and_raise(Integrations::Medelement::Client::ApiError.new('not found', status: 404))
+
+        perform
+
+        expect(command.reload).to be_succeeded
+        expect(client).to have_received(:remove_reception).once.with(reception_code: 'reception-1')
+        expect(appointment.reload).to have_attributes(status: 'cancelled')
+      end
+
+      it 'still stops when the provider shows another time for it' do
+        allow(client).to receive(:get_reception).and_return(
+          cached_reception(appointment.starts_at + 3.hours, appointment.ends_at + 3.hours)
+        )
+
+        perform
+
+        expect(command.reload).to have_attributes(status: 'failed', last_error_code: 'remote_state_changed')
+        expect(client).not_to have_received(:remove_reception)
+      end
+
+      context 'when the create was accepted longer ago than the window' do
+        let(:executed_at) { 31.minutes.ago }
+
+        it 'trusts the provider again: a missing reception fails the removal' do
+          allow(client).to receive(:get_reception).and_raise(Integrations::Medelement::Client::ApiError.new('not found', status: 404))
+
+          perform
+
+          expect(command.reload).to have_attributes(status: 'failed', last_error_code: 'provider_http_error', last_error_status: 404)
+          expect(client).not_to have_received(:remove_reception)
+        end
+      end
+    end
+  end
+
+  context 'when a provider read fails before anything was written' do
+    let(:contact_custom_attributes) { { 'medelement_patient_code' => 'patient-1' } }
+    let(:operation) { 'update_patient' }
+    let(:command_attributes) { { provider_patient_code: 'patient-1' } }
+
+    before do
+      allow(client).to receive(:update_patient)
+    end
+
+    it 'starts the command again shortly instead of ending it red for a blip' do
+      allow(client).to receive(:get_patient).and_raise(Integrations::Medelement::Client::ApiError.new('unavailable', status: 503))
+
+      expect { perform }.to have_enqueued_job(Integrations::Medelement::ProviderCommandJob).with(command.id)
+
+      expect(command.reload).to have_attributes(
+        status: 'queued', last_error_code: 'provider_http_error', last_error_status: 503, attempt_count: 1
+      )
+      expect(command.execution_state.keys).not_to include('claim_token', 'write_phase')
+      expect(client).not_to have_received(:update_patient)
+    end
+
+    it 'does the same for a dropped connection and for a provider rate limit answer' do
+      errors = [
+        Integrations::Medelement::Client::ApiError.new('transport failed'),
+        Integrations::Medelement::Client::ApiError.new('slow down', status: 429)
+      ]
+      errors.each do |error|
+        command.update!(status: 'queued', attempt_count: 0)
+        allow(client).to receive(:get_patient).and_raise(error)
+
+        described_class.new(command: command.reload).perform
+
+        expect(command.reload).to have_attributes(status: 'queued', attempt_count: 1)
+      end
+    end
+
+    it 'waits a little longer before every further attempt, up to ten seconds' do
+      delays = [1, 2, 3, 4, 9].map do |attempts|
+        command.update!(attempt_count: attempts)
+        executor.send(:provider_blip_delay)
+      end
+
+      expect(delays).to eq([3, 6, 9, 10, 10].map(&:seconds))
+    end
+
+    it 'gives up after a few attempts and fails with the provider answer' do
+      command.update!(attempt_count: described_class::RATE_LIMIT_REQUEUE_ATTEMPTS - 1)
+      allow(client).to receive(:get_patient).and_raise(Integrations::Medelement::Client::ApiError.new('unavailable', status: 503))
+
+      expect { perform }.not_to have_enqueued_job(Integrations::Medelement::ProviderCommandJob)
+
+      expect(command.reload).to have_attributes(status: 'failed', last_error_code: 'provider_http_error', last_error_status: 503)
+    end
+
+    it 'does not start again after an explicit rejection' do
+      allow(client).to receive(:get_patient).and_raise(Integrations::Medelement::Client::ApiError.new('unprocessable', status: 422))
+
+      expect { perform }.not_to have_enqueued_job(Integrations::Medelement::ProviderCommandJob)
+
+      expect(command.reload).to have_attributes(status: 'failed', last_error_code: 'provider_http_error', last_error_status: 422)
+    end
+
+    it 'does not start a command again whose write may have been sent' do
+      allow(client).to receive(:get_patient).and_return(
+        'PROFILE_CODE' => 'patient-1', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov', 'PATIENT_PHONE_2' => contact.phone_number
+      )
+      allow(client).to receive(:update_patient).and_raise(
+        Integrations::Medelement::Client::ApiError.new('timeout', status: 503, ambiguous: true)
+      )
+
+      expect { perform }.to have_enqueued_job(Integrations::Medelement::ProviderCommandReconciliationJob).with(command.id)
+
+      expect(command.reload).to have_attributes(status: 'reconciliation_required')
+      expect(client).to have_received(:update_patient).once
+    end
+  end
+
+  context 'when the limiter refuses the write request itself' do
+    let(:contact_custom_attributes) { { 'medelement_patient_code' => 'patient-1' } }
+    let(:appointment) { create(:scheduling_appointment, account: account, contact: contact, resource: resource, source: 'manual') }
+    let(:operation) { 'create_reception' }
+    let(:command_attributes) { { provider_patient_code: 'patient-1', company_cabinet_code: 'cabinet-1' } }
+    let(:refused_write) do
+      Integrations::Medelement::Client::RateLimitedError.new(operation: 'reception create', retry_after_ms: 4200, write: true)
+    end
+
+    before do
+      allow(client).to receive(:get_patient).with(patient_code: 'patient-1').and_return(
+        'PROFILE_CODE' => 'patient-1', 'PATIENT_PHONE_2' => contact.phone_number
+      )
+      allow_available_destination
+    end
+
+    it 'takes the write phase back and puts the command in the queue, because nothing was sent' do
+      allow(client).to receive(:create_reception).and_raise(refused_write)
+
+      expect { perform }.to have_enqueued_job(Integrations::Medelement::ProviderCommandJob).with(command.id)
+
+      expect(command.reload).to have_attributes(status: 'queued', last_error_code: 'provider_rate_limited', attempt_count: 1)
+      expect(command.execution_state.keys).not_to include('claim_token', 'write_phase', 'preflight_reception_codes', 'write_provider_patient_code')
+      expect(command).not_to be_provider_write_started
+    end
+
+    it 'sends the write once the slot is free, as a first write and not as a repeated one' do
+      allow(client).to receive(:create_reception).and_raise(refused_write)
+      perform
+      allow(client).to receive(:create_reception).and_return('RECEPTION_CODE' => 'reception-1')
+
+      described_class.new(command: command.reload).perform
+
+      expect(command.reload).to have_attributes(status: 'succeeded', provider_reception_code: 'reception-1')
+      expect(client).to have_received(:create_reception).twice
+    end
+
+    it 'restores the state a refused write found: an earlier write still has to be reconciled' do
+      command.update!(execution_state: command.execution_state.merge('write_phase' => 'patient_create', 'write_provider_patient_code' => 'patient-1'))
+      allow(executor).to receive(:execute_operation!) do
+        executor.send(:mark_write_phase!, 'reception_create', preflight_reception_codes: ['existing-1'], provider_patient_code: 'patient-2')
+        raise refused_write
+      end
+
+      expect { perform }.to have_enqueued_job(Integrations::Medelement::ProviderCommandReconciliationJob).with(command.id)
+
+      expect(command.reload).to have_attributes(status: 'reconciliation_required', last_error_code: 'provider_rate_limited')
+      expect(command.execution_state).to include('write_phase' => 'patient_create', 'write_provider_patient_code' => 'patient-1')
+      expect(command.execution_state).not_to have_key('preflight_reception_codes')
+    end
+  end
+
   context 'when the request slot of a request type stays busy for too long' do
     let(:busy) { Integrations::Medelement::Client::RateLimitedError.new(operation: 'patient search', retry_after_ms: 4200) }
 
@@ -1827,6 +2213,8 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
       expect(command.reload).to have_attributes(status: 'reconciliation_required', last_error_code: 'provider_rate_limited')
     end
   end
+
+  # rubocop:enable RSpec/MultipleMemoizedHelpers
 
   def allow_materialized_reception(starts_at: appointment.starts_at, ends_at: appointment.ends_at, service_codes: [])
     allow(client).to receive(:get_reception).with(reception_code: 'reception-1', version: :v2).and_return(

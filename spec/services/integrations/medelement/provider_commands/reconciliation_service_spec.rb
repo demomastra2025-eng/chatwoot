@@ -131,6 +131,17 @@ RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService
       expect(client).not_to have_received(:create_patient)
     end
 
+    it 'reads the provider with the short command retry profile instead of retrying for minutes' do
+      allow(client).to receive(:search_patients_by_phone).and_return(
+        [{ 'PROFILE_CODE' => 'patient-1', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov', 'PATIENT_PHONE_2' => contact.phone_number }]
+      )
+
+      perform
+
+      expect(Integrations::Medelement::Client).to have_received(:new)
+        .with(configuration: an_instance_of(Integrations::Medelement::Configuration), retry_profile: :command)
+    end
+
     it 'rejects manual cancellation while the reconciliation claim is in flight' do
       actor = create(:user, :administrator, account: account)
       command.update!(execution_state: command.execution_state.merge('execution_started_at' => 1.hour.ago.iso8601))
@@ -383,6 +394,15 @@ RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService
         expect(client).not_to have_received(:create_reception)
         expect(client).not_to have_received(:move_reception)
         expect(client).not_to have_received(:remove_reception)
+      end
+
+      it 'reads the provider with the short command retry profile, so a degraded provider cannot hold a command thread for minutes' do
+        allow(client).to receive(:get_reception).and_return(reception('created-1'))
+
+        perform
+
+        expect(Integrations::Medelement::Client).to have_received(:new)
+          .with(configuration: an_instance_of(Integrations::Medelement::Configuration), retry_profile: :command)
       end
 
       it 'bounds read checks and keeps acknowledgement successful after the last unavailable read' do

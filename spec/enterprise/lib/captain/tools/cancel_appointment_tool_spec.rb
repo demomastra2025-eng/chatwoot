@@ -1,6 +1,8 @@
 require 'rails_helper'
 
 RSpec.describe Captain::Tools::CancelAppointmentTool, type: :model do
+  include_context 'with a fake provider write wait clock'
+
   let(:account) { create(:account) }
   let(:assistant) { create(:captain_assistant, account: account) }
   let(:tool) { described_class.new(assistant) }
@@ -118,14 +120,16 @@ RSpec.describe Captain::Tools::CancelAppointmentTool, type: :model do
 
     payload = JSON.parse(result)
 
-    # No worker answers in this example, so the tool reports that MedElement did not answer in time: a technical failure.
-    expect(payload).to include('success' => false, 'appointment_id' => appointment.id, 'status' => 'pending_provider_confirmation',
-                              'provider_confirmed' => false, 'reason' => 'pending_provider_confirmation', 'error_class' => 'technical',
-                              'provider_confirmation_status' => 'pending', 'provider_confirmation_operation' => 'remove_reception',
+    # No worker answers in this example, so the tool reports that MedElement did not answer in time: a technical failure, and
+    # the command nobody can wait for any more is withdrawn before it can cancel the reception behind the human who takes over.
+    expect(payload).to include('success' => false, 'appointment_id' => appointment.id, 'status' => 'provider_confirmation_failed',
+                              'provider_confirmed' => false, 'reason' => 'staff_will_help', 'error_class' => 'technical',
+                              'provider_confirmation_status' => 'failed', 'provider_confirmation_operation' => 'remove_reception',
                               'provider_confirmation_scope' => 'medelement')
     expect(payload.keys).to match_array(%w[success appointment_id doctor_name local_date local_time status reason provider_confirmed
                                           provider_confirmation_status provider_confirmation_operation provider_confirmation_scope error_class])
     command = Integrations::Medelement::ProviderCommand.find_by!(appointment_id: appointment.id, operation: 'remove_reception')
+    expect(command).to have_attributes(status: 'cancelled', last_error_code: 'agent_wait_timeout')
     expect(command.request_snapshot.dig('actor', 'type')).to eq('Captain::Assistant')
     expect(other.reload.status).to eq('scheduled')
   end

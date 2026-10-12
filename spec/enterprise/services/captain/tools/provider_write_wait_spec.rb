@@ -11,7 +11,7 @@ RSpec.describe Captain::Tools::ProviderWriteWait do
     Integrations::Medelement::ProviderCommand.create!(
       {
         account: account, appointment: appointment, contact: contact, operation: 'move_reception', status: command_status,
-        idempotency_key: SecureRandom.uuid, company_cabinet_code: 'cabinet-1',
+        idempotency_key: SecureRandom.uuid, company_cabinet_code: 'cabinet-1', provider_reception_code: 'reception-1',
         desired_starts_at: appointment.starts_at + 1.day, desired_ends_at: appointment.ends_at + 1.day
       }.merge(command_attributes)
     )
@@ -97,6 +97,55 @@ RSpec.describe Captain::Tools::ProviderWriteWait do
   it 'raises a technical timeout error when MedElement does not answer in time' do
     expect { wait(timeout: 1.0) }.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_WRITE_TIMEOUT') }
     expect(sleeps).to eq([0.25, 0.25, 0.25, 0.25])
+  end
+
+  describe 'a command nobody waits for any more' do
+    it 'is withdrawn while MedElement has not been asked, so it cannot move the reception after a human took the case' do
+      expect { wait(timeout: 1.0) }.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_WRITE_TIMEOUT') }
+
+      expect(command.reload).to have_attributes(status: 'cancelled', last_error_code: 'agent_wait_timeout')
+      expect(appointment.reload.custom_attributes['medelement_move_request']).to include('state' => 'rejected', 'evidence' => 'not_sent')
+    end
+
+    it 'is withdrawn while it still waits for its confirmation' do
+      command.update!(status: 'awaiting_confirmation')
+
+      expect { wait(timeout: 1.0) }.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_WRITE_TIMEOUT') }
+
+      expect(command.reload).to be_cancelled
+    end
+
+    context 'when the command is already being processed' do
+      let(:command_status) { 'processing' }
+
+      it 'is left to finish, its result is unknown' do
+        expect { wait(timeout: 1.0) }.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_WRITE_TIMEOUT') }
+
+        expect(command.reload).to be_processing
+        expect(appointment.reload.custom_attributes).not_to have_key('medelement_move_request')
+      end
+    end
+
+    context 'when a write phase was already recorded' do
+      let(:command_attributes) { { execution_state: { 'write_phase' => 'reception_move' } } }
+
+      it 'is left to finish' do
+        expect { wait(timeout: 1.0) }.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_WRITE_TIMEOUT') }
+
+        expect(command.reload).to be_queued
+      end
+    end
+
+    it 'reports the OK that arrived between the last look and the withdrawal as a success' do
+      withdrawal = instance_double(Integrations::Medelement::ProviderCommands::UnstartedWithdrawal)
+      allow(Integrations::Medelement::ProviderCommands::UnstartedWithdrawal).to receive(:new).and_return(withdrawal)
+      allow(withdrawal).to receive(:perform) do
+        command.update!(status: 'succeeded')
+        false
+      end
+
+      expect(wait(timeout: 1.0)).to eq(command)
+    end
   end
 
   describe '.timeout_seconds' do

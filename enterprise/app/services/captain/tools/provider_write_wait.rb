@@ -55,7 +55,7 @@ class Captain::Tools::ProviderWriteWait
       return command if command.succeeded?
       raise self.class.failure_error(command) if self.class.failed?(command)
       raise error('MEDELEMENT_WRITE_UNKNOWN', 'Medelement result is unknown; staff verification is required') if self.class.unresolved?(command)
-      raise error('MEDELEMENT_WRITE_TIMEOUT', 'Medelement did not answer in time; staff verification is required') if clock.call >= deadline
+      return give_up! if clock.call >= deadline
 
       sleeper.call(poll)
     end
@@ -64,6 +64,17 @@ class Captain::Tools::ProviderWriteWait
   private
 
   attr_reader :clock, :command, :poll, :sleeper, :timeout
+
+  # No answer in time. A command that MedElement has not been asked yet is withdrawn, so it cannot book, move or cancel after
+  # the agent reported a failure and a human took the conversation over; one that is already running is left to finish.
+  def give_up!
+    withdrawn = Integrations::Medelement::ProviderCommands::UnstartedWithdrawal.new(command: command).perform
+    command.reload
+    return command if command.succeeded?
+    raise self.class.failure_error(command) if !withdrawn && self.class.failed?(command)
+
+    raise error('MEDELEMENT_WRITE_TIMEOUT', 'Medelement did not answer in time; staff verification is required')
+  end
 
   def error(code, message)
     Scheduling::Error.new(code: code, message: message, status: :unprocessable_content)

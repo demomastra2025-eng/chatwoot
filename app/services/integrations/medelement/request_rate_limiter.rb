@@ -9,10 +9,16 @@ class Integrations::Medelement::RequestRateLimiter
   class BusyError < StandardError
     attr_reader :operation, :retry_after_ms
 
-    def initialize(operation:, retry_after_ms:)
+    def initialize(operation:, retry_after_ms:, write: false)
       super("Medelement request slot is busy for #{retry_after_ms} ms")
       @operation = operation
       @retry_after_ms = retry_after_ms
+      @write = write
+    end
+
+    # The refused request was a write; it was not sent either.
+    def write?
+      @write
     end
   end
 
@@ -46,7 +52,8 @@ class Integrations::Medelement::RequestRateLimiter
                  connection_pool: nil, clock: nil)
     @integrator_key = integrator_key.to_s
     @account_login = account_login.to_s
-    @interval_ms = interval_ms.to_i
+    # The provider's own limit is a floor, whatever a hook setting asks for.
+    @interval_ms = [interval_ms.to_i, DEFAULT_INTERVAL_MS].max
     @sleeper = sleeper
     @connection_pool = connection_pool
     @clock = clock || -> { Time.current }
@@ -55,10 +62,8 @@ class Integrations::Medelement::RequestRateLimiter
 
   # Waits for the next free slot of this request type. The operation is the MedElement endpoint the request goes to.
   def wait!(operation: nil, write: false)
-    return if interval_ms <= 0
-
     delay_ms = reserve_delay_ms(operation, write ? MAX_INLINE_WRITE_WAIT_MS : MAX_INLINE_WAIT_MS)
-    raise BusyError.new(operation: operation.to_s, retry_after_ms: delay_ms.abs) if delay_ms.negative?
+    raise BusyError.new(operation: operation.to_s, retry_after_ms: delay_ms.abs, write: write) if delay_ms.negative?
 
     sleeper.call(delay_ms.to_f / 1000) if delay_ms.positive?
   end

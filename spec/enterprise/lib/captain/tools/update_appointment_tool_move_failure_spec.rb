@@ -5,6 +5,7 @@ require 'rails_helper'
 # answer or silence is a technical failure, a taken slot is a business failure. Nothing here ever touches the conversation.
 RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
   include ActiveSupport::Testing::TimeHelpers
+  include_context 'with a fake provider write wait clock'
 
   around { |example| travel_to(Time.utc(2026, 4, 19, 12)) { example.run } }
 
@@ -152,21 +153,41 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
   context 'when MedElement does not answer in time' do
     let(:execute_commands_inline) { false }
 
-    it 'reports a technical failure, and the late OK only updates the calendar' do
+    it 'reports a technical failure and withdraws the command, so a worker that is late cannot move the reception behind the human' do
       allow(client).to receive(:move_reception).and_return({})
 
       payload = request_move
 
-      expect(payload).to include('success' => false, 'status' => 'pending_provider_confirmation', 'provider_confirmed' => false,
-                                 'error_class' => 'technical', 'move_state' => 'pending', 'local_time' => '09:00')
-      expect(appointment.reload).to have_attributes(starts_at: original_starts_at)
+      expect(payload).to include('success' => false, 'status' => 'provider_confirmation_failed', 'provider_confirmed' => false,
+                                 'error_class' => 'technical', 'move_state' => 'rejected', 'local_time' => '09:00')
+      expect(move_command).to have_attributes(status: 'cancelled', last_error_code: 'agent_wait_timeout')
+      expect(appointment.reload.custom_attributes['medelement_move_request']).to include('state' => 'rejected', 'evidence' => 'not_sent')
+      expect(appointment).to have_attributes(starts_at: original_starts_at)
       expect_conversation_untouched
 
       Integrations::Medelement::ProviderCommands::Executor.new(command: move_command).perform
 
-      expect(move_command).to be_succeeded
-      expect(appointment.reload).to have_attributes(starts_at: requested_starts_at, ends_at: requested_ends_at)
+      expect(move_command).to be_cancelled
+      expect(client).not_to have_received(:move_reception)
+      expect(appointment.reload).to have_attributes(starts_at: original_starts_at)
       expect_conversation_untouched
+    end
+
+    context 'when the command is already being processed when the wait runs out' do # rubocop:disable RSpec/MultipleMemoizedHelpers
+      before do
+        allow(Integrations::Medelement::ProviderCommandJob).to receive(:perform_later) do |command_id|
+          Integrations::Medelement::ProviderCommand.find(command_id).update!(status: 'processing')
+        end
+      end
+
+      it 'reports a technical failure and leaves the running command to finish: its result is unknown, not absent' do
+        payload = request_move
+
+        expect(payload).to include('success' => false, 'status' => 'pending_provider_confirmation', 'error_class' => 'technical',
+                                   'move_state' => 'pending', 'local_time' => '09:00')
+        expect(move_command).to be_processing
+        expect_conversation_untouched
+      end
     end
   end
 

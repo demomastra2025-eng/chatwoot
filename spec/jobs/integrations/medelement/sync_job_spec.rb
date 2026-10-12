@@ -69,7 +69,7 @@ RSpec.describe Integrations::Medelement::SyncJob, type: :job do
         expect(sync_config[:queues]).to eq(['medelement_sync'])
         expect(sync_config[:concurrency]).to eq(1)
         expect(commands_config[:queues]).to eq(['medelement_provider_commands'])
-        expect(commands_config[:concurrency]).to eq(2)
+        expect(commands_config[:concurrency]).to eq(5)
         expect(shared_config[:queues]).not_to include('medelement_sync', 'medelement_provider_commands')
       end
     end

@@ -111,9 +111,45 @@ RSpec.describe Captain::Tools::ProviderBookingOutcomeService do
 
   it 'waits for asynchronous command confirmation rather than declaring an immediate rejection' do
     command.update!(status: 'awaiting_confirmation')
+    allow(service).to receive(:monotonic_now).and_return(0, 1, Captain::Tools::ProviderWriteWait.timeout_seconds + 1)
+    allow(service).to receive(:sleep)
+
+    expect { service.perform }.to raise_error(Scheduling::Error)
+
+    expect(service).to have_received(:sleep).once
+  end
+
+  %w[awaiting_confirmation queued v2_queued].each do |waiting_status|
+    it "withdraws a #{waiting_status} command MedElement was never asked when the wait runs out, so it cannot book later" do
+      command.update!(status: waiting_status)
+      allow(service).to receive(:monotonic_now).and_return(0, Captain::Tools::ProviderWriteWait.timeout_seconds + 1)
+
+      expect { service.perform }.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_BOOKING_FAILED') }
+
+      expect(command.reload).to have_attributes(status: 'cancelled', last_error_code: 'agent_wait_timeout')
+      expect(appointment.reload.custom_attributes[status::ATTRIBUTE_KEY]).to eq(status::FAILED)
+    end
+  end
+
+  it 'leaves a command that is already being processed to finish and reports its result as unknown' do
     allow(service).to receive(:monotonic_now).and_return(0, Captain::Tools::ProviderWriteWait.timeout_seconds + 1)
+
     expect { service.perform }.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_BOOKING_UNKNOWN') }
-    expect(appointment.reload.custom_attributes[status::ATTRIBUTE_KEY]).to eq(status::UNKNOWN)
+
+    expect(command.reload).to be_processing
+  end
+
+  it 'reports the reference that arrived between the last look and the withdrawal as a success' do
+    command.update!(status: 'queued')
+    allow(service).to receive(:monotonic_now).and_return(0, Captain::Tools::ProviderWriteWait.timeout_seconds + 1)
+    withdrawal = instance_double(Integrations::Medelement::ProviderCommands::UnstartedWithdrawal)
+    allow(Integrations::Medelement::ProviderCommands::UnstartedWithdrawal).to receive(:new).and_return(withdrawal)
+    allow(withdrawal).to receive(:perform) do
+      acknowledge_write!
+      false
+    end
+
+    expect(service.perform).to eq(command)
   end
 
   it 'marks a provider rejection red without deleting the local booking' do

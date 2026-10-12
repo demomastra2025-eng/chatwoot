@@ -26,6 +26,26 @@ RSpec.describe Integrations::Medelement::Configuration do
     end
   end
 
+  describe '#throttle_ms' do
+    it 'defaults to the 200 ms spacing the provider allows' do
+      expect(configuration.throttle_ms).to eq(200)
+    end
+
+    it 'keeps a longer pause that a hook asks for' do
+      allow(hook).to receive(:settings).and_return('throttle_ms' => 500)
+
+      expect(configuration.throttle_ms).to eq(500)
+    end
+
+    [0, 1, 199, -5].each do |too_short|
+      it "never goes below the provider's limit of five requests per second, whatever a hook saved (#{too_short})" do
+        allow(hook).to receive(:settings).and_return('throttle_ms' => too_short)
+
+        expect(configuration.throttle_ms).to eq(200)
+      end
+    end
+  end
+
   describe '#sync_services?' do
     it 'is enabled by default for existing hooks' do
       expect(configuration.sync_services?).to be(true)

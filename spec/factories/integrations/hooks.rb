@@ -70,7 +70,7 @@ FactoryBot.define do
           'sync_time_of_day' => '06:15',
           'receptions_days_back' => 3,
           'receptions_days_forward' => 89,
-          'throttle_ms' => 0
+          'throttle_ms' => 200
         }
       end
     end

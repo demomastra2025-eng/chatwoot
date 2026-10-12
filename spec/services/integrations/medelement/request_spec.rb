@@ -139,7 +139,7 @@ RSpec.describe Integrations::Medelement::Request do
     it 'does not send the request and raises a retryable error when the slot of its type is busy for too long' do
       provider_request = stub_request(:post, "#{base_url}/v2/doctor/reception/change_reception_date")
       allow(rate_limiter).to receive(:wait!).and_raise(
-        Integrations::Medelement::RequestRateLimiter::BusyError.new(operation: 'reception move', retry_after_ms: 4200)
+        Integrations::Medelement::RequestRateLimiter::BusyError.new(operation: 'reception move', retry_after_ms: 4200, write: true)
       )
 
       expect do
@@ -148,6 +148,7 @@ RSpec.describe Integrations::Medelement::Request do
         expect(error).to have_attributes(operation: 'reception move', retry_after_ms: 4200, status: nil)
         expect(error).to be_retryable
         expect(error).not_to be_ambiguous
+        expect(error).to be_write
       end
 
       expect(provider_request).not_to have_been_requested
@@ -236,7 +237,10 @@ RSpec.describe Integrations::Medelement::Request do
       provider_request = stub_request(:any, /api3.medelement.com/)
 
       expect { request.indexed_get('/doctor/v1/patients', query: 'skip=0', operation: 'patient search') }
-        .to raise_error(Integrations::Medelement::Client::RateLimitedError) { |error| expect(error.retry_after_ms).to eq(3500) }
+        .to raise_error(Integrations::Medelement::Client::RateLimitedError) do |error|
+          expect(error.retry_after_ms).to eq(3500)
+          expect(error).not_to be_write
+        end
       expect do
         request.receptions(company_cabinet_code: 'cabinet-1', specialist_code: 'specialist-1',
                            begin_datetime: '01.08.2026 00:00:00', end_datetime: '31.08.2026 23:59:59')

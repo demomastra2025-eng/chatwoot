@@ -51,17 +51,33 @@ RSpec.describe Integrations::Medelement::RequestRateLimiter do
     ).wait!(operation: 'reception move', write: true)
   end
 
-  it 'does not touch Redis or sleep when pacing is disabled' do
-    expect(connection_pool).not_to receive(:with)
+  [0, 50, 199, -10].each do |too_short|
+    it "never spaces requests closer than the provider allows, whatever interval #{too_short} asks for" do
+      expect(connection).to receive(:call_with_namespace) do |_command, _script, keys:, argv:|
+        expect(keys).to eq([lane_key(login: '', operation: 'timetable')])
+        expect(argv).to eq([200, described_class::MAX_INLINE_WAIT_MS])
+        200
+      end
 
-    described_class.new(
-      integrator_key: 'provider-secret',
-      interval_ms: 0,
-      sleeper: ->(seconds) { sleeps << seconds },
-      connection_pool: connection_pool
-    ).wait!(operation: 'timetable')
+      described_class.new(
+        integrator_key: 'provider-secret',
+        interval_ms: too_short,
+        sleeper: ->(seconds) { sleeps << seconds },
+        connection_pool: connection_pool
+      ).wait!(operation: 'timetable')
 
-    expect(sleeps).to be_empty
+      expect(sleeps).to eq([0.2])
+    end
+  end
+
+  it 'keeps a longer interval that a hook asks for' do
+    expect(connection).to receive(:call_with_namespace) do |_command, _script, keys:, argv:|
+      expect(keys.size).to eq(1)
+      expect(argv).to eq([500, described_class::MAX_INLINE_WAIT_MS])
+      0
+    end
+
+    described_class.new(integrator_key: 'provider-secret', interval_ms: 500, connection_pool: connection_pool).wait!(operation: 'timetable')
   end
 
   it 'normalizes a Redis connection failure without exposing the integrator key' do
@@ -149,6 +165,17 @@ RSpec.describe Integrations::Medelement::RequestRateLimiter do
       expect(retry_after.first).to be > described_class::MAX_INLINE_WAIT_MS
       expect(retry_after.uniq).to eq([retry_after.first])
       expect(sleeps).to be_empty
+    end
+
+    it 'tells whether the refused request was a write' do
+      ((described_class::MAX_INLINE_WRITE_WAIT_MS / 200) + 1).times { limiter.wait!(operation: 'reception create', write: true) }
+
+      expect { limiter.wait!(operation: 'reception create', write: true) }.to raise_error(described_class::BusyError) do |error|
+        expect(error).to be_write
+      end
+      expect { limiter.wait!(operation: 'reception create') }.to raise_error(described_class::BusyError) do |error|
+        expect(error).not_to be_write
+      end
     end
 
     it 'lets a write queue behind more requests than a read before it is refused' do

@@ -10,9 +10,12 @@ class Captain::Tools::ProviderBookingOutcomeService
       command.provider_reception_code.to_s == reference.to_s
   end
 
-  def initialize(appointment:, assistant:)
+  def initialize(appointment:, assistant:, clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) },
+                 sleeper: ->(seconds) { Kernel.sleep(seconds) })
     @appointment = appointment
     @assistant = assistant
+    @clock = clock
+    @sleeper = sleeper
   end
 
   # Observe only the command created by this booking. An unknown result must never
@@ -29,7 +32,7 @@ class Captain::Tools::ProviderBookingOutcomeService
 
   private
 
-  attr_reader :appointment, :assistant, :command
+  attr_reader :appointment, :assistant, :clock, :command, :sleeper
 
   def provider_write_required?
     return true if appointment.custom_attributes.to_h[STATUS::ATTRIBUTE_KEY].present?
@@ -53,10 +56,27 @@ class Captain::Tools::ProviderBookingOutcomeService
       raise booking_error('MEDELEMENT_BOOKING_SUPERSEDED', 'Medelement booking was superseded') unless current_binding?
 
       fail_unacknowledged! if failed?
-      return unknown_result! if command.succeeded? || unresolved? || monotonic_now >= deadline
+      return unknown_result! if command.succeeded? || unresolved?
+      return timed_out! if monotonic_now >= deadline
 
       sleep(POLL_SECONDS)
     end
+  end
+
+  def sleep(seconds)
+    sleeper.call(seconds)
+  end
+
+  # No answer in time. A command MedElement has not been asked yet is withdrawn, so it cannot book after the agent reported a
+  # failure and a human took the conversation over; a command that is already running has an unknown result.
+  def timed_out!
+    withdrawn = Integrations::Medelement::ProviderCommands::UnstartedWithdrawal.new(command: command).perform
+    command.reload
+    appointment.reload
+    return command if confirmed_write?
+    return fail_unacknowledged! if withdrawn
+
+    unknown_result!
   end
 
   def unknown_result!
@@ -141,7 +161,7 @@ class Captain::Tools::ProviderBookingOutcomeService
   end
 
   def monotonic_now
-    Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    clock.call
   end
 
   def booking_error(code, message)

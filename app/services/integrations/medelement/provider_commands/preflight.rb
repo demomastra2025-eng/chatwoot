@@ -28,12 +28,56 @@ class Integrations::Medelement::ProviderCommands::Preflight
   def verify_remote_reception!
     return if command.create_patient? || command.update_patient?
 
-    detail = client.get_reception(reception_code: provider_reception_code)
-    remote = merged_scoped_reception(detail)
+    detail = reception_detail
+    @remote_is_acknowledged_view = detail.nil?
+    remote = detail.nil? ? acknowledged_reception_view : merged_scoped_reception(detail)
     verify_remote_identity!(remote)
     verify_remote_state!(remote)
 
     remote
+  end
+
+  # The reception as the provider shows it, or nil when it shows no such reception although MedElement answered OK to a
+  # create or move of it a moment ago. A slower cached server does that for a while: absence is not evidence, so the command
+  # goes on from what MedElement accepted. Anything the provider does show is still checked below, and a contradiction
+  # (removed, another interval) still stops the command.
+  def reception_detail
+    detail = client.get_reception(reception_code: provider_reception_code)
+    return detail if detail.is_a?(Hash) && detail['RECEPTION_CODE'].present?
+
+    acknowledged_write.present? ? nil : detail
+  rescue Integrations::Medelement::Client::ApiError => e
+    raise unless e.status == 404 && acknowledged_write.present?
+
+    nil
+  end
+
+  # The latest create or move of this reception that MedElement accepted inside the window.
+  def acknowledged_write
+    return @acknowledged_write if defined?(@acknowledged_write)
+
+    write = Integrations::Medelement::AcknowledgedMoveWindow.latest_acknowledged_write(command.appointment)
+    @acknowledged_write = (write if write.present? && acknowledged_reception_code(write) == provider_reception_code)
+  end
+
+  def acknowledged_reception_code(write)
+    write.provider_reception_code.presence || write.request_snapshot['provider_reception_code'].to_s
+  end
+
+  # What MedElement accepted, in the shape of a provider read: the destination of the accepted write.
+  def acknowledged_reception_view
+    write = acknowledged_write
+    snapshot = write.request_snapshot
+    reception = snapshot.fetch('reception')
+    patient_code = write.provider_patient_code.presence || snapshot['provider_patient_code'].to_s
+
+    {
+      'RECEPTION_CODE' => provider_reception_code, 'PROFILE_CODE' => patient_code, 'PATIENT_CODE' => patient_code,
+      'SPECIALIST_CODE' => reception.fetch('specialist_code'), 'COMPANY_CABINET_CODE' => snapshot.fetch('company_cabinet_code'),
+      'STARTTIME' => provider_datetime(Time.iso8601(reception.fetch('destination_starts_at'))),
+      'ENDTIME' => provider_datetime(Time.iso8601(reception.fetch('destination_ends_at'))),
+      'REMOVED' => 0, 'ACTIVE' => 1
+    }
   end
 
   def verify_remote_identity!(remote)
@@ -82,6 +126,10 @@ class Integrations::Medelement::ProviderCommands::Preflight
 
   def verify_remove_state!(remote)
     raise StateChanged, 'Medelement reception time changed' unless source_time_current?(remote)
+    # Only what MedElement accepted is known about a reception the provider does not show yet: its services and payment
+    # state are checked by MedElement itself when it takes the removal.
+    return if @remote_is_acknowledged_view
+
     raise StateChanged, 'Medelement reception services changed' unless reception_verifier.services_match?(remote)
     return if remote['REMOVED'].to_i == 1
 

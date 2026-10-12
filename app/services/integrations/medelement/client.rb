@@ -23,10 +23,16 @@ class Integrations::Medelement::Client
   class RateLimitedError < ApiError
     attr_reader :operation, :retry_after_ms
 
-    def initialize(message = 'Medelement request slot is busy', operation: nil, retry_after_ms: nil)
+    def initialize(message = 'Medelement request slot is busy', operation: nil, retry_after_ms: nil, write: false)
       super(message, status: nil, ambiguous: false)
       @operation = operation
       @retry_after_ms = retry_after_ms
+      @write = write
+    end
+
+    # The refused request was a write. Like every refused request it was never sent.
+    def write?
+      @write
     end
 
     def retryable?

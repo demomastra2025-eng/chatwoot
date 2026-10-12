@@ -489,7 +489,7 @@ medelement:
           'remove_reception_on_cancel': { 'type': 'boolean' },
           'receptions_days_back': { 'type': 'integer', 'minimum': 0, 'maximum': 30 },
           'receptions_days_forward': { 'type': 'integer', 'minimum': 0, 'maximum': 365 },
-          'throttle_ms': { 'type': 'integer', 'minimum': 0, 'maximum': 5000 },
+          'throttle_ms': { 'type': 'integer', 'minimum': 200, 'maximum': 5000 },
           'sync_interval_hours': { 'type': 'number', 'enum': [0.25, 0.5, 1, 2, 4, 6, 12, 24] },
           'sync_time_of_day': { 'type': 'string', 'pattern': '^([01][0-9]|2[0-3]):[0-5][0-9]$' },
         },

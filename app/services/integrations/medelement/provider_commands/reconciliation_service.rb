@@ -42,8 +42,10 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
 
   attr_reader :command, :configuration, :reconciliation_claim_token
 
+  # A reconciliation shares the command queue's few threads with commands that have someone waiting, so a read that fails is
+  # retried only briefly here; the lifecycle schedules the next attempt with its own backoff.
   def client
-    @client ||= Integrations::Medelement::Client.new(configuration: configuration)
+    @client ||= Integrations::Medelement::Client.new(configuration: configuration, retry_profile: :command)
   end
 
   def reconcile_write!

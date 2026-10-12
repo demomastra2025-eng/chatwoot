@@ -1,6 +1,6 @@
 ---
 :verbose: false
-:concurrency: <%= ENV.fetch("MEDELEMENT_COMMANDS_SIDEKIQ_CONCURRENCY", 2) %>
+:concurrency: <%= ENV.fetch("MEDELEMENT_COMMANDS_SIDEKIQ_CONCURRENCY", 5) %>
 :timeout: 25
 :max_retries: 3
 
@@ -8,6 +8,6 @@
   - medelement_provider_commands
 
 production:
-  :concurrency: <%= ENV.fetch("MEDELEMENT_COMMANDS_SIDEKIQ_CONCURRENCY", 2) %>
+  :concurrency: <%= ENV.fetch("MEDELEMENT_COMMANDS_SIDEKIQ_CONCURRENCY", 5) %>
 staging:
-  :concurrency: <%= ENV.fetch("MEDELEMENT_COMMANDS_SIDEKIQ_CONCURRENCY", 2) %>
+  :concurrency: <%= ENV.fetch("MEDELEMENT_COMMANDS_SIDEKIQ_CONCURRENCY", 5) %>

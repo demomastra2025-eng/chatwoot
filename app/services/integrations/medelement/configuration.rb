@@ -121,8 +121,10 @@ class Integrations::Medelement::Configuration
     integer_setting('reception_detail_budget', DEFAULT_RECEPTION_DETAIL_BUDGET).clamp(1, 500)
   end
 
+  # The pause between two requests of one type is never shorter than the provider allows (five per second), whatever a
+  # hook saved: a smaller value would let the clinic go over the provider's limit.
   def throttle_ms
-    integer_setting('throttle_ms', DEFAULT_THROTTLE_MS)
+    [integer_setting('throttle_ms', DEFAULT_THROTTLE_MS), DEFAULT_THROTTLE_MS].max
   end
 
   def time_zone

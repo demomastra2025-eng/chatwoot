@@ -176,7 +176,7 @@ class Integrations::Medelement::Request
 
   def rate_limited_error(error)
     Integrations::Medelement::Client::RateLimitedError.new(
-      "Medelement #{error.operation} request slot is busy", operation: error.operation, retry_after_ms: error.retry_after_ms
+      "Medelement #{error.operation} request slot is busy", operation: error.operation, retry_after_ms: error.retry_after_ms, write: error.write?
     )
   end
 

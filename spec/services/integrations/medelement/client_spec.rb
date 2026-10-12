@@ -10,12 +10,15 @@ RSpec.describe Integrations::Medelement::Client do
       password: 'secret',
       integrator_key: 'integrator-key',
       organization_id: 'company-1',
-      throttle_ms: 0
+      throttle_ms: 200
     )
   end
 
   before do
     allow(Kernel).to receive(:sleep)
+    # The pacing of requests has its own spec; these examples are about what the client does with the answers.
+    limiter = instance_double(Integrations::Medelement::RequestRateLimiter, wait!: nil)
+    allow(Integrations::Medelement::RequestRateLimiter).to receive(:new).and_return(limiter)
   end
 
   describe 'provider organization configuration' do

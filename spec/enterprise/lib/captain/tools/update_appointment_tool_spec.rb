@@ -2,6 +2,7 @@ require 'rails_helper'
 
 RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
   include ActiveSupport::Testing::TimeHelpers
+  include_context 'with a fake provider write wait clock'
 
   around { |example| travel_to(Time.utc(2026, 4, 19, 12)) { example.run } }
 
@@ -213,21 +214,23 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
 
     payload = JSON.parse(result)
 
-    # No worker answers in this example, so the tool reports that MedElement did not answer in time: a technical failure.
-    expect(payload).to include('success' => false, 'appointment_id' => appointment.id, 'status' => 'pending_provider_confirmation',
-                              'provider_confirmed' => false, 'reason' => 'pending_provider_confirmation', 'error_class' => 'technical',
-                              'provider_confirmation_status' => 'pending', 'provider_confirmation_operation' => 'move_reception',
+    # No worker answers in this example, so the tool reports that MedElement did not answer in time: a technical failure, and
+    # the command nobody can wait for any more is withdrawn before it can move the reception behind the human who takes over.
+    expect(payload).to include('success' => false, 'appointment_id' => appointment.id, 'status' => 'provider_confirmation_failed',
+                              'provider_confirmed' => false, 'reason' => 'staff_will_help', 'error_class' => 'technical',
+                              'provider_confirmation_status' => 'failed', 'provider_confirmation_operation' => 'move_reception',
                               'provider_confirmation_scope' => 'medelement')
     expect(payload.keys).to match_array(%w[success appointment_id doctor_name local_date local_time status reason provider_confirmed
                                           provider_confirmation_status provider_confirmation_operation provider_confirmation_scope
                                           move_state requested_local_date requested_local_time move_guidance error_class])
     # The appointment is still at the confirmed time; the requested time is reported only as a request.
-    expect(payload).to include('local_date' => '20.04.2026', 'local_time' => '09:00', 'move_state' => 'pending',
+    expect(payload).to include('local_date' => '20.04.2026', 'local_time' => '09:00', 'move_state' => 'rejected',
                                'requested_local_date' => '20.04.2026', 'requested_local_time' => '10:00')
     expect(payload['move_guidance']).to include('Do not tell the patient it was moved')
     expect(appointment.reload).to have_attributes(starts_at: Time.zone.parse('2026-04-20 09:00:00 +0500'),
                                                   ends_at: Time.zone.parse('2026-04-20 09:30:00 +0500'))
     command = Integrations::Medelement::ProviderCommand.find_by!(appointment_id: appointment.id, operation: 'move_reception')
+    expect(command).to have_attributes(status: 'cancelled', last_error_code: 'agent_wait_timeout')
     expect(command.request_snapshot.dig('actor', 'type')).to eq('Captain::Assistant')
     expect(command.desired_starts_at).to eq(Time.zone.parse(moved_starts_at))
     expect(other.reload.starts_at).to eq(other_starts_at)
@@ -266,17 +269,16 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
       tool.perform(tool_context, appointment_id: appointment.id, starts_at: Time.zone.parse('2026-04-20 10:00:00 +0500').iso8601)
     end
 
-    it 'starts the move command right away and waits for MedElement to answer it' do
+    it 'starts the move command right away, waits for MedElement to answer it and withdraws it when no answer comes' do
       allow(Integrations::Medelement::ProviderCommandJob).to receive(:perform_later)
-      allow(Captain::Tools::ProviderWriteWait).to receive(:new).and_call_original
 
       result = move!
       raise result if result.start_with?('ERROR:')
 
       command = Integrations::Medelement::ProviderCommand.find_by!(appointment_id: appointment.id, operation: 'move_reception')
-      expect(command).to be_queued
       expect(Integrations::Medelement::ProviderCommandJob).to have_received(:perform_later).with(command.id)
       expect(Captain::Tools::ProviderWriteWait).to have_received(:new).with(command: command)
+      expect(command).to have_attributes(status: 'cancelled', last_error_code: 'agent_wait_timeout')
     end
 
     it 'records nothing about the conversation on the move command' do

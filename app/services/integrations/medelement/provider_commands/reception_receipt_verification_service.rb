@@ -99,7 +99,8 @@ class Integrations::Medelement::ProviderCommands::ReceptionReceiptVerificationSe
     configuration = Integrations::Medelement::Configuration.new(hook: hook)
     return false unless configuration.organization_id.to_s == command.request_snapshot['organization_id'].to_s
 
-    @client ||= Integrations::Medelement::Client.new(configuration: configuration)
+    # Short read retries: this runs on the command queue's few threads, and its own backoff schedules the next check.
+    @client ||= Integrations::Medelement::Client.new(configuration: configuration, retry_profile: :command)
     detail = @client.get_reception(reception_code: command.provider_reception_code, version: :v2)
     return true if verifier.destination_match?(detail, expected_reception_code: command.provider_reception_code)
 
