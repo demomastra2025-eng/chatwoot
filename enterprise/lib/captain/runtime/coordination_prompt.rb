@@ -27,9 +27,10 @@ module Captain::Runtime::CoordinationPrompt
       When older parts are open, mark each genuinely new request with link_action new.
       Do not treat a vague reply as confirmation; use clarify when its target is ambiguous.
       A part that may start only after another part succeeded has relation depends_on and is listed directly after that part.
-      Use a handoff for one part assigned to another agent. One request with several details (doctor, date, patient, price of
-      the same service) is ONE part, never a council. Use council only when the message holds two or more separate
-      requests that belong to different agents.
+      For one part that belongs to another agent, call plan_request with mode handoff and that agent's ID.
+      The system then transfers the conversation; do not call a transfer tool before or after it.
+      One request with several details (doctor, date, patient, price of the same service) is ONE part, never a council.
+      Use council only when the message holds two or more separate requests that belong to different agents.
     PROMPT
 
     own_tasks = tasks.select { |task| task['assistant_id'] == actor_id }
