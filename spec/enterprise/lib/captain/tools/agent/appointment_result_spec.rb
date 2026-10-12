@@ -135,6 +135,75 @@ RSpec.describe Captain::Tools::Agent::AppointmentResult do
     )
   end
 
+  describe 'a reschedule MedElement has not confirmed' do
+    let(:account) { create(:account) }
+    let(:resource) { create(:scheduling_resource, account: account, timezone: 'Asia/Almaty') }
+
+    def unconfirmed_move(state:, sync_status:, error: {})
+      entry = {
+        'state' => state, 'command_id' => 160,
+        'confirmed_starts_at' => '2026-10-15T05:00:00.000000Z', 'confirmed_ends_at' => '2026-10-15T05:30:00.000000Z',
+        'requested_starts_at' => '2026-10-14T05:30:00.000000Z', 'requested_ends_at' => '2026-10-14T06:00:00.000000Z'
+      }.merge(error)
+      create(:scheduling_appointment, account: account, resource: resource, starts_at: Time.utc(2026, 10, 15, 5, 0),
+                                      ends_at: Time.utc(2026, 10, 15, 5, 30),
+                                      custom_attributes: { 'medelement_provider_sync_status' => sync_status,
+                                                           'medelement_provider_operation' => 'move_reception',
+                                                           'medelement_move_request' => entry })
+    end
+
+    # A rejection proven by read-back leaves the reception provider-confirmed (succeeded) at its previous time.
+    [
+      %w[pending pending], %w[needs_reconciliation provider_status_unknown], %w[rejected failed], %w[rejected succeeded]
+    ].each do |state, sync_status|
+      it "reports the confirmed time and never the requested one as the appointment time while the move is #{state} (#{sync_status})" do
+        appointment = unconfirmed_move(state: state, sync_status: sync_status)
+
+        [described_class.success(appointment, action: 'update_appointment'), described_class.appointment(appointment)].each do |result|
+          expect(result).to include(
+            local_date: '15.10.2026', local_time: '10:00', requested_local_date: '14.10.2026', requested_local_time: '10:30',
+            move_state: state
+          )
+          expect(result[:move_guidance]).to include('Do not tell the patient it was moved')
+        end
+        expect(described_class.success(appointment, action: 'update_appointment')).to include(provider_confirmed: false)
+        expect(described_class.appointment(appointment)).to include(provider_confirmed: false) unless sync_status == 'succeeded'
+      end
+
+      it "does not claim the move succeeded when it is #{state} (#{sync_status})" do
+        result = described_class.success(unconfirmed_move(state: state, sync_status: sync_status), action: 'update_appointment')
+
+        expect(result).to include(success: false, provider_confirmed: false)
+        expect(result[:status]).not_to eq('updated')
+        expect(Captain::ToolResult.normalize(result.to_json)).to include(success: false, retryable: false)
+      end
+    end
+
+    it 'reports a rejection proven by read-back as a failed update even though the reception is provider-confirmed' do
+      appointment = unconfirmed_move(state: 'rejected', sync_status: 'succeeded', error: { 'evidence' => 'provider_readback' })
+
+      expect(described_class.appointment(appointment)).to include(provider_confirmed: true, move_state: 'rejected')
+      expect(described_class.success(appointment, action: 'update_appointment')).to include(
+        success: false, status: 'provider_confirmation_failed', reason: 'staff_will_help', provider_confirmation_status: 'failed',
+        provider_confirmed: false
+      )
+    end
+
+    it 'keeps a failed move out of the success status even after the provider rejection' do
+      appointment = unconfirmed_move(state: 'rejected', sync_status: 'failed',
+                                     error: { 'error_code' => 'provider_http_error', 'error_status' => 400 })
+
+      expect(described_class.success(appointment, action: 'update_appointment')).to include(
+        success: false, status: 'provider_confirmation_failed', reason: 'staff_will_help', provider_confirmation_status: 'failed'
+      )
+    end
+
+    it 'adds no move fields to an appointment without a pending or rejected reschedule' do
+      expect(described_class.appointment(create(:scheduling_appointment, account: account, resource: resource)).keys)
+        .not_to include(:move_state, :requested_local_date, :requested_local_time, :move_guidance)
+    end
+  end
+
   it 'maps only verified slot conflicts to time_taken' do
     conflict = Scheduling::Error.new(code: 'APPOINTMENT_SLOT_UNAVAILABLE', message: 'Unavailable', status: :conflict)
     unknown = Scheduling::Error.new(code: 'MEDELEMENT_AVAILABILITY_UNVERIFIED', message: 'Unknown', status: :service_unavailable)

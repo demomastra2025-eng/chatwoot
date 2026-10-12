@@ -195,6 +195,8 @@ class Integrations::Medelement::ProviderCommands::ReconciliationLifecycle
     provider_status = Integrations::Medelement::AppointmentProviderStatus
     if command.create_reception? && command.request_snapshot.dig('actor', 'type') == 'Captain::Assistant'
       provider_status.persist_if_bound!(command.appointment, status, command: command)
+    elsif command.move_reception?
+      provider_status.persist_for_command!(command.appointment, status, command: command)
     else
       provider_status.persist!(command.appointment, status)
     end

@@ -56,6 +56,7 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
     result = Captain::ToolResult.normalize(tool.perform(Struct.new(:state).new(state), resource_id: 1, starts_at: Time.current.iso8601))
 
     expect(result).to include(success: false, retryable: false, data: { 'success' => false, 'reason' => 'staff_will_help' })
+    # The conversation was already open (human-owned), so the bot adds nothing to the customer thread.
     expect(conversation.messages.outgoing.where(private: false)).to be_empty
     expect(conversation.reload.status).to eq('open')
     expect(conversation.current_captain_control_state).to eq('human')
@@ -87,7 +88,7 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
 
     expect(result).to include(success: false, retryable: false)
     expect(conversation.reload.status).to eq('open')
-    expect(conversation.messages.outgoing.where(private: false)).to be_empty
+    expect(conversation.messages.outgoing.where(private: false).count).to eq(1)
     expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
   end
 
@@ -125,6 +126,7 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
     expect(second).to include(success: false, retryable: false)
     expect(conversation.reload.status).to eq('open')
     expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
+    expect(conversation.messages.outgoing.where(private: false).count).to eq(1)
     expect(account.scheduling_appointments.where(conversation: conversation).count).to eq(1)
   end
 

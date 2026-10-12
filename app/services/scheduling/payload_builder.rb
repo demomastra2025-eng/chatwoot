@@ -76,7 +76,10 @@ module Scheduling::PayloadBuilder
                end,
       created_at: appointment.created_at&.iso8601,
       updated_at: appointment.updated_at&.iso8601
-    }.merge(Integrations::Medelement::AppointmentProviderStatus.payload(appointment)).tap do |payload|
+    }.merge(
+      Integrations::Medelement::AppointmentProviderStatus.payload(appointment),
+      Integrations::Medelement::AppointmentMoveState.payload(appointment)
+    ).tap do |payload|
       receipt = Integrations::Medelement::ProviderCommandReceiptBuilder.build(
         command: appointment.medelement_provider_command_receipt
       )

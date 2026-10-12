@@ -1,12 +1,15 @@
 class Integrations::Medelement::AppointmentProviderCommandReceiptService
   attr_reader :projected_command
 
-  def initialize(appointment:, actor:, new_record:)
+  # A staged move keeps the confirmed interval on the row, so the requested interval is added to the change envelope
+  # explicitly: the command is the only carrier of the move until the provider confirms it.
+  def initialize(appointment:, actor:, new_record:, staged_move: nil)
     @appointment = appointment
     @actor = actor
     @changed_attributes = appointment.saved_changes.except('updated_at')
     @event_name = resolve_event_name(new_record)
     @desired_attributes = Integrations::Medelement::OutboundChangeService.appointment_event_snapshot(appointment)
+    apply_staged_move(staged_move) if staged_move.present?
   end
 
   def perform
@@ -32,6 +35,13 @@ class Integrations::Medelement::AppointmentProviderCommandReceiptService
   private
 
   attr_reader :actor, :appointment, :changed_attributes, :desired_attributes, :event_name
+
+  def apply_staged_move(staged_move)
+    staged_move.fetch(:requested).each do |key, requested|
+      @changed_attributes[key.to_s] = [staged_move.fetch(:confirmed)[key], requested]
+    end
+    @desired_attributes = @desired_attributes.merge(staged_move.fetch(:requested).stringify_keys)
+  end
 
   def resolve_event_name(new_record)
     return 'appointment_created' if new_record

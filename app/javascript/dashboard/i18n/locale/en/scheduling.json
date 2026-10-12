@@ -272,6 +272,7 @@
         "RESOURCE_REQUIRED": "Select a specialist",
         "START_REQUIRED": "Choose a start time"
       },
+      "MOVE_PENDING": "The reschedule was sent to MedElement. The appointment stays at its previous time until MedElement confirms it.",
       "SAVED_WITHOUT_DEAL": "Appointment saved without a deal. Review the deal requirements or select an existing deal. You do not need to book again.",
       "SAVED_WITHOUT_DEAL_REQUIRED_FIELDS": "Appointment saved without a deal: required stage fields are missing. Complete them or select an existing deal."
     },
@@ -282,6 +283,9 @@
       "cancelled": "Cancelled",
       "no_show": "No show",
       "PROVIDER_REVIEW": "Not confirmed in MedElement — review required",
+      "MOVE_PENDING": "Reschedule sent to MedElement — waiting for confirmation, the appointment keeps its confirmed time",
+      "MOVE_REVIEW": "Reschedule not confirmed in MedElement — the appointment keeps its confirmed time, reconciliation required",
+      "MOVE_REJECTED": "MedElement did not apply the reschedule — the appointment stays at its previous time",
       "CANCELLATION_PENDING": "Awaiting MedElement cancellation confirmation",
       "CANCELLATION_REVIEW": "MedElement cancellation is not confirmed — manual review required",
       "MEDELEMENT_NOT_CANCELLED": "Not cancelled in MedElement"

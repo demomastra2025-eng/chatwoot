@@ -176,12 +176,25 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
   def reconcile_reception_move
     detail = client.get_reception(reception_code: provider_reception_code)
     return success_applier.reception_moved! if reception_verifier.moved_match?(detail)
-    return if reception_verifier.cabinet_matches?(detail)
+    return reject_unmoved_reception(detail) if reception_verifier.cabinet_matches?(detail)
 
     reception = merged_scoped_reception(detail, destination_receptions, provider_reception_code)
-    return unless reception_verifier.moved_match?(reception)
+    return success_applier.reception_moved! if reception_verifier.moved_match?(reception)
+    return unless definitive_write_rejection?
 
-    success_applier.reception_moved!
+    reject_unmoved_reception(merged_scoped_reception(detail, source_receptions, provider_reception_code))
+  end
+
+  # Only a definitive provider rejection can be closed by a read that still shows the original interval. After an
+  # ambiguous result that read may simply precede the provider applying the write, so it stays unresolved.
+  def reject_unmoved_reception(reception)
+    return unless definitive_write_rejection? && reception_verifier.unmoved_match?(reception)
+
+    success_applier.reception_move_rejected!
+  end
+
+  def definitive_write_rejection?
+    command.execution_state.to_h['write_failure'].to_h['definitive'] == true
   end
 
   def reconcile_reception_remove

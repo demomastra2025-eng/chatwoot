@@ -15,6 +15,7 @@ module Scheduling::ToolPayloadBuilder
       provider_confirmation_scope: appointment_data[:provider_confirmation_scope],
       provider_write_acknowledged: provider_write_acknowledged ? true : nil,
       provider_confirmation_required: provider_confirmation_required?(appointment),
+      provider_move: appointment_data[:provider_move],
       resource_id: appointment_data[:resource_id],
       resource_name: appointment_data[:resource_name],
       contact_id: appointment_data[:contact_id],

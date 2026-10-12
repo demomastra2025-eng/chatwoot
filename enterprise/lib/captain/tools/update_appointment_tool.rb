@@ -4,7 +4,9 @@ class Captain::Tools::UpdateAppointmentTool < Captain::Tools::BasePublicTool
               'Clarify an ambiguous appointment or requested change. For another patient use the task token returned by search_appointments, ' \
               'confirm the patient, doctor, date/time and requested change, then set patient_confirmed. ' \
               'Do not claim completion while provider confirmation is pending; do not repeat an uncertain provider write. ' \
-              'Report the local_date and local_time returned by the tool, never substitute the requested time.'
+              'Report the local_date and local_time returned by the tool as the current appointment time and never substitute the requested time: ' \
+              'requested_local_date and requested_local_time are only a request until provider_confirmed is true, ' \
+              'so never say the appointment was moved while it is not.'
   param :appointment_id, type: 'number', desc: 'Exact appointment ID returned by get_appointment or a previous appointment mutation', required: false
   param :appointment_access_token, type: 'string', desc: 'Opaque token from search_appointments for a specifically identified other patient appointment', required: false
   param :patient_confirmed, type: 'boolean',

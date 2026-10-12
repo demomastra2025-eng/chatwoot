@@ -89,6 +89,7 @@ class Scheduling::Appointments::UpsertService
       ).validate!
       Scheduling::Appointments::MutationGuard.ensure_editable!(appointment)
       apply_attributes!
+      ensure_provider_move_identity_unchanged!
       binding = Integrations::Medelement::PatientContactBinding.new(appointment: appointment)
       if @selected_patient
         binding.prepare_selected!(contact: @selected_patient, allow_communication_contact: @selected_patient.id == appointment.contact_id)
@@ -100,6 +101,7 @@ class Scheduling::Appointments::UpsertService
       validate_medelement_patient!
       validate_medelement_cabinet!
       validate_availability!
+      stage_provider_move!
       new_record = appointment.new_record?
       Crm::Appointments::LinkService.new(appointment: appointment, params: params, actor: actor).perform if new_record
       confirm_attendance!
@@ -251,7 +253,76 @@ class Scheduling::Appointments::UpsertService
     @provider_receipt_service = Integrations::Medelement::AppointmentProviderCommandReceiptService.new(
       appointment: appointment,
       actor: actor,
-      new_record: new_record
+      new_record: new_record,
+      staged_move: @staged_move
+    )
+  end
+
+  # A reschedule of a MedElement reception is only a request until the provider confirms it. The row keeps the interval
+  # MedElement last confirmed and the move state records the requested one; the success applier moves the appointment
+  # once the provider read-back matches, and a rejection or an unknown outcome never shows the request as confirmed.
+  def stage_provider_move!
+    return unless stage_provider_move?
+
+    requested = interval_attributes
+    confirmed = interval_attributes(from_database: true)
+    ensure_no_other_provider_command!(requested)
+    appointment.assign_attributes(confirmed)
+    appointment.custom_attributes = Integrations::Medelement::AppointmentMoveState.staged(
+      appointment.custom_attributes, confirmed: confirmed, requested: requested
+    )
+    @staged_move = { confirmed: confirmed, requested: requested }
+  end
+
+  def stage_provider_move?
+    provider_linked_reception_update? && (appointment.will_save_change_to_starts_at? || appointment.will_save_change_to_ends_at?)
+  end
+
+  def provider_linked_reception_update?
+    appointment.persisted? && appointment.status != 'cancelled' && medelement_provider_write_context? && medelement_reception_code.present?
+  end
+
+  # MedElement moves a reception in time only: the preflight requires the reception to still belong to the specialist and
+  # cabinet of the request, so a specialist or cabinet change of a linked reception could never be confirmed. It is refused
+  # instead of being written to the row (and shown as the appointment) as if the provider had accepted it.
+  def ensure_provider_move_identity_unchanged!
+    return unless provider_linked_reception_update?
+    return unless appointment.will_save_change_to_resource_id? || provider_cabinet_replaced?
+
+    raise Scheduling::Error.new(
+      code: 'MEDELEMENT_RESOURCE_CHANGE_UNSUPPORTED',
+      message: 'Changing the specialist or cabinet of a Medelement reception is not supported; change only the date or time',
+      status: :unprocessable_content
+    )
+  end
+
+  # A cabinet edit alone sends nothing to the provider; together with a new time it would become part of the move request.
+  def provider_cabinet_replaced?
+    return false unless appointment.will_save_change_to_starts_at? || appointment.will_save_change_to_ends_at?
+
+    previous, current = appointment.changes_to_save['custom_attributes']
+    before = previous.to_h['medelement_cabinet_code'].to_s
+    before.present? && before != current.to_h['medelement_cabinet_code'].to_s
+  end
+
+  def interval_attributes(from_database: false)
+    %i[starts_at ends_at duration_min].index_with do |key|
+      from_database ? appointment.attribute_in_database(key.to_s) : appointment.public_send(key)
+    end
+  end
+
+  # A provider command that has not finished (including a move whose outcome is unknown) owns the reception: another
+  # reschedule must wait for it instead of becoming a second provider write. The same request may be repeated.
+  def ensure_no_other_provider_command!(requested)
+    others = Integrations::Medelement::ProviderCommand.where(account: account, appointment: appointment).unfinished.reject do |command|
+      command.move_reception? && command.desired_starts_at == requested[:starts_at] && command.desired_ends_at == requested[:ends_at]
+    end
+    return if others.empty?
+
+    raise Scheduling::Error.new(
+      code: 'MEDELEMENT_COMMAND_IN_PROGRESS',
+      message: 'Another Medelement command is in progress',
+      status: :conflict
     )
   end
 

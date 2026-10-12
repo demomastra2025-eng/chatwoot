@@ -52,14 +52,37 @@ export const hasMedelementReceptionIdentity = appointment =>
       appointment?.customAttributes?.medelement_provider_sync_status
   );
 
+// A reschedule MedElement has not confirmed: the appointment keeps the confirmed time and providerMove holds the request.
+const providerMoveState = appointment =>
+  appointment?.providerMove?.state ||
+  appointment?.customAttributes?.medelement_move_request?.state ||
+  '';
+
+// A rejected move proven by read-back leaves the reception confirmed at its previous time, so the sync status alone no
+// longer marks it: the move state itself asks for a look.
+const providerMoveNeedsReview = appointment =>
+  appointment?.status !== 'cancelled' &&
+  ['needs_reconciliation', 'rejected'].includes(providerMoveState(appointment));
+
 export const providerBookingNeedsReview = appointment =>
-  ['failed', 'provider_status_unknown'].includes(
+  (['failed', 'provider_status_unknown'].includes(
     appointment?.providerConfirmationStatus ||
       appointment?.customAttributes?.medelement_provider_sync_status
-  ) && ['scheduled', 'confirmed', 'cancelled'].includes(appointment?.status);
+  ) ||
+    providerMoveNeedsReview(appointment)) &&
+  ['scheduled', 'confirmed', 'cancelled'].includes(appointment?.status);
 
 const providerCancellationCommandId = appointment =>
   appointment?.customAttributes?.medelement_cancellation_command_id;
+
+const providerMoveReviewKey = appointment => {
+  const state = providerMoveState(appointment);
+  if (state === 'needs_reconciliation')
+    return 'SCHEDULING.APPOINTMENT_STATUS.MOVE_REVIEW';
+  if (state === 'rejected')
+    return 'SCHEDULING.APPOINTMENT_STATUS.MOVE_REJECTED';
+  return '';
+};
 
 export const providerCancellationPending = appointment =>
   appointment?.status !== 'cancelled' &&
@@ -80,11 +103,17 @@ export const isMedelementCancellationLocalOnly = appointment =>
 export const providerBookingStatusKey = appointment => {
   if (isMedelementLocalCancellation(appointment))
     return 'SCHEDULING.APPOINTMENT_STATUS.MEDELEMENT_NOT_CANCELLED';
-  if (providerBookingNeedsReview(appointment))
-    return providerCancellationCommandId(appointment) ||
+  if (providerBookingNeedsReview(appointment)) {
+    if (
+      providerCancellationCommandId(appointment) ||
       appointment?.status === 'cancelled'
-      ? 'SCHEDULING.APPOINTMENT_STATUS.CANCELLATION_REVIEW'
-      : 'SCHEDULING.APPOINTMENT_STATUS.PROVIDER_REVIEW';
+    )
+      return 'SCHEDULING.APPOINTMENT_STATUS.CANCELLATION_REVIEW';
+    return (
+      providerMoveReviewKey(appointment) ||
+      'SCHEDULING.APPOINTMENT_STATUS.PROVIDER_REVIEW'
+    );
+  }
   if (providerCancellationPending(appointment))
     return 'SCHEDULING.APPOINTMENT_STATUS.CANCELLATION_PENDING';
   if (
@@ -94,6 +123,11 @@ export const providerBookingStatusKey = appointment => {
       'pending'
   )
     return 'SCHEDULING.APPOINTMENT_STATUS.CANCELLATION_PENDING';
+  if (
+    appointment?.status !== 'cancelled' &&
+    providerMoveState(appointment) === 'pending'
+  )
+    return 'SCHEDULING.APPOINTMENT_STATUS.MOVE_PENDING';
 
   return '';
 };
@@ -106,6 +140,12 @@ export const providerBookingStatusMessage = (appointment, t) => {
     return t('SCHEDULING.APPOINTMENT_STATUS.CANCELLATION_REVIEW');
   if (key === 'SCHEDULING.APPOINTMENT_STATUS.PROVIDER_REVIEW')
     return t('SCHEDULING.APPOINTMENT_STATUS.PROVIDER_REVIEW');
+  if (key === 'SCHEDULING.APPOINTMENT_STATUS.MOVE_PENDING')
+    return t('SCHEDULING.APPOINTMENT_STATUS.MOVE_PENDING');
+  if (key === 'SCHEDULING.APPOINTMENT_STATUS.MOVE_REVIEW')
+    return t('SCHEDULING.APPOINTMENT_STATUS.MOVE_REVIEW');
+  if (key === 'SCHEDULING.APPOINTMENT_STATUS.MOVE_REJECTED')
+    return t('SCHEDULING.APPOINTMENT_STATUS.MOVE_REJECTED');
   if (key === 'SCHEDULING.APPOINTMENT_STATUS.CANCELLATION_PENDING')
     return t('SCHEDULING.APPOINTMENT_STATUS.CANCELLATION_PENDING');
 

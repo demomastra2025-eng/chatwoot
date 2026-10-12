@@ -41,6 +41,7 @@ import SchedulingToolbar from 'dashboard/components-next/Scheduling/SchedulingTo
 import SchedulingViewSwitcher from 'dashboard/components-next/Scheduling/SchedulingViewSwitcher.vue';
 import {
   appointmentCrmLinkWarningMessage,
+  appointmentProviderMoveMessage,
   appointmentSaveAlertMessage,
 } from 'dashboard/components-next/Scheduling/appointmentSaveMessage';
 
@@ -1967,6 +1968,11 @@ const updateAppointmentMutation = async (
     );
     const updatedAppointment = normalizePayload(data);
     calendarStore.syncAppointment(updatedAppointment);
+    const pendingMoveMessage = appointmentProviderMoveMessage(
+      updatedAppointment,
+      t
+    );
+    if (pendingMoveMessage) useAlert(pendingMoveMessage);
 
     if (refresh || calendarStore.currentView === 'month') {
       await calendarStore.refresh();

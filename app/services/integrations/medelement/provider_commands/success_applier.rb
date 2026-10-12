@@ -57,19 +57,35 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
     end
   end
 
+  # The provider confirmed the move: only now does the appointment take the requested interval.
   def reception_moved!
     with_owned_command do
       validate_patient_identity!
+      appointment.mark_medelement_provider_reconciled!
       appointment.update!(
         starts_at: snapshot_time('destination_starts_at'),
         ends_at: snapshot_time('destination_ends_at'),
         duration_min: confirmed_duration_min,
-        custom_attributes: stamped_custom_attributes.merge(
+        custom_attributes: Integrations::Medelement::AppointmentMoveState.cleared(stamped_custom_attributes).merge(
           'medelement_cabinet_code' => command.request_snapshot.fetch('company_cabinet_code'),
           'medelement_provider_sync_status' => 'succeeded'
         )
       )
+      Reminders::SyncRemindableService.new(remindable: appointment).perform
       complete_command!
+    end
+  end
+
+  # The provider read-back shows the reception at its original interval after a definitive rejection. That evidence
+  # closes the move as not applied; the appointment keeps (or, if a legacy write already changed the row, regains)
+  # the interval the provider confirmed, and the rejection stays visible on the appointment.
+  def reception_move_rejected!
+    with_owned_command do
+      validate_patient_identity!
+      restore_confirmed_interval!
+      appointment.mark_medelement_provider_reconciled!
+      appointment.update!(custom_attributes: rejected_move_attributes)
+      reject_command!
     end
   end
 
@@ -281,6 +297,37 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
       Integrations::Medelement::ProviderCommands::ReconciliationLifecycle::CLAIM_TOKEN_KEY,
       Integrations::Medelement::ProviderCommands::ReconciliationLifecycle::CLAIMED_AT_KEY,
       'reconciliation_next_at'
+    )
+  end
+
+  # The read-back proved the reception is active at the confirmed interval, so the appointment stays provider-confirmed
+  # there: later syncs and reports keep treating it as the provider's reception. The rejection itself is recorded in the
+  # move state (and on the failed command), not in the sync status.
+  def rejected_move_attributes
+    provider_status = Integrations::Medelement::AppointmentProviderStatus
+    Integrations::Medelement::AppointmentMoveState.projected(
+      stamped_custom_attributes, command: command, provider_status: provider_status::FAILED
+    ).merge(provider_status::ATTRIBUTE_KEY => provider_status::SUCCEEDED)
+  end
+
+  def restore_confirmed_interval!
+    return unless appointment.starts_at == snapshot_time('destination_starts_at') && appointment.ends_at == snapshot_time('destination_ends_at')
+
+    source_starts_at = snapshot_time('source_starts_at')
+    source_ends_at = snapshot_time('source_ends_at')
+    appointment.assign_attributes(
+      starts_at: source_starts_at, ends_at: source_ends_at, duration_min: ((source_ends_at - source_starts_at) / 60).round
+    )
+  end
+
+  def reject_command!
+    failure = command.execution_state.to_h['write_failure'].to_h
+    command.update!(
+      status: 'failed',
+      executed_at: Time.current,
+      last_error_code: failure['code'].presence || command.last_error_code,
+      last_error_status: failure['status'] || command.last_error_status,
+      execution_state: released_reconciliation_state.merge('result' => 'rejected', 'verified_unmoved_at' => Time.current.iso8601)
     )
   end
 

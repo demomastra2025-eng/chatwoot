@@ -107,7 +107,7 @@ RSpec.describe Integrations::Medelement::AiBookingOutcomeJob do
   end
 
   %w[failed provider_status_unknown].each do |outcome|
-    it "hands off #{outcome} create once with a staff note, but never confirms it to the customer" do
+    it "hands off #{outcome} create once with a staff note and one customer notice, but never confirms it to the customer" do
       bind_provider_status!(outcome)
       capture_booking_fence!
       command.update!(status: outcome)
@@ -117,9 +117,14 @@ RSpec.describe Integrations::Medelement::AiBookingOutcomeJob do
 
       expect(conversation.reload.status).to eq('open')
       expect(conversation.current_captain_control_state).to eq('human')
-      expect(conversation.messages.outgoing.where(private: false)).to be_empty
+      notice = conversation.messages.outgoing.where(private: false).sole
+      expect(notice.content).to eq('Не получилось подтвердить запись на приём. Администратор проверит и свяжется с вами.')
+      expect(notice.sender).to eq(assistant)
+      expect(notice.additional_attributes['medelement_provider_command_id']).to eq(command.id)
       expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
-      expect(command.reload.execution_state[described_class::STAFF_NOTE_ID_KEY]).to eq(conversation.messages.outgoing.last.id)
+      state = command.reload.execution_state
+      expect(state[described_class::CUSTOMER_MESSAGE_ID_KEY]).to eq(notice.id)
+      expect(state[described_class::STAFF_NOTE_ID_KEY]).to eq(conversation.messages.outgoing.where(private: true).sole.id)
     end
   end
 
@@ -130,7 +135,24 @@ RSpec.describe Integrations::Medelement::AiBookingOutcomeJob do
 
     described_class.perform_now(command.id)
     expect(conversation.reload.status).to eq('open')
-    expect(conversation.messages.outgoing.where(private: false)).to be_empty
+    expect(conversation.messages.outgoing.where(private: false).pluck(:content)).to eq(
+      ['Не получилось подтвердить запись на приём. Администратор проверит и свяжется с вами.']
+    )
+  end
+
+  context 'when the account language is Kazakh' do
+    let(:account) { create(:account, locale: 'kk').tap { |record| record.enable_features!('scheduling') } }
+
+    it 'tells the customer in Kazakh that the booking could not be confirmed' do
+      bind_provider_status!('failed')
+      capture_booking_fence!
+      command.update!(status: 'failed')
+
+      described_class.perform_now(command.id)
+
+      expect(conversation.messages.outgoing.where(private: false).sole.content)
+        .to eq('Қабылдауға жазылуды растау мүмкін болмады. Әкімші тексеріп, сізбен байланысады.')
+    end
   end
 
   context 'when the provider rejects the selected interval' do
@@ -352,7 +374,7 @@ RSpec.describe Integrations::Medelement::AiBookingOutcomeJob do
     end
 
     %w[failed provider_status_unknown].each do |outcome|
-      it "hands a #{outcome} reschedule to people once with a staff note, but never tells the customer it moved" do
+      it "hands a #{outcome} reschedule to people once with a staff note and one customer notice, but never tells the customer it moved" do
         bind_provider_status!(outcome)
         capture_booking_fence!
         command.update!(status: outcome)
@@ -363,10 +385,75 @@ RSpec.describe Integrations::Medelement::AiBookingOutcomeJob do
         expect(conversation.reload.status).to eq('open')
         expect(conversation.captain_handoff_applied_at).to be_present
         expect(conversation.status_transitions.last).to have_attributes(source: 'system', actor: assistant)
-        expect(conversation.messages.outgoing.where(private: false)).to be_empty
-        expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
-        expect(command.reload.execution_state[described_class::STAFF_NOTE_ID_KEY]).to eq(conversation.messages.outgoing.last.id)
+        notice = conversation.messages.outgoing.where(private: false).sole
+        expect(notice.content).to eq('Не получилось подтвердить перенос записи. Администратор проверит и свяжется с вами.')
+        expect(notice.content).not_to match(/перенесена|MedElement|успешно/i)
+        expect(notice.additional_attributes['medelement_provider_command_id']).to eq(command.id)
+        note = conversation.messages.outgoing.where(private: true).sole
+        expect(note.content).to include('Запись в MedElement не подтверждена')
+        state = command.reload.execution_state
+        expect(state[described_class::STAFF_NOTE_ID_KEY]).to eq(note.id)
+        expect(state[described_class::CUSTOMER_MESSAGE_ID_KEY]).to eq(notice.id)
       end
+    end
+
+    it 'tells the customer in Kazakh that the reschedule could not be confirmed' do
+      account.update!(locale: 'kk')
+      bind_provider_status!('failed')
+      capture_booking_fence!
+      command.update!(status: 'failed')
+
+      described_class.perform_now(command.id)
+
+      expect(conversation.messages.outgoing.where(private: false).sole.content)
+        .to eq('Жазылуды ауыстыруды растау мүмкін болмады. Әкімші тексеріп, сізбен байланысады.')
+    end
+
+    it 'sends the notice once for a provider rejection under read-back and again sends nothing when the move fails for good' do
+      bind_provider_status!('provider_status_unknown')
+      capture_booking_fence!
+      command.update!(
+        status: 'reconciliation_required',
+        execution_state: command.execution_state.merge('write_failure' => { 'code' => 'provider_http_error', 'status' => 400, 'definitive' => true })
+      )
+
+      described_class.perform_now(command.id)
+
+      expect(conversation.reload.status).to eq('open')
+      expect(conversation.messages.outgoing.where(private: false).pluck(:content))
+        .to eq(['Не получилось подтвердить перенос записи. Администратор проверит и свяжется с вами.'])
+
+      command.update!(status: 'failed')
+      described_class.perform_now(command.id)
+
+      expect(conversation.messages.outgoing.where(private: false).count).to eq(1)
+      expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
+    end
+
+    it 'waits for the read-back result of an ambiguous move write before telling the customer anything' do
+      bind_provider_status!('provider_status_unknown')
+      capture_booking_fence!
+      command.update!(
+        status: 'reconciliation_required',
+        execution_state: command.execution_state.merge('write_failure' => { 'code' => 'provider_http_error', 'status' => 503, 'definitive' => false })
+      )
+
+      described_class.perform_now(command.id)
+
+      expect(conversation.reload.status).to eq('pending')
+      expect(conversation.messages.outgoing).to be_empty
+    end
+
+    it 'enqueues the outcome for a definitive rejection that is read back, but not for an ambiguous result' do
+      command.update!(status: 'processing')
+      command.update!(status: 'reconciliation_required',
+                      execution_state: command.execution_state.merge('write_failure' => { 'definitive' => false }))
+      expect(described_class).not_to have_received(:perform_later)
+
+      command.update!(status: 'processing')
+      command.update!(status: 'reconciliation_required',
+                      execution_state: command.execution_state.merge('write_failure' => { 'definitive' => true }))
+      expect(described_class).to have_received(:perform_later).with(command.id).once
     end
 
     it 'does not reopen a failed reschedule after a human took over, but notes it for staff' do
@@ -518,7 +605,8 @@ RSpec.describe Integrations::Medelement::AiBookingOutcomeJob do
       )
       expect(conversation.reload).to be_open
       expect(conversation.status_transitions.last.actor).to eq(assistant)
-      expect(conversation.messages.outgoing.pluck(:private)).to eq([true])
+      expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
+      expect(conversation.messages.outgoing.where(private: false).pluck(:sender_id)).to eq([assistant.id])
     end
 
     %w[transfer return_to_same_actor remove_route deactivate].each do |change|

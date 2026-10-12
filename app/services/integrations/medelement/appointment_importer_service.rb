@@ -339,6 +339,9 @@ class Integrations::Medelement::AppointmentImporterService
     ).compact
     # The marker lives only while the local cancellation is preserved against an active reception.
     attributes = attributes.except(local_cancellation::MARKER_KEY) unless status_resolution[:reason] == local_cancellation::PRESERVED_REASON
+    attributes = Integrations::Medelement::AppointmentMoveState.after_provider_import(
+      attributes, starts_at: import_context[:starts_at], ends_at: import_context[:ends_at]
+    )
     service_binding.reconcile_provider_attributes(
       attributes: attributes,
       reception: reception,

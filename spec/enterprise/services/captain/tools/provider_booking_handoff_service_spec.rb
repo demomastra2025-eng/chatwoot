@@ -26,6 +26,78 @@ RSpec.describe Captain::Tools::ProviderBookingHandoffService do
     expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
   end
 
+  context 'with a booking the provider did not confirm' do
+    let(:appointment) { create(:scheduling_appointment, account: account, contact: conversation.contact, conversation: conversation) }
+
+    it 'tells the customer once that it could not be confirmed, in the account language, and keeps the staff note' do
+      service = described_class.new(assistant: assistant, conversation: conversation, appointment: appointment, fence: fence)
+
+      expect(service.perform).to eq(:applied)
+      expect(service.perform).to eq(:stale)
+
+      notice = conversation.messages.outgoing.where(private: false).sole
+      expect(notice.content).to eq('Не получилось подтвердить запись на приём. Администратор проверит и свяжется с вами.')
+      expect(notice).to have_attributes(sender: assistant)
+      expect(notice.additional_attributes).to include('scheduling_appointment_id' => appointment.id,
+                                                      'medelement_booking_handoff_message_id' => incoming.id)
+      expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
+      expect(conversation.reload).to be_open
+    end
+
+    it 'speaks Kazakh to a Kazakh account' do
+      account.update!(locale: 'kk')
+
+      described_class.new(assistant: assistant, conversation: conversation, appointment: appointment, fence: fence).perform
+
+      expect(conversation.messages.outgoing.where(private: false).sole.content)
+        .to eq('Қабылдауға жазылуды растау мүмкін болмады. Әкімші тексеріп, сізбен байланысады.')
+    end
+
+    it 'speaks the language of the conversation when it is an enabled one, whatever the account language is' do
+      conversation.update!(additional_attributes: conversation.additional_attributes.to_h.merge('conversation_language' => 'kk'))
+
+      described_class.new(assistant: assistant, conversation: conversation, appointment: appointment, fence: fence).perform
+
+      expect(conversation.messages.outgoing.where(private: false).sole.content)
+        .to eq('Қабылдауға жазылуды растау мүмкін болмады. Әкімші тексеріп, сізбен байланысады.')
+      # The staff note stays in the account language.
+      expect(conversation.messages.outgoing.where(private: true).sole.content)
+        .to eq(I18n.t('conversations.captain.ai_booking_handoff_needs_review', locale: :ru))
+    end
+
+    it 'falls back to the account language when the conversation language is not an enabled one' do
+      account.update!(locale: 'kk')
+      conversation.update!(additional_attributes: conversation.additional_attributes.to_h.merge('conversation_language' => 'uk'))
+
+      described_class.new(assistant: assistant, conversation: conversation, appointment: appointment, fence: fence).perform
+
+      expect(conversation.messages.outgoing.where(private: false).sole.content)
+        .to eq('Қабылдауға жазылуды растау мүмкін болмады. Әкімші тексеріп, сізбен байланысады.')
+    end
+
+    it 'sends nothing to the customer when a human already took the conversation over' do
+      conversation.update!(assignee: create(:user, account: account))
+
+      result = described_class.new(assistant: assistant, conversation: conversation, appointment: appointment, fence: fence).perform
+
+      expect(result).to eq(:already_applied)
+      expect(conversation.messages.outgoing.where(private: false)).to be_empty
+      expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
+    end
+
+    it 'sends nothing when a newer Captain run owns the conversation' do
+      captured_fence = fence
+      conversation.update!(status: :open)
+      conversation.prepare_captain_ai_control!
+      conversation.update!(status: :pending)
+
+      result = described_class.new(assistant: assistant, conversation: conversation, appointment: appointment, fence: captured_fence).perform
+
+      expect(result).to eq(:stale)
+      expect(conversation.messages.outgoing).to be_empty
+    end
+  end
+
   it 'does not hand off when a newer Captain control generation exists' do
     captured_fence = fence
     conversation.activate_captain_human_control!(source: 'test')

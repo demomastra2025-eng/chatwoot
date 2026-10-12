@@ -186,6 +186,24 @@ describe('scheduling shared helpers', () => {
     }
   );
 
+  it('explains why the specialist of a linked MedElement reception cannot be changed', () => {
+    const error = {
+      response: {
+        data: {
+          code: 'MEDELEMENT_RESOURCE_CHANGE_UNSUPPORTED',
+          error:
+            'Changing the specialist or cabinet of a Medelement reception is not supported; change only the date or time',
+        },
+        status: 422,
+      },
+    };
+    const t = key => lookupMessage(ruScheduling, key) ?? key;
+
+    expect(formatSchedulingErrorMessage(error, t)).toBe(
+      ruScheduling.SCHEDULING.MEDELEMENT.RESOURCE_CHANGE_UNSUPPORTED
+    );
+  });
+
   it.each([
     'APPOINTMENT_SLOT_UNAVAILABLE',
     'MEDELEMENT_AVAILABILITY_UNVERIFIED',

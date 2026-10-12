@@ -661,9 +661,13 @@ const patientActionTitle = entry => {
     status === 'provider_status_unknown' ||
     status === 'v2_provider_status_unknown'
   ) {
-    return entry?.appointment?.status === 'cancelled'
-      ? t('SCHEDULING.APPOINTMENT_STATUS.CANCELLATION_REVIEW')
-      : t('SCHEDULING.APPOINTMENT_STATUS.PROVIDER_REVIEW');
+    if (entry?.appointment?.status === 'cancelled') {
+      return t('SCHEDULING.APPOINTMENT_STATUS.CANCELLATION_REVIEW');
+    }
+    return (
+      providerBookingStatusMessage(entry?.appointment, t) ||
+      t('SCHEDULING.APPOINTMENT_STATUS.PROVIDER_REVIEW')
+    );
   }
   if (
     status === 'reconciliation_required' ||

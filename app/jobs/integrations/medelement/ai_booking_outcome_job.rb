@@ -48,7 +48,8 @@ class Integrations::Medelement::AiBookingOutcomeJob < ApplicationJob
 
   # The reschedule reply waits for the provider, so after a failed or unknown
   # move the customer has no answer. Like a failed create, it is a system
-  # handoff under the response fence the update tool captured. Every failed or
+  # handoff under the response fence the update tool captured; the handoff also
+  # tells the customer once that the move could not be confirmed. Every failed or
   # unknown move still gets the one staff note it got before this release: when
   # the handoff cannot judge the command (no captured fence, e.g. created before
   # this release, or a changed assistant or conversation) or must not take over
@@ -125,8 +126,9 @@ class Integrations::Medelement::AiBookingOutcomeJob < ApplicationJob
     false
   end
 
+  # A definitively rejected move is handed over at once; its read-back only decides which time the appointment keeps.
   def failed_or_unknown?(command)
-    command.failed? || command.declined? || command.cancelled? || command.provider_status_unknown?
+    command.failed? || command.declined? || command.cancelled? || command.provider_status_unknown? || command.move_rejection_under_review?
   end
 
   def ai_booking?(command)

@@ -207,6 +207,7 @@ class Captain::ToolResult
         (result.keys - %w[
           success reason appointment_id doctor_name local_date local_time status provider_confirmed
           provider_confirmation_status provider_confirmation_operation provider_confirmation_scope
+          move_state requested_local_date requested_local_time move_guidance
         ]).empty?
     end
 

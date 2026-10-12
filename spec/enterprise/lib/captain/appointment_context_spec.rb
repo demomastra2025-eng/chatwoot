@@ -101,6 +101,26 @@ RSpec.describe Captain::AppointmentContext do
     expect(block.to_json).not_to include('private-provider-ref', '+70000000000', 'payment', 'medelement')
   end
 
+  it 'shows a reschedule MedElement has not confirmed next to the confirmed time, never as the visit time' do
+    unconfirmed = appointment(
+      starts_at: Time.zone.parse('2026-10-15 05:00:00 UTC'),
+      custom_attributes: {
+        'medelement_move_request' => {
+          'state' => 'needs_reconciliation', 'confirmed_starts_at' => '2026-10-15T05:00:00.000000Z',
+          'requested_starts_at' => '2026-10-14T05:30:00.000000Z'
+        }
+      }
+    )
+    plain = appointment(starts_at: Time.zone.parse('2026-10-16 05:00:00 UTC'))
+
+    expect(JSON.parse(context.block('nearest'))).to include(
+      'id' => unconfirmed.id, 'date' => '15.10.2026', 'time' => '10:00',
+      'reschedule' => { 'state' => 'needs_reconciliation', 'requested_time_confirmed' => false,
+                        'requested_date' => '14.10.2026', 'requested_time' => '10:30' }
+    )
+    expect(context.card(plain)).not_to have_key(:reschedule)
+  end
+
   it 'filters by status, date, and doctor and pages with a hard cap' do
     first = appointment(starts_at: 1.day.from_now)
     second = appointment(starts_at: 2.days.from_now, status: 'confirmed')

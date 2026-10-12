@@ -217,9 +217,17 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
                               'provider_confirmation_status' => 'pending', 'provider_confirmation_operation' => 'move_reception',
                               'provider_confirmation_scope' => 'medelement')
     expect(payload.keys).to match_array(%w[success appointment_id doctor_name local_date local_time status reason provider_confirmed
-                                          provider_confirmation_status provider_confirmation_operation provider_confirmation_scope])
+                                          provider_confirmation_status provider_confirmation_operation provider_confirmation_scope
+                                          move_state requested_local_date requested_local_time move_guidance])
+    # The appointment is still at the confirmed time; the requested time is reported only as a request.
+    expect(payload).to include('local_date' => '20.04.2026', 'local_time' => '09:00', 'move_state' => 'pending',
+                               'requested_local_date' => '20.04.2026', 'requested_local_time' => '10:00')
+    expect(payload['move_guidance']).to include('Do not tell the patient it was moved')
+    expect(appointment.reload).to have_attributes(starts_at: Time.zone.parse('2026-04-20 09:00:00 +0500'),
+                                                  ends_at: Time.zone.parse('2026-04-20 09:30:00 +0500'))
     command = Integrations::Medelement::ProviderCommand.find_by!(appointment_id: appointment.id, operation: 'move_reception')
     expect(command.request_snapshot.dig('actor', 'type')).to eq('Captain::Assistant')
+    expect(command.desired_starts_at).to eq(Time.zone.parse(moved_starts_at))
     expect(other.reload.starts_at).to eq(other_starts_at)
   end
 

@@ -25,7 +25,11 @@ class Integrations::Medelement::ProviderCommands::Executor
   rescue Integrations::Medelement::ProviderCommands::PatientActionRequired => e
     await_patient_action!(e)
   rescue Integrations::Medelement::Client::ApiError => e
-    fail_command!(code: 'provider_http_error', status: e.status, reconciliation: e.ambiguous?)
+    # A move the provider rejected may still have changed the reception, so it is read back instead of trusted or retried.
+    fail_command!(
+      code: 'provider_http_error', status: e.status, reconciliation: e.ambiguous? || move_write_rejected?,
+      failure: { 'definitive' => !e.ambiguous?, 'provider_message' => e.provider_message }
+    )
   rescue Integrations::Medelement::ProviderCommands::ExecutionError => e
     fail_command!(code: e.code, reconciliation: e.reconciliation?)
   rescue Integrations::Medelement::ProviderCommands::RequestSnapshotSchema::DestinationIntervalError => e
@@ -530,7 +534,7 @@ class Integrations::Medelement::ProviderCommands::Executor
     )
   end
 
-  def fail_command!(code:, status: nil, reconciliation: false)
+  def fail_command!(code:, status: nil, reconciliation: false, failure: nil)
     reconciliation &&= write_started?
     reconciliation_enqueued = false
     command.with_lock do
@@ -540,21 +544,47 @@ class Integrations::Medelement::ProviderCommands::Executor
         status: reconciliation ? command.status_for_transition('reconciliation_required') : 'failed',
         last_error_code: code,
         last_error_status: status,
-        executed_at: Time.current
+        executed_at: Time.current,
+        execution_state: execution_state_with_write_failure(code, status, failure)
       )
       project_failed_appointment_status! unless reconciliation || code == 'appointment_superseded'
+      project_unresolved_move_status! if reconciliation && command.move_reception?
       reconciliation_enqueued = reconciliation
     end
     Integrations::Medelement::ProviderCommandReconciliationJob.perform_later(command.id) if reconciliation_enqueued
+  end
+
+  # A started move write is remembered with its failure so reconciliation can tell a definitive provider rejection
+  # (verifiable by read-back) from an ambiguous transport result (never proven by a read that may lag behind the write).
+  def execution_state_with_write_failure(code, status, failure)
+    return command.execution_state unless command.move_reception? && write_started?
+
+    command.execution_state.merge('write_failure' => { 'code' => code, 'status' => status }.merge(failure.to_h).compact)
+  end
+
+  def move_write_rejected?
+    command.move_reception? && write_started?
   end
 
   def project_failed_appointment_status!
     provider_status = Integrations::Medelement::AppointmentProviderStatus
     if command.create_reception? && command.request_snapshot.dig('actor', 'type') == 'Captain::Assistant'
       provider_status.persist_if_bound!(command.appointment, provider_status::FAILED, command: command)
+    elsif command.move_reception?
+      provider_status.persist_for_command!(command.appointment, provider_status::FAILED, command: command)
     else
       provider_status.persist!(command.appointment, provider_status::FAILED)
     end
+  end
+
+  # The move outcome is not established until the read-back proves it, so the appointment is flagged for reconciliation.
+  # A provider-owned appointment is left alone: writing the flag would invalidate the source snapshot the command is
+  # applied against, and the reconciliation could then never finish the move.
+  def project_unresolved_move_status!
+    return if command.frozen_imported_source?
+
+    provider_status = Integrations::Medelement::AppointmentProviderStatus
+    provider_status.persist_for_command!(command.appointment, provider_status::UNKNOWN, command: command)
   end
 
   def await_patient_action!(action)

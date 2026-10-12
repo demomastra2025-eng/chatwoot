@@ -194,6 +194,32 @@ RSpec.describe Integrations::Medelement::Client do
     end
   end
 
+  describe 'a rejected write' do
+    let(:move_url) { "#{described_class::BASE_URL}/v2/doctor/reception/change_reception_date" }
+
+    it 'keeps a sanitized excerpt of the provider explanation and is not ambiguous' do
+      stub_request(:post, move_url).to_return(
+        status: 400, body: 'Недопустимое время приёма для user@example.com +7 701 123 45 67', headers: { 'Content-Type' => 'text/plain' }
+      )
+
+      expect { client.move_reception(params: { patient_code: 'patient-1', reception_code: 'reception-1' }) }
+        .to raise_error(described_class::ApiError) do |error|
+          expect(error).to have_attributes(status: 400, ambiguous?: false)
+          expect(error.provider_message).to include('Недопустимое время приёма')
+          expect(error.provider_message).not_to include('user@example.com')
+          expect(error.provider_message).not_to include('701 123')
+        end
+    end
+
+    it 'does not keep a response body for a failed read' do
+      stub_request(:get, "#{described_class::BASE_URL}/doctor/v1/patient/patient-1")
+        .to_return(status: 400, body: 'Patient body', headers: { 'Content-Type' => 'text/plain' })
+
+      expect { client.get_patient(patient_code: 'patient-1') }
+        .to raise_error(described_class::ApiError) { |error| expect(error.provider_message).to be_nil }
+    end
+  end
+
   describe 'read-back endpoints' do
     it 'routes patient and the preferred v2 reception detail path to the documented paths' do
       patient = stub_request(:get, "#{described_class::BASE_URL}/doctor/v1/patient/patient-1")

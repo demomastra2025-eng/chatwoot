@@ -6,7 +6,8 @@ class Captain::Tools::Copilot::UpdateAppointmentService < Captain::Tools::Copilo
 
   description 'Update the selected appointment with a new specialist, service, or confirmed time details. ' \
               'For another patient, use the search token and first confirm their exact appointment with the caller. ' \
-              'A pending provider result does not mean the change has been applied.'
+              'A pending, failed or unknown provider result does not mean the change has been applied: the appointment keeps its ' \
+              'confirmed time and provider_move shows the requested time.'
   param :appointment_id, type: :number, desc: 'Exact appointment ID returned by get_appointment or a previous appointment mutation', required: false
   param :appointment_access_token, type: :string, desc: 'Opaque token from search_appointments for a specifically identified other patient appointment', required: false
   param :patient_confirmed, type: :boolean, desc: 'True only after the caller confirms the specific patient, doctor, time and requested change', required: false

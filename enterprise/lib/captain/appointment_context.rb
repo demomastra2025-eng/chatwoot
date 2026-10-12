@@ -75,7 +75,7 @@ class Captain::AppointmentContext
       time: local_time.strftime('%H:%M'),
       doctor: appointment.resource&.name,
       service: appointment.service_name_snapshot.presence || appointment.service&.name
-    }
+    }.merge(unconfirmed_reschedule(appointment, timezone))
   end
 
   def compact_summary(now: Time.current)
@@ -101,6 +101,16 @@ class Captain::AppointmentContext
   end
 
   private
+
+  # The card time is the one MedElement confirmed. A reschedule it has not confirmed is a request, never the appointment time.
+  def unconfirmed_reschedule(appointment, timezone)
+    move = Integrations::Medelement::AppointmentMoveState.read(appointment)
+    return {} if move.blank?
+
+    requested = Integrations::Medelement::AppointmentMoveState.time(move, 'requested_starts_at')&.in_time_zone(timezone)
+    { reschedule: { state: move['state'], requested_time_confirmed: false, requested_date: requested&.strftime('%d.%m.%Y'),
+                    requested_time: requested&.strftime('%H:%M') }.compact }
+  end
 
   def filtered_appointments(status:, from:, to:, doctor:)
     scope = appointments

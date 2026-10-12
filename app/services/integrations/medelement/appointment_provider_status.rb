@@ -17,6 +17,7 @@ class Integrations::Medelement::AppointmentProviderStatus
       assign!(appointment, PENDING)
       COMMAND_BINDING_KEYS.each { |key| appointment.custom_attributes.delete(key) }
       appointment.custom_attributes.delete(OPERATION_KEY)
+      appointment.custom_attributes.delete(Integrations::Medelement::AppointmentMoveState::ATTRIBUTE_KEY)
       appointment.custom_attributes.delete(CANCELLATION_COMMAND_ID_KEY) if appointment.status == 'cancelled'
     end
 
@@ -24,11 +25,13 @@ class Integrations::Medelement::AppointmentProviderStatus
       return if appointment.blank?
 
       attrs = appointment.custom_attributes.to_h
+      updated = attributes(appointment, status, command)
+      move_key = Integrations::Medelement::AppointmentMoveState::ATTRIBUTE_KEY
       return if attrs[ATTRIBUTE_KEY] == status && command_current?(appointment, command) &&
-                (command.blank? || attrs[OPERATION_KEY] == command.operation)
+                (command.blank? || attrs[OPERATION_KEY] == command.operation) && attrs[move_key] == updated[move_key]
 
       appointment.mark_medelement_provider_reconciled!
-      appointment.update!(custom_attributes: attributes(appointment, status, command))
+      appointment.update!(custom_attributes: updated)
     end
 
     def persist_if_bound!(appointment, status, command:)
@@ -36,6 +39,16 @@ class Integrations::Medelement::AppointmentProviderStatus
 
       appointment.with_lock do
         persist!(appointment, status, command: command) if bound_to_command?(appointment, command)
+      end
+    end
+
+    # Projects a move command outcome unless the appointment already belongs to a different command.
+    def persist_for_command!(appointment, status, command:)
+      return if appointment.blank?
+
+      appointment.with_lock do
+        bound_id = appointment.custom_attributes.to_h[COMMAND_ID_KEY]
+        persist!(appointment, status, command: command) if bound_id.blank? || bound_id.to_s == command.id.to_s
       end
     end
 
@@ -114,7 +127,11 @@ class Integrations::Medelement::AppointmentProviderStatus
     end
 
     def attributes(appointment, status, command = nil)
-      appointment.custom_attributes.to_h.merge(ATTRIBUTE_KEY => status).merge(command.present? ? command_attributes(command) : {})
+      attributes = appointment.custom_attributes.to_h.merge(ATTRIBUTE_KEY => status).merge(command.present? ? command_attributes(command) : {})
+      return Integrations::Medelement::AppointmentMoveState.flagged(attributes) if command.blank? && status == UNKNOWN
+      return attributes unless command&.operation == 'move_reception'
+
+      Integrations::Medelement::AppointmentMoveState.projected(attributes, command: command, provider_status: status)
     end
 
     def command_current?(appointment, command)

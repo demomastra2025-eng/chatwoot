@@ -79,7 +79,13 @@ class Scheduling::Appointments::ProviderCancellationPolicy
 
   def confirmed_status?
     status = appointment.custom_attributes.to_h[STATUS::ATTRIBUTE_KEY]
-    status == STATUS::SUCCEEDED || (status.blank? && imported?) || retryable_prewrite_removal?(status)
+    status == STATUS::SUCCEEDED || (status.blank? && imported?) || retryable_prewrite_removal?(status) || rejected_move?(status)
+  end
+
+  # A rejected reschedule leaves the reception at the interval MedElement confirmed, so it can still be removed. A rejection
+  # proven by read-back keeps the sync status succeeded; this covers a move that failed before anything was sent.
+  def rejected_move?(status)
+    status == STATUS::FAILED && Integrations::Medelement::AppointmentMoveState.rejected?(appointment)
   end
 
   def reception_code

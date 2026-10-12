@@ -1,11 +1,13 @@
 class Integrations::Medelement::Client
   class ApiError < StandardError
-    attr_reader :status
+    # provider_message is a sanitized excerpt of the provider's own explanation of a rejected write.
+    attr_reader :status, :provider_message
 
-    def initialize(message, status: nil, ambiguous: false)
+    def initialize(message, status: nil, ambiguous: false, provider_message: nil)
       super(message)
       @status = status
       @ambiguous = ambiguous
+      @provider_message = provider_message.presence
     end
 
     def ambiguous?

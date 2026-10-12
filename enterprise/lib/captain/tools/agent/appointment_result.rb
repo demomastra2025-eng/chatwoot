@@ -13,6 +13,14 @@ class Captain::Tools::Agent::AppointmentResult
     'update_appointment' => 'move_reception',
     'cancel_appointment' => 'remove_reception'
   }.freeze
+  MOVE_GUIDANCE = {
+    'pending' => 'The reschedule is only requested. The appointment is still at local_date and local_time. Do not tell the patient it was moved; ' \
+                 'say the request was sent and staff will confirm the new time.',
+    'needs_reconciliation' => 'The result of the reschedule is not established and staff must check it in MedElement. ' \
+                              'Do not tell the patient it was moved and do not repeat the reschedule.',
+    'rejected' => 'MedElement did not apply the reschedule; the appointment stays at local_date and local_time. ' \
+                  'Do not tell the patient it was moved and do not repeat the reschedule on your own.'
+  }.freeze
   INPUT_FAILURE_GUIDANCE = {
     'INVALID_DATE' => 'Use the exact local calendar datetime YYYY-MM-DDTHH:MM without timezone, or copy a returned ISO 8601 slot unchanged. Do not calculate UTC offsets. For an ambiguous clock use an exact returned slot.',
     'INVALID_DURATION' => 'Use a positive whole number of minutes for duration_min.',
@@ -28,7 +36,10 @@ class Captain::Tools::Agent::AppointmentResult
     account_timezone = appointment.account.reporting_timezone.presence
     timezone = (ActiveSupport::TimeZone[resource_timezone] if resource_timezone) ||
                (ActiveSupport::TimeZone[account_timezone] if account_timezone) || Time.zone
+    # While a reschedule is not confirmed the appointment keeps the time MedElement last confirmed (or reported by its
+    # sync), so this is never the requested time; that one is reported separately by move_result.
     local_time = appointment.starts_at&.in_time_zone(timezone)
+    move = Integrations::Medelement::AppointmentMoveState.read(appointment)
     status = case action
              when 'create_appointment' then 'created'
              when 'update_appointment' then 'updated'
@@ -41,8 +52,21 @@ class Captain::Tools::Agent::AppointmentResult
       local_date: local_time&.strftime('%d.%m.%Y'),
       local_time: local_time&.strftime('%H:%M'),
       status: status
-    }.merge(provider_confirmation(appointment, action: action)).merge(crm_link_result(appointment))
+    }.merge(provider_confirmation(appointment, action: action)).merge(move_result(move, timezone)).merge(crm_link_result(appointment))
   end
+
+  def self.move_result(move, timezone)
+    return {} if move.blank?
+
+    requested = Integrations::Medelement::AppointmentMoveState.time(move, 'requested_starts_at')&.in_time_zone(timezone)
+    {
+      move_state: move['state'],
+      requested_local_date: requested&.strftime('%d.%m.%Y'),
+      requested_local_time: requested&.strftime('%H:%M'),
+      move_guidance: MOVE_GUIDANCE.fetch(move['state'])
+    }.compact
+  end
+  private_class_method :move_result
 
   def self.success(appointment, action: nil)
     result = { success: true }.merge(self.appointment(appointment, action: action))
@@ -55,6 +79,10 @@ class Captain::Tools::Agent::AppointmentResult
 
     provider = Integrations::Medelement::AppointmentProviderStatus
     state = result[:provider_confirmation_status]
+    # A reschedule MedElement has not confirmed is never a successful update, whatever the sync status of the row says
+    # (a rejected move proven by read-back leaves the reception confirmed at its previous time).
+    move_status = Integrations::Medelement::AppointmentMoveState.provider_status_for(result[:move_state])
+    state = move_status if move_status && action == 'update_appointment'
     return result if state.blank? || state.in?([provider::SUCCEEDED, 'not_requested'])
 
     reason = state == provider::PENDING ? 'pending_provider_confirmation' : 'staff_will_help'
@@ -63,7 +91,7 @@ class Captain::Tools::Agent::AppointmentResult
              when provider::UNKNOWN then provider::UNKNOWN
              else 'provider_confirmation_failed'
              end
-    result.merge(success: false, reason: reason, status: status, provider_confirmed: false)
+    result.merge(success: false, reason: reason, status: status, provider_confirmation_status: state, provider_confirmed: false)
   end
 
   def self.provider_confirmation(appointment, action: nil)

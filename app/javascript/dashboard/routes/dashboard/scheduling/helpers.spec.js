@@ -222,6 +222,92 @@ describe('scheduling helpers', () => {
     ).toBe(false);
   });
 
+  it('names an unconfirmed or rejected reschedule instead of a confirmed move', () => {
+    const t = key => key;
+    const unconfirmed = {
+      status: 'scheduled',
+      providerConfirmationStatus: 'provider_status_unknown',
+      providerMove: { state: 'needs_reconciliation' },
+    };
+    const rejected = {
+      status: 'scheduled',
+      providerConfirmationStatus: 'failed',
+      customAttributes: { medelement_move_request: { state: 'rejected' } },
+    };
+
+    expect(providerBookingStatusKey(unconfirmed)).toBe(
+      'SCHEDULING.APPOINTMENT_STATUS.MOVE_REVIEW'
+    );
+    expect(providerBookingStatusMessage(unconfirmed, t)).toBe(
+      'SCHEDULING.APPOINTMENT_STATUS.MOVE_REVIEW'
+    );
+    expect(providerBookingStatusKey(rejected)).toBe(
+      'SCHEDULING.APPOINTMENT_STATUS.MOVE_REJECTED'
+    );
+    expect(providerBookingStatusMessage(rejected, t)).toBe(
+      'SCHEDULING.APPOINTMENT_STATUS.MOVE_REJECTED'
+    );
+    expect(
+      providerBookingStatusKey({
+        status: 'scheduled',
+        providerConfirmationStatus: 'failed',
+      })
+    ).toBe('SCHEDULING.APPOINTMENT_STATUS.PROVIDER_REVIEW');
+  });
+
+  it('keeps a rejected reschedule visible even when the read-back left the reception provider-confirmed', () => {
+    const t = key => key;
+    const rejected = {
+      status: 'scheduled',
+      providerConfirmationStatus: 'succeeded',
+      providerMove: { state: 'rejected', requestedTimeConfirmed: false },
+    };
+
+    expect(providerBookingNeedsReview(rejected)).toBe(true);
+    expect(providerBookingStatusKey(rejected)).toBe(
+      'SCHEDULING.APPOINTMENT_STATUS.MOVE_REJECTED'
+    );
+    expect(providerBookingStatusMessage(rejected, t)).toBe(
+      'SCHEDULING.APPOINTMENT_STATUS.MOVE_REJECTED'
+    );
+    // A cancelled appointment is not described by a stale move state.
+    expect(
+      providerBookingNeedsReview({ ...rejected, status: 'cancelled' })
+    ).toBe(false);
+    expect(providerBookingStatusKey({ ...rejected, status: 'cancelled' })).toBe(
+      ''
+    );
+    expect(
+      providerBookingNeedsReview({
+        status: 'scheduled',
+        providerConfirmationStatus: 'succeeded',
+      })
+    ).toBe(false);
+  });
+
+  it('shows a requested reschedule as waiting for MedElement, not as a confirmed move', () => {
+    const t = key => key;
+    const waiting = {
+      status: 'scheduled',
+      providerConfirmationStatus: 'pending',
+      providerMove: { state: 'pending' },
+    };
+
+    expect(providerBookingStatusKey(waiting)).toBe(
+      'SCHEDULING.APPOINTMENT_STATUS.MOVE_PENDING'
+    );
+    expect(providerBookingStatusMessage(waiting, t)).toBe(
+      'SCHEDULING.APPOINTMENT_STATUS.MOVE_PENDING'
+    );
+    expect(providerBookingNeedsReview(waiting)).toBe(false);
+    expect(
+      providerBookingStatusKey({
+        status: 'scheduled',
+        providerConfirmationStatus: 'pending',
+      })
+    ).toBe('');
+  });
+
   it('keeps a provider removal pending or unknown without announcing completed cancellation', () => {
     const appointment = {
       source: 'manual',

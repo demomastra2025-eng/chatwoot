@@ -159,7 +159,8 @@ class Captain::Tools::ProviderBookingHandoffService
     handoff_fence = response_fence['part_id'].present? ? response_fence.except('routing_revision') : response_fence
     handoff_fence = handoff_fence.merge('require_current_incoming' => true) if slot_conflict?
     result = conversation.bot_handoff!(source: 'system', actor: assistant, fence: handoff_fence) do
-      customer_message = existing_conflict_message || create_conflict_message! if slot_conflict? && current_incoming_request?
+      message_key = customer_message_key
+      customer_message = existing_customer_message || create_customer_message!(message_key) if message_key
       note = existing_staff_note || create_staff_note!
     end
     if result.in?([:stale, :already_applied])
@@ -182,24 +183,55 @@ class Captain::Tools::ProviderBookingHandoffService
                                          .reorder(created_at: :desc, id: :desc).pick(:id).to_i == response_fence['last_message_id'].to_i
   end
 
-  def existing_conflict_message
-    conversation.messages.outgoing.where(private: false)
-                .where("additional_attributes ->> 'medelement_provider_command_id' = ?", command.id.to_s).first
+  # The one public message the customer gets for this booking: the slot conflict explanation, or a short
+  # notice that the booking or its change could not be confirmed. The handoff cuts off the model's own reply
+  # in this run, so without it the customer would hear nothing. An unfinished orphaned write belongs to a
+  # booking the customer no longer has and a handoff without a booking has nothing to report: both get the
+  # staff note only.
+  def customer_message_key
+    return if appointment.blank? || orphaned_write
+    return unconfirmed_message_key unless slot_conflict?
+
+    slot_conflict_message_key if current_incoming_request?
+  end
+
+  def slot_conflict_message_key
+    command.move_reception? ? 'conversations.captain.ai_booking_move_conflict' : 'conversations.captain.ai_booking_slot_conflict'
+  end
+
+  def unconfirmed_message_key
+    command&.move_reception? ? 'conversations.captain.ai_booking_move_unconfirmed' : 'conversations.captain.ai_booking_create_unconfirmed'
+  end
+
+  def existing_customer_message
+    scope = conversation.messages.outgoing.where(private: false)
+    if command
+      scope.where("additional_attributes ->> 'medelement_provider_command_id' = ?", command.id.to_s).first
+    else
+      scope.where("additional_attributes ->> 'medelement_booking_handoff_message_id' = ?", response_fence['last_message_id'].to_s).first
+    end
   end
 
   # This notice commits with the accepted handoff under the conversation/control
   # locks. A later stale model reply is still rejected by its original fence.
-  def create_conflict_message!
-    key = command.move_reception? ? 'conversations.captain.ai_booking_move_conflict' : 'conversations.captain.ai_booking_slot_conflict'
+  def create_customer_message!(key)
     conversation.messages.create!(
       account_id: conversation.account_id, inbox_id: conversation.inbox_id,
       message_type: :outgoing, private: false, sender: assistant,
-      content: I18n.with_locale(assistant.account.locale) { I18n.t(key) },
+      content: I18n.with_locale(customer_locale) { I18n.t(key) },
       additional_attributes: {
-        medelement_provider_command_id: command.id, scheduling_appointment_id: appointment.id,
+        medelement_provider_command_id: command&.id, scheduling_appointment_id: appointment.id,
+        medelement_booking_handoff_message_id: (response_fence['last_message_id'] unless command),
         captain_ai_reply: { assistant_id: assistant.id }
-      }
+      }.compact
     )
+  end
+
+  # The notice is written in the language of the conversation when it is one of the enabled ones; the account language
+  # is the fallback (the conversation language is only known when language detection has run for it).
+  def customer_locale
+    language = conversation.language.to_s.downcase.tr('_', '-').split('-').first
+    I18n.available_locales.map(&:to_s).include?(language) ? language : assistant.account.locale
   end
 
   # The fenced conversation was taken over by a human of the original run when

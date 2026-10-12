@@ -9,6 +9,16 @@ export const appointmentCrmLinkWarningMessage = (appointment, t) => {
   return t(key);
 };
 
+// A MedElement reschedule is a request: the appointment keeps its confirmed time until MedElement confirms the move.
+export const appointmentProviderMoveMessage = (appointment, t) => {
+  const state =
+    appointment?.providerMove?.state || appointment?.provider_move?.state;
+  return state === 'pending'
+    ? t('SCHEDULING.APPOINTMENT_FORM.MOVE_PENDING')
+    : '';
+};
+
 export const appointmentSaveAlertMessage = (appointment, t) =>
   appointmentCrmLinkWarningMessage(appointment, t) ||
+  appointmentProviderMoveMessage(appointment, t) ||
   t('SCHEDULING.APPOINTMENT_FORM.SUCCESS_SAVE');

@@ -47,7 +47,7 @@ class Integrations::Medelement::Request
     return [] if empty_not_found && response.code.to_i == 404 && parsed_response == []
     return validate_provider_scope!(parsed_response) if response.success?
 
-    raise_api_error(operation, response.code.to_i, write: write)
+    raise_api_error(operation, response.code.to_i, write: write, body: (response.body if write))
   rescue *TRANSPORT_ERRORS => e
     raise Integrations::Medelement::Client::ApiError.new(
       "Medelement #{operation} transport failed: #{e.class}",
@@ -160,11 +160,12 @@ class Integrations::Medelement::Request
     values
   end
 
-  def raise_api_error(operation, status, write: false)
+  def raise_api_error(operation, status, write: false, body: nil)
     raise Integrations::Medelement::Client::ApiError.new(
       "Medelement #{operation} request failed",
       status: status,
-      ambiguous: write && (status == 408 || status == 429 || status >= 500)
+      ambiguous: write && (status == 408 || status == 429 || status >= 500),
+      provider_message: (Integrations::Medelement::ErrorSanitizer.sanitize(body.to_s.squish) if body.present?)
     )
   end
 
