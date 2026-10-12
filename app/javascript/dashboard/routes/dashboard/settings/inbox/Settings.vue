@@ -28,7 +28,6 @@ import WhatsAppTemplatesPage from './settingsPage/WhatsAppTemplatesPage.vue';
 import BotConfiguration from './components/BotConfiguration.vue';
 import AccountHealth from './components/AccountHealth.vue';
 import WebsiteTriggerCampaigns from './components/WebsiteTriggerCampaigns.vue';
-import { FEATURE_FLAGS } from '../../../../featureFlags';
 import SenderNameExamplePreview from './components/SenderNameExamplePreview.vue';
 import LockToSingleConversationPreview from './components/LockToSingleConversationPreview.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
@@ -197,8 +196,6 @@ export default {
   },
   computed: {
     ...mapGetters({
-      accountId: 'getCurrentAccountId',
-      isFeatureEnabledonAccount: 'accounts/isFeatureEnabledonAccount',
       uiFlags: 'inboxes/getUIFlags',
       portals: 'portals/allPortals',
     }),
@@ -629,20 +626,8 @@ export default {
         ];
       }
 
-      // AI agents of text channels are set only in «ИИ-агенты → Каналы». Voice
-      // channels are not in that grid, so the voice agent stays here.
-      if (
-        this.isAVoiceChannel &&
-        this.isFeatureEnabledonAccount(this.accountId, FEATURE_FLAGS.CAPTAIN)
-      ) {
-        visibleToAllChannelTabs = [
-          ...visibleToAllChannelTabs,
-          {
-            key: 'bot-configuration',
-            name: this.$t('INBOX_MGMT.TABS.BOT_CONFIGURATION'),
-          },
-        ];
-      }
+      // AI agents are set only in «ИИ-агенты → Каналы». The voice agent editor
+      // is hidden until the voice agent is reworked (owner decision 12.10).
       if (this.shouldShowWhatsAppConfiguration) {
         visibleToAllChannelTabs = [
           ...visibleToAllChannelTabs,

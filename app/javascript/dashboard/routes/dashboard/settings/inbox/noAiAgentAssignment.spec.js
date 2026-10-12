@@ -3,8 +3,7 @@ import Settings from './Settings.vue';
 
 // AI agents are created and configured in «ИИ-агенты» and switched on for a
 // channel only in «ИИ-агенты → Каналы». The channel settings and the channel
-// creation flow do not offer them. Voice channels are not rows of that grid,
-// so their own agent editor stays on the voice channel settings.
+// creation flow do not offer them. The voice agent editor is hidden for now.
 
 const BOT_TAB = 'bot-configuration';
 const AI_AGENT_REFERENCE =
@@ -64,14 +63,8 @@ describe('channel settings: no AI agent assignment', () => {
     }
   );
 
-  it('keeps the voice agent editor only on voice channels', () => {
-    expect(settingsTabKeys({ isAVoiceChannel: true })).toContain(BOT_TAB);
-    expect(
-      settingsTabKeys({
-        isAVoiceChannel: true,
-        isFeatureEnabledonAccount: () => false,
-      })
-    ).not.toContain(BOT_TAB);
+  it('hides the voice agent editor on voice channels too', () => {
+    expect(settingsTabKeys({ isAVoiceChannel: true })).not.toContain(BOT_TAB);
   });
 });
 

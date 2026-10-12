@@ -334,8 +334,8 @@ describe('Captain channels matrix page', () => {
     expect(table(wrapper).find('[data-testid="matrix-row-9"]').exists()).toBe(
       false
     );
-    expect(wrapper.get('[data-testid="matrix-voice-note"]').text()).toBe(
-      'CAPTAIN.CHANNEL_MATRIX.VOICE_NOTE'
+    expect(wrapper.find('[data-testid="matrix-voice-note"]').exists()).toBe(
+      false
     );
     expect(saveButton(wrapper).element.disabled).toBe(true);
     // Design rule: no framed block nested inside the matrix block.

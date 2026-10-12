@@ -319,13 +319,6 @@ onBeforeUnmount(() => {
             />
           </div>
         </template>
-
-        <p
-          class="mb-0 text-body-main text-n-slate-11"
-          data-testid="matrix-voice-note"
-        >
-          {{ t('CAPTAIN.CHANNEL_MATRIX.VOICE_NOTE') }}
-        </p>
       </div>
     </template>
   </PageLayout>
