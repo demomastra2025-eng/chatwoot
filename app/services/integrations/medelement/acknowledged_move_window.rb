@@ -8,6 +8,8 @@ class Integrations::Medelement::AcknowledgedMoveWindow
   class << self
     def stale_read?(appointment, starts_at:, ends_at:, now: Time.current, window: DEFAULT_WINDOW)
       return false unless appointment.persisted? && starts_at.present? && ends_at.present?
+      # Only an appointment whose last provider operation was a move can be waiting for one; this spares a query per imported row.
+      return false unless appointment.custom_attributes.to_h[Integrations::Medelement::AppointmentProviderStatus::OPERATION_KEY] == 'move_reception'
 
       command = latest_acknowledged_move(appointment, since: now - window)
       return false if command.blank?

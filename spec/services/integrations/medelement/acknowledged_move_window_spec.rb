@@ -13,7 +13,7 @@ RSpec.describe Integrations::Medelement::AcknowledgedMoveWindow do
   let(:appointment) do
     create(:scheduling_appointment, account: account, contact: contact, resource: resource, source: 'medelement',
                                     starts_at: new_start, ends_at: new_end, external_ref: 'medelement:reception:r-1',
-                                    custom_attributes: { 'medelement_reception_code' => 'r-1' })
+                                    custom_attributes: { 'medelement_reception_code' => 'r-1', 'medelement_provider_operation' => 'move_reception' })
   end
 
   def acknowledged_move(executed_at: Time.current, status: 'succeeded')
@@ -57,6 +57,15 @@ RSpec.describe Integrations::Medelement::AcknowledgedMoveWindow do
       acknowledged_move(status: 'failed')
 
       expect(described_class.stale_read?(appointment, starts_at: old_start, ends_at: old_end)).to be(false)
+    end
+
+    it 'looks nothing up for an appointment whose last provider operation was not a move' do
+      acknowledged_move
+      appointment.update!(custom_attributes: appointment.custom_attributes.merge('medelement_provider_operation' => 'create_reception'))
+      allow(Integrations::Medelement::ProviderCommand).to receive(:where).and_call_original
+
+      expect(described_class.stale_read?(appointment, starts_at: old_start, ends_at: old_end)).to be(false)
+      expect(Integrations::Medelement::ProviderCommand).not_to have_received(:where)
     end
 
     it 'has nothing to hold back for an appointment without a move' do

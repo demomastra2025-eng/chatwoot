@@ -1527,6 +1527,7 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
 
       before do
         command
+        appointment.update!(custom_attributes: appointment.custom_attributes.merge('medelement_provider_operation' => 'move_reception'))
         Integrations::Medelement::ProviderCommand.create!(
           account: account, appointment: appointment, contact: contact, operation: 'move_reception', status: 'succeeded',
           idempotency_key: 'earlier-move', provider_reception_code: 'reception-1', company_cabinet_code: 'cabinet-1',
