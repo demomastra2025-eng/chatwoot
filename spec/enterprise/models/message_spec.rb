@@ -439,6 +439,8 @@ RSpec.describe Message do
     end
 
     it 'keeps an active linked Captain conversation pending and schedules its response' do
+      # The collapse window is a workspace setting (default 15 s, buffered scheduling); 0 selects the direct scheduling path.
+      Captain::AccountSettings.new(conversation.account).update!('conversation' => { 'message_collapse_window_seconds' => 0 })
       assistant = create(:captain_assistant, account: conversation.account)
       create(:captain_inbox, inbox: conversation.inbox, captain_assistant: assistant)
       conversation.inbox.reload

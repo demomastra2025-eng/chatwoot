@@ -4,6 +4,10 @@
 class Captain::AgentGraph
   MAX_AGENTS = 100
 
+  # The channel's entry agent is switched off, so no routing exists. Callers that only
+  # ask "who may act" treat this as "nobody"; it stays an ArgumentError for the others.
+  class EntryDisabledError < ArgumentError; end
+
   def initialize(entry, inbox: nil)
     @entry = entry
     @inbox = inbox
@@ -13,7 +17,7 @@ class Captain::AgentGraph
 
   def agents
     @agents ||= begin
-      raise ArgumentError, 'The entry agent is disabled' unless entry.active?
+      raise EntryDisabledError, 'The entry agent is disabled' unless entry.active?
 
       members = if entry.external_agent?
                   Captain::Assistant.entry_eligible.where(account_id: entry.account_id).order(:id).select do |actor|

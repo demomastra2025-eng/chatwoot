@@ -213,6 +213,8 @@ class Captain::Conversation::AgentSession
     return unless key.to_s.start_with?('scenario_')
 
     Captain::AgentGraph.new(@entry, inbox: @conversation.inbox).resolve(key)&.id
+  rescue Captain::AgentGraph::EntryDisabledError
+    nil
   end
 
   def epoch

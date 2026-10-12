@@ -21,6 +21,14 @@ RSpec.describe Captain::AgentGraph do
     expect(graph.payload.first).not_to have_key(:target_ids)
   end
 
+  it 'raises a dedicated error, still an ArgumentError, when the entry agent is disabled' do
+    entry.update_columns(active: false)
+
+    expect { described_class.new(entry, inbox: inbox).agents }
+      .to raise_error(described_class::EntryDisabledError, 'The entry agent is disabled')
+    expect(described_class::EntryDisabledError.ancestors).to include(ArgumentError)
+  end
+
   it 'uses all active external agents in a Playground without an inbox' do
     member
     other

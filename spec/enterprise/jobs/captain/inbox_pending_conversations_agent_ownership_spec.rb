@@ -106,7 +106,8 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
   end
 
   it 'does not fall back to the entry after access to the specialist is removed' do
-    Captain::AgentHandoff.where(source_assistant: entry, target_assistant: specialist).delete_all
+    # Routing is channel membership: the specialist leaves this inbox (selected scope without it).
+    specialist.update!(channel_scope: 'selected')
 
     expect_no_auto_action
     expect(Captain::ConversationCompletionService).not_to have_received(:new)

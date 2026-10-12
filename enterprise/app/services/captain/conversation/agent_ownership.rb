@@ -9,7 +9,7 @@ class Captain::Conversation::AgentOwnership
   def current?(expected_entry_id: nil, expected_revision: nil, enforce_revision: false)
     return false unless entry && assistant && assistant.account_id == conversation.account_id
     return false unless expected_entry_id.blank? || expected_entry_id.to_i == entry.id
-    return false unless Captain::AgentGraph.new(entry, inbox: conversation.inbox).find(assistant.id)
+    return false unless graph_member(assistant.id)
     return false unless current_actor_id == assistant.id
     return true unless enforce_revision
 
@@ -31,7 +31,7 @@ class Captain::Conversation::AgentOwnership
   def current_assistant
     return unless entry && entry.account_id == conversation.account_id
 
-    Captain::AgentGraph.new(entry, inbox: conversation.inbox).find(current_actor_id)
+    graph_member(current_actor_id)
   end
 
   def routing_revision
@@ -41,6 +41,14 @@ class Captain::Conversation::AgentOwnership
   private
 
   attr_reader :conversation, :assistant
+
+  # A disabled entry agent leaves the channel without routing: nobody is the owner, so
+  # ownership checks answer false/nil instead of raising into validations and jobs.
+  def graph_member(id)
+    Captain::AgentGraph.new(entry, inbox: conversation.inbox).find(id)
+  rescue Captain::AgentGraph::EntryDisabledError
+    nil
+  end
 
   def session
     return @session if instance_variable_defined?(:@session)

@@ -2145,6 +2145,9 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       end
 
       it 'waits for stored document text before generating a response' do
+        # The stubbed sleep stores the text, so the wait ends at its first iteration. The deadline only has to be
+        # long enough that the pending-state database probe cannot consume it before that first sleep.
+        stub_const('Captain::Conversation::ResponseBuilderJob::DOCUMENT_PARSE_WAIT_TIMEOUT', 10)
         job = described_class.new(conversation, assistant)
         allow(job).to receive(:sleep) do
           document_attachment.update!(meta: { 'parsed_text' => 'Parsed contract text' })
