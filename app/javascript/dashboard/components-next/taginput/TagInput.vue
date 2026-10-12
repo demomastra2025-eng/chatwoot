@@ -38,6 +38,10 @@ const props = defineProps({
   allowCreate: { type: Boolean, default: false },
   tagClass: { type: [String, Object, Array], default: '' },
   tagLabelClass: { type: [String, Object, Array], default: '' },
+  // Opt-in classes for the new-tag input wrapper (e.g. '!min-w-full' keeps it
+  // on its own row at container width, even when that is below the default
+  // 200px minimum).
+  inputWrapperClass: { type: [String, Object, Array], default: '' },
   // Skip label-based dedup when the consumer already filters menuItems by ID.
   // Prevents removing all same-name items when one is selected (e.g. duplicate agent names).
   skipLabelDedup: { type: Boolean, default: false },
@@ -239,6 +243,7 @@ const handleBlur = e => emit('blur', e);
     </div>
     <div
       v-if="showInput || showDropdownMenu"
+      :class="inputWrapperClass"
       class="relative flex items-center gap-2 flex-1 min-w-[200px] w-full"
     >
       <InlineInput

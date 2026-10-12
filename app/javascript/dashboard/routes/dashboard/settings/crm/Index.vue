@@ -1261,7 +1261,7 @@ onMounted(async () => {
                       class="flex min-h-44 w-[15rem] shrink-0 flex-col rounded-xl border-t-4 bg-n-slate-2 outline outline-1 -outline-offset-1 outline-n-weak"
                       :style="stageCardStyle(wonStage)"
                     >
-                      <div class="grid gap-3 p-4">
+                      <div class="grid grid-cols-1 gap-3 p-4">
                         <input
                           v-model="stageNameDrafts[wonStage.id]"
                           type="text"
@@ -1294,7 +1294,7 @@ onMounted(async () => {
                       class="flex min-h-44 w-[15rem] shrink-0 flex-col rounded-xl border-t-4 bg-n-slate-2 outline outline-1 -outline-offset-1 outline-n-weak"
                       :style="stageCardStyle(lostStage)"
                     >
-                      <div class="grid gap-3 p-4">
+                      <div class="grid grid-cols-1 gap-3 p-4">
                         <input
                           v-model="stageNameDrafts[lostStage.id]"
                           type="text"
@@ -1331,7 +1331,10 @@ onMounted(async () => {
                         <template v-if="lossReasonsEnabled">
                           <TagInput
                             v-model="closingReasonDraft"
-                            class="rounded-lg bg-n-surface-1 p-2 outline outline-1 outline-n-weak"
+                            class="min-w-0 rounded-lg bg-n-surface-1 p-2 outline outline-1 outline-n-weak"
+                            tag-class="!h-auto min-h-7"
+                            tag-label-class="!whitespace-normal break-words"
+                            input-wrapper-class="!min-w-full"
                             allow-create
                             :disabled="!canManage || settingsSaving"
                             :auto-open-dropdown="false"

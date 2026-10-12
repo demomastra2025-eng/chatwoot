@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils';
 import { h, nextTick, reactive, ref } from 'vue';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import TagInput from 'dashboard/components-next/taginput/TagInput.vue';
 import Index from './Index.vue';
 
 const testState = vi.hoisted(() => ({
@@ -254,7 +255,7 @@ const nestedFrames = block =>
     })
     .map(node => node.classes().join(' '));
 
-const mountComponent = () =>
+const mountComponent = (stubOverrides = {}) =>
   mount(Index, {
     global: {
       mocks: { $t: key => key },
@@ -275,6 +276,7 @@ const mountComponent = () =>
         Spinner: true,
         Switch: true,
         TagInput: true,
+        ...stubOverrides,
       },
     },
   });
@@ -678,6 +680,72 @@ describe('CRM pipeline settings', () => {
         auto_create_stage_id: '10',
       })
     );
+  });
+
+  it('keeps long loss reasons inside the narrow won and lost stage cards', async () => {
+    const longReason =
+      'Не заявка — информационный вопрос (адрес / график / результаты)';
+    testState.pipelineList = [
+      {
+        ...pipeline,
+        stages: [
+          ...pipeline.stages,
+          {
+            active: true,
+            code: 'won',
+            id: 15,
+            name: 'Won',
+            outcome: 'won',
+            pipelineId: 1,
+            position: 3,
+          },
+          {
+            active: true,
+            closingReasonOptions: [longReason, 'Дорого'],
+            code: 'lost',
+            id: 16,
+            name: 'Отказ / Не заявка',
+            outcome: 'lost',
+            pipelineId: 1,
+            position: 4,
+          },
+        ],
+      },
+    ];
+    const wrapper = mountComponent({ TagInput });
+    await flushPromises();
+
+    const [wonCard, lostCard] = wrapper
+      .findAll('article:not([data-stage-id])')
+      .map(card => card.element);
+    expect(wonCard.querySelector(':scope > div').classList).toContain(
+      'grid-cols-1'
+    );
+
+    const reasons = wrapper.findComponent(TagInput);
+    expect(lostCard.contains(reasons.element)).toBe(true);
+    expect(reasons.element.parentElement.classList).toContain('grid-cols-1');
+    expect(reasons.classes()).toContain('min-w-0');
+
+    const labels = reasons.findAll('span.truncate');
+    expect(labels.map(label => label.text())).toEqual([longReason, 'Дорого']);
+    labels.forEach(label => {
+      expect(label.classes()).toEqual(
+        expect.arrayContaining(['!whitespace-normal', 'break-words'])
+      );
+      expect([...label.element.parentElement.classList]).toEqual(
+        expect.arrayContaining(['!h-auto', 'min-h-7'])
+      );
+    });
+
+    // The new-reason input appears on focus and takes its own row at the
+    // card's content width (min-width: 100%), not a sliver beside a chip.
+    await reasons.trigger('click');
+    const inputWrapper = reasons
+      .get('input')
+      .element.closest('.min-w-\\[200px\\]');
+    expect(inputWrapper.classList).toContain('!min-w-full');
+    expect(inputWrapper.classList).not.toContain('!min-w-0');
   });
 
   it('does not persist a closed, inactive, or other-pipeline stage selection', async () => {
