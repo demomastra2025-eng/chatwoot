@@ -1,35 +1,26 @@
 # frozen_string_literal: true
 
+# Production runs this while the previous release still serves traffic, so it is
+# a short-locked expand: NOT VALID keys and checks validated afterwards, a
+# concurrent unique index and batched backfills (script/onelink/change_plan.py).
 class AddCaptainChannelMembership < ActiveRecord::Migration[7.2]
+  disable_ddl_transaction!
+
+  LOCK_TIMEOUT = '5s'.freeze
+  LOCK_ATTEMPTS = 5
+  BATCH_SIZE = 1_000
+  UNIQUE_INBOX_INDEX = 'index_captain_inboxes_on_unique_inbox_id'.freeze
+  SCOPE_CHECK = 'captain_assistants_channel_scope'.freeze
+
   def up
-    add_column :captain_assistants, :channel_scope, :string, null: false, default: 'all'
-    add_check_constraint :captain_assistants, "channel_scope IN ('all', 'selected')", name: 'captain_assistants_channel_scope'
-    add_column :captain_inboxes, :ai_enabled, :boolean, null: false, default: false
-
-    create_table :captain_agent_channels do |t|
-      t.bigint :account_id, null: false
-      t.bigint :assistant_id, null: false
-      t.bigint :inbox_id, null: false
-      t.timestamps
-    end
-    add_index :captain_agent_channels, [:assistant_id, :inbox_id], unique: true
-    add_index :captain_agent_channels, :inbox_id
-    add_index :captain_agent_channels, :account_id
-    add_foreign_key :captain_agent_channels, :accounts
-    add_foreign_key :captain_agent_channels, :captain_assistants, column: [:assistant_id, :account_id],
-                    primary_key: [:id, :account_id], on_delete: :cascade
-    add_foreign_key :captain_agent_channels, :inboxes, column: :inbox_id, on_delete: :cascade
-
+    add_flag_columns
+    create_membership_table
+    add_constraints
     backfill_membership!
-    execute('UPDATE captain_inboxes SET ai_enabled = TRUE WHERE ai_enabled = FALSE')
-    execute("UPDATE captain_assistants SET channel_scope = 'selected' WHERE usage_mode = 'external_agent'")
-
-    duplicate_ids = select_values('SELECT inbox_id FROM captain_inboxes GROUP BY inbox_id HAVING COUNT(*) > 1 ORDER BY inbox_id')
-    if duplicate_ids.empty?
-      add_index :captain_inboxes, :inbox_id, unique: true, name: 'index_captain_inboxes_on_unique_inbox_id'
-    else
-      say "Captain inbox duplicate inbox ids: #{duplicate_ids.join(', ')}"
-    end
+    enable_existing_channels
+    scope_existing_external_agents
+    add_unique_inbox_index
+    validate_constraints
   end
 
   def down
@@ -58,5 +49,108 @@ class AddCaptainChannelMembership < ActiveRecord::Migration[7.2]
       SELECT account_id, assistant_id, inbox_id, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP FROM reachable
       ON CONFLICT (assistant_id, inbox_id) DO NOTHING
     SQL
+  end
+
+  private
+
+  def add_flag_columns
+    with_short_lock_timeout do
+      add_column :captain_assistants, :channel_scope, :string, null: false, default: 'all' unless column_exists?(:captain_assistants, :channel_scope)
+    end
+    with_short_lock_timeout do
+      add_column :captain_inboxes, :ai_enabled, :boolean, null: false, default: false unless column_exists?(:captain_inboxes, :ai_enabled)
+    end
+  end
+
+  def create_membership_table
+    return if table_exists?(:captain_agent_channels)
+
+    with_short_lock_timeout do
+      create_table :captain_agent_channels do |t|
+        t.bigint :account_id, null: false
+        t.bigint :assistant_id, null: false
+        t.bigint :inbox_id, null: false
+        t.timestamps
+      end
+      add_index :captain_agent_channels, [:assistant_id, :inbox_id], unique: true
+      add_index :captain_agent_channels, :inbox_id
+      add_index :captain_agent_channels, :account_id
+    end
+  end
+
+  def add_constraints
+    with_short_lock_timeout { add_foreign_key :captain_agent_channels, :accounts, validate: false, if_not_exists: true }
+    with_short_lock_timeout do
+      add_foreign_key :captain_agent_channels, :captain_assistants, column: [:assistant_id, :account_id],
+                                                                   primary_key: [:id, :account_id], on_delete: :cascade,
+                                                                   validate: false, if_not_exists: true
+    end
+    with_short_lock_timeout do
+      add_foreign_key :captain_agent_channels, :inboxes, column: :inbox_id, on_delete: :cascade, validate: false, if_not_exists: true
+    end
+    return if check_constraint_exists?(:captain_assistants, name: SCOPE_CHECK)
+
+    with_short_lock_timeout do
+      add_check_constraint :captain_assistants, "channel_scope IN ('all', 'selected')", name: SCOPE_CHECK, validate: false
+    end
+  end
+
+  # Existing AI links keep answering: the previous release had no per-channel switch.
+  def enable_existing_channels
+    batch_update(<<~SQL.squish)
+      UPDATE captain_inboxes SET ai_enabled = TRUE
+      WHERE id IN (SELECT id FROM captain_inboxes WHERE ai_enabled = FALSE ORDER BY id LIMIT #{BATCH_SIZE})
+    SQL
+  end
+
+  # External agents keep exactly the channels they could reach before (backfilled above).
+  def scope_existing_external_agents
+    batch_update(<<~SQL.squish)
+      UPDATE captain_assistants SET channel_scope = 'selected'
+      WHERE id IN (
+        SELECT id FROM captain_assistants
+        WHERE usage_mode = 'external_agent' AND channel_scope <> 'selected' ORDER BY id LIMIT #{BATCH_SIZE}
+      )
+    SQL
+  end
+
+  def batch_update(sql)
+    loop do
+      updated = with_short_lock_timeout { exec_update(sql) }
+      break if updated.to_i < BATCH_SIZE
+    end
+  end
+
+  def add_unique_inbox_index
+    duplicate_ids = select_values('SELECT inbox_id FROM captain_inboxes GROUP BY inbox_id HAVING COUNT(*) > 1 ORDER BY inbox_id')
+    return say("Captain inbox duplicate inbox ids: #{duplicate_ids.join(', ')}") if duplicate_ids.any?
+
+    invalid = select_value("SELECT 1 FROM pg_index WHERE indexrelid = to_regclass(#{quote(UNIQUE_INBOX_INDEX)}) AND NOT indisvalid")
+    execute("REINDEX INDEX CONCURRENTLY #{quote_table_name(UNIQUE_INBOX_INDEX)}") if invalid.present?
+    add_index :captain_inboxes, :inbox_id, unique: true, name: UNIQUE_INBOX_INDEX, algorithm: :concurrently, if_not_exists: true
+  end
+
+  def validate_constraints
+    connection.foreign_keys(:captain_agent_channels).each do |constraint|
+      validate_foreign_key :captain_agent_channels, name: constraint.name unless constraint.validated?
+    end
+    constraint = connection.check_constraints(:captain_assistants).find { |check| check.name == SCOPE_CHECK }
+    validate_check_constraint :captain_assistants, name: SCOPE_CHECK if constraint && !constraint.validate?
+  end
+
+  def with_short_lock_timeout
+    attempt = 0
+    begin
+      attempt += 1
+      transaction(requires_new: true) do
+        execute("SET LOCAL lock_timeout = '#{LOCK_TIMEOUT}'")
+        yield
+      end
+    rescue ActiveRecord::LockWaitTimeout
+      raise if attempt >= LOCK_ATTEMPTS
+
+      sleep(attempt)
+      retry
+    end
   end
 end
