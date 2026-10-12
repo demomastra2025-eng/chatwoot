@@ -10,6 +10,10 @@ class Captain::Evals::RoutingBenchmark::Runner
   MODEL = 'openai/gpt-6-luna'
   class BudgetExceeded < StandardError; end
 
+  # A turn whose request left no provider usage row (a failed or aborted call) is counted; several such turns stop
+  # the run, because the budget can no longer be trusted.
+  MAX_USAGE_GAPS = 3
+
   def initialize(fixtures:, runs: 3, model: MODEL, reasoning: 'none', budget_usd:, out:, judge: false)
     @fixtures, @runs, @model, @reasoning = fixtures, Integer(runs), model, reasoning
     @budget_usd, @out, @judge = BigDecimal(budget_usd.to_s), out, judge
@@ -28,6 +32,7 @@ class Captain::Evals::RoutingBenchmark::Runner
 
     fixtures = paths.map { |path| [path, Captain::Evals::RoutingBenchmark::Fixture.load(path)] }
     @spent = BigDecimal('0')
+    @usage_gaps = 0
     @cases = []
     @aborted = false
     fixtures.each do |path, fixture|
@@ -146,7 +151,10 @@ class Captain::Evals::RoutingBenchmark::Runner
     end
     raise BudgetExceeded, 'unexpected_chat_model' if completions.any? { |event| event.model != @model }
     requested = events.any? { |event| event.event_name == 'llm.chat.request' }
-    raise BudgetExceeded, 'provider_usage_unavailable' if requested && completions.empty?
+    if requested && completions.empty?
+      @usage_gaps += 1
+      raise BudgetExceeded, 'provider_usage_unavailable' if @usage_gaps > MAX_USAGE_GAPS
+    end
     raise BudgetExceeded, 'provider_usage_unavailable' if completions.any? { |event| event.estimated_cost.nil? }
 
     completions.sum { |event| event.estimated_cost || BigDecimal('0') }
