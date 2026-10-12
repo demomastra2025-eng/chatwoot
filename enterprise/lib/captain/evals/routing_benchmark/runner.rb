@@ -57,13 +57,18 @@ class Captain::Evals::RoutingBenchmark::Runner
 
   # Every dialogue gets its own synthetic workspace (account, agents, contacts, calendar seeds) inside its own
   # savepoint, which is always rolled back, so a booking moved or cancelled by one dialogue never reaches the next.
+  # The savepoint is opened and rolled back explicitly: a block transaction holds the connection lock for its whole
+  # duration, which deadlocks council consultation threads that share the pinned benchmark connection.
   def execute_dialogue(path, fixture, dialogue, run_index)
-    ActiveRecord::Base.transaction(requires_new: true) do
+    connection = ActiveRecord::Base.connection
+    connection.begin_transaction(joinable: false, _lazy: false)
+    begin
       workspace = Current.with_runtime_events_suppressed do
         Captain::Evals::RoutingBenchmark::Workspace.new(fixture, model: @model, reasoning: @reasoning).create!
       end
       run_dialogue(workspace, dialogue, path: path, run_index: run_index)
-      raise ActiveRecord::Rollback
+    ensure
+      connection.rollback_transaction
     end
   end
 
