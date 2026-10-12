@@ -3,7 +3,8 @@ require 'rails_helper'
 RSpec.describe Captain::AgentRunContext do
   let(:account) { create(:account) }
   let(:entry) { create(:captain_assistant, account: account, description: 'ENTRY PRIVATE PROMPT') }
-  let(:specialist) do
+  # The mesh reads channel members from the database, so the specialist must exist before the graph is built.
+  let!(:specialist) do
     create(:captain_assistant, account: account, description: 'SPECIALIST OWN PROMPT', routing_description: 'Запись на приём')
   end
   let(:conversation) { create(:conversation, account: account) }
