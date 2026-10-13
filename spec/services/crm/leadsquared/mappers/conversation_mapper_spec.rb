@@ -192,7 +192,7 @@ RSpec.describe Crm::Leadsquared::Mappers::ConversationMapper, locale: :en do
         let(:unnamed_sender_message) do
           create(:message,
                  conversation: conversation,
-                 sender: create(:user, name: ''),
+                 sender: create(:user).tap { |user| user.update_column(:name, '') }, # legacy users can still have a blank name
                  content: 'Message',
                  message_type: :outgoing,
                  created_at: Time.zone.parse('2024-01-01 10:05'))
