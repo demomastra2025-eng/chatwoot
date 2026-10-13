@@ -44,6 +44,21 @@ RSpec.describe Captain::Tools::Operations::AppointmentOperations, type: :model d
       expect(later).not_to eq(first)
       expect(operations.already_booked_appointment).to be_nil
     end
+
+    it 'does not report the appointment of another service at the same start as the same booking' do
+      first_service = account.scheduling_services.first
+      second_service = create(:scheduling_service, account: account, duration_min: 30)
+      create(:scheduling_service_price, account: account, service: second_service, resource: resource, active: true, price: 10_000)
+      first = operations.create_appointment(**booking, service_id: first_service.id)
+
+      expect { operations.create_appointment(**booking, service_id: second_service.id) }.to raise_error(Scheduling::Error) { |error|
+        expect(Captain::Tools::Agent::AppointmentResult::CONFLICT_CODES).to include(error.code)
+      }
+      expect(operations.already_booked_appointment).to be_nil
+
+      expect(operations.create_appointment(**booking, service_id: first_service.id)).to eq(first)
+      expect(operations.already_booked_appointment).to eq(first)
+    end
   end
 
   describe 'a booking of staff' do

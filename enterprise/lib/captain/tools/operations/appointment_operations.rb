@@ -214,14 +214,16 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
     choice.perform&.id
   end
 
-  # The active appointment of the same patient with the same specialist at the same start. A booking of the agent that asks for it
-  # again is answered with this one: a second appointment would be a double booking.
+  # The active appointment of the same patient with the same specialist, the same service and the same start. A booking of the agent
+  # that asks for it again is answered with this one: a second appointment would be a double booking. Another service at that
+  # start is another booking: the slot is taken and the answer says so.
   def existing_booking(create_params)
     patient_id = create_params[:patient_contact_id] || create_params[:contact_id]
     return unless actor.is_a?(Captain::Assistant) && patient_id.present?
 
     starts_at = Time.zone.parse(create_params[:starts_at].to_s)
-    account.scheduling_appointments.where(status: %w[scheduled confirmed], resource_id: create_params[:resource_id], starts_at: starts_at)
+    account.scheduling_appointments.where(status: %w[scheduled confirmed], resource_id: create_params[:resource_id], starts_at: starts_at,
+                                          service_id: create_params[:service_id])
            .where('COALESCE(patient_contact_id, contact_id) = ?', patient_id).order(:id).first
   end
 

@@ -140,7 +140,7 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
     conversation = create(:conversation, account: account, contact: contact, status: :pending)
     create(:captain_inbox, inbox: conversation.inbox, captain_assistant: assistant)
     appointment = create(
-      :scheduling_appointment, account: account, resource: resource, contact: contact, conversation: conversation,
+      :scheduling_appointment, account: account, resource: resource, contact: contact, conversation: conversation, service: nil,
                                custom_attributes: { Integrations::Medelement::AppointmentProviderStatus::ATTRIBUTE_KEY => 'provider_status_unknown' }
     )
     expect(Scheduling::Appointments::UpsertService).not_to receive(:new)
@@ -394,7 +394,7 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
       booked = nil
       allow(upsert).to receive(:perform) do
         booked = create(:scheduling_appointment, account: account, resource: resource, contact: contact, conversation: conversation,
-                                                 starts_at: starts_at, ends_at: starts_at + 30.minutes)
+                                                 service: nil, starts_at: starts_at, ends_at: starts_at + 30.minutes)
         raise Scheduling::Error.new(code: 'APPOINTMENT_SLOT_UNAVAILABLE', message: 'Slot is already occupied', status: :conflict)
       end
       allow(Scheduling::Appointments::UpsertService).to receive(:new).and_return(upsert)
@@ -486,6 +486,51 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
       context = tool_context
 
       expect { tool.perform(context, **booking, patient: child) }.not_to(change { account.contacts.count })
+    end
+  end
+
+  describe 'a booking at a start the patient has booked for another service of the specialist' do
+    let(:resource) { create(:scheduling_resource, account: account, timezone: 'Asia/Almaty', slot_duration_min: 30) }
+    let(:contact) { create(:contact, account: account) }
+    let(:conversation) { create(:conversation, account: account, contact: contact) }
+    let(:tool_context) { Struct.new(:state).new({ conversation: { id: conversation.id }, contact: { id: contact.id } }) }
+    let(:booking) { { resource_id: resource.id, starts_at: '2026-04-20T09:00:00+05:00' } }
+    let!(:first_visit) { offer('First visit') }
+    let!(:control_visit) { offer('Control visit') }
+
+    before { create(:scheduling_work_rule, resource: resource, weekday: 1, start_minute: 9 * 60, end_minute: 18 * 60) }
+
+    def offer(name)
+      create(:scheduling_service, account: account, name: name, duration_min: 30).tap do |service|
+        create(:scheduling_service_price, account: account, service: service, resource: resource, active: true, price: 20_000)
+      end
+    end
+
+    it 'answers the same service with that appointment, and another service with the taken slot, not as the same booking' do
+      booked = JSON.parse(tool.perform(tool_context, **booking, service_id: first_visit.id))
+
+      same_service = JSON.parse(tool.perform(tool_context, **booking, service_id: first_visit.id))
+      other_service = JSON.parse(tool.perform(tool_context, **booking, service_id: control_visit.id))
+
+      expect(booked).to include('success' => true, 'status' => 'created')
+      expect(same_service).to include('success' => true, 'status' => 'already_booked', 'appointment_id' => booked.fetch('appointment_id'))
+      expect(other_service).to eq('success' => false, 'reason' => 'time_taken', 'error_class' => 'business')
+      expect(account.scheduling_appointments.pluck(:id, :service_id)).to eq([[booked.fetch('appointment_id'), first_visit.id]])
+    end
+
+    it 'does not take an appointment of another service that was booked in the meantime for the booking it asks for' do
+      starts_at = Time.zone.parse(booking[:starts_at])
+      upsert = instance_double(Scheduling::Appointments::UpsertService, persisted_appointment: nil)
+      allow(upsert).to receive(:perform) do
+        create(:scheduling_appointment, account: account, resource: resource, contact: contact, conversation: conversation,
+                                        service: first_visit, starts_at: starts_at, ends_at: starts_at + 30.minutes)
+        raise Scheduling::Error.new(code: 'APPOINTMENT_SLOT_UNAVAILABLE', message: 'Slot is already occupied', status: :conflict)
+      end
+      allow(Scheduling::Appointments::UpsertService).to receive(:new).and_return(upsert)
+
+      payload = JSON.parse(tool.perform(tool_context, **booking, service_id: control_visit.id))
+
+      expect(payload).to eq('success' => false, 'reason' => 'time_taken', 'error_class' => 'business')
     end
   end
 end
