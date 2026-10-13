@@ -10,7 +10,8 @@ RSpec.describe Captain::Runtime::ExecutorResolver do
     ]
   end
   let(:context) { { state: { assistant_id: 11 }, agent_graph: graph } }
-  let(:person_hint) { 'To pass the customer to a person call the handoff tool, not plan_request.' }
+  let(:person_hint) { 'To reach a person call the handoff tool.' }
+  let(:own_work_note) { 'Own work needs no plan: answer or use your tools.' }
 
   def resolve_ids(executors, mode: 'council')
     parts = executors.map { |executor| { 'fragment' => 'Запрос', 'executor' => executor } }
@@ -53,9 +54,7 @@ RSpec.describe Captain::Runtime::ExecutorResolver do
     end
 
     it 'never takes a bare number in the executor for an agent, because the model does not see agent ids' do
-      %w[answer_myself clarify].each do |mode|
-        expect(resolve_ids([12, '13', '1', 'Агент 7'], mode: mode)).to eq([11, 11, 11, 11])
-      end
+      expect(resolve_ids([12, '13', '1', 'Агент 7'], mode: 'clarify')).to eq([11, 11, 11, 11])
       expect { resolve_ids(['12']) }.to raise_error(described_class::UnknownAgentError, /Unknown agent "12"/)
       expect { resolve_ids([13, 'Қабылдау']) }.to raise_error(described_class::UnknownAgentError, /Unknown agent "13"/)
     end
@@ -67,10 +66,8 @@ RSpec.describe Captain::Runtime::ExecutorResolver do
     end
   end
 
-  it 'takes the current agent for an unknown name when the part is the own one' do
-    %w[answer_myself clarify].each do |mode|
-      expect(resolve_ids(['Неизвестный', 'Агент 7'], mode: mode)).to eq([11, 11])
-    end
+  it 'takes the current agent for an unknown name outside a council' do
+    expect(resolve_ids(['Неизвестный', 'Агент 7'], mode: 'clarify')).to eq([11, 11])
   end
 
   it 'fails with the valid names for an unknown name in a council' do
@@ -85,7 +82,7 @@ RSpec.describe Captain::Runtime::ExecutorResolver do
     graph[1][:name] = 'кабылдау'
 
     expect(resolve_ids(['Приём', 'Администратор'])).to eq([14, 11])
-    expect(resolve_ids(['Кабылдау'], mode: 'answer_myself')).to eq([11])
+    expect(resolve_ids(['Кабылдау'], mode: 'clarify')).to eq([11])
     expect { resolve_ids(['Приём', 'Кабылдау']) }.to raise_error(
       described_class::UnknownAgentError,
       "Unknown agent \"Кабылдау\" (several agents share this name). Use one of: Администратор, Лаборатория Анализы, Приём"
@@ -104,7 +101,7 @@ RSpec.describe Captain::Runtime::ExecutorResolver do
     it 'sends a person to the handoff tool, not to the plan, for the former handoff mode, whatever the executor' do
       expect { described_class.new(context).reject_transfer_mode!('handoff') }.to raise_error(
         described_class::TransferToolError,
-        "No other agent can be chosen on this channel. #{person_hint} For your own work use mode answer_myself."
+        "No other agent can be chosen on this channel. #{person_hint} #{own_work_note}"
       )
       expect(described_class::TransferToolError.ancestors).to include(described_class::RetryableError)
       expect(described_class::UnknownAgentError.ancestors).to include(described_class::RetryableError)
@@ -112,12 +109,12 @@ RSpec.describe Captain::Runtime::ExecutorResolver do
 
     it 'fails a council that cannot have two agents' do
       expect { resolve_ids([nil, nil]) }.to raise_error(
-        described_class::RetryableError, 'No other agent can be chosen on this channel; use mode answer_myself.'
+        described_class::RetryableError, "No other agent can be chosen on this channel. #{own_work_note}"
       )
     end
 
     it 'keeps an own part own, whatever number is sent' do
-      expect(resolve_ids(['1', nil], mode: 'answer_myself')).to eq([11, 11])
+      expect(resolve_ids(['1', nil], mode: 'clarify')).to eq([11, 11])
     end
   end
 
@@ -141,7 +138,7 @@ RSpec.describe Captain::Runtime::ExecutorResolver do
     end
 
     it 'lets every other mode through the transfer check' do
-      %w[answer_myself council clarify].each do |mode|
+      %w[council clarify].each do |mode|
         expect(described_class.new(context).reject_transfer_mode!(mode)).to be_nil
       end
     end
@@ -156,13 +153,10 @@ RSpec.describe Captain::Runtime::ExecutorResolver do
       expect(resolve_ids([nil, 'Қабылдау'], mode: 'council')).to eq([11, 12])
     end
 
-    it 'asks an own part that names a peer to use the transfer tool of that peer or to keep the part' do
-      expect(fail_with('answer_myself', ['Қабылдау']).message).to eq(
-        'This part belongs to Қабылдау. Pass the conversation to that colleague with its transfer tool (no plan needed), ' \
-        'or omit the executor to keep it yourself.'
-      )
-      expect(fail_with('answer_myself', ['assistant_13']).message).to start_with('This part belongs to Лаборатория Анализы.')
+    it 'takes a peer named in a plan that is not a council as that peer\'s part, and has no own-work check' do
       expect(resolve_ids(['Қабылдау'], mode: 'clarify')).to eq([12])
+      expect(resolve_ids(['assistant_13'], mode: 'clarify')).to eq([13])
+      expect(described_class.private_instance_methods).not_to include(:check_own!, :check_mode!)
     end
 
     it 'accepts a council of one part when that part continues an open part of another agent' do
@@ -179,15 +173,6 @@ RSpec.describe Captain::Runtime::ExecutorResolver do
 
       expect { described_class.new(context).resolve(new_part, mode: 'council') }.to raise_error(described_class::RetryableError, /at least two different agents/)
       expect(described_class.new(context).resolve(mixed, mode: 'council').pluck('executor_agent_id')).to eq([12, 11])
-    end
-
-    it 'names the council when an own part continues the open part of another agent' do
-      context[:parts] = [{ 'id' => 'peer-part', 'state' => 'waiting_customer', 'executor_agent_id' => 12 }]
-      answer = [{ 'fragment' => 'Давайте в 11', 'link_part_id' => 'peer-part', 'link_action' => 'answer' }]
-
-      expect { described_class.new(context).resolve(answer, mode: 'answer_myself') }.to raise_error(
-        described_class::RetryableError, /This part belongs to Қабылдау\. The customer answers, corrects or cancels a part of another agent: call plan_request with mode council/
-      )
     end
 
     it 'names the council, not the transfer tool, when the former handoff mode is used for such a continuation' do
@@ -225,20 +210,14 @@ RSpec.describe Captain::Runtime::ExecutorResolver do
       expect(link_owner({ 'link_action' => 'answer', 'executor' => 'Администратор' }, mode: 'council')).to eq(12)
       expect(link_owner({ 'link_action' => 'answer', 'executor' => 'Лаборатория Анализы' }, mode: 'council')).to eq(12)
       expect(link_owner({ 'link_action' => 'answer', 'executor' => 'Неизвестный' }, mode: 'council')).to eq(12)
-      expect(link_owner({ 'link_action' => 'new' }, mode: 'answer_myself')).to eq(11)
-      expect(link_owner({ 'link_part_id' => 'gone' }, mode: 'answer_myself')).to eq(11)
+      expect(link_owner({ 'link_action' => 'new' }, mode: 'clarify')).to eq(11)
+      expect(link_owner({ 'link_part_id' => 'gone' }, mode: 'clarify')).to eq(11)
     end
 
     it 'falls back to the current agent when the recorded executor is no longer on the channel' do
       peer_part['executor_agent_id'] = 99
 
-      expect(link_owner({ 'link_action' => 'answer' }, mode: 'answer_myself')).to eq(11)
-    end
-
-    it 'asks an answer to a peer part, given in answer_myself without an executor, to be handed over' do
-      expect { link_owner({ 'link_action' => 'answer' }, mode: 'answer_myself') }.to raise_error(
-        described_class::RetryableError, /This part belongs to Қабылдау/
-      )
+      expect(link_owner({ 'link_action' => 'answer' }, mode: 'clarify')).to eq(11)
     end
   end
 
@@ -253,7 +232,7 @@ RSpec.describe Captain::Runtime::ExecutorResolver do
     expect(resolved.call(link.merge('executor' => 'Угадай'), 'council')).to eq(12)
     expect(resolved.call(link.merge('executor' => 'Лаборатория  анализы'), 'council')).to eq(12)
     expect(resolved.call(link, 'clarify')).to eq(12)
-    expect(resolved.call(link.merge('link_part_id' => 'gone'), 'answer_myself')).to eq(11)
+    expect(resolved.call(link.merge('link_part_id' => 'gone'), 'clarify')).to eq(11)
     expect { resolved.call(link.merge('link_action' => 'new', 'executor' => 'Угадай'), 'council') }.to raise_error(
       described_class::UnknownAgentError
     )

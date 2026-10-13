@@ -25,7 +25,7 @@ RSpec.describe Captain::Runtime::PartPlanTool do
 
   it 'requires a fragment, names the executor by an optional agent name and shows no numeric agent id to the model' do
     schema = described_class.new.params_schema.deep_stringify_keys
-    valid = { 'mode' => 'answer_myself', 'parts' => [{ 'fragment' => 'Цена', 'executor' => 'Администратор' }] }
+    valid = { 'mode' => 'council', 'parts' => [{ 'fragment' => 'Цена', 'executor' => 'Администратор' }] }
     without = ->(key) { valid.deep_dup.tap { |item| item['parts'][0].delete(key) } }
 
     expect(JSONSchemer.schema(schema).valid?(valid)).to be(true)
@@ -65,20 +65,21 @@ RSpec.describe Captain::Runtime::PartPlanTool do
   it 'describes the modes and the optional fields briefly' do
     parameters = described_class.new.parameters
 
-    expect(parameters[:mode].description).to include(
-      'council: parts for different agents, or one linked part of another agent', 'answer_myself: only your own part', 'clarify: one question'
+    expect(parameters[:mode].description).to eq(
+      'council: parts for different agents, or one linked part of another agent. clarify: one question, when two or more open ' \
+      'parts could be meant and the message names none.'
     )
+    expect(parameters.keys).to eq(%i[mode parts clarification])
     expect(parameters[:parts].description).to eq(
       'The parts of the message. A council has at most three; one linked part of another agent is enough.'
     )
     expect(parameters[:clarification].description).to eq('The one precise question, for clarify only.')
-    expect(parameters[:answer].description).to include('fully verified from the data you have and needs no tool')
   end
 
   it 'turns the former executor_agent_id into an agent key and a number in the executor into plain text before validation' do
-    arguments = { mode: 'answer_myself', parts: [{ fragment: 'A', executor_agent_id: 1793 }, { fragment: 'B', executor: 7 },
-                                                 { fragment: 'C', executor: ' ', executor_agent_id: nil },
-                                                 { fragment: 'D', executor: 'Администратор', executor_agent_id: 5 }] }
+    arguments = { mode: 'council', parts: [{ fragment: 'A', executor_agent_id: 1793 }, { fragment: 'B', executor: 7 },
+                                           { fragment: 'C', executor: ' ', executor_agent_id: nil },
+                                           { fragment: 'D', executor: 'Администратор', executor_agent_id: 5 }] }
 
     normalized = described_class.new.normalize_runtime_arguments(arguments, context: {})
 
@@ -106,34 +107,39 @@ RSpec.describe Captain::Runtime::PartPlanTool do
       JSON.parse(rendered.delete_prefix('ERROR: '))
     end
 
-    it 'accepts a guessed number as the current agent in a single-agent setup and lets the booking tool run' do
+    def open_peer_part(id, state: 'waiting_customer')
+      { 'id' => id, 'version' => 1, 'state' => state, 'executor_agent_id' => entry.id + 1000, 'fragment' => id }
+    end
+
+    it 'refuses the former own-work mode with the way to work without a plan, and leaves the agent free to use its tools' do
       booking = PartPlanToolSpecBookingTool.new
       book = Captain::Runtime::ToolWrapper.new(booking, run_context)
 
-      rendered = planner.call(mode: 'answer_myself', parts: [{ fragment: 'Записать на приём', executor_agent_id: 1 }])
-      plan = JSON.parse(rendered)
+      payload = failure_payload(planner.call(mode: 'answer_myself', parts: [{ fragment: 'Записать на приём', executor_agent_id: 1 }]))
 
-      expect(plan['mode']).to eq('answer_myself')
-      expect(plan['parts'].sole).to eq('id' => context[:part_plan][:parts].sole['id'], 'version' => 1, 'executor' => 'Intermedical — DEV Test')
-      expect(context[:part_plan][:parts].sole['executor_agent_id']).to eq(entry.id)
-      expect(context[:part_plan_accepted]).to be(true)
+      expect(payload).to include('retryable' => true, 'error' => 'Invalid request mode. Own work needs no plan: answer or use your tools.')
+      expect(context[:part_plan_accepted]).to be_nil
       expect(book.call(title: 'synthetic visit')).to include('booked synthetic visit')
       expect(booking.calls).to eq(1)
     end
 
-    it 'accepts an unknown executor text as the current agent in answer_myself' do
-      rendered = planner.call(mode: 'answer_myself', parts: [{ fragment: 'Какой адрес?', executor: 'Агент 1' }])
-
-      expect(JSON.parse(rendered)['parts'].sole).to include('executor' => 'Intermedical — DEV Test')
-      expect(context[:part_plan][:parts].sole['executor_agent_id']).to eq(entry.id)
-    end
-
     it 'takes an omitted executor as the current agent and ignores quotes and letter case in its own name' do
+      context[:parts] = [open_peer_part('first'), open_peer_part('second')]
+
       rendered = planner.call(mode: 'clarify', clarification: 'Какой врач нужен?',
                               parts: [{ fragment: 'Запись' }, { fragment: 'Анализы', executor: ' «INTERMEDICAL — dev test» ' }])
 
       expect(JSON.parse(rendered)['parts'].pluck('executor')).to eq(['Intermedical — DEV Test'] * 2)
       expect(context[:part_plan][:parts].pluck('executor_agent_id')).to eq([entry.id] * 2)
+    end
+
+    it 'takes an unknown executor text as the current agent outside a council' do
+      context[:parts] = [open_peer_part('first'), open_peer_part('second')]
+
+      rendered = planner.call(mode: 'clarify', clarification: 'Какой запрос?', parts: [{ fragment: 'Какой адрес?', executor: 'Агент 1' }])
+
+      expect(JSON.parse(rendered)['parts'].sole).to include('executor' => 'Intermedical — DEV Test')
+      expect(context[:part_plan][:parts].sole['executor_agent_id']).to eq(entry.id)
     end
 
     it 'answers the former handoff mode with a retryable error and no accepted plan, in a single-agent setup' do
@@ -142,8 +148,8 @@ RSpec.describe Captain::Runtime::PartPlanTool do
 
       expect(payload).to include('retryable' => true)
       expect(payload['error']).to eq(
-        'No other agent can be chosen on this channel. ' \
-        'To pass the customer to a person call the handoff tool, not plan_request. For your own work use mode answer_myself.'
+        'No other agent can be chosen on this channel. To reach a person call the handoff tool. ' \
+        'Own work needs no plan: answer or use your tools.'
       )
       expect(payload['error']).not_to include('unavailable on this channel')
       expect(context[:part_plan_accepted]).to be_nil
@@ -163,7 +169,7 @@ RSpec.describe Captain::Runtime::PartPlanTool do
 
           expect(failures.pluck('retryable')).to eq([true] * 3)
           expect(failures.pluck('error').uniq.sole).to start_with('No other agent can be chosen on this channel.')
-          expect(failures.first['error']).to include('call the handoff tool, not plan_request')
+          expect(failures.first['error']).to include('To reach a person call the handoff tool.')
           expect(context).not_to include(terminal_key)
           expect(context[:part_plan_accepted]).to be_nil
         end
@@ -173,12 +179,12 @@ RSpec.describe Captain::Runtime::PartPlanTool do
         failures = identical_failures(2, mode: 'council', parts: [{ fragment: 'Адрес' }, { fragment: 'Цена' }])
 
         expect(failures.pluck('retryable')).to eq([true, true])
-        expect(failures.first['error']).to eq('No other agent can be chosen on this channel; use mode answer_myself.')
+        expect(failures.first['error']).to eq('No other agent can be chosen on this channel. Own work needs no plan: answer or use your tools.')
         expect(context).not_to include(terminal_key)
       end
 
       it 'keeps any other rejection of the arguments retryable' do
-        failures = identical_failures(2, mode: 'answer_myself', parts: [{ fragment: 'Да', link_part_id: 'gone', link_action: 'answer' }])
+        failures = identical_failures(2, mode: 'council', parts: [{ fragment: 'Да', link_part_id: 'gone', link_action: 'answer' }])
 
         expect(failures.pluck('retryable')).to eq([true, true])
         expect(failures.first['error']).to eq('Linked part is not open')
@@ -192,20 +198,15 @@ RSpec.describe Captain::Runtime::PartPlanTool do
         expect(planner.call(**arguments)).to be_a(RubyLLM::Tool::Halt)
         expect(context).to include(terminal_key)
       end
-
-      it 'leaves only a second plan for an already planned message non-retryable' do
-        context.delete(:agent_session)
-        planner.call(mode: 'answer_myself', parts: [{ fragment: 'Адрес клиники' }])
-
-        payload = failure_payload(planner.call(mode: 'clarify', clarification: 'Какой врач?', parts: [{ fragment: 'Запись' }]))
-
-        expect(payload).to include('retryable' => false, 'error' => 'This message already has a plan')
-      end
     end
 
     context 'with a second agent on the channel' do
       let(:graph) { [entry_agent, lab_agent] }
       let(:own_part) { { fragment: 'Адрес клиники' } }
+
+      def open_lab_part(id)
+        { 'id' => id, 'version' => 1, 'state' => 'waiting_customer', 'executor_agent_id' => lab_agent[:id], 'fragment' => id }
+      end
 
       # A part of a colleague is planned only in a council (two agents); one colleague alone is the colleague's transfer tool.
       def council_with_lab(lab_part)
@@ -222,7 +223,7 @@ RSpec.describe Captain::Runtime::PartPlanTool do
         expect(payload).to include('retryable' => true)
         expect(payload['error']).to eq(
           'plan_request has no handoff mode. To pass the conversation to one colleague, call that colleague\'s transfer tool ' \
-          'without a plan. Colleagues: Лаборатория. To pass the customer to a person call the handoff tool, not plan_request. ' \
+          'without a plan. Colleagues: Лаборатория. To reach a person call the handoff tool. ' \
           'plan_request is only for a council (separate requests for different agents) and for the answer to an open part.'
         )
         expect(context[:part_plan_accepted]).to be_nil
@@ -239,7 +240,7 @@ RSpec.describe Captain::Runtime::PartPlanTool do
       end
 
       it 'does not list handoff among the modes a plan can have' do
-        expect(Captain::Runtime::PartRegistry::MODES).to eq(%w[answer_myself council clarify])
+        expect(Captain::Runtime::PartRegistry::MODES).to eq(%w[council clarify])
         expect(described_class.new.parameters[:mode].description).not_to include('handoff')
       end
 
@@ -288,15 +289,21 @@ RSpec.describe Captain::Runtime::PartPlanTool do
         expect(context[:part_plan_accepted]).to be_nil
       end
 
-      it 'asks an own part that names the peer for the transfer tool of that peer, and lets a council with that peer through' do
+      it 'refuses the former own-work mode even for a peer, and lets a council with that peer through' do
         payload = failure_payload(planner.call(mode: 'answer_myself', parts: [{ fragment: 'Сдать анализы', executor: 'Лаборатория' }]))
 
-        expect(payload).to include(
-          'retryable' => true,
-          'error' => 'This part belongs to Лаборатория. Pass the conversation to that colleague with its transfer tool ' \
-                     '(no plan needed), or omit the executor to keep it yourself.'
-        )
+        expect(payload).to include('retryable' => true,
+                                   'error' => 'Invalid request mode. Own work needs no plan: answer or use your tools.')
         expect(JSON.parse(council_with_lab({ fragment: 'Сдать анализы', executor: 'Лаборатория' }))['mode']).to eq('council')
+      end
+
+      it 'leaves only a second plan for an already planned message non-retryable' do
+        context.delete(:agent_session)
+        council_with_lab({ fragment: 'Сдать анализы', executor: 'Лаборатория' })
+
+        payload = failure_payload(planner.call(mode: 'clarify', clarification: 'Какой врач?', parts: [{ fragment: 'Запись' }]))
+
+        expect(payload).to include('retryable' => false, 'error' => 'This message already has a plan')
       end
 
       def wait_for_the_customer(part)
@@ -306,15 +313,11 @@ RSpec.describe Captain::Runtime::PartPlanTool do
         context[:agent_request_id] = "next-request-#{SecureRandom.hex(3)}"
       end
 
-      it 'keeps a peer part with its owner when the answer to it names no executor, and asks for a council in answer_myself' do
+      it 'keeps a peer part with its owner when the answer to it names no executor' do
         council_with_lab({ fragment: 'Записать на анализ', executor: 'Лаборатория' })
         part = lab_part_of_plan
         wait_for_the_customer(part)
         reply = { fragment: 'Завтра', link_part_id: part['id'], link_action: 'answer' }
-
-        own = failure_payload(planner.call(mode: 'answer_myself', parts: [reply]))
-        expect(own).to include('retryable' => true)
-        expect(own['error']).to start_with('This part belongs to Лаборатория.').and include('mode council and ONLY that part linked')
 
         rendered = planner.call(mode: 'council', parts: [reply.merge(fragment: 'Завтра в десять'),
                                                           { fragment: 'Адрес клиники', link_action: 'new' }])
@@ -430,20 +433,89 @@ RSpec.describe Captain::Runtime::PartPlanTool do
         expect(failure).to include('retryable' => true)
         expect(failure['error']).to start_with('Unknown agent "Лаборатория" (several agents share this name).')
         expect(failure['error']).not_to include('Use one of: Лаборатория')
-        expect(planner.call(mode: 'answer_myself', parts: [{ fragment: 'Анализы', executor: 'Лаборатория' }])).to include('Intermedical')
+        context[:parts] = [open_lab_part('first'), open_lab_part('second')]
+        outside_a_council = planner.call(mode: 'clarify', clarification: 'Какой запрос?', parts: [{ fragment: 'Анализы', executor: 'Лаборатория' }])
+
+        expect(outside_a_council).to include('Intermedical')
       end
     end
   end
 
-  it 'describes a coordination tool between agents, not a step before the agent\'s own actions or a transfer' do
+  it 'describes a coordination tool between agents in positive words: when to call it and what it does' do
     description = described_class.new.description
 
     expect(description).to eq(
-      'Coordinate with other agents: split one message into parts for different agents (a council), or send the patient\'s answer, ' \
-      'correction or cancellation of an open part to the agent that owns it. Not for your own work, and not for passing the whole ' \
-      'conversation to one colleague: use that colleague\'s transfer tool.'
+      'Coordinate with other agents. Call it once for a message that holds requests for two or more agents: it splits the message ' \
+      'into parts (a council) and each agent does its part right away. Call it also to send the patient\'s answer, correction or ' \
+      'cancellation of an open part to the agent that owns it.'
     )
+    expect(description).not_to match(/\b(?:not|never|don't)\b/i)
     expect(description).not_to include('transfer the conversation to another agent', 'before using action tools', 'exact ID')
+  end
+
+  describe 'the audit log' do
+    let(:entry) { create(:captain_assistant) }
+    let(:session) { Captain::Conversation::AgentSession.new(entry: entry) }
+    let(:lab_agent) { { id: entry.id + 1000, key: "assistant_#{entry.id + 1000}", name: 'Лаборатория', description: 'Анализы' } }
+    let(:context) do
+      { state: { assistant_id: entry.id, account_id: entry.account_id, captain_runtime: {}, source: 'benchmark', conversation: { id: 5 } },
+        agent_graph: [{ id: entry.id, name: 'Администратор' }, lab_agent], agent_session: session, agent_request_id: 'audited',
+        parts: [], agent_tasks: [], current_agent: "assistant_#{entry.id}" }
+    end
+    let(:planner) { Captain::Runtime::ToolWrapper.new(described_class.new, Captain::Runtime::RunContext.new(context)) }
+    let(:rows) { Enterprise::AuditLog.where(associated_type: 'Account', associated_id: entry.account_id, action: 'captain_tool_execute') }
+    let(:parts) { [{ fragment: 'Адрес клиники' }, { fragment: 'Цена анализа', executor: 'Лаборатория' }] }
+
+    before do
+      session.update_routing(actor_id: entry.id)
+      entry.account.enable_features!('audit_logs')
+    end
+
+    it 'records a plan with its arguments, so that a report can show what was planned' do
+      planner.call(mode: 'council', parts: parts)
+
+      expect(rows.count).to eq(1)
+      expect(rows.first.audited_changes).to include('tool_id' => 'plan_request', 'result_success' => true, 'source' => 'benchmark',
+                                                    'current_agent' => "assistant_#{entry.id}", 'conversation_id' => 5)
+      expect(rows.first.audited_changes['arguments']).to include(
+        'mode' => 'council', 'parts' => [include('fragment' => 'Адрес клиники'), include('fragment' => 'Цена анализа', 'executor' => 'Лаборатория')]
+      )
+    end
+
+    it 'records a refused plan too, and the link of a part under keys that the log does not hide' do
+      planner.call(mode: 'clarify', clarification: 'Какой запрос?',
+                   parts: [{ fragment: 'Да', link_part_id: '9', link_action: 'answer' }])
+
+      changes = rows.first.audited_changes
+      expect(changes).to include('result_success' => false)
+      expect(changes['arguments']['clarification']).to eq('Какой запрос?')
+      expect(changes['arguments']['parts']).to eq([{ 'fragment' => 'Да', 'open_part' => '9', 'reaction' => 'answer' }])
+    end
+
+    it 'is the arguments that the benchmark trace shows for a plan_request call' do
+      planner.call(mode: 'council', parts: parts)
+      event = Struct.new(:event_name, :tool_name, :payload).new('llm.tool.complete', 'plan_request', { 'result_success' => true })
+
+      calls = Captain::Evals::RoutingBenchmark::ToolTrace.build(
+        events: [event], audits: Captain::Evals::RoutingBenchmark::ToolTrace.audits_after(entry.account, 0)
+      )
+
+      expect(calls.sole).to include(tool: 'plan_request', success: true, audited: true, arguments: include('mode' => 'council'))
+    end
+
+    it 'writes nothing for an account without audit_logs' do
+      entry.account.disable_features!('audit_logs')
+
+      expect(JSON.parse(planner.call(mode: 'council', parts: parts))).to include('mode' => 'council')
+      expect(rows.count).to eq(0)
+    end
+
+    it 'never fails the plan when the log cannot be written' do
+      allow(Captain::ToolExecutionAuditService).to receive(:record).and_raise(StandardError, 'log down')
+
+      expect(JSON.parse(planner.call(mode: 'council', parts: parts))).to include('mode' => 'council')
+      expect(context[:part_plan_accepted]).to be(true)
+    end
   end
 end
 # rubocop:enable Lint/ConstantDefinitionInBlock

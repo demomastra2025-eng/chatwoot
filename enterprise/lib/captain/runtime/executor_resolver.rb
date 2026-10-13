@@ -2,7 +2,7 @@
 
 # The model names the agent that owns a request part by the name shown in the coordination prompt and never sees agent ids.
 # The part registry stores ids, so the name is resolved here, in one place, before a plan is accepted. A plan that contradicts
-# itself (a council of one agent, an own part that names a peer, a plan in the former handoff mode) is rejected here with a
+# itself (a council of one agent, a plan in the former handoff mode) is rejected here with a
 # retryable error that tells the model what to change, so a correctable plan never ends the turn in the generic error.
 class Captain::Runtime::ExecutorResolver
   # The model can correct the call and plan again.
@@ -22,7 +22,8 @@ class Captain::Runtime::ExecutorResolver
   STRICT_MODES = %w[council].freeze
   COUNCIL_HINT = Captain::Runtime::PartRegistry::COUNCIL_HINT
   EDGE_NOISE = /\A[[:space:]"'`«»“”„‘’‹›]+|[[:space:]"'`«»“”„‘’‹›]+\z/
-  PERSON_HINT = 'To pass the customer to a person call the handoff tool, not plan_request.'
+  PERSON_HINT = 'To reach a person call the handoff tool.'
+  OWN_WORK_NOTE = Captain::Runtime::PartRegistry::OWN_WORK_NOTE
 
   def self.normalize(value)
     text = value.to_s
@@ -44,7 +45,7 @@ class Captain::Runtime::ExecutorResolver
 
     items = parts.map { |raw| raw.to_h.deep_stringify_keys }
     resolved = items.map { |item| with_executor_id(item, mode) }
-    check_mode!(mode, resolved)
+    check_council!(resolved) if mode == 'council'
     resolved
   end
 
@@ -133,13 +134,6 @@ class Captain::Runtime::ExecutorResolver
     end
   end
 
-  def check_mode!(mode, resolved)
-    case mode
-    when 'council' then check_council!(resolved)
-    when 'answer_myself' then check_own!(resolved)
-    end
-  end
-
   # A council is separate requests for at least two agents, or the continuation of open parts (one part is enough: the
   # customer answers a question of the agent that asked it).
   def check_council!(resolved)
@@ -152,17 +146,6 @@ class Captain::Runtime::ExecutorResolver
                           "Use one of: #{names.join(', ')}"
   end
 
-  def check_own!(resolved)
-    foreign = resolved.find { |item| item['executor_agent_id'] != @current_id }
-    return unless foreign
-
-    name = name_for(foreign['executor_agent_id']) || 'another agent'
-    raise RetryableError, "This part belongs to #{name}. #{COUNCIL_HINT}" if continuation?(foreign)
-
-    raise RetryableError, "This part belongs to #{name}. " \
-                          'Pass the conversation to that colleague with its transfer tool (no plan needed), or omit the executor to keep it yourself.'
-  end
-
   def unknown_message(reference, ambiguous)
     shown = reference.to_s.squish.first(80)
     lead = ambiguous ? %(Unknown agent "#{shown}" (several agents share this name).) : %(Unknown agent "#{shown}".)
@@ -173,9 +156,9 @@ class Captain::Runtime::ExecutorResolver
   end
 
   def no_peer_message(mode)
-    return "No other agent can be chosen on this channel. #{PERSON_HINT} For your own work use mode answer_myself." if mode == 'handoff'
+    return "No other agent can be chosen on this channel. #{PERSON_HINT} #{OWN_WORK_NOTE}" if mode == 'handoff'
 
-    'No other agent can be chosen on this channel; use mode answer_myself.'
+    "No other agent can be chosen on this channel. #{OWN_WORK_NOTE}"
   end
 
   # Only names that point to exactly one agent can be used; excluding the current agent lists the colleagues.

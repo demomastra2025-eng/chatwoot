@@ -4,19 +4,19 @@ class Captain::Runtime::PartPlanTool < Captain::Runtime::Tool
   EXECUTOR_DESCRIPTION = 'Agent name exactly as listed. Omit it for your own parts. Staff are not an agent: use the handoff tool.'
   # The cancellation of parts that never acted runs no agent: the model that planned it answers (see Runner#handle_plan).
   CANCELLED_NOTE = 'The cancellation is recorded and nothing else is to be done. Reply to the patient now: confirm it in one short sentence.'
+  AUDIT_TOOL = { id: 'plan_request', title: 'Plan request', risk_level: 'low' }.freeze
+  # The audit log hides every key that contains "link" (it may hold a URL), so the link of a part is written under these keys.
+  AUDIT_KEYS = { 'link_part_id' => 'open_part', 'link_action' => 'reaction' }.freeze
 
-  description 'Coordinate with other agents: split one message into parts for different agents (a council), or send the patient\'s ' \
-              'answer, correction or cancellation of an open part to the agent that owns it. Not for your own work, and not for ' \
-              'passing the whole conversation to one colleague: use that colleague\'s transfer tool.'
+  description 'Coordinate with other agents. Call it once for a message that holds requests for two or more agents: it splits the ' \
+              'message into parts (a council) and each agent does its part right away. Call it also to send the patient\'s answer, ' \
+              'correction or cancellation of an open part to the agent that owns it.'
   param :mode, type: 'string', required: true,
-               desc: 'council: parts for different agents, or one linked part of another agent. answer_myself: only your own part. ' \
-                     'clarify: one question when it is unclear which open part the message answers.'
+               desc: 'council: parts for different agents, or one linked part of another agent. clarify: one question, when ' \
+                     'two or more open parts could be meant and the message names none.'
   param :parts, type: 'array', required: true,
                 desc: 'The parts of the message. A council has at most three; one linked part of another agent is enough.'
   param :clarification, type: 'string', desc: 'The one precise question, for clarify only.', required: false
-  param :answer, type: 'string', required: false,
-                 desc: 'For one simple part of your own: the final answer, only when it is fully verified from the data you have ' \
-                       'and needs no tool.'
 
   def name = 'plan_request'
 
@@ -42,13 +42,22 @@ class Captain::Runtime::PartPlanTool < Captain::Runtime::Tool
   # Every rejection of the plan is something the model can correct by calling plan_request again, so it is retryable:
   # a non-retryable failure would turn the identical second call into a terminal stop and end the turn in the generic error.
   # Only a second, different plan for a message that is already planned cannot be corrected.
-  def perform(tool_context, mode:, parts:, clarification: nil, answer: nil)
-    context = tool_context.run_context.context
+  # The call is written to the audit log with its arguments (an account with audit_logs), so that a report can show what was planned.
+  # A model that still sends the former `answer` is understood: the parameter is dropped, the agent replies itself.
+  def perform(tool_context, mode:, parts:, clarification: nil, **_former)
+    result = accept_plan(tool_context.run_context.context, mode, parts, clarification)
+    audit(tool_context, { mode: mode, parts: audit_parts(parts), clarification: clarification }.compact, result)
+    result
+  end
+
+  private
+
+  def accept_plan(context, mode, parts, clarification)
     parts = with_part_ids(parts, context[:parts])
     resolver = Captain::Runtime::ExecutorResolver.new(context)
     resolver.reject_transfer_mode!(mode, parts)
     plan = Captain::Runtime::PartRegistry.new(context).accept!(
-      mode: mode, parts: parts, clarification: clarification, answer: answer
+      mode: mode, parts: parts, clarification: clarification
     ) { |items| resolver.resolve(items, mode: mode) }
     result = { mode: plan[:mode], parts: plan[:parts].map { |part| presented(part, resolver) } }
     result[:note] = CANCELLED_NOTE if plan[:parts].all? { |part| part['link_action'] == 'cancellation' }
@@ -58,8 +67,6 @@ class Captain::Runtime::PartPlanTool < Captain::Runtime::Tool
   rescue ArgumentError, TypeError, KeyError => e
     rejected(e.message, retryable: e.message != Captain::Runtime::PartRegistry::ALREADY_PLANNED)
   end
-
-  private
 
   def part_properties
     {
@@ -88,10 +95,39 @@ class Captain::Runtime::PartPlanTool < Captain::Runtime::Tool
                                           'cancellation: the patient\'s reaction to the linked part.' }
     }
   end
+
   def rejected(message, retryable:, reason: nil)
     audit = { failure_stage: 'tool_arguments', mutation_executed: false }
     audit[:failure_reason] = reason if reason
     Captain::ToolResult.failure(error: message, retryable: retryable, audit: audit)
+  end
+
+  # What the model planned, for the audit log: the ToolTrace of a benchmark turn reads the arguments of a call from it. Monitoring
+  # never changes the reply, so a failure to write is dropped.
+  def audit(tool_context, arguments, result)
+    context = tool_context.run_context.context
+    state = context[:state].to_h
+    assistant = Captain::Assistant.find_by(id: state[:assistant_id], **{ account_id: state[:account_id] }.compact)
+    return unless assistant
+
+    Captain::ToolExecutionAuditService.record(
+      assistant: assistant, scope_name: Captain::ToolAccess::SCOPE_AGENT, tool_definition: AUDIT_TOOL, arguments: arguments,
+      result: result, runtime_context: audit_context(state, context)
+    )
+  rescue StandardError
+    nil
+  end
+
+  def audit_parts(parts)
+    return parts unless parts.is_a?(Array)
+
+    parts.map { |part| part.is_a?(Hash) ? part.transform_keys { |key| AUDIT_KEYS.fetch(key.to_s, key) } : part }
+  end
+
+  def audit_context(state, context)
+    conversation = state[:conversation].to_h
+    { conversation_id: conversation[:id], conversation_display_id: conversation[:display_id], source: state[:source],
+      current_agent: context[:current_agent] }.compact
   end
 
   # The model links a part by the number it is listed with (#3); the registry stores the exact id. A reference that points at no

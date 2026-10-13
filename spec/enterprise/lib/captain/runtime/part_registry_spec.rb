@@ -6,8 +6,13 @@ RSpec.describe Captain::Runtime::PartRegistry do
       agent_request_id: 'synthetic-request', parts: [] }
   end
 
-  def plan(parts, mode: 'answer_myself', clarification: nil)
+  # A council needs parts of two agents; the first part is the current agent's (1), the second one a colleague's (2).
+  def plan(parts, mode: 'council', clarification: nil)
     described_class.new(context).accept!(mode: mode, parts: parts, clarification: clarification)
+  end
+
+  def waiting_part(id, executor, **attributes)
+    { 'id' => id, 'version' => 1, 'state' => 'waiting_customer', 'executor_agent_id' => executor, 'fragment' => id }.merge(attributes)
   end
 
   def next_message
@@ -44,6 +49,23 @@ RSpec.describe Captain::Runtime::PartRegistry do
     it 'returns a number that points at no stored part as it was written, so the plan is refused as not open' do
       expect(%w[0 4 #0].map { |reference| described_class.part_id_for(stored, reference) }).to eq(%w[0 4 #0])
       expect(described_class.part_id_for(nil, '1')).to eq('1')
+    end
+  end
+
+  describe '.listed_parts' do
+    it 'lists the open parts of the other agents: waiting, open and unresolved ones' do
+      context[:parts] = [waiting_part('a', 2), waiting_part('b', 2, 'state' => 'open'), waiting_part('c', 2, 'state' => 'unknown'),
+                         waiting_part('d', 2, 'state' => 'done'), waiting_part('e', 2, 'state' => 'answered')]
+
+      expect(described_class.listed_parts(context).pluck('id')).to eq(%w[a b c])
+    end
+
+    it 'leaves out the own parts of the agent and the parts handed to staff' do
+      context[:parts] = [waiting_part('own', 1), waiting_part('staff', 2, 'state' => 'unknown', 'handed_to_staff' => true), waiting_part('peer', 2)]
+
+      expect(described_class.listed_parts(context).pluck('id')).to eq(['peer'])
+      expect(described_class.listed_parts(context.merge(state: { assistant_id: 2 })).pluck('id')).to eq(['own'])
+      expect(described_class.listed_parts(context.merge(parts: nil))).to eq([])
     end
   end
 
@@ -120,44 +142,90 @@ RSpec.describe Captain::Runtime::PartRegistry do
     expect { plan(four, mode: 'council') }.to raise_error(ArgumentError, /one to three/)
   end
 
-  it 'accepts a verified answer with one simple part in the plan call' do
-    accepted = described_class.new(context).accept!(
-      mode: 'answer_myself', parts: [{ fragment: 'Режим работы', executor_agent_id: 1 }],
-      answer: 'Сегодня до 18:00.'
+  it 'has no own-work plan: a plan for the agent\'s own part is refused with the way to work without one' do
+    expect { plan([{ fragment: 'Режим работы', executor_agent_id: 1 }], mode: 'answer_myself') }.to raise_error(
+      ArgumentError, 'Invalid request mode. Own work needs no plan: answer or use your tools.'
     )
-
-    expect(accepted[:answer]).to eq('Сегодня до 18:00.')
-    expect(accepted[:parts].sole['executor_agent_id']).to eq(1)
   end
 
   it 'starts a part with nothing recorded about its outcome' do
-    part = plan([{ fragment: 'Visit', executor_agent_id: 1 }])[:parts].sole
+    part = plan([{ fragment: 'Visit', executor_agent_id: 1 }, { fragment: 'Price', executor_agent_id: 2 }])[:parts].first
 
     expect(part).to include('version' => 1, 'state' => 'open', 'missing_fields' => [], 'summary' => nil, 'acted' => false,
-                            'prior_summary' => nil, 'prior_questions' => [], 'prior_acted' => false)
+                            'prior_summary' => nil, 'prior_state' => nil, 'prior_questions' => [], 'prior_acted' => false)
     expect(part).not_to have_key('proposed_operation')
   end
 
+  it 'stores the plan without an answer' do
+    accepted = plan([{ fragment: 'Visit', executor_agent_id: 1 }, { fragment: 'Price', executor_agent_id: 2 }], mode: 'council')
+
+    expect(accepted.keys).to eq(%i[mode parts clarification])
+  end
+
   it 'links an answer to one open part and also creates a separately declared new part' do
-    old = plan([{ fragment: 'Visit', executor_agent_id: 1 }])[:parts].sole
+    old = plan([{ fragment: 'Visit', executor_agent_id: 1 }, { fragment: 'Cleaning', executor_agent_id: 2 }])[:parts].first
     next_message
     current = plan([
       { fragment: 'Tomorrow', executor_agent_id: 1, link_part_id: old['id'], link_action: 'answer' },
-      { fragment: 'Price', executor_agent_id: 1, link_action: 'new' }
+      { fragment: 'Price', executor_agent_id: 2, link_action: 'new' }
     ])[:parts]
 
     expect(current.first).to include('id' => old['id'], 'version' => 2)
     expect(current.last['id']).not_to eq(old['id'])
-    expect(context[:parts].size).to eq(2)
+    expect(context[:parts].size).to eq(3)
   end
 
-  it 'requires an explicit new request when an older part remains open' do
-    plan([{ fragment: 'Visit', executor_agent_id: 1 }])
+  it 'requires an explicit new request when an open part of another agent remains' do
+    plan([{ fragment: 'Visit', executor_agent_id: 2 }, { fragment: 'Price', executor_agent_id: 1 }])
     next_message
 
-    expect { plan([{ fragment: 'Tomorrow', executor_agent_id: 1 }]) }.to raise_error(ArgumentError, /link an open part/)
-    expect(plan([{ fragment: 'Tomorrow', executor_agent_id: 1 }], mode: 'clarify',
-                clarification: 'К какому запросу относится ответ?')[:mode]).to eq('clarify')
+    expect { plan([{ fragment: 'Tomorrow', executor_agent_id: 1 }, { fragment: 'Cleaning', executor_agent_id: 2 }]) }.to raise_error(
+      ArgumentError, /link an open part/
+    )
+    expect(plan([{ fragment: 'Tomorrow', executor_agent_id: 1, link_action: 'new' },
+                 { fragment: 'Cleaning', executor_agent_id: 2, link_action: 'new' }])[:mode]).to eq('council')
+  end
+
+  it 'asks for no decision about a part the model is not shown: the own parts of the agent and the parts handed to staff' do
+    context[:parts] = [waiting_part('own', 1), waiting_part('staff', 2, 'state' => 'unknown', 'handed_to_staff' => true)]
+
+    expect(plan([{ fragment: 'Tomorrow', executor_agent_id: 1 }, { fragment: 'Cleaning', executor_agent_id: 2 }])[:parts].size).to eq(2)
+  end
+
+  describe 'the clarifying question' do
+    def clarify
+      plan([{ fragment: 'Да', executor_agent_id: 1 }], mode: 'clarify', clarification: 'К какому запросу относится ответ?')
+    end
+
+    it 'needs two or more open parts of other agents that the message could mean' do
+      context[:parts] = [waiting_part('a', 2), waiting_part('b', 2)]
+
+      expect(clarify[:mode]).to eq('clarify')
+      expect(context[:part_plan][:clarification]).to eq('К какому запросу относится ответ?')
+    end
+
+    it 'sends a message to the one open part it can only mean, as a retryable rejection the model can correct' do
+      context[:parts] = [waiting_part('a', 2)]
+
+      expect { clarify }.to raise_error(ArgumentError, 'One part is open: link the message to it by its number.')
+      expect(context[:part_plan_accepted]).to be_nil
+    end
+
+    it 'has nothing to clarify when no part is open, and counts neither the own parts nor the parts handed to staff' do
+      expect { clarify }.to raise_error(ArgumentError, 'No part is open: reply to the patient yourself.')
+
+      staff = waiting_part('staff', 2, 'state' => 'unknown', 'handed_to_staff' => true)
+      context[:parts] = [waiting_part('own', 1), waiting_part('own two', 1), staff, waiting_part('peer', 2)]
+      expect { clarify }.to raise_error(ArgumentError, 'One part is open: link the message to it by its number.')
+    end
+
+    it 'still needs a precise question' do
+      context[:parts] = [waiting_part('a', 2), waiting_part('b', 2)]
+
+      expect { plan([{ fragment: 'Да', executor_agent_id: 1 }], mode: 'clarify', clarification: ' ') }.to raise_error(
+        ArgumentError, 'Clarification must be precise'
+      )
+    end
   end
 
   describe 'a continuation: the answer of the customer to an open part of another agent' do
@@ -179,7 +247,8 @@ RSpec.describe Captain::Runtime::PartRegistry do
       expect(accepted[:mode]).to eq('council')
       expect(accepted[:parts].sole).to include('id' => old['id'], 'version' => 2, 'executor_agent_id' => 2, 'link_action' => 'answer',
                                                'state' => 'open', 'acted' => false, 'summary' => nil,
-                                               'prior_summary' => question, 'prior_questions' => [question], 'prior_acted' => false)
+                                               'prior_summary' => question, 'prior_state' => 'waiting_customer',
+                                               'prior_questions' => [question], 'prior_acted' => false)
     end
 
     it 'does not give the acting agent the scope of the part: the conversation does not change hands' do
@@ -201,8 +270,17 @@ RSpec.describe Captain::Runtime::PartRegistry do
       end.to raise_error(ArgumentError, 'Council needs at least two agents')
     end
 
-    it 'rejects the own-part mode for a part of another agent and names the council' do
-      expect { continue(mode: 'answer_myself') }.to raise_error(ArgumentError, /This part belongs to another agent.*mode council and ONLY that part linked/)
+    it 'refuses the former own-part mode and tells that own work needs no plan' do
+      expect { continue(mode: 'answer_myself') }.to raise_error(ArgumentError, /Own work needs no plan/)
+    end
+
+    it 'remembers how the part before it ended, so that an unresolved part is not taken for a conclusion' do
+      described_class.new(context).record_result!(old['id'], state: 'unknown', summary: 'Не нашла.')
+      next_message
+
+      part = continue[:parts].sole
+
+      expect(part).to include('prior_state' => 'unknown', 'prior_summary' => 'Не нашла.', 'prior_acted' => false)
     end
 
     it 'takes the former link action confirmation as an answer, also when the part never proposed anything' do
@@ -242,9 +320,9 @@ RSpec.describe Captain::Runtime::PartRegistry do
 
   it 'links a new dependent part to the part planned right before it and keeps that link in the next version' do
     first, second = plan([{ fragment: 'Отменить визит', executor_agent_id: 1 },
-                          { fragment: 'Записать на другое время', executor_agent_id: 1, relation: 'depends_on' }])[:parts]
+                          { fragment: 'Записать на другое время', executor_agent_id: 2, relation: 'depends_on' }])[:parts]
     next_message
-    again = plan([{ fragment: 'Да', executor_agent_id: 1, link_part_id: second['id'], link_action: 'answer' },
+    again = plan([{ fragment: 'Да', executor_agent_id: 2, link_part_id: second['id'], link_action: 'answer' },
                   { fragment: 'Да', executor_agent_id: 1, link_part_id: first['id'], link_action: 'answer' }])[:parts]
 
     expect(first).not_to have_key('depends_on_part_id')
@@ -253,10 +331,11 @@ RSpec.describe Captain::Runtime::PartRegistry do
   end
 
   it 'links a conditional part to the part before it too, and no part without a part before it' do
-    lone = plan([{ fragment: 'Записать после отмены', executor_agent_id: 1, relation: 'depends_on' }])[:parts].sole
+    lone = plan([{ fragment: 'Записать после отмены', executor_agent_id: 1, relation: 'depends_on' },
+                 { fragment: 'Цена', executor_agent_id: 2 }])[:parts].first
     next_message
     first, conditional = plan([{ fragment: 'Записать на пятницу', executor_agent_id: 1, link_action: 'new' },
-                               { fragment: 'Если нет, на субботу', executor_agent_id: 1, relation: 'conditional', link_action: 'new' }])[:parts]
+                               { fragment: 'Если нет, на субботу', executor_agent_id: 2, relation: 'conditional', link_action: 'new' }])[:parts]
 
     expect(lone).not_to have_key('depends_on_part_id')
     expect(conditional['depends_on_part_id']).to eq(first['id'])
@@ -270,8 +349,8 @@ RSpec.describe Captain::Runtime::PartRegistry do
     first_context = { state: { assistant_id: entry.id }, agent_graph: [{ id: entry.id }, { id: specialist.id }],
                       agent_session: session, agent_request_id: 'first', parts: [] }
     first = described_class.new(first_context).accept!(
-      mode: 'answer_myself', parts: [{ fragment: 'Запись', executor_agent_id: entry.id }]
-    )[:parts].sole
+      mode: 'council', parts: [{ fragment: 'Запись', executor_agent_id: entry.id }, { fragment: 'Цена', executor_agent_id: specialist.id }]
+    )[:parts].first
     session.update_routing(actor_id: specialist.id)
     next_context = { state: { assistant_id: specialist.id }, agent_graph: first_context[:agent_graph],
                      agent_session: session, agent_request_id: 'second', parts: session.read['parts'] }
@@ -281,7 +360,7 @@ RSpec.describe Captain::Runtime::PartRegistry do
     )[:parts].sole
 
     expect(linked).to include('id' => first['id'], 'version' => 2, 'executor_agent_id' => entry.id)
-    expect(session.read['parts'].sole['version']).to eq(2)
+    expect(session.read['parts'].first['version']).to eq(2)
   end
 
   it 'keeps a completed operation receipt for its part' do
@@ -304,8 +383,8 @@ RSpec.describe Captain::Runtime::PartRegistry do
   end
 
   it 'has no handoff mode: a transfer to one colleague is that colleague\'s own tool, not a plan' do
-    expect(described_class::MODES).to eq(%w[answer_myself council clarify])
-    expect { plan([{ fragment: 'Book', executor_agent_id: 2 }], mode: 'handoff') }.to raise_error(ArgumentError, 'Invalid request mode')
+    expect(described_class::MODES).to eq(%w[council clarify])
+    expect { plan([{ fragment: 'Book', executor_agent_id: 2 }], mode: 'handoff') }.to raise_error(ArgumentError, /\AInvalid request mode/)
   end
 
   it 'has no link action confirmation and no state that waits for one' do
@@ -317,39 +396,41 @@ RSpec.describe Captain::Runtime::PartRegistry do
   it 'turns the parts through the given block only for a new plan and replays a saved plan as it was' do
     entry = create(:captain_assistant)
     session = Captain::Conversation::AgentSession.new(entry: entry)
-    registry_context = { state: { assistant_id: entry.id }, agent_graph: [{ id: entry.id }], agent_session: session,
+    specialist = create(:captain_assistant, account: entry.account)
+    registry_context = { state: { assistant_id: entry.id }, agent_graph: [{ id: entry.id }, { id: specialist.id }], agent_session: session,
                          agent_request_id: 'once', parts: [] }
     turned = []
     block = lambda do |items|
       turned << items
-      items.map { |item| item.merge(executor_agent_id: entry.id) }
+      items.each_with_index.map { |item, index| item.merge(executor_agent_id: index.zero? ? entry.id : specialist.id) }
     end
+    asked = [{ fragment: 'Адрес' }, { fragment: 'Цена' }]
 
-    first = described_class.new(registry_context).accept!(mode: 'answer_myself', parts: [{ fragment: 'Адрес' }], &block)
+    first = described_class.new(registry_context).accept!(mode: 'council', parts: asked, &block)
     replay_context = registry_context.merge(parts: session.read['parts'])
     replay_context.delete(:part_plan_accepted)
-    replayed = described_class.new(replay_context).accept!(mode: 'answer_myself', parts: [{ fragment: 'Другое' }], &block)
+    replayed = described_class.new(replay_context).accept!(mode: 'council', parts: [{ fragment: 'Другое' }, { fragment: 'Иное' }], &block)
 
-    expect(first[:parts].sole).to include('executor_agent_id' => entry.id, 'fragment' => 'Адрес')
-    expect(replayed[:parts].sole['fragment']).to eq('Адрес')
-    expect(turned).to eq([[{ fragment: 'Адрес' }]])
+    expect(first[:parts].first).to include('executor_agent_id' => entry.id, 'fragment' => 'Адрес')
+    expect(replayed[:parts].pluck('fragment')).to eq(%w[Адрес Цена])
+    expect(turned).to eq([asked])
   end
 
   describe '#record_result!' do
-    let(:part) { plan([{ fragment: 'Запись', executor_agent_id: 1 }])[:parts].sole }
+    let(:part) { plan([{ fragment: 'Запись', executor_agent_id: 1 }, { fragment: 'Цена', executor_agent_id: 2 }])[:parts].first }
 
     it 'stores only the keys it is given, in the stored part, and caps the summary' do
       registry = described_class.new(context)
       registry.record_result!(part['id'], state: 'done', summary: 'x' * 700, missing_fields: [], acted: true)
 
-      expect(context[:parts].sole).to include('state' => 'done', 'acted' => true, 'missing_fields' => [], 'fragment' => 'Запись',
-                                              'executor_agent_id' => 1)
-      expect(context[:parts].sole['summary'].size).to eq(described_class::SUMMARY_LIMIT)
+      expect(context[:parts].first).to include('state' => 'done', 'acted' => true, 'missing_fields' => [], 'fragment' => 'Запись',
+                                               'executor_agent_id' => 1)
+      expect(context[:parts].first['summary'].size).to eq(described_class::SUMMARY_LIMIT)
 
       registry.record_result!(part['id'], state: 'answered')
 
-      expect(context[:parts].sole).to include('state' => 'answered', 'acted' => true)
-      expect(context[:parts].sole['summary'].size).to eq(described_class::SUMMARY_LIMIT)
+      expect(context[:parts].first).to include('state' => 'answered', 'acted' => true)
+      expect(context[:parts].first['summary'].size).to eq(described_class::SUMMARY_LIMIT)
     end
 
     it 'stores the sentence told to the customer apart from the summary, and the failure that stopped the part by names and codes' do
@@ -359,11 +440,11 @@ RSpec.describe Captain::Runtime::PartRegistry do
       registry.record_result!(part['id'], state: 'done', summary: 'create_appointment: {"id":7}', reply_text: 'Вы записаны.',
                                           acted: true, technical: failure)
 
-      expect(context[:parts].sole).to include('summary' => 'create_appointment: {"id":7}', 'reply_text' => 'Вы записаны.',
-                                              'technical' => failure)
+      expect(context[:parts].first).to include('summary' => 'create_appointment: {"id":7}', 'reply_text' => 'Вы записаны.',
+                                               'technical' => failure)
       registry.record_result!(part['id'], state: 'done', reply_text: 'x' * (described_class::REPLY_TEXT_LIMIT + 10))
-      expect(context[:parts].sole['reply_text'].size).to eq(described_class::REPLY_TEXT_LIMIT)
-      expect(context[:parts].sole['technical']).to eq(failure)
+      expect(context[:parts].first['reply_text'].size).to eq(described_class::REPLY_TEXT_LIMIT)
+      expect(context[:parts].first['technical']).to eq(failure)
     end
 
     it 'starts a new version of a part without the reply text and the failure of the one before' do

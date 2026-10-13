@@ -335,7 +335,7 @@ RSpec.describe Captain::Runtime::Runner do
 
         result = run_with
 
-        expect(failures).to all(start_with('ERROR: ').and(include('"retryable":true', 'call the handoff tool, not plan_request')))
+        expect(failures).to all(start_with('ERROR: ').and(include('"retryable":true', 'To reach a person call the handoff tool.')))
         expect(result).to be_success
         expect(result.output).to eq('Уточните, пожалуйста, чем помочь.')
         expect(result.context).not_to include(Captain::Runtime::ToolWrapper::TERMINAL_TOOL_STOP_KEY, :part_plan_accepted)
@@ -357,9 +357,10 @@ RSpec.describe Captain::Runtime::Runner do
         expect(reminders).to be_empty
       end
 
-      it 'accepts a guessed executor number as the agent itself and delivers the reply of the planned message' do
+      it 'refuses a plan for its own work, and delivers the plain reply of the model' do
+        failed = nil
         chat.respond_with(lambda do |_current_context|
-          plan_with(mode: 'answer_myself', parts: [{ fragment: 'Записать на приём', executor_agent_id: 1 }])
+          failed = plan_with(mode: 'answer_myself', parts: [{ fragment: 'Записать на приём', executor_agent_id: 1 }])
           reply('Выберите удобное время.')
         end)
         expect_initial_ask
@@ -367,9 +368,10 @@ RSpec.describe Captain::Runtime::Runner do
 
         result = run_with
 
+        expect(failed).to start_with('ERROR: ').and include('"retryable":true', 'Own work needs no plan: answer or use your tools.')
         expect(result).to be_success
         expect(result.output).to eq('Выберите удобное время.')
-        expect(result.context[:part_plan][:parts].sole).to include('executor_agent_id' => 92)
+        expect(result.context).not_to include(:part_plan, :part_plan_accepted)
         expect(chat.requests).to eq([:ask])
       end
     end
