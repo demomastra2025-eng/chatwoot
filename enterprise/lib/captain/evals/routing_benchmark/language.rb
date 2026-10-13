@@ -25,6 +25,19 @@ class Captain::Evals::RoutingBenchmark::Language
       text.scan(/\p{Latin}{2,}/).size >= 2 ? :latin : :neutral
     end
 
+    # Why a text is not in the expected language (:ru or :kk), or nil when it is. The fixtures of the v2 schema state the expected
+    # language of a turn (`reply_language`), so no dialogue-wide guess is needed: a text with Latin words and no Cyrillic is in no
+    # expected language, a text that reads as the other language is not, and a short neutral text (a time, an emoji, a single
+    # word) or a weakly marked one passes.
+    def mismatch(expected, text)
+      other = expected.to_sym == :ru ? :kk : :ru
+      case script(text)
+      when :neutral then nil
+      when :latin then 'the reply has no Cyrillic'
+      else detect(text) == other ? "the reply reads as #{other}, expected #{expected}" : nil
+      end
+    end
+
     def detect(text)
       return :unknown unless script(text) == :cyrillic
 

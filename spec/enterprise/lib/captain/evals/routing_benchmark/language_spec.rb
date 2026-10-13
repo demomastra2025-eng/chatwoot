@@ -29,6 +29,23 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Language do
     end
   end
 
+  describe '.mismatch' do
+    it 'names why a text is not in the expected language, and is nil when it is' do
+      expect(described_class.mismatch(:ru, 'Здравствуйте, ждём вас в клинике в среду.')).to be_nil
+      expect(described_class.mismatch('kk', 'Сіз терапевтке жазылдыңыз, күтеміз')).to be_nil
+      expect(described_class.mismatch(:kk, 'Здравствуйте, мне нужно записаться к терапевту')).to eq('the reply reads as ru, expected kk')
+      expect(described_class.mismatch(:ru, 'Сіз терапевтке жазылдыңыз, күтеміз')).to eq('the reply reads as kk, expected ru')
+      expect(described_class.mismatch(:ru, 'Please choose a time')).to eq('the reply has no Cyrillic')
+    end
+
+    it 'lets a short neutral text and a weakly marked one pass' do
+      ['15:00', 'ok', '👍', 'Дана Нурланова', 'Терапевт Ли Анна, среда 14 октября в 9:00'].each do |text|
+        expect(described_class.mismatch(:kk, text)).to be_nil, text
+        expect(described_class.mismatch(:ru, text)).to be_nil, text
+      end
+    end
+  end
+
   describe '.script' do
     it 'tells Cyrillic, Latin and neutral text apart' do
       expect(described_class.script('Қайырлы күн')).to eq(:cyrillic)

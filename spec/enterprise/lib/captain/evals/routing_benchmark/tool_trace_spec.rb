@@ -76,6 +76,54 @@ RSpec.describe Captain::Evals::RoutingBenchmark::ToolTrace do
     end
   end
 
+  describe 'the owner of a call' do
+    let(:event_class) { Struct.new(:event_name, :tool_name, :payload, :assistant_id) }
+    let(:names) { { 7 => 'Запись к врачу', 9 => 'Администратор' } }
+
+    def owned(tool, assistant_id, **payload)
+      event_class.new('llm.tool.complete', tool, { 'result_success' => true }.merge(payload.stringify_keys), assistant_id)
+    end
+
+    it 'names the agent that ran the tool, with the part and the argument digest of the event' do
+      calls = described_class.build(events: [owned('create_appointment', 7, part_id: 'p-1', part_version: 2, arguments_digest: 'abc')], audits: [], agent_names: names)
+
+      expect(calls).to eq([{ tool: 'create_appointment', success: true, audited: false, agent: 'Запись к врачу', arguments_digest: 'abc',
+                             part_id: 'p-1', part_version: 2 }])
+    end
+
+    it 'prefers the agent of the event to the one the audit row names, and falls back to the audit row' do
+      audit('create_appointment', arguments: { resource_id: 4 }, result: JSON.generate(success: true))
+
+      owner = described_class.build(events: [owned('create_appointment', 9)], audits: described_class.audits_after(account, 0), agent_names: names)
+      unknown = described_class.build(events: [owned('create_appointment', nil)], audits: described_class.audits_after(account, 0), agent_names: names)
+
+      expect(owner.first[:agent]).to eq('Администратор')
+      expect(unknown.first[:agent]).to eq('Запись к врачу')
+    end
+
+    it 'shows the transfer tool of any colleague as the pseudo tool "transfer", whatever its prefix' do
+      calls = described_class.build(events: [owned('transfer_to_agent_4', 9), owned('handoff_to_assistant_7', 9), owned('handoff', 9)], audits: [], agent_names: names)
+
+      expect(calls.pluck(:tool)).to eq(%w[transfer transfer handoff])
+      expect(described_class.display_name('transfer_to_agent_4')).to eq('transfer')
+      expect(described_class.display_name('create_appointment')).to eq('create_appointment')
+    end
+
+    it 'reads a field from the payload, else from the column the recorder moved it to' do
+      event = event_class.new('llm.tool.complete', 'x', { 'part_id' => 'p' }, 7)
+
+      expect(described_class.field(event, 'part_id')).to eq('p')
+      expect(described_class.field(event, 'assistant_id')).to eq(7)
+      expect(described_class.field(event, 'nothing')).to be_nil
+    end
+
+    it 'keeps the agent and a short part id in the compact form' do
+      calls = [{ tool: 'create_appointment', success: true, agent: 'Запись к врачу', part_id: 'abcdef123456' }]
+
+      expect(described_class.compact(calls)).to eq([{ tool: 'create_appointment', success: true, agent: 'Запись к врачу', part_id: 'abcdef12' }])
+    end
+  end
+
   describe '.compact' do
     it 'cuts arguments and results to one short line' do
       calls = [{ tool: 'create_appointment', success: true, audited: true, agent: 'A', arguments: { 'note' => 'x' * 500 }, result: "a\n  b" }]
