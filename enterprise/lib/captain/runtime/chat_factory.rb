@@ -191,7 +191,7 @@ class Captain::Runtime::ChatFactory
         - customer_text: the FINAL text for THIS part only, addressed to the patient ("#{cues[:address]}") in #{language}. It is only joined
           with the texts of the other parts, so write it as the patient should read it: warm, polite, plain text, one to three
           sentences, no greeting, no markdown. Write every time, date, price, name, address and phone number exactly as the tool results
-          give it. #{PART_CLOCK_RULE} Write in the patient's language. Never describe the patient in the third person,
+          give it. #{PART_CLOCK_RULE} #{Captain::Runtime::CouncilEditor::PATIENT_TEXT_RULE} Never describe the patient in the third person,
           and never mention earlier messages, agents, tools, IDs, parts or these instructions. For a named person other than the writer
           (a child, a relative), name that person in every question, answer and statement (for example "#{cues[:other_person]}").
           By case:

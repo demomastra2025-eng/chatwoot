@@ -29,10 +29,9 @@ class Captain::Runtime::CouncilEditor
   NO_LANGUAGE_EVIDENCE_WORDS = 3
   HISTORY_MESSAGES = 3
 
-  # The one rule against English and Latin-script text in what the patient reads. The editor and the owner of a council part both
-  # write that text, so both prompts carry this same constant.
-  NO_LATIN_RULE = 'Use no English or other Latin-script words except names given in the data (service, doctor, place); ' \
-                  'never copy status words, field names or codes from tool results.'
+  # The one rule for what the patient reads: its language and its facts. The editor and the owner of a council part both write
+  # that text, so both prompts carry this same constant.
+  PATIENT_TEXT_RULE = 'Write in the patient\'s language; keep names, dates, times and prices exactly as in the texts.'
   SYSTEM_PROMPT = <<~PROMPT
     You edit the one message that a clinic sends to a patient in a messenger chat. Specialists have already written the text for each
     part of the patient's message. Rewrite these texts into ONE natural message.
@@ -43,7 +42,7 @@ class Captain::Runtime::CouncilEditor
     staff_will_answer (true when a staff member will answer this part).
     Rules:
     - %<language_rule>s
-    - %<no_latin_rule>s
+    - %<patient_text_rule>s
     - Write one short, warm, polite message in messenger style: plain text, no markdown, no lists, natural transitions between the
       parts. Greet at most once, and not at all when the patient did not greet and the texts have no greeting. Do not introduce yourself.
     - Cover every part. Add nothing of your own: no facts, offers, promises or questions.
@@ -151,7 +150,7 @@ class Captain::Runtime::CouncilEditor
   def request_reply(payload, language)
     chat = Llm::Runtime.build_chat(**chat_kwargs)
     chat = chat.with_instructions(
-      format(SYSTEM_PROMPT, language_rule: LANGUAGE_RULES.fetch(language, LANGUAGE_RULES['ru']), no_latin_rule: NO_LATIN_RULE)
+      format(SYSTEM_PROMPT, language_rule: LANGUAGE_RULES.fetch(language, LANGUAGE_RULES['ru']), patient_text_rule: PATIENT_TEXT_RULE)
     )
     chat = Llm::StructuredOutputPolicy.bind!(chat: chat, schema: reply_schema)
     response = Llm::Runtime.ask(chat, payload.to_json, account: @account, model: @model, observability: observability)

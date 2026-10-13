@@ -462,12 +462,15 @@ RSpec.describe Captain::Runtime::ChatFactory do
                               'questions: every question that customer_text contains, word for word, as its last sentences')
     end
 
-    it 'asks the owner to write in the language of the patient, with no rule about Latin-script words' do
+    it 'carries the shared rule for the language and the facts of the text, the same constant as the editor' do
+      expect(Captain::Runtime::CouncilEditor::PATIENT_TEXT_RULE).to eq(
+        'Write in the patient\'s language; keep names, dates, times and prices exactly as in the texts.'
+      )
       %w[ru kk].each do |language|
         text = prompt(part_language: language)
 
-        expect(text).to include("Write in the patient's language.")
-        expect(text).not_to include(Captain::Runtime::CouncilEditor::NO_LATIN_RULE, 'Latin-script', 'no English')
+        expect(text).to include(Captain::Runtime::CouncilEditor::PATIENT_TEXT_RULE)
+        expect(text).not_to match(/Latin|English/i)
       end
     end
 

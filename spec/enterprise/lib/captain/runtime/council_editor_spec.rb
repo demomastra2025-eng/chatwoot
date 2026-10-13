@@ -268,17 +268,22 @@ RSpec.describe Captain::Runtime::CouncilEditor do
       expect(instructions.sole).not_to include('ask the customer the same thing')
     end
 
-    it 'carries the shared rule against English and Latin-script words, the same constant as the part runs' do
+    it 'carries the shared rule for the language and the facts of the text, the same constant as the part runs' do
       edit_parts(language: 'kk', message: 'Қабылдау қанша тұрады?')
       edit_parts(language: 'ru')
 
-      expect(described_class::NO_LATIN_RULE).to eq(
-        'Use no English or other Latin-script words except names given in the data (service, doctor, place); ' \
-        'never copy status words, field names or codes from tool results.'
+      expect(described_class::PATIENT_TEXT_RULE).to eq(
+        'Write in the patient\'s language; keep names, dates, times and prices exactly as in the texts.'
       )
       expect(instructions.size).to eq(2)
-      expect(instructions).to all(include(described_class::NO_LATIN_RULE))
-      expect(described_class::SYSTEM_PROMPT).to include('%<no_latin_rule>s')
+      expect(instructions).to all(include(described_class::PATIENT_TEXT_RULE))
+      expect(described_class::SYSTEM_PROMPT).to include('%<patient_text_rule>s')
+    end
+
+    it 'has no rule that bans English or Latin-script words: the patient may write in any language' do
+      edit_parts(language: 'ru')
+
+      expect(instructions.sole).not_to match(/Latin|English/i)
     end
 
     it 'gives Kazakh reply instructions for Kazakh input and Russian ones otherwise' do
