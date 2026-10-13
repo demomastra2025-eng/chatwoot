@@ -23,6 +23,9 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Runner do
   # The roles of the message history that each call of the runtime received.
   let(:histories) { [] }
 
+  # The embedding of a FAQ answer of the workspace is a call to the embedding provider.
+  before { allow(Captain::Llm::UpdateEmbeddingJob).to receive(:perform_now) }
+
   # The scripted runtime reports what the workspace holds when it is called, then leaves rows behind. A block that returns
   # a Hash adds its keys to the response of that turn ({ 'handoff_tool_called' => true }); a block with two parameters also gets
   # the entry agent.

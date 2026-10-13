@@ -269,7 +269,11 @@ The runner also records the routing (current agent, routing revision) of the age
 ## Isolation
 
 Every dialogue runs in a fresh synthetic workspace (new account, agents, contacts and calendar seeds) inside its
-own savepoint, which is always rolled back. A booking that one dialogue creates, moves or cancels never reaches
+own savepoint, which is always rolled back. The workspace is seeded the way a clinic's data is, so a search finds what it would find live:
+every resource has a `specialty` (the position in its name without the person and the word "Кабинет": "Терапевт Абдрахманова Сауле" is a
+"Терапевт", "Кабинет УЗИ (врач Бекова Дана)" an "УЗИ"; `Workspace::SPECIALTY_PREFIXES` names the rooms and the compound positions), every
+contact has a phone number of its own (`+7701…`), and every FAQ answer is indexed with its embedding when the workspace is created (the
+commit callback that indexes it in production never fires in an uncommitted transaction, and the FAQ lookup is a vector search). A booking that one dialogue creates, moves or cancels never reaches
 another dialogue of the same file, so combined files and one-dialogue files give the same results. Turns within a
 dialogue share the workspace, as in a real conversation. The runner and the scorer keep no state between
 dialogues. `Captain::Runtime::Council` runs read-only parts on threads while the parts that write run one after another
@@ -629,7 +633,7 @@ Each turn's `evidence` in the JSON report shows what a counter was based on.
   birth date in the reply that the customer, the caller's name or the **public** workspace text (knowledge base, doctor and
   service names) did not contain. The names of the seeded patients are not public text, so naming another seeded patient is
   a finding; the people the caller booked for (the patient cards of the caller's appointments, and cards recorded as the
-  caller's own) are not strangers.
+  caller's own) are not strangers; the caller's own phone number is not another patient's (every seeded contact has a phone number).
 - `empty_reply`, `greeting_only_reply`: deterministic quality checks for a reply that is empty (and not suppressed by the
   runtime) or only a greeting to a message with content.
 

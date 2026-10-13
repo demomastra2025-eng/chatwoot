@@ -5,12 +5,21 @@ class Captain::Evals::RoutingBenchmark::Workspace
   FEATURES = %w[captain_integration crm_deals crm_tasks scheduling companies].freeze
   # Not a tool prerequisite: it makes the runtime record the arguments and results of tool calls (see ToolTrace).
   AUDIT_FEATURE = 'audit_logs'
+  # A doctor's specialty is what a clinic's staff list records for the position. The fixtures name a resource the way a patient
+  # reads it ("Терапевт Абдрахманова Сауле", "Кабинет УЗИ (врач Бекова Дана)"), so the specialty is the name without the person and
+  # without the word "Кабинет"; the rooms and the compound positions below are listed because their first word alone says nothing.
+  SPECIALTY_PREFIXES = ['Кабинет УЗИ', 'Кабинет МРТ', 'Детский ЛОР', 'Процедурный кабинет', 'Стоматолог-терапевт'].freeze
+  # Every seeded contact has a phone number of its own (E.164, Kazakhstan mobile range), so a tool that needs the contact's phone
+  # (a booking, a deal) finds one.
+  PHONE_PREFIX = '+7701'
+  EMBEDDING_ATTEMPTS = 3
 
   attr_reader :account, :agents, :channels, :contacts
 
   def initialize(fixture, model:, reasoning:)
     @fixture, @model, @reasoning = fixture, model, reasoning
     @agents, @channels, @contacts = {}, {}, {}
+    @contact_count = 0
   end
 
   def create!
@@ -111,15 +120,34 @@ class Captain::Evals::RoutingBenchmark::Workspace
     # No Playground marker: Captain::Playground::ExecutionBoundary blocks every tool for a marked
     # record without a live Playground session. The isolated database has no channel webhook or
     # provider integration, and the guard allows HTTP only to OpenRouter.
-    Contact.create!(account: account, name: row.fetch('name'),
+    @contact_count += 1
+    Contact.create!(account: account, name: row.fetch('name'), phone_number: format("#{PHONE_PREFIX}%07d", @contact_count),
                     additional_attributes: { 'captain_benchmark_source' => true })
   end
 
+  # The embedding job runs here, in the caller's thread: the rows of a dialogue live in a transaction that is never committed, so the
+  # after_commit hook that indexes a FAQ answer in production never fires, and the FAQ lookup (a vector search) would find nothing.
   def create_knowledge!
     data.fetch('knowledge', []).each do |row|
       actor = agents[row['agent']]
-      Captain::AssistantResponse.create!(account: account, assistant: actor,
-                                         question: row.fetch('question'), answer: row.fetch('answer'), status: :approved)
+      response = Captain::AssistantResponse.create!(account: account, assistant: actor,
+                                                    question: row.fetch('question'), answer: row.fetch('answer'), status: :approved)
+      index!(response)
+    end
+  end
+
+  # A provider that fails now and then is asked again; a FAQ that stays unindexed would make every lookup of the dialogue find nothing, so
+  # the last failure is raised.
+  def index!(response)
+    attempts = 0
+    begin
+      attempts += 1
+      Captain::Llm::UpdateEmbeddingJob.perform_now(response, "#{response.question}: #{response.answer}")
+    rescue Captain::Llm::EmbeddingService::EmbeddingsError
+      raise if attempts >= EMBEDDING_ATTEMPTS
+
+      sleep(attempts)
+      retry
     end
   end
 
@@ -128,7 +156,7 @@ class Captain::Evals::RoutingBenchmark::Workspace
     @services = {}
     data.fetch('resources', []).each do |row|
       @resources[row.fetch('key')] = Scheduling::Resource.create!(
-        account: account, name: row.fetch('name'), timezone: row.fetch('timezone', 'Asia/Almaty')
+        account: account, name: row.fetch('name'), specialty: specialty_for(row), timezone: row.fetch('timezone', 'Asia/Almaty')
       )
     end
     data.fetch('services', []).each do |row|
@@ -153,6 +181,14 @@ class Captain::Evals::RoutingBenchmark::Workspace
                                       ends_at: starts_at + (service&.duration_min || 30).minutes,
                                       duration_min: service&.duration_min || 30)
     end
+  end
+
+  # The specialty a search by specialty finds the resource by: "Терапевт Абдрахманова Сауле" is a "Терапевт", the room
+  # "Кабинет УЗИ (врач Бекова Дана)" is "УЗИ", the "Детский ЛОР Ахметова Динара" is a "Детский ЛОР".
+  def specialty_for(row)
+    name = row.fetch('name').to_s.squish
+    prefix = SPECIALTY_PREFIXES.find { |item| name.start_with?(item) }
+    prefix ? prefix.delete_prefix('Кабинет ') : name.split.first
   end
 
   def create_deals!

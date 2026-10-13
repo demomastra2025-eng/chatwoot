@@ -28,7 +28,10 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Rejudge do
   let(:fixture_path) { File.join(dir, 'case.yml') }
   let(:judge_runner) { runner_class.new(fixtures: 'rejudge', runs: 1, budget_usd: 1, out: 'rejudge', judge: true) }
 
-  before { File.write(fixture_path, fixture_data.deep_stringify_keys.to_yaml) }
+  before do
+    File.write(fixture_path, fixture_data.deep_stringify_keys.to_yaml)
+    allow(Captain::Llm::UpdateEmbeddingJob).to receive(:perform_now)
+  end
 
   after { FileUtils.remove_entry(dir) }
 
