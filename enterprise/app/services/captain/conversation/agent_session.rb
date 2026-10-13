@@ -151,13 +151,15 @@ class Captain::Conversation::AgentSession
   end
 
   # outcome: success, not_executed (the call was rejected, nothing changed) or unknown (it may or may not have happened); read
-  # from the result when it is not given.
-  def finish_operation(key, result, outcome: nil)
+  # from the result when it is not given. done: the line of the action for the list "Done in this conversation" (see
+  # Captain::DoneActions); it is kept only for an action that happened.
+  def finish_operation(key, result, outcome: nil, done: nil)
     record do |data|
       operation = data.fetch('operations').fetch(key)
       operation['status'] = 'finished'
       operation['outcome'] = (outcome.presence || Captain::Runtime::ToolFailure.outcome(result)).to_s
       operation['result'] = JSON.parse(JSON.generate(result.as_json))
+      remember_done(data, done) if done.present? && operation['outcome'] == Captain::Runtime::ToolFailure::SUCCESS
     end
   end
 
@@ -180,6 +182,10 @@ class Captain::Conversation::AgentSession
 
   def compatible?(data)
     data['entry_assistant_id'] == @entry.id
+  end
+
+  def remember_done(data, done)
+    data['done'] = Captain::DoneActions.remember(data['done'], done.deep_stringify_keys)
   end
 
   def operation_key(scope, tool)

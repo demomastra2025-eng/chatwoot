@@ -113,6 +113,13 @@ module Captain::Runtime::ToolFailure
     describe(result)[:pending]
   end
 
+  # The fields a result carries as one hash with string keys, wherever the tool put them (its data, its audit, a JSON text).
+  def facts(result)
+    normalized = Captain::ToolResult.normalize(result)
+    audit = normalized[:audit].is_a?(Hash) ? normalized[:audit].deep_stringify_keys : {}
+    facts_of(result, normalized, envelope_of(normalized), audit)
+  end
+
   # A failure that is an answer of the tool itself and changed nothing: the tool declares it business, or it carries a business
   # reason or code (the slot is taken, the patient was not found, the time is outside working hours). The agent acts on it by
   # choosing again or by asking, so a corrected call of the same tool is not a retry of a call that may have gone through. Unlike

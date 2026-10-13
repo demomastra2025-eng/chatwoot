@@ -106,6 +106,61 @@ RSpec.describe Captain::Conversation::AgentSession do
     end
   end
 
+  describe 'the list of what was done' do
+    def line(text)
+      { 'tool' => 'create_appointment', 'label' => 'Booked', 'text' => text, 'request' => 'request:synthetic' }
+    end
+
+    def stored_done
+      described_class.new(entry: assistant, conversation: conversation).read['done']
+    end
+
+    it 'keeps the line of an action that happened, newest first, and five lines at most' do
+      6.times do |index|
+        _, key = reserve(scope: "request:#{index}", tool: "tool_#{index}")
+        session.finish_operation(key, { success: true }, done: line("visit #{index}"))
+      end
+
+      expect(stored_done.pluck('text')).to eq(['visit 5', 'visit 4', 'visit 3', 'visit 2', 'visit 1'])
+    end
+
+    it 'keeps no line for an action that did not happen or whose outcome is unknown' do
+      _, rejected = reserve(tool: 'cancel_appointment')
+      session.finish_operation(rejected, { success: false, error: 'Rejected', audit: { mutation_executed: false } }, done: line('rejected'))
+      _, unknown = reserve(tool: 'update_appointment')
+      session.finish_operation(unknown, { success: false, error: 'Provider did not answer', retryable: false }, done: line('unknown'))
+
+      expect(stored_done).to be_nil
+    end
+
+    it 'keeps the line also when staff took over meanwhile: the action happened' do
+      _, key = reserve
+      conversation.update!(status: :open)
+
+      session.finish_operation(key, { success: true }, done: line('booked'))
+
+      expect(stored_done.pluck('text')).to eq(['booked'])
+    end
+
+    it 'writes no list for an operation that is finished without a line' do
+      _, key = reserve
+      session.finish_operation(key, { success: true })
+
+      expect(stored_done).to be_nil
+      expect(stored_operations[key]).to include('outcome' => 'success')
+    end
+
+    it 'is not removed when the receipts of earlier requests are cleared: it outlives them' do
+      _, key = reserve(scope: 'request:one', tool: 'create_appointment')
+      session.finish_operation(key, { success: true }, done: line('first'))
+
+      reserve(scope: 'request:two', tool: 'create_appointment')
+
+      expect(stored_operations.size).to eq(1)
+      expect(stored_done.pluck('text')).to eq(['first'])
+    end
+  end
+
   describe 'the memory of the earlier versions of a part' do
     def finish_version(version, result, outcome: nil, arguments: { slot_id: 9 })
       store_part(version)

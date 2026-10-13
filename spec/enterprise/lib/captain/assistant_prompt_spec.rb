@@ -166,6 +166,55 @@ RSpec.describe Captain::AssistantPrompt do
     end
   end
 
+  describe 'what the agents already did in this conversation' do
+    let(:state) { { prompt_context: { contact: contact } } }
+    let(:done) do
+      { request: 'request:41',
+        entries: [{ 'label' => 'Rescheduled', 'text' => 'Терапевт Абдрахманова Сауле, now Thu 15.10.2026 11:00', 'request' => 'request:41' },
+                  { 'label' => 'Booked', 'text' => 'Терапевт Абдрахманова Сауле, Tue 13.10.2026 15:00', 'request' => 'request:30' }] }
+    end
+
+    def patient_lines(done:, state: self.state)
+      described_class.new(assistant: assistant, context: context, state: state, prompt_state: state[:prompt_context].to_h, done: done)
+                     .variables[:patient_lines]
+    end
+
+    it 'closes the Patient lines with the list, newest first, each action marked as done in reply to this message or earlier' do
+      expect(patient_lines(done: done)).to eq(
+        ['Aigerim, +77000000000.',
+         'Done in this conversation:',
+         '- Rescheduled: Терапевт Абдрахманова Сауле, now Thu 15.10.2026 11:00 (in reply to this message)',
+         '- Booked: Терапевт Абдрахманова Сауле, Tue 13.10.2026 15:00 (earlier)']
+      )
+    end
+
+    it 'comes after the summaries of the appointments and the deals' do
+      summary = { kind: 'deals', groups: [{ key: 'active', total: 1, items: [{ id: 8, title: 'Имплантация', stage: 'Консультация' }] }] }
+      with_summary = { prompt_context: { contact: contact, context_summaries: { deal: summary } } }
+
+      lines = patient_lines(done: done, state: with_summary)
+
+      expect(lines.index { |line| line.start_with?('Deals:') }).to be < lines.index('Done in this conversation:')
+    end
+
+    it 'is a Patient block of its own when the patient has no name and no phone' do
+      expect(patient_lines(done: done, state: {}).first).to eq('Done in this conversation:')
+    end
+
+    it 'adds nothing when nothing was done or the run knows no list' do
+      expect(patient_lines(done: nil)).to eq(['Aigerim, +77000000000.'])
+      expect(patient_lines(done: { entries: [], request: 'request:41' })).to eq(['Aigerim, +77000000000.'])
+    end
+
+    it 'does not change the list it reads' do
+      before = Marshal.load(Marshal.dump(done))
+
+      patient_lines(done: done)
+
+      expect(done).to eq(before)
+    end
+  end
+
   it 'reads a time field in the zone of the run clock' do
     account.enable_features!('crm_tasks')
     assistant.update!(description: 'Due [$Due](field://task.due_at).')

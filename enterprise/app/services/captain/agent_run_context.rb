@@ -35,6 +35,8 @@ class Captain::AgentRunContext
     context[:agent_session] = @session
     context[:agent_tasks] = peers ? (saved['tasks'] || []) : []
     context[:parts] = saved['parts'] || []
+    # What the agents already did in this conversation (see Captain::DoneActions): the prompt of every agent that takes the turn.
+    context[:done_actions] = Array(saved['done'])
     context[:agent_tasks].each do |task|
       next if Captain::Runtime::TaskQueue::TERMINAL.include?(task['status']) || graph.find(task['assistant_id'])
 

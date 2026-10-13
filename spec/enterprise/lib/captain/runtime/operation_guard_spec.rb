@@ -148,6 +148,67 @@ RSpec.describe Captain::Runtime::OperationGuard do
     expect(session.read.fetch('operations').values.pluck('outcome')).to eq(results.map(&:last))
   end
 
+  describe 'the list of what was done' do
+    let(:reschedule) { double('Mutation', name: 'update_appointment', metadata: { read_only: false }) }
+    let(:moved) do
+      JSON.generate(success: true, appointment_id: 984, doctor_name: 'Терапевт Абдрахманова Сауле', local_date: '15.10.2026',
+                    local_time: '11:00', status: 'updated')
+    end
+    let(:line) do
+      hash_including('tool' => 'update_appointment', 'label' => 'Rescheduled', 'request' => 'request:same-input',
+                     'text' => 'Терапевт Абдрахманова Сауле, now Thu 15.10.2026 11:00')
+    end
+
+    it 'puts a successful action on the receipt and on the run, so that the agent that gets the conversation next reads it' do
+      action = described_class.new(context, reschedule, { appointment_id: 984, starts_at: '2026-10-15T11:00' })
+      action.reserve
+      action.finish(moved)
+
+      expect(session.read['done']).to contain_exactly(line)
+      expect(context[:done_actions]).to contain_exactly(line)
+    end
+
+    it 'puts nothing on either for a call that changed nothing, or whose outcome is unknown' do
+      [JSON.generate(success: false, reason: 'time_taken'), Captain::ToolResult.failure(error: 'Provider did not answer', retryable: false)]
+        .each_with_index do |result, index|
+          action = described_class.new(context, reschedule, { appointment_id: 984, starts_at: "2026-10-15T1#{index}:00" })
+          action.reserve
+          action.finish(result)
+        end
+
+      expect(session.read['done']).to be_nil
+      expect(context).not_to have_key(:done_actions)
+    end
+
+    it 'puts nothing for the replay of an action that was done already: it is on the list once' do
+      action = described_class.new(context, reschedule, { appointment_id: 984, starts_at: '2026-10-15T11:00' })
+      action.reserve
+      action.finish(moved)
+
+      replay = described_class.new(context.deep_dup, reschedule, { appointment_id: 984, starts_at: '2026-10-15T11:00' })
+      expect(replay.reserve).to be_present
+      replay.finish(moved)
+
+      expect(session.read['done'].size).to eq(1)
+    end
+
+    it 'lists the actions of a council part under the request of the message too' do
+      specialist = create(:captain_assistant, account: assistant.account)
+      session.change do |data|
+        data['parts'] = [{ 'id' => 'part-1', 'version' => 1, 'executor_agent_id' => specialist.id, 'state' => 'open' }]
+      end
+      session.update_routing(actor_id: assistant.id)
+      part_context = { state: { assistant_id: specialist.id }, agent_session: session, agent_request_id: 'same-input', part_run: true,
+                       active_part_id: 'part-1', active_part_version: 1 }
+
+      action = described_class.new(part_context, reschedule, { appointment_id: 984, starts_at: '2026-10-15T11:00' })
+      action.reserve
+      action.finish(moved)
+
+      expect(session.read['done']).to contain_exactly(line)
+    end
+  end
+
   describe 'for the owner of a council part, which does not hold the conversation' do
     let(:specialist) { create(:captain_assistant, account: assistant.account) }
     let(:part_context) do

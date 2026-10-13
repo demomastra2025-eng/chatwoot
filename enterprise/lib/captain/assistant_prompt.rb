@@ -4,8 +4,9 @@
 #   instruction / global_system_instruction  the texts with every $ field written as its value and every @ tool as its function name
 #   now_text                                 the one-line clock (after midnight with the night line) and, on the official WhatsApp channel,
 #                                            the reply window
-#   patient_lines                            the patient name and phone, an ID only when a bound tool takes it, and the appointment
-#                                            and deal summaries that the clinic instruction does not place itself
+#   patient_lines                            the patient name and phone, an ID only when a bound tool takes it, the appointment
+#                                            and deal summaries that the clinic instruction does not place itself, and the list of
+#                                            what the agents already did in this conversation (Captain::DoneActions)
 # The run state (prompt_state, runtime_clock, ...) is data and is not changed here; this class only chooses the text.
 #
 # part: true is the run of a council part. The owner of a part gets its own tools except the ones that change who controls the
@@ -14,12 +15,14 @@ class Captain::AssistantPrompt
   # The summaries of the run state and the label each one has in the Patient block.
   SUMMARY_LABELS = { appointment: 'Appointments', deal: 'Deals' }.freeze
 
-  def initialize(assistant:, context:, state:, prompt_state:, part: false)
+  # done: the actions the agents already did in this conversation and the request being answered (Captain::DoneActions.for_run).
+  def initialize(assistant:, context:, state:, prompt_state:, part: false, done: nil)
     @assistant = assistant
     @context = context
     @state = state.to_h
     @prompt_state = prompt_state.to_h
     @part = part
+    @done = done
   end
 
   def variables
@@ -67,7 +70,8 @@ class Captain::AssistantPrompt
       numbered_line(:contact, 'Patient ID', contact[:id]),
       ("Conversation labels: #{labels.join(', ')}." if labels.any?),
       numbered_line(:conversation, 'Conversation ID', conversation[:display_id]),
-      *unplaced_summary_lines
+      *unplaced_summary_lines,
+      *Captain::DoneActions.lines(@done)
     ].compact
   end
 

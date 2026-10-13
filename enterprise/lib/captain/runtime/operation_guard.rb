@@ -53,11 +53,25 @@ class Captain::Runtime::OperationGuard
       @session.release_unexecuted_operation(@key)
     else
       # The receipt remembers whether the action happened: a later version of the same part may repeat only what did not.
-      @session.finish_operation(@key, normalized, outcome: Captain::Runtime::ToolFailure.outcome(result))
+      outcome = Captain::Runtime::ToolFailure.outcome(result)
+      done = done_entry(result) if outcome == Captain::Runtime::ToolFailure::SUCCESS
+      @session.finish_operation(@key, normalized, outcome: outcome, done: done)
+      remember_done(done)
     end
   end
 
   private
+
+  # The action as one line of the "Done in this conversation" list (see Captain::DoneActions). The receipt keeps it for the next
+  # messages; the run keeps it for the agent that gets the conversation by a transfer in this same run.
+  def done_entry(result)
+    Captain::DoneActions.entry(tool_name: @tool.name, arguments: @arguments, result: result,
+                               request: Captain::Runtime::TaskQueue.new(@context).request_scope)
+  end
+
+  def remember_done(done)
+    @context[:done_actions] = Captain::DoneActions.remember(@context[:done_actions], done) if done
+  end
 
   def actor_id = @context.dig(:state, :assistant_id)
 

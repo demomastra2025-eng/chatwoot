@@ -23,7 +23,7 @@ module Concerns::Agentable
     enhanced_context[:scenarios] = [] if state[:mesh_routing]
     if compact_prompt_template?
       part = context&.context&.[](:part_run).present?
-      return compact_agent_instructions(enhanced_context, state, prompt_state, part: part)
+      return compact_agent_instructions(enhanced_context, state, prompt_state, part: part, done: Captain::DoneActions.for_run(context&.context))
     end
 
     if state.present?
@@ -93,10 +93,10 @@ module Concerns::Agentable
 
   # The run of a council part (part: true) has no handoff tool: the rules do not tell it to hand over, and the texts name only the tools
   # it gets (Captain::AssistantPrompt). Staff take a part over structurally, after the council.
-  def compact_agent_instructions(enhanced_context, state, prompt_state, part: false)
+  def compact_agent_instructions(enhanced_context, state, prompt_state, part: false, done: nil)
     variables = time_agent_phase('prompt_variables') do
       Captain::AssistantPrompt.new(
-        assistant: self, context: enhanced_context, state: state, prompt_state: prompt_state, part: part
+        assistant: self, context: enhanced_context, state: state, prompt_state: prompt_state, part: part, done: done
       ).variables
     end
     variables = variables.merge(human_handoff_enabled: false) if part

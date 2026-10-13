@@ -85,6 +85,54 @@ RSpec.describe Captain::AgentRunContext do
     expect(Captain::Conversation::AgentSession.new(entry: entry, conversation: conversation).read['tasks']).to eq([])
   end
 
+  describe 'what the agents already did in the conversation' do
+    let(:booked) do
+      { 'tool' => 'create_appointment', 'label' => 'Booked', 'text' => 'Терапевт Нурланова Асель, Fri 16.10.2026 09:00', 'request' => 'request:earlier' }
+    end
+
+    before do
+      Captain::Conversation::AgentSession.new(entry: entry, conversation: conversation).change { |data| data['done'] = [booked] }
+      context[:agent_request_id] = 'run-1'
+    end
+
+    it 'gives the run the list that the session kept' do
+      described_class.new(entry: entry, conversation: conversation).prepare(context)
+
+      expect(context[:done_actions]).to eq([booked])
+    end
+
+    it 'gives a run of a new conversation an empty list' do
+      described_class.new(entry: entry, conversation: create(:conversation, account: account)).prepare(context)
+
+      expect(context[:done_actions]).to eq([])
+    end
+
+    it 'shows the agent that takes the turn after a transfer what was done earlier and what was done in reply to this message' do
+      runtime = described_class.new(entry: entry, conversation: conversation)
+      runtime.prepare(context)
+      runtime.activate(specialist, context)
+      moved = { 'tool' => 'update_appointment', 'label' => 'Rescheduled', 'text' => 'Терапевт Нурланова Асель, now Thu 15.10.2026 11:00',
+                'request' => 'request:run-1' }
+      context[:done_actions] = Captain::DoneActions.remember(context[:done_actions], moved)
+
+      prompt = specialist.agent_instructions(Captain::Runtime::RunContext.new(context))
+
+      expect(prompt).to include(
+        "Done in this conversation:\n" \
+        "- Rescheduled: Терапевт Нурланова Асель, now Thu 15.10.2026 11:00 (in reply to this message)\n" \
+        '- Booked: Терапевт Нурланова Асель, Fri 16.10.2026 09:00 (earlier)'
+      )
+    end
+
+    it 'leaves the list out of the prompt of a conversation where nothing was done' do
+      runtime = described_class.new(entry: entry, conversation: create(:conversation, account: account))
+      runtime.prepare(context)
+      runtime.activate(specialist, context)
+
+      expect(specialist.agent_instructions(Captain::Runtime::RunContext.new(context))).not_to include('Done in this conversation')
+    end
+  end
+
   describe 'what the model is given for the run' do
     let(:lone_account) { create(:account) }
     let(:lone_entry) { create(:captain_assistant, account: lone_account, description: 'LONE PRIVATE PROMPT') }

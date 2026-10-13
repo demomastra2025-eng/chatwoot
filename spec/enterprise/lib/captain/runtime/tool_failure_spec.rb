@@ -5,6 +5,20 @@ RSpec.describe Captain::Runtime::ToolFailure do
     Captain::ToolResult.failure(error: error, retryable: retryable, audit: audit, data: data)
   end
 
+  describe '.facts' do
+    it 'reads the fields of a JSON text, of a hash and of the data of a normalized result as one hash with string keys' do
+      expect(described_class.facts('{"title":"Имплантация","deal":{"id":8}}')).to include('title' => 'Имплантация', 'deal' => { 'id' => 8 })
+      expect(described_class.facts({ doctor_name: 'Иванов', local_time: '11:00' })).to include('doctor_name' => 'Иванов', 'local_time' => '11:00')
+      expect(described_class.facts(Captain::ToolResult.success(data: { appointment_id: 1 }))).to include('appointment_id' => 1)
+    end
+
+    it 'adds the audit of the result, and is empty for a result without fields' do
+      expect(described_class.facts(Captain::ToolResult.success(audit: { mutation_executed: true }))).to include('mutation_executed' => true)
+      expect(described_class.facts('ok')).to eq({})
+      expect(described_class.facts(nil)).to eq({})
+    end
+  end
+
   describe '.classify' do
     it 'is nil for a success' do
       expect(described_class.classify(Captain::ToolResult.success(data: { appointment_id: 1 }))).to be_nil
