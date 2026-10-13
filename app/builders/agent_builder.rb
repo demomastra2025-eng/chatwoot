@@ -30,7 +30,9 @@ class AgentBuilder
     return user if user
 
     temp_password = "1!aA#{SecureRandom.alphanumeric(12)}"
-    User.create!(email: email, name: name, password: temp_password, password_confirmation: temp_password)
+    # users.name is required, so an invite with only an email gets the part before "@" as its name
+    User.create!(email: email, name: name.presence || email.to_s.split('@').first.to_s, password: temp_password,
+                 password_confirmation: temp_password)
   end
 
   # Checks if the user needs confirmation.

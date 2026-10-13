@@ -59,6 +59,7 @@ class SuperAdmin::UsersController < SuperAdmin::ApplicationController
   def resource_params
     permitted_params = super
     permitted_params.delete(:password) if permitted_params[:password].blank?
+    fill_blank_name(permitted_params)
     permitted_params
   end
 
@@ -66,5 +67,22 @@ class SuperAdmin::UsersController < SuperAdmin::ApplicationController
   # for more information
   def find_resource(param)
     super.becomes(User)
+  end
+
+  private
+
+  # users.name is required, but the admin form lets the operator fill only the display name.
+  # Administrate turns blank strings into nil, so fall back to the display name and then to
+  # the part of the email before "@" instead of failing with a database error.
+  def fill_blank_name(permitted_params)
+    return unless action_name == 'create' || permitted_params.key?(:name)
+    return if permitted_params[:name].present?
+
+    permitted_params[:name] = permitted_params[:display_name].presence || email_local_part(permitted_params)
+  end
+
+  def email_local_part(permitted_params)
+    email = permitted_params[:email].presence || (requested_resource.email if action_name != 'create')
+    email.to_s.split('@').first.to_s
   end
 end

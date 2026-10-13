@@ -77,6 +77,55 @@ RSpec.describe 'Super Admin Users API', type: :request do
         expect(response).to redirect_to('http://www.example.com/super_admin/users/new')
       end
 
+      it 'uses the display name when the name is left blank' do
+        sign_in(super_admin, scope: :super_admin)
+
+        expect do
+          post '/super_admin/users', params: { user: { name: '', display_name: 'Асем', email: 'asem@example.com', password: 'Password1!' } }
+        end.to change(User, :count).by(1)
+
+        expect(response).to redirect_to("http://www.example.com/super_admin/users/#{User.last.id}")
+        expect(User.last).to have_attributes(name: 'Асем', display_name: 'Асем', email: 'asem@example.com')
+      end
+
+      it 'uses the email local part when both the name and the display name are blank' do
+        sign_in(super_admin, scope: :super_admin)
+
+        expect do
+          post '/super_admin/users', params: { user: { name: '', display_name: '', email: 'new.agent@example.com', password: 'Password1!' } }
+        end.to change(User, :count).by(1)
+
+        expect(response).to redirect_to("http://www.example.com/super_admin/users/#{User.last.id}")
+        expect(User.last).to have_attributes(name: 'new.agent', email: 'new.agent@example.com')
+      end
+
+      it 'fills the name when the name field is not submitted at all' do
+        sign_in(super_admin, scope: :super_admin)
+
+        post '/super_admin/users', params: { user: { display_name: 'Только имя', email: 'only-display@example.com', password: 'Password1!' } }
+
+        expect(response).to redirect_to("http://www.example.com/super_admin/users/#{User.last.id}")
+        expect(User.last.name).to eq('Только имя')
+      end
+
+      it 'keeps an explicitly provided name' do
+        sign_in(super_admin, scope: :super_admin)
+
+        post '/super_admin/users', params: { user: { name: 'Full Name', display_name: 'Short', email: 'named@example.com', password: 'Password1!' } }
+
+        expect(User.last).to have_attributes(name: 'Full Name', display_name: 'Short')
+      end
+
+      it 'answers with a validation notice instead of a server error when nothing usable is submitted' do
+        sign_in(super_admin, scope: :super_admin)
+
+        expect do
+          post '/super_admin/users', params: { user: { name: '', display_name: '', email: '', password: 'Password1!' } }
+        end.not_to change(User, :count)
+
+        expect(response).to redirect_to('http://www.example.com/super_admin/users/new')
+      end
+
       it 'creates unconfirmed users when confirmed_at is not provided in payload' do
         sign_in(super_admin, scope: :super_admin)
 
@@ -132,6 +181,22 @@ RSpec.describe 'Super Admin Users API', type: :request do
       expect(response).to have_http_status(:redirect)
       expect(user.reload.email).to eq('updated@example.com')
       expect(user.reload.unconfirmed_email).to be_nil
+    end
+
+    it 'leaves the name untouched when it is not submitted' do
+      original_name = user.name
+
+      patch request_path, params: { user: { display_name: 'Another display name' } }
+
+      expect(response).to have_http_status(:redirect)
+      expect(user.reload).to have_attributes(name: original_name, display_name: 'Another display name')
+    end
+
+    it 'falls back to the display name when the name is cleared' do
+      patch request_path, params: { user: { name: '', display_name: 'Cleared name fallback' } }
+
+      expect(response).to have_http_status(:redirect)
+      expect(user.reload.name).to eq('Cleared name fallback')
     end
 
     it 'does not skip reconfirmation when confirmed_at is blank' do

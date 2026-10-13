@@ -22,8 +22,8 @@ class AccountBuilder
   private
 
   def user_full_name
-    # the empty string ensures that not-null constraint is not violated
-    @user_full_name || ''
+    # users.name is required (v2 signup and some OAuth profiles send no name), so fall back to the email local part
+    @user_full_name.presence || @email.to_s.split('@').first.to_s
   end
 
   def account_name

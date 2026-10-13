@@ -56,8 +56,13 @@ RSpec.describe AgentBuilder, type: :model do
 
       it 'creates a user with default values' do
         user = agent_builder.perform
-        expect(user.name).to eq('')
+        expect(user.name).to eq('test')
         expect(AccountUser.find_by(user: user).role).to eq('agent')
+      end
+
+      it 'also falls back to the email local part when the name is explicitly nil' do
+        user = described_class.new(email: email, name: nil, inviter: current_user, account: account).perform
+        expect(user.name).to eq('test')
       end
     end
 

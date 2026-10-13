@@ -9,6 +9,37 @@ RSpec.describe User do
 
   context 'with validations' do
     it { is_expected.to validate_presence_of(:email) }
+    it { is_expected.to validate_presence_of(:name) }
+  end
+
+  describe 'name validation' do
+    it 'rejects a blank name when the user is created' do
+      new_user = build(:user, name: '')
+
+      expect(new_user).not_to be_valid
+      expect(new_user.errors[:name]).to be_present
+      expect { new_user.save! }.to raise_error(ActiveRecord::RecordInvalid)
+    end
+
+    it 'rejects a nil name instead of failing on the not-null constraint' do
+      new_user = build(:user, name: nil)
+
+      expect { new_user.save }.not_to raise_error
+      expect(new_user).not_to be_persisted
+      expect(new_user.errors[:name]).to be_present
+    end
+
+    it 'rejects clearing the name of an existing user' do
+      expect(user.update(name: ' ')).to be(false)
+      expect(user.errors[:name]).to be_present
+    end
+
+    it 'keeps existing users with an empty legacy name saveable for unrelated changes' do
+      user.update_column(:name, '') # rubocop:disable Rails/SkipsModelValidations
+
+      expect(user.reload.update(display_name: 'Updated display name')).to be(true)
+      expect(user.reload.display_name).to eq('Updated display name')
+    end
   end
 
   context 'with associations' do

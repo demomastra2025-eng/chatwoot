@@ -39,6 +39,17 @@ RSpec.describe AccountBuilder do
         expect(user.confirmed?).to be(true)
       end
 
+      context 'when the user full name is blank' do
+        let(:user_full_name) { nil }
+
+        it 'falls back to the part of the email before the at sign' do
+          user, _account = account_builder.perform
+
+          expect(user).to be_persisted
+          expect(user.name).to eq('user')
+        end
+      end
+
       it 'links user to account as administrator' do
         user, account = account_builder.perform
         expect(user.account_users.first.role).to eq('administrator')

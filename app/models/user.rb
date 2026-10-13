@@ -88,6 +88,11 @@ class User < ApplicationRecord
   # validates_uniqueness_of :email, scope: :account_id
 
   validates :email, presence: true
+  # users.name is NOT NULL, so a blank name used to surface as a database error (HTTP 500).
+  # Validate it on creation and whenever the name is edited; existing rows that still hold an
+  # empty name (the v2 signup used to store one) stay saveable for unrelated changes such as a
+  # password reset or an availability update.
+  validates :name, presence: true, if: -> { new_record? || will_save_change_to_name? }
 
   serialize :otp_backup_codes, type: Array
 
