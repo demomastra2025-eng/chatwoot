@@ -44,6 +44,8 @@ class Captain::Evals::RoutingBenchmark::Scorer
   COUNCIL_STARTED = Captain::Evals::RoutingBenchmark::TurnEvents::COUNCIL_STARTED
   # Failure reasons about the council signal; kept apart from routing reasons such as wrong_agent.
   COUNCIL_REASONS = %w[council_event_missing council_unexpected].freeze
+  # The end states of a council part that leave it open for the customer's next message (a question asked, a request for staff).
+  OPEN_PART_STATES = %w[waiting_customer unknown].freeze
   SEVERITIES = %w[critical important minor].freeze
   # Failures of the infrastructure under the agents: the run, not the agent, is at fault. They fail the turn, but the report counts them
   # apart and leaves them out of the quality rates.
@@ -105,6 +107,8 @@ class Captain::Evals::RoutingBenchmark::Scorer
     'missing_act' => { severity: 'important', gate: 'overall', title: 'The agent named in expect.acts made no successful call of the tool (the owner did not act)' },
     'forbidden_tool' => { severity: 'important', gate: 'a,c', variants: MUTATION_TOOLS.index_with { 'critical' },
                           title: 'A tool the fixture forbids was called (critical when a mutation succeeded)' },
+    'late_operation' => { severity: 'important', gate: 'overall',
+                          title: 'A mutation the turn forbids made the change that an earlier turn expected and reported missing (it came late)' },
     'succeeded_forbidden' => { severity: 'critical', gate: 'a,c', title: 'A tool in must_not_succeed succeeded (an attempt is allowed, a success is not)' },
     'missing_operation' => { severity: 'important', gate: 'overall', title: 'An expected database change did not happen' },
     'missing_done_statement' => { severity: 'important', gate: 'overall', title: 'The expected operation succeeded but the reply does not say it was done' },
@@ -216,9 +220,13 @@ class Captain::Evals::RoutingBenchmark::Scorer
 
   # Everything one turn's checks read. `tool_events` are the llm.tool.complete events of the whole turn window, `calls` the same with
   # the agent that ran each tool (ToolTrace), `tool_calls` the runner's list with the audit rows (arguments, results).
+  # `expected` is the expectation the turn is held to: the one of the fixture, with an expected move folded into an earlier expected booking
+  # that did not happen (see #fold_pending; `folded` are the bookings made of the moves, `folded_from` the pending operations they replace).
+  # `late` caches the rows of the turn that an operation expected earlier accounts for (see #late_rows), `missing_operations` the
+  # operations of the turn that found no row.
   Context = Struct.new(:turn, :expected, :response, :events, :tool_events, :tool_calls, :calls, :turn_events, :changes, :text, :visible_text,
                        :claim_text, :handoff, :human_request, :acting_agent, :council, :customer, :routing, :silent,
-                       keyword_init: true) do
+                       :folded, :folded_from, :late, :missing_operations, keyword_init: true) do
     def tools = tool_events.map { |event| Captain::Evals::RoutingBenchmark::ToolTrace.display_name(event.tool_name) }
 
     def successful_tools = tool_events.select { |event| event.payload['result_success'] == true }.map { |event| name_of(event) }
@@ -240,6 +248,14 @@ class Captain::Evals::RoutingBenchmark::Scorer
     @written = []
     @earlier_handoff = false
     @language = nil
+    @turn_number = 0
+    # The appointment operations that earlier turns expected and found no row for (missing_operation): a later turn may make the change
+    # (see #late_rows), or move the booking that was never made (see #fold_pending).
+    @pending_operations = []
+    # { appointment id => the first start the dialogue saw of it }, for a move that names the start the appointment had at the beginning.
+    @origin_starts = {}
+    # { part id => end state } of the council parts so far: a part left open is answered by a follow-up that starts a council again.
+    @part_states = {}
   end
 
   # before:       { 'appointment' => { id => updated_at }, 'deal' => ..., 'contact' => ... } taken before the turn
@@ -247,6 +263,8 @@ class Captain::Evals::RoutingBenchmark::Scorer
   # tool_calls:   ToolTrace.build output for the turn (optional): arguments and results of the executed tools
   # routing:      { before: { current_assistant_id:, routing_revision: }, after: { ... } } of the conversation's agent session (optional)
   def call(turn:, response:, events:, before:, before_state: nil, tool_calls: nil, routing: nil)
+    @turn_number += 1
+    note_origin_starts(before_state)
     context = build_context(turn, response, events, before, before_state, tool_calls, routing)
     outcome = Outcome.new
     expectation_checks(context, outcome, before)
@@ -263,7 +281,7 @@ class Captain::Evals::RoutingBenchmark::Scorer
   private
 
   def build_context(turn, response, events, before, before_state, tool_calls, routing)
-    expected = turn.fetch('expect')
+    expected, folded, folded_from = fold_pending(turn.fetch('expect'))
     tool_events = events.select { |event| event.event_name == 'llm.tool.complete' }
     text = patient_text(response)
     visible = visible_text(response, text)
@@ -276,8 +294,69 @@ class Captain::Evals::RoutingBenchmark::Scorer
       text: text, visible_text: visible, claim_text: visible && Captain::Evals::RoutingBenchmark::StockText.strip(visible),
       handoff: handoff_state(response, tool_events), human_request: human_request(turn), acting_agent: names[response['agent_id']&.to_i],
       council: events.any? { |event| event.event_name == COUNCIL_STARTED }, customer: turn['customer'].to_s, routing: routing,
-      silent: silent_handoff?(response, text, visible)
+      silent: silent_handoff?(response, text, visible), folded: folded, folded_from: folded_from, missing_operations: []
     )
+  end
+
+  # The first start of every appointment the dialogue has seen, from the state before each turn.
+  def note_origin_starts(before_state)
+    before_state.to_h.fetch('appointment', {}).each { |id, state| @origin_starts[id] ||= state['starts_at'] }
+  end
+
+  # An expected move of a booking that the dialogue never made (the turn that was to make it reported missing_operation) can only be
+  # the booking itself, now at the new time: the operation is folded into the pending one, and the pending one is spent. The tools the
+  # turn expects follow the operation: the tool that books is called, and acts, where the fixture expected the move. Returns the
+  # expectation of the turn, the bookings made of the moves and the pending operations they replace.
+  def fold_pending(expected)
+    folded = []
+    spent = []
+    operations = Array(expected['operations']).map do |operation|
+      pending = @pending_operations.find { |item| movable_from?(item, operation) && spent.exclude?(item) }
+      next operation unless pending
+
+      spent << pending
+      folded << fold(pending, operation)
+      folded.last
+    end
+    return [expected, folded, spent] if folded.empty?
+
+    [expected.merge('operations' => operations, 'must_call' => swap_move_tool(expected['must_call']), 'acts' => swap_move_act(expected['acts'], folded.size)).compact,
+     folded, spent]
+  end
+
+  def swap_move_tool(tools)
+    return if tools.nil?
+
+    tools.map { |tool| tool == CHANGE_TOOLS[:updated] ? CHANGE_TOOLS[:created] : tool }.uniq
+  end
+
+  # The first `moves` acts of the move tool become acts of the booking tool, of the same agent.
+  def swap_move_act(acts, moves)
+    return if acts.nil?
+
+    left = moves
+    acts.map do |act|
+      next act unless act['tool'] == CHANGE_TOOLS[:updated] && left.positive?
+
+      left -= 1
+      act.merge('tool' => CHANGE_TOOLS[:created])
+    end
+  end
+
+  def movable_from?(pending, operation)
+    check = Captain::Evals::RoutingBenchmark::OperationCheck
+    return false unless check.kind_of(pending) == 'create' && check.kind_of(operation) == 'update' && operation['previous_starts_at'].present?
+
+    start = check.expected_start(pending)
+    start.present? && Time.iso8601(start) == Time.iso8601(operation['previous_starts_at'])
+  end
+
+  # The booking that was to be made, at the time of the move; what the move pins (the doctor, the service, the patient) wins.
+  def fold(pending, operation)
+    start = Captain::Evals::RoutingBenchmark::OperationCheck.expected_start(operation)
+    params = pending.fetch('params', {}).except('starts_at').merge(operation.fetch('params', {}).except('starts_at')).merge('starts_at' => start)
+    pending.except('starts_at', 'previous_starts_at', 'previous_resource', 'count')
+           .merge(operation.slice('resource', 'service', 'patient', 'patient_name')).merge('kind' => 'create', 'params' => params)
   end
 
   def agent_names = Captain::Assistant.where(account_id: @account.id).pluck(:id, :name).to_h
@@ -350,7 +429,7 @@ class Captain::Evals::RoutingBenchmark::Scorer
     infra_checks(context, outcome)
     agents = Array(expected['agents'] || expected['agent'])
     outcome.fail!('wrong_agent', "acted: #{context.acting_agent.inspect}; expected: #{agents.join(' | ')}") unless agents.include?(context.acting_agent)
-    council_checks(expected['council'], context.council, outcome)
+    council_checks(expected['council'], context.council, outcome, open_parts: @part_states.values.intersect?(OPEN_PART_STATES))
     council_hands_check(context, outcome)
   end
 
@@ -381,9 +460,13 @@ class Captain::Evals::RoutingBenchmark::Scorer
 
   # A missing captain.council.started event is reported on its own, not as a routing error: when the council
   # producer is silent, every turn that expects a council fails with council_event_missing and nothing else.
-  def council_checks(expected, observed, outcome)
+  # A council the fixture does not expect is no finding when an earlier turn left a part open (a question asked, a request for staff):
+  # the customer's message answers that part, and the runtime starts a council again to run it (a linked follow-up). The fixture
+  # states the council for the dialogue as it should go; after an earlier deviation the parts that are open are not the ones it counted on.
+  def council_checks(expected, observed, outcome, open_parts: false)
     outcome.evaluate(expected ? 'council_event_missing' : 'council_unexpected')
     return if expected == observed
+    return if !expected && open_parts
 
     outcome.fail!(expected ? 'council_event_missing' : 'council_unexpected')
   end
@@ -418,9 +501,39 @@ class Captain::Evals::RoutingBenchmark::Scorer
     return unless context.tools.include?(name)
 
     succeeded = context.successful_tools.include?(name)
+    if succeeded && late_mutation?(context, name)
+      outcome.fail!("late_operation:#{name}", "#{name} completed successfully and made the change an earlier turn expected and found missing" \
+                                              "#{call_arguments(context, name)}")
+      return
+    end
     severity = MUTATION_TOOLS.include?(name) && succeeded ? 'critical' : 'important'
     outcome.fail!("forbidden_tool:#{name}", "#{name} #{succeeded ? 'completed successfully' : 'was called and failed'}#{call_arguments(context, name)}",
                   severity: severity)
+  end
+
+  # The forbidden mutation changed rows, and every row it changed is one that an operation expected earlier accounts for: the earlier
+  # turn did not make the change (it reported missing_operation then), the customer's next message got it made, and the fixture, which
+  # counted on the change having been made, forbids the tool on this turn. The change is the one expected, late, and no wrong booking.
+  def late_mutation?(context, name)
+    change = CHANGE_TOOLS.key(name)
+    return false unless change
+
+    rows = context.changes.rows.select { |row| row.change == change }
+    rows.any? && rows.all? { |row| late_rows(context).any? { |late| late.id == row.id } }
+  end
+
+  # The rows of the turn that an operation expected earlier accounts for: a pending operation of an earlier turn, or the operation
+  # of this turn that was folded into one.
+  def late_rows(context)
+    context.late ||= begin
+      candidates = @pending_operations + context.folded
+      checker = operation_check(context)
+      context.changes.rows.select { |row| candidates.any? { |operation| checker.matches?(row, operation) } }
+    end
+  end
+
+  def operation_check(context)
+    Captain::Evals::RoutingBenchmark::OperationCheck.new(changes: context.changes, directory: @directory, origins: @origin_starts)
   end
 
   # A business outcome (the slot is taken, the doctor does not work that day) is an ordinary answer, so the attempt is allowed. A
@@ -456,7 +569,7 @@ class Captain::Evals::RoutingBenchmark::Scorer
 
   # expect.transfers: the number of colleague transfers (captain.agent.transfer events) in the turn window.
   def transfer_check(context, outcome)
-    expected = context.expected['transfers']
+    expected = expected_transfers(context)
     return if expected.nil?
 
     outcome.evaluate('wrong_transfers')
@@ -465,6 +578,22 @@ class Captain::Evals::RoutingBenchmark::Scorer
 
     path = transfers.map { |item| "#{item[:from]} -> #{item[:to]}" }.join('; ').presence || 'none'
     outcome.fail!("wrong_transfers:#{transfers.size}", "expected #{expected}, observed #{transfers.size}: #{path}")
+  end
+
+  # The fixture counts the transfers of the dialogue as it should go. On turn 1 that count stands. From turn 2 on, the holder of the
+  # conversation before the turn may not be the one the fixture counted on (an earlier turn handed it over wrongly, which that turn
+  # reports as wrong_agent): the count follows from where the conversation is, so one wrong hand-over is not reported on every turn
+  # after it. No transfer is needed in a council (it never changes hands), or when the holder is already an expected agent; else one.
+  def expected_transfers(context)
+    stated = context.expected['transfers']
+    return stated if stated.nil? || @turn_number <= 1 || context.routing.blank?
+    return 0 if context.expected['council'] == true
+
+    before = context.routing.to_h.symbolize_keys.fetch(:before, {}).to_h.symbolize_keys
+    holder = agent_names[before[:current_assistant_id]&.to_i]
+    return stated if holder.nil?
+
+    Array(context.expected['agents'] || context.expected['agent']).include?(holder) ? 0 : 1
   end
 
   # expect.staff_handoff: true needs a staff handoff (the tool, or the council handoff of an unresolved part), false none, 'any' is not
@@ -492,17 +621,21 @@ class Captain::Evals::RoutingBenchmark::Scorer
       "#{', marker without a handoff tool' if state[:marker_without_tool]}"
   end
 
+  # The operations of the turn are the expected ones (see Context: a move is folded into the booking an earlier turn did not make). A
+  # row that an operation expected earlier accounts for (it came late, see #late_rows) is accounted for here as well. The operations that
+  # found no row of their kind stay pending for the turns after.
   def operation_checks(context, outcome, before)
     operations = Array(context.expected['operations'])
     appointment_ops = operations.select { |operation| operation['model'] == 'appointment' }
     appointment_ops.each { |_operation| outcome.evaluate('missing_operation:appointment', 'operation_mismatch') }
-    checked = Captain::Evals::RoutingBenchmark::OperationCheck.new(changes: context.changes, directory: @directory).call(operations)
+    checked = operation_check(context).call(operations)
     checked.failures.each { |failure| outcome.fail!(failure[:id], failure[:detail]) }
+    context.missing_operations = checked.missing
     (operations - appointment_ops).each do |operation|
       outcome.evaluate("missing_operation:#{operation['model']}")
       outcome.fail!("missing_operation:#{operation['model']}") unless legacy_operation_present?(operation, before)
     end
-    unexpected_mutation_check(context, outcome, operations, checked.explained_ids)
+    unexpected_mutation_check(context, outcome, operations, checked.explained_ids.to_a | late_rows(context).map(&:id))
   end
 
   # Deals and contacts: a row created or updated in the turn with the given column values.
@@ -1195,6 +1328,29 @@ class Captain::Evals::RoutingBenchmark::Scorer
     @earlier_successes |= context.successful_tools
     @earlier_mutations.merge(executed_keys(context))
     @written.concat(context.changes.rows)
+    remember_origins(context)
+    remember_pending(context)
+    remember_parts(context)
+  end
+
+  # The start a row has after the turn is the first start the dialogue saw of an appointment it created.
+  def remember_origins(context)
+    context.changes.rows.each { |row| @origin_starts[row.id] ||= row.previous ? row.previous['starts_at'] : row.record.starts_at }
+  end
+
+  # The pending operations: the ones before, less those that were folded into a move or that a row of the turn accounts for, plus the
+  # operations of this turn that found no row.
+  def remember_pending(context)
+    checker = operation_check(context)
+    done = @pending_operations.select do |operation|
+      context.folded_from.include?(operation) || late_rows(context).any? { |row| checker.matches?(row, operation) }
+    end
+    @pending_operations = (@pending_operations - done) + context.missing_operations.to_a
+  end
+
+  def remember_parts(context)
+    parts = context.turn_events.council.to_h[:parts]
+    Array(parts).each { |part| @part_states[part[:part]] = part[:state] if part[:state] }
   end
 
   def result(context, outcome, counters, evidence)
@@ -1218,6 +1374,7 @@ class Captain::Evals::RoutingBenchmark::Scorer
     list << 'council_expected_but_no_part_started' if context.expected['council'] == true && !council.part_started?
     list << 'technical_council_handoff' if context.handoff[:council_technical]
     list << 'handoff_marker_without_tool' if context.handoff[:marker_without_tool]
+    list << 'late_operation' if context.late.present?
     list
   end
 

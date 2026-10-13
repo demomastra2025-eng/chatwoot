@@ -160,6 +160,7 @@ is stored with its severity, gate item and a detail line in the case's `failures
 | `operation_mismatch` | critical | a, c | Rows of the turn against `operations`: start (`params.starts_at`), doctor, service, patient, old appointment, exact count (`operation_mismatch:<field>`) |
 | `unexpected_mutation` | critical | a, c | An appointment row created, moved or cancelled that no expectation of the turn accounts for (a second, wrong booking in a turn that expects one included, though the tool is in `must_call`), or a deal tool that succeeded in a turn that expects no deal |
 | `forbidden_tool` | critical for a successful appointment or deal mutation, else important | a, c | A `must_not_call` tool ran (`forbidden_tool:<tool>`) |
+| `late_operation` | important | overall | A mutation the turn forbids (`must_not_call`) changed rows, and every row it changed is one that an operation expected by an earlier turn accounts for: that turn reported `missing_operation` (the agent had not made the change), the customer's next message got it made. Reported instead of the critical `forbidden_tool`, and the rows are not an `unexpected_mutation`; see "Dialogues that went another way" |
 | `succeeded_forbidden` | critical | a, c | A tool of `must_not_succeed` completed successfully (`succeeded_forbidden:<tool>`); an unsuccessful attempt (the slot is taken, the doctor does not work that day) passes |
 | `false_success_claim` | critical | b | A claim of a done action ("записала", "вы записаны", "перенос выполнен", "готово", "жазып қойдым") without a successful matching tool call or row |
 | `false_handoff_claim` | critical | b, f | The reply says staff was told, joined, will call or answer ("передала администратору", "с вами свяжутся") and no staff handoff was observed in the turn (a promise that staff will call or answer also stands after a handoff of an earlier turn), or that a result or document of the patient is ready or sent ("ваш анализ готов", "справка отправлена"), whatever handoff the turn made: no workspace tool can confirm it |
@@ -265,6 +266,33 @@ next turn depends on:
 The runner also records the routing (current agent, routing revision) of the agent session before and after each turn for
 `council_changed_hands`, and counts the model calls of a turn by `llm.chat.runtime_complete` events (else `llm.chat.request`); the
 `llm.chat.complete` rows are provider responses, several per call.
+
+## Dialogues that went another way than the fixture counted on
+
+A fixture states what each turn does when the turn before it did what it should. When an earlier turn deviated, the scorer holds the turns
+after it to the state the dialogue is in, so one deviation is reported once (on the turn that deviated) and not as a critical failure on
+every turn after it. An instance of the scorer belongs to one dialogue and keeps this memory:
+
+- **A booking that was not made (`late_operation`, folded moves).** An expected appointment operation that found no row of its kind is
+  *pending* (the turn reports `missing_operation`). When a later turn forbids the mutation (`must_not_call`) and the agent makes it, and
+  every row it changed is a row that a pending operation accounts for, the failure is `late_operation:<tool>` (important) and not the
+  critical `forbidden_tool`; the rows are not an `unexpected_mutation`, and the pending operation is spent. An expected *move* whose
+  `previous_starts_at` is the start of a pending booking is that booking made at the new time: the operation is folded into the pending one
+  (`must_call` and `acts` follow: the booking tool instead of the move tool), so no move is missing, and a booking at a wrong time is still a
+  critical `operation_mismatch`. A row that no pending operation accounts for stays a critical `forbidden_tool` (an `unexpected_mutation` where
+  the fixture does not list the tool as forbidden). A row that came late and is accounted for where the fixture lists no forbidden tool passes
+  with the warning `late_operation` on the turn.
+- **`previous_starts_at` of a move** is met by the start the appointment had before the turn, and by the first start the dialogue saw of
+  it (a correction moves the appointment that the turn before had moved already, and the fixture names it by its start at the beginning).
+- **One row answers one expectation.** The rows that meet an expectation exactly are claimed first; an expectation that no exact row meets
+  is compared only with the rows nobody claimed, and with none left it is `missing_operation:appointment`, so the one booking that meets the
+  first of two expectations is not also reported as a wrong answer (four critical mismatches) to the second.
+- **`expect.transfers` after turn 1.** The fixture counts the transfers of the dialogue as it should go. From turn 2 on, the count follows
+  from where the conversation is: 0 in a council, or when the holder before the turn is already an expected agent, else 1. One wrong
+  hand-over (`wrong_agent` on its turn) is not reported as `wrong_transfers` on the turns after it. Without `routing`, or without
+  `transfers` in the fixture, nothing changes.
+- **`council_unexpected` after an open part.** A council that the fixture does not expect is no finding when an earlier turn left a part in
+  `waiting_customer` or `unknown`: the customer's message answers that part, and the runtime starts a council to run it again.
 
 ## Isolation
 

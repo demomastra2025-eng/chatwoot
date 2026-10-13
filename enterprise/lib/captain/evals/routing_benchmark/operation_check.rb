@@ -16,10 +16,19 @@
 # `operation_mismatch:<field>` and not a pass. `count` is the exact number of matching rows (default 1): a second row for one
 # request is `operation_mismatch:count`.
 #
+# A row answers one expectation: the rows that match an expectation exactly are claimed first, and an expectation that no exact row
+# meets is compared only with the rows nobody claimed, so the one booking that meets the first of two expectations is not also
+# reported as a wrong answer to the second (the second is missing).
+#
+# `previous_starts_at` names the start the appointment had when the dialogue began (a move the turn before had already made does not
+# change it): it is met by the start of the row before this turn and by the first start the dialogue saw of it (`origins`).
+#
 # Reasons: missing_operation:appointment (no row of the kind with those params) and operation_mismatch:<field>.
 class Captain::Evals::RoutingBenchmark::OperationCheck
   KIND_VERBS = { 'create' => 'created', 'update' => 'updated', 'cancel' => 'cancelled' }.freeze
-  Result = Struct.new(:failures, :explained_ids, keyword_init: true)
+  # failures, the ids of the rows that the expectations account for, and the expectations that found no row of their kind at all
+  # (`missing`).
+  Result = Struct.new(:failures, :explained_ids, :missing, keyword_init: true)
 
   class << self
     # The kind an appointment expectation stands for. The first fixtures wrote a cancellation as an update that sets the
@@ -36,42 +45,63 @@ class Captain::Evals::RoutingBenchmark::OperationCheck
     end
   end
 
-  def initialize(changes:, directory: nil)
+  # origins: { appointment id => the first start the dialogue saw of it }
+  def initialize(changes:, directory: nil, origins: {})
     @changes = changes
     @directory = directory
+    @origins = origins
   end
 
   def call(operations)
-    failures = []
+    appointment_operations = Array(operations).select { |operation| operation['model'] == 'appointment' }
+    claimed = Set.new
     explained = Set.new
-    Array(operations).each do |operation|
-      next unless operation['model'] == 'appointment'
+    unmet = appointment_operations.reject { |operation| exact_match?(operation, claimed, explained) }
+    failures = []
+    missing = []
+    unmet.each { |operation| report_unmet(operation, claimed, explained, failures, missing) }
+    Result.new(failures: failures, explained_ids: explained, missing: missing)
+  end
 
-      explained.merge(check(operation, failures))
-    end
-    Result.new(failures: failures, explained_ids: explained)
+  # Whether the row is a change of the kind of the expectation that meets it in every pinned field.
+  def matches?(row, operation)
+    kind = self.class.kind_of(operation)
+    @changes.for_kind(kind).any? { |item| item.id == row.id } && with_params([row], operation).any? && mismatches(row, operation).empty?
   end
 
   private
 
-  # Appends the failures of one expectation; returns the ids of the rows it accounts for.
-  def check(operation, failures)
+  # The expectation is met when exactly `count` unclaimed rows of its kind match it in every pinned field; they are claimed.
+  def exact_match?(operation, claimed, explained)
+    count = Integer(operation.fetch('count', 1))
+    matching = unclaimed_rows(operation, claimed).select { |row| mismatches(row, operation).empty? }
+    return false unless matching.size == count
+
+    claimed.merge(matching.map(&:id))
+    explained.merge(matching.map(&:id))
+    true
+  end
+
+  # An expectation that no exact row meets: nothing of its kind is left (missing), or the rows left differ from it. Every row of
+  # the kind that is left is reported through this expectation; a row it does not account for would fall to unexpected_mutation.
+  def report_unmet(operation, claimed, explained, failures, missing)
     kind = self.class.kind_of(operation)
     count = Integer(operation.fetch('count', 1))
-    rows = with_params(@changes.for_kind(kind), operation)
-    return [] if rows.empty? && count.zero?
-
+    rows = unclaimed_rows(operation, claimed)
     if rows.empty?
       failures << { id: 'missing_operation:appointment', detail: "no appointment was #{KIND_VERBS.fetch(kind)}" }
-      return []
+      missing << operation
+      return
     end
-    matching = rows.select { |row| mismatches(row, operation).empty? }
-    return matching.map(&:id) if matching.size == count
 
-    # Every row of the kind is reported through this expectation. When it is met, a row of the kind that does not match
-    # is not accounted for and falls to unexpected_mutation.
+    matching = rows.select { |row| mismatches(row, operation).empty? }
     failures.concat(mismatch_failures(rows, matching, operation, count, kind))
-    rows.map(&:id)
+    claimed.merge(rows.map(&:id))
+    explained.merge(rows.map(&:id))
+  end
+
+  def unclaimed_rows(operation, claimed)
+    with_params(@changes.for_kind(self.class.kind_of(operation)), operation).reject { |row| claimed.include?(row.id) }
   end
 
   def mismatch_failures(rows, matching, operation, count, kind)
@@ -114,17 +144,23 @@ class Captain::Evals::RoutingBenchmark::OperationCheck
     operation['patient_name'] && !names_patient?(row.record, operation['patient_name'])
   end
 
-  # The old appointment of an update; unknown (no pre-turn state) is not a mismatch.
+  # The old appointment of an update; unknown (no pre-turn state) is not a mismatch. The start it moves from is the one it had before
+  # this turn, or the first one the dialogue saw: a correction ("лучше на 11:30") moves the appointment that the turn before had moved
+  # already, and the fixture names the appointment by the start it had at the beginning.
   def previous_mismatches(row, operation)
     previous = row.previous
     return [] if previous.nil?
 
     fields = []
-    fields << 'previous_starts_at' if operation['previous_starts_at'] && previous['starts_at'] != Time.iso8601(operation['previous_starts_at'])
+    fields << 'previous_starts_at' if operation['previous_starts_at'] && !moved_from?(row, previous, Time.iso8601(operation['previous_starts_at']))
     if operation['previous_resource'] && previous['resource_id'] != directory.resource_id(operation['previous_resource'])
       fields << 'previous_resource'
     end
     fields
+  end
+
+  def moved_from?(row, previous, start)
+    [previous['starts_at'], @origins[row.id]].compact.include?(start)
   end
 
   # A name part of the expected patient, compared by stem to survive Russian and Kazakh case endings, occurs in one of
