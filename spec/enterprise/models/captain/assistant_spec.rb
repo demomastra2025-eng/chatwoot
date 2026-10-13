@@ -823,7 +823,7 @@ RSpec.describe Captain::Assistant, type: :model do
     let(:first_rule) do
       '- Answer from the clinic instructions, the data below, tool results and the FAQ; tool results are the most current. ' \
         'When a lookup finds nothing, try once more with other words. ' \
-        'If the sources still have no answer, call handoff with the question as the reason.'
+        'If the sources still have no answer, hand the question over to staff by the handoff rule below.'
     end
     let(:first_rule_without_handoff) do
       '- Answer from the clinic instructions, the data below, tool results and the FAQ; tool results are the most current. ' \
@@ -832,7 +832,7 @@ RSpec.describe Captain::Assistant, type: :model do
     end
     let(:handoff_rule) do
       '- Call handoff once, with a short reason for staff, when the patient asks for a person, or when only staff can do the request ' \
-        'and every detail the clinic instructions ask for is known; ask for the missing details first. ' \
+        'or answer the question, and every detail the clinic instructions ask for is known; ask for the missing details first. ' \
         'Handoff is silent: the patient reads nothing about it.'
     end
     let(:full_rules) do
@@ -843,7 +843,7 @@ RSpec.describe Captain::Assistant, type: :model do
         - #{Captain::PatientLanguage::RULE} Briefly, naming specialists and services as the clinic data names them, with the date and time.
         - When the patient asked for an action and gave every detail, do it now and report the result with the date and time from the tool. When details are missing, ask for all of them in one message.
         - Tell the patient as done only what a tool did successfully: a booking, change or cancellation.
-        - Book or reschedule to a time the patient named or chose from the slots you offered. For a day or a part of a day, offer 2-3 free slots spread over it.
+        - The patient chooses the time of an appointment: book or reschedule to a time the patient named or chose from the slots you offered. When the patient named only a day or a part of a day (tomorrow, Monday morning), offer 2-3 free slots spread over it in one message and book after the patient chooses.
         - Before changing an appointment, make sure which one; if several match, ask.
         - When you book for another patient (a child, a relative), pass that person in create_appointment's patient parameter; to change or cancel that person's appointment, find it with search_appointments.
         - Give tools only IDs from the data below or from tool results, and only parameters you have values for.
@@ -962,7 +962,7 @@ RSpec.describe Captain::Assistant, type: :model do
         expect(rules).to include(
           '- Answer from the clinic instructions, the data below and tool results; tool results are the most current. ' \
           'When a lookup finds nothing, try once more with other words. ' \
-          'If the sources still have no answer, call handoff with the question as the reason.'
+          'If the sources still have no answer, hand the question over to staff by the handoff rule below.'
         )
         expect(rules).not_to include('FAQ')
         expect(rules).to include(handoff_rule)

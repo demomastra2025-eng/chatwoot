@@ -100,6 +100,22 @@ RSpec.describe Captain::Runtime::AgentToolTexts do
     expect(described_class.for_tool('update_appointment').description).not_to match(/free first|check .* is free/i)
   end
 
+  it 'makes the start of a booking or a move the time the patient named or chose, and sends a day or a part of a day to the free slots' do
+    offered = 'named or chose from the free slots you offered'
+    spread = 'call search_available_slots, offer 2-3 free slots spread over it in one message'
+
+    %w[create_appointment update_appointment].each do |tool_id|
+      entry = described_class.for_tool(tool_id)
+
+      expect(entry.description).to include(offered).and include(spread)
+      expect(entry.params['starts_at']).to include(offered)
+      expect(entry.description).not_to match(/otherwise take|take the .* time from|pick the/i)
+    end
+    expect(described_class.for_tool('create_appointment').description).to include('book after the patient chooses')
+    expect(described_class.for_tool('update_appointment').description).to include('move the appointment after the patient chooses')
+    expect(described_class.for_tool('search_available_slots').description).to include('to offer the patient free slots')
+  end
+
   it 'names the patient of create_appointment positively: the person the appointment is for when it is not the person in the conversation' do
     entry = described_class.for_tool('create_appointment')
 
@@ -118,12 +134,12 @@ RSpec.describe Captain::Runtime::AgentToolTexts do
     expect(entry.description).to include('Offer 2-3 slots spread over the period')
   end
 
-  it 'tells the agent that handoff is for a person or for what only staff can do, after one message for the details staff need' do
+  it 'tells the agent that handoff is for a person or for what only staff can do or answer, after one message for the details staff need' do
     description = described_class.for_tool('handoff').description
 
     expect(description).to eq(
-      'Hand the conversation to staff. Call it when the patient asks for a person, or when only staff can do the request: ' \
-      'first ask for the details the clinic instructions or FAQ say staff need for it (all in one message); ' \
+      'Hand the conversation to staff. Call it when the patient asks for a person, or when only staff can do the request or answer ' \
+      'the question: first ask for the details the clinic instructions or FAQ say staff need for it (all in one message); ' \
       'if they name none, hand over at once.'
     )
     expect(description).not_to match(/no answer|notice|informs/i)
