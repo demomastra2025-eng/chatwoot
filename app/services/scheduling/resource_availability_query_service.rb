@@ -2,13 +2,21 @@ class Scheduling::ResourceAvailabilityQueryService
   MAX_LIMIT = 50
   MAX_RANGE_DAYS = Scheduling::RangeValidator::MAX_RANGE_DAYS
 
+  # The length of one visit: the requested minutes, else the service's, else the resource's own default.
+  def self.duration_for(resource:, service:, duration_min:)
+    numeric = duration_min.to_i
+    return service&.duration_min || resource.slot_duration_min if numeric <= 0
+
+    numeric
+  end
+
   def initialize(resource:, from:, to:, **options)
     @resource = resource
     @account = resource.account
     @from = from
     @to = to
     @service = options[:service]
-    @duration_min = duration_for(service: @service, duration_min: options[:duration_min])
+    @duration_min = self.class.duration_for(resource: @resource, service: @service, duration_min: options[:duration_min])
     @limit = normalize_limit(options[:limit])
     @provider_working_windows = options[:provider_working_windows]
     @replace_work_rules = options.fetch(:replace_work_rules, false)
@@ -66,13 +74,6 @@ class Scheduling::ResourceAvailabilityQueryService
       provider_working_windows: @provider_working_windows,
       replace_work_rules: @replace_work_rules
     )
-  end
-
-  def duration_for(service:, duration_min:)
-    numeric = duration_min.to_i
-    return service&.duration_min || @resource.slot_duration_min if numeric <= 0
-
-    numeric
   end
 
   def validate_range!
