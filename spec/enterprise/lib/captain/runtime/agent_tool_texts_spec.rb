@@ -118,10 +118,14 @@ RSpec.describe Captain::Runtime::AgentToolTexts do
     expect(entry.description).to include('Offer 2-3 slots spread over the period')
   end
 
-  it 'tells the agent that handoff sends nothing to the patient and is for a person or for what only staff can do' do
+  it 'tells the agent that handoff is for a person or for what only staff can do, after one message for the details staff need' do
     description = described_class.for_tool('handoff').description
 
-    expect(description).to include('handoff sends nothing to the patient').and include('the patient asks for staff')
+    expect(description).to eq(
+      'Hand the conversation to staff. Call it when the patient asks for a person, or when only staff can do the request: ' \
+      'first ask for the details the clinic instructions or FAQ say staff need for it (all in one message); ' \
+      'if they name none, hand over at once.'
+    )
     expect(description).not_to match(/no answer|notice|informs/i)
   end
 
