@@ -391,7 +391,7 @@ RSpec.describe Captain::Runtime::ChatFactory do
                               'The patient writes in Russian',
                               'DO it now with your tools (book, move, cancel, update): do not propose it and do not ask whether to do it, ' \
                               'except where your tool descriptions require confirmation of another person\'s data. ' \
-                              'Otherwise ask ONE precise question and wait for the answer',
+                              'Otherwise ask for everything that is still missing in ONE message and wait for the answer',
                               'call no action tool: answer out_of_scope',
                               'Say only what your tool results show: what was done, for whom, the date and time exactly as returned',
                               'say that the request was sent and the confirmation will follow',

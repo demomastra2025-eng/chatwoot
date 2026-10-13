@@ -58,6 +58,8 @@ RSpec.describe Captain::Runtime::CoordinationPrompt do
       prompt = described_class.render(context)
 
       expect(prompt).to include('manage_agent_tasks', 'a waiting task alone is no reason to transfer back')
+      expect(prompt).to include('so ask for what is still missing in one message')
+      expect(prompt).not_to include('ask for that one fact')
       expect(prompt).not_to include('# Colleagues on this channel', 'plan_request', 'orchestrator')
     end
   end

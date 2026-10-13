@@ -2,7 +2,7 @@
 
 # A council: one customer message that holds separate requests for different agents, or the answer to an open part of another
 # agent. Every part is a normal run of the agent that OWNS it (see Council::PartRun), with that agent's own tools, mutating tools
-# included: the owner books, moves or cancels as soon as it has what it needs, otherwise it asks one precise question, and it
+# included: the owner books, moves or cancels as soon as it has what it needs, otherwise it asks for everything still missing in one message, and it
 # writes the final text of its part from what its tools returned. The editor (CouncilEditor) only merges the part texts into one
 # message; a council of one part sends that text as it is. The conversation never changes hands.
 #
@@ -474,7 +474,7 @@ class Captain::Runtime::Council
     ['unknown', '']
   end
 
-  # The owner asks the customer one precise question; its listed questions stand in for a missing text.
+  # The owner asks the customer for everything still missing in one message; its listed questions stand in for a missing text.
   def information_state(output, text, base)
     text = text.presence || output['questions'].join(' ')
     return ['waiting_customer', text] if text.present?

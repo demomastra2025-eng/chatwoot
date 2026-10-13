@@ -130,7 +130,7 @@ module Captain::Runtime::CoordinationPrompt
       # Task queue
       Continue the same conversation: do not greet or introduce yourself again, and use the facts the patient already gave.
       Use manage_agent_tasks to record your verified result and status before you reply or transfer; update only your own tasks.
-      - completed: the whole request is done. waiting: a patient answer is still missing, so ask for that one fact; when it is known, set the task to active before acting.
+      - completed: the whole request is done. waiting: a patient answer is still missing, so ask for what is still missing in one message; when it is known, set the task to active before acting.
       - Transfer only to an agent that has awaiting work; a waiting task alone is no reason to transfer back. When every remaining task is waiting, answer with the results and the needed question.
       - Never repeat a completed action. A cancellation or correction from the patient replaces pending requests.
       - Your final reply covers the completed tasks and explains any unresolved request.

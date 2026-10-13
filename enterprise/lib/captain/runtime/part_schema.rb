@@ -9,8 +9,9 @@ class Captain::Runtime::PartSchema < RubyLLM::Schema
     'Empty string when there is nothing to say.'
   ).freeze
   STATUS_DESCRIPTION = (
-    'Exactly one of: answered (the part is answered or its action is done), needs_information (you asked the patient one precise ' \
-    'question and wait), out_of_scope (not your responsibility; no action was taken), unavailable (cannot be resolved now).'
+    'Exactly one of: answered (the part is answered or its action is done), needs_information (you asked the patient, in one ' \
+    'message, for everything still missing, and wait), out_of_scope (not your responsibility; no action was taken), ' \
+    'unavailable (cannot be resolved now).'
   ).freeze
   QUESTIONS_DESCRIPTION = 'Every question for the patient that customer_text contains, word for word. Empty array when none.'
   SOURCES_DESCRIPTION = (

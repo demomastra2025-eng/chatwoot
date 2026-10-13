@@ -649,7 +649,7 @@ includes only live events. The runtime persists `captain.agent.transfer`,
 `captain.council.started` / `captain.council.finished` with participant IDs
 and an outcome on finish; `Captain::Runtime::Council` calls these producers.
 A council part is a normal run of the agent that owns it: it acts with its own tools (it books, moves or cancels when it
-has what it needs, otherwise it asks one precise question) and writes the final text of its part from its tool results.
+has what it needs, otherwise it asks for everything still missing in one message) and writes the final text of its part from its tool results.
 `captain.council.part_started` and `captain.council.part_finished` carry, per part, only IDs, states and counts
 (`part_id`, `part_version`, `executor_agent_id`, `lane` writer or reader, `inline`, `state`, `status`, `acted`,
 `mutations_succeeded`, `mutations_failed`, `mutations_unknown`, `tools_called`, `turns`, `duration_ms`); `llm.tool.*` events of
