@@ -416,12 +416,12 @@ RSpec.describe Captain::Runtime::ChatFactory do
       described_class.send(:system_prompt_for, agent, Captain::Runtime::RunContext.new({ part_run: true }.merge(context))).squish
     end
 
-    it 'asks the owner to act now with its own tools, say only what the tools show and write the final text in the language of the customer' do
-      text = prompt(part_language: 'ru', part_staff_handoff: false)
+    it 'asks the owner to act now with its own tools, say only what the tools show and write the final text in the language of the patient' do
+      text = prompt(part_staff_handoff: false)
 
       expect(text).to include('Specialist instructions',
                               'You handle ONE part of the patient\'s message with your own tools, as in a normal conversation',
-                              'The patient writes in Russian',
+                              Captain::PatientLanguage::RULE,
                               'DO it now with your tools (book, move, cancel, update): do not propose it and do not ask whether to do it, ' \
                               'except where your tool descriptions require confirmation of another person\'s data. ' \
                               'Otherwise ask for everything that is still missing in ONE message and wait for the answer',
@@ -431,37 +431,28 @@ RSpec.describe Captain::Runtime::ChatFactory do
                               'Never claim an action that no tool performed, and never repeat one that your results, ' \
                               'the dialogue or the data below show as done',
                               'You cannot transfer the conversation or call staff',
-                              'customer_text: the FINAL text for THIS part only, addressed to the patient ("вы") in Russian',
+                              'patient_language: the patient\'s language; customer_text is written in it.',
+                              'customer_text: the FINAL text for THIS part only, addressed to the patient politely.',
                               'done: say what was done, for whom, the date and the time ' \
-                              '(for example "Вы записаны к терапевту Иванову на 14 октября в 10:00.")',
+                              '(for example "You are booked with therapist Ivanov on 14 October at 10:00.")',
                               'answer: the answer', 'information needed: the exact question',
-                              'exactly as the tool results give it', '(for example "на какой день вам удобно?")')
-      expect(text).not_to include('Do not perform an action', 'proposed_operation', 'confirm it', 'missing_fields', 'customer\'s')
+                              'exactly as the tool results give it', '(for example "which day suits you?")')
+      expect(text).not_to include('Do not perform an action', 'proposed_operation', 'confirm it', 'missing_fields', 'customer\'s',
+                                  'The patient writes in')
     end
 
-    it 'gives the owner of a Kazakh patient Kazakh wording to follow and no Russian example sentences' do
-      text = prompt(part_language: 'kk', part_staff_handoff: false)
+    it 'gives the owner of every patient the same plain example sentences, with no wording of one language to follow' do
+      text = prompt(part_customer_message: 'Дүйсенбі 19-ы сағат 9:30-ға ауыстырыңызшы', part_staff_handoff: false)
 
-      expect(text).to include('The patient writes in Kazakh (Cyrillic)', 'addressed to the patient ("сіз") in Kazakh (Cyrillic)',
-                              'Сіз терапевт Ивановқа 14 қазанға сағат 10:00-ге жазылдыңыз.',
-                              '(for example "сізге қай күні ыңғайлы?")', '(for example "Бористі қай күнге жазайық?")')
-      expect(text).not_to include('Вы записаны к терапевту', 'на какой день вам удобно?', 'На какую дату записать Бориса?', '("вы")')
-    end
-
-    it 'writes the part for a patient of another language in the language of the latest message, with plain example sentences' do
-      text = prompt(part_language: 'other', part_staff_handoff: false, part_customer_message: 'Please move my visit to Thursday')
-
-      expect(text).to include('The patient writes in the language of the patient\'s latest message (given below)',
-                              'addressed to the patient politely in the language of the patient\'s latest message (given below)',
-                              'You are booked with therapist Ivanov on 14 October at 10:00.',
-                              '(for example "which day suits you?")', '(for example "Which date shall I book Boris for?")')
-      expect(text).not_to include('Russian', 'Kazakh', 'Вы записаны', '("вы")', '("сіз")')
+      expect(text).to include('(for example "Which date shall I book Boris for?")', '(for example "which day suits you?")')
+      expect(text).not_to include('Вы записаны', 'Сіз терапевт', 'на какой день вам удобно?', '("вы")', '("сіз")', 'The patient writes in')
+      expect(text.sub(Captain::PatientLanguage::RULE, '')).not_to match(/Russian|Kazakh/)
     end
 
     it 'asks to name a person other than the writer, in every question, answer and statement' do
-      expect(prompt(part_language: 'ru')).to include(
+      expect(prompt).to include(
         'For a named person other than the writer (a child, a relative), name that person in every question, answer and statement ' \
-        '(for example "На какую дату записать Бориса?")'
+        '(for example "Which date shall I book Boris for?")'
       )
     end
 
@@ -473,16 +464,17 @@ RSpec.describe Captain::Runtime::ChatFactory do
                               'questions: every question that customer_text contains, word for word, as its last sentences')
     end
 
-    it 'carries the shared rule for the language and the facts of the text, the same constant as the editor' do
-      expect(Captain::Runtime::CouncilEditor::PATIENT_TEXT_RULE).to eq(
-        'Write in the patient\'s language; keep names, dates, times and prices exactly as in the texts.'
-      )
-      %w[ru kk].each do |language|
-        text = prompt(part_language: language)
+    it 'carries the shared rules of the language and of the facts of the text, the same constants as the editor' do
+      text = prompt
+      editor_prompt = Captain::Runtime::CouncilEditor::SYSTEM_PROMPT
 
-        expect(text).to include(Captain::Runtime::CouncilEditor::PATIENT_TEXT_RULE)
-        expect(text).not_to match(/Latin|English/i)
-      end
+      expect(text).to include(Captain::PatientLanguage::RULE, Captain::Runtime::CouncilEditor::FACTS_RULE)
+      expect(editor_prompt).to include(Captain::PatientLanguage::RULE, Captain::Runtime::CouncilEditor::FACTS_RULE)
+    end
+
+    it 'does not take a language from the run: the owner decides it from the conversation' do
+      expect(described_class.const_defined?(:PART_LANGUAGES, false)).to be(false)
+      expect(prompt(part_language: 'kk')).to eq(prompt(part_language: 'ru'))
     end
 
     it 'books or moves only to a time the patient named or chose, and offers 2-3 free times for a day or a part of a day' do
@@ -544,8 +536,8 @@ RSpec.describe Captain::Runtime::ChatFactory do
     end
 
     it 'tells the owner that staff will answer an unresolved part only when a handoff is available' do
-      with_handoff = prompt(part_language: 'ru', part_staff_handoff: true)
-      without_handoff = prompt(part_language: 'ru', part_staff_handoff: false)
+      with_handoff = prompt(part_staff_handoff: true)
+      without_handoff = prompt(part_staff_handoff: false)
 
       expect(with_handoff).to include('one honest sentence that says so',
                                       'A staff member can take this part over: say briefly that a staff member will answer it')
@@ -555,10 +547,8 @@ RSpec.describe Captain::Runtime::ChatFactory do
       expect(without_handoff).not_to include('A staff member can take this part over')
     end
 
-    it 'defaults to Russian and to no staff handoff' do
-      text = prompt
-
-      expect(text).to include('The patient writes in Russian', 'No staff member can take this part over')
+    it 'defaults to no staff handoff' do
+      expect(prompt).to include('No staff member can take this part over')
     end
   end
 

@@ -20,6 +20,9 @@ class Captain::Runtime::PartSchema < RubyLLM::Schema
   SUGGESTED_AGENT_DESCRIPTION = 'When out_of_scope: the exact name of the responsible agent from the list. Otherwise an empty string.'
   REASONING_DESCRIPTION = 'One short internal sentence on how the part ended. Never shown to the patient.'
 
+  # patient_language comes first: the owner names the language before it writes the text. It is for the logs and for the editor
+  # (see Captain::Runtime::CouncilEditor); the text is used as it is.
+  string :patient_language, description: Captain::PatientLanguage::FIELD_DESCRIPTION
   string :customer_text, description: CUSTOMER_TEXT_DESCRIPTION
   string :status, description: STATUS_DESCRIPTION
   array :questions, of: :string, description: QUESTIONS_DESCRIPTION

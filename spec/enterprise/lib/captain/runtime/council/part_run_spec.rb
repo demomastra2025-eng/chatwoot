@@ -11,7 +11,10 @@ RSpec.describe Captain::Runtime::Council::PartRun do
   let(:snapshot) { { part_run: true, state: { assistant_id: 2 } } }
   let(:runner) { instance_double(Captain::Runtime::Runner) }
   let(:run_callbacks) { [] }
-  let(:answer) { { 'customer_text' => 'Вы записаны на 14 октября в 10:00.', 'status' => 'answered', 'questions' => [], 'sources' => ['create_appointment'], 'suggested_agent' => '', 'reasoning' => 'ok' } }
+  let(:answer) do
+    { 'patient_language' => 'Russian', 'customer_text' => 'Вы записаны на 14 октября в 10:00.', 'status' => 'answered', 'questions' => [],
+      'sources' => ['create_appointment'], 'suggested_agent' => '', 'reasoning' => 'ok' }
+  end
   let(:created) { Captain::ToolResult.success(data: { appointment_id: 7, local_date: '14.10.2026', local_time: '10:00' }) }
 
   def part_run(callbacks: {})
@@ -35,8 +38,8 @@ RSpec.describe Captain::Runtime::Council::PartRun do
     result = part_run.call('Запишите меня на 14 октября')
 
     expect(runner).to have_received(:run).with(agent, 'Запишите меня на 14 октября', hash_including(context: snapshot, max_turns: 14))
-    expect(result[:output]).to include('status' => 'answered', 'customer_text' => 'Вы записаны на 14 октября в 10:00.',
-                                       'sources' => ['create_appointment'])
+    expect(result[:output]).to include('status' => 'answered', 'patient_language' => 'Russian',
+                                       'customer_text' => 'Вы записаны на 14 октября в 10:00.', 'sources' => ['create_appointment'])
     expect(result).to include(acted: true, pending: false, technical: nil, mutations_succeeded: 1, mutations_failed: 0,
                               mutations_unknown: 0, tools_called: 1, turns: 1)
   end
@@ -110,11 +113,18 @@ RSpec.describe Captain::Runtime::Council::PartRun do
   end
 
   it 'reads the answer from a JSON string and drops anything but strings from the lists' do
-    stub_run(output: JSON.generate(status: 'needs_information', customer_text: ' На какое время? ', questions: ['На какое время?', 5, nil],
-                                   sources: 'x', suggested_agent: 3))
+    stub_run(output: JSON.generate(status: 'needs_information', patient_language: ' Kazakh ', customer_text: ' На какое время? ',
+                                   questions: ['На какое время?', 5, nil], sources: 'x', suggested_agent: 3))
 
-    expect(part_run.call('x')[:output]).to eq('status' => 'needs_information', 'customer_text' => 'На какое время?',
-                                              'questions' => ['На какое время?'], 'sources' => [], 'suggested_agent' => '', 'reasoning' => '')
+    expect(part_run.call('x')[:output]).to eq('status' => 'needs_information', 'patient_language' => 'Kazakh',
+                                              'customer_text' => 'На какое время?', 'questions' => ['На какое время?'], 'sources' => [],
+                                              'suggested_agent' => '', 'reasoning' => '')
+  end
+
+  it 'keeps an answer that names no language, with a blank one' do
+    stub_run(output: answer.except('patient_language'))
+
+    expect(part_run.call('x')[:output]).to include('customer_text' => 'Вы записаны на 14 октября в 10:00.', 'patient_language' => '')
   end
 
   it 'keeps the callbacks of the run and adds its own, without changing the lists it was given' do

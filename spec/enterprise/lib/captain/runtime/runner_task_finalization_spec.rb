@@ -443,6 +443,30 @@ RSpec.describe Captain::Runtime::Runner do
         expect(reminders.map(&:content).sole).to include('waits for the customer\'s answer')
       end
 
+      it 'carries the language the owners of the parts wrote in with the council reply, for the logs; delivery reads the reply only' do
+        allow(Captain::Runtime::Council).to receive(:new) do |context:, **|
+          instance_double(Captain::Runtime::Council).tap do |council|
+            allow(council).to receive(:run) do
+              context[:council_patient_language] = 'Kazakh'
+              'Сіз сағат 11:00-ге жазылдыңыз.'
+            end
+          end
+        end
+        chat.respond_with(reply('Записала.'), lambda do |current_context|
+          Captain::Runtime::PartRegistry.new(current_context).accept!(
+            mode: 'council',
+            parts: [{ fragment: 'давайте в 11', executor_agent_id: 91, link_part_id: 'pending-part', link_action: 'answer' }]
+          )
+          reply('Text that the council replaces.')
+        end)
+        expect_initial_ask
+        expect(Llm::Runtime).to receive(:complete).once.and_call_original
+
+        result = run_with
+
+        expect(result.output).to eq({ response: 'Сіз сағат 11:00-ге жазылдыңыз.', reasoning: '', patient_language: 'Kazakh' })
+      end
+
       it 'sends nothing when no part of the council has a text of its own: the run is suppressed, not failed, and the runtime writes no sentence' do
         council = instance_double(Captain::Runtime::Council, run: '')
         allow(Captain::Runtime::Council).to receive(:new).and_return(council)

@@ -51,9 +51,9 @@ RSpec.describe Captain::Runtime::Council do
 
   # What the run of a part returns (see Council::PartRun): the structured answer and what the tools did.
   def ran(text = '', status: 'answered', sources: ['faq_lookup'], questions: [], acted: false, pending: false, technical: nil, suggested: '',
-          summary: '', tracking: {})
-    output = { 'status' => status, 'customer_text' => text, 'questions' => questions, 'sources' => sources, 'suggested_agent' => suggested,
-               'reasoning' => '' }
+          summary: '', tracking: {}, language: '')
+    output = { 'patient_language' => language, 'status' => status, 'customer_text' => text, 'questions' => questions, 'sources' => sources,
+               'suggested_agent' => suggested, 'reasoning' => '' }
     { output: output, acted: acted, pending: pending, technical: technical, summary: summary, duration_ms: 12, tracking: tracking,
       mutations_succeeded: acted ? 1 : 0, mutations_failed: 0, mutations_unknown: 0, tools_called: 2, turns: 3 }
   end
@@ -163,8 +163,9 @@ RSpec.describe Captain::Runtime::Council do
       writer = runs.find { |run| run[:id] == 'part-0' }[:snapshot]
       reader = runs.find { |run| run[:id] == 'part-1' }[:snapshot]
       expect(writer).to include(part_run: true, part_plan_accepted: true, active_part_id: 'part-0', active_part_version: 1,
-                                current_agent: 'assistant_1', part_language: 'ru', part_staff_handoff: true,
+                                current_agent: 'assistant_1', part_staff_handoff: true,
                                 part_customer_message: 'Запишите меня к терапевту на 14 октября и сколько стоит МРТ')
+      expect(writer).not_to have_key(:part_language)
       expect(writer[:state]).to include(assistant_id: 1)
       expect(writer[:state][:captain_response_fence]).to include(last_message_id: 5, part_id: 'part-0', part_version: 1)
       expect(writer[:state][:captain_response_fence]).not_to have_key(:routing_revision)
@@ -596,14 +597,43 @@ RSpec.describe Captain::Runtime::Council do
       expect(run_council(parts(%w[Анна Борис]))).to eq("#{question}\n\n#{question}")
     end
 
-    it 'reports the reply of the editor and its language' do
+    it 'reports the reply of the editor and the language its owners wrote in, and keeps that language for the logs of the run' do
       context[:captain_v2_current_input] = 'Қабылдау қанша тұрады?'
-      results.merge!('part-0' => ran('Баға 5000 теңге.'), 'part-1' => ran('Мекенжай: Абай, 1.'))
+      results.merge!('part-0' => ran('Баға 5000 теңге.', language: 'Kazakh'), 'part-1' => ran('Мекенжай: Абай, 1.', language: 'Kazakh'))
       edited('Баға 5000 теңге, мекенжай: Абай, 1.')
 
       expect(run_council(parts(%w[Анна Борис], owners: [2, 2]))).to eq('Баға 5000 теңге, мекенжай: Абай, 1.')
-      expect(editor_calls.sole).to include(language: 'kk')
-      expect(Captain::Runtime::CoordinationEvents).to have_received(:council_edited).with(hash_including(language: 'kk', handoff: false))
+      expect(editor_calls.sole.keys).to contain_exactly(:message, :parts)
+      expect(editor_calls.sole[:message]).to eq('Қабылдау қанша тұрады?')
+      expect(Captain::Runtime::CoordinationEvents).to have_received(:council_edited).with(hash_including(language: 'Kazakh', handoff: false))
+      expect(context[:council_patient_language]).to eq('Kazakh')
+    end
+
+    it 'gives the editor the language each owner wrote in, as the owner named it, and no language for a part that named none' do
+      results.merge!('part-0' => ran('Баға 5000 теңге.', language: 'Kazakh'), 'part-1' => ran('Адрес: улица Абая, 1.', language: 'Russian'),
+                     'part-2' => ran('Телефон: 111.'))
+      edited
+
+      run_council(parts(%w[Анна Борис Вера], owners: [2, 2, 2]))
+
+      expect(editor_calls.sole[:parts].map { |part| part['patient_language'] }).to eq(['Kazakh', 'Russian', nil])
+      expect(Captain::Runtime::CoordinationEvents).to have_received(:council_edited).with(hash_including(language: 'Kazakh, Russian'))
+      expect(context[:council_patient_language]).to eq('Kazakh, Russian')
+    end
+
+    it 'keeps the language of a council of one part for the logs' do
+      results['part-0'] = ran(booked, acted: true, sources: ['create_appointment'], language: 'Russian')
+
+      expect(run_council(parts(%w[Анна], owners: [1]))).to eq(booked)
+      expect(context[:council_patient_language]).to eq('Russian')
+    end
+
+    it 'keeps no language for the logs when no owner named one' do
+      results['part-0'] = ran(booked, acted: true, sources: ['create_appointment'])
+
+      run_council(parts(%w[Анна], owners: [1]))
+
+      expect(context).not_to have_key(:council_patient_language)
     end
 
     it 'sends the part texts in order when the editor itself fails' do

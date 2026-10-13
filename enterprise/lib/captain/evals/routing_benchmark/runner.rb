@@ -273,10 +273,12 @@ class Captain::Evals::RoutingBenchmark::Runner
       event_names: events.map(&:event_name).tally, response_keys: response.keys.sort, response_flags: response_flags(response) }
   end
 
-  # What the runtime said about the turn besides the text: the handoff, the response mode, the failure and the plan.
+  # What the runtime said about the turn besides the text: the language it decided on, the handoff, the response mode, the failure
+  # and the plan.
   def response_flags(response)
     {
-      response_mode: response['response_mode'], handoff_tool_called: response['handoff_tool_called'],
+      patient_language: response['patient_language'].presence, response_mode: response['response_mode'],
+      handoff_tool_called: response['handoff_tool_called'],
       handoff_reason: response['handoff_reason'], handoff_message: response['handoff_message'],
       council_handoff: response['council_handoff'].present? || nil, error_class: response['error_class'],
       error_message: response['error_message']&.truncate(300), part_refs: response['part_refs'].presence,

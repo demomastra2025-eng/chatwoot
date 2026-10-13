@@ -6,15 +6,24 @@ RSpec.describe Llm::CaptainResponseContentNormalizer do
   let(:schema) { Captain::ResponseSchema }
 
   describe '.apply_defaults' do
-    it 'fills the mode, the reasoning and the artifact list and adds no handoff field' do
+    it 'fills the language, the mode, the reasoning and the artifact list and adds no handoff field' do
       payload = described_class.apply_defaults(schema, { 'response' => 'Готово.' })
 
       expect(payload).to eq(
+        'patient_language' => '',
         'response' => 'Готово.',
         'response_mode' => 'reply',
         'reasoning' => described_class::DEFAULT_REASONING,
         'artifact_ids' => []
       )
+    end
+
+    it 'keeps the language the model named and blanks one that is missing or null' do
+      named = described_class.apply_defaults(schema, { 'patient_language' => 'Kazakh', 'response' => 'Дайын.' })
+      missing = described_class.apply_defaults(schema, { 'patient_language' => nil, 'response' => 'Дайын.' })
+
+      expect(named['patient_language']).to eq('Kazakh')
+      expect(missing['patient_language']).to eq('')
     end
 
     it 'drops the handoff text and reason a model still writes, whatever their value' do
@@ -23,7 +32,7 @@ RSpec.describe Llm::CaptainResponseContentNormalizer do
         { 'response' => 'Готово.', 'reasoning' => 'FAQ.', 'handoff_message' => 'Model text', 'handoff_reason' => nil }
       )
 
-      expect(payload.keys).to match_array(%w[response response_mode reasoning artifact_ids])
+      expect(payload.keys).to match_array(%w[patient_language response response_mode reasoning artifact_ids])
     end
 
     it 'leaves the content of another schema alone' do
@@ -35,11 +44,11 @@ RSpec.describe Llm::CaptainResponseContentNormalizer do
   end
 
   describe '.plain_text_fallback' do
-    it 'wraps plain text in the four Captain fields only' do
+    it 'wraps plain text in the five Captain fields only, with no language' do
       payload = described_class.plain_text_fallback(schema, "<think>x</think>\nГотово.")
 
       expect(payload).to eq(
-        response: 'Готово.', response_mode: 'reply', reasoning: described_class::DEFAULT_REASONING, artifact_ids: []
+        patient_language: '', response: 'Готово.', response_mode: 'reply', reasoning: described_class::DEFAULT_REASONING, artifact_ids: []
       )
     end
   end

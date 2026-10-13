@@ -19,6 +19,8 @@ class Llm::CaptainResponseContentNormalizer
       # schema rejects unknown keys: drop what an older prompt, a cached reply or a provider still sends.
       RETIRED_HANDOFF_KEYS.each { |key| payload.delete(key) }
       payload['response_mode'] = normalized_response_mode(payload['response_mode'])
+      # The language is for the logs and the reply is delivered whatever it says: a missing one is blank, never a rejected reply.
+      apply_text_default!(payload, 'patient_language')
       apply_reasoning_default!(payload)
       payload['artifact_ids'] = normalized_artifact_ids(payload['artifact_ids'])
       payload
@@ -32,6 +34,7 @@ class Llm::CaptainResponseContentNormalizer
       return if text.blank? || json_document_like?(text) || Llm::JsonDocumentExtractor.call(text).present?
 
       {
+        patient_language: '',
         response: text,
         response_mode: 'reply',
         reasoning: DEFAULT_REASONING,

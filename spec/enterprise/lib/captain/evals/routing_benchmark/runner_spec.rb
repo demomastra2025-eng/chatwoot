@@ -94,6 +94,16 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Runner do
                                            passed_ignoring_council_signal: 3, council_detection: 1.0)
   end
 
+  it 'records the language the runtime decided on for each turn, beside the reply' do
+    stub_fixture
+    script_runtime(text: 'Дайын.', patient_language: 'Kazakh') { |_conversation| nil }
+
+    report = run_benchmark
+
+    expect(report[:cases].map { |item| item.dig(:response_flags, :patient_language) }).to all(eq('Kazakh'))
+    expect(report[:cases].first[:response_keys]).to include('patient_language')
+  end
+
   it 'warns when turns expect a council and the runtime never emitted captain.council.started' do
     fixture_data[:dialogues].each { |dialogue| dialogue[:turns].first[:expect][:council] = true }
     stub_fixture

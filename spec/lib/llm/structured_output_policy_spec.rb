@@ -56,6 +56,7 @@ RSpec.describe Llm::StructuredOutputPolicy do
   let(:events) { [] }
   let(:captain_content) do
     {
+      'patient_language' => '',
       'response' => 'Done',
       'response_mode' => 'reply',
       'reasoning' => 'Checked the tool result before replying.',
@@ -188,11 +189,11 @@ RSpec.describe Llm::StructuredOutputPolicy do
       described_class.normalize_response!(chat: chat, response: response)
     end
 
-    it 'asks the model for the reply, its mode, a short reasoning and the files to attach, and nothing about a handoff' do
+    it 'asks the model for the language first, then the reply, its mode, a short reasoning and the files to attach, and nothing about a handoff' do
       schema_json = Captain::ResponseSchema.new.to_json_schema.with_indifferent_access[:schema].with_indifferent_access
 
-      expect(schema_json[:properties].keys.map(&:to_s)).to eq(%w[response response_mode reasoning artifact_ids])
-      expect(schema_json[:required].map(&:to_s)).to match_array(%w[response response_mode reasoning artifact_ids])
+      expect(schema_json[:properties].keys.map(&:to_s)).to eq(%w[patient_language response response_mode reasoning artifact_ids])
+      expect(schema_json[:required].map(&:to_s)).to match_array(%w[patient_language response response_mode reasoning artifact_ids])
       expect(schema_json[:properties].dig(:response, :description)).to eq('Text for the patient.')
       expect(schema_json[:properties].dig(:response_mode, :description))
         .to eq("reply - send the reply; suppress - send nothing (the patient wrote only an 'ok', or staff already replied).")
@@ -282,11 +283,24 @@ RSpec.describe Llm::StructuredOutputPolicy do
       described_class.normalize_response!(chat: chat, response: response)
 
       expect(response.content).to include(
+        'patient_language' => '',
         'response' => 'Done',
         'reasoning' => 'Response generated from the current conversation and available tool results.',
         'artifact_ids' => []
       )
       expect(response.content.keys).to match_array(captain_response_schema_required_keys)
+    end
+
+    it 'delivers a Captain reply that comes without a language, and keeps the language a model names' do
+      described_class.bind!(chat: chat, schema: Captain::ResponseSchema)
+      named = StructuredOutputPolicySpecResponse.new('{"patient_language":"Kazakh","response":"Дайын.","reasoning":"Checked."}')
+      unnamed = StructuredOutputPolicySpecResponse.new('{"response":"Готово.","reasoning":"Checked."}')
+
+      described_class.normalize_response!(chat: chat, response: named)
+      described_class.normalize_response!(chat: chat, response: unnamed)
+
+      expect(named.content).to include('patient_language' => 'Kazakh', 'response' => 'Дайын.')
+      expect(unnamed.content).to include('patient_language' => '', 'response' => 'Готово.')
     end
 
     it 'rejects boolean Captain responses instead of stringifying them' do
@@ -336,16 +350,17 @@ RSpec.describe Llm::StructuredOutputPolicy do
 
   describe '.execute' do
     %w[openai/gpt-6-luna anthropic/claude-haiku-5.5].each do |model_id|
-      it "accepts a complete four-field Captain response once without repair for #{model_id}" do
+      it "accepts a complete five-field Captain response once without repair for #{model_id}" do
         model = instance_double(RubyLLM::Model::Info, id: model_id, provider: 'openrouter')
-        response = StructuredOutputPolicySpecResponse.new(captain_content.to_json)
+        complete = captain_content.merge('patient_language' => 'Kazakh')
+        response = StructuredOutputPolicySpecResponse.new(complete.to_json)
         retry_chat = StructuredOutputPolicySpecChat.new([response], model: model)
         described_class.bind!(chat: retry_chat, schema: Captain::ResponseSchema)
         expect(retry_chat).to receive(:ask).with('Hello').once.and_call_original
 
         result = described_class.execute(chat: retry_chat) { retry_chat.ask('Hello') }
 
-        expect(result.content).to eq(captain_content)
+        expect(result.content).to eq(complete)
         expect(result.content.keys).to match_array(captain_response_schema_required_keys)
         expect(retry_chat.messages).to contain_exactly(response)
         expect(retry_chat.instructions).to be_empty
@@ -477,6 +492,7 @@ RSpec.describe Llm::StructuredOutputPolicy do
       result = described_class.execute(chat: retry_chat) { retry_chat.ask('Hello') }
 
       expect(result.content).to eq(
+        'patient_language' => '',
         'response' => 'Готово, обновил сделку.',
         'response_mode' => 'reply',
         'reasoning' => 'Response generated from the current conversation and available tool results.',

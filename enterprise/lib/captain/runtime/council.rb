@@ -45,7 +45,8 @@ class Captain::Runtime::Council
     :captain_v2_handoff_tool_called,
     :pending_handoff, :pending_human_handoff, :pending_response_cancellation, :handoff_count, :previous_handoff_source_id,
     :part_plan, :part_plan_refused, :part_plan_processed, :transfer_guard, :transfer_guard_active, :transfer_guarded,
-    :technical_failure, :council_handoff, :council_note, :council_untold_part_ids, :council_contributors, :__otel_tracing,
+    :technical_failure, :council_handoff, :council_note, :council_untold_part_ids, :council_contributors, :council_patient_language,
+    :__otel_tracing,
     :__llm_event_bus,
     Captain::Runtime::ToolLoopGuard::REQUEST_COUNTS_KEY, Captain::Runtime::ToolLoopGuard::TERMINAL_STOP_KEY,
     Captain::Runtime::TracingCallbacks::TRACE_EVENT_CONTEXT_KEY
@@ -115,7 +116,6 @@ class Captain::Runtime::Council
   def prime_run_state
     @calling_thread = Thread.current
     customer_message
-    reply_language
     staff_handoff_available?
     @peers = Array(@context[:agent_graph])
     @shared_callbacks = serialized(@callbacks)
@@ -173,8 +173,7 @@ class Captain::Runtime::Council
   def part_snapshot(actor, part, writer)
     snapshot = @context.except(*MAIN_RUN_KEYS, *RUN_STATE_KEYS).deep_dup
     snapshot.merge!(part_run: true, part_plan_accepted: true, active_part_id: part['id'], active_part_version: part['version'],
-                    part_language: reply_language, part_staff_handoff: staff_handoff_available?,
-                    part_customer_message: customer_message, part_info: part_info(part),
+                    part_staff_handoff: staff_handoff_available?, part_customer_message: customer_message, part_info: part_info(part),
                     part_peers: @peers.reject { |item| item[:id] == actor.id }.map { |item| item.slice(:name, :description) },
                     conversation_history: public_history(@context[:conversation_history]), current_agent: actor.agent_name)
     # The durable session protects the actions of a writer from being repeated. A read-only part has no actions.
@@ -480,7 +479,7 @@ class Captain::Runtime::Council
                   else ['unknown', text]
                   end
     { status: output['status'], state: state, text: text, questions: output['questions'], sources: output['sources'],
-      suggested_agent: output['suggested_agent'] }
+      suggested_agent: output['suggested_agent'], patient_language: output['patient_language'].to_s }
   end
 
   # An action that was performed is done. An answer without a source (a tool, a document, the agent's own instructions) is not
@@ -615,9 +614,13 @@ class Captain::Runtime::Council
   def assemble(entries)
     @context.delete(:council_handoff)
     @context.delete(:council_note)
+    @context.delete(:council_patient_language)
     failures = entries.filter_map { |entry| entry[:technical] }
     shown = entries.select { |entry| told?(entry) }
     return no_reply(failures, entries) if shown.empty? && failures.any?
+
+    languages = patient_languages(shown)
+    @context[:council_patient_language] = languages.join(', ') if languages.any?
 
     unresolved = entries.select { |entry| entry[:unresolved] && !entry[:technical] }
     handoff = failures.any? || ((unresolved.any? || @staff_request.present?) && staff_handoff_available?)
@@ -690,8 +693,15 @@ class Captain::Runtime::Council
 
   # What the editor gets of a part: the text its owner wrote and two flags. The owner of a part was told whether staff can take
   # it over, so its own sentence is true; staff_will_answer says the same to the editor.
+  # patient_language is the language its owner decided on and wrote in (a part replayed from an earlier attempt has none).
   def part_line(entry, handoff:)
-    { 'text' => entry[:text], 'done' => entry[:acted] == true, 'staff_will_answer' => entry[:unresolved] == true && handoff }
+    { 'patient_language' => entry[:patient_language].presence, 'text' => entry[:text], 'done' => entry[:acted] == true,
+      'staff_will_answer' => entry[:unresolved] == true && handoff }.compact
+  end
+
+  # The languages the owners of the shown parts wrote in, each once, in the order of the parts. For the logs and the editor.
+  def patient_languages(entries)
+    entries.filter_map { |entry| entry[:patient_language].presence }.uniq
   end
 
   # Without the editor's reply the part texts go out in the order of the requests. Exact repeats are dropped (the same question
@@ -704,13 +714,14 @@ class Captain::Runtime::Council
   def edit_reply(ids, lines, handoff:)
     outcome = Captain::Runtime::CouncilEditor.new(
       context: @context, account: @account, llm_context: @llm_context, model: editor_model
-    ).edit(message: customer_message, language: reply_language, parts: lines)
+    ).edit(message: customer_message, parts: lines)
     if outcome.reply.blank?
       Captain::Runtime::CoordinationEvents.council_editor_fallback(context: @context, part_ids: ids, reason: outcome.reason)
       return
     end
 
-    Captain::Runtime::CoordinationEvents.council_edited(context: @context, part_ids: ids, language: reply_language, handoff: handoff)
+    Captain::Runtime::CoordinationEvents.council_edited(context: @context, part_ids: ids, language: @context[:council_patient_language],
+                                                        handoff: handoff)
     outcome.reply
   rescue Captain::Conversation::ControlGenerationStaleError
     raise
@@ -722,10 +733,6 @@ class Captain::Runtime::Council
 
   def customer_message
     @customer_message ||= Captain::Runtime::CouncilEditor.customer_text(@context[:captain_v2_current_input]).strip
-  end
-
-  def reply_language
-    @reply_language ||= Captain::Runtime::CouncilEditor.language_for(customer_message, history: @context[:conversation_history])
   end
 
   def acting_actor

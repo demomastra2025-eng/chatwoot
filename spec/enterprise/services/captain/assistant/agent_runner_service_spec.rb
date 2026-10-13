@@ -930,6 +930,23 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       expect(result).not_to include('handoff_message', 'handoff_reason')
     end
 
+    it 'keeps the language the model named in the response for the logs, and the reply is delivered as it is' do
+      allow(mock_runner).to receive(:run).and_return(
+        instance_double(
+          Captain::Runtime::Result,
+          output: { 'patient_language' => 'Kazakh', 'response' => 'Дайын.', 'response_mode' => 'reply', 'reasoning' => 'Checked.',
+                    'artifact_ids' => [] },
+          context: { current_agent: 'assistant_agent' },
+          error: nil
+        )
+      )
+
+      result = service.generate_response(message_history: message_history)
+
+      expect(result).to include('response' => 'Дайын.', 'patient_language' => 'Kazakh')
+      expect(result).not_to include('response_suppressed')
+    end
+
     it 'drops hallucinated artifact ids when no tool completed' do
       allow(mock_runner).to receive(:run).and_return(
         instance_double(
@@ -1234,7 +1251,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       allow(mock_runner).to receive(:run).and_return(
         instance_double(
           Captain::Runtime::Result,
-          output: { 'response' => '', 'response_mode' => 'suppress', 'reasoning' => 'No reply is required.' },
+          output: { 'patient_language' => 'Russian', 'response' => '', 'response_mode' => 'suppress', 'reasoning' => 'No reply is required.' },
           context: { current_agent: 'assistant_agent' },
           error: nil
         )

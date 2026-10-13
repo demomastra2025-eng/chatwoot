@@ -222,6 +222,8 @@ class Captain::Runtime::Runner
 
       # No part has a text of its own: nothing is sent (the staff handoff and note the council recorded still follow).
       output = answer.blank? ? { response: '', response_mode: 'suppress', reasoning: '' } : { response: answer, reasoning: '' }
+      # The language the owners of the parts wrote in goes to the logs with the reply; delivery does not read it.
+      output[:patient_language] = context[:council_patient_language] if context[:council_patient_language].present?
       finalize_run(session[:chat], session[:context_wrapper], session[:current_agent], output: output)
     when 'handoff'
       # Only a plan stored with the former mode: a new plan never has it, a transfer is the colleague's own tool.

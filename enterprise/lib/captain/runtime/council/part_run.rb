@@ -87,7 +87,8 @@ class Captain::Runtime::Council::PartRun
     return unless parsed.is_a?(Hash) && STATUSES.include?(parsed['status'].to_s.strip)
 
     {
-      'status' => parsed['status'].to_s.strip, 'customer_text' => text_of(parsed['customer_text']),
+      'status' => parsed['status'].to_s.strip, 'patient_language' => text_of(parsed['patient_language']),
+      'customer_text' => text_of(parsed['customer_text']),
       'questions' => strings_of(parsed['questions']), 'sources' => strings_of(parsed['sources']),
       'suggested_agent' => text_of(parsed['suggested_agent']), 'reasoning' => text_of(parsed['reasoning'])
     }
