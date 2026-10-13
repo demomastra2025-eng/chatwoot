@@ -950,6 +950,57 @@
           "LABEL": "Response Temperature",
           "DESCRIPTION": "Adjust how creative or restrictive the AI agent's responses should be. Lower values produce more focused and deterministic responses, while higher values allow for more creative and varied outputs."
         },
+        "SAFETY_SETTINGS": {
+          "LABEL": "Safety checks",
+          "DESCRIPTION": "Block stops matching requests. Flag logs a match and continues. Off skips the check.",
+          "MODERATION": "Provider content moderation",
+          "PROMPT_INJECTION": "Prompt injection",
+          "SENSITIVE_INFO": "Secrets and credentials",
+          "LOADING": "Loading value…",
+          "UNAVAILABLE": "Value unavailable",
+          "ENABLED": "On",
+          "DISABLED": "Off",
+          "BLOCK": "Block",
+          "FLAG": "Flag"
+        },
+        "CUSTOM_GUARDRAILS": {
+          "TITLE": "Custom safety rules",
+          "DESCRIPTION": "Rules in each group are checked from top to bottom. The first match applies. Changes take effect after saving the profile.",
+          "INPUT": {
+            "TITLE": "Incoming messages",
+            "DESCRIPTION": "Checked before the agent handles an incoming message.",
+            "EXAMPLE": "For example: if the customer asks to change the terms of a contract."
+          },
+          "OUTPUT": {
+            "TITLE": "Agent replies",
+            "DESCRIPTION": "Checked before sending. The reply is rewritten once; if it still breaks a rule, the conversation is handed over to a teammate.",
+            "EXAMPLE": "For example: if the reply promises a result that we cannot guarantee."
+          },
+          "NAME": "Rule name",
+          "NAME_PLACEHOLDER": "Contract terms",
+          "INSTRUCTION": "When should the rule apply?",
+          "ACTION": "Action",
+          "ACTIONS": {
+            "HANDOFF": "Stop the automatic reply and hand over to a teammate",
+            "REWRITE": "Rewrite the reply once"
+          },
+          "MESSAGE": "Message to the customer when handing over (optional)",
+          "MESSAGE_PLACEHOLDER": "Leave empty to use the agent’s handoff message.",
+          "ACTIVE": "Enabled",
+          "PRIORITY": "Rule {position}",
+          "EMPTY": "No custom rules in this group.",
+          "ADD": "Add rule",
+          "DELETE": "Delete",
+          "MOVE_UP": "Move up",
+          "MOVE_DOWN": "Move down",
+          "LIMIT": "A profile can have up to {count} custom rules.",
+          "ERRORS": {
+            "NAME": "Enter a rule name of up to 120 characters.",
+            "INSTRUCTION": "Describe the condition in up to 2000 characters.",
+            "MESSAGE": "The message must contain no more than 2000 characters.",
+            "RULES": "Check the rule list: up to 20 rules are allowed. Remove any invalid rule and add it again."
+          }
+        },
         "MESSAGE_COLLAPSE_WINDOW_SECONDS": {
           "LABEL": "Message Collapse Window",
           "PLACEHOLDER": "Enter seconds",
@@ -3920,9 +3971,19 @@
       },
       "SAFETY": {
         "TITLE": "Safety",
-        "DESCRIPTION": "The check works the same for every AI agent of the workspace.",
-        "CHECK": "Safety check",
-        "CHECK_DESCRIPTION": "Checks the customer's message before the agent works on it and the agent's reply before it is sent for prohibited content. If the check finds a violation, the automatic reply stops and the conversation goes to a staff member."
+        "DESCRIPTION": "Checks apply to every agent. Custom rules are checked from top to bottom and the first match wins.",
+        "STANDARD": "Standard checks",
+        "MODERATION": "Content moderation",
+        "MODERATION_DESCRIPTION": "The AI provider checks messages for prohibited content.",
+        "INJECTION": "Attempts to change the agent's instructions",
+        "INJECTION_DESCRIPTION": "Messages in which the customer tries to rewrite the agent's rules.",
+        "SENSITIVE": "Keys and credentials",
+        "SENSITIVE_DESCRIPTION": "Passwords, access keys and other secrets in messages and replies.",
+        "OFF": "Off",
+        "INBOUND": "Incoming messages",
+        "OUTBOUND": "Agent replies",
+        "ADD_RULE": "+ Rule",
+        "RULES_LIMIT": "Maximum rules: {count}"
       }
     },
     "CHANNEL_MATRIX": {

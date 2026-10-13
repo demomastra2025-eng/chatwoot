@@ -69,9 +69,10 @@ class Captain::AccountSettings
                      'auto_completion_enabled' => true, 'auto_reply_on_last_incoming' => false },
       'faq' => { 'generate_from_resolved' => false },
       'conversation' => { 'message_collapse_window_seconds' => 15 },
-      # The client edits moderation_enabled only. The two actions are stored but
-      # not read at run time (Captain::AssistantSafetyPreferences: platform
-      # level); custom_rules are platform rules and still evaluated.
+      # Workspace-wide safety checks edited on the AI settings page. The switch
+      # and the two actions are read at run time by
+      # Captain::AssistantSafetyPreferences, the custom_rules by
+      # Captain::Safety::CustomRulesEvaluator (runtime_rules).
       'safety' => { 'moderation_enabled' => false, 'prompt_injection_action' => 'block',
                     'sensitive_info_action' => 'block', 'custom_rules' => [] }
     }

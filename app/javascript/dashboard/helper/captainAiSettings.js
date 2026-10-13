@@ -13,6 +13,9 @@ import {
 // always go through this ONE map, so switching a value to what the backend
 // really accepts is a one-line change here.
 export const AI_SETTINGS_API_VALUES = Object.freeze({
+  direction: Object.freeze({ inbound: 'inbound', outbound: 'outbound' }),
+  ruleAction: Object.freeze({ handoff: 'handoff', rewrite: 'rewrite_once' }),
+  safetyAction: Object.freeze({ block: 'block', flag: 'flag', off: 'off' }),
   messageMode: Object.freeze({ fixed: 'fixed', generated: 'generated' }),
   // Key of the on/off flag of a handoff or completion reason.
   reasonEnabledKey: 'enabled',
@@ -20,6 +23,20 @@ export const AI_SETTINGS_API_VALUES = Object.freeze({
 
 // Legacy spellings tolerated on read (per-agent config before relsettings).
 const READ_ALIASES = Object.freeze({
+  direction: {
+    inbound: 'inbound',
+    input: 'inbound',
+    outbound: 'outbound',
+    output: 'outbound',
+  },
+  ruleAction: {
+    handoff: 'handoff',
+    // Service-level block rules have the same public effect as a handoff.
+    block: 'handoff',
+    rewrite: 'rewrite',
+    rewrite_once: 'rewrite',
+  },
+  safetyAction: { block: 'block', flag: 'flag', off: 'off', disabled: 'off' },
   messageMode: { fixed: 'fixed', generated: 'generated' },
 });
 
@@ -44,10 +61,26 @@ export const WEB_UNDERSTANDING_KEYS = Object.freeze([
   'web_page_reading',
 ]);
 
+export const SAFETY_ACTIONS = Object.freeze(['block', 'flag', 'off']);
 export const MESSAGE_MODES = Object.freeze(['fixed', 'generated']);
 // Same limit as Captain::AccountSettings::MESSAGE_INSTRUCTION_MAX_LENGTH: the
 // "how to write" guide of an AI-written handoff or closing message.
 export const MESSAGE_INSTRUCTION_MAX_LENGTH = 500;
+export const CUSTOM_RULE_DIRECTIONS = Object.freeze(['inbound', 'outbound']);
+
+// Same limits as Captain::Safety::CustomRulesConfig.
+export const CUSTOM_RULE_LIMITS = Object.freeze({
+  maxRules: 20,
+  name: 120,
+  instruction: 2000,
+  message: 2000,
+});
+export const CUSTOM_RULE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+const RESERVED_RULE_ID = 'none';
+
+// Rewriting is possible only for the agent's own replies.
+export const ruleActionsFor = direction =>
+  direction === 'outbound' ? ['handoff', 'rewrite'] : ['handoff'];
 
 const asObject = value =>
   value && typeof value === 'object' && !Array.isArray(value) ? value : {};
@@ -160,6 +193,24 @@ export const normalizeStatusMessage = raw => {
   };
 };
 
+export const normalizeCustomRule = raw => {
+  if (!raw || typeof raw !== 'object') return null;
+  const direction = readValue('direction', raw.direction, 'inbound');
+  const action = readValue('ruleAction', raw.action, 'handoff');
+  return {
+    id: readText(raw.id),
+    name: readText(raw.name),
+    direction,
+    instruction: readText(raw.instruction),
+    action: ruleActionsFor(direction).includes(action) ? action : 'handoff',
+    enabled: readBoolean(raw.enabled, true),
+    message: readText(raw.message),
+  };
+};
+
+export const normalizeCustomRules = raw =>
+  Array.isArray(raw) ? raw.map(normalizeCustomRule).filter(Boolean) : [];
+
 // `options.otherLabel`: localized name of the system "Other" reason.
 export const toAiSettingsDraft = (payload, options = {}) => {
   const data = asObject(payload);
@@ -203,12 +254,19 @@ export const toAiSettingsDraft = (payload, options = {}) => {
         conversation.message_collapse_window_seconds
       ),
     },
-    // The client owns ONE safety switch. The other safety values (instruction
-    // hijacking, keys and passwords, platform rules) are platform settings:
-    // the page neither reads, validates nor sends them, so a save can never
-    // reset or overwrite what is stored for them.
     safety: {
       moderation_enabled: readBoolean(safety.moderation_enabled, false),
+      prompt_injection_action: readValue(
+        'safetyAction',
+        safety.prompt_injection_action,
+        'block'
+      ),
+      sensitive_info_action: readValue(
+        'safetyAction',
+        safety.sensitive_info_action,
+        'block'
+      ),
+      custom_rules: normalizeCustomRules(safety.custom_rules),
     },
   };
 };
@@ -235,6 +293,16 @@ const serializeStatusMessage = message => ({
   instruction: readText(message?.instruction),
 });
 
+const serializeCustomRule = rule => ({
+  id: rule.id,
+  name: rule.name,
+  direction: writeValue('direction', rule.direction),
+  instruction: rule.instruction,
+  action: writeValue('ruleAction', rule.action),
+  enabled: rule.enabled === true,
+  message: readText(rule.message),
+});
+
 const SECTION_SERIALIZERS = {
   understanding: value =>
     Object.fromEntries(
@@ -256,10 +324,17 @@ const SECTION_SERIALIZERS = {
       value.message_collapse_window_seconds
     ),
   }),
-  // The server merges a section key by key, so the one switch is all that is
-  // sent; every other stored safety value stays as it is.
   safety: value => ({
     moderation_enabled: value.moderation_enabled === true,
+    prompt_injection_action: writeValue(
+      'safetyAction',
+      value.prompt_injection_action
+    ),
+    sensitive_info_action: writeValue(
+      'safetyAction',
+      value.sensitive_info_action
+    ),
+    custom_rules: (value.custom_rules || []).map(serializeCustomRule),
   }),
 };
 
@@ -283,6 +358,55 @@ export const buildAiSettingsPatch = (baseDraft, draft) => {
 
 export const isAiSettingsDirty = (baseDraft, draft) =>
   Object.keys(buildAiSettingsPatch(baseDraft, draft)).length > 0;
+
+const validText = (value, limit, required = true) =>
+  (value === undefined && !required) ||
+  (typeof value === 'string' &&
+    (!required || value.trim().length > 0) &&
+    value.length <= limit);
+
+const validRuleMetadata = rule =>
+  typeof rule?.id === 'string' &&
+  CUSTOM_RULE_ID_PATTERN.test(rule.id) &&
+  rule.id !== RESERVED_RULE_ID &&
+  CUSTOM_RULE_DIRECTIONS.includes(rule.direction) &&
+  ruleActionsFor(rule.direction).includes(rule.action) &&
+  typeof rule.enabled === 'boolean';
+
+// { valid, tooMany, invalidRuleIds: [], fields: { [ruleId]: { name, ... } } }
+export const validateCustomRules = rules => {
+  const list = Array.isArray(rules) ? rules : [];
+  const ids = list.map(rule => rule?.id);
+  const duplicates = new Set(
+    ids.filter((id, index) => ids.indexOf(id) !== index)
+  );
+  const result = {
+    tooMany: list.length > CUSTOM_RULE_LIMITS.maxRules,
+    invalidRuleIds: [],
+    fields: {},
+  };
+  list.forEach(rule => {
+    const fieldErrors = {};
+    if (!validText(rule?.name, CUSTOM_RULE_LIMITS.name)) {
+      fieldErrors.name = true;
+    }
+    if (!validText(rule?.instruction, CUSTOM_RULE_LIMITS.instruction)) {
+      fieldErrors.instruction = true;
+    }
+    if (!validText(rule?.message, CUSTOM_RULE_LIMITS.message, false)) {
+      fieldErrors.message = true;
+    }
+    if (Object.keys(fieldErrors).length) result.fields[rule?.id] = fieldErrors;
+    if (!validRuleMetadata(rule) || duplicates.has(rule?.id)) {
+      result.invalidRuleIds.push(rule?.id);
+    }
+  });
+  result.valid =
+    !result.tooMany &&
+    !result.invalidRuleIds.length &&
+    !Object.keys(result.fields).length;
+  return result;
+};
 
 const reasonsValid = reasons =>
   (Array.isArray(reasons) ? reasons : []).every(reason => {
@@ -308,7 +432,8 @@ export const validCollapseWindow = value =>
 
 // { valid, errors: { handoff_reasons, completion_reasons, handoff_message,
 //   resolution_message, handoff_message_instruction,
-//   resolution_message_instruction, collapse_window } }
+//   resolution_message_instruction, collapse_window },
+//   rules: validateCustomRules(...) }
 export const validateAiSettingsDraft = draft => {
   const handoff = asObject(draft?.handoff);
   const errors = {};
@@ -333,10 +458,15 @@ export const validateAiSettingsDraft = draft => {
   ) {
     errors.collapse_window = true;
   }
-  return { valid: !Object.keys(errors).length, errors };
+  const rules = validateCustomRules(draft?.safety?.custom_rules);
+  return {
+    valid: !Object.keys(errors).length && rules.valid,
+    errors,
+    rules,
+  };
 };
 
-// Server field paths (`handoff.handoff_message`,
+// Server field paths (`safety.custom_rules[2].name`, `handoff.handoff_message`,
 // `conversation.message_collapse_window_seconds`, ...) to page keys.
 const FIELD_KEYS = [
   'handoff_reasons',
@@ -347,19 +477,29 @@ const FIELD_KEYS = [
   'auto_reply_on_last_incoming',
   'generate_from_resolved',
   'moderation_enabled',
+  'prompt_injection_action',
+  'sensitive_info_action',
   ...UNDERSTANDING_KEYS,
 ];
+const RULE_PATH = /custom_rules\.(\d+)(?:\.([a-z_]+))?/;
 // `handoff.handoff_message.instruction` belongs to the guide field, not the text.
 const INSTRUCTION_ERROR_KEYS = [
   { message: 'handoff_message', key: 'handoff_message_instruction' },
   { message: 'resolution_message', key: 'resolution_message_instruction' },
 ];
 
-const fieldTarget = field => {
+const fieldTarget = (field, draft) => {
   const path = String(field || '')
     .replace(/\[(\d+)\]/g, '.$1')
     .toLowerCase();
   if (!path) return null;
+  const ruleMatch = path.match(RULE_PATH);
+  if (ruleMatch) {
+    const rule = draft?.safety?.custom_rules?.[Number(ruleMatch[1])];
+    if (!rule) return { key: 'custom_rules' };
+    return { ruleId: rule.id, ruleField: ruleMatch[2] || 'rule' };
+  }
+  if (path.includes('custom_rules')) return { key: 'custom_rules' };
   if (path.includes('message_collapse_window_seconds')) {
     return { key: 'collapse_window' };
   }
@@ -371,15 +511,23 @@ const fieldTarget = field => {
   return key ? { key } : null;
 };
 
-// { fields: { key: message }, general: [message] } — what cannot be placed
-// inline goes to `general`.
-export const mapAiSettingsErrors = errors => {
-  const result = { fields: {}, general: [] };
+// { fields: { key: message }, rules: { ruleId: { field: message } },
+//   general: [message] } — what cannot be placed inline goes to `general`.
+export const mapAiSettingsErrors = (errors, draft = null) => {
+  const result = { fields: {}, rules: {}, general: [] };
   (Array.isArray(errors) ? errors : []).forEach(error => {
     const message = readText(error?.message || error?.code);
-    const target = fieldTarget(error?.field);
+    const target = fieldTarget(error?.field, draft);
     if (!target) {
       if (message) result.general.push(message);
+      return;
+    }
+    if (target.ruleId !== undefined) {
+      const ruleErrors = result.rules[target.ruleId] || {};
+      if (!ruleErrors[target.ruleField]) {
+        ruleErrors[target.ruleField] = message;
+      }
+      result.rules[target.ruleId] = ruleErrors;
       return;
     }
     if (!result.fields[target.key]) result.fields[target.key] = message;

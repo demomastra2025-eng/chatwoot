@@ -11,7 +11,7 @@ RSpec.describe Captain::Assistant do
       'handoff' => { 'auto_completion_enabled' => false, 'auto_reply_on_last_incoming' => true },
       'faq' => { 'generate_from_resolved' => true },
       'conversation' => { 'message_collapse_window_seconds' => 9 },
-      'safety' => { 'moderation_enabled' => true }
+      'safety' => { 'moderation_enabled' => true, 'prompt_injection_action' => 'flag' }
     )
   end
 
@@ -32,7 +32,7 @@ RSpec.describe Captain::Assistant do
       expect(assistant.feature_faq).to be(true)
       expect(assistant.feature_memory).to be(false)
       expect(Captain::AssistantSafetyPreferences.for(assistant: assistant, feature: :assistant))
-        .to include('assistant_moderation' => true, 'assistant_prompt_injection_guardrail' => 'block')
+        .to include('assistant_moderation' => true, 'assistant_prompt_injection_guardrail' => 'flag')
     end
   end
 end

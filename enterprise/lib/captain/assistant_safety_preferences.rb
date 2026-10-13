@@ -1,21 +1,22 @@
 # frozen_string_literal: true
 
 # Runtime safety preferences of a Captain run. Safety is never a per-agent
-# choice. The client has ONE workspace-wide switch, "moderation_enabled" in the
-# "safety" section of Captain::AccountSettings, and every customer-facing agent
-# of the workspace follows it. Everything else (the instruction-hijacking and
-# credentials checks, their actions, the failure mode) is platform-level and
-# comes from the platform runtime preferences (Account#captain_runtime_preferences).
+# choice. The workspace-wide AI settings page edits the "safety" section of
+# Captain::AccountSettings (the content moderation switch and the actions of the
+# instruction-hijacking and credentials checks) and every customer-facing agent
+# of the workspace follows it. The failure mode of the moderation check
+# ("moderation_failure_mode", fail_open by default) is platform-level and comes
+# from the platform runtime preferences (Account#captain_runtime_preferences).
 # The internal Copilot has no workspace section and uses the platform
 # preferences only.
 #
 # Data that is stored but not read here and kept untouched: a legacy
-# config['safety_settings'] on an agent, and the workspace
-# prompt_injection_action / sensitive_info_action values (the client cannot see
-# or change them any more; the platform default "block" applies).
+# config['safety_settings'] on an agent.
 class Captain::AssistantSafetyPreferences
   WORKSPACE_SETTINGS = {
-    'moderation_enabled' => ['assistant_moderation', [true, false]]
+    'moderation_enabled' => ['assistant_moderation', [true, false]],
+    'prompt_injection_action' => ['assistant_prompt_injection_guardrail', Llm::RuntimeGuardrailAction::ACTIONS],
+    'sensitive_info_action' => ['assistant_sensitive_info_guardrail', Llm::RuntimeGuardrailAction::ACTIONS]
   }.freeze
 
   def self.for(assistant:, feature:, account: assistant&.account)
@@ -25,7 +26,7 @@ class Captain::AssistantSafetyPreferences
 
     settings = workspace_settings(assistant, account)
     WORKSPACE_SETTINGS.each do |setting_key, (runtime_key, allowed_values)|
-      value = settings[setting_key]
+      value = runtime_value(settings[setting_key], setting_key)
       preferences[runtime_key] = value if allowed_values.include?(value)
     end
 
@@ -37,5 +38,12 @@ class Captain::AssistantSafetyPreferences
     return Captain::AccountSettings.new(account).section('safety') if account
 
     {}
+  end
+
+  # The API spells "off" what the runtime calls "disabled".
+  def self.runtime_value(value, key)
+    return value unless key.end_with?('_action')
+
+    Captain::AccountSettings::ACTION_FROM_API.fetch(value, value)
   end
 end
