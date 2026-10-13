@@ -20,15 +20,23 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Runner do
   end
   let(:out) { Rails.root.join('tmp', "isolation-benchmark-#{SecureRandom.uuid}.json") }
   let(:seen) { [] }
+  # The roles of the message history that each call of the runtime received.
+  let(:histories) { [] }
 
   # The scripted runtime reports what the workspace holds when it is called, then leaves rows behind. A block that returns
-  # a Hash adds its keys to the response of that turn ({ 'handoff_tool_called' => true }).
+  # a Hash adds its keys to the response of that turn ({ 'handoff_tool_called' => true }); a block with two parameters also gets
+  # the entry agent.
   def script_runtime(text: 'Здравствуйте!', **extra, &block)
     allow(Captain::Assistant::AgentRunnerService).to receive(:new) do |assistant:, conversation:, **|
-      more = block.call(conversation)
-      instance_double(Captain::Assistant::AgentRunnerService,
-                      generate_response: { 'agent_id' => assistant.id, 'response' => text,
-                                           'captain_request_id' => 'synthetic-request' }.merge(extra.stringify_keys).merge(more.is_a?(Hash) ? more : {}))
+      more = block.arity == 2 ? block.call(conversation, assistant) : block.call(conversation)
+      answer = { 'agent_id' => assistant.id, 'response' => text, 'captain_request_id' => 'synthetic-request' }
+               .merge(extra.stringify_keys).merge(more.is_a?(Hash) ? more : {})
+      instance_double(Captain::Assistant::AgentRunnerService).tap do |runner|
+        allow(runner).to receive(:generate_response) do |message_history: []|
+          histories << message_history.pluck(:role)
+          answer
+        end
+      end
     end
   end
 
@@ -92,7 +100,8 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Runner do
 
     expect(report[:aggregates]).to include(council_expected: 3, council_event_missing: 3, passed: 0,
                                            passed_ignoring_council_signal: 3, routing_accuracy: 1.0)
-    expect(report[:warnings].sole).to match(/council_event_missing: 3 of 3 .*captain\.council\.started/)
+    expect(report[:warnings].first).to match(/council_event_missing: 3 of 3 .*captain\.council\.started/)
+    expect(report[:warnings]).to include('council_expected_but_no_part_started: 3 turn(s)')
   end
 
   describe 'the release gate' do
@@ -243,6 +252,313 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Runner do
           expect(report[:triage].sole).to include('triage' => 'test_bug')
         end
       end
+    end
+  end
+
+  describe 'what the runner does between the turns, as the response builder does' do
+    let(:fixture_data) do
+      {
+        workspace: {
+          agents: [{ name: 'Регистратор', routing_description: 'Запись', instructions: 'Отвечай по-русски.',
+                     tool_ids: %w[faq_lookup get_my_contact], model: 'openai/gpt-6-luna' }],
+          contacts: [{ key: 'patient', name: 'Дана Нурланова' }]
+        },
+        dialogues: [{ id: 'long', contact: 'patient', turns: [
+          { customer: 'Позовите оператора', expect: { agent: 'Регистратор', council: false } },
+          { customer: 'Алло', expect: { agent: 'Регистратор', council: false } },
+          { customer: 'Спасибо', staff: { status: 'pending' }, expect: { agent: 'Регистратор', council: false } }
+        ] }]
+      }
+    end
+
+    def handoff_event(account, success: true)
+      LlmEvent.create!(account_id: account.id, event_name: 'llm.tool.complete', tool_name: 'handoff', payload: { 'result_success' => success },
+                       request_id: 'other-request')
+    end
+
+    # The first turn hands the conversation to staff the way the handoff tool does: the marker, the flag and a successful tool event.
+    def hand_over_on_the_first_turn
+      calls = 0
+      script_runtime do |conversation|
+        calls += 1
+        seen << conversation.reload.status
+        next unless calls == 1
+
+        handoff_event(conversation.account)
+        { 'response' => 'conversation_handoff', 'handoff_tool_called' => true }
+      end
+    end
+
+    it 'leaves the conversation open for staff after an observed handoff, and gives it back to the AI on the turn that says pending' do
+      stub_fixture
+      hand_over_on_the_first_turn
+
+      report = run_benchmark
+
+      expect(seen).to eq(%w[pending open pending])
+      expect(report[:cases].pluck(:warnings)).to eq([[], ['ai_answered_while_staff_owned'], []])
+      expect(report[:warnings]).to include('ai_answered_while_staff_owned: 1 turn(s)')
+    end
+
+    it 'does not hand the conversation over for a marker with no handoff tool event, or a failed handoff' do
+      stub_fixture
+      calls = 0
+      script_runtime do |conversation|
+        calls += 1
+        seen << conversation.reload.status
+        handoff_event(conversation.account, success: false) if calls == 1
+        { 'response' => 'conversation_handoff', 'handoff_tool_called' => true } if calls <= 2
+      end
+
+      report = run_benchmark
+
+      expect(seen).to eq(%w[pending pending pending])
+      expect(report[:cases].pluck(:warnings)).to eq([['handoff_marker_without_tool'], ['handoff_marker_without_tool'], []])
+    end
+
+    it 'gives the model the replies the customer saw and nothing else: no handoff marker, no provider error, no suppressed reply' do
+      stub_fixture
+      calls = 0
+      script_runtime do |_conversation|
+        calls += 1
+        case calls
+        when 1 then { 'response' => 'conversation_handoff', 'handoff_tool_called' => true }
+        when 2 then { 'response' => Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_RESPONSE }
+        end
+      end
+
+      run_benchmark
+
+      expect(histories).to eq([%w[user], %w[user user], %w[user user user]])
+    end
+
+    it 'keeps the replies, and leaves out a suppressed one' do
+      stub_fixture
+      calls = 0
+      script_runtime do |_conversation|
+        calls += 1
+        { 'response' => '', 'response_mode' => 'suppress' } if calls == 2
+      end
+
+      run_benchmark
+
+      expect(histories).to eq([%w[user], %w[user assistant user], %w[user assistant user user]])
+    end
+
+    it 'records the reply as delivered with every part it reports, so the next turn does not announce the booking again' do
+      stub_fixture
+      calls = 0
+      parts = nil
+      script_runtime do |conversation, assistant|
+        calls += 1
+        session = Captain::Conversation::AgentSession.new(entry: assistant, conversation: conversation)
+        if calls == 1
+          session.change { |data| data['parts'] = [{ 'id' => 'p1', 'version' => 1, 'state' => 'done', 'acted' => true, 'delivered' => [] }] }
+          { 'part_refs' => [{ 'id' => 'p1', 'version' => 1 }, { 'id' => 'gone', 'version' => 1 }] }
+        elsif calls == 2
+          parts = session.read['parts']
+          nil
+        end
+      end
+
+      run_benchmark
+
+      expect(parts.first['delivered']).to contain_exactly(a_hash_including('content' => 'Здравствуйте!', 'version' => 1, 'message_id' => be_negative))
+    end
+
+    it 'records no delivery for a reply the customer did not read' do
+      stub_fixture
+      calls = 0
+      parts = nil
+      script_runtime do |conversation, assistant|
+        calls += 1
+        session = Captain::Conversation::AgentSession.new(entry: assistant, conversation: conversation)
+        if calls == 1
+          session.change { |data| data['parts'] = [{ 'id' => 'p1', 'version' => 1, 'state' => 'done', 'acted' => true, 'delivered' => [] }] }
+          { 'response' => 'conversation_handoff', 'handoff_tool_called' => true, 'part_refs' => [{ 'id' => 'p1', 'version' => 1 }] }
+        elsif calls == 2
+          parts = session.read['parts']
+          nil
+        end
+      end
+
+      run_benchmark
+
+      expect(parts.first['delivered']).to be_empty
+    end
+
+    it 'hands the scorer the routing of the session before and after the turn, and fails a council turn that changed hands' do
+      fixture_data[:dialogues] = [{ id: 'council', contact: 'patient', turns: [{ customer: 'Здравствуйте', expect: { agent: 'Регистратор', council: true } }] }]
+      stub_fixture
+      script_runtime do |conversation, assistant|
+        LlmEvent.create!(account_id: conversation.account_id, event_name: 'captain.council.started', request_id: 'other-request', payload: {})
+        conversation.update_column(:additional_attributes, { 'captain_agent_session' => { 'current_assistant_id' => assistant.id + 1000, 'routing_revision' => 1 } })
+        nil
+      end
+
+      item = run_benchmark[:cases].sole
+
+      expect(item[:reasons]).to eq(['council_changed_hands'])
+      expect(item[:routing][:before]).to include(routing_revision: 0)
+      expect(item[:routing][:after]).to include(routing_revision: 1)
+      expect(item[:routing][:after][:current_assistant_id]).not_to eq(item[:routing][:before][:current_assistant_id])
+    end
+
+    it 'proves that the handoff is silent, and blocks the gate when the notice of the synthetic account is not blank' do
+      stub_fixture
+      script_runtime { |_conversation| nil }
+
+      expect(run_benchmark).to include(silent_handoff: true)
+
+      notice = instance_double(Captain::CustomerNoticeService, text: 'Сотрудник продолжит диалог с вами.')
+      allow(Captain::CustomerNoticeService).to receive(:new).and_return(notice)
+      report = run_benchmark
+
+      expect(report).to include(silent_handoff: false)
+      expect(report[:gate][:blockers]).to include(a_string_starting_with('the handoff notice of the synthetic account is not blank'))
+      expect(report[:warnings]).to include('the handoff notice of the synthetic account is not blank: a handoff is not silent')
+    end
+
+    it 'counts the model calls of the turn by runtime_complete events, else by requests, and never by the provider responses' do
+      stub_fixture
+      calls = 0
+      script_runtime do |conversation|
+        calls += 1
+        account_id = conversation.account_id
+        if calls == 1
+          2.times { LlmEvent.create!(account_id: account_id, event_name: 'llm.chat.runtime_complete', request_id: 'other-request') }
+        elsif calls == 2
+          3.times { LlmEvent.create!(account_id: account_id, event_name: 'llm.chat.request', request_id: 'other-request') }
+          LlmEvent.create!(account_id: account_id, event_name: 'llm.chat.complete', model: described_class::MODEL, estimated_cost: 0,
+                           payload: { 'usage_scope' => 'provider_response' }, request_id: 'other-request')
+        end
+        nil
+      end
+
+      expect(run_benchmark[:cases].pluck(:llm_calls)).to eq([2, 3, 0])
+    end
+
+    it 'reports the agent and the part of every tool call, from the assistant id of the monitoring event' do
+      stub_fixture
+      script_runtime do |conversation, assistant|
+        LlmEvent.create!(account_id: conversation.account_id, assistant_id: assistant.id, event_name: 'llm.tool.complete', tool_name: 'faq_lookup',
+                         payload: { 'result_success' => true, 'part_id' => 'abcdef123456' }, request_id: 'other-request')
+        nil
+      end
+
+      expect(run_benchmark[:cases].first[:tool_calls]).to eq([{ tool: 'faq_lookup', success: true, audited: false, agent: 'Регистратор', part_id: 'abcdef12' }])
+    end
+
+    it 'sums the turns up per dialogue, per category and per reason, and keeps the dialogue summaries after the cases' do
+      fixture_data[:dialogues] = [{ id: 'plain_01', contact: 'patient', turns: [
+        { customer: 'Здравствуйте', expect: { agent: 'Регистратор', council: false } },
+        { customer: 'Спасибо', expect: { agent: 'Регистратор', council: false } }
+      ] }]
+      stub_fixture
+      script_runtime(text: 'Пожалуйста, обращайтесь.') { |_conversation| nil }
+
+      report = run_benchmark
+
+      expect(report[:aggregates]).to include(dialogues: include(total: 1, passed: 1, pass_k: include(k: 1, rate: 1.0)), by_category: { 'plain' => include(dialogues: 1) },
+                                             by_reason: {}, infra: { turns: 0, by_check: {} }, routing_accuracy: 1.0)
+      expect(report[:dialogue_summaries]).to contain_exactly(a_hash_including(dialogue: 'plain_01', pass: true, statuses: %w[pass pass]))
+    end
+  end
+
+  describe 'the rubric judge' do
+    let(:prompts) { [] }
+    let(:verdict) { '{"pass":true,"reason":"ок"}' }
+    let(:fixture_data) do
+      {
+        workspace: {
+          agents: [{ name: 'Регистратор', routing_description: 'Запись', instructions: 'Отвечай по-русски.', tool_ids: %w[faq_lookup handoff], model: 'openai/gpt-6-luna' }],
+          contacts: [{ key: 'patient', name: 'Дана Нурланова' }],
+          resources: [{ key: 'doctor_a', name: 'Терапевт Абдрахманова Сауле' }],
+          services: [{ key: 'consult', name: 'Консультация терапевта', duration_min: 30, base_price: 7000 }],
+          knowledge: [{ question: 'Где вы находитесь?', answer: 'Центр, улица Абая 10.' }]
+        },
+        dialogues: [{ id: 'judged', contact: 'patient',
+                      rubric: 'Пациент — Дана Нурланова (сама). Во всех ответах: по-русски. Ход 1: Здоровается. Ход 2: Молча передаёт сотруднику.',
+                      turns: [{ customer: 'Здравствуйте', rubric: 'Здоровается и спрашивает, чем помочь.', expect: { agent: 'Регистратор', council: false } },
+                              { customer: 'позовите оператора', rubric: 'Молча передаёт сотруднику.', expect: { agent: 'Регистратор', council: false } }] }]
+      }
+    end
+
+    def stub_judge(content)
+      allow(Llm::Runtime).to receive(:build_chat).and_return(Object.new)
+      allow(Llm::Runtime).to receive(:ask) do |_chat, prompt, account:, **|
+        prompts << prompt
+        LlmEvent.create!(account_id: account.id, event_name: 'llm.chat.complete', model: described_class::MODEL, estimated_cost: 0,
+                         payload: { 'usage_scope' => 'provider_response' }, request_id: 'judge-request')
+        Struct.new(:content).new(content)
+      end
+    end
+
+    def hand_over_on_the_second_turn
+      calls = 0
+      script_runtime do |conversation|
+        calls += 1
+        next unless calls == 2
+
+        LlmEvent.create!(account_id: conversation.account_id, event_name: 'llm.tool.complete', tool_name: 'handoff', payload: { 'result_success' => true },
+                         request_id: 'other-request')
+        { 'response' => 'conversation_handoff', 'handoff_tool_called' => true }
+      end
+    end
+
+    before { hand_over_on_the_second_turn }
+
+    it 'judges the reply against the rubric of the turn, with the header of the dialogue, the transcript, the tool calls and the facts of the workspace' do
+      stub_fixture
+      stub_judge(verdict)
+
+      run_benchmark(judge: true)
+
+      prompt = prompts.first
+      expect(prompt).to include('Criterion of this turn: Здоровается и спрашивает, чем помочь.',
+                                'Context of the dialogue: Пациент — Дана Нурланова (сама). Во всех ответах: по-русски.',
+                                'Doctors: Терапевт Абдрахманова Сауле', 'Консультация терапевта 7000 KZT, 30 min', 'Q: Где вы находитесь? A: Центр, улица Абая 10.',
+                                'Customer message: Здравствуйте', 'Reply to evaluate: Здравствуйте!')
+      expect(prompt).not_to include('Ход 1', 'Молча передаёт')
+    end
+
+    it 'does not judge a silent handoff or a runtime marker: there is nothing to read' do
+      stub_fixture
+      stub_judge(verdict)
+
+      report = run_benchmark(judge: true)
+
+      expect(prompts.size).to eq(1)
+      expect(report[:cases].pluck(:judge)).to eq([{ pass: true, reason: 'ок' }, nil])
+    end
+
+    it 'tolerates a fence around the verdict' do
+      stub_fixture
+      stub_judge("```json\n{\"pass\":false,\"reason\":\"слишком сухо\"}\n```")
+
+      item = run_benchmark(judge: true)[:cases].first
+
+      expect(item[:reasons]).to eq(['judge_failed'])
+      expect(item[:judge]).to eq(pass: false, reason: 'слишком сухо')
+    end
+
+    it 'can only add a failure: a pass of the judge removes none of the deterministic ones' do
+      fixture_data[:dialogues].first[:turns].first[:expect][:agent] = 'Другой агент'
+      fixture_data[:workspace][:agents] << { name: 'Другой агент', routing_description: 'Другое', instructions: 'Отвечай.', tool_ids: %w[faq_lookup] }
+      stub_fixture
+      stub_judge(verdict)
+
+      item = run_benchmark(judge: true)[:cases].first
+
+      expect(item[:reasons]).to eq(['wrong_agent'])
+      expect(item[:judge]).to include(pass: true)
+    end
+
+    it 'reports an answer it cannot read as a minor failure' do
+      stub_fixture
+      stub_judge('не знаю')
+
+      expect(run_benchmark(judge: true)[:cases].first[:failures]).to contain_exactly(a_hash_including(id: 'judge_invalid_json', severity: 'minor'))
     end
   end
 

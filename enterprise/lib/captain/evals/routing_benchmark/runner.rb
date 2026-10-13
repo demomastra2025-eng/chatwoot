@@ -4,6 +4,16 @@ require 'active_support/testing/time_helpers'
 
 require 'json'
 
+# Runs the dialogues of the fixtures through the real agent runtime and scores every turn. Besides the customer turns it plays the
+# part of the response builder that the runtime depends on between two turns (ResponseBuilderJob), because the runner does not
+# deliver anything:
+#   - a public reply is recorded as delivered with every part it reports (`part_refs`), or the next turn would be told to announce an
+#     old booking again and the repair of a linked follow-up would never fire;
+#   - an observed staff handoff leaves the conversation `open` (Conversation#bot_handoff!): staff owns it until the next turn of the
+#     fixture says `staff: {status: pending}`, which gives it back to the AI. A turn run on an open conversation with no such key is
+#     scored as usual and carries the warning ai_answered_while_staff_owned;
+#   - the history of the model gets the replies the customer saw, and nothing else: no handoff marker, no provider error response, no
+#     suppressed reply.
 class Captain::Evals::RoutingBenchmark::Runner
   include ActiveSupport::Testing::TimeHelpers
 
@@ -14,6 +24,8 @@ class Captain::Evals::RoutingBenchmark::Runner
   # the run, because the budget can no longer be trusted.
   MAX_USAGE_GAPS = 3
   REPLY_LIMIT = 4000
+  FACTS_LIMIT = 4000
+  STAFF_OWNED_WARNING = 'ai_answered_while_staff_owned'
 
   # triage: path of an earlier report (or label file) whose triage records a person filled in; see Triage.load.
   def initialize(fixtures:, runs: 3, model: MODEL, reasoning: 'none', budget_usd:, out:, judge: false, triage: nil)
@@ -39,6 +51,7 @@ class Captain::Evals::RoutingBenchmark::Runner
     @usage_gaps = 0
     @cases = []
     @aborted = false
+    @silent_handoff = nil
     fixtures.each do |path, fixture|
       @runs.times do |run_index|
         execute_fixture(path, fixture, run_index + 1)
@@ -70,6 +83,7 @@ class Captain::Evals::RoutingBenchmark::Runner
   # duration, which deadlocks council threads that share the pinned benchmark connection (the rake task also runs the council
   # with CAPTAIN_COUNCIL_PARALLEL=off).
   def execute_dialogue(path, fixture, dialogue, run_index)
+    @workspace_data = fixture.workspace
     connection = ActiveRecord::Base.connection
     connection.begin_transaction(joinable: false, _lazy: false)
     begin
@@ -84,6 +98,7 @@ class Captain::Evals::RoutingBenchmark::Runner
 
   def run_dialogue(workspace, dialogue, path:, run_index:)
     conversation = Current.with_runtime_events_suppressed { workspace.conversation_for(dialogue) }
+    verify_silent_handoff(workspace, dialogue, conversation)
     history = []
     scorer = Captain::Evals::RoutingBenchmark::Scorer.new(
       account: workspace.account, conversation: conversation, directory: workspace.directory,
@@ -104,41 +119,107 @@ class Captain::Evals::RoutingBenchmark::Runner
     end
   end
 
+  # The handoff of the benchmark is silent: the text checks are not put to a handoff turn, so the account's handoff notice must be
+  # blank, or a patient would read a sentence that nothing checked. The notice is asked for the way the response builder asks
+  # without a model call (generate: false); it is checked once per run, on the first conversation.
+  def verify_silent_handoff(workspace, dialogue, conversation)
+    return unless @silent_handoff.nil?
+
+    notice = Captain::CustomerNoticeService.new(conversation: conversation, assistant: workspace.entry_agent(dialogue), kind: :handoff, generate: false)
+    @silent_handoff = notice.text.nil?
+  rescue StandardError => e
+    @silent_handoff_error = e.class.name
+  end
+
   # One customer turn: the snapshots before it, the agent run, then the scoring of everything the turn did. The events
   # and tool audit rows of the whole turn are read, not only those of the request id the run returned: work that a
   # plan hands to another agent can run under another request id inside the same turn.
   def run_turn(workspace, dialogue, turn, conversation, history, scorer)
     account = workspace.account
+    entry = workspace.entry_agent(dialogue)
+    staff_owned = conversation.reload.status.to_s == 'open'
     before = record_snapshot(account)
     before_state = record_state(account)
+    routing_before = routing_state(conversation, entry)
     last_event_id = LlmEvent.where(account_id: account.id).maximum(:id).to_i
     audit_cursor = Captain::Evals::RoutingBenchmark::ToolTrace.cursor(account)
     incoming = create_incoming!(conversation, turn.fetch('customer'))
     history << { role: 'user', content: incoming.content }
     started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     response = Captain::Assistant::AgentRunnerService.new(
-      assistant: workspace.entry_agent(dialogue), conversation: conversation, source: 'benchmark'
+      assistant: entry, conversation: conversation, source: 'benchmark'
     ).generate_response(message_history: history)
     latency_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
     events = LlmEvent.where(account_id: account.id).where('id > ?', last_event_id).order(:id).to_a
     tool_calls = Captain::Evals::RoutingBenchmark::ToolTrace.build(
-      events: events, audits: Captain::Evals::RoutingBenchmark::ToolTrace.audits_after(account, audit_cursor)
+      events: events, audits: Captain::Evals::RoutingBenchmark::ToolTrace.audits_after(account, audit_cursor), agent_names: agent_names(workspace)
     )
-    scored = scorer.call(turn: turn, response: response, events: events, before: before, before_state: before_state, tool_calls: tool_calls)
-    scored = judge_turn(account, dialogue, turn, response, scored, history, tool_calls) if @judge && dialogue['rubric'].present?
+    routing = { before: routing_before, after: routing_state(conversation, entry) }
+    scored = scorer.call(turn: turn, response: response, events: events, before: before, before_state: before_state, tool_calls: tool_calls,
+                         routing: routing)
+    scored = judge_turn(account, dialogue, turn, response, scored, history, tool_calls) if judge_turn?(dialogue, turn, scored)
     # The cost is read after the judge ran: its calls are provider spend of this turn too, and the next turn starts its own
     # window after the newest event, so a call left out here would never be counted against the budget.
     cost = provider_cost(LlmEvent.where(account_id: account.id).where('id > ?', last_event_id).order(:id).to_a)
     @spent += cost
-    history << { role: 'assistant', content: response['response'].to_s, agent_name: response['agent_name'] }
+    after_turn(entry, conversation, history, response, scored)
+    scored = scored.merge(warnings: Array(scored[:warnings]) + (staff_owned && !turn['staff'] ? [STAFF_OWNED_WARNING] : []))
     scored.merge(latency_ms: latency_ms, cost_usd: cost.to_f, expectation: turn['expect'],
                  **turn_trace(turn, response, events, tool_calls))
   end
 
+  # What the response builder does after a reply: the history of the model, the delivery of the parts, the handoff.
+  def after_turn(entry, conversation, history, response, scored)
+    text = public_reply(response, scored)
+    if text
+      history << { role: 'assistant', content: text, agent_name: response['agent_name'] }
+      record_part_delivery(entry, conversation, response, text)
+    end
+    hand_over(conversation) if scored.dig(:handoff, :observed)
+  end
+
+  # The reply the customer read, or nil: a runtime marker, a provider error, a suppressed reply and a technical failure show nothing.
+  def public_reply(response, scored)
+    return if scored[:patient_text].blank? || response['response_mode'] == 'suppress' || response['technical_failure'].present?
+
+    response['response'].to_s
+  end
+
+  # ResponseBuilderJob#record_part_delivery: the reply is a delivery of every part it reports, of the version it reported.
+  def record_part_delivery(entry, conversation, response, text)
+    refs = Array(response['part_refs'])
+    return if refs.empty?
+
+    @delivery_sequence = @delivery_sequence.to_i + 1
+    delivery_id = -@delivery_sequence
+    Captain::Conversation::AgentSession.new(entry: entry, conversation: conversation).change do |data|
+      refs.each do |ref|
+        part = Array(data['parts']).find { |item| item['id'] == ref['id'] && item['version'].to_i == ref['version'].to_i }
+        next unless part
+
+        part['delivered'] ||= []
+        part['delivered'] << { 'message_id' => delivery_id, 'content' => text, 'at' => Time.current.iso8601, 'version' => part['version'].to_i }
+      end
+    end
+  end
+
+  # Conversation#bot_handoff! leaves the conversation open for staff.
+  def hand_over(conversation)
+    Current.with_runtime_events_suppressed { conversation.update!(status: :open) }
+  end
+
+  # The agent that holds the conversation and how often the routing changed, from the durable session of the conversation.
+  def routing_state(conversation, entry)
+    session = conversation.reload.additional_attributes.to_h['captain_agent_session'].to_h
+    { current_assistant_id: session['current_assistant_id'] || entry.id, routing_revision: session['routing_revision'].to_i }
+  end
+
+  def agent_names(workspace) = workspace.agents.values.to_h { |agent| [agent.id, agent.name] }
+
   # Synthetic dialogue text only (no real customer data), kept for prompt review and for the triage list.
   def turn_trace(turn, response, events, tool_calls)
     completions = events.count { |event| event.event_name == 'llm.chat.runtime_complete' }
-    completions = events.count { |event| event.event_name.to_s.end_with?('chat.complete') } if completions.zero?
+    completions = events.count { |event| event.event_name == 'llm.chat.request' } if completions.zero?
     tool_steps = events.select { |event| event.event_name == 'llm.tool.complete' }.map do |event|
       [event.tool_name, event.payload['result_success'], event.payload['duration_ms']].join(':')
     end
@@ -154,6 +235,8 @@ class Captain::Evals::RoutingBenchmark::Runner
       handoff_reason: response['handoff_reason'], handoff_message: response['handoff_message'],
       council_handoff: response['council_handoff'].present? || nil, error_class: response['error_class'],
       error_message: response['error_message']&.truncate(300), part_refs: response['part_refs'].presence,
+      technical_failure: response['technical_failure'].presence&.to_h&.slice('tool', 'stage', 'reason', 'kind', 'completed'),
+      tool_result_fallback: response['tool_result_fallback'] || nil,
       agent_tasks: Array(response['agent_tasks']).filter_map { |task| task.to_h.stringify_keys.slice('id', 'status', 'assistant_id').presence }.presence
     }.compact
   end
@@ -201,9 +284,15 @@ class Captain::Evals::RoutingBenchmark::Runner
     completions.sum { |event| event.estimated_cost || BigDecimal('0') }
   end
 
-  # The optional judge rates the quality of the reply only (does it answer, tone, language). It sees the transcript so
-  # far, the tool calls and the database changes of the turn, but it can only add a failure: bookings, claims, handoffs
-  # and leaks are decided by the deterministic checks, never by the judge.
+  # The optional judge rates the reply against the rubric of the turn: what it must say and must not say, the tone and the language.
+  # It sees the transcript so far, the tool calls with their owners and the database changes of the turn and the facts of the
+  # workspace, but it can only add a failure: bookings, claims, handoffs and leaks are decided by the deterministic checks, never by
+  # the judge, and a pass of the judge removes no failure. A turn with nothing to read (a silent handoff, a runtime marker) is not
+  # judged.
+  def judge_turn?(dialogue, turn, scored)
+    @judge && (turn['rubric'].present? || dialogue['rubric'].present?) && scored[:patient_text].present?
+  end
+
   def judge_turn(account, dialogue, turn, response, scored, history, tool_calls)
     prompt = judge_prompt(dialogue, turn, response, scored, history, tool_calls)
     judgment = Llm::EventBus.with_context(source: 'benchmark', feature: 'routing_benchmark', account_id: account.id) do
@@ -211,7 +300,7 @@ class Captain::Evals::RoutingBenchmark::Runner
       Llm::Runtime.ask(chat, prompt, model: @model, account: account,
                                      observability: { feature: 'routing_benchmark', source: 'benchmark', account_id: account.id })
     end
-    result = JSON.parse(judgment.content.to_s)
+    result = JSON.parse(json_text(judgment.content))
     raise JSON::ParserError, 'Judge response is not a verdict' unless result.is_a?(Hash) && [true, false].include?(result['pass'])
 
     scored = scored.merge(judge: { pass: result['pass'], reason: result['reason'].to_s.truncate(300) })
@@ -222,51 +311,77 @@ class Captain::Evals::RoutingBenchmark::Runner
     Captain::Evals::RoutingBenchmark::Scorer.with_failure(scored, 'judge_unavailable', e.class.name)
   end
 
+  # The verdict, whether or not the model wrapped it in a ```json fence.
+  def json_text(content)
+    content.to_s.strip.sub(/\A```(?:json)?\s*/i, '').sub(/\s*```\z/, '').strip
+  end
+
   def judge_prompt(dialogue, turn, response, scored, history, tool_calls)
     transcript = history.map { |message| "#{message[:role] == 'user' ? 'Customer' : 'Agent'}: #{message[:content]}" }.join("\n")
     <<~PROMPT
-      Evaluate the quality of the last agent reply of this synthetic dialogue. Judge only: does it answer what the customer
-      asked, is the tone polite, is it in the customer's language, is it free of filler. Do not judge bookings, handoffs or
-      leaks: code checks them. Return JSON only: {"pass":true|false,"reason":"short reason"}.
-      Dialogue rubric (context for the whole dialogue): #{dialogue['rubric']}
+      Evaluate the last agent reply of this synthetic dialogue against the criterion of the turn. The criterion says what the reply must
+      say and must not say. Judge what the reply says: does it meet the criterion, does it answer the customer, is the tone polite, is
+      it in the language the criterion asks for, is it free of filler. Bookings, handoffs, claims and leaks are decided by code from the
+      tool results and the database (shown below); do not re-decide whether they happened. Return JSON only: {"pass":true|false,"reason":"short reason"}.
+      Criterion of this turn: #{turn['rubric'].presence || dialogue['rubric']}
+      Context of the dialogue: #{rubric_header(dialogue)}
+      Facts of the workspace:
+      #{workspace_facts}
       Transcript so far:
       #{transcript}
-      Tool calls of this turn: #{Captain::Evals::RoutingBenchmark::ToolTrace.compact(tool_calls).to_json}
+      Tool calls of this turn (agent, tool, success, result): #{Captain::Evals::RoutingBenchmark::ToolTrace.compact(tool_calls).to_json}
       Database changes of this turn: #{scored[:db_delta].to_json}
       Customer message: #{turn['customer']}
       Reply to evaluate: #{response['response']}
     PROMPT
   end
 
+  # The dialogue rubric up to the first "Ход 1:": who the patient is and the rules for all replies.
+  def rubric_header(dialogue)
+    dialogue['rubric'].to_s.split(/\s*Ход\s+1:/, 2).first.to_s.squish
+  end
+
+  # Prices, doctors, and the knowledge base of the workspace: what a correct reply may state.
+  def workspace_facts
+    data = @workspace_data || {}
+    lines = []
+    lines << "Doctors: #{data.fetch('resources', []).pluck('name').join('; ')}"
+    lines << "Services: #{data.fetch('services', []).map { |row| "#{row['name']} #{row['base_price']} KZT, #{row['duration_min']} min" }.join('; ')}"
+    data.fetch('knowledge', []).each { |row| lines << "Q: #{row['question']} A: #{row['answer']}" }
+    lines.join("\n").truncate(FACTS_LIMIT)
+  end
+
   def build_report(labels)
     cases = @cases.map { |item| item.deep_stringify_keys }
+    summary = Captain::Evals::RoutingBenchmark::Summary.call(cases)
     {
-      gate: Captain::Evals::RoutingBenchmark::Gate.call(cases, aborted: @aborted, abort_reason: @abort_reason, labels: labels),
+      gate: Captain::Evals::RoutingBenchmark::Gate.call(cases, aborted: @aborted, abort_reason: @abort_reason, labels: labels, silent_handoff: @silent_handoff),
       triage: Captain::Evals::RoutingBenchmark::Triage.records(cases, labels: labels),
       model: @model, reasoning: @reasoning, runs: @runs, aborted: @aborted, abort_reason: @abort_reason,
       aborted_at_budget: @abort_reason == 'budget_reached', isolation: 'workspace_per_dialogue',
       budget_usd: @budget_usd.to_f, cost_usd: @spent.to_f,
-      warnings: council_warnings,
+      silent_handoff: @silent_handoff,
+      warnings: council_warnings + case_warnings + handoff_warnings,
       cases: @cases,
-      aggregates: aggregates
-    }
+      aggregates: aggregates(summary),
+      dialogue_summaries: summary[:dialogue_summaries]
+    }.compact
   end
 
-  def aggregates
+  def aggregates(summary)
     latencies = @cases.pluck(:latency_ms).sort
     total = @cases.size
     {
       total: total, passed: @cases.count { |item| item[:status] == 'pass' },
       # Turns that pass once the council signal is ignored: separates a silent council producer from real failures.
       passed_ignoring_council_signal: @cases.count { |item| (item[:reasons] - council_reasons).empty? },
-      routing_accuracy: ratio(@cases.count { |item| item[:reasons].exclude?('wrong_agent') }, total),
       council_detection: ratio(@cases.count { |item| (item[:reasons] & council_reasons).empty? }, total),
       council_expected: @cases.count { |item| item[:council_expected] },
       council_event_missing: count_reason('council_event_missing'),
       council_unexpected: count_reason('council_unexpected'),
       hard_zero: @cases.flat_map { |item| item[:hard_zero].to_a }.group_by(&:first).transform_values { |pairs| pairs.sum(&:last) },
       latency_p50_ms: percentile(latencies, 0.5), latency_p95_ms: percentile(latencies, 0.95)
-    }
+    }.merge(summary.except(:dialogue_summaries)).compact
   end
 
   def council_reasons = Captain::Evals::RoutingBenchmark::Scorer::COUNCIL_REASONS
@@ -284,6 +399,17 @@ class Captain::Evals::RoutingBenchmark::Runner
     signal = Captain::Evals::RoutingBenchmark::Scorer::COUNCIL_STARTED
     ["council_event_missing: #{missing} of #{expected} turns expecting a council saw no #{signal} event; " \
      'check that the runtime emits it before reading the routing results']
+  end
+
+  # The warnings of the turns, counted: "ai_answered_while_staff_owned: 3 turn(s)".
+  def case_warnings
+    @cases.flat_map { |item| Array(item[:warnings]).uniq }.tally.sort.map { |warning, count| "#{warning}: #{count} turn(s)" }
+  end
+
+  def handoff_warnings
+    return ["the handoff notice could not be checked (#{@silent_handoff_error}): silent handoff is not proven"] if @silent_handoff.nil? && @silent_handoff_error
+
+    @silent_handoff == false ? ['the handoff notice of the synthetic account is not blank: a handoff is not silent'] : []
   end
 
   def ratio(count, total)
