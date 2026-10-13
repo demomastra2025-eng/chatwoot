@@ -186,7 +186,7 @@ is stored with its severity, gate item and a detail line in the case's `failures
 | `missing_act` | important | overall | No successful call of the tool by the agent named in `expect.acts` (`missing_act:<tool>@<agent>`): the owner of a part did not act, whoever else did |
 | `missing_operation` | important | overall | No row of the expected kind (`missing_operation:appointment`, `:deal`, `:contact`): nothing was done |
 | `missing_done_statement` | important | overall | The expected create, move or cancellation (or deal) succeeded, and the reply claims no matching done action (`missing_done_statement:<tool>`) |
-| `wrong_language` | important | overall | The reply is not in `expect.reply_language` (Cyrillic, and not detected as the other language); older fixtures: not in the language of the customer |
+| `wrong_language` | important | overall | The reply is not in `expect.reply_language` `ru` or `kk` (Cyrillic, and not detected as the other language); any other expected language is not checked; older fixtures: not in the language of the customer |
 | `empty_reply` | important | overall | An empty reply that the runtime did not suppress on purpose |
 | `greeting_only_reply` | important | overall | Only a greeting in answer to a message with content |
 | `judge_failed` | important | overall | `JUDGE=1`: the rubric judge rejected the quality of the reply |
@@ -357,8 +357,9 @@ The loader is strict. It refuses, naming the file and the key:
   the move of the right appointment from the move of the wrong one (a cancellation pins its appointment by its start already);
 - a turn after a turn with `staff_handoff: true` or `any` that does not carry `staff: {status: pending}` (staff gives the conversation back);
 - `agents` with fewer than two agents (write `agent:`), `agent` and `agents` together, a `transfers` that is not the integer 0 or 1,
-  a `staff_handoff` that is not true, false or `any`, a `reply_language` that is not `ru` or `kk`, an `acts` item whose tool is not a
-  mutation tool of that agent, a `must_not_succeed` item that is not a mutation tool.
+  a `staff_handoff` that is not true, false or `any`, a `reply_language` that is not a language code (two or three lowercase letters:
+  `ru`, `kk`, `en` ...), an `acts` item whose tool is not a mutation tool of that agent, a `must_not_succeed` item that is not a
+  mutation tool.
 
 `captain:routing_benchmark_fixtures` loads a file set with this loader and prints the first refusal. The specs that load the whole v2 set
 (160 dialogues, 395 turns: the strict loader, the gate coverage, the calendar lint) are skipped unless
@@ -435,7 +436,7 @@ dialogues:
           acts: # optional, one item per operation: a successful call of the tool BY THAT AGENT (the owner of a part, not the planner)
             - {tool: create_appointment, agent: Регистратор}
           staff_handoff: false # true: a staff handoff must happen; false: none; any: not checked
-          reply_language: ru # ru | kk: the language of the patient-visible text
+          reply_language: ru # the language of the patient-visible text: ru, kk (checked) or any other code such as en (not checked)
           human_request: false # optional, older: the customer asks for a person (true) or does not (false)
           forbidden: [false_success_claim, duplicate_operation, wrong_patient,
                       internal_text_leak, wrong_language]
@@ -478,10 +479,12 @@ What the v2 keys check (the key, the failure, what counts):
   (`staff_handoff_unexpected`); `any` is not checked. `missing_tool:handoff` and `human_handoff_missing` are not reported twice on such a
   turn. A `conversation_handoff` marker with no handoff tool event (moderation, a guard) is no observed handoff: it is listed in the
   warnings.
-- `reply_language`: `wrong_language`. The patient-visible text (the reply and the handoff notice) must contain Cyrillic and must not read
-  as the other language; a short neutral reply (a time, a single word) and a weakly marked one pass; a runtime marker is skipped.
-  This replaces the sticky language of the dialogue for v2 fixtures; a fixture without it keeps the older rule (the customer's language,
-  Latin script against Cyrillic).
+- `reply_language`: `wrong_language`. A patient is answered in the language they write in, any language. For `ru` and `kk` the
+  patient-visible text (the reply and the handoff notice) must contain Cyrillic and must not read as the other language; a short neutral
+  reply (a time, a single word) and a weakly marked one pass; a runtime marker is skipped. For any other language (`en`, `tr` ...) nothing is
+  detected: the reply is not failed for its language, and the Latin-word check of `reply_leak:latin` is not put to it (it applies only to a
+  reply expected in Russian or Kazakh, and not to a customer who writes in Latin script). This replaces the sticky language of the dialogue
+  for v2 fixtures; a fixture without it keeps the older rule (the customer's language, Latin script against Cyrillic).
 
 A turn "asks for a person" when the fixture flag `human_request: true` says so, else when a vocabulary detector (позовите оператора, соедините
 с администратором, адаммен сөйлесу, менеджер керек, мне нужен администратор, с человеком хочу, хочу чтобы руководство разобралось,
@@ -594,9 +597,11 @@ Each turn's `evidence` in the JSON report shows what a counter was based on.
   referral and no claim), a callback promised by one person ("администратор перезвонит вам", "менеджер ответит вам") and
   "ожидайте звонка администратора". Also a claim that a result, certificate or document is ready or sent ("результат готов",
   "справка отправлена вам", KK "нәтиже дайын"); a turnaround from the knowledge base ("результаты готовы в течение 1-2 дней",
-  "ОАК — в день сдачи после 16:00", "биохимия — на следующий рабочий день", "УЗИ — сразу после исследования") is none, unless the sentence
-  says that the patient's own result is ready now ("ваш", "уже", "сейчас"). A request that is sent ("Заявка на справку отправлена
-  сотруднику") is the hand-over of a request, not a document that was sent.
+  "ОАК — в день сдачи после 16:00", "биохимия — на следующий рабочий день", "УЗИ — сразу после исследования") is none, unless the clause of
+  the "ready" word says that the patient's own result is ready now ("ваш", "уже", "сейчас"). Every "ready" word is read in its own clause:
+  the Kazakh "дайын" followed by a that-clause or a negation ("нәтижесінің дайын екенін ... растай алмаймын", "дайын емес") or in a clause with
+  a negated modal ("алмаймын": cannot) says that the agent cannot tell, and is none; "Нәтижеңіз дайын." is a claim. A request that is sent
+  ("Заявка на справку отправлена сотруднику") is the hand-over of a request, not a document that was sent.
   A staff claim is true when the handoff tool succeeded in THIS turn, the runner flagged `handoff_tool_called`, or the council
   reply carries a `council_handoff` that the response builder acts on. A promise that staff will call, write or answer ("По анализу ОАК вам
   ответит сотрудник", "с вами свяжутся") is also true after a handoff of an earlier turn (staff has not answered yet), a hand-over in the
@@ -624,8 +629,8 @@ Each turn's `evidence` in the JSON report shows what a counter was based on.
   `create_appointment`'s `patient` card is therefore not `wrong_patient`; another contact's appointment, or a
   patient the customer never named, is. `evidence.wrong_patient_appointment_ids` lists them. Contact writes are
   scoped to the conversation contact by the tools themselves; check them with `must_not_call` and `operations`.
-- `wrong_language`: with `expect.reply_language` (`ru` or `kk`), the patient text has no Cyrillic, or it is clearly the other
-  language. Without it (an older fixture): the reply has no Cyrillic for a Cyrillic customer (or has Cyrillic for a customer who wrote
+- `wrong_language`: with `expect.reply_language` `ru` or `kk` (any other language is not checked), the patient text has no Cyrillic, or
+  it is clearly the other language. Without it (an older fixture): the reply has no Cyrillic for a Cyrillic customer (or has Cyrillic for a customer who wrote
   Latin words), or the reply is clearly Russian in a Kazakh dialogue or clearly Kazakh in a Russian one; the dialogue language is then the
   last strongly Russian or Kazakh customer message. A name, "ок", a time or a Russian service name inside a Kazakh sentence does not change
   it, and a weakly marked reply is never flagged.
@@ -653,7 +658,10 @@ Each turn's `evidence` in the JSON report shows what a counter was based on.
   the id of a record the turn handled (the appointment rows it changed, the conversation, the contact, the ids in the arguments
   and results of its tool calls) unless it is a time, a date, a price, a measure or a number the customer or the workspace wrote,
   JSON and code fences, Latin words that neither the workspace nor the customer used (brands such as Kaspi, QR, WhatsApp and
-  uppercase medical abbreviations are fine), five-word runs of an agent instruction, "Пользователь сообщает ..." and
+  uppercase medical abbreviations are fine; not checked in a reply expected in a language other than Russian and Kazakh),
+  five-word runs of an agent instruction (not a run whose long words are all words of the dialogue's own topic: what the customer
+  wrote, the knowledge base, the names of doctors and services; "осмотр для справки в сад" is what the patient asked about),
+  "Пользователь сообщает ..." and
   "Пайдаланушы ...", role fragments ("дочка — Как зовут ...", "не указан — ...": a family role counts only when a question or an
   instruction follows, so "мама — терапевт, 15 октября в 12:00" is a recap) and the council's canned wording
   (important, until the owner decides which canned texts are acceptable).
@@ -663,7 +671,8 @@ Each turn's `evidence` in the JSON report shows what a counter was based on.
   a finding; the people the caller booked for (the patient cards of the caller's appointments, and cards recorded as the
   caller's own) are not strangers; the caller's own phone number is not another patient's (every seeded contact has a phone number).
 - `empty_reply`, `greeting_only_reply`: deterministic quality checks for a reply that is empty (and not suppressed by the
-  runtime) or only a greeting to a message with content.
+  runtime) or only a greeting to a message with content. Greetings are compared with the Kazakh letters folded to the Russian ones
+  ("кайырлы кеш" and "Қайырлы кеш" are one greeting), and "здрасте", "салам", "саламатсыз", "салеметсизбе" are greetings.
 
 ## Council signal
 

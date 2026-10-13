@@ -168,10 +168,16 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Fixture do
     end
 
     describe 'the v2 keys' do
-      it 'accepts transfers (the integer 0 or 1), staff_handoff (true, false, any) and reply_language (ru, kk)' do
+      it 'accepts transfers (the integer 0 or 1), staff_handoff (true, false, any) and reply_language (a language code: ru, kk, en ...)' do
         expect { described_class.new(with_expect(transfers: 0, staff_handoff: false, reply_language: 'ru')) }.not_to raise_error
         expect { described_class.new(with_expect(transfers: 1, staff_handoff: 'any', reply_language: 'kk')) }.not_to raise_error
         expect { described_class.new(with_expect(staff_handoff: true)) }.not_to raise_error
+      end
+
+      it 'accepts the reply in any language, written as its code: a patient is answered in the language they write in' do
+        %w[en tr de uk ar fil].each do |language|
+          expect { described_class.new(with_expect(reply_language: language)) }.not_to raise_error, language
+        end
       end
 
       it 'rejects a transfers count that is not 0 or 1, and a boolean' do
@@ -182,7 +188,9 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Fixture do
 
       it 'rejects a staff_handoff and a reply_language outside the schema' do
         ['yes', nil, 1].each { |value| expect { described_class.new(with_expect(staff_handoff: value)) }.to raise_error(described_class::Invalid, /staff_handoff/) }
-        %w[en RU kz].each { |value| expect { described_class.new(with_expect(reply_language: value)) }.to raise_error(described_class::Invalid, /reply_language/) }
+        ['RU', 'russian', 'r', 'ru-RU', '', nil, 1, ['ru']].each do |value|
+          expect { described_class.new(with_expect(reply_language: value)) }.to raise_error(described_class::Invalid, /reply_language/), value.inspect
+        end
       end
 
       it 'accepts a turn rubric that is a string, and rejects another' do

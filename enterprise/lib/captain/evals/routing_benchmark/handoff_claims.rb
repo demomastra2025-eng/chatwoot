@@ -77,6 +77,11 @@ class Captain::Evals::RoutingBenchmark::HandoffClaims < Captain::Evals::RoutingB
                 (?<!\p{L})(?:күн|сағат|кейін|ішінде)(?!\p{L})/ix
   # What turns such a sentence into a statement about the patient's own result: "Ваш анализ готов, заберите после 16:00", "Уже готово".
   NOW = /(?<!\p{L})(?:ваш\p{L}*|уже|сейчас|сіздің|қазір)(?!\p{L})/i
+  # The Kazakh "ready" word followed by the word of a that-clause or of a negation: "нәтижесінің дайын екенін ... растай алмаймын" (that the
+  # result is ready ... I cannot confirm), "дайын емес" (not ready). It says no result is ready.
+  NOT_READY = /\A\s*(?:екен\p{L}*|емес|жоқ)(?!\p{L})/i
+  # "растай алмаймын", "тексере алмаймыз": a negated modal ("cannot"), so what the clause speaks of is not asserted.
+  CANNOT = /(?<!\p{L})алмай\p{L}*/i
 
   # The sentence of a claim promises that staff will call, write or answer, and hands nothing over ("Администратор перезвонит вам",
   # "С вами свяжутся"). After a handoff of an earlier turn that promise is still true: staff has not answered yet. A hand-over in the past
@@ -103,11 +108,23 @@ class Captain::Evals::RoutingBenchmark::HandoffClaims < Captain::Evals::RoutingB
 
   # A result, certificate or document said to be ready or sent. A request that is sent ("Заявка на справку отправлена сотруднику") is the
   # hand-over of a request and belongs to #handoff_kind; a turnaround of the knowledge base is a claim only when it is said of the patient's
-  # own result (NOW).
+  # own result (NOW). Every "ready" word is read in its own clause: "ОАК ... кейін дайын болады, бірақ нәтижесінің дайын екенін қазір растай
+  # алмаймын" gives the turnaround and says that the agent cannot tell, and the "қазір" of the second clause does not make the first a claim.
   def ready?(sentence)
-    return false unless sentence.match?(DOCUMENT) && !sentence.match?(REQUEST_OBJECT) && claim?(sentence, READY, :ready)
+    return false unless sentence.match?(DOCUMENT) && !sentence.match?(REQUEST_OBJECT)
 
-    !sentence.match?(TURNAROUND) || sentence.match?(NOW)
+    turnaround = sentence.match?(TURNAROUND)
+    matches(sentence, READY).any? { |match| ready_claim?(sentence, match, turnaround) }
+  end
+
+  def ready_claim?(sentence, match, turnaround)
+    return false unless genuine?(sentence, match, :ready)
+
+    before = clause(sentence[0...match.begin(0)], :last)
+    after = clause(sentence[match.end(0)..], :first)
+    return false if after.match?(NOT_READY) || "#{before} #{after}".match?(CANNOT)
+
+    !turnaround || "#{before} #{match[0]} #{after}".match?(NOW)
   end
 
   def handoff_verbs(sentence)

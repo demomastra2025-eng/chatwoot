@@ -1248,6 +1248,22 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer do
       expect(failure_ids(result)).to include('reply_leak:instruction_overlap')
     end
 
+    # The g1 run (council_three_part_08 T1): the reply repeats the topic of the patient, which an instruction of the agent mentions as well.
+    it 'leaves a run alone that is made of the words the customer and the workspace used for the topic' do
+      instruction = 'Осмотр для справки в сад оформляй у педиатра и называй дату.'
+      directory = Captain::Evals::RoutingBenchmark::Directory.new(texts: ['Осмотр педиатра для справки в детский сад или школу'])
+      scorer = described_class.new(account: account, conversation: conversation, directory: directory, internal_texts: [instruction])
+      customer_says('аружан 6 лет, справка в сад нужна')
+
+      topic = score('Чтобы записать Аружан на осмотр для справки в сад, укажите дату рождения.', scorer: scorer)
+      copied = score('Конечно. Осмотр для справки в сад оформляй у педиатра и называй дату.', scorer: described_class.new(
+        account: account, conversation: conversation, directory: directory, internal_texts: [instruction]
+      ))
+
+      expect(failure_ids(topic)).not_to include('reply_leak:instruction_overlap')
+      expect(failure_ids(copied)).to include('reply_leak:instruction_overlap')
+    end
+
     it 'leaves brands of the workspace and a runtime marker alone' do
       directory = Captain::Evals::RoutingBenchmark::Directory.new(texts: ['Оплата: Kaspi QR или Air Flow'])
       scorer = described_class.new(account: account, conversation: conversation, directory: directory)
@@ -1438,6 +1454,19 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer do
     it 'flags a greeting to a message with content, not to a greeting' do
       expect(failure_ids(score('Здравствуйте!', customer: 'запишите дочку к педиатру на среду'))).to eq(['greeting_only_reply'])
       expect(failure_ids(score('Добрый день!', customer: 'Здравствуйте'))).to be_empty
+    end
+
+    # The g1 run (short_fragments_01 and short_fragments_10): a colloquial greeting, and a Kazakh one typed without the special letters.
+    it 'knows the colloquial and the transliterated greetings of the customer: a greeting answers a greeting' do
+      [['здрасте', 'Здравствуйте! Чем могу помочь?'], ['здрасьте', 'Здравствуйте!'], ['салам', 'Салем!'], ['кайырлы кеш', 'Қайырлы кеш!'],
+       ['саламатсыз', 'Сәлеметсіз бе!'], ['салеметсизбе', 'Сәлеметсіз бе!'], ['Қайырлы күн', 'Қайырлы күн!']].each do |customer, reply|
+        expect(failure_ids(score(reply, customer: customer, scorer: described_class.new(account: account, conversation: conversation)))).to be_empty,
+                                                                                                                                              customer
+      end
+    end
+
+    it 'still flags a greeting-only reply to a message with content, in Kazakh too' do
+      expect(failure_ids(score('Қайырлы кеш!', customer: 'кайырлы кеш, дәрігерге жазылғым келеді'))).to eq(['greeting_only_reply'])
     end
   end
 

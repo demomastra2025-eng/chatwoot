@@ -56,8 +56,14 @@ class Captain::Evals::RoutingBenchmark::Scorer
                             staff_handoff_missing council_event_missing council_changed_hands].freeze
   # Reply markers the response builder turns into a handoff; they are not patient text.
   RESERVED_REPLIES = %w[conversation_handoff response_cancelled].freeze
-  GREETING_WORDS = %w[здравствуйте здравствуй добрый доброе доброй день вечер утро ночи привет приветствую сәлеметсіз бе сәлем салем
-                      қайырлы күн таң кеш түн амансыз ба саламатсызба чем могу помочь как вам помочь].freeze
+  # Compared with the Kazakh letters folded to the Russian ones (see #greeting_only?): a customer who types "кайырлы кеш" without the
+  # special letters writes the same greeting as the reply "Қайырлы кеш".
+  GREETING_WORDS = %w[здравствуйте здравствуй добрый доброе доброй день вечер утро ночи привет приветствую здрасте здрасьте
+                      сәлеметсіз бе сәлем салем салам саламатсыз саламатсызба салеметсизбе қайырлы күн таң кеш түн амансыз ба
+                      чем могу помочь как вам помочь].freeze
+  KAZAKH_LETTERS = 'әғқңөұүһі'
+  RUSSIAN_LETTERS = 'агкноуухи'
+  FOLDED_GREETING_WORDS = GREETING_WORDS.to_set { |word| word.tr(KAZAKH_LETTERS, RUSSIAN_LETTERS) }.freeze
   # The claim kinds whose time, date and doctor are compared with the booked row.
   RECORD_CLAIM_KINDS = %i[book reschedule cancel create reschedule_state cancel_state create_state done done_state].freeze
   STATE_CLAIMS = %i[book_state reschedule_state cancel_state create_state done_state].freeze
@@ -1201,10 +1207,25 @@ class Captain::Evals::RoutingBenchmark::Scorer
 
   def reply_scan_findings(context)
     Captain::Evals::RoutingBenchmark::ReplyScan.call(
-      context.visible_text, tool_ids: tool_ids, allowed: allowed_latin, shingles: shingles,
-                            latin_ok: Captain::Evals::RoutingBenchmark::Language.script(context.customer) == :latin,
-                            internal_ids: internal_ids(context), known_numbers: known_numbers, agent_names: agent_names.values
+      context.visible_text, tool_ids: tool_ids, allowed: allowed_latin, shingles: shingles, latin_ok: latin_ok?(context),
+                            internal_ids: internal_ids(context), known_numbers: known_numbers, agent_names: agent_names.values,
+                            domain_words: domain_words
     )
+  end
+
+  # The Latin-word check is for replies in Russian and Kazakh. A reply expected in any other language (English ...) is full of Latin
+  # words, and so is the reply to a customer who writes in Latin script.
+  def latin_ok?(context)
+    expected = context.expected['reply_language']
+    return true if expected.present? && !Captain::Evals::RoutingBenchmark::Language.checked?(expected)
+
+    Captain::Evals::RoutingBenchmark::Language.script(context.customer) == :latin
+  end
+
+  # The words of the dialogue's own topic: what the customer wrote and what the workspace says (knowledge base, doctors, services). A
+  # reply that repeats an instruction in the words of that topic ("осмотр для справки в сад") has not copied the instruction.
+  def domain_words
+    Captain::Evals::RoutingBenchmark::ReplyScan.word_stems(dialogue_texts, @directory&.public_texts)
   end
 
   # The ids the turn handled: the appointment rows it changed, the conversation, the contact and every id in the arguments
@@ -1263,8 +1284,8 @@ class Captain::Evals::RoutingBenchmark::Scorer
   end
 
   def greeting_only?(text)
-    words = text.to_s.downcase.scan(/\p{L}+/)
-    words.any? && words.all? { |word| GREETING_WORDS.include?(word) }
+    words = text.to_s.downcase.tr(KAZAKH_LETTERS, RUSSIAN_LETTERS).scan(/\p{L}+/)
+    words.any? && words.all? { |word| FOLDED_GREETING_WORDS.include?(word) }
   end
 
   # The reply must say that the operation the fixture expects was done (decision 1: the reply of a council or an owner reports the

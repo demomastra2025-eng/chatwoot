@@ -38,6 +38,14 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Language do
       expect(described_class.mismatch(:ru, 'Please choose a time')).to eq('the reply has no Cyrillic')
     end
 
+    it 'checks Russian and Kazakh only: a reply expected in any other language has no mismatch' do
+      expect(described_class.checked?('ru')).to be(true)
+      expect(described_class.checked?(:kk)).to be(true)
+      expect(described_class.checked?('en')).to be(false)
+      expect(described_class.mismatch('en', 'Please choose a time for the visit.')).to be_nil
+      expect(described_class.mismatch('tr', 'Здравствуйте, ждём вас в клинике в среду.')).to be_nil
+    end
+
     it 'lets a short neutral text and a weakly marked one pass' do
       ['15:00', 'ok', '👍', 'Дана Нурланова', 'Терапевт Ли Анна, среда 14 октября в 9:00'].each do |text|
         expect(described_class.mismatch(:kk, text)).to be_nil, text

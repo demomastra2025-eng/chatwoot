@@ -11,7 +11,9 @@
 #                        ("Запись №4821", "Номер записи: 4821") and a number equal to the id of a record the turn handled
 #   json                 a JSON object or array, a YAML-like mapping, a code fence
 #   latin                a Latin word that is neither allowed nor typed by the customer
-#   instruction_overlap  five words in a row that an agent instruction or routing description contains
+#   instruction_overlap  five words in a row that an agent instruction or routing description contains, unless every long word of the run is
+#                        a word of the dialogue's own topic (the customer's words, the knowledge base, the names of doctors and services:
+#                        "осмотр для справки в сад" is what the patient asked about, not a copied instruction)
 #   third_person         "Пользователь сообщает ...", "Пайдаланушы ..." (the council paraphrased the customer)
 #   role_fragment        "дочка — Как зовут ...", "не указан — ...", "Жанна Оспанова — Вы имеете в виду ..." (a family role
 #                        followed by a time, a date or a doctor is a recap and no fragment)
@@ -24,6 +26,10 @@ class Captain::Evals::RoutingBenchmark::ReplyScan
   KINDS = %i[reserved_token tool_name identifier json latin instruction_overlap third_person role_fragment composer_phrase
              agent_name stock_text tool_error].freeze
   SHINGLE_SIZE = 5
+  # A word of this many letters or more is a content word of a run; a word is matched with the words of the topic by its stem (the word
+  # without its last two letters, but at least STEM_LENGTH letters), which survives Russian and Kazakh case endings.
+  CONTENT_WORD_LENGTH = 4
+  STEM_LENGTH = 4
 
   RESERVED_TOKEN = /(?<![\p{L}\p{N}_])(?:conversation_handoff\w*|response_cancelled|plan_request|manage_agent_tasks|
                       (?:handoff|transfer)_to_\w+|(?:assistant|agent|scenario)_\d+|agent_tasks|part_refs|captain_request_id)
@@ -78,9 +84,19 @@ class Captain::Evals::RoutingBenchmark::ReplyScan
     #                standalone number equal to one of them is an identifier
     # known_numbers: numbers (strings) the customer or the workspace wrote themselves; never an identifier
     # agent_names:   the names of the workspace agents, for the `agent_name` kind
-    def call(text, tool_ids: [], allowed: [], shingles: Set.new, latin_ok: false, internal_ids: [], known_numbers: [], agent_names: [])
-      new(text, tool_ids: tool_ids, allowed: allowed, shingles: shingles, latin_ok: latin_ok,
-                internal_ids: internal_ids, known_numbers: known_numbers, agent_names: agent_names).findings
+    # domain_words:  Set from .word_stems, the words of the dialogue's own topic, so that an instruction run made of them is no overlap
+    def call(text, tool_ids: [], allowed: [], shingles: Set.new, latin_ok: false, internal_ids: [], known_numbers: [], agent_names: [],
+             domain_words: Set.new)
+      new(text, tool_ids: tool_ids, allowed: allowed, shingles: shingles, latin_ok: latin_ok, internal_ids: internal_ids,
+                known_numbers: known_numbers, agent_names: agent_names, domain_words: domain_words).findings
+    end
+
+    # Every prefix of STEM_LENGTH letters or more of every word of the given texts: a word of a reply belongs to the topic when its stem
+    # is one of them.
+    def word_stems(*texts)
+      texts.flatten.compact.each_with_object(Set.new) do |text, stems|
+        normalized_words(text).each { |word| (STEM_LENGTH..word.length).each { |size| stems << word.first(size) } }
+      end
     end
 
     # The digit runs of the given texts, for the known-numbers list.
@@ -107,7 +123,8 @@ class Captain::Evals::RoutingBenchmark::ReplyScan
     def trim(word) = word.sub(/['-]+\z/, '')
   end
 
-  def initialize(text, tool_ids:, allowed:, shingles:, latin_ok:, internal_ids: [], known_numbers: [], agent_names: [])
+  def initialize(text, tool_ids:, allowed:, shingles:, latin_ok:, internal_ids: [], known_numbers: [], agent_names: [], domain_words: Set.new)
+    @domain_words = domain_words
     @text = text.to_s
     @tool_ids = Set.new(tool_ids.map(&:to_s))
     @allowed = Set.new((ALLOWED_LATIN + Array(allowed)).map { |word| word.to_s.downcase })
@@ -210,7 +227,13 @@ class Captain::Evals::RoutingBenchmark::ReplyScan
 
     self.class.normalized_words(@text).each_cons(SHINGLE_SIZE).filter_map do |run|
       joined = run.join(' ')
-      joined if @shingles.include?(joined)
+      joined if @shingles.include?(joined) && !topic_run?(run)
     end
+  end
+
+  # A run whose content words are all words of the dialogue's own topic says what the patient asked about.
+  def topic_run?(run)
+    content = run.select { |word| word.length >= CONTENT_WORD_LENGTH }
+    content.any? && content.all? { |word| @domain_words.include?(word.first([word.length - 2, STEM_LENGTH].max)) }
   end
 end

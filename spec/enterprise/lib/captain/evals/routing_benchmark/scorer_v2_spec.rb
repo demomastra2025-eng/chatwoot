@@ -542,6 +542,25 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer, 'v2 checks' do
     it 'keeps the older rule for a fixture without it' do
       expect(score('Hello, how can I help?', customer: 'Здравствуйте')[:hard_zero]['wrong_language']).to eq(1)
     end
+
+    # A patient is answered in the language they write in, any language. Russian and Kazakh are the languages the benchmark can check: for any other
+    # expected language the reply is neither failed for its language nor for its Latin words.
+    it 'checks no reply that is expected in another language: not its language, and not its Latin words' do
+      result = score('Please choose a time for the visit: Monday at 10:00 or Tuesday at 11:00.', customer: 'ок', expect: { reply_language: 'en' })
+
+      expect(failure_ids(result)).to be_empty
+      expect(result[:hard_zero]['wrong_language']).to eq(0)
+      expect(result[:evidence]).to include(expected_language: 'en')
+      expect(failure_ids(score('Bitte wählen Sie eine Zeit.', customer: 'ок', expect: { reply_language: 'de' }, scorer: fresh_scorer))).to be_empty
+    end
+
+    it 'still checks the Latin words of a reply that is expected in Russian or in Kazakh' do
+      ru = score('Выберите время: Monday в 10:00.', customer: 'ок', expect: { reply_language: 'ru' })
+      kk = score('Уақытты таңдаңыз: Monday сағат 10:00.', customer: 'ок', expect: { reply_language: 'kk' }, scorer: fresh_scorer)
+
+      expect(failure_ids(ru)).to include('reply_leak:latin')
+      expect(failure_ids(kk)).to include('reply_leak:latin')
+    end
   end
 
   describe 'an operation pinned among the params' do

@@ -4,7 +4,12 @@
 # :unknown otherwise, so a name, "ок" or a time never changes the language of a dialogue and a Russian service
 # name inside a Kazakh reply does not turn it into a Russian reply. Capitalised words that carry Kazakh letters
 # are ignored because they are usually names. The optional rubric judge (JUDGE=1) remains the quality check.
+#
+# A patient may write in any language and is answered in it (English, Turkish ...). Only Russian and Kazakh are checked: for any other
+# expected language (`expect.reply_language`) nothing is detected, so a reply is never failed for its language or for its Latin words.
 class Captain::Evals::RoutingBenchmark::Language
+  # The expected languages whose replies the benchmark can check.
+  CHECKED = %w[ru kk].freeze
   # ә ғ қ ң ө ұ ү һ і
   KAZAKH_LETTERS = /[әғқңөұүһі]/
   # Frequent Kazakh words that contain no Kazakh-only letter.
@@ -25,11 +30,16 @@ class Captain::Evals::RoutingBenchmark::Language
       text.scan(/\p{Latin}{2,}/).size >= 2 ? :latin : :neutral
     end
 
+    # Whether the benchmark checks replies in the language (Russian and Kazakh); any other language is answered, not checked.
+    def checked?(expected) = CHECKED.include?(expected.to_s)
+
     # Why a text is not in the expected language (:ru or :kk), or nil when it is. The fixtures of the v2 schema state the expected
     # language of a turn (`reply_language`), so no dialogue-wide guess is needed: a text with Latin words and no Cyrillic is in no
     # expected language, a text that reads as the other language is not, and a short neutral text (a time, an emoji, a single
-    # word) or a weakly marked one passes.
+    # word) or a weakly marked one passes. A language that is not checked (`checked?`) has no mismatch.
     def mismatch(expected, text)
+      return unless checked?(expected)
+
       other = expected.to_sym == :ru ? :kk : :ru
       case script(text)
       when :neutral then nil

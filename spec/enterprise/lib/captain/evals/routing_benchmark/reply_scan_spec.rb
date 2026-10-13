@@ -107,6 +107,33 @@ RSpec.describe Captain::Evals::RoutingBenchmark::ReplyScan do
     it 'builds no shingles from a short text' do
       expect(described_class.shingles(['слишком коротко'])).to be_empty
     end
+
+    # The g1 run (council_three_part_08 T1): "осмотр для справки в сад" is a run of the instruction of the pediatric agent and the very thing the
+    # patient asked about ("справка в сад"; the service is "Осмотр педиатра для справки в детский сад или школу").
+    describe 'a run made of the words of the dialogue\'s own topic' do
+      let(:shingles) { described_class.shingles(['Принимай заявки: осмотр для справки в сад оформляй у педиатра в детском приёме.']) }
+      let(:topic) { described_class.word_stems(['аружан сериковой 6 лет справка в сад нужна'], ['Осмотр педиатра для справки в детский сад или школу']) }
+      let(:reply) { 'Чтобы записать Аружан на осмотр для справки в сад, укажите её дату рождения.' }
+
+      it 'is no overlap: the patient\'s subject is not a copied instruction' do
+        expect(kinds(reply, shingles: shingles, domain_words: topic)).to be_empty
+      end
+
+      it 'is an overlap without the words of the topic' do
+        expect(kinds(reply, shingles: shingles)).to eq([:instruction_overlap])
+      end
+
+      it 'is still an overlap when a long word of the run is not a word of the topic' do
+        expect(kinds('Конечно: принимай заявки осмотр для справки в сад', shingles: shingles, domain_words: topic)).to eq([:instruction_overlap])
+      end
+
+      it 'matches a word by its stem: the case endings of Russian and Kazakh do not matter' do
+        stems = described_class.word_stems(['справка', 'осмотр'])
+
+        expect(stems).to include('справ', 'справк', 'справка', 'осмо', 'осмотр')
+        expect(stems).not_to include('спр')
+      end
+    end
   end
 
   describe 'council wording' do

@@ -57,7 +57,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::HandoffClaims do
   describe 'claims that a result or a document is ready or sent' do
     [
       'Результат готов.', 'Результаты анализов готовы.', 'Ваша справка готова.', 'Справка отправлена вам на почту.',
-      'Документы высланы.', 'Заключение направлено вам в WhatsApp.', 'Нәтиже дайын.', 'Анықтама жіберілді.',
+      'Документы высланы.', 'Заключение направлено вам в WhatsApp.', 'Нәтиже дайын.', 'Нәтижеңіз дайын.', 'Анықтама жіберілді.',
       # a timing word does not excuse a statement about the patient's own result
       'Ваши результаты ОАК готовы в день сдачи после 16:00.', 'Результат уже готов, заберите после 16:00.', 'Ваш анализ ОАК готов.'
     ].each do |text|
@@ -76,6 +76,25 @@ RSpec.describe Captain::Evals::RoutingBenchmark::HandoffClaims do
       it "finds nothing in #{text.inspect}" do
         expect(kinds(text)).to be_empty
       end
+    end
+
+    # The replies of the g1 run (council_two_part_04 T1, council_three_part_02 T1 and T2): the agent says that it cannot tell. Every "ready" word is
+    # read in its own clause, and the "қазір" of one clause does not turn the turnaround of the clause before it into a claim.
+    [
+      'ОАК әдетте тапсырған күні сағат 16:00-ден кейін дайын болады, бірақ нәтижесінің дайын екенін қазір растай алмаймын, ' \
+      'қызметкер тексеріп, сізге жауап береді.',
+      'Нәтиженің дайын екенін қазір тексере алмаймын.',
+      'Ербол Тулегеновтің анализ нәтижесінің дайын екенін қазір тексере алмаймын.',
+      'Нәтиже әлі дайын емес.'
+    ].each do |text|
+      it "finds nothing in the Kazakh negation #{text.inspect}" do
+        expect(kinds(text)).to be_empty
+      end
+    end
+
+    it 'keeps the clauses apart: the turnaround and the "now" of another clause are not mixed up' do
+      expect(kinds('Результаты ОАК готовы в день сдачи после 16:00, а ваш анализ сейчас в работе.')).to be_empty
+      expect(kinds('Результаты ОАК готовы в день сдачи после 16:00, ваш анализ готов.')).to eq([:handoff_ready])
     end
 
     it 'reads a request that is sent to staff as the hand-over of a request, and not as a document that was sent' do

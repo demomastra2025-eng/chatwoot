@@ -23,7 +23,9 @@ class Captain::Evals::RoutingBenchmark::Fixture
   EXPECT_KEYS = %w[agent agents council transfers must_call must_not_call must_not_succeed operations acts staff_handoff reply_language
                    forbidden human_request].freeze
   ACT_KEYS = %w[tool agent].freeze
-  REPLY_LANGUAGES = %w[ru kk].freeze
+  # The language of the reply: a patient is answered in the language they write in, any language (ru, kk, en, tr ...), written as its
+  # ISO 639 code. Only Russian and Kazakh replies are checked (Language.checked?).
+  REPLY_LANGUAGE = /\A[a-z]{2,3}\z/
   STAFF_HANDOFF_VALUES = [true, false, 'any'].freeze
   # The keys of the rows of the workspace (the workspace builder reads these and nothing else).
   ROW_KEYS = {
@@ -276,7 +278,10 @@ class Captain::Evals::RoutingBenchmark::Fixture
     if expect.key?('staff_handoff') && STAFF_HANDOFF_VALUES.exclude?(expect['staff_handoff'])
       raise Invalid, "staff_handoff must be true, false or 'any'"
     end
-    raise Invalid, 'reply_language must be ru or kk' if expect.key?('reply_language') && REPLY_LANGUAGES.exclude?(expect['reply_language'])
+    return unless expect.key?('reply_language')
+
+    language = expect['reply_language']
+    raise Invalid, 'reply_language must be a language code such as ru, kk or en' unless language.is_a?(String) && language.match?(REPLY_LANGUAGE)
   end
 
   # acts: [{tool: create_appointment, agent: Запись к врачу}]: the named agent, and not the planner, made a successful call.
