@@ -195,7 +195,7 @@ RSpec.describe Llm::StructuredOutputPolicy do
       expect(schema_json[:required].map(&:to_s)).to match_array(%w[response response_mode reasoning artifact_ids])
       expect(schema_json[:properties].dig(:response, :description)).to eq('Text for the patient.')
       expect(schema_json[:properties].dig(:response_mode, :description))
-        .to eq("reply - send the reply; suppress - send nothing (the patient wrote 'ok' or staff already answered).")
+        .to eq("reply - send the reply; suppress - send nothing (a thanks, an 'ok', or staff already replied).")
       expect(schema_json[:properties].dig(:reasoning, :description))
         .to eq('One short phrase for the log: what the reply is based on. The patient never sees it.')
       expect(schema_json[:properties].dig(:artifact_ids, :description)).to eq('IDs of files from tool results to attach; otherwise an empty list.')

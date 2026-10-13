@@ -1,210 +1,214 @@
-# Short English tool texts for the customer-facing agent runtime ONLY.
+# Short English tool texts for the patient-facing agent runtime ONLY.
 #
 # Captain::Runtime::ToolWrapper replaces the description and the top-level parameter descriptions that the model sees with
 # the texts below, and removes the listed hidden parameters from the schema the model sees (a hidden parameter that is sent
 # anyway is dropped before the tool runs). The registry, the Copilot classes, MCP, voice, i18n and the UI keep their own texts.
 # A tool without an entry here, and a parameter without an entry, keep their own text.
 #
-# Conventions: every text is English (the clinic's own data values stay as stored); no jargon and no internal ids; the global
-# rules (omit unknown optional values, never guess an id, confirm before acting) live in the system prompt, not here.
+# Conventions: every text is English (the clinic's own data values stay as stored). A description says what the tool does and when
+# to call it; a parameter text says what to pass and where the value comes from. One word per concept: patient (the person who
+# writes in the conversation; "another patient" is a child or a relative), staff, colleague, specialist, service, appointment, slot,
+# working hours, clinic time, clinic system, conversation, reply, note, ID. The rules for acting (act at once when every detail is
+# given, ask for all missing details in one message, hand over to staff) live in the platform rules of the prompt
+# (enterprise/lib/captain/prompts/assistant.liquid), not in the tool texts.
 # Captain::Runtime::AgentToolTexts reads this file once.
 tools:
   get_appointment:
-    description: "Show one appointment: date, time, specialist, status."
+    description: "Show one appointment by its ID: date, time, specialist, status. To find an appointment use list_my_appointments or search_appointments."
     params:
-      appointment_id: "Appointment to show."
-      appointment_access_token: "Token from search_appointments; only for another patient's appointment."
+      appointment_id: "Appointment ID from the Patient block or a tool result."
+      appointment_access_token: "Another patient's appointment: token from the latest search_appointments."
     hidden_params: []
 
   list_my_appointments:
-    description: "The current patient's appointments, latest first, with filters. Page with offset while has_more is true."
+    description: "The current patient's own appointments, latest date first. Call it for 'my appointments' and to get the appointment ID before rescheduling or cancelling; for upcoming ones use status scheduled with date_from today."
     params:
       status: "scheduled, completed, cancelled, no_show or any (default any)."
       date_from: "First date, YYYY-MM-DD."
       date_to: "Last date, inclusive, YYYY-MM-DD."
-      doctor: "Part of the doctor's name."
+      doctor: "Part of the specialist's name."
       limit: "Page size, 1-20 (default 10)."
-      offset: "How many appointments to skip."
+      offset: "Appointments to skip; use while has_more is true."
     hidden_params: []
 
   search_appointments:
-    description: "Find the current patient's appointments. For another patient: exact IIN, or exact full name + resource_id + one-day from/to. A phone alone is not identity."
+    description: "Find another patient's appointment (a child, a relative) by IIN, or by full name + specialist ID + appointment day. Results carry an access token for that appointment. For the patient's own appointments use list_my_appointments."
     params:
-      client_name: "Patient name; for another patient, the exact full name."
-      client_identifier: "Exact IIN; spaces and dashes are ignored."
-      status: "scheduled, confirmed, completed, cancelled or no_show."
+      client_name: "Another patient's full name in the order first, last, middle name (middle if they have one)."
+      client_identifier: "Exact IIN, 12 digits; alone it finds upcoming appointments (90 days)."
+      status: "completed, cancelled or no_show; omit for scheduled ones."
       payment_status: "awaiting_payment, prepaid, paid or cancelled."
-      contact_id: "Current patient's contact ID; usually omit."
-      resource_id: "Specialist; needed with a name search for another patient."
-      from: "Range start, ISO 8601 date or datetime."
-      to: "Range end (exclusive), ISO 8601."
-      limit: "How many appointments to return."
+      contact_id: "Omit: the current patient is used."
+      resource_id: "Specialist ID from search_scheduling_resources; needed with a name."
+      from: "Appointment day, YYYY-MM-DD; needed with a name, narrows an IIN search."
+      to: "Range end, exclusive; omit for a one-day range."
+      limit: "Max appointments to return."
     hidden_params: []
 
   list_appointment_custom_fields:
-    description: "Custom fields allowed in custom_attributes: key, label, type, required, select options. Use only these keys; select values must equal option.value."
+    description: "List the clinic's extra appointment fields (key, label, type, required, select options). Call it when the clinic instructions or an error from create_appointment ask for them; pass values in custom_attributes by key, select fields as option.value."
     params: {}
     hidden_params: []
 
   list_scheduling_resources:
-    description: "List specialists and rooms; with service_id, only those offering the service. That does not mean the service suits the patient medically."
+    description: "Plain list of the clinic's specialists and rooms; with service_id, only those who offer that service. To find one by name or specialty use search_scheduling_resources."
     params:
-      service_id: "Keep only specialists and rooms offering this service."
-      limit: "How many to return, up to 50."
+      service_id: "Service ID from search_scheduling_services."
+      limit: "Max results, up to 50."
     hidden_params:
       - include_inactive
 
   search_scheduling_resources:
-    description: "Find a specialist or room by name words (any order) or specialty. A service filter does not prove medical suitability. Page with offset."
+    description: "Find a specialist or room by name words (any order) or specialty; an empty query lists all. Call it to get the specialist ID before checking slots or booking. With service_id it keeps only those who offer that service."
     params:
-      query: "Name or specialty as written in the catalog, in the nominative case (not inflected)."
-      search_by: "name, specialty or all (default all)."
-      service_id: "Keep only specialists and rooms offering this service."
-      limit: "How many to return, up to 50."
+      query: "Name or specialty words in dictionary form, as the catalog writes them."
+      service_id: "Service ID from search_scheduling_services."
+      limit: "Max results, up to 50."
       offset: "next_offset from the previous result."
     hidden_params:
       - include_inactive
+      - search_by
 
   get_scheduling_resource_schedule:
-    description: "Working hours of one specialist for a date range, with breaks, holidays and time off. For free times use search_available_slots."
+    description: "Working hours of one specialist for a date range, with breaks, holidays and time off. Call it to answer 'when does the specialist work'; for times that can be booked use search_available_slots."
     params:
-      resource_id: "Specialist."
-      from: "Range start, ISO 8601."
-      to: "Range end, ISO 8601; at most 31 days after from."
+      resource_id: "Specialist ID from search_scheduling_resources."
+      from: "Range start, YYYY-MM-DD or YYYY-MM-DDTHH:MM (clinic time)."
+      to: "Range end after from, at most 31 days later."
       include_breaks: "Include breaks (default true)."
       include_holidays: "Include holidays (default true)."
       include_time_offs: "Include time off (default true)."
     hidden_params: []
 
   get_scheduling_resource_availability:
-    description: "Free times of one specialist or room in a date range. Returned times can be offered; booking checks them again."
+    description: "Free slots of one specialist or room in a date range, earliest first. For several specialists or a whole service use search_available_slots."
     params:
-      resource_id: "Specialist."
-      from: "Range start, ISO 8601."
-      to: "Range end, ISO 8601; at most 31 days after from."
-      service_id: "Service this specialist offers; sets the duration."
-      duration_min: "Duration in minutes when no service is given."
-      limit: "How many slots to return, up to 50."
+      resource_id: "Specialist ID from search_scheduling_resources."
+      from: "Range start, YYYY-MM-DD or YYYY-MM-DDTHH:MM (clinic time)."
+      to: "Range end after from, at most 31 days later."
+      service_id: "Service ID this specialist offers; sets the duration."
+      duration_min: "Minutes, when no service_id is given."
+      limit: "Max slots, up to 50."
     hidden_params: []
 
   search_scheduling_services:
-    description: "Find a service by name, specialty or synonym. A name match does not mean the service is medically right for the patient."
+    description: "Find a service in the clinic catalog by name, synonym or category. The result gives the service ID, duration and prices by specialist. Call it when the patient names a service, before searching slots or booking."
     params:
-      query: "Name as in the catalog, in the nominative case: \"консультация терапевта\", not \"консультацию терапевта\"."
-      limit: "How many services to return."
-      offset: "next_offset from the previous result."
+      query: "Service words in dictionary form, as the catalog writes them."
+      limit: "Max services, up to 50."
+      offset: "next_offset from the previous result; or add words to query."
     hidden_params:
       - include_inactive
 
   search_available_slots:
-    description: "Free appointment times. Returned times can be offered; booking checks them again."
+    description: "List free slots in a date range, earliest first. Call it to offer times and to get the slot start for create_appointment or update_appointment. With service_id all specialists who offer the service are searched; resource_ids narrows the search. Offer 2-3 slots spread over the period, not neighbouring starts."
     params:
-      from: "Range start, ISO 8601."
-      to: "Range end, ISO 8601."
-      resource_ids: "Specialists."
-      service_id: "Service; sets the duration."
-      duration_min: "Duration in minutes when no service is given."
-      limit: "How many slots to return."
+      from: "Range start, YYYY-MM-DD or YYYY-MM-DDTHH:MM (clinic time). To check one time pass from = that time."
+      to: "Range end, same format as from, within 31 days; slots start before it. For one whole day pass the next day's date."
+      resource_ids: "Specialist IDs from search_scheduling_resources; omit for all."
+      service_id: "Service ID from search_scheduling_services; once used, keep it in later searches."
+      duration_min: "Minutes, when no service_id is given."
+      limit: "Max slots, earliest starts first; 20 is enough to offer times. For a later hour start the range at that hour."
     hidden_params: []
 
   create_appointment:
-    description: "Book the patient with a specialist at a confirmed time. For a relative or another person, pass their details in patient. If the time is taken, offer another. If the tool asks to fix parameters, fix them and retry."
+    description: "Book an appointment with a specialist at a free slot. Call it once the specialist and slot start (and the service, if the patient wants one) are known. If the patient named an exact time, call this tool directly: it checks the time and says if it is taken. For a child or another person pass patient: the appointment is booked on the person given there, otherwise on the patient of this conversation."
     params:
-      resource_id: "Specialist."
-      starts_at: "Local time YYYY-MM-DDTHH:MM without a timezone, or a slot time copied unchanged."
-      ends_at: "Appointment end, when duration_min is not given."
-      duration_min: "Duration in minutes."
-      service_id: "Service from search_scheduling_services."
+      resource_id: "Specialist ID from search_scheduling_resources."
+      starts_at: "Slot start copied unchanged, or YYYY-MM-DDTHH:MM clinic time."
+      ends_at: "End, same format as starts_at; usually omit."
+      duration_min: "Minutes; omit to use the service's or slot length."
+      service_id: "Service ID from search_scheduling_services."
       appointment_type: "primary, secondary or other."
-      client_comment: "Patient's comment."
-      patient: "Another patient: first and last name required; middle name, IIN, birth date (YYYY-MM-DD), gender, phone if known. Never copy the person you are chatting with."
-      custom_attributes: "Additional appointment fields."
+      client_comment: "Patient's own comment for the appointment."
+      patient: "The patient the appointment is for when it is not the person in this conversation (a child, a relative): first and last name, birth date YYYY-MM-DD; middle name, IIN, gender, phone if known."
+      custom_attributes: "Extra appointment fields by key, as the clinic instructions or an error of this tool name them."
     hidden_params:
       - crm_deal_id
       - crm_pipeline_id
 
   update_appointment:
-    description: "Change an appointment: specialist, service, time or comment; pass only what changes. Check the new time is free first. If the time is taken, offer another. If the tool asks to fix parameters, fix them and retry. For another patient's appointment pass its token and patient_confirmed."
+    description: "Reschedule an appointment (new time, specialist or service) or change its comment; pass only what changes. If the patient named an exact time, call this tool directly: it checks the time and says if it is taken. Otherwise take the new time from search_available_slots."
     params:
-      appointment_id: "Appointment to change; pass it whenever known."
-      appointment_access_token: "Token from search_appointments; only for another patient's appointment."
-      patient_confirmed: "Another patient only: true once the caller confirms patient, doctor, time, change."
-      resource_id: "New specialist."
-      service_id: "New service from search_scheduling_services."
-      starts_at: "New local time YYYY-MM-DDTHH:MM without a timezone, or a slot time copied unchanged."
-      ends_at: "New end, when duration_min is not given."
-      duration_min: "New duration in minutes."
-      appointment_type: "primary, secondary or other."
+      appointment_id: "Appointment ID from the Patient block or a tool result; always pass it."
+      appointment_access_token: "Another patient's appointment: token from the latest search_appointments."
+      patient_confirmed: "Another patient only: true after the patient agrees to this change."
+      resource_id: "New specialist ID from search_scheduling_resources."
+      service_id: "New service ID from search_scheduling_services."
+      starts_at: "New slot start copied unchanged, or YYYY-MM-DDTHH:MM clinic time."
+      ends_at: "New end, same format as starts_at; usually omit."
+      duration_min: "New length in minutes; usually omit."
+      appointment_type: "New type: primary, secondary or other."
       client_comment: "New patient comment."
-      custom_attributes: "Additional appointment fields."
+      custom_attributes: "Extra appointment fields by key, as the clinic instructions or an error of this tool name them."
     hidden_params: []
 
   cancel_appointment:
-    description: "Cancel an appointment. For another patient's appointment pass its token and patient_confirmed. If the status is cancelled_local_only, the visit stays active in the clinic's system: tell the patient clearly."
+    description: "Cancel an appointment when the patient asks to; to reschedule it use update_appointment. If the status is cancelled_local_only, the appointment is still active in the clinic system: tell the patient."
     params:
-      appointment_id: "Appointment to cancel; pass it whenever known."
-      appointment_access_token: "Token from search_appointments; only for another patient's appointment."
-      patient_confirmed: "Another patient only: true once the caller confirms patient, doctor, time, cancellation."
+      appointment_id: "Appointment ID from the Patient block or a tool result; always pass it."
+      appointment_access_token: "Another patient's appointment: token from the latest search_appointments."
+      patient_confirmed: "Another patient only: true after the patient agrees to cancel."
     hidden_params: []
 
   get_contact:
-    description: "Get a contact's profile by ID: name, phone, email, identifier, company, custom attributes."
+    description: "Show the current patient's card: name, phone, email, IIN, company and custom fields."
     params:
-      contact_id: "Contact ID."
+      contact_id: "Patient ID from the Patient block."
     hidden_params: []
 
   get_my_contact:
-    description: "The current patient's data: name, IIN, birth date, gender, contacts."
+    description: "Show the current patient's card: first, last and middle name, IIN, birth date, gender, phone, email. Call it to see what is on file before asking the patient for a detail."
     params: {}
     hidden_params: []
 
   search_contacts:
-    description: "Find contacts by exact email, exact phone or part of a name; filters combine. Returns matches and total count."
+    description: "Check the current patient's card by exact email, exact phone or part of the name; filters combine. Only the current patient's card can match."
     params:
       email: "Exact email address."
-      phone_number: "Exact phone number in E.164 format, e.g. +77011234567."
-      name: "Part of the name, any letter case."
-      limit: "How many contacts to return, up to 50."
+      phone_number: "Exact phone with country code, e.g. +77011234567."
+      name: "Part of the name."
+      limit: "How many cards to return, up to 50."
     hidden_params: []
 
   update_contact:
-    description: "Update the current conversation contact. Only passed fields change; custom_attributes are merged with existing ones."
+    description: "Update the current patient's name, email, phone, IIN or custom fields; only passed fields change."
     params:
       name: "New name."
       email: "New email address."
-      phone_number: "New phone number in E.164 format, e.g. +77011234567."
-      identifier: "New contact identifier."
-      custom_attributes: "Object of custom fields to set, merged with existing ones."
+      phone_number: "New phone with country code, e.g. +77011234567."
+      identifier: "IIN, 12 digits."
+      custom_attributes: "Fields to set; merged with the existing custom fields."
     hidden_params: []
 
   update_my_contact:
-    description: "Update the current patient's name, IIN, birth date, gender, phone or email; only passed fields change. On validation_error ask the patient to recheck the value."
+    description: "Update the current patient's first, last or middle name, IIN, birth date, gender, phone or email; only passed fields change. Call it when the patient gives or corrects their own detail. On validation_error ask the patient to recheck the details you passed."
     params:
       first_name: "First name."
-      last_name: "Last name."
-      middle_name: "Middle name."
-      iin: "Kazakhstan IIN, 12 digits."
+      last_name: "Last name (surname)."
+      middle_name: "Middle name (patronymic)."
+      iin: "IIN, 12 digits."
       birth_date: "Birth date, YYYY-MM-DD."
       gender: "male or female."
-      phone_number: "Phone number in E.164 format, e.g. +77011234567."
+      phone_number: "Phone with country code, e.g. +77011234567."
       email: "Email address."
     hidden_params: []
 
   merge_contacts:
-    description: "Merge a duplicate contact into another one. The duplicate is deleted; this cannot be undone."
+    description: "Merge a duplicate patient card into the card that stays; the duplicate is deleted for good. Call it when staff ask to merge two cards."
     params:
-      base_contact_id: "Contact that stays."
-      mergee_contact_id: "Duplicate contact to merge in and delete."
+      base_contact_id: "Patient ID of the card that stays."
+      mergee_contact_id: "Patient ID of the duplicate to merge in and delete."
     hidden_params: []
 
   get_company:
-    description: "Get a company's details by ID."
+    description: "Show a company record (a patient's organization): name, domain, description."
     params:
-      company_id: "Company ID."
+      company_id: "Company ID from search_companies or a patient card."
     hidden_params: []
 
   search_companies:
-    description: "Find companies by part of the name or domain."
+    description: "Find company records (patients' organizations) by part of the name or domain. Returns total_count and the matching companies with their IDs."
     params:
       name: "Part of the company name."
       domain: "Part of the company domain."
@@ -212,7 +216,7 @@ tools:
     hidden_params: []
 
   create_company:
-    description: "Create a company and link it to the current conversation contact."
+    description: "Create a company record and link it to the current patient; works only while the patient has no linked company. Call it when the patient names their organization."
     params:
       name: "Company name."
       domain: "Company domain, e.g. example.kz."
@@ -220,132 +224,132 @@ tools:
     hidden_params: []
 
   update_company:
-    description: "Update the company linked to the current conversation contact; only passed fields change."
+    description: "Edit the company record linked to the current patient; only passed fields change. Call it when the patient corrects their organization's details."
     params:
       name: "New company name."
-      domain: "New company domain."
+      domain: "New company domain, e.g. example.kz."
       description: "New company description."
     hidden_params: []
 
   search_documentation:
-    description: "Search the clinic knowledge base: FAQ answers and document passages."
+    description: "Search the text of the clinic's documents for the patient's question. Returns matching passages with their source. Call it when the FAQ has no answer or the question needs details from a document."
     params:
-      query: "Question or topic."
+      query: "The patient's question as one short sentence."
     hidden_params: []
 
   list_captain_documents:
-    description: "List clinic knowledge documents. A document with a file has an artifact_id for attaching it to a message."
+    description: "Find a clinic document file to send to the patient (price list, form, preparation sheet). A document with a file returns a file ID (artifact_id) for the reply's artifact_ids. Call it when the patient asks for a file."
     params:
-      query: "Part of the document name or URL, any letter case."
-      sendable_only: "true: only documents with an uploaded file that can be sent."
-      limit: "How many documents to return, default 10, up to 20."
+      query: "Part of the document name or URL."
+      sendable_only: "true: only documents that have a file to send."
+      limit: "How many documents, up to 20 (default 10)."
     hidden_params: []
 
   faq_lookup:
-    description: "Find an answer in the clinic FAQ."
+    description: "Search the clinic's FAQ for the patient's question. Returns result found with the matching answers, or not_found. Call it for a clinic question that the clinic instructions and data do not answer."
     params:
-      query: "Question or topic."
+      query: "The patient's question as one short sentence, in the language of the clinic instructions."
     hidden_params: []
 
   web_search:
-    description: "Search the public web. Returns source links with short snippets."
+    description: "Search the public web. Returns links with title and short snippet. Call it for public information that is not about the clinic."
     params:
       query: "Search query."
-      limit: "How many results to return."
+      limit: "How many results (capped by clinic settings)."
     hidden_params: []
 
   web_scrape_url:
-    description: "Read the text of one public web page."
+    description: "Read the text of one public web page. Call it for a link that a search result or the patient provided."
     params:
       url: "Public http or https URL."
     hidden_params: []
 
   get_article:
-    description: "Get a help center article with its content by ID."
+    description: "Show one help-site article (title, content, status)."
     params:
-      article_id: "Article ID."
+      article_id: "Article ID from search_articles."
     hidden_params: []
 
   search_articles:
-    description: "Search help center articles by text, category or status. Published by default."
+    description: "Find articles of the public help site, a source separate from the clinic's FAQ and documents. Returns the articles with their content. Call it when the patient asks for a help-site article."
     params:
-      query: "Text to find in the title or content."
-      category_id: "Category ID to narrow the search."
-      status: "draft, published or archived. Default: published."
-      limit: "How many articles to return."
+      query: "One word or exact phrase to find in the title or content."
+      category_id: "Category ID the patient named; empty searches all categories."
+      status: "draft, published or archived (default published)."
+      limit: "How many articles to return, up to 50."
     hidden_params: []
 
   search_linear_issues:
-    description: "Search Linear issues by a term."
+    description: "Find Linear issues by a search term; returns id, title, description, state, priority and assignee. Call it to check where an issue stands."
     params:
       term: "Search term."
-      limit: "How many issues to return."
+      limit: "How many issues to return, up to 50."
     hidden_params: []
 
   get_deal:
-    description: "Get one deal: title, pipeline, stage, amount and dates."
+    description: "Get one deal with its details: description, pipeline, stage, amount, expected close date, win probability, custom fields. Call it for details that a deal list or summary does not show."
     params:
-      deal_id: "Deal ID."
+      deal_id: "ID of one of the patient's deals."
     hidden_params: []
 
   search_deals:
-    description: "Search deals by title, pipeline, stage, owner or company. With no query it lists the current patient's deals. Use it to see which deals exist."
+    description: "Search the patient's deals by title, pipeline, stage or status, most recently updated first; with no filters it returns all except archived. Call it to find a deal and its ID."
     params:
       query: "Part of the deal title or external reference."
-      contact_id: "Contact ID; the current patient by default."
+      contact_id: "Omit: only the current patient's deals are searched."
       pipeline_id: "Pipeline ID from list_deal_pipelines."
       pipeline_code: "Pipeline code from list_deal_pipelines."
-      stage_id: "Stage ID from list_deal_stages or list_deal_pipelines."
-      stage_name: "Stage name; add pipeline_id or pipeline_code if names repeat across pipelines."
-      stage_code: "Stage code; add pipeline_id or pipeline_code if codes repeat across pipelines."
-      owner_id: "Owner (staff user) ID."
-      company_id: "Company ID."
-      archived: "true to search archived deals."
-      status: "active, closed, archived or any. When set, archived is ignored."
-      limit: "Page size, max 50."
-      offset: "Zero-based start; pass next_offset from the previous result to get the next page."
+      stage_id: "Stage ID from list_deal_pipelines or list_deal_stages."
+      stage_name: "Stage name; add pipeline_id if names repeat across pipelines."
+      stage_code: "Stage code; add pipeline_id if codes repeat across pipelines."
+      owner_id: "Assignee (staff member) ID."
+      company_id: "Company ID (the patient's organization)."
+      archived: "true for archived deals only; default false."
+      status: "active (open), closed (won or lost), archived or any; default: all except archived."
+      limit: "Deals per page, 1-50; default 50."
+      offset: "Deals to skip; pass next_offset from the previous result."
     hidden_params: []
 
   list_my_deals:
-    description: "List the current patient's deals, filtered by status or pipeline, one page at a time."
+    description: "List the patient's deals, most recently updated first: ID, title, pipeline, stage, status, amount. Call it when the patient asks about their deals or you need a deal ID."
     params:
       status: "open, won, lost or any; default any."
-      pipeline: "Pipeline name or code."
-      limit: "Page size, default 10, max 20."
-      offset: "Number of deals to skip; use it to get the next page."
+      pipeline: "Pipeline name, code or ID."
+      limit: "Deals per page, 1-20; default 10."
+      offset: "Deals to skip; while has_more is true, add limit for the next page."
     hidden_params: []
 
   list_deal_pipelines:
-    description: "Catalog of pipelines with ordered stages, not deals (use search_deals for deals). Use it to pick a pipeline or stage before creating or moving a deal."
+    description: "List the active pipelines with their ordered stages: IDs, names, default stage, closing reasons. Call it to choose the pipeline and stage for a new deal or for a move to another pipeline. It lists no deals."
     params:
       include_inactive: "true to include inactive pipelines and stages; default false."
     hidden_params: []
 
   list_deal_stages:
-    description: "List the ordered stages of a pipeline, or of a deal's pipeline with the deal's current, previous and next stage. Default pipeline if none is given."
+    description: "Show a deal's current, previous and next stage, or list the ordered stages of one pipeline (the default pipeline if none is given). Call it to get the target stage_id before moving a deal within its pipeline."
     params:
       pipeline_id: "Pipeline ID from list_deal_pipelines."
       pipeline_code: "Pipeline code from list_deal_pipelines."
-      pipeline_name: "Pipeline name exactly as listed by list_deal_pipelines."
-      deal_id: "Deal ID, for its pipeline's stages and current stage. Ignored if a pipeline is given."
-      current_deal: "Deprecated; pass deal_id instead."
+      pipeline_name: "Pipeline name as listed by list_deal_pipelines."
+      deal_id: "Deal ID: shows its current stage; ignored if a pipeline is given."
+      current_deal: "Pass deal_id instead."
       include_inactive: "true to include inactive stages; default false."
     hidden_params: []
 
   list_deal_custom_fields:
-    description: "List the custom fields allowed in deal custom_attributes: key, label, type, required flag, select options."
+    description: "List the custom fields a deal accepts: key, label, type, required flag, select options. Call it before setting a deal's custom fields or to read their labels."
     params: {}
     hidden_params: []
 
   get_deal_timeline:
-    description: "Get the history (timeline) of a deal."
+    description: "Get the history of a deal, newest first: stage changes and other edits, staff notes, linked conversations. Call it to learn what happened to a deal and when."
     params:
-      deal_id: "Deal ID."
-      limit: "Max number of timeline items."
+      deal_id: "ID of one of the patient's deals."
+      limit: "Items to return, 1-100; default 20."
     hidden_params: []
 
   create_deal:
-    description: "Create a deal for the current patient. Pipeline and stage default to the account defaults; to pick them, call list_deal_pipelines first."
+    description: "Create a deal for the current patient. Pipeline and stage default to the clinic defaults; to pick them, call list_deal_pipelines first."
     params:
       title: "Deal title."
       description: "Deal description."
@@ -405,7 +409,7 @@ tools:
     params:
       query: "Text from the task title, description or external reference."
       status_name: "Task status name."
-      assignee_id: "Assignee (staff user) ID."
+      assignee_id: "Assignee (staff member) ID."
       deal_id: "Deal ID."
       activity_type: "Task type: task, call, meeting, message or touch."
       outcome: "Task result, e.g. held, no_show, answered, sent or not_done."
@@ -466,85 +470,85 @@ tools:
     hidden_params: []
 
   add_contact_note:
-    description: "Save a note on the patient's contact card. Staff only; the patient does not see it."
+    description: "Save a patient note for staff. It stays on the patient card for every future conversation and is visible only to staff. Call it for lasting facts about the patient (preferences, agreements, circumstances)."
     params:
-      note: "Note text for staff."
+      note: "Note text about the patient, for staff."
     hidden_params: []
 
   add_private_note:
-    description: "Add a private note to this conversation. Staff only; the patient never sees it."
+    description: "Save a conversation note for staff. It stays in this conversation only and is visible only to staff. Call it for details of this conversation that staff should know."
     params:
-      note: "Note text for staff."
+      note: "Note text about this conversation, for staff."
     hidden_params: []
 
   add_label_to_conversation:
-    description: "Add an existing label to this conversation."
+    description: "Add an existing label to this conversation. Call it when the clinic instructions name a label for the case."
     params:
-      label_name: "Name of an existing label."
+      label_name: "Exact label name from the clinic instructions."
     hidden_params: []
 
   remove_label_from_conversation:
-    description: "Remove a label from a conversation (this one by default)."
+    description: "Remove a label from this conversation. Call it when the label no longer applies."
     params:
-      conversation_id: "Conversation ID; this conversation if omitted."
-      label_name: "Name of the label to remove."
+      conversation_id: "Omit to use this conversation."
+      label_name: "Exact name of a label from Conversation labels."
     hidden_params: []
 
   update_priority:
-    description: "Set the priority of this conversation."
+    description: "Set the priority of this conversation. Call it when the clinic instructions or the urgency of the case call for a different priority."
     params:
-      priority: "low, medium, high or urgent. nil removes the priority."
+      priority: "low, medium, high or urgent; nil removes the priority."
     hidden_params: []
 
   resolve_conversation:
-    description: "Close the conversation when the patient's question is resolved."
+    description: "Mark this conversation done. Call it after the patient's question is fully handled and nothing is left for the patient or for staff."
     params:
-      reason: "Why it is closed."
+      reason: "Why it is done, in a few words."
     hidden_params: []
 
   handoff:
-    description: "Hand the conversation to staff."
+    description: "Hand this conversation to staff; your turn ends and your reply is not sent. Call it when the patient asks for staff, or when the request is complete and only staff can do it. Staff continue the open conversation; handoff sends nothing to the patient."
     params:
-      reason: "Short reason why a person is needed."
+      reason: "Short reason for staff."
     hidden_params: []
 
   cancel_response:
-    description: "Send no reply to the patient this turn, when the message needs none."
+    description: "Send no reply this turn; the conversation stays open. Call it when the patient's message needs no reply (a thanks, an 'ok', or staff already replied)."
     params:
-      reason: "Why no reply is needed."
+      reason: "Why no reply is needed, in a few words."
     hidden_params: []
 
   send_notification:
-    description: "Notify one staff member in the app about a conversation. Give exactly one of recipient_id, recipient_email, recipient_name."
+    description: "Send an in-app notification about a conversation to one staff member. Call it when that staff member must see something now. Give exactly one of recipient_id, recipient_email, recipient_name."
     params:
       message: "Notification text."
-      title: "Notification title; a default title if omitted."
-      recipient_type: "user, the only supported value."
-      recipient_id: "Staff user ID."
-      recipient_email: "Staff user email."
-      recipient_name: "Exact staff user name."
+      title: "Notification title; a default if omitted."
+      recipient_type: "Always user."
+      recipient_id: "Staff member ID."
+      recipient_email: "Staff member email."
+      recipient_name: "Exact staff member name."
       conversation_id: "Conversation ID; this conversation if omitted."
     hidden_params: []
 
   search_conversations:
-    description: "Find conversations by status, priority, contact or labels."
+    description: "List this patient's conversations, latest activity first, with status, priority, labels, assignee, channel and dates (no message text). Call it to check whether the patient has other open or earlier conversations."
     params:
       status: "open, resolved, pending or snoozed."
-      contact_id: "Contact ID."
+      contact_id: "Omit: the current patient is used."
       priority: "low, medium, high or urgent."
       labels: "Label names; matches conversations with any of them."
-      limit: "How many conversations to return."
+      limit: "How many conversations to return, up to 50 (default 50)."
     hidden_params: []
 
   send_message_to_conversation:
-    description: "Send a private note, files or an approved channel template to a conversation. The usual reply to the patient goes in response, not here."
+    description: "Send an approved WhatsApp template to the patient in this conversation now. Call it when the Now block says the WhatsApp reply window is closed; pick the template with list_channel_templates. Your normal reply and its files go in your reply."
     params:
-      conversation_id: "Conversation number from the Patient block."
-      content: "Message text. Optional with artifact_ids or template_params."
-      content_kind: "free_text (default) or channel_template (default when template_params are given)."
+      conversation_id: "Conversation ID from the Patient block."
+      content: "Message text; optional with template_params."
+      content_kind: "free_text, or channel_template when template_params are given."
       template_params: "Approved template: name, language, namespace, processed_params."
-      artifact_ids: "File IDs taken from tool results."
-      private_note: "true sends a private note, visible to staff only."
+      artifact_ids: "File IDs from tool results."
+      private_note: "true saves a note for staff instead of sending a message to the patient."
       in_reply_to_message_id: "ID of the message to reply to."
     hidden_params:
       - communication_thread_id
@@ -554,117 +558,117 @@ tools:
       - attachment_ids
 
   assign_conversation:
-    description: "Assign a conversation to a user, agent bot or team."
+    description: "Set the assignee (staff member or AI agent) or the team of this conversation; your turn continues. Call it when the clinic instructions name the assignee or team for the case. Staff take over through handoff, colleagues through their transfer tools."
     params:
-      conversation_id: "Conversation number from the Patient block."
-      assignee_id: "User or agent bot ID."
-      assignee_type: "User or AgentBot; User if omitted."
-      team_id: "Team ID. Leave out the assignee fields to change only the team."
+      conversation_id: "Conversation ID from the Patient block."
+      assignee_id: "Staff member or AI agent ID from the clinic instructions."
+      assignee_type: "User (staff member) or AgentBot (AI agent); User if omitted."
+      team_id: "Team ID from the clinic instructions; alone it changes only the team."
     hidden_params: []
 
   retry_failed_message:
-    description: "Retry sending an outgoing message that failed."
+    description: "Resend a message of this conversation whose delivery failed. Call it when a tool result shows that message as failed."
     params:
-      message_id: "ID of the failed outgoing message."
+      message_id: "ID of the failed message, from a tool result."
     hidden_params: []
 
   edit_message:
-    description: "Edit an outgoing message already sent, if the channel supports editing."
+    description: "Change the text of a message you sent with a tool, when the channel supports editing. Call it to correct that message."
     params:
-      message_id: "ID of the message to edit."
+      message_id: "ID of that message, from the tool result."
       content: "New message text."
     hidden_params: []
 
   translate_message:
-    description: "Translate a message into another language."
+    description: "Translate one message of this conversation, save the translation on it for staff, and return the text. Call it when staff need that message in another language."
     params:
-      message_id: "ID of the message to translate."
+      message_id: "ID of a message of this conversation, from a tool result."
       target_language: "Language code, e.g. ru, en or kk."
     hidden_params: []
 
   search_canned_responses:
-    description: "Find saved replies by short code or text."
+    description: "Find canned responses (replies that staff saved for their own use) by short code or text. Call it for wording to reuse; clinic facts come from the clinic instructions, knowledge and tool results."
     params:
-      query: "Search text."
-      limit: "How many replies to return."
+      query: "Search text; all canned responses if omitted."
+      limit: "How many canned responses to return."
     hidden_params: []
 
   list_channel_templates:
-    description: "List approved message templates of this conversation's channel, and say whether WhatsApp needs a template after the 24-hour window."
+    description: "List the approved templates of this conversation's channel. Call it when the Now block says the WhatsApp reply window is closed, then send the chosen template with send_message_to_conversation."
     params:
       name: "Exact template name."
-      language: "Template language, e.g. ru or en_US."
-      status: "Template status; approved by default."
+      language: "Template language code, e.g. ru or en_US."
+      status: "Template status; approved if omitted."
       limit: "How many templates to return, up to 50."
     hidden_params: []
 
   create_touch:
-    description: "Schedule a delayed message to the patient (a touch): text, files or an approved channel template. Timing: scheduled_at (absolute) or relative_offset_minutes after relative_anchor. Repeats need scheduled_at and repeat_until_at. WhatsApp after the 24-hour window needs channel_template."
+    description: "Schedule a message to the patient for later: text, files or an approved template. Call it when the patient or the clinic instructions ask for a message at a later time. Set the time as scheduled_at, or as relative_offset_minutes after relative_anchor."
     params:
-      body: "Message text. Required for free_text unless files are attached."
-      content_kind: "free_text (default) or channel_template (default when template_params are given)."
+      body: "Message text; required for free_text without files."
+      content_kind: "free_text, or channel_template after the 24-hour WhatsApp window."
       template_params: "Approved template: name, language, namespace, processed_params."
-      remindable_kind: "Current item it belongs to: conversation (default), deal, task, appointment."
-      relative_anchor: "Start for the offset, matching remindable_kind: touch.created_at, conversation.created_at, conversation.last_incoming_message_at (default), conversation.last_activity_at, conversation.last_outgoing_message_at, conversation.waiting_since, deal.expected_close_on, task.due_at, appointment.starts_at, appointment.ends_at."
-      relative_offset_minutes: "Whole minutes after the anchor, above 0. Not with scheduled_at."
-      repeat_mode: "once (default), daily, weekly, monthly or weekdays. Repeats need repeat_until_at."
-      repeat_until_at: "When to stop repeating, ISO 8601 with UTC offset, e.g. 2026-11-01T18:00:00+05:00."
-      scheduled_at: "Send time, ISO 8601 with UTC offset, e.g. 2026-10-14T15:00:00+05:00."
-      relative_time_mode: "inherit_anchor_time (default) or fixed_time_of_day, which needs relative_time_of_day."
-      relative_time_of_day: "Time of day HH:MM, e.g. 10:00, for fixed_time_of_day."
-      timezone: "IANA timezone, e.g. Asia/Almaty. UTC if omitted."
+      remindable_kind: "Linked record: conversation (default), deal, task or appointment."
+      relative_anchor: "Delay start of the same record kind, e.g. appointment.starts_at."
+      relative_offset_minutes: "Whole minutes after the anchor, above 0; not with scheduled_at."
+      repeat_mode: "once (default), daily, weekly, monthly or weekdays."
+      repeat_until_at: "Repeat end, YYYY-MM-DDTHH:MM:SS+HH:MM; repeats need it and scheduled_at."
+      scheduled_at: "Send time, YYYY-MM-DDTHH:MM:SS+HH:MM (with UTC offset)."
+      relative_time_mode: "inherit_anchor_time (default) or fixed_time_of_day."
+      relative_time_of_day: "HH:MM for fixed_time_of_day, e.g. 10:00."
+      timezone: "Time zone of relative_time_of_day, e.g. Asia/Almaty; UTC if omitted."
       target_inbox_id: "Inbox to send through; this conversation's inbox if omitted."
-      auto_cancel_on_incoming: "true cancels the touch when the patient replies here; default false."
-      attachment_ids: "Signed blob IDs of files to send. Not with channel_template."
-      artifact_ids: "File IDs taken from tool results. Not with channel_template."
+      auto_cancel_on_incoming: "true cancels it when the patient replies; default false."
+      attachment_ids: "Signed file IDs of uploaded files; not with channel_template."
+      artifact_ids: "File IDs from tool results; not with channel_template."
     hidden_params: []
 
   cancel_touch:
-    description: "Cancel a scheduled message (touch) that is still draft or pending, by ID."
+    description: "Cancel one scheduled message that is still draft or pending, by ID. Call it to stop that message from being sent."
     params:
-      touch_id: "Touch ID."
-      reason: "Why it is cancelled."
+      touch_id: "ID of the scheduled message."
+      reason: "Why it is cancelled, in a few words."
     hidden_params: []
 
   delete_touch:
-    description: "Delete a draft, pending, failed or cancelled scheduled message (touch) by ID."
+    description: "Delete the record of one scheduled message that is draft, pending, failed or cancelled, by ID. Call it to clean up a message you no longer need."
     params:
-      touch_id: "Touch ID."
+      touch_id: "ID of the scheduled message."
     hidden_params: []
 
   cancel_touches:
-    description: "Cancel all draft, pending and processing touches of the current item, optionally only those from one touch plan."
+    description: "Cancel all unsent scheduled messages (draft, pending, processing) of this conversation, appointment, deal or task, or only those of one message sequence. Call it when none of them should go out any more."
     params:
-      remindable_kind: "Current item: conversation (default), deal, task, appointment."
-      touch_plan_id: "Cancel only touches created from this touch plan."
-      touch_plan_name: "Touch plan name, when the ID is unknown."
-      reason: "Why they are cancelled."
+      remindable_kind: "Item: conversation (default), deal, task or appointment."
+      touch_plan_id: "Cancel only messages of this sequence (sequence ID)."
+      touch_plan_name: "Sequence name, when its ID is unknown."
+      reason: "Why they are cancelled, in a few words."
     hidden_params: []
 
   request_confirmation:
-    description: "Send the patient a confirmation request (confirm, decline or reschedule), optionally about the current appointment, deal, task or conversation."
+    description: "Send the patient a message with confirm, decline and reschedule buttons and track the answer. Call it when the clinic instructions ask the patient to confirm something, such as the patient's nearest appointment."
     params:
-      title: "Short title shown to the patient, in their language."
-      body: "Message text shown to the patient, in their language."
-      subject_kind: "Current item it is about: conversation, appointment, deal or task. Omit if none."
-      expires_at: "Expiry, ISO 8601 with UTC offset, e.g. 2026-10-14T18:00:00+05:00."
-      send_now: "true (default) sends the message to the patient now."
+      title: "Short title for the patient, in the patient's language."
+      body: "Message text for the patient, in the patient's language."
+      subject_kind: "appointment (the patient's nearest), conversation or deal; else omit."
+      expires_at: "Expiry, YYYY-MM-DDTHH:MM:SS+HH:MM (with UTC offset)."
+      send_now: "true (default) sends the message now."
       metadata: "Extra data to store with the request."
-      idempotency_key: "Key against duplicates: the same key returns the same request."
+      idempotency_key: "Same key returns the same request, so no duplicate."
     hidden_params: []
 
   get_confirmation_request:
-    description: "Get a confirmation request of this conversation (the latest by default) and its status: pending, confirmed, declined, reschedule_requested or expired."
+    description: "Read the status of a confirmation request of this conversation (the latest by default): pending, confirmed (the patient agreed), declined, reschedule_requested or expired. Call it to check whether the patient has answered."
     params:
       confirmation_request_id: "Request ID; the latest request if omitted."
     hidden_params: []
 
   resolve_confirmation:
-    description: "Record the patient's answer to a confirmation request. An expired request, or one already resolved differently, cannot be changed."
+    description: "Record the patient's answer to a confirmation request that is still pending. Call it when get_confirmation_request shows pending and the patient's message answers it. An expired request, or one already answered differently, stays as it is."
     params:
-      confirmation_request_id: "Confirmation request ID."
-      decision: "confirmed, declined or reschedule_requested."
-      source: "Where the answer came from: ai, text, button, link, manual or system. Use ai."
+      confirmation_request_id: "ID of the confirmation request."
+      decision: "confirmed (the patient agreed), declined or reschedule_requested."
+      source: "Always ai."
       confidence: "How sure you are of the decision, 0.0 to 1.0."
       metadata: "Extra data to store with the answer."
     hidden_params: []

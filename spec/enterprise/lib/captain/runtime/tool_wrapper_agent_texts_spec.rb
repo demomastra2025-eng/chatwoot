@@ -47,17 +47,20 @@ RSpec.describe Captain::Runtime::ToolWrapper do
       wrapper = wrapper_for('search_scheduling_services')
 
       expect(wrapper.description).to eq(texts('search_scheduling_services').description)
-      expect(wrapper.params_schema.dig('properties', 'limit', 'description')).to eq('How many services to return.')
-      expect(wrapper.params_schema.dig('properties', 'offset', 'description')).to eq('next_offset from the previous result.')
-      expect(wrapper.params_schema.dig('properties', 'query', 'description')).to include('консультация терапевта')
+      %w[limit offset query].each do |name|
+        expect(wrapper.params_schema.dig('properties', name, 'description')).to eq(texts('search_scheduling_services').params.fetch(name))
+      end
+      expect(wrapper.params_schema.dig('properties', 'query', 'description')).not_to match(/\p{Cyrillic}/)
     end
 
     it 'shows the model the short English texts of a direct tool and keeps the validation of its required fields' do
       wrapper = wrapper_for('create_appointment')
 
       expect(wrapper.description).to eq(texts('create_appointment').description)
-      expect(wrapper.params_schema.dig('properties', 'resource_id', 'description')).to eq('Specialist.')
-      expect(wrapper.params_schema.dig('properties', 'custom_attributes', 'description')).to eq('Additional appointment fields.')
+      expect(wrapper.params_schema.dig('properties', 'resource_id', 'description')).to eq('Specialist ID from search_scheduling_resources.')
+      %w[custom_attributes patient].each do |name|
+        expect(wrapper.params_schema.dig('properties', name, 'description')).to eq(texts('create_appointment').params.fetch(name))
+      end
       expect(wrapper.params_schema['required']).to include('resource_id', 'starts_at')
     end
 
@@ -73,18 +76,20 @@ RSpec.describe Captain::Runtime::ToolWrapper do
 
       expect(properties.dig('service_id', 'type')).to contain_exactly('number', 'null')
       expect(properties.dig('service_id', 'minimum')).to eq(1)
-      expect(properties.dig('service_id', 'description')).to eq('Service from search_scheduling_services.')
+      expect(properties.dig('service_id', 'description')).to eq('Service ID from search_scheduling_services.')
       expect(properties.dig('resource_id', 'type')).to eq('number')
       expect(properties.dig('resource_id', 'minimum')).to eq(1)
-      expect(properties.dig('resource_id', 'description')).to eq('Specialist.')
+      expect(properties.dig('resource_id', 'description')).to eq('Specialist ID from search_scheduling_resources.')
     end
 
-    it 'gives the provider the short texts' do
+    it 'gives the provider the short texts and leaves the hidden options of the specialist search out' do
       provider_tool = RubyLLM::Providers::OpenAI::Tools.tool_for(wrapper_for('search_scheduling_resources'))
+      properties = provider_tool.dig(:function, :parameters, 'properties')
 
       expect(provider_tool.dig(:function, :description)).to eq(texts('search_scheduling_resources').description)
-      expect(provider_tool.dig(:function, :parameters, 'properties', 'search_by', 'description')).to eq('name, specialty or all (default all).')
-      expect(provider_tool.dig(:function, :parameters, 'properties')).not_to have_key('include_inactive')
+      expect(properties.dig('query', 'description')).to eq(texts('search_scheduling_resources').params['query'])
+      expect(properties).not_to have_key('include_inactive')
+      expect(properties).not_to have_key('search_by')
     end
 
     it 'keeps its own text for a built-in tool without an entry' do
@@ -139,6 +144,11 @@ RSpec.describe Captain::Runtime::ToolWrapper do
       end
     end
 
+    it 'removes search_by from the specialist search: it always searches names and specialties' do
+      expect(wrapper_for('search_scheduling_resources').params_schema['properties']).not_to have_key('search_by')
+      expect(wrapper_for('search_scheduling_resources').params_schema['properties'].keys).to include('query', 'service_id', 'limit', 'offset')
+    end
+
     it 'keeps the hidden parameters in the tool itself and in the schema arguments are validated against' do
       wrapper = wrapper_for('create_appointment')
 
@@ -160,10 +170,16 @@ RSpec.describe Captain::Runtime::ToolWrapper do
       expect(wrapper.send(:normalize_args, query: 'терапевт', include_inactive: true)).to eq(query: 'терапевт')
     end
 
-    it 'asks send_message_to_conversation for the conversation number and hides the parameters the patient scope always denies' do
+    it 'drops search_by from a specialist search before the tool runs, so the search covers names and specialties' do
+      wrapper = wrapper_for('search_scheduling_resources')
+
+      expect(wrapper.send(:normalize_args, query: 'хирург', search_by: 'name')).to eq(query: 'хирург')
+    end
+
+    it 'asks send_message_to_conversation for the conversation ID and hides the parameters the patient scope always denies' do
       properties = wrapper_for('send_message_to_conversation').params_schema['properties']
 
-      expect(properties.dig('conversation_id', 'description')).to eq('Conversation number from the Patient block.')
+      expect(properties.dig('conversation_id', 'description')).to eq('Conversation ID from the Patient block.')
       expect(properties.keys).not_to include(
         'communication_thread_id', 'channel_key', 'target_inbox_id', 'target_contact_inbox_id', 'attachment_ids'
       )
