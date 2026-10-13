@@ -359,7 +359,7 @@ tools:
       stage_name: "Stage name; add pipeline_id or pipeline_code if names repeat across pipelines."
       stage_code: "Stage code; add pipeline_id or pipeline_code if codes repeat across pipelines."
       closing_reasons: "Closing reason labels, only when creating directly in a Won or Lost stage."
-      amount: "Whole amount in major units: 200 means 200 KZT, do not multiply by 100. No fractions."
+      amount: "Whole amount in major units: 200 means 200 KZT. No fractions."
       currency: "ISO currency code, e.g. KZT."
       expected_close_on: "Expected close date, YYYY-MM-DD."
       win_probability: "Win probability, 0 to 100."
@@ -378,7 +378,7 @@ tools:
       stage_name: "Target stage name; add pipeline_id or pipeline_code if names repeat."
       stage_code: "Target stage code; add pipeline_id or pipeline_code if codes repeat."
       closing_reasons: "Loss reason labels from list_deal_stages, when moving to a Lost stage."
-      amount: "New whole amount in major units: 200 means 200 KZT, do not multiply by 100. No fractions."
+      amount: "New whole amount in major units: 200 means 200 KZT. No fractions."
       currency: "New ISO currency code."
       expected_close_on: "New expected close date, YYYY-MM-DD."
       win_probability: "New win probability, 0 to 100."
@@ -394,7 +394,7 @@ tools:
       stage_code: "Target stage code; searched in the deal's pipeline unless a pipeline is given."
       pipeline_id: "Pipeline ID: scopes stage_name/stage_code; alone, moves to its default stage."
       pipeline_code: "Pipeline code; same use as pipeline_id."
-      stage_action: "next or previous stage; do not combine with other stage or pipeline fields."
+      stage_action: "next or previous stage; use it without other stage or pipeline fields."
       closing_reasons: "Loss reason labels from list_deal_stages, for a Lost stage that requires them."
     hidden_params: []
 
