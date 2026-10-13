@@ -329,10 +329,12 @@ RSpec.describe Captain::Runtime::ChatFactory do
         expect(system_prompt).not_to include('Accepted plan')
 
         context_wrapper.context[:part_plan_accepted] = true
+        context_wrapper.context[:part_plan] = { mode: 'council', parts: [{ 'id' => 'p-1', 'executor_agent_id' => 91, 'fragment' => 'Цена МРТ' }] }
 
         expect(built_tool_names).to be_empty
         expect(bound_tool_names).to be_empty
-        expect(system_prompt).to include('# Accepted plan (data)', 'do not call plan_request again')
+        expect(system_prompt).to include("# Accepted plan (data)\n- Quotes · \"Цена МРТ\"\nThe plan for this message is already accepted: " \
+                                         'continue only your own parts and do not call plan_request again.')
       end
 
       it 'binds the transfer tool of each colleague next to plan_request, and sends a single request to the colleague without a plan' do

@@ -29,21 +29,6 @@ module Captain::Runtime::CoordinationPrompt
     graph.find { |item| item[:id] == agent_id }&.dig(:name).to_s.squish.presence
   end
 
-  # The model reads agents by name only and never sees their ids, so stored executor ids are shown as names.
-  def parts_for_model(parts, graph)
-    Array(parts).map do |part|
-      shown = part.to_h.except('executor_agent_id')
-      name = name_of(graph, part['executor_agent_id'])
-      shown['executor'] = name if name.present?
-      shown
-    end
-  end
-
-  def plan_for_model(plan, graph)
-    plan = plan.to_h.symbolize_keys
-    plan.key?(:parts) ? plan.merge(parts: parts_for_model(plan[:parts], graph)) : plan
-  end
-
   def render(context)
     tasks = context[:agent_tasks] || []
     actor_id = context.dig(:state, :assistant_id)
@@ -65,19 +50,19 @@ module Captain::Runtime::CoordinationPrompt
   end
 
   def peer_line(peer)
-    description = peer[:description].to_s.squish
-    description.present? ? "- #{peer[:name].to_s.squish}: #{description}" : "- #{peer[:name].to_s.squish}"
+    "- #{[peer[:name], peer[:description]].map { |text| text.to_s.squish }.compact_blank.join(': ')}"
   end
 
   # One row per part that is still open: its number (the plan links by it), who handles it, what it is and where it stands. The
-  # delivered texts, the object references and every id stay out.
+  # delivered texts, the object references and every id stay out. The rule that links a message to a part calls plan_request, so it
+  # is left out once the plan of this message is accepted (plan_request is no longer bound then): only the rows stay.
   def open_parts_block(context, graph)
     parts = Array(context[:parts])
     open_parts = parts.select { |part| Captain::Runtime::PartRegistry::OPEN_STATES.include?(part['state']) }
     return '' if open_parts.empty?
 
     rows = open_parts.map { |part| "- #{open_part_segments(parts, part, graph).compact_blank.join(' · ')}" }
-    ['# Open parts (data)', *rows, OPEN_PARTS_RULE].join("\n")
+    ['# Open parts (data)', *rows, (OPEN_PARTS_RULE unless context[:part_plan_accepted])].compact.join("\n")
   end
 
   def open_part_segments(parts, part, graph)
@@ -103,11 +88,16 @@ module Captain::Runtime::CoordinationPrompt
   end
 
   # A plan that was already accepted for this message: the agent whose prompt is built again (a retry, a rebuilt chat) continues
-  # its parts and has no plan_request to call any more.
+  # its parts and has no plan_request to call any more. One row per part: who handles it and what it is, by name and quoted
+  # fragment only (no ids, versions, delivered texts or other stored fields).
   def accepted_plan_block(context, graph)
     return '' unless context[:part_plan_accepted]
 
-    ['# Accepted plan (data)', JSON.generate(plan_for_model(context[:part_plan], graph)), PLAN_ACCEPTED_RULE].join("\n")
+    rows = Array(context.dig(:part_plan, :parts)).filter_map do |part|
+      row = [name_of(graph, part['executor_agent_id']), (quoted(part['fragment']) if part['fragment'].present?)].compact.join(' · ')
+      "- #{row}" if row.present?
+    end
+    [('# Accepted plan (data)' if rows.any?), *rows, PLAN_ACCEPTED_RULE].compact.join("\n")
   end
 
   # What specialists did in an earlier run whose reply never reached the patient.
