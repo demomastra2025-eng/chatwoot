@@ -19,11 +19,10 @@ RSpec.describe Captain::Runtime::CoordinationPrompt do
       - Appointments: Appointment changes
       How to work together:
       1. Split the patient's latest message into separate requests. A service's price, its free times and its booking are one request for the agent that books it.
-      2. Handle your own requests yourself with your tools. A detail you can settle with your own tools (service variant, first or repeat visit, the price of what you book, the specialist) is part of your request.
-      3. If the whole message belongs to one colleague, call that colleague's transfer tool; the colleague replies.
-      4. If the message holds requests for two or more agents, call plan_request once to split it, also where the clinic instructions say to hand requests over at once; each agent does its part right away.
-      5. Choose the colleague by what the patient wants done: a wish to book, reschedule or cancel an appointment goes to the colleague who can book, reschedule and cancel appointments.
-      6. Staff are reached through handoff.
+      2. Answer questions yourself: every agent can use the FAQ and the catalog.
+      3. If the message asks for an action you cannot do (book, reschedule, cancel, a deal...), transfer the conversation to the colleague whose tools can do it; that colleague also answers the questions of the message.
+      4. If the message holds actions for two or more different agents, call plan_request once to split it; each agent does its part right away.
+      5. Staff are reached through handoff.
     TEXT
   end
   let(:open_parts_rule) do
@@ -82,24 +81,39 @@ RSpec.describe Captain::Runtime::CoordinationPrompt do
       expect(prompt).not_to include('Orders: Order enquiries', 'target_ids', 'assistant_92', 'Agent directory', 'manage_agent_tasks')
     end
 
-    it 'numbers the way of working: split the message, do your own requests, then transfer to one colleague or plan for several' do
+    it 'numbers the way of working: split the message, answer the questions yourself, transfer an action you cannot do, plan for several agents' do
       text = described_class.render(context)
 
-      expect(text.lines.grep(/\A\d\. /).map { |line| line[/\A\d/] }).to eq(%w[1 2 3 4 5 6])
-      expect(text).to include("3. If the whole message belongs to one colleague, call that colleague's transfer tool; the colleague replies.")
-      expect(text).to include('6. Staff are reached through handoff.')
-      expect(text.index('transfer tool')).to be < text.index('call plan_request once')
+      expect(text.lines.grep(/\A\d\. /).map { |line| line[/\A\d/] }).to eq(%w[1 2 3 4 5])
+      expect(text).to include('5. Staff are reached through handoff.')
+      expect(text.index('2. Answer questions')).to be < text.index('3. If the message asks for an action')
+      expect(text.index('transfer the conversation')).to be < text.index('call plan_request once')
     end
 
-    it 'counts a detail your own tools settle as part of your request, and asks for a plan only for two or more agents' do
+    it 'has every agent answer the questions of the message itself, with the FAQ and the catalog' do
+      expect(described_class.render(context)).to include('2. Answer questions yourself: every agent can use the FAQ and the catalog.')
+    end
+
+    it 'transfers an action the agent cannot do to the colleague whose tools can do it, who also answers the questions of the message' do
       text = described_class.render(context)
 
-      expect(text).to include('2. Handle your own requests yourself with your tools. A detail you can settle with your own tools ' \
-                              '(service variant, first or repeat visit, the price of what you book, the specialist) is part of your request.')
-      expect(text).to include('4. If the message holds requests for two or more agents, call plan_request once to split it, ' \
-                              'also where the clinic instructions say to hand requests over at once; each agent does its part right away.')
-      expect(text).to include('5. Choose the colleague by what the patient wants done: a wish to book, reschedule or cancel an ' \
-                              'appointment goes to the colleague who can book, reschedule and cancel appointments.')
+      expect(text).to include('3. If the message asks for an action you cannot do (book, reschedule, cancel, a deal...), transfer the ' \
+                              'conversation to the colleague whose tools can do it; that colleague also answers the questions of the message.')
+    end
+
+    it 'asks for a plan only where the actions belong to two or more different agents, and each agent acts at once' do
+      text = described_class.render(context)
+
+      expect(text).to include('4. If the message holds actions for two or more different agents, call plan_request once to split it; ' \
+                              'each agent does its part right away.')
+      expect(text.scan('plan_request').size).to eq(1)
+    end
+
+    it 'has none of the lines the routing no longer needs: no detail of a request, no transfer of a whole message, no choice by wish' do
+      text = described_class.render(context)
+
+      expect(text).not_to include('Handle your own requests yourself', 'A detail you can settle', 'the whole message belongs to one colleague',
+                                  'Choose the colleague by what the patient wants done', 'also where the clinic instructions say')
     end
 
     it 'makes the price, the free times and the booking of one service one request for the agent that books it, and plans the latest message' do
@@ -182,10 +196,10 @@ RSpec.describe Captain::Runtime::CoordinationPrompt do
       fresh = described_class.render(context)
 
       expect(transferred).to end_with(
-        "6. Staff are reached through handoff.\n" \
+        "5. Staff are reached through handoff.\n" \
         'The conversation was transferred to you: the whole message is yours unless it holds a separate request for another colleague.'
       )
-      expect(fresh).to end_with('6. Staff are reached through handoff.')
+      expect(fresh).to end_with('5. Staff are reached through handoff.')
       expect(fresh).not_to include('was transferred to you')
     end
   end
