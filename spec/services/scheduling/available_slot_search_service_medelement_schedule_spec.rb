@@ -48,6 +48,41 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
     expect(payload[:slots].first[:medelement_cabinet_code]).to eq('cabinet-1')
   end
 
+  describe 'checking one exact time' do
+    let(:date) { Date.new(2026, 4, 20) }
+
+    def check(hour, minute, ends: minute + 1)
+      described_class.new(account: account, resource_ids: [resource.id], duration_min: 30,
+                          from: zone.local(date.year, date.month, date.day, hour, minute),
+                          to: zone.local(date.year, date.month, date.day, hour, ends)).perform
+    end
+
+    it 'finds a free time of the provider table with a one-minute window' do
+      day(date)
+      expect(Integrations::Medelement::Client).not_to receive(:new)
+
+      payload = check(16, 0)
+
+      expect(payload[:slots].pluck(:starts_at)).to eq([zone.local(2026, 4, 20, 16).iso8601])
+      expect(payload[:slots].first[:ends_at]).to eq(zone.local(2026, 4, 20, 16, 30).iso8601)
+      expect(payload[:availability][:status]).to eq('fresh')
+    end
+
+    it 'reports a taken time as no slot instead of offering the next start' do
+      day(date)
+      create(:scheduling_appointment, account: account, resource: resource,
+                                      starts_at: zone.local(2026, 4, 20, 16), ends_at: zone.local(2026, 4, 20, 16, 30))
+
+      expect(check(16, 0)[:slots]).to be_empty
+    end
+
+    it 'does not offer a time outside the provider hours' do
+      day(date)
+
+      expect(check(14, 0)[:slots]).to be_empty
+    end
+  end
+
   it 'uses provider hours on Sunday despite local rules, holiday, vacation and break' do
     date = Date.new(2026, 4, 26)
     day(date, start_minute: 10 * 60, end_minute: 12 * 60)

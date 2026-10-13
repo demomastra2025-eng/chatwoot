@@ -126,4 +126,103 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
       described_class.new(account: account, from: from_time, to: from_time + 32.days).perform
     end.to raise_error(ArgumentError, 'Date range must be 31 days or less')
   end
+
+  describe 'the end of the range is the latest start' do
+    def at(hour, minute = 0)
+      time_zone.local(2026, 4, 20, hour, minute, 0)
+    end
+
+    def search_between(from, to, **attributes)
+      described_class.new(account: account, from: from, to: to, resource_ids: [resource.id], **attributes).perform
+    end
+
+    def starts(payload)
+      payload[:slots].pluck(:starts_at)
+    end
+
+    it 'finds a free time checked with a one-minute window' do
+      payload = search_between(at(10), at(10, 1), service_id: service_record.id)
+
+      expect(starts(payload)).to eq([at(10).iso8601])
+      expect(payload[:slots].first[:ends_at]).to eq(at(10, 30).iso8601)
+      expect(payload[:total_slots]).to eq(1)
+    end
+
+    it 'finds a free time that is not on the hour' do
+      expect(starts(search_between(at(10, 15), at(10, 16), duration_min: 20))).to eq([at(10, 15).iso8601])
+    end
+
+    it 'accepts a range whose end equals its start as an exact-time check' do
+      expect(starts(search_between(at(10), at(10), service_id: service_record.id))).to eq([at(10).iso8601])
+    end
+
+    it 'reports no slot when the exact time is taken instead of offering a neighbouring start' do
+      create(:scheduling_appointment, account: account, resource: resource, service: service_record,
+                                      starts_at: at(10), ends_at: at(10, 30), duration_min: 30)
+
+      payload = search_between(at(10), at(10, 1), service_id: service_record.id)
+
+      expect(payload[:slots]).to eq([])
+      expect(payload[:total_slots]).to eq(0)
+    end
+
+    it 'uses a window shorter than one visit to find the visit that starts at its beginning' do
+      payload = search_between(at(10), at(10, 20), service_id: service_record.id)
+
+      expect(starts(payload)).to eq([at(10).iso8601])
+    end
+
+    it 'keeps a window that holds a visit as it was: every visit ends before the end of the range' do
+      payload = search_between(at(9), at(10), service_id: service_record.id)
+
+      expect(starts(payload).first).to eq(at(9).iso8601)
+      expect(starts(payload).last).to eq(at(9, 30).iso8601)
+    end
+
+    it 'counts the limit from the start of the range, so a later hour is reached by moving the range' do
+      early = search_between(at(9), at(11), service_id: service_record.id, limit: 2)
+      later = search_between(at(10), at(11), service_id: service_record.id, limit: 2)
+
+      expect(starts(early)).to eq([at(9).iso8601, at(9, 5).iso8601])
+      expect(starts(later)).to eq([at(10).iso8601, at(10, 5).iso8601])
+    end
+
+    it 'returns the named time with a limit of one' do
+      expect(starts(search_between(at(10, 25), at(10, 26), service_id: service_record.id, limit: 1))).to eq([at(10, 25).iso8601])
+    end
+
+    it 'reads each specialist with the length of its own visit' do
+      payload = described_class.new(account: account, from: at(10), to: at(10, 1), resource_ids: [resource.id, other_resource.id]).perform
+
+      expect(payload[:slots].map { |slot| [slot[:resource_id], slot[:ends_at]] }).to contain_exactly(
+        [resource.id, at(10, 30).iso8601], [other_resource.id, at(10, 20).iso8601]
+      )
+    end
+
+    it 'rejects a range that ends before it starts' do
+      expect { search_between(at(10), at(9, 59)) }.to raise_error(ArgumentError, 'to must be greater than from')
+    end
+  end
+
+  describe 'specialist ids' do
+    def resource_ids_found(resource_ids)
+      perform(resource_ids: resource_ids, limit: 1)[:resources].pluck(:id)
+    end
+
+    it 'ignores blank and non-numeric ids and searches the other specialists' do
+      expect(resource_ids_found(['', nil, ' ', 'abc', 'Dr. Aigerim', 0, -3])).to contain_exactly(resource.id, other_resource.id)
+      expect(resource_ids_found('')).to contain_exactly(resource.id, other_resource.id)
+    end
+
+    it 'keeps the numeric ids among the ignored ones' do
+      expect(resource_ids_found([resource.id.to_s, '', 'abc'])).to eq([resource.id])
+      expect(resource_ids_found([nil, other_resource.id, resource.id.to_s])).to contain_exactly(resource.id, other_resource.id)
+      expect(resource_ids_found("#{resource.id}, #{other_resource.id}")).to contain_exactly(resource.id, other_resource.id)
+    end
+
+    it 'still reports a numeric id that is not a specialist of the account' do
+      expect { perform(resource_ids: ['', external_resource.id]) }
+        .to raise_error(ActiveRecord::RecordNotFound, "Specialists not found: #{external_resource.id}")
+    end
+  end
 end

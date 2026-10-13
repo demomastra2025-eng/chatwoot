@@ -11,11 +11,19 @@ class Scheduling::AvailableSlotSearchService
     attrs['medelement_specialist_code'].present? || attrs['medelement_cabinets'].present?
   end
 
+  # Specialist ids that are not positive integers (blank, a name, 0) are no filter; the search then covers the other ones.
+  def self.normalize_resource_ids(value)
+    values = value.is_a?(String) ? value.split(',') : Array(value)
+    values.filter_map { |item| Scheduling::IntegerNumericNormalizer.optional_positive_id(item) }.uniq
+  end
+
+  # `to` is the latest start of a visit. A window shorter than one visit is searched up to the end of a visit that starts at
+  # `from`, so a one-minute window (11:00-11:01) finds the visit at 11:00 when it is free.
   def initialize(account:, from:, to:, resource_ids: nil, service_id: nil, duration_min: nil, limit: nil, snapshots: nil)
     @account = account
     @from = from
     @to = to
-    @resource_ids = Array(resource_ids).compact_blank.map(&:to_i)
+    @resource_ids = self.class.normalize_resource_ids(resource_ids)
     @service_id = Scheduling::IntegerNumericNormalizer.optional_positive_id(service_id)
     @requested_duration_min = duration_min.presence&.to_i
     @limit = normalize_limit(limit)
@@ -104,7 +112,7 @@ class Scheduling::AvailableSlotSearchService
     end
   end
 
-  def local_slots(resource, from: @from, to: @to, provider_working_windows: nil, uncapped: false)
+  def local_slots(resource, from: @from, to: query_to(resource), provider_working_windows: nil, uncapped: false)
     if @snapshots
       return @snapshots.availability(resource: resource, from: from, to: to, service: service, duration_min: @requested_duration_min,
                                      limit: @limit, uncapped: uncapped).fetch(:slots).map do |slot|
@@ -133,14 +141,31 @@ class Scheduling::AvailableSlotSearchService
 
     unless medelement_resource?(resource)
       record_availability(resource_id: resource.id, status: 'local_only')
-      return label_service_eligibility(local_slots(resource), 'local_configured')
+      return label_service_eligibility(starting_in_window(local_slots(resource)), 'local_configured')
     end
 
     integrated_slots(resource)
   end
 
+  # The range the schedule is read for: the requested one, and at least one visit from `from`.
+  def query_to(resource)
+    visit_min = Scheduling::ResourceAvailabilityQueryService.duration_for(resource: resource, service: service,
+                                                                          duration_min: @requested_duration_min)
+    [@to, @from + [visit_min, Scheduling::Constants::MIN_DURATION_MINUTES].max.minutes].max
+  end
+
+  # Only starts before `to` are offered; a start at `from` counts even when `to` is equal to `from` (an exact-time check).
+  def starting_in_window(slots)
+    from_at = @from.to_i
+    to_at = @to.to_i
+    slots.select do |slot|
+      starts_at = Time.zone.parse(slot[:starts_at]).to_i
+      starts_at >= from_at && (starts_at < to_at || starts_at == from_at)
+    end
+  end
+
   def integrated_slots(resource)
-    range = Scheduling::ResourceHoursPolicy.new(resource: resource).clipped_range(from: @from, to: @to)
+    range = Scheduling::ResourceHoursPolicy.new(resource: resource).clipped_range(from: @from, to: query_to(resource))
     return [] if range.nil?
 
     result = Scheduling::ScheduleDayAvailabilityService.new(
@@ -153,7 +178,7 @@ class Scheduling::AvailableSlotSearchService
       status: result.state == 'ok' ? 'fresh' : result.state,
       checked_at: result.checked_at&.iso8601(6)
     )
-    slots = result.slots.first(@limit).map do |slot|
+    slots = starting_in_window(result.slots).first(@limit).map do |slot|
       slot.merge(resource_name: resource.name, timezone: resource.timezone,
                  availability_source: 'medelement', medelement_cabinet_code: slot[:cabinet_code])
     end
@@ -271,6 +296,6 @@ class Scheduling::AvailableSlotSearchService
   end
 
   def validate_range!
-    Scheduling::RangeValidator.validate!(from: @from, to: @to, max_days: MAX_RANGE_DAYS)
+    Scheduling::RangeValidator.validate!(from: @from, to: @to, max_days: MAX_RANGE_DAYS, allow_equal: true)
   end
 end
