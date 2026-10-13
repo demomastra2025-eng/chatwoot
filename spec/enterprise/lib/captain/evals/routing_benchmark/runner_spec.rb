@@ -280,9 +280,9 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Runner do
     end
 
     # The first turn hands the conversation to staff the way the handoff tool does: the marker, the flag and a successful tool event.
-    def hand_over_on_the_first_turn
+    def hand_over_on_the_first_turn(**options)
       calls = 0
-      script_runtime do |conversation|
+      script_runtime(**options) do |conversation|
         calls += 1
         seen << conversation.reload.status
         next unless calls == 1
@@ -301,6 +301,33 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Runner do
       expect(seen).to eq(%w[pending open pending])
       expect(report[:cases].pluck(:warnings)).to eq([[], ['ai_answered_while_staff_owned'], []])
       expect(report[:warnings]).to include('ai_answered_while_staff_owned: 1 turn(s)')
+    end
+
+    # A turn played on a conversation that staff owns, with nobody giving it back, cannot happen live: the case is marked, the dialogue
+    # summary shows it as blocked when it fails, and the gate reports the score without it next to the score of all the turns.
+    it 'marks the turn played on a conversation that staff owns and nobody gave back as blocked, and shows the gate both scores' do
+      stub_fixture
+      hand_over_on_the_first_turn(text: 'Пожалуйста, обращайтесь.')
+
+      report = run_benchmark
+
+      expect(report[:cases].pluck(:blocked)).to eq([nil, true, nil])
+      expect(report[:gate][:overall]).to include(passed: 3, total: 3, blocked_turns: 1)
+      expect(report[:gate][:overall_unblocked]).to include(passed: 2, total: 2, pct: 100.0)
+      expect(report[:aggregates]).to include(dialogues: include(blocked_turns: 0))
+    end
+
+    it 'counts a failed blocked turn as blocked in the dialogue summary and keeps it a failed turn for the verdict' do
+      fixture_data[:dialogues].first[:turns][1][:expect][:council] = true
+      stub_fixture
+      hand_over_on_the_first_turn(text: 'Пожалуйста, обращайтесь.')
+
+      report = run_benchmark
+
+      expect(report[:dialogue_summaries].sole).to include(statuses: %w[pass blocked pass])
+      expect(report[:gate][:overall]).to include(passed: 2, total: 3, blocked_turns: 1)
+      expect(report[:gate][:overall_unblocked]).to include(passed: 2, total: 2)
+      expect(report[:gate][:blockers]).to include('overall 66.67% is below 95.0% (100.0% without the 1 blocked turn(s))')
     end
 
     # ResponseBuilderJob calls bot_handoff! on a failed turn as well: after the provider error response, after a technical failure of a tool
@@ -609,11 +636,28 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Runner do
       expect(item[:judge]).to include(pass: true)
     end
 
-    it 'reports an answer it cannot read as a minor failure' do
+    # The judge is not a check of the agent: an answer that is no verdict, or a call that cannot be made, says nothing about the reply.
+    it 'does not fail the turn for an answer it cannot read: a warning of the turn, counted apart' do
       stub_fixture
       stub_judge('не знаю')
 
-      expect(run_benchmark(judge: true)[:cases].first[:failures]).to contain_exactly(a_hash_including(id: 'judge_invalid_json', severity: 'minor'))
+      report = run_benchmark(judge: true)
+      item = report[:cases].first
+
+      expect(item).to include(status: 'pass', reasons: [], failures: [], judge: { unusable: 'judge_invalid_json' }, warnings: ['judge_invalid_json'])
+      expect(report[:aggregates]).to include(passed: 2, judge_unusable: { turns: 1, by_check: { 'judge_invalid_json' => 1 } })
+      expect(report[:warnings]).to include('judge_invalid_json: 1 turn(s)')
+      expect(report[:triage]).to be_empty
+      expect(report[:gate][:overall]).to include(passed: 2, total: 2)
+    end
+
+    it 'does not fail the turn for a call that cannot be made either, and names the class of the error' do
+      stub_fixture
+      allow(Llm::Runtime).to receive(:build_chat).and_raise(TypeError, 'no implicit conversion of nil into Hash')
+
+      item = run_benchmark(judge: true)[:cases].first
+
+      expect(item).to include(status: 'pass', failures: [], judge: { unusable: 'judge_unavailable', detail: 'TypeError' }, warnings: ['judge_unavailable'])
     end
 
     # The examples above replace Llm::Runtime itself, so they could not see a judge call that the runtime cannot even build: it raised

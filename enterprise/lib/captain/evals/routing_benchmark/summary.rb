@@ -12,7 +12,11 @@
 #
 # A turn is `blocked` when an earlier turn of the same dialogue failed on something the later turns build on (a booking that was
 # not made, a wrong holder of the conversation, an aborted run), and the turn itself failed: its failure is probably the cascade of
-# the first one, so the dialogue summary shows it as blocked and not as a new finding. The turns stay failed turns for the gate.
+# the first one, so the dialogue summary shows it as blocked and not as a new finding. A turn the runner played on a conversation that
+# staff owned (`blocked: true` on the case: no `staff:` step gave it back to the AI, which cannot happen live) is blocked as well when it
+# fails. The turns stay failed turns for the gate; the gate also reports the score without the turns the runner marked (`overall_unblocked`).
+#
+# A judge that gave no verdict (`judge_unusable`) is no failure of the turn: the turns that carry it are counted apart.
 class Captain::Evals::RoutingBenchmark::Summary
   # What the later turns of a dialogue depend on.
   STATE_CHECKS = %w[missing_operation operation_mismatch unexpected_mutation forbidden_tool succeeded_forbidden missing_act missing_tool
@@ -36,7 +40,7 @@ class Captain::Evals::RoutingBenchmark::Summary
 
   def result
     {
-      infra: infra, routing_accuracy: accuracy(:routing), transfer_accuracy: accuracy(:transfer),
+      infra: infra, judge_unusable: judge_unusable, routing_accuracy: accuracy(:routing), transfer_accuracy: accuracy(:transfer),
       staff_handoff_accuracy: accuracy(:staff_handoff), acts_accuracy: accuracy(:acts),
       dialogues: dialogue_totals, by_category: by_category, by_reason: by_reason, dialogue_summaries: summaries
     }
@@ -66,7 +70,7 @@ class Captain::Evals::RoutingBenchmark::Summary
     blocked = false
     turns.map do |item|
       failed = failed_checks(item)
-      status = turn_status(failed, blocked)
+      status = turn_status(failed, blocked || item['blocked'] == true)
       blocked ||= (failed & STATE_CHECKS).any?
       status
     end
@@ -78,9 +82,10 @@ class Captain::Evals::RoutingBenchmark::Summary
     blocked ? 'blocked' : 'fail'
   end
 
+  # The checks a turn failed. A judge without a verdict is no failure (older reports hold it as one).
   def failed_checks(item)
     scorer = Captain::Evals::RoutingBenchmark::Scorer
-    Array(item['reasons']).map { |reason| scorer.base_check(reason) }.uniq
+    Array(item['reasons']).reject { |reason| scorer.judge_unusable?(reason) }.map { |reason| scorer.base_check(reason) }.uniq
   end
 
   def category_of(dialogue) = dialogue.to_s.sub(/_\d+\z/, '')
@@ -91,6 +96,16 @@ class Captain::Evals::RoutingBenchmark::Summary
     items = @cases.select { |item| infra_item?(item) }
     by_check = items.flat_map { |item| failed_checks(item) & Captain::Evals::RoutingBenchmark::Scorer::INFRA_CHECKS }.tally.sort.to_h
     { turns: items.size, by_check: by_check }
+  end
+
+  # The turns whose rubric judge gave no verdict (the call failed, or the answer was no verdict), by cause: a warning of the turn in a run
+  # of today, a failure in the report of an older run.
+  def judge_unusable
+    scorer = Captain::Evals::RoutingBenchmark::Scorer
+    causes = @cases.map do |item|
+      (Array(item['warnings']) + Array(item['reasons'])).map { |entry| scorer.base_check(entry) }.select { |check| scorer.judge_unusable?(check) }.uniq
+    end
+    { turns: causes.count(&:any?), by_check: causes.flatten.tally.sort.to_h }
   end
 
   # The share of the turns in scope with none of the failures of the given checks. Turns that ended in an infrastructure failure are

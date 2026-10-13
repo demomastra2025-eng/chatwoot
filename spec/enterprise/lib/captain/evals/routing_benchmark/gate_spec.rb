@@ -193,6 +193,60 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Gate do
     end
   end
 
+  # The runner marks a turn it played on a conversation that staff owned and nobody gave back (it cannot happen live). The verdict holds
+  # the run to every turn; the score without the marked turns is shown next to it, so the reader sees both.
+  describe 'blocked turns' do
+    def blocked_turn(index, fails: [])
+      turn(dialogue: "owned_#{index}", fails: fails).merge('blocked' => true)
+    end
+
+    it 'shows the score of all the turns and the score without the blocked ones, and holds the verdict to all the turns' do
+      cases = passing(88) + bad_turns(4) + Array.new(6) { |index| blocked_turn(index, fails: ['wrong_agent']) } + [blocked_turn(7)]
+
+      gate = described_class.call(cases)
+
+      expect(gate[:overall]).to include(passed: 89, total: 99, pct: 89.9, blocked_turns: 7)
+      expect(gate[:overall_unblocked]).to include(passed: 88, total: 92, pct: 95.65, threshold: 95.0)
+      expect(gate[:overall_unblocked]).not_to have_key(:blocked_turns)
+      expect(gate[:verdict]).to eq('FAIL')
+      expect(gate[:blockers]).to include('overall 89.9% is below 95.0% (95.65% without the 7 blocked turn(s))')
+    end
+
+    it 'says nothing of blocked turns when there are none, and keeps the same blocker text' do
+      gate = described_class.call(passing(10) + bad_turns(2))
+
+      expect(gate[:overall]).to include(blocked_turns: 0)
+      expect(gate[:overall_unblocked]).to include(passed: 10, total: 12)
+      expect(gate[:blockers]).to include('overall 83.33% is below 95.0%')
+    end
+
+    it 'computes both scores after the triage as well' do
+      owned = Array.new(5) { |index| blocked_turn(index, fails: ['wrong_agent']) }
+      cases = passing(95) + owned
+
+      gate = described_class.call(cases, labels: signed_off(owned, 'test_bug'))
+
+      expect(gate[:after_triage]).to include(verdict: 'PASS')
+      expect(gate[:after_triage][:overall]).to include(passed: 100, total: 100, blocked_turns: 5)
+      expect(gate[:after_triage][:overall_unblocked]).to include(passed: 95, total: 95)
+    end
+  end
+
+  # The rubric judge is not a check of the agent: a report of an older run holds a judge without a verdict as a failure of the turn, and it
+  # is no failure of the agent.
+  describe 'a judge without a verdict' do
+    it 'fails no turn, and needs no triage' do
+      cases = passing(10).map { |item| item.merge('failures' => [{ 'id' => 'judge_unavailable', 'check' => 'judge_unavailable', 'severity' => 'minor', 'gate' => 'none' }],
+                                                  'reasons' => ['judge_unavailable'], 'status' => 'fail') }
+
+      gate = described_class.call(cases)
+
+      expect(gate[:overall]).to include(passed: 10, total: 10)
+      expect(gate[:triage]).to include(failed_checks: 0, untriaged: 0)
+      expect(gate[:verdict]).to eq('PASS')
+    end
+  end
+
   describe 'coverage of gate items a and f' do
     it 'counts the expectations that pin the start time, and the turns that ask for a person' do
       cases = passing(10) + [booking_turn('cancelled', operations: [operation('kind' => 'cancel', 'service' => nil, 'patient' => nil)])]

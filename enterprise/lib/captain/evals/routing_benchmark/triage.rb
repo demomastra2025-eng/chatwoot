@@ -70,14 +70,19 @@ class Captain::Evals::RoutingBenchmark::Triage
 
     def severity_rank(severity) = Captain::Evals::RoutingBenchmark::Scorer::SEVERITIES.index(severity.to_s) || 99
 
-    # The failures of a case as hashes with id, severity, gate and detail; older reports hold only the reasons.
+    # The failures of a case as hashes with id, severity, gate and detail; older reports hold only the reasons. A judge that gave no verdict
+    # (Scorer::JUDGE_UNUSABLE) is no failure of the agent and is never listed: a run of today records it as a warning of the turn, and an
+    # older report that holds it as a failure is read the same way.
     def failures_of(item)
-      return item['failures'] if item['failures'].is_a?(Array)
-
       scorer = Captain::Evals::RoutingBenchmark::Scorer
-      Array(item['reasons']).map do |reason|
-        { 'id' => reason, 'check' => scorer.base_check(reason), 'severity' => scorer.severity_for(reason), 'gate' => scorer.gate_item_for(reason) }
-      end
+      failures = if item['failures'].is_a?(Array)
+                   item['failures']
+                 else
+                   Array(item['reasons']).map do |reason|
+                     { 'id' => reason, 'check' => scorer.base_check(reason), 'severity' => scorer.severity_for(reason), 'gate' => scorer.gate_item_for(reason) }
+                   end
+                 end
+      failures.reject { |failure| scorer.judge_unusable?(failure['id']) }
     end
 
     private

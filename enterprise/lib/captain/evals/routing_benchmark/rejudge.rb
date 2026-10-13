@@ -1,7 +1,8 @@
 # frozen_string_literal: true
 
 # Judges again, without running an agent, the turns of a stored report whose rubric judge gave no verdict (judge_unavailable or
-# judge_invalid_json); with `all: true`, every judged turn. Everything the judge reads is in the report or in the fixture the case names:
+# judge_invalid_json: a warning of the turn and `judge.unusable` in a report of today, a failure in an older one); with `all: true`,
+# every judged turn. Everything the judge reads is in the report or in the fixture the case names:
 # the reply, the tool calls and the database changes of the turn are stored with the case; the rubric and the facts of the workspace come
 # from the fixture (as it is now: a turn whose customer text no longer matches is refused); the transcript is rebuilt from the earlier
 # turns of the dialogue, the way the runner records it (what the customer wrote and the replies the customer saw).
@@ -10,7 +11,7 @@
 # list are computed again from the new cases. Only the judge calls cost money, and they stop at `budget_usd`; a turn left unjudged keeps
 # its old case.
 class Captain::Evals::RoutingBenchmark::Rejudge
-  UNUSABLE = %w[judge_unavailable judge_invalid_json].freeze
+  UNUSABLE = Captain::Evals::RoutingBenchmark::Scorer::JUDGE_UNUSABLE
   JUDGE_CHECKS = (UNUSABLE + %w[judge_failed]).freeze
 
   Result = Struct.new(:report, :rejudged, :cost_usd, :stopped, keyword_init: true)
@@ -48,7 +49,12 @@ class Captain::Evals::RoutingBenchmark::Rejudge
   private
 
   def redo?(row)
-    @all ? judged_before?(row) : row.fetch('failures', []).any? { |failure| UNUSABLE.include?(failure['check']) }
+    @all ? judged_before?(row) : unusable_before?(row)
+  end
+
+  # The judge gave no verdict: the turn says so (`judge.unusable`), or an older report holds it as a failure.
+  def unusable_before?(row)
+    row.dig('judge', 'unusable').present? || row.fetch('failures', []).any? { |failure| UNUSABLE.include?(failure['check']) }
   end
 
   def judged_before?(row)
@@ -67,7 +73,7 @@ class Captain::Evals::RoutingBenchmark::Rejudge
 
     @spent += cost
     @rejudged += 1
-    row.except('judge').merge(judged.slice(:status, :reasons, :failures, :evaluated, :judge).deep_stringify_keys)
+    row.except('judge').merge(judged.slice(:status, :reasons, :failures, :evaluated, :judge, :warnings).deep_stringify_keys)
   rescue Captain::Evals::RoutingBenchmark::Runner::BudgetExceeded => e
     stop(e.message, row)
   end
@@ -83,7 +89,8 @@ class Captain::Evals::RoutingBenchmark::Rejudge
     failures = scored.fetch(:failures, []).reject { |failure| JUDGE_CHECKS.include?(failure[:check]) }
     scored.merge(failures: failures, status: failures.empty? ? 'pass' : 'fail',
                  reasons: scored.fetch(:reasons, []).reject { |reason| judge_reason?(reason) },
-                 evaluated: scored.fetch(:evaluated, []).reject { |check| judge_reason?(check) })
+                 evaluated: scored.fetch(:evaluated, []).reject { |check| judge_reason?(check) },
+                 warnings: scored.fetch(:warnings, []).reject { |warning| UNUSABLE.include?(warning) })
   end
 
   def judge_reason?(reason) = JUDGE_CHECKS.include?(Captain::Evals::RoutingBenchmark::Scorer.base_check(reason))

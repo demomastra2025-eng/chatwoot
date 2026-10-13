@@ -75,7 +75,13 @@ the coverage table) and ends with the **TRIAGE** list.
   `reply_leak:latin` is the failed form of `reply_leak`, and the gate counts the failed form instead of the plain check. The
   text checks (`reply_leak`, `foreign_patient_data`, `empty_reply`, `greeting_only_reply`) are not put to a runtime marker,
   which is no patient text.
-- `overall passed/total` counts turns; a turn passes when no check of any severity failed on it. Minor failures count too.
+- `overall passed/total` counts turns; a turn passes when no check of any severity failed on it. Minor failures count too. A judge that
+  gave no verdict is not a failure (see "Rubric judge").
+- A turn the runner played on a conversation that staff owned and nobody gave back (no `staff: {status: pending}` step: it cannot
+  happen live) carries `blocked: true`. The verdict counts it like any other turn; `gate.overall.blocked_turns` says how many there are,
+  and **`gate.overall_unblocked`** is the score over the turns that are not marked, so both scores stand side by side (the Markdown
+  summary shows the second as a row of the table, and the blocker names it: "overall 56.5% is below 95.0% (61.0% without the 65 blocked
+  turn(s))"). A failed blocked turn is `blocked` in the dialogue summary, not a finding of its own.
 - The verdict is `PASS` only when all of these hold; `FAIL` when one of the first four does not:
   - `critical.failed` is 0;
   - overall is at least 95%;
@@ -193,8 +199,8 @@ is stored with its severity, gate item and a detail line in the case's `failures
 | `council_event_missing` | minor | none | A council was expected, but no `captain.council.started` event |
 | `council_unexpected` | minor | none | A council started where none was expected |
 | `human_request_flag_mismatch` | minor | none | The fixture flag `human_request` and the wording of the customer disagree |
-| `judge_invalid_json` | minor | none | The judge returned no verdict |
-| `judge_unavailable` | minor | none | The judge could not be called |
+| `judge_invalid_json` | minor | none | The judge returned no verdict. Never fails a turn: a run of today records it as a warning of the turn (`judge.unusable`) and counts the turns apart (`aggregates.judge_unusable`); an older report that holds it as a failure is read without it |
+| `judge_unavailable` | minor | none | The judge could not be called. Never fails a turn either (same as above) |
 
 `handoff_claim_unsupported` of older outputs is read as `false_handoff_claim`. The operation ledger is no check any more: the fixtures
 no longer name a `ledger_tool` (the strict loader refuses it), and the ledger entries are listed as evidence only (`operations_ledger`).
@@ -259,7 +265,8 @@ next turn depends on:
   unresolved part), and after a failed turn (the provider error response, a technical failure of a tool, the technical handoff of a
   council part: `ResponseBuilderJob` hands those over as well) the conversation is set `open`, as `Conversation#bot_handoff!` does. The fixture says when staff returns it: the
   turn after a handoff carries `staff: {status: pending}`. A turn that runs on an open conversation with no such key is scored as usual
-  and carries the warning `ai_answered_while_staff_owned`.
+  and carries the warning `ai_answered_while_staff_owned` and the mark `blocked: true` (live, staff owns such a conversation and the AI
+  does not answer it; see "Release gate" for how the gate and the dialogue summary read the mark).
 - **The history of the model** holds the replies the customer read and nothing else: the marker of a handoff, the provider error
   response and a suppressed reply are not appended, as live they produce no message.
 
@@ -509,8 +516,11 @@ the knowledge base). It can only add a failure (`judge_failed`): a pass removes 
 it. A fence around the JSON verdict is tolerated. A turn with nothing to read (a silent handoff, a runtime marker) is not judged.
 
 The judge is built like every other feature of the runtime (the `editor` feature, the benchmark model alone, temperature 0), so it uses the
-key and the routing of the account. A call that cannot be made is reported as `judge_unavailable` (minor, gate `none`) with the class of the
-error as its detail; it still fails the turn, so a run in which every judge call fails shows pass rates far below the real ones.
+key and the routing of the account. A judge that gave no usable verdict says nothing about the reply: a call that cannot be made
+(`judge_unavailable`, with the class of the error as the detail) or an answer that is no verdict (`judge_invalid_json`) **never fails the
+turn**. The turn keeps the result of the deterministic checks, carries the cause as a warning and as `judge: {unusable: ..., detail: ...}`,
+and the summary counts these turns apart (`aggregates.judge_unusable`, a line in the Markdown). The gate and the triage list do not see it.
+(A report of an older run that holds the cause as a minor failure of the turn is read the same way.)
 
 ### Judging a stored run again
 
@@ -524,8 +534,9 @@ RAILS_ENV=test REDIS_URL=redis://127.0.0.1:6379/15 BENCHMARK_REDIS_URL=redis://1
   bundle exec rake captain:routing_benchmark_rejudge
 ```
 
-It judges again the turns whose judge failed (`judge_unavailable`, `judge_invalid_json`); `ALL=1` judges every judged turn. The new verdict
-replaces the old judge failure; every other failure of the turn stays. The summary, the gate and the triage list are computed again, and the
+It judges again the turns whose judge gave no verdict (`judge.unusable` and the warning of a report of today, or the failure
+`judge_unavailable` / `judge_invalid_json` of an older one); `ALL=1` judges every judged turn. The new verdict
+replaces the old judge result (the warning or the failure); every other failure of the turn stays. The summary, the gate and the triage list are computed again, and the
 report gets a `rejudge` key (turns, cost, whether the budget stopped it). A fixture that is gone is looked up by file name in `FIXTURES`;
 a fixture whose turn no longer has the customer text of the report is refused. At the budget the run stops and the turns not yet judged keep
 their old cases.
@@ -548,7 +559,8 @@ category (the dialogue id without its number) and the failed turns per check, th
 routing (`wrong_agent`), transfers, staff handoff and acts over the turns that state the expectation and ran to their end. A turn
 is `blocked` in a dialogue summary when an earlier turn failed on something the later turns build on (a booking not made, a wrong holder
 of the conversation, an aborted run) and the turn itself failed: its failure is probably the cascade of the first, shown as blocked and not as
-a new finding (the gate still counts the failed turn).
+a new finding (the gate still counts the failed turn). A failed turn that the runner marked `blocked: true` (see "Release gate") is blocked as
+well.
 
 ## Hard-zero heuristics
 

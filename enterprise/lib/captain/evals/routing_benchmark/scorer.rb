@@ -50,6 +50,10 @@ class Captain::Evals::RoutingBenchmark::Scorer
   # Failures of the infrastructure under the agents: the run, not the agent, is at fault. They fail the turn, but the report counts them
   # apart and leaves them out of the quality rates.
   INFRA_CHECKS = %w[runtime_error technical_handoff provider_error tool_result_fallback].freeze
+  # The rubric judge is not a check of the agent: a call that fails or a verdict that cannot be read says nothing about the reply, so
+  # it never fails a turn. The runner reports it as a warning of the turn (counted apart in the summary); only reports of older runs
+  # hold it as a failure, and the gate and the triage list leave those out.
+  JUDGE_UNUSABLE = %w[judge_unavailable judge_invalid_json].freeze
   # After one of these the turn did not run to its end, so what it did not do is no finding.
   INTERRUPTED_BY = %w[runtime_error technical_handoff provider_error].freeze
   CONSEQUENTIAL_CHECKS = %w[wrong_agent missing_tool missing_operation missing_act missing_done_statement wrong_transfers
@@ -142,8 +146,8 @@ class Captain::Evals::RoutingBenchmark::Scorer
     'greeting_only_reply' => { severity: 'important', gate: 'overall', title: 'The reply is only a greeting to a message with content' },
     'human_request_flag_mismatch' => { severity: 'minor', gate: 'none', title: 'The fixture flag human_request disagrees with the wording of the customer' },
     'judge_failed' => { severity: 'important', gate: 'overall', title: 'The optional rubric judge rejected the reply' },
-    'judge_invalid_json' => { severity: 'minor', gate: 'none', title: 'The rubric judge returned no verdict' },
-    'judge_unavailable' => { severity: 'minor', gate: 'none', title: 'The rubric judge could not be called' }
+    'judge_invalid_json' => { severity: 'minor', gate: 'none', title: 'The rubric judge returned no verdict (a warning of the turn, never a failure; older reports hold it as one)' },
+    'judge_unavailable' => { severity: 'minor', gate: 'none', title: 'The rubric judge could not be called (a warning of the turn, never a failure; older reports hold it as one)' }
   }.freeze
   # Names that older reports carry for a check that was renamed.
   RENAMED_CHECKS = { 'handoff_claim_unsupported' => 'false_handoff_claim' }.freeze
@@ -173,6 +177,9 @@ class Captain::Evals::RoutingBenchmark::Scorer
     end
 
     def infra?(reason) = INFRA_CHECKS.include?(base_check(reason))
+
+    # The judge gave no usable verdict (JUDGE_UNUSABLE): not a finding of the agent.
+    def judge_unusable?(reason) = JUDGE_UNUSABLE.include?(base_check(reason))
 
     # A scored case with one more failed check (the judge adds its verdict after scoring).
     def with_failure(scored, reason, detail = nil, severity: nil)

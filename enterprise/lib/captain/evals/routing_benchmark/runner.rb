@@ -180,6 +180,7 @@ class Captain::Evals::RoutingBenchmark::Runner
     @spent += cost
     after_turn(entry, conversation, history, response, scored)
     scored = scored.merge(warnings: Array(scored[:warnings]) + (staff_owned && !turn['staff'] ? [STAFF_OWNED_WARNING] : []))
+    scored = scored.merge(blocked: true) if staff_owned && !turn['staff']
     scored.merge(latency_ms: latency_ms, cost_usd: cost.to_f, expectation: turn['expect'],
                  **turn_trace(turn, response, events, tool_calls))
   end
@@ -329,9 +330,16 @@ class Captain::Evals::RoutingBenchmark::Runner
     scored = scored.merge(judge: { pass: result['pass'], reason: result['reason'].to_s.truncate(300) })
     result['pass'] == true ? scored : Captain::Evals::RoutingBenchmark::Scorer.with_failure(scored, 'judge_failed', result['reason'].to_s.truncate(300))
   rescue JSON::ParserError
-    Captain::Evals::RoutingBenchmark::Scorer.with_failure(scored, 'judge_invalid_json')
+    judge_unusable(scored, 'judge_invalid_json')
   rescue StandardError => e
-    Captain::Evals::RoutingBenchmark::Scorer.with_failure(scored, 'judge_unavailable', e.class.name)
+    judge_unusable(scored, 'judge_unavailable', e.class.name)
+  end
+
+  # A judge that could not be called or whose answer could not be read says nothing about the reply: the turn keeps the result of the
+  # deterministic checks. The turn carries the cause as a warning and in `judge`, and the summary counts these turns apart. The rake task
+  # captain:routing_benchmark_rejudge asks again for the turns that carry it.
+  def judge_unusable(scored, reason, detail = nil)
+    scored.merge(judge: { unusable: reason, detail: detail }.compact, warnings: Array(scored[:warnings]) + [reason])
   end
 
   # The judge is a plain text completion on the benchmark model, built the way every feature of the runtime builds its chat: with a

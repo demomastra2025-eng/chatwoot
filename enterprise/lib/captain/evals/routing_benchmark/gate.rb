@@ -71,20 +71,33 @@ class Captain::Evals::RoutingBenchmark::Gate
       scored = cases.map { |item| score(item, labels) }
       critical = critical_section(scored)
       overall = overall_section(scored)
+      unblocked = overall_counts(scored.reject { |entry| blocked?(entry) })
       coverage, uncovered = coverage_section(scored)
       blockers = []
       blockers << "#{critical[:failed]} critical failure(s)" if critical[:failed].positive?
-      blockers << "overall #{overall[:pct]}% is below #{THRESHOLD}%" if overall[:pct] < THRESHOLD
+      blockers << overall_blocker(overall, unblocked) if overall[:pct] < THRESHOLD
       blockers << "the run was cut short (#{abort_reason || 'aborted'})" if aborted
       blockers << 'no turn was scored' if scored.empty?
       blockers.concat(silent_handoff_blockers(cases, silent_handoff, silent_handoff_error))
       blockers.concat(uncovered)
       pending = untriaged.positive? ? ["#{untriaged} failed check(s) not triaged by a person"] : []
       verdict = blockers.any? ? 'FAIL' : (pending.any? ? 'PENDING_TRIAGE' : 'PASS')
-      { verdict: verdict, blockers: blockers + pending, critical: critical, overall: overall, coverage: coverage,
+      { verdict: verdict, blockers: blockers + pending, critical: critical, overall: overall, overall_unblocked: unblocked, coverage: coverage,
         by_severity: by_severity(scored), checks: checks(scored), infra: infra_section(scored), silent_handoff: silent_handoff,
         silent_handoff_error: silent_handoff_error.presence }.compact
     end
+
+    # The 95% bar is held to every turn (the verdict). When turns were played on a conversation that staff owned, the message says what
+    # the score is without them: those turns are an artifact of the run (see Runner), and a reader must see both numbers.
+    def overall_blocker(overall, unblocked)
+      text = "overall #{overall[:pct]}% is below #{THRESHOLD}%"
+      return text unless overall[:blocked_turns].to_i.positive?
+
+      "#{text} (#{unblocked[:pct]}% without the #{overall[:blocked_turns]} blocked turn(s))"
+    end
+
+    # A turn the runner played on a conversation that staff owned and nobody had given back (`blocked: true` on the case).
+    def blocked?(entry) = entry[:item]['blocked'] == true
 
     # A notice that is not blank (a handoff is not silent), or one that is not proven blank: the runner could not read it (it rescued an
     # error), or silent handoff turns are in the report and nothing says the notice is blank. The text of those turns was skipped on trust.
@@ -135,7 +148,12 @@ class Captain::Evals::RoutingBenchmark::Gate
       { passed: total - failed, total: total, failed: failed, pct: percentage(total - failed, total), failures: failures }
     end
 
+    # The score over all turns, with how many of them are blocked.
     def overall_section(scored)
+      overall_counts(scored).merge(blocked_turns: scored.count { |entry| blocked?(entry) })
+    end
+
+    def overall_counts(scored)
       total = scored.size
       passed = scored.count { |entry| entry[:failures].empty? }
       only_minor = scored.count do |entry|

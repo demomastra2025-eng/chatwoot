@@ -70,11 +70,27 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Rejudge do
     described_class.new(report, runner: judge_runner, account: account, budget_usd: budget_usd, fixture_paths: fixture_paths, **options).call
   end
 
-  it 'starts from a stored report whose judged turns all lack a verdict' do
+  # An older report holds the missing verdict as a failure of the turn (minor, gate none).
+  def legacy_report
+    stored_report.tap do |report|
+      report['cases'].each do |item|
+        item.delete('judge')
+        item['warnings'] = []
+        item['status'] = 'fail'
+        item['reasons'] = ['judge_unavailable']
+        item['evaluated'] += ['judge_unavailable']
+        item['failures'] = [{ 'id' => 'judge_unavailable', 'check' => 'judge_unavailable', 'severity' => 'minor', 'gate' => 'none', 'detail' => 'TypeError' }]
+      end
+    end
+  end
+
+  it 'starts from a stored report whose judged turns all lack a verdict: no failure, a warning and the cause in the judge of the turn' do
     cases = stored_report['cases']
 
-    expect(cases.pluck('reasons')).to eq([['judge_unavailable'], ['judge_unavailable']])
-    expect(cases.dig(0, 'failures', 0)).to include('check' => 'judge_unavailable', 'detail' => 'TypeError')
+    expect(cases.pluck('reasons')).to eq([[], []])
+    expect(cases.pluck('status')).to eq(%w[pass pass])
+    expect(cases.pluck('judge')).to eq([{ 'unusable' => 'judge_unavailable', 'detail' => 'TypeError' }] * 2)
+    expect(cases.pluck('warnings')).to eq([['judge_unavailable']] * 2)
   end
 
   it 'judges those turns again with their rubric, the transcript and the facts of the workspace, and keeps the other failures' do
@@ -87,8 +103,8 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Rejudge do
     first, second = result.report['cases']
 
     expect(result).to have_attributes(rejudged: 2, cost_usd: 0.0, stopped: nil)
-    expect(first).to include('status' => 'pass', 'reasons' => [], 'failures' => [], 'judge' => { 'pass' => true, 'reason' => 'ок' })
-    expect(second).to include('status' => 'fail', 'reasons' => ['wrong_language'], 'judge' => { 'pass' => true, 'reason' => 'ок' })
+    expect(first).to include('status' => 'pass', 'reasons' => [], 'failures' => [], 'warnings' => [], 'judge' => { 'pass' => true, 'reason' => 'ок' })
+    expect(second).to include('status' => 'fail', 'reasons' => ['wrong_language'], 'warnings' => [], 'judge' => { 'pass' => true, 'reason' => 'ок' })
     expect(second['evaluated']).not_to include('judge_unavailable')
     expect(prompts.size).to eq(2)
     expect(prompts.first).to include('Criterion of this turn: Здоровается и спрашивает, чем помочь.', 'Doctors: Терапевт Абдрахманова Сауле',
@@ -105,11 +121,34 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Rejudge do
 
     result = rejudge(report).report
 
-    expect(report['aggregates']['passed']).to eq(0)
-    expect(report['triage'].pluck('check')).to include('judge_unavailable')
-    expect(result['aggregates']).to include('total' => 2, 'passed' => 2)
-    expect(result['triage'].pluck('check')).not_to include('judge_unavailable')
+    expect(report['aggregates']).to include('passed' => 2, 'judge_unusable' => { 'turns' => 2, 'by_check' => { 'judge_unavailable' => 2 } })
+    expect(report['triage']).to be_empty
+    expect(result['aggregates']).to include('total' => 2, 'passed' => 2, 'judge_unusable' => { 'turns' => 0, 'by_check' => {} })
+    expect(result['triage']).to be_empty
     expect(result['rejudge']).to eq('turns' => 2, 'cost_usd' => 0.0, 'all' => false)
+  end
+
+  describe 'a report of an older run, which holds the missing verdict as a failure' do
+    it 'is read without the failure by the gate, the triage list and the summary' do
+      older = legacy_report
+      gate = Captain::Evals::RoutingBenchmark::Gate.call(older['cases'])
+
+      expect(gate[:overall]).to include(passed: 2, total: 2)
+      expect(gate[:triage]).to include(failed_checks: 0)
+      expect(Captain::Evals::RoutingBenchmark::Triage.records(older['cases'])).to be_empty
+      expect(Captain::Evals::RoutingBenchmark::Summary.call(older['cases'])).to include(judge_unusable: { turns: 2, by_check: { 'judge_unavailable' => 2 } },
+                                                                                         dialogues: include(passed: 1))
+    end
+
+    it 'is judged again, and the failure is gone' do
+      older = legacy_report
+      stub_judge('{"pass":true,"reason":"ок"}')
+
+      result = rejudge(older)
+
+      expect(result).to have_attributes(rejudged: 2)
+      expect(result.report['cases']).to all(include('status' => 'pass', 'reasons' => [], 'failures' => [], 'warnings' => []))
+    end
   end
 
   it 'turns a rejected reply into judge_failed' do
@@ -141,7 +180,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Rejudge do
     result = rejudge(report, budget_usd: 0.5)
 
     expect(result).to have_attributes(rejudged: 1, cost_usd: 0.6, stopped: 'budget_reached')
-    expect(result.report['cases'].pluck('reasons')).to eq([[], ['judge_unavailable']])
+    expect(result.report['cases'].pluck('judge')).to eq([{ 'pass' => true, 'reason' => 'ок' }, { 'unusable' => 'judge_unavailable', 'detail' => 'TypeError' }])
     expect(result.report['rejudge']).to include('turns' => 1, 'stopped' => 'budget_reached')
   end
 

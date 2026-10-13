@@ -66,6 +66,29 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Summary do
 
       expect(result[:dialogue_summaries].pluck(:statuses)).to eq([%w[fail], %w[fail]])
     end
+
+    it 'is blocked when the runner marked it (played on a conversation that staff owned), if it failed; a turn that passed stays a pass' do
+      owned = { 'blocked' => true }
+      result = summary(turn('d_01', 1), turn('d_01', 2, fails: ['wrong_language']).merge(owned), turn('d_01', 3).merge(owned),
+                       turn('d_01', 4, fails: ['wrong_language']))
+
+      expect(result[:dialogue_summaries].first).to include(statuses: %w[pass blocked pass fail], failed: 1, blocked: 1)
+    end
+  end
+
+  describe 'a judge without a verdict' do
+    it 'is no failure of the turn, and the turns that carry it are counted apart, as a warning of today or as a failure of an older run' do
+      result = summary(turn('d_01', 1).merge('warnings' => ['judge_unavailable']), turn('d_01', 2, fails: ['judge_invalid_json']),
+                       turn('d_02', 1).merge('warnings' => %w[judge_invalid_json handoff_marker_without_tool]), turn('d_02', 2, fails: ['wrong_agent']))
+
+      expect(result[:judge_unusable]).to eq(turns: 3, by_check: { 'judge_invalid_json' => 2, 'judge_unavailable' => 1 })
+      expect(result[:by_reason]).to eq('wrong_agent' => 1)
+      expect(result[:dialogue_summaries].pluck(:statuses)).to eq([%w[pass pass], %w[pass fail]])
+    end
+
+    it 'is nothing to report when no judge failed' do
+      expect(summary(turn('d_01', 1))[:judge_unusable]).to eq(turns: 0, by_check: {})
+    end
   end
 
   describe 'pass^k across the runs' do

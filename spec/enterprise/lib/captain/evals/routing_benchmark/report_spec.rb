@@ -72,6 +72,23 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Report do
                                '- Triage: ________ (agent_bug | test_bug | judge_error)')
   end
 
+  it 'shows the score without the blocked turns next to the score of all the turns, only when the run has blocked turns' do
+    expect(markdown).not_to include('blocked turn(s)')
+    owned = risky.merge('blocked' => true)
+    blocked = report.merge(gate: Captain::Evals::RoutingBenchmark::Gate.call([fine, owned]))
+
+    expect(described_class.new(blocked).markdown).to include('| Overall score, at least 95.0% | 1/2 turns passed (50.0%) |',
+                                                              '| Overall score without the 1 blocked turn(s) (information) | 1/1 turns passed (100.0%) |')
+  end
+
+  it 'says how many turns the rubric judge gave no verdict for, which is no failure of those turns' do
+    judged = report.merge(aggregates: report[:aggregates].merge(dialogues: { total: 1, passed: 1, blocked_turns: 0, pass_k: { k: 1 } },
+                                                                 judge_unusable: { turns: 2, by_check: { 'judge_unavailable' => 2 } }))
+
+    expect(described_class.new(judged).markdown).to include('Rubric judge without a verdict (no failure of the turn): 2 turn(s) {"judge_unavailable":2}.')
+    expect(markdown).not_to include('Rubric judge without a verdict')
+  end
+
   it 'says whether the handoff of the run was silent, when the run checked it' do
     expect(markdown).not_to include('Handoff is silent')
     silent = report.merge(gate: Captain::Evals::RoutingBenchmark::Gate.call(cases, silent_handoff: true))

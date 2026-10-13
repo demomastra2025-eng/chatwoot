@@ -34,13 +34,22 @@ class Captain::Evals::RoutingBenchmark::Report
     lines = ['## GATE', '', "**Verdict: #{gate['verdict']}**", '',
              '| Rule | Result |', '| --- | --- |',
              "| Critical checks, all must pass | #{critical['passed']}/#{critical['total']} passed (#{critical['pct']}%), #{critical['failed']} failed |",
-             "| Overall score, at least #{overall['threshold']}% | #{overall['passed']}/#{overall['total']} turns passed (#{overall['pct']}%) |",
-             "| Run complete | #{@report['aborted'] ? "no, stopped: #{@report['abort_reason']}" : 'yes'} |",
-             "| Failed checks triaged by a person | #{triage['triaged']}/#{triage['failed_checks']} |"]
+             "| Overall score, at least #{overall['threshold']}% | #{overall['passed']}/#{overall['total']} turns passed (#{overall['pct']}%) |"]
+    lines << unblocked_row(gate['overall_unblocked'], overall) if overall['blocked_turns'].to_i.positive?
+    lines += ["| Run complete | #{@report['aborted'] ? "no, stopped: #{@report['abort_reason']}" : 'yes'} |",
+              "| Failed checks triaged by a person | #{triage['triaged']}/#{triage['failed_checks']} |"]
     lines << "| Handoff is silent (blank notice) | #{silent_cell} |" if silent_cell
     lines += infra_lines
     lines += blockers_lines + after_triage_lines + coverage_lines + critical_failure_lines + check_table_lines
     "#{lines.join("\n")}\n"
+  end
+
+  # The turns the runner played on a conversation that staff owned and nobody had given back cannot happen live: the verdict counts them,
+  # and the score without them is shown next to it.
+  def unblocked_row(unblocked, overall)
+    unblocked = unblocked.to_h
+    "| Overall score without the #{overall['blocked_turns']} blocked turn(s) (information) | " \
+      "#{unblocked['passed']}/#{unblocked['total']} turns passed (#{unblocked['pct']}%) |"
   end
 
   # "yes" / "no" when the run checked that the notice is blank, "not proven: <error>" when it could not read it, else nothing.
@@ -135,6 +144,8 @@ class Captain::Evals::RoutingBenchmark::Report
              "pass^#{pass_k['k']}: #{pass_k['passed_every_run']}/#{pass_k['dialogues']} (#{pass_k['rate']})."]
     infra = agg['infra'].to_h
     lines << "Infrastructure failures: #{infra['turns']} turn(s) #{infra['by_check'].to_json}." if infra['turns'].to_i.positive?
+    judge = agg['judge_unusable'].to_h
+    lines << "Rubric judge without a verdict (no failure of the turn): #{judge['turns']} turn(s) #{judge['by_check'].to_json}." if judge['turns'].to_i.positive?
     lines
   end
 
