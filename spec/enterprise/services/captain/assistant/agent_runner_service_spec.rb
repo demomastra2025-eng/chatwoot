@@ -1944,15 +1944,30 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
     it 'does not list a part of a council that has no text in the reply: it was not told, and an action it did is reported later' do
       allow(Llm::SafetyPolicy).to receive(:check!).and_return(nil)
-      context = { current_agent: 'assistant', council_untold_part_ids: %w[a b],
+      context = { current_agent: 'assistant', council_untold_part_ids: %w[a],
                   part_plan: { parts: [{ 'id' => 'a', 'version' => 1 }, { 'id' => 'e', 'version' => 1 }] },
                   parts: [{ 'id' => 'a', 'version' => 1, 'acted' => true, 'delivered' => [] },
-                          { 'id' => 'b', 'version' => 1, 'acted' => true, 'delivered' => [] },
                           { 'id' => 'e', 'version' => 1, 'acted' => false, 'delivered' => [] }] }
 
       response = service.send(:process_agent_result, Struct.new(:output, :context, :error).new({ 'response' => 'Готово.' }, context, nil))
 
       expect(response['part_refs']).to eq([{ 'id' => 'e', 'version' => 1 }])
+    end
+
+    it 'does not record the action of an earlier run as delivered with a council reply: the council texts never report it' do
+      allow(Llm::SafetyPolicy).to receive(:check!).and_return(nil)
+      earlier = { 'id' => 'b', 'version' => 3, 'acted' => true, 'delivered' => [] }
+      council_context = { current_agent: 'assistant', council_untold_part_ids: [],
+                          part_plan: { parts: [{ 'id' => 'e', 'version' => 1 }] },
+                          parts: [earlier, { 'id' => 'e', 'version' => 1, 'acted' => false, 'delivered' => [] }] }
+      single_context = { current_agent: 'assistant', part_plan: { parts: [{ 'id' => 'e', 'version' => 1 }] },
+                         parts: council_context[:parts] }
+
+      council = service.send(:process_agent_result, Struct.new(:output, :context, :error).new({ 'response' => 'Готово.' }, council_context, nil))
+      single = service.send(:process_agent_result, Struct.new(:output, :context, :error).new({ 'response' => 'Готово.' }, single_context, nil))
+
+      expect(council['part_refs']).to eq([{ 'id' => 'e', 'version' => 1 }])
+      expect(single['part_refs']).to eq([{ 'id' => 'e', 'version' => 1 }, { 'id' => 'b', 'version' => 3 }])
     end
 
     it 'passes on a staff note that only the council can set, never one written by the model' do

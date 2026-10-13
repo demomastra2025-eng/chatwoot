@@ -355,10 +355,13 @@ class Captain::Assistant::AgentRunnerService
   # The parts this reply answers: the plan of the request, and the actions of earlier runs that the customer was not told about
   # (their reply was dropped) and that this reply reports. They are recorded as delivered with the message. A part of a council
   # that has no text in the reply was not told, so it is not recorded as delivered (an action it did is reported by a later reply).
+  # A council reply holds only the texts of the parts of its own plan and never reports the actions of earlier runs, so those
+  # stay undelivered until a reply of a single agent reports them (the council sets council_untold_part_ids on every reply it
+  # assembles, an empty list included).
   def part_refs_for(context)
     untold = Array(context&.dig(:council_untold_part_ids))
     planned = Array(context&.dig(:part_plan, :parts))
-    undelivered = Captain::Runtime::PartRegistry.undelivered_outcomes(context&.dig(:parts))
+    undelivered = context&.key?(:council_untold_part_ids) ? [] : Captain::Runtime::PartRegistry.undelivered_outcomes(context&.dig(:parts))
     (planned + undelivered).reject { |part| untold.include?(part['id']) }.map { |part| part.slice('id', 'version') }.uniq
   end
 
