@@ -33,6 +33,8 @@ class AutomationRules::ConditionValidationService
   end
 
   def valid_condition?(condition)
+    return contact_condition_valid?(condition) if AutomationRules::ContactCondition.contact_condition?(condition)
+
     key = condition['attribute_key']
 
     conversation_filter = @conversation_filters[key]
@@ -44,6 +46,10 @@ class AutomationRules::ConditionValidationService
     else
       custom_attribute_present?(key, condition['custom_attribute_type'])
     end
+  end
+
+  def contact_condition_valid?(condition)
+    AutomationRules::ContactCondition::OPERATORS.include?(condition['filter_operator'])
   end
 
   def operation_valid?(condition, filter)

@@ -19,6 +19,10 @@ class AutomationRulePolicy < ApplicationPolicy
     @account_user.administrator?
   end
 
+  def contact_options?
+    @account_user.administrator?
+  end
+
   def destroy?
     @account_user.administrator?
   end

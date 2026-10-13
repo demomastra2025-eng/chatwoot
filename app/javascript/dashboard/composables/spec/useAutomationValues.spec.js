@@ -3,6 +3,7 @@ import { useMapGetter, useStoreGetters } from 'dashboard/composables/store';
 import { useI18n } from 'vue-i18n';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/references';
+import { useAutomationContactsStore } from 'dashboard/stores/automation/contacts';
 import useAutomationValues from '../useAutomationValues';
 
 vi.mock('dashboard/composables/store');
@@ -78,6 +79,53 @@ describe('useAutomationValues', () => {
         'appointment_updated'
       )
     ).toEqual([]);
+  });
+
+  describe('contact condition values', () => {
+    it('offers the contacts met so far, and deleted ones flagged as such', () => {
+      const contactsStore = useAutomationContactsStore();
+      contactsStore.remember([
+        { id: 7, name: 'Айгерим', description: '+77011234567' },
+      ]);
+      contactsStore.deletedIds = [9];
+      const { contactOptions, getConditionDropdownValues } =
+        useAutomationValues();
+
+      const expected = [
+        { id: 7, name: 'Айгерим', description: '+77011234567' },
+        { id: 9, name: 'AUTOMATION.CONTACT_CONDITION.DELETED', deleted: true },
+      ];
+
+      expect(contactOptions.value).toEqual(expected);
+      expect(
+        getConditionDropdownValues('contact_id', 'conversation_created')
+      ).toEqual(expected);
+      expect(
+        getConditionDropdownValues('contact_id', 'message_created')
+      ).toEqual(expected);
+      expect(
+        getConditionDropdownValues('contact_id', 'appointment_updated')
+      ).toEqual(expected);
+    });
+
+    it('has no contacts before any is searched or named', () => {
+      const { getConditionDropdownValues } = useAutomationValues();
+
+      expect(
+        getConditionDropdownValues('contact_id', 'conversation_created')
+      ).toEqual([]);
+    });
+
+    it('follows the contacts found by a later search', () => {
+      const contactsStore = useAutomationContactsStore();
+      const { getConditionDropdownValues } = useAutomationValues();
+
+      contactsStore.remember([{ id: 3, name: 'Берик', description: '' }]);
+
+      expect(
+        getConditionDropdownValues('contact_id', 'conversation_created')
+      ).toEqual([{ id: 3, name: 'Берик', description: '' }]);
+    });
   });
 
   it('renders only active CRM stages from active pipelines in automation dropdowns', () => {

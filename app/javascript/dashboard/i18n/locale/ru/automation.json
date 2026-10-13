@@ -95,6 +95,12 @@
       "DEAL_CUSTOM_ATTR_LABEL": "Пользовательские поля сделки",
       "TASK_CUSTOM_ATTR_LABEL": "Пользовательские поля задачи"
     },
+    "CONTACT_CONDITION": {
+      "OPERATOR_IS": "является",
+      "OPERATOR_IS_NOT": "не является",
+      "SEARCH_PLACEHOLDER": "Имя или телефон",
+      "DELETED": "Контакт удалён (№ {id})"
+    },
     "ACTION": {
       "DELETE_MESSAGE": "Вам нужно иметь по крайней мере одно условие для сохранения",
       "TEAM_MESSAGE_INPUT_PLACEHOLDER": "Напишите здесь ваше сообщение",
@@ -265,6 +271,7 @@
       "INBOX": "Каналы",
       "CONVERSATION_LANGUAGE": "Язык сообщения",
       "PHONE_NUMBER": "Номер телефона",
+      "CONTACT": "Контакт",
       "STATUS": "Статус",
       "PAYMENT_STATUS": "Статус оплаты",
       "APPOINTMENT_TYPE": "Тип записи",

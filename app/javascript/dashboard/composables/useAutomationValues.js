@@ -5,6 +5,7 @@ import countries from 'shared/constants/countries';
 import { useStoreGetters, useMapGetter } from 'dashboard/composables/store';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/references';
+import { useAutomationContactsStore } from 'dashboard/stores/automation/contacts';
 
 import {
   getActionOptions,
@@ -23,6 +24,7 @@ export default function useAutomationValues() {
   const getters = useStoreGetters();
   const crmReferencesStore = useCrmReferencesStore();
   const schedulingReferencesStore = useSchedulingReferencesStore();
+  const contactsStore = useAutomationContactsStore();
   const { t } = useI18n();
   const agents = useMapGetter('agents/getVerifiedAgents');
   const campaigns = useMapGetter('campaigns/getAllCampaigns');
@@ -172,6 +174,18 @@ export default function useAutomationValues() {
     }))
   );
 
+  // The "Contact" condition searches the account's contacts on the server, so
+  // these are only the contacts met so far: the ones found by a search and the
+  // ones a saved rule lists (by name, or flagged deleted). They name the chips.
+  const contactOptions = computed(() => [
+    ...contactsStore.knownOptions,
+    ...contactsStore.deletedIds.map(id => ({
+      id,
+      name: t('AUTOMATION.CONTACT_CONDITION.DELETED', { id }),
+      deleted: true,
+    })),
+  ]);
+
   const appointmentWeekdayOptions = computed(() => [
     { id: '1', name: t('AUTOMATION.WEEKDAYS.1') },
     { id: '2', name: t('AUTOMATION.WEEKDAYS.2') },
@@ -249,6 +263,7 @@ export default function useAutomationValues() {
       appointmentWeekdayOptions: appointmentWeekdayOptions.value,
       booleanFilterOptions: booleanFilterOptions.value,
       campaigns: campaigns.value,
+      contactOptions: contactOptions.value,
       crmDealOwnerOptions: agents.value,
       crmPipelineOptions: crmPipelineOptions.value,
       crmStageOptions: crmStageOptions.value,
@@ -315,6 +330,7 @@ export default function useAutomationValues() {
     appointmentTypeOptions,
     appointmentWeekdayOptions,
     appointmentFieldDefinitions,
+    contactOptions,
     dealFieldDefinitions,
     taskFieldDefinitions,
     crmPipelineOptions,

@@ -61,6 +61,8 @@ class AutomationRules::ConditionsFilterService < FilterService
   end
 
   def apply_filter(query_hash, current_index)
+    return apply_contact_id_filter(query_hash, current_index) if AutomationRules::ContactCondition.contact_condition?(query_hash)
+
     conversation_filter = @conversation_filters[query_hash['attribute_key']]
     contact_filter = @contact_filters[query_hash['attribute_key']]
     message_filter = @message_filters[query_hash['attribute_key']]
@@ -75,6 +77,15 @@ class AutomationRules::ConditionsFilterService < FilterService
       # send table name according to attribute key right now we are supporting contact based custom attribute filter
       @query_string += custom_attribute_query(query_hash.with_indifferent_access, query_hash['custom_attribute_type'], current_index)
     end
+  end
+
+  # "Contact is / is not" the chosen contacts (see AutomationRules::ContactCondition).
+  def apply_contact_id_filter(query_hash, current_index)
+    sql, binds = AutomationRules::ContactCondition.conversation_sql(
+      query_hash['filter_operator'], query_hash['values'], query_hash['query_operator'], current_index, @account.id
+    )
+    @query_string += sql
+    @filter_values.merge!(binds)
   end
 
   # If attribute_changed type filter is present perform this against array

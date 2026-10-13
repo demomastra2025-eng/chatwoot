@@ -48,6 +48,11 @@ class AutomationRules::AppointmentFieldCatalog
     CABINET_CODE_KEY => {
       field_type: 'cabinet',
       operators: %w[equal_to not_equal_to]
+    },
+    # The booking contact or the patient card of the appointment; the saved ids are checked by the rule (account only).
+    AutomationRules::ContactCondition::KEY => {
+      field_type: 'contact',
+      operators: AutomationRules::ContactCondition::OPERATORS
     }
   }.freeze
 

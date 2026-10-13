@@ -9,6 +9,8 @@
     "EMPTY_STATE": "Ештеңе табылмады.",
     "SEARCH_PLACEHOLDER": "Іздеу...",
     "MORE": "+{count} more",
+    "LOAD_MORE": "Тағы көрсету",
+    "LOAD_ERROR": "Тізімді жүктеу мүмкін болмады. Жауып, қайта ашыңыз.",
     "OPEN_IN_NEW_TAB": "Жаңа қойындыда ашу"
   },
   "DROPDOWN_MENU": {

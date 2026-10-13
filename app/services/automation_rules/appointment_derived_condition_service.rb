@@ -1,6 +1,7 @@
 class AutomationRules::AppointmentDerivedConditionService
   CABINET_CODE_KEY = AutomationRules::AppointmentFieldCatalog::CABINET_CODE_KEY
-  FIELD_KEYS = ['starts_at_weekday', 'starts_at_time', 'service_id', CABINET_CODE_KEY].freeze
+  CONTACT_KEY = AutomationRules::ContactCondition::KEY
+  FIELD_KEYS = ['starts_at_weekday', 'starts_at_time', 'service_id', CABINET_CODE_KEY, CONTACT_KEY].freeze
 
   def initialize(rule, appointment)
     @rule = rule
@@ -17,6 +18,8 @@ class AutomationRules::AppointmentDerivedConditionService
       evaluate_service(condition, operator)
     when CABINET_CODE_KEY
       evaluate_cabinet(condition, operator)
+    when CONTACT_KEY
+      evaluate_contact(condition, operator)
     else
       false
     end
@@ -29,6 +32,14 @@ class AutomationRules::AppointmentDerivedConditionService
   private
 
   attr_reader :appointment, :rule
+
+  # Both people of the appointment count: the contact who booked (and gets the messages) and the patient card, which
+  # can be another contact. "Is not" holds only when neither of them is on the list.
+  def evaluate_contact(condition, operator)
+    listed_ids = AutomationRules::ContactCondition.normalize_ids(condition['values'])
+
+    AutomationRules::ContactCondition.matches?(operator, listed_ids, [appointment.contact_id, appointment.patient_contact_id])
+  end
 
   def evaluate_cabinet(condition, operator)
     expected_codes = normalize_values(condition['values'])

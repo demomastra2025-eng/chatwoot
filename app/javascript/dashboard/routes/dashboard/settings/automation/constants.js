@@ -9,6 +9,23 @@ import {
   SERVICE_SET_OPERATOR_TYPES,
 } from './operators';
 
+// "Contact is / is not": a list of contacts of the account, so a rule can skip
+// (or target) chosen people. Only the events that have a contact offer it
+// (conversation, message and appointment events). The contacts are found by a
+// server-side search on name or phone; the operators read "is / is not".
+const CONTACT_AUTOMATION_CONDITION = {
+  key: 'contact_id',
+  name: 'CONTACT',
+  inputType: 'multi_select',
+  filterOperators: OPERATOR_TYPES_1,
+  remoteSource: 'contacts',
+  searchPlaceholderKey: 'AUTOMATION.CONTACT_CONDITION.SEARCH_PLACEHOLDER',
+  operatorLabelKeys: {
+    equal_to: 'AUTOMATION.CONTACT_CONDITION.OPERATOR_IS',
+    not_equal_to: 'AUTOMATION.CONTACT_CONDITION.OPERATOR_IS_NOT',
+  },
+};
+
 const APPOINTMENT_AUTOMATION_CONDITIONS = [
   {
     key: 'status',
@@ -53,6 +70,7 @@ const APPOINTMENT_AUTOMATION_CONDITIONS = [
     inputType: 'search_select',
     filterOperators: SERVICE_SET_OPERATOR_TYPES,
   },
+  CONTACT_AUTOMATION_CONDITION,
   {
     key: 'medelement_cabinet_code',
     name: 'APPOINTMENT_CABINET',
@@ -319,6 +337,7 @@ const CONVERSATION_AUTOMATION_CONDITIONS = [
     inputType: 'plain_text',
     filterOperators: OPERATOR_TYPES_2,
   },
+  CONTACT_AUTOMATION_CONDITION,
   {
     key: 'country_code',
     name: 'COUNTRY_NAME',

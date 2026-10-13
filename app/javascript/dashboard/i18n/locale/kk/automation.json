@@ -98,6 +98,12 @@
       "DEAL_CUSTOM_ATTR_LABEL": "Deal Custom Fields",
       "TASK_CUSTOM_ATTR_LABEL": "Task Custom Fields"
     },
+    "CONTACT_CONDITION": {
+      "OPERATOR_IS": "болып табылады",
+      "OPERATOR_IS_NOT": "болып табылмайды",
+      "SEARCH_PLACEHOLDER": "Аты немесе телефоны",
+      "DELETED": "Контакт жойылған (№ {id})"
+    },
     "ACTION": {
       "DELETE_MESSAGE": "You need to have atleast one action to save",
       "TEAM_MESSAGE_INPUT_PLACEHOLDER": "Enter your message here",
@@ -268,6 +274,7 @@
       "INBOX": "Inbox",
       "CONVERSATION_LANGUAGE": "Conversation Language",
       "PHONE_NUMBER": "Phone Number",
+      "CONTACT": "Контакт",
       "STATUS": "Status",
       "PAYMENT_STATUS": "Payment Status",
       "APPOINTMENT_TYPE": "Appointment Type",

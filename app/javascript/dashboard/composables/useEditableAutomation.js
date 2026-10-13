@@ -17,6 +17,8 @@ export function useEditableAutomation() {
   const isCabinetReference = (eventName, type) =>
     eventName?.startsWith('appointment_') && type === 'medelement_cabinet_code';
 
+  const isContactReference = type => type === 'contact_id';
+
   const buildLegacyOptions = (selectedIds, dropdownValues, buildName) => {
     const activeIds = new Set(dropdownValues.map(item => String(item.id)));
 
@@ -31,11 +33,14 @@ export function useEditableAutomation() {
 
   // A cabinet can disappear from the catalog after a rule picked it: keep it
   // selected (by its code) instead of silently dropping it on the next save.
+  // The same holds for a contact whose name could not be fetched; a deleted
+  // contact already comes with a "deleted" name among the dropdown values.
   const hydrateDropdownValues = ({
     selectedIds,
     dropdownValues,
     legacyStage,
     legacyCabinet,
+    legacyContact,
   }) => {
     const hydratedValues = dropdownValues.filter(item =>
       selectedIds.map(String).includes(String(item.id))
@@ -52,7 +57,7 @@ export function useEditableAutomation() {
       ];
     }
 
-    if (legacyCabinet) {
+    if (legacyCabinet || legacyContact) {
       return [
         ...hydratedValues,
         ...buildLegacyOptions(selectedIds, dropdownValues, id => `№ ${id}`),
@@ -127,6 +132,7 @@ export function useEditableAutomation() {
             automation.event_name,
             condition.attribute_key
           ),
+          legacyContact: isContactReference(condition.attribute_key),
         }),
       };
     });

@@ -6,6 +6,7 @@ import * as automationHelper from 'dashboard/helper/automationHelper';
 import { createPinia, setActivePinia } from 'pinia';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/references';
+import { useAutomationContactsStore } from 'dashboard/stores/automation/contacts';
 import {
   customAttributes,
   appointmentFieldDefinitions,
@@ -67,6 +68,9 @@ describe('useAutomation', () => {
     schedulingReferencesStore.loadCabinets = vi
       .fn()
       .mockResolvedValue(schedulingReferencesStore.cabinets);
+    useAutomationContactsStore().loadByIds = vi
+      .fn()
+      .mockResolvedValue(undefined);
 
     useStoreGetters.mockReturnValue({
       'attributes/getAttributes': { value: customAttributes },
@@ -362,6 +366,7 @@ describe('useAutomation', () => {
       'starts_at_weekday',
       'starts_at_time',
       'service_id',
+      'contact_id',
       'medelement_cabinet_code',
       'appointment_custom_attribute',
       'visit_reason',
@@ -523,6 +528,54 @@ describe('useAutomation', () => {
       loadAutomationReferences('appointment_created')
     ).resolves.toBeDefined();
     expect(schedulingReferencesStore.loadCabinets).toHaveBeenCalled();
+  });
+
+  describe('contacts a saved rule lists', () => {
+    const contactCondition = values => ({
+      attribute_key: 'contact_id',
+      filter_operator: 'not_equal_to',
+      values,
+      query_operator: 'and',
+      custom_attribute_type: '',
+    });
+
+    it('names them for conversation and appointment events alike', async () => {
+      const contactsStore = useAutomationContactsStore();
+      const { loadAutomationReferences } = useAutomation();
+
+      await loadAutomationReferences('conversation_created', [
+        contactCondition([7, 9]),
+      ]);
+      await loadAutomationReferences('appointment_created', [
+        contactCondition([11]),
+        contactCondition([12]),
+      ]);
+
+      expect(contactsStore.loadByIds).toHaveBeenNthCalledWith(1, [7, 9]);
+      expect(contactsStore.loadByIds).toHaveBeenNthCalledWith(2, [11, 12]);
+    });
+
+    it('does not look up anything for other conditions or a custom attribute called contact_id', async () => {
+      const contactsStore = useAutomationContactsStore();
+      const { loadAutomationReferences } = useAutomation();
+
+      await loadAutomationReferences('conversation_created', [
+        {
+          attribute_key: 'status',
+          filter_operator: 'equal_to',
+          values: ['open'],
+        },
+        {
+          ...contactCondition(['ref-7']),
+          custom_attribute_type: 'contact_attribute',
+        },
+      ]);
+      await loadAutomationReferences('conversation_created');
+
+      contactsStore.loadByIds.mock.calls.forEach(([ids]) =>
+        expect(ids).toEqual([])
+      );
+    });
   });
 
   it('does not load cabinets for non-appointment events of an account without scheduling', async () => {

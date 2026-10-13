@@ -627,6 +627,134 @@ RSpec.describe AutomationRule do
       end
     end
 
+    context 'with the contact condition' do
+      let(:contact) { create(:contact, account: account) }
+      let(:other_contact) { create(:contact, account: account) }
+      let(:foreign_contact) { create(:contact, account: create(:account)) }
+
+      def contact_condition(values, operator: 'equal_to')
+        { attribute_key: 'contact_id', filter_operator: operator, values: values, query_operator: nil }
+      end
+
+      def use_event(event_name)
+        account.enable_features!('scheduling', 'crm_deals', 'crm_tasks')
+        params[:event_name] = event_name
+        params[:actions] = if event_name.start_with?('appointment_', 'deal_')
+                             [{ action_name: :send_webhook_event, action_params: ['https://example.com/hooks/automation'] }]
+                           else
+                             [{ action_name: :send_message, action_params: ['Hello'] }]
+                           end
+      end
+
+      %w[conversation_created message_created appointment_created appointment_updated].each do |event_name|
+        context "when the event is #{event_name}" do
+          before { use_event(event_name) }
+
+          it 'allows contacts of the account with equality operators' do
+            operators = %w[equal_to not_equal_to]
+
+            aggregate_failures do
+              [[contact.id], [contact.id, other_contact.id], [contact.id.to_s], [contact.id, other_contact.id.to_s]].each do |values|
+                operators.each do |operator|
+                  params[:conditions] = [contact_condition(values, operator: operator)]
+
+                  expect(FactoryBot.build(:automation_rule, params)).to be_valid
+                end
+              end
+            end
+          end
+
+          it 'rejects empty, malformed, nested, oversized, foreign and unknown contact lists' do
+            too_many = Array.new(AutomationRules::ContactCondition::MAX_VALUES + 1) { |index| index + 1 }
+            lists = [[], [''], ['  '], [nil], ['abc'], [0], [-1], [contact.id.to_f], ["#{contact.id}.0"], [[contact.id]], [{ 'id' => contact.id }],
+                     [foreign_contact.id], [contact.id, foreign_contact.id], [Contact.maximum(:id).to_i + 1000], [10**30], too_many, 'not a list']
+
+            aggregate_failures do
+              lists.each do |values|
+                params[:conditions] = [contact_condition(values)]
+
+                rule = FactoryBot.build(:automation_rule, params)
+
+                expect(rule).not_to be_valid
+                expect(rule.errors[:conditions]).to include('Automation condition values contact_id not supported.')
+              end
+            end
+          end
+
+          it 'rejects operators the contact condition does not support' do
+            params[:conditions] = [contact_condition([contact.id], operator: 'is_present')]
+
+            rule = FactoryBot.build(:automation_rule, params)
+
+            expect(rule).not_to be_valid
+            expect(rule.errors[:conditions]).to include('Automation condition operators contact_id:is_present not supported.')
+          end
+
+          it 'keeps a saved rule valid after a listed contact is deleted, until a new unknown contact is added' do
+            params[:conditions] = [contact_condition([contact.id, other_contact.id])]
+            rule = create(:automation_rule, params)
+            other_contact.destroy!
+
+            expect(rule.reload.update(active: false)).to be(true)
+
+            rule.conditions = [contact_condition([contact.id, other_contact.id.to_s], operator: 'not_equal_to')]
+            expect(rule).to be_valid
+
+            rule.conditions = [contact_condition([contact.id, other_contact.id, Contact.maximum(:id).to_i + 1000])]
+            expect(rule).not_to be_valid
+
+            rule.conditions = [contact_condition([other_contact.id])]
+            expect(rule.save).to be(true)
+          end
+
+          it 'never accepts a contact of another account, even one that was saved before' do
+            params[:conditions] = [contact_condition([contact.id])]
+            rule = create(:automation_rule, params)
+            rule.update_columns(conditions: [contact_condition([foreign_contact.id]).stringify_keys]) # rubocop:disable Rails/SkipsModelValidations
+
+            expect(rule.reload.update(active: false)).to be(false)
+          end
+
+          it 'does not clash with another condition' do
+            status_condition = if event_name.start_with?('appointment_')
+                                 { attribute_key: 'status', filter_operator: 'equal_to', values: ['scheduled'], query_operator: nil }
+                               else
+                                 { attribute_key: 'browser_language', filter_operator: 'equal_to', values: ['en'], query_operator: nil }
+                               end
+            params[:conditions] = [contact_condition([contact.id]).merge(query_operator: 'OR'), status_condition]
+
+            expect(FactoryBot.build(:automation_rule, params)).to be_valid
+          end
+        end
+      end
+
+      it 'is not offered for events without a contact' do
+        use_event('deal_created')
+        params[:conditions] = [contact_condition([contact.id])]
+
+        rule = FactoryBot.build(:automation_rule, params)
+
+        expect(rule).not_to be_valid
+        expect(rule.errors[:conditions]).to include('Automation conditions contact_id not supported.')
+      end
+
+      it 'lets a custom attribute called contact_id stay a custom attribute of a conversation rule' do
+        create(:custom_attribute_definition, account: account, attribute_key: 'contact_id', attribute_model: :contact_attribute)
+        use_event('conversation_created')
+        params[:conditions] = [
+          { attribute_key: 'contact_id', filter_operator: 'equal_to', values: ['ref-7'], query_operator: nil,
+            custom_attribute_type: 'contact_attribute' }
+        ]
+
+        expect(FactoryBot.build(:automation_rule, params)).to be_valid
+      end
+
+      it 'lists the contact condition among the supported conversation and appointment conditions' do
+        expect(described_class::CONVERSATION_CONDITION_ATTRIBUTES).to include('contact_id')
+        expect(described_class::APPOINTMENT_CONDITION_ATTRIBUTES).to include('contact_id')
+      end
+    end
+
     it 'allows appointment automation rules with native status change action' do
       account.enable_features!('scheduling')
       params[:event_name] = 'appointment_created'

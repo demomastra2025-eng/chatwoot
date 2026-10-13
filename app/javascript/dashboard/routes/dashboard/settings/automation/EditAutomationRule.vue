@@ -45,7 +45,10 @@ const mergedCustomAttributes = computed(() => [
 ]);
 
 const open = async () => {
-  await loadAutomationReferences(props.selectedResponse?.event_name);
+  await loadAutomationReferences(
+    props.selectedResponse?.event_name,
+    props.selectedResponse?.conditions
+  );
   formRef.value?.open();
 };
 const close = () => formRef.value?.close();
@@ -59,7 +62,7 @@ watch(
   async value => {
     if (!value?.conditions) return;
 
-    await loadAutomationReferences(value.event_name);
+    await loadAutomationReferences(value.event_name, value.conditions);
     manifestCustomAttributes();
 
     automation.value = formatAutomation(

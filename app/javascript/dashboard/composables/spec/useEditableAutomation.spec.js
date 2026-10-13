@@ -54,6 +54,14 @@ const getConditionDropdownValues = vi.fn((type, eventName) => {
     ];
   }
 
+  // The contacts met so far: one named, one the server reported deleted.
+  if (type === 'contact_id') {
+    return [
+      { id: 7, name: 'Айгерим', description: '+77011234567' },
+      { id: 9, name: 'Контакт удалён (№ 9)', deleted: true },
+    ];
+  }
+
   return [];
 });
 
@@ -268,6 +276,91 @@ describe('useEditableAutomation', () => {
     expect(formatted.conditions[0].values).toEqual([
       { id: '777', legacy: true, name: '№ 777' },
     ]);
+  });
+
+  describe('the contacts of a saved rule', () => {
+    const contactRule = (eventName, values) => ({
+      event_name: eventName,
+      conditions: [
+        {
+          attribute_key: 'contact_id',
+          filter_operator: 'not_equal_to',
+          values,
+          query_operator: null,
+          custom_attribute_type: '',
+        },
+      ],
+      actions: [],
+    });
+
+    it.each(['conversation_created', 'message_created', 'appointment_created'])(
+      'shows them by name for a %s rule, with their phone number',
+      eventName => {
+        const { formatAutomation } = useEditableAutomation();
+
+        const formatted = formatAutomation(
+          contactRule(eventName, [7]),
+          [],
+          AUTOMATIONS,
+          []
+        );
+
+        expect(formatted.conditions).toEqual([
+          {
+            attribute_key: 'contact_id',
+            filter_operator: 'not_equal_to',
+            values: [{ id: 7, name: 'Айгерим', description: '+77011234567' }],
+            query_operator: 'and',
+            custom_attribute_type: '',
+          },
+        ]);
+      }
+    );
+
+    it('shows a deleted contact as deleted, so it can be removed', () => {
+      const { formatAutomation } = useEditableAutomation();
+
+      const formatted = formatAutomation(
+        contactRule('conversation_updated', [7, 9]),
+        [],
+        AUTOMATIONS,
+        []
+      );
+
+      expect(formatted.conditions[0].values).toEqual([
+        { id: 7, name: 'Айгерим', description: '+77011234567' },
+        { id: 9, name: 'Контакт удалён (№ 9)', deleted: true },
+      ]);
+    });
+
+    it('keeps a contact whose name could not be fetched selected by its number', () => {
+      const { formatAutomation } = useEditableAutomation();
+
+      const formatted = formatAutomation(
+        contactRule('appointment_updated', [7, 11]),
+        [],
+        AUTOMATIONS,
+        []
+      );
+
+      expect(formatted.conditions[0].values).toEqual([
+        { id: 7, name: 'Айгерим', description: '+77011234567' },
+        { id: 11, legacy: true, name: '№ 11' },
+      ]);
+    });
+
+    it('matches ids saved as text', () => {
+      const { formatAutomation } = useEditableAutomation();
+
+      const formatted = formatAutomation(
+        contactRule('conversation_created', ['7']),
+        [],
+        AUTOMATIONS,
+        []
+      );
+
+      expect(formatted.conditions[0].values.map(({ id }) => id)).toEqual([7]);
+    });
   });
 
   it('hydrates native appointment actions with appointment-aware dropdown values', () => {

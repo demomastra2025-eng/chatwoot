@@ -9,6 +9,8 @@
     "EMPTY_STATE": "No results found.",
     "SEARCH_PLACEHOLDER": "Search...",
     "MORE": "+{count} more",
+    "LOAD_MORE": "Show more",
+    "LOAD_ERROR": "Could not load the list. Close and open it again.",
     "OPEN_IN_NEW_TAB": "Open in new tab"
   },
   "DROPDOWN_MENU": {

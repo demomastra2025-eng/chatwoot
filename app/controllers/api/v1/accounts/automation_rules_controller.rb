@@ -59,6 +59,13 @@ class Api::V1::Accounts::AutomationRulesController < Api::V1::Accounts::BaseCont
     @automation_rule = new_rule
   end
 
+  # Contacts for the "Contact" condition: a page found by text (q, page) or the contacts behind saved ids (ids).
+  def contact_options
+    render json: AutomationRules::ContactOptionsService.new(
+      account: Current.account, query: params[:q], ids: contact_option_ids, page: params[:page]
+    ).perform
+  end
+
   private
 
   def automation_rules_permit
@@ -67,6 +74,10 @@ class Api::V1::Accounts::AutomationRulesController < Api::V1::Accounts::BaseCont
       conditions: [:attribute_key, :filter_operator, :query_operator, :custom_attribute_type, { values: [] }],
       actions: [:action_id, :action_name, { action_params: [] }]
     )
+  end
+
+  def contact_option_ids
+    Array.wrap(params[:ids]).flat_map { |value| value.is_a?(String) ? value.split(',') : value }
   end
 
   def fetch_automation_rule

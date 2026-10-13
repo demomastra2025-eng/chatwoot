@@ -4,6 +4,7 @@ import { useAlert } from 'dashboard/composables';
 import { useI18n } from 'vue-i18n';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/references';
+import { useAutomationContactsStore } from 'dashboard/stores/automation/contacts';
 
 import {
   generateCustomAttributeTypes,
@@ -28,6 +29,7 @@ export function useAutomation(startValue = null) {
   const getters = useStoreGetters();
   const crmReferencesStore = useCrmReferencesStore();
   const schedulingReferencesStore = useSchedulingReferencesStore();
+  const contactsStore = useAutomationContactsStore();
   const { t } = useI18n();
 
   const {
@@ -338,8 +340,22 @@ export function useAutomation(startValue = null) {
     }
   };
 
-  const loadAutomationReferences = async eventNameToLoad => {
-    const jobs = [];
+  // The contacts a saved rule lists, so the form shows their names (or that
+  // they were deleted) instead of bare ids.
+  const loadSelectedContacts = conditions => {
+    const ids = (conditions || [])
+      .filter(
+        condition =>
+          condition.attribute_key === 'contact_id' &&
+          !condition.custom_attribute_type
+      )
+      .flatMap(condition => condition.values || []);
+
+    return contactsStore.loadByIds(ids);
+  };
+
+  const loadAutomationReferences = async (eventNameToLoad, conditions = []) => {
+    const jobs = [loadSelectedContacts(conditions)];
 
     if (
       isSchedulingEnabled.value ||

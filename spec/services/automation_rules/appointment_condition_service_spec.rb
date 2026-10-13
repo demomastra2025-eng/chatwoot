@@ -253,6 +253,110 @@ RSpec.describe AutomationRules::AppointmentConditionService do
     end
   end
 
+  describe 'contact conditions' do
+    let(:booking_contact) { appointment.contact }
+    let(:patient) { create(:contact, account: account, name: 'Patient Card') }
+    let(:other_contact) { create(:contact, account: account, name: 'Somebody Else') }
+
+    def contact_rule(operator, values, query_operator: nil)
+      create(
+        :automation_rule,
+        account: account,
+        event_name: 'appointment_updated',
+        conditions: [{ attribute_key: 'contact_id', filter_operator: operator, values: values, query_operator: query_operator }],
+        actions: [{ action_name: 'send_webhook_event', action_params: ['https://example.com/hooks/appointments'] }]
+      )
+    end
+
+    def perform(rule)
+      described_class.new(rule, appointment).perform
+    end
+
+    it 'matches the contact who booked the appointment' do
+      expect(perform(contact_rule('equal_to', [booking_contact.id]))).to be(true)
+      expect(perform(contact_rule('equal_to', [other_contact.id]))).to be(false)
+      expect(perform(contact_rule('equal_to', [other_contact.id, booking_contact.id.to_s]))).to be(true)
+    end
+
+    it 'skips the listed contacts with not_equal_to' do
+      expect(perform(contact_rule('not_equal_to', [booking_contact.id]))).to be(false)
+      expect(perform(contact_rule('not_equal_to', [other_contact.id]))).to be(true)
+      expect(perform(contact_rule('not_equal_to', [other_contact.id, booking_contact.id]))).to be(false)
+    end
+
+    it 'counts the patient card as well as the contact who booked' do
+      appointment.update!(patient_contact: patient)
+
+      expect(perform(contact_rule('equal_to', [patient.id]))).to be(true)
+      expect(perform(contact_rule('not_equal_to', [patient.id]))).to be(false)
+      expect(perform(contact_rule('not_equal_to', [booking_contact.id]))).to be(false)
+      expect(perform(contact_rule('not_equal_to', [other_contact.id]))).to be(true)
+    end
+
+    it 'treats an appointment without a contact as outside every listed contact' do
+      appointment.update_columns(contact_id: nil, patient_contact_id: nil) # rubocop:disable Rails/SkipsModelValidations
+
+      expect(perform(contact_rule('equal_to', [other_contact.id]))).to be(false)
+      expect(perform(contact_rule('not_equal_to', [other_contact.id]))).to be(true)
+    end
+
+    it 'ignores ids of contacts of another account and of deleted contacts' do
+      foreign = create(:contact, account: create(:account))
+      deleted = create(:contact, account: account)
+      deleted_id = deleted.id
+      deleted.destroy!
+      rule = contact_rule('equal_to', [other_contact.id])
+      expected_results = { 'equal_to' => false, 'not_equal_to' => true }
+
+      expected_results.each do |operator, expected|
+        rule.conditions = [{ attribute_key: 'contact_id', filter_operator: operator, values: [foreign.id, deleted_id], query_operator: nil }]
+
+        expect(perform(rule)).to eq(expected)
+      end
+    end
+
+    it 'never matches an unreadable list or an unsupported operator' do
+      rule = contact_rule('equal_to', [booking_contact.id])
+      operators = %w[equal_to not_equal_to]
+
+      [[], ['abc'], [nil], [booking_contact.id.to_f.to_s]].each do |values|
+        operators.each do |operator|
+          rule.conditions = [{ attribute_key: 'contact_id', filter_operator: operator, values: values, query_operator: nil }]
+
+          expect(perform(rule)).to be(false)
+        end
+      end
+
+      rule.conditions = [{ attribute_key: 'contact_id', filter_operator: 'contains', values: [booking_contact.id], query_operator: nil }]
+
+      expect(perform(rule)).to be(false)
+    end
+
+    it 'combines with other conditions through AND and OR groups' do
+      rule = contact_rule('not_equal_to', [booking_contact.id], query_operator: 'AND')
+      rule.conditions = rule.conditions + [
+        { attribute_key: 'status', filter_operator: 'equal_to', values: ['scheduled'], query_operator: nil }
+      ]
+
+      expect(perform(rule)).to be(false)
+
+      rule.conditions.first['query_operator'] = 'OR'
+
+      expect(perform(rule)).to be(true)
+
+      rule.conditions = [
+        { attribute_key: 'contact_id', filter_operator: 'not_equal_to', values: [other_contact.id], query_operator: 'AND' },
+        { attribute_key: 'status', filter_operator: 'equal_to', values: ['scheduled'], query_operator: nil }
+      ]
+
+      expect(perform(rule)).to be(true)
+
+      appointment.update!(status: 'cancelled')
+
+      expect(perform(rule)).to be(false)
+    end
+  end
+
   it 'returns false for unsupported operators' do
     rule = build(
       :automation_rule,

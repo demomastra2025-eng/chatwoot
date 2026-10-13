@@ -185,6 +185,8 @@ defineExpose({ validate, resetValidation });
           v-model="values"
           :options="currentFilter.options"
           :searchable="currentFilter.searchable"
+          :fetch-options="currentFilter.fetchOptions"
+          :search-placeholder="currentFilter.searchPlaceholder"
           dropdown-max-height="max-h-72"
         />
         <SingleSelect

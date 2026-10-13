@@ -16,6 +16,7 @@ import {
   showActionInput,
 } from 'dashboard/helper/automationHelper';
 import { validateAutomation } from 'dashboard/helper/validations';
+import { useAutomationContactsStore } from 'dashboard/stores/automation/contacts';
 import { AUTOMATION_RULE_EVENTS, AUTOMATION_ACTION_TYPES } from './constants';
 
 const props = defineProps({
@@ -79,6 +80,13 @@ const { t, tm } = useI18n();
 const { isCloudFeatureEnabled } = useAccount();
 const getters = useStoreGetters();
 const { operators } = useOperators();
+const contactsStore = useAutomationContactsStore();
+
+// Conditions whose values are too many to list (contacts) are searched on the
+// server while the user types, instead of being loaded up front.
+const REMOTE_OPTION_SOURCES = {
+  contacts: (query, page) => contactsStore.search(query, page),
+};
 
 const dialogRef = ref(null);
 const conditionsRef = useTemplateRef('conditionsRef');
@@ -183,9 +191,7 @@ const filterTypes = computed(() => {
     const options = props.getConditionDropdownValues(attr.key, event) || [];
 
     const filterOperators = (attr.filterOperators || []).map(op => {
-      const enriched = operators.value[op.value];
-      if (enriched) return enriched;
-      return {
+      const operator = operators.value[op.value] || {
         value: op.value,
         label:
           filterOperatorTranslations.value[op.value] || op.label || op.value,
@@ -193,6 +199,9 @@ const filterTypes = computed(() => {
         inputOverride: null,
         icon: h('span', { class: 'i-ph-equals-bold !text-n-blue-11' }),
       };
+      // Some conditions word their operators differently ("is" / "is not").
+      const labelKey = attr.operatorLabelKeys?.[op.value];
+      return labelKey ? { ...operator, label: t(labelKey) } : operator;
     });
 
     return {
@@ -203,6 +212,10 @@ const filterTypes = computed(() => {
       inputType: mappedInputType,
       options,
       searchable: Boolean(attr.searchable),
+      fetchOptions: REMOTE_OPTION_SOURCES[attr.remoteSource] || null,
+      searchPlaceholder: attr.searchPlaceholderKey
+        ? t(attr.searchPlaceholderKey)
+        : '',
       filterOperators,
       dataType: 'text',
       attributeModel: attr.customAttributeType || 'standard',

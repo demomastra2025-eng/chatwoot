@@ -113,10 +113,10 @@ class AutomationRule < ApplicationRecord
   ].freeze
   CONVERSATION_CONDITION_ATTRIBUTES = %w[
     content email country_code status message_type browser_language assignee_id team_id referer city company inbox_id
-    mail_subject phone_number priority conversation_language labels private_note
+    mail_subject phone_number priority conversation_language labels private_note contact_id
   ].freeze
   APPOINTMENT_CONDITION_ATTRIBUTES = %w[
-    status payment_status appointment_type source starts_at_weekday starts_at_time service_id medelement_cabinet_code
+    status payment_status appointment_type source starts_at_weekday starts_at_time service_id medelement_cabinet_code contact_id
   ].freeze
 
   include Rails.application.routes.url_helpers
@@ -133,6 +133,7 @@ class AutomationRule < ApplicationRecord
   validate :feature_enabled_for_event
   validate :appointment_condition_operators_supported
   validate :appointment_condition_values_supported
+  validate :contact_condition_supported
   validate :appointment_action_params_supported
   validate :conversation_action_params_supported
   validate :crm_condition_operators_supported
@@ -306,6 +307,56 @@ class AutomationRule < ApplicationRecord
   # save (for example when it is switched off), only newly submitted cabinets are checked.
   def stored_cabinet_condition?(key)
     key == AutomationRules::AppointmentFieldCatalog::CABINET_CODE_KEY && persisted? && !will_save_change_to_conditions?
+  end
+
+  # The "Contact" condition (conversation and appointment events): the values are ids of contacts of this account.
+  # The operators of appointment rules are checked with the other appointment conditions.
+  def contact_condition_supported
+    return unless (conversation_event? || appointment_event?) && account.present?
+
+    contact_conditions = Array(conditions).select { |condition| AutomationRules::ContactCondition.contact_condition?(condition) }
+    return if contact_conditions.blank?
+
+    add_contact_operator_errors(contact_conditions) if conversation_event?
+    add_contact_value_errors(contact_conditions)
+  end
+
+  def add_contact_value_errors(contact_conditions)
+    return if contact_conditions.all? { |condition| contact_condition_values_supported?(condition['values']) }
+
+    errors.add(:conditions, "Automation condition values #{AutomationRules::ContactCondition::KEY} not supported.")
+  end
+
+  def add_contact_operator_errors(contact_conditions)
+    operators = contact_conditions.map { |condition| condition['filter_operator'].to_s }.uniq - AutomationRules::ContactCondition::OPERATORS
+    return if operators.blank?
+
+    key = AutomationRules::ContactCondition::KEY
+    errors.add(:conditions, "Automation condition operators #{operators.map { |operator| "#{key}:#{operator}" }.join(',')} not supported.")
+  end
+
+  # A contact of another account is never accepted. A contact that no longer exists stays acceptable only while the
+  # rule already lists it, so a rule keeps saving (and can be switched off or edited) after a contact is deleted.
+  def contact_condition_values_supported?(values)
+    return false unless AutomationRules::ContactCondition.ids_well_formed?(values)
+
+    ids = AutomationRules::ContactCondition.normalize_ids(values)
+    missing = ids - account.contacts.where(id: ids).pluck(:id)
+    return true if missing.empty?
+    return false if Contact.where(id: missing).where.not(account_id: account_id).exists?
+
+    (missing - stored_contact_condition_ids).empty?
+  end
+
+  def stored_contact_condition_ids
+    return [] unless persisted?
+
+    stored = attribute_in_database('conditions')
+    stored = JSON.parse(stored) if stored.is_a?(String)
+    Array(stored).select { |condition| AutomationRules::ContactCondition.contact_condition?(condition) }
+                 .flat_map { |condition| AutomationRules::ContactCondition.normalize_ids(condition['values']) }
+  rescue JSON::ParserError
+    []
   end
 
   def crm_condition_operators_supported
