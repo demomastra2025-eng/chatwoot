@@ -765,6 +765,55 @@ RSpec.describe Captain::Runtime::Runner do
         expect(colleague_chat.requests).to be_empty
       end
 
+      it 'gives the council the human handoff that the planner asked for in the same step, so that the answers of the other parts are sent' do
+        council = instance_double(Captain::Runtime::Council, run: 'Повторный приём стоит 8000 тенге.')
+        allow(Captain::Runtime::Council).to receive(:new).and_return(council)
+        chat.respond_with(lambda do |current_context|
+          Captain::Runtime::PartRegistry.new(current_context).accept!(
+            mode: 'council', parts: [{ fragment: 'Готов ли ТТГ', executor_agent_id: 92 }, { fragment: 'Цена', executor_agent_id: 91 }]
+          )
+          current_context[:pending_human_handoff] = { reason: 'Result of the test', timestamp: Time.current }
+          current_context[:captain_v2_handoff_tool_called] = true
+          RubyLLM::Tool::Halt.new('')
+        end)
+        expect_initial_ask
+
+        result = run_with
+
+        expect(Captain::Runtime::Council).to have_received(:new).with(hash_including(staff_request: hash_including(reason: 'Result of the test')))
+        expect(result.output).to eq({ response: 'Повторный приём стоит 8000 тенге.', reasoning: '' })
+        expect(result.context).not_to include(:pending_human_handoff, :captain_v2_handoff_tool_called)
+      end
+
+      it 'asks the council for no staff when the planner did not call the handoff tool' do
+        council = instance_double(Captain::Runtime::Council, run: 'Ответ совета.')
+        allow(Captain::Runtime::Council).to receive(:new).and_return(council)
+        chat.respond_with(lambda do |current_context|
+          Captain::Runtime::PartRegistry.new(current_context).accept!(
+            mode: 'council', parts: [{ fragment: 'Запись', executor_agent_id: 91 }, { fragment: 'Цена', executor_agent_id: 92 }]
+          )
+          reply('Text that the council replaces.')
+        end)
+        expect_initial_ask
+
+        run_with
+
+        expect(Captain::Runtime::Council).to have_received(:new).with(hash_including(staff_request: nil))
+      end
+
+      it 'leaves the human handoff of a run without a plan in the run state, for the response to carry out' do
+        chat.respond_with(lambda do |current_context|
+          current_context[:pending_human_handoff] = { reason: 'Only staff can do it' }
+          current_context[:captain_v2_handoff_tool_called] = true
+          RubyLLM::Tool::Halt.new('conversation_handoff')
+        end)
+        expect_initial_ask
+
+        result = run_with
+
+        expect(result.context).to include(pending_human_handoff: { reason: 'Only staff can do it' }, captain_v2_handoff_tool_called: true)
+      end
+
       it 'transfers although an open part of the conversation waits for the customer' do
         context[:parts] = [{ 'id' => 'old-part', 'state' => 'waiting_customer', 'fragment' => 'Book a visit', 'proposed_operation' => nil }]
         chat.respond_with(transfer_to_colleague)

@@ -1805,6 +1805,37 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       end
     end
 
+    context 'when the agent that planned a council asked for staff next to its plan' do
+      let(:reason) { 'Запрос результата: Жанна Оспанова, ТТГ, сдан 9 октября; проверить готовность результата' }
+      let(:council_response) do
+        { 'response' => 'Повторный приём стоит 8000 тенге.',
+          'council_handoff' => { 'reason' => 'council_unresolved', 'parts' => [], 'staff_reason' => reason } }
+      end
+
+      before { allow(agent_runner_service).to receive(:generate_response).and_return(council_response) }
+
+      it 'delivers the answers of the other parts, then hands the conversation to staff with a private note that gives the reason' do
+        described_class.perform_now(conversation, assistant)
+
+        conversation.reload
+        expect(conversation.messages.outgoing.where(private: false).pluck(:content)).to eq(['Повторный приём стоит 8000 тенге.'])
+        expect(conversation.messages.outgoing.where(private: true).last.content).to eq(
+          I18n.t('captain.coordination.unresolved_handoff', parts: reason, locale: account.locale)
+        )
+        expect(conversation.status).to eq('open')
+      end
+
+      it 'names the unanswered parts rather than the reason when the council has some' do
+        council_response['council_handoff']['parts'] = ['Результаты анализов']
+
+        described_class.perform_now(conversation, assistant)
+
+        expect(conversation.reload.messages.outgoing.where(private: true).last.content).to eq(
+          I18n.t('captain.coordination.unresolved_handoff', parts: 'Результаты анализов', locale: account.locale)
+        )
+      end
+    end
+
     context 'when no part of a council has a text for the customer' do
       let(:unreported_note) do
         I18n.t('captain.coordination.unreported_action_note', parts: 'Запись к терапевту', locale: account.locale)

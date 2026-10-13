@@ -253,13 +253,15 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     response_assistant.handoff_enabled? && response_assistant.selected_agent_tool_ids.include?('handoff')
   end
 
-  # The staff-facing reason: what was left unanswered, or what failed technically (names and codes, no arguments, no patient).
+  # The staff-facing reason: what was left unanswered (the parts, else the reason the planning agent gave when it asked for staff),
+  # or what failed technically (names and codes, no arguments, no patient).
   def council_handoff_reason(request, technical)
     I18n.with_locale(account.locale) do
       if technical
         I18n.t('captain.coordination.technical_failure_note', details: technical_failure_details(request['failures']))
       else
-        I18n.t('captain.coordination.unresolved_handoff', parts: council_note_parts(request['parts']).presence || request['reason'])
+        unanswered = council_note_parts(request['parts']).presence || council_note_parts([request['staff_reason']]).presence
+        I18n.t('captain.coordination.unresolved_handoff', parts: unanswered || request['reason'])
       end
     end
   end

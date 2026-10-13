@@ -16,10 +16,16 @@
 # resolved (the conversation goes to staff after the reply). A technical failure of a tool (see ToolFailure) stops the part: it is
 # not mentioned to the customer, the other parts are answered, and the conversation goes to staff after the reply
 # (council_handoff, technical: true). When no part has a text, the reply is empty and the run sends nothing.
+#
+# Staff for a part. The owner of a part cannot call the handoff tool (see PartTools): a part that only staff can finish ends
+# unavailable. The agent that planned the council can call it in the same step as its plan; the runner gives that request to the
+# council (staff_request) instead of ending the run with it, so the answers of the other parts are not lost: they go out in the
+# one reply and the conversation goes to staff after it, the same handoff as for a part that ends unavailable.
 class Captain::Runtime::Council
   UNRESOLVED_STATES = %w[open unknown].freeze
   HANDOFF_REASON = 'council_unresolved'
   TECHNICAL_HANDOFF_REASON = 'council_technical_failure'
+  STAFF_REASON_LIMIT = 300
   PART_SEPARATOR = "\n\n"
   # A booking is: find the resource, the service and the slot, read the contact, create, verify. ToolLoopGuard allows 16 tool requests.
   PART_MAX_TURNS = 14
@@ -68,8 +74,12 @@ class Captain::Runtime::Council
 
   # model: the acting agent's runtime model, used by the editor that writes the single customer reply.
   # callbacks: the callbacks of the run, so that the tool calls of the parts are traced like those of any other run.
-  def initialize(context:, graph:, account:, llm_context: nil, model: nil, callbacks: nil)
+  # staff_request: the human handoff that the planning agent asked for in the same step as the plan (its reason, as the handoff
+  # tool recorded it). It does not discard the other parts: they are answered, and the conversation goes to staff after the reply,
+  # as for a part that ends unavailable.
+  def initialize(context:, graph:, account:, llm_context: nil, model: nil, callbacks: nil, staff_request: nil)
     @context, @graph, @account, @llm_context, @model = context, graph, account, llm_context, model
+    @staff_request = staff_request.to_h.with_indifferent_access.presence
     @callbacks = callbacks || {}
     @entries = {}
     @results = []
@@ -607,10 +617,10 @@ class Captain::Runtime::Council
     @context.delete(:council_note)
     failures = entries.filter_map { |entry| entry[:technical] }
     shown = entries.select { |entry| told?(entry) }
-    return no_reply(failures) if shown.empty? && failures.any?
+    return no_reply(failures, entries) if shown.empty? && failures.any?
 
     unresolved = entries.select { |entry| entry[:unresolved] && !entry[:technical] }
-    handoff = failures.any? || (unresolved.any? && staff_handoff_available?)
+    handoff = failures.any? || ((unresolved.any? || @staff_request.present?) && staff_handoff_available?)
     reply = reply_for(shown, handoff: handoff)
     @context[:council_untold_part_ids] = entries.reject { |entry| told?(entry) }.pluck(:id)
     @context[:council_handoff] = handoff_request(unresolved, failures) if handoff
@@ -620,7 +630,8 @@ class Captain::Runtime::Council
   end
 
   # The parts the conversation goes to staff for (the unresolved ones and the ones that failed technically) are theirs now: the
-  # coordination prompt no longer lists them as open parts of a colleague (they stay linkable by number).
+  # coordination prompt no longer lists them as open parts of a colleague (they stay linkable by number). Staff take them over
+  # after the reply, and also when the run ends as a failed turn and the system hands the conversation over (see #no_reply).
   def mark_handed_to_staff(entries)
     entries.select { |entry| entry[:unresolved] || entry[:technical] }.each do |entry|
       registry.record_result!(entry[:id], handed_to_staff: true)
@@ -641,8 +652,9 @@ class Captain::Runtime::Council
     entry[:text].present?
   end
 
-  def no_reply(failures)
+  def no_reply(failures, entries)
     @context[:technical_failure] = failures.first.merge('parts' => failures.size)
+    mark_handed_to_staff(entries)
     ''
   end
 
@@ -656,8 +668,12 @@ class Captain::Runtime::Council
     @context[:council_note] = note if note.any?
   end
 
+  # staff_reason: why the planning agent asked for staff, in its own words (the reason of its handoff call), for the note to staff
+  # when no part names what is left unanswered.
   def handoff_request(unresolved, failures)
     request = { reason: failures.any? ? TECHNICAL_HANDOFF_REASON : HANDOFF_REASON, parts: unresolved.pluck(:request) }
+    staff_reason = @staff_request&.dig(:reason).to_s.squish.first(STAFF_REASON_LIMIT).presence
+    request[:staff_reason] = staff_reason if staff_reason
     request.merge!(technical: true, failures: failures) if failures.any?
     request
   end

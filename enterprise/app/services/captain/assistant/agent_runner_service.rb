@@ -60,7 +60,6 @@ class Captain::Assistant::AgentRunnerService
                       else
                         {}
                       end
-    @handoff_tool_called = false
   end
 
   def generate_response(message_history: [])
@@ -1284,14 +1283,16 @@ class Captain::Assistant::AgentRunnerService
     return if context_wrapper.context[:pending_human_handoff].blank?
 
     context_wrapper.context[:captain_v2_handoff_tool_called] = true
-    @handoff_tool_called = true
   end
 
+  # A handoff that the planning agent asked for next to a council plan is carried out after the council reply (see
+  # Captain::Runtime::Runner#take_staff_request): that run answered the patient, so it used a credit; the flag of the run says so.
   def write_credits_used_metadata(context_wrapper)
     root_span = context_wrapper&.context&.dig(:__otel_tracing, :root_span)
     return unless root_span
 
-    root_span.set_attribute(format(ATTR_LANGFUSE_METADATA, 'credit_used'), @handoff_tool_called ? 'false' : 'true')
+    credit_used = handoff_tool_called_from_context(context_wrapper.context) ? 'false' : 'true'
+    root_span.set_attribute(format(ATTR_LANGFUSE_METADATA, 'credit_used'), credit_used)
   end
 
   def runner

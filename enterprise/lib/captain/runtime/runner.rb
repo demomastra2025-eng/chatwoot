@@ -216,7 +216,8 @@ class Captain::Runtime::Runner
       # The conversation never changes hands: the current agent stays the current agent while the owners of the parts act.
       answer = Captain::Runtime::Council.new(context: context, graph: context[:agent_graph_object], account: session[:account],
                                              llm_context: session[:llm_context], model: session[:current_agent].model,
-                                             callbacks: session[:context_wrapper].callbacks).run(plan[:parts])
+                                             callbacks: session[:context_wrapper].callbacks,
+                                             staff_request: take_staff_request(context)).run(plan[:parts])
       return technical_failure_result(session) if answer.blank? && context[:technical_failure].present?
 
       # No part has a text of its own: nothing is sent (the staff handoff and note the council recorded still follow).
@@ -235,6 +236,17 @@ class Captain::Runtime::Runner
       finalize_run(session[:chat], session[:context_wrapper], session[:current_agent],
                    output: { response: plan[:clarification], reasoning: '' })
     end
+  end
+
+  # The agent that planned a council can ask for staff in the same step (the handoff tool). Its request must not discard the answers
+  # of the other parts: it leaves the run state here and goes to the council, which sends the one reply and hands the conversation
+  # to staff after it, as it does for a part that ends unavailable. Without it the run would end as a bare human handoff.
+  def take_staff_request(context)
+    request = context.delete(:pending_human_handoff)
+    return if request.blank?
+
+    context.delete(:captain_v2_handoff_tool_called)
+    request.to_h
   end
 
   # No more transfers in this run (two were made, or the colleague cannot be reached): the agent keeps its own tools and its human
