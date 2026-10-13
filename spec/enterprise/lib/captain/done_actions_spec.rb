@@ -37,6 +37,10 @@ RSpec.describe Captain::DoneActions do
       expect(entry_for('update_appointment', JSON.generate(appointment.merge(status: 'unchanged')))).to be_nil
     end
 
+    it 'writes nothing for a booking that exists already: it created nothing' do
+      expect(entry_for('create_appointment', JSON.generate(appointment.merge(status: 'already_booked')))).to be_nil
+    end
+
     it 'writes a change that the provider has not confirmed as a request, never as done' do
       pending_move = appointment.merge(success: false, reason: 'pending_provider_confirmation', status: 'pending_provider_confirmation',
                                        requested_local_date: '16.10.2026', requested_local_time: '10:00')

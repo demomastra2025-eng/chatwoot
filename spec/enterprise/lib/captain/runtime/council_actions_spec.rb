@@ -417,7 +417,7 @@ RSpec.describe Captain::Runtime::Council, 'with parts that act' do
         Scheduling::Error.new(code: 'MEDELEMENT_BOOKING_UNKNOWN', message: 'Staff verification required', status: :unprocessable_content)
       )
       allow(real_tool).to receive(:operations).and_return(
-        instance_double(Captain::Tools::Operations::AppointmentOperations, create_appointment: appointment)
+        instance_double(Captain::Tools::Operations::AppointmentOperations, create_appointment: appointment, already_booked_appointment: nil)
       )
       allow(Captain::Tools::ProviderBookingOutcomeService).to receive(:new).and_return(outcome)
     end

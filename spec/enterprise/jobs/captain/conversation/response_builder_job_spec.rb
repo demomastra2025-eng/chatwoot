@@ -1929,7 +1929,8 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       def run_live_booking(fence)
         account.enable_features!('scheduling')
         appointment = create(:scheduling_appointment, account: account, contact: conversation.contact, conversation: conversation)
-        operations = instance_double(Captain::Tools::Operations::AppointmentOperations, create_appointment: appointment)
+        operations = instance_double(Captain::Tools::Operations::AppointmentOperations,
+                                     create_appointment: appointment, already_booked_appointment: nil)
         outcome = instance_double(Captain::Tools::ProviderBookingOutcomeService)
         allow(outcome).to receive(:perform).and_raise(
           Scheduling::Error.new(code: 'MEDELEMENT_BOOKING_UNKNOWN', message: 'Staff verification required', status: :unprocessable_content)

@@ -89,10 +89,11 @@ module Captain::DoneActions
     end
   end
 
-  # An update that asked for what the appointment already has changed nothing. A change that the provider has not confirmed yet is
-  # a request, never a done action.
+  # An update that asked for what the appointment already has, and a booking that exists already, changed nothing (the statuses of
+  # Captain::ToolResult::NO_CHANGE_STATUSES): the earlier record of the action stays the one that tells it. A change that the provider
+  # has not confirmed yet is a request, never a done action.
   def appointment_parts(name, facts, pending)
-    return if facts['status'] == 'unchanged'
+    return if Captain::ToolResult::NO_CHANGE_STATUSES.include?(facts['status'].to_s)
 
     if pending
       moment = moment_of(facts['requested_local_date'] || facts['local_date'], facts['requested_local_time'] || facts['local_time'])
