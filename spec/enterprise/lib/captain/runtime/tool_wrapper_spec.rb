@@ -120,6 +120,38 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     end
   end
 
+  # The appointment tools of the agent as the guards see them: the booking names a person, a change or a cancellation an appointment.
+  class ToolWrapperSpecAppointmentTool < Captain::Runtime::Tool
+    param :starts_at, type: :string, required: false
+    param :appointment_id, type: :integer, required: false
+    param :patient, type: 'object', required: false
+
+    attr_reader :calls
+
+    def initialize(tool_name: 'create_appointment')
+      super()
+      @tool_name = tool_name
+      @calls = 0
+    end
+
+    def name
+      @tool_name
+    end
+
+    def description
+      'Tool wrapper appointment spec tool'
+    end
+
+    def metadata
+      { risk_level: 'high', idempotent: false }
+    end
+
+    def perform(_tool_context, **params)
+      @calls += 1
+      Captain::ToolResult.success(message: "done #{params[:starts_at]}", data: { id: @calls, patient: params[:patient], appointment_id: params[:appointment_id] })
+    end
+  end
+
   class ToolWrapperSpecSchedulingTool < Captain::Runtime::Tool
     param :service_id, type: :integer, required: false
     param :resource_ids, type: :array, required: false
@@ -1032,6 +1064,65 @@ RSpec.describe Captain::Runtime::ToolWrapper do
         agent_session.change { |data| data['parts'].first['version'] = 2 }
 
         expect { mutating_wrapper.call(title: 'Old version') }.to raise_error(Captain::Conversation::ControlGenerationStaleError)
+      end
+    end
+
+    describe 'one agent that acts on several targets in one request' do
+      let(:booking_tool) { ToolWrapperSpecAppointmentTool.new }
+      let(:booking_wrapper) { described_class.new(booking_tool, context_wrapper) }
+      let(:son) { { first_name: 'Test', last_name: 'Son', birth_date: '2016-11-11' } }
+      let(:daughter) { { first_name: 'Test', last_name: 'Daughter', birth_date: '2018-03-03' } }
+      let(:retry_error) { 'This action tool already ran in the current assistant run. Do not retry it with alternate arguments.' }
+
+      def call_in_new_batch(wrapper, **arguments)
+        context_wrapper.context[:captain_v2_current_tool_batch_id] = "batch-#{SecureRandom.hex(4)}"
+        wrapper.call(**arguments)
+      end
+
+      it 'books the person of the conversation and two relatives, one booking each' do
+        results = [{ starts_at: '10:00' }, { starts_at: '10:30', patient: son }, { starts_at: '11:00', patient: daughter }].map do |arguments|
+          call_in_new_batch(booking_wrapper, **arguments)
+        end
+
+        expect(results.map { |result| JSON.parse(result)['message'] }).to eq(['done 10:00', 'done 10:30', 'done 11:00'])
+        expect(booking_tool.calls).to eq(3)
+        expect(agent_session.read.fetch('operations').size).to eq(3)
+      end
+
+      it 'answers the identical call for a relative with the first result, and refuses the same relative with another time' do
+        call_in_new_batch(booking_wrapper, starts_at: '10:30', patient: son)
+
+        identical = call_in_new_batch(booking_wrapper, starts_at: '10:30', patient: son)
+        other_time = call_in_new_batch(booking_wrapper, starts_at: '12:00', patient: son)
+
+        expect(JSON.parse(identical)['message']).to eq('done 10:30')
+        expect(other_time).to be_a(RubyLLM::Tool::Halt)
+        expect_tool_error(other_time, retry_error, retryable: false)
+        expect(booking_tool.calls).to eq(1)
+      end
+
+      it 'moves and cancels different appointments in one request, and refuses a second change of the same one' do
+        move = described_class.new(ToolWrapperSpecAppointmentTool.new(tool_name: 'update_appointment'), context_wrapper)
+        cancel = described_class.new(ToolWrapperSpecAppointmentTool.new(tool_name: 'cancel_appointment'), context_wrapper)
+
+        expect(JSON.parse(call_in_new_batch(move, appointment_id: 101, starts_at: '10:00'))['message']).to eq('done 10:00')
+        expect(JSON.parse(call_in_new_batch(move, appointment_id: 102, starts_at: '11:00'))['message']).to eq('done 11:00')
+        expect(JSON.parse(call_in_new_batch(cancel, appointment_id: 103))['message']).to eq('done ')
+        expect(JSON.parse(call_in_new_batch(cancel, appointment_id: 104))['message']).to eq('done ')
+        again = call_in_new_batch(move, appointment_id: 101, starts_at: '12:00')
+
+        expect_tool_error(again, retry_error, retryable: false)
+      end
+
+      it 'still stops the tool at its limit of requests, whoever the calls are for' do
+        described_class::MAX_TOOL_REQUESTS_PER_TOOL.times do |number|
+          call_in_new_batch(booking_wrapper, starts_at: '10:00', patient: { first_name: 'Test', last_name: "Child#{number}" })
+        end
+
+        over_limit = call_in_new_batch(booking_wrapper, starts_at: '10:00', patient: { first_name: 'Test', last_name: 'Another' })
+
+        expect(over_limit.respond_to?(:content) ? over_limit.content : over_limit).to include('Tool request limit reached')
+        expect(booking_tool.calls).to eq(described_class::MAX_TOOL_REQUESTS_PER_TOOL)
       end
     end
 

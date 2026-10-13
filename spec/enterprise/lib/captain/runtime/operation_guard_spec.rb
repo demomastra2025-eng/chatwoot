@@ -148,6 +148,79 @@ RSpec.describe Captain::Runtime::OperationGuard do
     expect(session.read.fetch('operations').values.pluck('outcome')).to eq(results.map(&:last))
   end
 
+  describe 'one tool used on different targets in one request' do
+    let(:booking) { double('Mutation', name: 'create_appointment', metadata: { read_only: false }) }
+    let(:reschedule) { double('Mutation', name: 'update_appointment', metadata: { read_only: false }) }
+    let(:cancel) { double('Mutation', name: 'cancel_appointment', metadata: { read_only: false }) }
+    let(:own_booking) { { resource_id: 7, starts_at: '2026-10-15T10:00' } }
+    let(:son) { { first_name: 'Test', last_name: 'Son', birth_date: '2016-11-11' } }
+    let(:daughter) { { first_name: 'Test', last_name: 'Daughter', birth_date: '2018-03-03' } }
+
+    def run(tool, arguments, result = { success: true, data: { appointment_id: 1 } })
+      action = described_class.new(context, tool, arguments)
+      reserved = action.reserve
+      action.finish(result) if reserved.nil?
+      reserved
+    end
+
+    it 'lets the agent book the person of the conversation and two relatives, one booking each' do
+      expect(run(booking, own_booking)).to be_nil
+      expect(run(booking, own_booking.merge(starts_at: '2026-10-15T10:30', patient: son))).to be_nil
+      expect(run(booking, own_booking.merge(starts_at: '2026-10-15T11:00', patient: daughter))).to be_nil
+
+      expect(session.read.fetch('operations').values).to all(include('status' => 'finished', 'outcome' => 'success'))
+      expect(session.read.fetch('operations').size).to eq(3)
+    end
+
+    it 'keeps one claim per person: the same relative with other arguments is refused, the identical call is answered with its result' do
+      run(booking, own_booking.merge(patient: son), { success: true, data: { appointment_id: 21 } })
+
+      other = run(booking, own_booking.merge(starts_at: '2026-10-15T12:00', patient: son.merge(first_name: ' TEST ')))
+      same = run(booking, own_booking.merge(patient: son))
+
+      expect(other.dig(:audit, :failure_reason)).to eq('mutation_retry_blocked')
+      expect(same.dig(:data, :appointment_id)).to eq(21)
+      expect(same.dig(:audit, :cached_result_reused)).to be(true)
+    end
+
+    it 'does not take the phone or the gender for another person' do
+      run(booking, own_booking.merge(patient: son.merge(phone: '+77010000000')))
+
+      again = run(booking, own_booking.merge(starts_at: '2026-10-15T12:00', patient: son.merge(gender: 'male')))
+
+      expect(again.dig(:audit, :failure_reason)).to eq('mutation_retry_blocked')
+    end
+
+    it 'lets the agent correct a booking that ended in a business answer for the same person' do
+      run(booking, own_booking.merge(patient: son), JSON.generate(success: false, reason: 'time_taken'))
+
+      expect(run(booking, own_booking.merge(starts_at: '2026-10-15T11:00', patient: son))).to be_nil
+    end
+
+    it 'keeps the claim of the person of the conversation apart from a relative' do
+      run(booking, own_booking)
+
+      expect(run(booking, own_booking.merge(starts_at: '2026-10-15T11:00')).dig(:audit, :failure_reason)).to eq('mutation_retry_blocked')
+      expect(run(booking, own_booking.merge(starts_at: '2026-10-15T11:00', patient: son))).to be_nil
+    end
+
+    it 'lets the agent move or cancel two different appointments, and refuses a second change of the same one' do
+      expect(run(reschedule, { appointment_id: 101, starts_at: '2026-10-16T10:00' })).to be_nil
+      expect(run(reschedule, { appointment_id: 102, starts_at: '2026-10-16T11:00' })).to be_nil
+      expect(run(cancel, { appointment_id: 103 })).to be_nil
+      expect(run(cancel, { appointment_id: 104 })).to be_nil
+
+      expect(run(reschedule, { appointment_id: 101, starts_at: '2026-10-17T10:00' }).dig(:audit, :failure_reason)).to eq('mutation_retry_blocked')
+      expect(run(cancel, { appointment_id: 103, reason: 'again' }).dig(:audit, :failure_reason)).to eq('mutation_retry_blocked')
+    end
+
+    it 'claims the whole tool for a call that has no target: another tool or other arguments are refused as before' do
+      expect(run(tool, arguments)).to be_nil
+
+      expect(run(tool, arguments.merge(service_id: 2)).dig(:audit, :failure_reason)).to eq('mutation_retry_blocked')
+    end
+  end
+
   describe 'the list of what was done' do
     let(:reschedule) { double('Mutation', name: 'update_appointment', metadata: { read_only: false }) }
     let(:moved) do

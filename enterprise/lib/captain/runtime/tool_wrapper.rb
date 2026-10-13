@@ -58,7 +58,9 @@ class Captain::Runtime::ToolWrapper
       return RubyLLM::Tool::Halt.new('Control has been transferred; remaining calls in this batch were not executed.')
     end
     @operation_scope = Captain::Runtime::TaskQueue.new(context_wrapper_context).operation_scope if context_wrapper_context[:agent_session]
+    @operation_target = nil
     normalized_args = normalize_args(args)
+    @operation_target = Captain::Runtime::OperationTarget.of(@tool.name, normalized_args)
 
     request_stop = requested_tool_stop_result(normalized_args)
     return complete_and_halt(request_stop) if request_stop
@@ -736,7 +738,7 @@ class Captain::Runtime::ToolWrapper
   def repeated_mutating_tool_result(normalized_args)
     return unless domain_mutating_tool?
 
-    entry = mutating_tool_executions[mutation_execution_key]
+    entry = mutating_tool_executions[mutation_claim_key]
     return if entry.blank? || mutation_retry_allowed?(entry, normalized_args)
 
     Captain::ToolResult.failure(
@@ -756,7 +758,7 @@ class Captain::Runtime::ToolWrapper
   def track_mutating_tool_execution(normalized_args)
     return unless domain_mutating_tool?
 
-    mutating_tool_executions[mutation_execution_key] = {
+    mutating_tool_executions[mutation_claim_key] = {
       arguments_digest: tool_result_cache_digest(normalized_args),
       idempotency_key: normalized_args[:idempotency_key].presence,
       retryable: false
@@ -764,7 +766,7 @@ class Captain::Runtime::ToolWrapper
   end
 
   def record_mutating_tool_result(result)
-    entry = mutating_tool_executions[mutation_execution_key]
+    entry = mutating_tool_executions[mutation_claim_key]
     return if entry.blank?
 
     normalized_result = Captain::ToolResult.normalize(result)
@@ -800,6 +802,13 @@ class Captain::Runtime::ToolWrapper
     return @tool.name.to_s unless context_wrapper_context[:agent_session]
 
     "#{task_operation_scope}:#{@tool.name}"
+  end
+
+  # The claim of an action in a request: the tool, and the target of the call when it has one (the person a booking is for, the
+  # appointment a change is for). A second call for another target is another operation; the same target with other arguments is
+  # a retry, which the claim refuses.
+  def mutation_claim_key
+    [mutation_execution_key, @operation_target].compact.join(':')
   end
 
   def task_operation_scope

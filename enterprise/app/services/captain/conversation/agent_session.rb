@@ -103,7 +103,8 @@ class Captain::Conversation::AgentSession
   # peer_part: the actor is the owner of a council part, which does not hold the conversation. Its part is still checked
   # against its own executor, only the current agent of the conversation is not.
   def reserve_operation(scope:, tool:, arguments:, actor_id:, peer_part: false)
-    key = operation_key(scope, tool)
+    target = Captain::Runtime::OperationTarget.of(tool, arguments)
+    key = operation_key(scope, tool, target)
     digest = Digest::SHA256.hexdigest(JSON.generate(canonical(arguments)))
     change do |data|
       if @task_revision && data['task_revision'].to_i != @task_revision
@@ -136,7 +137,7 @@ class Captain::Conversation::AgentSession
 
       # A new version of a part (an answer, a correction) must not repeat an action that an earlier version did, or may have
       # done: that call may already have reached the provider.
-      earlier = earlier_version_receipt(operations, scope, tool, digest)
+      earlier = earlier_version_receipt(operations, scope, tool, digest, target)
       next earlier if earlier
 
       # The receipts of every version of every part that is still in the registry stay: they are that memory.
@@ -188,8 +189,10 @@ class Captain::Conversation::AgentSession
     data['done'] = Captain::DoneActions.remember(data['done'], done.deep_stringify_keys)
   end
 
-  def operation_key(scope, tool)
-    Digest::SHA256.hexdigest(JSON.generate([scope, tool]))
+  # One receipt per scope, tool and target (see Captain::Runtime::OperationTarget): the person a booking is for, the appointment a
+  # change is for. A call without a target keeps the key of the scope and the tool alone.
+  def operation_key(scope, tool, target = nil)
+    Digest::SHA256.hexdigest(JSON.generate(target ? [scope, tool, target] : [scope, tool]))
   end
 
   # What the receipts of the earlier versions of the same part say about the same tool, newest first:
@@ -198,12 +201,12 @@ class Captain::Conversation::AgentSession
   #   finished, not_executed         -> nothing happened, the next version may try (this is skipped)
   #   finished, unknown or no outcome (a receipt of an older release) -> blocked
   # nil when no earlier version decides.
-  def earlier_version_receipt(operations, scope, tool, digest)
+  def earlier_version_receipt(operations, scope, tool, digest, target = nil)
     part_id, version = scope.to_s.match(/\Apart:([^:]+):v(\d+)\z/)&.captures
     return unless part_id
 
     (1...version.to_i).to_a.reverse_each do |earlier|
-      receipt = operations[operation_key("part:#{part_id}:v#{earlier}", tool)]
+      receipt = operations[operation_key("part:#{part_id}:v#{earlier}", tool, target)]
       next unless receipt
 
       decision = receipt_decision(receipt, digest)
