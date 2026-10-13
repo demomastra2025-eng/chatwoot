@@ -469,6 +469,45 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(assistant.scenario_agent_tool_ids).to eq(['handoff'])
     end
 
+    context 'with the shared read layer (the FAQ and the service catalog for every agent)' do
+      before do
+        account.enable_features!('scheduling')
+        assistant.update!(config: { 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['handoff'] } } })
+      end
+
+      it 'selects the FAQ lookup and the service catalog next to the tools the clinic selected' do
+        expect(assistant.selected_agent_tool_ids).to include('handoff', 'faq_lookup', 'search_scheduling_services')
+        expect(assistant.direct_agent_tool_ids).to include('handoff', 'faq_lookup', 'search_scheduling_services')
+        expect(assistant.allowed_agent_tool_ids).to include('handoff', 'faq_lookup', 'search_scheduling_services')
+        expect(assistant.prompt_runtime_agent_tools.pluck(:id)).to include('faq_lookup', 'search_scheduling_services')
+      end
+
+      it 'builds both read tools into the tools of the agent, once each, and no writing tool' do
+        names = assistant.agent.tool_ids
+
+        expect(names).to include('faq_lookup', 'search_scheduling_services')
+        expect(names).to eq(names.uniq)
+        expect(names).not_to include('create_appointment', 'update_appointment', 'cancel_appointment')
+      end
+
+      it 'is the same set the colleagues see by id, without building the tools' do
+        lazy = Captain::Runtime::LazyAgent.new(assistant)
+
+        expect(lazy.tool_ids).to include('faq_lookup', 'search_scheduling_services', 'handoff')
+      end
+
+      it 'leaves the tools of a scenario of the agent as they were' do
+        expect(assistant.scenario_agent_tool_ids).to eq(['handoff'])
+      end
+
+      it 'has no catalog tool when the account has no scheduling feature' do
+        account.disable_features!('scheduling')
+
+        expect(assistant.reload.allowed_agent_tool_ids).to include('faq_lookup')
+        expect(assistant.allowed_agent_tool_ids).not_to include('search_scheduling_services')
+      end
+    end
+
     it 'includes enabled custom tools in the assistant scope catalog by default' do
       custom_tool = create(:captain_custom_tool, account: account)
 

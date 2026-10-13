@@ -6,6 +6,10 @@ module Captain::ToolAccess
     SCOPE_ASSISTANT
   ].freeze
   DEFAULT_AGENT_TOOL_IDS = %w[faq_lookup web_search web_scrape_url handoff].freeze
+  # The shared read layer: the read-only tools every customer-facing agent has whatever the clinic selected, the FAQ lookup and the
+  # service catalog with prices. Any agent can then answer a question itself, and a transfer is only for an action that its own
+  # tools cannot do. The writing tools and the patient-data tools stay as the clinic configured them.
+  SHARED_READ_TOOL_IDS = %w[faq_lookup search_scheduling_services].freeze
   PER_ASSISTANT_WEB_TOOL_IDS = %w[web_search web_scrape_url].freeze
   CAPABILITY_CONTROLLED_AGENT_TOOL_IDS = %w[
     faq_lookup web_search web_scrape_url handoff resolve_conversation add_contact_note add_private_note
@@ -75,11 +79,28 @@ module Captain::ToolAccess
     settings = assistant.account_settings
     understanding = settings.section('understanding')
     selected -= %w[web_search web_scrape_url resolve_conversation]
-    selected |= %w[faq_lookup handoff] & available_ids
+    selected |= %w[handoff] & available_ids
+    selected |= shared_read_tool_ids_for(assistant, available_ids)
     selected << 'resolve_conversation' if settings.section('handoff')['auto_completion_enabled'] && available_ids.include?('resolve_conversation')
     selected << 'web_search' if understanding['web_search'] && available_ids.include?('web_search')
     selected << 'web_scrape_url' if understanding['web_page_reading'] && available_ids.include?('web_scrape_url')
     selected
+  end
+
+  # The ids of the shared read layer (SHARED_READ_TOOL_IDS) that this agent gets: the tool is in the catalog of the agent, the FAQ
+  # lookup only where the platform has the FAQ on for the agent, and every tool only where its own requirements hold (the service
+  # catalog needs the scheduling feature of the account, so a clinic without a calendar has no catalog tool that would always fail).
+  def shared_read_tool_ids_for(assistant, available_ids)
+    SHARED_READ_TOOL_IDS.select do |tool_id|
+      available_ids.include?(tool_id) && shared_read_tool_open?(assistant, tool_id)
+    end
+  end
+
+  def shared_read_tool_open?(assistant, tool_id)
+    return false if tool_id == 'faq_lookup' && !assistant.faq_enabled?
+
+    definition = Captain::ToolRegistry.definition_for(tool_id)
+    definition.present? && Captain::ToolPolicy.runtime_allowed?(definition.to_h, assistant: assistant, scope_name: SCOPE_AGENT)
   end
 
   def allowed_tool_ids_for(assistant, scope_name, fallback_ids:)

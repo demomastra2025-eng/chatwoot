@@ -160,6 +160,26 @@ RSpec.describe Captain::AgentRunContext do
       )
     end
 
+    it 'gives every agent the FAQ and the service catalog as read tools, and does not present them as a reason to transfer' do
+      account.enable_features!('scheduling')
+      entry.update!(config: { 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['handoff'] } } })
+      specialist.update!(config: { 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => %w[create_appointment handoff] } } })
+      runtime = described_class.new(entry: entry, conversation: conversation)
+      runtime.prepare(context)
+      run_context = Captain::Runtime::RunContext.new(context)
+
+      names = tool_names(runtime, run_context)
+
+      expect(names).to include('faq_lookup', 'search_scheduling_services', 'handoff', "transfer_to_agent_#{specialist.id}")
+      expect(names).to eq(names.uniq)
+      expect(names).not_to include('create_appointment')
+      Captain::Runtime::ChatFactory.send(:record_bound_agent_tools, runtime.runtime_agents.first, run_context)
+      expect(run_context.context[:captain_v2_bound_tool_ids]).to include('faq_lookup', 'search_scheduling_services')
+      transfer = Captain::Runtime::HandoffTool.new(runtime.runtime_agents.last)
+      expect(transfer.description).to include('book appointments')
+      expect(transfer.description).not_to include('service prices')
+    end
+
     it 'gives a lone main agent neither a plan, a council nor a transfer: just its own prompt and tools' do
       runtime = described_class.new(entry: lone_entry, conversation: lone_conversation)
       runtime.prepare(lone_context)

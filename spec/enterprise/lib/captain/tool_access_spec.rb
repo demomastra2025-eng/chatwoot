@@ -95,6 +95,73 @@ RSpec.describe Captain::ToolAccess do
     end
   end
 
+  describe 'the shared read layer' do
+    let(:only_handoff) { { 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['handoff'] } } } }
+
+    def agent_tool_ids(record)
+      described_class.allowed_tool_ids_for(record, Captain::ToolAccess::SCOPE_AGENT, fallback_ids: [])
+    end
+
+    it 'gives a customer-facing agent the FAQ lookup and the service catalog whatever the clinic selected' do
+      account.enable_features!('scheduling')
+      assistant.update!(config: only_handoff)
+
+      ids = agent_tool_ids(assistant)
+
+      expect(ids).to include('handoff', 'faq_lookup', 'search_scheduling_services')
+      expect(ids).to eq(ids.uniq)
+      expect(described_class.normalized_access_for(assistant).dig(Captain::ToolAccess::SCOPE_AGENT, 'tool_ids'))
+        .to include('faq_lookup', 'search_scheduling_services')
+    end
+
+    it 'adds read tools only: the writing tools and the patient-data tools stay as the clinic configured them' do
+      account.enable_features!('scheduling')
+      assistant.update!(config: only_handoff)
+
+      expect(agent_tool_ids(assistant)).not_to include('create_appointment', 'update_appointment', 'cancel_appointment',
+                                                       'get_my_contact', 'update_my_contact')
+    end
+
+    it 'takes the selected service catalog once' do
+      account.enable_features!('scheduling')
+      assistant.update!(config: { 'tool_access' => { 'agent' => { 'enabled' => true,
+                                                                  'tool_ids' => %w[search_scheduling_services faq_lookup] } } })
+
+      expect(agent_tool_ids(assistant).count('search_scheduling_services')).to eq(1)
+      expect(agent_tool_ids(assistant).count('faq_lookup')).to eq(1)
+    end
+
+    it 'leaves out the service catalog of an account without the scheduling feature: it would only fail' do
+      assistant.update!(config: only_handoff)
+
+      expect(agent_tool_ids(assistant)).to include('faq_lookup')
+      expect(agent_tool_ids(assistant)).not_to include('search_scheduling_services')
+    end
+
+    it 'leaves out the FAQ lookup where the platform has the FAQ off for the agent' do
+      account.enable_features!('scheduling')
+      assistant.update!(config: only_handoff)
+      allow(assistant).to receive(:faq_enabled?).and_return(false)
+
+      expect(described_class.shared_read_tool_ids_for(assistant, assistant.available_tool_ids)).to eq(['search_scheduling_services'])
+    end
+
+    it 'gives nothing to a tool that is not in the catalog of the agent' do
+      account.enable_features!('scheduling')
+
+      expect(described_class.shared_read_tool_ids_for(assistant, ['faq_lookup'])).to eq(['faq_lookup'])
+      expect(described_class.shared_read_tool_ids_for(assistant, [])).to eq([])
+    end
+
+    it 'does not reach an agent that does not talk to customers' do
+      account.enable_features!('scheduling')
+      assistant.update!(config: only_handoff)
+      allow(assistant).to receive(:external_agent?).and_return(false)
+
+      expect(agent_tool_ids(assistant)).to eq(['handoff'])
+    end
+  end
+
   describe '.per_assistant_web_tool_enabled?' do
     it 'uses the account default when no per-agent permission fields are stored' do
       assistant.config = {}

@@ -29,6 +29,21 @@ RSpec.describe Captain::Runtime::PartTools do
     expect(described_class.withheld_tool_ids).to contain_exactly('handoff', 'resolve_conversation', 'cancel_response')
   end
 
+  it 'keeps the shared read tools of the owner in a part: the FAQ and the service catalog, never the handoff' do
+    account = create(:account)
+    account.enable_features!('scheduling')
+    owner = create(:captain_assistant, account: account)
+    owner.update!(config: { 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['handoff'] } } })
+
+    tools = owner.agent.tools
+    names = described_class.filter(tools).map(&:name)
+
+    expect(tools.map(&:name)).to include('handoff')
+    expect(names).to include('faq_lookup', 'search_scheduling_services')
+    expect(names).not_to include('handoff')
+    expect(names).to eq(names.uniq)
+  end
+
   it 'does not decide by name: a renamed control tool is still withheld' do
     renamed = tool(Captain::Tools::HandoffTool)
     allow(renamed).to receive(:name).and_return('escalate_to_person')

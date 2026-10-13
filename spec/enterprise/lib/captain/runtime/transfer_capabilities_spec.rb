@@ -5,9 +5,17 @@ require 'rails_helper'
 RSpec.describe Captain::Runtime::TransferCapabilities do
   describe '.line' do
     it 'joins the appointment verbs the colleague has and names what it can look up, in glossary words' do
-      ids = %w[create_appointment update_appointment cancel_appointment search_scheduling_services search_available_slots]
+      ids = %w[create_appointment update_appointment cancel_appointment search_scheduling_resources search_available_slots]
 
-      expect(described_class.line(ids)).to eq('Can: book, reschedule and cancel appointments; look up service prices and free slots.')
+      expect(described_class.line(ids)).to eq('Can: book, reschedule and cancel appointments; look up specialists and free slots.')
+    end
+
+    it 'leaves out the tools of the shared read layer: every agent answers the FAQ and the service prices itself' do
+      expect(Captain::ToolAccess::SHARED_READ_TOOL_IDS).to contain_exactly('faq_lookup', 'search_scheduling_services')
+      expect(described_class.line(Captain::ToolAccess::SHARED_READ_TOOL_IDS)).to eq('')
+
+      ids = %w[create_appointment search_scheduling_services faq_lookup search_available_slots]
+      expect(described_class.line(ids)).to eq('Can: book appointments; look up free slots.')
     end
 
     it 'says only the verbs of the appointment tools the colleague has' do
