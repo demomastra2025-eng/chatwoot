@@ -44,7 +44,7 @@ describe('automation contact condition texts', () => {
     });
   });
 
-  it('is offered for conversation, message and appointment events only', () => {
+  it('is offered for conversation, message, appointment, deal and task events', () => {
     const withContact = Object.entries(AUTOMATIONS)
       .filter(([, { conditions }]) =>
         conditions.some(({ key }) => key === 'contact_id')
@@ -64,7 +64,17 @@ describe('automation contact condition texts', () => {
         'conversation_resolved',
         'conversation_transferred_to_ai',
         'conversation_updated',
+        'deal_archived',
+        'deal_created',
+        'deal_stage_changed',
+        'deal_unarchived',
+        'deal_updated',
         'message_created',
+        'task_archived',
+        'task_created',
+        'task_status_changed',
+        'task_unarchived',
+        'task_updated',
       ].sort()
     );
   });

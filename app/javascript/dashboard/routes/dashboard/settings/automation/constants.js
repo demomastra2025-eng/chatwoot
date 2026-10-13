@@ -10,9 +10,10 @@ import {
 } from './operators';
 
 // "Contact is / is not": a list of contacts of the account, so a rule can skip
-// (or target) chosen people. Only the events that have a contact offer it
-// (conversation, message and appointment events). The contacts are found by a
-// server-side search on name or phone; the operators read "is / is not".
+// (or target) chosen people. Every event that has a contact offers it
+// (conversation, message, appointment, deal and task events). The contacts are
+// found by a server-side search on name or phone; the operators read
+// "is / is not".
 const CONTACT_AUTOMATION_CONDITION = {
   key: 'contact_id',
   name: 'CONTACT',
@@ -125,6 +126,7 @@ const DEAL_AUTOMATION_CONDITIONS = [
     inputType: 'search_select',
     filterOperators: OPERATOR_TYPES_3,
   },
+  CONTACT_AUTOMATION_CONDITION,
   {
     key: 'title',
     name: 'DEAL_TITLE',
@@ -235,6 +237,7 @@ const TASK_AUTOMATION_CONDITIONS = [
     inputType: 'search_select',
     filterOperators: OPERATOR_TYPES_3,
   },
+  CONTACT_AUTOMATION_CONDITION,
   {
     key: 'priority',
     name: 'PRIORITY',

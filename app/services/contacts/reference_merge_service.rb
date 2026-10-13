@@ -43,6 +43,7 @@ class Contacts::ReferenceMergeService
     deduplicate_assignment_quota_usages!
     ensure_campaign_deliveries_do_not_collide!
     self.class.merge_reminder_references!(base_contact: base_contact, mergee_contact: mergee_contact)
+    self.class.merge_automation_rule_references!(base_contact: base_contact, mergee_contact: mergee_contact)
 
     remaining_references.each { |table, column| bulk_reassign(table, column) }
   end
@@ -57,6 +58,34 @@ class Contacts::ReferenceMergeService
       reminder.update!(target_contact: base_contact)
     end
   end
+
+  # The "Contact" condition of an automation rule lists contact ids inside its JSON conditions, which no foreign key
+  # follows. The merged contact is swapped for the contact it was merged into, so a person a rule skips (or is limited
+  # to) stays skipped (or listed) after the duplicate is merged and deleted. The rules are written without validations
+  # and callbacks: the swap must not be refused because of an unrelated problem of the rule, and the touches that moved to
+  # the base contact are held to the new list when they are about to go out.
+  def self.merge_automation_rule_references!(base_contact:, mergee_contact:)
+    raise UnsafeMergeError, 'Automation contacts must belong to the same account.' unless base_contact.account_id == mergee_contact.account_id
+
+    AutomationRule.where(account_id: base_contact.account_id)
+                  .where('conditions @> ?', [{ 'attribute_key' => AutomationRules::ContactCondition::KEY }].to_json)
+                  .find_each do |rule|
+      conditions = swap_listed_contact(rule.conditions, from: mergee_contact.id, to: base_contact.id)
+      next if conditions == rule.conditions
+
+      rule.update_columns(conditions: conditions, updated_at: Time.current) # rubocop:disable Rails/SkipsModelValidations
+    end
+  end
+
+  def self.swap_listed_contact(conditions, from:, to:)
+    contact_condition = AutomationRules::ContactCondition
+    Array(conditions).map do |condition|
+      next condition unless contact_condition.contact_condition?(condition)
+
+      condition.merge('values' => contact_condition.replace_id(condition['values'], from, to))
+    end
+  end
+  private_class_method :swap_listed_contact
 
   def self.merge_appointment_references!(base_contact:, mergee_contact:)
     now = Time.current

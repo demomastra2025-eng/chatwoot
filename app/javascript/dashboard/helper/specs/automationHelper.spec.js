@@ -228,6 +228,7 @@ const BACKEND_DEAL_CONDITIONS = [
   'stage_id',
   'owner_id',
   'team_id',
+  'contact_id',
   'title',
   'description',
   'currency',
@@ -243,6 +244,7 @@ const BACKEND_TASK_CONDITIONS = [
   'status_id',
   'assignee_id',
   'team_id',
+  'contact_id',
   'priority',
   'title',
   'description',
@@ -369,8 +371,13 @@ describe('AUTOMATIONS backend parity', () => {
     });
   });
 
-  it('offers the contact as a server-searched multi-select reading "is / is not" for every conversation and appointment event', () => {
-    [...CONVERSATION_EVENTS, ...APPOINTMENT_EVENTS].forEach(eventName => {
+  it('offers the contact as a server-searched multi-select reading "is / is not" for every event that has a contact', () => {
+    [
+      ...CONVERSATION_EVENTS,
+      ...APPOINTMENT_EVENTS,
+      ...DEAL_EVENTS,
+      ...TASK_EVENTS,
+    ].forEach(eventName => {
       expect(
         AUTOMATIONS[eventName].conditions.find(
           ({ key }) => key === 'contact_id'
@@ -387,14 +394,6 @@ describe('AUTOMATIONS backend parity', () => {
           not_equal_to: 'AUTOMATION.CONTACT_CONDITION.OPERATOR_IS_NOT',
         },
       });
-    });
-  });
-
-  it('does not offer the contact for events without a contact', () => {
-    [...DEAL_EVENTS, ...TASK_EVENTS].forEach(eventName => {
-      expect(
-        AUTOMATIONS[eventName].conditions.map(({ key }) => key)
-      ).not.toContain('contact_id');
     });
   });
 
@@ -857,13 +856,18 @@ describe('getConditionOptions', () => {
     });
   });
 
-  it('returns the contacts met so far for the contact condition of conversation and appointment events', () => {
+  it('returns the contacts met so far for the contact condition of every event that has a contact', () => {
     const contactOptions = [
       { id: 7, name: 'Айгерим', description: '+77011234567' },
       { id: 9, name: 'Контакт удалён (№ 9)', deleted: true },
     ];
 
-    [...CONVERSATION_EVENTS, ...APPOINTMENT_EVENTS].forEach(eventName => {
+    [
+      ...CONVERSATION_EVENTS,
+      ...APPOINTMENT_EVENTS,
+      ...DEAL_EVENTS,
+      ...TASK_EVENTS,
+    ].forEach(eventName => {
       expect(
         helpers.getConditionOptions({
           contactOptions,
@@ -872,19 +876,6 @@ describe('getConditionOptions', () => {
           type: 'contact_id',
         })
       ).toEqual(contactOptions);
-    });
-  });
-
-  it('offers no contact values for CRM events', () => {
-    [...DEAL_EVENTS, ...TASK_EVENTS].forEach(eventName => {
-      expect(
-        helpers.getConditionOptions({
-          contactOptions: [{ id: 7, name: 'Айгерим' }],
-          customAttributes,
-          eventName,
-          type: 'contact_id',
-        })
-      ).toBeUndefined();
     });
   });
 
@@ -1316,6 +1307,39 @@ describe('generateAutomationPayload', () => {
       expectedPayload
     );
   });
+
+  it.each(['deal_created', 'task_updated'])(
+    'sends the chosen contacts of a %s rule as a list of contact ids',
+    eventName => {
+      const payload = helpers.generateAutomationPayload({
+        name: 'Skip family',
+        description: 'Never message the chosen contacts',
+        event_name: eventName,
+        conditions: [
+          {
+            attribute_key: 'contact_id',
+            filter_operator: 'not_equal_to',
+            values: [
+              { id: 7, name: 'Айгерим', description: '+77011234567' },
+              { id: 9, name: 'Контакт удалён (№ 9)', deleted: true },
+            ],
+            query_operator: 'and',
+            custom_attribute_type: '',
+          },
+        ],
+        actions: [{ action_name: 'send_webhook_event', action_params: [] }],
+      });
+
+      expect(payload.conditions).toEqual([
+        {
+          attribute_key: 'contact_id',
+          filter_operator: 'not_equal_to',
+          values: [7, 9],
+          custom_attribute_type: '',
+        },
+      ]);
+    }
+  );
 
   it('sends the chosen contacts as a list of contact ids', () => {
     const payload = helpers.generateAutomationPayload({

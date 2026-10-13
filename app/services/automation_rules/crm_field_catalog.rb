@@ -10,12 +10,19 @@ class AutomationRules::CrmFieldCatalog
     TEMPORAL_FIELD_TYPES
   ).freeze
 
+  # The contacts of the deal (of the deal a task belongs to); the saved ids are checked by the rule (account only).
+  CONTACT_CONDITION = {
+    field_type: 'contact',
+    operators: AutomationRules::ContactCondition::OPERATORS
+  }.freeze
+
   STANDARD_CONDITIONS = {
     'deal' => {
       'pipeline_id' => { field_type: 'select', operators: %w[equal_to not_equal_to is_present is_not_present] },
       'stage_id' => { field_type: 'select', operators: %w[equal_to not_equal_to is_present is_not_present] },
       'owner_id' => { field_type: 'select', operators: %w[equal_to not_equal_to is_present is_not_present] },
       'team_id' => { field_type: 'select', operators: %w[equal_to not_equal_to is_present is_not_present] },
+      AutomationRules::ContactCondition::KEY => CONTACT_CONDITION,
       'title' => {
         field_type: 'text',
         operators: %w[equal_to not_equal_to contains does_not_contain starts_with is_present is_not_present]
@@ -57,6 +64,7 @@ class AutomationRules::CrmFieldCatalog
       'status_id' => { field_type: 'select', operators: %w[equal_to not_equal_to is_present is_not_present] },
       'assignee_id' => { field_type: 'select', operators: %w[equal_to not_equal_to is_present is_not_present] },
       'team_id' => { field_type: 'select', operators: %w[equal_to not_equal_to is_present is_not_present] },
+      AutomationRules::ContactCondition::KEY => CONTACT_CONDITION,
       'priority' => { field_type: 'select', operators: %w[equal_to not_equal_to is_present is_not_present] },
       'title' => {
         field_type: 'text',

@@ -656,6 +656,7 @@ class WhatsappWeb::ContactSyncService
       base_contact: target_contact,
       mergee_contact: source_contact
     )
+    Contacts::ReferenceMergeService.merge_automation_rule_references!(base_contact: target_contact, mergee_contact: source_contact)
 
     {
       'Note' => :contact_id,

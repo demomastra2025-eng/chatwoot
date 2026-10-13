@@ -11,7 +11,7 @@ class AutomationRules::CrmMatchingSnapshot
 
     catalog = AutomationRules::CrmFieldCatalog.new(account: record.account, entity_kind: entity_kind)
     standard_values = catalog.standard_field_keys.index_with do |key|
-      record.public_send(key)
+      standard_value(record, key)
     end
     custom_values = catalog.custom_field_keys.index_with do |key|
       record.custom_attributes.to_h[key]
@@ -44,4 +44,12 @@ class AutomationRules::CrmMatchingSnapshot
     return 'task' if record.is_a?(::Crm::Task)
   end
   private_class_method :entity_kind_for
+
+  # The "Contact" condition is not a column: the snapshot keeps the contact ids the event fired with.
+  def self.standard_value(record, key)
+    return AutomationRules::ContactCondition.contact_ids_of(record) if key == AutomationRules::ContactCondition::KEY
+
+    record.public_send(key)
+  end
+  private_class_method :standard_value
 end

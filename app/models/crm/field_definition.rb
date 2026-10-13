@@ -56,11 +56,11 @@ class Crm::FieldDefinition < ApplicationRecord
     'deal' => %w[
       title description owner_id creator_id team_id company_id originating_conversation_id
       pipeline_id stage_id amount_minor currency expected_close_on closed_at win_probability
-      external_ref idempotency_key lock_version archived_at
+      external_ref idempotency_key lock_version archived_at contact_id
     ],
     'task' => %w[
       title description context_kind deal_id status_id assignee_id creator_id team_id activity_type outcome outcome_note priority
-      start_at due_at completed_at external_ref idempotency_key lock_version archived_at
+      start_at due_at completed_at external_ref idempotency_key lock_version archived_at contact_id
     ],
     'appointment' => %w[
       resource_id contact_id service_id company_id conversation_id created_by_id owner_id

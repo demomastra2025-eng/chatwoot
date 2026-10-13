@@ -639,14 +639,15 @@ RSpec.describe AutomationRule do
       def use_event(event_name)
         account.enable_features!('scheduling', 'crm_deals', 'crm_tasks')
         params[:event_name] = event_name
-        params[:actions] = if event_name.start_with?('appointment_', 'deal_')
+        params[:actions] = if event_name.start_with?('appointment_', 'deal_', 'task_')
                              [{ action_name: :send_webhook_event, action_params: ['https://example.com/hooks/automation'] }]
                            else
                              [{ action_name: :send_message, action_params: ['Hello'] }]
                            end
       end
 
-      %w[conversation_created message_created appointment_created appointment_updated].each do |event_name|
+      %w[conversation_created message_created appointment_created appointment_updated deal_created deal_stage_changed
+         task_created task_updated].each do |event_name|
         context "when the event is #{event_name}" do
           before { use_event(event_name) }
 
@@ -718,6 +719,8 @@ RSpec.describe AutomationRule do
           it 'does not clash with another condition' do
             status_condition = if event_name.start_with?('appointment_')
                                  { attribute_key: 'status', filter_operator: 'equal_to', values: ['scheduled'], query_operator: nil }
+                               elsif event_name.start_with?('deal_', 'task_')
+                                 { attribute_key: 'title', filter_operator: 'contains', values: ['Visit'], query_operator: nil }
                                else
                                  { attribute_key: 'browser_language', filter_operator: 'equal_to', values: ['en'], query_operator: nil }
                                end
@@ -728,14 +731,16 @@ RSpec.describe AutomationRule do
         end
       end
 
-      it 'is not offered for events without a contact' do
-        use_event('deal_created')
-        params[:conditions] = [contact_condition([contact.id])]
+      %w[deal_created task_created].each do |event_name|
+        it "rejects the operators of the other conditions on a #{event_name} rule" do
+          use_event(event_name)
+          params[:conditions] = [contact_condition([contact.id], operator: 'contains')]
 
-        rule = FactoryBot.build(:automation_rule, params)
+          rule = FactoryBot.build(:automation_rule, params)
 
-        expect(rule).not_to be_valid
-        expect(rule.errors[:conditions]).to include('Automation conditions contact_id not supported.')
+          expect(rule).not_to be_valid
+          expect(rule.errors[:conditions]).to include('Automation condition operators contact_id:contains not supported.')
+        end
       end
 
       it 'lets a custom attribute called contact_id stay a custom attribute of a conversation rule' do
@@ -749,9 +754,13 @@ RSpec.describe AutomationRule do
         expect(FactoryBot.build(:automation_rule, params)).to be_valid
       end
 
-      it 'lists the contact condition among the supported conversation and appointment conditions' do
+      it 'lists the contact condition among the supported conversation, appointment, deal and task conditions' do
+        account.enable_features!('scheduling', 'crm_deals', 'crm_tasks')
+
         expect(described_class::CONVERSATION_CONDITION_ATTRIBUTES).to include('contact_id')
         expect(described_class::APPOINTMENT_CONDITION_ATTRIBUTES).to include('contact_id')
+        expect(build(:automation_rule, account: account, event_name: 'deal_created', actions: []).conditions_attributes).to include('contact_id')
+        expect(build(:automation_rule, account: account, event_name: 'task_created', actions: []).conditions_attributes).to include('contact_id')
       end
     end
 

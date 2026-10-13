@@ -147,7 +147,8 @@ class AutomationRule < ApplicationRecord
   before_validation :normalize_action_ids
   before_destroy :cancel_live_touch_enrollments, prepend: true
   after_update_commit :reauthorized!, if: -> { saved_change_to_conditions? }
-  after_update_commit :reconcile_live_touch_enrollments, if: -> { saved_change_to_actions? || saved_change_to_active? }
+  after_update_commit :reconcile_live_touch_enrollments,
+                      if: -> { saved_change_to_actions? || saved_change_to_active? || saved_change_to_conditions? }
   after_update_commit :backfill_live_appointment_enrollments,
                       if: -> { saved_change_to_active? && active? && event_name == 'appointment_created' }
 
@@ -309,16 +310,20 @@ class AutomationRule < ApplicationRecord
     key == AutomationRules::AppointmentFieldCatalog::CABINET_CODE_KEY && persisted? && !will_save_change_to_conditions?
   end
 
-  # The "Contact" condition (conversation and appointment events): the values are ids of contacts of this account.
-  # The operators of appointment rules are checked with the other appointment conditions.
+  # The "Contact" condition (conversation, appointment, deal and task events): the values are ids of contacts of this
+  # account. The operators of appointment, deal and task rules are checked with the other conditions of their catalog.
   def contact_condition_supported
-    return unless (conversation_event? || appointment_event?) && account.present?
+    return unless contact_condition_event? && account.present?
 
     contact_conditions = Array(conditions).select { |condition| AutomationRules::ContactCondition.contact_condition?(condition) }
     return if contact_conditions.blank?
 
     add_contact_operator_errors(contact_conditions) if conversation_event?
     add_contact_value_errors(contact_conditions)
+  end
+
+  def contact_condition_event?
+    conversation_event? || appointment_event? || crm_event?
   end
 
   def add_contact_value_errors(contact_conditions)

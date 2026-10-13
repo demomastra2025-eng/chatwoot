@@ -21,7 +21,7 @@ class Reminders::ExecuteService
     return complete_dispatched_execution if dispatched_before_completion?
     return reminder if execution_ineligible?
     return reminder if playground_delivery_blocked?
-    return reminder if Reminders::MissedAutomationTouchPolicy.new(reminder: reminder).cancel_if_missed!
+    return reminder if automation_touch_cancelled?
     return reminder if appointment_provider_blocked?(:materialization)
     return finish_execution if reminder.delivery_materialized?
 
@@ -61,9 +61,22 @@ class Reminders::ExecuteService
     reminder.persisted? && (!reminder.processing? || !current_execution_claim?)
   end
 
+  # An automation touch that missed its schedule, or whose contact its rule now excludes, is cancelled instead of sent.
+  def automation_touch_cancelled?
+    Reminders::MissedAutomationTouchPolicy.new(reminder: reminder).cancel_if_missed! || excluded_contact_cancelled?
+  end
+
+  # An automation touch goes only to contacts its rule still lets through: the "Contact is not" list is read again here
+  # (and once more after the route is re-pointed, which can name another contact), not just when the event fired.
+  def excluded_contact_cancelled?
+    Reminders::ExcludedContactPolicy.new(reminder: reminder, processing_claim: @processing_claim).cancel_if_excluded!
+  end
+
   def execute_action
     ensure_routable_patient_route!
     realign_notification_route!
+    return reminder if excluded_contact_cancelled?
+
     case reminder.action_type
     when 'send_message'
       execute_send_message

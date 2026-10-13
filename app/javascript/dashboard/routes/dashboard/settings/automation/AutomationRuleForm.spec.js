@@ -173,6 +173,12 @@ describe('AutomationRuleForm contact condition', () => {
     'appointment_created',
     'appointment_updated',
     'appointment_cancelled',
+    'deal_created',
+    'deal_stage_changed',
+    'deal_archived',
+    'task_created',
+    'task_status_changed',
+    'task_archived',
   ])('is offered for %s even before any contact is known', eventName => {
     const wrapper = mountForm({ automation: buildAutomation('', eventName) });
 
@@ -183,12 +189,21 @@ describe('AutomationRuleForm contact condition', () => {
     });
   });
 
-  it.each(['deal_created', 'deal_stage_changed', 'task_created'])(
-    'is hidden for %s, which has no contact',
+  it.each(['deal_created', 'task_created'])(
+    'searches the contacts of a %s rule on the server like the other rules',
     eventName => {
       const wrapper = mountForm({ automation: buildAutomation('', eventName) });
 
-      expect(filterTypeFor(wrapper, CONTACT_KEY)).toBeUndefined();
+      const contact = filterTypeFor(wrapper, CONTACT_KEY);
+
+      expect(contact.fetchOptions).toEqual(expect.any(Function));
+      expect(contact.searchPlaceholder).toBe(
+        'AUTOMATION.CONTACT_CONDITION.SEARCH_PLACEHOLDER'
+      );
+      expect(contact.filterOperators.map(({ value }) => value)).toEqual([
+        'equal_to',
+        'not_equal_to',
+      ]);
     }
   );
 

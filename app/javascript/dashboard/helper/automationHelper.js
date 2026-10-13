@@ -227,11 +227,13 @@ const getManagedConditionFilterMaps = ({
     stage_id: crmStageOptions,
     owner_id: crmDealOwnerOptions,
     team_id: teams,
+    contact_id: contactOptions,
   },
   task: {
     status_id: crmTaskStatusOptions,
     assignee_id: crmTaskAssigneeOptions,
     team_id: teams,
+    contact_id: contactOptions,
     priority: priorityOptions,
   },
 });

@@ -13,17 +13,29 @@ class Reminders::ReconcileEnrollmentService
       enrollment.reload
       next enrollment if enrollment.cancelled?
 
-      if definition_resolver.source_available?
+      if !definition_resolver.source_available?
+        cancel_unavailable_source!
+      elsif Reminders::ExcludedContactPolicy.enrollment_excluded?(enrollment)
+        cancel_excluded_contact!
+      else
         reconcile_materialized_reminders!
         schedule.refresh_next_due!
-      else
-        cancel_unavailable_source!
       end
       enrollment
     end
   end
 
   private
+
+  # The rule now excludes a contact of the enrollment's record: nothing more is materialized and the undelivered steps
+  # that already exist are cancelled.
+  def cancel_excluded_contact!
+    Reminders::CancelEnrollmentService.new(
+      enrollment: enrollment,
+      reason: Reminders::ExcludedContactPolicy::CANCEL_REASON,
+      metadata: { 'cancelled_via' => Reminders::ExcludedContactPolicy::CANCELLED_VIA }
+    ).perform
+  end
 
   def reconcile_materialized_reminders!
     steps = schedule.current_steps.index_by(&:step_key)

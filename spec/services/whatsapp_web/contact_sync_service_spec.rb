@@ -896,6 +896,14 @@ RSpec.describe WhatsappWeb::ContactSyncService do
       }
     ).perform
     original_reminder_fingerprint = (reminder = create_reminder_for_contact_inbox(provisional_contact_inbox)).fingerprint
+    skip_rule = create(
+      :automation_rule,
+      account: channel.account,
+      event_name: 'conversation_created',
+      conditions: [{ attribute_key: 'contact_id', filter_operator: 'not_equal_to', values: [provisional_contact_inbox.contact_id],
+                     query_operator: nil }],
+      actions: [{ action_name: 'send_message', action_params: ['Hello'] }]
+    )
 
     expect(Avatar::AvatarFromUrlJob).not_to receive(:perform_later)
 
@@ -912,6 +920,7 @@ RSpec.describe WhatsappWeb::ContactSyncService do
     expect(resolved_contact_inbox).to be_present
     expect(resolved_contact_inbox.contact_id).to eq(shared_contact.id)
     expect_reminder_reassigned(reminder, shared_contact, original_reminder_fingerprint, contact_inbox: resolved_contact_inbox)
+    expect(skip_rule.reload.conditions.first['values']).to eq([shared_contact.id])
     expect(Contact.find_by(id: provisional_contact_inbox.contact_id)).to be_nil
     expect(channel.inbox.contact_inboxes.find_by(source_id: '249262822686958@lid')&.contact_id).to eq(shared_contact.id)
     expect(channel.inbox.contact_inboxes.find_by(source_id: '77077064008')&.contact_id).to eq(shared_contact.id)

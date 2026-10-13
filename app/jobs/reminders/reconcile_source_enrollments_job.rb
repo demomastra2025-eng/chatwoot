@@ -10,5 +10,17 @@ class Reminders::ReconcileSourceEnrollmentsJob < ApplicationJob
     rescue StandardError => e
       ChatwootExceptionTracker.new(e, account: enrollment.account).capture_exception
     end
+    cancel_excluded_contact_touches(source)
+  end
+
+  private
+
+  # The touches of a rule that are not tied to an enrollment are held to the rule's "Contact is not" list here.
+  def cancel_excluded_contact_touches(source)
+    return unless source.is_a?(AutomationRule)
+
+    Reminders::CancelExcludedContactTouchesService.new(rule: source).perform
+  rescue StandardError => e
+    ChatwootExceptionTracker.new(e, account: source.account).capture_exception
   end
 end

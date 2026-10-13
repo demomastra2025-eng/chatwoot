@@ -291,6 +291,13 @@ RSpec.describe TelegramPersonal::ContactSyncService do
     )
     contact_inbox = create(:contact_inbox, inbox: channel.inbox, contact: telegram_contact, source_id: '134527512')
     original_reminder_fingerprint = (reminder = create_reminder_for_contact_inbox(contact_inbox)).fingerprint
+    skip_rule = create(
+      :automation_rule,
+      account: account,
+      event_name: 'conversation_created',
+      conditions: [{ attribute_key: 'contact_id', filter_operator: 'not_equal_to', values: [telegram_contact.id], query_operator: nil }],
+      actions: [{ action_name: 'send_message', action_params: ['Hello'] }]
+    )
 
     expect do
       described_class.new(
@@ -308,6 +315,7 @@ RSpec.describe TelegramPersonal::ContactSyncService do
     end.not_to raise_error
 
     expect_reminder_reassigned(reminder, shared_contact, original_reminder_fingerprint, contact_inbox: contact_inbox)
+    expect(skip_rule.reload.conditions.first['values']).to eq([shared_contact.id])
     expect { telegram_contact.reload }.to raise_error(ActiveRecord::RecordNotFound)
     expect(shared_contact.reload.additional_attributes).to include(
       'provider' => 'whatsapp_web',

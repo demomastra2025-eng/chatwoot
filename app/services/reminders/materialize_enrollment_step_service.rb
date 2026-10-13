@@ -29,7 +29,7 @@ class Reminders::MaterializeEnrollmentStepService
   def process_locked_enrollment
     return process_inactive_enrollment unless enrollment.active?
     return pause_enrollment! unless feature_enabled?
-    return cancel_unavailable_source! unless definition_resolver.source_available?
+    return cancel_unusable_source! unless source_usable?
 
     schedule = Reminders::EnrollmentScheduleService.new(enrollment: enrollment)
     return cancel_terminal!(schedule) if schedule.terminal_remindable?
@@ -146,8 +146,27 @@ class Reminders::MaterializeEnrollmentStepService
     reminder.mark_automation_provenance!(rule) if rule.present?
   end
 
+  # The live source still exists and its rule (if it is a rule) does not exclude a contact of the enrollment's record.
+  def source_usable?
+    definition_resolver.source_available? && !Reminders::ExcludedContactPolicy.enrollment_excluded?(enrollment)
+  end
+
+  def cancel_unusable_source!
+    definition_resolver.source_available? ? cancel_excluded_contact! : cancel_unavailable_source!
+  end
+
   def cancel_unavailable_source!
     enrollment.cancel!(reason: 'live_source_unavailable', metadata: { evaluated_at: now.iso8601 })
+  end
+
+  # The rule excludes a contact of the enrollment's record (it may have been edited after the enrollment was made):
+  # no step is materialized and the ones that exist but were not delivered are cancelled with the enrollment.
+  def cancel_excluded_contact!
+    Reminders::CancelEnrollmentService.new(
+      enrollment: enrollment,
+      reason: Reminders::ExcludedContactPolicy::CANCEL_REASON,
+      metadata: { 'evaluated_at' => now.iso8601, 'cancelled_via' => Reminders::ExcludedContactPolicy::CANCELLED_VIA }
+    ).perform
   end
 
   def definition_resolver

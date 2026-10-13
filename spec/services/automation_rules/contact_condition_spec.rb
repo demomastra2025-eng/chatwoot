@@ -80,6 +80,105 @@ RSpec.describe AutomationRules::ContactCondition do
     end
   end
 
+  describe '.excludes?' do
+    def condition(operator, ids, query_operator = nil)
+      { 'attribute_key' => 'contact_id', 'filter_operator' => operator, 'values' => ids, 'query_operator' => query_operator }
+    end
+
+    def other(query_operator = nil)
+      { 'attribute_key' => 'status', 'filter_operator' => 'equal_to', 'values' => ['open'], 'query_operator' => query_operator }
+    end
+
+    it 'excludes a contact an "is not" condition lists, whatever the other conditions say' do
+      expect(described_class.excludes?([other('AND'), condition('not_equal_to', [3, 4])], [4])).to be(true)
+      expect(described_class.excludes?([condition('not_equal_to', ['3'])], [nil, 3])).to be(true)
+    end
+
+    it 'does not exclude contacts the list does not name' do
+      expect(described_class.excludes?([condition('not_equal_to', [3])], [4, nil])).to be(false)
+      expect(described_class.excludes?([condition('not_equal_to', [3])], [nil])).to be(false)
+      expect(described_class.excludes?([condition('not_equal_to', [3])], [])).to be(false)
+    end
+
+    it 'reads an "is" list or a rule without contact conditions as no exclusion' do
+      expect(described_class.excludes?([condition('equal_to', [3])], [4])).to be(false)
+      expect(described_class.excludes?([other], [3])).to be(false)
+      expect(described_class.excludes?([], [3])).to be(false)
+      expect(described_class.excludes?(nil, [3])).to be(false)
+    end
+
+    it 'needs the contact excluded in every OR group' do
+      only_first_group = [condition('not_equal_to', [3], 'OR'), other]
+      both_groups = [condition('not_equal_to', [3], 'OR'), other('AND'), condition('not_equal_to', [3, 5])]
+
+      expect(described_class.excludes?(only_first_group, [3])).to be(false)
+      expect(described_class.excludes?(both_groups, [3])).to be(true)
+      expect(described_class.excludes?(both_groups, [5])).to be(false)
+    end
+
+    it 'does not take a custom attribute called contact_id for a contact list' do
+      custom = condition('not_equal_to', [3]).merge('custom_attribute_type' => 'contact_attribute')
+
+      expect(described_class.excludes?([custom], [3])).to be(false)
+    end
+  end
+
+  describe '.excluded_ids' do
+    it 'collects the ids of the "is not" lists only' do
+      conditions = [
+        { 'attribute_key' => 'contact_id', 'filter_operator' => 'not_equal_to', 'values' => [3, '4'], 'query_operator' => 'OR' },
+        { 'attribute_key' => 'contact_id', 'filter_operator' => 'equal_to', 'values' => [9], 'query_operator' => nil }
+      ]
+
+      expect(described_class.excluded_ids(conditions)).to eq([3, 4])
+      expect(described_class.excluded_ids(nil)).to eq([])
+    end
+  end
+
+  describe '.replace_id' do
+    it 'swaps one id for another and keeps an id that ends up twice once' do
+      expect(described_class.replace_id([1, '2', 3], 2, 5)).to eq([1, 5, 3])
+      expect(described_class.replace_id([1, 2], 2, 1)).to eq([1])
+      expect(described_class.replace_id(['2', 2], 2, 7)).to eq([7])
+    end
+
+    it 'leaves values without the id as they are' do
+      expect(described_class.replace_id([1, '3', 3], 2, 5)).to eq([1, '3', 3])
+      expect(described_class.replace_id(nil, 2, 5)).to eq([])
+    end
+  end
+
+  describe '.contact_ids_of' do
+    let(:account) { create(:account) }
+
+    it 'reads the contact of a conversation' do
+      conversation = create(:conversation, account: account)
+
+      expect(described_class.contact_ids_of(conversation)).to eq([conversation.contact_id])
+    end
+
+    it 'reads the booking contact and the patient card of an appointment' do
+      account.enable_features!('scheduling')
+      patient = create(:contact, account: account)
+      appointment = create(:scheduling_appointment, account: account, patient_contact: patient)
+
+      expect(described_class.contact_ids_of(appointment)).to contain_exactly(appointment.contact_id, patient.id)
+    end
+
+    it 'reads every contact of a deal and the contacts of the deal of a task' do
+      account.enable_features!('crm_deals', 'crm_tasks')
+      deal = create(:crm_deal, account: account)
+      first = create(:crm_deal_contact, deal: deal, primary: true)
+      second = create(:crm_deal_contact, deal: deal)
+      task = create(:crm_task, account: account, deal: deal)
+      unlinked_task = create(:crm_task, account: account)
+
+      expect(described_class.contact_ids_of(deal)).to contain_exactly(first.contact_id, second.contact_id)
+      expect(described_class.contact_ids_of(task)).to contain_exactly(first.contact_id, second.contact_id)
+      expect(described_class.contact_ids_of(unlinked_task)).to eq([])
+    end
+  end
+
   describe '.matches?' do
     it 'makes "is" true and "is not" false when an event contact is listed' do
       expect(described_class.matches?('equal_to', [1, 2], [2, nil])).to be(true)

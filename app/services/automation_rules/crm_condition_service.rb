@@ -22,6 +22,7 @@ class AutomationRules::CrmConditionService # rubocop:disable Metrics/ClassLength
     key = condition['attribute_key'].to_s
     operator = condition['filter_operator'].to_s
     return false unless field_catalog.operator_supported?(key, operator)
+    return evaluate_contact_condition(operator, condition) if AutomationRules::ContactCondition.contact_condition?(condition)
 
     return evaluate_standard_condition(key, operator, condition) if field_catalog.standard_field?(key)
 
@@ -29,6 +30,22 @@ class AutomationRules::CrmConditionService # rubocop:disable Metrics/ClassLength
     return false if definition.blank?
 
     evaluate_custom_condition(definition, operator, condition)
+  end
+
+  # Any contact of the deal (of the deal a task belongs to) on the list counts: "is not" holds only when none of them is.
+  def evaluate_contact_condition(operator, condition)
+    listed_ids = AutomationRules::ContactCondition.normalize_ids(condition['values'])
+
+    AutomationRules::ContactCondition.matches?(operator, listed_ids, event_contact_ids)
+  end
+
+  # The contacts as they were when the event fired. An event recorded before this condition existed has no list in its
+  # snapshot and reads the record's current contacts.
+  def event_contact_ids
+    key = AutomationRules::ContactCondition::KEY
+    return AutomationRules::ContactCondition.contact_ids_of(record) unless @snapshot.present? && @snapshot.key?(key)
+
+    AutomationRules::ContactCondition.normalize_ids(@snapshot[key])
   end
 
   def evaluate_custom_condition(definition, operator, condition)

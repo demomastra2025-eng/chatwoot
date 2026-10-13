@@ -1,7 +1,8 @@
 # The "Contact" condition of an automation rule: a rule can be limited to chosen contacts ("is") or skip them
 # ("is not"), for example to never message a family or a test number. The values are contact ids of the rule's
 # account, kept as a list of positive integers. It exists for the events that have a contact: conversation and
-# message events (the conversation contact) and appointment events (the booking contact and the patient card).
+# message events (the conversation contact), appointment events (the booking contact and the patient card) and deal
+# and task events (the contacts of the deal).
 class AutomationRules::ContactCondition
   KEY = 'contact_id'.freeze
   OPERATORS = %w[equal_to not_equal_to].freeze
@@ -53,4 +54,66 @@ class AutomationRules::ContactCondition
     listed = listed_ids.intersect?(event_contact_ids.compact)
     { 'equal_to' => listed, 'not_equal_to' => !listed }.fetch(operator.to_s, false)
   end
+
+  # The values with one contact id replaced by another (an id that ends up twice stays once). Values without the id stay
+  # as they are.
+  def self.replace_id(values, from, to)
+    values = Array(values)
+    return values unless values.any? { |value| normalize_id(value) == from }
+
+    values.map { |value| normalize_id(value) == from ? to : value }.uniq { |value| normalize_id(value) || value }
+  end
+
+  # The contacts an automation record involves, as ids: the conversation contact; the booking contact and the patient
+  # card of an appointment; every contact linked to a deal, and the contacts of the deal a task belongs to.
+  def self.contact_ids_of(record)
+    ids = case record
+          when ::Crm::Deal then deal_contact_ids(record)
+          when ::Crm::Task then record.deal.present? ? deal_contact_ids(record.deal) : []
+          else [record.try(:contact_id), record.try(:patient_contact_id)]
+          end
+    ids.compact.uniq
+  end
+
+  def self.deal_contact_ids(deal)
+    ::Crm::DealContact.where(account_id: deal.account_id, deal_id: deal.id).pluck(:contact_id)
+  end
+  private_class_method :deal_contact_ids
+
+  # True when no way of passing the conditions is left for these contacts: every OR group of the rule has an "is not"
+  # Contact condition that lists one of them. The other conditions do not matter then, so the answer holds whatever the
+  # event looks like. This is the "never message this person" check that touches scheduled earlier are held to again
+  # when they are about to go out. An "is" list narrows who the rule fires for and is only judged when the event fires.
+  def self.excludes?(conditions, event_contact_ids)
+    contact_ids = Array(event_contact_ids).compact
+    return false if contact_ids.blank?
+
+    groups = condition_groups(conditions)
+    groups.present? && groups.all? { |group| group.any? { |condition| excluding_condition?(condition, contact_ids) } }
+  end
+
+  # The "is not" lists of the conditions, for a quick "is anyone excluded at all?" check.
+  def self.excluded_ids(conditions)
+    Array(conditions).select { |condition| excluding_condition?(condition) }
+                     .flat_map { |condition| normalize_ids(condition['values']) }.uniq
+  end
+
+  # The conditions split the way every condition service reads them: "A AND B OR C" is [[A, B], [C]].
+  def self.condition_groups(conditions)
+    groups = [[]]
+    Array(conditions).each do |condition|
+      groups.last << condition
+      groups << [] if condition['query_operator'].to_s.casecmp('OR').zero?
+    end
+    groups.reject(&:blank?)
+  end
+  private_class_method :condition_groups
+
+  def self.excluding_condition?(condition, contact_ids = nil)
+    return false unless contact_condition?(condition) && condition['filter_operator'].to_s == 'not_equal_to'
+
+    listed_ids = normalize_ids(condition['values'])
+    contact_ids.nil? ? listed_ids.present? : listed_ids.intersect?(contact_ids)
+  end
+  private_class_method :excluding_condition?
 end
