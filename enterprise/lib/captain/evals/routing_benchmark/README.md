@@ -315,7 +315,13 @@ The loader is strict. It refuses, naming the file and the key:
   a `staff_handoff` that is not true, false or `any`, a `reply_language` that is not `ru` or `kk`, an `acts` item whose tool is not a
   mutation tool of that agent, a `must_not_succeed` item that is not a mutation tool.
 
-`captain:routing_benchmark_fixtures` loads a file set with this loader and prints the first refusal.
+`captain:routing_benchmark_fixtures` loads a file set with this loader and prints the first refusal. The specs that load the whole v2 set
+(160 dialogues, 395 turns: the strict loader, the gate coverage, the calendar lint) are skipped unless
+`ROUTING_BENCHMARK_V2_FIXTURES='/path/to/v2/*.yml'` is set:
+
+```sh
+ROUTING_BENCHMARK_V2_FIXTURES='/root/work/bench/v2/*.yml' bundle exec rspec spec/enterprise/lib/captain/evals
+```
 
 ```yaml
 workspace:
