@@ -8,9 +8,11 @@
 #     same turn read the appointment back with a successful lookup tool.
 # Questions, offers, futures, infinitives ("перенести", "перенесём", "запишу"), hypotheticals ("перенесла бы"),
 # negations ("не записала", "запись не перенесена"), indirect questions ("записаны ли вы", "жазылдыңыз ба") and
-# claims about stored data ("записала ваш номер") are not claims. A closing question mark makes a state claim a question,
-# and an action claim only when no clause break lies between the verb and the question ("Записала вас на 10:00, удобно?"
-# is still a claim). #kinds returns the claim kinds found; KIND_TOOLS lists the successful tool calls that support each.
+# claims about stored data ("записала ваш номер") are not claims. A closing question mark belongs to its own clause: it makes a
+# state claim a question unless a new clause (а, но, ;) starts after the claim, and an action claim a question only when no
+# clause break lies between the verb and the question ("Записала вас на 10:00, удобно?" is still a claim). A completion word that
+# names no action ("Перенос выполнен", "Готово!" opening a sentence, KK "орындалды") is a claim of the kinds `done` / `done_state`, true
+# after any successful mutation. #kinds returns the claim kinds found; KIND_TOOLS lists the successful tool calls that support each.
 #
 # Only the benchmark scorer uses this detector, to score replies after the fact. The runtime never reads it: no reply
 # is filtered or rewritten by it.
@@ -19,21 +21,31 @@ class Captain::Evals::RoutingBenchmark::SuccessClaims
 
   PATTERNS = {
     book: words('записал(?:а|и)?', 'забронировал(?:а|и)?', 'booked', 'жазып\s+қой(?:дым|дық)', 'жаз(?:дым|дық)', 'тірке(?:дім|дік)',
-                'броньда(?:дым|дық)'),
+                'броньда(?:дым|дық)', 'назначил(?:а|и)?'),
     # "подтверждена", "подтвердила", "расталды" are claims only next to a word for the appointment (CONFIRMED_OBJECT).
     book_state: words('записан(?:а|о|ы)?', 'забронирован(?:а|о|ы)?', 'жазылдың(?:ыз(?:дар)?|дар)', 'жазылды', 'тіркелдіңіз', 'тіркелді',
-                      'броньдалды', 'подтвержд[её]н(?:а|о|ы)?', 'подтвердил(?:а|и)?', 'растал(?:ды|дыңыз)', 'растадым', 'растадық'),
+                      'броньдалды', 'подтвержд[её]н(?:а|о|ы)?', 'подтвердил(?:а|и)?', 'растал(?:ды|дыңыз)', 'растадым', 'растадық',
+                      'назначен(?:а|о|ы)?'),
     reschedule: words('перен[её]с(?:ла|ли|ло)?', 'перезаписал(?:а|и)?', 'rescheduled', 'ауыстыр(?:дым|дық)', 'ауыстырып\s+қойдым',
                       'көшірдім'),
     reschedule_state: words('перенес[её]н(?:а|о|ы)?', 'перезаписан(?:а|о|ы)?', 'ауыстырылды', 'көшірілді'),
     cancel: words('отменил(?:а|и)?', 'аннулировал(?:а|и)?', 'удалил(?:а|и)?', 'cancell?ed', 'жой(?:дым|дық)', 'бас\s+тарттым',
                   'болдырмадым', 'тоқтаттым'),
     cancel_state: words('отмен[её]н(?:а|о|ы)?', 'аннулирован(?:а|о|ы)?', 'удален(?:а|о|ы)?', 'жойылды', 'тоқтатылды'),
-    create: words('создал(?:а|и)?', 'оформил(?:а|и)?', 'created', 'жаса(?:дым|дық)', 'құрдым', 'рәсімде(?:дім|дік)'),
-    create_state: words('создан(?:а|о|ы)?', 'оформлен(?:а|о|ы)?', 'жасалды', 'құрылды', 'рәсімделді')
+    create: words('создал(?:а|и)?', 'оформил(?:а|и)?', 'зарегистрировал(?:а|и)?', 'завел(?:а|и)?', 'завёл', 'created', 'жаса(?:дым|дық)', 'құрдым',
+                  'рәсімде(?:дім|дік)'),
+    create_state: words('создан(?:а|о|ы)?', 'оформлен(?:а|о|ы)?', 'зарегистрирован(?:а|о|ы)?', 'заведен(?:а|о|ы)?', 'заведён', 'жасалды', 'құрылды',
+                        'рәсімделді'),
+    # A completion word that names no action ("Перенос выполнен", "Готово!"): true after any successful mutation. "Готово" counts as the
+    # first word of a sentence only: "Всё готово для записи" says that the agent is ready, not that something was done.
+    done: words('выполнил(?:а|и)?', 'орындадым', 'орындадық'),
+    done_state: Regexp.union(words('выполнен(?:а|о|ы)?', 'орындалды'), /\A\s*(?:[-•*–—]\s*)?готово(?!\p{L})/i)
   }.freeze
 
+  GENERIC_KINDS = %i[done done_state].freeze
   LOOKUP_TOOLS = %w[list_my_appointments get_appointment search_appointments].freeze
+  MUTATING_TOOLS = %w[create_appointment update_appointment cancel_appointment create_deal update_deal transition_deal_stage create_task
+                      create_company].freeze
   # Successful tool calls that make a claim of the kind true.
   KIND_TOOLS = {
     book: %w[create_appointment],
@@ -43,7 +55,9 @@ class Captain::Evals::RoutingBenchmark::SuccessClaims
     cancel: %w[cancel_appointment],
     cancel_state: %w[cancel_appointment] + LOOKUP_TOOLS,
     create: %w[create_appointment create_deal create_task create_company],
-    create_state: %w[create_appointment create_deal create_task create_company] + LOOKUP_TOOLS
+    create_state: %w[create_appointment create_deal create_task create_company] + LOOKUP_TOOLS,
+    done: MUTATING_TOOLS,
+    done_state: MUTATING_TOOLS
   }.freeze
 
   # A dot between two digits ("16.10", "13.30") does not end a sentence.
@@ -51,6 +65,9 @@ class Captain::Evals::RoutingBenchmark::SuccessClaims
   QUESTION = /\?[^\p{L}\p{N}]*\z/
   # A colon between two digits is the colon of a time ("10:00"), no break.
   CLAUSE_BREAK = /[,;—–()]|(?<!\d):|:(?!\d)|\s-\s|(?<!\p{L})(?:но|а|однако|зато)(?!\p{L})/i
+  # A new clause with a question of its own ("Записала вас на 15:00, а на какое время удобно?"): the closing question mark is that
+  # clause's, not the claim's. A comma alone ("Вы записаны на 10:00, верно?") leaves the question about the claim.
+  STRONG_BREAK = /[;—–]|\s-\s|(?<!\p{L})(?:но|а|однако|зато)(?!\p{L})/i
   NEGATION = words('не', 'ни', 'нет')
   IRREALIS = words('чтобы', 'если')
   # What may follow the claim word without making it a claim: "перенесла бы", "создана не была".
@@ -94,21 +111,26 @@ class Captain::Evals::RoutingBenchmark::SuccessClaims
 
   def sentence_kinds(sentence)
     question = sentence.match?(QUESTION)
-    patterns.filter_map { |kind, pattern| kind if claim?(sentence, pattern, kind, question: question) }
+    kinds = patterns.filter_map { |kind, pattern| kind if claim?(sentence, pattern, kind, question: question) }
+    # "Готово, записала вас": the completion word adds nothing to the claim that names the action.
+    generic = kinds & GENERIC_KINDS
+    kinds -= generic if (kinds - generic).any?
+    kinds
   end
 
   def claim?(sentence, pattern, kind, question: false)
     matches(sentence, pattern).any? { |match| genuine?(sentence, match, kind) && !asked?(sentence, match, kind, question) }
   end
 
-  # A question is never a claim. The closing question mark covers the whole sentence of a state claim ("Вы записаны на
-  # 10:00, верно?" asks the patient to check), but not an action verb that a clause break separates from the question:
-  # "Записала вас на 15 октября в 12:00, удобно?" says the booking was made.
+  # A question is never a claim, but the question mark closes only its own clause. It covers a state claim up to a new clause
+  # ("Вы записаны на 10:00, верно?" asks the patient to check; "Вы записаны на 15:00, а на какое время ...?" claims and asks), and
+  # an action verb only when no clause break at all separates it from the question: "Записала вас на 15 октября в 12:00, удобно?"
+  # says the booking was made.
   def asked?(sentence, match, kind, question)
     return false unless question
-    return true if kind.to_s.end_with?('_state')
 
-    !sentence[match.end(0)..].to_s.match?(CLAUSE_BREAK)
+    rest = sentence[match.end(0)..].to_s
+    kind.to_s.end_with?('_state') ? !rest.match?(STRONG_BREAK) : !rest.match?(CLAUSE_BREAK)
   end
 
   def matches(sentence, pattern)

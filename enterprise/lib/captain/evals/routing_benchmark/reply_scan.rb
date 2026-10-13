@@ -16,12 +16,23 @@
 #   role_fragment        "дочка — Как зовут ...", "не указан — ...", "Жанна Оспанова — Вы имеете в виду ..." (a family role
 #                        followed by a time, a date or a doctor is a recap and no fragment)
 #   composer_phrase      canned council text ("Часть запроса требует дополнительной проверки")
+#   agent_name           the name of a workspace agent used as a name: in quotes («Запись к врачу») or after "агент". The bare name
+#                        of an agent is an ordinary word ("Диагностика", "Администратор") and no finding
+#   stock_text           a sentence of the runtime's locale files that is shown to a patient instead of an agent reply (StockText)
+#   tool_error           an English sentence of a runtime tool error ("This agent handoff is not allowed")
 class Captain::Evals::RoutingBenchmark::ReplyScan
-  KINDS = %i[reserved_token tool_name identifier json latin instruction_overlap third_person role_fragment composer_phrase].freeze
+  KINDS = %i[reserved_token tool_name identifier json latin instruction_overlap third_person role_fragment composer_phrase
+             agent_name stock_text tool_error].freeze
   SHINGLE_SIZE = 5
 
-  RESERVED_TOKEN = /(?<![\p{L}\p{N}_])(?:conversation_handoff\w*|response_cancelled|plan_request|manage_agent_tasks|handoff_to_assistant_?\d*|
-                      (?:assistant|scenario)_\d+|agent_tasks|part_refs|captain_request_id)(?![\p{L}\p{N}_])/ix
+  RESERVED_TOKEN = /(?<![\p{L}\p{N}_])(?:conversation_handoff\w*|response_cancelled|plan_request|manage_agent_tasks|
+                      (?:handoff|transfer)_to_\w+|(?:assistant|agent|scenario)_\d+|agent_tasks|part_refs|captain_request_id)
+                      (?![\p{L}\p{N}_])/ix
+  TOOL_ERROR = Regexp.union(
+    /handoff\s+(?:is\s+)?not\s+allowed/i, /routing\s+changed/i, /no\s+longer\s+available/i, /requires\s+a\s+confirmed/i,
+    /mutation[_\s]retry[_\s]blocked/i, /tool-call\s+loop/i, /not\s+enabled\s+for\s+this\s+assistant/i, /conversation\s+not\s+found/i,
+    /failed\s+to\s+hand\s?off/i, /technical\s+failure/i
+  )
   SNAKE_CASE = /(?<![\p{L}\p{N}_])[a-z][a-z0-9]*(?:_[a-z0-9]+)+(?![\p{L}\p{N}_])/
   IDENTIFIER = /\h{8}-\h{4}-\h{4}-\h{4}-\h{12}|\#\d+|(?<![\p{L}\d])id\s*[:=\#]?\s*\d+|
                 (?<![\p{L}\d])(?:appointment|resource|service|contact|deal|conversation|patient|assistant)[_ -]?id(?![\p{L}\d])/ix
@@ -41,9 +52,9 @@ class Captain::Evals::RoutingBenchmark::ReplyScan
   ASKING = '(?:Как|Какая|Какой|Какое|Какую|Какие|Когда|Для\s+кого|Уточните|Подтвердите|Подскажите|Назовите|Укажите|Напишите|' \
            'имя|дата\s+рождения|ФИО)(?![\p{L}])'
   ROLE_FRAGMENT = /(?:\A|\n|[.!?;:]\s+|,\s+)(?:(?:#{PLACEHOLDER_ROLES})\s*[—–]\s*\S|(?:#{FAMILY_ROLES})\s*[—–]\s*#{ASKING})/i
-  # "Запись №4821", "заявка № 12345": a numbered record next to a word for a booking.
+  # "Запись №4821", "заявка № 12345", "№ 305": a number sign with three digits or more is an identifier, unless the customer or the
+  # workspace wrote that number themselves ("кабинет №305").
   NUMBER_SIGN = /№\s*\d{3,}/
-  RECORD_WORD = /(?<!\p{L})(?:запис\p{L}*|заявк\p{L}*|брон\p{L}*|ID)(?!\p{L})/i
   # "Номер вашей записи: 4821": the booking number, which in this system is the database id.
   RECORD_NUMBER = /(?<!\p{L})номер\p{L}*\s+(?:\p{L}+\s+){0,2}запис\p{L}*[^\p{L}\d\n]{0,4}\d+/i
   # A number that is no time, date, price or amount: not next to ":", "/" or "-", not part of a decimal or a date ("1.5",
@@ -66,9 +77,10 @@ class Captain::Evals::RoutingBenchmark::ReplyScan
     # internal_ids:  database ids the turn handled (appointment rows, conversation, contact, ids in tool results); a
     #                standalone number equal to one of them is an identifier
     # known_numbers: numbers (strings) the customer or the workspace wrote themselves; never an identifier
-    def call(text, tool_ids: [], allowed: [], shingles: Set.new, latin_ok: false, internal_ids: [], known_numbers: [])
+    # agent_names:   the names of the workspace agents, for the `agent_name` kind
+    def call(text, tool_ids: [], allowed: [], shingles: Set.new, latin_ok: false, internal_ids: [], known_numbers: [], agent_names: [])
       new(text, tool_ids: tool_ids, allowed: allowed, shingles: shingles, latin_ok: latin_ok,
-                internal_ids: internal_ids, known_numbers: known_numbers).findings
+                internal_ids: internal_ids, known_numbers: known_numbers, agent_names: agent_names).findings
     end
 
     # The digit runs of the given texts, for the known-numbers list.
@@ -95,7 +107,7 @@ class Captain::Evals::RoutingBenchmark::ReplyScan
     def trim(word) = word.sub(/['-]+\z/, '')
   end
 
-  def initialize(text, tool_ids:, allowed:, shingles:, latin_ok:, internal_ids: [], known_numbers: [])
+  def initialize(text, tool_ids:, allowed:, shingles:, latin_ok:, internal_ids: [], known_numbers: [], agent_names: [])
     @text = text.to_s
     @tool_ids = Set.new(tool_ids.map(&:to_s))
     @allowed = Set.new((ALLOWED_LATIN + Array(allowed)).map { |word| word.to_s.downcase })
@@ -103,6 +115,7 @@ class Captain::Evals::RoutingBenchmark::ReplyScan
     @latin_ok = latin_ok
     @internal_ids = Set.new(Array(internal_ids).filter_map { |id| Integer(id, exception: false) })
     @known_numbers = Set.new(Array(known_numbers).map(&:to_s))
+    @agent_names = Array(agent_names).map { |name| name.to_s.squish }.reject(&:empty?)
   end
 
   def findings
@@ -117,7 +130,10 @@ class Captain::Evals::RoutingBenchmark::ReplyScan
     found[:instruction_overlap].concat(overlap)
     found[:third_person].concat(scan(THIRD_PERSON))
     found[:role_fragment].concat(scan(ROLE_FRAGMENT) + scan(NAME_QUESTION_FRAGMENT))
-    found[:composer_phrase].concat(COMPOSER_PHRASES.flat_map { |pattern| scan(pattern) })
+    found[:stock_text].concat(Captain::Evals::RoutingBenchmark::StockText.found(@text))
+    found[:composer_phrase].concat(composer_phrases(found[:stock_text]))
+    found[:agent_name].concat(agent_names_in_text)
+    found[:tool_error].concat(scan(TOOL_ERROR))
     KINDS.filter_map { |kind| { kind: kind, matches: found[kind].uniq.first(5) } if found[kind].any? }
   end
 
@@ -127,12 +143,26 @@ class Captain::Evals::RoutingBenchmark::ReplyScan
     @text.to_enum(:scan, pattern).map { Regexp.last_match(0).strip }
   end
 
-  # "Запись №4821 создана", "Номер вашей записи: 4821": the number of a booking is its database id.
+  # The canned council wording that is not also a stock sentence: a stock sentence is the stricter finding.
+  def composer_phrases(stock)
+    COMPOSER_PHRASES.flat_map { |pattern| scan(pattern) }.reject { |phrase| stock.any? { |line| line.include?(phrase.squish) } }
+  end
+
+  # «Запись к врачу», "Диагностика", агент Запись к врачу: the name of an agent used as a name. Written plainly in a sentence it is an
+  # ordinary phrase ("запись к врачу на среду") and no finding.
+  def agent_names_in_text
+    @agent_names.flat_map do |name|
+      words = Regexp.escape(name).gsub('\ ') { '\s+' }
+      scan(/[«"“„'‘]\s*#{words}\s*[»"”“'’]|агент\p{L}*\s+[«"“]?#{words}[»"”]?/i)
+    end
+  end
+
+  # "Запись №4821 создана", "Номер вашей записи: 4821", "№ 305": a number sign with three digits or more, or the number of a
+  # booking, is a database id unless the customer or the workspace wrote that number themselves.
   def numbered_records
     signed = @text.to_enum(:scan, NUMBER_SIGN).filter_map do
       match = Regexp.last_match
-      near = @text[[match.begin(0) - 30, 0].max...(match.end(0) + 30)]
-      match[0].strip if near.match?(RECORD_WORD)
+      match[0].strip if @known_numbers.exclude?(match[0][/\d+/])
     end
     signed + scan(RECORD_NUMBER)
   end

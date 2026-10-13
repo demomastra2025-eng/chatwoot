@@ -122,9 +122,15 @@ RSpec.describe Captain::Evals::RoutingBenchmark::ReplyScan do
     end
 
     it 'finds canned text as a composer phrase' do
+      allow(Captain::Evals::RoutingBenchmark::StockText).to receive(:found).and_return([])
+
       expect(kinds('Часть запроса требует дополнительной проверки.')).to eq([:composer_phrase])
       expect(kinds('Не удалось завершить обработку запроса. Остаётся открытым: перенос.')).to eq([:composer_phrase])
       expect(kinds('Подтвердите действие по запросу «Перенести приём»?')).to eq([:composer_phrase])
+    end
+
+    it 'leaves the canned text that the runtime locale files hold to the stricter stock_text kind' do
+      expect(kinds('Часть запроса требует дополнительной проверки.')).to eq([:stock_text])
     end
 
     it 'does not take a recap line with a patient role for a fragment' do
@@ -140,6 +146,54 @@ RSpec.describe Captain::Evals::RoutingBenchmark::ReplyScan do
     it 'still finds a family role that is followed by a question or an instruction' do
       expect(kinds("Уточните:\nсын — Подскажите имя и дату рождения.")).to eq([:role_fragment])
       expect(kinds('Уточните: мама — Для кого оформить запись?')).to eq([:role_fragment])
+    end
+  end
+
+  describe 'the names of the agents and the tools' do
+    let(:names) { ['Запись к врачу', 'Диагностика', 'Администратор'] }
+
+    it 'finds the name of an agent used as a name: in quotes or after "агент"' do
+      expect(matches('Передаю вас агенту «Запись к врачу».', :agent_name, agent_names: names)).to eq(['агенту «Запись к врачу»'])
+      expect(matches('Вызываю «Запись к врачу».', :agent_name, agent_names: names)).to eq(['«Запись к врачу»'])
+      expect(matches('Вам ответит агент Диагностика.', :agent_name, agent_names: names)).to eq(['агент Диагностика'])
+      expect(matches('Вопрос ушёл в "Администратор".', :agent_name, agent_names: names)).to eq(['"Администратор"'])
+    end
+
+    it 'leaves the bare name of an agent alone: it is an ordinary phrase' do
+      expect(kinds('Запись к врачу возможна по будням. Диагностика занимает час, Администратор подскажет.', agent_names: names)).to be_empty
+    end
+
+    it 'finds the transfer tools, the planning tools and the agent keys of the runtime' do
+      expect(matches('Вызов transfer_to_agent_4 и handoff_to_assistant_7, plan_request, manage_agent_tasks, agent_12.', :reserved_token))
+        .to contain_exactly('transfer_to_agent_4', 'handoff_to_assistant_7', 'plan_request', 'manage_agent_tasks', 'agent_12')
+    end
+
+    it 'finds an English sentence of a runtime tool error' do
+      expect(matches('Ответ: This agent handoff is not allowed', :tool_error)).to eq(['handoff is not allowed'])
+      expect(matches('Mutation retry blocked.', :tool_error)).to be_present
+    end
+
+    it 'finds a number sign with three digits or more whatever the words around it, unless the customer wrote the number' do
+      expect(matches('Ваш номер №4821.', :identifier)).to eq(['№4821'])
+      expect(kinds('Кабинет №305.', known_numbers: %w[305])).to be_empty
+      expect(kinds('Кабинет №30.')).to be_empty
+    end
+  end
+
+  describe 'the stock sentences of the runtime' do
+    it 'finds the sentences of the locale files and the owner\'s list, in Russian and in Kazakh' do
+      ['По этому вопросу вам ответит сотрудник клиники.', 'Действие выполнено.', 'Запрос отменён.', 'Сұрау тоқтатылды.',
+       'Запрос обработан. Если нужны подробности, уточните, пожалуйста, вопрос.', 'Әрекет орындалды.'].each do |text|
+        expect(kinds("Хорошо. #{text}")).to eq([:stock_text]), text
+      end
+    end
+
+    it 'finds a stock sentence with an interpolation, whatever fills the gap' do
+      expect(kinds('Часть обращения осталась без ответа, нужен ответ сотрудника: перенос приёма.')).to eq([:stock_text])
+    end
+
+    it 'does not take an ordinary reply for a stock sentence' do
+      expect(kinds('Запись отменена по вашей просьбе, ждём вас снова.')).to be_empty
     end
   end
 

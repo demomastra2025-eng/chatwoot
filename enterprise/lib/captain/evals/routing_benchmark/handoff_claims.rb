@@ -13,6 +13,9 @@
 #                        doctor or colleague ("передала ваш вопрос врачу").
 #   - handoff_ambiguous: the sentence hands the request to "специалист" / "маман" / "отдел". That word also names an
 #                        internal agent that took the request over, so it is reported on its own, never as staff.
+#   - handoff_ready:     a result, certificate or document said to be ready or sent ("результат готов", "справка отправлена вам",
+#                        KK "нәтиже дайын"). Only staff can know that, so it counts like a staff claim; a turnaround from the
+#                        knowledge base ("результаты готовы в течение 1-2 дней") and a question are no claims.
 #
 # "Запрос передан на обработку" is the plan acknowledgement of the runtime and no claim. "Направила вас к врачу" refers
 # the patient to a doctor and is no claim either: a doctor counts as the addressee only for a verb of passing a message on.
@@ -55,6 +58,16 @@ class Captain::Evals::RoutingBenchmark::HandoffClaims < Captain::Evals::RoutingB
   ADDRESSEE = /(?<!\p{L})(?:с\s+вами|вам|вас|сізбен|сізге)(?!\p{L})/i
   WAITING = /(?<!\p{L})ожидайте\s+(?:звонка|ответа|сообщения)/i
 
+  # "Результат готов", "Справка отправлена вам на почту": what only staff can know or do, said as done. A result, a certificate
+  # or a document that is ready or sent is a claim of the same weight as "передала администратору".
+  READY = words('готов(?:а|о|ы)?', 'отправлен(?:а|о|ы)?', 'выслан(?:а|о|ы)?', 'направлен(?:а|о|ы)?', 'дайын', 'жіберілді', 'жіберілген',
+                'жолданды')
+  DOCUMENT = words('результат\p{L}*', 'анализ\p{L}*', 'справк\p{L}*', 'документ\p{L}*', 'заключени\p{L}*', 'выписк\p{L}*', 'нәтиже\p{L}*',
+                   'анықтама\p{L}*', 'құжат\p{L}*', 'қорытынды\p{L}*', 'талдау\p{L}*')
+  # "Результаты готовы в течение 1-2 дней" states a turnaround from the knowledge base: no claim that a result is ready now.
+  TURNAROUND = /в\s+течени\p{L}*|через|срок|обычно|как\s+правило|будут|будет|бывает|занима\p{L}*|ориентировочно|до\s+\d|
+                (?<!\p{L})(?:күн|сағат|кейін|ішінде)(?!\p{L})/ix
+
   private
 
   def sentence_kinds(sentence)
@@ -64,7 +77,12 @@ class Captain::Evals::RoutingBenchmark::HandoffClaims < Captain::Evals::RoutingB
     kinds << :handoff_staff if promise?(sentence) || staff_promise?(sentence) || waiting_for_staff?(sentence)
     verbs = handoff_verbs(sentence)
     kinds << handoff_kind(sentence, verbs) if verbs.any?
+    kinds << :handoff_ready if ready?(sentence)
     kinds.compact.uniq
+  end
+
+  def ready?(sentence)
+    sentence.match?(DOCUMENT) && !sentence.match?(TURNAROUND) && claim?(sentence, READY, :ready)
   end
 
   def handoff_verbs(sentence)

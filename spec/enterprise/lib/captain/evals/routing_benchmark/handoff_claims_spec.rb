@@ -54,6 +54,30 @@ RSpec.describe Captain::Evals::RoutingBenchmark::HandoffClaims do
     end
   end
 
+  describe 'claims that a result or a document is ready or sent' do
+    [
+      'Результат готов.', 'Результаты анализов готовы.', 'Ваша справка готова.', 'Справка отправлена вам на почту.',
+      'Документы высланы.', 'Заключение направлено вам в WhatsApp.', 'Нәтиже дайын.', 'Анықтама жіберілді.'
+    ].each do |text|
+      it "reads #{text.inspect} as a ready claim" do
+        expect(kinds(text)).to eq([:handoff_ready])
+      end
+    end
+
+    [
+      'Результаты анализов готовы в течение 1-2 дней.', 'Справка будет готова через день.', 'Результат уже готов?', 'Результат пока не готов.',
+      'Когда будет готов результат?', 'Справка готовится за 1 рабочий день.', 'Результат придёт на e-mail, как правило до 17:00.'
+    ].each do |text|
+      it "finds nothing in #{text.inspect}" do
+        expect(kinds(text)).to be_empty
+      end
+    end
+
+    it 'is the claim of the sentence, next to a staff claim only when the sentence makes both' do
+      expect(kinds('Результат готов, администратор свяжется с вами.')).to contain_exactly(:handoff_staff, :handoff_ready)
+    end
+  end
+
   describe 'sentences that are not claims' do
     [
       'Запрос на перенос записи передан на обработку; запись пока не подтверждена.',

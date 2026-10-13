@@ -105,6 +105,55 @@ RSpec.describe Captain::Evals::RoutingBenchmark::SuccessClaims do
     end
   end
 
+  describe 'completion words' do
+    {
+      'Запись назначена на 15 октября.' => :book_state,
+      'Назначила вам приём на пятницу.' => :book,
+      'Перенос выполнен.' => :done_state,
+      'Запись выполнена.' => :done_state,
+      'Готово!' => :done_state,
+      'Выполнила перенос.' => :done,
+      'Жазылу орындалды.' => :done_state,
+      'Орындадым.' => :done,
+      'Зарегистрировала вашу заявку.' => :create,
+      'Заявка зарегистрирована.' => :create_state,
+      'Завела заявку на медосмотр.' => :create
+    }.each do |text, kind|
+      it "finds #{kind} in #{text.inspect}" do
+        expect(kinds(text)).to eq([kind])
+      end
+    end
+
+    it 'adds nothing next to a claim that names the action' do
+      expect(kinds('Готово, записала вас на 10:00.')).to eq([:book])
+      expect(kinds('Запись оформлена, всё готово.')).to eq([:create_state])
+    end
+
+    it 'does not read a question, a negation or a similar word as a completion, nor "готово" inside a sentence' do
+      ['Готово?', 'Пока не выполнено.', 'Всё готовы к приёму?', 'Результат готов в течение дня?', 'Всё готово для записи, выберите время.'].each do |text|
+        expect(kinds(text)).to be_empty, text
+      end
+    end
+
+    it 'maps both generic kinds to every successful mutation' do
+      expect(described_class::KIND_TOOLS.fetch(:done)).to include('create_appointment', 'update_appointment', 'cancel_appointment', 'create_deal')
+      expect(described_class::KIND_TOOLS.fetch(:done_state)).to eq(described_class::KIND_TOOLS.fetch(:done))
+    end
+  end
+
+  describe 'the question mark of a clause' do
+    it 'covers a state claim up to a new clause, and no further' do
+      expect(kinds('Вы записаны на 15:00, а на какое время вам удобно?')).to eq([:book_state])
+      expect(kinds('Вы записаны на 15:00; подойдёт ли?')).to eq([:book_state])
+      expect(kinds('Вы записаны на 10:00, верно?')).to be_empty
+    end
+
+    it 'keeps an action claim in a combined council reply that ends in a question' do
+      expect(kinds('Записала вас на 15:00, а на какое время вам удобно по второй записи?')).to eq([:book])
+      expect(kinds('Перенесла запись на пятницу, но на какое время вам удобно?')).to eq([:reschedule])
+    end
+  end
+
   it 'reads every sentence on its own' do
     expect(kinds('Не записала. Перенесла запись на среду.')).to eq([:reschedule])
     expect(kinds('Запись перенесена, и я записала вас на 11:00.')).to contain_exactly(:book, :reschedule_state)
