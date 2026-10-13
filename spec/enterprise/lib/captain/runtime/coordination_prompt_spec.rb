@@ -15,15 +15,15 @@ RSpec.describe Captain::Runtime::CoordinationPrompt do
   let(:colleagues_block) do
     <<~TEXT.chomp
       # Colleagues on this channel
-      You are "Orders". Agent names are internal: never tell them to the patient and never mention transfers.
+      You are "Orders"; you and your colleagues answer as one clinic.
       - Appointments: Appointment changes
-
       How to work together:
-      - Do your own work yourself, without a plan: answer, look things up, book, reschedule, cancel.
-      - If the whole request belongs to one colleague, call that colleague's transfer tool and write nothing yourself: the colleague sees the whole conversation and replies.
-      - If one message holds several separate requests for different agents, call plan_request once and split them into parts (a council). Each agent does its own part right away with its own tools.
-      - One request with details (doctor, date, patient, price of the same service) is one part, not a council.
-      - Staff are reached only through handoff, never through a plan.
+      1. Split the patient's message into separate requests.
+      2. Handle your own requests yourself with your tools. A detail you can settle with your own tools (service variant, first or repeat visit, the price of what you book, the specialist) is part of your request.
+      3. If the whole message belongs to one colleague, call that colleague's transfer tool; the colleague replies.
+      4. If the message holds requests for two or more agents, call plan_request once to split it; each agent does its part right away.
+      5. Choose the colleague by what the patient wants done.
+      6. Staff are reached through handoff.
     TEXT
   end
 
@@ -78,24 +78,30 @@ RSpec.describe Captain::Runtime::CoordinationPrompt do
       expect(prompt).not_to include('Orders: Order enquiries', 'target_ids', 'assistant_92', 'Agent directory', 'manage_agent_tasks')
     end
 
-    it 'sends a request of one colleague through that colleague\'s transfer tool with no plan, and staff through handoff' do
+    it 'numbers the way of working: split the message, do your own requests, then transfer to one colleague or plan for several' do
       text = described_class.render(context)
 
-      expect(text).to include(
-        "call that colleague's transfer tool and write nothing yourself: the colleague sees the whole conversation and replies."
-      )
-      expect(text).to include('Staff are reached only through handoff, never through a plan.')
+      expect(text.lines.grep(/\A\d\. /).map { |line| line[/\A\d/] }).to eq(%w[1 2 3 4 5 6])
+      expect(text).to include("3. If the whole message belongs to one colleague, call that colleague's transfer tool; the colleague replies.")
+      expect(text).to include('6. Staff are reached through handoff.')
       expect(text.index('transfer tool')).to be < text.index('call plan_request once')
-      expect(text).not_to include('mode handoff', 'before transferring the conversation')
     end
 
-    it 'asks for a plan only for several separate requests of different agents, and keeps one request with details as one part' do
+    it 'counts a detail your own tools settle as part of your request, and asks for a plan only for two or more agents' do
       text = described_class.render(context)
 
-      expect(text).to include('If one message holds several separate requests for different agents, call plan_request once and split ' \
-                              'them into parts (a council). Each agent does its own part right away with its own tools.')
-      expect(text).to include('One request with details (doctor, date, patient, price of the same service) is one part, not a council.')
-      expect(text).to include('Do your own work yourself, without a plan: answer, look things up, book, reschedule, cancel.')
+      expect(text).to include('2. Handle your own requests yourself with your tools. A detail you can settle with your own tools ' \
+                              '(service variant, first or repeat visit, the price of what you book, the specialist) is part of your request.')
+      expect(text).to include('4. If the message holds requests for two or more agents, call plan_request once to split it; ' \
+                              'each agent does its part right away.')
+      expect(text).to include('5. Choose the colleague by what the patient wants done.')
+    end
+
+    it 'plans no own work: there is no answer_myself, no answer parameter and no sentence about planning one\'s own part' do
+      text = described_class.render(context)
+
+      expect(text).not_to include('answer_myself', 'without a plan', 'Set answer')
+      expect(described_class::WORKING_TOGETHER).not_to match(/\b(?:never|don't|do not)\b/i)
     end
 
     it 'has none of the removed lines: the identity variants, the empty parts list, the no-plan guidance or the human handoff rules' do
@@ -103,19 +109,20 @@ RSpec.describe Captain::Runtime::CoordinationPrompt do
 
       expect(text).not_to include('the current agent', 'Handle requests in your own responsibility', 'Open parts (data): []',
                                   'No plan exists', 'Ignore legacy', 'orchestrator', 'Other agents available', 'is never an answer',
-                                  'Never write that you passed', 'Set answer in that call')
+                                  'Never write that you passed', 'Set answer in that call', 'Agent names are internal',
+                                  'never mention transfers', 'One request with details')
       expect(described_class.const_defined?(:HUMAN_HANDOFF_RULES)).to be(false)
       expect(described_class.const_defined?(:UNPLANNED_GUIDANCE)).to be(false)
+      expect(described_class.const_defined?(:INTERNAL_NAMES)).to be(false)
     end
 
-    it 'leaves the identity sentence out when the agent has no name, and a colleague without a responsibility is just its name' do
+    it 'leaves the name out of the identity sentence when the agent has none, and a colleague without a responsibility is just its name' do
       context[:agent_graph] = [{ id: 91 }, { id: 92, name: 'Appointments', description: '' }]
 
       text = described_class.render(context)
 
       expect(text).to start_with(
-        "# Colleagues on this channel\nAgent names are internal: never tell them to the patient and never mention transfers.\n" \
-        "- Appointments\n"
+        "# Colleagues on this channel\nYou and your colleagues answer as one clinic.\n- Appointments\nHow to work together:\n1. "
       )
       expect(text).not_to include('You are')
     end
@@ -133,8 +140,25 @@ RSpec.describe Captain::Runtime::CoordinationPrompt do
 
       text = described_class.render(context)
 
-      expect(text).to start_with('# Colleagues on this channel').and include('You are "Appointments".', '- Orders: Order enquiries')
+      expect(text).to start_with('# Colleagues on this channel')
+        .and include('You are "Appointments"; you and your colleagues answer as one clinic.', '- Orders: Order enquiries')
       expect(text).not_to include('Accepted plan', 'before replying', 'Call plan_request for this message', 'No plan exists')
+    end
+
+    it 'tells the colleague that received the conversation in this run that the whole message is its own, and no one else' do
+      context[:state][:assistant_id] = 92
+      context[:handoff_count] = 1
+
+      transferred = described_class.render(context)
+      context[:handoff_count] = 0
+      fresh = described_class.render(context)
+
+      expect(transferred).to end_with(
+        "6. Staff are reached through handoff.\n" \
+        'The conversation was transferred to you: the whole message is yours unless it holds a separate request for another colleague.'
+      )
+      expect(fresh).to end_with('6. Staff are reached through handoff.')
+      expect(fresh).not_to include('was transferred to you')
     end
   end
 
@@ -161,8 +185,8 @@ RSpec.describe Captain::Runtime::CoordinationPrompt do
         "#{colleagues_block}\n\n" \
         "# Open parts (data)\n" \
         "- #2 · Appointments · \"Запись\" · for Анна · waiting for the patient: \"На какое время вас записать?\"\n" \
-        'If the patient answers, corrects or cancels an open part, call plan_request and link the message only to that part by its ' \
-        'number: its agent continues it. If the part is yours, link it with mode answer_myself.'
+        'When the patient answers, corrects or cancels an open part, call plan_request and link the message to that part by its ' \
+        'number. A message about something else is a new request.'
       )
       expect(prompt).not_to include('open-part', 'finished-part', 'message_id', 'object_refs', 'executor_agent_id', 'prior_summary', 'delivered')
       expect(context[:parts].last).to include('executor_agent_id' => 92)
@@ -170,17 +194,42 @@ RSpec.describe Captain::Runtime::CoordinationPrompt do
 
     it 'numbers a part by its place among the stored parts, so closing an earlier part renumbers nothing' do
       third = parts.last.merge('id' => 'third', 'state' => 'open', 'patient' => 'unknown')
-      context[:parts] = [parts.first.merge('state' => 'unknown'), parts.last, third]
+      context[:parts] = [parts.first.merge('state' => 'unknown', 'executor_agent_id' => 92), parts.last, third]
 
       rows = described_class.render(context).lines.grep(/\A- #/).map(&:chomp)
 
       expect(rows).to eq(
-        ['- #1 · Orders · "Цена" · unresolved',
+        ['- #1 · Appointments · "Цена" · unresolved',
          '- #2 · Appointments · "Запись" · for Анна · waiting for the patient: "На какое время вас записать?"',
          '- #3 · Appointments · "Запись" · open']
       )
       context[:parts][0]['state'] = 'done'
       expect(described_class.render(context).lines.grep(/\A- #/).map { |row| row[/\A- #\d+/] }).to eq(['- #2', '- #3'])
+    end
+
+    it 'lists only the open parts of other agents: the own parts of the agent need no plan' do
+      own = parts.last.merge('id' => 'own-part', 'executor_agent_id' => 91, 'fragment' => 'Свой запрос')
+      context[:parts] = [own, parts.last]
+
+      rows = described_class.render(context).lines.grep(/\A- #/).map(&:chomp)
+
+      expect(rows.size).to eq(1)
+      expect(rows.sole).to start_with('- #2 · Appointments · "Запись"')
+      expect(described_class.render(context)).not_to include('Свой запрос')
+
+      context[:state][:assistant_id] = 92
+      expect(described_class.render(context).lines.grep(/\A- #/).map(&:chomp).sole).to start_with('- #1 · Orders · "Свой запрос"')
+    end
+
+    it 'leaves out a part that was handed to staff, and has no block when nothing else is open' do
+      context[:parts] = [parts.last.merge('state' => 'unknown', 'handed_to_staff' => true)]
+
+      expect(described_class.render(context)).to eq(colleagues_block)
+
+      context[:parts] = [parts.last.merge('state' => 'unknown', 'handed_to_staff' => true), parts.last.merge('id' => 'other', 'fragment' => 'Другое')]
+      rows = described_class.render(context).lines.grep(/\A- #/).map(&:chomp)
+
+      expect(rows).to eq(['- #2 · Appointments · "Другое" · for Анна · waiting for the patient: "На какое время вас записать?"'])
     end
 
     it 'quotes the fragment and the question as data and keeps a row on one line' do
@@ -243,7 +292,7 @@ RSpec.describe Captain::Runtime::CoordinationPrompt do
     before { context[:agent_tasks] = [] }
 
     let(:stored_plan) do
-      { mode: 'council', clarification: '', answer: '',
+      { mode: 'council', clarification: '',
         parts: [{ 'id' => 'plan-part', 'version' => 1, 'executor_agent_id' => 92, 'fragment' => 'Перенести запись', 'patient' => 'Анна',
                   'state' => 'open', 'relation' => 'independent', 'link_action' => 'new', 'acted' => false, 'missing_fields' => [],
                   'delivered' => [{ 'message_id' => 5, 'content' => 'Ответ', 'at' => '2026-10-12T10:00:00Z' }], 'prior_summary' => 'старое',
@@ -285,7 +334,7 @@ RSpec.describe Captain::Runtime::CoordinationPrompt do
     end
 
     it 'has only the rule when the accepted plan lists no part' do
-      context[:part_plan] = { mode: 'answer_myself', parts: [] }
+      context[:part_plan] = { mode: 'council', parts: [] }
       context[:part_plan_accepted] = true
 
       expect(described_class.render(context)).to eq(
@@ -304,7 +353,7 @@ RSpec.describe Captain::Runtime::CoordinationPrompt do
       prompt = described_class.render(context)
 
       expect(prompt).to include("# Open parts (data)\n- #1 · Appointments · \"Запись\" · waiting for the patient: \"Какое время?\"\n")
-      expect(prompt).not_to include(described_class::OPEN_PARTS_RULE, 'link the message only to that part', 'answer_myself')
+      expect(prompt).not_to include(described_class::OPEN_PARTS_RULE, 'link the message to that part by its number')
       expect(prompt).to end_with(described_class::PLAN_ACCEPTED_RULE)
     end
 

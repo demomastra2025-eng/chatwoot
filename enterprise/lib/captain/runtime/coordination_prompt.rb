@@ -5,18 +5,19 @@
 # (open parts, outcomes the patient has not been told) appear only when they have something in them. The human handoff rules are
 # not part of it: the platform rules of the main prompt carry them.
 module Captain::Runtime::CoordinationPrompt
-  INTERNAL_NAMES = 'Agent names are internal: never tell them to the patient and never mention transfers.'
   WORKING_TOGETHER = <<~RULES.chomp.freeze
     How to work together:
-    - Do your own work yourself, without a plan: answer, look things up, book, reschedule, cancel.
-    - If the whole request belongs to one colleague, call that colleague's transfer tool and write nothing yourself: the colleague sees the whole conversation and replies.
-    - If one message holds several separate requests for different agents, call plan_request once and split them into parts (a council). Each agent does its own part right away with its own tools.
-    - One request with details (doctor, date, patient, price of the same service) is one part, not a council.
-    - Staff are reached only through handoff, never through a plan.
+    1. Split the patient's message into separate requests.
+    2. Handle your own requests yourself with your tools. A detail you can settle with your own tools (service variant, first or repeat visit, the price of what you book, the specialist) is part of your request.
+    3. If the whole message belongs to one colleague, call that colleague's transfer tool; the colleague replies.
+    4. If the message holds requests for two or more agents, call plan_request once to split it; each agent does its part right away.
+    5. Choose the colleague by what the patient wants done.
+    6. Staff are reached through handoff.
   RULES
-  OPEN_PARTS_RULE = 'If the patient answers, corrects or cancels an open part, call plan_request and link the message only to that part ' \
-                    'by its number: its agent continues it. If the part is yours, link it with mode answer_myself.'
-  PLAN_ACCEPTED_RULE = 'The plan for this message is already accepted: continue only your own parts and do not call plan_request again.'
+  TRANSFERRED_RULE = 'The conversation was transferred to you: the whole message is yours unless it holds a separate request for another colleague.'
+  OPEN_PARTS_RULE = 'When the patient answers, corrects or cancels an open part, call plan_request and link the message to that part ' \
+                    'by its number. A message about something else is a new request.'
+  PLAN_ACCEPTED_RULE ='The plan for this message is already accepted: continue only your own parts and do not call plan_request again.'
   MENTION_IT = 'Mention it in your reply.'
   FRAGMENT_LIMIT = 200
   QUESTION_LIMIT = 600
@@ -39,26 +40,30 @@ module Captain::Runtime::CoordinationPrompt
     peers = graph.reject { |item| item[:id] == actor_id }
     return '' if peers.empty?
 
-    [colleagues_block(actor, peers), open_parts_block(context, graph), accepted_plan_block(context, graph),
+    [colleagues_block(actor, peers, context), open_parts_block(context, graph), accepted_plan_block(context, graph),
      done_block(context)].compact_blank.join("\n\n")
   end
 
-  def colleagues_block(actor, peers)
-    name = actor&.dig(:name).to_s.squish
-    identity = name.present? ? %(You are "#{name.tr('"', "'")}". #{INTERNAL_NAMES}) : INTERNAL_NAMES
-    ['# Colleagues on this channel', identity, *peers.map { |peer| peer_line(peer) }].join("\n") + "\n\n#{WORKING_TOGETHER}"
+  # The colleagues, then the numbered way of working. The rule for a transferred conversation closes the list, and only a run
+  # in which the conversation was transferred to this agent has it.
+  def colleagues_block(actor, peers, context)
+    name = actor&.dig(:name).to_s.squish.tr('"', "'")
+    identity = [(%(You are "#{name}";) if name.present?), 'you and your colleagues answer as one clinic.'].compact.join(' ').upcase_first
+    transferred = TRANSFERRED_RULE if context[:handoff_count].to_i.positive?
+    ['# Colleagues on this channel', identity, *peers.map { |peer| peer_line(peer) }, WORKING_TOGETHER, transferred].compact.join("\n")
   end
 
   def peer_line(peer)
     "- #{[peer[:name], peer[:description]].map { |text| text.to_s.squish }.compact_blank.join(': ')}"
   end
 
-  # One row per part that is still open: its number (the plan links by it), who handles it, what it is and where it stands. The
-  # delivered texts, the object references and every id stay out. The rule that links a message to a part calls plan_request, so it
-  # is left out once the plan of this message is accepted (plan_request is no longer bound then): only the rows stay.
+  # One row per part of ANOTHER agent that is still open: its number (the plan links by it), who handles it, what it is and where
+  # it stands (see PartRegistry.listed_parts). The delivered texts, the object references and every id stay out. The rule that
+  # links a message to a part calls plan_request, so it is left out once the plan of this message is accepted (plan_request is no
+  # longer bound then): only the rows stay.
   def open_parts_block(context, graph)
     parts = Array(context[:parts])
-    open_parts = parts.select { |part| Captain::Runtime::PartRegistry::OPEN_STATES.include?(part['state']) }
+    open_parts = Captain::Runtime::PartRegistry.listed_parts(context)
     return '' if open_parts.empty?
 
     rows = open_parts.map { |part| "- #{open_part_segments(parts, part, graph).compact_blank.join(' · ')}" }
@@ -78,13 +83,11 @@ module Captain::Runtime::CoordinationPrompt
 
   # Where an open part stands. A part that waits for the patient shows the question it asked.
   def part_state(part)
-    case part['state']
-    when 'waiting_customer'
-      question = Array(part['missing_fields']).join(' ').squish.presence || part['summary'].to_s.squish
-      question.present? ? "waiting for the patient: #{quoted(question, QUESTION_LIMIT)}" : 'waiting for the patient'
-    when 'unknown' then 'unresolved'
-    else 'open'
-    end
+    return 'unresolved' if part['state'] == 'unknown'
+    return 'open' unless part['state'] == 'waiting_customer'
+
+    question = Array(part['missing_fields']).join(' ').squish.presence || part['summary'].to_s.squish
+    question.present? ? "waiting for the patient: #{quoted(question, QUESTION_LIMIT)}" : 'waiting for the patient'
   end
 
   # A plan that was already accepted for this message: the agent whose prompt is built again (a retry, a rebuilt chat) continues

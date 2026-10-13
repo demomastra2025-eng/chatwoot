@@ -606,8 +606,19 @@ class Captain::Runtime::Council
     reply = reply_for(shown, handoff: handoff)
     @context[:council_untold_part_ids] = entries.reject { |entry| told?(entry) }.pluck(:id)
     @context[:council_handoff] = handoff_request(unresolved, failures) if handoff
+    mark_handed_to_staff(entries) if handoff
     staff_note(entries, unresolved, handoff: handoff)
     reply
+  end
+
+  # The parts the conversation goes to staff for (the unresolved ones and the ones that failed technically) are theirs now: the
+  # coordination prompt no longer lists them as open parts of a colleague (they stay linkable by number).
+  def mark_handed_to_staff(entries)
+    entries.select { |entry| entry[:unresolved] || entry[:technical] }.each do |entry|
+      registry.record_result!(entry[:id], handed_to_staff: true)
+    rescue StandardError => e
+      Rails.logger.warn("[CAPTAIN][Council] could not mark a part handed to staff error_class=#{e.class.name}")
+    end
   end
 
   def reply_for(shown, handoff:)

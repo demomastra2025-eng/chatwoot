@@ -305,7 +305,7 @@ RSpec.describe Captain::Runtime::ChatFactory do
           context_wrapper.context[:agent_graph] = peer_graph
 
           expect(system_prompt).to start_with("Agent instructions\n\n# Colleagues on this channel\n")
-          expect(system_prompt).to include('- Quotes: Price quotes', 'Staff are reached only through handoff, never through a plan.')
+          expect(system_prompt).to include('- Quotes: Price quotes', '6. Staff are reached through handoff.')
           expect(system_prompt).not_to include(*rules)
         end
       end
@@ -343,9 +343,7 @@ RSpec.describe Captain::Runtime::ChatFactory do
 
         expect(built_tool_names).to eq([transfer, 'plan_request'])
         expect(bound_tool_names).to eq([transfer, 'plan_request'])
-        expect(system_prompt.squish).to include(
-          "call that colleague's transfer tool and write nothing yourself: the colleague sees the whole conversation"
-        )
+        expect(system_prompt.squish).to include("call that colleague's transfer tool; the colleague replies.")
         expect(system_prompt).not_to include('mode handoff')
 
         context_wrapper.context[:part_plan_accepted] = true

@@ -427,6 +427,34 @@ RSpec.describe Captain::Runtime::Council do
       expect(state_of('part-1')['state']).to eq('unknown')
     end
 
+    it 'marks the part that the conversation goes to staff for as handed to staff, and no other part' do
+      results.merge!('part-0' => ran('Цена'), 'part-1' => ran('', status: 'unavailable', sources: []))
+      edited
+
+      run_council(parts)
+
+      expect(state_of('part-1')).to include('handed_to_staff' => true)
+      expect(state_of('part-0')).not_to have_key('handed_to_staff')
+    end
+
+    it 'marks a part that failed technically too, because the failure hands the conversation to staff' do
+      results.merge!('part-0' => ran('Цена'), 'part-1' => ran('', technical: technical_failure))
+      edited
+
+      run_council(parts)
+
+      expect(state_of('part-1')).to include('handed_to_staff' => true)
+    end
+
+    it 'marks nothing when the conversation cannot go to staff: nobody took the part over' do
+      allow(actors[1]).to receive(:handoff_enabled?).and_return(false)
+      results['part-0'] = ran('', status: 'unavailable', sources: [])
+
+      run_council(parts(%w[Анна], owners: [2]))
+
+      expect(state_of('part-0')).not_to have_key('handed_to_staff')
+    end
+
     it 'counts an action as done also when the owner returned no usable answer, writes no sentence for it and notes it for staff' do
       results['part-0'] = unparsable(acted: true)
 

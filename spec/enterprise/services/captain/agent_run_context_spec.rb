@@ -107,7 +107,7 @@ RSpec.describe Captain::AgentRunContext do
       expect(tool_names(runtime, run_context))
         .to include('plan_request', "transfer_to_agent_#{specialist.id}")
       expect(prompt_of(runtime, run_context)).to include(
-        'ENTRY PRIVATE PROMPT', %(You are "#{entry.name}"), '# Colleagues on this channel', 'plan_request', 'a council'
+        'ENTRY PRIVATE PROMPT', %(You are "#{entry.name}"), '# Colleagues on this channel', 'call plan_request once to split it'
       )
     end
 
