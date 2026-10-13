@@ -19,5 +19,11 @@ class Captain::Runtime::PartTools
     def filter(tools)
       Array(tools).select { |tool| allowed?(tool) }
     end
+
+    # The registry ids of the withheld tools. The prompt of a part is written before its tools are built: it must not tell the owner to
+    # hand the conversation over, nor name a tool that the part does not get.
+    def withheld_tool_ids
+      Captain::ToolRegistry.definitions.select { |definition| WITHHELD.include?(definition.agent_tool_class) }.map(&:id)
+    end
   end
 end

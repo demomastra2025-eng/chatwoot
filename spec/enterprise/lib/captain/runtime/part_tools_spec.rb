@@ -25,6 +25,10 @@ RSpec.describe Captain::Runtime::PartTools do
     expect(described_class.filter(nil)).to eq([])
   end
 
+  it 'lists the registry ids of the withheld tools, for the prompt of a part' do
+    expect(described_class.withheld_tool_ids).to contain_exactly('handoff', 'resolve_conversation', 'cancel_response')
+  end
+
   it 'does not decide by name: a renamed control tool is still withheld' do
     renamed = tool(Captain::Tools::HandoffTool)
     allow(renamed).to receive(:name).and_return('escalate_to_person')

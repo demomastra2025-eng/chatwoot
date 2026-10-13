@@ -979,11 +979,24 @@ RSpec.describe Captain::Assistant, type: :model do
         )
       end
 
+      def part_context(state = {})
+        instance_double(Captain::Runtime::RunContext, context: { state: state, part_run: true })
+      end
+
       it 'names all the tools of the agent and lets it hand over' do
         rendered = assistant.agent_instructions(run_context({}))
 
         expect(rendered).to include('Check `get_appointment`, book with `create_appointment`, hand over with `handoff`.')
         expect(rendered.split("\n\n").first).to include('hand the conversation to staff with `handoff`')
+      end
+
+      it 'does not tell the run of a council part to hand over, and names only the tools it gets' do
+        rendered = assistant.agent_instructions(part_context)
+
+        expect(rendered).to include("# Clinic instructions\nCheck `get_appointment`, book with `create_appointment`, hand over with Handoff.")
+        rules = rendered.split("\n\n").first
+        expect(rules).to include('If there is no answer, do not guess.')
+        expect(rules).not_to include('handoff', 'A request for a person', 'hand the conversation to staff')
       end
     end
 

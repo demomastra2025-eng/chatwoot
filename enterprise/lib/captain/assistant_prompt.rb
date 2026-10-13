@@ -6,15 +6,19 @@
 #   patient_lines                            the patient name and phone, a number only when a bound tool takes it, and the appointment
 #                                            and deal summaries that the clinic instruction does not place itself
 # The run state (prompt_state, runtime_clock, ...) is data and is not changed here; this class only chooses the text.
+#
+# part: true is the run of a council part. The owner of a part gets its own tools except the ones that change who controls the
+# conversation (Captain::Runtime::PartTools), so a mention or a number of such a tool is written as if the tool were not bound.
 class Captain::AssistantPrompt
   # The summaries of the run state and the label each one has in the Patient block.
   SUMMARY_LABELS = { appointment: 'Appointments', deal: 'Deals' }.freeze
 
-  def initialize(assistant:, context:, state:, prompt_state:)
+  def initialize(assistant:, context:, state:, prompt_state:, part: false)
     @assistant = assistant
     @context = context
     @state = state.to_h
     @prompt_state = prompt_state.to_h
+    @part = part
   end
 
   def variables
@@ -31,7 +35,8 @@ class Captain::AssistantPrompt
   def bound_tool_ids
     return unless @context.key?(:runtime_tool_ids)
 
-    Array(@context[:runtime_tool_ids]).map(&:to_s)
+    ids = Array(@context[:runtime_tool_ids]).map(&:to_s)
+    @part ? ids - Captain::Runtime::PartTools.withheld_tool_ids : ids
   end
 
   def time_zone

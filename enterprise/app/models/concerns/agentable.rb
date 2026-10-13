@@ -21,7 +21,10 @@ module Concerns::Agentable
     prompt_state = state[:prompt_context] || {}
     enhanced_context = time_agent_phase('prompt_context') { prompt_context_for_runtime_state(state) }.merge(default_prompt_runtime_context)
     enhanced_context[:scenarios] = [] if state[:mesh_routing]
-    return compact_agent_instructions(enhanced_context, state, prompt_state) if compact_prompt_template?
+    if compact_prompt_template?
+      part = context&.context&.[](:part_run).present?
+      return compact_agent_instructions(enhanced_context, state, prompt_state, part: part)
+    end
 
     if state.present?
       explicit_prompt_context = state.key?(:prompt_context)
@@ -88,12 +91,15 @@ module Concerns::Agentable
     template_name == 'assistant'
   end
 
-  def compact_agent_instructions(enhanced_context, state, prompt_state)
+  # The run of a council part (part: true) has no handoff tool: the rules do not tell it to hand over, and the texts name only the tools
+  # it gets (Captain::AssistantPrompt). Staff take a part over structurally, after the council.
+  def compact_agent_instructions(enhanced_context, state, prompt_state, part: false)
     variables = time_agent_phase('prompt_variables') do
       Captain::AssistantPrompt.new(
-        assistant: self, context: enhanced_context, state: state, prompt_state: prompt_state
+        assistant: self, context: enhanced_context, state: state, prompt_state: prompt_state, part: part
       ).variables
     end
+    variables = variables.merge(human_handoff_enabled: false) if part
 
     time_agent_phase('prompt_render') do
       Captain::PromptRenderer.render(template_name, enhanced_context.merge(variables).with_indifferent_access)

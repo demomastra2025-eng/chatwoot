@@ -42,6 +42,18 @@ RSpec.describe Captain::AssistantPrompt do
     expect(variables(runtime_tool_ids: [])[:instruction]).to eq('Use FAQ for not specified.')
   end
 
+  it 'writes the mention of a tool that a council part does not get as its label, and the others as function names' do
+    assistant.update!(description: 'Ask [@FAQ](tool://faq_lookup) or hand over with [@Handoff](tool://handoff).')
+    tools = %w[faq_lookup handoff resolve_conversation cancel_response]
+    own_run = described_class.new(assistant: assistant, context: context.merge(instruction: assistant.description, runtime_tool_ids: tools),
+                                  state: {}, prompt_state: {})
+    part_run = described_class.new(assistant: assistant, context: context.merge(instruction: assistant.description, runtime_tool_ids: tools),
+                                   state: {}, prompt_state: {}, part: true)
+
+    expect(own_run.variables[:instruction]).to eq('Ask `faq_lookup` or hand over with `handoff`.')
+    expect(part_run.variables[:instruction]).to eq('Ask `faq_lookup` or hand over with Handoff.')
+  end
+
   it 'adds a number line only for a tool that takes that number' do
     state = { prompt_context: { contact: contact, conversation: { 'display_id' => 15, 'label_list' => ['vip'] } } }
 
