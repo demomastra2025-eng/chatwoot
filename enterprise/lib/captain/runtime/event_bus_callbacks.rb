@@ -101,6 +101,9 @@ class Captain::Runtime::EventBusCallbacks
       result_size: payload_size(result),
       error: tool_error?(result),
       result_success: normalized_result[:success],
+      # Set only for a success that changed or created nothing (an update that found the appointment as asked, a booking that
+      # already exists): the tool did not mutate, which a count of successful mutations must not take for one.
+      result_no_change: (true if Captain::ToolResult.no_change?(result)),
       result_retryable: normalized_result[:retryable],
       result_message_type: payload_type(normalized_result[:message]),
       result_message_size: payload_size(normalized_result[:message]),

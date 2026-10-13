@@ -19,8 +19,9 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer do
     { 'agent_id' => assistant.id, 'response' => text, 'captain_request_id' => 'synthetic-request' }.merge(extra.stringify_keys)
   end
 
-  def tool_event(name, success: true, digest: nil)
-    event_class.new('llm.tool.complete', name, { 'result_success' => success, 'arguments_digest' => digest }.compact)
+  def tool_event(name, success: true, digest: nil, no_change: false)
+    payload = { 'result_success' => success, 'result_no_change' => (true if no_change), 'arguments_digest' => digest }.compact
+    event_class.new('llm.tool.complete', name, payload)
   end
 
   # call: more keywords for Scorer#call (before_state, tool_calls); the other keywords go into the agent response.
@@ -1010,6 +1011,61 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer do
       events = [tool_event('create_appointment'), tool_event('create_appointment')]
 
       expect(score('Здравствуйте!', events: events, call: { tool_calls: calls })[:hard_zero]['duplicate_operation']).to eq(0)
+    end
+  end
+
+  describe 'a success that changed or created nothing (status unchanged or already_booked)' do
+    let(:arguments) { { 'starts_at' => '2026-10-15T11:00', 'appointment_id' => 984 } }
+
+    def update_call(no_change: false)
+      { tool: 'update_appointment', success: true, audited: true, arguments: arguments, no_change: (true if no_change) }.compact
+    end
+
+    def moved_in_an_earlier_turn
+      score('Здравствуйте!', events: [tool_event('update_appointment', digest: 'same')], call: { tool_calls: [update_call] })
+    end
+
+    it 'is no repeat of the move an earlier turn made' do
+      moved_in_an_earlier_turn
+
+      result = score('Здравствуйте!', events: [tool_event('update_appointment', digest: 'same', no_change: true)],
+                                      call: { tool_calls: [update_call(no_change: true)] })
+
+      expect(result[:hard_zero]['duplicate_operation']).to eq(0)
+      expect(failure_ids(result)).to be_empty
+    end
+
+    it 'is a repeat when the same call did change something' do
+      moved_in_an_earlier_turn
+
+      result = score('Здравствуйте!', events: [tool_event('update_appointment', digest: 'same')], call: { tool_calls: [update_call] })
+
+      expect(result[:hard_zero]['duplicate_operation']).to eq(1)
+    end
+
+    it 'is no repeat by the argument digests of the events either, and no second booking among the calls of the turn' do
+      events = [tool_event('create_appointment', digest: 'same'), tool_event('create_appointment', digest: 'same', no_change: true)]
+      calls = [{ tool: 'create_appointment', success: true, arguments_digest: 'same' },
+               { tool: 'create_appointment', success: true, arguments_digest: 'same', no_change: true }]
+
+      expect(score('Здравствуйте!', events: events, call: { tool_calls: calls })[:hard_zero]['duplicate_operation']).to eq(0)
+    end
+
+    it 'is a forbidden call but no successful mutation: important, with the detail that it changed nothing' do
+      result = score('Здравствуйте!', events: [tool_event('update_appointment', no_change: true)],
+                                      expect: { must_not_call: %w[update_appointment], must_not_succeed: %w[update_appointment] })
+
+      expect(result[:failures]).to include(a_hash_including(id: 'forbidden_tool:update_appointment', severity: 'important',
+                                                            detail: 'update_appointment was called and changed nothing'))
+      expect(failure_ids(result)).not_to include('succeeded_forbidden:update_appointment')
+    end
+
+    it 'does not back the claim that the appointment was moved' do
+      unchanged = score('Ваша запись перенесена на 15 октября.', events: [tool_event('update_appointment', no_change: true)])
+      moved = score('Ваша запись перенесена на 15 октября.', events: [tool_event('update_appointment')])
+
+      expect(failure_ids(unchanged)).to include('false_success_claim')
+      expect(failure_ids(moved)).not_to include('false_success_claim')
     end
   end
 

@@ -157,4 +157,33 @@ RSpec.describe Captain::ToolResult do
       expect(described_class.render(RubyLLM::Tool::Halt.new('Transferred'))).to eq('Transferred')
     end
   end
+
+  describe '.no_change?' do
+    it 'is true for a successful result whose status says nothing was changed or created' do
+      described_class::NO_CHANGE_STATUSES.each do |status|
+        text = JSON.generate(success: true, appointment_id: 4, status: status, note: 'Nothing was changed.')
+
+        expect(described_class.no_change?(text)).to be(true)
+        expect(described_class.no_change?(JSON.parse(text))).to be(true)
+        expect(described_class.no_change?(described_class.normalize(text))).to be(true)
+        expect(described_class.no_change?(described_class.success(message: text))).to be(true)
+      end
+    end
+
+    it 'is false for a result that did change or create something, and for results with no status' do
+      %w[updated created cancelled].each do |status|
+        expect(described_class.no_change?(JSON.generate(success: true, status: status))).to be(false)
+      end
+      expect(described_class.no_change?('Done')).to be(false)
+      expect(described_class.no_change?(nil)).to be(false)
+      expect(described_class.no_change?('{broken json')).to be(false)
+      expect(described_class.no_change?({ data: { id: 1 } })).to be(false)
+    end
+
+    it 'is false for a failure, whatever its status says' do
+      expect(described_class.no_change?(JSON.generate(success: false, status: 'unchanged', reason: 'staff_will_help'))).to be(false)
+      expect(described_class.no_change?(described_class.failure(error: 'Boom', data: { status: 'unchanged' }))).to be(false)
+      expect(described_class.no_change?('ERROR: unchanged')).to be(false)
+    end
+  end
 end

@@ -39,7 +39,8 @@ class Captain::Evals::RoutingBenchmark::ToolTrace
       value
     end
 
-    # [{ tool:, success:, audited:, agent:, arguments:, result:, arguments_digest:, part_id:, part_version: }]. Events come in the
+    # [{ tool:, success:, no_change:, audited:, agent:, arguments:, result:, arguments_digest:, part_id:, part_version: }]. no_change is
+    # true for a success that changed or created nothing (Captain::ToolResult::NO_CHANGE_STATUSES): no mutation. Events come in the
     # order the tools finished; an audit row is matched with the next event of the same tool that has the same success flag: a
     # call that failed before its body ran (a refused argument, a guard) has an event and no audit row, so the row of the next call
     # of that tool is not its row. agent_names maps an assistant id to the name of the agent: `agent` is the agent that ran the
@@ -57,6 +58,7 @@ class Captain::Evals::RoutingBenchmark::ToolTrace
     def compact(calls)
       calls.map do |call|
         line = { tool: call[:tool], success: call[:success] }
+        line[:no_change] = true if call[:no_change]
         line[:audited] = call[:audited] unless call[:audited].nil?
         line[:agent] = call[:agent] if call[:agent].present?
         line[:part_id] = call[:part_id].to_s.first(8) if call[:part_id].present?
@@ -99,6 +101,7 @@ class Captain::Evals::RoutingBenchmark::ToolTrace
       {
         tool: display_name(event&.tool_name || changes['tool_id']),
         success: event ? event.payload['result_success'] : changes['result_success'],
+        no_change: (true if no_change?(event, changes)),
         audited: audit.present?,
         agent: agent_of(event, agent_names) || changes['current_agent'],
         arguments: changes['arguments'],
@@ -107,6 +110,14 @@ class Captain::Evals::RoutingBenchmark::ToolTrace
         part_id: event ? field(event, 'part_id') : nil,
         part_version: event ? field(event, 'part_version') : nil
       }.compact
+    end
+
+    # The call succeeded and changed or created nothing: the event says so (result_no_change), else the result of its audit row does.
+    def no_change?(event, changes)
+      payload = event ? event.payload.to_h : {}
+      return payload['result_no_change'] == true if payload.key?('result_no_change')
+
+      Captain::ToolResult.no_change?(changes['result_preview'])
     end
 
     def agent_of(event, agent_names)

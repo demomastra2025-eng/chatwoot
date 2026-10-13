@@ -658,6 +658,11 @@ Each turn's `evidence` in the JSON report shows what a counter was based on.
   decide. The database adds two checks: more appointments created in the turn than successful `create_appointment` calls (when the turn
   has a tool trace), and two active appointments written by the dialogue with the same patient, doctor and start. A pair is reported on
   the turn that wrote one of its rows, and not again on every later turn of the dialogue (one duplicate is one failure to triage).
+  A success that changed or created nothing is no mutation: an `update_appointment` that found the appointment as asked (status
+  `unchanged`) and a `create_appointment` that found the booking made (status `already_booked`) carry the event flag `result_no_change`
+  (`Captain::ToolResult.no_change?`), and the scorer leaves them out of the successful tools: no repeated mutation, no successful
+  forbidden mutation, no backing for a claim that something was moved or booked. The call is still a call (`must_not_call`, and the
+  `acts` of its owner count it) and is shown with `no_change: true` in the tool trace.
 - `internal_text_leak`: the reply contains the whole `reasoning` or the whole text of an agent instruction or routing
   description (20 characters or more). The hard-zero counter of this name also counts every critical finding of the broader
   `reply_leak` scan, which reads the patient text for runtime markers

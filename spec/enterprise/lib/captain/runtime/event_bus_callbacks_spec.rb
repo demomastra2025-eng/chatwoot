@@ -116,6 +116,17 @@ RSpec.describe Captain::Runtime::EventBusCallbacks do
     )
   end
 
+  it 'flags a successful tool result that changed or created nothing, and only that one' do
+    unchanged = JSON.generate(success: true, appointment_id: 4, status: 'unchanged', note: 'Nothing was changed.')
+
+    callbacks.on_tool_complete('update_appointment', unchanged, context_wrapper)
+    callbacks.on_tool_complete('update_appointment', JSON.generate(success: true, appointment_id: 4, status: 'updated'), context_wrapper)
+    callbacks.on_tool_complete('update_appointment', Captain::ToolResult.failure(error: 'Boom', data: { status: 'unchanged' }), context_wrapper)
+
+    flags = events.select { |event| event.name == 'llm.tool.complete' }.map { |event| event.payload.slice('result_success', 'result_no_change') }
+    expect(flags).to eq([{ 'result_success' => true, 'result_no_change' => true }, { 'result_success' => true }, { 'result_success' => false }])
+  end
+
   it 'records an agent transfer and return with source and request IDs' do
     context_wrapper.context[:state][:entry_assistant_id] = 2
     captured = []

@@ -98,6 +98,19 @@ RSpec.describe Captain::Evals::RoutingBenchmark::ToolTrace do
     it 'takes the success flag of the event' do
       expect(described_class.build(events: [event('handoff', success: false)], audits: []).first).to include(success: false)
     end
+
+    it 'marks a success that changed nothing: by the flag of the event, else by the result of its audit row' do
+      audit('update_appointment', arguments: { appointment_id: 9 }, result: JSON.generate(success: true, status: 'unchanged'))
+      audit('update_appointment', arguments: { appointment_id: 9 }, result: JSON.generate(success: true, status: 'updated'))
+      flagged = event_class.new('llm.tool.complete', 'create_appointment', { 'result_success' => true, 'result_no_change' => true })
+      events = [flagged, event('update_appointment'), event('update_appointment')]
+
+      calls = described_class.build(events: events, audits: described_class.audits_after(account, 0))
+
+      expect(calls.pluck(:tool, :no_change)).to eq([['create_appointment', true], ['update_appointment', true], ['update_appointment', nil]])
+      expect(described_class.compact(calls).first).to include(tool: 'create_appointment', success: true, no_change: true)
+      expect(described_class.compact(calls).last).not_to include(:no_change)
+    end
   end
 
   describe 'the owner of a call' do

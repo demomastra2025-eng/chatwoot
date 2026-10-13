@@ -6,6 +6,9 @@ class Captain::ToolResult
   MCP_ERROR_MESSAGE = 'MCP tool returned an error'
   ERROR_PREFIX = 'ERROR:'
   DEFAULT_SUCCESS_MESSAGE = 'Done'
+  # The statuses of a successful answer that changed or created nothing: an update that asked for what the appointment already has,
+  # a booking that already exists. The call succeeded; no mutation happened.
+  NO_CHANGE_STATUSES = %w[unchanged already_booked].freeze
 
   class << self
     def success(message: nil, data: nil, audit: nil)
@@ -52,6 +55,15 @@ class Captain::ToolResult
       normalized[:success] == false || normalized[:error].present?
     end
 
+    # A successful result whose status says that nothing was changed or created (NO_CHANGE_STATUSES). Reads the JSON text a tool
+    # returns, a hash, and a normalized result that keeps the tool's JSON in its message or data.
+    def no_change?(result)
+      return false if result.is_a?(String) && NO_CHANGE_STATUSES.none? { |status| result.include?(status) }
+
+      body = result_body(result)
+      !error?(result) && body[:success] != false && body[:error].blank? && NO_CHANGE_STATUSES.include?(body[:status].to_s)
+    end
+
     def render(result, fallback_message: DEFAULT_SUCCESS_MESSAGE)
       normalized = normalize(result)
       return render_error(normalized, fallback_message) if error?(normalized)
@@ -88,6 +100,21 @@ class Captain::ToolResult
     end
 
     private
+
+    def result_body(result)
+      body = json_object(result)
+      return body if body.key?(:status)
+
+      nested = body[:data].is_a?(Hash) ? body[:data].with_indifferent_access : json_object(body[:message])
+      nested.key?(:status) ? nested : body
+    end
+
+    def json_object(value)
+      value = JSON.parse(value) if value.is_a?(String) && value.lstrip.start_with?('{')
+      (value.is_a?(Hash) ? value : {}).with_indifferent_access
+    rescue JSON::ParserError
+      ActiveSupport::HashWithIndifferentAccess.new
+    end
 
     def normalized_payload(result)
       return normalize_mcp_hash(result) if mcp_result_hash?(result)

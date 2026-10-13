@@ -34,6 +34,11 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer, 'v2 checks' do
     event_class.new('llm.tool.complete', name, payload, agent&.id)
   end
 
+  # A success that changed or created nothing: the monitoring event carries the flag result_no_change.
+  def no_change_event(name, agent: nil)
+    tool_event(name, agent: agent).tap { |event| event.payload['result_no_change'] = true }
+  end
+
   def coordination(name, payload = {}, status: nil, reason: nil)
     event_class.new(name, nil, payload, nil, status, reason)
   end
@@ -84,6 +89,17 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer, 'v2 checks' do
 
       expect(failure_ids(failed)).to include('missing_act:create_appointment@Запись к врачу')
       expect(failure_ids(other)).to include('missing_act:create_appointment@Запись к врачу')
+    end
+
+    it 'counts a call that changed nothing as the act of its owner, though it is no mutation: the appointment is as the patient asked' do
+      acts = [{ 'tool' => 'update_appointment', 'agent' => 'Запись к врачу' }]
+
+      result = score('Запись уже на это время.', events: [no_change_event('update_appointment', agent: owner)], expect: { acts: acts })
+
+      expect(failure_ids(result)).not_to include('missing_act:update_appointment@Запись к врачу')
+      expect(result[:evidence][:calls]).to eq(
+        [{ tool: 'update_appointment', success: true, no_change: true, audited: false, agent: 'Запись к врачу' }]
+      )
     end
 
     it 'lists the successful mutations of the turn with their agents in the evidence' do

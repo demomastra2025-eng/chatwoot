@@ -242,11 +242,18 @@ class Captain::Evals::RoutingBenchmark::Scorer
                        :folded, :folded_from, :late, :missing_operations, keyword_init: true) do
     def tools = tool_events.map { |event| Captain::Evals::RoutingBenchmark::ToolTrace.display_name(event.tool_name) }
 
-    def successful_tools = tool_events.select { |event| event.payload['result_success'] == true }.map { |event| name_of(event) }
+    # The tools that succeeded and did their work. A success that changed or created nothing (an update that found the appointment as
+    # asked, a booking that exists already: the event flag result_no_change, see Captain::ToolResult::NO_CHANGE_STATUSES) is no
+    # mutation: it is listed by #no_change_tools and in none of the counts of successful mutations.
+    def successful_tools = tool_events.select { |event| event.payload['result_success'] == true && !no_change?(event) }.map { |event| name_of(event) }
 
     def failed_tools = tool_events.select { |event| event.payload['result_success'] == false }.map { |event| name_of(event) }
 
+    def no_change_tools = tool_events.select { |event| no_change?(event) }.map { |event| name_of(event) }
+
     private
+
+    def no_change?(event) = event.payload['result_success'] == true && event.payload['result_no_change'] == true
 
     def name_of(event) = Captain::Evals::RoutingBenchmark::ToolTrace.display_name(event.tool_name)
   end
@@ -520,8 +527,14 @@ class Captain::Evals::RoutingBenchmark::Scorer
       return
     end
     severity = MUTATION_TOOLS.include?(name) && succeeded ? 'critical' : 'important'
-    outcome.fail!("forbidden_tool:#{name}", "#{name} #{succeeded ? 'completed successfully' : 'was called and failed'}#{call_arguments(context, name)}",
-                  severity: severity)
+    outcome.fail!("forbidden_tool:#{name}", "#{name} #{call_outcome(context, name, succeeded)}#{call_arguments(context, name)}", severity: severity)
+  end
+
+  # What became of a forbidden call: it did its work, it found nothing to change (an answer of the tool, no mutation), or it failed.
+  def call_outcome(context, name, succeeded)
+    return 'completed successfully' if succeeded
+
+    context.no_change_tools.include?(name) ? 'was called and changed nothing' : 'was called and failed'
   end
 
   # The forbidden mutation changed rows, and every row it changed is one that an operation expected earlier accounts for: the earlier
@@ -576,7 +589,7 @@ class Captain::Evals::RoutingBenchmark::Scorer
   end
 
   def successful_mutations(context)
-    context.calls.select { |call| MUTATION_TOOLS.include?(call[:tool]) && call[:success] == true }
+    context.calls.select { |call| MUTATION_TOOLS.include?(call[:tool]) && call[:success] == true && !call[:no_change] }
            .map { |call| "#{call[:tool]} by #{call[:agent] || 'unknown'}" }.join(', ').presence || 'none'
   end
 
@@ -865,20 +878,21 @@ class Captain::Evals::RoutingBenchmark::Scorer
     detail << "#{repeated} repeated mutation(s) in the turn" if repeated.positive?
     detail << "#{earlier} mutation(s) repeated from an earlier turn" if earlier.positive?
     detail.concat(rows)
-    tools = context.tool_events.select { |event| event.payload['result_success'] == true && MUTATION_TOOLS.include?(event.tool_name) }
-    outcome.fail!('duplicate_operation', "#{detail.join('; ')}: #{tools.map(&:tool_name).tally.to_a.flatten.join(' ')}")
+    tools = context.successful_tools & MUTATION_TOOLS
+    outcome.fail!('duplicate_operation', "#{detail.join('; ')}: #{tools.tally.to_a.flatten.join(' ')}")
     count
   end
 
   # [tool, canonical arguments] of every executed successful mutation of the turn (its argument digest when no audit row has them).
+  # A call that changed nothing (see Context#successful_tools) executed no mutation.
   def executed_keys(context)
-    audited = Array(context.tool_calls).select do |call|
-      MUTATION_TOOLS.include?(call[:tool]) && call[:success] == true && call[:audited] && call[:arguments].present?
+    mutations = lambda do |calls|
+      calls.select { |call| MUTATION_TOOLS.include?(call[:tool]) && call[:success] == true && !call[:no_change] }
     end
+    audited = mutations.call(Array(context.tool_calls)).select { |call| call[:audited] && call[:arguments].present? }
     return audited.map { |call| [call[:tool], Captain::Evals::RoutingBenchmark::ToolTrace.canonical(call[:arguments]).to_json] } if audited.any?
 
-    context.calls.select { |call| MUTATION_TOOLS.include?(call[:tool]) && call[:success] == true && call[:arguments_digest].present? }
-           .map { |call| [call[:tool], call[:arguments_digest]] }
+    mutations.call(context.calls).select { |call| call[:arguments_digest].present? }.map { |call| [call[:tool], call[:arguments_digest]] }
   end
 
   # The database: more rows created in the turn than successful create calls, and two active rows of the dialogue with the same
@@ -887,7 +901,7 @@ class Captain::Evals::RoutingBenchmark::Scorer
   def duplicate_rows(context)
     details = []
     created = context.changes.created.size
-    creates = context.calls.count { |call| call[:tool] == 'create_appointment' && call[:success] == true }
+    creates = context.calls.count { |call| call[:tool] == 'create_appointment' && call[:success] == true && !call[:no_change] }
     details << "#{created} appointment(s) created by #{creates} successful create_appointment call(s)" if context.tool_events.any? && created > creates
     changed = context.changes.rows.map(&:id)
     ids = (@written + context.changes.rows).map(&:id).uniq
