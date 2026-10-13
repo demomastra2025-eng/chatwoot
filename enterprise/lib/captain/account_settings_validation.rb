@@ -118,8 +118,10 @@ class Captain::AccountSettingsValidation
     converted = value.map do |rule|
       next rule unless rule.is_a?(Hash)
 
-      rule.merge('direction' => Captain::AccountSettings::RULE_DIRECTION_FROM_API.fetch(rule['direction'], rule['direction']),
-                 'action' => Captain::AccountSettings::RULE_ACTION_FROM_API.fetch(rule['action'], rule['action']))
+      # Only the API spellings are accepted. A value left as it was sent would pass for the internal spelling
+      # (input, output, block, rewrite), be stored as is and make Captain::AccountSettings#runtime_rules fail.
+      rule.merge('direction' => Captain::AccountSettings::RULE_DIRECTION_FROM_API[rule['direction']],
+                 'action' => Captain::AccountSettings::RULE_ACTION_FROM_API[rule['action']])
     end
     Captain::Safety::CustomRulesConfig.errors(converted).map do |violation|
       error(violation[:path].sub('safety_settings', 'safety'), violation[:code], violation[:message])

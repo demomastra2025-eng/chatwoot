@@ -112,6 +112,25 @@ RSpec.describe 'Captain safety settings', type: :request do
       expect(response.body).not_to include('private-provider-token')
     end
 
+    # input, output, block and rewrite are the run-time spellings. Stored as sent they cannot be read back into a rule,
+    # and the checker then stops the automatic reply of the whole workspace.
+    [
+      [{ direction: 'input' }, 'direction'],
+      [{ direction: 'output' }, 'direction'],
+      [{ action: 'block' }, 'action'],
+      [{ action: 'rewrite' }, 'action']
+    ].each do |spelling, field|
+      it "rejects the run-time spelling #{spelling} of a rule and saves nothing" do
+        update_settings(custom_rules: [outbound_rule.merge(spelling)])
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(JSON.parse(response.body)['errors']).to include(
+          include('field' => "safety.custom_rules[0].#{field}", 'code' => 'invalid_value')
+        )
+        expect(account.reload.captain_agent_settings).to be_nil
+      end
+    end
+
     it 'rejects the size limits of a rule and an inbound rewrite, and rolls back the rest of the same patch' do
       patch settings_path, params: { faq: { generate_from_resolved: true },
                                      safety: { custom_rules: [inbound_rule.merge(name: 'n' * 121),
