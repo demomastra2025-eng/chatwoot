@@ -447,7 +447,13 @@ class Captain::Runtime::ToolWrapper
 
     pointer = error['data_pointer'].presence || '/'
     error_type = error['type'].presence || 'schema violation'
-    raise InvalidToolArgumentsError, "Invalid tool arguments at #{pointer}: #{error_type}"
+    raise InvalidToolArgumentsError, "Invalid tool arguments at #{pointer}: #{error_type}#{allowed_values_note(error)}"
+  end
+
+  # A value outside an enum is told with the values the schema allows, so that the model can correct the call.
+  def allowed_values_note(error)
+    allowed = error['schema'].is_a?(Hash) ? error['schema']['enum'] : nil
+    allowed.is_a?(Array) && error['type'] == 'enum' ? " (allowed: #{allowed.first(12).map(&:to_s).join(', ')})" : ''
   end
 
   # An agent's own actions (booking, rescheduling, card updates, the human handoff) and its transfer of the conversation to one

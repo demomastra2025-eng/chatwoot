@@ -37,6 +37,7 @@ class Captain::Runtime::ExecutorResolver
     @agents = Array(context[:agent_graph])
     @parts = Array(context[:parts])
     @current_id = context.dig(:state, :assistant_id)
+    @bound_tool_ids = Array(context[:captain_v2_bound_tool_ids]).map(&:to_s)
   end
 
   # Returns copies of the parts that carry the registry's integer executor_agent_id instead of the model's executor.
@@ -65,7 +66,7 @@ class Captain::Runtime::ExecutorResolver
 
     raise TransferToolError, 'plan_request has no handoff mode. To pass the conversation to one colleague, call that colleague\'s ' \
                              "transfer tool without a plan. Colleagues: #{names.join(', ')}. #{PERSON_HINT} " \
-                             'plan_request is only for a council (separate requests for different agents) and for the answer to an open part.'
+                             'plan_request is only for a council (actions for different agents) and for the answer to an open part.'
   end
 
   private
@@ -134,17 +135,59 @@ class Captain::Runtime::ExecutorResolver
     end
   end
 
-  # A council is separate requests for at least two agents, or the continuation of open parts (one part is enough: the
-  # customer answers a question of the agent that asked it).
+  # A council is separate actions for at least two agents, or the continuation of open parts (one part is enough: the
+  # patient answers a question of the agent that asked it). A plan that is neither tells the route that fits: the agent's own
+  # tools, the link to the open part of the colleague, or the transfer tool of the one colleague.
   def check_council!(resolved)
-    return if resolved.pluck('executor_agent_id').uniq.size >= 2 || resolved.all? { |item| continuation?(item) }
+    executors = resolved.pluck('executor_agent_id').uniq
+    return if executors.size >= 2 || resolved.all? { |item| continuation?(item) }
 
     names = selectable_names(exclude_current: true)
     raise RetryableError, no_peer_message('council') if names.empty?
 
-    raise RetryableError, 'Council needs parts for at least two different agents, from the patient\'s latest message only: name the ' \
-                          "executor of each part, one of: #{names.join(', ')}. A latest message with one request needs no plan: " \
-                          'answer it with your tools or transfer it to its colleague.'
+    raise RetryableError, one_agent_message(resolved, executors.first)
+  end
+
+  # All parts of the plan belong to one agent: the agent itself (no plan), or one colleague, whose open part this message may answer
+  # (link it) or who takes the conversation (transfer). An action of the writer's own that the plan left out is added as a part.
+  def one_agent_message(resolved, agent_id)
+    return "Every part of this plan is yours. #{OWN_WORK_NOTE}" if agent_id == @current_id || agent_id.nil?
+
+    name = name_for(agent_id)
+    link = link_to_open_part(resolved, agent_id, name)
+    [link, transfer_route(agent_id, name), 'A plan holds actions for two or more different agents; an action of yours is a part without executor.']
+      .compact.join(' ')
+  end
+
+  # The colleague waits for the patient's answer and the plan does not link it: the message may be that answer.
+  def link_to_open_part(resolved, agent_id, name)
+    open = open_numbers_of(agent_id)
+    return if open.empty? || resolved.none? { |item| item['link_part_id'].blank? && item['link_action'].to_s != 'new' }
+
+    reference = open.one? ? open.first.delete_prefix('#') : 'its number'
+    "#{name} has the open part #{open.join(', ')}. If the message answers, corrects or cancels it, link it with link_part_id " \
+      "#{reference} and link_action answer, correction or cancellation (plan_request with mode council and ONLY that part)."
+  end
+
+  # The action is the one colleague's, and the message is not an answer to its open part: the conversation goes to that colleague.
+  def transfer_route(agent_id, name)
+    tool = Captain::HandoffNaming.tool_name_for(name, record_id: agent_id)
+    if @bound_tool_ids.empty? || @bound_tool_ids.include?(tool)
+      return "If all actions of the message belong to #{name}, transfer the conversation to #{name} with #{tool} and plan nothing."
+    end
+
+    "If all actions of the message belong to #{name}, do them with your own tools, or call handoff for staff."
+  end
+
+  def open_numbers_of(agent_id)
+    registry = Captain::Runtime::PartRegistry
+    registry.listed_parts(parts_context).select { |part| part['executor_agent_id'] == agent_id }.map do |part|
+      "##{registry.number_of(@parts, part['id'])}"
+    end
+  end
+
+  def parts_context
+    { state: { assistant_id: @current_id }, parts: @parts }
   end
 
   def unknown_message(reference, ambiguous)

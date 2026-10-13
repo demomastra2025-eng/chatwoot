@@ -3,6 +3,8 @@
 require 'rails_helper'
 
 RSpec.describe Captain::Runtime::HandoffTool do
+  let(:when_to_use) { described_class::WHEN_TO_USE }
+
   it 'emits a benchmark guard event when a transfer target is unavailable' do
     target = Captain::Runtime::Agent.new(name: 'assistant_2')
     target.assistant_id = 2
@@ -159,7 +161,15 @@ RSpec.describe Captain::Runtime::HandoffTool do
       expect(tool.parameters).to be_empty
       expect(tool.name).to eq("transfer_to_agent_#{specialist.id}")
       expect(tool.name).to eq(Captain::HandoffNaming.tool_name_for('any name', record_id: specialist.id))
-      expect(tool.description).to eq(%(Transfer the conversation to colleague "assistant_#{specialist.id}".))
+      expect(tool.description).to eq(%(Transfer the conversation to colleague "assistant_#{specialist.id}". #{when_to_use}))
+    end
+
+    it 'ends with when to use it: the message holds actions of this colleague only, who also answers the questions of the message' do
+      expect(when_to_use).to eq(
+        'Use it when the patient\'s message holds actions of this colleague only; the colleague also answers the questions of the message.'
+      )
+      expect(described_class.new(target).description).to end_with(when_to_use)
+      expect(when_to_use).not_to match(/\b(?:not|never|don't)\b/i)
     end
 
     it 'names the colleague and its responsibility in one sentence, and names a Cyrillic colleague by its id' do
@@ -169,7 +179,7 @@ RSpec.describe Captain::Runtime::HandoffTool do
       tool = described_class.new(Captain::Runtime::LazyAgent.new(specialist))
 
       expect(tool.name).to eq("transfer_to_agent_#{specialist.id}")
-      expect(tool.description).to eq(%(Transfer the conversation to colleague "Анализы": Подготовка к анализам, цены))
+      expect(tool.description).to eq(%(Transfer the conversation to colleague "Анализы": Подготовка к анализам, цены. #{when_to_use}))
     end
 
     it 'adds one line with what the colleague can do, read from the tool ids of the assistant without building its tools' do
@@ -183,7 +193,7 @@ RSpec.describe Captain::Runtime::HandoffTool do
 
       expect(tool.description).to eq(
         %(Transfer the conversation to colleague "Продажи": Сделки клиники. ) +
-        'Can: create and update deals; look up deals.'
+        "Can: create and update deals; look up deals. #{when_to_use}"
       )
     end
 
@@ -193,7 +203,7 @@ RSpec.describe Captain::Runtime::HandoffTool do
       colleague = Captain::Runtime::Agent.new(name: 'assistant_7', tools: tools).tap { |agent| agent.assistant_id = 7 }
 
       expect(described_class.new(colleague).description).to eq(
-        %(Transfer the conversation to colleague "assistant_7". Can: book, reschedule and cancel appointments; look up free slots.)
+        %(Transfer the conversation to colleague "assistant_7". Can: book, reschedule and cancel appointments; look up free slots. #{when_to_use})
       )
     end
 
@@ -202,8 +212,8 @@ RSpec.describe Captain::Runtime::HandoffTool do
       broken = Captain::Runtime::Agent.new(name: 'assistant_8')
       allow(broken).to receive(:tool_ids).and_raise(StandardError, 'catalog down')
 
-      expect(described_class.new(only_shared).description).to eq(%(Transfer the conversation to colleague "assistant_7".))
-      expect(described_class.new(broken).description).to eq(%(Transfer the conversation to colleague "assistant_8".))
+      expect(described_class.new(only_shared).description).to eq(%(Transfer the conversation to colleague "assistant_7". #{when_to_use}))
+      expect(described_class.new(broken).description).to eq(%(Transfer the conversation to colleague "assistant_8". #{when_to_use}))
     end
 
     it 'is still named by its normalized name when the colleague has no id' do

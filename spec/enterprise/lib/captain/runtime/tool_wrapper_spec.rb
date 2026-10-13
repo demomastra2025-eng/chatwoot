@@ -421,6 +421,16 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     )
   end
 
+  it 'names the allowed values when an argument is outside an enum, so that the model can correct the call' do
+    allow(tool).to receive(:params_schema).and_return(
+      type: 'object', properties: { mode: { type: 'string', enum: %w[council clarify] }, result: { type: 'string' } }
+    )
+
+    result = wrapper.call(mode: 'answer')
+
+    expect_tool_error(result, 'Invalid tool arguments at /mode: enum (allowed: council, clarify)', retryable: false)
+  end
+
   it 'preserves an explicit null when the optional schema allows it' do
     result = wrapper.call(result: 'not executed', category_id: nil)
 

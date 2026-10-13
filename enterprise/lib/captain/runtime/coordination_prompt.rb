@@ -7,13 +7,13 @@
 module Captain::Runtime::CoordinationPrompt
   WORKING_TOGETHER = <<~RULES.chomp.freeze
     How to work together:
-    1. Split the patient's latest message into separate requests. A service's price, its free times and its booking are one request for the agent that books it.
+    1. Split the patient's latest message into separate requests: actions (they change data) and questions (they ask for information). A service's price, its free times and its booking are one action for the agent that books it.
     2. Answer questions yourself: every agent can use the FAQ and the catalog.
     3. If the message asks for an action you cannot do (book, reschedule, cancel, a deal...), transfer the conversation to the colleague whose tools can do it; that colleague also answers the questions of the message.
     4. If the message holds actions for two or more different agents, call plan_request once to split it; each agent does its part right away.
     5. Staff are reached through handoff.
   RULES
-  TRANSFERRED_RULE = 'The conversation was transferred to you: the whole message is yours unless it holds a separate request for another colleague.'
+  TRANSFERRED_RULE = 'The conversation was transferred to you: the whole message is yours unless it holds an action for another colleague.'
   OPEN_PARTS_RULE = 'Link a message to an open part, by its number, with plan_request only when the message answers, corrects or cancels ' \
                     'that part (for a part that waits for the patient: when it answers the question shown). Every other message is a new request.'
   PLAN_ACCEPTED_RULE ='The plan for this message is already accepted: continue only your own parts and do not call plan_request again.'

@@ -1,27 +1,44 @@
 # frozen_string_literal: true
 
 class Captain::Runtime::PartPlanTool < Captain::Runtime::Tool
-  EXECUTOR_DESCRIPTION = 'Agent name exactly as listed. Omit it for your own parts. Staff are not an agent: use the handoff tool.'
+  EXECUTOR_DESCRIPTION = 'The agent that does this action, by its name exactly as listed under Colleagues. Omit it for your own ' \
+                         'action. Staff are not an agent: use the handoff tool.'
+  FRAGMENT_DESCRIPTION = 'The patient\'s own words that make this one action.'
+  PATIENT_DESCRIPTION = 'Whom the action is about, when it is not the person writing.'
+  OBJECT_REFS_DESCRIPTION = 'Records this action is about, when you know their type and id.'
+  RELATION_DESCRIPTION = 'How this part follows the part before it in this plan. independent (default). depends_on: the action is ' \
+                         'carried out only when the part before it succeeded. conditional ("if X then Y"): its owner decides from ' \
+                         'the result of the part before it; list the part that decides first and the conditional part after it. ' \
+                         'The patient\'s reaction to an open part goes into link_action.'
+  LINK_PART_DESCRIPTION = 'Only when the message answers, corrects or cancels an open part of a colleague: its number from the list ' \
+                          'of open parts (for #3 write 3). Leave it out for a new action.'
+  LINK_ACTION_DESCRIPTION = 'new: a separate new action, also while other parts are open. answer, correction, cancellation: ' \
+                            'the patient\'s reaction to the linked open part.'
+  MODE_DESCRIPTION = 'council: actions for different agents, or one open part of another agent that the message answers, corrects or ' \
+                     'cancels. clarify: one question for the patient, when two or more open parts could be meant and the message ' \
+                     'names none.'
+  PARTS_DESCRIPTION = 'One item per action, in the order of the patient\'s message; a council has at most three. A single item is ' \
+                      'for one open part of another agent that the message answers, corrects or cancels.'
   # The cancellation of parts that never acted runs no agent: the model that planned it answers (see Runner#handle_plan).
   CANCELLED_NOTE = 'The cancellation is recorded and nothing else is to be done. Reply to the patient now: confirm it in one short sentence.'
   AUDIT_TOOL = { id: 'plan_request', title: 'Plan request', risk_level: 'low' }.freeze
   # The audit log hides every key that contains "link" (it may hold a URL), so the link of a part is written under these keys.
   AUDIT_KEYS = { 'link_part_id' => 'open_part', 'link_action' => 'reaction' }.freeze
 
-  description 'Coordinate with other agents. Call it once for a message that holds requests for two or more agents: it splits the ' \
-              'message into parts (a council) and each agent does its part right away. Call it also to send the patient\'s answer, ' \
-              'correction or cancellation of an open part to the agent that owns it.'
-  param :mode, type: 'string', required: true,
-               desc: 'council: parts for different agents, or one linked part of another agent. clarify: one question, when ' \
-                     'two or more open parts could be meant and the message names none.'
-  param :parts, type: 'array', required: true,
-                desc: 'The parts of the message. A council has at most three; one linked part of another agent is enough.'
+  description 'Coordinate actions with other agents. Call it once when the patient\'s message holds actions for two or more different ' \
+              'agents: it splits the message into parts (a council) and each agent does its part right away. Call it also to send ' \
+              'the patient\'s answer, correction or cancellation of an open part to the agent that owns it. When all actions of the ' \
+              'message belong to one colleague, transfer the conversation with that colleague\'s transfer tool.'
+  param :mode, type: 'string', required: true, desc: MODE_DESCRIPTION
+  param :parts, type: 'array', required: true, desc: PARTS_DESCRIPTION
   param :clarification, type: 'string', desc: 'The one precise question, for clarify only.', required: false
 
   def name = 'plan_request'
 
+  # mode is an enum of the valid modes, so the model is offered nothing else (a former mode such as handoff or answer is not one).
   def params_schema
     super.deep_stringify_keys.tap do |schema|
+      schema['properties']['mode']['enum'] = Captain::Runtime::PartRegistry::MODES
       schema['properties']['parts']['items'] = {
         'type' => 'object', 'additionalProperties' => false,
         'properties' => part_properties.merge(link_properties),
@@ -53,7 +70,7 @@ class Captain::Runtime::PartPlanTool < Captain::Runtime::Tool
   private
 
   def accept_plan(context, mode, parts, clarification)
-    parts = with_part_ids(parts, context[:parts])
+    parts = with_part_ids(parts, context)
     resolver = Captain::Runtime::ExecutorResolver.new(context)
     resolver.reject_transfer_mode!(mode, parts)
     plan = Captain::Runtime::PartRegistry.new(context).accept!(
@@ -70,29 +87,23 @@ class Captain::Runtime::PartPlanTool < Captain::Runtime::Tool
 
   def part_properties
     {
-      'fragment' => { 'type' => 'string', 'description' => 'The patient\'s words that make this part.' },
+      'fragment' => { 'type' => 'string', 'description' => FRAGMENT_DESCRIPTION },
       'executor' => { 'type' => %w[string null], 'description' => EXECUTOR_DESCRIPTION },
-      'patient' => { 'type' => 'string', 'description' => 'Whom the part is about, when it is not the person writing.' },
-      'relation' => { 'type' => 'string', 'enum' => Captain::Runtime::PartRegistry::RELATIONS,
-                      'description' => 'independent (default); depends_on: starts only after the part before it succeeded; ' \
-                                       'conditional: its owner decides from the result of the part before it.' }
+      'patient' => { 'type' => 'string', 'description' => PATIENT_DESCRIPTION },
+      'relation' => { 'type' => 'string', 'enum' => Captain::Runtime::PartRegistry::RELATIONS, 'description' => RELATION_DESCRIPTION }
     }
   end
 
   def link_properties
     {
-      'object_refs' => { 'type' => 'array', 'description' => 'Records this part is about, when you know their type and id.',
+      'object_refs' => { 'type' => 'array', 'description' => OBJECT_REFS_DESCRIPTION,
                          'items' => {
                            'type' => 'object', 'additionalProperties' => false,
                            'properties' => { 'type' => { 'type' => 'string' }, 'id' => { 'type' => 'integer', 'minimum' => 1 } },
                            'required' => %w[type id]
                          } },
-      'link_part_id' => { 'type' => %w[string integer null],
-                          'description' => 'Number of the open part whose question this message answers, or that it corrects or ' \
-                                           'cancels, as listed (for #3 write 3).' },
-      'link_action' => { 'type' => 'string', 'enum' => Captain::Runtime::PartRegistry::LINK_ACTIONS,
-                         'description' => 'new: a separate new request, also while other parts are open. answer, correction, ' \
-                                          'cancellation: the patient\'s reaction to the linked part.' }
+      'link_part_id' => { 'type' => %w[string integer null], 'description' => LINK_PART_DESCRIPTION },
+      'link_action' => { 'type' => 'string', 'enum' => Captain::Runtime::PartRegistry::LINK_ACTIONS, 'description' => LINK_ACTION_DESCRIPTION }
     }
   end
 
@@ -131,20 +142,21 @@ class Captain::Runtime::PartPlanTool < Captain::Runtime::Tool
   end
 
   # The model links a part by the number it is listed with (#3); the registry stores the exact id. A reference that points at no
-  # stored part is refused here, as the registry refuses a part that is not open, so that the model is told what is wrong with the
-  # link and not, for example, that a council needs a second agent.
-  def with_part_ids(parts, stored)
+  # stored part is refused here, as the registry refuses a part that is not open, so that the model is told what is wrong with
+  # the link and not, for example, that a council needs a second agent.
+  def with_part_ids(parts, context)
     return parts unless parts.is_a?(Array)
 
-    parts.map { |part| part.is_a?(Hash) ? with_part_id(part, stored) : part }
+    parts.map { |part| part.is_a?(Hash) ? with_part_id(part, context) : part }
   end
 
-  def with_part_id(part, stored)
+  def with_part_id(part, context)
     key = part.key?(:link_part_id) ? :link_part_id : 'link_part_id'
     return part if part[key].blank?
 
-    id = Captain::Runtime::PartRegistry.part_id_for(stored, part[key])
-    raise ArgumentError, 'Linked part is not open' if Array(stored).none? { |item| item['id'] == id }
+    registry = Captain::Runtime::PartRegistry
+    id = registry.part_id_for(context[:parts], part[key])
+    raise ArgumentError, registry.unknown_link_message(context, part[key]) unless Array(context[:parts]).any? { |item| item['id'] == id }
 
     part.merge(key => id)
   end

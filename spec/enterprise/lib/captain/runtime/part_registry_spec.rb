@@ -137,15 +137,41 @@ RSpec.describe Captain::Runtime::PartRegistry do
 
   it 'validates the channel and allows at most three council parts' do
     invalid = [{ fragment: 'One', executor_agent_id: 3 }]
-    expect { plan(invalid) }.to raise_error(ArgumentError, /unavailable/)
+    expect { plan(invalid) }.to raise_error(ArgumentError, 'That agent is not on this channel: name an agent listed under Colleagues.')
     four = Array.new(4) { |index| { fragment: "Part #{index}", executor_agent_id: index.even? ? 1 : 2 } }
-    expect { plan(four, mode: 'council') }.to raise_error(ArgumentError, /one to three/)
+    expect { plan(four, mode: 'council') }.to raise_error(
+      ArgumentError, 'A council has one to three parts: put the actions that one agent does into one part.'
+    )
   end
 
-  it 'has no own-work plan: a plan for the agent\'s own part is refused with the way to work without one' do
-    expect { plan([{ fragment: 'Режим работы', executor_agent_id: 1 }], mode: 'answer_myself') }.to raise_error(
-      ArgumentError, 'Invalid request mode. Own work needs no plan: answer or use your tools.'
+  it 'names the next step in every rejection of a part: the fragment, the relation, the link action and a single link' do
+    expect { plan([{ fragment: ' ', executor_agent_id: 1 }, { fragment: 'Price', executor_agent_id: 2 }]) }.to raise_error(
+      ArgumentError, 'Every part needs its fragment: the patient\'s own words that make this action.'
     )
+    expect { plan([{ fragment: 'A', executor_agent_id: 1, relation: 'later' }, { fragment: 'B', executor_agent_id: 2 }]) }.to raise_error(
+      ArgumentError, 'Invalid relation. Valid relations: independent, conditional, depends_on.'
+    )
+    expect { plan([{ fragment: 'A', executor_agent_id: 1, link_action: 'again' }, { fragment: 'B', executor_agent_id: 2 }]) }.to raise_error(
+      ArgumentError, 'Invalid link_action. Valid link actions: new, answer, correction, cancellation.'
+    )
+    both = [{ fragment: 'A', executor_agent_id: 2, link_part_id: 'same' }, { fragment: 'B', executor_agent_id: 2, link_part_id: 'same' }]
+    expect { plan(both) }.to raise_error(ArgumentError, 'An open part is linked by one item only: put the answers to one part into one item.')
+  end
+
+  it 'has no own-work plan: a plan for the agent\'s own part is refused with the valid modes and the way to work without a plan' do
+    expect { plan([{ fragment: 'Режим работы', executor_agent_id: 1 }], mode: 'answer_myself') }.to raise_error(
+      ArgumentError, described_class::INVALID_MODE
+    )
+    expect(described_class::INVALID_MODE).to start_with('Invalid mode. Valid modes: council (').and end_with(
+      'Own work needs no plan: answer or use your tools.'
+    )
+  end
+
+  it 'adds the way to continue an open part to a refused mode when the plan links one' do
+    message = described_class.invalid_mode_message([{ 'link_part_id' => 'peer-part' }, 'not a hash'])
+
+    expect(message).to eq("#{described_class::INVALID_MODE} #{described_class::COUNCIL_HINT}")
+    expect(described_class.invalid_mode_message([{ fragment: 'A' }])).to eq(described_class::INVALID_MODE)
   end
 
   it 'starts a part with nothing recorded about its outcome' do
@@ -175,15 +201,38 @@ RSpec.describe Captain::Runtime::PartRegistry do
     expect(context[:parts].size).to eq(3)
   end
 
-  it 'requires an explicit new request when an open part of another agent remains' do
+  it 'requires an explicit new action when an open part of another agent remains' do
     plan([{ fragment: 'Visit', executor_agent_id: 2 }, { fragment: 'Price', executor_agent_id: 1 }])
     next_message
 
     expect { plan([{ fragment: 'Tomorrow', executor_agent_id: 1 }, { fragment: 'Cleaning', executor_agent_id: 2 }]) }.to raise_error(
-      ArgumentError, /link an open part/
+      ArgumentError, 'Open parts of colleagues: #1. If this item answers, corrects or cancels one of them, give link_part_id with its ' \
+                     'number and link_action answer, correction or cancellation. A separate new action has link_action new.'
     )
     expect(plan([{ fragment: 'Tomorrow', executor_agent_id: 1, link_action: 'new' },
                  { fragment: 'Cleaning', executor_agent_id: 2, link_action: 'new' }])[:mode]).to eq('council')
+  end
+
+  it 'tells a link to a finished part, to a part with staff and to no part how to go on: a new action goes by transfer or by a new plan' do
+    parts = plan([{ fragment: 'Visit', executor_agent_id: 2 }, { fragment: 'Price', executor_agent_id: 1 }])[:parts]
+    new_action = described_class::NEW_ACTION_NOTE
+    answer = ->(id) { [{ fragment: 'Yes', executor_agent_id: 2, link_part_id: id, link_action: 'answer' }] }
+    described_class.new(context).record_result!(parts.first['id'], state: 'done')
+    next_message
+
+    expect(new_action).to include("transfer the conversation with that colleague's transfer tool", 'plan_request without link_part_id')
+    expect { plan(answer.call(parts.first['id'])) }.to raise_error(
+      ArgumentError,
+      'Part #1 is closed (done). If the message only repeats or confirms what the part did, reply to the patient yourself. ' \
+      "#{new_action}"
+    )
+    expect { plan(answer.call('gone')) }.to raise_error(ArgumentError, "There is no part gone. No part is open. #{new_action}")
+
+    context[:parts].first.merge!('state' => 'failed', 'handed_to_staff' => true)
+    expect { plan(answer.call(parts.first['id'])) }.to raise_error(
+      ArgumentError,
+      "Part #1 is with staff, who will answer it. If the message adds details for staff, pass them with the handoff tool. #{new_action}"
+    )
   end
 
   it 'asks for no decision about a part the model is not shown: the own parts of the agent and the parts handed to staff' do
@@ -207,23 +256,23 @@ RSpec.describe Captain::Runtime::PartRegistry do
     it 'sends a message to the one open part it can only mean, as a retryable rejection the model can correct' do
       context[:parts] = [waiting_part('a', 2)]
 
-      expect { clarify }.to raise_error(ArgumentError, 'One part is open: link the message to it by its number.')
+      expect { clarify }.to raise_error(ArgumentError, described_class::ONE_OPEN_PART)
       expect(context[:part_plan_accepted]).to be_nil
     end
 
     it 'has nothing to clarify when no part is open, and counts neither the own parts nor the parts handed to staff' do
-      expect { clarify }.to raise_error(ArgumentError, 'No part is open: reply to the patient yourself.')
+      expect { clarify }.to raise_error(ArgumentError, described_class::NO_OPEN_PART)
 
       staff = waiting_part('staff', 2, 'state' => 'unknown', 'handed_to_staff' => true)
       context[:parts] = [waiting_part('own', 1), waiting_part('own two', 1), staff, waiting_part('peer', 2)]
-      expect { clarify }.to raise_error(ArgumentError, 'One part is open: link the message to it by its number.')
+      expect { clarify }.to raise_error(ArgumentError, described_class::ONE_OPEN_PART)
     end
 
     it 'still needs a precise question' do
       context[:parts] = [waiting_part('a', 2), waiting_part('b', 2)]
 
       expect { plan([{ fragment: 'Да', executor_agent_id: 1 }], mode: 'clarify', clarification: ' ') }.to raise_error(
-        ArgumentError, 'Clarification must be precise'
+        ArgumentError, 'Clarification must be precise: give the one question for the patient in clarification.'
       )
     end
   end
@@ -267,7 +316,10 @@ RSpec.describe Captain::Runtime::PartRegistry do
     it 'rejects a council of one new part' do
       expect do
         plan([{ fragment: 'Цена', executor_agent_id: 2, link_action: 'new' }], mode: 'council')
-      end.to raise_error(ArgumentError, 'Council needs at least two agents')
+      end.to raise_error(
+        ArgumentError, 'A council needs actions for at least two different agents. When all actions belong to one colleague, transfer ' \
+                       'the conversation with that colleague\'s transfer tool.'
+      )
     end
 
     it 'refuses the former own-part mode and tells that own work needs no plan' do
@@ -384,7 +436,7 @@ RSpec.describe Captain::Runtime::PartRegistry do
 
   it 'has no handoff mode: a transfer to one colleague is that colleague\'s own tool, not a plan' do
     expect(described_class::MODES).to eq(%w[council clarify])
-    expect { plan([{ fragment: 'Book', executor_agent_id: 2 }], mode: 'handoff') }.to raise_error(ArgumentError, /\AInvalid request mode/)
+    expect { plan([{ fragment: 'Book', executor_agent_id: 2 }], mode: 'handoff') }.to raise_error(ArgumentError, /\AInvalid mode\. Valid modes: council/)
   end
 
   it 'has no link action confirmation and no state that waits for one' do

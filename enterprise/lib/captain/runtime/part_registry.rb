@@ -14,17 +14,24 @@ class Captain::Runtime::PartRegistry
   # (see Runner#handle_plan), never re-validated.
   MODES = %w[council clarify].freeze
   OWN_WORK_NOTE = 'Own work needs no plan: answer or use your tools.'
-  INVALID_MODE = "Invalid request mode. #{OWN_WORK_NOTE}".freeze
+  MODE_HELP = 'Valid modes: council (actions for different agents, or one open part of another agent that the message answers, ' \
+              'corrects or cancels) and clarify (one question, when two or more open parts could be meant).'
+  INVALID_MODE = "Invalid mode. #{MODE_HELP} #{OWN_WORK_NOTE}".freeze
   ONE_OPEN_PART = 'One part is open: link the message to it by its number.'
   NO_OPEN_PART = 'No part is open: reply to the patient yourself.'
+  # What a message is that does not continue an open part: one colleague takes it by transfer, several agents get a plan.
+  NEW_ACTION_NOTE = 'For a new action: when it belongs to one colleague, transfer the conversation with that colleague\'s transfer ' \
+                    'tool; for actions of two or more agents call plan_request without link_part_id and with link_action new.'
+  CLOSED_PART_NOTE = 'If the message only repeats or confirms what the part did, reply to the patient yourself.'
+  STAFF_PART_NOTE = 'If the message adds details for staff, pass them with the handoff tool.'
   RELATIONS = %w[independent conditional depends_on].freeze
   PREREQUISITE_RELATIONS = %w[depends_on conditional].freeze
   LINK_ACTIONS = %w[new answer correction cancellation].freeze
   # A model that still sends the former link action is understood: a customer's "да" is an answer to the part's question.
   LEGACY_LINK_ACTIONS = { 'confirmation' => 'answer' }.freeze
-  ALREADY_PLANNED = 'This message already has a plan'
-  COUNCIL_HINT = 'The customer answers, corrects or cancels a part of another agent: call plan_request with mode council and ' \
-                 'ONLY that part linked by its number. Its own agent continues it with its own tools.'
+  ALREADY_PLANNED = 'This message already has a plan: each agent of the plan does its part, so continue with your own work.'
+  COUNCIL_HINT = 'The patient answers, corrects or cancels a part of another agent: call plan_request with mode council and ' \
+                 'ONLY that part linked by its number (link_part_id). Its own agent continues it with its own tools.'
 
   # The plan coordinates agents (a council, the answer to an open part), so it exists only where another agent is
   # available. A lone agent has no plan_request and acts with its own tools.
@@ -98,6 +105,37 @@ class Captain::Runtime::PartRegistry
     Array(parts)[number.to_i - 1]&.dig('id') || text
   end
 
+  # The numbers (#3) of the parts the model can link, as the prompt lists them (open parts of the other agents).
+  def self.open_numbers(context)
+    stored = Array(context[:parts])
+    listed_parts(context).map { |part| "##{number_of(stored, part['id'])}" }
+  end
+
+  # What is wrong with a link, written for the model: the number points at no part.
+  def self.unknown_link_message(context, reference)
+    open = open_numbers(context)
+    state = open.any? ? "Open parts: #{open.join(', ')}. If the message answers one of them, link its number." : 'No part is open.'
+    "There is no part #{reference.to_s.squish.first(20)}. #{state} #{NEW_ACTION_NOTE}"
+  end
+
+  # What is wrong with a link, written for the model: the part is finished or with staff, so the message continues nothing. What it
+  # repeats is answered by the agent itself; what is new goes by transfer or by a new plan.
+  def self.closed_link_message(context, prior)
+    number = number_of(Array(context[:parts]), prior['id'])
+    where = if prior['handed_to_staff'] == true
+              "is with staff, who will answer it. #{STAFF_PART_NOTE}"
+            else
+              "is closed (#{prior['state']}). #{CLOSED_PART_NOTE}"
+            end
+    "Part ##{number} #{where} #{NEW_ACTION_NOTE}"
+  end
+
+  # The mode is not one of MODES. A link to an open part tells the model which mode it meant.
+  def self.invalid_mode_message(parts)
+    linked = Array(parts).any? { |part| part.respond_to?(:to_h) && part.to_h.stringify_keys['link_part_id'].present? }
+    linked ? "#{INVALID_MODE} #{COUNCIL_HINT}" : INVALID_MODE
+  end
+
   def initialize(context)
     @context = context
   end
@@ -109,16 +147,21 @@ class Captain::Runtime::PartRegistry
     saved = @context[:agent_session]&.read
     return replay(saved) if saved && saved['last_part_plan_scope'] == scope
 
-    raise ArgumentError, INVALID_MODE unless MODES.include?(mode)
+    raise ArgumentError, self.class.invalid_mode_message(parts) unless MODES.include?(mode)
+
     max_parts = mode == 'council' ? MAX_COUNCIL_PARTS : MAX_PARTS_PER_MESSAGE
-    raise ArgumentError, 'Council needs one to three parts' if mode == 'council' && (!parts.is_a?(Array) || !parts.size.between?(1, max_parts))
-    raise ArgumentError, 'A request needs one to thirty parts' unless parts.is_a?(Array) && parts.size.between?(1, max_parts)
+    if mode == 'council' && (!parts.is_a?(Array) || !parts.size.between?(1, max_parts))
+      raise ArgumentError, 'A council has one to three parts: put the actions that one agent does into one part.'
+    end
+    raise ArgumentError, 'parts needs one to thirty items: one item per action.' unless parts.is_a?(Array) && parts.size.between?(1, max_parts)
     raise ArgumentError, ALREADY_PLANNED if @context[:part_plan_accepted]
 
     parts = yield(parts) if block_given?
     previous = Array(@context[:parts])
     linked_ids = parts.filter_map { |item| item.to_h.stringify_keys['link_part_id'].presence }
-    raise ArgumentError, 'A part can only be linked once per message' if linked_ids.uniq.size != linked_ids.size
+    if linked_ids.uniq.size != linked_ids.size
+      raise ArgumentError, 'An open part is linked by one item only: put the answers to one part into one item.'
+    end
 
     normalized = parts.map { |raw| normalize_part(raw, previous, mode) }
     link_prerequisites!(normalized)
@@ -179,27 +222,37 @@ class Captain::Runtime::PartRegistry
     item = raw.to_h.deep_stringify_keys
     graph_ids = Array(@context[:agent_graph]).pluck(:id)
     actor_id = Integer(item.fetch('executor_agent_id'))
-    raise ArgumentError, 'Agent is unavailable on this channel' unless graph_ids.include?(actor_id)
-    raise ArgumentError, 'Missing message fragment' if item['fragment'].to_s.strip.blank?
+    raise ArgumentError, 'That agent is not on this channel: name an agent listed under Colleagues.' unless graph_ids.include?(actor_id)
+    raise ArgumentError, 'Every part needs its fragment: the patient\'s own words that make this action.' if item['fragment'].to_s.strip.blank?
 
     prior = previous.find { |part| part['id'] == item['link_part_id'] }
-    raise ArgumentError, 'Linked part is not open' if item['link_part_id'].present? && (!prior || !OPEN_STATES.include?(prior['state']))
+    if item['link_part_id'].present? && (!prior || !OPEN_STATES.include?(prior['state']))
+      raise ArgumentError, prior ? self.class.closed_link_message(@context, prior) : self.class.unknown_link_message(@context, item['link_part_id'])
+    end
 
     relation = item['relation'].presence || prior&.dig('relation') || 'independent'
-    raise ArgumentError, 'Invalid part relation' unless RELATIONS.include?(relation)
+    raise ArgumentError, "Invalid relation. Valid relations: #{RELATIONS.join(', ')}." unless RELATIONS.include?(relation)
 
-    link_action = LEGACY_LINK_ACTIONS.fetch(item['link_action'].to_s, item['link_action'].presence) || 'answer'
-    raise ArgumentError, 'Invalid link action' unless LINK_ACTIONS.include?(link_action)
+    named = LEGACY_LINK_ACTIONS.fetch(item['link_action'].to_s, item['link_action'].presence)
+    raise ArgumentError, "Invalid link_action. Valid link actions: #{LINK_ACTIONS.join(', ')}." unless named.nil? || LINK_ACTIONS.include?(named)
 
     # Only the parts the model is shown force the decision: it cannot link or declare "new" against a part it is not told about.
-    if prior.nil? && self.class.listed_parts(@context).any? && mode != 'clarify' && link_action != 'new'
-      raise ArgumentError, 'Identify this as a new request or link an open part'
-    end
+    raise ArgumentError, link_required_message if prior.nil? && self.class.listed_parts(@context).any? && mode != 'clarify' && named != 'new'
+
+    # An item that links a part answers it unless it says more; an item without a link is a new action. The owner reads this word.
+    link_action = named || (prior ? 'answer' : 'new')
 
     # A part that already acted is not "cancelled" by a text: its owner runs again and undoes the action with its own tools.
     link_action = 'correction' if link_action == 'cancellation' && prior&.dig('acted') == true
     actor_id = pinned_executor(prior, link_action, actor_id, graph_ids)
     part_hash(item, prior, actor_id, relation, link_action)
+  end
+
+  # Open parts of colleagues exist, so every item says which one it answers or that it is new: the numbers are listed here.
+  def link_required_message
+    numbers = self.class.open_numbers(@context)
+    "Open parts of colleagues: #{numbers.join(', ')}. If this item answers, corrects or cancels one of them, give link_part_id " \
+      'with its number and link_action answer, correction or cancellation. A separate new action has link_action new.'
   end
 
   # A continuation keeps the agent that owns the part, whatever executor the model named.
@@ -227,13 +280,14 @@ class Captain::Runtime::PartRegistry
 
   def validate_plan!(mode, normalized, clarification)
     continuations = normalized.all? { |part| part['version'] > 1 }
-    # A council is separate requests for different agents, or the answer to an open part of another agent (one part is enough).
+    # A council is separate actions for different agents, or the answer to an open part of another agent (one part is enough).
     if mode == 'council' && !continuations && normalized.pluck('executor_agent_id').uniq.size < 2
-      raise ArgumentError, 'Council needs at least two agents'
+      raise ArgumentError, 'A council needs actions for at least two different agents. When all actions belong to one colleague, ' \
+                           'transfer the conversation with that colleague\'s transfer tool.'
     end
     return unless mode == 'clarify'
 
-    raise ArgumentError, 'Clarification must be precise' if clarification.to_s.strip.blank?
+    raise ArgumentError, 'Clarification must be precise: give the one question for the patient in clarification.' if clarification.to_s.strip.blank?
 
     # The question is for a patient whose message could mean one of two or more listed parts; with fewer there is nothing to ask.
     listed = self.class.listed_parts(@context).size

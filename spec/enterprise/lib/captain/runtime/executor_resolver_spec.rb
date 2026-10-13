@@ -132,7 +132,7 @@ RSpec.describe Captain::Runtime::ExecutorResolver do
         expect(error.message).to eq(
           'plan_request has no handoff mode. To pass the conversation to one colleague, call that colleague\'s transfer tool ' \
           'without a plan. Colleagues: Қабылдау, Лаборатория Анализы, Приём. ' \
-          "#{person_hint} plan_request is only for a council (separate requests for different agents) and for the answer to an open part."
+          "#{person_hint} plan_request is only for a council (actions for different agents) and for the answer to an open part."
         )
       end
     end
@@ -143,15 +143,55 @@ RSpec.describe Captain::Runtime::ExecutorResolver do
       end
     end
 
-    it 'asks a council of one agent for a part of a second agent' do
-      [[nil, nil], %w[Қабылдау Қабылдау], ['Администратор']].each do |executors|
-        expect(fail_with('council', executors).message).to eq(
-          'Council needs parts for at least two different agents, from the patient\'s latest message only: name the executor of each ' \
-          'part, one of: Қабылдау, Лаборатория Анализы, Приём. A latest message with one request needs no plan: answer it with your ' \
-          'tools or transfer it to its colleague.'
-        )
+    let(:add_own_action) { 'A plan holds actions for two or more different agents; an action of yours is a part without executor.' }
+
+    it 'tells a plan of the writer\'s own actions to do them with its tools' do
+      [[nil, nil], ['Администратор']].each do |executors|
+        expect(fail_with('council', executors).message).to eq("Every part of this plan is yours. #{own_work_note}")
       end
       expect(resolve_ids([nil, 'Қабылдау'], mode: 'council')).to eq([11, 12])
+    end
+
+    it 'tells a plan of one colleague to transfer the conversation with that colleague\'s transfer tool, or to add its own action' do
+      expect(fail_with('council', %w[Қабылдау Қабылдау]).message).to eq(
+        'If all actions of the message belong to Қабылдау, transfer the conversation to Қабылдау with transfer_to_agent_12 and plan ' \
+        "nothing. #{add_own_action}"
+      )
+      context[:captain_v2_bound_tool_ids] = %w[faq_lookup transfer_to_agent_12 plan_request]
+      expect(fail_with('council', ['Қабылдау']).message).to include('transfer the conversation to Қабылдау with transfer_to_agent_12')
+    end
+
+    it 'does not name a transfer tool that the agent does not have' do
+      context[:captain_v2_bound_tool_ids] = %w[faq_lookup transfer_to_agent_13 plan_request]
+
+      expect(fail_with('council', ['Қабылдау']).message).to eq(
+        "If all actions of the message belong to Қабылдау, do them with your own tools, or call handoff for staff. #{add_own_action}"
+      )
+    end
+
+    it 'links the message to the open part of that colleague when the plan names it as a new one' do
+      context[:parts] = [{ 'id' => 'peer-part', 'state' => 'waiting_customer', 'executor_agent_id' => 12 }]
+
+      message = fail_with('council', ['Қабылдау']).message
+
+      expect(message).to start_with(
+        'Қабылдау has the open part #1. If the message answers, corrects or cancels it, link it with link_part_id 1 and link_action ' \
+        'answer, correction or cancellation (plan_request with mode council and ONLY that part). If all actions of the message belong to'
+      )
+      expect(message).to include('transfer the conversation to Қабылдау with transfer_to_agent_12')
+    end
+
+    it 'names the numbers of several open parts of that colleague, and no link when the plan declares the item new' do
+      context[:parts] = [{ 'id' => 'first', 'state' => 'waiting_customer', 'executor_agent_id' => 12 },
+                         { 'id' => 'second', 'state' => 'open', 'executor_agent_id' => 12 }]
+
+      expect(fail_with('council', ['Қабылдау']).message).to start_with('Қабылдау has the open part #1, #2. ')
+      expect(fail_with('council', ['Қабылдау']).message).to include('link_part_id its number and link_action')
+
+      declared_new = [{ 'fragment' => 'Цена', 'executor' => 'Қабылдау', 'link_action' => 'new' }]
+      expect { described_class.new(context).resolve(declared_new, mode: 'council') }.to raise_error(
+        described_class::RetryableError, /\AIf all actions of the message belong to Қабылдау/
+      )
     end
 
     it 'takes a peer named in a plan that is not a council as that peer\'s part, and has no own-work check' do
@@ -172,7 +212,7 @@ RSpec.describe Captain::Runtime::ExecutorResolver do
       new_part = [{ 'fragment' => 'Цена', 'link_part_id' => 'peer-part', 'link_action' => 'new' }]
       mixed = [{ 'fragment' => 'Давайте в 11', 'link_part_id' => 'peer-part', 'link_action' => 'answer' }, { 'fragment' => 'Цена' }]
 
-      expect { described_class.new(context).resolve(new_part, mode: 'council') }.to raise_error(described_class::RetryableError, /at least two different agents/)
+      expect { described_class.new(context).resolve(new_part, mode: 'council') }.to raise_error(described_class::RetryableError, /Every part of this plan is yours/)
       expect(described_class.new(context).resolve(mixed, mode: 'council').pluck('executor_agent_id')).to eq([12, 11])
     end
 
@@ -181,7 +221,8 @@ RSpec.describe Captain::Runtime::ExecutorResolver do
       answer = [{ 'fragment' => 'Давайте в 11', 'link_part_id' => 'peer-part', 'link_action' => 'answer' }]
 
       expect { described_class.new(context).reject_transfer_mode!('handoff', answer) }.to raise_error(
-        described_class::TransferToolError, /plan_request has no handoff mode\. The customer answers, corrects or cancels a part of another agent/
+        described_class::TransferToolError,
+        /plan_request has no handoff mode\. The patient answers, corrects or cancels a part of another agent/
       )
       expect { described_class.new(context).reject_transfer_mode!('handoff', [{ 'fragment' => 'Цена' }]) }.to raise_error(
         described_class::TransferToolError, /call that colleague's transfer tool without a plan/

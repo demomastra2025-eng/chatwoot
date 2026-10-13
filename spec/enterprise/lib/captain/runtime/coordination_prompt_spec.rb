@@ -18,7 +18,7 @@ RSpec.describe Captain::Runtime::CoordinationPrompt do
       You are "Orders"; you and your colleagues answer as one clinic.
       - Appointments: Appointment changes
       How to work together:
-      1. Split the patient's latest message into separate requests. A service's price, its free times and its booking are one request for the agent that books it.
+      1. Split the patient's latest message into separate requests: actions (they change data) and questions (they ask for information). A service's price, its free times and its booking are one action for the agent that books it.
       2. Answer questions yourself: every agent can use the FAQ and the catalog.
       3. If the message asks for an action you cannot do (book, reschedule, cancel, a deal...), transfer the conversation to the colleague whose tools can do it; that colleague also answers the questions of the message.
       4. If the message holds actions for two or more different agents, call plan_request once to split it; each agent does its part right away.
@@ -116,11 +116,21 @@ RSpec.describe Captain::Runtime::CoordinationPrompt do
                                   'Choose the colleague by what the patient wants done', 'also where the clinic instructions say')
     end
 
-    it 'makes the price, the free times and the booking of one service one request for the agent that books it, and plans the latest message' do
+    it 'makes the price, the free times and the booking of one service one action for the agent that books it, and plans the latest message' do
       text = described_class.render(context)
 
-      expect(text).to include("1. Split the patient's latest message into separate requests. A service's price, its free times and its " \
-                              'booking are one request for the agent that books it.')
+      expect(text).to include("1. Split the patient's latest message into separate requests: actions (they change data) and questions " \
+                              "(they ask for information). A service's price, its free times and its booking are one action for the " \
+                              'agent that books it.')
+    end
+
+    it 'uses action and question in the same sense in the rules, the plan tool and the transfer tools' do
+      rules = described_class::WORKING_TOGETHER
+
+      expect(rules).to include('actions (they change data)', 'questions (they ask for information)', 'Answer questions yourself')
+      expect(rules).to include('asks for an action you cannot do', 'holds actions for two or more different agents')
+      expect(Captain::Runtime::PartPlanTool.new.description).to include('holds actions for two or more different agents')
+      expect(Captain::Runtime::HandoffTool::WHEN_TO_USE).to include('holds actions of this colleague only', 'answers the questions')
     end
 
     it 'leaves out the way of working and the rule of the open parts once the transfer guard took the transfer and plan tools away' do
@@ -197,7 +207,7 @@ RSpec.describe Captain::Runtime::CoordinationPrompt do
 
       expect(transferred).to end_with(
         "5. Staff are reached through handoff.\n" \
-        'The conversation was transferred to you: the whole message is yours unless it holds a separate request for another colleague.'
+        'The conversation was transferred to you: the whole message is yours unless it holds an action for another colleague.'
       )
       expect(fresh).to end_with('5. Staff are reached through handoff.')
       expect(fresh).not_to include('was transferred to you')

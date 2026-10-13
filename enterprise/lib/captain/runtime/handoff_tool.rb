@@ -11,6 +11,9 @@
 # Only after two transfers in one run does the guard stop transfers for good (see Runner#continue_after_transfer_guard).
 class Captain::Runtime::HandoffTool < Captain::Runtime::Tool
   PLANNED_MESSAGE = 'This message is already planned: each agent of the plan answers its part.'
+  # The last sentence of every transfer tool: when to use it. Actions of two or more agents are a plan (plan_request).
+  WHEN_TO_USE = 'Use it when the patient\'s message holds actions of this colleague only; the colleague also answers the questions ' \
+                'of the message.'
   RETURN_TO_SOURCE = 'The conversation came from that colleague; transfer to the colleague who owns this request, or answer it yourself.'
 
   attr_reader :target_agent
@@ -81,13 +84,12 @@ class Captain::Runtime::HandoffTool < Captain::Runtime::Tool
 
   private
 
-  # One sentence: whom the conversation goes to and what that colleague answers; then what that colleague can do.
+  # One sentence: whom the conversation goes to and what that colleague answers; then what that colleague can do; then when to use it.
   def transfer_description(display_name, responsibility, capabilities)
     title = %(Transfer the conversation to colleague "#{display_name.to_s.squish.tr('"', "'")}")
     text = responsibility.present? ? "#{title}: #{responsibility}" : "#{title}."
-    return text if capabilities.blank?
-
-    "#{text.end_with?('.', '!', '?') ? text : "#{text}."} #{capabilities}"
+    text = "#{text.end_with?('.', '!', '?') ? text : "#{text}."} #{capabilities}" if capabilities.present?
+    "#{text.end_with?('.', '!', '?') ? text : "#{text}."} #{WHEN_TO_USE}"
   end
 
   # The colleague's tool ids come without building its tools (a LazyAgent reads them from the assistant). The line says what the

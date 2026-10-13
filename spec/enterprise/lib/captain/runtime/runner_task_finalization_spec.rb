@@ -307,7 +307,7 @@ RSpec.describe Captain::Runtime::Runner do
       it 'delivers a plain reply after a plan_request that named an agent which does not exist' do
         failed = nil
         chat.respond_with(lambda do |_current_context|
-          failed = plan_with(mode: 'handoff', parts: [{ fragment: 'Анализы', executor: 'Лаборатория' }])
+          failed = plan_with(mode: 'council', parts: [{ fragment: 'Анализы', executor: 'Лаборатория' }])
           reply('Анализы можно сдать в клинике ежедневно.')
         end)
         expect_initial_ask
@@ -322,12 +322,12 @@ RSpec.describe Captain::Runtime::Runner do
         expect(result.context).not_to include(:part_plan_accepted)
       end
 
-      it 'delivers the reply after an agreed human handoff was first tried as a plan_request handoff, even when repeated' do
+      it 'delivers the reply after an agreed human handoff was first tried as a plan_request, even when repeated' do
         failures = []
         chat.respond_with(lambda do |_current_context|
-          failures << plan_with(mode: 'handoff', parts: [{ fragment: 'Соедините с оператором' }])
-          failures << plan_with(mode: 'handoff', parts: [{ fragment: 'Соедините с оператором', executor: 'Intermedical — DEV Test' }])
-          failures << plan_with(mode: 'handoff', parts: [{ fragment: 'Соедините с оператором' }])
+          failures << plan_with(mode: 'council', parts: [{ fragment: 'Соедините с оператором' }])
+          failures << plan_with(mode: 'council', parts: [{ fragment: 'Соедините с оператором', executor: 'Intermedical — DEV Test' }])
+          failures << plan_with(mode: 'council', parts: [{ fragment: 'Соедините с оператором' }])
           reply('Уточните, пожалуйста, чем помочь.')
         end)
         expect_initial_ask
@@ -335,7 +335,7 @@ RSpec.describe Captain::Runtime::Runner do
 
         result = run_with
 
-        expect(failures).to all(start_with('ERROR: ').and(include('"retryable":true', 'To reach a person call the handoff tool.')))
+        expect(failures).to all(start_with('ERROR: ').and(include('"retryable":true', 'Own work needs no plan: answer or use your tools.')))
         expect(result).to be_success
         expect(result.output).to eq('Уточните, пожалуйста, чем помочь.')
         expect(result.context).not_to include(Captain::Runtime::ToolWrapper::TERMINAL_TOOL_STOP_KEY, :part_plan_accepted)
@@ -343,7 +343,7 @@ RSpec.describe Captain::Runtime::Runner do
 
       it 'keeps the human handoff of the model, which follows the rejected plan, intact' do
         chat.respond_with(lambda do |_current_context|
-          plan_with(mode: 'handoff', parts: [{ fragment: 'Соедините с оператором' }])
+          plan_with(mode: 'council', parts: [{ fragment: 'Соедините с оператором' }])
           RubyLLM::Tool::Halt.new('conversation_handoff')
         end)
         expect_initial_ask
@@ -360,7 +360,7 @@ RSpec.describe Captain::Runtime::Runner do
       it 'refuses a plan for its own work, and delivers the plain reply of the model' do
         failed = nil
         chat.respond_with(lambda do |_current_context|
-          failed = plan_with(mode: 'answer_myself', parts: [{ fragment: 'Записать на приём', executor_agent_id: 1 }])
+          failed = plan_with(mode: 'council', parts: [{ fragment: 'Записать на приём' }, { fragment: 'Цена приёма' }])
           reply('Выберите удобное время.')
         end)
         expect_initial_ask
