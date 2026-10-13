@@ -14,8 +14,13 @@
 #   - handoff_ambiguous: the sentence hands the request to "специалист" / "маман" / "отдел". That word also names an
 #                        internal agent that took the request over, so it is reported on its own, never as staff.
 #   - handoff_ready:     a result, certificate or document said to be ready or sent ("результат готов", "справка отправлена вам",
-#                        KK "нәтиже дайын"). Only staff can know that, so it counts like a staff claim; a turnaround from the
-#                        knowledge base ("результаты готовы в течение 1-2 дней") and a question are no claims.
+#                        KK "нәтиже дайын"). Only staff can know that, so it counts like a staff claim (and no handoff makes it
+#                        true); a turnaround from the knowledge base ("результаты готовы в течение 1-2 дней", "ОАК — в день сдачи
+#                        после 16:00"; a timing word is no excuse for "ваш анализ готов") and a question are no claims.
+#                        A request that is sent ("заявка на справку отправлена сотруднику") is a hand-over, not a ready document.
+#
+# .promise_only? tells a bare promise that staff will call or answer ("вам ответит сотрудник") from a hand-over in the past tense
+# ("передала администратору"): the promise stays true after the handoff of an earlier turn, the hand-over does not.
 #
 # "Запрос передан на обработку" is the plan acknowledgement of the runtime and no claim. "Направила вас к врачу" refers
 # the patient to a doctor and is no claim either: a doctor counts as the addressee only for a verb of passing a message on.
@@ -64,9 +69,24 @@ class Captain::Evals::RoutingBenchmark::HandoffClaims < Captain::Evals::RoutingB
                 'жолданды')
   DOCUMENT = words('результат\p{L}*', 'анализ\p{L}*', 'справк\p{L}*', 'документ\p{L}*', 'заключени\p{L}*', 'выписк\p{L}*', 'нәтиже\p{L}*',
                    'анықтама\p{L}*', 'құжат\p{L}*', 'қорытынды\p{L}*', 'талдау\p{L}*')
-  # "Результаты готовы в течение 1-2 дней" states a turnaround from the knowledge base: no claim that a result is ready now.
+  # "Результаты готовы в течение 1-2 дней", "ОАК — в день сдачи после 16:00", "биохимия — на следующий рабочий день", "УЗИ — сразу после
+  # исследования" state a turnaround from the knowledge base: no claim that a result is ready now.
   TURNAROUND = /в\s+течени\p{L}*|через|срок|обычно|как\s+правило|будут|будет|бывает|занима\p{L}*|ориентировочно|до\s+\d|
+                (?<!\p{L})(?:после|сразу|рабоч\p{L}*|на\s+следующ\p{L}*|в\s+(?:тот\s+же\s+)?день|дн(?:я|ей)|час(?:а|ов)?|минут\p{L}*)(?!\p{L})|
+                (?<!\d)\d{1,2}[:.]\d{2}(?!\d)|
                 (?<!\p{L})(?:күн|сағат|кейін|ішінде)(?!\p{L})/ix
+  # What turns such a sentence into a statement about the patient's own result: "Ваш анализ готов, заберите после 16:00", "Уже готово".
+  NOW = /(?<!\p{L})(?:ваш\p{L}*|уже|сейчас|сіздің|қазір)(?!\p{L})/i
+
+  # The sentence of a claim promises that staff will call, write or answer, and hands nothing over ("Администратор перезвонит вам",
+  # "С вами свяжутся"). After a handoff of an earlier turn that promise is still true: staff has not answered yet. A hand-over in the past
+  # tense ("Передала администратору") is true only for a handoff of the turn itself.
+  def self.promise_only?(sentence) = new(sentence).promise_only?
+
+  def promise_only?
+    sentence = @text
+    (promise?(sentence) || staff_promise?(sentence) || waiting_for_staff?(sentence)) && handoff_verbs(sentence).empty?
+  end
 
   private
 
@@ -81,8 +101,13 @@ class Captain::Evals::RoutingBenchmark::HandoffClaims < Captain::Evals::RoutingB
     kinds.compact.uniq
   end
 
+  # A result, certificate or document said to be ready or sent. A request that is sent ("Заявка на справку отправлена сотруднику") is the
+  # hand-over of a request and belongs to #handoff_kind; a turnaround of the knowledge base is a claim only when it is said of the patient's
+  # own result (NOW).
   def ready?(sentence)
-    sentence.match?(DOCUMENT) && !sentence.match?(TURNAROUND) && claim?(sentence, READY, :ready)
+    return false unless sentence.match?(DOCUMENT) && !sentence.match?(REQUEST_OBJECT) && claim?(sentence, READY, :ready)
+
+    !sentence.match?(TURNAROUND) || sentence.match?(NOW)
   end
 
   def handoff_verbs(sentence)

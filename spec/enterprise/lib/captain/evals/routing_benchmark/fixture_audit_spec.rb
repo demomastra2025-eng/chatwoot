@@ -49,11 +49,17 @@ RSpec.describe Captain::Evals::RoutingBenchmark::FixtureAudit do
   end
 
   it 'counts the pinned expectations of item a, and is not ready unless all of them are' do
-    result = audit({ customer: 'Запишите меня', expect: { operations: [booking, booking.merge(kind: 'update')] } },
+    move = booking.merge(kind: 'update', previous_starts_at: '2026-10-13T15:00:00+05:00')
+    result = audit({ customer: 'Запишите меня', expect: { operations: [booking, move] } },
                    { customer: 'позовите оператора', expect: { staff_handoff: true } })
 
     expect(result.result[:operations]).to eq(expected: 2, specific: 2)
-    expect(result.markdown).to include('Item a: 2 of 2 appointment expectations pin the start time.')
+    expect(result.markdown).to include('Item a: 2 of 2 appointment expectations pin the start time (a move: the old start too).')
+  end
+
+  it 'refuses a move that does not name the appointment it moves: the strict loader names it before the audit counts it' do
+    expect { audit({ customer: 'Запишите меня', expect: { operations: [booking.merge(kind: 'update')] } }) }
+      .to raise_error(Captain::Evals::RoutingBenchmark::Fixture::Invalid, /must pin previous_starts_at/)
   end
 
   it 'asks no service or patient of a cancellation, and counts nothing for count: 0 or a deal' do
@@ -133,11 +139,17 @@ RSpec.describe Captain::Evals::RoutingBenchmark::FixtureAudit do
     end
 
     it 'lets a move ignore the seeded appointment of the contact that it moves, and a cancellation is not checked' do
-      move = at('11:00', resource: 'doctor_a', kind: 'update')
+      move = at('11:00', resource: 'doctor_a', kind: 'update', previous_starts_at: '2026-10-15T11:00:00+05:00')
       cancel = at('23:00', kind: 'update', params: { status: 'cancelled', starts_at: '2026-10-15T23:00:00+05:00' })
 
       expect(messages(move)).to be_empty
       expect(messages(cancel)).to be_empty
+    end
+
+    it 'ignores only the appointment that the move starts from: another seeded appointment of the contact still blocks the new slot' do
+      elsewhere = at('11:00', resource: 'doctor_a', kind: 'update', previous_starts_at: '2026-10-14T11:00:00+05:00')
+
+      expect(messages(elsewhere).first).to include('not possible for doctor_a: taken by seeded appointment of patient at 15.10 11:00')
     end
 
     it 'finds a booking on a slot that an earlier turn of the dialogue took, for the only doctor who can take it' do
@@ -180,7 +192,8 @@ RSpec.describe Captain::Evals::RoutingBenchmark::FixtureAudit do
 
       expect(audit.result[:gaps].map(&:to_h)).to be_empty
       expect(audit.result).to include(fixtures: 160, turns: 395, operations: { expected: 105, specific: 105 })
-      expect(audit.result[:human_requests]).to include(flagged: 7, unmarked: 0)
+      # 7 staff requests, and the 4 complaints that ask the management to look into it and to get in touch
+      expect(audit.result[:human_requests]).to include(flagged: 11, unmarked: 0)
       expect(audit).to be_ok
     end
   end

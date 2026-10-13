@@ -24,7 +24,12 @@ RSpec.describe Captain::Evals::RoutingBenchmark::HumanRequest do
       'Мне нужен администратор',
       'Дайте администратора',
       'Оператормен байланыстырыңыз',
-      'Администратор керек'
+      'Администратор керек',
+      # the complaints of the v2 fixtures: the management is to look into it and to get in touch
+      'хочу чтобы руководство разобралось и мне перезвонили',
+      'хочу чтобы руководство разобралось',
+      'басшылық хабарлассын, қайталанбасын',
+      'басшылық білсін, маған хабарласыңыздар'
     ].each do |text|
       it "reads #{text.inspect} as a request for a person" do
         expect(described_class.match?(text)).to be(true)
@@ -45,7 +50,10 @@ RSpec.describe Captain::Evals::RoutingBenchmark::HumanRequest do
       'нужна справка для администратора',
       'можно записать человека на завтра?',
       'хочу записаться к администратору клиники на пятницу',
-      'әкімші үшін керек'
+      'әкімші үшін керек',
+      # a third person who will call, or has called, is no request
+      'мне вчера перезвонил администратор',
+      'басшылық хабарласады'
     ].each do |text|
       it "does not read #{text.inspect} as a request for a person" do
         expect(described_class.match?(text)).to be(false)

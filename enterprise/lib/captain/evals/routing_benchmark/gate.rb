@@ -8,7 +8,9 @@
 #     the customer asks for a person (see `coverage`),
 #   - a run that was not cut short (a run stopped by the budget or by an unexpected model scored only part of the fixtures), and
 #   - a handoff that is silent: the synthetic account's handoff notice is blank, so the text checks that are not put to a handoff
-#     turn do not hide a sentence the patient would read (`silent_handoff: false` is a blocker, nil means "not checked").
+#     turn do not hide a sentence the patient would read (`silent_handoff: false` is a blocker). nil means "not checked" for a report
+#     that has no handoff turn; when the runner could not read the notice (`silent_handoff_error`), or a turn is a silent handoff and
+#     nothing proves the notice blank, the gate is blocked as well: the text of such a turn was not checked.
 # A run that fails none of the hard rules but has failed checks nobody has triaged yet is PENDING_TRIAGE, which is not a
 # pass. `critical passed/total` counts checks put to a turn (see Scorer::CHECKS and the `evaluated` list of a case);
 # `overall passed/total` counts turns. Human triage labels are reported next to the raw verdict: `after_triage` drops the
@@ -21,15 +23,18 @@ class Captain::Evals::RoutingBenchmark::Gate
   THRESHOLD = 95.0
   # Older reports carry no `evaluated` list; these checks existed then and ran on every turn.
   LEGACY_CRITICAL_CHECKS = %w[false_success_claim duplicate_operation wrong_patient internal_text_leak].freeze
+  NOT_SILENT = 'the handoff notice of the synthetic account is not blank: a handoff is not silent, and its text is not checked'
+  UNPROVEN_CAUSE = 'the report has silent handoff turns and no proof that the notice is blank'
 
   class << self
     # cases: the report's cases (string or symbol keys)
-    def call(cases, aborted: false, abort_reason: nil, labels: {}, silent_handoff: nil)
+    def call(cases, aborted: false, abort_reason: nil, labels: {}, silent_handoff: nil, silent_handoff_error: nil)
       cases = cases.map { |item| item.to_h.deep_stringify_keys }
       triage = triage_summary(cases, labels)
-      raw = evaluate(cases, aborted, abort_reason, triage[:untriaged], silent_handoff: silent_handoff)
+      proof = { silent_handoff: silent_handoff, silent_handoff_error: silent_handoff_error }
+      raw = evaluate(cases, aborted, abort_reason, triage[:untriaged], **proof)
       raw[:triage] = triage
-      raw[:after_triage] = evaluate(cases, aborted, abort_reason, triage[:untriaged], labels: labels, silent_handoff: silent_handoff) if labels.any?
+      raw[:after_triage] = evaluate(cases, aborted, abort_reason, triage[:untriaged], labels: labels, **proof) if labels.any?
       raw
     end
 
@@ -52,15 +57,17 @@ class Captain::Evals::RoutingBenchmark::Gate
     end
 
     # An expectation that can tell a wrong booking from a right one: it pins the start time (`params.starts_at` of the v2 schema, or
-    # the symbolic `starts_at`). A wrong time is then an operation_mismatch; the doctor is any resource that fits the service, so the
-    # fixture does not pin it, and the reply is read against the booked row (reply_record_mismatch).
+    # the symbolic `starts_at`), and a move also pins the appointment it starts from (`previous_starts_at`). Without the old start, a
+    # move of the wrong appointment to the requested time passes. A wrong time is an operation_mismatch; the doctor, the service and
+    # the patient are checked only where the fixture pins them, and the reply is read against the booked row (reply_record_mismatch).
     def specific?(operation)
-      Captain::Evals::RoutingBenchmark::OperationCheck.expected_start(operation).present?
+      check = Captain::Evals::RoutingBenchmark::OperationCheck
+      check.expected_start(operation).present? && (check.kind_of(operation) != 'update' || operation['previous_starts_at'].present?)
     end
 
     private
 
-    def evaluate(cases, aborted, abort_reason, untriaged, labels: {}, silent_handoff: nil)
+    def evaluate(cases, aborted, abort_reason, untriaged, labels: {}, silent_handoff: nil, silent_handoff_error: nil)
       scored = cases.map { |item| score(item, labels) }
       critical = critical_section(scored)
       overall = overall_section(scored)
@@ -70,12 +77,23 @@ class Captain::Evals::RoutingBenchmark::Gate
       blockers << "overall #{overall[:pct]}% is below #{THRESHOLD}%" if overall[:pct] < THRESHOLD
       blockers << "the run was cut short (#{abort_reason || 'aborted'})" if aborted
       blockers << 'no turn was scored' if scored.empty?
-      blockers << 'the handoff notice of the synthetic account is not blank: a handoff is not silent, and its text is not checked' if silent_handoff == false
+      blockers.concat(silent_handoff_blockers(cases, silent_handoff, silent_handoff_error))
       blockers.concat(uncovered)
       pending = untriaged.positive? ? ["#{untriaged} failed check(s) not triaged by a person"] : []
       verdict = blockers.any? ? 'FAIL' : (pending.any? ? 'PENDING_TRIAGE' : 'PASS')
       { verdict: verdict, blockers: blockers + pending, critical: critical, overall: overall, coverage: coverage,
-        by_severity: by_severity(scored), checks: checks(scored), infra: infra_section(scored), silent_handoff: silent_handoff }.compact
+        by_severity: by_severity(scored), checks: checks(scored), infra: infra_section(scored), silent_handoff: silent_handoff,
+        silent_handoff_error: silent_handoff_error.presence }.compact
+    end
+
+    # A notice that is not blank (a handoff is not silent), or one that is not proven blank: the runner could not read it (it rescued an
+    # error), or silent handoff turns are in the report and nothing says the notice is blank. The text of those turns was skipped on trust.
+    def silent_handoff_blockers(cases, silent_handoff, error)
+      return [NOT_SILENT] if silent_handoff == false
+      return [] unless silent_handoff.nil? && (error.present? || cases.any? { |item| item['silent_handoff'] == true })
+
+      cause = error.present? ? "the notice could not be read (#{error})" : UNPROVEN_CAUSE
+      ["silent handoff not proven: #{cause}; the text of a handoff turn is not checked"]
     end
 
     # The turns that ended in a failure of the infrastructure under the agents, by check.
@@ -156,7 +174,8 @@ class Captain::Evals::RoutingBenchmark::Gate
       if expected.zero?
         blockers << 'item a not covered: no appointment operation is expected anywhere in this run'
       elsif specific < expected
-        blockers << "item a not covered: #{expected - specific} of #{expected} expected operations pin no start time (params.starts_at)"
+        blockers << "item a not covered: #{expected - specific} of #{expected} expected operations pin no start time (params.starts_at), " \
+                    'or pin no previous_starts_at for a move'
       end
       blockers << 'item f not covered: no turn asks for a person' if asked.zero?
       blockers

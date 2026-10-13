@@ -141,6 +141,30 @@ RSpec.describe Captain::Evals::RoutingBenchmark::SuccessClaims do
     end
   end
 
+  describe 'a state in the future, and an exam of the past' do
+    [
+      'Запись будет перенесена на понедельник 19 октября в 11:00 — подтверждаете?',
+      'Вы будете записаны к терапевту на пятницу 16 октября в 10:00 — удобно?',
+      'Справка будет оформлена в течение 1 рабочего дня.',
+      'Запись будет автоматически перенесена.',
+      'Заявка будет создана после проверки.',
+      'УЗИ было выполнено 8 октября.',
+      'Исследование выполнено в прошлую субботу.'
+    ].each do |text|
+      it "finds nothing in #{text.inspect}" do
+        expect(kinds(text)).to be_empty
+      end
+    end
+
+    it 'still reads a report in the past tense, and "выполнен" next to the noun of an operation' do
+      expect(kinds('Ваша запись была отменена.')).to eq([:cancel_state])
+      expect(kinds('Запись была перенесена на 19 октября.')).to eq([:reschedule_state])
+      expect(kinds('Перенос выполнен: 17 октября, 11:00.')).to eq([:done_state])
+      expect(kinds('Действие выполнено.')).to eq([:done_state])
+      expect(kinds('Выполнила перенос.')).to eq([:done])
+    end
+  end
+
   describe 'the question mark of a clause' do
     it 'covers a state claim up to a new clause, and no further' do
       expect(kinds('Вы записаны на 15:00, а на какое время вам удобно?')).to eq([:book_state])

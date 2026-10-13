@@ -3,8 +3,9 @@
 require 'yaml'
 
 # A routing-benchmark fixture file (the v2 schema, README "YAML fixture"). The loader is strict: a key the schema does not know
-# (a typo such as `must_not_cal`), a transfer tool name, a `ledger_tool`, an appointment operation without a pinned start or a turn
-# after a staff handoff without `staff: {status: pending}` is an error, because the scorer would otherwise ignore it in silence.
+# (a typo such as `must_not_cal`, at the level of a row of the workspace as well), a tool name that matches no tool, a transfer tool
+# name, a `ledger_tool`, an appointment operation without a pinned start, a move without the start it moves from, or a turn after a
+# staff handoff without `staff: {status: pending}` is an error, because the scorer would otherwise ignore it in silence.
 class Captain::Evals::RoutingBenchmark::Fixture
   class Invalid < ArgumentError; end
 
@@ -24,8 +25,16 @@ class Captain::Evals::RoutingBenchmark::Fixture
   ACT_KEYS = %w[tool agent].freeze
   REPLY_LANGUAGES = %w[ru kk].freeze
   STAFF_HANDOFF_VALUES = [true, false, 'any'].freeze
+  # The keys of the rows of the workspace (the workspace builder reads these and nothing else).
+  ROW_KEYS = {
+    'channels' => %w[key entry_agent], 'knowledge' => %w[agent question answer], 'contacts' => %w[key name],
+    'resources' => %w[key name timezone], 'services' => %w[key name duration_min base_price],
+    'slots' => %w[resource weekday start_minute end_minute], 'appointments' => %w[resource service contact starts_at], 'deals' => %w[title]
+  }.freeze
   # Transfer tools are account-specific names (a hash of the colleague), so a fixture can never list one.
   TRANSFER_TOOL_PREFIXES = %w[handoff_to_ transfer_to_].freeze
+  # Tools of the runtime that are no tool of an agent's list: the planning tool of a council and the human handoff.
+  RUNTIME_TOOLS = %w[plan_request handoff].freeze
   OFFSET = /(?:Z|[+-]\d{2}:\d{2})\z/
 
   attr_reader :data
@@ -56,8 +65,13 @@ class Captain::Evals::RoutingBenchmark::Fixture
     reject_unknown_keys!(workspace, WORKSPACE_KEYS, 'workspace')
     tools_by_agent = validate_agents!
     names = tools_by_agent.keys
-    %w[channels knowledge contacts resources services slots appointments deals].each do |key|
-      require_array!(workspace[key], "workspace.#{key}") if workspace.key?(key)
+    ROW_KEYS.each do |key, allowed|
+      next unless workspace.key?(key)
+
+      require_array!(workspace[key], "workspace.#{key}").each do |row|
+        require_hash!(row, key.singularize)
+        reject_unknown_keys!(row, allowed, "workspace.#{key}")
+      end
     end
     channel_keys = validate_channels!(names)
     contact_keys = validate_contacts!
@@ -192,6 +206,7 @@ class Captain::Evals::RoutingBenchmark::Fixture
     raise Invalid, 'Expected council must be true or false' unless [true, false].include?(council)
 
     validate_tool_lists!(expect, council)
+    validate_tool_names!(expect, tools_by_agent)
     validate_v2_values!(expect)
     Array(expect['operations']).each { |operation| validate_operation!(operation, operation_keys) }
     validate_acts!(expect['acts'], tools_by_agent) if expect.key?('acts')
@@ -233,6 +248,22 @@ class Captain::Evals::RoutingBenchmark::Fixture
       next if mutation_tools.include?(tool)
 
       raise Invalid, "must_not_succeed names #{tool.inspect}, which is not a mutation tool"
+    end
+  end
+
+  # A tool name that matches nothing is a silent hole: a typo in `must_not_call` ("cancel_apointment") disables the check of the tool it
+  # was meant to forbid. `must_call` names a tool that some agent of the workspace has (or plan_request / handoff), `must_not_call` any
+  # tool of the benchmark.
+  def validate_tool_names!(expect, tools_by_agent)
+    known = self.class.safe_tool_ids | RUNTIME_TOOLS
+    owned = tools_by_agent.values.flatten | RUNTIME_TOOLS
+    allowed = { 'must_call' => [owned, 'no agent of the workspace has it'], 'must_not_call' => [known, 'it is no tool of the benchmark'] }
+    allowed.each do |key, (names, why)|
+      Array(expect[key]).each do |name|
+        next if names.include?(name)
+
+        raise Invalid, "turn.expect.#{key} names the unknown tool #{name.inspect}: #{why}"
+      end
     end
   end
 
@@ -279,6 +310,18 @@ class Captain::Evals::RoutingBenchmark::Fixture
 
     validate_symbolic_operation!(operation, keys)
     validate_pinned_start!(operation)
+    validate_move_origin!(operation)
+  end
+
+  # A move pins the appointment it starts from. The new start alone cannot tell the move of the right appointment from the move of the
+  # wrong one to the requested time (two appointments of the caller, "перенесите на понедельник в 11:00"). A cancellation pins the
+  # appointment by its start already (`params.starts_at` is the start of the cancelled appointment).
+  def validate_move_origin!(operation)
+    return unless operation['model'] == 'appointment' && Captain::Evals::RoutingBenchmark::OperationCheck.kind_of(operation) == 'update'
+    return if operation.key?('count') && operation['count'].to_i.zero?
+    return if operation['previous_starts_at'].present?
+
+    raise Invalid, 'A move (kind update) must pin previous_starts_at (ISO-8601 with an offset): the start of the appointment it moves'
   end
 
   def validate_pinned_start!(operation)

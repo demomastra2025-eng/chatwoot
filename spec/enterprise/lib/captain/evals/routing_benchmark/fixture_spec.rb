@@ -106,6 +106,23 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Fixture do
       expect { described_class.new(with_operation(starts_at: '2026-10-16T12:00:00+05:00')) }.to raise_error(described_class::Invalid, /differ/)
     end
 
+    it 'rejects a move that does not pin the appointment it starts from: the new start alone cannot tell the right appointment from the wrong one' do
+      expect { described_class.new(with_operation(kind: 'update')) }
+        .to raise_error(described_class::Invalid, /A move \(kind update\) must pin previous_starts_at/)
+      expect { described_class.new(with_operation(kind: 'update', previous_starts_at: '2026-10-13T15:00:00+05:00')) }.not_to raise_error
+      expect { described_class.new(with_operation(kind: 'update', previous_starts_at: '2026-10-13T15:00:00')) }
+        .to raise_error(described_class::Invalid, /previous_starts_at must carry an offset/)
+    end
+
+    it 'asks the old start of a move only: a cancellation pins its appointment by its start, a booking and a count of 0 have none' do
+      cancel = { status: 'cancelled', starts_at: '2026-10-15T12:00:00+05:00' }
+
+      expect { described_class.new(with_operation(kind: 'update', params: cancel)) }.not_to raise_error
+      expect { described_class.new(with_operation(kind: 'cancel')) }.not_to raise_error
+      expect { described_class.new(with_operation(kind: 'create')) }.not_to raise_error
+      expect { described_class.new(with_operation(kind: 'update', params: { status: 'scheduled' }, count: 0)) }.not_to raise_error
+    end
+
     it 'accepts the doctor, service, patient and count of an appointment, and the kinds update and cancel' do
       expect do
         described_class.new(with_operation(resource: 'doctor_a', service: 'consult', patient: 'caller', count: 2))
@@ -215,6 +232,24 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Fixture do
     end
 
     describe 'tool names' do
+      it 'rejects a name that matches no tool: a typo in must_not_call would silently disable the check of the tool it was meant for' do
+        expect { described_class.new(with_expect(must_not_call: %w[create_appointment cancel_apointment])) }
+          .to raise_error(described_class::Invalid, /must_not_call names the unknown tool "cancel_apointment"/)
+        expect { described_class.new(with_expect(must_call: ['create_apointment'])) }
+          .to raise_error(described_class::Invalid, /must_call names the unknown tool "create_apointment"/)
+      end
+
+      it 'wants a must_call tool that some agent of the workspace has, and takes any tool of the benchmark in must_not_call' do
+        expect { described_class.new(with_expect(must_call: ['update_appointment'])) }
+          .to raise_error(described_class::Invalid, /must_call names the unknown tool "update_appointment": no agent of the workspace has it/)
+        expect { described_class.new(with_expect(must_not_call: %w[update_appointment cancel_appointment faq_lookup])) }.not_to raise_error
+      end
+
+      it 'takes the runtime tools plan_request and handoff, which are in no list of an agent' do
+        expect { described_class.new(with_expect(must_not_call: %w[plan_request handoff])) }.not_to raise_error
+        expect { described_class.new(with_expect(must_call: %w[create_appointment handoff plan_request])) }.not_to raise_error
+      end
+
       it 'rejects a transfer tool in must_call and must_not_call: its name is account-specific' do
         %w[handoff_to_assistant_7 transfer_to_agent_4].each do |name|
           expect { described_class.new(with_expect(must_call: [name])) }.to raise_error(described_class::Invalid, /transfer tool/), name
@@ -251,6 +286,33 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Fixture do
 
           expect { described_class.new(copy) }.to raise_error(described_class::Invalid, /Unknown key in #{Regexp.escape(where)}/), where
         end
+      end
+
+      it 'rejects a typo in a row of the workspace as well: a channel, knowledge, contact, doctor, service, slot, appointment or deal' do
+        rows = {
+          'channels' => { key: 'api', entry_agent: 'Запись к врачу', entry: 'x' },
+          'knowledge' => { question: 'Где?', answer: 'Здесь.', agnet: 'Запись к врачу' },
+          'contacts' => { key: 'other', name: 'Арсен', phone: '+7 700 000 00 00' },
+          'resources' => { key: 'doctor_c', name: 'Врач В', timezon: 'Asia/Almaty' },
+          'services' => { key: 'xray', name: 'Рентген', price: 5000 },
+          'slots' => { resource: 'doctor_a', weekday: 1, start_minute: 540, end_minute: 600, day: 'Пн' },
+          'appointments' => { resource: 'doctor_a', contact: 'caller', starts_at: '2026-10-16T09:30:00+05:00', status: 'scheduled' },
+          'deals' => { title: 'Программа', stage: 'new' }
+        }
+
+        rows.each do |section, row|
+          copy = booking_data.deep_dup
+          copy[:workspace][section.to_sym] = Array(copy[:workspace][section.to_sym]) + [row]
+
+          expect { described_class.new(copy) }.to raise_error(described_class::Invalid, /Unknown key in workspace\.#{section}/), section
+        end
+      end
+
+      it 'rejects a row of the workspace that is not a mapping' do
+        copy = booking_data.deep_dup
+        copy[:workspace][:resources] = ['doctor_a']
+
+        expect { described_class.new(copy) }.to raise_error(described_class::Invalid, /resource must be a mapping/)
       end
 
       it 'rejects agent and agents together, and a list of one agent (write agent: for one)' do
@@ -349,7 +411,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Fixture do
                   must_call: [update_appointment]
                   must_not_call: [create_appointment, cancel_appointment, handoff]
                   operations:
-                    - {model: appointment, kind: update, params: {status: scheduled, starts_at: '2026-10-16T10:00:00+05:00'}}
+                    - {model: appointment, kind: update, params: {status: scheduled, starts_at: '2026-10-16T10:00:00+05:00'}, resource: ginekolog, service: consult, previous_starts_at: '2026-10-16T09:30:00+05:00'}
                   acts:
                     - {tool: update_appointment, agent: Запись к врачу}
                   staff_handoff: true
@@ -438,5 +500,23 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Fixture do
       expect([paths.size, dialogues, turns]).to eq([160, 160, 395])
     end
 
+    # The pins that make gate item a real: a move names the appointment it starts from, a booking names its service and (where the plan
+    # has exactly one doctor for it) its doctor, a booking for a relative names the relative.
+    it 'pins the old start of every move, the service and the doctor of every booking and the patient of every relative in the v2 set',
+       skip: ENV['ROUTING_BENCHMARK_V2_FIXTURES'].blank? && 'set ROUTING_BENCHMARK_V2_FIXTURES to a glob of the 160 v2 fixture files' do
+      paths = Dir.glob(ENV.fetch('ROUTING_BENCHMARK_V2_FIXTURES')).reject { |path| File.basename(path) == 'CHANGES.md' }
+      turns = paths.flat_map { |path| described_class.load(path).dialogues.flat_map { |dialogue| dialogue['turns'] } }
+      operations = turns.flat_map { |turn| Array(turn.dig('expect', 'operations')) }.select { |operation| operation['model'] == 'appointment' }
+      kind_of = ->(operation) { Captain::Evals::RoutingBenchmark::OperationCheck.kind_of(operation) }
+      moves = operations.select { |operation| kind_of.call(operation) == 'update' }
+      bookings = operations.select { |operation| kind_of.call(operation) == 'create' }
+
+      expect([operations.size, moves.size, bookings.size]).to eq([105, 22, 80])
+      expect(moves).to all(include('previous_starts_at' => match(/\A2026-10-\d\dT\d\d:\d\d:00\+05:00\z/)))
+      expect(bookings).to all(include('service' => be_present))
+      expect(bookings.count { |operation| operation['resource'].present? }).to eq(76)
+      expect(bookings.count { |operation| operation['patient_name'].present? }).to eq(23)
+      expect(operations.count { |operation| Captain::Evals::RoutingBenchmark::Gate.specific?(operation) }).to eq(105)
+    end
   end
 end

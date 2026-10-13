@@ -37,10 +37,17 @@ class Captain::Evals::RoutingBenchmark::Report
              "| Overall score, at least #{overall['threshold']}% | #{overall['passed']}/#{overall['total']} turns passed (#{overall['pct']}%) |",
              "| Run complete | #{@report['aborted'] ? "no, stopped: #{@report['abort_reason']}" : 'yes'} |",
              "| Failed checks triaged by a person | #{triage['triaged']}/#{triage['failed_checks']} |"]
-    lines << "| Handoff is silent (blank notice) | #{gate['silent_handoff'] ? 'yes' : 'no'} |" unless gate['silent_handoff'].nil?
+    lines << "| Handoff is silent (blank notice) | #{silent_cell} |" if silent_cell
     lines += infra_lines
     lines += blockers_lines + after_triage_lines + coverage_lines + critical_failure_lines + check_table_lines
     "#{lines.join("\n")}\n"
+  end
+
+  # "yes" / "no" when the run checked that the notice is blank, "not proven: <error>" when it could not read it, else nothing.
+  def silent_cell
+    return (gate['silent_handoff'] ? 'yes' : 'no') unless gate['silent_handoff'].nil?
+
+    "not proven: #{gate['silent_handoff_error']}" if gate['silent_handoff_error']
   end
 
   # Turns that failed because of the infrastructure under the agents (a technical handoff, a provider error): counted as failed

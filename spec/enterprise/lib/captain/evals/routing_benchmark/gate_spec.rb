@@ -50,6 +50,11 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Gate do
 
   def bad_turns(count, check = 'wrong_agent') = Array.new(count) { |index| turn(dialogue: "bad_#{index}", fails: [check]) }
 
+  # The blocker of gate item a for `count` of `total` expected operations that pin no start time (or, for a move, no old start).
+  def unpinned_message(count, total)
+    "item a not covered: #{count} of #{total} expected operations pin no start time (params.starts_at), or pin no previous_starts_at for a move"
+  end
+
   # The decisions of a person: every failed check of the given turns is signed with the label.
   def signed_off(cases, label = 'agent_bug')
     cases.flat_map { |item| item['failures'].map { |failure| [triage.key(item['fixture'], item['dialogue'], item['turn'], failure['id']), label] } }.to_h
@@ -199,7 +204,8 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Gate do
     end
 
     it 'takes the start time of the v2 schema among the params as the pin: the doctor is any that fits, so the fixture names none' do
-      gate = described_class.call(passing(10) + [booking_turn('v2', operations: [v2_operation, v2_operation('kind' => 'update')])])
+      move = v2_operation('kind' => 'update', 'previous_starts_at' => '2026-10-13T15:00:00+05:00')
+      gate = described_class.call(passing(10) + [booking_turn('v2', operations: [v2_operation, move])])
 
       expect(gate[:verdict]).to eq('PASS')
       expect(gate[:coverage]['a']).to eq(covered: 3, expected: 3)
@@ -213,7 +219,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Gate do
       gate = described_class.call(cases)
 
       expect(gate[:verdict]).to eq('FAIL')
-      expect(gate[:blockers]).to eq(['item a not covered: 1 of 1 expected operations pin no start time (params.starts_at)'])
+      expect(gate[:blockers]).to eq([unpinned_message(1, 1)])
       expect(gate[:critical][:failed]).to eq(0)
     end
 
@@ -222,8 +228,23 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Gate do
 
       gate = described_class.call(passing(10) + [booking_turn('vague', operations: vague)])
 
-      expect(gate[:blockers]).to eq(['item a not covered: 2 of 5 expected operations pin no start time (params.starts_at)'])
+      expect(gate[:blockers]).to eq([unpinned_message(2, 5)])
       expect(gate[:coverage]['a']).to eq(covered: 3, expected: 5)
+    end
+
+    it 'does not count a move as pinned before it names the appointment it moves: the wrong one could be moved to the requested time' do
+      pinned = v2_operation('kind' => 'update', 'previous_starts_at' => '2026-10-13T15:00:00+05:00')
+      bare = v2_operation('kind' => 'update')
+      symbolic_bare = operation('kind' => 'update')
+      cancel = v2_operation('kind' => 'update', 'params' => { 'status' => 'cancelled', 'starts_at' => '2026-10-15T12:00:00+05:00' })
+
+      gate = described_class.call(passing(10) + [booking_turn('moves', operations: [pinned, bare, symbolic_bare, cancel])])
+
+      expect(gate[:verdict]).to eq('FAIL')
+      # the first of the ten clean turns (passing) holds one more pinned booking
+      expect(gate[:blockers]).to eq([unpinned_message(2, 5)])
+      expect(gate[:coverage]['a']).to eq(covered: 3, expected: 5)
+      expect(described_class.specific?(symbolic_bare.merge('previous_starts_at' => '2026-10-13T15:00:00+05:00'))).to be(true)
     end
 
     it 'does not count count: 0 ("no such row") or an operation on a deal' do
@@ -328,6 +349,29 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Gate do
       expect(described_class.call(passing(10), silent_handoff: true)).to include(verdict: 'PASS', silent_handoff: true)
       expect(described_class.call(passing(10))).to include(verdict: 'PASS')
       expect(described_class.call(passing(10))).not_to have_key(:silent_handoff)
+    end
+
+    it 'blocks the gate when the runner could not read the notice: the text of the handoff turns was skipped on trust, not on proof' do
+      gate = described_class.call(passing(10), silent_handoff: nil, silent_handoff_error: 'ActiveRecord::StatementInvalid')
+
+      expect(gate).to include(verdict: 'FAIL', silent_handoff_error: 'ActiveRecord::StatementInvalid')
+      expect(gate[:blockers]).to eq(['silent handoff not proven: the notice could not be read (ActiveRecord::StatementInvalid); ' \
+                                     'the text of a handoff turn is not checked'])
+    end
+
+    it 'blocks a report that holds silent handoff turns and carries no proof that the notice is blank, and passes once it does' do
+      cases = passing(10) + [turn(dialogue: 'handed').merge('silent_handoff' => true)]
+
+      gate = described_class.call(cases)
+
+      expect(gate[:verdict]).to eq('FAIL')
+      expect(gate[:blockers]).to eq(['silent handoff not proven: the report has silent handoff turns and no proof that the notice is blank; ' \
+                                     'the text of a handoff turn is not checked'])
+      expect(described_class.call(cases, silent_handoff: true)).to include(verdict: 'PASS', blockers: [])
+    end
+
+    it 'does not read an error as a failure when the notice was read after all' do
+      expect(described_class.call(passing(10), silent_handoff: true, silent_handoff_error: 'Timeout::Error')).to include(verdict: 'PASS')
     end
   end
 

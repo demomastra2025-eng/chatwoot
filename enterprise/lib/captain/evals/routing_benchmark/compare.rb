@@ -61,7 +61,8 @@ class Captain::Evals::RoutingBenchmark::Compare
     cases = report.fetch('cases')
     labels = Captain::Evals::RoutingBenchmark::Triage.labels_from('triage' => report['triage'])
     gate = Captain::Evals::RoutingBenchmark::Gate.call(cases, aborted: report['aborted'], abort_reason: report['abort_reason'], labels: labels,
-                                                              silent_handoff: report['silent_handoff'])
+                                                              silent_handoff: report['silent_handoff'],
+                                                              silent_handoff_error: report['silent_handoff_error'])
     failures = cases.flat_map { |item| failed_checks(item) }
     {
       gate: gate, cases: cases, turns: cases.map { |item| turn_key(item) }.uniq,

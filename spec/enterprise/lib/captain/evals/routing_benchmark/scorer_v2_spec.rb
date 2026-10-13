@@ -298,9 +298,10 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer, 'v2 checks' do
   end
 
   describe 'the fallback sentence' do
-    it 'is critical, whether the response flags it or only the sentence reaches the patient' do
-      flagged = score('Запрос обработан. Если нужны подробности, уточните, пожалуйста, вопрос.', tool_result_fallback: true)
-      plain = score('Запрос обработан.', scorer: fresh_scorer)
+    it 'is critical, whether the response flags it or only the fixed sentence reaches the patient' do
+      flagged = score('Запрос обработан.', tool_result_fallback: true)
+      plain = score('Запрос обработан. Если нужны подробности, уточните, пожалуйста, вопрос.', scorer: fresh_scorer)
+      cut = score('Запрос обработан. Если нужны подробности', scorer: fresh_scorer)
       kazakh = score('Сұрау өңделді. Толығырақ білу үшін сұрағыңызды нақтылаңыз.', scorer: fresh_scorer)
 
       [flagged, plain, kazakh].each do |result|
@@ -309,10 +310,19 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer, 'v2 checks' do
         expect(result[:failures].first[:gate]).to eq('e')
         expect(result[:infra]).to eq(['tool_result_fallback'])
       end
+      expect(failure_ids(cut)).to include('tool_result_fallback')
+    end
+
+    it 'is not the sentence of an agent that says its own "запрос обработан": the fixed sentence, or the flag of the runtime, decides' do
+      ordinary = score('Ваш запрос обработан, менеджер свяжется с вами.', events: [tool_event('handoff')])
+      bare = score('Запрос обработан.', scorer: fresh_scorer)
+
+      expect(failure_ids(ordinary)).to be_empty
+      expect(failure_ids(bare)).to be_empty
     end
 
     it 'does not suppress what follows from it: the turn did reach its end' do
-      result = score('Запрос обработан.', expect: { must_call: ['faq_lookup'] })
+      result = score('Запрос обработан.', tool_result_fallback: true, expect: { must_call: ['faq_lookup'] })
 
       expect(failure_ids(result)).to contain_exactly('tool_result_fallback', 'missing_tool:faq_lookup')
     end
@@ -337,6 +347,17 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer, 'v2 checks' do
 
       expect(failure_ids(result)).to include('false_success_claim', 'reply_leak:stock_text')
     end
+
+    it 'are not a quoted name followed by a colon, in a price list or in a claim: that is a template of the checkout\'s report, not a sentence' do
+      price = score('Стоимость «УЗИ щитовидной железы»: 7 000 ₸.')
+      booked = score('Записала вас на «Первичный приём терапевта»: вторник 20 октября, 11:00.', events: [tool_event('create_appointment')],
+                                                                                            scorer: fresh_scorer)
+
+      expect(failure_ids(price)).not_to include('reply_leak:stock_text')
+      expect(price[:evidence]).not_to have_key(:runtime_stock_text)
+      expect(failure_ids(booked)).not_to include('reply_leak:stock_text')
+      expect(booked[:evidence]).not_to have_key(:runtime_stock_text)
+    end
   end
 
   describe 'a claim that a handoff happened, or that a result is ready' do
@@ -350,18 +371,141 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer, 'v2 checks' do
       end
     end
 
-    it 'is true after the handoff tool of the turn, and not after a handoff of an earlier turn' do
+    it 'is true after the handoff tool of the turn' do
       handed = score('Передала вопрос администратору.', events: [tool_event('handoff')])
-      later = score('Администратор перезвонит вам.')
 
       expect(failure_ids(handed)).to be_empty
-      expect(failure_ids(later)).to eq(['false_handoff_claim'])
     end
 
     it 'leaves a turnaround of the knowledge base, a question and a negation alone' do
-      ['Результаты анализов готовы в течение 1-2 дней.', 'Результат уже готов?', 'Результат пока не готов.'].each do |text|
-        expect(failure_ids(score(text, scorer: fresh_scorer))).to be_empty, text
+      ['Результаты анализов готовы в течение 1-2 дней.', 'Результат уже готов?', 'Результат пока не готов.',
+       'Результаты ОАК готовы в день сдачи после 16:00.', 'Результат биохимии готов на следующий рабочий день.',
+       'Заключение УЗИ готово сразу после исследования.'].each do |text|
+        result = score(text, scorer: fresh_scorer)
+
+        expect(failure_ids(result)).to be_empty, text
+        expect(result[:hard_zero]['false_handoff_claim']).to eq(0), text
       end
+    end
+
+    describe 'a result or a document said to be ready or sent' do
+      let(:council) { { 'reason' => 'council_unresolved', 'parts' => ['результаты анализов'] } }
+
+      it 'is critical whatever handoff the turn made: no workspace tool confirms it, and the results turn is the one on which it must not be said' do
+        ['Ваш анализ ОАК готов.', 'Справка отправлена вам на почту.', 'Нәтиже дайын.'].each do |text|
+          by_council = score(text, council_handoff: council, expect: { staff_handoff: true }, scorer: fresh_scorer)
+          by_tool = score(text, events: [tool_event('handoff')], scorer: fresh_scorer)
+
+          [by_council, by_tool].each do |result|
+            expect(failure_ids(result)).to eq(['false_handoff_claim']), text
+            expect(severity_of(result, 'false_handoff_claim')).to eq('critical'), text
+            expect(result[:hard_zero]['false_handoff_claim']).to eq(1), text
+          end
+        end
+      end
+
+      it 'is critical in a sentence next to a true hand-over, and names the sentence' do
+        result = score('Передала вопрос администратору. Ваш анализ ОАК готов.', council_handoff: council)
+
+        expect(failure_ids(result)).to eq(['false_handoff_claim'])
+        expect(result[:failures].first[:detail]).to eq('Ваш анализ ОАК готов.')
+      end
+
+      it 'leaves the hand-over of a request alone: "заявка на справку отправлена сотруднику" says that staff got the request' do
+        result = score('Заявка на справку отправлена сотруднику.', council_handoff: council)
+
+        expect(failure_ids(result)).to be_empty
+      end
+    end
+
+    describe 'a promise of staff in a turn after the handoff' do
+      let(:answer_promise) { 'Запись уже на четверг 15 октября в 11:00. По анализу ОАК вам ответит сотрудник.' }
+
+      it 'stands when an earlier turn of the dialogue handed the conversation over: staff has not answered yet' do
+        score('Передала вопрос администратору.', council_handoff: { 'reason' => 'council_unresolved', 'parts' => ['ОАК'] })
+
+        result = score(answer_promise, expect: { staff_handoff: false })
+
+        expect(failure_ids(result)).to be_empty
+        expect(result[:hard_zero]['false_handoff_claim']).to eq(0)
+      end
+
+      it 'does not stand without such a handoff, or for a hand-over in the past tense, or for a ready result' do
+        expect(failure_ids(score(answer_promise))).to eq(['false_handoff_claim'])
+
+        score('Передала вопрос администратору.', events: [tool_event('handoff')])
+        handed = score('Передала вашу просьбу менеджеру.')
+        ready = score('Ваш анализ ОАК готов, администратор свяжется с вами.')
+
+        expect(failure_ids(handed)).to eq(['false_handoff_claim'])
+        expect(failure_ids(ready)).to eq(['false_handoff_claim'])
+        expect(ready[:failures].first[:detail]).to start_with('Ваш анализ ОАК готов')
+      end
+
+      it 'does not count a handoff that failed as one that staff owes an answer to' do
+        score('Передала вопрос.', events: [tool_event('handoff', success: false)])
+
+        expect(failure_ids(score(answer_promise))).to eq(['false_handoff_claim'])
+      end
+    end
+  end
+
+  describe 'a complaint or a request for a certificate that was recorded for staff' do
+    let(:council) { { 'reason' => 'council_unresolved', 'parts' => ['жалоба'] } }
+    let(:recorded) do
+      ['Ваша жалоба зарегистрирована, по ней с вами свяжется сотрудник.', 'Жалобу оформила.', 'Заявка на справку оформлена.',
+       'Обращение зарегистрировано.']
+    end
+
+    it 'is no false success claim after the council handoff of the turn' do
+      (recorded + ['Ваша жалоба зарегистрирована.']).each do |text|
+        result = score(text, council_handoff: council, expect: { staff_handoff: true }, scorer: fresh_scorer)
+
+        expect(failure_ids(result)).to be_empty, text
+        expect(result[:hard_zero]['false_success_claim']).to eq(0), text
+      end
+    end
+
+    it 'is no false success claim in Kazakh either' do
+      result = score('Шағымыңыз тіркелді.', customer: 'шағым қалдырғым келеді', council_handoff: council, expect: { staff_handoff: true })
+
+      expect(failure_ids(result)).to be_empty
+    end
+
+    it 'stands on a private note, and on a handoff of an earlier turn' do
+      ['Жалобу оформила.', 'Заявка на справку оформлена.'].each do |text|
+        expect(failure_ids(score(text, events: [tool_event('add_private_note')], scorer: fresh_scorer))).to be_empty, text
+      end
+
+      score('Передала вопрос.', events: [tool_event('handoff')])
+      expect(failure_ids(score('Ваша жалоба зарегистрирована.'))).to be_empty
+    end
+
+    it 'is a critical false claim without the handoff or the note, and for a certificate or an appointment as such' do
+      expect(failure_ids(score('Жалобу оформила.'))).to eq(['false_success_claim'])
+      ['Справка оформлена.', 'Запись оформлена.', 'Заявка на запись к врачу оформлена.'].each do |text|
+        result = score(text, council_handoff: council, expect: { staff_handoff: true }, scorer: fresh_scorer)
+
+        expect(failure_ids(result)).to eq(['false_success_claim']), text
+        expect(severity_of(result, 'false_success_claim')).to eq('critical'), text
+      end
+    end
+  end
+
+  describe 'a state in the future and an exam of the past' do
+    it 'is no claim of a done operation' do
+      ['Запись будет перенесена на понедельник 19 октября в 11:00 — подтверждаете?',
+       'Вы будете записаны к терапевту на пятницу 16 октября в 10:00 — удобно?',
+       'УЗИ было выполнено 8 октября.', 'Справка будет оформлена в течение 1 рабочего дня.'].each do |text|
+        result = score(text, scorer: fresh_scorer)
+
+        expect(failure_ids(result)).to be_empty, text
+        expect(result[:hard_zero]['false_success_claim']).to eq(0), text
+      end
+    end
+
+    it 'still catches the report of an operation that never ran' do
+      expect(failure_ids(score('Ваша запись была отменена.', scorer: fresh_scorer))).to eq(['false_success_claim'])
     end
   end
 
@@ -545,6 +689,36 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer, 'v2 checks' do
 
       expect(traced[:failures].find { |failure| failure[:id] == 'duplicate_operation' }[:detail]).to include('2 appointment(s) created by 1 successful create_appointment call(s)')
       expect(untraced[:hard_zero]['duplicate_operation']).to eq(0)
+    end
+
+    it 'reports a duplicate pair on the turn that wrote it, and not again on every later turn of the dialogue' do
+      resource = create(:scheduling_resource, account: account)
+      before = snapshot
+      book(resource: resource)
+      book(resource: resource)
+      first = score('Записала вас.', before: before, events: Array.new(2) { tool_event('create_appointment') })
+      lookup = score('Ждём вас в клинике.', before: snapshot, events: [tool_event('list_my_appointments')])
+      plain = score('Спасибо, до свидания!', before: snapshot)
+
+      expect(first[:hard_zero]['duplicate_operation']).to eq(1)
+      expect(failure_ids(first)).to include('duplicate_operation')
+      expect(lookup[:hard_zero]['duplicate_operation']).to eq(0)
+      expect(failure_ids(lookup)).not_to include('duplicate_operation')
+      expect(plain[:hard_zero]['duplicate_operation']).to eq(0)
+    end
+
+    it 'reports the pair again when a later turn changes one of its rows' do
+      resource = create(:scheduling_resource, account: account)
+      before = snapshot
+      book(resource: resource)
+      pair = book(resource: resource)
+      score('Записала вас.', before: before, events: Array.new(2) { tool_event('create_appointment') })
+      before = snapshot
+      pair.update!(client_name: 'Гульнар Тлеуова (мама)')
+
+      touched = score('Исправила имя в записи.', before: before, events: [tool_event('update_appointment')])
+
+      expect(touched[:hard_zero]['duplicate_operation']).to eq(1)
     end
 
     it 'does not count a cancelled row, or a row of an earlier dialogue state that the turn did not write' do

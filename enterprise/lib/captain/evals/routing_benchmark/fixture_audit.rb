@@ -2,9 +2,9 @@
 
 # What the fixtures lack for gate items a and f, found without calling a model (the gate itself only finds out after a paid
 # run, see Gate coverage):
-#   - an appointment expectation that does not pin the start time (`params.starts_at`, or the symbolic `starts_at`): a booking at
-#     the wrong time would not be noticed on that turn. The strict loader (Fixture) refuses such an operation, so the audit only
-#     counts them (item a);
+#   - an appointment expectation that does not pin the start time (`params.starts_at`, or the symbolic `starts_at`), or a move that does
+#     not pin the start it moves from (`previous_starts_at`): a booking at the wrong time, or the move of the wrong appointment, would
+#     not be noticed on that turn. The strict loader (Fixture) refuses such an operation, so the audit only counts them (item a);
 #   - a turn in which the customer asks for a person but the fixture does not expect a handoff (`staff_handoff: true`, or the older
 #     `human_request: true`), or says `staff_handoff: false` / `human_request: false` against the wording;
 #   - the lint of the calendar (FixtureLint): a start outside every doctor's work window or on a busy slot.
@@ -38,7 +38,8 @@ class Captain::Evals::RoutingBenchmark::FixtureAudit
     data = result
     lines = ['# Routing benchmark fixtures', '',
              "Fixtures: #{data[:fixtures]}; turns: #{data[:turns]}.",
-             "Item a: #{data[:operations][:specific]} of #{data[:operations][:expected]} appointment expectations pin the start time.",
+             "Item a: #{data[:operations][:specific]} of #{data[:operations][:expected]} appointment expectations pin the start time " \
+             '(a move: the old start too).',
              "Item f: #{data[:human_requests][:flagged]} turns that ask for a person expect a handoff; #{data[:human_requests][:unmarked]} do not.",
              "Ready for the gate: #{ok? ? 'yes' : 'no'}.", '']
     lines << 'Nothing is missing.' if data[:gaps].empty?
@@ -66,8 +67,8 @@ class Captain::Evals::RoutingBenchmark::FixtureAudit
       human_requests: counts.slice(:flagged, :unmarked), gaps: gaps }
   end
 
-  # The strict loader refuses an appointment operation that pins no start, so every expectation that gets here is specific; the count
-  # stays in the report (item a), and `ok?` still compares the two.
+  # The strict loader refuses an appointment operation that pins no start (and a move that pins no old start), so every expectation that
+  # gets here is specific; the count stays in the report (item a), and `ok?` still compares the two.
   def operations(turn, counts)
     gate = Captain::Evals::RoutingBenchmark::Gate
     gate.expected_operations('expectation' => turn['expect']).each do |operation|

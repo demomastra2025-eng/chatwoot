@@ -69,7 +69,8 @@ namespace :captain do
     labels = Captain::Evals::RoutingBenchmark::Triage.load(ENV['TRIAGE'].presence)
     cases = report.fetch('cases')
     gate = Captain::Evals::RoutingBenchmark::Gate.call(cases, aborted: report['aborted'], abort_reason: report['abort_reason'], labels: labels,
-                                                              silent_handoff: report['silent_handoff'])
+                                                              silent_handoff: report['silent_handoff'],
+                                                              silent_handoff_error: report['silent_handoff_error'])
     report['gate'] = gate
     report['triage'] = Captain::Evals::RoutingBenchmark::Triage.records(cases, labels: labels)
     puts Captain::Evals::RoutingBenchmark::Report.new(report).markdown

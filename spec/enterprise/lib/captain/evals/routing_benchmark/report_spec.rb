@@ -81,6 +81,13 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Report do
     expect(described_class.new(loud).markdown).to include('| Handoff is silent (blank notice) | no |', 'the handoff notice of the synthetic account is not blank')
   end
 
+  it 'says that the silence of the handoff could not be proven when the runner could not read the notice' do
+    unproven = report.merge(gate: Captain::Evals::RoutingBenchmark::Gate.call(cases, silent_handoff_error: 'Timeout::Error'))
+
+    expect(described_class.new(unproven).markdown).to include('| Handoff is silent (blank notice) | not proven: Timeout::Error |',
+                                                              '- silent handoff not proven: the notice could not be read (Timeout::Error)')
+  end
+
   it 'shows what the run put to the test for each gate item' do
     expect(markdown).to include('### Coverage', '| a | 1 of 1 | appointment expectations that pin the start time (blocks the gate) |',
                                 '| f | 1 | turns in which the customer asks for a person (blocks the gate) |')

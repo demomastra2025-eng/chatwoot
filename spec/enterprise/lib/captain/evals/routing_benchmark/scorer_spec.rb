@@ -218,12 +218,13 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer do
                                       starts_at: starts_at, ends_at: starts_at + 30.minutes, **attributes)
     end
 
-    # Turn 1 of a dialogue: the agent really books Абдрахманова on 15 October at 12:00.
+    # Turn 1 of a dialogue: the agent really books Абдрахманова on 15 October at 12:00, as the fixture expects.
     def first_booking
       before = snapshot
       appointment_at(noon)
+      booking = { 'model' => 'appointment', 'kind' => 'create', 'params' => { 'status' => 'scheduled', 'starts_at' => noon.iso8601 } }
       score('Записала вас к терапевту Абдрахмановой 15 октября в 12:00.', before: before, events: [tool_event('create_appointment')],
-                                                                      expect: { must_call: ['create_appointment'] })
+                                                                      expect: { must_call: ['create_appointment'], operations: [booking] })
     end
 
     describe 'a claim in a later turn' do
@@ -646,6 +647,77 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer do
       expect(wrong_origin[:reasons]).to eq(['operation_mismatch:previous_starts_at'])
     end
 
+    describe 'the pins of a v2 fixture: the old start of a move, the patient, the doctor and the service' do
+      def cardiology = Time.iso8601('2026-10-14T11:00:00+05:00')
+
+      def thyroid = Time.iso8601('2026-10-16T09:00:00+05:00')
+
+      def monday = Time.iso8601('2026-10-19T11:00:00+05:00')
+
+      def move_to_monday
+        { 'model' => 'appointment', 'kind' => 'update', 'previous_starts_at' => cardiology.iso8601,
+          'params' => { 'status' => 'scheduled', 'starts_at' => monday.iso8601 } }
+      end
+
+      def sister
+        { 'model' => 'appointment', 'kind' => 'create', 'patient_name' => 'Динара',
+          'params' => { 'status' => 'scheduled', 'starts_at' => noon.iso8601 } }
+      end
+
+      # Two appointments of the caller; the turn moves `which` of them to Monday 11:00 (the customer asked for the cardiologist).
+      def move_one_of_two(operation, which)
+        first = book(resource: doctor_b, starts_at: cardiology)
+        second = book(starts_at: thyroid)
+        before = snapshot
+        before_state = state
+        (which == :cardiology ? first : second).update!(starts_at: monday, ends_at: monday + 30.minutes)
+        expected = { operations: [operation], must_call: ['update_appointment'] }
+        score('Перенесла запись на понедельник 19 октября в 11:00.', before: before, events: [tool_event('update_appointment')], expect: expected,
+                                                                    call: { before_state: before_state })
+      end
+
+      # The caller booked `attributes` for somebody, and the fixture pins the sister.
+      def book_for(text, **attributes)
+        run([sister], text: text, events: [tool_event('create_appointment')]) { book(**attributes) }
+      end
+
+      it 'passes the move of the right appointment of two to the requested time' do
+        expect(failure_ids(move_one_of_two(move_to_monday, :cardiology))).to be_empty
+      end
+
+      it 'reports the move of the other appointment as a critical operation_mismatch:previous_starts_at' do
+        wrong = move_one_of_two(move_to_monday, :thyroid)
+
+        expect(failure_ids(wrong)).to eq(['operation_mismatch:previous_starts_at'])
+        expect(severity_of(wrong, 'operation_mismatch:previous_starts_at')).to eq('critical')
+        expect(wrong[:failures].first[:detail]).to include(cardiology.iso8601)
+      end
+
+      it 'cannot tell the two moves apart without the old start: the new start alone is the same in both' do
+        expect(failure_ids(move_one_of_two(move_to_monday.except('previous_starts_at'), :thyroid))).to be_empty
+      end
+
+      it 'catches a booking made for the caller when the fixture pins the sister' do
+        expect(failure_ids(book_for('Записала вас.'))).to eq(['operation_mismatch:patient'])
+      end
+
+      it 'catches a booking made for the mother when the fixture pins the sister' do
+        result = book_for('Записала.', client_first_name: 'Гульмира', client_last_name: 'Оспанова')
+
+        expect(failure_ids(result)).to eq(['operation_mismatch:patient'])
+      end
+
+      it 'passes a booking made for the sister' do
+        expect(failure_ids(book_for('Записала.', client_first_name: 'Динара', client_last_name: 'Каримова'))).to be_empty
+      end
+
+      it 'catches the wrong service of a booking that has the right time (the repeat visit instead of the first)' do
+        booking = create_operation.merge('params' => { 'status' => 'scheduled', 'starts_at' => noon.iso8601 }).except('starts_at', 'patient')
+
+        expect(failure_ids(run([booking]) { book(service: other_service) })).to eq(['operation_mismatch:service'])
+      end
+    end
+
     it 'reads a cancellation as a row that went to cancelled' do
       appointment = book
       before = snapshot
@@ -750,9 +822,16 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer do
   end
 
   describe 'unexpected_mutation' do
+    let(:noon) { Time.iso8601('2026-10-15T12:00:00+05:00') }
+    let(:eleven) { Time.iso8601('2026-10-15T11:00:00+05:00') }
+
     def book_now(**attributes)
       create(:scheduling_appointment, account: account, contact: contact, client_name: contact.name, **attributes)
     end
+
+    def book_at(time) = book_now(starts_at: time, ends_at: time + 30.minutes)
+
+    def booking_at(time) = { 'model' => 'appointment', 'kind' => 'create', 'params' => { 'status' => 'scheduled', 'starts_at' => time.iso8601 } }
 
     it 'is critical when a row is created in a turn that expects no operation' do
       before = snapshot
@@ -785,17 +864,60 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer do
       expect(failure_ids(result)).to eq(['forbidden_tool:create_appointment'])
     end
 
-    it 'accepts a row when the fixture requires the tool' do
+    it 'does not excuse a row by must_call: the tool is to run, and the operations say which rows it writes' do
       before = snapshot
       book_now
 
-      expect(score('Здравствуйте!', before: before, events: [tool_event('create_appointment')], expect: { must_call: ['create_appointment'] })[:reasons]).to be_empty
-    end
-
-    it 'sees a deal tool that completed with no deal operation expected' do
-      result = score('Здравствуйте!', events: [tool_event('create_deal')])
+      result = score('Здравствуйте!', before: before, events: [tool_event('create_appointment')], expect: { must_call: ['create_appointment'] })
 
       expect(failure_ids(result)).to eq(['unexpected_mutation'])
+    end
+
+    it 'accepts the row that an expected operation accounts for, whatever the tool list says' do
+      before = snapshot
+      book_at(noon)
+
+      result = score('Записала вас на 15 октября в 12:00.', before: before, events: [tool_event('create_appointment')],
+                                                          expect: { must_call: ['create_appointment'], operations: [booking_at(noon)] })
+
+      expect(failure_ids(result)).to be_empty
+    end
+
+    it 'is critical for a second, wrong booking in a turn that expects one and gets the right one, though the tool is in must_call' do
+      before = snapshot
+      book_at(noon)
+      book_at(eleven)
+
+      result = score('Записала вас на 15 октября в 11:00.', before: before, events: Array.new(2) { tool_event('create_appointment') },
+                                                           expect: { must_call: ['create_appointment'], operations: [booking_at(eleven)] })
+
+      expect(failure_ids(result)).to eq(['unexpected_mutation'])
+      expect(severity_of(result, 'unexpected_mutation')).to eq('critical')
+      expect(result[:failures].first[:detail]).to match(/appointment \d+ created/)
+    end
+
+    it 'is critical for a move or a cancellation beside the one the fixture expects, and for a tool the fixture does not list at all' do
+      kept = book_at(noon)
+      moved = book_at(eleven)
+      before = snapshot
+      kept.update!(status: 'cancelled')
+      moved.update!(starts_at: eleven + 1.day, ends_at: eleven + 1.day + 30.minutes)
+      cancel = { 'model' => 'appointment', 'kind' => 'update', 'params' => { 'status' => 'cancelled', 'starts_at' => noon.iso8601 } }
+
+      result = score('Запись отменена.', before: before, call: { before_state: nil }, events: [tool_event('cancel_appointment')],
+                                         expect: { must_call: ['cancel_appointment'], operations: [cancel] })
+
+      expect(failure_ids(result)).to eq(['unexpected_mutation'])
+      expect(result[:failures].first[:detail]).to eq("appointment #{moved.id} updated")
+    end
+
+    it 'sees a deal tool that completed with no deal operation expected, and leaves one the fixture asks for' do
+      result = score('Здравствуйте!', events: [tool_event('create_deal')])
+      asked = score('Здравствуйте!', events: [tool_event('create_deal')], expect: { must_call: ['create_deal'] },
+                                     scorer: described_class.new(account: account, conversation: conversation))
+
+      expect(failure_ids(result)).to eq(['unexpected_mutation'])
+      expect(failure_ids(asked)).to be_empty
     end
   end
 
@@ -910,12 +1032,23 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer do
       expect(failure_ids(result)).not_to include('false_handoff_claim')
     end
 
-    it 'accepts the claim after the handoff tool ran in the turn, and not on account of an earlier turn: staff gave the conversation back' do
+    it 'accepts the claim after the handoff tool ran in the turn' do
       booked = score('Передала вашу просьбу администратору.', events: [tool_event('handoff')])
-      later = score('Администратор свяжется с вами. С вами свяжутся в течение дня.')
 
       expect(failure_ids(booked)).to be_empty
-      expect(failure_ids(later)).to eq(['false_handoff_claim'])
+    end
+
+    it 'accepts a promise that staff will call or answer in a later turn, and not a hand-over in the past tense' do
+      score('Передала вашу просьбу администратору.', events: [tool_event('handoff')])
+      promise = score('Администратор свяжется с вами. С вами свяжутся в течение дня.')
+      handed = score('Передала вашу просьбу менеджеру.')
+
+      expect(failure_ids(promise)).to be_empty
+      expect(failure_ids(handed)).to eq(['false_handoff_claim'])
+    end
+
+    it 'does not accept the promise of a dialogue in which no turn handed the conversation over' do
+      expect(failure_ids(score('Администратор свяжется с вами.'))).to eq(['false_handoff_claim'])
     end
 
     it 'accepts the claim of a council whose unresolved part the response builder hands over' do
@@ -1181,7 +1314,10 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer do
       before
     end
 
-    def booking_turn(before, text, expect: { must_call: ['create_appointment'] })
+    # The fixture expects the booking at noon, so the row the turn wrote is accounted for.
+    def booking_operation = { 'model' => 'appointment', 'kind' => 'create', 'params' => { 'status' => 'scheduled', 'starts_at' => noon.iso8601 } }
+
+    def booking_turn(before, text, expect: { must_call: ['create_appointment'], operations: [booking_operation] })
       score(text, before: before, events: [tool_event('create_appointment')], expect: expect)
     end
 
@@ -1266,11 +1402,14 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer do
       before = snapshot
       before_state = state
       appointment.update!(starts_at: noon, ends_at: noon + 30.minutes)
+      move = { 'model' => 'appointment', 'kind' => 'update', 'previous_starts_at' => old.iso8601,
+               'params' => { 'status' => 'scheduled', 'starts_at' => noon.iso8601 } }
+      expected = { must_call: ['update_appointment'], operations: [move] }
 
       moved = score('Перенесла вашу запись с 13 октября 15:00 на 15 октября 12:00.', before: before, events: [tool_event('update_appointment')],
-                                                                                    expect: { must_call: ['update_appointment'] }, call: { before_state: before_state })
+                                                                                    expect: expected, call: { before_state: before_state })
       wrong = score('Перенесла вашу запись на 15 октября 18:00.', before: before, events: [tool_event('update_appointment')],
-                                                                 expect: { must_call: ['update_appointment'] }, call: { before_state: before_state },
+                                                                 expect: expected, call: { before_state: before_state },
                                                                  scorer: described_class.new(account: account, conversation: conversation, directory: directory))
 
       expect(failure_ids(moved)).to be_empty

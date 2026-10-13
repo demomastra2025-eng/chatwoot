@@ -9,7 +9,8 @@ require 'json'
 # deliver anything:
 #   - a public reply is recorded as delivered with every part it reports (`part_refs`), or the next turn would be told to announce an
 #     old booking again and the repair of a linked follow-up would never fire;
-#   - an observed staff handoff leaves the conversation `open` (Conversation#bot_handoff!): staff owns it until the next turn of the
+#   - an observed staff handoff, and a failed turn (the provider error response, a technical failure of a tool, the technical handoff of a
+#     council part), leave the conversation `open` (Conversation#bot_handoff!): staff owns it until the next turn of the
 #     fixture says `staff: {status: pending}`, which gives it back to the AI. A turn run on an open conversation with no such key is
 #     scored as usual and carries the warning ai_answered_while_staff_owned;
 #   - the history of the model gets the replies the customer saw, and nothing else: no handoff marker, no provider error response, no
@@ -52,6 +53,7 @@ class Captain::Evals::RoutingBenchmark::Runner
     @cases = []
     @aborted = false
     @silent_handoff = nil
+    @silent_handoff_error = nil
     fixtures.each do |path, fixture|
       @runs.times do |run_index|
         execute_fixture(path, fixture, run_index + 1)
@@ -175,7 +177,14 @@ class Captain::Evals::RoutingBenchmark::Runner
       history << { role: 'assistant', content: text, agent_name: response['agent_name'] }
       record_part_delivery(entry, conversation, response, text)
     end
-    hand_over(conversation) if scored.dig(:handoff, :observed)
+    hand_over(conversation) if staff_owned_after?(response, scored)
+  end
+
+  # ResponseBuilderJob leaves the conversation open (bot_handoff!) after the handoff tool, after the council handoff of an unresolved
+  # part, and after a failed turn: the provider error response, a technical failure of a tool, and the technical handoff of a council part.
+  def staff_owned_after?(response, scored)
+    scored.dig(:handoff, :observed) || response['council_handoff'].present? || response['technical_failure'].present? ||
+      response['response'] == Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_RESPONSE
   end
 
   # The reply the customer read, or nil: a runtime marker, a provider error, a suppressed reply and a technical failure show nothing.
@@ -354,13 +363,15 @@ class Captain::Evals::RoutingBenchmark::Runner
   def build_report(labels)
     cases = @cases.map { |item| item.deep_stringify_keys }
     summary = Captain::Evals::RoutingBenchmark::Summary.call(cases)
+    gate = Captain::Evals::RoutingBenchmark::Gate.call(cases, aborted: @aborted, abort_reason: @abort_reason, labels: labels,
+                                                              silent_handoff: @silent_handoff, silent_handoff_error: @silent_handoff_error)
     {
-      gate: Captain::Evals::RoutingBenchmark::Gate.call(cases, aborted: @aborted, abort_reason: @abort_reason, labels: labels, silent_handoff: @silent_handoff),
+      gate: gate,
       triage: Captain::Evals::RoutingBenchmark::Triage.records(cases, labels: labels),
       model: @model, reasoning: @reasoning, runs: @runs, aborted: @aborted, abort_reason: @abort_reason,
       aborted_at_budget: @abort_reason == 'budget_reached', isolation: 'workspace_per_dialogue',
       budget_usd: @budget_usd.to_f, cost_usd: @spent.to_f,
-      silent_handoff: @silent_handoff,
+      silent_handoff: @silent_handoff, silent_handoff_error: @silent_handoff_error,
       warnings: council_warnings + case_warnings + handoff_warnings,
       cases: @cases,
       aggregates: aggregates(summary),

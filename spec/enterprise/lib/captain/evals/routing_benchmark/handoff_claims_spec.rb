@@ -57,7 +57,9 @@ RSpec.describe Captain::Evals::RoutingBenchmark::HandoffClaims do
   describe 'claims that a result or a document is ready or sent' do
     [
       'Результат готов.', 'Результаты анализов готовы.', 'Ваша справка готова.', 'Справка отправлена вам на почту.',
-      'Документы высланы.', 'Заключение направлено вам в WhatsApp.', 'Нәтиже дайын.', 'Анықтама жіберілді.'
+      'Документы высланы.', 'Заключение направлено вам в WhatsApp.', 'Нәтиже дайын.', 'Анықтама жіберілді.',
+      # a timing word does not excuse a statement about the patient's own result
+      'Ваши результаты ОАК готовы в день сдачи после 16:00.', 'Результат уже готов, заберите после 16:00.', 'Ваш анализ ОАК готов.'
     ].each do |text|
       it "reads #{text.inspect} as a ready claim" do
         expect(kinds(text)).to eq([:handoff_ready])
@@ -66,11 +68,19 @@ RSpec.describe Captain::Evals::RoutingBenchmark::HandoffClaims do
 
     [
       'Результаты анализов готовы в течение 1-2 дней.', 'Справка будет готова через день.', 'Результат уже готов?', 'Результат пока не готов.',
-      'Когда будет готов результат?', 'Справка готовится за 1 рабочий день.', 'Результат придёт на e-mail, как правило до 17:00.'
+      'Когда будет готов результат?', 'Справка готовится за 1 рабочий день.', 'Результат придёт на e-mail, как правило до 17:00.',
+      # the turnarounds of the knowledge base ("ОАК — в день сдачи после 16:00; биохимия — на следующий рабочий день; УЗИ — сразу")
+      'Результаты ОАК готовы в день сдачи после 16:00.', 'Результат биохимии готов на следующий рабочий день.',
+      'Заключение УЗИ готово сразу после исследования.', 'Результат ЭКГ готов через 15 минут.', 'Результаты ТТГ готовы на следующий день.'
     ].each do |text|
       it "finds nothing in #{text.inspect}" do
         expect(kinds(text)).to be_empty
       end
+    end
+
+    it 'reads a request that is sent to staff as the hand-over of a request, and not as a document that was sent' do
+      expect(kinds('Заявка на справку отправлена сотруднику.')).to eq([:handoff_staff])
+      expect(kinds('Ваш запрос на справку передан администратору.')).to eq([:handoff_staff])
     end
 
     it 'is the claim of the sentence, next to a staff claim only when the sentence makes both' do
@@ -104,6 +114,25 @@ RSpec.describe Captain::Evals::RoutingBenchmark::HandoffClaims do
     ].each do |text|
       it "finds nothing in #{text.inspect}" do
         expect(kinds(text)).to be_empty
+      end
+    end
+  end
+
+  describe '.promise_only?' do
+    [
+      'Администратор перезвонит вам в течение часа.', 'С вами свяжутся по заявке.', 'По анализу ОАК вам ответит сотрудник.',
+      'Ожидайте звонка администратора.'
+    ].each do |text|
+      it "reads #{text.inspect} as a promise that hands nothing over" do
+        expect(described_class.promise_only?(text)).to be(true)
+      end
+    end
+
+    [
+      'Передала вашу просьбу администратору.', 'Передала администратору, он перезвонит вам.', 'Здравствуйте.'
+    ].each do |text|
+      it "does not read #{text.inspect} as a bare promise" do
+        expect(described_class.promise_only?(text)).to be(false)
       end
     end
   end

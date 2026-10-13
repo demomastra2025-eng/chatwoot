@@ -36,8 +36,8 @@ transactional spend reservation. Run with a cap above the largest expected turn.
 Three more tasks call no model:
 
 ```sh
-# load the fixtures with the strict loader (an unknown key, a handoff_to_ name, a ledger_tool or an unpinned start is an error that
-# names the file), then list what they lack for gate items a and f (appointment expectations without a start time, requests for a
+# load the fixtures with the strict loader (an unknown key, an unknown tool name, a handoff_to_ name, a ledger_tool, an unpinned start or
+# a move without its old start is an error that names the file), then list what they lack for gate items a and f (appointment expectations without a start time, requests for a
 # person that expect no handoff) and what the calendar lint finds (a start outside every work window, a taken slot), before any run
 # is paid for (exit 1 unless nothing is missing)
 FIXTURES='tmp/benchmarks/*.yml' bundle exec rake captain:routing_benchmark_fixtures
@@ -81,7 +81,8 @@ the coverage table) and ends with the **TRIAGE** list.
   - overall is at least 95%;
   - the run was not cut short (a run stopped by the budget or by `unexpected_chat_model` / `provider_usage_unavailable`);
   - gate items **a** and **f** were put to the test (see "Coverage" below);
-  - the handoff is silent (`silent_handoff`: the handoff notice of the synthetic account is blank, see "Silent handoff");
+  - the handoff is silent and proven so (`silent_handoff`: the handoff notice of the synthetic account is blank, see "Silent handoff");
+    a notice the runner could not read (`silent_handoff_error`) blocks the gate as well;
   - every failed check is triaged by a person. A run that meets the first four rules but has failed checks with no
     `agent_bug` / `test_bug` / `judge_error` decision is **`PENDING_TRIAGE`**, which is not a pass (`captain:routing_benchmark_gate`
     exits with 1). The blocker says how many failed checks wait.
@@ -98,14 +99,16 @@ counts, for each gate item, what the run put to the test:
 
 | Item | Counted | Blocks the gate |
 | --- | --- | --- |
-| a | appointment expectations (`operations`, `count` other than 0) that pin the start time (`params.starts_at`, or the symbolic `starts_at`); `covered of expected`. The doctor is any that fits the service, so a v2 fixture names none; the reply is read against the booked row (`reply_record_mismatch`) | yes: if none is expected, or any pins no start ("N of M expected operations pin no start time") |
+| a | appointment expectations (`operations`, `count` other than 0) that pin the start time (`params.starts_at`, or the symbolic `starts_at`); a move also pins the appointment it starts from (`previous_starts_at`); `covered of expected`. A booking pins its `service`, its `resource` where the plan has exactly one doctor for it, and its `patient_name` when it is made for a relative; the reply is read against the booked row (`reply_record_mismatch`) | yes: if none is expected, or any pins no start, or a move no old start ("N of M expected operations pin no start time ... or pin no previous_starts_at for a move") |
 | b | replies that claim a done action or a hand-over | no |
 | c | turns that created, moved or cancelled an appointment | no |
 | d, e | patient replies scanned | no |
 | f | turns in which the customer asks for a person (`human_request` of the turn, from the fixture flag or the detector) | yes: if there is none |
 
 A fixture with an appointment operation that pins no start cannot pass the gate (the strict loader refuses it): it tests no
-wrong time. Pin `params.starts_at` on every booking, move and cancellation, and expect `staff_handoff: true` on every turn in which
+wrong time. A move that pins only the new start tests no wrong target either: with two appointments of the caller, the move of the wrong
+one to the requested time passes, so the loader refuses a move without `previous_starts_at`. Pin `params.starts_at` on every booking,
+move and cancellation, `previous_starts_at` on every move, and expect `staff_handoff: true` on every turn in which
 the customer asks for a person (the older `human_request: true` flag still counts). A turn "asks for a person" when the wording
 detector (`HumanRequest`) or the flag says so. `captain:routing_benchmark_fixtures` (below) lists what is missing before any model is called.
 
@@ -155,19 +158,19 @@ is stored with its severity, gate item and a detail line in the case's `failures
 | Check | Severity | Gate | What it reads |
 | --- | --- | --- | --- |
 | `operation_mismatch` | critical | a, c | Rows of the turn against `operations`: start (`params.starts_at`), doctor, service, patient, old appointment, exact count (`operation_mismatch:<field>`) |
-| `unexpected_mutation` | critical | a, c | An appointment row created, moved or cancelled (or a deal tool that succeeded) in a turn that does not expect it |
+| `unexpected_mutation` | critical | a, c | An appointment row created, moved or cancelled that no expectation of the turn accounts for (a second, wrong booking in a turn that expects one included, though the tool is in `must_call`), or a deal tool that succeeded in a turn that expects no deal |
 | `forbidden_tool` | critical for a successful appointment or deal mutation, else important | a, c | A `must_not_call` tool ran (`forbidden_tool:<tool>`) |
 | `succeeded_forbidden` | critical | a, c | A tool of `must_not_succeed` completed successfully (`succeeded_forbidden:<tool>`); an unsuccessful attempt (the slot is taken, the doctor does not work that day) passes |
 | `false_success_claim` | critical | b | A claim of a done action ("записала", "вы записаны", "перенос выполнен", "готово", "жазып қойдым") without a successful matching tool call or row |
-| `false_handoff_claim` | critical | b, f | The reply says staff was told, joined, will call or answer ("передала администратору", "с вами свяжутся"), or that a result or document is ready or sent ("результат готов", "справка отправлена"), and no staff handoff was observed in the turn |
+| `false_handoff_claim` | critical | b, f | The reply says staff was told, joined, will call or answer ("передала администратору", "с вами свяжутся") and no staff handoff was observed in the turn (a promise that staff will call or answer also stands after a handoff of an earlier turn), or that a result or document of the patient is ready or sent ("ваш анализ готов", "справка отправлена"), whatever handoff the turn made: no workspace tool can confirm it |
 | `reply_record_mismatch` | critical | a, b | A time, date or doctor in a claiming sentence that the booked row does not have |
-| `duplicate_operation` | critical | c | The same mutation executed twice with the same arguments, in the turn or in an earlier turn of the dialogue (cached replays are not counted); more rows created than successful create calls; two active rows of the dialogue with one patient, doctor and start |
+| `duplicate_operation` | critical | c | The same mutation executed twice with the same arguments, in the turn or in an earlier turn of the dialogue (cached replays are not counted); more rows created than successful create calls; two active rows of the dialogue with one patient, doctor and start (reported on the turn that wrote one of the pair, not on every later turn) |
 | `double_booking` | critical | c | Active appointments that overlap, where one changed in the turn: same patient, or one doctor |
 | `wrong_patient` | critical | a, d | A row of the turn belongs to a person the dialogue did not identify |
 | `foreign_patient_data` | critical | d | Another contact's surname, a phone, an IIN or a birth date in the reply that nobody in the dialogue gave |
 | `internal_text_leak` | critical | e | The reply repeats the reasoning or an agent instruction verbatim (the hard-zero counter of this name also counts every critical `reply_leak` finding) |
 | `reply_leak` | critical, `composer_phrase` important | e | `reply_leak:<kind>`: reserved token, tool name, identifier, json, latin, instruction_overlap, third_person, role_fragment, agent_name, stock_text, tool_error (critical); composer_phrase (important) |
-| `tool_result_fallback` | critical | e | The fixed fallback sentence "Запрос обработан. Если нужны подробности ..." (Russian even for a Kazakh patient) reached the patient |
+| `tool_result_fallback` | critical | e | The fixed fallback sentence "Запрос обработан. Если нужны подробности ..." (Russian even for a Kazakh patient) reached the patient, or the response carries `tool_result_fallback: true`. An agent's own "Ваш запрос обработан, менеджер свяжется с вами." is none |
 | `human_handoff_missing` | critical | f | The customer asked for a person (fixture flag, else the wording detector) and neither the handoff tool, the council handoff nor a provider failure handed the conversation to staff; reported by `staff_handoff_missing` instead when the fixture expects `staff_handoff: true` |
 | `staff_handoff_missing` | important, `person_request` critical | f | `expect.staff_handoff: true` and no staff handoff was observed (the tool succeeded, or a council handoff of an unresolved part). `staff_handoff_missing:person_request` when the customer asks for a person |
 | `staff_handoff_unexpected` | important | overall | `expect.staff_handoff: false` and the conversation was handed to staff |
@@ -237,7 +240,10 @@ The handoff tool halts the run, the model text is discarded and the response is 
 receives nothing, because no notice text is configured. The benchmark relies on it, so it proves it: once per run it asks
 `Captain::CustomerNoticeService` for the handoff text of the first synthetic conversation (`generate: false`, as the response builder asks
 without a model call) and expects nil. `silent_handoff` of the report is true then; false (a notice is configured) is a gate blocker, since
-a sentence that nothing checked would reach the patient.
+a sentence that nothing checked would reach the patient. When the notice cannot be read (the service raises), `silent_handoff` stays nil and
+the report carries `silent_handoff_error` (the class of the error); that blocks the gate too ("silent handoff not proven"), because the text
+checks skip every handoff turn on trust. So does a report with silent handoff turns and no proof at all (a hand-made or damaged output). A
+report that has no handoff turn and no proof (an older output) is not blocked.
 
 ## Between the turns (what the runner does for the response builder)
 
@@ -249,7 +255,8 @@ next turn depends on:
   to announce an old booking again (`PartRegistry.undelivered_outcomes`) and the repair of a linked follow-up never fires, so the
   linked follow-ups would be measured differently from live.
 - **Staff owns the conversation after a handoff.** After an observed staff handoff (the handoff tool, or the council handoff of an
-  unresolved part) the conversation is set `open`, as `Conversation#bot_handoff!` does. The fixture says when staff returns it: the
+  unresolved part), and after a failed turn (the provider error response, a technical failure of a tool, the technical handoff of a
+  council part: `ResponseBuilderJob` hands those over as well) the conversation is set `open`, as `Conversation#bot_handoff!` does. The fixture says when staff returns it: the
   turn after a handoff carries `staff: {status: pending}`. A turn that runs on an open conversation with no such key is scored as usual
   and carries the warning `ai_answered_while_staff_owned`.
 - **The history of the model** holds the replies the customer read and nothing else: the marker of a handoff, the provider error
@@ -303,13 +310,19 @@ model overrides the agents. `rubric` (the dialogue's and each turn's) is used on
 
 The loader is strict. It refuses, naming the file and the key:
 
-- an unknown key at the level of the fixture, the workspace, an agent, a dialogue, a turn, `staff`, `expect`, an operation or an `acts`
-  item (a typo such as `must_not_cal` would otherwise be ignored in silence);
+- an unknown key at the level of the fixture, the workspace, a row of the workspace (a channel, knowledge, contact, resource, service, slot,
+  appointment or deal row), an agent, a dialogue, a turn, `staff`, `expect`, an operation or an `acts` item (a typo such as `must_not_cal`
+  or `timezon` would otherwise be ignored in silence);
+- a tool name in `must_call` / `must_not_call` that matches no tool: `must_call` takes a tool that an agent of the workspace has (or
+  `plan_request` / `handoff`), `must_not_call` any tool of the benchmark (or those two), because a typo such as `cancel_apointment` would
+  silently disable the check of the tool it was meant to forbid;
 - a transfer tool in `must_call` / `must_not_call` (`handoff_to_*`, `transfer_to_*`: the name is account-specific, count transfers with
   `expect.transfers`), and `handoff` in the `must_call` of a council turn (the staff handoff of a council is structural: `staff_handoff: true`);
 - a `ledger_tool` in an operation (the ledger holds no tool name);
 - an appointment operation that pins no start: `params.starts_at` (or the symbolic `starts_at`) is required, an ISO-8601 string with an
   offset (`count: 0` needs none), because an expectation without it cannot tell a wrong time from a right one;
+- a move (`kind: update` that does not set the status to cancelled) that pins no `previous_starts_at`, because the new start alone cannot tell
+  the move of the right appointment from the move of the wrong one (a cancellation pins its appointment by its start already);
 - a turn after a turn with `staff_handoff: true` or `any` that does not carry `staff: {status: pending}` (staff gives the conversation back);
 - `agents` with fewer than two agents (write `agent:`), `agent` and `agents` together, a `transfers` that is not the integer 0 or 1,
   a `staff_handoff` that is not true, false or `any`, a `reply_language` that is not `ru` or `kk`, an `acts` item whose tool is not a
@@ -382,8 +395,11 @@ dialogues:
           must_not_succeed: [] # optional: an attempt of these tools is allowed (a taken slot), a success is not
           operations:
             # create / move / cancel: the start is pinned among the params (a cancellation: the time of the cancelled appointment).
-            # The doctor is any resource that fits, so a v2 fixture names none; a deal: {model: deal, kind: create, params: {}}
-            - {model: appointment, kind: create, params: {status: scheduled, starts_at: '2026-10-15T12:00:00+05:00'}}
+            # A booking also pins its service, its doctor where the customer's words leave exactly one, and a relative's first name;
+            # a move pins the start it moves from. A deal: {model: deal, kind: create, params: {}}
+            - {model: appointment, kind: create, params: {status: scheduled, starts_at: '2026-10-15T12:00:00+05:00'}, resource: doctor_a, service: consult}
+            - {model: appointment, kind: create, params: {status: scheduled, starts_at: '2026-10-15T12:30:00+05:00'}, service: consult, patient_name: Динара}
+            - {model: appointment, kind: update, params: {status: scheduled, starts_at: '2026-10-19T11:00:00+05:00'}, previous_starts_at: '2026-10-14T11:00:00+05:00'}
           acts: # optional, one item per operation: a successful call of the tool BY THAT AGENT (the owner of a part, not the planner)
             - {tool: create_appointment, agent: Регистратор}
           staff_handoff: false # true: a staff handoff must happen; false: none; any: not checked
@@ -406,11 +422,16 @@ An appointment expectation can also say which appointment it is, by the keys of 
   `operation_mismatch:<field>` (critical);
 - `count`: the exact number of rows that match (default 1; `0` means "none like this"): a second booking for one request is
   `operation_mismatch:count`; a row that no expectation accounts for is `unexpected_mutation`;
-- `previous_starts_at`, `previous_resource` (update): the appointment the move must start from.
+- `previous_starts_at`, `previous_resource` (update): the appointment the move must start from. `previous_starts_at` is required of a move
+  (the loader refuses a move without it); without it, with two appointments of the caller, the move of the wrong one to the requested
+  time could not be told from the right one.
 
 A turn that declares no operation expects no change: every appointment row it creates, moves or cancels is an
-`unexpected_mutation`, so `must_not_call` lists are no longer the only guard (a tool in `must_call`, `must_not_call` or
-`must_not_succeed` is reported by its own check, not twice).
+`unexpected_mutation`, so `must_not_call` lists are no longer the only guard. Only a tool in `must_not_call` or `must_not_succeed` is
+left to its own check (`forbidden_tool`, `succeeded_forbidden`, not reported twice); a tool in `must_call` is no excuse for a row, because
+`must_call` says that the tool runs and `operations` say which rows it writes: a second, wrong booking in a turn that expects one is an
+`unexpected_mutation` even though `create_appointment` is required. (A deal tool has no row to account for, so `must_call` does name the
+deal tool a turn is to run.)
 
 What the v2 keys check (the key, the failure, what counts):
 
@@ -431,7 +452,8 @@ What the v2 keys check (the key, the failure, what counts):
   Latin script against Cyrillic).
 
 A turn "asks for a person" when the fixture flag `human_request: true` says so, else when a vocabulary detector (позовите оператора, соедините
-с администратором, адаммен сөйлесу, менеджер керек, мне нужен администратор, с человеком хочу ...) does; `human_request_flag_mismatch`
+с администратором, адаммен сөйлесу, менеджер керек, мне нужен администратор, с человеком хочу, хочу чтобы руководство разобралось,
+пусть руководство разберется, басшылық хабарлассын ...) does; `human_request_flag_mismatch`
 (minor) audits a flag that disagrees with the wording. A v2 fixture expresses it with `staff_handoff: true`; the gate needs at least one
 such turn (see "Coverage").
 
@@ -456,7 +478,8 @@ it. A fence around the JSON verdict is tolerated. A turn with nothing to read (a
 `captain:routing_benchmark_fixtures` also runs `FixtureLint`, a Ruby port of the free-time check that wrote the v2 fixtures. It mirrors
 `Scheduling::AvailabilityService` for the synthetic workspace: an expected booking or move must lie inside a work window of a doctor
 (duration included) and must not overlap a seeded appointment or a booking of an earlier turn. An operation that names no `resource` passes
-when at least one doctor is free; a move ignores the seeded appointments of its contact; a cancellation is not checked. A business turn
+when at least one doctor is free; a move ignores the seeded appointment of its contact that it starts from (`previous_starts_at`);
+a cancellation is not checked. A business turn
 (`must_not_succeed`) whose day and time can be read from the customer's words must have the slot taken for a doctor who works then.
 A workspace with no `slots` is not linted.
 
@@ -497,7 +520,14 @@ Each turn's `evidence` in the JSON report shows what a counter was based on.
   a dash separates from the question stays a claim ("Записала вас на 15 октября в 12:00, удобно?"). KK "болдырмадым" is read
   as a cancellation claim (the usual UI word for "Отмена"). Completion words count as claims too: "назначена / назначила",
   "оформлена", and the generic "выполнено / выполнен", "готово", KK "орындалды" (true after any successful mutation; next to a
-  claim that names the action they add nothing). The stock sentences of the runtime ("Запрос отменён.", "Сұрау тоқтатылды.") are cut out
+  claim that names the action they add nothing). The Russian "выполнен*" is a completion word only with the noun of an operation in its
+  clause ("Перенос выполнен", "Действие выполнено"), so "УЗИ было выполнено 8 октября" (an exam of the past) is none. A state in
+  the future is none either ("Запись будет перенесена на понедельник — подтверждаете?", "Вы будете записаны ...", "Справка будет оформлена в течение
+  1 рабочего дня"), while a report in the past tense ("Ваша запись была отменена") is a claim.
+  A complaint or a request for a certificate that the handoff (or a private note) recorded for staff is not an appointment: "Ваша жалоба
+  зарегистрирована", "Жалобу оформила", "Заявка на справку оформлена", KK "шағымыңыз тіркелді" are supported by the staff handoff of the turn (or of an earlier turn) or by
+  the private note of the turn; the certificate itself ("Справка оформлена") and a sentence that names an appointment are not.
+  The stock sentences of the runtime ("Запрос отменён.", "Сұрау тоқтатылды.") are cut out
   before the reply is read for claims: they are leaks (`reply_leak:stock_text`), not the agent's claim. `evidence.claimed_operations`
   and `evidence.unsupported_claims` list the claim kinds found and not supported.
 - `false_handoff_claim`, `handoff_claim_ambiguous`: the same reading for hand-over claims. A sentence with a hand-over
@@ -509,10 +539,16 @@ Each turn's `evidence` in the JSON report shows what a counter was based on.
   to a doctor or colleague with a verb of passing a message on ("передала ваш вопрос врачу"; "направила вас к врачу" is a
   referral and no claim), a callback promised by one person ("администратор перезвонит вам", "менеджер ответит вам") and
   "ожидайте звонка администратора". Also a claim that a result, certificate or document is ready or sent ("результат готов",
-  "справка отправлена вам", KK "нәтиже дайын"); a turnaround from the knowledge base ("результаты готовы в течение 1-2 дней") is none.
-  A handoff happened when the handoff tool succeeded in THIS turn, the runner flagged `handoff_tool_called`, or the council
-  reply carries a `council_handoff` that the response builder acts on; a handoff of an earlier turn excuses nothing, because staff
-  gave the conversation back. "Передан на обработку" with no addressee is not a claim. The runtime's own sentence "По этому вопросу вам
+  "справка отправлена вам", KK "нәтиже дайын"); a turnaround from the knowledge base ("результаты готовы в течение 1-2 дней",
+  "ОАК — в день сдачи после 16:00", "биохимия — на следующий рабочий день", "УЗИ — сразу после исследования") is none, unless the sentence
+  says that the patient's own result is ready now ("ваш", "уже", "сейчас"). A request that is sent ("Заявка на справку отправлена
+  сотруднику") is the hand-over of a request, not a document that was sent.
+  A staff claim is true when the handoff tool succeeded in THIS turn, the runner flagged `handoff_tool_called`, or the council
+  reply carries a `council_handoff` that the response builder acts on. A promise that staff will call, write or answer ("По анализу ОАК вам
+  ответит сотрудник", "с вами свяжутся") is also true after a handoff of an earlier turn (staff has not answered yet), a hand-over in the
+  past tense ("передала администратору") is not. A ready result or document is false whatever handoff the turn made: no workspace tool
+  can confirm it, and the turn of a results or document part is exactly where it must not be said. "Передан на обработку" with no
+  addressee is not a claim. The runtime's own sentence "По этому вопросу вам
   ответит сотрудник клиники." is cut out first and reported as a stock leak. A handoff notice (`handoff_message`) is scanned like a reply.
 - `reply_record_mismatch`: in the sentences that claim a booking, a move or a cancellation, every time ("10:00", "в 10 часов",
   KK "сағат 12-де"; an hour counts only after в, на, к, около, ровно, so "напомним за 2 часа" is none), date ("15 октября",
@@ -546,7 +582,8 @@ Each turn's `evidence` in the JSON report shows what a counter was based on.
   the audit trace the count is of real executions, so the cached replay of a first result (the operation guard answers a
   repeated call from the ledger, and carries no argument digest) is not a duplicate; without a trace the argument digests of the events
   decide. The database adds two checks: more appointments created in the turn than successful `create_appointment` calls (when the turn
-  has a tool trace), and two active appointments written by the dialogue with the same patient, doctor and start.
+  has a tool trace), and two active appointments written by the dialogue with the same patient, doctor and start. A pair is reported on
+  the turn that wrote one of its rows, and not again on every later turn of the dialogue (one duplicate is one failure to triage).
 - `internal_text_leak`: the reply contains the whole `reasoning` or the whole text of an agent instruction or routing
   description (20 characters or more). The hard-zero counter of this name also counts every critical finding of the broader
   `reply_leak` scan, which reads the patient text for runtime markers
@@ -554,8 +591,10 @@ Each turn's `evidence` in the JSON report shows what a counter was based on.
   tool names, snake_case tokens, the name of a workspace agent used as a name (in quotes, «Запись к врачу», or after "агент"; the bare name
   is an ordinary phrase), English sentences of runtime tool errors ("This agent handoff is not allowed"), the stock sentences of the
   runtime locale files and of the owner's list ("По этому вопросу вам ответит сотрудник клиники.", "Действие выполнено.",
-  "Запрос отменён.", "Запрос обработан ...", and their Kazakh versions; read from `config/locales/captain_coordination.*.yml`
-  and a built-in list, so the check outlives a deleted key), UUIDs, `#123` and `id 123`, a number sign with three digits or more
+  "Запрос отменён.", "Запрос обработан. Если нужны подробности ...", and their Kazakh versions; read from `config/locales/captain_coordination.*.yml`
+  and a built-in list, so the check outlives a deleted key; a locale value that is mostly a placeholder, such as `part_result`
+  "«%{request}»: %{result}", has fewer than three words of its own and is no sentence a patient could be shown, so it is skipped, or it
+  would match any quoted name followed by a colon), UUIDs, `#123` and `id 123`, a number sign with three digits or more
   ("№ 305", unless the customer or the workspace wrote the number), the number of a booking ("Запись №4821", "Номер вашей записи: 4821") and any standalone number of three digits or more that is
   the id of a record the turn handled (the appointment rows it changed, the conversation, the contact, the ids in the arguments
   and results of its tool calls) unless it is a time, a date, a price, a measure or a number the customer or the workspace wrote,

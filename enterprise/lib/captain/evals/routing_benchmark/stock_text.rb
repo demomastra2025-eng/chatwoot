@@ -20,9 +20,14 @@ module Captain::Evals::RoutingBenchmark::StockText
     'На этот вопрос я сейчас не могу ответить.', 'Бұл сұраққа қазір жауап бере алмаймын.',
     'Запрос отправлен, подтверждение придёт сообщением.', 'Сұрау жіберілді, растау хабарлама арқылы келеді.'
   ].freeze
-  # "Запрос обработан" opens the fixed fallback sentence whatever follows it.
-  REQUEST_PROCESSED = /Запрос\s+обработан\.?|Сұрау\s+өңделді\.?/i
+  # The opening of the fixed fallback sentence, at the start of a sentence and in this case: "Запрос обработан. Если нужны подробности ...".
+  # An agent's own "Ваш запрос обработан, менеджер свяжется с вами." is no fallback, and the runtime marks the real one with
+  # response['tool_result_fallback'] as well.
+  REQUEST_PROCESSED = /(?<![\p{L}\p{N},;]\s)(?<![\p{L}\p{N},;])(?:Запрос\s+обработан\.\s+Если\s+нужны\s+подробности|Сұрау\s+өңделді\.\s+Толығырақ)/
   PLACEHOLDER = /%\{\w+\}/
+  # A locale value with a placeholder is a stock sentence only when it has this many words of its own. "«%{request}»: %{result}" and
+  # "Остаётся открытым: %{parts}." are templates of a report for staff: as patterns they would match any quoted name followed by a colon.
+  MIN_FIXED_WORDS = 3
 
   class << self
     # [Regexp] one per sentence, longest first, so a sentence is cut out whole.
@@ -30,10 +35,12 @@ module Captain::Evals::RoutingBenchmark::StockText
       @patterns ||= sentences.map { |sentence| pattern_for(sentence) }.push(REQUEST_PROCESSED).uniq
     end
 
-    # The stock sentences found in the text, as written there. A match inside a longer one ("Запрос обработан." inside the whole fixed
-    # sentence) is the same sentence and is listed once.
+    # The stock sentences found in the text, as written there, in the order of the text. A match inside a longer one (the opening of the
+    # fixed fallback sentence inside the whole sentence) is the same sentence and is listed once.
     def found(text)
-      matches = patterns.flat_map { |pattern| text.to_s.scan(pattern).map { |match| match.is_a?(Array) ? match.first : match } }.map(&:squish).uniq
+      text = text.to_s
+      hits = patterns.flat_map { |pattern| text.to_enum(:scan, pattern).map { Regexp.last_match } }
+      matches = hits.sort_by { |hit| [hit.begin(0), -hit[0].length] }.map { |hit| hit[0].squish }.uniq
       matches.reject { |match| matches.any? { |other| other != match && other.include?(match) } }
     end
 
@@ -53,18 +60,28 @@ module Captain::Evals::RoutingBenchmark::StockText
     end
 
     def locale_sentences
-      Dir.glob(Rails.root.join(LOCALE_GLOB)).flat_map do |path|
+      found = Dir.glob(Rails.root.join(LOCALE_GLOB)).flat_map do |path|
         data = YAML.safe_load_file(path, permitted_classes: [], aliases: false)
         data.to_h.values.flat_map { |locale| locale.to_h.dig('captain', 'coordination').to_h.values.grep(String) }
       rescue Psych::Exception, SystemCallError
         []
       end
+      found.select { |sentence| specific?(sentence) }
     end
 
-    # "Часть обращения осталась без ответа, нужен ответ сотрудника: %{parts}." -> the same with ".+?" in the gap.
+    # A sentence without a gap matches only itself. One with a gap needs words of its own, or the gap matches an ordinary sentence.
+    def specific?(sentence)
+      return true unless sentence.match?(PLACEHOLDER)
+
+      sentence.gsub(PLACEHOLDER, ' ').scan(/\p{L}{2,}/).size >= MIN_FIXED_WORDS
+    end
+
+    # "Часть обращения осталась без ответа, нужен ответ сотрудника: %{parts}." -> the same with ".+?" in the gap. A gap that ends the
+    # sentence stops at the end of the sentence, or the pattern would take one character of it and leave the rest in the text.
     def pattern_for(sentence)
       parts = sentence.split(PLACEHOLDER, -1).map { |part| Regexp.escape(part).gsub('\ ') { '\s+' } }
-      Regexp.new(parts.join('.+?'), Regexp::IGNORECASE)
+      source = parts.size > 1 && parts.last.empty? ? "#{parts[0...-1].join('.+?')}[^.!?\\n]+" : parts.join('.+?')
+      Regexp.new(source, Regexp::IGNORECASE)
     end
   end
 end

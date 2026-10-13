@@ -300,6 +300,43 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Runner do
       expect(report[:warnings]).to include('ai_answered_while_staff_owned: 1 turn(s)')
     end
 
+    # ResponseBuilderJob calls bot_handoff! on a failed turn as well: after the provider error response, after a technical failure of a tool
+    # and after the technical handoff of a council part, the conversation is staff-owned, whether or not the handoff tool ran.
+    provider_error = Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_RESPONSE
+    technical = { 'tool' => 'create_appointment', 'stage' => 'execution', 'reason' => 'provider_timeout', 'kind' => 'technical' }
+    {
+      'the provider error response' => { 'response' => provider_error },
+      'a technical failure of a tool' => { 'response' => provider_error, 'technical_failure' => technical },
+      'the technical handoff of a council part' => { 'council_handoff' => { 'reason' => 'council_unresolved', 'technical' => true,
+                                                                             'failures' => [technical] } },
+      'the council handoff of an unresolved part' => { 'council_handoff' => { 'reason' => 'council_unresolved', 'parts' => ['результаты'] } }
+    }.each do |name, first_turn|
+      it "leaves the conversation open for staff after #{name}, and warns when the next turn is answered without staff giving it back" do
+        stub_fixture
+        calls = 0
+        script_runtime do |conversation|
+          calls += 1
+          seen << conversation.reload.status
+          first_turn if calls == 1
+        end
+
+        report = run_benchmark
+
+        expect(seen).to eq(%w[pending open pending])
+        warned = report[:cases].map { |item| item[:warnings].include?('ai_answered_while_staff_owned') }
+        expect(warned).to eq([false, true, false])
+      end
+    end
+
+    it 'leaves the conversation as it is after an ordinary reply' do
+      stub_fixture
+      script_runtime { |conversation| seen << conversation.reload.status }
+
+      run_benchmark
+
+      expect(seen).to eq(%w[pending pending pending])
+    end
+
     it 'does not hand the conversation over for a marker with no handoff tool event, or a failed handoff' do
       stub_fixture
       calls = 0
@@ -417,6 +454,21 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Runner do
       expect(report).to include(silent_handoff: false)
       expect(report[:gate][:blockers]).to include(a_string_starting_with('the handoff notice of the synthetic account is not blank'))
       expect(report[:warnings]).to include('the handoff notice of the synthetic account is not blank: a handoff is not silent')
+    end
+
+    it 'blocks the gate when the notice of the synthetic account cannot be read: silent handoff is not proven, nor the text of a handoff turn' do
+      stub_fixture
+      script_runtime { |_conversation| nil }
+      allow(Captain::CustomerNoticeService).to receive(:new).and_raise(ActiveRecord::StatementInvalid, 'connection lost')
+
+      report = run_benchmark
+
+      expect(report).to include(silent_handoff_error: 'ActiveRecord::StatementInvalid')
+      expect(report).not_to have_key(:silent_handoff)
+      expect(report[:gate]).to include(verdict: 'FAIL', silent_handoff_error: 'ActiveRecord::StatementInvalid')
+      expect(report[:gate][:blockers]).to include('silent handoff not proven: the notice could not be read (ActiveRecord::StatementInvalid); ' \
+                                                  'the text of a handoff turn is not checked')
+      expect(report[:warnings]).to include(a_string_starting_with('the handoff notice could not be checked (ActiveRecord::StatementInvalid)'))
     end
 
     it 'counts the model calls of the turn by runtime_complete events, else by requests, and never by the provider responses' do

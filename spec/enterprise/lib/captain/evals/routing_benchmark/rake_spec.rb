@@ -14,10 +14,11 @@ RSpec.describe 'routing benchmark rake tasks' do
       'reasons' => reasons, 'customer' => 'Здравствуйте', 'reply' => 'Здравствуйте!' }
   end
 
-  def report_file(dir, name, cases)
+  def report_file(dir, name, cases, **extra)
     path = File.join(dir, name)
     aggregates = { 'total' => cases.size, 'passed' => cases.count { |item| item['reasons'].empty? }, 'hard_zero' => {} }
-    File.write(path, JSON.generate('model' => 'openai/gpt-6-luna', 'runs' => 1, 'aborted' => false, 'cases' => cases, 'aggregates' => aggregates))
+    File.write(path, JSON.generate({ 'model' => 'openai/gpt-6-luna', 'runs' => 1, 'aborted' => false, 'cases' => cases, 'aggregates' => aggregates }
+                                   .merge(extra.stringify_keys)))
     path
   end
 
@@ -219,6 +220,17 @@ RSpec.describe 'routing benchmark rake tasks' do
 
         expect(output).to include('## GATE', '**Verdict: PASS**', '## TRIAGE', '0 failed check(s).')
         expect(status).to be_nil
+      end
+    end
+
+    it 'blocks a report whose handoff notice the runner could not read: silent handoff is not proven' do
+      Dir.mktmpdir do |dir|
+        path = report_file(dir, 'unproven.json', clean, silent_handoff_error: 'Timeout::Error')
+        output, status = run_task('captain:routing_benchmark_gate', REPORT: path)
+
+        expect(output).to include('**Verdict: FAIL**', '- silent handoff not proven: the notice could not be read (Timeout::Error)',
+                                  '| Handoff is silent (blank notice) | not proven: Timeout::Error |')
+        expect(status).to eq(1)
       end
     end
 

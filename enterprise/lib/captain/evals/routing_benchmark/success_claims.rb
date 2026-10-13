@@ -7,12 +7,14 @@
 #   - a state claim ("вы записаны", "запись отменена", "запись подтверждена", "жазылдыңыз"), which is also true when the
 #     same turn read the appointment back with a successful lookup tool.
 # Questions, offers, futures, infinitives ("перенести", "перенесём", "запишу"), hypotheticals ("перенесла бы"),
-# negations ("не записала", "запись не перенесена"), indirect questions ("записаны ли вы", "жазылдыңыз ба") and
-# claims about stored data ("записала ваш номер") are not claims. A closing question mark belongs to its own clause: it makes a
+# negations ("не записала", "запись не перенесена"), indirect questions ("записаны ли вы", "жазылдыңыз ба"), a state in the
+# future ("запись будет перенесена", "вы будете записаны") and claims about stored data ("записала ваш номер") are not claims; a report in the
+# past tense ("запись была отменена") is. A closing question mark belongs to its own clause: it makes a
 # state claim a question unless a new clause (а, но, ;) starts after the claim, and an action claim a question only when no
 # clause break lies between the verb and the question ("Записала вас на 10:00, удобно?" is still a claim). A completion word that
 # names no action ("Перенос выполнен", "Готово!" opening a sentence, KK "орындалды") is a claim of the kinds `done` / `done_state`, true
-# after any successful mutation. #kinds returns the claim kinds found; KIND_TOOLS lists the successful tool calls that support each.
+# after any successful mutation; the Russian "выполнен*" needs the noun of an operation in its clause ("УЗИ было выполнено 8 октября" is
+# an exam of the past). #kinds returns the claim kinds found; KIND_TOOLS lists the successful tool calls that support each.
 #
 # Only the benchmark scorer uses this detector, to score replies after the fact. The runtime never reads it: no reply
 # is filtered or rewritten by it.
@@ -37,7 +39,8 @@ class Captain::Evals::RoutingBenchmark::SuccessClaims
     create_state: words('создан(?:а|о|ы)?', 'оформлен(?:а|о|ы)?', 'зарегистрирован(?:а|о|ы)?', 'заведен(?:а|о|ы)?', 'заведён', 'жасалды', 'құрылды',
                         'рәсімделді'),
     # A completion word that names no action ("Перенос выполнен", "Готово!"): true after any successful mutation. "Готово" counts as the
-    # first word of a sentence only: "Всё готово для записи" says that the agent is ready, not that something was done.
+    # first word of a sentence only: "Всё готово для записи" says that the agent is ready, not that something was done. "выполнен" counts
+    # next to an action noun only (ACTION_NOUN): "УЗИ было выполнено 8 октября" reports an exam of the past.
     done: words('выполнил(?:а|и)?', 'орындадым', 'орындадық'),
     done_state: Regexp.union(words('выполнен(?:а|о|ы)?', 'орындалды'), /\A\s*(?:[-•*–—]\s*)?готово(?!\p{L})/i)
   }.freeze
@@ -83,6 +86,13 @@ class Captain::Evals::RoutingBenchmark::SuccessClaims
   CONFIRMED_OBJECT = words('запис\p{L}*', 'при[её]м\p{L}*', 'визит\p{L}*', 'брон\p{L}*', 'жазыл\p{L}*', 'жазба\p{L}*', 'қабылдау\p{L}*', 'тіркел\p{L}*')
   # "Вы подтвердили запись" reports what the patient did.
   PATIENT_SUBJECT = words('вы', 'ты', 'сіз')
+  # "Запись будет перенесена", "Вы будете записаны", "Справка будет оформлена": the state is a promise or a term of the knowledge base,
+  # not a report. "была перенесена" is a report and stays a claim.
+  FUTURE = words('буд(?:у|ешь|ет|ем|ете|ут)')
+  # The nouns of an operation: "Перенос выполнен", "Действие выполнено", "Заявка выполнена". The Russian "выполн*" is a completion word only
+  # with one of them in its clause.
+  ACTION_NOUN = words('перенос\p{L}*', 'запис\p{L}*', 'отмен\p{L}*', 'брон\p{L}*', 'действи\p{L}*', 'заявк\p{L}*')
+  EXECUTED = /\Aвыполн/i
 
   def self.kinds(text) = new(text).kinds
 
@@ -147,8 +157,10 @@ class Captain::Evals::RoutingBenchmark::SuccessClaims
     before = clause(sentence[0...match.begin(0)], :last)
     after = clause(sentence[match.end(0)..], :first)
     return false if before.match?(IRREALIS) || before.split.last(4).join(' ').match?(NEGATION)
+    return false if before.split.last(3).any? { |word| word.match?(FUTURE) }
     return false if after.match?(HYPOTHETICAL) || after.match?(INDIRECT_QUESTION)
     return false if match[0].match?(CONFIRMATION) && !confirms_appointment?(sentence, before)
+    return false if match[0].match?(EXECUTED) && !"#{before} #{match[0]} #{after}".match?(ACTION_NOUN)
 
     !(kind.to_s.start_with?('book') && recorded_data?(before, after))
   end

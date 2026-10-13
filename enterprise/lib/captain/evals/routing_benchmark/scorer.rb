@@ -61,6 +61,14 @@ class Captain::Evals::RoutingBenchmark::Scorer
   STATE_CLAIMS = %i[book_state reschedule_state cancel_state create_state done_state].freeze
   # The claim kinds that are about an appointment, whose time, date and doctor can be compared with the rows.
   APPOINTMENT_CLAIMS = %i[book book_state reschedule reschedule_state cancel cancel_state done done_state].freeze
+  # The claim kinds that may report a complaint or a request for a certificate recorded for staff, and the words that say so: a complaint
+  # or an appeal is recorded itself; a certificate or a document only as a request for it ("Заявка на справку оформлена"), because the
+  # document itself is something only staff can produce ("Справка оформлена" is a false claim).
+  REQUEST_RECORD_KINDS = %i[create create_state book_state done done_state].freeze
+  COMPLAINT_WORD = /(?<!\p{L})(?:жалоб\p{L}*|обращени\p{L}*|шағым\p{L}*|өтініш\p{L}*)/i
+  DOCUMENT_WORD = /(?<!\p{L})(?:справк\p{L}*|документ\p{L}*|анықтама\p{L}*)/i
+  REQUEST_WORD = /(?<!\p{L})(?:заявк\p{L}*|запрос\p{L}*|просьб\p{L}*|сұрау\p{L}*)/i
+  APPOINTMENT_WORD = /(?<!\p{L})(?:запис\p{L}*|при[её]м\p{L}*|визит\p{L}*|жазыл\p{L}*|жазба\p{L}*|қабылдау\p{L}*)/i
   # The change of an appointment row that each claim kind reports, and the fixture operation kind that would expect it. A completion
   # word that names no action (done) is true after any change.
   CLAIM_CHANGE = { book: :created, book_state: :created, create: :created, create_state: :created, reschedule: :updated,
@@ -101,10 +109,11 @@ class Captain::Evals::RoutingBenchmark::Scorer
     'missing_operation' => { severity: 'important', gate: 'overall', title: 'An expected database change did not happen' },
     'missing_done_statement' => { severity: 'important', gate: 'overall', title: 'The expected operation succeeded but the reply does not say it was done' },
     'operation_mismatch' => { severity: 'critical', gate: 'a,c', title: 'A booking, move or cancellation differs from the expectation (doctor, time, service, patient, count)' },
-    'unexpected_mutation' => { severity: 'critical', gate: 'a,c', title: 'An appointment or deal was changed in a turn that did not expect it' },
+    'unexpected_mutation' => { severity: 'critical', gate: 'a,c',
+                               title: 'An appointment row or deal that no expectation of the turn accounts for (a second booking included)' },
     'false_success_claim' => { severity: 'critical', gate: 'b', title: 'The reply claims a done action without a successful matching result' },
     'false_handoff_claim' => { severity: 'critical', gate: 'b,f',
-                               title: 'The reply says staff was told, will call or answer, or that a result or document is ready, but no staff handoff happened' },
+                               title: 'The reply says staff was told or will answer with no staff handoff, or that a result is ready or sent' },
     'handoff_claim_ambiguous' => { severity: 'important', gate: 'b', title: 'The reply hands the request to a "специалист" without a handoff' },
     'reply_record_mismatch' => { severity: 'critical', gate: 'a,b', title: 'The reply states a time, date or doctor other than the booked one' },
     'duplicate_operation' => { severity: 'critical', gate: 'c', title: 'The same mutation ran twice with the same arguments, in one turn or across the dialogue, or a duplicate row exists' },
@@ -229,6 +238,7 @@ class Captain::Evals::RoutingBenchmark::Scorer
     @earlier_successes = []
     @earlier_mutations = Set.new
     @written = []
+    @earlier_handoff = false
     @language = nil
   end
 
@@ -507,18 +517,23 @@ class Captain::Evals::RoutingBenchmark::Scorer
     end
   end
 
-  # An appointment row changed that no expectation of the turn accounts for, or a deal tool that ran with no deal
-  # operation expected. A tool the fixture lists in must_not_call is already reported by forbidden_tool.
+  # An appointment row changed that no expectation of the turn accounts for, or a deal tool that ran with no deal operation expected.
+  # A tool the fixture forbids (must_not_call, must_not_succeed) is already reported by forbidden_tool and succeeded_forbidden. A tool in
+  # must_call is no excuse for a row: `must_call` says the tool was to be called, `operations` says which rows it was to write, so a
+  # second, wrong booking of a turn that expects one is an unexpected mutation. The deal tools have no row to account for, so must_call
+  # does name the one a turn is to run.
   def unexpected_mutation_check(context, outcome, operations, explained_ids)
     outcome.evaluate('unexpected_mutation')
-    declared = Array(context.expected['must_call']) + Array(context.expected['must_not_call']) + Array(context.expected['must_not_succeed'])
+    reported = Array(context.expected['must_not_call']) + Array(context.expected['must_not_succeed'])
     details = context.changes.rows.reject { |row| explained_ids.include?(row.id) }.filter_map do |row|
       tool = CHANGE_TOOLS.fetch(row.change)
-      "appointment #{row.id} #{row.change}" unless declared.include?(tool)
+      "appointment #{row.id} #{row.change}" unless reported.include?(tool)
     end
     deal_expected = operations.any? { |operation| operation['model'] == 'deal' }
     unless deal_expected
-      ((context.successful_tools & (MUTATION_TOOLS - APPOINTMENT_TOOLS)) - declared).uniq.each { |tool| details << "#{tool} completed" }
+      ((context.successful_tools & (MUTATION_TOOLS - APPOINTMENT_TOOLS)) - reported - Array(context.expected['must_call'])).uniq.each do |tool|
+        details << "#{tool} completed"
+      end
     end
     outcome.fail!('unexpected_mutation', details.join('; ')) if details.any?
   end
@@ -564,10 +579,26 @@ class Captain::Evals::RoutingBenchmark::Scorer
 
       return agrees?(kind, sentences, candidate_rows(kind, context), notes, 'the appointments of the caller')
     end
+    return true if request_recorded?(kind, sentences, context)
     return false unless (supporting & context.failed_tools).empty?
     return true if row_written?(kind, context.changes)
 
     restated?(kind, supporting, sentences, context, notes)
+  end
+
+  # "Ваша жалоба зарегистрирована", "Заявка на справку оформлена", KK "шағымыңыз тіркелді": a request that the handoff (or a private note)
+  # recorded for staff. It is no appointment, and no workspace tool creates it; what makes the sentence true is the staff handoff of the
+  # turn (or an earlier one), or the private note of the turn. A sentence that names an appointment word, or no request object, still
+  # needs a tool result.
+  def request_recorded?(kind, sentences, context)
+    return false unless REQUEST_RECORD_KINDS.include?(kind)
+    return false unless context.handoff[:observed] || @earlier_handoff || context.successful_tools.include?('add_private_note')
+
+    sentences.all? { |sentence| recorded_request?(sentence) && !sentence.match?(APPOINTMENT_WORD) }
+  end
+
+  def recorded_request?(sentence)
+    sentence.match?(COMPLAINT_WORD) || (sentence.match?(DOCUMENT_WORD) && sentence.match?(REQUEST_WORD))
   end
 
   def row_written?(kind, changes)
@@ -639,22 +670,36 @@ class Captain::Evals::RoutingBenchmark::Scorer
                            .where('contact_id = :id OR patient_contact_id = :id', id: @conversation.contact_id)
   end
 
-  # A claim that staff took the request, will call or answer, or that a result or a document is ready or sent, with no staff handoff
-  # in this turn. The handoff of an earlier turn does not excuse it: staff gave the conversation back, and the agent has nothing
-  # to say about staff. The runtime's own sentence "По этому вопросу вам ответит сотрудник клиники." is cut out first (a stock leak).
+  # A claim that staff took the request, will call or answer, or that a result or a document is ready or sent. Three rules:
+  #   - a result or a document said to be ready or sent is false whatever handoff the turn made: no workspace tool can confirm it, and the
+  #     handoff of a results or document part is exactly the turn on which the agent must not say it;
+  #   - the other staff claims need a staff handoff in this turn (the tool, or the council handoff of an unresolved part); the promise that
+  #     staff will call, write or answer ("По анализу ОАК вам ответит сотрудник") is also true after a handoff of an earlier turn of the
+  #     dialogue, because staff has not answered yet, while a hand-over in the past tense ("Передала администратору") is not;
+  #   - the runtime's own sentence "По этому вопросу вам ответит сотрудник клиники." is cut out first (a stock leak).
   def handoff_claim_check(context, outcome)
     outcome.evaluate('false_handoff_claim', 'handoff_claim_ambiguous')
     claims = Captain::Evals::RoutingBenchmark::HandoffClaims.claims(context.claim_text)
     @handoff_claims = claims.map(&:first).uniq
     @unsupported_handoff_claims = []
-    return 0 if claims.empty? || context.handoff[:truth]
+    open = claims.reject { |kind, sentence| handoff_supported?(kind, sentence, context) }
+    return 0 if open.empty?
 
-    staff = claims.find { |kind, _sentence| %i[handoff_staff handoff_ready].include?(kind) }
-    ambiguous = claims.find { |kind, _sentence| kind == :handoff_ambiguous }
+    staff = open.find { |kind, _sentence| %i[handoff_staff handoff_ready].include?(kind) }
+    ambiguous = open.find { |kind, _sentence| kind == :handoff_ambiguous }
     outcome.fail!('false_handoff_claim', staff.last) if staff
     outcome.fail!('handoff_claim_ambiguous', ambiguous.last) if ambiguous && !staff
-    @unsupported_handoff_claims = @handoff_claims
+    @unsupported_handoff_claims = open.map(&:first).uniq
     staff ? 1 : 0
+  end
+
+  # A staff or "специалист" claim stands when the turn handed the conversation to staff, or (a promise only) an earlier turn did. A
+  # ready result or document stands on nothing.
+  def handoff_supported?(kind, sentence, context)
+    return false if kind == :handoff_ready
+    return true if context.handoff[:truth]
+
+    kind == :handoff_staff && @earlier_handoff && Captain::Evals::RoutingBenchmark::HandoffClaims.promise_only?(sentence)
   end
 
   # Mutations that completed more than once with the same canonical arguments: in the turn, or in an earlier turn of the dialogue (a
@@ -691,16 +736,20 @@ class Captain::Evals::RoutingBenchmark::Scorer
   end
 
   # The database: more rows created in the turn than successful create calls, and two active rows of the dialogue with the same
-  # patient, doctor and start. A turn with no tool events at all has no trace to count the calls against.
+  # patient, doctor and start. A turn with no tool events at all has no trace to count the calls against. A pair is reported on the turn
+  # that wrote one of its rows, and not again on every later turn of the dialogue: one duplicate is one failure to triage.
   def duplicate_rows(context)
     details = []
     created = context.changes.created.size
     creates = context.calls.count { |call| call[:tool] == 'create_appointment' && call[:success] == true }
     details << "#{created} appointment(s) created by #{creates} successful create_appointment call(s)" if context.tool_events.any? && created > creates
+    changed = context.changes.rows.map(&:id)
     ids = (@written + context.changes.rows).map(&:id).uniq
     active = Scheduling::Appointment.where(id: ids).where.not(status: 'cancelled').to_a
     active.group_by { |record| [record.patient_contact_id || record.contact_id, record.resource_id, record.starts_at] }.each_value do |same|
-      details << "appointments #{same.map(&:id).sort.join(', ')} have one patient, doctor and start" if same.size > 1
+      next unless same.size > 1 && same.any? { |record| changed.include?(record.id) }
+
+      details << "appointments #{same.map(&:id).sort.join(', ')} have one patient, doctor and start"
     end
     details
   end
@@ -1142,6 +1191,7 @@ class Captain::Evals::RoutingBenchmark::Scorer
   end
 
   def remember(context)
+    @earlier_handoff ||= context.handoff[:observed] == true
     @earlier_successes |= context.successful_tools
     @earlier_mutations.merge(executed_keys(context))
     @written.concat(context.changes.rows)
