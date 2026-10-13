@@ -26,6 +26,7 @@ class Captain::Evals::RoutingBenchmark::Runner
   MAX_USAGE_GAPS = 3
   REPLY_LIMIT = 4000
   FACTS_LIMIT = 4000
+  JUDGE_FEATURE = :editor
   STAFF_OWNED_WARNING = 'ai_answered_while_staff_owned'
 
   # triage: path of an earlier report (or label file) whose triage records a person filled in; see Triage.load.
@@ -67,6 +68,19 @@ class Captain::Evals::RoutingBenchmark::Runner
     report = build_report(labels)
     write_report(report)
     report
+  end
+
+  # The judge of a turn stored in an earlier report (see Rejudge): the prompt and the call of a live run, with the facts of the fixture
+  # of the case. Returns the scored turn with the new verdict and what the call cost, or nil when the turn is not judged (no rubric,
+  # nothing to read).
+  def judge_stored(account, fixture, dialogue, turn, response, scored, history, tool_calls)
+    return unless judge_turn?(dialogue, turn, scored)
+
+    @workspace_data = fixture.workspace
+    @usage_gaps ||= 0
+    last_event_id = LlmEvent.where(account_id: account.id).maximum(:id).to_i
+    judged = judge_turn(account, dialogue, turn, response, scored, history, tool_calls)
+    [judged, provider_cost(LlmEvent.where(account_id: account.id).where('id > ?', last_event_id).order(:id).to_a)]
   end
 
   private
@@ -305,7 +319,7 @@ class Captain::Evals::RoutingBenchmark::Runner
   def judge_turn(account, dialogue, turn, response, scored, history, tool_calls)
     prompt = judge_prompt(dialogue, turn, response, scored, history, tool_calls)
     judgment = Llm::EventBus.with_context(source: 'benchmark', feature: 'routing_benchmark', account_id: account.id) do
-      chat = Llm::Runtime.build_chat(model: @model, account: account)
+      chat = judge_chat(account)
       Llm::Runtime.ask(chat, prompt, model: @model, account: account,
                                      observability: { feature: 'routing_benchmark', source: 'benchmark', account_id: account.id })
     end
@@ -318,6 +332,18 @@ class Captain::Evals::RoutingBenchmark::Runner
     Captain::Evals::RoutingBenchmark::Scorer.with_failure(scored, 'judge_invalid_json')
   rescue StandardError => e
     Captain::Evals::RoutingBenchmark::Scorer.with_failure(scored, 'judge_unavailable', e.class.name)
+  end
+
+  # The judge is a plain text completion on the benchmark model, built the way every feature of the runtime builds its chat: with a
+  # feature (the editor: text in, text out, no tools), so the account's own key and routing apply, and with the benchmark model alone:
+  # no fallback model may answer in its place.
+  # The earlier call carried no feature and no `options`, took the runtime's legacy path and raised TypeError (nil into
+  # Hash#merge!) before any request left: every judged turn became judge_unavailable.
+  def judge_chat(account)
+    Llm::Runtime.build_chat(
+      feature: JUDGE_FEATURE, account: account, model: @model, models: [@model],
+      options: { temperature: 0, thinking: Llm::RuntimePolicy.no_thinking_options(model: @model, account: account) }.compact
+    )
   end
 
   # The verdict, whether or not the model wrapped it in a ```json fence.

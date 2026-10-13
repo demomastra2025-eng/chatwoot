@@ -33,7 +33,7 @@ in-flight request may cross the limit because the provider does not offer a
 transactional spend reservation. Run with a cap above the largest expected turn.
 `TRIAGE=<report.json>` passes the decisions of an earlier triage (see below).
 
-Three more tasks call no model:
+Three more tasks call no model (a fourth, `captain:routing_benchmark_rejudge`, calls the judge only; see "Rubric judge"):
 
 ```sh
 # load the fixtures with the strict loader (an unknown key, an unknown tool name, a handoff_to_ name, a ledger_tool, an unpinned start or
@@ -472,6 +472,28 @@ dialogue rubric (who the patient is and the rules for all replies, up to "Ход
 far, the tool calls of the turn with their owners, the database changes and the facts of the workspace (doctors, services with prices,
 the knowledge base). It can only add a failure (`judge_failed`): a pass removes no failure, and a hard-zero counter is never decided by
 it. A fence around the JSON verdict is tolerated. A turn with nothing to read (a silent handoff, a runtime marker) is not judged.
+
+The judge is built like every other feature of the runtime (the `editor` feature, the benchmark model alone, temperature 0), so it uses the
+key and the routing of the account. A call that cannot be made is reported as `judge_unavailable` (minor, gate `none`) with the class of the
+error as its detail; it still fails the turn, so a run in which every judge call fails shows pass rates far below the real ones.
+
+### Judging a stored run again
+
+A stored report can be judged again without running the agents. The reply, the tool calls and the database changes of every turn are in
+the report; the rubric and the facts of the workspace come from the fixture the case names; the transcript is rebuilt from the earlier turns
+of the dialogue. Only the judge calls cost money:
+
+```sh
+RAILS_ENV=test REDIS_URL=redis://127.0.0.1:6379/15 BENCHMARK_REDIS_URL=redis://127.0.0.1:6379/15 \
+  REPORT=tmp/run1.json OUT=tmp/run1-rejudged.json BUDGET_USD=1 [FIXTURES='tmp/benchmarks/*.yml'] [ALL=1] [TRIAGE=tmp/run1.json] \
+  bundle exec rake captain:routing_benchmark_rejudge
+```
+
+It judges again the turns whose judge failed (`judge_unavailable`, `judge_invalid_json`); `ALL=1` judges every judged turn. The new verdict
+replaces the old judge failure; every other failure of the turn stays. The summary, the gate and the triage list are computed again, and the
+report gets a `rejudge` key (turns, cost, whether the budget stopped it). A fixture that is gone is looked up by file name in `FIXTURES`;
+a fixture whose turn no longer has the customer text of the report is refused. At the budget the run stops and the turns not yet judged keep
+their old cases.
 
 ## Fixture lint
 

@@ -63,6 +63,37 @@ namespace :captain do
     exit(1) unless comparison.result[:gate_item_3]
   end
 
+  desc 'Judge again the turns of a stored report whose judge gave no verdict, without running the agents (only the judge calls cost money): ' \
+       'REPORT=out.json OUT=new.json BUDGET_USD=1 [FIXTURES=glob] [ALL=1 judges every judged turn] [TRIAGE=labels.json]'
+  task routing_benchmark_rejudge: %i[routing_benchmark_preflight environment] do
+    out = ENV.fetch('OUT')
+    raise ArgumentError, 'OUT already exists' if File.exist?(out) || File.exist?("#{out}.md")
+    raise ArgumentError, 'OUT directory does not exist' unless File.directory?(File.dirname(out))
+
+    Captain::Evals::RoutingBenchmark::Guard.check!
+    Captain::Evals::RoutingBenchmark::Guard.restrict_http!
+    report = JSON.parse(File.read(ENV.fetch('REPORT')))
+    labels = Captain::Evals::RoutingBenchmark::Triage.load(ENV['TRIAGE'].presence)
+    # The judge needs an account (its key and its budget check): it gets one inside a transaction that unpinning rolls back.
+    pool = ActiveRecord::Base.connection_pool
+    pool.pin_connection!(true)
+    Llm::EventSubscriber.install!
+    begin
+      result = Captain::Evals::RoutingBenchmark::Rejudge.run(
+        report, budget_usd: ENV.fetch('BUDGET_USD'), all: ENV['ALL'] == '1', labels: labels,
+                fixture_paths: ENV['FIXTURES'].present? ? Dir.glob(ENV['FIXTURES']) : []
+      )
+    ensure
+      pool.unpin_connection!
+    end
+    File.open(out, File::WRONLY | File::CREAT | File::EXCL, 0o600) { |file| file.write(JSON.pretty_generate(result.report)) }
+    File.open("#{out}.md", File::WRONLY | File::CREAT | File::EXCL, 0o600) do |file|
+      file.write(Captain::Evals::RoutingBenchmark::Report.new(result.report).markdown)
+    end
+    puts "Judged again: #{result.rejudged} turn(s), cost #{result.cost_usd} USD#{", stopped: #{result.stopped}" if result.stopped}"
+    puts "Gate: #{result.report.dig('gate', :verdict) || result.report.dig('gate', 'verdict')}"
+  end
+
   desc 'Print the release gate and the triage list of a routing benchmark output: REPORT=out.json [TRIAGE=labels.json]'
   task routing_benchmark_gate: %i[routing_benchmark_preflight environment] do
     report = JSON.parse(File.read(ENV.fetch('REPORT')))

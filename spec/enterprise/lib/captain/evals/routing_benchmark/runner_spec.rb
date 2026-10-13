@@ -612,6 +612,46 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Runner do
 
       expect(run_benchmark(judge: true)[:cases].first[:failures]).to contain_exactly(a_hash_including(id: 'judge_invalid_json', severity: 'minor'))
     end
+
+    # The examples above replace Llm::Runtime itself, so they could not see a judge call that the runtime cannot even build: it raised
+    # TypeError (nil into Hash#merge!) before any request left, and every judged turn of a real run became judge_unavailable. Here only
+    # the provider is stubbed.
+    context 'when the call goes through the real runtime' do
+      let(:requests) { [] }
+
+      before do
+        allow(Llm::Config).to receive(:installation_api_key).and_return('synthetic-key')
+        stub_request(:post, %r{/chat/completions}).to_return do |request|
+          requests << JSON.parse(request.body)
+          { status: 200, headers: { 'Content-Type' => 'application/json' },
+            body: { id: 'gen-judge', object: 'chat.completion', model: described_class::MODEL,
+                    choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: verdict } }],
+                    usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } }.to_json }
+        end
+        stub_fixture
+      end
+
+      it 'asks the benchmark model alone, with the criterion of the turn, and reads its verdict' do
+        item = run_benchmark(judge: true)[:cases].first
+
+        expect(item).to include(status: 'pass', judge: { pass: true, reason: 'ок' })
+        expect(item[:failures]).to be_empty
+        expect(requests.size).to eq(1)
+        expect(requests.first).to include('model' => described_class::MODEL, 'models' => [described_class::MODEL])
+        expect(requests.first['messages'].pluck('content').join).to include('Criterion of this turn: Здоровается и спрашивает, чем помочь.')
+      end
+
+      context 'when the judge rejects the reply' do
+        let(:verdict) { '{"pass":false,"reason":"слишком сухо"}' }
+
+        it 'fails the turn with the reason of the judge, not with judge_unavailable' do
+          item = run_benchmark(judge: true)[:cases].first
+
+          expect(item[:reasons]).to eq(['judge_failed'])
+          expect(item[:judge]).to eq(pass: false, reason: 'слишком сухо')
+        end
+      end
+    end
   end
 
   describe 'the budget when the rubric judge runs' do
