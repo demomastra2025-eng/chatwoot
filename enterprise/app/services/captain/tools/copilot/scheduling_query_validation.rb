@@ -7,7 +7,7 @@ module Captain::Tools::Copilot::SchedulingQueryValidation
   private
 
   def scheduling_datetime(value, field_name:)
-    Scheduling::InputValidation.datetime(value, field_name: field_name)
+    Time.use_zone(scheduling_time_zone) { Scheduling::InputValidation.datetime(value, field_name: field_name) }
   end
 
   def scheduling_range!(range_from, range_to)
@@ -64,5 +64,12 @@ module Captain::Tools::Copilot::SchedulingQueryValidation
   def scheduling_error_class(error)
     technical = error.status.to_i >= 500 || TECHNICAL_SCHEDULING_CODES.include?(error.code.to_s)
     technical ? Captain::Runtime::ToolFailure::TECHNICAL : Captain::Runtime::ToolFailure::BUSINESS
+  end
+
+  # A date or a time without an offset is the clinic time that the prompt states in its Now block (the zone of the inbox, else the
+  # reporting zone of the account), never the UTC of the server: "2026-10-14T11:00" is 11:00 in Almaty. A value with an offset
+  # keeps it.
+  def scheduling_time_zone
+    Captain::PromptClock.zone_for(@conversation&.inbox&.timezone, account.reporting_timezone)
   end
 end
