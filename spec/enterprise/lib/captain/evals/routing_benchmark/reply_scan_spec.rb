@@ -129,7 +129,10 @@ RSpec.describe Captain::Evals::RoutingBenchmark::ReplyScan do
       expect(kinds('Подтвердите действие по запросу «Перенести приём»?')).to eq([:composer_phrase])
     end
 
-    it 'leaves the canned text that the runtime locale files hold to the stricter stock_text kind' do
+    # The runtime locale files no longer hold a composer phrase; the precedence is checked with a stock sentence that is also one.
+    it 'leaves a canned text that is also a stock sentence to the stricter stock_text kind' do
+      allow(Captain::Evals::RoutingBenchmark::StockText).to receive(:found).and_return(['Часть запроса требует дополнительной проверки.'])
+
       expect(kinds('Часть запроса требует дополнительной проверки.')).to eq([:stock_text])
     end
 

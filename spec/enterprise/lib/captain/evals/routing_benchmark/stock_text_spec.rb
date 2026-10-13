@@ -110,10 +110,14 @@ RSpec.describe Captain::Evals::RoutingBenchmark::StockText do
     end
     # rubocop:enable Style/FormatStringToken
 
+    # The coordination texts of the checkout are notes with a gap today (%{parts}, %{details}); the gap is filled the way a report would
+    # fill it. A template that is mostly a gap is skipped by design (see MIN_FIXED_WORDS).
     it 'agree with the checkout under test: its own coordination texts are all found' do
       sentences = Dir.glob(Rails.root.join(described_class::LOCALE_GLOB)).flat_map do |path|
         YAML.safe_load_file(path).values.flat_map { |locale| locale.dig('captain', 'coordination').to_h.values }
-      end.reject { |text| text.include?('%{') }
+      end
+      sentences = sentences.reject { |text| text.gsub(/%\{\w+\}/, ' ').scan(/\p{L}{2,}/).size < described_class::MIN_FIXED_WORDS }
+      sentences = sentences.map { |text| text.gsub(/%\{\w+\}/, 'запись на среду') }
       described_class.reset!
 
       expect(sentences).to be_present
