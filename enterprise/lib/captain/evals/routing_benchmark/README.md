@@ -32,6 +32,9 @@ provider response cost after each turn (the calls of the judge included) and abo
 in-flight request may cross the limit because the provider does not offer a
 transactional spend reservation. Run with a cap above the largest expected turn.
 `TRIAGE=<report.json>` passes the decisions of an earlier triage (see below).
+While it runs, the task prints one line to the standard output after every dialogue, flushed at once, so a long run can be followed:
+`[3/395] council_two_part_04 turns passed 2/3, critical 1, reasons: missing_operation:appointment, wrong_agent` (the number of the dialogue
+among all the dialogues of all the runs, the turns that passed, the critical failures, the distinct reasons or `none`).
 
 Three more tasks call no model (a fourth, `captain:routing_benchmark_rejudge`, calls the judge only; see "Rubric judge"):
 

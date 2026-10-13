@@ -152,6 +152,13 @@ RSpec.describe 'routing benchmark rake tasks' do
       expect(runner).to have_received(:call)
     end
 
+    it 'gives the runner the standard output for its progress lines: one per dialogue, while the run goes' do
+      run_task('captain:routing_benchmark', FIXTURES: 'tmp/x/*.yml', BUDGET_USD: '1', OUT: 'tmp/x.json')
+
+      # run_task stands a StringIO in for the standard output of the task
+      expect(Captain::Evals::RoutingBenchmark::Runner).to have_received(:new).with(hash_including(progress: an_instance_of(StringIO)))
+    end
+
     it 'leaves a switch that somebody set on purpose alone' do
       ENV['CAPTAIN_COUNCIL_PARALLEL'] = 'on'
 

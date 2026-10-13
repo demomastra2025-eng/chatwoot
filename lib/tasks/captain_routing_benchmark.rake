@@ -24,7 +24,8 @@ namespace :captain do
       Captain::Evals::RoutingBenchmark::Runner.new(
         fixtures: ENV.fetch('FIXTURES'), runs: ENV.fetch('RUNS', 3),
         model: ENV.fetch('MODEL', 'openai/gpt-6-luna'), reasoning: ENV.fetch('REASONING', 'none'),
-        budget_usd: ENV.fetch('BUDGET_USD'), out: ENV.fetch('OUT'), judge: ENV['JUDGE'] == '1', triage: ENV['TRIAGE'].presence
+        budget_usd: ENV.fetch('BUDGET_USD'), out: ENV.fetch('OUT'), judge: ENV['JUDGE'] == '1', triage: ENV['TRIAGE'].presence,
+        progress: $stdout
       ).call
     ensure
       pool.unpin_connection!

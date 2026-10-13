@@ -107,6 +107,44 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Runner do
     expect(report[:warnings]).to include('council_expected_but_no_part_started: 3 turn(s)')
   end
 
+  describe 'the progress lines' do
+    let(:progress) { StringIO.new }
+
+    def lines = progress.string.lines.map(&:chomp)
+
+    it 'prints one line after every dialogue and flushes it at once, so a long run can be followed' do
+      stub_fixture
+      script_runtime { |_conversation| nil }
+      allow(progress).to receive(:flush).and_call_original
+
+      run_benchmark(progress: progress)
+
+      expect(lines).to eq(['[1/3] first turns passed 1/1, critical 0, reasons: none', '[2/3] second turns passed 1/1, critical 0, reasons: none',
+                           '[3/3] third turns passed 1/1, critical 0, reasons: none'])
+      expect(progress).to have_received(:flush).exactly(3).times
+    end
+
+    it 'counts the dialogues of all the runs, and names the turns that passed, the critical failures and the reasons of a dialogue that did not pass' do
+      fixture_data[:dialogues] = fixture_data[:dialogues].first(1)
+      fixture_data[:dialogues].first[:turns] = [{ customer: 'Здравствуйте', expect: { agent: 'Регистратор', council: true } },
+                                                { customer: 'Спасибо', expect: { agent: 'Регистратор', council: false } }]
+      stub_fixture
+      script_runtime(text: 'Пожалуйста, обращайтесь.') { |_conversation| nil }
+
+      run_benchmark(runs: 2, progress: progress)
+
+      expect(lines).to eq(['[1/2] first turns passed 1/2, critical 0, reasons: council_event_missing',
+                           '[2/2] first turns passed 1/2, critical 0, reasons: council_event_missing'])
+    end
+
+    it 'prints nothing unless it is given a stream' do
+      stub_fixture
+      script_runtime { |_conversation| nil }
+
+      expect { run_benchmark }.not_to output.to_stdout
+    end
+  end
+
   describe 'the release gate' do
     it 'comes first in the report, and a run that tests nothing with a booking or a person does not pass it, however clean' do
       stub_fixture

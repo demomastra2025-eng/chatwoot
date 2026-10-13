@@ -26,14 +26,17 @@ class Captain::Evals::RoutingBenchmark::Runner
   MAX_USAGE_GAPS = 3
   REPLY_LIMIT = 4000
   FACTS_LIMIT = 4000
+  REASONS_LIMIT = 300
   JUDGE_FEATURE = :editor
   STAFF_OWNED_WARNING = 'ai_answered_while_staff_owned'
 
   # triage: path of an earlier report (or label file) whose triage records a person filled in; see Triage.load.
-  def initialize(fixtures:, runs: 3, model: MODEL, reasoning: 'none', budget_usd:, out:, judge: false, triage: nil)
+  # progress: an IO that gets one line after every dialogue (see #report_progress), flushed at once; nil prints nothing.
+  def initialize(fixtures:, runs: 3, model: MODEL, reasoning: 'none', budget_usd:, out:, judge: false, triage: nil, progress: nil)
     @fixtures, @runs, @model, @reasoning = fixtures, Integer(runs), model, reasoning
     @budget_usd, @out, @judge = BigDecimal(budget_usd.to_s), out, judge
     @triage = triage
+    @progress = progress
     raise ArgumentError, 'Only openai/gpt-6-luna is allowed' unless @model == MODEL
     raise ArgumentError, 'REASONING must be none or low' unless %w[none low].include?(@reasoning)
     raise ArgumentError, 'RUNS and BUDGET_USD must be positive' unless @runs.positive? && @budget_usd.positive?
@@ -55,6 +58,8 @@ class Captain::Evals::RoutingBenchmark::Runner
     @aborted = false
     @silent_handoff = nil
     @silent_handoff_error = nil
+    @dialogues_total = fixtures.sum { |_path, fixture| fixture.dialogues.size } * @runs
+    @dialogues_done = 0
     fixtures.each do |path, fixture|
       @runs.times do |run_index|
         execute_fixture(path, fixture, run_index + 1)
@@ -102,6 +107,7 @@ class Captain::Evals::RoutingBenchmark::Runner
     @workspace_data = fixture.workspace
     connection = ActiveRecord::Base.connection
     connection.begin_transaction(joinable: false, _lazy: false)
+    first_case = @cases.size
     begin
       workspace = Current.with_runtime_events_suppressed do
         Captain::Evals::RoutingBenchmark::Workspace.new(fixture, model: @model, reasoning: @reasoning).create!
@@ -109,7 +115,22 @@ class Captain::Evals::RoutingBenchmark::Runner
       run_dialogue(workspace, dialogue, path: path, run_index: run_index)
     ensure
       connection.rollback_transaction
+      report_progress(dialogue, @cases[first_case..])
     end
+  end
+
+  # One line per dialogue, so a long run can be followed while it goes (it is flushed at once, whatever the buffering of the output):
+  # "[3/395] council_two_part_04 turns passed 2/3, critical 1, reasons: missing_operation:appointment, wrong_agent". A dialogue that the
+  # budget or an error cut short reports the turns it played.
+  def report_progress(dialogue, cases)
+    @dialogues_done += 1
+    return unless @progress
+
+    reasons = cases.flat_map { |item| item[:reasons].to_a }.uniq.join(', ').truncate(REASONS_LIMIT)
+    critical = cases.sum { |item| item[:failures].to_a.count { |failure| failure[:severity] == 'critical' } }
+    @progress.puts("[#{@dialogues_done}/#{@dialogues_total}] #{dialogue.fetch('id')} turns passed #{cases.count { |item| item[:status] == 'pass' }}/" \
+                   "#{cases.size}, critical #{critical}, reasons: #{reasons.presence || 'none'}")
+    @progress.flush
   end
 
   def run_dialogue(workspace, dialogue, path:, run_index:)
