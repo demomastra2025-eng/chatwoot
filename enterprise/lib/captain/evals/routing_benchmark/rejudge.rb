@@ -68,12 +68,13 @@ class Captain::Evals::RoutingBenchmark::Rejudge
     fixture = fixture_for(row)
     dialogue, turn = locate(fixture, row)
     judged, cost = @runner.judge_stored(@account, fixture, dialogue, turn, { 'response' => row['reply'].to_s }, without_judgment(row),
-                                        history_for(row, earlier), row.fetch('tool_calls', []).map(&:deep_symbolize_keys))
+                                        history_for(row, earlier), row.fetch('tool_calls', []).map(&:deep_symbolize_keys),
+                                        earlier_handoffs: earlier_handoffs(row, earlier))
     return row unless judged
 
     @spent += cost
     @rejudged += 1
-    row.except('judge').merge(judged.slice(:status, :reasons, :failures, :evaluated, :judge, :warnings).deep_stringify_keys)
+    row.except('judge', 'not_evaluated').merge(judged.slice(:status, :reasons, :failures, :evaluated, :judge, :warnings, :not_evaluated).deep_stringify_keys)
   rescue Captain::Evals::RoutingBenchmark::Runner::BudgetExceeded => e
     stop(e.message, row)
   end
@@ -85,7 +86,7 @@ class Captain::Evals::RoutingBenchmark::Rejudge
 
   # The scored turn as it was before the judge: its judge failure (and verdict) removed, the status that follows from the rest.
   def without_judgment(row)
-    scored = row.deep_symbolize_keys.except(:judge)
+    scored = row.deep_symbolize_keys.except(:judge, :not_evaluated)
     failures = scored.fetch(:failures, []).reject { |failure| JUDGE_CHECKS.include?(failure[:check]) }
     scored.merge(failures: failures, status: failures.empty? ? 'pass' : 'fail',
                  reasons: scored.fetch(:reasons, []).reject { |reason| judge_reason?(reason) },
@@ -94,6 +95,12 @@ class Captain::Evals::RoutingBenchmark::Rejudge
   end
 
   def judge_reason?(reason) = JUDGE_CHECKS.include?(Captain::Evals::RoutingBenchmark::Scorer.base_check(reason))
+
+  # How often the conversation was handed to staff in the earlier turns of this dialogue and run (the judge is told, as it is in a live run).
+  def earlier_handoffs(row, earlier)
+    key = row.values_at('fixture', 'dialogue', 'run')
+    earlier.count { |item| item.values_at('fixture', 'dialogue', 'run') == key && item.dig('handoff', 'observed') }
+  end
 
   # The history of the runner at that turn: each earlier turn of the dialogue in this run (its customer text, and the reply when the
   # customer saw one), then the customer text of this turn.
@@ -137,15 +144,16 @@ class Captain::Evals::RoutingBenchmark::Rejudge
 
   def rebuilt(rows)
     summary = Captain::Evals::RoutingBenchmark::Summary.call(rows)
-    gate = Captain::Evals::RoutingBenchmark::Gate.call(rows, aborted: @report['aborted'], abort_reason: @report['abort_reason'], labels: @labels,
-                                                            silent_handoff: @report['silent_handoff'], silent_handoff_error: @report['silent_handoff_error'])
+    gate = Captain::Evals::RoutingBenchmark::Gate.for_report(@report.merge('cases' => rows), labels: @labels)
     council_reasons = Captain::Evals::RoutingBenchmark::Scorer::COUNCIL_REASONS
     aggregates = @report.fetch('aggregates', {}).merge(
       summary.except(:dialogue_summaries).deep_stringify_keys,
       'passed' => rows.count { |row| row['status'] == 'pass' },
-      'passed_ignoring_council_signal' => rows.count { |row| (row['reasons'] - council_reasons).empty? }
+      'not_evaluated' => rows.count { |row| row['status'] == 'not_evaluated' },
+      'passed_ignoring_council_signal' => rows.count { |row| row['status'] != 'not_evaluated' && (row['reasons'] - council_reasons).empty? }
     )
     @report.merge('cases' => rows, 'gate' => gate, 'triage' => Captain::Evals::RoutingBenchmark::Triage.records(rows, labels: @labels),
+                  'needs_review' => Captain::Evals::RoutingBenchmark::Review.records(rows),
                   'aggregates' => aggregates, 'dialogue_summaries' => summary[:dialogue_summaries],
                   'rejudge' => { 'turns' => @rejudged, 'cost_usd' => @spent.to_f, 'all' => @all, 'stopped' => @stopped }.compact)
   end

@@ -18,6 +18,13 @@ require 'digest'
 # The checks read tool results, database rows and the reply. A call is evaluated whether or not it failed: `evaluated`
 # lists every check the turn was put through, so the gate can say "critical passed/total".
 #
+# Two kinds of check (owner decision 2A):
+#   facts   read the database, the operations ledger, the tool calls and results, the events and the schemas. They fail the turn.
+#   hints   read TEXT: the reply of the agent (success and handoff claims, internal material, another patient's data, the language,
+#           a greeting only) or the words of the customer (a request for a person). A detector can be wrong, so a hit never fails a
+#           turn or the gate by itself. It is a hint (HINT_CHECKS): it is stored in `hints` of the turn, goes to the evidence of the
+#           rubric judge, which decides by meaning, and to the `needs_review` list of the report for a person (critical hints first).
+#
 # The expectation of a turn (the v2 fixture schema) is checked by
 #   agent / agents     wrong_agent        the agent HOLDING the conversation after the turn (response agent_id)
 #   council            council_event_missing / council_unexpected / council_changed_hands
@@ -54,6 +61,11 @@ class Captain::Evals::RoutingBenchmark::Scorer
   # it never fails a turn. The runner reports it as a warning of the turn (counted apart in the summary); only reports of older runs
   # hold it as a failure, and the gate and the triage list leave those out.
   JUDGE_UNUSABLE = %w[judge_unavailable judge_invalid_json].freeze
+  # The checks that read text (see the header): a hit is a hint, never a failure of the turn. human_handoff_missing and
+  # tool_result_fallback are not in the list: they fail the turn when a fact says so (the fixture flags the request for a person, the
+  # runtime flags the fallback) and are hints only when the text alone says so (see #human_handoff_check, #tool_result_fallback_check).
+  HINT_CHECKS = %w[false_success_claim false_handoff_claim handoff_claim_ambiguous reply_record_mismatch internal_text_leak reply_leak
+                   foreign_patient_data wrong_language greeting_only_reply missing_done_statement human_request_flag_mismatch].freeze
   # After one of these the turn did not run to its end, so what it did not do is no finding.
   INTERRUPTED_BY = %w[runtime_error technical_handoff provider_error].freeze
   CONSEQUENTIAL_CHECKS = %w[wrong_agent missing_tool missing_operation missing_act missing_done_statement wrong_transfers
@@ -181,6 +193,23 @@ class Captain::Evals::RoutingBenchmark::Scorer
     # The judge gave no usable verdict (JUDGE_UNUSABLE): not a finding of the agent.
     def judge_unusable?(reason) = JUDGE_UNUSABLE.include?(base_check(reason))
 
+    # A check that reads text (HINT_CHECKS): its hit is a hint for the judge and for a person, never a failure.
+    def hint?(reason) = HINT_CHECKS.include?(base_check(reason))
+
+    # A turn that is judged and got no verdict (decision 3A): the case says so (`status` and `not_evaluated`), and an older report holds the
+    # missing verdict as `judge.unusable`, as a warning of the turn or as a failure of it. Not a pass and not a failure.
+    def not_evaluated?(item)
+      item = item.to_h
+      return true if item['status'] == 'not_evaluated' || Array(item['not_evaluated']).any?
+      return true if item['judge'].is_a?(Hash) && item['judge']['unusable'].present?
+
+      (Array(item['warnings']) + Array(item['reasons'])).any? { |entry| judge_unusable?(entry) }
+    end
+
+    # A reason that counts against a turn: a fact that failed. Older reports hold the hints and the unusable judge as failures; the gate,
+    # the summary and the triage list read them with this, so they are read the same way as a report of today.
+    def finding?(reason) = !judge_unusable?(reason) && !hint?(reason)
+
     # A scored case with one more failed check (the judge adds its verdict after scoring).
     def with_failure(scored, reason, detail = nil, severity: nil)
       failure = failure_record(reason, detail, severity)
@@ -195,13 +224,24 @@ class Captain::Evals::RoutingBenchmark::Scorer
 
   # The checks a turn was put through and the ones that failed.
   class Outcome
-    attr_reader :failures, :evaluated, :suppressed
+    attr_reader :failures, :evaluated, :suppressed, :hints
 
     def initialize
       @failures = []
       @evaluated = []
       @suppressed = []
+      @hints = []
     end
+
+    # A hit of a check that reads text: recorded with the same fields as a failure (id, check, severity, gate, detail), but it fails
+    # nothing and is not counted among the checks the turn was put through (the gate counts only facts).
+    def hint!(id, detail = nil, severity: nil)
+      return if hinted?(id)
+
+      @hints << Captain::Evals::RoutingBenchmark::Scorer.failure_record(id, detail, severity)
+    end
+
+    def hinted?(id) = @hints.any? { |hint| hint[:id] == id }
 
     def evaluate(*ids)
       ids.each { |id| @evaluated << id unless @evaluated.include?(id) }
@@ -483,7 +523,11 @@ class Captain::Evals::RoutingBenchmark::Scorer
   # A council the fixture does not expect is no finding when an earlier turn left a part open (a question asked, a request for staff):
   # the customer's message answers that part, and the runtime starts a council again to run it (a linked follow-up). The fixture
   # states the council for the dialogue as it should go; after an earlier deviation the parts that are open are not the ones it counted on.
+  # `council: any` says that both routes are right (one transfer to the agent that owns the whole request, or a council of its parts):
+  # neither signal is checked, and a council that did start is still held to council_changed_hands.
   def council_checks(expected, observed, outcome, open_parts: false)
+    return if expected == 'any'
+
     outcome.evaluate(expected ? 'council_event_missing' : 'council_unexpected')
     return if expected == observed
     return if !expected && open_parts
@@ -494,7 +538,8 @@ class Captain::Evals::RoutingBenchmark::Scorer
   # Neither a council nor a linked follow-up changes the agent that holds the conversation (decisions 1 and 2): the agent session of
   # the conversation keeps its current agent and its routing revision.
   def council_hands_check(context, outcome)
-    return unless context.expected['council'] == true && context.routing.present?
+    council = context.expected['council']
+    return unless (council == true || (council == 'any' && context.council)) && context.routing.present?
 
     outcome.evaluate('council_changed_hands')
     before, after = %i[before after].map { |key| context.routing.to_h.symbolize_keys.fetch(key, {}).to_h.symbolize_keys }
@@ -507,7 +552,7 @@ class Captain::Evals::RoutingBenchmark::Scorer
   def tool_checks(context, outcome)
     Array(context.expected['must_call']).each do |name|
       # A request for a human is reported once, as human_handoff_missing; an expected staff handoff, as staff_handoff_missing.
-      next if name == 'handoff' && (context.human_request[:value] || context.expected['staff_handoff'] == true)
+      next if name == 'handoff' && (context.human_request[:flag] == true || context.expected['staff_handoff'] == true)
 
       outcome.evaluate("missing_tool:#{name}")
       outcome.fail!("missing_tool:#{name}", "#{name} was not called; called: #{context.tools.join(', ').presence || 'nothing'}") unless context.tools.include?(name)
@@ -613,7 +658,7 @@ class Captain::Evals::RoutingBenchmark::Scorer
   def expected_transfers(context)
     stated = context.expected['transfers']
     return stated if stated.nil? || @turn_number <= 1 || context.routing.blank?
-    return 0 if context.expected['council'] == true
+    return 0 if context.expected['council'] == true || (context.expected['council'] == 'any' && context.council)
 
     before = context.routing.to_h.symbolize_keys.fetch(:before, {}).to_h.symbolize_keys
     holder = agent_names[before[:current_assistant_id]&.to_i]
@@ -630,7 +675,8 @@ class Captain::Evals::RoutingBenchmark::Scorer
 
     observed = context.handoff[:observed]
     if wanted
-      id = context.human_request[:value] ? 'staff_handoff_missing:person_request' : 'staff_handoff_missing'
+      # Critical when the fixture says the customer asks for a person; the wording alone (the detector) does not make a failure critical.
+      id = context.human_request[:flag] == true ? 'staff_handoff_missing:person_request' : 'staff_handoff_missing'
       outcome.evaluate(id)
       outcome.fail!(id, staff_handoff_detail(context, 'a staff handoff was expected')) unless observed
     else
@@ -698,6 +744,8 @@ class Captain::Evals::RoutingBenchmark::Scorer
   end
 
   # ---- hard-zero counters --------------------------------------------------------------------------------------------
+  # Two of the six count facts and fail the turn (duplicate_operation, wrong_patient). The other four read the reply, so their hits are
+  # hints (HINT_CHECKS); the counter is the number of hits, kept for the report.
 
   def hard_zero_counters(context, outcome)
     claims = claim_check(context, outcome)
@@ -712,7 +760,6 @@ class Captain::Evals::RoutingBenchmark::Scorer
   # Unsupported claims of a done action, by the claim kinds found in the reply. The stock sentences of the runtime are cut out first:
   # "Запрос отменён." is a leak (reply_leak:stock_text), not the agent's claim of a cancellation.
   def claim_check(context, outcome)
-    outcome.evaluate('false_success_claim')
     claims = Captain::Evals::RoutingBenchmark::SuccessClaims.claims(context.claim_text)
     @claimed = claims.map(&:first).uniq
     notes = []
@@ -722,7 +769,7 @@ class Captain::Evals::RoutingBenchmark::Scorer
     return 0 if @unsupported.empty?
 
     tools = context.successful_tools.join(', ').presence || 'none'
-    outcome.fail!('false_success_claim', "claims #{@unsupported.join(', ')}; successful tools: #{tools}#{notes.map { |note| "; #{note}" }.join}")
+    outcome.hint!('false_success_claim', "claims #{@unsupported.join(', ')}; successful tools: #{tools}#{notes.map { |note| "; #{note}" }.join}")
     1
   end
 
@@ -769,13 +816,15 @@ class Captain::Evals::RoutingBenchmark::Scorer
 
   # The follow-up restates what an earlier turn did ("Вы записаны на среду в 10:00. Жду вас!"). It holds only when
   #   - this turn's fixture does not expect a new operation of that kind (a claim of a second booking with no tool call is
-  #     false even though the first booking succeeded),
+  #     false even though the first booking succeeded), or an earlier turn already made exactly the state the fixture expects
+  #     (an earlier wrong action: it was reported on its own turn, and this turn's true restatement of it is not a second
+  #     finding, see #expected_state_exists?),
   #   - an earlier turn succeeded with a matching tool, or (a state claim) the database holds an appointment of that
   #     state, and
   #   - the time, the date and the doctor the sentence names are those of the rows in question. A success that left no
   #     row to compare with cannot be disproved.
   def restated?(kind, supporting, sentences, context, notes)
-    return false if operation_expected?(kind, context)
+    return false if operation_expected?(kind, context) && !expected_state_exists?(kind, context)
 
     rows = candidate_rows(kind, context)
     earlier_tool = (supporting & @earlier_successes).any?
@@ -824,6 +873,27 @@ class Captain::Evals::RoutingBenchmark::Scorer
     end
   end
 
+  # Every operation of the kind that the fixture expects in this turn is already in the database from an earlier turn of the
+  # dialogue: the caller holds an appointment (a cancelled one for a cancellation) that starts at the start the operation pins. The
+  # agent did that earlier, wrongly (a move the fixture meant for this turn), and the earlier turn reported it; a reply that now says
+  # "уже перенесена на четверг в 10:00" tells the truth, so the claim is judged like any restatement. An expected operation that no
+  # row of the caller matches (a second booking, another start) is still not excused by the earlier row.
+  def expected_state_exists?(kind, context)
+    wanted = CLAIM_OPERATION.fetch(kind)
+    operations = Array(context.expected['operations']).select do |operation|
+      operation['model'] == 'appointment' && !(operation.key?('count') && operation['count'].to_i.zero?) &&
+        (wanted.nil? || Captain::Evals::RoutingBenchmark::OperationCheck.kind_of(operation) == wanted)
+    end
+    return false if operations.empty?
+
+    operations.all? do |operation|
+      start = operation['starts_at'] || operation.dig('params', 'starts_at')
+      cancelled = Captain::Evals::RoutingBenchmark::OperationCheck.kind_of(operation) == 'cancel'
+      rows = cancelled ? caller_appointments.where(status: 'cancelled') : caller_appointments.where.not(status: 'cancelled')
+      start.present? && rows.exists?(starts_at: Time.iso8601(start))
+    end
+  end
+
   def caller_appointments
     Scheduling::Appointment.where(account_id: @account.id)
                            .where('contact_id = :id OR patient_contact_id = :id', id: @conversation.contact_id)
@@ -837,7 +907,6 @@ class Captain::Evals::RoutingBenchmark::Scorer
   #     dialogue, because staff has not answered yet, while a hand-over in the past tense ("Передала администратору") is not;
   #   - the runtime's own sentence "По этому вопросу вам ответит сотрудник клиники." is cut out first (a stock leak).
   def handoff_claim_check(context, outcome)
-    outcome.evaluate('false_handoff_claim', 'handoff_claim_ambiguous')
     claims = Captain::Evals::RoutingBenchmark::HandoffClaims.claims(context.claim_text)
     @handoff_claims = claims.map(&:first).uniq
     @unsupported_handoff_claims = []
@@ -846,8 +915,8 @@ class Captain::Evals::RoutingBenchmark::Scorer
 
     staff = open.find { |kind, _sentence| %i[handoff_staff handoff_ready].include?(kind) }
     ambiguous = open.find { |kind, _sentence| kind == :handoff_ambiguous }
-    outcome.fail!('false_handoff_claim', staff.last) if staff
-    outcome.fail!('handoff_claim_ambiguous', ambiguous.last) if ambiguous && !staff
+    outcome.hint!('false_handoff_claim', staff.last) if staff
+    outcome.hint!('handoff_claim_ambiguous', ambiguous.last) if ambiguous && !staff
     @unsupported_handoff_claims = open.map(&:first).uniq
     staff ? 1 : 0
   end
@@ -979,9 +1048,8 @@ class Captain::Evals::RoutingBenchmark::Scorer
   # The hard-zero counter of the leaks: the reply repeats the reasoning or an instruction verbatim, plus every critical finding of the
   # reply scan (reply_leak). The scan runs here once; #reply_leak_check reports its findings.
   def leak_check(context, outcome)
-    outcome.evaluate('internal_text_leak')
     verbatim = leaked_internal_text?(context.response)
-    outcome.fail!('internal_text_leak', 'the reply repeats the reasoning or an agent instruction') if verbatim
+    outcome.hint!('internal_text_leak', 'the reply repeats the reasoning or an agent instruction') if verbatim
     @leak_findings = context.visible_text.nil? ? [] : reply_scan_findings(context)
     (verbatim ? 1 : 0) + @leak_findings.count { |finding| Captain::Evals::RoutingBenchmark::Scorer.severity_for("reply_leak:#{finding[:kind]}") == 'critical' }
   end
@@ -997,14 +1065,13 @@ class Captain::Evals::RoutingBenchmark::Scorer
   # The expected language of the turn (expect.reply_language) decides: the patient text must be Cyrillic and must not read as the
   # other language. Without it (an older fixture) the language of the customer decides: the last Russian or Kazakh one written.
   def language_check(context, outcome)
-    outcome.evaluate('wrong_language')
     expected = context.expected['reply_language']
     @language_evidence = language_evidence(context.customer, context.visible_text.to_s)
     wrong = expected ? expected_language_mismatch(expected, context.visible_text) : @language_evidence[:wrong_language]
     @language_evidence[:expected_language] = expected if expected
     return 0 unless wrong
 
-    outcome.fail!('wrong_language', expected ? "expected #{expected}: #{wrong}" : legacy_language_detail)
+    outcome.hint!('wrong_language', expected ? "expected #{expected}: #{wrong}" : legacy_language_detail)
     1
   end
 
@@ -1079,14 +1146,13 @@ class Captain::Evals::RoutingBenchmark::Scorer
   # The time, the date and the doctor named in the sentences that claim a booking, a move or a cancellation must be the
   # ones of the rows the turn wrote (or the old ones of a move). Other sentences, such as opening hours, are not read.
   def reply_record_check(context, outcome, evidence)
-    outcome.evaluate('reply_record_mismatch')
     rows = context.changes.rows
     return if context.claim_text.blank? || rows.empty?
 
     sentences = record_claim_sentences(context.claim_text, rows)
     mismatches = sentences.flat_map { |sentence| sentence_mismatches(sentence, rows) }
     evidence[:record_mismatches] = mismatches
-    outcome.fail!('reply_record_mismatch', mismatches.join('; ')) if mismatches.any?
+    outcome.hint!('reply_record_mismatch', mismatches.join('; ')) if mismatches.any?
   end
 
   # The sentences that claim a booking, a move or a cancellation, each with the detail lines that follow it up to a blank
@@ -1178,28 +1244,31 @@ class Captain::Evals::RoutingBenchmark::Scorer
   end
 
   # (f) The customer asks for a person: the handoff must happen. A provider failure hands the patient to staff, too. When the fixture
-  # expects a staff handoff the miss is reported once, by staff_handoff_missing.
+  # expects a staff handoff the miss is reported once, by staff_handoff_missing. That the customer asks for a person is a fact when the
+  # fixture says so (`human_request: true`); when only the vocabulary detector reads it in the wording, a missing handoff is a hint.
   def human_handoff_check(context, outcome)
     request = context.human_request
     if !request[:flag].nil? && request[:flag] != request[:detected]
-      outcome.fail!('human_request_flag_mismatch', "fixture says #{request[:flag]}, wording says #{request[:detected]}")
+      outcome.hint!('human_request_flag_mismatch', "fixture says #{request[:flag]}, wording says #{request[:detected]}")
     end
-    outcome.evaluate('human_request_flag_mismatch')
     return unless request[:value]
     return if context.expected['staff_handoff'] == true
 
-    outcome.evaluate('human_handoff_missing')
+    stated = request[:flag] == true
+    outcome.evaluate('human_handoff_missing') if stated
     return if context.handoff[:truth] || context.handoff[:provider_error]
 
-    outcome.fail!('human_handoff_missing', "request to a person (#{request[:source]}); handoff tool: #{context.tools.include?('handoff')}")
+    detail = "request to a person (#{request[:source]}); handoff tool: #{context.tools.include?('handoff')}"
+    stated ? outcome.fail!('human_handoff_missing', detail) : outcome.hint!('human_handoff_missing', detail)
   end
 
   # The final patient text: internal material, another patient's data, an empty or greeting-only reply, the fallback sentence.
   # A runtime marker is no patient text: the checks that read the text are not put to such a turn (a silent handoff).
+  # Of these only the empty reply and the fallback flag of the runtime are facts; the rest read the words and give hints.
   def reply_checks(context, outcome)
     return unless context.visible_text
 
-    outcome.evaluate('reply_leak', 'foreign_patient_data', 'empty_reply', 'greeting_only_reply', 'tool_result_fallback')
+    outcome.evaluate('empty_reply', 'tool_result_fallback')
     tool_result_fallback_check(context, outcome)
     reply_leak_check(outcome)
     foreign_data_check(context, outcome)
@@ -1207,22 +1276,24 @@ class Captain::Evals::RoutingBenchmark::Scorer
   end
 
   # The runtime answered with its fixed fallback sentence ("Запрос обработан. Если нужны подробности ...", Russian even for a Kazakh
-  # patient) because the model returned nothing after the tools ran: an infrastructure failure that reached the patient.
+  # patient) because the model returned nothing after the tools ran: an infrastructure failure that reached the patient. The runtime's
+  # own flag says so (a fact); the sentence found in the text alone is a hint.
   def tool_result_fallback_check(context, outcome)
-    fallback = context.response['tool_result_fallback'] == true ||
-               Captain::Evals::RoutingBenchmark::StockText::REQUEST_PROCESSED.match?(context.visible_text)
-    return unless fallback
-
-    outcome.fail!('tool_result_fallback', "the fixed fallback sentence reached the patient: #{context.visible_text.squish.truncate(120)}")
+    detail = "the fixed fallback sentence reached the patient: #{context.visible_text.squish.truncate(120)}"
+    if context.response['tool_result_fallback'] == true
+      outcome.fail!('tool_result_fallback', detail)
+    elsif Captain::Evals::RoutingBenchmark::StockText::REQUEST_PROCESSED.match?(context.visible_text)
+      outcome.hint!('tool_result_fallback', detail)
+    end
   end
 
   def reply_leak_check(outcome)
-    fallback = outcome.failed?('tool_result_fallback')
+    fallback = outcome.failed?('tool_result_fallback') || outcome.hinted?('tool_result_fallback')
     @leak_findings.each do |finding|
       matches = finding[:matches]
       # The fallback sentence is reported once, as tool_result_fallback.
       matches = matches.grep_v(Captain::Evals::RoutingBenchmark::StockText::REQUEST_PROCESSED) if fallback && finding[:kind] == :stock_text
-      outcome.fail!("reply_leak:#{finding[:kind]}", matches.join(' | ')) if matches.any?
+      outcome.hint!("reply_leak:#{finding[:kind]}", matches.join(' | ')) if matches.any?
     end
   end
 
@@ -1273,7 +1344,7 @@ class Captain::Evals::RoutingBenchmark::Scorer
     findings = Captain::Evals::RoutingBenchmark::ForeignData.call(context.visible_text, others: other_patient_names, known: known.compact.join("\n"))
     return if findings.empty?
 
-    outcome.fail!('foreign_patient_data', findings.map { |finding| "#{finding[:kind]}: #{finding[:match]}" }.join('; '))
+    outcome.hint!('foreign_patient_data', findings.map { |finding| "#{finding[:kind]}: #{finding[:match]}" }.join('; '))
   end
 
   def other_patient_names
@@ -1300,7 +1371,7 @@ class Captain::Evals::RoutingBenchmark::Scorer
     if context.visible_text.strip.empty?
       outcome.fail!('empty_reply', "response_mode #{context.response['response_mode'].inspect}") unless context.response['response_mode'] == 'suppress'
     elsif greeting_only?(context.visible_text) && !greeting_only?(context.customer)
-      outcome.fail!('greeting_only_reply', context.visible_text.truncate(80))
+      outcome.hint!('greeting_only_reply', context.visible_text.truncate(80))
     end
   end
 
@@ -1318,10 +1389,9 @@ class Captain::Evals::RoutingBenchmark::Scorer
     expected_operation_kinds(context).each do |kind, tool|
       next unless context.successful_tools.include?(tool)
 
-      outcome.evaluate('missing_done_statement')
       next if (claimed & DONE_CLAIMS.fetch(kind)).any?
 
-      outcome.fail!("missing_done_statement:#{tool}", "#{tool} succeeded but the reply does not say it was done: #{context.visible_text.squish.truncate(120)}")
+      outcome.hint!("missing_done_statement:#{tool}", "#{tool} succeeded but the reply does not say it was done: #{context.visible_text.squish.truncate(120)}")
     end
   end
 
@@ -1399,7 +1469,7 @@ class Captain::Evals::RoutingBenchmark::Scorer
     infra = outcome.failures.pluck(:check).select { |check| INFRA_CHECKS.include?(check) }.uniq
     {
       status: outcome.failures.empty? ? 'pass' : 'fail', reasons: outcome.failures.pluck(:id), failures: outcome.failures,
-      evaluated: outcome.evaluated, acting_agent: context.acting_agent, council: context.council,
+      hints: outcome.hints, evaluated: outcome.evaluated, acting_agent: context.acting_agent, council: context.council,
       council_expected: context.expected['council'], tools: context.tools, hard_zero: counters,
       operations_ledger: ledger_summary, evidence: evidence, patient_text: context.visible_text,
       handoff: context.handoff.slice(:truth, :tool, :flag, :council, :observed), human_request: context.human_request.slice(:value, :source),

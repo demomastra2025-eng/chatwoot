@@ -7,7 +7,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Gate do
   let(:triage) { Captain::Evals::RoutingBenchmark::Triage }
 
   # A scored turn as the runner stores it (string keys, as after a JSON round trip).
-  def turn(dialogue: 'd1', number: 1, fails: [], evaluated: %w[false_success_claim wrong_agent], run: 1)
+  def turn(dialogue: 'd1', number: 1, fails: [], evaluated: %w[duplicate_operation wrong_agent], run: 1)
     failures = fails.map do |id|
       { 'id' => id, 'check' => scorer.base_check(id), 'severity' => scorer.severity_for(id), 'gate' => scorer.gate_item_for(id),
         'detail' => "detail of #{id}" }
@@ -120,7 +120,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Gate do
     end
 
     it 'counts a critical failure in the run of a repeat as well' do
-      cases = passing(10) + [turn(dialogue: 'flaky', fails: ['false_success_claim'], run: 2)]
+      cases = passing(10) + [turn(dialogue: 'flaky', fails: ['duplicate_operation'], run: 2)]
 
       expect(described_class.call(cases)[:critical][:failures].first).to include(run: 2)
     end
@@ -146,13 +146,13 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Gate do
     end
 
     it 'summarises the severities and the checks' do
-      cases = passing(2) + [turn(dialogue: 'x', fails: %w[false_success_claim wrong_agent council_unexpected])]
+      cases = passing(2) + [turn(dialogue: 'x', fails: %w[duplicate_operation wrong_agent council_unexpected])]
 
       gate = described_class.call(cases)
 
       expect(gate[:by_severity]).to include('critical' => { evaluated: 3, failed: 1 }, 'important' => hash_including(failed: 1),
                                             'minor' => hash_including(failed: 1))
-      expect(gate[:checks].keys.first).to eq('false_success_claim')
+      expect(gate[:checks].keys.first).to eq('duplicate_operation')
       expect(gate[:checks]['wrong_agent']).to include(severity: 'important', gate: 'overall', evaluated: 3, failed: 1)
     end
 
@@ -171,24 +171,24 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Gate do
     end
 
     it 'counts one critical check once on a turn: the plain check and its failed form are not both counted' do
-      leaky = turn(dialogue: 'leaky', fails: %w[reply_leak:identifier reply_leak:latin], evaluated: %w[reply_leak wrong_agent])
-      cases = passing(2) + [leaky]
+      wrong = turn(dialogue: 'wrong', fails: %w[operation_mismatch:starts_at operation_mismatch:resource], evaluated: %w[operation_mismatch wrong_agent])
+      cases = passing(2) + [wrong]
 
-      gate = described_class.call(cases, labels: signed_off([leaky]))
+      gate = described_class.call(cases, labels: signed_off([wrong]))
 
-      # false_success_claim on the two clean turns; on the leaky one only reply_leak, in its two failed forms
+      # duplicate_operation on the two clean turns; on the wrong one only operation_mismatch, in its two failed forms
       expect(gate[:critical]).to include(total: 2 + 2, failed: 2, passed: 2)
       expect(gate[:by_severity]['critical']).to eq(evaluated: 4, failed: 2)
-      expect(gate[:checks]['reply_leak']).to include(evaluated: 1, failed: 1)
+      expect(gate[:checks]['operation_mismatch']).to include(evaluated: 1, failed: 1)
     end
 
     it 'reads an older report that has only reasons' do
       old = { 'fixture' => 'a.yml', 'dialogue' => 'old', 'turn' => 1, 'status' => 'fail',
-              'reasons' => %w[false_success_claim missing_operation:appointment] }
+              'reasons' => %w[duplicate_operation missing_operation:appointment] }
 
       gate = described_class.call([old, old.merge('dialogue' => 'old2', 'reasons' => [], 'status' => 'pass')])
 
-      expect(gate[:critical]).to include(failed: 1, total: 8)
+      expect(gate[:critical]).to include(failed: 1, total: 4)
       expect(gate[:checks]['missing_operation']).to include(severity: 'important', failed: 1)
     end
   end
@@ -233,17 +233,37 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Gate do
   end
 
   # The rubric judge is not a check of the agent: a report of an older run holds a judge without a verdict as a failure of the turn, and it
-  # is no failure of the agent.
+  # is no failure of the agent. It leaves the turn not evaluated (decision 3A), as a report of today does.
   describe 'a judge without a verdict' do
-    it 'fails no turn, and needs no triage' do
-      cases = passing(10).map { |item| item.merge('failures' => [{ 'id' => 'judge_unavailable', 'check' => 'judge_unavailable', 'severity' => 'minor', 'gate' => 'none' }],
-                                                  'reasons' => ['judge_unavailable'], 'status' => 'fail') }
+    let(:cases) do
+      passing(10).map do |item|
+        item.merge('failures' => [{ 'id' => 'judge_unavailable', 'check' => 'judge_unavailable', 'severity' => 'minor', 'gate' => 'none' }],
+                   'reasons' => ['judge_unavailable'], 'status' => 'fail')
+      end
+    end
 
+    it 'fails no turn, needs no triage, and leaves every turn not evaluated: the verdict is INCOMPLETE_EVALUATION' do
       gate = described_class.call(cases)
 
-      expect(gate[:overall]).to include(passed: 10, total: 10)
+      expect(gate[:overall]).to include(passed: 0, total: 0, not_evaluated: 10)
       expect(gate[:triage]).to include(failed_checks: 0, untriaged: 0)
-      expect(gate[:verdict]).to eq('PASS')
+      expect(gate[:not_evaluated]).to eq(turns: 10, by_check: { 'judge' => 10 })
+      expect(gate[:verdict]).to eq('INCOMPLETE_EVALUATION')
+    end
+
+    it 'is read the same way when the report holds it as the warning or as the judge of the turn' do
+      warned = passing(10).map { |item| item.merge('warnings' => ['judge_invalid_json']) }
+      judged = passing(10).map { |item| item.merge('judge' => { 'unusable' => 'judge_unavailable', 'detail' => 'RubyLLM::Error' }) }
+
+      expect(described_class.call(warned)[:not_evaluated]).to eq(turns: 10, by_check: { 'judge' => 10 })
+      expect(described_class.call(judged)).to include(verdict: 'INCOMPLETE_EVALUATION')
+    end
+
+    it 'does not hide a failure of a fact check on the same turn' do
+      failing = cases.first.merge('reasons' => %w[judge_unavailable wrong_agent],
+                                  'failures' => cases.first['failures'] + [{ 'id' => 'wrong_agent', 'check' => 'wrong_agent', 'severity' => 'important', 'gate' => 'overall' }])
+
+      expect(described_class.call([failing] + cases.drop(1))[:overall]).to include(failed_turns: 1, not_evaluated: 9)
     end
   end
 
@@ -323,6 +343,17 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Gate do
       expect(gate).to include(verdict: 'FAIL', blockers: ['item f not covered: no turn asks for a person'])
     end
 
+    it 'counts only the turns that the fixture states as a request for a person: the wording detector alone puts nothing of item f to the test' do
+      detector = turn(dialogue: 'detector').merge('human_request' => { 'value' => true, 'source' => 'detector' })
+      denied = turn(dialogue: 'denied').merge('human_request' => { 'value' => false, 'source' => 'fixture' })
+      cases = passing(10).reject { |item| item['human_request'] } + [detector, denied]
+
+      gate = described_class.call(cases)
+
+      expect(gate[:coverage]['f']).to eq(covered: 0)
+      expect(gate[:blockers]).to include('item f not covered: no turn asks for a person')
+    end
+
     it 'blocks a run of the first harness version, which carries no expectations: it can prove nothing' do
       old = { 'fixture' => 'a.yml', 'dialogue' => 'old', 'turn' => 1, 'status' => 'pass', 'reasons' => [] }
 
@@ -350,19 +381,12 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Gate do
       expect(important.map { |id| scorer.severity_for(id) }.uniq).to eq(['important'])
     end
 
-    it 'fails a run on one wrong start time or one false handoff claim, and on a stock sentence in a patient reply' do
-      %w[operation_mismatch:starts_at false_handoff_claim reply_leak:stock_text succeeded_forbidden:update_appointment].each do |check|
+    it 'fails a run on one wrong start time, one forbidden success or one missing handoff of a request the fixture states' do
+      %w[operation_mismatch:starts_at succeeded_forbidden:update_appointment staff_handoff_missing:person_request human_handoff_missing].each do |check|
         gate = described_class.call(passing(40) + [turn(dialogue: 'risky', fails: [check])])
 
         expect(gate).to include(verdict: 'FAIL', blockers: include('1 critical failure(s)')), check
       end
-    end
-
-    it 'reads the old name of the renamed handoff check in an older output' do
-      old = turn(dialogue: 'old', fails: ['handoff_claim_unsupported'])
-      old['failures'].each { |failure| failure.delete('severity') }
-
-      expect(described_class.call(passing(10) + [old])[:critical]).to include(failed: 1)
     end
   end
 
@@ -431,12 +455,12 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Gate do
 
   describe 'human triage' do
     let(:cases) do
-      passing(18) + [turn(dialogue: 'a_bug', fails: ['false_success_claim']),
+      passing(18) + [turn(dialogue: 'a_bug', fails: ['duplicate_operation']),
                      turn(dialogue: 'a_fixture', fails: ['forbidden_tool:create_appointment'])]
     end
     let(:labels) do
       { triage.key('ws_a.yml', 'a_fixture', 1, 'forbidden_tool:create_appointment') => 'test_bug',
-        triage.key('ws_a.yml', 'a_bug', 1, 'false_success_claim') => 'agent_bug' }
+        triage.key('ws_a.yml', 'a_bug', 1, 'duplicate_operation') => 'agent_bug' }
     end
 
     it 'keeps the raw verdict and reports the verdict after the failures signed as test bugs or judge errors are removed' do
@@ -464,6 +488,169 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Gate do
 
       expect(gate[:after_triage]).to be_nil
       expect(gate[:triage]).to include(failed_checks: 2, triaged: 0, untriaged: 2)
+    end
+  end
+
+  # Decision 2A: a check that reads text is a hint, never a failure of a turn or of the gate.
+  describe 'the hits of the checks that read text' do
+    let(:hits) { %w[false_success_claim false_handoff_claim reply_leak:latin reply_leak:stock_text wrong_language foreign_patient_data] }
+
+    it 'fail no turn and no gate: an older output that holds them as failures is read as hints' do
+      old = turn(dialogue: 'leaky', fails: hits, evaluated: %w[duplicate_operation wrong_agent] + hits)
+
+      gate = described_class.call(passing(10) + [old])
+
+      expect(gate).to include(verdict: 'PASS', blockers: [])
+      expect(gate[:critical]).to include(failed: 0, total: 11, pct: 100.0)
+      expect(gate[:overall]).to include(passed: 11, total: 11, failed_turns: 0)
+      expect(gate[:triage]).to include(failed_checks: 0, untriaged: 0)
+      expect(gate[:checks].keys).to contain_exactly('duplicate_operation', 'wrong_agent')
+      expect(gate[:hints]).to include(total: 6, critical: 5)
+      expect(gate[:hints][:by_check].keys).to eq(%w[false_handoff_claim false_success_claim foreign_patient_data reply_leak wrong_language].sort_by do |name|
+        [triage.severity_rank(scorer.severity_for(name)), name]
+      end)
+    end
+
+    it 'are counted per run, the critical ones apart, from the hints a turn of today stores' do
+      critical = { 'id' => 'false_success_claim', 'check' => 'false_success_claim', 'severity' => 'critical', 'gate' => 'b', 'detail' => 'claims book' }
+      important = { 'id' => 'wrong_language', 'check' => 'wrong_language', 'severity' => 'important', 'gate' => 'overall' }
+      cases = [turn(dialogue: 'a', run: 1).merge('hints' => [critical, important]), turn(dialogue: 'a', run: 2).merge('hints' => [important]),
+               turn(dialogue: 'b', run: 1), booking_turn.merge('run' => 1), person_turn.merge('run' => 1)]
+
+      gate = described_class.call(cases)
+
+      expect(gate[:runs][1]).to include(hints: 2, critical_hints: 1, critical_failures: 0)
+      expect(gate[:runs][2]).to include(hints: 1, critical_hints: 0)
+      expect(gate[:hints]).to include(total: 3, critical: 1)
+      expect(gate[:verdict]).to eq('PASS')
+    end
+
+    it 'are not checks put to a turn: an older output that lists them as evaluated does not count them as passed critical checks' do
+      old = turn(dialogue: 'old', evaluated: %w[false_success_claim internal_text_leak reply_leak])
+
+      expect(described_class.call([old])[:critical]).to include(total: 0, failed: 0)
+    end
+  end
+
+  # Decision 3A: a turn whose required judge check has no verdict is not evaluated: not a pass, not a failure.
+  describe 'turns that are not evaluated' do
+    def left(index, **options) = turn(dialogue: "left_#{index}", **options).merge('status' => 'not_evaluated', 'not_evaluated' => ['judge'])
+
+    it 'make the verdict INCOMPLETE_EVALUATION, however clean the rest is, and stay out of the percentage' do
+      gate = described_class.call(passing(20) + [left(1), left(2)])
+
+      expect(gate[:verdict]).to eq('INCOMPLETE_EVALUATION')
+      expect(gate[:blockers]).to eq(['2 turn(s) not evaluated: a required check has no verdict (the rubric judge gave none)'])
+      expect(gate[:overall]).to include(passed: 20, total: 20, pct: 100.0, not_evaluated: 2)
+      expect(gate[:not_evaluated]).to eq(turns: 2, by_check: { 'judge' => 2 })
+      expect(gate[:runs][1]).to include(turns: 22, passed: 20, failed: 0, not_evaluated: 2, pct: 100.0)
+    end
+
+    it 'do not hide a failure: a critical failure makes the verdict FAIL, with the turns left unevaluated listed next to it' do
+      risky = turn(dialogue: 'risky', fails: ['operation_mismatch:starts_at'])
+
+      gate = described_class.call(passing(20) + [left(1), risky])
+
+      expect(gate[:verdict]).to eq('FAIL')
+      expect(gate[:blockers]).to include('1 critical failure(s)', a_string_starting_with('1 turn(s) not evaluated'))
+    end
+
+    it 'are not the turns that failed a fact check: such a turn is failed, whatever the judge said about it' do
+      failed = left(1, fails: ['wrong_agent']).merge('status' => 'fail')
+
+      gate = described_class.call(passing(20) + [failed])
+
+      expect(gate[:overall]).to include(passed: 20, total: 21, failed_turns: 1, not_evaluated: 0)
+      expect(gate[:not_evaluated]).to eq(turns: 0, by_check: {})
+      expect(gate[:verdict]).to eq('PENDING_TRIAGE')
+    end
+
+    it 'are no pass of the percentage, and never a failure of it: a run with nothing evaluated is incomplete, not failed' do
+      gate = described_class.call([left(1), left(2)].map { |item| item.merge('human_request' => { 'value' => true }) })
+
+      expect(gate[:overall]).to include(passed: 0, total: 0, not_evaluated: 2)
+      expect(gate[:blockers]).not_to include(a_string_starting_with('overall'))
+      expect(gate[:verdict]).to eq('FAIL') # items a and f are not covered by these two turns
+      expect(gate[:blockers]).to include('2 turn(s) not evaluated: a required check has no verdict (the rubric judge gave none)')
+    end
+
+    it 'come before the triage: INCOMPLETE_EVALUATION, not PENDING_TRIAGE, while a verdict is missing' do
+      gate = described_class.call(passing(96) + bad_turns(4) + [left(1)])
+
+      expect(gate).to include(verdict: 'INCOMPLETE_EVALUATION')
+      expect(gate[:blockers]).to eq(['1 turn(s) not evaluated: a required check has no verdict (the rubric judge gave none)',
+                                     '4 failed check(s) not triaged by a person'])
+    end
+
+    it 'are read from the status of the case as well as from the list' do
+      by_status = turn(dialogue: 'by_status').merge('status' => 'not_evaluated')
+
+      expect(described_class.call(passing(10) + [by_status])[:not_evaluated]).to eq(turns: 1, by_check: { 'judge' => 1 })
+    end
+
+    it 'leave the verdict as it was for a report that records no judge, and block a run that played without the judge' do
+      expect(described_class.call(passing(10))[:verdict]).to eq('PASS')
+      expect(described_class.call(passing(10), judge: true)[:verdict]).to eq('PASS')
+
+      off = described_class.call(passing(10), judge: false)
+
+      expect(off).to include(verdict: 'INCOMPLETE_EVALUATION', judge: false)
+      expect(off[:blockers]).to eq(['the rubric judge was off: the text of the replies was not evaluated'])
+    end
+
+    it 'are asked for again by the rejudge: a turn that got its verdict is evaluated and the verdict is PASS' do
+      judged = left(1).except('not_evaluated').merge('status' => 'pass')
+
+      expect(described_class.call(passing(20) + [judged], judge: true)).to include(verdict: 'PASS', blockers: [])
+    end
+  end
+
+  # Decision 3A: with RUNS=3 a dialogue passes only when all three runs pass (pass^3).
+  describe 'repeated runs' do
+    def runs_of(dialogues, count, fails_in: {})
+      dialogues.flat_map do |name|
+        Array.new(count) { |index| turn(dialogue: name, number: 1, run: index + 1, fails: fails_in.fetch([name, index + 1], [])) }
+      end
+    end
+
+    let(:names) { Array.new(20) { |index| "dialogue_#{index}" } }
+
+    it 'counts a turn that failed in one of the three runs as failed (pass^3), and reports the score of each run' do
+      cases = runs_of(names, 3, fails_in: { ['dialogue_0', 2] => ['wrong_agent'], ['dialogue_1', 3] => ['wrong_agent'] })
+
+      gate = described_class.call(cases)
+
+      expect(gate[:overall]).to include(passed: 18, total: 20, pct: 90.0, failed_turns: 2, runs: 3)
+      expect(gate[:blockers]).to include('overall 90.0% is below 95.0% (pass^3: a turn passes only when it passes in every run)')
+      expect(gate[:runs].transform_values { |row| row.slice(:turns, :passed, :failed, :pct) }).to eq(
+        1 => { turns: 20, passed: 20, failed: 0, pct: 100.0 }, 2 => { turns: 20, passed: 19, failed: 1, pct: 95.0 },
+        3 => { turns: 20, passed: 19, failed: 1, pct: 95.0 }
+      )
+      expect(gate[:dialogues]).to include(runs: 3, total: 20, passed_every_run: 18, failed: 2, not_evaluated: 0, pass_k_pct: 90.0)
+    end
+
+    it 'passes a run in which every dialogue passed in every run, and counts the critical failures of all the runs' do
+      clean = runs_of(names, 3) + [booking_turn.merge('run' => 1), person_turn.merge('run' => 1)]
+
+      expect(described_class.call(clean)).to include(verdict: 'PASS')
+
+      risky = runs_of(names, 3, fails_in: { ['dialogue_4', 3] => ['operation_mismatch:starts_at'] }) + clean.last(2)
+      gate = described_class.call(risky)
+
+      expect(gate[:critical]).to include(failed: 1)
+      expect(gate[:runs][3]).to include(critical_failures: 1)
+      expect(gate[:runs][1]).to include(critical_failures: 0)
+      expect(gate[:verdict]).to eq('FAIL')
+    end
+
+    it 'calls a turn that failed in none of the runs but was left without a verdict in one not evaluated' do
+      cases = runs_of(names, 3)
+      cases[1] = cases[1].merge('status' => 'not_evaluated', 'not_evaluated' => ['judge'])
+
+      gate = described_class.call(cases)
+
+      expect(gate[:overall]).to include(passed: 19, total: 19, not_evaluated: 1)
+      expect(gate[:dialogues]).to include(passed_every_run: 19, not_evaluated: 1, failed: 0)
     end
   end
 end

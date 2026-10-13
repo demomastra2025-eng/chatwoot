@@ -27,8 +27,31 @@ class Captain::Evals::RoutingBenchmark::Runner
   REPLY_LIMIT = 4000
   FACTS_LIMIT = 4000
   REASONS_LIMIT = 300
-  JUDGE_FEATURE = :editor
+  # The judge runs on standard processing, like the council editor (feature captain_agent, no tools). The `editor` feature is bound to
+  # the Flex service tier, which the provider switches off under load ("Flex processing is temporarily unavailable"): on DEV that
+  # answered about 40% of the judge calls with an error and every one of them became judge_unavailable.
+  JUDGE_FEATURE = :captain_agent
+  # Reasoning effort of the judge: without any, the judge misread replies that do ask for the day (short_fragments_12).
+  JUDGE_THINKING_EFFORT = 'low'
+  # The output limit of a judge call. The reasoning of the model counts against it, so a limit that only fits the short JSON verdict
+  # would cut the answer off after the reasoning (finish_reason `length`, no content); the verdict itself is a few dozen tokens.
+  JUDGE_MAX_TOKENS = 4000
+  # A judge call that failed is asked again at most twice, after a short pause that grows with every attempt.
+  JUDGE_RETRIES = 2
+  JUDGE_PAUSE_SECONDS = 2
+  # The required check of a turn that the judge could not give a verdict for (see #judge_unusable).
+  NOT_EVALUATED_JUDGE = 'judge'
   STAFF_OWNED_WARNING = 'ai_answered_while_staff_owned'
+
+  # An answer of the judge that is no verdict. It carries the finish_reason of the call: `length` says the output limit cut it off.
+  class UnusableVerdict < JSON::ParserError
+    attr_reader :finish_reason
+
+    def initialize(message, finish_reason = nil)
+      super(message)
+      @finish_reason = finish_reason
+    end
+  end
 
   # triage: path of an earlier report (or label file) whose triage records a person filled in; see Triage.load.
   # progress: an IO that gets one line after every dialogue (see #report_progress), flushed at once; nil prints nothing.
@@ -78,10 +101,11 @@ class Captain::Evals::RoutingBenchmark::Runner
   # The judge of a turn stored in an earlier report (see Rejudge): the prompt and the call of a live run, with the facts of the fixture
   # of the case. Returns the scored turn with the new verdict and what the call cost, or nil when the turn is not judged (no rubric,
   # nothing to read).
-  def judge_stored(account, fixture, dialogue, turn, response, scored, history, tool_calls)
+  def judge_stored(account, fixture, dialogue, turn, response, scored, history, tool_calls, earlier_handoffs: 0)
     return unless judge_turn?(dialogue, turn, scored)
 
     @workspace_data = fixture.workspace
+    @earlier_handoffs = earlier_handoffs
     @usage_gaps ||= 0
     last_event_id = LlmEvent.where(account_id: account.id).maximum(:id).to_i
     judged = judge_turn(account, dialogue, turn, response, scored, history, tool_calls)
@@ -120,16 +144,18 @@ class Captain::Evals::RoutingBenchmark::Runner
   end
 
   # One line per dialogue, so a long run can be followed while it goes (it is flushed at once, whatever the buffering of the output):
-  # "[3/395] council_two_part_04 turns passed 2/3, critical 1, reasons: missing_operation:appointment, wrong_agent". A dialogue that the
-  # budget or an error cut short reports the turns it played.
+  # "[3/395] council_two_part_04 turns passed 2/3, not evaluated 0, critical 1, hints 2 (critical 1), reasons: missing_operation:appointment,
+  # wrong_agent". A dialogue that the budget or an error cut short reports the turns it played.
   def report_progress(dialogue, cases)
     @dialogues_done += 1
     return unless @progress
 
     reasons = cases.flat_map { |item| item[:reasons].to_a }.uniq.join(', ').truncate(REASONS_LIMIT)
     critical = cases.sum { |item| item[:failures].to_a.count { |failure| failure[:severity] == 'critical' } }
+    hints = cases.flat_map { |item| item[:hints].to_a }
     @progress.puts("[#{@dialogues_done}/#{@dialogues_total}] #{dialogue.fetch('id')} turns passed #{cases.count { |item| item[:status] == 'pass' }}/" \
-                   "#{cases.size}, critical #{critical}, reasons: #{reasons.presence || 'none'}")
+                   "#{cases.size}, not evaluated #{cases.count { |item| item[:status] == 'not_evaluated' }}, critical #{critical}, " \
+                   "hints #{hints.size} (critical #{hints.count { |hint| hint[:severity] == 'critical' }}), reasons: #{reasons.presence || 'none'}")
     @progress.flush
   end
 
@@ -142,6 +168,7 @@ class Captain::Evals::RoutingBenchmark::Runner
       internal_texts: workspace.agents.values.flat_map { |agent| [agent.description, agent.routing_description] }.compact
     )
     clock = Time.current
+    @earlier_handoffs = 0
     dialogue.fetch('turns').each_with_index do |turn, index|
       raise BudgetExceeded, 'budget_reached' if @spent >= @budget_usd
 
@@ -151,6 +178,7 @@ class Captain::Evals::RoutingBenchmark::Runner
         apply_staff_intervention(conversation, turn['staff']) if turn['staff']
         scored = run_turn(workspace, dialogue, turn, conversation, history, scorer)
         @cases << scored.merge(fixture: path, dialogue: dialogue.fetch('id'), run: run_index, turn: index + 1)
+        @earlier_handoffs += 1 if scored.dig(:handoff, :observed)
         raise BudgetExceeded, 'budget_reached' if @spent >= @budget_usd
       end
     end
@@ -340,41 +368,101 @@ class Captain::Evals::RoutingBenchmark::Runner
     @judge && (turn['rubric'].present? || dialogue['rubric'].present?) && scored[:patient_text].present?
   end
 
+  # The judge is the arbiter of the text of the reply (the checks that read text only give it hints, see Scorer). A turn that is judged
+  # and gets no verdict is NOT_EVALUATED: not a pass, not a failure (see #judge_unusable).
   def judge_turn(account, dialogue, turn, response, scored, history, tool_calls)
     prompt = judge_prompt(dialogue, turn, response, scored, history, tool_calls)
-    judgment = Llm::EventBus.with_context(source: 'benchmark', feature: 'routing_benchmark', account_id: account.id) do
-      chat = judge_chat(account)
-      Llm::Runtime.ask(chat, prompt, model: @model, account: account,
-                                     observability: { feature: 'routing_benchmark', source: 'benchmark', account_id: account.id })
-    end
-    result = JSON.parse(json_text(judgment.content))
-    raise JSON::ParserError, 'Judge response is not a verdict' unless result.is_a?(Hash) && [true, false].include?(result['pass'])
-
-    scored = scored.merge(judge: { pass: result['pass'], reason: result['reason'].to_s.truncate(300) })
+    result, finish_reason, attempts = ask_judge(account, prompt)
+    verdict = { pass: result['pass'], reason: result['reason'].to_s.truncate(300), finish_reason: finish_reason,
+                attempts: (attempts if attempts > 1) }.compact
+    scored = scored.merge(judge: verdict)
     result['pass'] == true ? scored : Captain::Evals::RoutingBenchmark::Scorer.with_failure(scored, 'judge_failed', result['reason'].to_s.truncate(300))
-  rescue JSON::ParserError
-    judge_unusable(scored, 'judge_invalid_json')
+  rescue UnusableVerdict => e
+    detail = [("finish_reason #{e.finish_reason}" if e.finish_reason), e.message].compact.join(': ')
+    judge_unusable(scored, 'judge_invalid_json', detail, finish_reason: e.finish_reason)
+  rescue JSON::ParserError => e
+    judge_unusable(scored, 'judge_invalid_json', e.message.to_s.squish.truncate(160))
   rescue StandardError => e
-    judge_unusable(scored, 'judge_unavailable', e.class.name)
+    judge_unusable(scored, 'judge_unavailable', error_detail(e))
   end
 
-  # A judge that could not be called or whose answer could not be read says nothing about the reply: the turn keeps the result of the
-  # deterministic checks. The turn carries the cause as a warning and in `judge`, and the summary counts these turns apart. The rake task
-  # captain:routing_benchmark_rejudge asks again for the turns that carry it.
-  def judge_unusable(scored, reason, detail = nil)
-    scored.merge(judge: { unusable: reason, detail: detail }.compact, warnings: Array(scored[:warnings]) + [reason])
+  # [the verdict of the judge ({'pass' => true|false, 'reason' => ...}), the finish_reason of the call, the number of calls]. A call that
+  # fails (the provider, a limit, an answer that is no verdict) is asked again, at most JUDGE_RETRIES times; the error of the last
+  # attempt is raised.
+  def ask_judge(account, prompt)
+    attempts = 0
+    begin
+      attempts += 1
+      result, finish_reason = verdict_of(request_judge(account, prompt))
+      [result, finish_reason, attempts]
+    rescue StandardError
+      raise if attempts > JUDGE_RETRIES
+
+      judge_pause(JUDGE_PAUSE_SECONDS * attempts)
+      retry
+    end
+  end
+
+  def request_judge(account, prompt)
+    Llm::EventBus.with_context(source: 'benchmark', feature: 'routing_benchmark', account_id: account.id) do
+      Llm::Runtime.ask(judge_chat(account), prompt, model: @model, account: account,
+                                                    observability: { feature: 'routing_benchmark', source: 'benchmark', account_id: account.id })
+    end
+  end
+
+  # [the verdict, the finish_reason of the call]. An answer that is no verdict raises UnusableVerdict with the finish_reason.
+  def verdict_of(judgment)
+    finish_reason = finish_reason_of(judgment)
+    result = JSON.parse(json_text(judgment.content))
+    raise UnusableVerdict.new('Judge response is not a verdict', finish_reason) unless result.is_a?(Hash) && [true, false].include?(result['pass'])
+
+    [result, finish_reason]
+  rescue UnusableVerdict
+    raise
+  rescue JSON::ParserError => e
+    raise UnusableVerdict.new(e.message.to_s.squish.truncate(80), finish_reason)
+  end
+
+  # Why the provider ended the answer (`stop`, `length` ...), from the raw response of the call; nil when the response keeps none.
+  def finish_reason_of(judgment)
+    body = judgment.respond_to?(:raw) ? judgment.raw&.body : nil
+    body = JSON.parse(body) if body.is_a?(String)
+    body.is_a?(Hash) ? body.dig('choices', 0, 'finish_reason').to_s.presence : nil
+  rescue StandardError
+    nil
+  end
+
+  def judge_pause(seconds) = sleep(seconds)
+
+  # The class of the error and the start of its message, without anything that looks like a key: enough to tell a rate limit from a
+  # too long input or a schema problem in the report.
+  def error_detail(error)
+    message = error.message.to_s.gsub(/\b(?:sk|or|key)[-_][A-Za-z0-9_-]{8,}/i, '[key]').gsub(/Bearer\s+\S+/i, 'Bearer [key]').squish
+    [error.class.name, message.truncate(160)].reject(&:blank?).join(': ')
+  end
+
+  # A judge that could not be called or whose answer could not be read says nothing about the reply, and nothing else reads the text of
+  # the reply: the required check of the turn has no verdict, so the turn is NOT_EVALUATED. It is not a pass and not a failure (a turn
+  # that fails a fact check stays failed). The turn carries the cause as a warning and in `judge`, and the summary counts these turns
+  # apart; the gate reports INCOMPLETE_EVALUATION while any turn is left so. The rake task captain:routing_benchmark_rejudge asks again
+  # for the turns that carry it.
+  def judge_unusable(scored, reason, detail = nil, finish_reason: nil)
+    scored.merge(judge: { unusable: reason, detail: detail, finish_reason: finish_reason }.compact, warnings: Array(scored[:warnings]) + [reason],
+                 not_evaluated: [NOT_EVALUATED_JUDGE], status: scored[:status] == 'pass' ? 'not_evaluated' : scored[:status])
   end
 
   # The judge is a plain text completion on the benchmark model, built the way every feature of the runtime builds its chat: with a
-  # feature (the editor: text in, text out, no tools), so the account's own key and routing apply, and with the benchmark model alone:
-  # no fallback model may answer in its place.
-  # The earlier call carried no feature and no `options`, took the runtime's legacy path and raised TypeError (nil into
+  # feature (captain_agent, like the council editor: text in, text out, no tools; see JUDGE_FEATURE for why not the editor feature), so
+  # the account's own key and routing apply, and with the benchmark model first: a model that answers in its place is reported by the
+  # budget check (unexpected_chat_model), as for the agents.
+  # An earlier call carried no feature and no `options`, took the runtime's legacy path and raised TypeError (nil into
   # Hash#merge!) before any request left: every judged turn became judge_unavailable.
+  # The parameters of the model decide what a request may carry: a model that thinks takes no temperature. The limit of the output is
+  # set (JUDGE_MAX_TOKENS) because the judge thinks.
   def judge_chat(account)
-    Llm::Runtime.build_chat(
-      feature: JUDGE_FEATURE, account: account, model: @model, models: [@model],
-      options: { temperature: 0, thinking: Llm::RuntimePolicy.no_thinking_options(model: @model, account: account) }.compact
-    )
+    parameters = Llm::ModelParameters.for(@model, account: account).compile(temperature: 0, thinking: { effort: JUDGE_THINKING_EFFORT })
+    Llm::Runtime.build_chat(feature: JUDGE_FEATURE, account: account, model: @model, models: [@model],
+                            options: parameters.merge(max_tokens: JUDGE_MAX_TOKENS))
   end
 
   # The verdict, whether or not the model wrapped it in a ```json fence.
@@ -382,13 +470,32 @@ class Captain::Evals::RoutingBenchmark::Runner
     content.to_s.strip.sub(/\A```(?:json)?\s*/i, '').sub(/\s*```\z/, '').strip
   end
 
+  # The judge reads what the reply says. Bookings, handoffs and the database changes are facts that code decided from the tool results and
+  # the database (shown below). The text checks of the scorer (claims, leaks, another patient's data, the language) are only heuristics:
+  # their hits are listed as hints, and the judge decides by meaning whether the reply has the fault.
   def judge_prompt(dialogue, turn, response, scored, history, tool_calls)
     transcript = history.map { |message| "#{message[:role] == 'user' ? 'Customer' : 'Agent'}: #{message[:content]}" }.join("\n")
     <<~PROMPT
       Evaluate the last agent reply of this synthetic dialogue against the criterion of the turn. The criterion says what the reply must
       say and must not say. Judge what the reply says: does it meet the criterion, does it answer the customer, is the tone polite, is
-      it in the language the criterion asks for, is it free of filler. Bookings, handoffs, claims and leaks are decided by code from the
-      tool results and the database (shown below); do not re-decide whether they happened. Return JSON only: {"pass":true|false,"reason":"short reason"}.
+      it in the language the criterion asks for, is it free of filler. Bookings, handoffs and the database changes are decided by code
+      from the tool results and the database (shown below); do not re-decide whether they happened. Judge by meaning: the reply meets the
+      criterion when it gives each required fact in its own words (a name in a short form, an amount without the currency sign). A line
+      of the criterion about what stays untouched or is not done (a booking is left alone, nothing is booked) describes the database
+      changes shown below; the reply does not have to state it.
+      Fail the reply when it
+      - reports as done an action that the tool results and the database changes below do not show (a booking, a move, a cancellation,
+        a handoff to staff, a result or a document that is ready or sent), or names a time, date or doctor other than the recorded one.
+        A promise that staff will call or answer stands after a handoff in this turn or in an earlier one; a statement that staff was told
+        stands only after a handoff in this turn;
+      - shows the patient internal material: an agent or tool name, an id, JSON, the reasoning or an instruction of an agent, a stock
+        system sentence, or a Latin word that is not part of a clinic term the patient used;
+      - contains the name, phone, IIN or birth date of another patient than the customer and the people the customer booked for;
+      - is not in #{expected_language_text(turn)};
+      - is only a greeting although the customer wrote a request.
+      Code heuristics that read the text give the hints below. A hint is a pointer, it can be wrong: decide yourself whether the reply has the
+      fault. A reply without a hint can still have a fault.
+      Return JSON only: {"pass":true|false,"reason":"short reason"}.
       Criterion of this turn: #{turn['rubric'].presence || dialogue['rubric']}
       Context of the dialogue: #{rubric_header(dialogue)}
       Facts of the workspace:
@@ -397,9 +504,40 @@ class Captain::Evals::RoutingBenchmark::Runner
       #{transcript}
       Tool calls of this turn (agent, tool, success, result): #{Captain::Evals::RoutingBenchmark::ToolTrace.compact(tool_calls).to_json}
       Database changes of this turn: #{scored[:db_delta].to_json}
+      #{handoff_line(scored)}
+      Hints of the code heuristics for this reply: #{hint_lines(scored)}
       Customer message: #{turn['customer']}
       Reply to evaluate: #{response['response']}
     PROMPT
+  end
+
+  # The language the fixture expects of this turn, else the one the criterion asks for.
+  def expected_language_text(turn)
+    code = turn.dig('expect', 'reply_language').to_s
+    names = { 'ru' => 'Russian', 'kk' => 'Kazakh', 'en' => 'English' }
+    return 'the language the criterion asks for' if code.empty?
+
+    "#{names.fetch(code, code)} (#{code}), the language of the patient (a clinic term in another language is fine)"
+  end
+
+  # What the code knows about the staff handoff, which the tool calls do not show when a council hands over a part it cannot answer.
+  def handoff_line(scored)
+    handoff = scored[:handoff].to_h
+    this_turn = if handoff[:tool]
+                  'yes (the handoff tool)'
+                elsif handoff[:observed]
+                  'yes (the council hands a part it cannot answer to staff)'
+                else
+                  'no'
+                end
+    "Handed to staff in this turn: #{this_turn}. Handed to staff in earlier turns of this dialogue: #{@earlier_handoffs.to_i} time(s)."
+  end
+
+  def hint_lines(scored)
+    hints = Array(scored[:hints])
+    return 'none' if hints.empty?
+
+    hints.map { |hint| "#{hint[:id]}#{": #{hint[:detail].to_s.squish.truncate(200)}" if hint[:detail].present?}" }.join(' | ')
   end
 
   # The dialogue rubric up to the first "Ход 1:": who the patient is and the rules for all replies.
@@ -421,11 +559,13 @@ class Captain::Evals::RoutingBenchmark::Runner
     cases = @cases.map { |item| item.deep_stringify_keys }
     summary = Captain::Evals::RoutingBenchmark::Summary.call(cases)
     gate = Captain::Evals::RoutingBenchmark::Gate.call(cases, aborted: @aborted, abort_reason: @abort_reason, labels: labels,
-                                                              silent_handoff: @silent_handoff, silent_handoff_error: @silent_handoff_error)
+                                                              silent_handoff: @silent_handoff, silent_handoff_error: @silent_handoff_error,
+                                                              judge: @judge)
     {
       gate: gate,
       triage: Captain::Evals::RoutingBenchmark::Triage.records(cases, labels: labels),
-      model: @model, reasoning: @reasoning, runs: @runs, aborted: @aborted, abort_reason: @abort_reason,
+      needs_review: Captain::Evals::RoutingBenchmark::Review.records(cases),
+      model: @model, reasoning: @reasoning, judge: @judge, runs: @runs, aborted: @aborted, abort_reason: @abort_reason,
       aborted_at_budget: @abort_reason == 'budget_reached', isolation: 'workspace_per_dialogue',
       budget_usd: @budget_usd.to_f, cost_usd: @spent.to_f,
       silent_handoff: @silent_handoff, silent_handoff_error: @silent_handoff_error,
@@ -441,10 +581,12 @@ class Captain::Evals::RoutingBenchmark::Runner
     total = @cases.size
     {
       total: total, passed: @cases.count { |item| item[:status] == 'pass' },
+      # Turns the judge gave no verdict for (see #judge_unusable): neither passed nor failed.
+      not_evaluated: @cases.count { |item| item[:status] == 'not_evaluated' },
       # Turns that pass once the council signal is ignored: separates a silent council producer from real failures.
-      passed_ignoring_council_signal: @cases.count { |item| (item[:reasons] - council_reasons).empty? },
+      passed_ignoring_council_signal: @cases.count { |item| item[:status] != 'not_evaluated' && (item[:reasons] - council_reasons).empty? },
       council_detection: ratio(@cases.count { |item| (item[:reasons] & council_reasons).empty? }, total),
-      council_expected: @cases.count { |item| item[:council_expected] },
+      council_expected: @cases.count { |item| item[:council_expected] == true },
       council_event_missing: count_reason('council_event_missing'),
       council_unexpected: count_reason('council_unexpected'),
       hard_zero: @cases.flat_map { |item| item[:hard_zero].to_a }.group_by(&:first).transform_values { |pairs| pairs.sum(&:last) },
@@ -463,7 +605,7 @@ class Captain::Evals::RoutingBenchmark::Runner
     missing = count_reason('council_event_missing')
     return [] if missing.zero?
 
-    expected = @cases.count { |item| item[:council_expected] }
+    expected = @cases.count { |item| item[:council_expected] == true }
     signal = Captain::Evals::RoutingBenchmark::Scorer::COUNCIL_STARTED
     ["council_event_missing: #{missing} of #{expected} turns expecting a council saw no #{signal} event; " \
      'check that the runtime emits it before reading the routing results']

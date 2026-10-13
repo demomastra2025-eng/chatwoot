@@ -15,7 +15,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Summary do
     let(:cases) do
       [turn('council_two_part_01', 1), turn('council_two_part_01', 2),
        turn('council_two_part_02', 1), turn('council_two_part_02', 2, fails: ['wrong_agent']),
-       turn('route_single_01', 1, fails: ['wrong_language'])]
+       turn('route_single_01', 1, fails: ['empty_reply'])]
     end
 
     it 'counts the dialogues that passed on every turn, and the failed ones, with the turns of each' do
@@ -30,25 +30,25 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Summary do
     end
 
     it 'sums up per category and per failed check, a check once per turn' do
-      result = summary(*cases, turn('route_single_02', 1, fails: %w[wrong_language wrong_language:kk wrong_agent]))
+      result = summary(*cases, turn('route_single_02', 1, fails: %w[empty_reply empty_reply:suppress wrong_agent]))
 
       expect(result[:by_category]).to eq('council_two_part' => { dialogues: 2, dialogues_passed: 1, turns: 4, turns_passed: 3 },
                                          'route_single' => { dialogues: 2, dialogues_passed: 0, turns: 2, turns_passed: 0 })
-      expect(result[:by_reason]).to eq('wrong_agent' => 2, 'wrong_language' => 2)
+      expect(result[:by_reason]).to eq('wrong_agent' => 2, 'empty_reply' => 2)
     end
   end
 
   describe 'a turn after a failed prerequisite' do
     it 'is blocked when it failed itself: its failure is the cascade of the first, not a finding of its own' do
       result = summary(turn('d_01', 1, fails: ['missing_operation:appointment']), turn('d_01', 2, fails: ['wrong_agent']), turn('d_01', 3),
-                       turn('d_01', 4, fails: ['wrong_language']))
+                       turn('d_01', 4, fails: ['empty_reply']))
 
       expect(result[:dialogue_summaries].first).to include(statuses: %w[fail blocked pass blocked], failed: 1, blocked: 2, pass: false)
       expect(result[:dialogues][:blocked_turns]).to eq(2)
     end
 
-    it 'does not block after a failure that the later turns do not build on, a language or a leak' do
-      result = summary(turn('d_01', 1, fails: ['wrong_language']), turn('d_01', 2, fails: ['reply_leak:latin']), turn('d_01', 3, fails: ['wrong_agent']))
+    it 'does not block after a failure that the later turns do not build on, an empty reply or a missing handoff' do
+      result = summary(turn('d_01', 1, fails: ['empty_reply']), turn('d_01', 2, fails: ['human_handoff_missing']), turn('d_01', 3, fails: ['wrong_agent']))
 
       expect(result[:dialogue_summaries].first[:statuses]).to eq(%w[fail fail fail])
     end
@@ -62,32 +62,72 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Summary do
     end
 
     it 'keeps the turns of one dialogue and run apart from another run of it' do
-      result = summary(turn('d_01', 1, fails: ['wrong_agent']), turn('d_01', 2, run: 2, fails: ['wrong_language']))
+      result = summary(turn('d_01', 1, fails: ['wrong_agent']), turn('d_01', 2, run: 2, fails: ['empty_reply']))
 
       expect(result[:dialogue_summaries].pluck(:statuses)).to eq([%w[fail], %w[fail]])
     end
 
     it 'is blocked when the runner marked it (played on a conversation that staff owned), if it failed; a turn that passed stays a pass' do
       owned = { 'blocked' => true }
-      result = summary(turn('d_01', 1), turn('d_01', 2, fails: ['wrong_language']).merge(owned), turn('d_01', 3).merge(owned),
-                       turn('d_01', 4, fails: ['wrong_language']))
+      result = summary(turn('d_01', 1), turn('d_01', 2, fails: ['empty_reply']).merge(owned), turn('d_01', 3).merge(owned),
+                       turn('d_01', 4, fails: ['empty_reply']))
 
       expect(result[:dialogue_summaries].first).to include(statuses: %w[pass blocked pass fail], failed: 1, blocked: 1)
     end
   end
 
   describe 'a judge without a verdict' do
-    it 'is no failure of the turn, and the turns that carry it are counted apart, as a warning of today or as a failure of an older run' do
+    it 'is no failure of the turn but leaves it not evaluated, and the turns that carry it are counted apart, as a warning of today or as a failure of an older run' do
       result = summary(turn('d_01', 1).merge('warnings' => ['judge_unavailable']), turn('d_01', 2, fails: ['judge_invalid_json']),
                        turn('d_02', 1).merge('warnings' => %w[judge_invalid_json handoff_marker_without_tool]), turn('d_02', 2, fails: ['wrong_agent']))
 
       expect(result[:judge_unusable]).to eq(turns: 3, by_check: { 'judge_invalid_json' => 2, 'judge_unavailable' => 1 })
       expect(result[:by_reason]).to eq('wrong_agent' => 1)
-      expect(result[:dialogue_summaries].pluck(:statuses)).to eq([%w[pass pass], %w[pass fail]])
+      expect(result[:dialogue_summaries].pluck(:statuses)).to eq([%w[not_evaluated not_evaluated], %w[not_evaluated fail]])
     end
 
     it 'is nothing to report when no judge failed' do
       expect(summary(turn('d_01', 1))[:judge_unusable]).to eq(turns: 0, by_check: {})
+    end
+  end
+
+  # A turn the judge gave no verdict for is neither passed nor failed (decision 3A); a hit of a text detector is no failure either (2A).
+  describe 'a turn that is not evaluated' do
+    def not_evaluated_turn(dialogue, number, **options) = turn(dialogue, number, **options).merge('status' => 'not_evaluated', 'not_evaluated' => ['judge'])
+
+    it 'is neither a pass nor a failure, and makes its dialogue incomplete' do
+      result = summary(turn('d_01', 1), not_evaluated_turn('d_01', 2), turn('d_02', 1), turn('d_02', 2, fails: ['wrong_agent']),
+                       not_evaluated_turn('d_03', 1))
+
+      expect(result[:dialogue_summaries].pluck(:statuses)).to eq([%w[pass not_evaluated], %w[pass fail], %w[not_evaluated]])
+      expect(result[:dialogue_summaries].first).to include(passed: 1, failed: 0, not_evaluated: 1, pass: false, incomplete: true)
+      expect(result[:dialogues]).to include(total: 3, passed: 0, failed: 1, not_evaluated: 2)
+    end
+
+    it 'does not hide a failure of a fact check: the turn stays failed' do
+      result = summary(not_evaluated_turn('d_01', 1, fails: ['wrong_agent']).merge('status' => 'fail'))
+
+      expect(result[:dialogue_summaries].first).to include(statuses: ['fail'], incomplete: false)
+    end
+
+    it 'keeps a dialogue that is incomplete in one run out of pass^k' do
+      cases = [turn('a_01', 1, run: 1), turn('a_01', 1, run: 2), not_evaluated_turn('b_01', 1, run: 1), turn('b_01', 1, run: 2)]
+
+      result = summary(*cases)
+
+      expect(result[:dialogues][:pass_k]).to eq(k: 2, dialogues: 2, passed_every_run: 1, not_evaluated: 1, rate: 0.5)
+      expect(result[:dialogues][:per_run][1]).to eq(dialogues: 2, passed: 1, failed: 0, not_evaluated: 1)
+    end
+  end
+
+  describe 'a hit of a text detector' do
+    it 'is no failure: a report of an older run that holds it as a failure is read without it' do
+      older = turn('d_01', 1, fails: %w[false_success_claim reply_leak:latin wrong_language])
+
+      result = summary(older, turn('d_01', 2, fails: %w[wrong_language wrong_agent]))
+
+      expect(result[:by_reason]).to eq('wrong_agent' => 1)
+      expect(result[:dialogue_summaries].first[:statuses]).to eq(%w[pass fail])
     end
   end
 
@@ -98,8 +138,10 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Summary do
 
       result = summary(*cases)
 
-      expect(result[:dialogues][:pass_k]).to eq(k: 3, dialogues: 2, passed_every_run: 1, rate: 0.5)
-      expect(result[:dialogues][:per_run]).to eq(1 => { dialogues: 2, passed: 2 }, 2 => { dialogues: 2, passed: 1 }, 3 => { dialogues: 2, passed: 2 })
+      expect(result[:dialogues][:pass_k]).to eq(k: 3, dialogues: 2, passed_every_run: 1, not_evaluated: 0, rate: 0.5)
+      expect(result[:dialogues][:per_run]).to eq(1 => { dialogues: 2, passed: 2, failed: 0, not_evaluated: 0 },
+                                                 2 => { dialogues: 2, passed: 1, failed: 1, not_evaluated: 0 },
+                                                 3 => { dialogues: 2, passed: 2, failed: 0, not_evaluated: 0 })
     end
 
     it 'does not count a dialogue that a cut-short run reached in fewer runs than the others' do

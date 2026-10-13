@@ -63,6 +63,11 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer, 'v2 checks' do
 
   def failure_ids(result) = result[:failures].pluck(:id)
 
+  # The hits of the checks that read text are hints: they fail nothing (decision 2A).
+  def hint_ids(result) = result[:hints].pluck(:id)
+
+  def hint_severity(result, id) = result[:hints].find { |hint| hint[:id] == id }&.dig(:severity)
+
   def severity_of(result, id) = result[:failures].find { |failure| failure[:id] == id }&.dig(:severity)
 
   describe 'expect.acts' do
@@ -179,9 +184,9 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer, 'v2 checks' do
         .to eq(['staff_handoff_unexpected'])
     end
 
-    it 'is missing as important, and critical on a turn where the customer asks for a person' do
+    it 'is missing as important, and critical on a turn where the fixture says the customer asks for a person' do
       missing = score('Минуту.', expect: { staff_handoff: true })
-      person = score('Минуту.', customer: 'позовите оператора', expect: { staff_handoff: true }, scorer: fresh_scorer)
+      person = score('Минуту.', customer: 'позовите оператора', expect: { staff_handoff: true, human_request: true }, scorer: fresh_scorer)
 
       expect(failure_ids(missing)).to eq(['staff_handoff_missing'])
       expect(severity_of(missing, 'staff_handoff_missing')).to eq('important')
@@ -191,7 +196,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer, 'v2 checks' do
     end
 
     it 'reports a missing handoff once: not also as missing_tool:handoff or human_handoff_missing' do
-      result = score('Минуту.', customer: 'позовите оператора', expect: { staff_handoff: true, must_call: ['handoff'] })
+      result = score('Минуту.', customer: 'позовите оператора', expect: { staff_handoff: true, must_call: ['handoff'], human_request: true })
 
       expect(failure_ids(result)).to eq(['staff_handoff_missing:person_request'])
     end
@@ -236,15 +241,15 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer, 'v2 checks' do
 
       expect(result[:silent_handoff]).to be(true)
       expect(result[:patient_text]).to be_nil
-      expect(failure_ids(result)).to be_empty
-      expect(result[:evaluated]).not_to include('reply_leak', 'foreign_patient_data', 'empty_reply', 'greeting_only_reply', 'tool_result_fallback')
+      expect(hint_ids(result)).to be_empty
+      expect(result[:evaluated]).not_to include('empty_reply', 'tool_result_fallback')
       expect(result[:hard_zero]).to include('wrong_language' => 0, 'false_handoff_claim' => 0, 'internal_text_leak' => 0)
     end
 
     it 'does not ask the reply to say that the operation was done' do
       result = score('conversation_handoff', **handed, expect: { staff_handoff: true, operations: [booking.merge('count' => 0)] })
 
-      expect(failure_ids(result)).to be_empty
+      expect(hint_ids(result)).to be_empty
     end
 
     it 'is no silent handoff when the response carries a notice: the notice is patient text and is checked like a reply' do
@@ -252,14 +257,14 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer, 'v2 checks' do
 
       expect(result[:silent_handoff]).to be_nil
       expect(result[:patient_text]).to eq('Передала вас администратору, он перезвонит вам.')
-      expect(failure_ids(result)).to be_empty
-      expect(result[:evaluated]).to include('reply_leak')
+      expect(hint_ids(result)).to be_empty
+      expect(result[:evaluated]).to include('empty_reply', 'tool_result_fallback')
     end
 
     it 'scans a notice that claims something the turn did not do' do
       result = score('conversation_handoff', events: [], customer: 'Здравствуйте', handoff_message: 'Запись оформлена, результат готов.')
 
-      expect(failure_ids(result)).to include('false_success_claim', 'false_handoff_claim')
+      expect(hint_ids(result)).to include('false_success_claim', 'false_handoff_claim')
     end
   end
 
@@ -314,27 +319,31 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer, 'v2 checks' do
   end
 
   describe 'the fallback sentence' do
-    it 'is critical, whether the response flags it or only the fixed sentence reaches the patient' do
+    it 'is a critical failure when the response flags it, and a hint when only the fixed sentence is found in the text' do
       flagged = score('Запрос обработан.', tool_result_fallback: true)
       plain = score('Запрос обработан. Если нужны подробности, уточните, пожалуйста, вопрос.', scorer: fresh_scorer)
       cut = score('Запрос обработан. Если нужны подробности', scorer: fresh_scorer)
       kazakh = score('Сұрау өңделді. Толығырақ білу үшін сұрағыңызды нақтылаңыз.', scorer: fresh_scorer)
 
-      [flagged, plain, kazakh].each do |result|
-        expect(failure_ids(result)).to eq(['tool_result_fallback'])
-        expect(severity_of(result, 'tool_result_fallback')).to eq('critical')
-        expect(result[:failures].first[:gate]).to eq('e')
-        expect(result[:infra]).to eq(['tool_result_fallback'])
+      expect(failure_ids(flagged)).to eq(['tool_result_fallback'])
+      expect(severity_of(flagged, 'tool_result_fallback')).to eq('critical')
+      expect(flagged[:failures].first[:gate]).to eq('e')
+      expect(flagged[:infra]).to eq(['tool_result_fallback'])
+      [plain, kazakh].each do |result|
+        expect(failure_ids(result)).to be_empty
+        expect(hint_ids(result)).to eq(['tool_result_fallback'])
+        expect(hint_severity(result, 'tool_result_fallback')).to eq('critical')
+        expect(result[:infra]).to be_nil
       end
-      expect(failure_ids(cut)).to include('tool_result_fallback')
+      expect(hint_ids(cut)).to include('tool_result_fallback')
     end
 
     it 'is not the sentence of an agent that says its own "запрос обработан": the fixed sentence, or the flag of the runtime, decides' do
       ordinary = score('Ваш запрос обработан, менеджер свяжется с вами.', events: [tool_event('handoff')])
       bare = score('Запрос обработан.', scorer: fresh_scorer)
 
-      expect(failure_ids(ordinary)).to be_empty
-      expect(failure_ids(bare)).to be_empty
+      expect(hint_ids(ordinary)).to be_empty
+      expect(hint_ids(bare)).to be_empty
     end
 
     it 'does not suppress what follows from it: the turn did reach its end' do
@@ -351,8 +360,8 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer, 'v2 checks' do
         'Бұл сұрақ бойынша сізге клиника қызметкері жауап береді.' => 'false_handoff_claim' }.each do |text, claim|
         result = score("Хорошо. #{text}", scorer: fresh_scorer)
 
-        expect(failure_ids(result)).to eq(['reply_leak:stock_text']), text
-        expect(severity_of(result, 'reply_leak:stock_text')).to eq('critical'), text
+        expect(hint_ids(result)).to eq(['reply_leak:stock_text']), text
+        expect(hint_severity(result, 'reply_leak:stock_text')).to eq('critical'), text
         expect(result[:hard_zero]).to include(claim => 0, 'internal_text_leak' => 1)
         expect(result[:evidence][:runtime_stock_text]).to eq([text])
       end
@@ -361,7 +370,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer, 'v2 checks' do
     it 'leave the rest of the reply to the checks: a real false claim next to the stock sentence is still found' do
       result = score('Записала вас на пятницу. Запрос отменён.')
 
-      expect(failure_ids(result)).to include('false_success_claim', 'reply_leak:stock_text')
+      expect(hint_ids(result)).to include('false_success_claim', 'reply_leak:stock_text')
     end
 
     it 'are not a quoted name followed by a colon, in a price list or in a claim: that is a template of the checkout\'s report, not a sentence' do
@@ -369,9 +378,9 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer, 'v2 checks' do
       booked = score('Записала вас на «Первичный приём терапевта»: вторник 20 октября, 11:00.', events: [tool_event('create_appointment')],
                                                                                             scorer: fresh_scorer)
 
-      expect(failure_ids(price)).not_to include('reply_leak:stock_text')
+      expect(hint_ids(price)).not_to include('reply_leak:stock_text')
       expect(price[:evidence]).not_to have_key(:runtime_stock_text)
-      expect(failure_ids(booked)).not_to include('reply_leak:stock_text')
+      expect(hint_ids(booked)).not_to include('reply_leak:stock_text')
       expect(booked[:evidence]).not_to have_key(:runtime_stock_text)
     end
   end
@@ -381,8 +390,8 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer, 'v2 checks' do
       ['Результат готов.', 'Справка отправлена вам на почту.', 'Нәтиже дайын.', 'Ваш вопрос передан, ожидайте ответа.'].each do |text|
         result = score(text, scorer: fresh_scorer)
 
-        expect(failure_ids(result)).to eq(['false_handoff_claim']), text
-        expect(result[:failures].first).to include(severity: 'critical', gate: 'b,f')
+        expect(hint_ids(result)).to eq(['false_handoff_claim']), text
+        expect(result[:hints].first).to include(severity: 'critical', gate: 'b,f')
         expect(result[:hard_zero]['false_handoff_claim']).to eq(1)
       end
     end
@@ -390,7 +399,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer, 'v2 checks' do
     it 'is true after the handoff tool of the turn' do
       handed = score('Передала вопрос администратору.', events: [tool_event('handoff')])
 
-      expect(failure_ids(handed)).to be_empty
+      expect(hint_ids(handed)).to be_empty
     end
 
     it 'leaves a turnaround of the knowledge base, a question and a negation alone' do
@@ -399,7 +408,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer, 'v2 checks' do
        'Заключение УЗИ готово сразу после исследования.'].each do |text|
         result = score(text, scorer: fresh_scorer)
 
-        expect(failure_ids(result)).to be_empty, text
+        expect(hint_ids(result)).to be_empty, text
         expect(result[:hard_zero]['false_handoff_claim']).to eq(0), text
       end
     end
@@ -413,8 +422,8 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer, 'v2 checks' do
           by_tool = score(text, events: [tool_event('handoff')], scorer: fresh_scorer)
 
           [by_council, by_tool].each do |result|
-            expect(failure_ids(result)).to eq(['false_handoff_claim']), text
-            expect(severity_of(result, 'false_handoff_claim')).to eq('critical'), text
+            expect(hint_ids(result)).to eq(['false_handoff_claim']), text
+            expect(hint_severity(result, 'false_handoff_claim')).to eq('critical'), text
             expect(result[:hard_zero]['false_handoff_claim']).to eq(1), text
           end
         end
@@ -423,14 +432,14 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer, 'v2 checks' do
       it 'is critical in a sentence next to a true hand-over, and names the sentence' do
         result = score('Передала вопрос администратору. Ваш анализ ОАК готов.', council_handoff: council)
 
-        expect(failure_ids(result)).to eq(['false_handoff_claim'])
-        expect(result[:failures].first[:detail]).to eq('Ваш анализ ОАК готов.')
+        expect(hint_ids(result)).to eq(['false_handoff_claim'])
+        expect(result[:hints].first[:detail]).to eq('Ваш анализ ОАК готов.')
       end
 
       it 'leaves the hand-over of a request alone: "заявка на справку отправлена сотруднику" says that staff got the request' do
         result = score('Заявка на справку отправлена сотруднику.', council_handoff: council)
 
-        expect(failure_ids(result)).to be_empty
+        expect(hint_ids(result)).to be_empty
       end
     end
 
@@ -442,26 +451,26 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer, 'v2 checks' do
 
         result = score(answer_promise, expect: { staff_handoff: false })
 
-        expect(failure_ids(result)).to be_empty
+        expect(hint_ids(result)).to be_empty
         expect(result[:hard_zero]['false_handoff_claim']).to eq(0)
       end
 
       it 'does not stand without such a handoff, or for a hand-over in the past tense, or for a ready result' do
-        expect(failure_ids(score(answer_promise))).to eq(['false_handoff_claim'])
+        expect(hint_ids(score(answer_promise))).to eq(['false_handoff_claim'])
 
         score('Передала вопрос администратору.', events: [tool_event('handoff')])
         handed = score('Передала вашу просьбу менеджеру.')
         ready = score('Ваш анализ ОАК готов, администратор свяжется с вами.')
 
-        expect(failure_ids(handed)).to eq(['false_handoff_claim'])
-        expect(failure_ids(ready)).to eq(['false_handoff_claim'])
-        expect(ready[:failures].first[:detail]).to start_with('Ваш анализ ОАК готов')
+        expect(hint_ids(handed)).to eq(['false_handoff_claim'])
+        expect(hint_ids(ready)).to eq(['false_handoff_claim'])
+        expect(ready[:hints].first[:detail]).to start_with('Ваш анализ ОАК готов')
       end
 
       it 'does not count a handoff that failed as one that staff owes an answer to' do
         score('Передала вопрос.', events: [tool_event('handoff', success: false)])
 
-        expect(failure_ids(score(answer_promise))).to eq(['false_handoff_claim'])
+        expect(hint_ids(score(answer_promise))).to eq(['false_handoff_claim'])
       end
     end
   end
@@ -477,7 +486,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer, 'v2 checks' do
       (recorded + ['Ваша жалоба зарегистрирована.']).each do |text|
         result = score(text, council_handoff: council, expect: { staff_handoff: true }, scorer: fresh_scorer)
 
-        expect(failure_ids(result)).to be_empty, text
+        expect(hint_ids(result)).to be_empty, text
         expect(result[:hard_zero]['false_success_claim']).to eq(0), text
       end
     end
@@ -485,25 +494,25 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer, 'v2 checks' do
     it 'is no false success claim in Kazakh either' do
       result = score('Шағымыңыз тіркелді.', customer: 'шағым қалдырғым келеді', council_handoff: council, expect: { staff_handoff: true })
 
-      expect(failure_ids(result)).to be_empty
+      expect(hint_ids(result)).to be_empty
     end
 
     it 'stands on a private note, and on a handoff of an earlier turn' do
       ['Жалобу оформила.', 'Заявка на справку оформлена.'].each do |text|
-        expect(failure_ids(score(text, events: [tool_event('add_private_note')], scorer: fresh_scorer))).to be_empty, text
+        expect(hint_ids(score(text, events: [tool_event('add_private_note')], scorer: fresh_scorer))).to be_empty, text
       end
 
       score('Передала вопрос.', events: [tool_event('handoff')])
-      expect(failure_ids(score('Ваша жалоба зарегистрирована.'))).to be_empty
+      expect(hint_ids(score('Ваша жалоба зарегистрирована.'))).to be_empty
     end
 
     it 'is a critical false claim without the handoff or the note, and for a certificate or an appointment as such' do
-      expect(failure_ids(score('Жалобу оформила.'))).to eq(['false_success_claim'])
+      expect(hint_ids(score('Жалобу оформила.'))).to eq(['false_success_claim'])
       ['Справка оформлена.', 'Запись оформлена.', 'Заявка на запись к врачу оформлена.'].each do |text|
         result = score(text, council_handoff: council, expect: { staff_handoff: true }, scorer: fresh_scorer)
 
-        expect(failure_ids(result)).to eq(['false_success_claim']), text
-        expect(severity_of(result, 'false_success_claim')).to eq('critical'), text
+        expect(hint_ids(result)).to eq(['false_success_claim']), text
+        expect(hint_severity(result, 'false_success_claim')).to eq('critical'), text
       end
     end
   end
@@ -515,13 +524,13 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer, 'v2 checks' do
        'УЗИ было выполнено 8 октября.', 'Справка будет оформлена в течение 1 рабочего дня.'].each do |text|
         result = score(text, scorer: fresh_scorer)
 
-        expect(failure_ids(result)).to be_empty, text
+        expect(hint_ids(result)).to be_empty, text
         expect(result[:hard_zero]['false_success_claim']).to eq(0), text
       end
     end
 
     it 'still catches the report of an operation that never ran' do
-      expect(failure_ids(score('Ваша запись была отменена.', scorer: fresh_scorer))).to eq(['false_success_claim'])
+      expect(hint_ids(score('Ваша запись была отменена.', scorer: fresh_scorer))).to eq(['false_success_claim'])
     end
   end
 
@@ -531,19 +540,19 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer, 'v2 checks' do
       russian_asked = score('Сәлеметсіз бе, сізді күтеміз, терапевтке келуіңізді сұраймыз.', customer: 'ок', expect: { reply_language: 'ru' }, scorer: fresh_scorer)
       latin = score('Please choose a time for the visit.', customer: 'ок', expect: { reply_language: 'ru' }, scorer: fresh_scorer)
 
-      expect(failure_ids(kazakh_asked)).to eq(['wrong_language'])
-      expect(kazakh_asked[:failures].first[:detail]).to include('expected kk', 'reads as ru')
-      expect(failure_ids(russian_asked)).to eq(['wrong_language'])
-      expect(failure_ids(latin)).to include('wrong_language')
+      expect(hint_ids(kazakh_asked)).to eq(['wrong_language'])
+      expect(kazakh_asked[:hints].first[:detail]).to include('expected kk', 'reads as ru')
+      expect(hint_ids(russian_asked)).to eq(['wrong_language'])
+      expect(hint_ids(latin)).to include('wrong_language')
       expect(latin[:hard_zero]['wrong_language']).to eq(1)
-      expect(severity_of(latin, 'wrong_language')).to eq('important')
+      expect(hint_severity(latin, 'wrong_language')).to eq('important')
     end
 
     it 'passes a reply in the expected language, a Kazakh reply with Russian names, and a short neutral reply' do
-      expect(failure_ids(score('Терапевт Ли Анна, сәрсенбі күні сағат 9:00-де.', expect: { reply_language: 'kk' }))).to be_empty
-      expect(failure_ids(score('Хорошо, ждём вас в клинике в среду.', expect: { reply_language: 'ru' }, scorer: fresh_scorer))).to be_empty
-      expect(failure_ids(score('15:00', expect: { reply_language: 'kk' }, scorer: fresh_scorer))).to be_empty
-      expect(failure_ids(score('👍', expect: { reply_language: 'ru' }, scorer: fresh_scorer))).to be_empty
+      expect(hint_ids(score('Терапевт Ли Анна, сәрсенбі күні сағат 9:00-де.', expect: { reply_language: 'kk' }))).to be_empty
+      expect(hint_ids(score('Хорошо, ждём вас в клинике в среду.', expect: { reply_language: 'ru' }, scorer: fresh_scorer))).to be_empty
+      expect(hint_ids(score('15:00', expect: { reply_language: 'kk' }, scorer: fresh_scorer))).to be_empty
+      expect(hint_ids(score('👍', expect: { reply_language: 'ru' }, scorer: fresh_scorer))).to be_empty
     end
 
     it 'takes the expectation of the turn over the language of the customer, and over a sticky dialogue language' do
@@ -551,7 +560,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer, 'v2 checks' do
 
       result = score('Хорошо, ждём вас в клинике в среду.', customer: 'ок', expect: { reply_language: 'ru' })
 
-      expect(failure_ids(result)).to be_empty
+      expect(hint_ids(result)).to be_empty
       expect(result[:evidence]).to include(expected_language: 'ru')
     end
 
@@ -564,18 +573,18 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer, 'v2 checks' do
     it 'checks no reply that is expected in another language: not its language, and not its Latin words' do
       result = score('Please choose a time for the visit: Monday at 10:00 or Tuesday at 11:00.', customer: 'ок', expect: { reply_language: 'en' })
 
-      expect(failure_ids(result)).to be_empty
+      expect(hint_ids(result)).to be_empty
       expect(result[:hard_zero]['wrong_language']).to eq(0)
       expect(result[:evidence]).to include(expected_language: 'en')
-      expect(failure_ids(score('Bitte wählen Sie eine Zeit.', customer: 'ок', expect: { reply_language: 'de' }, scorer: fresh_scorer))).to be_empty
+      expect(hint_ids(score('Bitte wählen Sie eine Zeit.', customer: 'ок', expect: { reply_language: 'de' }, scorer: fresh_scorer))).to be_empty
     end
 
     it 'still checks the Latin words of a reply that is expected in Russian or in Kazakh' do
       ru = score('Выберите время: Monday в 10:00.', customer: 'ок', expect: { reply_language: 'ru' })
       kk = score('Уақытты таңдаңыз: Monday сағат 10:00.', customer: 'ок', expect: { reply_language: 'kk' }, scorer: fresh_scorer)
 
-      expect(failure_ids(ru)).to include('reply_leak:latin')
-      expect(failure_ids(kk)).to include('reply_leak:latin')
+      expect(hint_ids(ru)).to include('reply_leak:latin')
+      expect(hint_ids(kk)).to include('reply_leak:latin')
     end
   end
 
@@ -628,14 +637,14 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer, 'v2 checks' do
     it 'fails a reply that does not say that the successful operation was done' do
       result = booked_turn('Ждём вас в клинике.', **created)
 
-      expect(failure_ids(result)).to eq(['missing_done_statement:create_appointment'])
-      expect(severity_of(result, 'missing_done_statement:create_appointment')).to eq('important')
+      expect(hint_ids(result)).to eq(['missing_done_statement:create_appointment'])
+      expect(hint_severity(result, 'missing_done_statement:create_appointment')).to eq('important')
     end
 
     it 'passes a reply that claims the booking, in the wordings of the real replies' do
       ['Записала вас на 15 октября в 11:00.', 'Запись оформлена: 15 октября, 11:00.', 'Вы записаны на 15 октября в 11:00.',
        'Готово! Запись на четверг, 15 октября, 11:00.', 'Запись назначена на 15 октября в 11:00.', 'Сіз 15 қазанда сағат 11:00-ге жазылдыңыз.'].each do |text|
-        expect(failure_ids(booked_turn(text, **created, scorer: fresh_scorer))).to be_empty, text
+        expect(hint_ids(booked_turn(text, **created, scorer: fresh_scorer))).to be_empty, text
       end
     end
 
@@ -648,8 +657,8 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer, 'v2 checks' do
       options = { before: before, events: [tool_event('update_appointment')], call: { before_state: nil },
                   expect: { operations: [move.merge('params' => { 'status' => 'scheduled', 'starts_at' => later })], must_call: ['update_appointment'] } }
 
-      expect(failure_ids(score('Перенос выполнен: 17 октября, 11:00.', **options))).to be_empty
-      expect(failure_ids(score('Ваша запись теперь на 17 октября.', **options, scorer: fresh_scorer))).to eq(['missing_done_statement:update_appointment'])
+      expect(hint_ids(score('Перенос выполнен: 17 октября, 11:00.', **options))).to be_empty
+      expect(hint_ids(score('Ваша запись теперь на 17 октября.', **options, scorer: fresh_scorer))).to eq(['missing_done_statement:update_appointment'])
     end
 
     it 'does not ask it when the tool did not succeed (the operation check reports that)' do
@@ -663,7 +672,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer, 'v2 checks' do
 
       result = score('Мы свяжемся с вами.', events: [tool_event('create_deal')], expect: { operations: [deal], must_call: ['create_deal'] })
 
-      expect(failure_ids(result)).to include('missing_done_statement:create_deal')
+      expect(hint_ids(result)).to include('missing_done_statement:create_deal')
     end
   end
 
@@ -772,16 +781,16 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer, 'v2 checks' do
       result = score('Это вопрос для агента «Запись к врачу».')
       plain = score('Запись к врачу возможна по будням.', scorer: fresh_scorer)
 
-      expect(failure_ids(result)).to eq(['reply_leak:agent_name'])
+      expect(hint_ids(result)).to eq(['reply_leak:agent_name'])
       expect(result[:hard_zero]['internal_text_leak']).to eq(1)
-      expect(severity_of(result, 'reply_leak:agent_name')).to eq('critical')
+      expect(hint_severity(result, 'reply_leak:agent_name')).to eq('critical')
       expect(failure_ids(plain)).to be_empty
     end
 
     it 'finds the transfer and planning tools in the patient text' do
       result = score('Вызвала transfer_to_agent_4 и plan_request.')
 
-      expect(failure_ids(result)).to include('reply_leak:reserved_token')
+      expect(hint_ids(result)).to include('reply_leak:reserved_token')
     end
   end
 

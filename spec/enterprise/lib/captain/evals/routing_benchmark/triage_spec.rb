@@ -7,10 +7,10 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Triage do
   let(:failing) do
     { 'fixture' => '/work/set/ws_net__family_booking_01.yml', 'dialogue' => 'family_booking_01', 'run' => 2, 'turn' => 4,
       'customer' => "запишите\n  дочку   на среду", 'patient_text' => 'Записала вас на среду в 10:00.', 'acting_agent' => 'Запись к врачу',
-      'reasons' => %w[wrong_agent false_success_claim],
+      'reasons' => %w[wrong_agent duplicate_operation],
       'failures' => [
         { 'id' => 'wrong_agent', 'check' => 'wrong_agent', 'severity' => 'important', 'gate' => 'overall', 'detail' => 'acted: nil' },
-        { 'id' => 'false_success_claim', 'check' => 'false_success_claim', 'severity' => 'critical', 'gate' => 'b', 'detail' => 'claims book' }
+        { 'id' => 'duplicate_operation', 'check' => 'duplicate_operation', 'severity' => 'critical', 'gate' => 'c', 'detail' => 'repeated create_appointment' }
       ],
       'tool_calls' => [{ 'tool' => 'search_available_slots', 'success' => true }], 'expectation' => { 'agent' => 'Запись к врачу' } }
   end
@@ -19,10 +19,10 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Triage do
     it 'makes one record per failed check, critical first, with an empty triage field' do
       records = described_class.records([failing])
 
-      expect(records.pluck('check')).to eq(%w[false_success_claim wrong_agent])
+      expect(records.pluck('check')).to eq(%w[duplicate_operation wrong_agent])
       expect(records.first).to eq(
-        'fixture' => 'ws_net__family_booking_01.yml', 'dialogue' => 'family_booking_01', 'run' => 2, 'turn' => 4, 'check' => 'false_success_claim',
-        'severity' => 'critical', 'gate' => 'b', 'detail' => 'claims book', 'signature' => records.first['signature'],
+        'fixture' => 'ws_net__family_booking_01.yml', 'dialogue' => 'family_booking_01', 'run' => 2, 'turn' => 4, 'check' => 'duplicate_operation',
+        'severity' => 'critical', 'gate' => 'c', 'detail' => 'repeated create_appointment', 'signature' => records.first['signature'],
         'patient_message' => 'запишите дочку на среду',
         'agent_reply' => 'Записала вас на среду в 10:00.', 'acting_agent' => 'Запись к врачу',
         'tool_calls' => [{ 'tool' => 'search_available_slots', 'success' => true }], 'expectation' => { 'agent' => 'Запись к врачу' }, 'triage' => nil
@@ -35,7 +35,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Triage do
       records = described_class.records([early, failing])
 
       expect(records.map { |record| [record['severity'], record['dialogue'], record['check']] }).to eq(
-        [%w[critical family_booking_01 false_success_claim], %w[important a_dialogue wrong_agent], %w[important family_booking_01 wrong_agent]]
+        [%w[critical family_booking_01 duplicate_operation], %w[important a_dialogue wrong_agent], %w[important family_booking_01 wrong_agent]]
       )
     end
 
@@ -127,7 +127,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Triage do
 
       with_file('triage' => records) do |path|
         expect(described_class.load(path)).to eq(described_class.key('ws_net__family_booking_01.yml', 'family_booking_01', 4,
-                                                                     'false_success_claim', records.first['signature']) => 'agent_bug')
+                                                                     'duplicate_operation', records.first['signature']) => 'agent_bug')
       end
     end
 
@@ -135,7 +135,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Triage do
       record = described_class.records([failing]).first.except('signature').merge('triage' => 'test_bug')
 
       with_file([record]) do |path|
-        expect(described_class.load(path)).to eq('ws_net__family_booking_01.yml|family_booking_01|4|false_success_claim' => 'test_bug')
+        expect(described_class.load(path)).to eq('ws_net__family_booking_01.yml|family_booking_01|4|duplicate_operation' => 'test_bug')
       end
     end
 
@@ -154,5 +154,15 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Triage do
 
   it 'identifies a failure by fixture file name, dialogue, turn and check, whatever the run' do
     expect(described_class.key('/a/b/ws.yml', 'd', 2, 'wrong_agent')).to eq('ws.yml|d|2|wrong_agent')
+  end
+
+  describe 'a hit of a check that reads text' do
+    it 'is no failure to triage: an older report that holds it as a failure is read without it' do
+      item = { 'fixture' => 'a.yml', 'dialogue' => 'd', 'turn' => 1, 'reasons' => %w[wrong_agent false_success_claim reply_leak:latin judge_unavailable],
+               'failures' => %w[wrong_agent false_success_claim reply_leak:latin judge_unavailable].map { |id| { 'id' => id, 'severity' => 'important' } } }
+
+      expect(described_class.failures_of(item).pluck('id')).to eq(['wrong_agent'])
+      expect(described_class.records([item]).pluck('check')).to eq(['wrong_agent'])
+    end
   end
 end

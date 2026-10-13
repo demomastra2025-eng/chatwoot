@@ -100,11 +100,10 @@ namespace :captain do
     report = JSON.parse(File.read(ENV.fetch('REPORT')))
     labels = Captain::Evals::RoutingBenchmark::Triage.load(ENV['TRIAGE'].presence)
     cases = report.fetch('cases')
-    gate = Captain::Evals::RoutingBenchmark::Gate.call(cases, aborted: report['aborted'], abort_reason: report['abort_reason'], labels: labels,
-                                                              silent_handoff: report['silent_handoff'],
-                                                              silent_handoff_error: report['silent_handoff_error'])
+    gate = Captain::Evals::RoutingBenchmark::Gate.for_report(report, labels: labels)
     report['gate'] = gate
     report['triage'] = Captain::Evals::RoutingBenchmark::Triage.records(cases, labels: labels)
+    report['needs_review'] = Captain::Evals::RoutingBenchmark::Review.records(cases)
     puts Captain::Evals::RoutingBenchmark::Report.new(report).markdown
     exit(1) unless gate[:verdict] == 'PASS'
   end

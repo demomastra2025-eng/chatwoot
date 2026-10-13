@@ -19,8 +19,10 @@ class Captain::Evals::RoutingBenchmark::Report
     @report = report.to_h.deep_stringify_keys
   end
 
+  REVIEW_LIMIT = 150
+
   def markdown
-    [header, gate_section, summary_section, dialogues_section, triage_section].reject(&:empty?).join("\n")
+    [header, gate_section, summary_section, dialogues_section, triage_section, review_section].reject(&:empty?).join("\n")
   end
 
   private
@@ -31,17 +33,58 @@ class Captain::Evals::RoutingBenchmark::Report
 
   def gate_section
     critical, overall, triage = gate.values_at('critical', 'overall', 'triage')
+    pass_k = overall['runs'].to_i > 1 ? "pass^#{overall['runs']}: a turn passes only when it passes in every run; " : ''
     lines = ['## GATE', '', "**Verdict: #{gate['verdict']}**", '',
              '| Rule | Result |', '| --- | --- |',
              "| Critical checks, all must pass | #{critical['passed']}/#{critical['total']} passed (#{critical['pct']}%), #{critical['failed']} failed |",
-             "| Overall score, at least #{overall['threshold']}% | #{overall['passed']}/#{overall['total']} turns passed (#{overall['pct']}%) |"]
+             "| Overall score, at least #{overall['threshold']}% (#{pass_k}turns not evaluated are left out) | " \
+             "#{overall['passed']}/#{overall['total']} turns passed (#{overall['pct']}%) |"]
     lines << unblocked_row(gate['overall_unblocked'], overall) if overall['blocked_turns'].to_i.positive?
+    lines << "| Turns not evaluated (no verdict of the rubric judge) | #{not_evaluated_cell} |" if gate['not_evaluated']
     lines += ["| Run complete | #{@report['aborted'] ? "no, stopped: #{@report['abort_reason']}" : 'yes'} |",
               "| Failed checks triaged by a person | #{triage['triaged']}/#{triage['failed_checks']} |"]
+    lines << "| Rubric judge | #{judge_cell} |" unless gate['judge'].nil?
     lines << "| Handoff is silent (blank notice) | #{silent_cell} |" if silent_cell
-    lines += infra_lines
+    lines += run_lines + dialogue_lines + hint_lines + infra_lines
     lines += blockers_lines + after_triage_lines + coverage_lines + critical_failure_lines + check_table_lines
     "#{lines.join("\n")}\n"
+  end
+
+  def not_evaluated_cell
+    left = gate['not_evaluated']
+    left['turns'].to_i.positive? ? "#{left['turns']} #{left['by_check'].to_json}" : 'none'
+  end
+
+  def judge_cell = gate['judge'] ? 'on' : 'off: the text of the replies is not evaluated'
+
+  # The score of each run on its own (with RUNS=3 three rows): the per-turn pass rate, the critical failures, the critical hints.
+  def run_lines
+    runs = gate['runs'].to_h
+    return [] if runs.empty?
+
+    rows = runs.map do |run, stats|
+      "| #{run} | #{stats['passed']}/#{stats['passed'].to_i + stats['failed'].to_i} (#{stats['pct']}%) | #{stats['not_evaluated']} | " \
+        "#{stats['critical_failures']} | #{stats['hints']} (#{stats['critical_hints']} critical) |"
+    end
+    ['', '### Runs', '', '| Run | Turns passed | Not evaluated | Critical failures | Hints (detectors, never failures) |', '| --- | --- | --- | --- | --- |'] + rows
+  end
+
+  # pass^k of the dialogues: passed in every run.
+  def dialogue_lines
+    dialogues = gate['dialogues']
+    return [] unless dialogues
+
+    ['', "Dialogues: pass^#{dialogues['runs']} #{dialogues['passed_every_run']}/#{dialogues['total']} (#{dialogues['pass_k_pct']}%), " \
+         "failed #{dialogues['failed']}, not evaluated #{dialogues['not_evaluated']}."]
+  end
+
+  # The hits of the checks that read text: they never fail a turn; the list of the critical ones to read is in NEEDS REVIEW.
+  def hint_lines
+    hints = gate['hints']
+    return [] unless hints && hints['total'].to_i.positive?
+
+    by_check = hints['by_check'].map { |name, row| "`#{name}` #{row['turns']} (#{row['severity']})" }.join(', ')
+    ['', "Detector hints (they never fail a turn or the gate): #{hints['total']}, critical #{hints['critical']}; #{by_check}. See NEEDS REVIEW."]
   end
 
   # The turns the runner played on a conversation that staff owned and nobody had given back cannot happen live: the verdict counts them,
@@ -119,11 +162,13 @@ class Captain::Evals::RoutingBenchmark::Report
   def summary_section
     agg = @report.fetch('aggregates')
     lines = ['## Summary', '',
-             "Model: #{@report['model']}; runs: #{@report['runs']}; cases: #{agg['total']}; passed: #{agg['passed']}.",
+             "Model: #{@report['model']}; runs: #{@report['runs']}; cases: #{agg['total']}; passed: #{agg['passed']}; " \
+             "not evaluated: #{agg['not_evaluated'].to_i}.",
              "Routing accuracy: #{agg['routing_accuracy']}; council detection: #{agg['council_detection']}.",
              "Council turns: #{agg['council_expected']}; event missing: #{agg['council_event_missing']}; unexpected: #{agg['council_unexpected']}.",
              "Passed when the council signal is ignored: #{agg['passed_ignoring_council_signal']}.",
-             "Hard-zero counters: #{agg['hard_zero'].to_json}.",
+             "Hard-zero counters (duplicates and wrong patients are facts; the claim, leak and language counters count detector hints): " \
+             "#{agg['hard_zero'].to_json}.",
              "Latency p50/p95: #{agg['latency_p50_ms']}/#{agg['latency_p95_ms']} ms.",
              "Estimated provider cost: $#{@report['cost_usd']}; budget reached: #{@report['aborted_at_budget']}."]
     lines += quality_lines(agg)
@@ -140,12 +185,15 @@ class Captain::Evals::RoutingBenchmark::Report
     rate = ->(key) { agg[key].nil? ? 'n/a' : agg[key] }
     lines = ["Accuracy without infrastructure failures: routing #{rate.call('routing_accuracy')}, transfers #{rate.call('transfer_accuracy')}, " \
              "staff handoff #{rate.call('staff_handoff_accuracy')}, acts #{rate.call('acts_accuracy')}.",
-             "Dialogues: #{dialogues['passed']}/#{dialogues['total']} passed on every turn; blocked turns: #{dialogues['blocked_turns']}; " \
-             "pass^#{pass_k['k']}: #{pass_k['passed_every_run']}/#{pass_k['dialogues']} (#{pass_k['rate']})."]
+             "Dialogues: #{dialogues['passed']}/#{dialogues['total']} passed on every turn, #{dialogues['not_evaluated'].to_i} not evaluated; " \
+             "blocked turns: #{dialogues['blocked_turns']}; " \
+             "pass^#{pass_k['k']}: #{pass_k['passed_every_run']}/#{pass_k['dialogues']} (#{pass_k['rate']}), #{pass_k['not_evaluated'].to_i} not evaluated."]
     infra = agg['infra'].to_h
     lines << "Infrastructure failures: #{infra['turns']} turn(s) #{infra['by_check'].to_json}." if infra['turns'].to_i.positive?
     judge = agg['judge_unusable'].to_h
-    lines << "Rubric judge without a verdict (no failure of the turn): #{judge['turns']} turn(s) #{judge['by_check'].to_json}." if judge['turns'].to_i.positive?
+    if judge['turns'].to_i.positive?
+      lines << "Rubric judge without a verdict (no failure of the turn, but the turn is not evaluated): #{judge['turns']} turn(s) #{judge['by_check'].to_json}."
+    end
     lines
   end
 
@@ -177,7 +225,7 @@ class Captain::Evals::RoutingBenchmark::Report
     lines = ['', "Dialogues that did not pass (#{failed.size}; blocked = failed after an earlier failure it depends on):"]
     failed.first(FAILED_DIALOGUE_LIMIT).each do |item|
       numbers = item['turn_numbers'] || item['statuses'].each_index.map { |index| index + 1 }
-      turns = item['statuses'].each_with_index.map { |status, index| "t#{numbers[index]} #{status == 'fail' ? 'FAIL' : status}" }
+      turns = item['statuses'].each_with_index.map { |status, index| "t#{numbers[index]} #{{ 'fail' => 'FAIL', 'not_evaluated' => 'not evaluated' }.fetch(status, status)}" }
       first = item['first_failure'].to_h
       detail = first['checks'].present? ? " (first failure: turn #{first['turn']}, #{first['checks'].join(', ')})" : ''
       lines << "- `#{item['dialogue']}`#{run_suffix(item)}: #{turns.join(', ')}#{detail}"
@@ -209,6 +257,40 @@ class Captain::Evals::RoutingBenchmark::Report
       "- Triage: #{record['triage'] || '________ (agent_bug | test_bug | judge_error)'}",
       ''
     ]
+  end
+
+  # The hits of the checks that read text, critical first, for a person: each shows what the detector found, the reply, and the verdict of
+  # the rubric judge, which saw the hit and decided by meaning.
+  def review_section
+    records = Array(@report['needs_review'])
+    return '' if records.empty?
+
+    critical = records.count { |record| record['severity'] == 'critical' }
+    lines = ['## NEEDS REVIEW', '',
+             "#{records.size} detector hint(s), #{critical} critical. A detector of text never fails a turn or the gate; read the critical hints first " \
+             'and decide whether the reply has the fault.', '']
+    records.first(REVIEW_LIMIT).each_with_index { |record, index| lines.concat(review_lines(record, index + 1)) }
+    lines << "... and #{records.size - REVIEW_LIMIT} more (all of them are in `needs_review` of the JSON report)." if records.size > REVIEW_LIMIT
+    "#{lines.join("\n")}\n"
+  end
+
+  def review_lines(record, number)
+    [
+      "### #{number}. #{record['severity']} - `#{record['dialogue']}` turn #{record['turn']}#{run_suffix(record)} - `#{record['check']}`",
+      "- Detail: #{record['detail'].present? ? cell(record['detail'], DETAIL_LIMIT) : 'none recorded'}",
+      "- Patient: #{cell(record['patient_message'], TEXT_LIMIT)}",
+      "- Agent reply: #{cell(record['agent_reply'], TEXT_LIMIT)}",
+      "- Rubric judge: #{judge_text(record['judge'])}",
+      ''
+    ]
+  end
+
+  def judge_text(judge)
+    judge = judge.to_h
+    return 'not asked' if judge.empty?
+    return "no verdict (#{judge['unusable']}#{": #{cell(judge['detail'], DETAIL_LIMIT)}" if judge['detail'].present?})" if judge['unusable']
+
+    "#{judge['pass'] ? 'pass' : 'FAIL'}#{": #{cell(judge['reason'], DETAIL_LIMIT)}" if judge['reason'].present?}"
   end
 
   # The transfers and the council of the turn: who handed the conversation to whom, and how each part of a council ended.

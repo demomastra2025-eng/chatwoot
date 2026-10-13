@@ -5,7 +5,7 @@ require 'rails_helper'
 RSpec.describe Captain::Evals::RoutingBenchmark::Compare do
   let(:scorer) { Captain::Evals::RoutingBenchmark::Scorer }
 
-  def turn(dialogue, number = 1, fails: [], fixture: '/a/set1/ws_a.yml', evaluated: %w[false_success_claim wrong_agent runtime_error council_unexpected])
+  def turn(dialogue, number = 1, fails: [], fixture: '/a/set1/ws_a.yml', evaluated: %w[duplicate_operation wrong_agent runtime_error council_unexpected])
     failures = fails.map do |id|
       { 'id' => id, 'check' => scorer.base_check(id), 'severity' => scorer.severity_for(id), 'gate' => scorer.gate_item_for(id) }
     end
@@ -44,13 +44,13 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Compare do
     end
 
     it 'does not pass gate item 3 for two similar runs that both fail the gate, or that wait for triage' do
-      same_failure = described_class.call(run_of(hundred(7 => ['false_success_claim'])), run_of(hundred(7 => ['false_success_claim'])))
+      same_failure = described_class.call(run_of(hundred(7 => ['duplicate_operation'])), run_of(hundred(7 => ['duplicate_operation'])))
       untriaged = described_class.call(run_of(hundred(1 => ['wrong_agent'])), run_of(hundred(1 => ['wrong_agent'])))
 
       expect(same_failure).to include(similar: true, both_pass_the_gate: false, gate_item_3: false)
       expect(untriaged).to include(similar: true, both_pass_the_gate: false, gate_item_3: false)
       expect(described_class.new(run_of(hundred), run_of(hundred)).markdown).to include('- Gate item 3 (two consecutive runs, similar and both passing): PASS')
-      expect(described_class.new(run_of(hundred(7 => ['false_success_claim'])), run_of(hundred(7 => ['false_success_claim']))).markdown)
+      expect(described_class.new(run_of(hundred(7 => ['duplicate_operation'])), run_of(hundred(7 => ['duplicate_operation']))).markdown)
         .to include('- Gate item 3 (two consecutive runs, similar and both passing): FAIL')
     end
 
@@ -65,7 +65,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Compare do
       expect(described_class.new(first, first).markdown).not_to include('## Infrastructure failures')
     end
 
-    it 'compares the checks of the v2 schema like any other, and reads the old name of the renamed handoff check' do
+    it 'compares the checks of the v2 schema like any other, and reads the hit of a text detector in an older output as a hint' do
       older = run_of(hundred(2 => ['handoff_claim_unsupported']))
       newer = run_of(hundred(2 => ['false_handoff_claim'], 3 => ['staff_handoff_missing:person_request']))
 
@@ -73,12 +73,13 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Compare do
 
       expect(result[:critical][:new_in_second]).to eq([])
       expect(result[:critical][:fixed_in_second]).to eq([])
-      expect(result[:checks].pluck(:check)).to include('false_handoff_claim')
+      expect(result[:checks].pluck(:check)).to eq(['staff_handoff_missing'])
+      expect(result[:flipped]).to be_empty
     end
 
     it 'compares a check only on the turns that both runs scored and put the check to' do
-      older = hundred.map { |item| item.merge('evaluated' => %w[false_success_claim wrong_agent]) }
-      newer = hundred(5 => %w[reply_leak:latin reply_leak:identifier])
+      older = hundred.map { |item| item.merge('evaluated' => %w[duplicate_operation wrong_agent]) }
+      newer = hundred(5 => %w[operation_mismatch:starts_at operation_mismatch:resource])
 
       result = described_class.call(run_of(older), run_of(newer))
 
@@ -90,13 +91,13 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Compare do
     it 'does not blame a run for the turns the other run never reached' do
       aborted = run_of(hundred.first(50), aborted: true)
 
-      beyond = described_class.call(aborted, run_of(hundred(70 => ['false_success_claim'])))
-      within = described_class.call(aborted, run_of(hundred(10 => ['false_success_claim'])))
+      beyond = described_class.call(aborted, run_of(hundred(70 => ['duplicate_operation'])))
+      within = described_class.call(aborted, run_of(hundred(10 => ['duplicate_operation'])))
 
       expect(beyond).to include(similar: true)
       expect(beyond[:critical][:new_in_second]).to be_empty
-      expect(within[:critical][:new_in_second]).to eq(['ws_a.yml/d10/run1/t1 false_success_claim'])
-      expect(described_class.call(run_of(hundred(70 => ['false_success_claim'])), aborted)[:critical][:fixed_in_second]).to be_empty
+      expect(within[:critical][:new_in_second]).to eq(['ws_a.yml/d10/run1/t1 duplicate_operation'])
+      expect(described_class.call(run_of(hundred(70 => ['duplicate_operation'])), aborted)[:critical][:fixed_in_second]).to be_empty
     end
 
     it 'is similar within 2 points and not beyond' do
@@ -109,21 +110,21 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Compare do
     end
 
     it 'is not similar when the second run has a critical failure the first did not' do
-      result = described_class.call(run_of(hundred), run_of(hundred(7 => ['false_success_claim'])))
+      result = described_class.call(run_of(hundred), run_of(hundred(7 => ['duplicate_operation'])))
 
       expect(result[:similar]).to be(false)
       expect(result[:not_similar_because]).to eq(['1 critical failure(s) appear only in the second run'])
-      expect(result[:critical][:new_in_second]).to eq(['ws_a.yml/d7/run1/t1 false_success_claim'])
+      expect(result[:critical][:new_in_second]).to eq(['ws_a.yml/d7/run1/t1 duplicate_operation'])
       expect(result[:both_pass_the_gate]).to be(false)
     end
 
     it 'does not call a critical failure that both runs share new, and reports one that is gone' do
-      shared = described_class.call(run_of(hundred(7 => ['false_success_claim'])), run_of(hundred(7 => ['false_success_claim'])))
-      gone = described_class.call(run_of(hundred(7 => ['false_success_claim'])), run_of(hundred))
+      shared = described_class.call(run_of(hundred(7 => ['duplicate_operation'])), run_of(hundred(7 => ['duplicate_operation'])))
+      gone = described_class.call(run_of(hundred(7 => ['duplicate_operation'])), run_of(hundred))
 
       expect(shared).to include(similar: true)
       expect(shared[:critical][:new_in_second]).to be_empty
-      expect(gone[:critical][:fixed_in_second]).to eq(['ws_a.yml/d7/run1/t1 false_success_claim'])
+      expect(gone[:critical][:fixed_in_second]).to eq(['ws_a.yml/d7/run1/t1 duplicate_operation'])
     end
 
     it 'lists the checks that flipped between the runs' do
@@ -178,21 +179,21 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Compare do
         run_of([{ 'fixture' => 'a.yml', 'dialogue' => 'd', 'turn' => 1, 'status' => reasons.empty? ? 'pass' : 'fail', 'reasons' => reasons }])
       end
 
-      result = described_class.call(old.call(['false_success_claim']), old.call([]))
+      result = described_class.call(old.call(['duplicate_operation']), old.call([]))
 
-      expect(result[:critical][:fixed_in_second]).to eq(['a.yml/d/run1/t1 false_success_claim'])
+      expect(result[:critical][:fixed_in_second]).to eq(['a.yml/d/run1/t1 duplicate_operation'])
     end
   end
 
   describe '#markdown' do
     it 'prints the verdict, the differences and the flipped checks' do
       first = run_of(hundred(1 => ['wrong_agent'], 2 => ['runtime_error']))
-      second = run_of(hundred(1 => ['wrong_agent'], 7 => ['false_success_claim']))
+      second = run_of(hundred(1 => ['wrong_agent'], 7 => ['duplicate_operation']))
 
       text = described_class.new(first, second).markdown
 
       expect(text).to start_with("# Benchmark comparison\n\n**Similar: no**")
-      expect(text).to include('- First: 98/100 turns (98.0%)', '- Second: 98/100 turns (98.0%)', '- New in the second run: ws_a.yml/d7/run1/t1 false_success_claim',
+      expect(text).to include('- First: 98/100 turns (98.0%)', '- Second: 98/100 turns (98.0%)', '- New in the second run: ws_a.yml/d7/run1/t1 duplicate_operation',
                               '| `wrong_agent` | important | 1 | 1 | +0 |', '## Flipped checks', '- ws_a.yml/d2/run1/t1 `runtime_error` (important): first fail, second pass')
     end
   end

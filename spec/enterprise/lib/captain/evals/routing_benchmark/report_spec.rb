@@ -8,7 +8,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Report do
     { 'fixture' => '/x/ws_mid__kazakh_mixed_01.yml', 'dialogue' => 'kazakh_mixed_01', 'run' => 1, 'turn' => 3, 'status' => 'fail',
       'reasons' => ['forbidden_tool:create_appointment', 'wrong_agent'],
       'failures' => [failure('forbidden_tool:create_appointment', 'create_appointment completed successfully'), failure('wrong_agent', 'acted: nil')],
-      'evaluated' => %w[forbidden_tool:create_appointment wrong_agent false_success_claim], 'customer' => 'ок',
+      'evaluated' => %w[forbidden_tool:create_appointment wrong_agent duplicate_operation], 'customer' => 'ок',
       'patient_text' => 'Сізді жаздым.', 'acting_agent' => 'Запись к врачу',
       'tool_calls' => [{ 'tool' => 'create_appointment', 'success' => true, 'arguments' => '{"resource_id":4}', 'result' => '{"success":true}' }],
       'expectation' => { 'agent' => 'Запись к врачу', 'must_not_call' => ['create_appointment'] },
@@ -20,7 +20,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Report do
   let(:fine) do
     booking = { 'model' => 'appointment', 'kind' => 'create', 'resource' => 'doctor_a', 'service' => 'consult', 'starts_at' => '2026-10-15T12:00:00+05:00' }
     { 'fixture' => '/x/ws_mid__kazakh_mixed_01.yml', 'dialogue' => 'kazakh_mixed_01', 'run' => 1, 'turn' => 1, 'status' => 'pass', 'reasons' => [],
-      'failures' => [], 'evaluated' => %w[wrong_agent false_success_claim], 'customer' => 'Сәлеметсіз бе', 'reply' => 'Сәлеметсіз бе!',
+      'failures' => [], 'evaluated' => %w[wrong_agent duplicate_operation], 'customer' => 'Сәлеметсіз бе', 'reply' => 'Сәлеметсіз бе!',
       'patient_text' => 'Сәлеметсіз бе!', 'expectation' => { 'operations' => [booking] }, 'human_request' => { 'value' => true, 'source' => 'fixture' } }
   end
   let(:cases) { [fine, risky] }
@@ -45,7 +45,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Report do
   it 'starts with the GATE section: the verdict, the rules and the critical failures' do
     expect(markdown).to start_with("# Routing benchmark\n\n## GATE\n\n**Verdict: FAIL**")
     expect(markdown).to include('| Critical checks, all must pass | 2/3 passed (66.67%), 1 failed |')
-    expect(markdown).to include('| Overall score, at least 95.0% | 1/2 turns passed (50.0%) |')
+    expect(markdown).to include('| Overall score, at least 95.0% (turns not evaluated are left out) | 1/2 turns passed (50.0%) |')
     expect(markdown).to include('| Run complete | yes |', '| Failed checks triaged by a person | 0/2 |')
     expect(markdown).to include('### Critical failures',
                                 '- `kazakh_mixed_01` turn 3: `forbidden_tool:create_appointment` (gate a,c) create_appointment completed successfully')
@@ -57,8 +57,9 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Report do
   end
 
   it 'keeps the summary lines of the first harness version' do
-    expect(markdown).to include('Model: openai/gpt-6-luna; runs: 1; cases: 2; passed: 1.', 'Hard-zero counters: {"false_success_claim":0}.',
+    expect(markdown).to include('Model: openai/gpt-6-luna; runs: 1; cases: 2; passed: 1; not evaluated: 0.', '{"false_success_claim":0}.',
                                 'Latency p50/p95: 10/20 ms.', 'WARNING: a warning')
+    expect(markdown).to include('Hard-zero counters (duplicates and wrong patients are facts; the claim, leak and language counters count detector hints)')
   end
 
   it 'lists one triage record per failed check, critical first, with an empty triage field' do
@@ -77,7 +78,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Report do
     owned = risky.merge('blocked' => true)
     blocked = report.merge(gate: Captain::Evals::RoutingBenchmark::Gate.call([fine, owned]))
 
-    expect(described_class.new(blocked).markdown).to include('| Overall score, at least 95.0% | 1/2 turns passed (50.0%) |',
+    expect(described_class.new(blocked).markdown).to include('| Overall score, at least 95.0% (turns not evaluated are left out) | 1/2 turns passed (50.0%) |',
                                                               '| Overall score without the 1 blocked turn(s) (information) | 1/1 turns passed (100.0%) |')
   end
 
@@ -85,7 +86,8 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Report do
     judged = report.merge(aggregates: report[:aggregates].merge(dialogues: { total: 1, passed: 1, blocked_turns: 0, pass_k: { k: 1 } },
                                                                  judge_unusable: { turns: 2, by_check: { 'judge_unavailable' => 2 } }))
 
-    expect(described_class.new(judged).markdown).to include('Rubric judge without a verdict (no failure of the turn): 2 turn(s) {"judge_unavailable":2}.')
+    expect(described_class.new(judged).markdown)
+      .to include('Rubric judge without a verdict (no failure of the turn, but the turn is not evaluated): 2 turn(s) {"judge_unavailable":2}.')
     expect(markdown).not_to include('Rubric judge without a verdict')
   end
 
@@ -130,7 +132,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Report do
 
     it 'prints the accuracies, the dialogue totals, pass^k and the categories in a section of their own' do
       expect(text).to include('Accuracy without infrastructure failures: routing 0.0, transfers n/a, staff handoff n/a, acts n/a.',
-                              'Dialogues: 1/3 passed on every turn; blocked turns: 0; pass^1: 1/3 (0.3333).')
+                              'Dialogues: 1/3 passed on every turn, 0 not evaluated; blocked turns: 0; pass^1: 1/3 (0.3333), 0 not evaluated.')
       expect(text).to include('## Dialogues', '| Category | Dialogues passed | Turns passed |', '| kazakh_mixed | 0/1 | 1/2 |', '| ok | 1/1 | 1/1 |')
       expect(text.index('## Summary')).to be < text.index('## Dialogues')
       expect(text.index('## Dialogues')).to be < text.index('## TRIAGE')
@@ -203,5 +205,65 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Report do
     text = described_class.new(decided).markdown
 
     expect(text).to include('- Triage: test_bug', 'After triage (test bugs and judge errors removed)')
+  end
+
+  describe 'the verdict INCOMPLETE_EVALUATION, the runs and the turns not evaluated' do
+    let(:left) { fine.merge('dialogue' => 'left_01', 'status' => 'not_evaluated', 'not_evaluated' => ['judge'], 'judge' => { 'unusable' => 'judge_unavailable' }) }
+    let(:incomplete) do
+      cases = [fine, left, fine.merge('dialogue' => 'ok_02', 'run' => 2), fine.merge('dialogue' => 'ok_03')]
+      report.merge(cases: cases, gate: Captain::Evals::RoutingBenchmark::Gate.call(cases, judge: true), triage: [])
+    end
+
+    it 'names the verdict, the turns that wait for a verdict, and the score of each run' do
+      text = described_class.new(incomplete).markdown
+
+      expect(text).to include('**Verdict: INCOMPLETE_EVALUATION**', '| Turns not evaluated (no verdict of the rubric judge) | 1 {"judge":1} |',
+                              '| Rubric judge | on |', '- 1 turn(s) not evaluated: a required check has no verdict (the rubric judge gave none)')
+      expect(text).to include('### Runs', '| Run | Turns passed | Not evaluated | Critical failures | Hints (detectors, never failures) |', '| 1 | 2/2 (100.0%) | 1 | 0 | 0 (0 critical) |',
+                              '| 2 | 1/1 (100.0%) | 0 | 0 | 0 (0 critical) |')
+      expect(text).to include('Dialogues: pass^2')
+    end
+
+    it 'says that a run without the judge did not evaluate the text of the replies' do
+      cases = [fine]
+      off = report.merge(cases: cases, gate: Captain::Evals::RoutingBenchmark::Gate.call(cases, judge: false), triage: [])
+
+      expect(described_class.new(off).markdown).to include('**Verdict: INCOMPLETE_EVALUATION**', '| Rubric judge | off: the text of the replies is not evaluated |')
+    end
+
+    it 'shows a turn not evaluated in the list of the dialogues that did not pass' do
+      summary = Captain::Evals::RoutingBenchmark::Summary.call(incomplete[:cases])
+      text = described_class.new(incomplete.merge(dialogue_summaries: summary[:dialogue_summaries],
+                                                   aggregates: incomplete[:aggregates].merge(summary.except(:dialogue_summaries)))).markdown
+
+      expect(text).to include('- `left_01`: t1 not evaluated')
+    end
+  end
+
+  describe 'the NEEDS REVIEW list of the detector hints' do
+    let(:hinted) do
+      claim = { 'id' => 'false_success_claim', 'check' => 'false_success_claim', 'severity' => 'critical', 'gate' => 'b', 'detail' => 'claims book; successful tools: none' }
+      greeting = { 'id' => 'greeting_only_reply', 'check' => 'greeting_only_reply', 'severity' => 'important', 'gate' => 'overall', 'detail' => 'Здравствуйте!' }
+      fine.merge('hints' => [greeting, claim], 'judge' => { 'pass' => false, 'reason' => 'the booking is not in the database' })
+    end
+    let(:with_hints) do
+      cases = [hinted]
+      report.merge(cases: cases, gate: Captain::Evals::RoutingBenchmark::Gate.call(cases), triage: [],
+                   needs_review: Captain::Evals::RoutingBenchmark::Review.records(cases))
+    end
+
+    it 'lists every hit with the reply and the verdict of the judge, the critical ones first, and says they fail nothing' do
+      text = described_class.new(with_hints).markdown
+
+      expect(text).to include('## NEEDS REVIEW', '2 detector hint(s), 1 critical. A detector of text never fails a turn or the gate')
+      expect(text.index('critical - `kazakh_mixed_01` turn 1 - `false_success_claim`')).to be < text.index('important - `kazakh_mixed_01` turn 1 - `greeting_only_reply`')
+      expect(text).to include('- Detail: claims book; successful tools: none', '- Agent reply: Сәлеметсіз бе!', '- Rubric judge: FAIL: the booking is not in the database')
+      expect(text).to include('Detector hints (they never fail a turn or the gate): 2, critical 1;')
+      expect(text.index('## TRIAGE')).to be < text.index('## NEEDS REVIEW')
+    end
+
+    it 'has no section for a run without hints' do
+      expect(markdown).not_to include('NEEDS REVIEW')
+    end
   end
 end

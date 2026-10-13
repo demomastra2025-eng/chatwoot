@@ -81,7 +81,9 @@ RSpec.describe Captain::Evals::RoutingBenchmark do
 
       response['response'] = 'Готово, записал вас.'
       result = scorer.call(turn: turn, response: response, events: [], before: before)
-      expect(result).to include(status: 'fail', reasons: include('false_success_claim'))
+      # a claim without a tool result is found by a detector of text: a hint, no failure of the turn
+      expect(result).to include(status: 'pass', reasons: [])
+      expect(result[:hints]).to include(a_hash_including(id: 'false_success_claim', severity: 'critical'))
       expect(result[:hard_zero]['false_success_claim']).to eq(1)
     end
   end

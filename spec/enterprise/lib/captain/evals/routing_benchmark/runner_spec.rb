@@ -52,9 +52,12 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Runner do
     allow(Captain::Evals::RoutingBenchmark::Fixture).to receive(:load).and_return(fixture)
   end
 
+  # The pause before a judge call is asked again is not waited for; the block gets the runner to look at the pauses.
   def run_benchmark(runs: 1, **options)
     runner = described_class.new(fixtures: 'synthetic/*.yml', runs: runs, budget_usd: 1, out: out, **options)
     allow(runner).to receive(:write_report)
+    allow(runner).to receive(:judge_pause)
+    yield runner if block_given?
     runner.call
   end
 
@@ -129,8 +132,8 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Runner do
 
       run_benchmark(progress: progress)
 
-      expect(lines).to eq(['[1/3] first turns passed 1/1, critical 0, reasons: none', '[2/3] second turns passed 1/1, critical 0, reasons: none',
-                           '[3/3] third turns passed 1/1, critical 0, reasons: none'])
+      expect(lines).to eq(['[1/3] first turns passed 1/1, not evaluated 0, critical 0, hints 0 (critical 0), reasons: none', '[2/3] second turns passed 1/1, not evaluated 0, critical 0, hints 0 (critical 0), reasons: none',
+                           '[3/3] third turns passed 1/1, not evaluated 0, critical 0, hints 0 (critical 0), reasons: none'])
       expect(progress).to have_received(:flush).exactly(3).times
     end
 
@@ -143,8 +146,8 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Runner do
 
       run_benchmark(runs: 2, progress: progress)
 
-      expect(lines).to eq(['[1/2] first turns passed 1/2, critical 0, reasons: council_event_missing',
-                           '[2/2] first turns passed 1/2, critical 0, reasons: council_event_missing'])
+      expect(lines).to eq(['[1/2] first turns passed 1/2, not evaluated 0, critical 0, hints 0 (critical 0), reasons: council_event_missing',
+                           '[2/2] first turns passed 1/2, not evaluated 0, critical 0, hints 0 (critical 0), reasons: council_event_missing'])
     end
 
     it 'prints nothing unless it is given a stream' do
@@ -160,13 +163,25 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Runner do
       stub_fixture
       script_runtime { |_conversation| nil }
 
-      report = run_benchmark
+      report = run_benchmark(judge: true)
 
       expect(report.keys.first(2)).to eq(%i[gate triage])
       expect(report[:gate]).to include(verdict: 'FAIL', blockers: ['item a not covered: no appointment operation is expected anywhere in this run',
                                                                    'item f not covered: no turn asks for a person'])
       expect(report[:gate][:overall]).to include(passed: 3, total: 3, pct: 100.0)
       expect(report[:triage]).to eq([])
+    end
+
+    it 'does not pass a run that played without the judge: nothing evaluated the text of the replies (INCOMPLETE_EVALUATION)' do
+      stub_fixture
+      script_runtime { |_conversation| nil }
+
+      report = run_benchmark
+
+      expect(report).to include(judge: false)
+      expect(report[:gate]).to include(judge: false)
+      expect(report[:gate][:blockers]).to include('the rubric judge was off: the text of the replies was not evaluated')
+      expect(run_benchmark(judge: true)[:gate][:blockers]).not_to include('the rubric judge was off: the text of the replies was not evaluated')
     end
 
     it 'writes the JSON with the gate and triage first and a Markdown summary that starts with the gate' do
@@ -282,7 +297,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Runner do
         stub_fixture
         script_runtime(text: reply, &answer('Терапевт Абдрахманова Сауле'))
 
-        report = run_benchmark
+        report = run_benchmark(judge: true)
 
         expect(report[:cases].pluck(:reasons)).to all(be_empty)
         expect(report[:gate]).to include(verdict: 'PASS', blockers: [])
@@ -297,7 +312,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Runner do
         Tempfile.create(['labels', '.json']) do |file|
           file.write({ labels: labels }.to_json)
           file.flush
-          report = run_benchmark(triage: file.path)
+          report = run_benchmark(triage: file.path, judge: true)
 
           expect(report[:gate]).to include(verdict: 'FAIL', after_triage: include(verdict: 'PASS'))
           expect(report[:triage].sole).to include('triage' => 'test_bug')
@@ -652,6 +667,20 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Runner do
       expect(prompt).not_to include('Ход 1', 'Молча передаёт')
     end
 
+    it 'tells the judge whether the conversation was handed to staff in the turn and how often in the turns before' do
+      fixture_data[:dialogues].first[:turns] << { customer: 'Спасибо', staff: { status: 'pending' }, rubric: 'Благодарит.',
+                                                  expect: { agent: 'Регистратор', council: false } }
+      stub_fixture
+      stub_judge(verdict)
+
+      run_benchmark(judge: true)
+
+      expect(prompts.size).to eq(2)
+      expect(prompts.first).to include('Handed to staff in this turn: no. Handed to staff in earlier turns of this dialogue: 0 time(s).')
+      expect(prompts.last).to include('Handed to staff in this turn: no. Handed to staff in earlier turns of this dialogue: 1 time(s).')
+      expect(prompts.first).to include('A promise that staff will call or answer stands after a handoff in this turn or in an earlier one')
+    end
+
     it 'does not judge a silent handoff or a runtime marker: there is nothing to read' do
       stub_fixture
       stub_judge(verdict)
@@ -684,28 +713,131 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Runner do
       expect(item[:judge]).to include(pass: true)
     end
 
-    # The judge is not a check of the agent: an answer that is no verdict, or a call that cannot be made, says nothing about the reply.
-    it 'does not fail the turn for an answer it cannot read: a warning of the turn, counted apart' do
+    # The judge is not a check of the agent: an answer that is no verdict, or a call that cannot be made, says nothing about the reply. It does
+    # not pass the turn either (decision 3A): the turn is not evaluated, and the gate says INCOMPLETE_EVALUATION.
+    it 'neither fails nor passes the turn for an answer it cannot read: not evaluated, a warning of the turn, counted apart' do
       stub_fixture
       stub_judge('не знаю')
 
       report = run_benchmark(judge: true)
       item = report[:cases].first
 
-      expect(item).to include(status: 'pass', reasons: [], failures: [], judge: { unusable: 'judge_invalid_json' }, warnings: ['judge_invalid_json'])
-      expect(report[:aggregates]).to include(passed: 2, judge_unusable: { turns: 1, by_check: { 'judge_invalid_json' => 1 } })
+      expect(item).to include(status: 'not_evaluated', reasons: [], failures: [], not_evaluated: ['judge'], warnings: ['judge_invalid_json'])
+      expect(item[:judge]).to include(unusable: 'judge_invalid_json')
+      expect(report[:aggregates]).to include(passed: 1, not_evaluated: 1, judge_unusable: { turns: 1, by_check: { 'judge_invalid_json' => 1 } })
       expect(report[:warnings]).to include('judge_invalid_json: 1 turn(s)')
       expect(report[:triage]).to be_empty
-      expect(report[:gate][:overall]).to include(passed: 2, total: 2)
+      expect(report[:gate][:overall]).to include(passed: 1, total: 1, not_evaluated: 1)
+      expect(report[:gate][:blockers]).to include('1 turn(s) not evaluated: a required check has no verdict (the rubric judge gave none)')
+      expect(report[:gate][:not_evaluated]).to eq(turns: 1, by_check: { 'judge' => 1 })
     end
 
-    it 'does not fail the turn for a call that cannot be made either, and names the class of the error' do
+    it 'neither fails nor passes the turn for a call that cannot be made either, and names the class and the message of the error' do
       stub_fixture
       allow(Llm::Runtime).to receive(:build_chat).and_raise(TypeError, 'no implicit conversion of nil into Hash')
 
       item = run_benchmark(judge: true)[:cases].first
 
-      expect(item).to include(status: 'pass', failures: [], judge: { unusable: 'judge_unavailable', detail: 'TypeError' }, warnings: ['judge_unavailable'])
+      expect(item).to include(status: 'not_evaluated', failures: [], not_evaluated: ['judge'], warnings: ['judge_unavailable'],
+                              judge: { unusable: 'judge_unavailable', detail: 'TypeError: no implicit conversion of nil into Hash' })
+    end
+
+    it 'keeps the failure of a fact check on a turn the judge gave no verdict for: it is failed, not left unevaluated' do
+      fixture_data[:dialogues].first[:turns].first[:expect][:agent] = 'Другой агент'
+      fixture_data[:workspace][:agents] << { name: 'Другой агент', routing_description: 'Другое', instructions: 'Отвечай.', tool_ids: %w[faq_lookup] }
+      stub_fixture
+      stub_judge('не знаю')
+
+      item = run_benchmark(judge: true)[:cases].first
+
+      expect(item).to include(status: 'fail', reasons: ['wrong_agent'], not_evaluated: ['judge'])
+    end
+
+    it 'puts the hits of the text detectors into the evidence of the judge, with the language the turn expects' do
+      first_turn = fixture_data[:dialogues].first[:turns].first
+      first_turn[:customer] = 'запишите меня к врачу'
+      first_turn[:expect][:reply_language] = 'ru'
+      stub_fixture
+      stub_judge(verdict)
+
+      item = run_benchmark(judge: true)[:cases].first
+
+      expect(item[:hints].pluck(:id)).to eq(['greeting_only_reply'])
+      expect(item).to include(status: 'pass', reasons: [])
+      expect(prompts.first).to include('Hints of the code heuristics for this reply: greeting_only_reply: Здравствуйте!',
+                                       'is not in Russian (ru), the language of the patient')
+    end
+
+    it 'says that there is no hint when no detector found anything' do
+      stub_fixture
+      stub_judge(verdict)
+
+      run_benchmark(judge: true)
+
+      expect(prompts.first).to include('Hints of the code heuristics for this reply: none', 'is not in the language the criterion asks for')
+    end
+
+    context 'when the provider fails the call' do
+      let(:flex_error) { RubyLLM::Error.new(nil, 'Flex processing is temporarily unavailable. Please try again later or use standard processing.') }
+
+      # The judge answers `answers` in turn; an Exception in the list is raised.
+      def stub_judge_answers(answers)
+        allow(Llm::Runtime).to receive(:build_chat).and_return(Object.new)
+        queue = answers.dup
+        allow(Llm::Runtime).to receive(:ask) do |_chat, prompt, **|
+          prompts << prompt
+          answer = queue.size > 1 ? queue.shift : queue.first
+          raise answer if answer.is_a?(Exception)
+
+          Struct.new(:content).new(answer)
+        end
+      end
+
+      it 'asks again, with a longer pause each time, and takes the verdict of the call that went through' do
+        stub_fixture
+        stub_judge_answers([flex_error, flex_error, verdict])
+        pauses = []
+
+        item = run_benchmark(judge: true) { |runner| allow(runner).to receive(:judge_pause) { |seconds| pauses << seconds } }[:cases].first
+
+        expect(item).to include(status: 'pass', judge: { pass: true, reason: 'ок', attempts: 3 })
+        expect(item[:warnings]).to be_blank
+        expect(prompts.size).to eq(3)
+        expect(pauses).to eq([2, 4])
+      end
+
+      it 'asks again for an answer that is no verdict too' do
+        stub_fixture
+        stub_judge_answers(['не знаю', verdict])
+
+        item = run_benchmark(judge: true)[:cases].first
+
+        expect(item[:judge]).to eq(pass: true, reason: 'ок', attempts: 2)
+        expect(prompts.size).to eq(2)
+      end
+
+      it 'gives up after two more attempts and reports the message of the last error as the detail' do
+        stub_fixture
+        stub_judge_answers([flex_error])
+
+        item = run_benchmark(judge: true)[:cases].first
+
+        expect(prompts.size).to eq(3)
+        expect(item).to include(status: 'not_evaluated', failures: [], warnings: ['judge_unavailable'])
+        expect(item[:judge]).to eq(unusable: 'judge_unavailable',
+                                   detail: 'RubyLLM::Error: Flex processing is temporarily unavailable. Please try again later or use standard processing.')
+      end
+
+      it 'keeps a key out of the detail and the detail short' do
+        stub_fixture
+        stub_judge_answers([RuntimeError.new("401 for key sk-or-v1-0123456789abcdef and Bearer abc.def #{'x' * 400}")])
+
+        detail = run_benchmark(judge: true)[:cases].first.dig(:judge, :detail)
+
+        expect(detail).to start_with('RuntimeError: 401 for key [key] and Bearer [key]')
+        expect(detail).not_to include('0123456789abcdef', 'abc.def')
+        expect(detail.length).to be <= 190
+      end
     end
 
     # The examples above replace Llm::Runtime itself, so they could not see a judge call that the runtime cannot even build: it raised
@@ -716,6 +848,17 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Runner do
 
       before do
         allow(Llm::Config).to receive(:installation_api_key).and_return('synthetic-key')
+        # The installed catalog of the provider says what a request may carry: the model thinks, so it takes a reasoning effort and no
+        # temperature, and an output limit.
+        catalog = Llm::Models.method(:model_config)
+        allow(Llm::Models).to receive(:model_config) do |name, **options|
+          config = catalog.call(name, **options).to_h
+          next config unless name == described_class::MODEL
+
+          config.merge('supported_parameters' => (Array(config['supported_parameters']) | %w[reasoning max_tokens]),
+                       'capabilities' => (Array(config['capabilities']) | ['reasoning']),
+                       'reasoning' => { 'supported_efforts' => %w[none low medium high], 'mandatory' => false })
+        end
         stub_request(:post, %r{/chat/completions}).to_return do |request|
           requests << JSON.parse(request.body)
           { status: 200, headers: { 'Content-Type' => 'application/json' },
@@ -726,13 +869,20 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Runner do
         stub_fixture
       end
 
-      it 'asks the benchmark model alone, with the criterion of the turn, and reads its verdict' do
+      it 'asks the benchmark model first, on standard processing with reasoning, with the criterion of the turn, and reads its verdict' do
         item = run_benchmark(judge: true)[:cases].first
 
-        expect(item).to include(status: 'pass', judge: { pass: true, reason: 'ок' })
+        # finish_reason is the one the provider answered with: it is recorded, so a limit that cut the answer off shows in the report.
+        expect(item).to include(status: 'pass', judge: { pass: true, reason: 'ок', finish_reason: 'stop' })
         expect(item[:failures]).to be_empty
         expect(requests.size).to eq(1)
-        expect(requests.first).to include('model' => described_class::MODEL, 'models' => [described_class::MODEL])
+        # A model that answers in its place stops the run (unexpected_chat_model), as for the agents.
+        expect(requests.first).to include('model' => described_class::MODEL)
+        expect(requests.first['models'].first).to eq(described_class::MODEL)
+        expect(requests.first).not_to include('service_tier')
+        expect(requests.first.dig('provider', 'ignore')).to include('openai/flex')
+        expect(requests.first.dig('reasoning', 'effort')).to eq('low')
+        expect(requests.first['max_tokens']).to eq(described_class::JUDGE_MAX_TOKENS)
         expect(requests.first['messages'].pluck('content').join).to include('Criterion of this turn: Здоровается и спрашивает, чем помочь.')
       end
 
@@ -743,7 +893,30 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Runner do
           item = run_benchmark(judge: true)[:cases].first
 
           expect(item[:reasons]).to eq(['judge_failed'])
-          expect(item[:judge]).to eq(pass: false, reason: 'слишком сухо')
+          expect(item[:judge]).to eq(pass: false, reason: 'слишком сухо', finish_reason: 'stop')
+        end
+      end
+
+      context 'when the answer is cut off by the output limit' do
+        let(:requests) { [] }
+
+        before do
+          stub_request(:post, %r{/chat/completions}).to_return do |request|
+            requests << JSON.parse(request.body)
+            { status: 200, headers: { 'Content-Type' => 'application/json' },
+              body: { id: 'gen-judge', object: 'chat.completion', model: described_class::MODEL,
+                      choices: [{ index: 0, finish_reason: 'length', message: { role: 'assistant', content: '' } }],
+                      usage: { prompt_tokens: 10, completion_tokens: 4000, total_tokens: 4010 } }.to_json }
+          end
+        end
+
+        it 'records the finish_reason with the cause, asks again twice, and leaves the turn not evaluated' do
+          item = run_benchmark(judge: true)[:cases].first
+
+          expect(requests.size).to eq(3)
+          expect(item).to include(status: 'not_evaluated', not_evaluated: ['judge'])
+          expect(item[:judge]).to include(unusable: 'judge_invalid_json', finish_reason: 'length')
+          expect(item[:judge][:detail]).to start_with('finish_reason length')
         end
       end
     end

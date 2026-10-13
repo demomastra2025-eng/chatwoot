@@ -50,7 +50,7 @@ RSpec.describe 'routing benchmark rake tasks' do
   end
 
   describe 'captain:routing_benchmark_fixtures' do
-    def write_fixture(dir, operations:, customer: 'позовите оператора', expectation: { 'staff_handoff' => true }, **extra)
+    def write_fixture(dir, operations:, customer: 'позовите оператора', expectation: { 'staff_handoff' => true, 'human_request' => true }, **extra)
       turn = ->(text, expect) { { 'customer' => text, 'expect' => { 'agent' => 'Регистратор', 'council' => false }.merge(expect) } }
       data = {
         'workspace' => {
@@ -184,12 +184,12 @@ RSpec.describe 'routing benchmark rake tasks' do
     it 'exits with 1 when the second run has a critical failure the first did not, and writes the comparison to OUT' do
       Dir.mktmpdir do |dir|
         first = report_file(dir, 'first.json', clean)
-        second = report_file(dir, 'second.json', [turn('d0', ['false_success_claim'])] + clean.drop(1))
+        second = report_file(dir, 'second.json', [turn('d0', ['duplicate_operation'])] + clean.drop(1))
         out = File.join(dir, 'comparison.json')
 
         output, status = run_task('captain:routing_benchmark_compare', FIRST: first, SECOND: second, OUT: out)
 
-        expect(output).to include('**Similar: no**', 'New in the second run: ws_a.yml/d0/run1/t1 false_success_claim')
+        expect(output).to include('**Similar: no**', 'New in the second run: ws_a.yml/d0/run1/t1 duplicate_operation')
         expect(status).to eq(1)
         expect(JSON.parse(File.read(out))).to include('similar' => false)
         expect(File.read("#{out}.md")).to start_with('# Benchmark comparison')
@@ -198,7 +198,7 @@ RSpec.describe 'routing benchmark rake tasks' do
 
     it 'exits with 1 for two similar runs that both fail the gate: the same critical failure twice is no pass of gate item 3' do
       Dir.mktmpdir do |dir|
-        failing = clean.each_with_index.map { |item, index| index == 5 ? turn('d5', ['false_success_claim']) : item }
+        failing = clean.each_with_index.map { |item, index| index == 5 ? turn('d5', ['duplicate_operation']) : item }
         first = report_file(dir, 'first.json', failing)
         second = report_file(dir, 'second.json', failing)
 
@@ -248,6 +248,25 @@ RSpec.describe 'routing benchmark rake tasks' do
 
         expect(output).to include('**Verdict: FAIL**', '- `risky` turn 1: `forbidden_tool:create_appointment` (gate a,c)',
                                   '### 1. critical - `risky` turn 1 - `forbidden_tool:create_appointment`')
+        expect(status).to eq(1)
+      end
+    end
+
+    it 'reads the hits of the text detectors of an older output as hints to review: they fail nothing' do
+      Dir.mktmpdir do |dir|
+        leaky = turn('leaky', %w[false_success_claim reply_leak:latin]).merge('customer' => 'ок', 'patient_text' => 'Готово, booking принят.')
+        output, status = run_task('captain:routing_benchmark_gate', REPORT: report_file(dir, 'old.json', [leaky] + clean))
+
+        expect(output).to include('**Verdict: PASS**', '## NEEDS REVIEW', '2 detector hint(s), 2 critical.', '- Agent reply: Готово, booking принят.')
+        expect(status).to be_nil
+      end
+    end
+
+    it 'exits with 1 for a run without the judge: the text of the replies was not evaluated' do
+      Dir.mktmpdir do |dir|
+        output, status = run_task('captain:routing_benchmark_gate', REPORT: report_file(dir, 'nojudge.json', clean, judge: false))
+
+        expect(output).to include('**Verdict: INCOMPLETE_EVALUATION**', '- the rubric judge was off: the text of the replies was not evaluated')
         expect(status).to eq(1)
       end
     end

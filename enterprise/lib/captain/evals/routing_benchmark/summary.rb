@@ -16,7 +16,9 @@
 # staff owned (`blocked: true` on the case: no `staff:` step gave it back to the AI, which cannot happen live) is blocked as well when it
 # fails. The turns stay failed turns for the gate; the gate also reports the score without the turns the runner marked (`overall_unblocked`).
 #
-# A judge that gave no verdict (`judge_unusable`) is no failure of the turn: the turns that carry it are counted apart.
+# A judge that gave no verdict (`judge_unusable`) is no failure of the turn, and no pass either: a turn left without the verdict it
+# requires is `not_evaluated` (a dialogue with such a turn and no failure is `incomplete`), and the turns that carry it are counted apart.
+# A hit of a check that reads text (Scorer::HINT_CHECKS) is a hint, not a failure: it is not counted here.
 class Captain::Evals::RoutingBenchmark::Summary
   # What the later turns of a dialogue depend on.
   STATE_CHECKS = %w[missing_operation operation_mismatch unexpected_mutation forbidden_tool succeeded_forbidden missing_act missing_tool
@@ -46,7 +48,8 @@ class Captain::Evals::RoutingBenchmark::Summary
     }
   end
 
-  # { fixture, dialogue, run, category, turns, passed, failed, blocked, pass, statuses: ['pass', 'fail', 'blocked'], first_failure }
+  # { fixture, dialogue, run, category, turns, passed, failed, blocked, not_evaluated, pass, incomplete,
+  #   statuses: ['pass', 'fail', 'blocked', 'not_evaluated'], first_failure }
   def summaries
     @summaries ||= @cases.group_by { |item| [item['fixture'], item['dialogue'], item['run'] || 1] }.map do |(fixture, dialogue, run), turns|
       dialogue_summary(File.basename(fixture.to_s), dialogue, run, turns.sort_by { |item| item['turn'].to_i })
@@ -61,7 +64,9 @@ class Captain::Evals::RoutingBenchmark::Summary
     {
       fixture: fixture, dialogue: dialogue, run: run, category: category_of(dialogue), turns: turns.size,
       passed: statuses.count('pass'), failed: statuses.count('fail'), blocked: statuses.count('blocked'),
-      pass: statuses.all?('pass'), statuses: statuses, turn_numbers: turns.map { |item| item['turn'] },
+      not_evaluated: statuses.count('not_evaluated'),
+      pass: statuses.all?('pass'), incomplete: statuses.include?('not_evaluated') && (statuses - %w[pass not_evaluated]).empty?,
+      statuses: statuses, turn_numbers: turns.map { |item| item['turn'] },
       first_failure: first && { turn: first[0]['turn'], checks: failed_checks(first[0]) }
     }.compact
   end
@@ -70,22 +75,26 @@ class Captain::Evals::RoutingBenchmark::Summary
     blocked = false
     turns.map do |item|
       failed = failed_checks(item)
-      status = turn_status(failed, blocked || item['blocked'] == true)
+      status = turn_status(failed, blocked || item['blocked'] == true, not_evaluated?(item))
       blocked ||= (failed & STATE_CHECKS).any?
       status
     end
   end
 
-  def turn_status(failed, blocked)
-    return 'pass' if failed.empty?
+  def turn_status(failed, blocked, not_evaluated)
+    return blocked ? 'blocked' : 'fail' if failed.any?
 
-    blocked ? 'blocked' : 'fail'
+    not_evaluated ? 'not_evaluated' : 'pass'
   end
 
-  # The checks a turn failed. A judge without a verdict is no failure (older reports hold it as one).
+  # A turn that is judged and got no verdict (see Runner#judge_unusable). A report of an older run holds it as a warning or a failure of the turn.
+  def not_evaluated?(item) = Captain::Evals::RoutingBenchmark::Scorer.not_evaluated?(item)
+
+  # The checks a turn failed: facts only. A judge without a verdict is no failure, and neither is a hint of a check that reads text
+  # (older reports hold both as failures).
   def failed_checks(item)
     scorer = Captain::Evals::RoutingBenchmark::Scorer
-    Array(item['reasons']).reject { |reason| scorer.judge_unusable?(reason) }.map { |reason| scorer.base_check(reason) }.uniq
+    Array(item['reasons']).select { |reason| scorer.finding?(reason) }.map { |reason| scorer.base_check(reason) }.uniq
   end
 
   def category_of(dialogue) = dialogue.to_s.sub(/_\d+\z/, '')
@@ -128,19 +137,29 @@ class Captain::Evals::RoutingBenchmark::Summary
     end
   end
 
+  # `failed` counts the dialogues with a failed turn, `not_evaluated` those left without a verdict and with no failure. pass^k is the
+  # share of dialogues that passed in EVERY run of k: a dialogue with a turn not evaluated in one run is not counted as passed.
   def dialogue_totals
     runs = summaries.pluck(:run).uniq.sort
     every_run = summaries.group_by { |item| [item[:fixture], item[:dialogue]] }
     stable = every_run.count { |_key, list| list.size == runs.size && list.all? { |item| item[:pass] } }
+    incomplete = every_run.count { |_key, list| list.none? { |item| item[:statuses].any? { |status| %w[fail blocked].include?(status) } } && list.any? { |item| item[:incomplete] } }
     {
-      total: summaries.size, passed: summaries.count { |item| item[:pass] }, failed: summaries.count { |item| !item[:pass] },
+      total: summaries.size, passed: summaries.count { |item| item[:pass] }, failed: summaries.count { |item| failed_dialogue?(item) },
+      not_evaluated: summaries.count { |item| item[:incomplete] },
       blocked_turns: summaries.sum { |item| item[:blocked] },
       per_run: runs.to_h { |run| [run, run_rate(summaries.select { |item| item[:run] == run })] },
-      pass_k: { k: runs.size, dialogues: every_run.size, passed_every_run: stable, rate: every_run.empty? ? nil : (stable.to_f / every_run.size).round(4) }
+      pass_k: { k: runs.size, dialogues: every_run.size, passed_every_run: stable, not_evaluated: incomplete,
+                rate: every_run.empty? ? nil : (stable.to_f / every_run.size).round(4) }
     }
   end
 
-  def run_rate(list) = { dialogues: list.size, passed: list.count { |item| item[:pass] } }
+  def failed_dialogue?(item) = !item[:pass] && !item[:incomplete]
+
+  def run_rate(list)
+    { dialogues: list.size, passed: list.count { |item| item[:pass] }, failed: list.count { |item| failed_dialogue?(item) },
+      not_evaluated: list.count { |item| item[:incomplete] } }
+  end
 
   def by_category
     summaries.group_by { |item| item[:category] }.sort.to_h do |category, list|
