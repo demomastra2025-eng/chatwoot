@@ -4,13 +4,19 @@
 #   - every critical check passed (100%): one failure of gate items a-f blocks the release,
 #   - an overall score of at least 95%: the share of scored turns on which no check failed,
 #   - every failed check triaged by a person (agent_bug, test_bug or judge_error),
-#   - gate items a and f put to the test: the run holds appointment expectations that name the doctor and the time, and a
-#     turn in which the customer asks for a person (see `coverage`), and
-#   - a run that was not cut short (a run stopped by the budget or by an unexpected model scored only part of the fixtures).
+#   - gate items a and f put to the test: the run holds appointment expectations that pin a start time, and a turn in which
+#     the customer asks for a person (see `coverage`),
+#   - a run that was not cut short (a run stopped by the budget or by an unexpected model scored only part of the fixtures), and
+#   - a handoff that is silent: the synthetic account's handoff notice is blank, so the text checks that are not put to a handoff
+#     turn do not hide a sentence the patient would read (`silent_handoff: false` is a blocker, nil means "not checked").
 # A run that fails none of the hard rules but has failed checks nobody has triaged yet is PENDING_TRIAGE, which is not a
 # pass. `critical passed/total` counts checks put to a turn (see Scorer::CHECKS and the `evaluated` list of a case);
 # `overall passed/total` counts turns. Human triage labels are reported next to the raw verdict: `after_triage` drops the
 # failures a person signed as test_bug or judge_error. It never replaces the raw verdict.
+#
+# A failure of the infrastructure under the agents (Scorer::INFRA_CHECKS: a technical handoff, a provider error, the fallback
+# sentence) fails its turn like any other, and needs a triage; `infra` counts these turns apart so that they are not read as
+# agent quality.
 class Captain::Evals::RoutingBenchmark::Gate
   THRESHOLD = 95.0
   # Older reports carry no `evaluated` list; these checks existed then and ran on every turn.
@@ -18,12 +24,12 @@ class Captain::Evals::RoutingBenchmark::Gate
 
   class << self
     # cases: the report's cases (string or symbol keys)
-    def call(cases, aborted: false, abort_reason: nil, labels: {})
+    def call(cases, aborted: false, abort_reason: nil, labels: {}, silent_handoff: nil)
       cases = cases.map { |item| item.to_h.deep_stringify_keys }
       triage = triage_summary(cases, labels)
-      raw = evaluate(cases, aborted, abort_reason, triage[:untriaged])
+      raw = evaluate(cases, aborted, abort_reason, triage[:untriaged], silent_handoff: silent_handoff)
       raw[:triage] = triage
-      raw[:after_triage] = evaluate(cases, aborted, abort_reason, triage[:untriaged], labels: labels) if labels.any?
+      raw[:after_triage] = evaluate(cases, aborted, abort_reason, triage[:untriaged], labels: labels, silent_handoff: silent_handoff) if labels.any?
       raw
     end
 
@@ -45,18 +51,16 @@ class Captain::Evals::RoutingBenchmark::Gate
       end
     end
 
-    # An expectation that can tell a wrong booking from a right one: it names the doctor and the time, and for a booking or
-    # a move also the service or the patient.
+    # An expectation that can tell a wrong booking from a right one: it pins the start time (`params.starts_at` of the v2 schema, or
+    # the symbolic `starts_at`). A wrong time is then an operation_mismatch; the doctor is any resource that fits the service, so the
+    # fixture does not pin it, and the reply is read against the booked row (reply_record_mismatch).
     def specific?(operation)
-      return false unless operation['resource'].present? && operation['starts_at'].present?
-
-      Captain::Evals::RoutingBenchmark::OperationCheck.kind_of(operation) == 'cancel' ||
-        %w[service patient patient_name].any? { |key| operation[key].present? }
+      Captain::Evals::RoutingBenchmark::OperationCheck.expected_start(operation).present?
     end
 
     private
 
-    def evaluate(cases, aborted, abort_reason, untriaged, labels: {})
+    def evaluate(cases, aborted, abort_reason, untriaged, labels: {}, silent_handoff: nil)
       scored = cases.map { |item| score(item, labels) }
       critical = critical_section(scored)
       overall = overall_section(scored)
@@ -66,11 +70,23 @@ class Captain::Evals::RoutingBenchmark::Gate
       blockers << "overall #{overall[:pct]}% is below #{THRESHOLD}%" if overall[:pct] < THRESHOLD
       blockers << "the run was cut short (#{abort_reason || 'aborted'})" if aborted
       blockers << 'no turn was scored' if scored.empty?
+      blockers << 'the handoff notice of the synthetic account is not blank: a handoff is not silent, and its text is not checked' if silent_handoff == false
       blockers.concat(uncovered)
       pending = untriaged.positive? ? ["#{untriaged} failed check(s) not triaged by a person"] : []
       verdict = blockers.any? ? 'FAIL' : (pending.any? ? 'PENDING_TRIAGE' : 'PASS')
       { verdict: verdict, blockers: blockers + pending, critical: critical, overall: overall, coverage: coverage,
-        by_severity: by_severity(scored), checks: checks(scored) }
+        by_severity: by_severity(scored), checks: checks(scored), infra: infra_section(scored), silent_handoff: silent_handoff }.compact
+    end
+
+    # The turns that ended in a failure of the infrastructure under the agents, by check.
+    def infra_section(scored)
+      by_check = Hash.new(0)
+      turns = scored.count do |entry|
+        found = entry[:failures].filter_map { |failure| base(failure['id']) }.select { |check| Captain::Evals::RoutingBenchmark::Scorer::INFRA_CHECKS.include?(check) }
+        found.each { |check| by_check[check] += 1 }
+        found.any?
+      end
+      { turns: turns, by_check: by_check.sort.to_h }
     end
 
     # A case reduced to what the gate counts: its failures (minus the ones a person signed off) and its evaluated checks.
@@ -114,8 +130,7 @@ class Captain::Evals::RoutingBenchmark::Gate
 
     # What the run put to the test, per gate item. A critical check that is "evaluated" on every turn proves nothing on a
     # turn that never gives it a chance to fail. Items a and f depend on the fixtures, so they block the gate:
-    #   a  appointment expectations that name the doctor and the time (and the service or the patient for a booking or a
-    #      move): without them a booking with the wrong doctor or time is not noticed
+    #   a  appointment expectations that pin the start time: without them a booking at the wrong time is not noticed
     #   f  turns in which the customer asks for a person: without them a missing handoff is not noticed
     # The other items are counted for the report only (b: replies that claim something; c: turns that changed an
     # appointment; d, e: patient replies that were scanned). Returns the table and the blockers.
@@ -141,7 +156,7 @@ class Captain::Evals::RoutingBenchmark::Gate
       if expected.zero?
         blockers << 'item a not covered: no appointment operation is expected anywhere in this run'
       elsif specific < expected
-        blockers << "item a not covered: #{expected - specific} of #{expected} expected operations have no doctor/time (or service/patient)"
+        blockers << "item a not covered: #{expected - specific} of #{expected} expected operations pin no start time (params.starts_at)"
       end
       blockers << 'item f not covered: no turn asks for a person' if asked.zero?
       blockers

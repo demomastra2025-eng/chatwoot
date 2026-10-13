@@ -47,6 +47,16 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Triage do
                                                               'tool_calls' => [{ 'tool' => 'create_appointment', 'success' => true }])
     end
 
+    it 'carries the transfers, the council parts, the silent handoff and the warnings of the turn, and nothing for a turn without them' do
+      item = failing.merge('evidence' => { 'transfers' => [{ 'from' => 'Администратор', 'to' => 'Запись к врачу' }], 'council' => { 'parts' => [] } },
+                           'silent_handoff' => true, 'warnings' => ['handoff_marker_without_tool'])
+
+      expect(described_class.records([item]).first).to include('transfers' => [{ 'from' => 'Администратор', 'to' => 'Запись к врачу' }],
+                                                               'council' => { 'parts' => [] }, 'silent_handoff' => true,
+                                                               'warnings' => ['handoff_marker_without_tool'])
+      expect(described_class.records([failing]).first.keys).not_to include('transfers', 'council', 'silent_handoff', 'warnings')
+    end
+
     it 'puts a decided label into the record' do
       labels = { described_class.key('ws_net__family_booking_01.yml', 'family_booking_01', 4, 'wrong_agent') => 'judge_error' }
 

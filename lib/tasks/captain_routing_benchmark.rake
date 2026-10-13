@@ -10,7 +10,10 @@ namespace :captain do
     # Each dialogue lives in an uncommitted, rolled-back transaction, so everything that runs on another thread would have to share
     # its connection (as transactional specs do) or it could not see the synthetic workspace. The pinned connection opens an outer
     # transaction that unpinning rolls back. A thread that opens a transaction of its own on the pinned connection deadlocks, so
-    # the council runs all its parts on the calling thread, in plan order (the read-only lanes would otherwise use threads).
+    # the council runs all its parts on the calling thread, in plan order (the read-only lanes would otherwise use threads) unless
+    # the switch is set on purpose. The scorer reads the events of the whole turn window (every LlmEvent after the turn started,
+    # whatever its request id), so parallel parts would not be missed either; the switch stays off by default because of the
+    # deadlock.
     ENV['CAPTAIN_COUNCIL_PARALLEL'] ||= 'off'
     pool = ActiveRecord::Base.connection_pool
     pool.pin_connection!(true)
@@ -28,12 +31,18 @@ namespace :captain do
     end
   end
 
-  desc 'List what the fixtures lack for gate items a and f, without calling a model: FIXTURES=glob (exit 1 unless nothing is missing)'
+  desc 'Load the fixtures strictly and list what they lack for gate items a and f and what the calendar lint finds, without calling a ' \
+       'model: FIXTURES=glob (exit 1 unless nothing is missing)'
   task routing_benchmark_fixtures: %i[routing_benchmark_preflight environment] do
     paths = Dir.glob(ENV.fetch('FIXTURES'))
     raise ArgumentError, 'No fixtures matched FIXTURES' if paths.empty?
 
-    audit = Captain::Evals::RoutingBenchmark::FixtureAudit.load(paths)
+    begin
+      audit = Captain::Evals::RoutingBenchmark::FixtureAudit.load(paths)
+    rescue Captain::Evals::RoutingBenchmark::Fixture::Invalid => e
+      puts "Invalid fixture: #{e.message}"
+      exit(1)
+    end
     puts audit.markdown
     exit(1) unless audit.ok?
   end
@@ -59,7 +68,8 @@ namespace :captain do
     report = JSON.parse(File.read(ENV.fetch('REPORT')))
     labels = Captain::Evals::RoutingBenchmark::Triage.load(ENV['TRIAGE'].presence)
     cases = report.fetch('cases')
-    gate = Captain::Evals::RoutingBenchmark::Gate.call(cases, aborted: report['aborted'], abort_reason: report['abort_reason'], labels: labels)
+    gate = Captain::Evals::RoutingBenchmark::Gate.call(cases, aborted: report['aborted'], abort_reason: report['abort_reason'], labels: labels,
+                                                              silent_handoff: report['silent_handoff'])
     report['gate'] = gate
     report['triage'] = Captain::Evals::RoutingBenchmark::Triage.records(cases, labels: labels)
     puts Captain::Evals::RoutingBenchmark::Report.new(report).markdown

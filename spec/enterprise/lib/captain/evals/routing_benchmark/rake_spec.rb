@@ -49,32 +49,65 @@ RSpec.describe 'routing benchmark rake tasks' do
   end
 
   describe 'captain:routing_benchmark_fixtures' do
-    def write_fixture(dir, operations:, customer: 'позовите оператора', human_request: true)
+    def write_fixture(dir, operations:, customer: 'позовите оператора', expectation: { 'staff_handoff' => true }, **extra)
       turn = ->(text, expect) { { 'customer' => text, 'expect' => { 'agent' => 'Регистратор', 'council' => false }.merge(expect) } }
       data = {
         'workspace' => {
           'agents' => [{ 'name' => 'Регистратор', 'routing_description' => 'Запись', 'instructions' => 'Отвечай.', 'tool_ids' => %w[faq_lookup] }],
           'contacts' => [{ 'key' => 'patient', 'name' => 'Дана Нурланова' }], 'resources' => [{ 'key' => 'doctor_a', 'name' => 'Терапевт Иванов Иван' }],
           'services' => [{ 'key' => 'consult', 'name' => 'Консультация' }]
-        },
+        }.merge(extra.stringify_keys),
         'dialogues' => [{ 'id' => 'd1', 'contact' => 'patient',
-                          'turns' => [turn.call('Запишите меня', 'operations' => operations), turn.call(customer, human_request ? { 'human_request' => true } : {})] }]
+                          'turns' => [turn.call('Запишите меня', 'operations' => operations), turn.call(customer, expectation)] }]
       }
       File.write(File.join(dir, 'ws_a.yml'), data.to_yaml)
     end
 
     let(:booking) do
-      { 'model' => 'appointment', 'kind' => 'create', 'resource' => 'doctor_a', 'service' => 'consult', 'starts_at' => '2026-10-15T12:00:00+05:00' }
+      { 'model' => 'appointment', 'kind' => 'create', 'params' => { 'status' => 'scheduled', 'starts_at' => '2026-10-15T12:00:00+05:00' } }
     end
 
-    it 'prints what is missing and exits with 1' do
+    it 'names the fixture that the strict loader refuses for an operation without a start, and exits with 1' do
       Dir.mktmpdir do |dir|
-        write_fixture(dir, operations: [{ 'model' => 'appointment', 'kind' => 'create', 'params' => { 'status' => 'scheduled' } }], human_request: false)
+        write_fixture(dir, operations: [{ 'model' => 'appointment', 'kind' => 'create', 'count' => 1, 'resource' => 'doctor_a' }], expectation: {})
 
         output, status = run_task('captain:routing_benchmark_fixtures', FIXTURES: File.join(dir, '*.yml'))
 
-        expect(output).to include('Ready for the gate: no.', '- ws_a.yml d1 turn 1: create expectation lacks resource, starts_at, service or patient',
-                                  '- ws_a.yml d1 turn 2: the customer asks for a person: add human_request: true')
+        expect(output).to include('Invalid fixture: ws_a.yml: An appointment operation must pin params.starts_at')
+        expect(status).to eq(1)
+      end
+    end
+
+    it 'prints the gaps of a fixture that loads, and exits with 1' do
+      Dir.mktmpdir do |dir|
+        write_fixture(dir, operations: [booking], expectation: {})
+
+        output, status = run_task('captain:routing_benchmark_fixtures', FIXTURES: File.join(dir, '*.yml'))
+
+        expect(output).to include('Ready for the gate: no.', '- ws_a.yml d1 turn 2: the customer asks for a person: add staff_handoff: true')
+        expect(status).to eq(1)
+      end
+    end
+
+    it 'names the file and the key the strict loader refuses' do
+      Dir.mktmpdir do |dir|
+        write_fixture(dir, operations: [booking], appointmens: [])
+
+        output, status = run_task('captain:routing_benchmark_fixtures', FIXTURES: File.join(dir, '*.yml'))
+
+        expect(output).to include('Invalid fixture: ws_a.yml: Unknown key in workspace: appointmens')
+        expect(status).to eq(1)
+      end
+    end
+
+    it 'prints what the calendar lint found' do
+      Dir.mktmpdir do |dir|
+        slots = [{ 'resource' => 'doctor_a', 'weekday' => 4, 'start_minute' => 540, 'end_minute' => 600 }]
+        write_fixture(dir, operations: [booking], slots: slots)
+
+        output, status = run_task('captain:routing_benchmark_fixtures', FIXTURES: File.join(dir, '*.yml'))
+
+        expect(output).to include('Ready for the gate: no.', '- ws_a.yml d1 turn 1: 2026-10-15T12:00:00+05:00 (30 min) is not possible for doctor_a: outside the work window (09:00-10:00)')
         expect(status).to eq(1)
       end
     end
@@ -88,6 +121,42 @@ RSpec.describe 'routing benchmark rake tasks' do
         expect(output).to include('Ready for the gate: yes.')
         expect(status).to be_nil
       end
+    end
+  end
+
+  describe 'captain:routing_benchmark' do
+    let(:runner) { instance_double(Captain::Evals::RoutingBenchmark::Runner, call: {}) }
+
+    around do |example|
+      saved = ENV.fetch('CAPTAIN_COUNCIL_PARALLEL', nil)
+      example.run
+    ensure
+      saved.nil? ? ENV.delete('CAPTAIN_COUNCIL_PARALLEL') : ENV['CAPTAIN_COUNCIL_PARALLEL'] = saved
+    end
+
+    before do
+      allow(Captain::Evals::RoutingBenchmark::Runner).to receive(:new).and_return(runner)
+      allow(Llm::EventSubscriber).to receive(:install!)
+      pool = ActiveRecord::Base.connection_pool
+      allow(pool).to receive(:pin_connection!)
+      allow(pool).to receive(:unpin_connection!)
+    end
+
+    it 'runs the parts of a council one after another on the calling thread: a thread on the pinned connection would deadlock' do
+      ENV.delete('CAPTAIN_COUNCIL_PARALLEL')
+
+      run_task('captain:routing_benchmark', FIXTURES: 'tmp/x/*.yml', BUDGET_USD: '1', OUT: 'tmp/x.json')
+
+      expect(ENV.fetch('CAPTAIN_COUNCIL_PARALLEL')).to eq('off')
+      expect(runner).to have_received(:call)
+    end
+
+    it 'leaves a switch that somebody set on purpose alone' do
+      ENV['CAPTAIN_COUNCIL_PARALLEL'] = 'on'
+
+      run_task('captain:routing_benchmark', FIXTURES: 'tmp/x/*.yml', BUDGET_USD: '1', OUT: 'tmp/x.json')
+
+      expect(ENV.fetch('CAPTAIN_COUNCIL_PARALLEL')).to eq('on')
     end
   end
 

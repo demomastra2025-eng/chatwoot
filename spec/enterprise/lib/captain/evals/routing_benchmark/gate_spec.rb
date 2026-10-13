@@ -22,8 +22,13 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Gate do
       'starts_at' => '2026-10-15T12:00:00+05:00' }.merge(extra)
   end
 
-  # A turn whose fixture names the doctor, the time and the service of the booking it expects (gate item a), and one in
-  # which the customer asks for a person (gate item f).
+  # The v2 form: the start is pinned among the params and nothing else is.
+  def v2_operation(extra = {})
+    { 'model' => 'appointment', 'kind' => 'create', 'params' => { 'status' => 'scheduled', 'starts_at' => '2026-10-15T12:00:00+05:00' } }.merge(extra)
+  end
+
+  # A turn whose fixture pins the start time of the booking it expects (gate item a), and one in which the customer asks for a
+  # person (gate item f).
   def booking_turn(dialogue = 'booking', operations: [operation], **options)
     turn(dialogue: dialogue, **options).merge('expectation' => { 'operations' => operations })
   end
@@ -184,7 +189,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Gate do
   end
 
   describe 'coverage of gate items a and f' do
-    it 'counts the expectations that name the doctor, the time and the service or patient, and the turns that ask for a person' do
+    it 'counts the expectations that pin the start time, and the turns that ask for a person' do
       cases = passing(10) + [booking_turn('cancelled', operations: [operation('kind' => 'cancel', 'service' => nil, 'patient' => nil)])]
 
       gate = described_class.call(cases)
@@ -193,7 +198,14 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Gate do
       expect(gate[:coverage]).to include('a' => { covered: 2, expected: 2 }, 'f' => { covered: 1 }, 'c' => { covered: 0 }, 'd' => { covered: 11 })
     end
 
-    it 'blocks the gate when a clean run holds no expectation with a doctor and a time: a wrong booking could not be noticed' do
+    it 'takes the start time of the v2 schema among the params as the pin: the doctor is any that fits, so the fixture names none' do
+      gate = described_class.call(passing(10) + [booking_turn('v2', operations: [v2_operation, v2_operation('kind' => 'update')])])
+
+      expect(gate[:verdict]).to eq('PASS')
+      expect(gate[:coverage]['a']).to eq(covered: 3, expected: 3)
+    end
+
+    it 'blocks the gate when a clean run holds no expectation with a start time: a booking at the wrong time could not be noticed' do
       old_form = { 'model' => 'appointment', 'kind' => 'create', 'params' => { 'status' => 'scheduled' } }
       cases = [turn(dialogue: 'old_form').merge('expectation' => { 'operations' => [old_form] }), person_turn] +
               Array.new(18) { |index| turn(dialogue: "d#{index}") }
@@ -201,17 +213,17 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Gate do
       gate = described_class.call(cases)
 
       expect(gate[:verdict]).to eq('FAIL')
-      expect(gate[:blockers]).to eq(['item a not covered: 1 of 1 expected operations have no doctor/time (or service/patient)'])
+      expect(gate[:blockers]).to eq(['item a not covered: 1 of 1 expected operations pin no start time (params.starts_at)'])
       expect(gate[:critical][:failed]).to eq(0)
     end
 
-    it 'names how many of the expected operations lack the doctor or the time' do
-      vague = [operation('resource' => nil), operation('starts_at' => nil), operation('service' => nil), operation]
+    it 'names how many of the expected operations pin no start time' do
+      vague = [operation('starts_at' => nil), v2_operation('params' => { 'status' => 'scheduled' }), operation('resource' => nil), v2_operation]
 
       gate = described_class.call(passing(10) + [booking_turn('vague', operations: vague)])
 
-      expect(gate[:blockers]).to eq(['item a not covered: 3 of 5 expected operations have no doctor/time (or service/patient)'])
-      expect(gate[:coverage]['a']).to eq(covered: 2, expected: 5)
+      expect(gate[:blockers]).to eq(['item a not covered: 2 of 5 expected operations pin no start time (params.starts_at)'])
+      expect(gate[:coverage]['a']).to eq(covered: 3, expected: 5)
     end
 
     it 'does not count count: 0 ("no such row") or an operation on a deal' do
@@ -249,6 +261,73 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Gate do
       claiming = booking_turn('claim').merge('evidence' => { 'claimed_operations' => ['book'] }, 'db_delta' => [{ 'change' => 'created' }])
 
       expect(described_class.call(passing(3) + [claiming])[:coverage]).to include('b' => { covered: 1 }, 'c' => { covered: 1 })
+    end
+  end
+
+  describe 'the checks of the v2 schema' do
+    it 'rates the new checks: the critical ones block the release at once, the others count against the overall score' do
+      critical = %w[succeeded_forbidden:create_appointment false_handoff_claim tool_result_fallback staff_handoff_missing:person_request
+                    reply_leak:stock_text reply_leak:agent_name operation_mismatch:starts_at duplicate_operation]
+      important = %w[missing_act:create_appointment@Запись\ к\ врачу wrong_transfers:1 staff_handoff_missing staff_handoff_unexpected
+                     missing_done_statement:create_appointment council_changed_hands technical_handoff provider_error wrong_language]
+
+      expect(critical.map { |id| scorer.severity_for(id) }.uniq).to eq(['critical'])
+      expect(important.map { |id| scorer.severity_for(id) }.uniq).to eq(['important'])
+    end
+
+    it 'fails a run on one wrong start time or one false handoff claim, and on a stock sentence in a patient reply' do
+      %w[operation_mismatch:starts_at false_handoff_claim reply_leak:stock_text succeeded_forbidden:update_appointment].each do |check|
+        gate = described_class.call(passing(40) + [turn(dialogue: 'risky', fails: [check])])
+
+        expect(gate).to include(verdict: 'FAIL', blockers: include('1 critical failure(s)')), check
+      end
+    end
+
+    it 'reads the old name of the renamed handoff check in an older output' do
+      old = turn(dialogue: 'old', fails: ['handoff_claim_unsupported'])
+      old['failures'].each { |failure| failure.delete('severity') }
+
+      expect(described_class.call(passing(10) + [old])[:critical]).to include(failed: 1)
+    end
+  end
+
+  describe 'failures of the infrastructure' do
+    let(:infra_cases) do
+      passing(97) + [turn(dialogue: 'down_1', fails: ['provider_error']), turn(dialogue: 'down_2', fails: %w[technical_handoff wrong_agent]),
+                     turn(dialogue: 'down_3', fails: ['technical_handoff'])]
+    end
+
+    it 'counts them apart by check, and still as failed turns that need a triage' do
+      gate = described_class.call(infra_cases)
+
+      expect(gate[:infra]).to eq(turns: 3, by_check: { 'provider_error' => 1, 'technical_handoff' => 2 })
+      expect(gate[:overall]).to include(passed: 97, total: 100, failed_turns: 3)
+      expect(gate).to include(verdict: 'PENDING_TRIAGE', blockers: ['4 failed check(s) not triaged by a person'])
+    end
+
+    it 'fails the run when too many turns end in an infrastructure failure: they are never left out of the score' do
+      many = passing(90) + Array.new(10) { |index| turn(dialogue: "down_#{index}", fails: ['provider_error']) }
+
+      expect(described_class.call(many, labels: signed_off(many.last(10)))).to include(verdict: 'FAIL', blockers: ['overall 90.0% is below 95.0%'])
+    end
+
+    it 'passes once a person triaged every failure and the score holds' do
+      expect(described_class.call(infra_cases, labels: signed_off(infra_cases.last(3)))).to include(verdict: 'PASS', blockers: [])
+    end
+  end
+
+  describe 'the silent handoff' do
+    it 'blocks the gate when the handoff notice of the synthetic account is not blank: the text of a handoff is not checked' do
+      gate = described_class.call(passing(10), silent_handoff: false)
+
+      expect(gate).to include(verdict: 'FAIL', silent_handoff: false)
+      expect(gate[:blockers]).to include(a_string_starting_with('the handoff notice of the synthetic account is not blank'))
+    end
+
+    it 'does not block when the notice is blank or was not checked (an older output)' do
+      expect(described_class.call(passing(10), silent_handoff: true)).to include(verdict: 'PASS', silent_handoff: true)
+      expect(described_class.call(passing(10))).to include(verdict: 'PASS')
+      expect(described_class.call(passing(10))).not_to have_key(:silent_handoff)
     end
   end
 

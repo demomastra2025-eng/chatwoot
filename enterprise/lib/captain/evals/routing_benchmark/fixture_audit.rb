@@ -2,17 +2,24 @@
 
 # What the fixtures lack for gate items a and f, found without calling a model (the gate itself only finds out after a paid
 # run, see Gate coverage):
-#   - an appointment expectation that does not name the doctor (`resource`), the time (`starts_at`) and, for a booking or a
-#     move, the service or the patient (`service`, `patient`, `patient_name`): a booking with the wrong doctor or time would
-#     not be noticed on that turn;
-#   - a turn in which the customer asks for a person but the fixture does not say `human_request: true` (the detector would
-#     decide at run time), or says `false` against the wording.
-# `ok?` holds when nothing is missing and the fixtures hold at least one specific expectation and one request for a person.
+#   - an appointment expectation that does not pin the start time (`params.starts_at`, or the symbolic `starts_at`): a booking at
+#     the wrong time would not be noticed on that turn. The strict loader (Fixture) refuses such an operation, so the audit only
+#     counts them (item a);
+#   - a turn in which the customer asks for a person but the fixture does not expect a handoff (`staff_handoff: true`, or the older
+#     `human_request: true`), or says `staff_handoff: false` / `human_request: false` against the wording;
+#   - the lint of the calendar (FixtureLint): a start outside every doctor's work window or on a busy slot.
+# `ok?` holds when nothing is missing and the fixtures hold at least one pinned expectation and one request for a person.
 class Captain::Evals::RoutingBenchmark::FixtureAudit
   Gap = Struct.new(:fixture, :dialogue, :turn, :problem, keyword_init: true)
 
-  # fixtures: { file name => Fixture }
-  def self.load(paths) = new(paths.sort.to_h { |path| [File.basename(path), Captain::Evals::RoutingBenchmark::Fixture.load(path)] })
+  # fixtures: { file name => Fixture }. A file the strict loader refuses is named in the error.
+  def self.load(paths) = new(paths.sort.to_h { |path| [File.basename(path), load_fixture(path)] })
+
+  def self.load_fixture(path)
+    Captain::Evals::RoutingBenchmark::Fixture.load(path)
+  rescue Captain::Evals::RoutingBenchmark::Fixture::Invalid => e
+    raise Captain::Evals::RoutingBenchmark::Fixture::Invalid, "#{File.basename(path)}: #{e.message}"
+  end
 
   def initialize(fixtures)
     @fixtures = fixtures
@@ -23,15 +30,16 @@ class Captain::Evals::RoutingBenchmark::FixtureAudit
   end
 
   def ok?
-    result[:gaps].empty? && result[:operations][:specific].positive? && result[:human_requests][:flagged].positive?
+    operations = result[:operations]
+    result[:gaps].empty? && operations[:specific].positive? && operations[:specific] == operations[:expected] && result[:human_requests][:flagged].positive?
   end
 
   def markdown
     data = result
     lines = ['# Routing benchmark fixtures', '',
              "Fixtures: #{data[:fixtures]}; turns: #{data[:turns]}.",
-             "Item a: #{data[:operations][:specific]} of #{data[:operations][:expected]} appointment expectations name the doctor, the time and the service or patient.",
-             "Item f: #{data[:human_requests][:flagged]} turns are marked human_request: true; #{data[:human_requests][:unmarked]} ask for a person without the mark.",
+             "Item a: #{data[:operations][:specific]} of #{data[:operations][:expected]} appointment expectations pin the start time.",
+             "Item f: #{data[:human_requests][:flagged]} turns that ask for a person expect a handoff; #{data[:human_requests][:unmarked]} do not.",
              "Ready for the gate: #{ok? ? 'yes' : 'no'}.", '']
     lines << 'Nothing is missing.' if data[:gaps].empty?
     lines += data[:gaps].map { |gap| "- #{gap.fixture} #{gap.dialogue} turn #{gap.turn}: #{gap.problem}" }
@@ -48,42 +56,43 @@ class Captain::Evals::RoutingBenchmark::FixtureAudit
         dialogue.fetch('turns').each_with_index do |turn, index|
           counts[:turns] += 1
           where = { fixture: name, dialogue: dialogue['id'], turn: index + 1 }
-          operations(turn, where, counts, gaps)
+          operations(turn, counts)
           person(turn, where, counts, gaps)
         end
       end
+      lint(name, fixture, gaps)
     end
     { fixtures: @fixtures.size, turns: counts[:turns], operations: counts.slice(:expected, :specific),
       human_requests: counts.slice(:flagged, :unmarked), gaps: gaps }
   end
 
-  def operations(turn, where, counts, gaps)
+  # The strict loader refuses an appointment operation that pins no start, so every expectation that gets here is specific; the count
+  # stays in the report (item a), and `ok?` still compares the two.
+  def operations(turn, counts)
     gate = Captain::Evals::RoutingBenchmark::Gate
     gate.expected_operations('expectation' => turn['expect']).each do |operation|
       counts[:expected] += 1
-      if gate.specific?(operation)
-        counts[:specific] += 1
-      else
-        gaps << Gap.new(**where, problem: "#{kind_of(operation)} expectation lacks #{missing(operation).join(', ')}")
-      end
+      counts[:specific] += 1 if gate.specific?(operation)
     end
   end
 
+  # The customer asks for a person. The fixture expects the handoff (`staff_handoff: true`), or in the older form marks the turn.
   def person(turn, where, counts, gaps)
-    flag = turn.dig('expect', 'human_request')
+    expect = turn['expect']
     detected = Captain::Evals::RoutingBenchmark::HumanRequest.match?(turn['customer'])
-    counts[:flagged] += 1 if flag == true
-    return unless detected && flag != true
+    expected = expect['human_request'] == true || expect['staff_handoff'] == true
+    counts[:flagged] += 1 if expect['human_request'] == true || (detected && expect['staff_handoff'] == true)
+    return unless detected && !expected
 
     counts[:unmarked] += 1
-    gaps << Gap.new(**where, problem: flag.nil? ? 'the customer asks for a person: add human_request: true' : 'human_request: false, but the customer asks for a person')
+    contradicted = expect['human_request'] == false || expect['staff_handoff'] == false
+    gaps << Gap.new(**where, problem: contradicted ? 'the customer asks for a person, but the fixture expects no handoff' : 'the customer asks for a person: add staff_handoff: true')
   end
 
-  def kind_of(operation) = Captain::Evals::RoutingBenchmark::OperationCheck.kind_of(operation)
-
-  def missing(operation)
-    lacking = %w[resource starts_at].reject { |key| operation[key].present? }
-    lacking << 'service or patient' if kind_of(operation) != 'cancel' && %w[service patient patient_name].none? { |key| operation[key].present? }
-    lacking
+  def lint(name, fixture, gaps)
+    Captain::Evals::RoutingBenchmark::FixtureLint.new(fixture).problems.each do |problem|
+      gaps << Gap.new(fixture: name, dialogue: problem[:dialogue], turn: problem[:turn], problem: problem[:message])
+    end
   end
+
 end

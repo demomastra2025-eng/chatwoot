@@ -40,6 +40,7 @@ class Captain::Evals::RoutingBenchmark::Compare
       overall: { first: @first[:gate][:overall], second: @second[:gate][:overall], delta_points: delta },
       critical: { first: critical_summary(@first), second: critical_summary(@second),
                   new_in_second: new_critical.sort, fixed_in_second: fixed.sort },
+      infra: { first: @first[:gate][:infra].to_h[:turns].to_i, second: @second[:gate][:infra].to_h[:turns].to_i },
       checks: check_deltas, flipped: flipped, turns_compared: (@first[:turns] & @second[:turns]).size
     }
   end
@@ -49,7 +50,7 @@ class Captain::Evals::RoutingBenchmark::Compare
     data = result
     lines = ['# Benchmark comparison', '', "**Similar: #{data[:similar] ? 'yes' : 'no'}**", '']
     lines += data[:not_similar_because].map { |reason| "- #{reason}" } + [''] if data[:not_similar_because].any?
-    lines += overall_lines(data) + critical_lines(data) + check_lines(data) + flipped_lines(data)
+    lines += overall_lines(data) + critical_lines(data) + infra_lines(data) + check_lines(data) + flipped_lines(data)
     "#{lines.join("\n")}\n"
   end
 
@@ -59,7 +60,8 @@ class Captain::Evals::RoutingBenchmark::Compare
     report = report.to_h.deep_stringify_keys
     cases = report.fetch('cases')
     labels = Captain::Evals::RoutingBenchmark::Triage.labels_from('triage' => report['triage'])
-    gate = Captain::Evals::RoutingBenchmark::Gate.call(cases, aborted: report['aborted'], abort_reason: report['abort_reason'], labels: labels)
+    gate = Captain::Evals::RoutingBenchmark::Gate.call(cases, aborted: report['aborted'], abort_reason: report['abort_reason'], labels: labels,
+                                                              silent_handoff: report['silent_handoff'])
     failures = cases.flat_map { |item| failed_checks(item) }
     {
       gate: gate, cases: cases, turns: cases.map { |item| turn_key(item) }.uniq,
@@ -71,7 +73,8 @@ class Captain::Evals::RoutingBenchmark::Compare
 
   def failed_checks(item)
     Captain::Evals::RoutingBenchmark::Triage.failures_of(item).map do |failure|
-      { key: [turn_key(item), failure['id']].join(' '), severity: Captain::Evals::RoutingBenchmark::Gate.severity_of(failure) }
+      { key: [turn_key(item), Captain::Evals::RoutingBenchmark::Scorer.canonical_id(failure['id'])].join(' '),
+        severity: Captain::Evals::RoutingBenchmark::Gate.severity_of(failure) }
     end
   end
 
@@ -150,6 +153,14 @@ class Captain::Evals::RoutingBenchmark::Compare
     lines += data[:critical][:new_in_second].map { |key| "- New in the second run: #{key}" }
     lines += data[:critical][:fixed_in_second].map { |key| "- Gone in the second run: #{key}" }
     lines << ''
+  end
+
+  # Turns that failed on the infrastructure under the agents (a technical handoff, a provider error): a run with more of them is not a
+  # worse agent, so they are shown apart from the checks.
+  def infra_lines(data)
+    return [] unless data[:infra].values.any?(&:positive?)
+
+    ['## Infrastructure failures', '', "- First: #{data[:infra][:first]} turn(s)", "- Second: #{data[:infra][:second]} turn(s)", '']
   end
 
   def check_lines(data)

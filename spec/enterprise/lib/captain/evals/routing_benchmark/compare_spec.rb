@@ -54,6 +54,28 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Compare do
         .to include('- Gate item 3 (two consecutive runs, similar and both passing): FAIL')
     end
 
+    it 'shows the infrastructure failures of the two runs apart from the checks, and only when there are some' do
+      first = run_of(hundred)
+      second = run_of(hundred(3 => ['provider_error'], 4 => ['technical_handoff']))
+
+      comparison = described_class.new(first, second)
+
+      expect(comparison.result[:infra]).to eq(first: 0, second: 2)
+      expect(comparison.markdown).to include('## Infrastructure failures', '- First: 0 turn(s)', '- Second: 2 turn(s)')
+      expect(described_class.new(first, first).markdown).not_to include('## Infrastructure failures')
+    end
+
+    it 'compares the checks of the v2 schema like any other, and reads the old name of the renamed handoff check' do
+      older = run_of(hundred(2 => ['handoff_claim_unsupported']))
+      newer = run_of(hundred(2 => ['false_handoff_claim'], 3 => ['staff_handoff_missing:person_request']))
+
+      result = described_class.call(older, newer)
+
+      expect(result[:critical][:new_in_second]).to eq([])
+      expect(result[:critical][:fixed_in_second]).to eq([])
+      expect(result[:checks].pluck(:check)).to include('false_handoff_claim')
+    end
+
     it 'compares a check only on the turns that both runs scored and put the check to' do
       older = hundred.map { |item| item.merge('evaluated' => %w[false_success_claim wrong_agent]) }
       newer = hundred(5 => %w[reply_leak:latin reply_leak:identifier])

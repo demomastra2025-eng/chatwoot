@@ -5,8 +5,9 @@
 class Captain::Evals::RoutingBenchmark::Report
   DETAIL_LIMIT = 200
   TEXT_LIMIT = 500
+  FAILED_DIALOGUE_LIMIT = 40
   COVERAGE_ITEMS = {
-    'a' => 'appointment expectations that name the doctor, the time and the service or patient (blocks the gate)',
+    'a' => 'appointment expectations that pin the start time (blocks the gate)',
     'b' => 'replies that claim a done action or a hand-over',
     'c' => 'turns that created, moved or cancelled an appointment',
     'd' => 'patient replies scanned for another patient\'s data',
@@ -19,7 +20,7 @@ class Captain::Evals::RoutingBenchmark::Report
   end
 
   def markdown
-    [header, gate_section, summary_section, triage_section].join("\n")
+    [header, gate_section, summary_section, dialogues_section, triage_section].reject(&:empty?).join("\n")
   end
 
   private
@@ -36,8 +37,19 @@ class Captain::Evals::RoutingBenchmark::Report
              "| Overall score, at least #{overall['threshold']}% | #{overall['passed']}/#{overall['total']} turns passed (#{overall['pct']}%) |",
              "| Run complete | #{@report['aborted'] ? "no, stopped: #{@report['abort_reason']}" : 'yes'} |",
              "| Failed checks triaged by a person | #{triage['triaged']}/#{triage['failed_checks']} |"]
+    lines << "| Handoff is silent (blank notice) | #{gate['silent_handoff'] ? 'yes' : 'no'} |" unless gate['silent_handoff'].nil?
+    lines += infra_lines
     lines += blockers_lines + after_triage_lines + coverage_lines + critical_failure_lines + check_table_lines
     "#{lines.join("\n")}\n"
+  end
+
+  # Turns that failed because of the infrastructure under the agents (a technical handoff, a provider error): counted as failed
+  # turns above, and kept apart from the quality rates of the summary.
+  def infra_lines
+    infra = gate['infra']
+    return [] unless infra && infra['turns'].to_i.positive?
+
+    ['', "Infrastructure failures (left out of the quality rates, still failed turns): #{infra['turns']} turn(s), #{infra['by_check'].to_json}."]
   end
 
   # What the run put to the test: a critical check that no turn gives a chance to fail proves nothing.
@@ -98,8 +110,62 @@ class Captain::Evals::RoutingBenchmark::Report
              "Hard-zero counters: #{agg['hard_zero'].to_json}.",
              "Latency p50/p95: #{agg['latency_p50_ms']}/#{agg['latency_p95_ms']} ms.",
              "Estimated provider cost: $#{@report['cost_usd']}; budget reached: #{@report['aborted_at_budget']}."]
+    lines += quality_lines(agg)
     lines += Array(@report['warnings']).map { |warning| "WARNING: #{warning}" }
     "#{lines.join("\n")}\n"
+  end
+
+  # The accuracies over the turns that state the expectation and ran to their end, and the dialogue totals.
+  def quality_lines(agg)
+    return [] unless agg['dialogues']
+
+    dialogues = agg['dialogues']
+    pass_k = dialogues['pass_k'].to_h
+    rate = ->(key) { agg[key].nil? ? 'n/a' : agg[key] }
+    lines = ["Accuracy without infrastructure failures: routing #{rate.call('routing_accuracy')}, transfers #{rate.call('transfer_accuracy')}, " \
+             "staff handoff #{rate.call('staff_handoff_accuracy')}, acts #{rate.call('acts_accuracy')}.",
+             "Dialogues: #{dialogues['passed']}/#{dialogues['total']} passed on every turn; blocked turns: #{dialogues['blocked_turns']}; " \
+             "pass^#{pass_k['k']}: #{pass_k['passed_every_run']}/#{pass_k['dialogues']} (#{pass_k['rate']})."]
+    infra = agg['infra'].to_h
+    lines << "Infrastructure failures: #{infra['turns']} turn(s) #{infra['by_check'].to_json}." if infra['turns'].to_i.positive?
+    lines
+  end
+
+  # The categories, the failed checks by reason and the dialogues that did not pass, turn by turn.
+  def dialogues_section
+    agg = @report['aggregates'].to_h
+    return '' if agg['by_category'].blank?
+
+    lines = ['## Dialogues', '', '| Category | Dialogues passed | Turns passed |', '| --- | --- | --- |']
+    agg['by_category'].each do |category, stats|
+      lines << "| #{category} | #{stats['dialogues_passed']}/#{stats['dialogues']} | #{stats['turns_passed']}/#{stats['turns']} |"
+    end
+    lines += reason_lines(agg['by_reason']) + failed_dialogue_lines
+    "#{lines.join("\n")}\n"
+  end
+
+  def reason_lines(by_reason)
+    return [] if by_reason.blank?
+
+    ['', 'Failed turns by check: ' + by_reason.map { |check, count| "`#{check}` #{count}" }.join(', ') + '.']
+  end
+
+  # "council_two_part_03 run 1: t1 pass, t2 FAIL (wrong_agent), t3 blocked": a turn after a failed turn that the later turns build on is
+  # shown as blocked, not as a finding of its own.
+  def failed_dialogue_lines
+    failed = Array(@report['dialogue_summaries']).reject { |item| item['pass'] }
+    return [] if failed.empty?
+
+    lines = ['', "Dialogues that did not pass (#{failed.size}; blocked = failed after an earlier failure it depends on):"]
+    failed.first(FAILED_DIALOGUE_LIMIT).each do |item|
+      numbers = item['turn_numbers'] || item['statuses'].each_index.map { |index| index + 1 }
+      turns = item['statuses'].each_with_index.map { |status, index| "t#{numbers[index]} #{status == 'fail' ? 'FAIL' : status}" }
+      first = item['first_failure'].to_h
+      detail = first['checks'].present? ? " (first failure: turn #{first['turn']}, #{first['checks'].join(', ')})" : ''
+      lines << "- `#{item['dialogue']}`#{run_suffix(item)}: #{turns.join(', ')}#{detail}"
+    end
+    lines << "- ... and #{failed.size - FAILED_DIALOGUE_LIMIT} more" if failed.size > FAILED_DIALOGUE_LIMIT
+    lines
   end
 
   def triage_section
@@ -119,6 +185,7 @@ class Captain::Evals::RoutingBenchmark::Report
       "- Patient: #{cell(record['patient_message'], TEXT_LIMIT)}",
       "- Agent reply: #{cell(record['agent_reply'], TEXT_LIMIT)}",
       "- Tool calls: #{tool_calls_text(record['tool_calls'])}",
+      *coordination_lines(record),
       "- Database changes: #{delta_text(record['db_delta'])}",
       "- Expectation: #{record['expectation'] ? cell(record['expectation'].to_json, TEXT_LIMIT) : 'not recorded'}",
       "- Triage: #{record['triage'] || '________ (agent_bug | test_bug | judge_error)'}",
@@ -126,11 +193,25 @@ class Captain::Evals::RoutingBenchmark::Report
     ]
   end
 
+  # The transfers and the council of the turn: who handed the conversation to whom, and how each part of a council ended.
+  def coordination_lines(record)
+    lines = []
+    transfers = Array(record['transfers'])
+    lines << "- Transfers: #{transfers.map { |item| "#{item['from']} -> #{item['to']}" }.join('; ')}" if transfers.any?
+    council = record['council'].to_h
+    if council.any?
+      parts = Array(council['parts']).map { |part| "#{part['owner']}: #{part['state']}#{' (acted)' if part['acted']}" }.join('; ')
+      lines << "- Council: #{[parts.presence, ("editor fallback #{council['editor_fallback']}" if council['editor_fallback'])].compact.join('; ').presence || 'no parts'}"
+    end
+    lines << "- Silent handoff: the conversation was handed to staff with no text for the patient" if record['silent_handoff']
+    lines
+  end
+
   def tool_calls_text(calls)
     return 'none' if calls.blank?
 
     calls.map do |call|
-      text = "#{call['tool']}#{call['success'] == false ? ' [failed]' : ''}"
+      text = "#{call['agent'] ? "#{call['agent']}: " : ''}#{call['tool']}#{call['success'] == false ? ' [failed]' : ''}"
       text += " args #{call['arguments']}" if call['arguments'].present?
       text += " -> #{call['result']}" if call['result'].present?
       text

@@ -92,7 +92,8 @@ class Captain::Evals::RoutingBenchmark::Triage
           'patient_message' => item['customer'].to_s.squish.truncate(MESSAGE_LIMIT),
           'agent_reply' => (item['patient_text'] || item['reply']).to_s.squish.truncate(REPLY_LIMIT),
           'acting_agent' => item['acting_agent'], 'tool_calls' => tool_calls(item), 'expectation' => item['expectation'],
-          'db_delta' => item['db_delta']
+          'db_delta' => item['db_delta'], 'transfers' => item.dig('evidence', 'transfers'), 'council' => item.dig('evidence', 'council'),
+          'silent_handoff' => item['silent_handoff'], 'warnings' => item['warnings'].presence
         }.compact.merge('triage' => label_for(labels, item, failure))
       end
     end

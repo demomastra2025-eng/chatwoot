@@ -72,9 +72,65 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Report do
                                '- Triage: ________ (agent_bug | test_bug | judge_error)')
   end
 
+  it 'says whether the handoff of the run was silent, when the run checked it' do
+    expect(markdown).not_to include('Handoff is silent')
+    silent = report.merge(gate: Captain::Evals::RoutingBenchmark::Gate.call(cases, silent_handoff: true))
+    loud = report.merge(gate: Captain::Evals::RoutingBenchmark::Gate.call(cases, silent_handoff: false))
+
+    expect(described_class.new(silent).markdown).to include('| Handoff is silent (blank notice) | yes |')
+    expect(described_class.new(loud).markdown).to include('| Handoff is silent (blank notice) | no |', 'the handoff notice of the synthetic account is not blank')
+  end
+
   it 'shows what the run put to the test for each gate item' do
-    expect(markdown).to include('### Coverage', '| a | 1 of 1 | appointment expectations that name the doctor, the time and the service or patient (blocks the gate) |',
+    expect(markdown).to include('### Coverage', '| a | 1 of 1 | appointment expectations that pin the start time (blocks the gate) |',
                                 '| f | 1 | turns in which the customer asks for a person (blocks the gate) |')
+  end
+
+  describe 'the dialogues, the accuracies and the infrastructure failures' do
+    let(:down) do
+      risky.merge('dialogue' => 'down_01', 'turn' => 1, 'reasons' => ['technical_handoff'], 'failures' => [failure('technical_handoff', 'tool: create_appointment; stage: execution')])
+    end
+    let(:clean) { fine.merge('dialogue' => 'ok_01') }
+    let(:cases_of_run) { [fine, risky, down, clean] }
+    let(:summary) { Captain::Evals::RoutingBenchmark::Summary.call(cases_of_run) }
+    let(:full) do
+      report.merge(cases: cases_of_run, gate: Captain::Evals::RoutingBenchmark::Gate.call(cases_of_run),
+                   triage: Captain::Evals::RoutingBenchmark::Triage.records(cases_of_run),
+                   aggregates: report[:aggregates].merge(summary.except(:dialogue_summaries)), dialogue_summaries: summary[:dialogue_summaries])
+    end
+    let(:text) { described_class.new(full).markdown }
+
+    it 'says in the gate section how many turns failed on the infrastructure under the agents' do
+      expect(text).to include('Infrastructure failures (left out of the quality rates, still failed turns): 1 turn(s), {"technical_handoff":1}.')
+    end
+
+    it 'prints the accuracies, the dialogue totals, pass^k and the categories in a section of their own' do
+      expect(text).to include('Accuracy without infrastructure failures: routing 0.0, transfers n/a, staff handoff n/a, acts n/a.',
+                              'Dialogues: 1/3 passed on every turn; blocked turns: 0; pass^1: 1/3 (0.3333).')
+      expect(text).to include('## Dialogues', '| Category | Dialogues passed | Turns passed |', '| kazakh_mixed | 0/1 | 1/2 |', '| ok | 1/1 | 1/1 |')
+      expect(text.index('## Summary')).to be < text.index('## Dialogues')
+      expect(text.index('## Dialogues')).to be < text.index('## TRIAGE')
+    end
+
+    it 'lists the dialogues that did not pass turn by turn, with the failed checks' do
+      expect(text).to include('Failed turns by check: `forbidden_tool` 1, `technical_handoff` 1, `wrong_agent` 1.')
+      expect(text).to include('Dialogues that did not pass (2; blocked = failed after an earlier failure it depends on):',
+                              '- `kazakh_mixed_01`: t1 pass, t3 FAIL (first failure: turn 3, forbidden_tool, wrong_agent)',
+                              '- `down_01`: t1 FAIL (first failure: turn 1, technical_handoff)')
+      expect(text).not_to include('- `ok_01`')
+    end
+
+    it 'shows the transfers, the council parts and a silent handoff in the triage record of the turn' do
+      coordinated = risky.merge('evidence' => { 'transfers' => [{ 'from' => 'Администратор', 'to' => 'Запись к врачу' }],
+                                                 'council' => { 'parts' => [{ 'owner' => 'Запись к врачу', 'state' => 'done', 'acted' => true }], 'editor_fallback' => 'timeout' } },
+                                'silent_handoff' => true)
+      records = Captain::Evals::RoutingBenchmark::Triage.records([coordinated])
+
+      text = described_class.new(report.merge(cases: [coordinated], gate: Captain::Evals::RoutingBenchmark::Gate.call([coordinated]), triage: records)).markdown
+
+      expect(text).to include('- Transfers: Администратор -> Запись к врачу', '- Council: Запись к врачу: done (acted); editor fallback timeout',
+                              '- Silent handoff: the conversation was handed to staff with no text for the patient')
+    end
   end
 
   it 'shows the database changes of the turn in each triage record, and says so when there are none' do
