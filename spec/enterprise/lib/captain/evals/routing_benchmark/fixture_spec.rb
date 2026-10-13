@@ -270,9 +270,40 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Fixture do
         expect { described_class.new(with_expect(council: true, must_not_call: ['handoff'])) }.not_to raise_error
         expect { described_class.new(with_expect(council: false, must_call: ['handoff'])) }.not_to raise_error
       end
+
+      it "takes council true, false or 'any' (a request with two right routes), and nothing else" do
+        [true, false, 'any'].each { |value| expect { described_class.new(with_expect(council: value)) }.not_to raise_error, value.inspect }
+        ['maybe', nil, 1].each do |value|
+          expect { described_class.new(with_expect(council: value)) }
+            .to raise_error(described_class::Invalid, /council must be true, false or 'any'/), value.inspect
+        end
+      end
     end
 
-    describe 'unknown keys' do
+    describe 'the doctors of a service' do
+    def with_services(services)
+      data.deep_dup.tap do |copy|
+        copy[:workspace].merge!(resources: [{ key: 'doctor_a', name: 'Терапевт Иванов' }, { key: 'doctor_b', name: 'Кардиолог Петров' }], services: services)
+      end
+    end
+
+    it 'takes a list of the resources that perform the service, and none' do
+      listed = { key: 'consult', name: 'Консультация', resources: %w[doctor_a] }
+      open = { key: 'checkup', name: 'Чек-ап' }
+
+      expect { described_class.new(with_services([listed, open])) }.not_to raise_error
+    end
+
+    it 'refuses an unknown resource, an empty list, a repeated resource and a list that is no array' do
+      [{ resources: %w[doctor_x] }, { resources: [] }, { resources: %w[doctor_a doctor_a] }, { resources: 'doctor_a' }].each do |extra|
+        service = { key: 'consult', name: 'Консультация' }.merge(extra)
+
+        expect { described_class.new(with_services([service])) }.to raise_error(described_class::Invalid, /services\.consult\.resources/), extra.inspect
+      end
+    end
+  end
+
+  describe 'unknown keys' do
       it 'rejects a typo at the level of the fixture, the workspace, the agent, the dialogue, the turn, the expectation and the operation' do
         misspelled = {
           'fixture' => ->(copy) { copy[:extra] = 1 },

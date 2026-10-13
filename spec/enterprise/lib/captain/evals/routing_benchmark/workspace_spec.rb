@@ -93,6 +93,45 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Workspace do
     end
   end
 
+  describe 'the doctors that perform a service' do
+    let(:fixture) do
+      Captain::Evals::RoutingBenchmark::Fixture.new(
+        workspace: {
+          agents: [{ name: 'Регистратор', routing_description: 'Запись', instructions: 'Отвечай по-русски.', tool_ids: %w[faq_lookup], model: 'openai/gpt-6-luna' }],
+          contacts: [{ key: 'patient', name: 'Дана Нурланова' }],
+          resources: [{ key: 'terapevt', name: 'Терапевт Абдрахманова Сауле' }, { key: 'kardiolog', name: 'Кардиолог Омаров Тимур' },
+                      { key: 'lab', name: 'Процедурный кабинет (забор анализов)' }],
+          services: [{ key: 'consult_terapevt', name: 'Консультация терапевта', duration_min: 30, base_price: 7000, resources: %w[terapevt] },
+                     { key: 'oak', name: 'Общий анализ крови', duration_min: 10, base_price: 2800, resources: %w[lab] },
+                     { key: 'checkup', name: 'Чек-ап', duration_min: 60, base_price: 12_000, resources: %w[terapevt lab] },
+                     { key: 'anything', name: 'Консультация без списка врачей', duration_min: 30, base_price: 5000 }]
+        },
+        dialogues: [{ id: 'case_1', contact: 'patient', turns: [{ customer: 'Здравствуйте', expect: { agent: 'Регистратор', council: false } }] }]
+      )
+    end
+
+    def links
+      names = Scheduling::Resource.where(account_id: workspace.account.id).pluck(:id, :name).to_h
+      services = Scheduling::Service.where(account_id: workspace.account.id).pluck(:id, :name).to_h
+      Scheduling::ServicePrice.where(account_id: workspace.account.id).group_by { |row| services.fetch(row.service_id) }
+                              .transform_values { |rows| rows.map { |row| names.fetch(row.resource_id) }.sort }
+    end
+
+    it 'are the ones the fixture lists for the service, by specialty: a therapist consultation is performed by the therapist alone' do
+      expect(links).to include('Консультация терапевта' => ['Терапевт Абдрахманова Сауле'], 'Общий анализ крови' => ['Процедурный кабинет (забор анализов)'],
+                               'Чек-ап' => ['Процедурный кабинет (забор анализов)', 'Терапевт Абдрахманова Сауле'])
+    end
+
+    it 'are every doctor of the workspace for a service that lists none (the fixtures of the first version)' do
+      expect(links.fetch('Консультация без списка врачей')).to eq(['Кардиолог Омаров Тимур', 'Процедурный кабинет (забор анализов)', 'Терапевт Абдрахманова Сауле'])
+    end
+
+    it 'take the price of the service' do
+      expect(Scheduling::ServicePrice.where(account_id: workspace.account.id).count).to eq(1 + 1 + 2 + 3)
+      expect(Scheduling::ServicePrice.where(account_id: workspace.account.id).pluck(:price).map(&:to_i)).to include(7000, 2800, 12_000, 5000)
+    end
+  end
+
   describe 'the contacts' do
     it 'have a phone number of their own, the patient of a dialogue without a contact included' do
       workspace.conversation_for('id' => 'no_contact')

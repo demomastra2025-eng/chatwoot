@@ -106,12 +106,16 @@ class Captain::Evals::RoutingBenchmark::Workspace
   end
 
   # Clinics record which resource performs which service (price list / MedElement sync); slot search refuses a
-  # service without that link. Fixtures do not list links, so every synthetic resource is linked to every service.
+  # service without that link. A service of the fixture lists the doctors that perform it (`resources`, by specialty: the services of
+  # a therapist to the therapists, an analysis to the procedure room ...). A service that lists none is linked to every doctor of the
+  # workspace, as the fixtures of the first version did.
   def link_services_to_resources!
-    @services.each_value do |service|
-      @resources.each_value do |resource|
-        Scheduling::ServicePrice.create!(account: account, service_id: service.id, resource_id: resource.id,
-                                         price: service.base_price)
+    data.fetch('services', []).each do |row|
+      service = @services.fetch(row.fetch('key'))
+      keys = row['resources'].presence || @resources.keys
+      keys.each do |key|
+        resource = @resources.fetch(key)
+        Scheduling::ServicePrice.create!(account: account, service_id: service.id, resource_id: resource.id, price: service.base_price)
       end
     end
   end

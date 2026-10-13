@@ -60,7 +60,7 @@ class Captain::Evals::RoutingBenchmark::FixtureLint
     from = Time.iso8601(start)
     minutes = operation['service'] ? duration(operation['service']) : shortest_duration
     ignore = ignored_seeds(operation, contact)
-    candidates = operation['resource'] ? [operation['resource']] : resources.keys
+    candidates = operation['resource'] ? [operation['resource']] : service_resources(operation['service'])
     verdicts = candidates.index_with { |key| verdict(key, from, minutes, booked, ignore) }
     free = verdicts.select { |_key, result| result == :free }.keys
     booked << [free.first, from, minutes] if free.size == 1
@@ -169,6 +169,12 @@ class Captain::Evals::RoutingBenchmark::FixtureLint
   end
 
   def zone(key) = resources.fetch(key, 'Asia/Almaty')
+
+  # The doctors that can perform the service: those the service lists (`resources`), else every doctor of the workspace.
+  def service_resources(service_key)
+    row = @workspace.fetch('services', []).find { |item| item['key'] == service_key }
+    (row && row['resources'].presence) || resources.keys
+  end
 
   def duration(service_key)
     @workspace.fetch('services', []).find { |row| row['key'] == service_key }&.fetch('duration_min', DEFAULT_MINUTES) || DEFAULT_MINUTES

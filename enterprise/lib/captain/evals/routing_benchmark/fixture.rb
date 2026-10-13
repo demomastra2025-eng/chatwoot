@@ -27,10 +27,12 @@ class Captain::Evals::RoutingBenchmark::Fixture
   # ISO 639 code. Only Russian and Kazakh replies are checked (Language.checked?).
   REPLY_LANGUAGE = /\A[a-z]{2,3}\z/
   STAFF_HANDOFF_VALUES = [true, false, 'any'].freeze
+  # `any`: a request whose right route is one transfer to the agent that owns it all, or a council of its parts: neither signal is checked.
+  COUNCIL_VALUES = [true, false, 'any'].freeze
   # The keys of the rows of the workspace (the workspace builder reads these and nothing else).
   ROW_KEYS = {
     'channels' => %w[key entry_agent], 'knowledge' => %w[agent question answer], 'contacts' => %w[key name],
-    'resources' => %w[key name timezone], 'services' => %w[key name duration_min base_price],
+    'resources' => %w[key name timezone], 'services' => %w[key name duration_min base_price resources],
     'slots' => %w[resource weekday start_minute end_minute], 'appointments' => %w[resource service contact starts_at], 'deals' => %w[title]
   }.freeze
   # Transfer tools are account-specific names (a hash of the colleague), so a fixture can never list one.
@@ -146,6 +148,21 @@ class Captain::Evals::RoutingBenchmark::Fixture
       end
       raise Invalid, "#{kind} keys must be unique" unless keys.uniq == keys
     end
+    validate_service_links!
+  end
+
+  # `services[].resources`: the doctors that perform the service (the price list of a clinic links a service to its doctors). A service
+  # that lists none is performed by every doctor of the workspace.
+  def validate_service_links!
+    resource_keys = workspace.fetch('resources', []).pluck('key')
+    workspace.fetch('services', []).each do |row|
+      next unless row.key?('resources')
+
+      links = require_array!(row['resources'], "services.#{row['key']}.resources", nonempty: true)
+      unknown = links - resource_keys
+      raise Invalid, "services.#{row['key']}.resources names an unknown resource: #{unknown.join(', ')}" if unknown.any?
+      raise Invalid, "services.#{row['key']}.resources must not repeat a resource" unless links.uniq == links
+    end
   end
 
   def validate_dialogues!(tools_by_agent, channel_keys, contact_keys, operation_keys)
@@ -205,7 +222,7 @@ class Captain::Evals::RoutingBenchmark::Fixture
     reject_unknown_keys!(expect, EXPECT_KEYS, 'turn.expect')
     validate_expected_agents!(expect, tools_by_agent.keys)
     council = expect['council']
-    raise Invalid, 'Expected council must be true or false' unless [true, false].include?(council)
+    raise Invalid, "Expected council must be true, false or 'any' (both routes are right)" unless COUNCIL_VALUES.include?(council)
 
     validate_tool_lists!(expect, council)
     validate_tool_names!(expect, tools_by_agent)

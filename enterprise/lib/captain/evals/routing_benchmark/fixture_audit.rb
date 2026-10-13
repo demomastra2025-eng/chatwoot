@@ -6,11 +6,15 @@
 #     not pin the start it moves from (`previous_starts_at`): a booking at the wrong time, or the move of the wrong appointment, would
 #     not be noticed on that turn. The strict loader (Fixture) refuses such an operation, so the audit only counts them (item a);
 #   - a turn in which the customer asks for a person but the fixture does not expect a handoff (`staff_handoff: true`, or the older
-#     `human_request: true`), or says `staff_handoff: false` / `human_request: false` against the wording;
+#     `human_request: true`), or says `staff_handoff: false` / `human_request: false` against the wording, or expects the handoff
+#     without stating `human_request: true`: that the customer asks for a person is a fact of the fixture, the wording detector only
+#     reads it (a missing handoff of a request that only the wording shows is a hint, never a critical failure);
 #   - the lint of the calendar (FixtureLint): a start outside every doctor's work window or on a busy slot.
 # `ok?` holds when nothing is missing and the fixtures hold at least one pinned expectation and one request for a person.
 class Captain::Evals::RoutingBenchmark::FixtureAudit
   Gap = Struct.new(:fixture, :dialogue, :turn, :problem, keyword_init: true)
+  UNSTATED = 'the customer asks for a person and the fixture expects a handoff: add human_request: true ' \
+             '(the wording alone makes a missing handoff only a hint)'.freeze
 
   # fixtures: { file name => Fixture }. A file the strict loader refuses is named in the error.
   def self.load(paths) = new(paths.sort.to_h { |path| [File.basename(path), load_fixture(path)] })
@@ -77,12 +81,15 @@ class Captain::Evals::RoutingBenchmark::FixtureAudit
     end
   end
 
-  # The customer asks for a person. The fixture expects the handoff (`staff_handoff: true`), or in the older form marks the turn.
+  # The customer asks for a person. The fixture expects the handoff (`staff_handoff: true`) and states the request (`human_request:
+  # true`), which makes a missing handoff a critical failure of a fact; the wording alone (the detector) gives a hint only.
   def person(turn, where, counts, gaps)
     expect = turn['expect']
     detected = Captain::Evals::RoutingBenchmark::HumanRequest.match?(turn['customer'])
-    expected = expect['human_request'] == true || expect['staff_handoff'] == true
-    counts[:flagged] += 1 if expect['human_request'] == true || (detected && expect['staff_handoff'] == true)
+    stated = expect['human_request'] == true
+    expected = stated || expect['staff_handoff'] == true
+    counts[:flagged] += 1 if stated || (detected && expect['staff_handoff'] == true)
+    gaps << Gap.new(**where, problem: UNSTATED) if detected && expect['staff_handoff'] == true && !stated
     return unless detected && !expected
 
     counts[:unmarked] += 1

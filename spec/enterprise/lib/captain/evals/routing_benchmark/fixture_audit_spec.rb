@@ -26,7 +26,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::FixtureAudit do
 
   it 'is ready for the gate when every booking pins its start time and a request for a person expects a handoff' do
     result = audit({ customer: 'Запишите меня', expect: { operations: [booking] } },
-                   { customer: 'позовите оператора', expect: { staff_handoff: true } })
+                   { customer: 'позовите оператора', expect: { staff_handoff: true, human_request: true } })
 
     expect(result).to be_ok
     expect(result.result).to include(fixtures: 1, turns: 2, operations: { expected: 1, specific: 1 }, human_requests: { flagged: 1, unmarked: 0 }, gaps: [])
@@ -51,7 +51,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::FixtureAudit do
   it 'counts the pinned expectations of item a, and is not ready unless all of them are' do
     move = booking.merge(kind: 'update', previous_starts_at: '2026-10-13T15:00:00+05:00')
     result = audit({ customer: 'Запишите меня', expect: { operations: [booking, move] } },
-                   { customer: 'позовите оператора', expect: { staff_handoff: true } })
+                   { customer: 'позовите оператора', expect: { staff_handoff: true, human_request: true } })
 
     expect(result.result[:operations]).to eq(expected: 2, specific: 2)
     expect(result.markdown).to include('Item a: 2 of 2 appointment expectations pin the start time (a move: the old start too).')
@@ -65,7 +65,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::FixtureAudit do
   it 'asks no service or patient of a cancellation, and counts nothing for count: 0 or a deal' do
     cancel = { model: 'appointment', kind: 'update', params: { status: 'cancelled', starts_at: '2026-10-15T12:00:00+05:00' } }
     result = audit({ customer: 'отмените', expect: { operations: [cancel, booking.merge(count: 0), { model: 'deal', kind: 'create' }] } },
-                   { customer: 'оператор керек', expect: { staff_handoff: true } })
+                   { customer: 'оператор керек', expect: { staff_handoff: true, human_request: true } })
 
     expect(result.result).to include(operations: { expected: 1, specific: 1 }, gaps: [])
   end
@@ -81,7 +81,19 @@ RSpec.describe Captain::Evals::RoutingBenchmark::FixtureAudit do
     expect(result.result[:human_requests]).to eq(flagged: 1, unmarked: 3)
     expect(result.result[:gaps].map(&:problem)).to eq(['the customer asks for a person: add staff_handoff: true',
                                                        'the customer asks for a person, but the fixture expects no handoff',
+                                                       described_class::UNSTATED,
                                                        'the customer asks for a person: add staff_handoff: true'])
+  end
+
+  it 'asks the fixture to state human_request: true where it expects the handoff of a request that only the wording shows' do
+    stated = audit({ customer: 'Запишите меня', expect: { operations: [booking] } },
+                   { customer: 'позовите оператора', expect: { staff_handoff: true, human_request: true } })
+    unstated = audit({ customer: 'Запишите меня', expect: { operations: [booking] } },
+                     { customer: 'позовите оператора', expect: { staff_handoff: true } })
+
+    expect(stated.result[:gaps]).to be_empty
+    expect(unstated.result[:gaps].map(&:problem)).to eq([described_class::UNSTATED])
+    expect(unstated).not_to be_ok
   end
 
   it 'does not count a handoff of a turn where nobody asks for a person as a request for a person' do
@@ -107,7 +119,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::FixtureAudit do
         appointments: [{ resource: 'doctor_a', service: 'consult', contact: 'patient', starts_at: '2026-10-15T11:00:00+05:00' }]
       )
     end
-    let(:person) { { customer: 'позовите оператора', expect: { staff_handoff: true } } }
+    let(:person) { { customer: 'позовите оператора', expect: { staff_handoff: true, human_request: true } } }
 
     def at(time, **extra)
       { model: 'appointment', kind: 'create', params: { status: 'scheduled', starts_at: "2026-10-15T#{time}:00+05:00" } }.merge(extra)
@@ -171,6 +183,20 @@ RSpec.describe Captain::Evals::RoutingBenchmark::FixtureAudit do
       expect(free.result[:gaps].map(&:problem)).to eq(['the customer asks for 2026-10-15T12:30:00+05:00, which is free for every doctor who works then: the business refusal could never happen'])
       expect(taken.result[:gaps]).to be_empty
       expect(unreadable.result[:gaps]).to be_empty
+    end
+
+    context 'with services that only some doctors perform' do
+      let(:workspace) do
+        super().merge(services: [{ key: 'consult', name: 'Консультация терапевта', resources: %w[doctor_a] },
+                                 { key: 'cardio', name: 'Консультация кардиолога', resources: %w[doctor_b] }])
+      end
+
+      it 'looks for a free doctor among those who perform the service only' do
+        # 12:00 is free for doctor_a only (doctor_b works from 14:00): a cardiology booking at noon has no doctor
+        expect(messages(at('12:00', service: 'consult'))).to be_empty
+        expect(messages(at('12:00', service: 'cardio')).first).to include('is not possible for doctor_b: outside the work window (14:00-18:00)')
+        expect(messages(at('15:00', service: 'cardio'))).to be_empty
+      end
     end
 
     context 'without work rules' do
