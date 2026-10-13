@@ -132,7 +132,8 @@ class Captain::Evals::RoutingBenchmark::Workspace
       actor = agents[row['agent']]
       response = Captain::AssistantResponse.create!(account: account, assistant: actor,
                                                     question: row.fetch('question'), answer: row.fetch('answer'), status: :approved)
-      index!(response)
+      # Indexing every FAQ of every synthetic clinic costs minutes per dialogue; it runs only when BENCHMARK_FAQ_EMBEDDINGS=1.
+      index!(response) if ENV['BENCHMARK_FAQ_EMBEDDINGS'] == '1'
     end
   end
 
