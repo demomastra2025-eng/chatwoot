@@ -30,7 +30,10 @@ RSpec.describe 'Native scheduling query error contracts' do
 
       it 'distinguishes a reversed or too-long range from an internal failure' do
         expect(Integrations::Medelement::Client).not_to receive(:new)
-        [from, '2026-11-14T09:00:00+05:00'].each do |invalid_to|
+        # A search for free times may name one exact moment (to == from); the other reads need a range.
+        invalid_tos = ['2026-10-12T08:00:00+05:00', '2026-11-14T09:00:00+05:00']
+        invalid_tos << from unless defaults.key?(:resource_ids)
+        invalid_tos.each do |invalid_to|
           payload = error_payload(tool.execute(**args.merge(to: invalid_to)))
           expect(payload).to include('code' => 'INVALID_DATE_RANGE', 'reason' => 'invalid_date_range', 'error_class' => 'business')
         end

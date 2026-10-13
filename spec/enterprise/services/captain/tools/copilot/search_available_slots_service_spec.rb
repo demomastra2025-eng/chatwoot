@@ -86,6 +86,40 @@ RSpec.describe Captain::Tools::Copilot::SearchAvailableSlotsService do
       end
     end
 
+    describe 'checking one exact time' do
+      def slot_starts(**arguments)
+        JSON.parse(service.execute(resource_ids: [resource.id], service_id: consultation.id, **arguments))['slots'].pluck('starts_at')
+      end
+
+      it 'finds the free time named with a one-minute window' do
+        expect(slot_starts(from: '2026-04-20T11:30:00+05:00', to: '2026-04-20T11:31:00+05:00', limit: 1))
+          .to eq(['2026-04-20T11:30:00+05:00'])
+      end
+
+      it 'accepts a range whose end equals its start' do
+        expect(slot_starts(from: '2026-04-20T11:30:00+05:00', to: '2026-04-20T11:30:00+05:00')).to eq(['2026-04-20T11:30:00+05:00'])
+      end
+
+      it 'returns no slot when that time is taken' do
+        expect(slot_starts(from: '2026-04-20T10:00:00+05:00', to: '2026-04-20T10:01:00+05:00')).to eq([])
+      end
+
+      it 'rejects a range that ends before it starts' do
+        result = service.execute(from: '2026-04-20T11:30:00+05:00', to: '2026-04-20T11:29:00+05:00')
+
+        expect(result).to start_with('ERROR:')
+        expect(result).to include('INVALID_DATE_RANGE')
+      end
+    end
+
+    it 'ignores blank and non-numeric specialist ids' do
+      payload = JSON.parse(
+        service.execute(from: from_time.iso8601, to: to_time.iso8601, resource_ids: ['', nil, 'unknown specialist', 0], limit: 1)
+      )
+
+      expect(payload['resources'].map { |item| item['id'] }).to contain_exactly(resource.id, other_resource.id)
+    end
+
     it 'returns an error when a requested specialist cannot perform the service' do
       result = service.execute(
         from: from_time.iso8601,

@@ -10,8 +10,10 @@ module Captain::Tools::Copilot::SchedulingQueryValidation
     Time.use_zone(scheduling_time_zone) { Scheduling::InputValidation.datetime(value, field_name: field_name) }
   end
 
-  def scheduling_range!(range_from, range_to)
-    Scheduling::RangeValidator.validate!(from: range_from, to: range_to, max_days: Scheduling::RangeValidator::MAX_RANGE_DAYS)
+  # allow_equal: a search for free times may name one exact moment (to == from).
+  def scheduling_range!(range_from, range_to, allow_equal: false)
+    Scheduling::RangeValidator.validate!(from: range_from, to: range_to, max_days: Scheduling::RangeValidator::MAX_RANGE_DAYS,
+                                         allow_equal: allow_equal)
   rescue ArgumentError => e
     raise Scheduling::Error.new(code: 'INVALID_DATE_RANGE', message: e.message, status: :unprocessable_content,
                                 details: { reason: 'invalid_date_range', max_range_days: Scheduling::RangeValidator::MAX_RANGE_DAYS })
@@ -30,13 +32,6 @@ module Captain::Tools::Copilot::SchedulingQueryValidation
   def invalid_service_id!
     raise Scheduling::Error.new(code: 'INVALID_SERVICE_ID', message: 'service_id must be an integer ID returned by the service catalog',
                                 status: :unprocessable_content, details: { field: 'service_id', reason: 'invalid_service_id' })
-  end
-
-  def scheduling_resource_ids(value)
-    parse_id_list(value, field_name: 'resource_ids')
-  rescue ArgumentError => e
-    raise Scheduling::Error.new(code: 'INVALID_RESOURCE_IDS', message: e.message, status: :unprocessable_content,
-                                details: { field: 'resource_ids', reason: 'invalid_resource_ids' })
   end
 
   def scheduling_service!(service_id)

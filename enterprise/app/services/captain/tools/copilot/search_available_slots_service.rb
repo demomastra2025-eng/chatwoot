@@ -17,14 +17,14 @@ class Captain::Tools::Copilot::SearchAvailableSlotsService < Captain::Tools::Cop
   def execute(from:, to:, resource_ids: nil, service_id: nil, duration_min: nil, limit: nil)
     range_from = scheduling_datetime(from, field_name: 'from')
     range_to = scheduling_datetime(to, field_name: 'to')
-    scheduling_range!(range_from, range_to)
+    scheduling_range!(range_from, range_to, allow_equal: true)
     service_id = scheduling_service_id(service_id)
     scheduling_service!(service_id)
     payload = Scheduling::AvailableSlotSearchService.new(
       account: account,
       from: range_from,
       to: range_to,
-      resource_ids: scheduling_resource_ids(resource_ids),
+      resource_ids: resource_ids,
       service_id: service_id,
       duration_min: duration_min,
       limit: limit
