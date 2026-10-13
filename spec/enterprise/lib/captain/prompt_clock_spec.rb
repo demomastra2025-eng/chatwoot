@@ -9,14 +9,25 @@ RSpec.describe Captain::PromptClock do
   end
 
   describe '.now_line' do
-    it 'writes the English weekday, the date, the time, the city and the offset in one line' do
-      expect(described_class.now_line(clock('Asia/Almaty', '2026-10-12T18:56:00Z'))).to eq('Monday, 12.10.2026, 23:56, Almaty (UTC+5).')
+    it 'writes the weekday, the day, the month name and the ISO date, the time, the city, the offset and tomorrow in one line' do
+      expect(described_class.now_line(clock('Asia/Almaty', '2026-10-12T07:34:00Z'))).to eq(
+        'Monday, 12 October 2026 (2026-10-12), 12:34, Almaty (UTC+5). Tomorrow: Tuesday, 13 October 2026 (2026-10-13).'
+      )
     end
 
     it 'moves to the next day with the zone, never writing UTC time' do
       line = described_class.now_line(clock('Asia/Almaty', '2026-10-12T20:30:00Z'))
 
-      expect(line).to eq('Tuesday, 13.10.2026, 01:30, Almaty (UTC+5).')
+      expect(line).to eq('Tuesday, 13 October 2026 (2026-10-13), 01:30, Almaty (UTC+5). Tomorrow: Wednesday, 14 October 2026 (2026-10-14).')
+    end
+
+    it 'writes a one-digit day without a leading zero and crosses the end of a month and of a year' do
+      expect(described_class.now_line(clock('Asia/Almaty', '2026-10-05T07:00:00Z')))
+        .to start_with('Monday, 5 October 2026 (2026-10-05), 12:00, Almaty (UTC+5). Tomorrow: Tuesday, 6 October 2026 (2026-10-06).')
+      expect(described_class.now_line(clock('Asia/Almaty', '2026-10-31T07:00:00Z')))
+        .to end_with('Tomorrow: Sunday, 1 November 2026 (2026-11-01).')
+      expect(described_class.now_line(clock('Asia/Almaty', '2026-12-31T07:00:00Z')))
+        .to end_with('Tomorrow: Friday, 1 January 2027 (2027-01-01).')
     end
 
     it 'names the Kazakhstan, Uzbekistan, Kyrgyzstan and Russia cities and their offsets' do
@@ -28,21 +39,23 @@ RSpec.describe Captain::PromptClock do
       }
 
       lines.each do |zone, expected|
-        expect(described_class.now_line(clock(zone, now))).to end_with(", #{expected}.")
+        expect(described_class.now_line(clock(zone, now))).to include(", #{expected}. Tomorrow: ")
       end
     end
 
     it 'falls back to the zone id for an unlisted city and writes half-hour and negative offsets' do
-      expect(described_class.now_line(clock('Asia/Kolkata', '2026-10-12T12:00:00Z'))).to eq('Monday, 12.10.2026, 17:30, Asia/Kolkata (UTC+5:30).')
+      expect(described_class.now_line(clock('Asia/Kolkata', '2026-10-12T12:00:00Z')))
+        .to start_with('Monday, 12 October 2026 (2026-10-12), 17:30, Asia/Kolkata (UTC+5:30). Tomorrow: ')
       expect(described_class.now_line(clock('America/Sao_Paulo', '2026-10-12T12:00:00Z')))
-        .to eq('Monday, 12.10.2026, 09:00, America/Sao_Paulo (UTC-3).')
-      expect(described_class.now_line(clock('UTC', '2026-10-12T12:00:00Z'))).to eq('Monday, 12.10.2026, 12:00, UTC (UTC+0).')
+        .to start_with('Monday, 12 October 2026 (2026-10-12), 09:00, America/Sao_Paulo (UTC-3). Tomorrow: ')
+      expect(described_class.now_line(clock('UTC', '2026-10-12T12:00:00Z')))
+        .to start_with('Monday, 12 October 2026 (2026-10-12), 12:00, UTC (UTC+0). Tomorrow: ')
     end
 
     it 'takes the local time from now_local when now_utc is missing and accepts string keys' do
       line = described_class.now_line('timezone' => 'Asia/Almaty', 'now_local' => '2026-10-12T23:56:00+05:00')
 
-      expect(line).to eq('Monday, 12.10.2026, 23:56, Almaty (UTC+5).')
+      expect(line).to eq('Monday, 12 October 2026 (2026-10-12), 23:56, Almaty (UTC+5). Tomorrow: Tuesday, 13 October 2026 (2026-10-13).')
     end
 
     it 'writes nothing when the clock has no usable time or zone' do
@@ -51,6 +64,30 @@ RSpec.describe Captain::PromptClock do
       expect(described_class.now_line(timezone: 'UTC')).to be_nil
       expect(described_class.now_line(timezone: 'Not/AZone', now_utc: '2026-10-12T12:00:00Z')).to be_nil
       expect(described_class.now_line(timezone: 'Asia/Almaty', now_utc: 'garbage')).to be_nil
+    end
+  end
+
+  describe '.night_line' do
+    let(:night) { 'It is night: a patient\'s "today" or "tomorrow" may mean the coming day; name the date you understood.' }
+
+    it 'is written between 00:00 and 05:00 of the local time and at no other hour' do
+      expect(described_class.night_line(clock('Asia/Almaty', '2026-10-12T19:00:00Z'))).to eq(night)
+      expect(described_class.night_line(clock('Asia/Almaty', '2026-10-12T19:15:00Z'))).to eq(night)
+      expect(described_class.night_line(clock('Asia/Almaty', '2026-10-12T23:59:00Z'))).to eq(night)
+      expect(described_class.night_line(clock('Asia/Almaty', '2026-10-13T00:00:00Z'))).to be_nil
+      expect(described_class.night_line(clock('Asia/Almaty', '2026-10-12T18:59:00Z'))).to be_nil
+      expect(described_class.night_line(clock('Asia/Almaty', '2026-10-12T07:34:00Z'))).to be_nil
+    end
+
+    it 'reads the hour in the zone of the run, not in UTC' do
+      expect(described_class.night_line(clock('Europe/Moscow', '2026-10-12T22:00:00Z'))).to eq(night)
+      expect(described_class.night_line(clock('Europe/Moscow', '2026-10-12T02:00:00Z'))).to be_nil
+    end
+
+    it 'writes nothing when the clock has no usable time or zone' do
+      expect(described_class.night_line(nil)).to be_nil
+      expect(described_class.night_line(timezone: 'Not/AZone', now_utc: '2026-10-12T20:00:00Z')).to be_nil
+      expect(described_class.night_line(timezone: 'Asia/Almaty', now_utc: 'garbage')).to be_nil
     end
   end
 

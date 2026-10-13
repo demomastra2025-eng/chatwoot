@@ -2,8 +2,9 @@
 
 # The variable parts of the agent prompt (prompts/assistant.liquid), built from the agent and the run state:
 #   instruction / global_system_instruction  the texts with every $ field written as its value and every @ tool as its function name
-#   now_text                                 the one-line clock and, on the official WhatsApp channel, the reply window
-#   patient_lines                            the patient name and phone, a number only when a bound tool takes it, and the appointment
+#   now_text                                 the one-line clock (after midnight with the night line) and, on the official WhatsApp channel,
+#                                            the reply window
+#   patient_lines                            the patient name and phone, an ID only when a bound tool takes it, and the appointment
 #                                            and deal summaries that the clinic instruction does not place itself
 # The run state (prompt_state, runtime_clock, ...) is data and is not changed here; this class only chooses the text.
 #
@@ -50,6 +51,7 @@ class Captain::AssistantPrompt
 
     [
       Captain::PromptClock.now_line(@state[:runtime_clock]),
+      Captain::PromptClock.night_line(@state[:runtime_clock]),
       Captain::PromptClock.reply_window_line(@state[:reply_window], time_zone: time_zone)
     ].compact.join("\n")
   end
@@ -62,14 +64,14 @@ class Captain::AssistantPrompt
 
     [
       ("#{who}." if who.present?),
-      numbered_line(:contact, 'Patient number', contact[:id]),
+      numbered_line(:contact, 'Patient ID', contact[:id]),
       ("Conversation labels: #{labels.join(', ')}." if labels.any?),
-      numbered_line(:conversation, 'Conversation number', conversation[:display_id]),
+      numbered_line(:conversation, 'Conversation ID', conversation[:display_id]),
       *unplaced_summary_lines
     ].compact
   end
 
-  # "Patient number: 7." when a bound tool takes that number, else nothing.
+  # "Patient ID: 7." when a bound tool takes that ID, else nothing.
   def numbered_line(kind, label, number)
     "#{label}: #{number}." if number.present? && Captain::PromptNumbers.shown?(kind, bound_tool_ids)
   end

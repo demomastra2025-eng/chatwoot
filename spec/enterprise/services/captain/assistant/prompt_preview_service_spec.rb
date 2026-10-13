@@ -121,7 +121,7 @@ RSpec.describe Captain::Assistant::PromptPreviewService do
       preview = described_class.new(assistant: assistant).preview
 
       expect(preview.dig(:assistant, :used_tool_ids)).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation')
-      expect(preview.dig(:assistant, :compiled_prompt)).to include('hand the conversation to staff with `handoff`')
+      expect(preview.dig(:assistant, :compiled_prompt)).to include('Call handoff once, with a short reason for staff')
     end
 
     it 'reports only runtime-available scenario tools in preview metadata' do

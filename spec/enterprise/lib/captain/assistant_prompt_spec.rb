@@ -19,8 +19,21 @@ RSpec.describe Captain::AssistantPrompt do
     expect(variables(state: state)).to eq(
       instruction: 'Use `faq_lookup` for Aigerim.',
       global_system_instruction: 'Shared',
-      now_text: 'Monday, 12.10.2026, 23:56, Almaty (UTC+5).',
+      now_text: 'Monday, 12 October 2026 (2026-10-12), 23:56, Almaty (UTC+5). Tomorrow: Tuesday, 13 October 2026 (2026-10-13).',
       patient_lines: ['Aigerim, +77000000000.']
+    )
+  end
+
+  it 'adds the night line after the clock line between 00:00 and 05:00 and before the reply window line' do
+    night = { now_utc: '2026-10-12T20:15:00Z', timezone: 'Asia/Almaty' }
+    window = { channel: 'official_whatsapp', closes_at: '2026-10-13T10:00:00Z', open_now: true }
+
+    expect(variables(state: { runtime_clock: night, reply_window: window })[:now_text].split("\n")).to eq(
+      [
+        'Tuesday, 13 October 2026 (2026-10-13), 01:15, Almaty (UTC+5). Tomorrow: Wednesday, 14 October 2026 (2026-10-14).',
+        'It is night: a patient\'s "today" or "tomorrow" may mean the coming day; name the date you understood.',
+        'WhatsApp reply window is open until 13.10.2026 15:00; after that only approved templates can be sent.'
+      ]
     )
   end
 
@@ -58,18 +71,18 @@ RSpec.describe Captain::AssistantPrompt do
     state = { prompt_context: { contact: contact, conversation: { 'display_id' => 15, 'label_list' => ['vip'] } } }
 
     expect(variables(state: state, runtime_tool_ids: %w[get_contact assign_conversation])[:patient_lines]).to eq(
-      ['Aigerim, +77000000000.', 'Patient number: 7.', 'Conversation labels: vip.', 'Conversation number: 15.']
+      ['Aigerim, +77000000000.', 'Patient ID: 7.', 'Conversation labels: vip.', 'Conversation ID: 15.']
     )
     expect(variables(state: state, runtime_tool_ids: %w[get_my_contact])[:patient_lines]).to eq(
       ['Aigerim, +77000000000.', 'Conversation labels: vip.']
     )
   end
 
-  it 'adds the conversation number for send_message_to_conversation, which has no default conversation in the agent runtime' do
+  it 'adds the conversation ID for send_message_to_conversation, which has no default conversation in the agent runtime' do
     state = { prompt_context: { contact: contact, conversation: { 'display_id' => 15 } } }
 
     expect(variables(state: state, runtime_tool_ids: %w[send_message_to_conversation])[:patient_lines]).to eq(
-      ['Aigerim, +77000000000.', 'Conversation number: 15.']
+      ['Aigerim, +77000000000.', 'Conversation ID: 15.']
     )
     expect(variables(state: state, runtime_tool_ids: %w[send_notification remove_label_from_conversation])[:patient_lines]).to eq(
       ['Aigerim, +77000000000.']

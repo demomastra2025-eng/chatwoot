@@ -10,19 +10,29 @@ class Captain::PromptClock
   }.freeze
   DATE_TIME_FORMAT = '%d.%m.%Y %H:%M'
   DATE_FORMAT = '%d.%m.%Y'
+  # The weekday, the day, the month name and the ISO date together: a model reads "Monday, 12 October 2026 (2026-10-12)" without
+  # counting weekdays from a numeric date.
+  LONG_DATE_FORMAT = '%A, %-d %B %Y (%Y-%m-%d)'
+  # Before this local hour a patient's "today" or "tomorrow" may still mean the coming day.
+  NIGHT_ENDS_AT_HOUR = 5
+  NIGHT_LINE = 'It is night: a patient\'s "today" or "tomorrow" may mean the coming day; name the date you understood.'
 
   class << self
-    # "Monday, 12.10.2026, 23:56, Almaty (UTC+5)." or nil when the clock holds no usable time.
+    # "Monday, 12 October 2026 (2026-10-12), 12:34, Almaty (UTC+5). Tomorrow: Tuesday, 13 October 2026 (2026-10-13)." or nil when
+    # the clock holds no usable time.
     def now_line(runtime_clock)
-      clock = runtime_clock.to_h.with_indifferent_access
-      zone_id = clock[:timezone].to_s
-      zone = ActiveSupport::TimeZone[zone_id] if zone_id.present?
-      time = parse_time(clock[:now_utc]) || parse_time(clock[:now_local])
-      return if zone.blank? || time.blank?
+      local, city = local_clock(runtime_clock)
+      return if local.blank?
 
-      local = time.in_time_zone(zone)
-      city = CITIES[zone_id] || CITIES[zone.tzinfo.name] || zone_id
-      "#{local.strftime('%A, %d.%m.%Y, %H:%M')}, #{city} (#{offset_label(local)})."
+      "#{local.strftime(LONG_DATE_FORMAT)}, #{local.strftime('%H:%M')}, #{city} (#{offset_label(local)}). " \
+        "Tomorrow: #{(local + 1.day).strftime(LONG_DATE_FORMAT)}."
+    end
+
+    # One more line for the hours after midnight, when "today" and "tomorrow" are ambiguous; nil at any other time and without a
+    # usable clock.
+    def night_line(runtime_clock)
+      local, = local_clock(runtime_clock)
+      NIGHT_LINE if local.present? && local.hour < NIGHT_ENDS_AT_HOUR
     end
 
     # One short line about the official WhatsApp reply window, or nil for every other channel.
@@ -77,6 +87,17 @@ class Captain::PromptClock
     end
 
     private
+
+    # The local time of the run clock and the city to show with it; nil when the clock has no usable zone or time.
+    def local_clock(runtime_clock)
+      clock = runtime_clock.to_h.with_indifferent_access
+      zone_id = clock[:timezone].to_s
+      zone = ActiveSupport::TimeZone[zone_id] if zone_id.present?
+      time = parse_time(clock[:now_utc]) || parse_time(clock[:now_local])
+      return if zone.blank? || time.blank?
+
+      [time.in_time_zone(zone), CITIES[zone_id] || CITIES[zone.tzinfo.name] || zone_id]
+    end
 
     def offset_label(local)
       seconds = local.utc_offset
