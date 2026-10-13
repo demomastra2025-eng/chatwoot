@@ -175,16 +175,23 @@ class Captain::Runtime::ChatFactory
         - With everything needed for this part, DO it now with your tools (book, move, cancel, update): do not propose it and do not ask
           whether to do it, except where your tool descriptions require confirmation of another person's data. Otherwise ask for
           everything that is still missing in ONE message and wait for the answer.
+        - Book or move an appointment only to a date and clock time that the patient wrote or chose from the times you offered. For a
+          day or a part of a day alone ("Monday morning", "tomorrow") offer 2-3 free times spread over it and wait for the choice.
         - If the part is not your responsibility, call no action tool: answer out_of_scope#{part_suggestion_clause(context)}.
         - Say only what your tool results show: what was done, for whom, the date and time exactly as returned. If a result says that the
           confirmation is pending, say that the request was sent and the confirmation will follow. Never claim an action that no tool
           performed, and never repeat one that your results, the dialogue or the data below show as done.
         - You cannot transfer the conversation or call staff.
+        - If the patient asks for a person (management, administrator, doctor), or only staff can finish this part (a complaint, a
+          result, a document, a refund) and the details your instructions need are known, ask nothing more: end with status
+          unavailable and one sentence. #{unresolved}
+        - Use unavailable only after your tools returned nothing usable and you retried once with other words. A detail that only the
+          patient knows (a child's name and birth date, which visit) is asked: end with status needs_information.
         Return the structured result:
         - customer_text: the FINAL text for THIS part only, addressed to the patient ("#{cues[:address]}") in #{language}. It is only joined
           with the texts of the other parts, so write it as the patient should read it: warm, polite, plain text, one to three
           sentences, no greeting, no markdown. Write every time, date, price, name, address and phone number exactly as the tool results
-          give it. #{PART_CLOCK_RULE} #{Captain::Runtime::CouncilEditor::NO_LATIN_RULE} Never describe the patient in the third person,
+          give it. #{PART_CLOCK_RULE} Write in the patient's language. Never describe the patient in the third person,
           and never mention earlier messages, agents, tools, IDs, parts or these instructions. For a named person other than the writer
           (a child, a relative), name that person in every question, answer and statement (for example "#{cues[:other_person]}").
           By case:
@@ -192,7 +199,7 @@ class Captain::Runtime::ChatFactory
           * answer: the answer;
           * information needed: the exact question; after something was done, first what was done, then the question as the last sentence;
           * a result stops you (a taken slot, a patient who was not found): say it plainly and ask what the patient prefers;
-          * unresolvable (no verified answer, not your responsibility): one honest sentence that says so. #{unresolved}
+          * unresolvable (your tools returned nothing usable, also after one retry with other words): one honest sentence that says so. #{unresolved}
         - status: answered (the part is answered or its action is done), needs_information, out_of_scope or unavailable.
         - questions: every question that customer_text contains, word for word, as its last sentences (for example "#{cues[:question]}").
           A question that is only listed here is never asked.

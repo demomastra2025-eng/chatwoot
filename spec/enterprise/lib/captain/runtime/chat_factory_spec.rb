@@ -462,13 +462,41 @@ RSpec.describe Captain::Runtime::ChatFactory do
                               'questions: every question that customer_text contains, word for word, as its last sentences')
     end
 
-    it 'carries the shared rule against English and Latin-script words, the same constant as the editor' do
-      expect(Captain::Runtime::CouncilEditor::NO_LATIN_RULE).to eq(
-        'Use no English or other Latin-script words except names given in the data (service, doctor, place); ' \
-        'never copy status words, field names or codes from tool results.'
+    it 'asks the owner to write in the language of the patient, with no rule about Latin-script words' do
+      %w[ru kk].each do |language|
+        text = prompt(part_language: language)
+
+        expect(text).to include("Write in the patient's language.")
+        expect(text).not_to include(Captain::Runtime::CouncilEditor::NO_LATIN_RULE, 'Latin-script', 'no English')
+      end
+    end
+
+    it 'books or moves only to a time the patient named or chose, and offers 2-3 free times for a day or a part of a day' do
+      expect(prompt).to include(
+        'Book or move an appointment only to a date and clock time that the patient wrote or chose from the times you offered. ' \
+        'For a day or a part of a day alone ("Monday morning", "tomorrow") offer 2-3 free times spread over it and wait for the choice.'
       )
-      expect(prompt(part_language: 'ru')).to include(Captain::Runtime::CouncilEditor::NO_LATIN_RULE)
-      expect(prompt(part_language: 'kk')).to include(Captain::Runtime::CouncilEditor::NO_LATIN_RULE)
+    end
+
+    it 'ends a part the patient wants a person for, or that only staff can finish, with unavailable and one sentence, and asks nothing more' do
+      with_handoff = prompt(part_staff_handoff: true)
+      without_handoff = prompt(part_staff_handoff: false)
+      rule = 'If the patient asks for a person (management, administrator, doctor), or only staff can finish this part (a complaint, a ' \
+             'result, a document, a refund) and the details your instructions need are known, ask nothing more: end with status ' \
+             'unavailable and one sentence.'
+
+      expect(with_handoff).to include("#{rule} A staff member can take this part over: say briefly that a staff member will answer it.")
+      expect(without_handoff).to include("#{rule} No staff member can take this part over: say that you cannot answer it now.")
+    end
+
+    it 'uses unavailable only after the tools found nothing usable and one retry with other words, and asks for a detail only the patient knows' do
+      text = prompt
+
+      expect(text).to include('Use unavailable only after your tools returned nothing usable and you retried once with other words. ' \
+                              'A detail that only the patient knows (a child\'s name and birth date, which visit) is asked: ' \
+                              'end with status needs_information.')
+      expect(text).to include('unresolvable (your tools returned nothing usable, also after one retry with other words): one honest sentence')
+      expect(text).not_to include('unresolvable (no verified answer, not your responsibility)')
     end
 
     it 'gives the data blocks: the whole message of the patient, the part and how the parts before it ended, quoted as data' do

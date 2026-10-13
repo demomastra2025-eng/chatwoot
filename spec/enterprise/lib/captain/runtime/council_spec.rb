@@ -223,6 +223,41 @@ RSpec.describe Captain::Runtime::Council do
     end
   end
 
+  describe 'what the owner is told about an earlier version of its part' do
+    def continued(prior)
+      items = parts(%w[Анна], owners: [2])
+      items.first.merge!({ 'version' => 2, 'link_action' => 'answer', 'prior_questions' => ['Какой врач?'] }.merge(prior))
+      results['part-0'] = ran('Готово.')
+      run_council(items)
+      runs.sole[:snapshot][:part_info]
+    end
+
+    it 'hands on what the earlier version concluded, with its questions' do
+      info = continued('prior_summary' => 'На какое время вас записать?', 'prior_state' => 'waiting_customer', 'prior_acted' => false)
+
+      expect(info).to include(prior_summary: 'На какое время вас записать?', questions: ['Какой врач?'])
+    end
+
+    it 'does not hand on the summary of an earlier version that ended unresolved: it concluded nothing, so the owner looks again' do
+      info = continued('prior_summary' => 'Не нашла такой услуги.', 'prior_state' => 'unknown', 'prior_acted' => false)
+
+      expect(info).not_to have_key(:prior_summary)
+      expect(info).to include(questions: ['Какой врач?'], link_action: 'answer')
+    end
+
+    it 'keeps the summary of an unresolved earlier version that had acted: what it did is a fact' do
+      info = continued('prior_summary' => 'Запись на 10:00 создана.', 'prior_state' => 'unknown', 'prior_acted' => true)
+
+      expect(info).to include(prior_summary: 'Запись на 10:00 создана.', prior_acted: true)
+    end
+
+    it 'reads a part stored before the state of the earlier version was kept as it was' do
+      info = continued('prior_summary' => 'Старый итог.')
+
+      expect(info).to include(prior_summary: 'Старый итог.')
+    end
+  end
+
   describe 'where the parts run' do
     it 'runs every mutating part on the calling thread and a read-only part on a thread of its own' do
       results.merge!('part-0' => ran(booked, acted: true), 'part-1' => ran('Цена'))

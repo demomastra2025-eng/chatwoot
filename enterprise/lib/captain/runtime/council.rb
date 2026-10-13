@@ -196,9 +196,17 @@ class Captain::Runtime::Council
   def part_info(part)
     {
       id: part['id'], version: part['version'], patient: part['patient'], relation: part['relation'], fragment: part['fragment'],
-      link_action: part['link_action'], prior_summary: part['prior_summary'].presence, questions: Array(part['prior_questions']).presence,
+      link_action: part['link_action'], prior_summary: prior_conclusion(part), questions: Array(part['prior_questions']).presence,
       prior_acted: part['prior_acted'].presence
     }.compact
+  end
+
+  # What an earlier version of the part concluded. A version that ended unresolved (its tools found nothing usable) concluded
+  # nothing: its summary is not handed on as a conclusion, so the owner looks again with its own tools.
+  def prior_conclusion(part)
+    return if part['prior_state'] == 'unknown' && part['prior_acted'] != true
+
+    part['prior_summary'].presence
   end
 
   def public_history(history)
