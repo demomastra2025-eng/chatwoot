@@ -202,12 +202,9 @@ class Captain::Runtime::Runner
 
     context[:part_plan_processed] = true
     # A cancellation of a part that never acted needs no agent: there is nothing to undo. (A part that acted is planned as a
-    # correction, see PartRegistry#accept!, so its owner runs and undoes the action with its own tools.)
-    if plan[:parts].all? { |part| part['link_action'] == 'cancellation' }
-      return finalize_run(session[:chat], session[:context_wrapper], session[:current_agent],
-                          output: { response: I18n.t('captain.coordination.cancelled', locale: Captain::Runtime::CouncilEditor.locale_for(context)),
-                                    reasoning: '' })
-    end
+    # correction, see PartRegistry#accept!, so its owner runs and undoes the action with its own tools.) The runtime writes no
+    # sentence for it: the agent that took the cancellation continues and answers in its own words.
+    return if plan[:parts].all? { |part| part['link_action'] == 'cancellation' }
 
     case plan[:mode]
     when 'council'
@@ -217,8 +214,9 @@ class Captain::Runtime::Runner
                                              callbacks: session[:context_wrapper].callbacks).run(plan[:parts])
       return technical_failure_result(session) if answer.blank? && context[:technical_failure].present?
 
-      finalize_run(session[:chat], session[:context_wrapper], session[:current_agent],
-                   output: { response: answer, reasoning: '' })
+      # No part has a text of its own: nothing is sent (the staff handoff and note the council recorded still follow).
+      output = answer.blank? ? { response: '', response_mode: 'suppress', reasoning: '' } : { response: answer, reasoning: '' }
+      finalize_run(session[:chat], session[:context_wrapper], session[:current_agent], output: output)
     when 'handoff'
       # Only a plan stored with the former mode: a new plan never has it, a transfer is the colleague's own tool.
       target_id = plan[:parts].first['executor_agent_id']

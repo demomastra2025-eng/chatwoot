@@ -137,21 +137,25 @@ RSpec.describe Captain::Playground::Session do
 
   describe 'the owner of a council part, which is not the active agent' do
     let(:peer) { create(:captain_assistant, account: account) }
+    let(:inbox) { create(:inbox, account: account) }
 
-    before { assistant.update!(handoff_agent_ids: [peer.id]) }
+    # The peers of the entry agent are the agents of the chosen channel, so the session works on a channel.
+    def routed_session(&)
+      session.with_lock(inbox_id: inbox.id, &)
+    end
 
     def state_for(workspace, actor)
       { playground: workspace.context_reference, source: 'playground', assistant_id: actor.id }
     end
 
     it 'cannot pass the checks of the session as itself: the session knows its active agent only' do
-      session.with_lock do |workspace|
+      routed_session do |workspace|
         expect { workspace.assert_context!(state_for(workspace, peer)) }.to raise_error(ArgumentError, /acting agent changed/)
       end
     end
 
     it 'passes them through a view of the session that acts as the owner, while the session keeps its active agent and its references' do
-      session.with_lock do |workspace|
+      routed_session do |workspace|
         view = workspace.acting_as(peer.id)
 
         expect(view.assistant).to eq(peer)
@@ -166,7 +170,7 @@ RSpec.describe Captain::Playground::Session do
     end
 
     it 'still refuses an agent that is foreign, disabled, or not reachable from the entry agent' do
-      session.with_lock do |workspace|
+      routed_session do |workspace|
         expect { workspace.acting_as(create(:captain_assistant).id) }.to raise_error(Pundit::NotAuthorizedError)
         internal = create(:captain_assistant, account: account, usage_mode: 'internal_assistant')
         expect { workspace.acting_as(internal.id) }.to raise_error(Pundit::NotAuthorizedError, /no longer reachable/)
@@ -177,7 +181,7 @@ RSpec.describe Captain::Playground::Session do
     end
 
     it 'does not let the view act for the run of another session' do
-      session.with_lock do |workspace|
+      routed_session do |workspace|
         view = workspace.acting_as(peer.id)
         foreign = state_for(workspace, peer).merge(playground: workspace.context_reference.merge(session_id: SecureRandom.uuid))
 

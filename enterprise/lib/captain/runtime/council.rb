@@ -11,8 +11,11 @@
 # parts run on threads of their own, side by side with it (see Council::Lanes). Only the calling thread touches the shared
 # context and the registry: threads return plain data that the calling thread records after the join.
 #
-# A technical failure of a tool (see ToolFailure) stops the part: it is not mentioned to the customer, the other parts are
-# answered, and the conversation goes to staff after the reply (council_handoff, technical: true).
+# The runtime writes no sentence to the customer. A part tells the customer only what its owner wrote: a part without a text of
+# its own is left out of the reply, also when it acted (staff get a private note, see #staff_note) and also when it could not be
+# resolved (the conversation goes to staff after the reply). A technical failure of a tool (see ToolFailure) stops the part: it is
+# not mentioned to the customer, the other parts are answered, and the conversation goes to staff after the reply
+# (council_handoff, technical: true). When no part has a text, the reply is empty and the run sends nothing.
 class Captain::Runtime::Council
   UNRESOLVED_STATES = %w[open unknown].freeze
   HANDOFF_REASON = 'council_unresolved'
@@ -36,7 +39,8 @@ class Captain::Runtime::Council
     :captain_v2_handoff_tool_called,
     :pending_handoff, :pending_human_handoff, :pending_response_cancellation, :handoff_count, :previous_handoff_source_id,
     :part_plan, :part_plan_refused, :part_plan_processed, :transfer_guard, :transfer_guard_active, :transfer_guarded,
-    :technical_failure, :council_handoff, :council_contributors, :__otel_tracing, :__llm_event_bus,
+    :technical_failure, :council_handoff, :council_note, :council_untold_part_ids, :council_contributors, :__otel_tracing,
+    :__llm_event_bus,
     Captain::Runtime::ToolLoopGuard::REQUEST_COUNTS_KEY, Captain::Runtime::ToolLoopGuard::TERMINAL_STOP_KEY,
     Captain::Runtime::TracingCallbacks::TRACE_EVENT_CONTEXT_KEY
   ].freeze
@@ -435,7 +439,7 @@ class Captain::Runtime::Council
   end
 
   # What the registry keeps of the part for later runs: the text its owner wrote; else, for a part that acted, what its tools
-  # returned (the council's own stock line says too little); else the text that was sent.
+  # returned; else the text that was sent.
   def stored_summary(written, sent, base)
     written.to_s.presence || (base[:acted] ? base[:summary].presence : sent.presence)
   end
@@ -448,23 +452,23 @@ class Captain::Runtime::Council
   end
 
   # The registry state and the text of a part, from what the owner said and what its tools did. That an action was performed is
-  # computed from the tool results, never from what the owner says.
+  # computed from the tool results, never from what the owner says. The text is only ever the owner's: it may be blank.
   def answer_outcome(output, base)
     text = output['customer_text'].to_s
     state, text = case output['status']
                   when 'answered' then answered_state(output, text, base)
                   when 'needs_information' then information_state(output, text, base)
-                  when 'out_of_scope' then base[:acted] ? ['unknown', text.presence || action_line(base)] : ['open', text]
-                  else base[:acted] ? ['unknown', text.presence || action_line(base)] : ['unknown', text]
+                  when 'out_of_scope' then [base[:acted] ? 'unknown' : 'open', text]
+                  else ['unknown', text]
                   end
     { status: output['status'], state: state, text: text, questions: output['questions'], sources: output['sources'],
       suggested_agent: output['suggested_agent'] }
   end
 
-  # An action that was performed is reported as done. An answer without a source (a tool, a document, the agent's own
-  # instructions) is not an answer: its text is not passed on.
+  # An action that was performed is done. An answer without a source (a tool, a document, the agent's own instructions) is not
+  # an answer: its text is not passed on.
   def answered_state(output, text, base)
-    return ['done', text.presence || action_line(base)] if base[:acted]
+    return ['done', text] if base[:acted]
     return ['answered', text] if text.present? && output['sources'].any?
 
     ['unknown', '']
@@ -475,23 +479,22 @@ class Captain::Runtime::Council
     text = text.presence || output['questions'].join(' ')
     return ['waiting_customer', text] if text.present?
 
-    base[:acted] ? ['waiting_customer', action_line(base)] : ['unknown', '']
+    [base[:acted] ? 'done' : 'unknown', '']
   end
 
-  # No usable structured answer. An action that was performed is still reported as done.
+  # No usable structured answer. An action that was performed is still done, and it has no text.
   def unparsed_outcome(base)
-    return { status: 'answered', state: 'done', text: action_line(base) } if base[:acted]
+    return { status: 'answered', state: 'done', text: '' } if base[:acted]
 
     { status: 'unavailable', state: 'unknown', text: '' }
   end
 
-  # A technical failure: the part is not mentioned. When it had already performed an action, the customer is told that much.
+  # A technical failure: the part is not mentioned, also when it had already performed an action (staff are told, see
+  # #staff_note, and the failure hands the conversation over).
   def technical_entry(base, technical)
-    if base[:acted]
-      return base.merge(status: 'answered', state: 'done', text: action_line(base), technical: technical, stored: base[:summary].presence)
-    end
+    return base.merge(status: 'answered', state: 'done', text: '', technical: technical, stored: base[:summary].presence) if base[:acted]
 
-    base.merge(status: 'unavailable', state: 'unknown', text: '', technical: technical, omit: true)
+    base.merge(status: 'unavailable', state: 'unknown', text: '', technical: technical)
   end
 
   # An internal error of a part (not of one of its tools). It is a technical failure like any other; what its tools did before
@@ -501,13 +504,11 @@ class Captain::Runtime::Council
     technical_entry(entry_base(part).merge(acted: acted, summary: summary.to_s), technical)
   end
 
-  # A dependent part whose prerequisite has not finished does not run, and the customer is not told about it: the line of the
-  # prerequisite (its question, or that staff will answer) carries the reply, and the part stays open for the next message. When
-  # the prerequisite failed technically, that failure is the dependent's too, so the note for staff names it and the handoff
-  # follows the reply. The stock line is kept only for the one case where nothing else is left to say (see #assemble).
+  # A dependent part whose prerequisite has not finished does not run, and the customer is not told about it: the text of the
+  # prerequisite (its question) carries the reply, and the part stays open for the next message. When the prerequisite failed
+  # technically, that failure is the dependent's too, so the note for staff names it and the handoff follows the reply.
   def not_started_entry(plan, failure = nil)
-    entry = entry_base(plan.part).merge(state: 'open', text: stock_text_for('action_not_started'), status: 'unavailable',
-                                        not_started: true, omit: true)
+    entry = entry_base(plan.part).merge(state: 'open', text: '', status: 'unavailable', not_started: true)
     failure ? entry.merge(technical: failure) : entry
   end
 
@@ -520,27 +521,18 @@ class Captain::Runtime::Council
     entry = entry_base(plan.part).merge(state: stored['state'], text: settled_text(stored), acted: stored['acted'] == true,
                                         questions: Array(stored['missing_fields']),
                                         unresolved: UNRESOLVED_STATES.include?(stored['state']), settled: true)
-    return entry if stored['technical'].blank?
-
-    entry.merge(technical: stored['technical'], omit: !entry[:acted])
+    stored['technical'].blank? ? entry : entry.merge(technical: stored['technical'])
   end
 
-  # What the customer was told for a stored part: the text that was sent. A part stored without it (an older record, or a part
-  # whose run was interrupted after it acted) says that the action was done; the summary holds the raw results of its tools for the
-  # model and for staff, and is never sent.
+  # What the customer was told for a stored part: the text that was sent, and nothing else. A part stored without one (a cancelled
+  # part, an older record, a part whose run was interrupted after it acted) has no text and is left out of the reply; the summary
+  # holds the raw results of its tools for the model and for staff, and is never sent.
   def settled_text(stored)
-    return stock_text_for('cancelled') if stored['cancelled']
-    return stored['reply_text'].to_s if stored.key?('reply_text')
-
-    stored['acted'] == true ? stock_text_for('action_done') : stored['summary'].to_s
+    stored['reply_text'].to_s
   end
 
   def unavailable_entry(part)
     entry_base(part).merge(state: 'unknown', text: '', status: 'unavailable', unresolved: true)
-  end
-
-  def action_line(base)
-    stock_text_for(base[:pending] ? 'action_pending' : 'action_done')
   end
 
   # --- Recording (calling thread only) --------------------------------------------------------------------------------------
@@ -597,28 +589,52 @@ class Captain::Runtime::Council
 
   # --- The reply ------------------------------------------------------------------------------------------------------------
 
-  # Parts that failed technically are not mentioned: what is left is answered, and the conversation goes to staff after the
-  # reply. When nothing is left there is no reply at all, and the run ends as a technical failure (see Runner#handle_plan).
+  # The reply holds the texts the owners wrote, and nothing else. A part without a text (one that failed technically, one that
+  # could not be resolved, a dependent part that did not start, a cancelled part, a part that acted and wrote nothing) is left
+  # out; parts that failed technically or could not be resolved hand the conversation to staff after the reply, in silence. When
+  # no part has a text the reply is empty: with a technical failure the run ends as a failed turn (see Runner#handle_plan),
+  # otherwise nothing is sent, and the conversation still goes to staff when a part is unresolved.
   def assemble(entries)
     @context.delete(:council_handoff)
+    @context.delete(:council_note)
     failures = entries.filter_map { |entry| entry[:technical] }
-    shown = entries.reject { |entry| entry[:omit] }
-    # Dependent parts that did not start are left out of the reply. When nothing else is left to say and nothing failed (the
-    # prerequisite is a part of an earlier message that still waits), the customer is told that much instead of nothing.
-    shown = entries.select { |entry| entry[:not_started] } if shown.empty? && failures.empty?
-    return no_reply(failures) if shown.empty?
+    shown = entries.select { |entry| told?(entry) }
+    return no_reply(failures) if shown.empty? && failures.any?
 
-    unresolved = shown.select { |entry| entry[:unresolved] }
+    unresolved = entries.select { |entry| entry[:unresolved] && !entry[:technical] }
     handoff = failures.any? || (unresolved.any? && staff_handoff_available?)
-    lines = shown.map { |entry| part_line(entry, handoff: handoff) }
-    reply = lines.one? ? lines.first['text'] : (edit_reply(shown.pluck(:id), lines, handoff: handoff) || plain_reply(shown, lines))
+    reply = reply_for(shown, handoff: handoff)
+    @context[:council_untold_part_ids] = entries.reject { |entry| told?(entry) }.pluck(:id)
     @context[:council_handoff] = handoff_request(unresolved, failures) if handoff
+    staff_note(entries, unresolved, handoff: handoff)
     reply
+  end
+
+  def reply_for(shown, handoff:)
+    return '' if shown.empty?
+
+    lines = shown.map { |entry| part_line(entry, handoff: handoff) }
+    lines.one? ? lines.first['text'] : (edit_reply(shown.pluck(:id), lines, handoff: handoff) || plain_reply(shown, lines))
+  end
+
+  # The customer reads the text of a part only when its owner wrote one.
+  def told?(entry)
+    entry[:text].present?
   end
 
   def no_reply(failures)
     @context[:technical_failure] = failures.first.merge('parts' => failures.size)
     ''
+  end
+
+  # A private note for staff, never customer text: what a part did without any text that tells the customer (the action is on
+  # record, and the next reply mentions it, see PartRegistry.undelivered_outcomes), and what nobody will answer because the
+  # conversation cannot go to staff. The response builder writes it (see ResponseBuilderJob#note_council_parts).
+  def staff_note(entries, unresolved, handoff:)
+    unreported = entries.select { |entry| entry[:acted] && !told?(entry) }.pluck(:request)
+    unanswered = handoff ? [] : unresolved.reject { |entry| told?(entry) }.pluck(:request)
+    note = { unreported: unreported.compact_blank, unanswered: unanswered.compact_blank }.compact_blank
+    @context[:council_note] = note if note.any?
   end
 
   def handoff_request(unresolved, failures)
@@ -627,42 +643,26 @@ class Captain::Runtime::Council
     request
   end
 
-  # The agents that wrote a part of the reply. An agent whose parts all failed technically is not one of them.
+  # The agents that wrote a part of the reply. An agent none of whose parts has a text is not one of them.
   def contributors
-    shown = @entries.values.reject { |entry| entry[:omit] }.pluck(:executor_id)
-    hidden = @entries.values.select { |entry| entry[:omit] }.pluck(:executor_id) - shown
+    shown = @entries.values.select { |entry| told?(entry) }.pluck(:executor_id)
+    hidden = @entries.values.reject { |entry| told?(entry) }.pluck(:executor_id) - shown
     (@participants - hidden).filter_map do |id|
       actor = @graph&.find(id)
       { id: actor.id, name: actor.name, avatar_url: actor.avatar_url } if actor
     end
   end
 
-  # A part that is unresolved and has no text of its own gets one short line. The owner of a part was told whether staff can take
-  # it over, so its own sentence is true; the line says the same to the editor.
+  # What the editor gets of a part: the text its owner wrote and two flags. The owner of a part was told whether staff can take
+  # it over, so its own sentence is true; staff_will_answer says the same to the editor.
   def part_line(entry, handoff:)
-    text = stock_line?(entry) ? stock_text(handoff) : entry[:text]
-    { 'text' => text, 'done' => entry[:acted] == true, 'staff_will_answer' => entry[:unresolved] == true && handoff }
+    { 'text' => entry[:text], 'done' => entry[:acted] == true, 'staff_will_answer' => entry[:unresolved] == true && handoff }
   end
 
-  def stock_line?(entry)
-    entry[:unresolved] && entry[:text].blank?
-  end
-
-  def stock_text(handoff)
-    stock_text_for(handoff ? 'part_staff_will_answer' : 'part_cannot_answer')
-  end
-
-  def stock_text_for(key)
-    I18n.t("captain.coordination.#{key}", locale: reply_language.to_sym)
-  end
-
-  # Without the editor's reply the part texts go out in the order of the requests. Exact repeats are dropped (the same stock
-  # line for two parts, the same question twice for one person); the same words about different people stay, since they ask
-  # about different people.
+  # Without the editor's reply the part texts go out in the order of the requests. Exact repeats are dropped (the same question
+  # twice for one person); the same words about different people stay, since they ask about different people.
   def plain_reply(entries, lines)
-    keyed = entries.zip(lines).map do |entry, line|
-      [[stock_line?(entry) ? nil : entry[:patient], line['text']], line['text']]
-    end
+    keyed = entries.zip(lines).map { |entry, line| [[entry[:patient], line['text']], line['text']] }
     keyed.uniq(&:first).filter_map { |_, text| text.presence }.join(PART_SEPARATOR)
   end
 

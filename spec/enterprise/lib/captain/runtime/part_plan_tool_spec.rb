@@ -380,6 +380,27 @@ RSpec.describe Captain::Runtime::PartPlanTool do
         expect(context[:part_plan][:parts].sole).to include('link_action' => 'answer')
       end
 
+      it 'tells the model to confirm the cancellation of a part that never acted itself: no agent runs and no sentence is written for it' do
+        council_with_lab({ fragment: 'Записать на анализ', executor: 'Лаборатория' })
+        part = lab_part_of_plan
+        wait_for_the_customer(part)
+
+        rendered = planner.call(mode: 'council', parts: [{ fragment: 'Не надо', link_part_id: part['id'], link_action: 'cancellation' }])
+
+        expect(JSON.parse(rendered)).to include('note' => described_class::CANCELLED_NOTE)
+        expect(context[:part_plan][:parts].sole).to include('cancelled' => true, 'state' => 'done')
+      end
+
+      it 'gives no note for an answer to a part' do
+        council_with_lab({ fragment: 'Записать на анализ', executor: 'Лаборатория' })
+        part = lab_part_of_plan
+        wait_for_the_customer(part)
+
+        rendered = planner.call(mode: 'council', parts: [{ fragment: 'Да', link_part_id: part['id'], link_action: 'answer' }])
+
+        expect(JSON.parse(rendered)).not_to have_key('note')
+      end
+
       it 'does not offer the link action confirmation to the model' do
         link_actions = described_class.new.params_schema.deep_stringify_keys.dig('properties', 'parts', 'items', 'properties', 'link_action', 'enum')
 

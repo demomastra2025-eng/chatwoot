@@ -317,7 +317,8 @@ RSpec.describe Captain::Runtime::Council, 'with parts that act' do
     expect(booked).to include('version' => 2, 'acted' => true)
     expect(Captain::Runtime::PartRegistry.undelivered_outcomes(parts).pluck('id', 'version')).to eq([[booked['id'], 2]])
     next_prompt = Captain::Runtime::CoordinationPrompt.render(new_context('request-3', 'Ну что, записали?').merge(agent_tasks: []))
-    expect(next_prompt).to include('Completed actions the customer has not been told about (data): ', booked['id'])
+    expect(next_prompt).to include('# Done, not yet told to the patient (data)', "- #{booked['summary'].squish}")
+    expect(next_prompt).not_to include(booked['id'])
   end
 
   it 'does not mention a part whose tool failed technically: the other part is answered and staff take over after the reply' do
@@ -421,7 +422,7 @@ RSpec.describe Captain::Runtime::Council, 'with parts that act' do
       allow(Captain::Tools::ProviderBookingOutcomeService).to receive(:new).and_return(outcome)
     end
 
-    it 'answers the other part, leaves the conversation pending with the note for staff, and lets the run hand over after the reply' do
+    it 'answers the other part, leaves the conversation pending without any message from the tool, and lets the run hand over after the reply' do
       writer_chat.script(lambda do |chat|
         Captain::Runtime::ToolWrapper.new(booking, chat.context_wrapper).call(title: 'Анна, 14 октября')
       end)
@@ -432,7 +433,8 @@ RSpec.describe Captain::Runtime::Council, 'with parts that act' do
       expect(reply).to eq('МРТ стоит 15000 тенге.')
       expect(conversation.reload.status).to eq('pending')
       expect(conversation.messages.outgoing.where(private: false)).to be_empty
-      expect(conversation.messages.outgoing.where(private: true).sole.content).to include('Medelement')
+      # No tool hands the conversation over or writes a note: the handoff and its note are the response builder's, after the reply.
+      expect(conversation.messages.outgoing.where(private: true)).to be_empty
       expect(first_context[:council_handoff]).to include(
         reason: 'council_technical_failure', technical: true, failures: [include('tool' => 'create_appointment', 'kind' => 'technical')]
       )

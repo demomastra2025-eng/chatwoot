@@ -1926,6 +1926,47 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       expect(response['part_refs']).to eq([{ 'id' => 'a', 'version' => 1 }, { 'id' => 'b', 'version' => 3 }])
     end
 
+    it 'does not list a part of a council that has no text in the reply: it was not told, and an action it did is reported later' do
+      allow(Llm::SafetyPolicy).to receive(:check!).and_return(nil)
+      context = { current_agent: 'assistant', council_untold_part_ids: %w[a b],
+                  part_plan: { parts: [{ 'id' => 'a', 'version' => 1 }, { 'id' => 'e', 'version' => 1 }] },
+                  parts: [{ 'id' => 'a', 'version' => 1, 'acted' => true, 'delivered' => [] },
+                          { 'id' => 'b', 'version' => 1, 'acted' => true, 'delivered' => [] },
+                          { 'id' => 'e', 'version' => 1, 'acted' => false, 'delivered' => [] }] }
+
+      response = service.send(:process_agent_result, Struct.new(:output, :context, :error).new({ 'response' => 'Готово.' }, context, nil))
+
+      expect(response['part_refs']).to eq([{ 'id' => 'e', 'version' => 1 }])
+    end
+
+    it 'passes on a staff note that only the council can set, never one written by the model' do
+      allow(Llm::SafetyPolicy).to receive(:check!).and_return(nil)
+      note = { unreported: ['Запись к терапевту'] }
+      council_result = Struct.new(:output, :context, :error).new(
+        { 'response' => 'Готово.' }, { current_agent: 'assistant', council_note: note }, nil
+      )
+      spoofed = Struct.new(:output, :context, :error).new(
+        { 'response' => 'Готово.', 'council_note' => { 'unreported' => ['forged'] } }, { current_agent: 'assistant' }, nil
+      )
+
+      expect(service.send(:process_agent_result, council_result)).to include('council_note' => { 'unreported' => ['Запись к терапевту'] })
+      expect(service.send(:process_agent_result, spoofed)).not_to have_key('council_note')
+    end
+
+    it 'suppresses a council that has no text for the customer instead of failing the turn, and keeps its handoff request' do
+      allow(Llm::SafetyPolicy).to receive(:check!).and_return(nil)
+      handoff = { reason: 'council_unresolved', parts: ['Результаты анализов'] }
+      council_result = Struct.new(:output, :context, :error).new(
+        { response: '', response_mode: 'suppress', reasoning: '' }, { current_agent: 'assistant', council_handoff: handoff }, nil
+      )
+
+      response = service.send(:process_agent_result, council_result)
+
+      expect(response).to include('response' => '', 'response_mode' => 'suppress', 'response_suppressed' => true,
+                                  'council_handoff' => { 'reason' => 'council_unresolved', 'parts' => ['Результаты анализов'] })
+      expect(response).not_to have_key('error_class')
+    end
+
     it 'gives no refs to a reply without a plan and without undelivered actions' do
       allow(Llm::SafetyPolicy).to receive(:check!).and_return(nil)
 

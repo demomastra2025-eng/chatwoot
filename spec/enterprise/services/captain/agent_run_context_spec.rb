@@ -109,9 +109,9 @@ RSpec.describe Captain::AgentRunContext do
       run_context = Captain::Runtime::RunContext.new(context)
 
       expect(tool_names(runtime, run_context))
-        .to include('plan_request', Captain::HandoffNaming.tool_name_for(specialist.agent_name))
+        .to include('plan_request', "transfer_to_agent_#{specialist.id}")
       expect(prompt_of(runtime, run_context)).to include(
-        'ENTRY PRIVATE PROMPT', "You are #{entry.name}, the current agent", 'plan_request', 'Use council only when'
+        'ENTRY PRIVATE PROMPT', %(You are "#{entry.name}"), '# Colleagues on this channel', 'plan_request', 'a council'
       )
     end
 

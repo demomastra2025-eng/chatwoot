@@ -78,8 +78,8 @@ RSpec.describe Captain::AgentGraph do
 
   describe '#resolve' do
     let(:graph) do
-      member
-      described_class.new(entry)
+      Captain::AgentChannel.create!(account: account, inbox: inbox, assistant: member)
+      described_class.new(entry, inbox: inbox)
     end
 
     it 'finds an agent by its runtime key assistant_<id> and by agent_<id>, the key in its transfer tool name' do
@@ -98,7 +98,7 @@ RSpec.describe Captain::AgentGraph do
     it 'finds an agent by its normalized name and returns nothing for an unknown key' do
       member.update!(name: 'Lab consultant')
 
-      expect(described_class.new(entry).resolve('lab_consultant')).to eq(member)
+      expect(graph.resolve('lab_consultant')).to eq(member)
       expect(graph.resolve('nobody')).to be_nil
       expect(graph.resolve(nil)).to be_nil
     end

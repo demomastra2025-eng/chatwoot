@@ -310,6 +310,7 @@ class Captain::Assistant::AgentRunnerService
     response = output.is_a?(Hash) ? output.with_indifferent_access : { 'response' => output.to_s, 'reasoning' => '' }
     response.delete('handoff_authorized')
     response.delete('council_handoff')
+    response.delete('council_note')
     response.delete(PROVIDER_ERROR_AUTHORIZED_KEY)
     response.delete(MODERATION_BLOCKED_KEY)
     response.delete(Captain::Safety::CustomRulesRuntime::RESPONSE_KEY)
@@ -317,8 +318,10 @@ class Captain::Assistant::AgentRunnerService
     response['agent_id'] = @acting_assistant_id
     response['agent_tasks'] = @agent_tasks if @agent_tasks.present?
     response['council_contributors'] = result.context[:council_contributors] if result.context&.dig(:council_contributors).present?
-    # Set by the council only when its reply promises staff an unresolved part; the response builder then performs the handoff.
+    # Set by the council only when a part is unresolved or failed technically; the response builder then performs the handoff.
     response['council_handoff'] = result.context[:council_handoff].to_h.deep_stringify_keys if result.context&.dig(:council_handoff).present?
+    # Set by the council only for a part that acted without a text for the customer, or that nobody will answer; a private note.
+    response['council_note'] = result.context[:council_note].to_h.deep_stringify_keys if result.context&.dig(:council_note).present?
     refs = part_refs_for(result.context)
     response['part_refs'] = refs if refs.any?
     response['handoff_tool_called'] = handoff_tool_called
@@ -346,11 +349,13 @@ class Captain::Assistant::AgentRunnerService
   end
 
   # The parts this reply answers: the plan of the request, and the actions of earlier runs that the customer was not told about
-  # (their reply was dropped) and that this reply reports. They are recorded as delivered with the message.
+  # (their reply was dropped) and that this reply reports. They are recorded as delivered with the message. A part of a council
+  # that has no text in the reply was not told, so it is not recorded as delivered (an action it did is reported by a later reply).
   def part_refs_for(context)
+    untold = Array(context&.dig(:council_untold_part_ids))
     planned = Array(context&.dig(:part_plan, :parts))
     undelivered = Captain::Runtime::PartRegistry.undelivered_outcomes(context&.dig(:parts))
-    (planned + undelivered).map { |part| part.slice('id', 'version') }.uniq
+    (planned + undelivered).reject { |part| untold.include?(part['id']) }.map { |part| part.slice('id', 'version') }.uniq
   end
 
   def technical_failure_from(context)

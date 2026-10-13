@@ -190,6 +190,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
       communication_thread_id: @conversation.communication_thread&.id,
       job_id: job_id
     )
+    finish_council_reply
     true
   end
 
@@ -216,12 +217,19 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
         account.increment_token_usage(@response.dig('usage', 'total_tokens'))
       end
     end
-    hand_off_after_council_reply
+    finish_council_reply
     true
   end
 
-  # A council reply that tells the customer staff will answer an unresolved part is followed by a real handoff.
-  # The reply is already delivered, so the handoff adds a private note only; the reply is the customer's notice.
+  # What follows a council reply, or the silence of a council whose parts had no text of their own: the staff handoff and the
+  # private note the council asked for. Both are no-ops for any other response.
+  def finish_council_reply
+    hand_off_after_council_reply
+    note_council_parts
+  end
+
+  # A council reply leaves out the part that could not be resolved, and the conversation is handed to staff after it, in silence.
+  # The handoff adds a private note only; the council writes no sentence to the customer about it.
   # A part that failed technically (a tool of its owner failed) is not mentioned in the reply: its handoff is the system's, so it
   # does not depend on the handoff tool, and it also sends the configured handoff notice (see Captain::CustomerNoticeService).
   def hand_off_after_council_reply
@@ -251,10 +259,30 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
       if technical
         I18n.t('captain.coordination.technical_failure_note', details: technical_failure_details(request['failures']))
       else
-        parts = Array(request['parts']).map { |part| part.to_s.squish.first(160) }.reject(&:blank?).join('; ')
-        I18n.t('captain.coordination.unresolved_handoff', parts: parts.presence || request['reason'])
+        I18n.t('captain.coordination.unresolved_handoff', parts: council_note_parts(request['parts']).presence || request['reason'])
       end
     end
+  end
+
+  # A private note for staff that the council asked for, apart from a handoff: the actions that no text told the patient about,
+  # and the parts nobody will answer because the conversation cannot go to staff. Requests, no patient data.
+  def note_council_parts
+    note = @response&.dig('council_note')
+    return if note.blank?
+
+    I18n.with_locale(account.locale) do
+      { 'unreported' => 'unreported_action_note', 'unanswered' => 'unresolved_handoff' }.each do |kind, key|
+        parts = council_note_parts(note[kind])
+        create_private_note(I18n.t("captain.coordination.#{key}", parts: parts)) if parts.present?
+      end
+    end
+  rescue StandardError => e
+    # The customer already has the reply, and the action is on record: a failed note must not run the failed-turn path.
+    log_error(e)
+  end
+
+  def council_note_parts(parts)
+    Array(parts).map { |part| part.to_s.squish.first(160) }.reject(&:blank?).join('; ')
   end
 
   def technical_failure_details(failures)

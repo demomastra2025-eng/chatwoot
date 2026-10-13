@@ -126,14 +126,14 @@ RSpec.describe Captain::Playground::ActionApproval do
     let(:owner) { create(:captain_assistant, account: account) }
 
     before do
-      assistant.update!(handoff_agent_ids: [owner.id])
+      # The owner is reachable as an agent of the chosen channel (the sessions below work on one), not by a stored list of the entry agent.
       # Only the owner has the tool in its profile; the record that the session loads for the owner is a fresh one.
       allow(assistant).to receive(:allowed_agent_tool_ids).and_return([])
       allow_any_instance_of(Captain::Assistant).to receive(:allowed_agent_tool_ids) { |agent| agent.id == owner.id ? %w[update_deal] : [] }
     end
 
     it 'records the owner in the preview, keeps the references of the session, and confirms the action as the owner' do
-      session.with_lock do |workspace|
+      session.with_lock(inbox_id: inbox.id) do |workspace|
         workspace.set_permissions!(read: true, write: true)
         preview = described_class.new(workspace.acting_as(owner.id)).preview('update_deal', deal_id: deal.id, title: 'Owner title')
 
@@ -150,7 +150,7 @@ RSpec.describe Captain::Playground::ActionApproval do
 
     it 'cannot be confirmed as another agent: the digest covers the owner' do
       allow(assistant).to receive(:allowed_agent_tool_ids).and_return(%w[update_deal])
-      session.with_lock do |workspace|
+      session.with_lock(inbox_id: inbox.id) do |workspace|
         workspace.set_permissions!(read: true, write: true)
         preview = described_class.new(workspace.acting_as(owner.id)).preview('update_deal', deal_id: deal.id, title: 'Owner title')
         preview['actor_id'] = assistant.id

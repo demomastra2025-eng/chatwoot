@@ -1805,10 +1805,83 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       end
     end
 
+    context 'when no part of a council has a text for the customer' do
+      let(:unreported_note) do
+        I18n.t('captain.coordination.unreported_action_note', parts: 'Запись к терапевту', locale: account.locale)
+      end
+      let(:council_response) do
+        { 'response' => '', 'response_mode' => 'suppress', 'response_suppressed' => true,
+          'council_handoff' => { 'reason' => 'council_unresolved', 'parts' => ['Результаты анализов'] },
+          'council_note' => { 'unreported' => ['Запись к терапевту'] } }
+      end
+
+      before { allow(agent_runner_service).to receive(:generate_response).and_return(council_response) }
+
+      it 'sends no public message, not even a notice, and hands the conversation to staff in silence with the private notes' do
+        save_account_handoff_message(text: 'Сотрудник продолжит диалог с вами.')
+
+        described_class.perform_now(conversation, assistant)
+
+        conversation.reload
+        expect(conversation.messages.outgoing.where(private: false)).to be_empty
+        notes = conversation.messages.outgoing.where(private: true).pluck(:content)
+        expect(notes).to include(a_string_including('Результаты анализов'), unreported_note)
+        expect(conversation.status).to eq('open')
+      end
+
+      it 'keeps the conversation with the agent when it cannot hand off to staff, and still notes the action' do
+        allow_any_instance_of(Captain::Assistant).to receive(:handoff_enabled?).and_return(false)
+
+        described_class.perform_now(conversation, assistant)
+
+        conversation.reload
+        expect(conversation.messages.outgoing.where(private: false)).to be_empty
+        expect(conversation.messages.outgoing.where(private: true).pluck(:content)).to eq([unreported_note])
+        expect(conversation.status).to eq('pending')
+      end
+
+      it 'is not a failed turn: nothing is sent and no error is recorded' do
+        allow(Llm::EventBus).to receive(:publish)
+
+        described_class.perform_now(conversation, assistant)
+
+        expect(Llm::EventBus).to have_received(:publish).with('captain.response.suppressed', hash_including(conversation_id: conversation.id))
+      end
+    end
+
+    context 'when a council reply leaves out an action that no text reported and a part that nobody will answer' do
+      let(:council_response) do
+        { 'response' => 'Приём стоит 5000 тенге.',
+          'council_note' => { 'unreported' => ['Запись к терапевту'], 'unanswered' => ['Результаты анализов'] } }
+      end
+
+      before { allow(agent_runner_service).to receive(:generate_response).and_return(council_response) }
+
+      it 'delivers the reply, then writes one private note for each, and does not hand the conversation over' do
+        described_class.perform_now(conversation, assistant)
+
+        conversation.reload
+        expect(conversation.messages.outgoing.where(private: false).pluck(:content)).to eq(['Приём стоит 5000 тенге.'])
+        expect(conversation.messages.outgoing.where(private: true).order(:id).pluck(:content)).to eq(
+          [I18n.t('captain.coordination.unreported_action_note', parts: 'Запись к терапевту', locale: account.locale),
+           I18n.t('captain.coordination.unresolved_handoff', parts: 'Результаты анализов', locale: account.locale)]
+        )
+        expect(conversation.status).to eq('pending')
+      end
+
+      it 'keeps the delivered reply when the note cannot be written' do
+        allow_any_instance_of(described_class).to receive(:create_private_note).and_raise(ActiveRecord::StatementInvalid)
+
+        expect { described_class.perform_now(conversation, assistant) }.not_to raise_error
+
+        expect(conversation.reload.messages.outgoing.where(private: false).pluck(:content)).to eq(['Приём стоит 5000 тенге.'])
+      end
+    end
+
     # The whole path of a live run, with only the provider faked: the real booking tool fails with an unknown outcome inside the real
     # tool wrapper, the runner service builds the failed turn from what the run left in its context, and this job answers it. The tool
-    # leaves the conversation pending (only its note for staff), so the reply is not dropped by its own fence and the handoff of the
-    # failed turn applies and sends the notice.
+    # leaves the conversation pending and writes nothing (no handoff and no note of its own), so the reply is not dropped by its own
+    # fence and the handoff of the failed turn applies, writes its one note and sends the notice.
     context 'when create_appointment of the live run ends with an unknown provider outcome' do
       let(:notice) { 'Сотрудник продолжит диалог с вами.' }
       let(:real_tool) { Captain::Tools::CreateAppointmentTool.new(assistant) }
@@ -1848,7 +1921,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         end
       end
 
-      it 'hands the conversation to staff once, with the notice of the workspace, the note about the booking and nothing else public' do
+      it 'hands the conversation to staff once, with the notice of the workspace, one note that names the failure and nothing else public' do
         save_account_handoff_message(text: notice)
 
         described_class.perform_now(conversation, assistant)
@@ -1857,9 +1930,8 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         expect(conversation.status).to eq('open')
         expect(conversation.messages.outgoing.where(private: false).pluck(:content)).to eq([notice])
         notes = conversation.messages.outgoing.where(private: true).order(:id).pluck(:content)
-        expect(notes.size).to eq(2)
-        expect(notes.first).to include('Medelement')
-        expect(notes.last).to include('Automatic reply was stopped by a technical error (create_appointment')
+        expect(notes.size).to eq(1)
+        expect(notes.sole).to include('Automatic reply was stopped by a technical error (create_appointment')
         expect(conversation.status_transitions.last).to have_attributes(source: 'system', from_status: 'pending', to_status: 'open')
       end
 
@@ -1868,7 +1940,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
         expect(conversation.reload.status).to eq('open')
         expect(conversation.messages.outgoing.where(private: false)).to be_empty
-        expect(conversation.messages.outgoing.where(private: true).count).to eq(2)
+        expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
       end
     end
 

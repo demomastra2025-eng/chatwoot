@@ -2,6 +2,8 @@
 
 class Captain::Runtime::PartPlanTool < Captain::Runtime::Tool
   EXECUTOR_DESCRIPTION = 'Agent name exactly as listed. Omit it for your own parts. Staff are not an agent: use the handoff tool.'
+  # The cancellation of parts that never acted runs no agent: the model that planned it answers (see Runner#handle_plan).
+  CANCELLED_NOTE = 'The cancellation is recorded and nothing else is to be done. Reply to the patient now: confirm it in one short sentence.'
 
   description 'Coordinate with other agents: split one message into parts for different agents (a council), or send the patient\'s ' \
               'answer, correction or cancellation of an open part to the agent that owns it. Not for your own work, and not for ' \
@@ -48,7 +50,9 @@ class Captain::Runtime::PartPlanTool < Captain::Runtime::Tool
     plan = Captain::Runtime::PartRegistry.new(context).accept!(
       mode: mode, parts: parts, clarification: clarification, answer: answer
     ) { |items| resolver.resolve(items, mode: mode) }
-    { mode: plan[:mode], parts: plan[:parts].map { |part| presented(part, resolver) } }.to_json
+    result = { mode: plan[:mode], parts: plan[:parts].map { |part| presented(part, resolver) } }
+    result[:note] = CANCELLED_NOTE if plan[:parts].all? { |part| part['link_action'] == 'cancellation' }
+    result.to_json
   rescue Captain::Runtime::ExecutorResolver::RetryableError => e
     rejected(e.message, retryable: true, reason: e.reason)
   rescue ArgumentError, TypeError, KeyError => e

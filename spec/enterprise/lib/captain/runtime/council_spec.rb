@@ -5,8 +5,11 @@ require 'timeout'
 # its own spec) and check what the council does around it: which parts run where, how an outcome is recorded and what the
 # customer reads.
 RSpec.describe Captain::Runtime::Council do
-  let(:cannot_answer) { 'На этот вопрос я сейчас не могу ответить.' }
-  let(:staff_will_answer) { 'По этому вопросу вам ответит сотрудник клиники.' }
+  # Sentences the runtime used to write to the patient itself (ru). The council writes none: the reply holds the owners' texts only.
+  let(:stock_sentences) do
+    ['На этот вопрос я сейчас не могу ответить.', 'По этому вопросу вам ответит сотрудник клиники.', 'Действие выполнено.',
+     'Запрос отменён.', 'Не начато: предыдущий шаг не завершён.', 'Запрос отправлен, подтверждение придёт сообщением.']
+  end
   let(:booked) { 'Вы записаны к терапевту Иванову на 14 октября в 10:00.' }
   let(:editor) { instance_double(Captain::Runtime::CouncilEditor) }
   let(:runs) { [] }
@@ -391,22 +394,24 @@ RSpec.describe Captain::Runtime::Council do
       expect(editor_calls.sole[:parts].first).to include('text' => text, 'done' => true)
     end
 
-    it 'does not pass on an answer that has no source and acted on nothing: the part is unknown and staff answer it' do
+    it 'does not pass on an answer that has no source and acted on nothing: the part is unknown, nothing is sent and staff answer it' do
       results['part-0'] = ran('Приём стоит 5000 тенге.', sources: [])
 
       reply = run_council(parts(%w[Анна], owners: [2]))
 
-      expect(reply).to eq(staff_will_answer)
+      expect(reply).to eq('')
       expect(state_of('part-0')['state']).to eq('unknown')
       expect(context[:council_handoff]).to eq(reason: 'council_unresolved', parts: ['Запрос 0'])
+      expect(context).not_to have_key(:council_note)
     end
 
-    it 'says no staff will answer, and hands nothing over, when the agent cannot hand off' do
+    it 'sends nothing and hands nothing over when the agent cannot hand off, and leaves a private note that nobody answers the part' do
       allow(actors[1]).to receive(:handoff_enabled?).and_return(false)
       results['part-0'] = ran('', status: 'unavailable', sources: [])
 
-      expect(run_council(parts(%w[Анна], owners: [2]))).to eq(cannot_answer)
+      expect(run_council(parts(%w[Анна], owners: [2]))).to eq('')
       expect(context).not_to have_key(:council_handoff)
+      expect(context[:council_note]).to eq(unanswered: ['Запрос 0'])
     end
 
     it 'keeps the honest sentence of an owner that cannot resolve its part and hands the part to staff after the reply' do
@@ -422,28 +427,39 @@ RSpec.describe Captain::Runtime::Council do
       expect(state_of('part-1')['state']).to eq('unknown')
     end
 
-    it 'reports an action as done also when the owner returned no usable answer' do
+    it 'counts an action as done also when the owner returned no usable answer, writes no sentence for it and notes it for staff' do
       results['part-0'] = unparsable(acted: true)
 
-      expect(run_council(parts(%w[Анна], owners: [1]))).to eq('Действие выполнено.')
-      expect(state_of('part-0')).to include('state' => 'done', 'acted' => true)
+      expect(run_council(parts(%w[Анна], owners: [1]))).to eq('')
+      expect(state_of('part-0')).to include('state' => 'done', 'acted' => true, 'reply_text' => '')
       expect(context).not_to have_key(:council_handoff)
+      expect(context[:council_note]).to eq(unreported: ['Запрос 0'])
     end
 
-    it 'leaves a part without a usable answer and without an action unknown, for staff' do
+    it 'leaves a part without a usable answer and without an action unknown, for staff, and sends nothing' do
       results['part-0'] = unparsable
 
-      expect(run_council(parts(%w[Анна], owners: [2]))).to eq(staff_will_answer)
+      expect(run_council(parts(%w[Анна], owners: [2]))).to eq('')
       expect(state_of('part-0')['state']).to eq('unknown')
       expect(context[:council_handoff]).to eq(reason: 'council_unresolved', parts: ['Запрос 0'])
     end
 
-    it 'counts a write that waits for the confirmation of the provider as done, says the request was sent and hands nothing to staff' do
+    it 'counts a write that waits for the confirmation of the provider as done and sends the text of its owner, not one of its own' do
+      sentence = 'Запрос на запись отправлен, подтверждение придёт сообщением.'
+      results['part-0'] = ran(sentence, acted: true, pending: true)
+
+      expect(run_council(parts(%w[Анна], owners: [1]))).to eq(sentence)
+      expect(state_of('part-0')).to include('state' => 'done', 'reply_text' => sentence)
+      expect(context).not_to have_key(:council_handoff)
+      expect(context).not_to have_key(:council_note)
+    end
+
+    it 'writes no sentence for a pending write whose owner wrote no text, and notes it for staff' do
       results['part-0'] = ran('', acted: true, pending: true)
 
-      expect(run_council(parts(%w[Анна], owners: [1]))).to eq('Запрос отправлен, подтверждение придёт сообщением.')
+      expect(run_council(parts(%w[Анна], owners: [1]))).to eq('')
       expect(state_of('part-0')['state']).to eq('done')
-      expect(context).not_to have_key(:council_handoff)
+      expect(context[:council_note]).to eq(unreported: ['Запрос 0'])
     end
 
     it 'keeps the action of a part as the summary when it ended without a text of its own' do
@@ -454,26 +470,49 @@ RSpec.describe Captain::Runtime::Council do
       expect(state_of('part-0')['summary']).to eq('create_appointment: {"appointment_id":7}')
     end
 
-    it 'uses one short line in the language of the customer for a part without any text' do
-      context[:captain_v2_current_input] = 'Қабылдау қанша тұрады?'
-      results['part-0'] = ran('', status: 'unavailable', sources: [])
+    [true, false].each do |staff|
+      it "writes no line of its own for a part without any text, in Kazakh too, when staff #{staff ? 'can' : 'cannot'} take it over" do
+        allow(actors[1]).to receive(:handoff_enabled?).and_return(staff)
+        context[:captain_v2_current_input] = 'Қабылдау қанша тұрады?'
+        results['part-0'] = ran('', status: 'unavailable', sources: [])
 
-      expect(run_council(parts(%w[Анна], owners: [2]))).to eq('Бұл сұрақ бойынша сізге клиника қызметкері жауап береді.')
+        expect(run_council(parts(%w[Анна], owners: [2]))).to eq('')
+      end
     end
 
-    it 'says in the language of the customer that the part cannot be answered when no staff member can take it over' do
-      allow(actors[1]).to receive(:handoff_enabled?).and_return(false)
-      context[:captain_v2_current_input] = 'Қабылдау қанша тұрады?'
-      results['part-0'] = ran('', status: 'unavailable', sources: [])
+    it 'leaves a part without any text out of the lines for the editor and out of the contributors' do
+      results.merge!('part-0' => ran('', status: 'unavailable', sources: []), 'part-1' => ran('Цена'), 'part-2' => ran('Адрес'))
+      edited
 
-      expect(run_council(parts(%w[Анна], owners: [2]))).to eq('Бұл сұраққа қазір жауап бере алмаймын.')
+      run_council(parts(%w[Анна Анна Анна], owners: [2, 2, 3]))
+
+      expect(editor_calls.sole[:parts]).to eq([{ 'text' => 'Цена', 'done' => false, 'staff_will_answer' => false },
+                                               { 'text' => 'Адрес', 'done' => false, 'staff_will_answer' => false }])
+      expect(editor_calls.sole[:parts].to_json).not_to include(*stock_sentences)
+      expect(context[:council_handoff]).to eq(reason: 'council_unresolved', parts: ['Запрос 0'])
+      expect(context[:council_untold_part_ids]).to eq(['part-0'])
     end
 
-    it 'says it once when several parts have no text and the editor produces nothing' do
+    it 'sends nothing when no part has a text, and hands every unresolved part to staff once, without the editor' do
       results.merge!('part-0' => ran('', status: 'unavailable', sources: []), 'part-1' => ran('', status: 'unavailable', sources: []))
 
-      expect(run_council(parts)).to eq(staff_will_answer)
+      expect(run_council(parts)).to eq('')
+      expect(editor).not_to have_received(:edit)
       expect(context[:council_handoff]).to eq(reason: 'council_unresolved', parts: ['Запрос 0', 'Запрос 1'])
+      expect(context[:council_untold_part_ids]).to eq(%w[part-0 part-1])
+    end
+
+    it 'has no key left for a sentence the runtime used to write to the patient' do
+      %w[cancelled action_pending action_not_started action_done part_staff_will_answer part_cannot_answer].each do |key|
+        %i[ru kk en].each { |locale| expect(I18n.exists?("captain.coordination.#{key}", locale)).to be(false) }
+      end
+    end
+
+    it 'keeps only the private notes for staff in the coordination texts, in every language' do
+      %i[ru kk en].each do |locale|
+        keys = I18n.t('captain.coordination', locale: locale).keys
+        expect(keys).to contain_exactly(:unresolved_handoff, :technical_failure_note, :unreported_action_note)
+      end
     end
 
     it 'sends the part texts in order when the editor produces nothing, and drops a question that repeats for the same person' do
@@ -625,7 +664,7 @@ RSpec.describe Captain::Runtime::Council do
       run_council(items)
 
       expect(editor_calls.sole[:parts].pluck('text')).to eq(['На какой день?', 'Цена'])
-      expect(editor_calls.sole[:parts].to_json).not_to include('Не начато')
+      expect(editor_calls.sole[:parts].to_json).not_to include(*stock_sentences)
     end
 
     it 'does not show or mention a dependent part whose prerequisite failed technically, and hands it over with the failure' do
@@ -639,7 +678,7 @@ RSpec.describe Captain::Runtime::Council do
 
       expect(runs.pluck(:id)).to contain_exactly('part-0', 'part-2')
       expect(reply).to eq('Цена 15000 тенге.')
-      expect(reply).not_to include('Не начато')
+      stock_sentences.each { |sentence| expect(reply).not_to include(sentence) }
       expect(state_of('part-1')['state']).to eq('open')
       expect(context[:council_handoff]).to include(reason: 'council_technical_failure', technical: true,
                                                    failures: [technical_failure, technical_failure])
@@ -668,16 +707,19 @@ RSpec.describe Captain::Runtime::Council do
       expect(runs.pluck(:id)).to eq(['part-0'])
     end
 
-    it 'tells the customer that the step did not start only when nothing else is left to say: the part it waits for is of an earlier message' do
+    it 'sends nothing, and hands nothing to staff, when only a part is left that did not start: the part it waits for is of an earlier message' do
       items = parts(%w[Анна], owners: [3])
       items.first.merge!('relation' => 'depends_on', 'depends_on_part_id' => 'earlier-part')
       context[:parts] = items.deep_dup + [{ 'id' => 'earlier-part', 'version' => 1, 'state' => 'waiting_customer', 'executor_agent_id' => 1 }]
 
       reply = run_council(items)
 
-      expect(reply).to eq('Не начато: предыдущий шаг не завершён.')
+      expect(reply).to eq('')
       expect(runs).to be_empty
       expect(state_of('part-0')['state']).to eq('open')
+      expect(context).not_to have_key(:council_handoff)
+      expect(context).not_to have_key(:council_note)
+      expect(context).not_to have_key(:technical_failure)
     end
 
     it 'starts it when the part it depends on is done, and shows its owner how that part ended' do
@@ -802,15 +844,17 @@ RSpec.describe Captain::Runtime::Council do
       expect(context).not_to have_key(:council_handoff)
     end
 
-    it 'tells the customer about an action that was already performed before the failure, and still hands over to staff' do
+    it 'writes no sentence for an action that was already performed before the failure: it hands over to staff and notes the action' do
       results.merge!('part-0' => ran('', technical: technical_failure, acted: true, sources: []), 'part-1' => ran('Цена'))
-      edited
 
-      run_council(parts)
+      reply = run_council(parts)
 
-      expect(editor_calls.sole[:parts].first).to eq('text' => 'Действие выполнено.', 'done' => true, 'staff_will_answer' => false)
+      expect(reply).to eq('Цена')
+      expect(editor).not_to have_received(:edit)
       expect(context[:council_handoff]).to include(reason: 'council_technical_failure', technical: true)
-      expect(state_of('part-0')).to include('state' => 'done', 'acted' => true)
+      expect(context[:council_note]).to eq(unreported: ['Запрос 0'])
+      expect(state_of('part-0')).to include('state' => 'done', 'acted' => true, 'reply_text' => '')
+      expect(context[:council_contributors].pluck(:id)).to eq([2])
     end
 
     it 'also hands a part to staff when its owner cannot hand off: it is the system that does it' do
@@ -837,13 +881,26 @@ RSpec.describe Captain::Runtime::Council do
   end
 
   describe 'replaying settled parts' do
-    it 'answers a cancelled part with the stock line' do
+    it 'writes no sentence for a cancelled part: nothing is sent when nothing else is left' do
       items = parts(%w[Анна], owners: [1])
       items.first.merge!('state' => 'done', 'cancelled' => true)
       context[:parts] = items.deep_dup
 
-      expect(run_council(items)).to eq('Запрос отменён.')
+      expect(run_council(items)).to eq('')
       expect(runs).to be_empty
+      expect(context).not_to have_key(:council_handoff)
+      expect(context).not_to have_key(:council_note)
+    end
+
+    it 'leaves a cancelled part out of the reply when another part is answered' do
+      items = parts(%w[Анна Анна], owners: [1, 2])
+      items.first.merge!('state' => 'done', 'cancelled' => true)
+      context[:parts] = items.deep_dup
+      results['part-1'] = ran('Цена 15000 тенге.')
+
+      expect(run_council(items)).to eq('Цена 15000 тенге.')
+      expect(runs.pluck(:id)).to eq(['part-1'])
+      expect(editor).not_to have_received(:edit)
     end
 
     def retry_run(items)
@@ -854,28 +911,42 @@ RSpec.describe Captain::Runtime::Council do
       retried.run(items)
     end
 
-    it 'replays the sentence that was sent for a part that acted and wrote no text, never the results of its tools' do
+    it 'replays only the sentence that was sent for a part that acted and wrote no text: none, and never the results of its tools' do
       dump = 'create_appointment: {"success":true,"appointment_id":7}'
       results['part-0'] = unparsable(acted: true).merge(summary: dump)
       items = parts(%w[Анна], owners: [1])
 
       first = run_council(items)
-      expect(state_of('part-0')).to include('summary' => dump, 'reply_text' => 'Действие выполнено.')
+      expect(state_of('part-0')).to include('summary' => dump, 'reply_text' => '')
+      expect(context[:council_note]).to eq(unreported: ['Запрос 0'])
 
       replay = retry_run(items)
 
-      expect(first).to eq('Действие выполнено.')
-      expect(replay).to eq('Действие выполнено.')
-      expect(replay).not_to include('create_appointment', '{', 'appointment_id')
+      expect(first).to eq('')
+      expect(replay).to eq('')
       expect(runs).to be_empty
+      expect(context[:council_note]).to eq(unreported: ['Запрос 0'])
     end
 
-    it 'says that the action was done for a stored part that acted and has no stored sentence (an older record, an interrupted run)' do
+    it 'sends no sentence for a stored part that acted and has no stored sentence (an older record, an interrupted run), and notes it' do
       items = parts(%w[Анна], owners: [1])
       items.first.merge!('state' => 'done', 'acted' => true, 'summary' => 'create_appointment: {"appointment_id":7}')
       context[:parts] = items.deep_dup
 
-      expect(run_council(items)).to eq('Действие выполнено.')
+      expect(run_council(items)).to eq('')
+      expect(context[:council_note]).to eq(unreported: ['Запрос 0'])
+    end
+
+    it 'replays the stored sentence of a part that acted and wrote one' do
+      items = parts(%w[Анна], owners: [1])
+      results['part-0'] = ran(booked, acted: true, sources: ['create_appointment'], summary: 'create_appointment: ok')
+
+      first = run_council(items)
+      replay = retry_run(items)
+
+      expect([first, replay]).to eq([booked, booked])
+      expect(runs).to be_empty
+      expect(context).not_to have_key(:council_note)
     end
 
     it 'replays a part that waits for the customer with the question it asked' do
@@ -902,24 +973,26 @@ RSpec.describe Captain::Runtime::Council do
       expect(context[:council_handoff]).to include(reason: 'council_technical_failure', technical: true, failures: [technical_failure])
     end
 
-    it 'tells a part that acted before its technical failure the same way when the job is retried' do
+    it 'treats a part that acted before its technical failure the same way when the job is retried: no sentence, a handoff and a note' do
       items = parts
       results.merge!('part-0' => ran('', technical: technical_failure, acted: true, sources: []), 'part-1' => ran('Цена'))
       run_council(items)
-      edited
 
-      retry_run(items)
+      replay = retry_run(items)
 
-      expect(editor_calls.last[:parts].first).to eq('text' => 'Действие выполнено.', 'done' => true, 'staff_will_answer' => false)
+      expect(replay).to eq('Цена')
+      expect(editor).not_to have_received(:edit)
       expect(context[:council_handoff]).to include(technical: true)
+      expect(context[:council_note]).to eq(unreported: ['Запрос 0'])
     end
 
-    it 'hands a settled part that stayed unknown to staff again' do
+    it 'hands a settled part that stayed unknown to staff again, and sends nothing' do
       items = parts(%w[Анна], owners: [1])
       items.first.merge!('state' => 'unknown')
       context[:parts] = items.deep_dup
 
-      expect(run_council(items)).to eq(staff_will_answer)
+      expect(run_council(items)).to eq('')
+      expect(context[:council_handoff]).to eq(reason: 'council_unresolved', parts: ['Запрос 0'])
       expect(runs).to be_empty
     end
   end
