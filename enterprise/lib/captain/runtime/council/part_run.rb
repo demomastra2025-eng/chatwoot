@@ -9,7 +9,7 @@
 #
 # The result is a plain Hash. No ActiveRecord object leaves the call, so it can cross a thread boundary.
 class Captain::Runtime::Council::PartRun
-  STATUSES = %w[answered needs_information out_of_scope unavailable].freeze
+  STATUSES = Captain::Runtime::PartSchema::STATUSES
   SUMMARY_LIMIT = 300
 
   # Counts what the tools of one run did. It belongs to one run and one thread.

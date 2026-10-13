@@ -4,6 +4,8 @@
 # part ended; whether an action was performed is NOT reported here but computed by code from the tool results of the run
 # (see Council::PartRun), so a model can never claim an action by setting a field.
 class Captain::Runtime::PartSchema < RubyLLM::Schema
+  # status is an enum, so the provider offers the model these four values and nothing else (see Council::PartRun).
+  STATUSES = %w[answered needs_information out_of_scope unavailable].freeze
   CUSTOMER_TEXT_DESCRIPTION = (
     'The final text of THIS part for the patient, in the patient\'s language. Say only what your tool results show. ' \
     'Empty string when there is nothing to say.'
@@ -24,7 +26,7 @@ class Captain::Runtime::PartSchema < RubyLLM::Schema
   # (see Captain::Runtime::CouncilEditor); the text is used as it is.
   string :patient_language, description: Captain::PatientLanguage::FIELD_DESCRIPTION
   string :customer_text, description: CUSTOMER_TEXT_DESCRIPTION
-  string :status, description: STATUS_DESCRIPTION
+  string :status, enum: STATUSES, description: STATUS_DESCRIPTION
   array :questions, of: :string, description: QUESTIONS_DESCRIPTION
   array :sources, of: :string, description: SOURCES_DESCRIPTION
   string :suggested_agent, description: SUGGESTED_AGENT_DESCRIPTION
