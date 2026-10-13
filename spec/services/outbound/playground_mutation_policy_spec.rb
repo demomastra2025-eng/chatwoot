@@ -105,9 +105,9 @@ RSpec.describe Outbound::PlaygroundMutationPolicy do
   it 'authorizes the owner of a council part as the acting agent when the stored action names it, and nobody else' do
     owner = create(:captain_assistant, account: account)
     other = create(:captain_assistant, account: account)
-    assistant.update!(handoff_agent_ids: [owner.id, other.id])
     allow_any_instance_of(Captain::Assistant).to receive(:allowed_agent_tool_ids).and_return(%w[create_appointment])
-    with_approved_policy do |workspace, policy|
+    # The owner is a colleague because the channel grid attaches it to the chosen channel, as in a real council.
+    with_approved_policy(inbox: create(:inbox, account: account)) do |workspace, policy|
       workspace.data['action_previews'].first['actor_id'] = owner.id
       workspace.save!
       payload = Outbound::PlaygroundDeliveryPolicy.verified(policy).to_h
