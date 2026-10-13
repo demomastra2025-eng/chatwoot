@@ -80,6 +80,25 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer do
       expect(described_class.gate_item_for('human_handoff_missing')).to eq('f')
     end
 
+    it 'rates the checks of the v2 schema, the arguments with an agent name included' do
+      expect(described_class.severity_for('staff_handoff_missing:person_request')).to eq('critical')
+      expect(described_class.severity_for('staff_handoff_missing')).to eq('important')
+      expect(described_class.severity_for('succeeded_forbidden:update_appointment')).to eq('critical')
+      expect(described_class.severity_for('missing_act:create_appointment@Запись к врачу')).to eq('important')
+      expect(described_class.severity_for('tool_result_fallback')).to eq('critical')
+      expect(described_class.severity_for('reply_leak:stock_text')).to eq('critical')
+      expect(%w[technical_handoff provider_error runtime_error tool_result_fallback].map { |id| described_class.infra?(id) }).to all(be(true))
+      expect(described_class.infra?('wrong_agent')).to be(false)
+    end
+
+    it 'reads the old name of a renamed check, with and without an argument' do
+      expect(described_class.base_check('handoff_claim_unsupported')).to eq('false_handoff_claim')
+      expect(described_class.canonical_id('handoff_claim_unsupported')).to eq('false_handoff_claim')
+      expect(described_class.canonical_id('reply_leak:latin')).to eq('reply_leak:latin')
+      expect(described_class.severity_for('handoff_claim_unsupported')).to eq('critical')
+      expect(described_class.gate_item_for('handoff_claim_unsupported')).to eq('b,f')
+    end
+
     it 'is documented, check by check, in the README' do
       readme = Rails.root.join('enterprise/lib/captain/evals/routing_benchmark/README.md').read
 
@@ -316,7 +335,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer do
          'Передала ваш вопрос врачу.'].each do |text|
           result = score(text, scorer: fresh_scorer)
 
-          expect(result[:failures]).to include(a_hash_including(id: 'handoff_claim_unsupported', severity: 'critical')), text
+          expect(result[:failures]).to include(a_hash_including(id: 'false_handoff_claim', severity: 'critical')), text
         end
       end
     end
@@ -457,13 +476,19 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer do
     end
   end
 
-  describe 'runtime_error' do
+  describe 'provider_error' do
     it 'explains a provider failure with the error class and message the runner stored' do
       result = score(Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_RESPONSE,
                      error_class: 'RubyLLM::Error', error_message: 'schema invalid')
 
-      expect(result[:failures]).to include(a_hash_including(id: 'runtime_error', severity: 'important',
+      expect(result[:failures]).to include(a_hash_including(id: 'provider_error', severity: 'important',
                                                             detail: 'RubyLLM::Error: schema invalid'))
+    end
+
+    it 'keeps runtime_error for a turn that has no request id' do
+      result = scorer.call(turn: turn_for, response: { 'agent_id' => assistant.id, 'response' => 'Здравствуйте!' }, events: [], before: no_operations)
+
+      expect(result[:failures]).to include(a_hash_including(id: 'runtime_error', severity: 'important'))
     end
   end
 
@@ -526,7 +551,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer do
     end
 
     it 'passes when the row has the expected doctor, service, time and patient' do
-      result = run([create_operation], events: [tool_event('create_appointment')]) { book }
+      result = run([create_operation], text: 'Запись оформлена на 15 октября в 12:00.', events: [tool_event('create_appointment')]) { book }
 
       expect(result[:reasons]).to be_empty
       expect(result[:db_delta]).to contain_exactly(a_hash_including(change: 'created', resource: 'doctor_a', service: 'consult', patient: 'caller'))
@@ -635,27 +660,17 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer do
     end
 
     describe 'the old form of a cancellation: an update that sets the status to cancelled' do
-      def finish_in_ledger(tool)
-        scope = 'task:1'
-        key = Digest::SHA256.hexdigest(JSON.generate([scope, tool]))
-        conversation.update!(additional_attributes: { 'captain_agent_session' => { 'operations' => {
-          key => { 'scope' => scope, 'status' => 'finished', 'result' => { 'success' => true }, 'actor_id' => assistant.id }
-        } } })
-        conversation.reload
-      end
-
       # The shape of ws_mid__reschedule_cancel_04 t2 of the full2 fixtures: must_call is empty and must_not_call does not list
       # cancel_appointment, so only the operation tells the scorer that the cancellation is what the turn should do.
       it 'passes a correct cancellation, as the full2 fixtures describe it' do
         appointment = book
-        finish_in_ledger('cancel_appointment')
         before = snapshot
         before_state = state
         appointment.update!(status: 'cancelled')
-        operation = { 'model' => 'appointment', 'kind' => 'update', 'ledger_tool' => 'cancel_appointment', 'params' => { 'status' => 'cancelled' } }
+        operation = { 'model' => 'appointment', 'kind' => 'update', 'params' => { 'status' => 'cancelled' } }
 
-        result = score('Здравствуйте!', before: before, events: [tool_event('cancel_appointment')], call: { before_state: before_state },
-                                        expect: { must_call: [], must_not_call: %w[create_appointment update_appointment update_my_contact], operations: [operation] })
+        result = score('Запись отменена.', before: before, events: [tool_event('cancel_appointment')], call: { before_state: before_state },
+                                           expect: { must_call: [], must_not_call: %w[create_appointment update_appointment update_my_contact], operations: [operation] })
 
         expect(failure_ids(result)).to be_empty
         expect(result[:db_delta]).to contain_exactly(a_hash_including(change: 'cancelled', status: 'cancelled'))
@@ -668,8 +683,8 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer do
         appointment.update!(status: 'cancelled')
         operation = { 'model' => 'appointment', 'kind' => 'update', 'params' => { 'status' => 'cancelled', 'starts_at' => '2026-10-15T12:00:00+05:00' } }
 
-        result = score('Здравствуйте!', before: before, events: [tool_event('cancel_appointment')], call: { before_state: before_state },
-                                        expect: { must_call: ['cancel_appointment'], operations: [operation] })
+        result = score('Запись отменена.', before: before, events: [tool_event('cancel_appointment')], call: { before_state: before_state },
+                                           expect: { must_call: ['cancel_appointment'], operations: [operation] })
 
         expect(failure_ids(result)).to be_empty
       end
@@ -702,29 +717,20 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer do
       expect(score('Здравствуйте!', expect: { operations: [operation] })[:reasons]).to eq(['missing_operation:deal'])
     end
 
-    it 'checks the ledger by recomputing the key, because entries hold the scope but not the tool' do
+    it 'lists the ledger entries with their tool, recomputing the key because entries hold the scope but not the tool' do
       book
       scope = 'task:1'
       key = Digest::SHA256.hexdigest(JSON.generate([scope, 'create_appointment']))
       conversation.update!(additional_attributes: { 'captain_agent_session' => { 'operations' => {
         key => { 'scope' => scope, 'status' => 'finished', 'result' => { 'success' => true }, 'actor_id' => assistant.id }
       } } })
-      operation = { 'model' => 'appointment', 'kind' => 'create', 'ledger_tool' => 'create_appointment' }
+      operation = { 'model' => 'appointment', 'kind' => 'create', 'params' => { 'status' => 'scheduled' } }
       conversation.reload
 
       result = score('Здравствуйте!', before: no_operations, expect: { operations: [operation] })
 
-      expect(result[:reasons]).to be_empty
       expect(result[:operations_ledger]).to eq([{ 'status' => 'finished', 'actor_id' => assistant.id, 'tool' => 'create_appointment' }])
-    end
-
-    it 'reports a missing ledger entry once the rows are right' do
-      book
-      operation = { 'model' => 'appointment', 'kind' => 'create', 'ledger_tool' => 'create_appointment' }
-
-      result = score('Здравствуйте!', before: no_operations, expect: { operations: [operation] })
-
-      expect(failure_ids(result)).to eq(['missing_ledger_entry:create_appointment'])
+      expect(result[:evaluated].grep(/ledger/)).to be_empty
     end
 
     it 'lists the checks the turn was put through' do
@@ -889,26 +895,27 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer do
     it 'flags a claim that staff got the request when no handoff happened' do
       result = score('Передаю ваш вопрос сотруднику.')
 
-      expect(result[:failures]).to include(a_hash_including(id: 'handoff_claim_unsupported', severity: 'critical'))
+      expect(result[:failures]).to include(a_hash_including(id: 'false_handoff_claim', severity: 'critical'))
+      expect(result[:hard_zero]['false_handoff_claim']).to eq(1)
     end
 
     it 'flags a promise that staff will call' do
-      expect(failure_ids(score('С вами свяжутся по заявке.'))).to eq(['handoff_claim_unsupported'])
+      expect(failure_ids(score('С вами свяжутся по заявке.'))).to eq(['false_handoff_claim'])
     end
 
     it 'reports "специалисту" apart, as important' do
       result = score('Передала ваш вопрос специалисту.')
 
       expect(result[:failures]).to include(a_hash_including(id: 'handoff_claim_ambiguous', severity: 'important'))
-      expect(failure_ids(result)).not_to include('handoff_claim_unsupported')
+      expect(failure_ids(result)).not_to include('false_handoff_claim')
     end
 
-    it 'accepts the claim after the handoff tool ran, in the turn or earlier in the dialogue' do
+    it 'accepts the claim after the handoff tool ran in the turn, and not on account of an earlier turn: staff gave the conversation back' do
       booked = score('Передала вашу просьбу администратору.', events: [tool_event('handoff')])
       later = score('Администратор свяжется с вами. С вами свяжутся в течение дня.')
 
       expect(failure_ids(booked)).to be_empty
-      expect(failure_ids(later)).to be_empty
+      expect(failure_ids(later)).to eq(['false_handoff_claim'])
     end
 
     it 'accepts the claim of a council whose unresolved part the response builder hands over' do
@@ -920,7 +927,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer do
     it 'does not count a failed handoff call' do
       result = score('Передала вашу просьбу администратору.', events: [tool_event('handoff', success: false)])
 
-      expect(failure_ids(result)).to eq(['handoff_claim_unsupported'])
+      expect(failure_ids(result)).to eq(['false_handoff_claim'])
     end
 
     it 'ignores questions, offers, futures and the plan acknowledgement' do
@@ -946,7 +953,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer do
 
       expect(failure_ids(by_tool)).to be_empty
       expect(failure_ids(by_flag)).to be_empty
-      expect(failure_ids(by_failure)).to eq(['runtime_error'])
+      expect(failure_ids(by_failure)).to eq(['provider_error'])
     end
 
     it 'takes the fixture flag over the wording and audits the disagreement' do
@@ -1071,11 +1078,20 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer do
       end
     end
 
-    it 'rates the canned council wording important' do
+    it 'rates the canned council wording important when it is no stock sentence of the runtime' do
+      allow(Captain::Evals::RoutingBenchmark::StockText).to receive(:found).and_return([])
       result = score('Часть запроса требует дополнительной проверки.')
 
       expect(failure_ids(result)).to eq(['reply_leak:composer_phrase'])
       expect(severity_of(result, 'reply_leak:composer_phrase')).to eq('important')
+    end
+
+    it 'reports the same wording once, as the stricter stock sentence, when the locale files hold it' do
+      allow(Captain::Evals::RoutingBenchmark::StockText).to receive(:found).and_return(['Часть запроса требует дополнительной проверки.'])
+      result = score('Часть запроса требует дополнительной проверки.')
+
+      expect(failure_ids(result)).to eq(['reply_leak:stock_text'])
+      expect(severity_of(result, 'reply_leak:stock_text')).to eq('critical')
     end
 
     it 'finds five words of an agent instruction' do

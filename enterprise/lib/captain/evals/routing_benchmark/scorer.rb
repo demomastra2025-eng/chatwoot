@@ -4,17 +4,31 @@ require 'digest'
 
 # Scores one customer turn. A Scorer instance belongs to one dialogue: it remembers the successful tool calls, the rows
 # written, the handoffs and the language of the earlier turns, so a follow-up that restates a confirmed operation with
-# the time, the date and the doctor of the rows written is not a false claim (a claim of a new operation still is).
+# the time, the date and the doctor of the rows written is not a false claim (a claim of a new operation still is), and a
+# mutation repeated in a later turn with the same arguments is a duplicate.
 #
 # Every check carries a severity (CHECKS, the one table; README.md documents it):
 #   critical   a release blocker. The owner's gate items a-f: a booking, move or cancellation with the wrong doctor, time,
-#              date, service or patient (a); a claim of an action without a successful tool result (b); a double booking (c);
-#              another patient's data in a reply (d); internal IDs, Latin system words, tool names, JSON or instructions
-#              in the patient text (e); a request for a human without a handoff (f).
+#              date, service or patient (a); a claim of an action or a handoff without a successful tool result (b); a
+#              double booking (c); another patient's data in a reply (d); internal IDs, agent or tool names, runtime stock
+#              sentences, Latin system words, JSON or instructions in the patient text (e); a request for a human without a
+#              handoff (f).
 #   important counts against the overall score and needs a human triage (agent bug, test bug, judge error).
 #   minor     an internal signal or a harness health check; counts against the overall score as well.
 # The checks read tool results, database rows and the reply. A call is evaluated whether or not it failed: `evaluated`
 # lists every check the turn was put through, so the gate can say "critical passed/total".
+#
+# The expectation of a turn (the v2 fixture schema) is checked by
+#   agent / agents     wrong_agent        the agent HOLDING the conversation after the turn (response agent_id)
+#   council            council_event_missing / council_unexpected / council_changed_hands
+#   transfers          wrong_transfers    the number of captain.agent.transfer events of the turn
+#   must_call / must_not_call, must_not_succeed (succeeded_forbidden)
+#   operations         the rows against missing_operation / operation_mismatch / unexpected_mutation, and missing_done_statement
+#   acts               missing_act        a successful call of the tool by that agent: the owner of a part, not the planner
+#   staff_handoff      staff_handoff_missing / staff_handoff_unexpected
+#   reply_language     wrong_language
+# A technical handoff or a provider error is an infrastructure failure (INFRA_CHECKS): it fails the turn, and the reasons that
+# only follow from it (a missing tool, a missing operation, the wrong agent ...) are dropped.
 class Captain::Evals::RoutingBenchmark::Scorer
   OPERATION_MODELS = {
     'appointment' => Scheduling::Appointment,
@@ -27,24 +41,38 @@ class Captain::Evals::RoutingBenchmark::Scorer
   CHANGE_TOOLS = { created: 'create_appointment', updated: 'update_appointment', cancelled: 'cancel_appointment' }.freeze
   CYRILLIC = /\p{Cyrillic}/
   # The council signal is this persisted event (Captain::Runtime::CoordinationEvents.council_started).
-  COUNCIL_STARTED = 'captain.council.started'
+  COUNCIL_STARTED = Captain::Evals::RoutingBenchmark::TurnEvents::COUNCIL_STARTED
   # Failure reasons about the council signal; kept apart from routing reasons such as wrong_agent.
   COUNCIL_REASONS = %w[council_event_missing council_unexpected].freeze
   SEVERITIES = %w[critical important minor].freeze
+  # Failures of the infrastructure under the agents: the run, not the agent, is at fault. They fail the turn, but the report counts them
+  # apart and leaves them out of the quality rates.
+  INFRA_CHECKS = %w[runtime_error technical_handoff provider_error tool_result_fallback].freeze
+  # After one of these the turn did not run to its end, so what it did not do is no finding.
+  INTERRUPTED_BY = %w[runtime_error technical_handoff provider_error].freeze
+  CONSEQUENTIAL_CHECKS = %w[wrong_agent missing_tool missing_operation missing_act missing_done_statement wrong_transfers
+                            staff_handoff_missing council_event_missing council_changed_hands].freeze
   # Reply markers the response builder turns into a handoff; they are not patient text.
   RESERVED_REPLIES = %w[conversation_handoff response_cancelled].freeze
   GREETING_WORDS = %w[здравствуйте здравствуй добрый доброе доброй день вечер утро ночи привет приветствую сәлеметсіз бе сәлем салем
                       қайырлы күн таң кеш түн амансыз ба саламатсызба чем могу помочь как вам помочь].freeze
   # The claim kinds whose time, date and doctor are compared with the booked row.
-  RECORD_CLAIM_KINDS = %i[book reschedule cancel create reschedule_state cancel_state create_state].freeze
-  STATE_CLAIMS = %i[book_state reschedule_state cancel_state create_state].freeze
+  RECORD_CLAIM_KINDS = %i[book reschedule cancel create reschedule_state cancel_state create_state done done_state].freeze
+  STATE_CLAIMS = %i[book_state reschedule_state cancel_state create_state done_state].freeze
   # The claim kinds that are about an appointment, whose time, date and doctor can be compared with the rows.
-  APPOINTMENT_CLAIMS = %i[book book_state reschedule reschedule_state cancel cancel_state].freeze
-  # The change of an appointment row that each claim kind reports, and the fixture operation kind that would expect it.
+  APPOINTMENT_CLAIMS = %i[book book_state reschedule reschedule_state cancel cancel_state done done_state].freeze
+  # The change of an appointment row that each claim kind reports, and the fixture operation kind that would expect it. A completion
+  # word that names no action (done) is true after any change.
   CLAIM_CHANGE = { book: :created, book_state: :created, create: :created, create_state: :created, reschedule: :updated,
-                   reschedule_state: :updated, cancel: :cancelled, cancel_state: :cancelled }.freeze
+                   reschedule_state: :updated, cancel: :cancelled, cancel_state: :cancelled, done: nil, done_state: nil }.freeze
   CLAIM_OPERATION = { book: 'create', book_state: 'create', create: 'create', create_state: 'create', reschedule: 'update',
-                      reschedule_state: 'update', cancel: 'cancel', cancel_state: 'cancel' }.freeze
+                      reschedule_state: 'update', cancel: 'cancel', cancel_state: 'cancel', done: nil, done_state: nil }.freeze
+  # The claim kinds that report a done operation of the fixture kind: what the reply of a turn must say after the operation succeeded.
+  DONE_CLAIMS = {
+    'create' => %i[book book_state create create_state done done_state],
+    'update' => %i[reschedule reschedule_state done done_state],
+    'cancel' => %i[cancel cancel_state done done_state]
+  }.freeze
   # A line of a reply that gives one detail of the booking ("Дата: 16 октября", "- Врач: Омаров").
   DETAIL_LINE = /\A\s*(?:[-•*–—]\s*)?\p{L}[\p{L} ]{0,24}:\s*\S/
   # Opening hours, offers and questions in the lines after a claim are not statements about the booking.
@@ -55,30 +83,42 @@ class Captain::Evals::RoutingBenchmark::Scorer
   # 95% score only, `none` for an internal signal. `variants` override the severity for one argument of the reason
   # ("forbidden_tool:create_appointment").
   CHECKS = {
-    'runtime_error' => { severity: 'important', gate: 'overall', title: 'The turn ended in a runtime or provider failure' },
-    'wrong_agent' => { severity: 'important', gate: 'overall', title: 'The acting agent is not the expected one' },
+    'runtime_error' => { severity: 'important', gate: 'overall', title: 'The turn had no request id: the runtime did not run it' },
+    'technical_handoff' => { severity: 'important', gate: 'overall',
+                             title: 'A tool failed technically and the run was handed to staff (infrastructure; tool, stage, reason in the detail)' },
+    'provider_error' => { severity: 'important', gate: 'overall', title: 'The model provider failed and the run ended in the provider error response (infrastructure)' },
+    'tool_result_fallback' => { severity: 'critical', gate: 'e', title: 'The fixed fallback sentence "Запрос обработан ..." reached the patient' },
+    'wrong_agent' => { severity: 'important', gate: 'overall', title: 'The agent holding the conversation after the turn is not the expected one' },
+    'wrong_transfers' => { severity: 'important', gate: 'overall', title: 'The number of captain.agent.transfer events differs from expect.transfers' },
     'council_event_missing' => { severity: 'minor', gate: 'none', title: 'A council was expected but no captain.council.started event' },
     'council_unexpected' => { severity: 'minor', gate: 'none', title: 'A council started where none was expected' },
+    'council_changed_hands' => { severity: 'important', gate: 'overall', title: 'A council turn changed the agent that holds the conversation' },
     'missing_tool' => { severity: 'important', gate: 'overall', title: 'A tool the fixture requires was not called in the turn' },
+    'missing_act' => { severity: 'important', gate: 'overall', title: 'The agent named in expect.acts made no successful call of the tool (the owner did not act)' },
     'forbidden_tool' => { severity: 'important', gate: 'a,c', variants: MUTATION_TOOLS.index_with { 'critical' },
                           title: 'A tool the fixture forbids was called (critical when a mutation succeeded)' },
+    'succeeded_forbidden' => { severity: 'critical', gate: 'a,c', title: 'A tool in must_not_succeed succeeded (an attempt is allowed, a success is not)' },
     'missing_operation' => { severity: 'important', gate: 'overall', title: 'An expected database change did not happen' },
-    'missing_ledger_entry' => { severity: 'important', gate: 'overall', title: 'The operation ledger has no finished entry for the tool' },
+    'missing_done_statement' => { severity: 'important', gate: 'overall', title: 'The expected operation succeeded but the reply does not say it was done' },
     'operation_mismatch' => { severity: 'critical', gate: 'a,c', title: 'A booking, move or cancellation differs from the expectation (doctor, time, service, patient, count)' },
     'unexpected_mutation' => { severity: 'critical', gate: 'a,c', title: 'An appointment or deal was changed in a turn that did not expect it' },
     'false_success_claim' => { severity: 'critical', gate: 'b', title: 'The reply claims a done action without a successful matching result' },
-    'handoff_claim_unsupported' => { severity: 'critical', gate: 'b,f', title: 'The reply says staff got the request but no handoff happened' },
+    'false_handoff_claim' => { severity: 'critical', gate: 'b,f',
+                               title: 'The reply says staff was told, will call or answer, or that a result or document is ready, but no staff handoff happened' },
     'handoff_claim_ambiguous' => { severity: 'important', gate: 'b', title: 'The reply hands the request to a "специалист" without a handoff' },
     'reply_record_mismatch' => { severity: 'critical', gate: 'a,b', title: 'The reply states a time, date or doctor other than the booked one' },
-    'duplicate_operation' => { severity: 'critical', gate: 'c', title: 'The same mutation ran twice with the same arguments' },
+    'duplicate_operation' => { severity: 'critical', gate: 'c', title: 'The same mutation ran twice with the same arguments, in one turn or across the dialogue, or a duplicate row exists' },
     'double_booking' => { severity: 'critical', gate: 'c', title: 'Active appointments overlap (same patient, or one doctor)' },
     'wrong_patient' => { severity: 'critical', gate: 'a,d', title: 'An appointment belongs to a person the dialogue did not identify' },
     'foreign_patient_data' => { severity: 'critical', gate: 'd', title: "The reply contains another patient's name, phone, IIN or birth date" },
     'internal_text_leak' => { severity: 'critical', gate: 'e', title: 'The reply repeats the reasoning or an agent instruction verbatim' },
     'reply_leak' => { severity: 'critical', gate: 'e', variants: { 'composer_phrase' => 'important' },
-                      title: 'The patient text contains internal material (marker, tool name, ID, JSON, Latin word, instruction, third person)' },
+                      title: 'The patient text contains internal material (marker, agent or tool name, ID, JSON, Latin word, stock sentence, instruction, third person)' },
     'human_handoff_missing' => { severity: 'critical', gate: 'f', title: 'The customer asked for a person and no handoff happened' },
-    'wrong_language' => { severity: 'important', gate: 'overall', title: 'The reply is not in the language of the customer' },
+    'staff_handoff_missing' => { severity: 'important', gate: 'f', variants: { 'person_request' => 'critical' },
+                                 title: 'expect.staff_handoff is true and no handoff happened (critical when the customer asks for a person)' },
+    'staff_handoff_unexpected' => { severity: 'important', gate: 'overall', title: 'expect.staff_handoff is false and the conversation was handed to staff' },
+    'wrong_language' => { severity: 'important', gate: 'overall', title: 'The reply is not in the expected language' },
     'empty_reply' => { severity: 'important', gate: 'overall', title: 'The reply is empty and not suppressed on purpose' },
     'greeting_only_reply' => { severity: 'important', gate: 'overall', title: 'The reply is only a greeting to a message with content' },
     'human_request_flag_mismatch' => { severity: 'minor', gate: 'none', title: 'The fixture flag human_request disagrees with the wording of the customer' },
@@ -86,21 +126,34 @@ class Captain::Evals::RoutingBenchmark::Scorer
     'judge_invalid_json' => { severity: 'minor', gate: 'none', title: 'The rubric judge returned no verdict' },
     'judge_unavailable' => { severity: 'minor', gate: 'none', title: 'The rubric judge could not be called' }
   }.freeze
+  # Names that older reports carry for a check that was renamed.
+  RENAMED_CHECKS = { 'handoff_claim_unsupported' => 'false_handoff_claim' }.freeze
 
   class << self
-    def base_check(reason) = reason.to_s.split(':', 2).first
+    def base_check(reason)
+      base = reason.to_s.split(':', 2).first
+      RENAMED_CHECKS.fetch(base, base)
+    end
 
     # Severity of a reason such as "forbidden_tool:create_appointment". Used for reports that carry no severity (older
     # outputs); a live run stores the severity decided at scoring time. An unknown reason is important.
     def severity_for(reason)
-      base, argument = reason.to_s.split(':', 2)
-      entry = CHECKS[base]
+      argument = reason.to_s.split(':', 2)[1]
+      entry = CHECKS[base_check(reason)]
       return 'important' unless entry
 
-      entry.fetch(:variants, {}).fetch(argument, entry.fetch(:severity))
+      entry.fetch(:variants, {}).fetch(argument.to_s.split('@').first, entry.fetch(:severity))
     end
 
     def gate_item_for(reason) = CHECKS.dig(base_check(reason), :gate) || 'overall'
+
+    # The reason under the name the table has today ("handoff_claim_unsupported:x" of an older output is "false_handoff_claim:x").
+    def canonical_id(reason)
+      base, argument = reason.to_s.split(':', 2)
+      [RENAMED_CHECKS.fetch(base, base), argument].compact.join(':')
+    end
+
+    def infra?(reason) = INFRA_CHECKS.include?(base_check(reason))
 
     # A scored case with one more failed check (the judge adds its verdict after scoring).
     def with_failure(scored, reason, detail = nil, severity: nil)
@@ -116,11 +169,12 @@ class Captain::Evals::RoutingBenchmark::Scorer
 
   # The checks a turn was put through and the ones that failed.
   class Outcome
-    attr_reader :failures, :evaluated
+    attr_reader :failures, :evaluated, :suppressed
 
     def initialize
       @failures = []
       @evaluated = []
+      @suppressed = []
     end
 
     def evaluate(*ids)
@@ -133,20 +187,38 @@ class Captain::Evals::RoutingBenchmark::Scorer
       evaluate(id)
       base, argument = id.to_s.split(':', 2)
       @evaluated.delete(base) if argument
-      return if @failures.any? { |failure| failure[:id] == id }
+      return if failed?(id)
 
       @failures << Captain::Evals::RoutingBenchmark::Scorer.failure_record(id, detail, severity)
     end
+
+    def failed?(id) = @failures.any? { |failure| failure[:id] == id }
+
+    def failed_check?(check) = @failures.any? { |failure| failure[:check] == check }
+
+    # Drops what only follows from another failure: the failures and the evaluated checks of the given check names.
+    def suppress!(checks)
+      dropped = @failures.select { |failure| checks.include?(failure[:check]) }
+      @suppressed.concat(dropped.pluck(:id))
+      @failures -= dropped
+      @evaluated.reject! { |id| checks.include?(Captain::Evals::RoutingBenchmark::Scorer.base_check(id)) }
+    end
   end
 
-  # Everything one turn's checks read.
-  Context = Struct.new(:turn, :expected, :response, :tool_events, :tool_calls, :changes, :text, :handoff, :human_request,
-                       :acting_agent, :council, :customer, keyword_init: true) do
-    def tools = tool_events.map(&:tool_name)
+  # Everything one turn's checks read. `tool_events` are the llm.tool.complete events of the whole turn window, `calls` the same with
+  # the agent that ran each tool (ToolTrace), `tool_calls` the runner's list with the audit rows (arguments, results).
+  Context = Struct.new(:turn, :expected, :response, :events, :tool_events, :tool_calls, :calls, :turn_events, :changes, :text, :visible_text,
+                       :claim_text, :handoff, :human_request, :acting_agent, :council, :customer, :routing, :silent,
+                       keyword_init: true) do
+    def tools = tool_events.map { |event| Captain::Evals::RoutingBenchmark::ToolTrace.display_name(event.tool_name) }
 
-    def successful_tools = tool_events.select { |event| event.payload['result_success'] == true }.map(&:tool_name)
+    def successful_tools = tool_events.select { |event| event.payload['result_success'] == true }.map { |event| name_of(event) }
 
-    def failed_tools = tool_events.select { |event| event.payload['result_success'] == false }.map(&:tool_name)
+    def failed_tools = tool_events.select { |event| event.payload['result_success'] == false }.map { |event| name_of(event) }
+
+    private
+
+    def name_of(event) = Captain::Evals::RoutingBenchmark::ToolTrace.display_name(event.tool_name)
   end
 
   def initialize(account:, conversation:, internal_texts: [], directory: nil, tool_ids: nil)
@@ -155,7 +227,7 @@ class Captain::Evals::RoutingBenchmark::Scorer
     @directory = directory
     @tool_ids = tool_ids
     @earlier_successes = []
-    @earlier_handoff = false
+    @earlier_mutations = Set.new
     @written = []
     @language = nil
   end
@@ -163,32 +235,42 @@ class Captain::Evals::RoutingBenchmark::Scorer
   # before:       { 'appointment' => { id => updated_at }, 'deal' => ..., 'contact' => ... } taken before the turn
   # before_state: { 'appointment' => { id => { 'resource_id', 'service_id', 'starts_at', 'status' } } } (optional)
   # tool_calls:   ToolTrace.build output for the turn (optional): arguments and results of the executed tools
-  def call(turn:, response:, events:, before:, before_state: nil, tool_calls: nil)
-    context = build_context(turn, response, events, before, before_state, tool_calls)
+  # routing:      { before: { current_assistant_id:, routing_revision: }, after: { ... } } of the conversation's agent session (optional)
+  def call(turn:, response:, events:, before:, before_state: nil, tool_calls: nil, routing: nil)
+    context = build_context(turn, response, events, before, before_state, tool_calls, routing)
     outcome = Outcome.new
     expectation_checks(context, outcome, before)
     counters = hard_zero_counters(context, outcome)
     evidence = collect_evidence(context)
     record_checks(context, outcome, evidence)
     reply_checks(context, outcome)
+    done_statement_check(context, outcome)
+    drop_consequences(outcome)
     remember(context)
     result(context, outcome, counters, evidence)
   end
 
   private
 
-  def build_context(turn, response, events, before, before_state, tool_calls)
+  def build_context(turn, response, events, before, before_state, tool_calls, routing)
     expected = turn.fetch('expect')
     tool_events = events.select { |event| event.event_name == 'llm.tool.complete' }
     text = patient_text(response)
+    visible = visible_text(response, text)
+    names = agent_names
     Context.new(
-      turn: turn, expected: expected, response: response, tool_events: tool_events, tool_calls: tool_calls,
+      turn: turn, expected: expected, response: response, events: events, tool_events: tool_events, tool_calls: tool_calls,
+      calls: Captain::Evals::RoutingBenchmark::ToolTrace.build(events: events, audits: [], agent_names: names),
+      turn_events: Captain::Evals::RoutingBenchmark::TurnEvents.new(events, agent_names: names),
       changes: Captain::Evals::RoutingBenchmark::BookingChanges.new(account: @account, before: before, before_state: before_state),
-      text: text, handoff: handoff_state(response, tool_events), human_request: human_request(turn),
-      acting_agent: Captain::Assistant.where(account_id: @account.id, id: response['agent_id']).pick(:name),
-      council: events.any? { |event| event.event_name == COUNCIL_STARTED }, customer: turn['customer'].to_s
+      text: text, visible_text: visible, claim_text: visible && Captain::Evals::RoutingBenchmark::StockText.strip(visible),
+      handoff: handoff_state(response, tool_events), human_request: human_request(turn), acting_agent: names[response['agent_id']&.to_i],
+      council: events.any? { |event| event.event_name == COUNCIL_STARTED }, customer: turn['customer'].to_s, routing: routing,
+      silent: silent_handoff?(response, text, visible)
     )
   end
+
+  def agent_names = Captain::Assistant.where(account_id: @account.id).pluck(:id, :name).to_h
 
   # The text a patient would read, or nil for a runtime marker that the response builder turns into a handoff.
   def patient_text(response)
@@ -198,15 +280,40 @@ class Captain::Evals::RoutingBenchmark::Scorer
     text
   end
 
+  # The reply, and the handoff notice when the response carries one. A silent handoff (the marker with no notice) has none.
+  def visible_text(response, text)
+    notice = response['handoff_message'].to_s.strip.presence
+    return text unless notice
+
+    [text, notice].compact.join("\n")
+  end
+
+  # The human handoff of the handoff tool: the marker and the flag, and nothing a patient reads.
+  def silent_handoff?(response, text, visible)
+    text.nil? && visible.nil? && response['handoff_tool_called'] == true && response['response'].to_s.start_with?('conversation_handoff')
+  end
+
   # A handoff happened when the handoff tool ran, the runner flagged it, or the council reply is followed by the response
-  # builder's handoff for an unresolved part. A provider failure hands the patient to staff as well, but it is no tool
-  # call and no basis for a claim.
+  # builder's handoff for an unresolved part. `observed` is the staff handoff the fixture speaks of (expect.staff_handoff): the
+  # tool succeeded, or a council handoff of an unresolved part (not a technical one). A provider failure hands the patient to staff
+  # as well, but it is no tool call and no basis for a claim. The marker without a tool event (moderation, a guard) is reported apart.
   def handoff_state(response, tool_events)
     tool = tool_events.any? { |event| event.tool_name == 'handoff' && event.payload['result_success'] == true }
     flag = response['handoff_tool_called'] == true
+    request = council_request(response)
     council = response['council_handoff'].present?
-    provider_error = response['response'].to_s == Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_RESPONSE
-    { truth: tool || flag || council, tool: tool, flag: flag, council: council, provider_error: provider_error }
+    technical_council = council && request['technical'] == true
+    reply = response['response'].to_s
+    provider_error = reply == Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_RESPONSE
+    marker = !provider_error && reply.start_with?('conversation_handoff')
+    { truth: tool || flag || council, tool: tool, flag: flag, council: council, council_technical: technical_council,
+      observed: tool || (council && !technical_council), marker: marker, marker_without_tool: marker && !tool, provider_error: provider_error }
+  end
+
+  # The handoff request of a council reply (reason, parts, technical, failures), or {} when the response carries none.
+  def council_request(response)
+    request = response['council_handoff']
+    request.is_a?(Hash) ? request.stringify_keys : {}
   end
 
   # The fixture flag when the turn has one, else the vocabulary detector.
@@ -221,20 +328,45 @@ class Captain::Evals::RoutingBenchmark::Scorer
   def expectation_checks(context, outcome, before)
     runtime_checks(context, outcome)
     tool_checks(context, outcome)
+    act_checks(context, outcome)
+    transfer_check(context, outcome)
+    staff_handoff_check(context, outcome)
     operation_checks(context, outcome, before)
   end
 
   def runtime_checks(context, outcome)
-    response = context.response
     expected = context.expected
-    outcome.evaluate('runtime_error', 'wrong_agent')
-    if response['captain_request_id'].blank? || response['response'].to_s == Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_RESPONSE
-      cause = [response['error_class'], response['error_message']].compact_blank.join(': ')
-      outcome.fail!('runtime_error', cause.presence || 'no captain_request_id, or the provider error response')
-    end
+    outcome.evaluate('runtime_error', 'technical_handoff', 'provider_error', 'wrong_agent')
+    infra_checks(context, outcome)
     agents = Array(expected['agents'] || expected['agent'])
     outcome.fail!('wrong_agent', "acted: #{context.acting_agent.inspect}; expected: #{agents.join(' | ')}") unless agents.include?(context.acting_agent)
     council_checks(expected['council'], context.council, outcome)
+    council_hands_check(context, outcome)
+  end
+
+  # A turn the runtime did not carry through: no request id, a tool that failed technically (the run was handed to staff, or a part
+  # of a council was), or the provider error response. The three are told apart because they are fixed in different places.
+  def infra_checks(context, outcome)
+    response = context.response
+    failure = response['technical_failure']
+    if failure.present?
+      outcome.fail!('technical_handoff', technical_detail(failure))
+    elsif context.handoff[:council_technical]
+      failures = Array(council_request(response)['failures']).map { |item| technical_detail(item) }
+      outcome.fail!('technical_handoff', "a part of the council failed technically: #{failures.join(' | ').presence || 'no detail'}")
+    elsif context.handoff[:provider_error]
+      cause = [response['error_class'], response['error_message']].compact_blank.join(': ')
+      outcome.fail!('provider_error', cause.presence || 'the provider error response')
+    end
+    outcome.fail!('runtime_error', 'no captain_request_id') if response['captain_request_id'].blank?
+  end
+
+  def technical_detail(failure)
+    data = failure.is_a?(Hash) ? failure.stringify_keys : {}
+    parts = %w[tool stage reason kind].filter_map { |key| "#{key}: #{data[key]}" if data[key].present? }
+    completed = Array(data['completed']).map(&:to_s).presence
+    parts << "completed: #{completed.join(', ')}" if completed
+    parts.join('; ').presence || 'no detail'
   end
 
   # A missing captain.council.started event is reported on its own, not as a routing error: when the council
@@ -246,15 +378,29 @@ class Captain::Evals::RoutingBenchmark::Scorer
     outcome.fail!(expected ? 'council_event_missing' : 'council_unexpected')
   end
 
+  # Neither a council nor a linked follow-up changes the agent that holds the conversation (decisions 1 and 2): the agent session of
+  # the conversation keeps its current agent and its routing revision.
+  def council_hands_check(context, outcome)
+    return unless context.expected['council'] == true && context.routing.present?
+
+    outcome.evaluate('council_changed_hands')
+    before, after = %i[before after].map { |key| context.routing.to_h.symbolize_keys.fetch(key, {}).to_h.symbolize_keys }
+    return if before.slice(:current_assistant_id, :routing_revision) == after.slice(:current_assistant_id, :routing_revision)
+
+    outcome.fail!('council_changed_hands', "agent #{before[:current_assistant_id]} -> #{after[:current_assistant_id]}, " \
+                                           "routing revision #{before[:routing_revision]} -> #{after[:routing_revision]}")
+  end
+
   def tool_checks(context, outcome)
     Array(context.expected['must_call']).each do |name|
-      # A request for a human is reported once, as human_handoff_missing.
-      next if name == 'handoff' && context.human_request[:value]
+      # A request for a human is reported once, as human_handoff_missing; an expected staff handoff, as staff_handoff_missing.
+      next if name == 'handoff' && (context.human_request[:value] || context.expected['staff_handoff'] == true)
 
       outcome.evaluate("missing_tool:#{name}")
       outcome.fail!("missing_tool:#{name}", "#{name} was not called; called: #{context.tools.join(', ').presence || 'nothing'}") unless context.tools.include?(name)
     end
     Array(context.expected['must_not_call']).each { |name| forbidden_tool_check(context, outcome, name) }
+    Array(context.expected['must_not_succeed']).each { |name| succeeded_forbidden_check(context, outcome, name) }
   end
 
   def forbidden_tool_check(context, outcome, name)
@@ -267,9 +413,73 @@ class Captain::Evals::RoutingBenchmark::Scorer
                   severity: severity)
   end
 
+  # A business outcome (the slot is taken, the doctor does not work that day) is an ordinary answer, so the attempt is allowed. A
+  # successful call is not: the booking or the move would have happened against the business rule.
+  def succeeded_forbidden_check(context, outcome, name)
+    outcome.evaluate("succeeded_forbidden:#{name}")
+    return unless context.successful_tools.include?(name)
+
+    outcome.fail!("succeeded_forbidden:#{name}", "#{name} completed successfully#{call_arguments(context, name)}")
+  end
+
   def call_arguments(context, name)
     call = Array(context.tool_calls).find { |item| item[:tool] == name && item[:arguments].present? }
     call ? " with #{Captain::Evals::RoutingBenchmark::ToolTrace.compact([call]).first[:arguments]}" : ''
+  end
+
+  # expect.acts: a successful call of the tool by the named agent. A council part runs as its owner with the owner's tools, so the
+  # call of the planner (the holder of the conversation) does not count for the owner.
+  def act_checks(context, outcome)
+    Array(context.expected['acts']).each do |act|
+      id = "missing_act:#{act['tool']}@#{act['agent']}"
+      outcome.evaluate(id)
+      next if context.calls.any? { |call| call[:tool] == act['tool'] && call[:agent] == act['agent'] && call[:success] == true }
+
+      outcome.fail!(id, "no successful #{act['tool']} by #{act['agent']}; successful mutations: #{successful_mutations(context)}")
+    end
+  end
+
+  def successful_mutations(context)
+    context.calls.select { |call| MUTATION_TOOLS.include?(call[:tool]) && call[:success] == true }
+           .map { |call| "#{call[:tool]} by #{call[:agent] || 'unknown'}" }.join(', ').presence || 'none'
+  end
+
+  # expect.transfers: the number of colleague transfers (captain.agent.transfer events) in the turn window.
+  def transfer_check(context, outcome)
+    expected = context.expected['transfers']
+    return if expected.nil?
+
+    outcome.evaluate('wrong_transfers')
+    transfers = context.turn_events.transfers
+    return if transfers.size == expected
+
+    path = transfers.map { |item| "#{item[:from]} -> #{item[:to]}" }.join('; ').presence || 'none'
+    outcome.fail!("wrong_transfers:#{transfers.size}", "expected #{expected}, observed #{transfers.size}: #{path}")
+  end
+
+  # expect.staff_handoff: true needs a staff handoff (the tool, or the council handoff of an unresolved part), false none, 'any' is not
+  # checked. Missing on a turn in which the customer asks for a person is the owner's gate item f.
+  def staff_handoff_check(context, outcome)
+    wanted = context.expected['staff_handoff']
+    return unless [true, false].include?(wanted)
+
+    observed = context.handoff[:observed]
+    if wanted
+      id = context.human_request[:value] ? 'staff_handoff_missing:person_request' : 'staff_handoff_missing'
+      outcome.evaluate(id)
+      outcome.fail!(id, staff_handoff_detail(context, 'a staff handoff was expected')) unless observed
+    else
+      outcome.evaluate('staff_handoff_unexpected')
+      return unless observed && !outcome.failed?('forbidden_tool:handoff')
+
+      outcome.fail!('staff_handoff_unexpected', staff_handoff_detail(context, 'no staff handoff was expected'))
+    end
+  end
+
+  def staff_handoff_detail(context, lead)
+    state = context.handoff
+    "#{lead}; handoff tool: #{state[:tool]}, council handoff: #{state[:council]}#{' (technical)' if state[:council_technical]}" \
+      "#{', marker without a handoff tool' if state[:marker_without_tool]}"
   end
 
   def operation_checks(context, outcome, before)
@@ -282,7 +492,6 @@ class Captain::Evals::RoutingBenchmark::Scorer
       outcome.evaluate("missing_operation:#{operation['model']}")
       outcome.fail!("missing_operation:#{operation['model']}") unless legacy_operation_present?(operation, before)
     end
-    ledger_checks(operations, outcome)
     unexpected_mutation_check(context, outcome, operations, checked.explained_ids)
   end
 
@@ -298,22 +507,11 @@ class Captain::Evals::RoutingBenchmark::Scorer
     end
   end
 
-  # `ledger_tool` additionally requires a finished, successful entry of the tool in the operation ledger; checked once
-  # the rows themselves are right.
-  def ledger_checks(operations, outcome)
-    return if outcome.failures.any? { |failure| %w[missing_operation operation_mismatch].include?(failure[:check]) }
-
-    operations.filter_map { |operation| operation['ledger_tool'].presence }.uniq.each do |tool|
-      outcome.evaluate("missing_ledger_entry:#{tool}")
-      outcome.fail!("missing_ledger_entry:#{tool}", 'no finished successful entry in the conversation ledger') unless ledger_finished?(tool)
-    end
-  end
-
   # An appointment row changed that no expectation of the turn accounts for, or a deal tool that ran with no deal
   # operation expected. A tool the fixture lists in must_not_call is already reported by forbidden_tool.
   def unexpected_mutation_check(context, outcome, operations, explained_ids)
     outcome.evaluate('unexpected_mutation')
-    declared = Array(context.expected['must_call']) + Array(context.expected['must_not_call'])
+    declared = Array(context.expected['must_call']) + Array(context.expected['must_not_call']) + Array(context.expected['must_not_succeed'])
     details = context.changes.rows.reject { |row| explained_ids.include?(row.id) }.filter_map do |row|
       tool = CHANGE_TOOLS.fetch(row.change)
       "appointment #{row.id} #{row.change}" unless declared.include?(tool)
@@ -325,7 +523,7 @@ class Captain::Evals::RoutingBenchmark::Scorer
     outcome.fail!('unexpected_mutation', details.join('; ')) if details.any?
   end
 
-  # ---- hard-zero counters (kept from the first harness version) ------------------------------------------------------
+  # ---- hard-zero counters --------------------------------------------------------------------------------------------
 
   def hard_zero_counters(context, outcome)
     claims = claim_check(context, outcome)
@@ -334,13 +532,14 @@ class Captain::Evals::RoutingBenchmark::Scorer
     leaked = leak_check(context, outcome)
     wrong_language = language_check(context, outcome)
     { 'false_success_claim' => claims, 'duplicate_operation' => duplicates, 'wrong_patient' => wrong,
-      'internal_text_leak' => leaked, 'wrong_language' => wrong_language }
+      'internal_text_leak' => leaked, 'wrong_language' => wrong_language, 'false_handoff_claim' => handoff_claim_check(context, outcome) }
   end
 
-  # Unsupported claims of a done action, by the claim kinds found in the reply.
+  # Unsupported claims of a done action, by the claim kinds found in the reply. The stock sentences of the runtime are cut out first:
+  # "Запрос отменён." is a leak (reply_leak:stock_text), not the agent's claim of a cancellation.
   def claim_check(context, outcome)
     outcome.evaluate('false_success_claim')
-    claims = Captain::Evals::RoutingBenchmark::SuccessClaims.claims(context.text)
+    claims = Captain::Evals::RoutingBenchmark::SuccessClaims.claims(context.claim_text)
     @claimed = claims.map(&:first).uniq
     notes = []
     @unsupported = @claimed.reject do |kind|
@@ -374,7 +573,8 @@ class Captain::Evals::RoutingBenchmark::Scorer
   def row_written?(kind, changes)
     return changes.created.any? || changes.updated.any? if kind == :book_state
 
-    changes.rows.any? { |row| row.change == CLAIM_CHANGE.fetch(kind) }
+    change = CLAIM_CHANGE.fetch(kind)
+    changes.rows.any? { |row| change.nil? || row.change == change }
   end
 
   # The follow-up restates what an earlier turn did ("Вы записаны на среду в 10:00. Жду вас!"). It holds only when
@@ -413,7 +613,9 @@ class Captain::Evals::RoutingBenchmark::Scorer
     case kind
     when :book_state then existing_rows(caller_appointments.where.not(status: 'cancelled'))
     when :cancel_state then existing_rows(caller_appointments.where(status: 'cancelled'))
-    else (@written + context.changes.rows).select { |row| row.change == CLAIM_CHANGE.fetch(kind) }.uniq(&:id)
+    else
+      change = CLAIM_CHANGE.fetch(kind)
+      (@written + context.changes.rows).select { |row| change.nil? || row.change == change }.uniq(&:id)
     end
   end
 
@@ -426,9 +628,9 @@ class Captain::Evals::RoutingBenchmark::Scorer
     wanted = CLAIM_OPERATION.fetch(kind)
     Array(context.expected['operations']).any? do |operation|
       next false if operation.key?('count') && operation['count'].to_i.zero?
-      next false unless operation['model'] == 'appointment' || %i[create create_state].include?(kind)
+      next false unless operation['model'] == 'appointment' || %i[create create_state done done_state].include?(kind)
 
-      Captain::Evals::RoutingBenchmark::OperationCheck.kind_of(operation) == wanted
+      wanted.nil? || Captain::Evals::RoutingBenchmark::OperationCheck.kind_of(operation) == wanted
     end
   end
 
@@ -437,30 +639,70 @@ class Captain::Evals::RoutingBenchmark::Scorer
                            .where('contact_id = :id OR patient_contact_id = :id', id: @conversation.contact_id)
   end
 
-  # Mutations that completed more than once with the same canonical arguments. The executed-tool trace (audit rows)
-  # tells a real second execution from the cached replay of the first result, which never ran the tool body; without a
-  # trace the argument digests of the monitoring events decide.
+  # A claim that staff took the request, will call or answer, or that a result or a document is ready or sent, with no staff handoff
+  # in this turn. The handoff of an earlier turn does not excuse it: staff gave the conversation back, and the agent has nothing
+  # to say about staff. The runtime's own sentence "По этому вопросу вам ответит сотрудник клиники." is cut out first (a stock leak).
+  def handoff_claim_check(context, outcome)
+    outcome.evaluate('false_handoff_claim', 'handoff_claim_ambiguous')
+    claims = Captain::Evals::RoutingBenchmark::HandoffClaims.claims(context.claim_text)
+    @handoff_claims = claims.map(&:first).uniq
+    @unsupported_handoff_claims = []
+    return 0 if claims.empty? || context.handoff[:truth]
+
+    staff = claims.find { |kind, _sentence| %i[handoff_staff handoff_ready].include?(kind) }
+    ambiguous = claims.find { |kind, _sentence| kind == :handoff_ambiguous }
+    outcome.fail!('false_handoff_claim', staff.last) if staff
+    outcome.fail!('handoff_claim_ambiguous', ambiguous.last) if ambiguous && !staff
+    @unsupported_handoff_claims = @handoff_claims
+    staff ? 1 : 0
+  end
+
+  # Mutations that completed more than once with the same canonical arguments: in the turn, or in an earlier turn of the dialogue (a
+  # customer's "да" after a done booking must not book again), or two rows of one patient, doctor and start. The executed-tool trace
+  # (audit rows) tells a real second execution from the cached replay of the first result, which never ran the tool body; a replay
+  # carries no argument digest. Without a trace the argument digests of the monitoring events decide.
   def duplicate_check(context, outcome)
     outcome.evaluate('duplicate_operation')
-    mutations = context.tool_events.select { |event| event.payload['result_success'] == true && MUTATION_TOOLS.include?(event.tool_name) }
-    executed = Array(context.tool_calls).select do |call|
-      MUTATION_TOOLS.include?(call[:tool]) && call[:success] == true && call[:audited] && call[:arguments].present?
-    end
-    count = executed.any? ? executed_duplicates(executed) : digest_duplicates(mutations)
-    outcome.fail!('duplicate_operation', "#{count} repeated mutation(s): #{mutations.map(&:tool_name).tally.to_a.flatten.join(' ')}") if count.positive?
+    keys = executed_keys(context)
+    repeated = keys.size - keys.uniq.size
+    earlier = keys.uniq.count { |key| @earlier_mutations.include?(key) }
+    rows = duplicate_rows(context)
+    count = repeated + earlier + rows.size
+    return 0 if count.zero?
+
+    detail = []
+    detail << "#{repeated} repeated mutation(s) in the turn" if repeated.positive?
+    detail << "#{earlier} mutation(s) repeated from an earlier turn" if earlier.positive?
+    detail.concat(rows)
+    tools = context.tool_events.select { |event| event.payload['result_success'] == true && MUTATION_TOOLS.include?(event.tool_name) }
+    outcome.fail!('duplicate_operation', "#{detail.join('; ')}: #{tools.map(&:tool_name).tally.to_a.flatten.join(' ')}")
     count
   end
 
-  def executed_duplicates(calls)
-    calls.group_by { |call| [call[:tool], Captain::Evals::RoutingBenchmark::ToolTrace.canonical(call[:arguments])] }
-         .values.sum { |group| group.size - 1 }
+  # [tool, canonical arguments] of every executed successful mutation of the turn (its argument digest when no audit row has them).
+  def executed_keys(context)
+    audited = Array(context.tool_calls).select do |call|
+      MUTATION_TOOLS.include?(call[:tool]) && call[:success] == true && call[:audited] && call[:arguments].present?
+    end
+    return audited.map { |call| [call[:tool], Captain::Evals::RoutingBenchmark::ToolTrace.canonical(call[:arguments]).to_json] } if audited.any?
+
+    context.calls.select { |call| MUTATION_TOOLS.include?(call[:tool]) && call[:success] == true && call[:arguments_digest].present? }
+           .map { |call| [call[:tool], call[:arguments_digest]] }
   end
 
-  def digest_duplicates(events)
-    events.filter_map do |event|
-      digest = event.payload['arguments_digest']
-      [event.tool_name, digest] if digest.present?
-    end.tally.values.sum { |count| [count - 1, 0].max }
+  # The database: more rows created in the turn than successful create calls, and two active rows of the dialogue with the same
+  # patient, doctor and start. A turn with no tool events at all has no trace to count the calls against.
+  def duplicate_rows(context)
+    details = []
+    created = context.changes.created.size
+    creates = context.calls.count { |call| call[:tool] == 'create_appointment' && call[:success] == true }
+    details << "#{created} appointment(s) created by #{creates} successful create_appointment call(s)" if context.tool_events.any? && created > creates
+    ids = (@written + context.changes.rows).map(&:id).uniq
+    active = Scheduling::Appointment.where(id: ids).where.not(status: 'cancelled').to_a
+    active.group_by { |record| [record.patient_contact_id || record.contact_id, record.resource_id, record.starts_at] }.each_value do |same|
+      details << "appointments #{same.map(&:id).sort.join(', ')} have one patient, doctor and start" if same.size > 1
+    end
+    details
   end
 
   # Appointments created or updated in this turn whose patient is neither the caller nor a person the dialogue
@@ -525,12 +767,14 @@ class Captain::Evals::RoutingBenchmark::Scorer
     text.to_s.downcase.tr('ё', 'е')
   end
 
+  # The hard-zero counter of the leaks: the reply repeats the reasoning or an instruction verbatim, plus every critical finding of the
+  # reply scan (reply_leak). The scan runs here once; #reply_leak_check reports its findings.
   def leak_check(context, outcome)
     outcome.evaluate('internal_text_leak')
-    return 0 unless leaked_internal_text?(context.response)
-
-    outcome.fail!('internal_text_leak', 'the reply repeats the reasoning or an agent instruction')
-    1
+    verbatim = leaked_internal_text?(context.response)
+    outcome.fail!('internal_text_leak', 'the reply repeats the reasoning or an agent instruction') if verbatim
+    @leak_findings = context.visible_text.nil? ? [] : reply_scan_findings(context)
+    (verbatim ? 1 : 0) + @leak_findings.count { |finding| Captain::Evals::RoutingBenchmark::Scorer.severity_for("reply_leak:#{finding[:kind]}") == 'critical' }
   end
 
   def leaked_internal_text?(response)
@@ -541,14 +785,28 @@ class Captain::Evals::RoutingBenchmark::Scorer
     @internal_texts.any? { |text| text.to_s.length >= 20 && public_text.include?(text.to_s) }
   end
 
+  # The expected language of the turn (expect.reply_language) decides: the patient text must be Cyrillic and must not read as the
+  # other language. Without it (an older fixture) the language of the customer decides: the last Russian or Kazakh one written.
   def language_check(context, outcome)
     outcome.evaluate('wrong_language')
-    @language_evidence = language_evidence(context.customer, context.response['response'].to_s)
-    return 0 unless @language_evidence[:wrong_language]
+    expected = context.expected['reply_language']
+    @language_evidence = language_evidence(context.customer, context.visible_text.to_s)
+    wrong = expected ? expected_language_mismatch(expected, context.visible_text) : @language_evidence[:wrong_language]
+    @language_evidence[:expected_language] = expected if expected
+    return 0 unless wrong
 
-    outcome.fail!('wrong_language', "customer #{@language_evidence[:customer_language]}, dialogue #{@language_evidence[:dialogue_language]}, " \
-                                    "reply #{@language_evidence[:reply_language]}")
+    outcome.fail!('wrong_language', expected ? "expected #{expected}: #{wrong}" : legacy_language_detail)
     1
+  end
+
+  def expected_language_mismatch(expected, text)
+    return if text.blank?
+
+    Captain::Evals::RoutingBenchmark::Language.mismatch(expected, text)
+  end
+
+  def legacy_language_detail
+    "customer #{@language_evidence[:customer_language]}, dialogue #{@language_evidence[:dialogue_language]}, reply #{@language_evidence[:reply_language]}"
   end
 
   # The customer's language is the last Russian or Kazakh one the customer wrote; a name, "ок" or a time keeps it.
@@ -576,17 +834,32 @@ class Captain::Evals::RoutingBenchmark::Scorer
 
   # ---- the reply against the records and against the dialogue ---------------------------------------------------------
 
-  def collect_evidence(_context)
+  def collect_evidence(context)
     {
       claimed_operations: @claimed,
       unsupported_claims: @unsupported,
       wrong_patient_appointment_ids: @wrong_patient_ids
-    }.merge(@language_evidence)
+    }.merge(@language_evidence).merge(coordination_evidence(context))
   end
 
-  # Handoff claims (gate b), the reply against the rows the turn wrote (gate a), and the human request (gate f).
+  # What the coordination events and the response say about hand-overs: the transfers, the council and its parts, the guards that
+  # stopped a transfer, the stock sentences, and the handoffs that no fixture key speaks of.
+  def coordination_evidence(context)
+    state = context.handoff
+    turn_events = context.turn_events
+    stock = context.visible_text.nil? ? [] : Captain::Evals::RoutingBenchmark::StockText.found(context.visible_text)
+    {
+      transfers: turn_events.transfers.presence, transfer_guards: turn_events.transfer_guards.presence, council: turn_events.council,
+      runtime_stock_text: stock.presence, silent_handoff: context.silent || nil,
+      handoff_marker_without_tool: state[:marker_without_tool] || nil, technical_council_handoff: state[:council_technical] || nil,
+      calls: Captain::Evals::RoutingBenchmark::ToolTrace.compact(context.calls.select { |call| MUTATION_TOOLS.include?(call[:tool]) }).presence
+    }.compact
+  end
+
+  # Handoff claims (gate item b), the reply against the rows the turn wrote (gate a), and the human request (gate f).
   def record_checks(context, outcome, evidence)
-    handoff_claim_checks(context, outcome, evidence)
+    evidence[:handoff_claims] = @handoff_claims
+    evidence[:unsupported_handoff_claims] = @unsupported_handoff_claims if @unsupported_handoff_claims.present?
     reply_record_check(context, outcome, evidence)
     outcome.evaluate('double_booking')
     conflicts = context.changes.conflicts(@directory)
@@ -594,27 +867,14 @@ class Captain::Evals::RoutingBenchmark::Scorer
     human_handoff_check(context, outcome)
   end
 
-  def handoff_claim_checks(context, outcome, evidence)
-    outcome.evaluate('handoff_claim_unsupported', 'handoff_claim_ambiguous')
-    claims = Captain::Evals::RoutingBenchmark::HandoffClaims.claims(context.text)
-    evidence[:handoff_claims] = claims.map(&:first).uniq
-    return if claims.empty? || context.handoff[:truth] || @earlier_handoff
-
-    staff = claims.find { |kind, _sentence| kind == :handoff_staff }
-    ambiguous = claims.find { |kind, _sentence| kind == :handoff_ambiguous }
-    outcome.fail!('handoff_claim_unsupported', staff.last) if staff
-    outcome.fail!('handoff_claim_ambiguous', ambiguous.last) if ambiguous && !staff
-    evidence[:unsupported_handoff_claims] = claims.map(&:first).uniq
-  end
-
   # The time, the date and the doctor named in the sentences that claim a booking, a move or a cancellation must be the
   # ones of the rows the turn wrote (or the old ones of a move). Other sentences, such as opening hours, are not read.
   def reply_record_check(context, outcome, evidence)
     outcome.evaluate('reply_record_mismatch')
     rows = context.changes.rows
-    return if context.text.blank? || rows.empty?
+    return if context.claim_text.blank? || rows.empty?
 
-    sentences = record_claim_sentences(context.text, rows)
+    sentences = record_claim_sentences(context.claim_text, rows)
     mismatches = sentences.flat_map { |sentence| sentence_mismatches(sentence, rows) }
     evidence[:record_mismatches] = mismatches
     outcome.fail!('reply_record_mismatch', mismatches.join('; ')) if mismatches.any?
@@ -708,7 +968,8 @@ class Captain::Evals::RoutingBenchmark::Scorer
     end
   end
 
-  # (f) The customer asks for a person: the handoff must happen. A provider failure hands the patient to staff, too.
+  # (f) The customer asks for a person: the handoff must happen. A provider failure hands the patient to staff, too. When the fixture
+  # expects a staff handoff the miss is reported once, by staff_handoff_missing.
   def human_handoff_check(context, outcome)
     request = context.human_request
     if !request[:flag].nil? && request[:flag] != request[:detected]
@@ -716,6 +977,7 @@ class Captain::Evals::RoutingBenchmark::Scorer
     end
     outcome.evaluate('human_request_flag_mismatch')
     return unless request[:value]
+    return if context.expected['staff_handoff'] == true
 
     outcome.evaluate('human_handoff_missing')
     return if context.handoff[:truth] || context.handoff[:provider_error]
@@ -723,24 +985,44 @@ class Captain::Evals::RoutingBenchmark::Scorer
     outcome.fail!('human_handoff_missing', "request to a person (#{request[:source]}); handoff tool: #{context.tools.include?('handoff')}")
   end
 
-  # The final patient text: internal material, another patient's data, an empty or greeting-only reply.
-  # A runtime marker is no patient text: the checks that read the text are not put to such a turn.
+  # The final patient text: internal material, another patient's data, an empty or greeting-only reply, the fallback sentence.
+  # A runtime marker is no patient text: the checks that read the text are not put to such a turn (a silent handoff).
   def reply_checks(context, outcome)
-    return unless context.text
+    return unless context.visible_text
 
-    outcome.evaluate('reply_leak', 'foreign_patient_data', 'empty_reply', 'greeting_only_reply')
-    reply_leak_check(context, outcome)
+    outcome.evaluate('reply_leak', 'foreign_patient_data', 'empty_reply', 'greeting_only_reply', 'tool_result_fallback')
+    tool_result_fallback_check(context, outcome)
+    reply_leak_check(outcome)
     foreign_data_check(context, outcome)
     empty_reply_check(context, outcome)
   end
 
-  def reply_leak_check(context, outcome)
-    findings = Captain::Evals::RoutingBenchmark::ReplyScan.call(
-      context.text, tool_ids: tool_ids, allowed: allowed_latin, shingles: shingles,
-                    latin_ok: Captain::Evals::RoutingBenchmark::Language.script(context.customer) == :latin,
-                    internal_ids: internal_ids(context), known_numbers: known_numbers
+  # The runtime answered with its fixed fallback sentence ("Запрос обработан. Если нужны подробности ...", Russian even for a Kazakh
+  # patient) because the model returned nothing after the tools ran: an infrastructure failure that reached the patient.
+  def tool_result_fallback_check(context, outcome)
+    fallback = context.response['tool_result_fallback'] == true ||
+               Captain::Evals::RoutingBenchmark::StockText::REQUEST_PROCESSED.match?(context.visible_text)
+    return unless fallback
+
+    outcome.fail!('tool_result_fallback', "the fixed fallback sentence reached the patient: #{context.visible_text.squish.truncate(120)}")
+  end
+
+  def reply_leak_check(outcome)
+    fallback = outcome.failed?('tool_result_fallback')
+    @leak_findings.each do |finding|
+      matches = finding[:matches]
+      # The fallback sentence is reported once, as tool_result_fallback.
+      matches = matches.grep_v(Captain::Evals::RoutingBenchmark::StockText::REQUEST_PROCESSED) if fallback && finding[:kind] == :stock_text
+      outcome.fail!("reply_leak:#{finding[:kind]}", matches.join(' | ')) if matches.any?
+    end
+  end
+
+  def reply_scan_findings(context)
+    Captain::Evals::RoutingBenchmark::ReplyScan.call(
+      context.visible_text, tool_ids: tool_ids, allowed: allowed_latin, shingles: shingles,
+                            latin_ok: Captain::Evals::RoutingBenchmark::Language.script(context.customer) == :latin,
+                            internal_ids: internal_ids(context), known_numbers: known_numbers, agent_names: agent_names.values
     )
-    findings.each { |finding| outcome.fail!("reply_leak:#{finding[:kind]}", finding[:matches].join(' | ')) }
   end
 
   # The ids the turn handled: the appointment rows it changed, the conversation, the contact and every id in the arguments
@@ -763,7 +1045,7 @@ class Captain::Evals::RoutingBenchmark::Scorer
   # name, the people the caller booked for, and the public workspace text (knowledge base, doctors, services). The names of
   # the other seeded patients are not "known": a directory that listed them would hide exactly the leak this check looks for.
   def foreign_data_check(context, outcome)
-    findings = Captain::Evals::RoutingBenchmark::ForeignData.call(context.text, others: other_patient_names,
+    findings = Captain::Evals::RoutingBenchmark::ForeignData.call(context.visible_text, others: other_patient_names,
                                                                   known: (dialogue_texts + callers_family_names + Array(@directory&.public_texts)).join("\n"))
     return if findings.empty?
 
@@ -791,16 +1073,50 @@ class Captain::Evals::RoutingBenchmark::Scorer
   end
 
   def empty_reply_check(context, outcome)
-    if context.text.strip.empty?
+    if context.visible_text.strip.empty?
       outcome.fail!('empty_reply', "response_mode #{context.response['response_mode'].inspect}") unless context.response['response_mode'] == 'suppress'
-    elsif greeting_only?(context.text) && !greeting_only?(context.customer)
-      outcome.fail!('greeting_only_reply', context.text.truncate(80))
+    elsif greeting_only?(context.visible_text) && !greeting_only?(context.customer)
+      outcome.fail!('greeting_only_reply', context.visible_text.truncate(80))
     end
   end
 
   def greeting_only?(text)
     words = text.to_s.downcase.scan(/\p{L}+/)
     words.any? && words.all? { |word| GREETING_WORDS.include?(word) }
+  end
+
+  # The reply must say that the operation the fixture expects was done (decision 1: the reply of a council or an owner reports the
+  # action as made, it does not offer it). Checked when the matching tool succeeded in the turn; a silent handoff has no reply.
+  def done_statement_check(context, outcome)
+    return if context.visible_text.blank?
+
+    claimed = Captain::Evals::RoutingBenchmark::SuccessClaims.claims(context.claim_text).map(&:first)
+    expected_operation_kinds(context).each do |kind, tool|
+      next unless context.successful_tools.include?(tool)
+
+      outcome.evaluate('missing_done_statement')
+      next if (claimed & DONE_CLAIMS.fetch(kind)).any?
+
+      outcome.fail!("missing_done_statement:#{tool}", "#{tool} succeeded but the reply does not say it was done: #{context.visible_text.squish.truncate(120)}")
+    end
+  end
+
+  # [[operation kind, tool]] of the create / move / cancel operations the fixture expects in the turn.
+  def expected_operation_kinds(context)
+    Array(context.expected['operations']).filter_map do |operation|
+      next if operation.key?('count') && operation['count'].to_i.zero?
+
+      kind = Captain::Evals::RoutingBenchmark::OperationCheck.kind_of(operation)
+      tool = done_tool(operation['model'], kind)
+      [kind, tool] if tool
+    end.uniq
+  end
+
+  def done_tool(model, kind)
+    case model
+    when 'appointment' then CHANGE_TOOLS[{ 'create' => :created, 'update' => :updated, 'cancel' => :cancelled }[kind]]
+    when 'deal' then 'create_deal' if kind == 'create'
+    end
   end
 
   def tool_ids
@@ -817,36 +1133,51 @@ class Captain::Evals::RoutingBenchmark::Scorer
 
   # ---- dialogue memory and the result ---------------------------------------------------------------------------------
 
+  # A turn that ended in an infrastructure failure stopped before it did all it should have: what it did not do (the tool, the
+  # operation, the transfer ...) is a consequence of the failure and no finding of its own.
+  def drop_consequences(outcome)
+    return unless outcome.failures.any? { |failure| INTERRUPTED_BY.include?(failure[:check]) }
+
+    outcome.suppress!(CONSEQUENTIAL_CHECKS)
+  end
+
   def remember(context)
     @earlier_successes |= context.successful_tools
-    @earlier_handoff ||= context.handoff[:truth]
+    @earlier_mutations.merge(executed_keys(context))
     @written.concat(context.changes.rows)
   end
 
   def result(context, outcome, counters, evidence)
+    infra = outcome.failures.pluck(:check).select { |check| INFRA_CHECKS.include?(check) }.uniq
     {
       status: outcome.failures.empty? ? 'pass' : 'fail', reasons: outcome.failures.pluck(:id), failures: outcome.failures,
       evaluated: outcome.evaluated, acting_agent: context.acting_agent, council: context.council,
       council_expected: context.expected['council'], tools: context.tools, hard_zero: counters,
-      operations_ledger: ledger_summary, evidence: evidence, patient_text: context.text,
-      handoff: context.handoff.slice(:truth, :tool, :flag, :council), human_request: context.human_request.slice(:value, :source),
-      db_delta: context.changes.delta(@directory)
-    }
+      operations_ledger: ledger_summary, evidence: evidence, patient_text: context.visible_text,
+      handoff: context.handoff.slice(:truth, :tool, :flag, :council, :observed), human_request: context.human_request.slice(:value, :source),
+      db_delta: context.changes.delta(@directory), infra: infra.presence, suppressed: outcome.suppressed.presence,
+      silent_handoff: context.silent || nil, routing: context.routing, warnings: warnings(context)
+    }.compact
   end
 
-  # ---- operation ledger ---------------------------------------------------------------------------------------------
+  # Signals that are no failure of the turn but the reader of the report should know.
+  def warnings(context)
+    list = []
+    council = context.turn_events
+    list << "council_editor_fallback:#{council.editor_fallback}" if council.editor_fallback
+    list << 'council_expected_but_no_part_started' if context.expected['council'] == true && !council.part_started?
+    list << 'technical_council_handoff' if context.handoff[:council_technical]
+    list << 'handoff_marker_without_tool' if context.handoff[:marker_without_tool]
+    list
+  end
+
+  # ---- operation ledger (evidence only) --------------------------------------------------------------------------------
 
   # Entries of the conversation's operation ledger as [key, entry]. The key is sha256([scope, tool]) and the entry holds
   # the scope but not the tool name, so the tool is found by recomputing the key.
   def ledger_pairs
     raw = @conversation.reload.additional_attributes.to_h.dig('captain_agent_session', 'operations')
     raw.is_a?(Hash) ? raw.to_a : []
-  end
-
-  def ledger_finished?(tool)
-    ledger_pairs.any? do |key, entry|
-      entry['status'] == 'finished' && entry.dig('result', 'success') == true && key == ledger_key(entry['scope'], tool)
-    end
   end
 
   def ledger_key(scope, tool) = Digest::SHA256.hexdigest(JSON.generate([scope, tool]))

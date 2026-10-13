@@ -3,16 +3,18 @@
 # Compares the appointment operations that a fixture turn expects with the rows the turn really created, moved or
 # cancelled (see BookingChanges). An expectation is
 #
-#   {model: appointment, kind: create|update|cancel, params: {status: scheduled},   # database columns, exact
-#    resource: doctor_a, service: consult, starts_at: '2026-10-15T12:00:00+05:00',   # symbolic, optional
+#   {model: appointment, kind: create|update|cancel,
+#    params: {status: scheduled, starts_at: '2026-10-15T12:00:00+05:00'},           # database columns, exact (starts_at: see below)
+#    resource: doctor_a, service: consult,                                          # symbolic, optional
 #    patient: m_marat | patient_name: Арсен, count: 1,                               # who, and how many rows
 #    previous_starts_at: '2026-10-13T15:00:00+05:00', previous_resource: doctor_b}   # the row an update must start from
 #
-# `params` alone (the old form) accepts any row of the kind with those column values; the old form of a cancellation,
-# {kind: update, params: {status: cancelled}}, is read as kind cancel (see .kind_of). The symbolic keys compare the
-# doctor, the service, the start, the patient and the old appointment with the row, so a booking with the wrong
-# doctor, time, service or patient is an `operation_mismatch:<field>` and not a pass. `count` is the exact number of
-# matching rows (default 1): a second row for one request is `operation_mismatch:count`.
+# `params` alone accepts any row of the kind with those column values; the old form of a cancellation,
+# {kind: update, params: {status: cancelled}}, is read as kind cancel (see .kind_of). The start is the one column that is not
+# filtered by the database: `params.starts_at` (v2 fixtures) or the symbolic `starts_at` is compared with the row, like the
+# doctor, the service, the patient and the old appointment, so a booking with the wrong doctor, time, service or patient is an
+# `operation_mismatch:<field>` and not a pass. `count` is the exact number of matching rows (default 1): a second row for one
+# request is `operation_mismatch:count`.
 #
 # Reasons: missing_operation:appointment (no row of the kind with those params) and operation_mismatch:<field>.
 class Captain::Evals::RoutingBenchmark::OperationCheck
@@ -26,6 +28,11 @@ class Captain::Evals::RoutingBenchmark::OperationCheck
     def kind_of(operation)
       kind = operation.fetch('kind', 'create')
       kind == 'update' && operation.dig('params', 'status').to_s == 'cancelled' ? 'cancel' : kind
+    end
+
+    # The start an appointment expectation pins: the symbolic `starts_at`, else `params.starts_at`.
+    def expected_start(operation)
+      operation['starts_at'].presence || operation.dig('params', 'starts_at').presence
     end
   end
 
@@ -81,7 +88,8 @@ class Captain::Evals::RoutingBenchmark::OperationCheck
   end
 
   def with_params(rows, operation)
-    params = operation['params'] || {}
+    # The start is compared in #mismatches, so a wrong time is an operation_mismatch (critical) and not a missing operation.
+    params = (operation['params'] || {}).except('starts_at')
     return rows if params.empty? || rows.empty?
 
     ids = Scheduling::Appointment.where(id: rows.map(&:id)).where(params).pluck(:id)
@@ -93,7 +101,8 @@ class Captain::Evals::RoutingBenchmark::OperationCheck
     fields = []
     fields << 'resource' if operation['resource'] && record.resource_id != directory.resource_id(operation['resource'])
     fields << 'service' if operation['service'] && record.service_id != directory.service_id(operation['service'])
-    fields << 'starts_at' if operation['starts_at'] && record.starts_at != Time.iso8601(operation['starts_at'])
+    start = self.class.expected_start(operation)
+    fields << 'starts_at' if start && record.starts_at != Time.iso8601(start)
     fields << 'patient' if patient_mismatch?(row, operation)
     fields.concat(previous_mismatches(row, operation))
     fields
@@ -141,7 +150,11 @@ class Captain::Evals::RoutingBenchmark::OperationCheck
   end
 
   def expected(operation, field)
-    field == 'patient' ? (operation['patient'] || operation['patient_name']) : operation[field]
+    case field
+    when 'patient' then operation['patient'] || operation['patient_name']
+    when 'starts_at' then self.class.expected_start(operation)
+    else operation[field]
+    end
   end
 
   def directory
