@@ -3,6 +3,8 @@
 class Captain::Runtime::Runner
   DEFAULT_MAX_TURNS = 10
   MAX_TASK_FINALIZATION_REPAIRS = 2
+  MAX_TRANSFERS = 2
+  TRANSFER_GUARD_NOTE = 'You cannot transfer any more: handle the request with your own tools, or call handoff if only staff can do it.'
 
   class MaxTurnsExceeded < StandardError; end
   class ToolLoopStopped < StandardError; end
@@ -140,9 +142,12 @@ class Captain::Runtime::Runner
     return technical_failure_result(session) if technical_failure_stop?(session, response)
     return terminal_tool_stop_result(session) if terminal_tool_stop?(session, response)
     return continue_after_transfer_guard(session) if session[:context_wrapper].context.delete(:transfer_guard_active)
-    return handle_handoff(session) if handoff_requested?(session, response)
+
+    # An accepted plan is handled before a transfer that was requested in the same step: the message is planned, so each agent of
+    # the plan answers its part (HandoffTool refuses a transfer after the plan, and this order covers a transfer called before it).
     plan_result = handle_plan(session)
     return plan_result if plan_result
+    return handle_handoff(session) if handoff_requested?(session, response)
     return finalize_run(session[:chat], session[:context_wrapper], session[:current_agent], output: response.content) if halt_response?(response)
     return if response.tool_call?
     return if continue_unresolved_tasks?(session, response)
@@ -229,22 +234,15 @@ class Captain::Runtime::Runner
       end
       finalize_run(session[:chat], session[:context_wrapper], session[:current_agent],
                    output: { response: plan[:clarification], reasoning: '' })
-    when 'answer_myself'
-      if plan[:answer].present?
-        Captain::Runtime::PartRegistry.new(context).update!(plan[:parts].first['id'], state: 'answered')
-        finalize_run(session[:chat], session[:context_wrapper], session[:current_agent],
-                     output: { response: plan[:answer], reasoning: '' })
-      end
     end
   end
 
+  # No more transfers in this run (two were made, or the colleague cannot be reached): the agent keeps its own tools and its human
+  # handoff, and loses only the transfer and plan tools (see ChatFactory.build_agent_tools).
   def continue_after_transfer_guard(session)
     session[:context_wrapper].context[:transfer_guarded] = true
     rebuild_chat!(session)
-    session[:chat].add_message(role: :system, content: <<~PROMPT)
-      Internal routing is unavailable for this message. Answer from verified facts already available.
-      State what remains open. Do not ask a new question or transfer to staff.
-    PROMPT
+    session[:chat].add_message(role: :system, content: TRANSFER_GUARD_NOTE)
     nil
   end
 
@@ -339,13 +337,10 @@ class Captain::Runtime::Runner
     nil
   end
 
-  # Two transfers per message at most, and no immediate return to the agent that just handed over.
-  # An agent without an assistant ID has no routing identity, so it can never be "the previous source".
-  def handoff_limit_reached?(context, next_agent)
-    return true if context[:handoff_count].to_i >= 2
-
-    target_id = next_agent.assistant_id
-    target_id.present? && context[:previous_handoff_source_id] == target_id
+  # Two transfers per message at most. A return to the agent that just handed over is refused by the transfer tool with a result
+  # the model can act on (HandoffTool), so it is no limit here.
+  def handoff_limit_reached?(context, _next_agent)
+    context[:handoff_count].to_i >= MAX_TRANSFERS
   end
 
   def handoff_target(session)

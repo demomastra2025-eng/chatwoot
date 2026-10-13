@@ -362,6 +362,7 @@ RSpec.describe Captain::Runtime::ChatFactory do
 
       context 'with its own tools' do
         let(:tools) { [ChatFactorySpecTool.new('create_appointment', 'Book a visit'), ChatFactorySpecTool.new('faq_lookup', 'Search the FAQ')] }
+        let(:colleague) { Captain::Runtime::Agent.new(name: 'assistant_91').tap { |item| item.assistant_id = 91 } }
 
         it 'binds exactly the tools of the part, reads and writes alike, and no coordination tool' do
           agent.register_handoffs(Captain::Runtime::Agent.new(name: 'assistant_91'))
@@ -369,6 +370,39 @@ RSpec.describe Captain::Runtime::ChatFactory do
 
           expect(built_tool_names).to eq(%w[create_appointment faq_lookup])
           expect(bound_tool_names).to eq(%w[create_appointment faq_lookup])
+        end
+
+        it 'keeps these tools after the transfer guard and loses only the transfer tools and plan_request' do
+          agent.register_handoffs(colleague)
+          expect(built_tool_names).to eq(%w[transfer_to_agent_91 create_appointment faq_lookup plan_request])
+          expect(bound_tool_names).to eq(%w[transfer_to_agent_91 create_appointment faq_lookup plan_request])
+
+          context_wrapper.context[:transfer_guarded] = true
+
+          expect(built_tool_names).to eq(%w[create_appointment faq_lookup])
+          expect(bound_tool_names).to eq(%w[create_appointment faq_lookup])
+        end
+
+        it 'keeps the task queue tool of an inherited queue after the transfer guard' do
+          agent.register_handoffs(colleague)
+          tasks.replace([{ 'id' => 'visit', 'assistant_id' => 92, 'status' => 'active', 'title' => 'Book a visit', 'result' => nil }])
+          context_wrapper.context[:transfer_guarded] = true
+
+          expect(built_tool_names).to eq(%w[create_appointment faq_lookup manage_agent_tasks])
+          expect(bound_tool_names).to eq(%w[create_appointment faq_lookup manage_agent_tasks])
+        end
+
+        it 'still offers the human handoff after the transfer guard, and a finalization-only run offers nothing' do
+          human = ChatFactorySpecTool.new('handoff', 'Hand off to staff')
+          staffed = Captain::Runtime::Agent.new(name: 'assistant_92', model: 'openai/gpt-5.4-mini', tools: [tools.first, human])
+          staffed.register_handoffs(colleague)
+          context_wrapper.context[:transfer_guarded] = true
+
+          expect(described_class.send(:build_agent_tools, staffed, context_wrapper).map(&:name)).to eq(%w[create_appointment handoff])
+          described_class.send(:record_bound_agent_tools, staffed, context_wrapper)
+          expect(context_wrapper.context[:captain_v2_bound_tool_ids]).to eq(%w[create_appointment handoff])
+          described_class.send(:record_bound_agent_tools, staffed, context_wrapper, finalization_only: true)
+          expect(context_wrapper.context[:captain_v2_bound_tool_ids]).to be_empty
         end
       end
     end

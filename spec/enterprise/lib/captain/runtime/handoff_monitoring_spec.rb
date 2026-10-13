@@ -44,22 +44,33 @@ RSpec.describe Captain::Runtime::HandoffTool do
     expect(context).not_to have_key(:pending_human_handoff)
   end
 
-  it 'prevents an immediate return to the agent that just handed off' do
+  it 'answers an immediate return to the agent that just handed off with a result the model can act on, without a guard' do
     entry = create(:captain_assistant)
     specialist = create(:captain_assistant, account: entry.account)
     inbox = create(:inbox, account: entry.account)
     target = Captain::Runtime::Agent.new(name: "assistant_#{entry.id}")
     target.assistant_id = entry.id
-    context = { state: { account_id: entry.account_id, assistant_id: specialist.id,
-                         entry_assistant_id: entry.id }, agent_graph: Captain::AgentGraph.new(entry, inbox: inbox).payload,
+    context = { agent_request_id: 'synthetic-request',
+                state: { account_id: entry.account_id, assistant_id: specialist.id, entry_assistant_id: entry.id },
+                agent_graph: Captain::AgentGraph.new(entry, inbox: inbox).payload,
                 agent_inbox_id: inbox.id, handoff_count: 1, previous_handoff_source_id: entry.id }
     tool_context = Captain::Runtime::ToolContext.new(run_context: Captain::Runtime::RunContext.new(context))
+    events = []
+    subscriber = ActiveSupport::Notifications.subscribe('captain.agent.transfer_guard') do |*args|
+      events << ActiveSupport::Notifications::Event.new(*args)
+    end
 
     result = described_class.new(target).perform(tool_context)
 
-    expect(result.content).to be_blank
-    expect(context[:transfer_guard_active]).to be(true)
-    expect(context).not_to have_key(:pending_handoff)
+    expect(result).not_to be_a(RubyLLM::Tool::Halt)
+    expect(Captain::ToolResult.normalize(result)).to include(
+      success: false, retryable: true,
+      error: 'The conversation came from that colleague; transfer to the colleague who owns this request, or answer it yourself.'
+    )
+    expect(context).not_to include(:transfer_guard_active, :pending_handoff)
+    expect(events.sole.payload).to include('reason' => 'return_to_previous_source', 'from_agent_id' => specialist.id, 'to_agent_id' => entry.id)
+  ensure
+    ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
   end
 
   it 'refuses a transfer when the channel grid no longer attaches the target' do
@@ -114,6 +125,34 @@ RSpec.describe Captain::Runtime::HandoffTool do
       expect(context).not_to include(:part_plan_accepted)
     end
 
+    it 'refuses a transfer once the message is planned, as a result the model can act on, and leaves the plan to run' do
+      context[:part_plan_accepted] = true
+      context[:part_plan] = { mode: 'council', parts: [] }
+
+      result = described_class.new(target).perform(tool_context)
+
+      expect(result).not_to be_a(RubyLLM::Tool::Halt)
+      expect(Captain::ToolResult.normalize(result)).to include(
+        success: false, retryable: true, error: 'This message is already planned: each agent of the plan answers its part.'
+      )
+      expect(context).not_to include(:pending_handoff, :transfer_guard_active)
+      expect(context).to include(part_plan_accepted: true)
+    end
+
+    it 'refuses a planned message before it looks at the limit, and halts without a result only at the third transfer' do
+      context[:part_plan_accepted] = true
+      context[:handoff_count] = 2
+
+      refused = described_class.new(target).perform(tool_context)
+      context.delete(:part_plan_accepted)
+      halted = described_class.new(target).perform(tool_context)
+
+      expect(Captain::ToolResult.normalize(refused)).to include(success: false, retryable: true)
+      expect(halted).to be_a(RubyLLM::Tool::Halt)
+      expect(context[:transfer_guard_active]).to be(true)
+      expect(context).not_to include(:pending_handoff)
+    end
+
     it 'is a tool without parameters whose name identifies the colleague and whose description names it' do
       tool = described_class.new(target)
 
@@ -125,11 +164,46 @@ RSpec.describe Captain::Runtime::HandoffTool do
 
     it 'names the colleague and its responsibility in one sentence, and names a Cyrillic colleague by its id' do
       specialist.assign_attributes(name: 'Анализы', routing_description: "Подготовка к анализам,\nцены")
+      allow(specialist).to receive(:selected_agent_tool_ids).and_return(%w[handoff faq_lookup])
 
       tool = described_class.new(Captain::Runtime::LazyAgent.new(specialist))
 
       expect(tool.name).to eq("transfer_to_agent_#{specialist.id}")
       expect(tool.description).to eq(%(Transfer the conversation to colleague "Анализы": Подготовка к анализам, цены))
+    end
+
+    it 'adds one line with what the colleague can do, read from the tool ids of the assistant without building its tools' do
+      specialist.assign_attributes(name: 'Продажи', routing_description: 'Сделки клиники')
+      ids = %w[create_deal update_deal transition_deal_stage search_deals faq_lookup handoff]
+      allow(specialist).to receive(:selected_agent_tool_ids).and_return(ids)
+      lazy = Captain::Runtime::LazyAgent.new(specialist)
+      expect(specialist).not_to receive(:agent)
+
+      tool = described_class.new(lazy)
+
+      expect(tool.description).to eq(
+        %(Transfer the conversation to colleague "Продажи": Сделки клиники. ) +
+        'Tools: create and update deal; transition deal stage; look up deals.'
+      )
+    end
+
+    it 'adds the same line for an agent that holds its tools, and ends a title without a responsibility with a full stop' do
+      names = %w[create_appointment update_appointment cancel_appointment faq_lookup search_available_slots]
+      tools = names.map { |name| Struct.new(:name).new(name) }
+      colleague = Captain::Runtime::Agent.new(name: 'assistant_7', tools: tools).tap { |agent| agent.assistant_id = 7 }
+
+      expect(described_class.new(colleague).description).to eq(
+        %(Transfer the conversation to colleague "assistant_7". Tools: create, update and cancel appointment; look up available slots.)
+      )
+    end
+
+    it 'leaves the line out when the colleague has no tool that says what it does, and when its tool ids cannot be read' do
+      only_shared = Captain::Runtime::Agent.new(name: 'assistant_7', tools: [Struct.new(:name).new('faq_lookup')])
+      broken = Captain::Runtime::Agent.new(name: 'assistant_8')
+      allow(broken).to receive(:tool_ids).and_raise(StandardError, 'catalog down')
+
+      expect(described_class.new(only_shared).description).to eq(%(Transfer the conversation to colleague "assistant_7".))
+      expect(described_class.new(broken).description).to eq(%(Transfer the conversation to colleague "assistant_8".))
     end
 
     it 'is still named by its normalized name when the colleague has no id' do

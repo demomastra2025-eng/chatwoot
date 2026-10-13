@@ -21,6 +21,11 @@ class Captain::Runtime::LazyAgent < Captain::Runtime::Agent
   def headers = materialized.headers
   def params = materialized.params
 
+  # The ids of the tools the agent will have, read from the assistant without building them.
+  def tool_ids
+    @tool_ids ||= Array(@actor.selected_agent_tool_ids).map(&:to_s)
+  end
+
   def get_system_prompt(context)
     materialized.get_system_prompt(context)
   end

@@ -28,6 +28,11 @@ class Captain::Runtime::Agent
     self
   end
 
+  # The names of the tools the agent acts with (the transfer tool of a colleague describes what the colleague can do from them).
+  def tool_ids
+    tools.filter_map { |tool| tool.name.to_s.presence if tool.respond_to?(:name) }
+  end
+
   def get_system_prompt(context)
     case instructions
     when String

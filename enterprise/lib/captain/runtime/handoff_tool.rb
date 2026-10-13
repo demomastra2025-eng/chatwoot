@@ -1,10 +1,18 @@
 # frozen_string_literal: true
 
 # The transfer of the conversation to one colleague: one tool per peer of the agent graph, with no parameters. The tool name
-# identifies the colleague (Captain::HandoffNaming) and the description names it for the model. It needs no request plan: the
-# plan only coordinates several agents (a council) or links an answer to an open part. The runner hands the whole
-# conversation to the colleague, who continues it without mentioning the transfer.
+# identifies the colleague (Captain::HandoffNaming) and the description names it for the model, with what the colleague answers and
+# what it can do. It needs no request plan: the plan only coordinates several agents (a council) or links an answer to an open part.
+# The runner hands the whole conversation to the colleague, who continues it without mentioning the transfer.
+#
+# A transfer that cannot happen is told to the model as a result it can act on:
+# - the message is already planned (plan_request ran in this turn): each agent of the plan answers its part;
+# - the colleague is the one the conversation came from: the model chooses the colleague that owns the request, or answers itself.
+# Only after two transfers in one run does the guard stop transfers for good (see Runner#continue_after_transfer_guard).
 class Captain::Runtime::HandoffTool < Captain::Runtime::Tool
+  PLANNED_MESSAGE = 'This message is already planned: each agent of the plan answers its part.'
+  RETURN_TO_SOURCE = 'The conversation came from that colleague; transfer to the colleague who owns this request, or answer it yourself.'
+
   attr_reader :target_agent
 
   # The name the model calls the transfer to this colleague by. ChatFactory records the same name as bound.
@@ -18,7 +26,7 @@ class Captain::Runtime::HandoffTool < Captain::Runtime::Tool
     @tool_name = self.class.tool_name_for(target_agent)
     display_name = target_agent.respond_to?(:display_name) ? target_agent.display_name : target_agent.name
     responsibility = target_agent.respond_to?(:routing_description) ? target_agent.routing_description.to_s.squish : ''
-    @tool_description = transfer_description(display_name, responsibility)
+    @tool_description = transfer_description(display_name, responsibility, capabilities_of(target_agent))
     super()
   end
 
@@ -32,6 +40,11 @@ class Captain::Runtime::HandoffTool < Captain::Runtime::Tool
 
   def perform(tool_context, **_params)
     context = tool_context.run_context.context
+
+    if context[:part_plan_accepted]
+      record_guard(context, 'plan_accepted')
+      return Captain::ToolResult.failure(error: PLANNED_MESSAGE, retryable: true)
+    end
 
     if context[:agent_graph].present?
       source_id = context.dig(:state, :assistant_id)
@@ -49,10 +62,14 @@ class Captain::Runtime::HandoffTool < Captain::Runtime::Tool
         return Captain::ToolResult.failure(error: 'Agent routing changed; this handoff is no longer available', retryable: false)
       end
     end
-    if context[:handoff_count].to_i >= 2 || return_to_previous_source?(context)
+    if context[:handoff_count].to_i >= Captain::Runtime::Runner::MAX_TRANSFERS
       record_guard(context, 'handoff_limit')
       context[:transfer_guard_active] = true
       return halt('')
+    end
+    if return_to_previous_source?(context)
+      record_guard(context, 'return_to_previous_source')
+      return Captain::ToolResult.failure(error: RETURN_TO_SOURCE, retryable: true)
     end
     tool_context.run_context.context[:pending_handoff] = {
       target_agent: @target_agent,
@@ -64,10 +81,23 @@ class Captain::Runtime::HandoffTool < Captain::Runtime::Tool
 
   private
 
-  # One sentence: whom the conversation goes to and what that colleague answers.
-  def transfer_description(display_name, responsibility)
+  # One sentence: whom the conversation goes to and what that colleague answers; then what that colleague can do.
+  def transfer_description(display_name, responsibility, capabilities)
     title = %(Transfer the conversation to colleague "#{display_name.to_s.squish.tr('"', "'")}")
-    responsibility.present? ? "#{title}: #{responsibility}" : "#{title}."
+    text = responsibility.present? ? "#{title}: #{responsibility}" : "#{title}."
+    return text if capabilities.blank?
+
+    "#{text.end_with?('.', '!', '?') ? text : "#{text}."} #{capabilities}"
+  end
+
+  # The colleague's tool ids come without building its tools (a LazyAgent reads them from the assistant). A line is a help for the
+  # choice of the colleague, never a reason to fail the build of the chat.
+  def capabilities_of(target_agent)
+    return '' unless target_agent.respond_to?(:tool_ids)
+
+    Captain::Runtime::TransferCapabilities.line(target_agent.tool_ids)
+  rescue StandardError
+    ''
   end
 
   # An agent without an assistant ID has no routing identity, so it is never "the previous source".

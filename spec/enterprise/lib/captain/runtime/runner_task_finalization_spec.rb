@@ -710,7 +710,58 @@ RSpec.describe Captain::Runtime::Runner do
         expect(result.context[:current_agent]).to eq(agent.name)
         expect(result.context).to include(transfer_guarded: true)
         expect(result.context).not_to include(:part_plan, :part_plan_accepted, :pending_handoff)
-        expect(reminders.map(&:content).sole).to include('Internal routing is unavailable for this message')
+        expect(reminders.map(&:content).sole).to eq(
+          'You cannot transfer any more: handle the request with your own tools, or call handoff if only staff can do it.'
+        )
+        expect(colleague_chat.requests).to be_empty
+      end
+
+      it 'stops a third transfer of a run with the same note' do
+        context[:handoff_count] = 2
+        chat.respond_with(transfer_to_colleague, reply('Остальное уточнит администратор клиники.'))
+        expect_initial_ask
+        expect(Llm::Runtime).to receive(:complete).once.and_call_original
+
+        result = run_with
+
+        expect(result.output).to eq('Остальное уточнит администратор клиники.')
+        expect(result.context).to include(transfer_guarded: true, handoff_count: 2)
+        expect(reminders.map(&:content).sole).to eq(described_class::TRANSFER_GUARD_NOTE)
+        expect(colleague_chat.requests).to be_empty
+      end
+
+      it 'counts only the transfers of the run as the limit: a pending return to the previous source is followed' do
+        context[:handoff_count] = 1
+        context[:previous_handoff_source_id] = 91
+        chat.respond_with(transfer_to_colleague)
+        colleague_chat.respond_with(reply('Готово.'))
+        expect_initial_ask
+
+        result = run_with
+
+        expect(result.output).to eq('Готово.')
+        expect(result.context).to include(handoff_count: 2)
+        expect(result.context[:current_agent]).to eq(colleague.name)
+        expect(result.context).not_to include(:transfer_guarded)
+      end
+
+      it 'runs the plan that was accepted in the same step before the transfer, so that the colleague is not asked and the council answers' do
+        council = instance_double(Captain::Runtime::Council, run: 'Ответ совета.')
+        allow(Captain::Runtime::Council).to receive(:new).and_return(council)
+        chat.respond_with(lambda do |current_context|
+          Captain::Runtime::PartRegistry.new(current_context).accept!(
+            mode: 'council', parts: [{ fragment: 'Запись', executor_agent_id: 91 }, { fragment: 'Цена', executor_agent_id: 92 }]
+          )
+          current_context[:pending_handoff] = { target_agent: colleague }
+          RubyLLM::Tool::Halt.new('')
+        end)
+        expect_initial_ask
+
+        result = run_with
+
+        expect(result.output).to eq({ response: 'Ответ совета.', reasoning: '' })
+        expect(result.context[:current_agent]).to eq(agent.name)
+        expect(result.context).not_to include(:handoff_count, :pending_handoff)
         expect(colleague_chat.requests).to be_empty
       end
 

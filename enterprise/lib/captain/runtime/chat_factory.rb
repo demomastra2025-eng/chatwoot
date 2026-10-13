@@ -82,12 +82,12 @@ class Captain::Runtime::ChatFactory
     end
 
     def build_agent_tools(agent, context_wrapper)
-      return [] if context_wrapper.context[:transfer_guarded]
-
       # A council part is a run of the owner agent with the tools it was given (see Council#part_agent): it transfers nothing and
-      # plans nothing.
+      # plans nothing. After the transfer guard (see Runner#continue_after_transfer_guard) the agent is in the same position: it
+      # keeps its own tools and its human handoff, and loses only the transfer and plan tools.
       part = context_wrapper.context[:part_run]
-      handoff_tools = (part ? [] : agent.handoff_agents).map do |target_agent|
+      transfers_open = !part && !context_wrapper.context[:transfer_guarded]
+      handoff_tools = (transfers_open ? agent.handoff_agents : []).map do |target_agent|
         Captain::Runtime::ToolWrapper.new(Captain::Runtime::HandoffTool.new(target_agent), context_wrapper)
       end
 
@@ -97,7 +97,7 @@ class Captain::Runtime::ChatFactory
 
       coordination_tools = if !part && Captain::Runtime::TaskQueue.in_flight?(context_wrapper.context[:agent_tasks])
                              [Captain::Runtime::TaskQueueTool.new]
-                           elsif !part && plan_request_available?(context_wrapper.context)
+                           elsif transfers_open && plan_request_available?(context_wrapper.context)
                              [Captain::Runtime::PartPlanTool.new]
                            else
                              []
@@ -244,18 +244,18 @@ class Captain::Runtime::ChatFactory
 
     def record_bound_agent_tools(agent, context_wrapper, finalization_only: false)
       part = context_wrapper.context[:part_run]
+      transfers_open = !part && !context_wrapper.context[:transfer_guarded]
       bound_tool_names = if finalization_only
                            []
-                         elsif part
-                           regular_tool_names(agent)
-                         else
+                         elsif transfers_open
                            (handoff_tool_names(agent) + regular_tool_names(agent)).uniq
+                         else
+                           regular_tool_names(agent)
                          end
       bound_tool_names << 'manage_agent_tasks' if !finalization_only && !part &&
                                                    Captain::Runtime::TaskQueue.in_flight?(context_wrapper.context[:agent_tasks])
-      bound_tool_names << 'plan_request' if !finalization_only && !part && plan_request_available?(context_wrapper.context) &&
+      bound_tool_names << 'plan_request' if !finalization_only && transfers_open && plan_request_available?(context_wrapper.context) &&
                                              !Captain::Runtime::TaskQueue.in_flight?(context_wrapper.context[:agent_tasks])
-      bound_tool_names = [] if context_wrapper.context[:transfer_guarded]
 
       context_wrapper.context[:current_agent] = agent.name
       context_wrapper.context[:captain_v2_bound_tool_ids_by_agent] ||= {}
