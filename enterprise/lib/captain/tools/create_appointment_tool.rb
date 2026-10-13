@@ -1,6 +1,8 @@
 class Captain::Tools::CreateAppointmentTool < Captain::Tools::BasePublicTool
   description 'Create an appointment using a selected specialist and confirmed time details. ' \
               'For a named relative or another patient, pass their explicit patient details; the communication chat stays unchanged. ' \
+              'Without a service_id the specialist\'s only service is used; for a specialist with several services the answer lists them. ' \
+              'An appointment the patient already has with this specialist at this start is returned as already_booked. ' \
               'A successful result for a Medelement-linked specialist includes a reception ID from this booking command: ' \
               'confirm the booking to the patient in your reply. For a local-only booking, the local calendar save is sufficient. ' \
               'For an argument validation failure follow the returned correction before retrying. ' \
@@ -46,6 +48,11 @@ class Captain::Tools::CreateAppointmentTool < Captain::Tools::BasePublicTool
       crm_deal_id: crm_deal_id,
       crm_pipeline_id: crm_pipeline_id
     )
+
+    # The patient has this appointment already (same specialist, same start): nothing was created, and the answer says so.
+    if operation.already_booked_appointment.present?
+      return JSON.generate(Captain::Tools::Agent::AppointmentResult.already_booked(appointment, action: 'create_appointment'))
+    end
 
     command = verify_provider_booking!(appointment)
     JSON.generate(booking_result(appointment, command))

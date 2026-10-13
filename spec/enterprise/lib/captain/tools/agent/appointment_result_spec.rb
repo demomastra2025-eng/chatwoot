@@ -328,4 +328,89 @@ RSpec.describe Captain::Tools::Agent::AppointmentResult do
       expect(described_class.failure(other, account: account)).to eq(success: false, reason: 'validation_error', error_class: 'business')
     end
   end
+
+  describe 'an answer that nothing was changed or created' do
+    let(:account) { create(:account) }
+    let(:resource) { create(:scheduling_resource, account: account, name: 'Therapist Abdrakhmanova', timezone: 'Asia/Almaty') }
+    let(:appointment) { create(:scheduling_appointment, account: account, resource: resource, starts_at: Time.zone.parse('2026-10-15 11:00 +0500')) }
+
+    it 'names the statuses the monitoring flag reads' do
+      expect(Captain::ToolResult::NO_CHANGE_STATUSES).to contain_exactly(described_class::STATUS_UNCHANGED, described_class::STATUS_ALREADY_BOOKED)
+    end
+
+    it 'tells an update that asked for what the appointment has where it is and with whom, in the clinic time of the specialist' do
+      result = described_class.unchanged(appointment, action: 'update_appointment')
+
+      expect(result).to include(
+        success: true, appointment_id: appointment.id, local_date: '15.10.2026', local_time: '11:00', status: 'unchanged',
+        note: 'The appointment is already at 15.10.2026 11:00 with Therapist Abdrakhmanova; nothing was changed.'
+      )
+      expect(Captain::ToolResult.no_change?(result.to_json)).to be(true)
+    end
+
+    it 'tells a booking that exists already the same way, and that nothing was created' do
+      result = described_class.already_booked(appointment, action: 'create_appointment')
+
+      expect(result).to include(
+        success: true, appointment_id: appointment.id, status: 'already_booked',
+        note: 'The appointment is already booked at 15.10.2026 11:00 with Therapist Abdrakhmanova; nothing was created.'
+      )
+      expect(Captain::ToolResult.no_change?(result.to_json)).to be(true)
+    end
+
+    it 'gives staff the same line for an update that changed nothing' do
+      expect(described_class.unchanged_note(appointment)).to eq(
+        'The appointment is already at 15.10.2026 11:00 with Therapist Abdrakhmanova; nothing was changed.'
+      )
+    end
+
+    it 'reports the provider state instead when the existing appointment is not confirmed: no success the agent could repeat' do
+      appointment.update!(custom_attributes: { 'medelement_provider_sync_status' => 'pending' })
+
+      result = described_class.already_booked(appointment, action: 'create_appointment')
+
+      expect(result).to include(success: false, provider_confirmed: false)
+      expect(result[:status]).not_to eq('already_booked')
+      expect(Captain::ToolResult.no_change?(result.to_json)).to be(false)
+    end
+  end
+
+  describe 'a booking without a service for a specialist who offers several' do
+    let(:services) { [{ id: 12, name: 'Control visit' }, { id: 15, name: 'First visit' }] }
+    let(:error) do
+      Scheduling::Error.new(code: 'SERVICE_REQUIRED', message: 'The specialist offers several services', status: :unprocessable_content,
+                            details: { mutation_executed: false, services: services })
+    end
+
+    it 'is a business answer that lists the services by ID and name, with nothing written' do
+      payload = described_class.failure(error)
+
+      expect(payload).to include(success: false, reason: 'validation_error', code: 'SERVICE_REQUIRED', error_class: 'business',
+                                 services: services, audit: { mutation_executed: false, failure_stage: 'tool_arguments' })
+      expect(payload[:correction]).to include('service_id', 'ask the patient')
+    end
+
+    it 'says when the list is partial and where to find the other services' do
+      partial = Scheduling::Error.new(code: 'SERVICE_REQUIRED', message: 'x', status: :unprocessable_content,
+                                      details: { mutation_executed: false, services: services, more: 7 })
+
+      payload = described_class.failure(partial)
+
+      expect(payload).to include(more_services: 7, services: services)
+      expect(payload[:correction]).to end_with('The list is partial: search_scheduling_services finds the others.')
+      expect(described_class.failure(error)).not_to include(:more_services)
+    end
+
+    it 'reaches the agent as a failure it can correct in the same run, and the runtime reads it as a business answer' do
+      output = described_class.failure_output(error)
+      result = Captain::ToolResult.normalize(output)
+
+      expect(result).to include(success: false, retryable: false, error: include('service_id'),
+                                audit: include(error_class: 'business', failure_stage: 'tool_arguments', mutation_executed: false),
+                                data: include(code: 'SERVICE_REQUIRED', services: services))
+      expect(result[:data]).not_to include(:correction)
+      expect(Captain::Runtime::ToolFailure.classify(output)).to eq('business')
+      expect(Captain::Runtime::ToolFailure.business_answer?(output)).to be(true)
+    end
+  end
 end

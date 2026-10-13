@@ -48,7 +48,9 @@ class Captain::Tools::Copilot::UpdateAppointmentService < Captain::Tools::Copilo
     return formatted_payload(agent_result(appointment, unchanged: unchanged)) if patient_scope
 
     payload = ::Scheduling::ToolPayloadBuilder.appointment_payload(action: 'update_appointment', appointment: appointment)
-    formatted_payload(unchanged ? payload.merge(unchanged: true, note: Captain::Tools::Agent::AppointmentResult::UNCHANGED_NOTE) : payload)
+    return formatted_payload(payload) unless unchanged
+
+    formatted_payload(payload.merge(unchanged: true, note: Captain::Tools::Agent::AppointmentResult.unchanged_note(appointment)))
   rescue Scheduling::Error => e
     return formatted_payload(Captain::Tools::Agent::AppointmentResult.failure(e)) if patient_scope
 

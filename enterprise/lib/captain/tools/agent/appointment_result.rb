@@ -4,11 +4,22 @@ class Captain::Tools::Agent::AppointmentResult
   VALIDATION_CODES = %w[
     VALIDATION_ERROR INVALID_IIN RESOURCE_UNAVAILABLE RESOURCE_NOT_AVAILABLE_FOR_SCHEDULING
     SERVICE_NOT_AVAILABLE_FOR_RESOURCE OUTSIDE_WORKING_HOURS BLOCKED_BY_BREAK BLOCKED_BY_HOLIDAY BLOCKED_BY_VACATION
-    MEDELEMENT_CABINET_INVALID MEDELEMENT_CABINET_REQUIRED
+    MEDELEMENT_CABINET_INVALID MEDELEMENT_CABINET_REQUIRED SERVICE_REQUIRED
     APPOINTMENT_READ_ONLY APPOINTMENT_SOURCE_READ_ONLY APPOINTMENT_EXTERNAL_REF_RESERVED
   ].freeze
   MAX_SEARCH_RESULTS = 20
-  UNCHANGED_NOTE = 'The appointment is already at this time with these details; nothing was changed.'.freeze
+  # A booking without service_id for a specialist who offers several services: the code of the business answer that lists them.
+  SERVICE_REQUIRED_CODE = 'SERVICE_REQUIRED'.freeze
+  SERVICE_REQUIRED_GUIDANCE = 'The specialist offers several services (see services). Retry with the service_id the patient asked for; ' \
+                              'ask the patient when their words fit none or several.'.freeze
+  SERVICE_LIST_PARTIAL = 'The list is partial: search_scheduling_services finds the others.'.freeze
+  # The two answers of "nothing was changed" (the statuses of Captain::ToolResult::NO_CHANGE_STATUSES) and their result line.
+  STATUS_UNCHANGED = 'unchanged'.freeze
+  STATUS_ALREADY_BOOKED = 'already_booked'.freeze
+  NO_CHANGE_NOTES = {
+    STATUS_UNCHANGED => 'The appointment is already at %<place>s; nothing was changed.',
+    STATUS_ALREADY_BOOKED => 'The appointment is already booked at %<place>s; nothing was created.'
+  }.freeze
   # Message of Crm::FieldCatalog when a required custom field has no value: "custom_attributes.<key> is required".
   REQUIRED_CUSTOM_FIELD_MESSAGE = /\Acustom_attributes\.(?<key>\S+) is required\z/
   # Stable machine flag of a failed mutation: the runtime hands the conversation to a human on a technical failure and
@@ -79,9 +90,33 @@ class Captain::Tools::Agent::AppointmentResult
 
   # The answer to an update that asked for what the appointment already has: nothing was changed, nothing was sent to the provider.
   def self.unchanged(appointment, action: nil)
-    result = success(appointment, action: action)
-    result[:success] == false ? result : result.merge(status: 'unchanged', note: UNCHANGED_NOTE)
+    no_change(appointment, STATUS_UNCHANGED, action: action)
   end
+
+  # The answer to a booking that exists already (the same patient, specialist and start): nothing was created. The appointment
+  # keeps the confirmation state the provider gave it, so a booking that is still pending or failed is reported as that.
+  def self.already_booked(appointment, action: nil)
+    no_change(appointment, STATUS_ALREADY_BOOKED, action: action)
+  end
+
+  # The result line of a no-change answer: where the appointment is and with whom, in the specialist's clinic time.
+  def self.no_change_note(status, facts)
+    place = ["#{facts[:local_date]} #{facts[:local_time]}".strip.presence, ("with #{facts[:doctor_name]}" if facts[:doctor_name].present?)]
+    format(NO_CHANGE_NOTES.fetch(status), place: place.compact.join(' '))
+  end
+
+  # The same line for the update of staff (Copilot), which answers with its own payload.
+  def self.unchanged_note(appointment)
+    no_change_note(STATUS_UNCHANGED, self.appointment(appointment))
+  end
+
+  def self.no_change(appointment, status, action:)
+    result = success(appointment, action: action)
+    return result if result[:success] == false
+
+    result.merge(status: status, note: no_change_note(status, result))
+  end
+  private_class_method :no_change
 
   def self.success(appointment, action: nil)
     result = { success: true }.merge(self.appointment(appointment, action: action))
@@ -173,7 +208,8 @@ class Captain::Tools::Agent::AppointmentResult
     audit = result.delete(:audit)
     return JSON.generate(result) unless audit
 
-    Captain::ToolResult.failure(error: result[:correction], data: result.deep_stringify_keys, retryable: false,
+    # The correction is the error text of the result; the data next to it does not say it a second time.
+    Captain::ToolResult.failure(error: result[:correction], data: result.except(:correction).deep_stringify_keys, retryable: false,
                                 audit: audit.merge(error_class: result[:error_class]))
   end
 
@@ -204,9 +240,23 @@ class Captain::Tools::Agent::AppointmentResult
   end
   private_class_method :required_custom_field_label
 
+  # A booking with no service_id for a specialist who offers several: the agent chooses by the patient's words or asks the patient.
+  # The failure lists the services by ID and name; nothing was written before it.
+  def self.service_required_failure(error)
+    return unless error.is_a?(::Scheduling::Error) && error.code.to_s == SERVICE_REQUIRED_CODE
+
+    details = error.details.to_h.with_indifferent_access
+    partial = details[:more].to_i.positive?
+    { success: false, reason: 'validation_error', code: SERVICE_REQUIRED_CODE, error_class: ERROR_CLASS_BUSINESS,
+      services: Array(details[:services]), more_services: (details[:more].to_i if partial),
+      correction: partial ? "#{SERVICE_REQUIRED_GUIDANCE} #{SERVICE_LIST_PARTIAL}" : SERVICE_REQUIRED_GUIDANCE,
+      audit: { mutation_executed: false, failure_stage: 'tool_arguments' } }.compact
+  end
+  private_class_method :service_required_failure
+
   def self.failure(error, account: nil)
-    required_field_failure = required_custom_field_failure(error, account)
-    return required_field_failure if required_field_failure
+    answer = required_custom_field_failure(error, account) || service_required_failure(error)
+    return answer if answer
 
     code = error.respond_to?(:code) ? error.code.to_s : ''
     if code.blank? && !error.is_a?(ArgumentError) && !error.is_a?(ActiveRecord::RecordInvalid) && !error.is_a?(ActiveRecord::RecordNotFound)

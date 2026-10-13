@@ -1,7 +1,8 @@
 class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operations::BaseOperation
   # persisted_creation: the appointment a create call saved. unchanged_appointment: the appointment an update call found already
-  # in the state it asked for (nothing was sent to the provider and nothing was saved).
-  attr_reader :persisted_creation, :unchanged_appointment
+  # in the state it asked for (nothing was sent to the provider and nothing was saved). already_booked_appointment: the appointment
+  # a create call of the agent found booked already for the same patient, specialist and start (nothing was created).
+  attr_reader :persisted_creation, :unchanged_appointment, :already_booked_appointment
 
   # The fields of an update that can be compared with the appointment (a custom attribute cannot, so it is always a change).
   UNCHANGED_INTEGER_FIELDS = %i[resource_id service_id duration_min].freeze
@@ -26,10 +27,12 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
   def create_appointment(resource_id:, starts_at:, ends_at: nil, duration_min: nil, service_id: nil, appointment_type: nil, client_comment: nil,
                          custom_attributes: nil, patient: nil, crm_deal_id: nil, crm_pipeline_id: nil)
     @persisted_creation = nil
+    @already_booked_appointment = nil
     ensure_feature_enabled!('scheduling', 'Scheduling is not enabled for this account')
     starts_at, ends_at = normalize_appointment_times(resource_id: resource_id, starts_at: starts_at, ends_at: ends_at)
     validated_service = validate_booking_inputs!(starts_at: starts_at, ends_at: ends_at, duration_min: duration_min, service_id: service_id)
     service_id = validated_service.id if validated_service
+    service_id ||= offered_service_id(resource_id)
 
     create_params = {
       resource_id: resource_id,
@@ -200,11 +203,46 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
     ), conversation_id: conversation.id, patient_confirmed: confirmed }
   end
 
+  # The service of a booking of the agent that names none: the only service the specialist offers, none when it offers none, and a
+  # business answer that lists them when it offers several (see BookingServiceChoice). Staff choose their service themselves.
+  def offered_service_id(resource_id)
+    return unless actor.is_a?(Captain::Assistant)
+
+    choice = Captain::Tools::Agent::BookingServiceChoice.new(
+      account: account, resource_id: required_positive_id(resource_id, field_name: 'resource_id')
+    )
+    choice.perform&.id
+  end
+
+  # The active appointment of the same patient with the same specialist at the same start. A booking of the agent that asks for it
+  # again is answered with this one: a second appointment would be a double booking.
+  def existing_booking(create_params)
+    patient_id = create_params[:patient_contact_id] || create_params[:contact_id]
+    return unless actor.is_a?(Captain::Assistant) && patient_id.present?
+
+    starts_at = Time.zone.parse(create_params[:starts_at].to_s)
+    account.scheduling_appointments.where(status: %w[scheduled confirmed], resource_id: create_params[:resource_id], starts_at: starts_at)
+           .where('COALESCE(patient_contact_id, contact_id) = ?', patient_id).order(:id).first
+  end
+
+  # Another part of the same request may have booked it between the check and the write: the slot is then taken by the very
+  # appointment this call asks for, which is the answer.
+  def perform_or_find_booking(upsert, create_params)
+    upsert.perform
+  rescue Scheduling::Error => e
+    raise unless Captain::Tools::Agent::AppointmentResult::CONFLICT_CODES.include?(e.code.to_s)
+
+    @already_booked_appointment = existing_booking(create_params) || raise
+  end
+
   def persist_creation!(create_params)
     upsert = nil
     appointment = with_idempotent_creation('create_appointment', create_params.except(:patient_selection_token)) do
+      @already_booked_appointment = existing_booking(create_params)
+      next @already_booked_appointment if @already_booked_appointment
+
       upsert = ::Scheduling::Appointments::UpsertService.new(account: account, params: create_params, actor: actor)
-      upsert.perform
+      perform_or_find_booking(upsert, create_params)
     end
     @persisted_creation = appointment
     attach_provider_command_receipt(appointment)

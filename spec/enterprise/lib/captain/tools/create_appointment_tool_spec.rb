@@ -42,7 +42,7 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
     conversation = create(:conversation, account: account, contact: contact, status: :pending)
     create(:captain_inbox, inbox: conversation.inbox, captain_assistant: assistant)
     appointment = create(:scheduling_appointment, account: account, contact: contact, conversation: conversation)
-    operations = instance_double(Captain::Tools::Operations::AppointmentOperations, create_appointment: appointment)
+    operations = instance_double(Captain::Tools::Operations::AppointmentOperations, create_appointment: appointment, already_booked_appointment: nil)
     outcome = instance_double(Captain::Tools::ProviderBookingOutcomeService)
     allow(outcome).to receive(:perform).and_raise(
       Scheduling::Error.new(code: 'MEDELEMENT_BOOKING_UNKNOWN', message: 'Staff verification required', status: :unprocessable_content)
@@ -69,7 +69,7 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
       :scheduling_appointment, account: account, contact: contact, conversation: conversation,
                                custom_attributes: { Integrations::Medelement::AppointmentProviderStatus::ATTRIBUTE_KEY => 'pending' }
     )
-    operations = instance_double(Captain::Tools::Operations::AppointmentOperations, create_appointment: appointment)
+    operations = instance_double(Captain::Tools::Operations::AppointmentOperations, create_appointment: appointment, already_booked_appointment: nil)
     allow(tool).to receive(:operations).and_return(operations)
     allow(Captain::Tools::ProviderBookingOutcomeService).to receive(:new).and_raise(StandardError, 'provider receipt read failed')
 
@@ -85,7 +85,7 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
     conversation = create(:conversation, account: account, contact: contact, status: :pending)
     create(:captain_inbox, inbox: conversation.inbox, captain_assistant: assistant)
     appointment = create(:scheduling_appointment, account: account, contact: contact, conversation: conversation)
-    operations = instance_double(Captain::Tools::Operations::AppointmentOperations, create_appointment: appointment)
+    operations = instance_double(Captain::Tools::Operations::AppointmentOperations, create_appointment: appointment, already_booked_appointment: nil)
     outcome = instance_double(Captain::Tools::ProviderBookingOutcomeService)
     allow(outcome).to receive(:perform).and_raise(
       Scheduling::Error.new(code: 'SLOT_CONFLICT', message: 'The time is not available in Medelement', status: :conflict)
@@ -106,17 +106,22 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
     contact = create(:contact, account: account)
     conversation = create(:conversation, account: account, contact: contact, status: :pending)
     create(:captain_inbox, inbox: conversation.inbox, captain_assistant: assistant)
-    appointment = create(
-      :scheduling_appointment, account: account, resource: resource, contact: contact, conversation: conversation,
-                               custom_attributes: { Integrations::Medelement::AppointmentProviderStatus::ATTRIBUTE_KEY => 'provider_status_unknown' }
-    )
-    upsert = instance_double(Scheduling::Appointments::UpsertService, persisted_appointment: appointment)
-    expect(upsert).to receive(:perform).once.and_raise(
-      Scheduling::Error.new(code: 'MEDELEMENT_COMMAND_RECEIPT_UNAVAILABLE', message: 'Receipt unavailable', status: :service_unavailable)
-    )
+    starts_at = Time.zone.now.change(hour: 10)
+    appointment = nil
+    upsert = instance_double(Scheduling::Appointments::UpsertService)
+    allow(upsert).to receive(:persisted_appointment) { appointment }
+    # The booking is saved locally, and only then the receipt of the provider command cannot be read.
+    unknown = { Integrations::Medelement::AppointmentProviderStatus::ATTRIBUTE_KEY => 'provider_status_unknown' }
+    allow(upsert).to receive(:perform) do
+      appointment = create(
+        :scheduling_appointment, account: account, resource: resource, contact: contact, conversation: conversation,
+                                 starts_at: starts_at, ends_at: starts_at + 30.minutes, custom_attributes: unknown
+      )
+      raise Scheduling::Error.new(code: 'MEDELEMENT_COMMAND_RECEIPT_UNAVAILABLE', message: 'Receipt unavailable', status: :service_unavailable)
+    end
     allow(Scheduling::Appointments::UpsertService).to receive(:new).and_return(upsert)
     context = Struct.new(:state).new({ conversation: { id: conversation.id } })
-    input = { resource_id: resource.id, starts_at: appointment.starts_at.iso8601 }
+    input = { resource_id: resource.id, starts_at: starts_at.iso8601 }
 
     first = Captain::ToolResult.normalize(tool.perform(context, **input))
     second = Captain::ToolResult.normalize(tool.perform(context, **input))
@@ -124,6 +129,26 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
     expect(first).to include(success: false, retryable: false,
                              data: { 'success' => false, 'reason' => 'staff_will_help', 'error_class' => 'technical' })
     expect(second).to include(success: false, retryable: false)
+    expect(upsert).to have_received(:perform).once
+    expect_conversation_untouched(conversation)
+    expect(account.scheduling_appointments.where(conversation: conversation).count).to eq(1)
+  end
+
+  it 'answers a retry after the booking was saved and its receipt could not be read with the saved appointment, not a second booking' do
+    resource = create(:scheduling_resource, account: account, custom_attributes: { 'medelement_specialist_code' => 'specialist-1' })
+    contact = create(:contact, account: account)
+    conversation = create(:conversation, account: account, contact: contact, status: :pending)
+    create(:captain_inbox, inbox: conversation.inbox, captain_assistant: assistant)
+    appointment = create(
+      :scheduling_appointment, account: account, resource: resource, contact: contact, conversation: conversation,
+                               custom_attributes: { Integrations::Medelement::AppointmentProviderStatus::ATTRIBUTE_KEY => 'provider_status_unknown' }
+    )
+    expect(Scheduling::Appointments::UpsertService).not_to receive(:new)
+    context = Struct.new(:state).new({ conversation: { id: conversation.id } })
+
+    result = Captain::ToolResult.normalize(tool.perform(context, resource_id: resource.id, starts_at: appointment.starts_at.iso8601))
+
+    expect(result).to include(success: false, retryable: false, data: include('appointment_id' => appointment.id, 'error_class' => 'technical'))
     expect_conversation_untouched(conversation)
     expect(account.scheduling_appointments.where(conversation: conversation).count).to eq(1)
   end
@@ -159,7 +184,7 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
     appointment.medelement_provider_command_receipt = command
     replacement = create(:scheduling_resource, account: account)
     appointment.update!(resource: replacement)
-    operations = instance_double(Captain::Tools::Operations::AppointmentOperations, create_appointment: appointment)
+    operations = instance_double(Captain::Tools::Operations::AppointmentOperations, create_appointment: appointment, already_booked_appointment: nil)
     allow(tool).to receive(:operations).and_return(operations)
     context = Struct.new(:state).new({ conversation: { id: conversation.id } })
 
@@ -318,5 +343,149 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
     expect(command.request_snapshot.dig('actor', 'type')).to eq('Captain::Assistant')
     expect(Integrations::Medelement::ProviderCommand.where(account_id: account.id, operation: 'create_reception').count).to eq(1)
     expect(conversation.messages.outgoing.where(private: false)).to be_empty
+  end
+
+  describe 'a booking at a start the patient already has with this specialist' do
+    let(:resource) { create(:scheduling_resource, account: account, timezone: 'Asia/Almaty', slot_duration_min: 30) }
+    let(:contact) { create(:contact, account: account) }
+    let(:conversation) { create(:conversation, account: account, contact: contact) }
+    let(:tool_context) { Struct.new(:state).new({ conversation: { id: conversation.id }, contact: { id: contact.id } }) }
+    let(:booking) { { resource_id: resource.id, starts_at: '2026-04-20T09:00:00+05:00', duration_min: 30 } }
+
+    before { create(:scheduling_work_rule, resource: resource, weekday: 1, start_minute: 9 * 60, end_minute: 18 * 60) }
+
+    it 'is answered with that appointment as already_booked, and nothing is created' do
+      created = JSON.parse(tool.perform(tool_context, **booking))
+      expect(created).to include('success' => true, 'status' => 'created')
+
+      repeated = JSON.parse(tool.perform(tool_context, **booking))
+
+      expect(repeated).to include(
+        'success' => true, 'appointment_id' => created.fetch('appointment_id'), 'status' => 'already_booked',
+        'local_date' => '20.04.2026', 'local_time' => '09:00', 'doctor_name' => resource.name,
+        'note' => "The appointment is already booked at 20.04.2026 09:00 with #{resource.name}; nothing was created."
+      )
+      expect(account.scheduling_appointments.count).to eq(1)
+      expect(Captain::ToolResult.no_change?(tool.perform(tool_context, **booking))).to be(true)
+    end
+
+    it 'books another start with the same specialist as a new appointment' do
+      JSON.parse(tool.perform(tool_context, **booking))
+
+      later = JSON.parse(tool.perform(tool_context, **booking, starts_at: '2026-04-20T10:00:00+05:00'))
+
+      expect(later).to include('success' => true, 'status' => 'created', 'local_time' => '10:00')
+      expect(account.scheduling_appointments.count).to eq(2)
+    end
+
+    it 'books again when the earlier appointment was cancelled' do
+      first = JSON.parse(tool.perform(tool_context, **booking))
+      account.scheduling_appointments.find(first.fetch('appointment_id')).update!(status: 'cancelled')
+
+      again = JSON.parse(tool.perform(tool_context, **booking))
+
+      expect(again).to include('success' => true, 'status' => 'created')
+      expect(again.fetch('appointment_id')).not_to eq(first.fetch('appointment_id'))
+    end
+
+    it 'answers with the appointment another part of the request booked in the meantime, when it is the one that holds the slot' do
+      starts_at = Time.zone.parse(booking[:starts_at])
+      upsert = instance_double(Scheduling::Appointments::UpsertService)
+      booked = nil
+      allow(upsert).to receive(:perform) do
+        booked = create(:scheduling_appointment, account: account, resource: resource, contact: contact, conversation: conversation,
+                                                 starts_at: starts_at, ends_at: starts_at + 30.minutes)
+        raise Scheduling::Error.new(code: 'APPOINTMENT_SLOT_UNAVAILABLE', message: 'Slot is already occupied', status: :conflict)
+      end
+      allow(Scheduling::Appointments::UpsertService).to receive(:new).and_return(upsert)
+
+      payload = JSON.parse(tool.perform(tool_context, **booking))
+
+      expect(payload).to include('success' => true, 'status' => 'already_booked', 'appointment_id' => booked.id)
+    end
+
+    it 'keeps the taken-slot answer when somebody else holds the slot' do
+      starts_at = Time.zone.parse(booking[:starts_at])
+      create(:scheduling_appointment, account: account, resource: resource, starts_at: starts_at, ends_at: starts_at + 30.minutes)
+
+      payload = JSON.parse(tool.perform(tool_context, **booking))
+
+      expect(payload).to eq('success' => false, 'reason' => 'time_taken', 'error_class' => 'business')
+      expect(account.scheduling_appointments.count).to eq(1)
+    end
+
+    it 'finds the appointment of a named relative by the relative, not by the caller' do
+      mother_booking = JSON.parse(tool.perform(tool_context, **booking))
+      child = { first_name: 'Test', last_name: 'Son', birth_date: '2016-11-11' }
+
+      first = JSON.parse(tool.perform(tool_context, **booking, starts_at: '2026-04-20T10:00:00+05:00', patient: child))
+      repeated = JSON.parse(tool.perform(tool_context, **booking, starts_at: '2026-04-20T10:00:00+05:00', patient: child))
+
+      expect(first).to include('status' => 'created')
+      expect(first.fetch('appointment_id')).not_to eq(mother_booking.fetch('appointment_id'))
+      expect(repeated).to include('status' => 'already_booked', 'appointment_id' => first.fetch('appointment_id'))
+      expect(account.scheduling_appointments.count).to eq(2)
+    end
+  end
+
+  describe 'a booking that names no service' do
+    let(:resource) { create(:scheduling_resource, account: account, timezone: 'Asia/Almaty', slot_duration_min: 30) }
+    let(:contact) { create(:contact, account: account) }
+    let(:conversation) { create(:conversation, account: account, contact: contact) }
+    let(:tool_context) { Struct.new(:state).new({ conversation: { id: conversation.id }, contact: { id: contact.id } }) }
+    let(:booking) { { resource_id: resource.id, starts_at: '2026-04-20T09:00:00+05:00' } }
+
+    before { create(:scheduling_work_rule, resource: resource, weekday: 1, start_minute: 9 * 60, end_minute: 18 * 60) }
+
+    def offer(name)
+      create(:scheduling_service, account: account, name: name, duration_min: 30).tap do |service|
+        create(:scheduling_service_price, account: account, service: service, resource: resource, active: true, price: 20_000)
+      end
+    end
+
+    it 'books without a service when the specialist offers none' do
+      payload = JSON.parse(tool.perform(tool_context, **booking))
+
+      expect(payload).to include('success' => true, 'status' => 'created')
+      expect(account.scheduling_appointments.find(payload.fetch('appointment_id')).service_id).to be_nil
+    end
+
+    it 'books the one service the specialist offers' do
+      service = offer('Consultation')
+
+      payload = JSON.parse(tool.perform(tool_context, **booking))
+
+      expect(payload).to include('success' => true, 'status' => 'created')
+      expect(account.scheduling_appointments.find(payload.fetch('appointment_id'))).to have_attributes(service_id: service.id)
+    end
+
+    it 'answers with the services, writes nothing, and books once the agent passes the one the patient asked for' do
+      first = offer('First visit')
+      second = offer('Control visit')
+
+      result = Captain::ToolResult.normalize(tool.perform(tool_context, **booking))
+
+      expect(result).to include(
+        success: false, retryable: false,
+        audit: include(error_class: 'business', failure_stage: 'tool_arguments', mutation_executed: false),
+        data: include(reason: 'validation_error', code: 'SERVICE_REQUIRED', error_class: 'business',
+                      services: [{ id: second.id, name: 'Control visit' }, { id: first.id, name: 'First visit' }])
+      )
+      expect(account.scheduling_appointments.count).to eq(0)
+
+      booked = JSON.parse(tool.perform(tool_context, **booking, service_id: first.id))
+
+      expect(booked).to include('success' => true, 'status' => 'created')
+      expect(account.scheduling_appointments.find(booked.fetch('appointment_id'))).to have_attributes(service_id: first.id)
+    end
+
+    it 'asks for the service before it creates the card of another patient' do
+      offer('First visit')
+      offer('Control visit')
+      child = { first_name: 'Test', last_name: 'Son', birth_date: '2016-11-11' }
+      context = tool_context
+
+      expect { tool.perform(context, **booking, patient: child) }.not_to(change { account.contacts.count })
+    end
   end
 end

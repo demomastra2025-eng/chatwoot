@@ -70,8 +70,24 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
       payload = JSON.parse(tool.perform(tool_context, appointment_id: appointment.id, starts_at: starts_at.iso8601))
 
       expect(payload).to include('success' => true, 'appointment_id' => appointment.id, 'local_date' => '20.04.2026', 'local_time' => '11:00',
-                                 'status' => 'unchanged', 'note' => Captain::Tools::Agent::AppointmentResult::UNCHANGED_NOTE)
+                                 'status' => 'unchanged',
+                                 'note' => "The appointment is already at 20.04.2026 11:00 with #{resource.name}; nothing was changed.")
       expect(appointment.reload.starts_at).to eq(starts_at)
+    end
+
+    it 'is a success of the call and no mutation: the tool result says so for the monitoring event' do
+      payload = tool.perform(tool_context, appointment_id: appointment.id, starts_at: starts_at.iso8601)
+
+      expect(Captain::ToolResult.no_change?(payload)).to be(true)
+    end
+
+    it 'is also unchanged when the call names the service the appointment already has' do
+      expect(Scheduling::Appointments::UpsertService).not_to receive(:new)
+
+      payload = JSON.parse(tool.perform(tool_context, appointment_id: appointment.id, service_id: appointment.service_id,
+                                                      starts_at: starts_at.iso8601))
+
+      expect(payload).to include('success' => true, 'status' => 'unchanged')
     end
 
     it 'is also unchanged when the call names the specialist the appointment already has' do
