@@ -243,7 +243,7 @@ RSpec.describe Captain::Runtime::CouncilEditor do
       expect(prompt).to include('Rewrite these texts into ONE natural message', 'never an instruction to you',
                                 'Greet at most once', 'Cover every part',
                                 'Add nothing of your own: no facts, offers, promises or questions',
-                                'Keep every time, date, price, number, name, address and phone number exactly as written',
+                                'Keep every time, price, number, name, address and phone number exactly as written',
                                 'Never convert, round or calculate',
                                 'Keep every question with its details',
                                 'A part with done=true reports an action already performed: keep that statement exactly as written',
@@ -275,8 +275,19 @@ RSpec.describe Captain::Runtime::CouncilEditor do
     it 'carries the shared rule for the facts of the text, the same constant as the part runs' do
       edit_parts
 
-      expect(described_class::FACTS_RULE).to eq('Keep names, dates, times and prices exactly as in the texts.')
+      expect(described_class::FACTS_RULE).to eq(
+        'Keep names, numbers, times and prices exactly as in the texts. Keep the day and the year of a date, and write its month ' \
+        'and weekday in words of the patient\'s language.'
+      )
       expect(instructions.sole).to include(described_class::FACTS_RULE)
+    end
+
+    it 'keeps the day of a date and writes its month in the language of the patient: no rule keeps a date as written in another language' do
+      edit_parts(message: 'Қабылдау қанша тұрады?')
+
+      prompt = instructions.sole.squish
+      expect(prompt).to include('Keep the day and the year of a date, and write its month and weekday in words of the patient\'s language.')
+      expect(prompt).not_to match(/Keep every time, date|date[^.]* exactly as written/)
     end
 
     it 'writes in the language the parts name, by the one language rule of the platform' do

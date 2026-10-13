@@ -426,7 +426,7 @@ RSpec.describe Captain::Runtime::ChatFactory do
                               'except where your tool descriptions require confirmation of another person\'s data. ' \
                               'Otherwise ask for everything that is still missing in ONE message and wait for the answer',
                               'call no action tool: answer out_of_scope',
-                              'Say only what your tool results show: what was done, for whom, the date and time exactly as returned',
+                              'Say only what your tool results show: what was done, for whom, the date and time as returned',
                               'say that the request was sent and the confirmation will follow',
                               'Never claim an action that no tool performed, and never repeat one that your results, ' \
                               'the dialogue or the data below show as done',
@@ -470,6 +470,15 @@ RSpec.describe Captain::Runtime::ChatFactory do
 
       expect(text).to include(Captain::PatientLanguage::RULE, Captain::Runtime::CouncilEditor::FACTS_RULE)
       expect(editor_prompt).to include(Captain::PatientLanguage::RULE, Captain::Runtime::CouncilEditor::FACTS_RULE)
+    end
+
+    it 'has the owner write the month and the weekday of a date in words of the patient\'s language, and keep no date as another language wrote it' do
+      text = prompt
+
+      expect(text).to include('Write every time, price, name, address and phone number exactly as the tool results give it.',
+                              'Keep the day and the year of a date, and write its month and weekday in words of the patient\'s language.',
+                              'patient_language: the patient\'s language; customer_text is written in it.')
+      expect(text).not_to include('every time, date, price', 'the date and time exactly as returned')
     end
 
     it 'does not take a language from the run: the owner decides it from the conversation' do

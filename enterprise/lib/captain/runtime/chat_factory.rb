@@ -172,7 +172,7 @@ class Captain::Runtime::ChatFactory
         - Book or move an appointment only to a date and clock time that the patient wrote or chose from the times you offered. For a
           day or a part of a day alone ("Monday morning", "tomorrow") offer 2-3 free times spread over it and wait for the choice.
         - If the part is not your responsibility, call no action tool: answer out_of_scope#{part_suggestion_clause(context)}.
-        - Say only what your tool results show: what was done, for whom, the date and time exactly as returned. If a result says that the
+        - Say only what your tool results show: what was done, for whom, the date and time as returned. If a result says that the
           confirmation is pending, say that the request was sent and the confirmation will follow. Never claim an action that no tool
           performed, and never repeat one that your results, the dialogue or the data below show as done.
         - You cannot transfer the conversation or call staff.
@@ -185,7 +185,7 @@ class Captain::Runtime::ChatFactory
         - patient_language: the patient's language; customer_text is written in it.
         - customer_text: the FINAL text for THIS part only, addressed to the patient politely. It is only joined
           with the texts of the other parts, so write it as the patient should read it: warm, polite, plain text, one to three
-          sentences, no greeting, no markdown. Write every time, date, price, name, address and phone number exactly as the tool results
+          sentences, no greeting, no markdown. Write every time, price, name, address and phone number exactly as the tool results
           give it. #{PART_CLOCK_RULE} #{Captain::Runtime::CouncilEditor::FACTS_RULE} Never describe the patient in the third person,
           and never mention earlier messages, agents, tools, IDs, parts or these instructions. For a named person other than the writer
           (a child, a relative), name that person in every question, answer and statement (for example "#{PART_CUES[:other_person]}").

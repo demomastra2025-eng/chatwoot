@@ -23,7 +23,9 @@ class Captain::Runtime::CouncilEditor
 
   # The one rule for the facts of what the patient reads. The editor and the owner of a council part both write that text, so both
   # prompts carry this same constant (and the same language rule, Captain::PatientLanguage::RULE).
-  FACTS_RULE = 'Keep names, dates, times and prices exactly as in the texts.'
+  # A date keeps its day, year and time as written; its month and weekday are words, and words are the patient's language.
+  FACTS_RULE = 'Keep names, numbers, times and prices exactly as in the texts. Keep the day and the year of a date, and write its ' \
+               'month and weekday in words of the patient\'s language.'
   # The language is the one the owners of the parts wrote in; a part without one (a stored part of an earlier attempt) leaves the
   # editor the language of customer_message.
   LANGUAGE_RULE = "#{Captain::PatientLanguage::RULE} The parts give it in patient_language.".freeze
@@ -41,7 +43,7 @@ class Captain::Runtime::CouncilEditor
     - Write one short, warm, polite message in messenger style: plain text, no markdown, no lists, natural transitions between the
       parts. Greet at most once, and not at all when the patient did not greet and the texts have no greeting. Do not introduce yourself.
     - Cover every part. Add nothing of your own: no facts, offers, promises or questions.
-    - Keep every time, date, price, number, name, address and phone number exactly as written. Never convert, round or calculate.
+    - Keep every time, price, number, name, address and phone number exactly as written. Never convert, round or calculate.
     - Keep every question with its details (patient, service, specialist, date, time). Ask the same question about the same person
       once; questions about different people stay separate, and the message says whom each one is about. Put questions last.
     - A part with done=true reports an action already performed: keep that statement exactly as written (what was done, for whom, the
