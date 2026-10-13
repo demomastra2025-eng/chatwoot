@@ -94,3 +94,17 @@ number (`#123`) is written only when a tool bound for the run takes that id as a
 required or main parameter (`Captain::PromptNumbers`). The renderer only reads
 the hash; the hash itself, `ContextSummary` and the prompt state stay unchanged.
 A text sent to a customer leaves a summary out.
+
+A summary that is selected in the agent's context access but not referenced with
+`$` in the clinic instruction (a new agent with scheduling tools gets
+`appointment.summary` selected without any reference) is written once as a line
+of the Patient block, `Appointments: <line>.` or `Deals: <line>.`, by
+`Captain::AssistantPrompt`. A summary that the instruction references is written
+only where it is referenced, never twice.
+
+The legacy blocks `appointment.nearest`, `appointment.last_past`,
+`appointment.last_cancelled` and `appointment.all` hold the JSON of
+`Captain::AppointmentContext#block`. A `$` reference to one is written as the
+same kind of short English line (`Captain::PromptSummaryText.render_block`), a
+missing block as `not specified`, and a customer text leaves it out. A legacy
+block that is selected but not referenced is not written into the prompt.

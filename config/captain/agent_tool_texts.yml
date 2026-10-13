@@ -57,7 +57,7 @@ tools:
   search_scheduling_resources:
     description: "Find a specialist or room by name words (any order) or specialty. A service filter does not prove medical suitability. Page with offset."
     params:
-      query: "Name or specialty in the nominative: \"Асланова\", not \"Аслановой\"; \"хирург\", not \"хирургу\"."
+      query: "Name or specialty as written in the catalog, in the nominative case (not inflected)."
       search_by: "name, specialty or all (default all)."
       service_id: "Keep only specialists and rooms offering this service."
       limit: "How many to return, up to 50."
@@ -136,7 +136,7 @@ tools:
       duration_min: "New duration in minutes."
       appointment_type: "primary, secondary or other."
       client_comment: "New patient comment."
-      custom_attributes: "Additional appointment fields; keys from list_appointment_custom_fields."
+      custom_attributes: "Additional appointment fields."
     hidden_params: []
 
   cancel_appointment:
@@ -326,7 +326,7 @@ tools:
     params:
       pipeline_id: "Pipeline ID from list_deal_pipelines."
       pipeline_code: "Pipeline code from list_deal_pipelines."
-      pipeline_name: "Pipeline name as in list_deal_pipelines, e.g. \"Продажи\"."
+      pipeline_name: "Pipeline name exactly as listed by list_deal_pipelines."
       deal_id: "Deal ID, for its pipeline's stages and current stage. Ignored if a pipeline is given."
       current_deal: "Deprecated; pass deal_id instead."
       include_inactive: "true to include inactive stages; default false."
@@ -359,7 +359,7 @@ tools:
       currency: "ISO currency code, e.g. KZT."
       expected_close_on: "Expected close date, YYYY-MM-DD."
       win_probability: "Win probability, 0 to 100."
-      custom_attributes: "JSON object string. Keys from list_deal_custom_fields; select values as option.value."
+      custom_attributes: "JSON object string of clinic fields; select values as option.value."
     hidden_params: []
 
   update_deal:
@@ -378,7 +378,7 @@ tools:
       currency: "New ISO currency code."
       expected_close_on: "New expected close date, YYYY-MM-DD."
       win_probability: "New win probability, 0 to 100."
-      custom_attributes: "JSON object string. Keys from list_deal_custom_fields; select values as option.value."
+      custom_attributes: "JSON object string of clinic fields; select values as option.value."
     hidden_params: []
 
   transition_deal_stage:
@@ -439,7 +439,7 @@ tools:
       due_at: "Deadline, ISO 8601 with UTC offset, e.g. 2026-10-14T18:00+05:00."
       deal_id: "Deal ID to link the task to."
       originating_conversation_id: "Conversation ID to link; the current conversation by default."
-      custom_attributes: "JSON object string. Keys from list_task_custom_fields; select values as option.value."
+      custom_attributes: "JSON object string of clinic fields; select values as option.value."
     hidden_params: []
 
   update_task:
@@ -454,7 +454,7 @@ tools:
       priority: "New priority: low, medium, high or urgent."
       start_at: "New start, ISO 8601 with UTC offset, e.g. 2026-10-14T10:30+05:00."
       due_at: "New deadline, ISO 8601 with UTC offset, e.g. 2026-10-14T18:00+05:00."
-      custom_attributes: "JSON object string. Keys from list_task_custom_fields; select values as option.value."
+      custom_attributes: "JSON object string of clinic fields; select values as option.value."
     hidden_params: []
 
   change_task_status:
@@ -539,24 +539,24 @@ tools:
   send_message_to_conversation:
     description: "Send a private note, files or an approved channel template to a conversation. The usual reply to the patient goes in response, not here."
     params:
-      conversation_id: "Conversation display ID. Not needed with communication_thread_id + channel_key."
-      communication_thread_id: "Communication thread display ID, to send through a thread channel."
-      channel_key: "Thread channel key, e.g. conversation:123 or inbox:456."
-      target_inbox_id: "Inbox ID, when sending through an unlinked thread channel."
-      target_contact_inbox_id: "Contact inbox ID of the selected thread channel."
-      content: "Message text. Optional with attachment_ids, artifact_ids or template_params."
+      conversation_id: "Conversation number from the Patient block."
+      content: "Message text. Optional with artifact_ids or template_params."
       content_kind: "free_text (default) or channel_template (default when template_params are given)."
       template_params: "Approved template: name, language, namespace, processed_params."
-      attachment_ids: "Signed blob IDs of files to send."
       artifact_ids: "File IDs taken from tool results."
       private_note: "true sends a private note, visible to staff only."
       in_reply_to_message_id: "ID of the message to reply to."
-    hidden_params: []
+    hidden_params:
+      - communication_thread_id
+      - channel_key
+      - target_inbox_id
+      - target_contact_inbox_id
+      - attachment_ids
 
   assign_conversation:
     description: "Assign a conversation to a user, agent bot or team."
     params:
-      conversation_id: "Conversation display ID."
+      conversation_id: "Conversation number from the Patient block."
       assignee_id: "User or agent bot ID."
       assignee_type: "User or AgentBot; User if omitted."
       team_id: "Team ID. Leave out the assignee fields to change only the team."

@@ -866,6 +866,85 @@ RSpec.describe Captain::ContextFields do
         expect(render('Records: [$Summary](field://appointment.summary).', state, mode: :customer)).to eq('Records: .')
       end
 
+      describe 'the legacy appointment blocks' do
+        let(:card) do
+          { id: 123, status: 'scheduled', date: '15.10.2026', time: '10:30', doctor: 'Иванов', service: 'Приём терапевта' }
+        end
+        let(:past_card) { card.merge(id: 99, status: 'completed', date: '01.10.2026') }
+        let(:cancelled_card) { card.merge(id: 77, status: 'cancelled', date: '02.10.2026') }
+        let(:blocks) do
+          all = {
+            total: 3, upcoming: 1, past: 1, cancelled: 1, appointments: [card, past_card, cancelled_card],
+            empty: nil, hint: 'Остальные записи запросите через list_my_appointments'
+          }
+          {
+            'nearest' => JSON.generate(card),
+            'last_past' => JSON.generate(past_card),
+            'last_cancelled' => JSON.generate(cancelled_card),
+            'all' => JSON.generate(all)
+          }
+        end
+        let(:state) { { appointment: blocks } }
+
+        it 'writes a card as one line with no id, no JSON and no label' do
+          expect(render('Next: [$Nearest](field://appointment.nearest).', state))
+            .to eq('Next: Thu 15.10.2026 10:30, «Приём терапевта», Иванов.')
+          expect(render('[$Past](field://appointment.last_past)', state)).to eq('Thu 01.10.2026 10:30, «Приём терапевта», Иванов')
+          expect(render('[$Cancelled](field://appointment.last_cancelled)', state))
+            .to eq('Fri 02.10.2026 10:30, «Приём терапевта», Иванов')
+        end
+
+        it 'writes the number of a card only when a bound tool takes the appointment number' do
+          expect(render('[$Nearest](field://appointment.nearest)', state, bound_tool_ids: %w[cancel_appointment]))
+            .to eq('#123 Thu 15.10.2026 10:30, «Приём терапевта», Иванов')
+          expect(render('[$Nearest](field://appointment.nearest)', state, bound_tool_ids: %w[list_my_appointments]))
+            .to eq('Thu 15.10.2026 10:30, «Приём терапевта», Иванов')
+        end
+
+        it 'writes the all block as the groups of a summary, in English and without the Russian words or the tool hint' do
+          text = render('[$All](field://appointment.all)', state)
+
+          expect(text).to eq(
+            'upcoming: Thu 15.10.2026 10:30, «Приём терапевта», Иванов; ' \
+            'past: Thu 01.10.2026 10:30, «Приём терапевта», Иванов; ' \
+            'cancelled: Fri 02.10.2026 10:30, «Приём терапевта», Иванов'
+          )
+          expect(text).not_to include('list_my_appointments', 'Остальные', '{', '"id"')
+        end
+
+        it 'writes the all block of a patient with no appointments as no appointments' do
+          empty = JSON.generate(total: 0, upcoming: 0, past: 0, cancelled: 0, appointments: [], empty: 'нет записей', hint: 'x')
+
+          expect(render('[$All](field://appointment.all)', { appointment: { 'all' => empty } })).to eq('no appointments')
+        end
+
+        it 'writes not specified for a missing block, the JSON null and a text that is not JSON' do
+          [nil, 'null', 'not json', '[]', '{}'].each do |value|
+            expect(render('[$Nearest](field://appointment.nearest)', { appointment: { 'nearest' => value } })).to eq('not specified')
+          end
+          expect(render('[$Nearest](field://appointment.nearest)', {})).to eq('not specified')
+        end
+
+        it 'reads a block that is already a hash' do
+          expect(render('[$Nearest](field://appointment.nearest)', { appointment: { 'nearest' => card } }))
+            .to eq('Thu 15.10.2026 10:30, «Приём терапевта», Иванов')
+        end
+
+        it 'writes a move that the provider has not confirmed as a request' do
+          moved = JSON.generate(card.merge(reschedule: { state: 'pending', requested_date: '16.10.2026', requested_time: '11:00' }))
+
+          expect(render('[$Nearest](field://appointment.nearest)', { appointment: { 'nearest' => moved } }))
+            .to eq('Thu 15.10.2026 10:30, «Приём терапевта», Иванов (move to 16.10.2026 11:00 requested, not confirmed)')
+        end
+
+        it 'leaves every block out of a text a customer reads' do
+          %w[nearest last_past last_cancelled all].each do |key|
+            expect(render("Data: [$Block](field://appointment.#{key}).", state, mode: :customer)).to eq('Data: .')
+          end
+          expect(render('[$Nearest](field://appointment.nearest)', {}, mode: :customer)).to eq('')
+        end
+      end
+
       it 'writes a hash that is not a summary shape as JSON when the field is a summary field' do
         state = { appointment: { 'summary' => { 'unknown' => 'shape' } } }
 

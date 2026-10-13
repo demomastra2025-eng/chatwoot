@@ -236,6 +236,58 @@ RSpec.describe Captain::PromptSummaryText do
     end
   end
 
+  describe '.render_block' do
+    let(:card) { { id: 123, status: 'scheduled', date: '15.10.2026', time: '10:30', doctor: 'Иванов', service: 'Приём' } }
+
+    def render_block(key, value, **)
+      described_class.render_block(key, value, **)
+    end
+
+    it 'writes the card of a single-card block with its group status rule' do
+      expect(render_block('nearest', card)).to eq('Thu 15.10.2026 10:30, «Приём», Иванов')
+      expect(render_block('last_past', card.merge(status: 'completed'))).to eq('Thu 15.10.2026 10:30, «Приём», Иванов')
+      expect(render_block('last_past', card.merge(status: 'no_show'))).to eq('Thu 15.10.2026 10:30, «Приём», Иванов (no-show)')
+      expect(render_block('last_cancelled', card.merge(status: 'cancelled'))).to eq('Thu 15.10.2026 10:30, «Приём», Иванов')
+    end
+
+    it 'reads the JSON text that AppointmentContext#block returns' do
+      expect(render_block('nearest', JSON.generate(card))).to eq('Thu 15.10.2026 10:30, «Приём», Иванов')
+    end
+
+    it 'writes a number only when a bound tool takes the appointment number' do
+      expect(render_block('nearest', card, bound_tool_ids: %w[update_appointment])).to start_with('#123 Thu')
+      expect(render_block('nearest', card, bound_tool_ids: %w[search_appointments])).to start_with('Thu')
+      expect(render_block('nearest', card)).to start_with('Thu')
+    end
+
+    it 'distributes the cards of the all block over its groups by their counts' do
+      past = card.merge(id: 99, status: 'completed', date: '01.10.2026')
+      all = { total: 5, upcoming: 4, past: 1, cancelled: 0, appointments: [card, card, card, past] }
+
+      expect(render_block('all', all)).to eq(
+        'upcoming: Thu 15.10.2026 10:30, «Приём», Иванов; Thu 15.10.2026 10:30, «Приём», Иванов; ' \
+        'Thu 15.10.2026 10:30, «Приём», Иванов (and 1 more); past: Thu 01.10.2026 10:30, «Приём», Иванов; no cancelled appointments'
+      )
+    end
+
+    it 'says there are no appointments for an all block with empty groups' do
+      expect(render_block('all', { total: 0, upcoming: 0, past: 0, cancelled: 0, appointments: [], empty: 'нет записей' }))
+        .to eq('no appointments')
+    end
+
+    it 'renders nothing for an empty or unreadable block, an unknown key and an all block without counts' do
+      [nil, 'null', '{broken', [], {}, { id: 1 }].each do |value|
+        expect(render_block('nearest', value)).to be_nil
+      end
+      expect(render_block('summary', card)).to be_nil
+      expect(render_block('all', { appointments: [card] })).to be_nil
+    end
+
+    it 'does not render a card kind handed to .render without a card' do
+      expect(render({ kind: 'appointment_card', group: 'upcoming' })).to be_nil
+    end
+  end
+
   describe 'a value that is not a summary' do
     it 'renders nothing for an unknown shape, a non-hash and nil' do
       expect(render({ unknown: 'shape' })).to be_nil

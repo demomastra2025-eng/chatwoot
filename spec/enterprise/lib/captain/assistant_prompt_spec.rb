@@ -53,6 +53,93 @@ RSpec.describe Captain::AssistantPrompt do
     )
   end
 
+  it 'adds the conversation number for send_message_to_conversation, which has no default conversation in the agent runtime' do
+    state = { prompt_context: { contact: contact, conversation: { 'display_id' => 15 } } }
+
+    expect(variables(state: state, runtime_tool_ids: %w[send_message_to_conversation])[:patient_lines]).to eq(
+      ['Aigerim, +77000000000.', 'Conversation number: 15.']
+    )
+    expect(variables(state: state, runtime_tool_ids: %w[send_notification remove_label_from_conversation])[:patient_lines]).to eq(
+      ['Aigerim, +77000000000.']
+    )
+  end
+
+  describe 'the summaries that the clinic instruction does not place' do
+    let(:appointment_summary) do
+      {
+        kind: 'appointments',
+        groups: [{ key: 'upcoming', total: 1,
+                   items: [{ id: 5, status: 'scheduled', date: '15.10.2026', time: '10:30', doctor: 'Иванов', service: 'Приём' }] }]
+      }
+    end
+    let(:deal_summary) do
+      {
+        kind: 'deals',
+        groups: [{ key: 'active', total: 1,
+                   items: [{ id: 8, title: 'Имплантация', stage: 'Консультация', amount: '150000', currency: 'KZT' }] }]
+      }
+    end
+    let(:state) do
+      { prompt_context: { contact: contact, context_summaries: { appointment: appointment_summary, deal: deal_summary } } }
+    end
+    let(:appointment_line) do
+      'Appointments: upcoming: Thu 15.10.2026 10:30, «Приём», Иванов; no past or cancelled appointments.'
+    end
+    let(:deal_line) { 'Deals: open: «Имплантация», stage «Консультация», 150000 KZT; no closed deals.' }
+
+    it 'adds one line per selected summary to the Patient lines when the instruction has no $ reference to it' do
+      expect(variables(state: state)[:patient_lines]).to eq(['Aigerim, +77000000000.', appointment_line, deal_line])
+    end
+
+    it 'adds a Patient block even when the patient has neither a name nor a phone' do
+      expect(variables(state: { prompt_context: { context_summaries: { appointment: appointment_summary } } })[:patient_lines])
+        .to eq([appointment_line])
+    end
+
+    it 'writes the number of a record in the line only when a bound tool takes it' do
+      lines = variables(state: state, runtime_tool_ids: %w[cancel_appointment get_deal])[:patient_lines]
+
+      expect(lines).to include(
+        appointment_line.sub('upcoming: Thu', 'upcoming: #5 Thu'),
+        deal_line.sub('open: «', 'open: #8 «')
+      )
+    end
+
+    it 'leaves out the summary that the instruction writes itself, so the model sees it once' do
+      account.enable_features!('scheduling')
+      assistant.update!(description: 'Records: [$Summary](field://appointment.summary).')
+
+      placed = state.deep_merge(prompt_context: { appointment: { 'summary' => appointment_summary } })
+
+      result = variables(state: placed, instruction: assistant.description)
+
+      expect(result[:instruction]).to eq(
+        'Records: upcoming: Thu 15.10.2026 10:30, «Приём», Иванов; no past or cancelled appointments.'
+      )
+      expect(result[:patient_lines]).to eq(['Aigerim, +77000000000.', deal_line])
+    end
+
+    it 'adds nothing for a run with no summary, an empty summary or an unknown shape' do
+      expect(variables(state: { prompt_context: { contact: contact } })[:patient_lines]).to eq(['Aigerim, +77000000000.'])
+      empty = { prompt_context: { contact: contact, context_summaries: { appointment: nil, deal: { 'unknown' => 'shape' } } } }
+      expect(variables(state: empty)[:patient_lines]).to eq(['Aigerim, +77000000000.'])
+    end
+
+    it 'reads a state whose keys are strings' do
+      string_keys = { prompt_context: { contact: contact, context_summaries: { 'appointment' => appointment_summary.deep_stringify_keys } } }
+
+      expect(variables(state: string_keys)[:patient_lines]).to eq(['Aigerim, +77000000000.', appointment_line])
+    end
+
+    it 'never changes the summary it reads' do
+      before = Marshal.load(Marshal.dump(state))
+
+      variables(state: state)
+
+      expect(state).to eq(before)
+    end
+  end
+
   it 'reads a time field in the zone of the run clock' do
     account.enable_features!('crm_tasks')
     assistant.update!(description: 'Due [$Due](field://task.due_at).')

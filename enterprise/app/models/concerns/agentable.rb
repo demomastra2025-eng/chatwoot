@@ -90,7 +90,9 @@ module Concerns::Agentable
 
   def compact_agent_instructions(enhanced_context, state, prompt_state)
     variables = time_agent_phase('prompt_variables') do
-      Captain::AssistantPrompt.new(assistant: self, context: enhanced_context, state: state, prompt_state: prompt_state).variables
+      Captain::AssistantPrompt.new(
+        assistant: self, context: enhanced_context, state: state, prompt_state: prompt_state
+      ).variables
     end
 
     time_agent_phase('prompt_render') do

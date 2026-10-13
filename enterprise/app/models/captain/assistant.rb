@@ -939,8 +939,9 @@ class Captain::Assistant < ApplicationRecord
 
     case value
     when String
-      text_without_scripts = value.gsub(%r{\[([^\]]+)\]\(tool://skill_script_[^)]+\)}, '\\1')
-      text_with_tools = render_tool_references(text_without_scripts, bound_tool_ids: bound_tool_ids)
+      # A skill script is a tool mention like any other: its function name when bound, else the bare label (a customer text
+      # always gets the bare label, see render_tool_references).
+      text_with_tools = render_tool_references(value, bound_tool_ids: bound_tool_ids)
       text_without_skill_links = text_with_tools.gsub(%r{\[([^\]]+)\]\(skill://[^)]+\)}, '\\1')
       Captain::ContextFields.render_references(
         text_without_skill_links, prompt_state: prompt_state, allowed_fields: allowed_fields,

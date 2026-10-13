@@ -9,14 +9,8 @@ RSpec.describe Captain::Runtime::AgentToolTexts do
   let(:agent_scope) { Captain::ToolAccess::SCOPE_AGENT }
   # Registry tools of the agent scope that keep their own text on purpose.
   let(:tools_without_override) { %w[get_appointment_provider_status] }
-  # The only texts that may carry Russian: examples of the words the clinic's catalog is written in.
-  let(:russian_examples) do
-    {
-      'search_scheduling_resources' => %w[query],
-      'search_scheduling_services' => %w[query],
-      'list_deal_stages' => %w[pipeline_name]
-    }
-  end
+  # The only text that may carry Russian: the owner-approved example of the words the clinic's catalog is written in.
+  let(:russian_examples) { { 'search_scheduling_services' => %w[query] } }
 
   def agent_tool(tool_id)
     Captain::ToolCatalog.build_tool({ id: tool_id }, assistant: assistant, scope_name: agent_scope)
@@ -91,6 +85,28 @@ RSpec.describe Captain::Runtime::AgentToolTexts do
     expect(described_class.for_tool('list_scheduling_resources').hidden_params).to eq(%w[include_inactive])
     expect(described_class.for_tool('search_scheduling_resources').hidden_params).to eq(%w[include_inactive])
     expect(described_class.for_tool('create_appointment').hidden_params).to contain_exactly('crm_deal_id', 'crm_pipeline_id')
+  end
+
+  it 'does not send the model to a custom-field catalog tool that is bound only when the account has such fields' do
+    catalogs = %w[list_appointment_custom_fields list_deal_custom_fields list_task_custom_fields]
+
+    described_class.tool_ids.each do |tool_id|
+      next if catalogs.include?(tool_id)
+
+      entry = described_class.for_tool(tool_id)
+      texts = [entry.description, *entry.params.values].join("\n")
+      expect(texts).not_to match(Regexp.union(catalogs)), "#{tool_id} names a companion tool that may not be bound"
+    end
+  end
+
+  it 'asks for the conversation number of the Patient block and hides the thread parameters that the patient scope always denies' do
+    send_message = described_class.for_tool('send_message_to_conversation')
+
+    expect(send_message.params['conversation_id']).to eq('Conversation number from the Patient block.')
+    expect(described_class.for_tool('assign_conversation').params['conversation_id']).to eq('Conversation number from the Patient block.')
+    expect(send_message.hidden_params).to contain_exactly(
+      'communication_thread_id', 'channel_key', 'target_inbox_id', 'target_contact_inbox_id', 'attachment_ids'
+    )
   end
 
   it 'does not mention cabinets in the create_appointment texts: the calendar picks the cabinet itself' do

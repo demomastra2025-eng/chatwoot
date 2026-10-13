@@ -969,6 +969,24 @@ RSpec.describe Captain::Assistant, type: :model do
       end
     end
 
+    describe 'the tools of the run' do
+      before do
+        account.enable_features!('scheduling')
+        assistant.update!(
+          description: 'Check [@Appointment](tool://get_appointment), book with [@Create](tool://create_appointment), ' \
+                       'hand over with [@Handoff](tool://handoff).',
+          config: { 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => %w[faq_lookup handoff create_appointment get_appointment] } } }
+        )
+      end
+
+      it 'names all the tools of the agent and lets it hand over' do
+        rendered = assistant.agent_instructions(run_context({}))
+
+        expect(rendered).to include('Check `get_appointment`, book with `create_appointment`, hand over with `handoff`.')
+        expect(rendered.split("\n\n").first).to include('hand the conversation to staff with `handoff`')
+      end
+    end
+
     describe 'the $ fields and @ tools of the clinic instructions' do
       it 'writes a field as its plain value and a bound tool as its function name' do
         assistant.update!(description: 'Greet [$Name](field://contact.name) and use [@FAQ Lookup](tool://faq_lookup) before replying.')
@@ -993,6 +1011,24 @@ RSpec.describe Captain::Assistant, type: :model do
 
         expect(assistant.prompt_runtime_agent_tools.pluck(:id)).not_to include('resolve_conversation')
         expect(assistant.agent_instructions).to include('Close with Resolve and ask `faq_lookup`.')
+      end
+
+      it 'writes a mention of a skill script like any other tool: its function name when bound, else the bare label' do
+        script = '[@My script](tool://skill_script_abc123_summary)'
+        assistant.update!(description: "Run #{script} first.")
+
+        allow(assistant).to receive(:prompt_runtime_agent_tools).and_return([{ id: 'skill_script_abc123_summary' }])
+        expect(assistant.agent_instructions).to include('Run `skill_script_abc123_summary` first.')
+
+        allow(assistant).to receive(:prompt_runtime_agent_tools).and_return([{ id: 'faq_lookup' }])
+        expect(assistant.agent_instructions).to include('Run My script first.')
+        expect(assistant.agent_instructions).not_to include('@My script', 'tool://')
+      end
+
+      it 'writes the label of a skill script, without the editor @, in a text a customer reads' do
+        assistant.update!(description: 'Run [@My script](tool://skill_script_abc123_summary) and [@FAQ](tool://faq_lookup).')
+
+        expect(assistant.render_runtime_text(assistant.description)).to eq('Run My script and FAQ.')
       end
 
       it 'writes the time of a field in the zone of the run, never in UTC' do
@@ -1088,6 +1124,28 @@ RSpec.describe Captain::Assistant, type: :model do
 
         expect(rendered).to include('Patient number: 7.')
         expect(rendered).not_to include('Conversation number')
+      end
+
+      it 'adds the conversation number for send_message_to_conversation, which cannot name the conversation itself' do
+        allow(assistant).to receive(:prompt_runtime_agent_tools).and_return([{ id: 'send_message_to_conversation' }])
+
+        rendered = assistant.agent_instructions(run_context(prompt_context: { contact: contact_data, conversation: conversation_data }))
+
+        expect(rendered).to end_with("# Patient\nАйгерим Тестова, +77000000000.\nConversation number: 15.")
+      end
+
+      it 'writes a selected summary that the clinic instruction does not place as a line, with a number only for a bound tool' do
+        summary = {
+          'kind' => 'deals',
+          'groups' => [{ 'key' => 'active', 'total' => 1, 'items' => [{ 'id' => 8, 'title' => 'Имплантация', 'stage' => 'Консультация' }] }]
+        }
+        state = { prompt_context: { contact: contact_data, context_summaries: { deal: summary } } }
+        line = 'Deals: open: «Имплантация», stage «Консультация»; no closed deals.'
+
+        expect(assistant.agent_instructions(run_context(state))).to end_with("# Patient\nАйгерим Тестова, +77000000000.\n#{line}")
+
+        allow(assistant).to receive(:prompt_runtime_agent_tools).and_return([{ id: 'get_deal' }])
+        expect(assistant.agent_instructions(run_context(state))).to end_with(line.sub('open: «', 'open: #8 «'))
       end
 
       it 'reads a bare run state that has no explicit prompt context' do

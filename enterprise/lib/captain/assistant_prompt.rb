@@ -3,9 +3,13 @@
 # The variable parts of the agent prompt (prompts/assistant.liquid), built from the agent and the run state:
 #   instruction / global_system_instruction  the texts with every $ field written as its value and every @ tool as its function name
 #   now_text                                 the one-line clock and, on the official WhatsApp channel, the reply window
-#   patient_lines                            the patient name and phone, and a number only when a bound tool takes it
+#   patient_lines                            the patient name and phone, a number only when a bound tool takes it, and the appointment
+#                                            and deal summaries that the clinic instruction does not place itself
 # The run state (prompt_state, runtime_clock, ...) is data and is not changed here; this class only chooses the text.
 class Captain::AssistantPrompt
+  # The summaries of the run state and the label each one has in the Patient block.
+  SUMMARY_LABELS = { appointment: 'Appointments', deal: 'Deals' }.freeze
+
   def initialize(assistant:, context:, state:, prompt_state:)
     @assistant = assistant
     @context = context
@@ -55,13 +59,30 @@ class Captain::AssistantPrompt
       ("#{who}." if who.present?),
       numbered_line(:contact, 'Patient number', contact[:id]),
       ("Conversation labels: #{labels.join(', ')}." if labels.any?),
-      numbered_line(:conversation, 'Conversation number', conversation[:display_id])
+      numbered_line(:conversation, 'Conversation number', conversation[:display_id]),
+      *unplaced_summary_lines
     ].compact
   end
 
   # "Patient number: 7." when a bound tool takes that number, else nothing.
   def numbered_line(kind, label, number)
     "#{label}: #{number}." if number.present? && Captain::PromptNumbers.shown?(kind, bound_tool_ids)
+  end
+
+  # A summary the agent has selected as context but the clinic instruction does not write with a $ reference would reach the model
+  # nowhere else, so it is one line here. A reference that is made renders the summary inside the instruction, once. Only the clinic
+  # instruction counts: a $ reference in the shared rules is not resolved by itself (resolve_prompt_texts reads the fields of the
+  # instruction).
+  def unplaced_summary_lines
+    placed = Captain::ContextFields.extract_field_ids_from_text(@context[:instruction])
+    summaries = @prompt_state[:context_summaries].to_h
+
+    SUMMARY_LABELS.filter_map do |scope, label|
+      next if placed.include?("#{scope}.summary")
+
+      text = Captain::PromptSummaryText.render(summaries[scope] || summaries[scope.to_s], time_zone: time_zone, bound_tool_ids: bound_tool_ids)
+      "#{label}: #{text}." if text.present?
+    end
   end
 
   # The data of a record. With an explicit prompt context it is the filtered copy of the run; a bare state is read as it is.

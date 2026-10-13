@@ -4,6 +4,7 @@
 # for example "upcoming: Thu 15.10.2026 10:30, «Приём терапевта», Иванов Алексей; no past or cancelled appointments".
 # The data values (titles, names) stay as stored. Pure: no database and no clock. It only reads the hash and never changes
 # it, because the hash is the shared contract of outbound text, Liquid drops, custom tools and the playground.
+# The legacy appointment blocks (nearest, last_past, last_cancelled, all) are written the same way by render_block.
 #
 # An internal number ("#101") is written only when a tool bound for the run takes that record's id (Captain::PromptNumbers).
 class Captain::PromptSummaryText
@@ -19,6 +20,10 @@ class Captain::PromptSummaryText
   end
 
   APPOINTMENT_GROUPS = %w[upcoming past cancelled].freeze
+  # The single-card blocks of Captain::AppointmentContext#block and the group each one is a card of.
+  BLOCK_GROUPS = { 'nearest' => 'upcoming', 'last_past' => 'past', 'last_cancelled' => 'cancelled' }.freeze
+  # How many cards the "all" block lists per group, in the order of its list.
+  ALL_BLOCK_LIMITS = { 'upcoming' => 3, 'past' => 2, 'cancelled' => 1 }.freeze
   DEFAULT_APPOINTMENT_STATUSES = {
     'upcoming' => %w[scheduled confirmed], 'past' => %w[completed], 'cancelled' => %w[cancelled]
   }.freeze
@@ -33,6 +38,41 @@ class Captain::PromptSummaryText
 
       new(summary.deep_stringify_keys, time_zone: time_zone, bound_tool_ids: bound_tool_ids).render
     end
+
+    # A legacy appointment block (nearest, last_past, last_cancelled or all) as text, or nil when it holds nothing to show.
+    # The value is what Captain::AppointmentContext#block returns: a JSON text or the hash parsed from it.
+    def render_block(key, value, time_zone: nil, bound_tool_ids: nil)
+      data = block_data(value)
+      return if data.blank?
+
+      summary = key.to_s == 'all' ? all_block_summary(data) : card_block_summary(BLOCK_GROUPS[key.to_s], data)
+      new(summary, time_zone: time_zone, bound_tool_ids: bound_tool_ids).render if summary
+    end
+
+    private
+
+    def block_data(value)
+      data = value.is_a?(String) ? JSON.parse(value) : value
+      data.deep_stringify_keys if data.is_a?(Hash)
+    rescue JSON::ParserError
+      nil
+    end
+
+    def card_block_summary(group, card)
+      { 'kind' => 'appointment_card', 'group' => group, 'card' => card } if group
+    end
+
+    # The "all" block counts the groups and lists a few cards: upcoming first, then past, then cancelled.
+    def all_block_summary(data)
+      return unless APPOINTMENT_GROUPS.any? { |group| data.key?(group) }
+
+      cards = Array(data['appointments']).select { |card| card.is_a?(Hash) }
+      groups = APPOINTMENT_GROUPS.map do |group|
+        total = data[group].to_i
+        { 'key' => group, 'total' => total, 'items' => cards.shift([total, ALL_BLOCK_LIMITS.fetch(group)].min) }
+      end
+      { 'kind' => 'appointments', 'groups' => groups }
+    end
   end
 
   def initialize(summary, time_zone:, bound_tool_ids:)
@@ -44,12 +84,19 @@ class Captain::PromptSummaryText
   def render
     case @summary['kind']
     when 'appointments' then appointments_text
+    when 'appointment_card' then card_text
     when 'deals' then deals_text
     else client_deals_text
     end
   end
 
   private
+
+  # One appointment card of a legacy block (render_block), written like an item of a summary group.
+  def card_text
+    card = @summary['card']
+    appointment_item(card, @summary['group']) if card.is_a?(Hash)
+  end
 
   def appointments_text
     groups = groups_by_key('key')

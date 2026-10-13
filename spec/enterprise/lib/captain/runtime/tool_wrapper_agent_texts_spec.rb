@@ -160,6 +160,33 @@ RSpec.describe Captain::Runtime::ToolWrapper do
       expect(wrapper.send(:normalize_args, query: 'терапевт', include_inactive: true)).to eq(query: 'терапевт')
     end
 
+    it 'asks send_message_to_conversation for the conversation number and hides the parameters the patient scope always denies' do
+      properties = wrapper_for('send_message_to_conversation').params_schema['properties']
+
+      expect(properties.dig('conversation_id', 'description')).to eq('Conversation number from the Patient block.')
+      expect(properties.keys).not_to include(
+        'communication_thread_id', 'channel_key', 'target_inbox_id', 'target_contact_inbox_id', 'attachment_ids'
+      )
+      expect(properties.keys).to include('content', 'artifact_ids', 'private_note', 'template_params', 'in_reply_to_message_id')
+    end
+
+    it 'drops a thread or blob parameter of send_message_to_conversation that is sent anyway' do
+      wrapper = wrapper_for('send_message_to_conversation')
+
+      normalized = wrapper.send(:normalize_args, conversation_id: 15, content: 'Hi', channel_key: 'inbox:1', attachment_ids: ['signed-blob'])
+
+      expect(normalized).to eq(conversation_id: 15, content: 'Hi')
+    end
+
+    it 'does not send the model to a custom-field catalog tool that may not be bound for the account' do
+      %w[update_appointment create_deal update_deal create_task update_task].each do |tool_id|
+        text = wrapper_for(tool_id).params_schema.dig('properties', 'custom_attributes', 'description')
+
+        expect(text).to be_present
+        expect(text).not_to match(/list_\w+_custom_fields/), tool_id
+      end
+    end
+
     it 'still rejects an argument the tool does not have' do
       wrapper = wrapper_for('search_scheduling_services')
 

@@ -21,11 +21,15 @@ RSpec.describe Captain::PromptNumbers do
       expect(described_class.shown?(:deal, %w[create_task create_appointment search_deals])).to be(false)
     end
 
-    it 'shows the patient number for get_contact and the conversation number for assign_conversation only' do
+    it 'shows the patient number for get_contact only' do
       expect(described_class.shown?(:contact, %w[get_contact])).to be(true)
       expect(described_class.shown?(:contact, %w[get_my_contact update_contact search_appointments])).to be(false)
+    end
+
+    it 'shows the conversation number for the tools that have no default conversation: assign and send a message' do
       expect(described_class.shown?(:conversation, %w[assign_conversation])).to be(true)
-      expect(described_class.shown?(:conversation, %w[send_notification add_private_note])).to be(false)
+      expect(described_class.shown?(:conversation, %w[send_message_to_conversation])).to be(true)
+      expect(described_class.shown?(:conversation, %w[send_notification add_private_note remove_label_from_conversation])).to be(false)
     end
 
     it 'shows nothing when no tool is bound or the bound tools are unknown' do

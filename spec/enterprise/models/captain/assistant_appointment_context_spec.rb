@@ -117,12 +117,50 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(rendered).not_to include('Сидорова Мария', 'Fri 16.10.2026')
     end
 
-    it 'keeps the summary in the run data although the text of the prompt only shows it where the clinic referenced it' do
+    it 'keeps the summary in the run data and writes it once, as a Patient line, when the instruction does not reference it' do
       assistant = create(:captain_assistant, account: account, description: 'No references.', config: config)
       state = Captain::ContextFields.runtime_state_for(account: account, conversation: conversation, assistant: assistant)
 
+      rendered = render_prompt(assistant)
+
       expect(assistant.prompt_context_state(state).dig(:appointment, 'summary', :kind)).to eq('appointments')
-      expect(render_prompt(assistant)).not_to include('upcoming:', 'Thu 15.10.2026')
+      expect(rendered).to include('# Patient')
+      expect(rendered).to end_with(
+        'Appointments: upcoming: Thu 15.10.2026 10:30, «Приём терапевта (первичный)», Иванов Алексей Петрович; no past or cancelled appointments.'
+      )
+      expect(rendered.scan('Thu 15.10.2026').size).to eq(1)
+      expect(rendered).not_to include('(данные)', '"groups"')
+    end
+
+    it 'gives an agent that has scheduling tools and no $ reference its existing appointments, so it does not double-book' do
+      tools = { 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['list_my_appointments'] } }, 'context_access' => {} }
+      assistant = create(:captain_assistant, account: account, description: 'No references.', config: tools)
+
+      expect(assistant.config.dig('context_access', 'appointment', 'field_ids')).to eq(%w[appointment.summary])
+      expect(render_prompt(assistant)).to include('Appointments: upcoming: Thu 15.10.2026 10:30')
+    end
+
+    it 'does not repeat the summary in the Patient block when the instruction writes it' do
+      assistant = create(:captain_assistant, account: account, description: description, config: config)
+
+      rendered = render_prompt(assistant)
+
+      expect(rendered.scan('Thu 15.10.2026').size).to eq(1)
+      expect(rendered).not_to include('Appointments: upcoming')
+    end
+
+    it 'writes the legacy nearest and all blocks of the instruction as short English lines, never as JSON' do
+      blocks = { 'context_access' => { 'appointment' => { 'enabled' => true, 'field_ids' => %w[appointment.nearest appointment.all] } } }
+      assistant = create(:captain_assistant, account: account, config: blocks,
+                                             description: 'Next: [$Nearest](field://appointment.nearest). All: [$All](field://appointment.all).')
+
+      rendered = render_prompt(assistant)
+
+      expect(rendered).to include(
+        'Next: Thu 15.10.2026 10:30, «Приём терапевта (первичный)», Иванов Алексей Петрович. ' \
+        'All: upcoming: Thu 15.10.2026 10:30, «Приём терапевта (первичный)», Иванов Алексей Петрович; no past or cancelled appointments.'
+      )
+      expect(rendered).not_to include('"id"', 'Остальные записи', 'list_my_appointments', 'нет записей')
     end
   end
 

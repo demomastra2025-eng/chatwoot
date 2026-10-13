@@ -41,6 +41,7 @@ class Captain::ContextFields
     { key: 'last_cancelled', title: 'Последняя отменённая запись' },
     { key: 'all', title: 'Все записи, сжато' }
   ].freeze
+  APPOINTMENT_BLOCK_FIELD_ID = /\Aappointment\.(?:nearest|last_past|last_cancelled|all)\z/
   SUMMARY_FIELD_DEFINITIONS = {
     deal: { key: 'summary', title: 'Сводка', description: 'До 8 активных и 4 закрытых/архивных сделок. Показано X из Y в каждой группе.' },
     appointment: { key: 'summary', title: 'Сводка', description: 'До 6 будущих/текущих, 3 прошлых и 3 отменённых записей. Показано X из Y в каждой группе.' }
@@ -521,9 +522,10 @@ class Captain::ContextFields
 
     # Writes each [$Label](field://id) reference as the plain value, with no label and no field id.
     #   mode :prompt   - for the model. An empty value is "not specified"; an unknown or not allowed field is its bare label.
-    #                    Times are written in time_zone. A summary is written as one short line (Captain::PromptSummaryText).
+    #                    Times are written in time_zone. A summary and a legacy appointment block (nearest, last_past,
+    #                    last_cancelled, all) are written as one short line (Captain::PromptSummaryText).
     #   mode :customer - for a text a customer reads. An empty or unknown value is an empty string and never a label or an id;
-    #                    a summary is left out.
+    #                    a summary and a legacy appointment block are left out.
     def render_references(text, prompt_state:, allowed_fields:, mode: :prompt, time_zone: nil, bound_tool_ids: nil)
       return text if text.blank?
 
@@ -601,7 +603,7 @@ class Captain::ContextFields
     end
 
     def add_appointment_context_blocks(prompt_state, assistant, runtime_state, field_ids)
-      block_ids = field_ids.grep(/\Aappointment\.(?:nearest|last_past|last_cancelled|all)\z/)
+      block_ids = field_ids.grep(APPOINTMENT_BLOCK_FIELD_ID)
       return if block_ids.blank?
 
       if %w[trial workspace].include?(runtime_state.dig(:playground, :mode))
@@ -1001,6 +1003,10 @@ class Captain::ContextFields
 
     def reference_text(value, field_id, mode:, time_zone:, bound_tool_ids:)
       customer = mode == :customer
+      if field_id.match?(APPOINTMENT_BLOCK_FIELD_ID)
+        return customer ? '' : appointment_block_text(value, field_id, time_zone: time_zone, bound_tool_ids: bound_tool_ids)
+      end
+
       if value.is_a?(Hash) && summary_field_id?(field_id)
         return '' if customer
 
@@ -1009,6 +1015,14 @@ class Captain::ContextFields
       end
 
       plain_value(value, time_zone, json: !customer).presence || (customer ? '' : NOT_SPECIFIED)
+    end
+
+    # A legacy appointment block (nearest, last_past, last_cancelled, all) holds the JSON of Captain::AppointmentContext#block, with
+    # internal ids and Russian platform words. The model gets a compact English line (a number only when a bound tool takes it);
+    # a customer text gets nothing of it (reference_text returns an empty text before this).
+    def appointment_block_text(value, field_id, time_zone:, bound_tool_ids:)
+      key = field_id.delete_prefix('appointment.')
+      Captain::PromptSummaryText.render_block(key, value, time_zone: time_zone, bound_tool_ids: bound_tool_ids).presence || NOT_SPECIFIED
     end
 
     def summary_field_id?(field_id)
