@@ -24,7 +24,7 @@ RSpec.describe Captain::Tools::Copilot::SearchSchedulingResourcesService do
   def expect_name_confirmation(payload)
     expect(payload['search_status']).to eq('ambiguous')
     expect(payload['ambiguous']).to be(true)
-    expect(payload['instruction']).to include('differs from the request').and include('exact name').and include('never book')
+    expect(payload['instruction']).to include('differs from the request').and include('Choose the best match').and include('exact name')
   end
 
   def expect_single_match(payload)

@@ -8,6 +8,11 @@ class Captain::Tools::Copilot::BaseAccountTool < Captain::Tools::BaseTool
     assistant.account
   end
 
+  # True in a patient conversation of the AI agent (the runtime hands the tool a patient scope), false for staff and Copilot.
+  def agent_scope?
+    patient_scope.present?
+  end
+
   def current_conversation
     return nil unless @conversation
 

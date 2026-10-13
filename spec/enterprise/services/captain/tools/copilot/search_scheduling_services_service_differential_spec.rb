@@ -202,7 +202,7 @@ RSpec.describe Captain::Tools::Copilot::SearchSchedulingServicesService do
                                      'instruction' => described_class::SINGLE_MATCH_INSTRUCTION), "sole match, query #{name.inspect}"
         else
           expect(payload['match_status']).not_to eq('candidate'), "only #{other.name.inspect} present, query #{name.inspect}"
-          expect(payload['instruction']).to include('never book') if payload['total_count'].positive?
+          expect(payload['instruction']).to include('Choose the best match') if payload['total_count'].positive?
         end
 
         own.update!(active: true)

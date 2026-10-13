@@ -1,8 +1,9 @@
 class Captain::Tools::Copilot::SearchSchedulingResourcesService < Captain::Tools::Copilot::BaseAccountTool
-  NAME_DIFFERS_INSTRUCTION = 'The resource name differs from the request. Tell the patient the exact name of the specialist or room ' \
-                             'and ask to confirm it; never book on a non-exact name.'.freeze
-  SAME_NAME_INSTRUCTION = 'Several resources have exactly this name. Ask the patient which one is meant; never book on a guess.'.freeze
-  SINGLE_MATCH_INSTRUCTION = 'Exactly one specialist or room matches; you may book it when the customer asked to book, and name ' \
+  NAME_DIFFERS_INSTRUCTION = 'The name differs from the request. Choose the best match from the patient\'s words (first visit = ' \
+                             'primary; a named doctor = that specialist) and use its exact name in your reply or booking. ' \
+                             'Ask the patient only when two or more entries fit equally.'.freeze
+  SAME_NAME_INSTRUCTION = 'Several resources have exactly this name. Ask the patient which one is meant.'.freeze
+  SINGLE_MATCH_INSTRUCTION = 'Exactly one specialist or room matches; you may book it when the patient asked to book, and name ' \
                              'this exact specialist or room in your booking confirmation.'.freeze
 
   def self.name
@@ -60,9 +61,11 @@ class Captain::Tools::Copilot::SearchSchedulingResourcesService < Captain::Tools
       search_status: status,
       ambiguous: status == 'ambiguous',
       exact_name_matches: result[:exact_name_matches].to_i,
-      link_status: link_status(status, filters[:service_id]),
       resources: result[:resources]
     }
+    # Staff and Copilot see how the service filter was applied; the patient agent gets the search status only (the link label
+    # named no action and gave the model a reason to doubt the filter and to hand the conversation over).
+    payload[:link_status] = link_status(status, filters[:service_id]) unless agent_scope?
     instruction = instruction_for(status, result, sole)
     payload[:instruction] = instruction if instruction
     formatted_payload(payload)

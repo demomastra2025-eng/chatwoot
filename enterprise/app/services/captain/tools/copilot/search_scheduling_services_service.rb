@@ -1,9 +1,9 @@
 class Captain::Tools::Copilot::SearchSchedulingServicesService < Captain::Tools::Copilot::BaseAccountTool
-  NAME_DIFFERS_INSTRUCTION = 'The service name differs from the request. Tell the patient the exact name of the service and ask ' \
-                             'to confirm it; never book on a non-exact name.'.freeze
-  SAME_NAME_INSTRUCTION = 'Several services have exactly this name. Ask the patient which one is meant (category, direction); ' \
-                          'never book on a guess.'.freeze
-  SINGLE_MATCH_INSTRUCTION = 'Exactly one service matches; you may book it when the customer asked to book, and name this ' \
+  NAME_DIFFERS_INSTRUCTION = 'The name differs from the request. Choose the best match from the patient\'s words (first visit = ' \
+                             'primary; a named doctor = that specialist) and use its exact name in your reply or booking. ' \
+                             'Ask the patient only when two or more entries fit equally.'.freeze
+  SAME_NAME_INSTRUCTION = 'Several services have exactly this name. Ask the patient which one is meant (category, direction).'.freeze
+  SINGLE_MATCH_INSTRUCTION = 'Exactly one service matches; you may book it when the patient asked to book, and name this ' \
                              'exact service in your booking confirmation.'.freeze
   PAGING_INSTRUCTION = 'Further pages are not reachable in this run. Refine the query with more words of the exact service ' \
                        'name instead of paging.'.freeze
@@ -63,7 +63,9 @@ class Captain::Tools::Copilot::SearchSchedulingServicesService < Captain::Tools:
   end
 
   # A price row is a recorded link between a service and a resource, never proof that the resource may perform the
-  # service. Only the active rows of the service's own account are listed, each one labelled as unverified.
+  # service. Only the active rows of the service's own account are listed. Staff and Copilot see each row labelled as
+  # unverified; the patient agent gets the rows without that label (a label that names no action gave the model a reason to
+  # doubt the price and to hand the conversation over).
   def service_payload(service, prices)
     Scheduling::PayloadBuilder.service(service, prices: []).merge(prices: prices)
   end
@@ -76,7 +78,8 @@ class Captain::Tools::Copilot::SearchSchedulingServicesService < Captain::Tools:
                             .where(scheduling_resources: { account_id: account.id, active: true })
                             .order(:id).group_by(&:service_id).transform_values do |prices|
       prices.map do |price|
-        Scheduling::PayloadBuilder.service_price(price).merge(service_eligibility_status: 'price_link_unverified')
+        row = Scheduling::PayloadBuilder.service_price(price)
+        agent_scope? ? row : row.merge(service_eligibility_status: 'price_link_unverified')
       end
     end
   end
@@ -138,9 +141,9 @@ class Captain::Tools::Copilot::SearchSchedulingServicesService < Captain::Tools:
       match_status: status,
       ambiguous: confirmation_needed?(status),
       exact_name_matches: exact_name_matches,
-      eligibility_status: 'unverified',
       services: page[:records]
     }
+    payload[:eligibility_status] = 'unverified' unless agent_scope?
     instruction = instruction_for(status, exact_name_matches, page, search)
     payload[:instruction] = instruction if instruction
     payload[:paging_instruction] = PAGING_INSTRUCTION if page[:paging_unreachable]

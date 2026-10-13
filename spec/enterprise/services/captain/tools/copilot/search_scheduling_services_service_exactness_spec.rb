@@ -30,7 +30,7 @@ RSpec.describe Captain::Tools::Copilot::SearchSchedulingServicesService do
   def expect_name_confirmation(payload)
     expect(payload['match_status']).to be_in(unconfident)
     expect(payload['ambiguous']).to be(true)
-    expect(payload['instruction']).to include('differs from the request').and include('exact name').and include('never book')
+    expect(payload['instruction']).to include('differs from the request').and include('Choose the best match').and include('exact name')
   end
 
   describe 'a word that changes the meaning of the name' do
