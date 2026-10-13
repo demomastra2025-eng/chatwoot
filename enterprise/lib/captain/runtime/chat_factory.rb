@@ -7,14 +7,21 @@ class Captain::Runtime::ChatFactory
     Finalize the customer-facing Captain response using only the completed tool result messages already present in the conversation history.
     Do not request or imply another tool call. Return the required structured response for the customer.
   PROMPT
-  PART_LANGUAGES = { 'ru' => 'Russian', 'kk' => 'Kazakh (Cyrillic)' }.freeze
+  # 'other' is a patient who writes in neither Russian nor Kazakh (see CouncilEditor.language_for): the part is written in the
+  # language of the patient's latest message, which the part prompt gives below as data.
+  PART_LANGUAGES = {
+    'ru' => 'Russian', 'kk' => 'Kazakh (Cyrillic)', 'other' => 'the language of the patient\'s latest message (given below)'
+  }.freeze
   # The polite form of address and the example sentences the owner of a council part is shown, in the language of the customer:
-  # a Kazakh customer's agent must not be given Russian wording to copy.
+  # a Kazakh customer's agent must not be given Russian wording to copy. The cues of 'other' are plain English sentences that show
+  # the form only: the language of the text comes from PART_LANGUAGES.
   PART_CUES = {
     'ru' => { address: 'вы', question: 'на какой день вам удобно?', other_person: 'На какую дату записать Бориса?',
               done: 'Вы записаны к терапевту Иванову на 14 октября в 10:00.' },
     'kk' => { address: 'сіз', question: 'сізге қай күні ыңғайлы?', other_person: 'Бористі қай күнге жазайық?',
-              done: 'Сіз терапевт Ивановқа 14 қазанға сағат 10:00-ге жазылдыңыз.' }
+              done: 'Сіз терапевт Ивановқа 14 қазанға сағат 10:00-ге жазылдыңыз.' },
+    'other' => { address: nil, question: 'which day suits you?', other_person: 'Which date shall I book Boris for?',
+                 done: 'You are booked with therapist Ivanov on 14 October at 10:00.' }
   }.freeze
   # Tool results can carry a UTC time (a timestamp ending in Z) next to local ones. The instructions of the owner give the
   # current local time with its UTC offset, so it can name the clinic's local time without any code converting for it.
@@ -163,6 +170,7 @@ class Captain::Runtime::ChatFactory
       code = PART_LANGUAGES.key?(context[:part_language].to_s) ? context[:part_language].to_s : 'ru'
       language = PART_LANGUAGES.fetch(code)
       cues = PART_CUES.fetch(code)
+      address = cues[:address] ? %( ("#{cues[:address]}")) : ' politely'
       unresolved = if context[:part_staff_handoff]
                      'A staff member can take this part over: say briefly that a staff member will answer it. Promise nothing else.'
                    else
@@ -182,13 +190,13 @@ class Captain::Runtime::ChatFactory
           confirmation is pending, say that the request was sent and the confirmation will follow. Never claim an action that no tool
           performed, and never repeat one that your results, the dialogue or the data below show as done.
         - You cannot transfer the conversation or call staff.
-        - If the patient asks for a person (management, administrator, doctor), or only staff can finish this part (a complaint, a
-          result, a document, a refund) and the details your instructions need are known, ask nothing more: end with status
-          unavailable and one sentence. #{unresolved}
-        - Use unavailable only after your tools returned nothing usable and you retried once with other words. A detail that only the
-          patient knows (a child's name and birth date, which visit) is asked: end with status needs_information.
+        - If the patient asks to talk to a person (management, an administrator, a staff member), or only staff can finish this part (a
+          complaint, a result, a document, a refund) and the details your instructions need are known, ask nothing more: end with
+          status unavailable and one sentence. #{unresolved}
+        - For any other part, use unavailable only after your tools returned nothing usable and you retried once with other words. A
+          detail that only the patient knows (a child's name and birth date, which visit) is asked: end with status needs_information.
         Return the structured result:
-        - customer_text: the FINAL text for THIS part only, addressed to the patient ("#{cues[:address]}") in #{language}. It is only joined
+        - customer_text: the FINAL text for THIS part only, addressed to the patient#{address} in #{language}. It is only joined
           with the texts of the other parts, so write it as the patient should read it: warm, polite, plain text, one to three
           sentences, no greeting, no markdown. Write every time, date, price, name, address and phone number exactly as the tool results
           give it. #{PART_CLOCK_RULE} #{Captain::Runtime::CouncilEditor::PATIENT_TEXT_RULE} Never describe the patient in the third person,

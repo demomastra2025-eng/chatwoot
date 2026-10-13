@@ -88,8 +88,8 @@ class Captain::Runtime::PartPlanTool < Captain::Runtime::Tool
                            'required' => %w[type id]
                          } },
       'link_part_id' => { 'type' => %w[string integer null],
-                          'description' => 'Number of the open part that this message answers, corrects or cancels, as listed ' \
-                                           '(for #3 write 3).' },
+                          'description' => 'Number of the open part whose question this message answers, or that it corrects or ' \
+                                           'cancels, as listed (for #3 write 3).' },
       'link_action' => { 'type' => 'string', 'enum' => Captain::Runtime::PartRegistry::LINK_ACTIONS,
                          'description' => 'new: a separate new request, also while other parts are open. answer, correction, ' \
                                           'cancellation: the patient\'s reaction to the linked part.' }

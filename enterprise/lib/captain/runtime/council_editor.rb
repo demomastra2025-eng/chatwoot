@@ -60,7 +60,8 @@ class Captain::Runtime::CouncilEditor
   LANGUAGE_RULES = {
     'ru' => 'Write the whole reply in Russian.',
     'kk' => 'Write the whole reply in Kazakh (Cyrillic), with no Russian sentences or phrasing. ' \
-            'Keep names of services, doctors and places exactly as given.'
+            'Keep names of services, doctors and places exactly as given.',
+    'other' => 'Write the whole reply in the language of customer_message.'
   }.freeze
 
   class << self
@@ -77,24 +78,46 @@ class Captain::Runtime::CouncilEditor
       end
     end
 
-    # 'kk' or 'ru'. A Kazakh message with Russian service names is Kazakh. A message with too little text to tell
+    # 'kk', 'ru' or 'other'. A Kazakh message with Russian service names is Kazakh. A message in no Cyrillic letters at all (English,
+    # for example) is 'other': its reply is written in the language of that message. A message with too little text to tell
     # (a name, "да", a time) takes the language of the customer's recent messages.
     def language_for(message, history: [])
       return 'kk' if kazakh?(message)
-      return 'ru' if message.to_s.scan(/\p{L}{2,}/).size >= NO_LANGUAGE_EVIDENCE_WORDS
+      return (cyrillic?(message) ? 'ru' : 'other') if message.to_s.scan(/\p{L}{2,}/).size >= NO_LANGUAGE_EVIDENCE_WORDS
 
-      recent = Array(history).filter_map do |raw|
-        item = raw.respond_to?(:to_h) ? raw.to_h.with_indifferent_access : {}
-        customer_text(item[:content]) if item[:role].to_s == 'user'
-      end
-      recent.last(HISTORY_MESSAGES).any? { |text| kazakh?(text) } ? 'kk' : 'ru'
+      recent = recent_customer_texts(history)
+      return 'kk' if recent.any? { |text| kazakh?(text) }
+
+      foreign_conversation?(message, recent) ? 'other' : 'ru'
     end
 
-    # The language of the customer's turn as an I18n locale, for the texts of the runtime that are not model-written.
+    # The language of the customer's turn as an I18n locale, for the texts of the runtime that are not model-written. Those texts
+    # exist in Russian and Kazakh only, so any other language reads the Russian ones.
     def locale_for(context)
-      language_for(customer_text(context[:captain_v2_current_input]).strip, history: context[:conversation_history]).to_sym
+      language = language_for(customer_text(context[:captain_v2_current_input]).strip, history: context[:conversation_history])
+      language == 'kk' ? :kk : :ru
     rescue StandardError
       :ru
+    end
+
+    def recent_customer_texts(history)
+      Array(history).filter_map do |raw|
+        item = raw.respond_to?(:to_h) ? raw.to_h.with_indifferent_access : {}
+        customer_text(item[:content]) if item[:role].to_s == 'user'
+      end.last(HISTORY_MESSAGES)
+    end
+
+    def cyrillic?(text)
+      text.to_s.match?(/\p{Cyrillic}/)
+    end
+
+    # A message too short to tell, with no Cyrillic letter, in a conversation whose recent messages with enough text carry none
+    # either ("yes", "10:00" after an English message).
+    def foreign_conversation?(message, recent)
+      return false if cyrillic?(message)
+
+      evidence = recent.select { |text| text.scan(/\p{L}{2,}/).size >= NO_LANGUAGE_EVIDENCE_WORDS }
+      evidence.any? && evidence.none? { |text| cyrillic?(text) }
     end
 
     # A Kazakh function word is enough. Otherwise at least two words must carry Kazakh-only letters: one such word

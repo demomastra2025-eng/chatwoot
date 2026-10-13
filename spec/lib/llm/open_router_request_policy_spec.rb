@@ -77,6 +77,26 @@ RSpec.describe Llm::OpenRouterRequestPolicy do
       expect(chat.params).to include(provider: include(require_parameters: true))
     end
 
+    it 'keeps the models of the first compile when it compiles the chat again: a chat built for one model keeps one' do
+      chat = OpenRouterRequestPolicySpecChat.new(model: OpenRouterRequestPolicySpecModel.new('openai/gpt-6-luna', 'openrouter'))
+      described_class.tag!(chat, feature: :editor, model: 'openai/gpt-6-luna', routing_metadata: { models: ['openai/gpt-6-luna'] })
+
+      described_class.require_parameters!(chat, feature: :editor, model: 'openai/gpt-6-luna', reasoning: true)
+
+      expect(chat.params[:models]).to eq(['openai/gpt-6-luna'])
+    end
+
+    it 'never sends OpenRouter more than three models when it compiles a chat of a Luna 6 feature that has four fallbacks listed' do
+      %i[editor label_suggestion image_recognition].each do |feature|
+        chat = OpenRouterRequestPolicySpecChat.new(model: OpenRouterRequestPolicySpecModel.new('openai/gpt-6-luna', 'openrouter'))
+
+        described_class.require_parameters!(chat, feature: feature, model: 'openai/gpt-6-luna', reasoning: true)
+
+        expect(chat.params[:models].size).to be <= 3
+        expect(chat.params[:models].first(2)).to eq(%w[openai/gpt-6-luna openai/gpt-5.6-luna])
+      end
+    end
+
     it 'uses tagged account and feature metadata for existing chat instances' do
       account = create(:account)
       chat = OpenRouterRequestPolicySpecChat.new(model: 'custom/model')

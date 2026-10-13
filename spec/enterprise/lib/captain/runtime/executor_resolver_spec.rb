@@ -146,8 +146,9 @@ RSpec.describe Captain::Runtime::ExecutorResolver do
     it 'asks a council of one agent for a part of a second agent' do
       [[nil, nil], %w[Қабылдау Қабылдау], ['Администратор']].each do |executors|
         expect(fail_with('council', executors).message).to eq(
-          'Council needs parts for at least two different agents: name the executor of the part that is not yours. ' \
-          'Use one of: Қабылдау, Лаборатория Анализы, Приём'
+          'Council needs parts for at least two different agents, from the patient\'s latest message only: name the executor of each ' \
+          'part, one of: Қабылдау, Лаборатория Анализы, Приём. A latest message with one request needs no plan: answer it with your ' \
+          'tools or transfer it to its colleague.'
         )
       end
       expect(resolve_ids([nil, 'Қабылдау'], mode: 'council')).to eq([11, 12])

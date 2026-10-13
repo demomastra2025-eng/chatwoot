@@ -183,7 +183,7 @@ RSpec.describe Captain::Runtime::HandoffTool do
 
       expect(tool.description).to eq(
         %(Transfer the conversation to colleague "Продажи": Сделки клиники. ) +
-        'Tools: create and update deal; transition deal stage; look up deals.'
+        'Can: create and update deals; look up deals.'
       )
     end
 
@@ -193,7 +193,7 @@ RSpec.describe Captain::Runtime::HandoffTool do
       colleague = Captain::Runtime::Agent.new(name: 'assistant_7', tools: tools).tap { |agent| agent.assistant_id = 7 }
 
       expect(described_class.new(colleague).description).to eq(
-        %(Transfer the conversation to colleague "assistant_7". Tools: create, update and cancel appointment; look up available slots.)
+        %(Transfer the conversation to colleague "assistant_7". Can: book, reschedule and cancel appointments; look up free slots.)
       )
     end
 

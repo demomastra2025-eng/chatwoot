@@ -40,13 +40,15 @@ class Captain::Evals::RoutingBenchmark::ToolTrace
     end
 
     # [{ tool:, success:, audited:, agent:, arguments:, result:, arguments_digest:, part_id:, part_version: }]. Events come in the
-    # order the tools finished; an audit row is matched with the next event of the same tool. agent_names maps an assistant id
-    # to the name of the agent: `agent` is the agent that ran the tool, else the one the audit row names. Only the llm.tool.complete
-    # event of a call is read (any other event about the same operation is ignored), so a call is listed once.
+    # order the tools finished; an audit row is matched with the next event of the same tool that has the same success flag: a
+    # call that failed before its body ran (a refused argument, a guard) has an event and no audit row, so the row of the next call
+    # of that tool is not its row. agent_names maps an assistant id to the name of the agent: `agent` is the agent that ran the
+    # tool, else the one the audit row names. Only the llm.tool.complete event of a call is read (any other event about the same
+    # operation is ignored), so a call is listed once.
     def build(events:, audits:, agent_names: {})
       pending = audits.group_by { |audit| audit.audited_changes.to_h['tool_id'] }
       calls = events.select { |event| event.event_name == 'llm.tool.complete' }.map do |event|
-        entry(event, pending[event.tool_name]&.shift, agent_names)
+        entry(event, take_audit(pending[event.tool_name], event), agent_names)
       end
       calls + pending.values.flatten.map { |audit| entry(nil, audit, agent_names) }
     end
@@ -77,6 +79,19 @@ class Captain::Evals::RoutingBenchmark::ToolTrace
 
     def audits(account)
       Enterprise::AuditLog.where(associated_type: 'Account', associated_id: account.id, action: ACTION)
+    end
+
+    # The first audit row of the tool whose success flag is the event's (a flag that is unknown on either side matches), removed
+    # from the list; nil when the tool has no such row.
+    def take_audit(rows, event)
+      return if rows.blank?
+
+      success = event.payload.to_h['result_success']
+      index = rows.index do |audit|
+        recorded = audit.audited_changes.to_h['result_success']
+        success.nil? || recorded.nil? || recorded == success
+      end
+      rows.delete_at(index) if index
     end
 
     def entry(event, audit, agent_names)

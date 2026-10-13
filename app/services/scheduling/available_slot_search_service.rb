@@ -11,14 +11,29 @@ class Scheduling::AvailableSlotSearchService
     attrs['medelement_specialist_code'].present? || attrs['medelement_cabinets'].present?
   end
 
-  # Specialist ids that are not positive integers (blank, a name, 0) are no filter; the search then covers the other ones.
+  INVALID_RESOURCE_IDS_MESSAGE = 'resource_ids takes specialist IDs from search_scheduling_resources'.freeze
+
+  # The specialist ids to search. A blank value, null and 0 mean no specialist and are dropped, so the search covers the others.
+  # Anything else that is not a positive integer (a doctor's name) is an error: dropping it would widen the search to every
+  # specialist and offer the slot of another doctor as the answer for the one asked for.
   def self.normalize_resource_ids(value)
     values = value.is_a?(String) ? value.split(',') : Array(value)
-    values.filter_map { |item| Scheduling::IntegerNumericNormalizer.optional_positive_id(item) }.uniq
+    values.filter_map { |item| normalize_resource_id(item) }.uniq
   end
 
-  # `to` is the latest start of a visit. A window shorter than one visit is searched up to the end of a visit that starts at
-  # `from`, so a one-minute window (11:00-11:01) finds the visit at 11:00 when it is free.
+  def self.normalize_resource_id(item)
+    return if item.blank? || Scheduling::IntegerNumericNormalizer.normalize_value(item)&.zero?
+
+    Scheduling::IntegerNumericNormalizer.optional_positive_id(item) || raise(
+      Scheduling::Error.new(code: 'INVALID_RESOURCE_IDS', message: INVALID_RESOURCE_IDS_MESSAGE, status: :unprocessable_content,
+                            details: { field: 'resource_ids', reason: 'invalid_resource_ids' })
+    )
+  end
+  private_class_method :normalize_resource_id
+
+  # `to` is the latest start of a visit. The schedule is read up to the end of a visit that starts just before `to` (and, for a
+  # window shorter than one visit, of a visit that starts at `from`), so a one-minute window (11:00-11:01) finds the visit at 11:00
+  # when it is free, and a start at 11:30 is found for the window 11:00-12:00.
   def initialize(account:, from:, to:, resource_ids: nil, service_id: nil, duration_min: nil, limit: nil, snapshots: nil)
     @account = account
     @from = from
@@ -147,11 +162,15 @@ class Scheduling::AvailableSlotSearchService
     integrated_slots(resource)
   end
 
-  # The range the schedule is read for: the requested one, and at least one visit from `from`.
+  # The range the schedule is read for: up to `to` plus one visit, because a visit that starts just before `to` ends after it and
+  # a slot exists only when the whole visit fits (starting_in_window then drops the starts at or after `to`). The range never
+  # grows past the days the schedule readers accept, and never ends before `to`.
   def query_to(resource)
     visit_min = Scheduling::ResourceAvailabilityQueryService.duration_for(resource: resource, service: service,
                                                                           duration_min: @requested_duration_min)
-    [@to, @from + [visit_min, Scheduling::Constants::MIN_DURATION_MINUTES].max.minutes].max
+    visit = [visit_min, Scheduling::Constants::MIN_DURATION_MINUTES].max.minutes
+    horizon = @from + MAX_RANGE_DAYS.days
+    horizon > @to ? [@to + visit, horizon].min : @to
   end
 
   # Only starts before `to` are offered; a start at `from` counts even when `to` is equal to `from` (an exact-time check).

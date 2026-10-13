@@ -49,6 +49,55 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
     expect(appointment.custom_attributes).to include('source' => 'agent')
   end
 
+  describe 'a move to the time the appointment already has' do
+    let(:resource) { create(:scheduling_resource, account: account, timezone: 'Asia/Almaty', slot_duration_min: 30) }
+    let(:contact) { create(:contact, account: account) }
+    let(:conversation) { create(:conversation, account: account, contact: contact) }
+    let(:starts_at) { Time.zone.parse('2026-04-20 11:00:00 +0500') }
+    let!(:appointment) do
+      create(:scheduling_appointment, account: account, resource: resource, contact: contact, conversation_id: conversation.id,
+                                      starts_at: starts_at, ends_at: starts_at + 30.minutes, duration_min: 30)
+    end
+    let(:tool_context) do
+      Struct.new(:state).new({ conversation: { id: conversation.id }, appointment: { id: appointment.id }, contact: { id: contact.id } })
+    end
+
+    before { create(:scheduling_work_rule, resource: resource, weekday: 1, start_minute: 9 * 60, end_minute: 18 * 60) }
+
+    it 'is answered as unchanged, and nothing is saved or sent to the provider' do
+      expect(Scheduling::Appointments::UpsertService).not_to receive(:new)
+
+      payload = JSON.parse(tool.perform(tool_context, appointment_id: appointment.id, starts_at: starts_at.iso8601))
+
+      expect(payload).to include('success' => true, 'appointment_id' => appointment.id, 'local_date' => '20.04.2026', 'local_time' => '11:00',
+                                 'status' => 'unchanged', 'note' => Captain::Tools::Agent::AppointmentResult::UNCHANGED_NOTE)
+      expect(appointment.reload.starts_at).to eq(starts_at)
+    end
+
+    it 'is also unchanged when the call names the specialist the appointment already has' do
+      expect(Scheduling::Appointments::UpsertService).not_to receive(:new)
+
+      payload = JSON.parse(tool.perform(tool_context, appointment_id: appointment.id, resource_id: resource.id, starts_at: starts_at.iso8601))
+
+      expect(payload).to include('success' => true, 'status' => 'unchanged')
+    end
+
+    it 'is still a change when anything else in the call differs: another time, or a new comment next to the same time' do
+      payload = JSON.parse(tool.perform(tool_context, appointment_id: appointment.id, starts_at: starts_at.iso8601, client_comment: 'Bring the card'))
+
+      expect(payload).to include('success' => true, 'status' => 'updated')
+      expect(appointment.reload.client_comment).to eq('Bring the card')
+    end
+
+    it 'leaves a cancelled appointment to the normal path, which says why it cannot be changed' do
+      appointment.update!(status: 'cancelled')
+
+      payload = JSON.parse(tool.perform(tool_context, appointment_id: appointment.id, starts_at: starts_at.iso8601))
+
+      expect(payload['status']).not_to eq('unchanged')
+    end
+  end
+
   it 'exposes custom_attributes as an object parameter' do
     expect(described_class.parameters[:custom_attributes].type).to eq('object')
   end

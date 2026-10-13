@@ -63,8 +63,10 @@ class Captain::Tools::Copilot::SearchSchedulingResourcesService < Captain::Tools
       exact_name_matches: result[:exact_name_matches].to_i,
       resources: result[:resources]
     }
-    # Staff and Copilot see how the service filter was applied; the patient agent gets the search status only (the link label
-    # named no action and gave the model a reason to doubt the filter and to hand the conversation over).
+    # Staff and Copilot see how the service filter was applied and the ambiguous flag; the patient agent gets the search status and
+    # the instruction only (the link label named no action and gave the model a reason to doubt the filter and to hand the
+    # conversation over; the flag next to the instruction "choose the best match" told it to ask the patient to confirm a name).
+    payload.delete(:ambiguous) if agent_scope?
     payload[:link_status] = link_status(status, filters[:service_id]) unless agent_scope?
     instruction = instruction_for(status, result, sole)
     payload[:instruction] = instruction if instruction

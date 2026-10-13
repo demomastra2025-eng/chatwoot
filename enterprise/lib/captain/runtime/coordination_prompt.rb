@@ -7,16 +7,16 @@
 module Captain::Runtime::CoordinationPrompt
   WORKING_TOGETHER = <<~RULES.chomp.freeze
     How to work together:
-    1. Split the patient's message into separate requests.
+    1. Split the patient's latest message into separate requests. A service's price, its free times and its booking are one request for the agent that books it.
     2. Handle your own requests yourself with your tools. A detail you can settle with your own tools (service variant, first or repeat visit, the price of what you book, the specialist) is part of your request.
     3. If the whole message belongs to one colleague, call that colleague's transfer tool; the colleague replies.
-    4. If the message holds requests for two or more agents, call plan_request once to split it; each agent does its part right away.
-    5. Choose the colleague by what the patient wants done.
+    4. If the message holds requests for two or more agents, call plan_request once to split it, also where the clinic instructions say to hand requests over at once; each agent does its part right away.
+    5. Choose the colleague by what the patient wants done: a wish to book, reschedule or cancel an appointment goes to the colleague who can book, reschedule and cancel appointments.
     6. Staff are reached through handoff.
   RULES
   TRANSFERRED_RULE = 'The conversation was transferred to you: the whole message is yours unless it holds a separate request for another colleague.'
-  OPEN_PARTS_RULE = 'When the patient answers, corrects or cancels an open part, call plan_request and link the message to that part ' \
-                    'by its number. A message about something else is a new request.'
+  OPEN_PARTS_RULE = 'Link a message to an open part, by its number, with plan_request only when the message answers, corrects or cancels ' \
+                    'that part (for a part that waits for the patient: when it answers the question shown). Every other message is a new request.'
   PLAN_ACCEPTED_RULE ='The plan for this message is already accepted: continue only your own parts and do not call plan_request again.'
   MENTION_IT = 'Mention it in your reply.'
   FRAGMENT_LIMIT = 200
@@ -45,12 +45,13 @@ module Captain::Runtime::CoordinationPrompt
   end
 
   # The colleagues, then the numbered way of working. The rule for a transferred conversation closes the list, and only a run
-  # in which the conversation was transferred to this agent has it.
+  # in which the conversation was transferred to this agent has it. After the transfer guard the agent has no transfer and no plan
+  # tool any more (see ChatFactory.build_agent_tools): the way of working that calls them is left out, the list of colleagues stays.
   def colleagues_block(actor, peers, context)
     name = actor&.dig(:name).to_s.squish.tr('"', "'")
     identity = [(%(You are "#{name}";) if name.present?), 'you and your colleagues answer as one clinic.'].compact.join(' ').upcase_first
-    transferred = TRANSFERRED_RULE if context[:handoff_count].to_i.positive?
-    ['# Colleagues on this channel', identity, *peers.map { |peer| peer_line(peer) }, WORKING_TOGETHER, transferred].compact.join("\n")
+    rules = [WORKING_TOGETHER, (TRANSFERRED_RULE if context[:handoff_count].to_i.positive?)] unless context[:transfer_guarded]
+    ['# Colleagues on this channel', identity, *peers.map { |peer| peer_line(peer) }, *rules].compact.join("\n")
   end
 
   def peer_line(peer)
@@ -59,15 +60,16 @@ module Captain::Runtime::CoordinationPrompt
 
   # One row per part of ANOTHER agent that is still open: its number (the plan links by it), who handles it, what it is and where
   # it stands (see PartRegistry.listed_parts). The delivered texts, the object references and every id stay out. The rule that
-  # links a message to a part calls plan_request, so it is left out once the plan of this message is accepted (plan_request is no
-  # longer bound then): only the rows stay.
+  # links a message to a part calls plan_request, so it is left out once the plan of this message is accepted or the transfer guard
+  # took the plan tool away (plan_request is no longer bound then): only the rows stay.
   def open_parts_block(context, graph)
     parts = Array(context[:parts])
     open_parts = Captain::Runtime::PartRegistry.listed_parts(context)
     return '' if open_parts.empty?
 
     rows = open_parts.map { |part| "- #{open_part_segments(parts, part, graph).compact_blank.join(' · ')}" }
-    ['# Open parts (data)', *rows, (OPEN_PARTS_RULE unless context[:part_plan_accepted])].compact.join("\n")
+    rule = OPEN_PARTS_RULE unless context[:part_plan_accepted] || context[:transfer_guarded]
+    ['# Open parts (data)', *rows, rule].compact.join("\n")
   end
 
   def open_part_segments(parts, part, graph)

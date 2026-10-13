@@ -65,6 +65,8 @@ class Llm::OpenRouterRoutingProfile
   LUNA_PRIMARY_MODEL = 'openai/gpt-6-luna'
   LUNA_FALLBACK_MODEL = 'openai/gpt-5.6-luna'
   LUNA_CHAT_FEATURES = %w[copilot editor label_suggestion image_recognition customer_notice].freeze
+  # OpenRouter rejects a request whose `models` array has more than three items ("'models' array must have 3 items or fewer").
+  MAX_MODELS = 3
   EXCLUDED_CAPTAIN_PROVIDER_ENDPOINTS = %w[openai/fast openai/priority openai/flex].freeze
 
   NATIVE_ENDPOINTS = {
@@ -177,11 +179,13 @@ class Llm::OpenRouterRoutingProfile
 
   def build_models
     fallback_models = model_fallbacks_allowed? ? fallback_models_for_feature : []
-    ([model] + fallback_models).compact_blank.uniq
+    ([model] + fallback_models).compact_blank.uniq.first(MAX_MODELS)
   end
 
   # The agent falls back only to Luna 5.6. The other chat features, when they run on Luna 6, try Luna 5.6 before
-  # their own cheaper fallbacks, so a Luna 6 outage does not silently move them to a much smaller model.
+  # their own cheaper fallbacks, so a Luna 6 outage does not silently move them to a much smaller model. The list is cut to the
+  # models OpenRouter accepts (MAX_MODELS): the last cheaper fallback of editor, label suggestion and image recognition is the one
+  # that goes.
   def fallback_models_for_feature
     return [LUNA_FALLBACK_MODEL] if feature_key == 'captain_agent' && model == LUNA_PRIMARY_MODEL
     return FALLBACK_MODELS.fetch(feature_key, []) unless model == LUNA_PRIMARY_MODEL && LUNA_CHAT_FEATURES.include?(feature_key)

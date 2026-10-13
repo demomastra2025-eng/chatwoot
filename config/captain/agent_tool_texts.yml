@@ -507,13 +507,13 @@ tools:
     hidden_params: []
 
   handoff:
-    description: "Hand this conversation to staff; your turn ends and your reply is not sent. Call it when the patient asks for staff, or when the request is complete and only staff can do it. Staff continue the open conversation; handoff sends nothing to the patient."
+    description: "Hand this conversation to staff; your turn ends and your reply is not sent. Call it when the patient asks for staff, or when only staff can do the request and every detail the clinic instructions ask for is known (ask for the missing ones first). Staff continue the open conversation; handoff sends nothing to the patient."
     params:
       reason: "Short reason for staff."
     hidden_params: []
 
   cancel_response:
-    description: "Send no reply this turn; the conversation stays open. Call it when the patient's message needs no reply (a thanks, an 'ok', or staff already replied)."
+    description: "Send no reply this turn; the conversation stays open. Call it when the patient's message needs no reply (the patient wrote only an 'ok', or staff already replied)."
     params:
       reason: "Why no reply is needed, in a few words."
     hidden_params: []

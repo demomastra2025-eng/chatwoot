@@ -68,7 +68,10 @@ RSpec.describe Captain::PromptClock do
   end
 
   describe '.night_line' do
-    let(:night) { 'It is night: a patient\'s "today" or "tomorrow" may mean the coming day; name the date you understood.' }
+    let(:night) do
+      'It is after midnight: a patient\'s "tomorrow" may mean today, Tuesday, 13 October 2026 (2026-10-13). ' \
+        'For "today" or "tomorrow" offer free slots with the full date and book after the patient picks one.'
+    end
 
     it 'is written between 00:00 and 05:00 of the local time and at no other hour' do
       expect(described_class.night_line(clock('Asia/Almaty', '2026-10-12T19:00:00Z'))).to eq(night)
@@ -77,6 +80,13 @@ RSpec.describe Captain::PromptClock do
       expect(described_class.night_line(clock('Asia/Almaty', '2026-10-13T00:00:00Z'))).to be_nil
       expect(described_class.night_line(clock('Asia/Almaty', '2026-10-12T18:59:00Z'))).to be_nil
       expect(described_class.night_line(clock('Asia/Almaty', '2026-10-12T07:34:00Z'))).to be_nil
+    end
+
+    it 'names the date that has already begun, not the day the Now line calls Tomorrow' do
+      line = described_class.night_line(clock('Asia/Almaty', '2026-10-12T19:15:00Z'))
+
+      expect(line).to include('2026-10-13')
+      expect(line).not_to include('2026-10-14', 'coming day')
     end
 
     it 'reads the hour in the zone of the run, not in UTC' do

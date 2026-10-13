@@ -90,8 +90,9 @@ class Captain::Runtime::HandoffTool < Captain::Runtime::Tool
     "#{text.end_with?('.', '!', '?') ? text : "#{text}."} #{capabilities}"
   end
 
-  # The colleague's tool ids come without building its tools (a LazyAgent reads them from the assistant). A line is a help for the
-  # choice of the colleague, never a reason to fail the build of the chat.
+  # The colleague's tool ids come without building its tools (a LazyAgent reads them from the assistant). The line says what the
+  # colleague can do, in glossary words (see TransferCapabilities). It is a help for the choice of the colleague, never a reason to
+  # fail the build of the chat.
   def capabilities_of(target_agent)
     return '' unless target_agent.respond_to?(:tool_ids)
 

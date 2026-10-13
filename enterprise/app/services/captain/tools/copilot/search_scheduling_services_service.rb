@@ -143,6 +143,10 @@ class Captain::Tools::Copilot::SearchSchedulingServicesService < Captain::Tools:
       exact_name_matches: exact_name_matches,
       services: page[:records]
     }
+    # The patient agent chooses the best entry itself (see NAME_DIFFERS_INSTRUCTION): a flag that says "ambiguous" next to that
+    # instruction told it to ask the patient to confirm a name. It keeps match_status and the instruction; staff and Copilot
+    # keep the flag.
+    payload.delete(:ambiguous) if agent_scope?
     payload[:eligibility_status] = 'unverified' unless agent_scope?
     instruction = instruction_for(status, exact_name_matches, page, search)
     payload[:instruction] = instruction if instruction

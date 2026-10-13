@@ -31,7 +31,8 @@ RSpec.describe Captain::AssistantPrompt do
     expect(variables(state: { runtime_clock: night, reply_window: window })[:now_text].split("\n")).to eq(
       [
         'Tuesday, 13 October 2026 (2026-10-13), 01:15, Almaty (UTC+5). Tomorrow: Wednesday, 14 October 2026 (2026-10-14).',
-        'It is night: a patient\'s "today" or "tomorrow" may mean the coming day; name the date you understood.',
+        'It is after midnight: a patient\'s "tomorrow" may mean today, Tuesday, 13 October 2026 (2026-10-13). ' \
+        'For "today" or "tomorrow" offer free slots with the full date and book after the patient picks one.',
         'WhatsApp reply window is open until 13.10.2026 15:00; after that only approved templates can be sent.'
       ]
     )

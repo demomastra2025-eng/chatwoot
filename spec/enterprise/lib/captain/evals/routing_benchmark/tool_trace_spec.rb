@@ -62,6 +62,30 @@ RSpec.describe Captain::Evals::RoutingBenchmark::ToolTrace do
       expect(calls[1][:result]).to include('created')
     end
 
+    it 'does not give the row of a later call to a call that failed before its body ran' do
+      audit('create_appointment', arguments: { resource_id: 4 }, result: JSON.generate(success: true, status: 'created'))
+      events = [event('create_appointment', success: false), event('create_appointment', success: true)]
+
+      calls = described_class.build(events: events, audits: described_class.audits_after(account, 0))
+
+      expect(calls).to eq([
+                            { tool: 'create_appointment', success: false, audited: false },
+                            { tool: 'create_appointment', success: true, audited: true, agent: 'Запись к врачу', arguments: { 'resource_id' => 4 },
+                              result: calls[1][:result] }
+                          ])
+      expect(calls[1][:result]).to include('created')
+    end
+
+    it 'gives the row of a call that failed inside its body to that call' do
+      audit('create_appointment', arguments: { resource_id: 4 }, result: JSON.generate(success: false, reason: 'time_taken'))
+      audit('create_appointment', arguments: { resource_id: 5 }, result: JSON.generate(success: true, status: 'created'))
+      events = [event('create_appointment', success: false), event('create_appointment', success: true)]
+
+      calls = described_class.build(events: events, audits: described_class.audits_after(account, 0))
+
+      expect(calls.map { |call| [call[:success], call[:arguments]] }).to eq([[false, { 'resource_id' => 4 }], [true, { 'resource_id' => 5 }]])
+    end
+
     it 'keeps an audit row that has no event, and ignores events of other kinds' do
       audit('add_private_note', arguments: { note: 'x' }, result: 'ok')
       other = event_class.new('llm.chat.request', nil, {})

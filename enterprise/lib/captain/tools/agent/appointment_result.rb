@@ -8,6 +8,7 @@ class Captain::Tools::Agent::AppointmentResult
     APPOINTMENT_READ_ONLY APPOINTMENT_SOURCE_READ_ONLY APPOINTMENT_EXTERNAL_REF_RESERVED
   ].freeze
   MAX_SEARCH_RESULTS = 20
+  UNCHANGED_NOTE = 'The appointment is already at this time with these details; nothing was changed.'.freeze
   # Message of Crm::FieldCatalog when a required custom field has no value: "custom_attributes.<key> is required".
   REQUIRED_CUSTOM_FIELD_MESSAGE = /\Acustom_attributes\.(?<key>\S+) is required\z/
   # Stable machine flag of a failed mutation: the runtime hands the conversation to a human on a technical failure and
@@ -75,6 +76,12 @@ class Captain::Tools::Agent::AppointmentResult
     }.compact
   end
   private_class_method :move_result
+
+  # The answer to an update that asked for what the appointment already has: nothing was changed, nothing was sent to the provider.
+  def self.unchanged(appointment, action: nil)
+    result = success(appointment, action: action)
+    result[:success] == false ? result : result.merge(status: 'unchanged', note: UNCHANGED_NOTE)
+  end
 
   def self.success(appointment, action: nil)
     result = { success: true }.merge(self.appointment(appointment, action: action))

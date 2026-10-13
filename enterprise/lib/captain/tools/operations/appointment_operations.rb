@@ -1,5 +1,12 @@
 class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operations::BaseOperation
-  attr_reader :persisted_creation
+  # persisted_creation: the appointment a create call saved. unchanged_appointment: the appointment an update call found already
+  # in the state it asked for (nothing was sent to the provider and nothing was saved).
+  attr_reader :persisted_creation, :unchanged_appointment
+
+  # The fields of an update that can be compared with the appointment (a custom attribute cannot, so it is always a change).
+  UNCHANGED_INTEGER_FIELDS = %i[resource_id service_id duration_min].freeze
+  UNCHANGED_TIME_FIELDS = %i[starts_at ends_at].freeze
+  UNCHANGED_TEXT_FIELDS = %i[appointment_type client_comment].freeze
 
   def cancel_current_appointment(appointment_id: nil, appointment_access_token: nil, patient_confirmed: false)
     ensure_feature_enabled!('scheduling', 'Scheduling is not enabled for this account')
@@ -53,6 +60,7 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
   def update_current_appointment(appointment_id: nil, resource_id: nil, service_id: nil, starts_at: nil, ends_at: nil, duration_min: nil,
                                  appointment_type: nil, client_comment: nil, custom_attributes: nil,
                                  appointment_access_token: nil, patient_confirmed: false)
+    @unchanged_appointment = nil
     ensure_feature_enabled!('scheduling', 'Scheduling is not enabled for this account')
     appointment = target_appointment(appointment_id, appointment_access_token: appointment_access_token, patient_confirmed: patient_confirmed)
 
@@ -70,6 +78,13 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
     params[:appointment_type] = appointment_type unless appointment_type.nil?
     params[:client_comment] = client_comment unless client_comment.nil?
     params[:custom_attributes] = parsed_hash(custom_attributes, field_name: 'custom_attributes') if custom_attributes.present?
+
+    # A change that asks for what the appointment already has (the same time, the same specialist) is not sent again, to the
+    # provider either: a second message or a second agent that repeats a move changes nothing.
+    if appointment_unchanged?(appointment, params)
+      @unchanged_appointment = appointment
+      return appointment
+    end
 
     if imported_appointment?(appointment)
       return mutate_imported_appointment(appointment, 'move_reception', params, appointment_access_token, patient_confirmed)
@@ -100,6 +115,30 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
   end
 
   private
+
+  # An active appointment whose every field in the change equals what it holds. A custom attribute cannot be compared, so it is a
+  # change; a cancelled or finished appointment goes through the normal path, which says why it cannot be changed.
+  def appointment_unchanged?(appointment, params)
+    appointment.status.in?(%w[scheduled confirmed]) && params.present? &&
+      params.all? { |field, value| unchanged_field?(appointment, field, value) }
+  end
+
+  def unchanged_field?(appointment, field, value)
+    return integer_value(value) == appointment.public_send(field) if UNCHANGED_INTEGER_FIELDS.include?(field)
+    return same_instant?(value, appointment.public_send(field)) if UNCHANGED_TIME_FIELDS.include?(field)
+
+    UNCHANGED_TEXT_FIELDS.include?(field) && value.to_s == appointment.public_send(field).to_s
+  end
+
+  def integer_value(value)
+    ::Scheduling::IntegerNumericNormalizer.normalize_value(value)
+  end
+
+  def same_instant?(value, time)
+    time.present? && Time.zone.parse(value.to_s)&.to_i == time.to_i
+  rescue ArgumentError
+    false
+  end
 
   def normalize_appointment_times(resource_id:, starts_at:, ends_at:)
     return [starts_at, ends_at] if starts_at.nil? && ends_at.nil?

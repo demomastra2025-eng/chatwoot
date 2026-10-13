@@ -106,19 +106,40 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Workspace do
   end
 
   describe 'the knowledge base' do
-    # The rows of a dialogue live in a transaction that is never committed, so the callback that indexes a FAQ answer in production does
-    # not run, and the FAQ lookup (a vector search) would find nothing.
-    it 'indexes every FAQ answer when the workspace is created' do
+    # Indexing every FAQ of every synthetic clinic costs minutes per dialogue, so a workspace stores the FAQ answers and indexes them
+    # only on request (BENCHMARK_FAQ_EMBEDDINGS=1).
+    it 'stores every FAQ answer without calling the embedding provider unless indexing was asked for' do
       response = Captain::AssistantResponse.find_by!(account_id: workspace.account.id)
 
-      expect(Captain::Llm::UpdateEmbeddingJob).to have_received(:perform_now).with(response, 'Как оплатить?: Kaspi QR или наличные.')
+      expect(response).to have_attributes(question: 'Как оплатить?', answer: 'Kaspi QR или наличные.')
+      expect(Captain::Llm::UpdateEmbeddingJob).not_to have_received(:perform_now)
+    end
+
+    def ask_for_indexing
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with('BENCHMARK_FAQ_EMBEDDINGS').and_return('1')
+    end
+
+    context 'when indexing was asked for' do
+      before { ask_for_indexing }
+
+      # The rows of a dialogue live in a transaction that is never committed, so the callback that indexes a FAQ answer in production
+      # does not run, and the FAQ lookup (a vector search) would find nothing.
+      it 'indexes every FAQ answer when the workspace is created' do
+        response = Captain::AssistantResponse.find_by!(account_id: workspace.account.id)
+
+        expect(Captain::Llm::UpdateEmbeddingJob).to have_received(:perform_now).with(response, 'Как оплатить?: Kaspi QR или наличные.')
+      end
     end
 
     context 'when the embedding provider fails' do
       let(:failure) { Captain::Llm::EmbeddingService::EmbeddingsError.new('overloaded') }
       let(:space) { described_class.new(fixture, model: 'openai/gpt-6-luna', reasoning: 'none') }
 
-      before { allow(space).to receive(:sleep) }
+      before do
+        ask_for_indexing
+        allow(space).to receive(:sleep)
+      end
 
       it 'asks again, and goes on when the provider answers' do
         calls = 0

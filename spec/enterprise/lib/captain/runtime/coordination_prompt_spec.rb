@@ -18,13 +18,17 @@ RSpec.describe Captain::Runtime::CoordinationPrompt do
       You are "Orders"; you and your colleagues answer as one clinic.
       - Appointments: Appointment changes
       How to work together:
-      1. Split the patient's message into separate requests.
+      1. Split the patient's latest message into separate requests. A service's price, its free times and its booking are one request for the agent that books it.
       2. Handle your own requests yourself with your tools. A detail you can settle with your own tools (service variant, first or repeat visit, the price of what you book, the specialist) is part of your request.
       3. If the whole message belongs to one colleague, call that colleague's transfer tool; the colleague replies.
-      4. If the message holds requests for two or more agents, call plan_request once to split it; each agent does its part right away.
-      5. Choose the colleague by what the patient wants done.
+      4. If the message holds requests for two or more agents, call plan_request once to split it, also where the clinic instructions say to hand requests over at once; each agent does its part right away.
+      5. Choose the colleague by what the patient wants done: a wish to book, reschedule or cancel an appointment goes to the colleague who can book, reschedule and cancel appointments.
       6. Staff are reached through handoff.
     TEXT
+  end
+  let(:open_parts_rule) do
+    'Link a message to an open part, by its number, with plan_request only when the message answers, corrects or cancels that part ' \
+      '(for a part that waits for the patient: when it answers the question shown). Every other message is a new request.'
   end
 
   def data_line(prompt, label)
@@ -92,9 +96,33 @@ RSpec.describe Captain::Runtime::CoordinationPrompt do
 
       expect(text).to include('2. Handle your own requests yourself with your tools. A detail you can settle with your own tools ' \
                               '(service variant, first or repeat visit, the price of what you book, the specialist) is part of your request.')
-      expect(text).to include('4. If the message holds requests for two or more agents, call plan_request once to split it; ' \
-                              'each agent does its part right away.')
-      expect(text).to include('5. Choose the colleague by what the patient wants done.')
+      expect(text).to include('4. If the message holds requests for two or more agents, call plan_request once to split it, ' \
+                              'also where the clinic instructions say to hand requests over at once; each agent does its part right away.')
+      expect(text).to include('5. Choose the colleague by what the patient wants done: a wish to book, reschedule or cancel an ' \
+                              'appointment goes to the colleague who can book, reschedule and cancel appointments.')
+    end
+
+    it 'makes the price, the free times and the booking of one service one request for the agent that books it, and plans the latest message' do
+      text = described_class.render(context)
+
+      expect(text).to include("1. Split the patient's latest message into separate requests. A service's price, its free times and its " \
+                              'booking are one request for the agent that books it.')
+    end
+
+    it 'leaves out the way of working and the rule of the open parts once the transfer guard took the transfer and plan tools away' do
+      context[:handoff_count] = 2
+      context[:transfer_guarded] = true
+      context[:parts] = [{ 'id' => 'open-part', 'state' => 'waiting_customer', 'executor_agent_id' => 92, 'fragment' => 'Запись',
+                           'missing_fields' => ['Какое время?'] }]
+
+      prompt = described_class.render(context)
+
+      expect(prompt).to start_with(
+        "# Colleagues on this channel\nYou are \"Orders\"; you and your colleagues answer as one clinic.\n- Appointments: Appointment changes\n"
+      )
+      expect(prompt).to include("# Open parts (data)\n- #1 · Appointments · \"Запись\" · waiting for the patient: \"Какое время?\"")
+      expect(prompt).not_to include('How to work together', 'plan_request', 'transfer tool', 'was transferred to you',
+                                    described_class::OPEN_PARTS_RULE)
     end
 
     it 'plans no own work: there is no answer_myself, no answer parameter and no sentence about planning one\'s own part' do
@@ -185,8 +213,7 @@ RSpec.describe Captain::Runtime::CoordinationPrompt do
         "#{colleagues_block}\n\n" \
         "# Open parts (data)\n" \
         "- #2 · Appointments · \"Запись\" · for Анна · waiting for the patient: \"На какое время вас записать?\"\n" \
-        'When the patient answers, corrects or cancels an open part, call plan_request and link the message to that part by its ' \
-        'number. A message about something else is a new request.'
+        "#{open_parts_rule}"
       )
       expect(prompt).not_to include('open-part', 'finished-part', 'message_id', 'object_refs', 'executor_agent_id', 'prior_summary', 'delivered')
       expect(context[:parts].last).to include('executor_agent_id' => 92)
@@ -353,7 +380,7 @@ RSpec.describe Captain::Runtime::CoordinationPrompt do
       prompt = described_class.render(context)
 
       expect(prompt).to include("# Open parts (data)\n- #1 · Appointments · \"Запись\" · waiting for the patient: \"Какое время?\"\n")
-      expect(prompt).not_to include(described_class::OPEN_PARTS_RULE, 'link the message to that part by its number')
+      expect(prompt).not_to include(described_class::OPEN_PARTS_RULE, 'Link a message to an open part')
       expect(prompt).to end_with(described_class::PLAN_ACCEPTED_RULE)
     end
 

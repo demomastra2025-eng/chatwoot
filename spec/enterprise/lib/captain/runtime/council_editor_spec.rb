@@ -294,6 +294,13 @@ RSpec.describe Captain::Runtime::CouncilEditor do
       expect(instructions.last).to include('Write the whole reply in Russian.')
     end
 
+    it 'asks for the language of the patient\'s message when the patient writes in neither Russian nor Kazakh' do
+      edit_parts(language: 'other', message: 'Please move my visit to Thursday')
+
+      expect(instructions.sole).to include('Write the whole reply in the language of customer_message.')
+      expect(instructions.sole).not_to include('Russian', 'Kazakh')
+    end
+
     it 'reads the reply from a JSON string as well as from an object' do
       allow(Llm::Runtime).to receive(:ask).and_return(double(content: '{"reply": "Баға 5000 теңге."}'))
 
@@ -364,7 +371,30 @@ RSpec.describe Captain::Runtime::CouncilEditor do
       expect(described_class.language_for('10:00', history: history)).to eq('ru')
     end
 
+    it 'reads a message with no Cyrillic letter as another language, so it is answered in its own language' do
+      expect(described_class.language_for('Please move my visit to Thursday')).to eq('other')
+      expect(described_class.language_for('Hello, how much is a check-up?')).to eq('other')
+      expect(described_class.language_for('Zdravstvuyte, hochu zapisatsya k terapevtu')).to eq('other')
+    end
+
+    it 'keeps a short message with no Cyrillic letter in the language of the conversation' do
+      english = [{ role: 'user', content: 'Please move my visit to Thursday' }, { role: 'assistant', content: 'Which time suits you?' }]
+      russian = [{ role: 'user', content: 'Здравствуйте, нужен врач' }]
+
+      expect(described_class.language_for('yes', history: english)).to eq('other')
+      expect(described_class.language_for('10:00', history: english)).to eq('other')
+      expect(described_class.language_for('10:00', history: russian)).to eq('ru')
+      expect(described_class.language_for('yes')).to eq('ru')
+    end
+
+    it 'reads a Kazakh message as Kazakh also in a conversation that began in English' do
+      english = [{ role: 'user', content: 'Please move my visit to Thursday' }]
+
+      expect(described_class.language_for('Қанша тұрады?', history: english)).to eq('kk')
+    end
+
     it 'gives the runtime locale of a context' do
+      expect(described_class.locale_for(captain_v2_current_input: 'Please move my visit to Thursday')).to eq(:ru)
       expect(described_class.locale_for(captain_v2_current_input: 'Қанша тұрады?')).to eq(:kk)
       expect(described_class.locale_for(captain_v2_current_input: 'Иә', conversation_history: [{ role: 'user', content: 'Бағасы қанша' }])).to eq(:kk)
       expect(described_class.locale_for({})).to eq(:ru)

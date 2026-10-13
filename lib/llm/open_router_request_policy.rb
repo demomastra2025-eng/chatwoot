@@ -4,7 +4,9 @@ class Llm::OpenRouterRequestPolicy
   OPENROUTER_PROVIDER = 'openrouter'
   RESPONSE_HEALING_PLUGIN_ID = 'response-healing'
   ROUTING_METADATA_IVAR = :@onelink_openrouter_routing_metadata
-  RecompileRequest = Struct.new(:feature_key, :runtime_preferences, :privacy_profile, :options, :temperature, keyword_init: true)
+  # models: the models the first compile of the chat chose (a caller's own list, else the profile's). A recompile changes the
+  # parameters of the request, never the list of models that may answer it.
+  RecompileRequest = Struct.new(:feature_key, :runtime_preferences, :privacy_profile, :options, :temperature, :models, keyword_init: true)
   CACHE_HEADER_KEYS = %w[X-OpenRouter-Cache X-OpenRouter-Cache-TTL X-OpenRouter-Cache-Clear].freeze
 
   class << self
@@ -167,7 +169,8 @@ class Llm::OpenRouterRequestPolicy
         privacy_profile: privacy_profile,
         runtime_preferences: recompile_runtime_preferences(metadata, privacy_profile),
         options: recompile_cache_options(metadata),
-        temperature: chat_temperature(chat)
+        temperature: chat_temperature(chat),
+        models: Array(metadata[:models]).presence
       )
     end
 

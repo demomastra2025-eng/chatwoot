@@ -112,12 +112,30 @@ RSpec.describe Captain::Tools::Copilot::SearchAvailableSlotsService do
       end
     end
 
-    it 'ignores blank and non-numeric specialist ids' do
+    it 'ignores blank, null and zero specialist ids' do
       payload = JSON.parse(
-        service.execute(from: from_time.iso8601, to: to_time.iso8601, resource_ids: ['', nil, 'unknown specialist', 0], limit: 1)
+        service.execute(from: from_time.iso8601, to: to_time.iso8601, resource_ids: ['', nil, ' ', 0, '0'], limit: 1)
       )
 
       expect(payload['resources'].map { |item| item['id'] }).to contain_exactly(resource.id, other_resource.id)
+    end
+
+    it 'answers a specialist name in resource_ids with a business error instead of searching every specialist' do
+      result = service.execute(from: from_time.iso8601, to: to_time.iso8601, resource_ids: ['Айгерим'], limit: 1)
+
+      expect(result).to start_with('ERROR:')
+      expect(result).to include('resource_ids takes specialist IDs from search_scheduling_resources', 'INVALID_RESOURCE_IDS', 'business')
+      expect(result).not_to include('INTERNAL_FAILURE')
+    end
+
+    it 'finds the starts up to the end of the range whose visit ends after it' do
+      payload = JSON.parse(
+        service.execute(from: '2026-04-20T12:00:00+05:00', to: '2026-04-20T13:00:00+05:00', resource_ids: [resource.id],
+                        service_id: consultation.id)
+      )
+
+      expect(payload['slots'].last['starts_at']).to eq('2026-04-20T12:55:00+05:00')
+      expect(payload['slots'].last['ends_at']).to eq('2026-04-20T13:40:00+05:00')
     end
 
     it 'returns an error when a requested specialist cannot perform the service' do

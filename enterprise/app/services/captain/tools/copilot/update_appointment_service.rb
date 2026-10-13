@@ -30,7 +30,8 @@ class Captain::Tools::Copilot::UpdateAppointmentService < Captain::Tools::Copilo
 
   def execute(appointment_id: nil, resource_id: nil, service_id: nil, starts_at: nil, ends_at: nil, duration_min: nil, appointment_type: nil,
               client_comment: nil, custom_attributes: nil, appointment_access_token: nil, patient_confirmed: false)
-    appointment = appointment_operations.update_current_appointment(
+    operations = appointment_operations
+    appointment = operations.update_current_appointment(
       appointment_id: appointment_id,
       appointment_access_token: appointment_access_token,
       patient_confirmed: patient_confirmed,
@@ -43,11 +44,11 @@ class Captain::Tools::Copilot::UpdateAppointmentService < Captain::Tools::Copilo
       client_comment: client_comment,
       custom_attributes: custom_attributes
     )
-    return formatted_payload(Captain::Tools::Agent::AppointmentResult.success(appointment, action: self.class.name)) if patient_scope
+    unchanged = operations.unchanged_appointment.present?
+    return formatted_payload(agent_result(appointment, unchanged: unchanged)) if patient_scope
 
-    formatted_payload(
-      ::Scheduling::ToolPayloadBuilder.appointment_payload(action: 'update_appointment', appointment: appointment)
-    )
+    payload = ::Scheduling::ToolPayloadBuilder.appointment_payload(action: 'update_appointment', appointment: appointment)
+    formatted_payload(unchanged ? payload.merge(unchanged: true, note: Captain::Tools::Agent::AppointmentResult::UNCHANGED_NOTE) : payload)
   rescue Scheduling::Error => e
     return formatted_payload(Captain::Tools::Agent::AppointmentResult.failure(e)) if patient_scope
 
@@ -63,6 +64,11 @@ class Captain::Tools::Copilot::UpdateAppointmentService < Captain::Tools::Copilo
   end
 
   private
+
+  def agent_result(appointment, unchanged:)
+    result = Captain::Tools::Agent::AppointmentResult
+    unchanged ? result.unchanged(appointment, action: self.class.name) : result.success(appointment, action: self.class.name)
+  end
 
   def appointment_operations
     Captain::Tools::Operations::AppointmentOperations.new(

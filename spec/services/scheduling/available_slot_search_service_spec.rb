@@ -166,17 +166,30 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
       expect(payload[:total_slots]).to eq(0)
     end
 
-    it 'uses a window shorter than one visit to find the visit that starts at its beginning' do
+    it 'offers every start inside a window shorter than one visit, although its visit ends after the window' do
       payload = search_between(at(10), at(10, 20), service_id: service_record.id)
 
-      expect(starts(payload)).to eq([at(10).iso8601])
+      expect(starts(payload)).to eq([at(10), at(10, 5), at(10, 10), at(10, 15)].map(&:iso8601))
+      expect(payload[:slots].last[:ends_at]).to eq(at(10, 45).iso8601)
     end
 
-    it 'keeps a window that holds a visit as it was: every visit ends before the end of the range' do
+    it 'offers the starts up to the end of a window that holds a visit, whose visit ends after it' do
       payload = search_between(at(9), at(10), service_id: service_record.id)
 
       expect(starts(payload).first).to eq(at(9).iso8601)
-      expect(starts(payload).last).to eq(at(9, 30).iso8601)
+      expect(starts(payload).last).to eq(at(9, 55).iso8601)
+      expect(payload[:slots].last[:ends_at]).to eq(at(10, 25).iso8601)
+    end
+
+    it 'does not offer a start at or after the end of the range' do
+      expect(starts(search_between(at(9), at(10), service_id: service_record.id))).not_to include(at(10).iso8601)
+    end
+
+    it 'does not read the schedule further than the days a range may hold' do
+      last_day = time_zone.local(2026, 5, 21, 23, 59, 0)
+      from = time_zone.local(2026, 4, 20, 8, 0, 0)
+
+      expect { described_class.new(account: account, from: from, to: last_day, resource_ids: [resource.id]).perform }.not_to raise_error
     end
 
     it 'counts the limit from the start of the range, so a later hour is reached by moving the range' do
@@ -209,15 +222,26 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
       perform(resource_ids: resource_ids, limit: 1)[:resources].pluck(:id)
     end
 
-    it 'ignores blank and non-numeric ids and searches the other specialists' do
-      expect(resource_ids_found(['', nil, ' ', 'abc', 'Dr. Aigerim', 0, -3])).to contain_exactly(resource.id, other_resource.id)
+    it 'drops a blank value, null and 0 and searches the other specialists' do
+      expect(resource_ids_found(['', nil, ' ', 0, '0'])).to contain_exactly(resource.id, other_resource.id)
       expect(resource_ids_found('')).to contain_exactly(resource.id, other_resource.id)
     end
 
-    it 'keeps the numeric ids among the ignored ones' do
-      expect(resource_ids_found([resource.id.to_s, '', 'abc'])).to eq([resource.id])
+    it 'keeps the numeric ids among the dropped ones' do
+      expect(resource_ids_found([resource.id.to_s, '', nil, 0])).to eq([resource.id])
       expect(resource_ids_found([nil, other_resource.id, resource.id.to_s])).to contain_exactly(resource.id, other_resource.id)
       expect(resource_ids_found("#{resource.id}, #{other_resource.id}")).to contain_exactly(resource.id, other_resource.id)
+    end
+
+    it 'refuses a value that is not an ID, so a name never widens the search to every specialist' do
+      message = 'resource_ids takes specialist IDs from search_scheduling_resources'
+      ['abc', 'Dr. Aigerim', -3, '1.5x', 'Aigerim'].each do |value|
+        expect { perform(resource_ids: [value]) }.to raise_error(Scheduling::Error, message) do |error|
+          expect(error.code).to eq('INVALID_RESOURCE_IDS')
+          expect(error.details).to include(reason: 'invalid_resource_ids')
+        end
+      end
+      expect { perform(resource_ids: [resource.id, 'Dr. Aigerim']) }.to raise_error(Scheduling::Error, message)
     end
 
     it 'still reports a numeric id that is not a specialist of the account' do

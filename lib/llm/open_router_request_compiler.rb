@@ -148,7 +148,7 @@ class Llm::OpenRouterRequestCompiler
   end
 
   def request_models
-    Array(request_value(:models)).filter_map { |candidate| candidate.to_s.strip.presence }.uniq
+    Array(request_value(:models)).filter_map { |candidate| candidate.to_s.strip.presence }.uniq.first(Llm::OpenRouterRoutingProfile::MAX_MODELS)
   end
 
   def apply_request_params!(params, provider_params:, models:)

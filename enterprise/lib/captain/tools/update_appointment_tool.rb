@@ -35,7 +35,8 @@ class Captain::Tools::UpdateAppointmentTool < Captain::Tools::BasePublicTool
 
   def perform(tool_context, appointment_id: nil, resource_id: nil, service_id: nil, starts_at: nil, ends_at: nil, duration_min: nil,
               appointment_type: nil, client_comment: nil, custom_attributes: nil, appointment_access_token: nil, patient_confirmed: false)
-    appointment = operations(tool_context.state).update_current_appointment(
+    appointment_operations = operations(tool_context.state)
+    appointment = appointment_operations.update_current_appointment(
       appointment_id: appointment_id,
       appointment_access_token: appointment_access_token,
       patient_confirmed: patient_confirmed,
@@ -48,6 +49,10 @@ class Captain::Tools::UpdateAppointmentTool < Captain::Tools::BasePublicTool
       client_comment: client_comment,
       custom_attributes: custom_attributes
     )
+    # The appointment already has what was asked: there is no provider write to wait for, and the answer says nothing was changed.
+    if appointment_operations.unchanged_appointment.present?
+      return JSON.generate(Captain::Tools::Agent::AppointmentResult.unchanged(appointment, action: 'update_appointment'))
+    end
 
     provider_write_output(appointment, action: 'update_appointment', operation: 'move_reception')
   rescue StandardError => e

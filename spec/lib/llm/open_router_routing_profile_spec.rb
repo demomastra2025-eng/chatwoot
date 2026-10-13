@@ -171,6 +171,19 @@ RSpec.describe Llm::OpenRouterRoutingProfile do
       expect(described_class.for(feature: :editor, model: 'openai/gpt-5.4-mini').models).to eq(%w[openai/gpt-5.4-mini openai/gpt-4.1-mini])
     end
 
+    it 'never lists more models than OpenRouter accepts in one request' do
+      expect(described_class::MAX_MODELS).to eq(3)
+      Llm::OpenRouterRoutingProfile::FALLBACK_MODELS.each_key do |feature|
+        %w[openai/gpt-6-luna openai/gpt-5.4-mini openai/gpt-5.4].each do |model|
+          expect(described_class.for(feature: feature, model: model).models.size).to be <= described_class::MAX_MODELS
+        end
+      end
+      expect(described_class.for(feature: :editor, model: 'openai/gpt-6-luna').models)
+        .to eq(%w[openai/gpt-6-luna openai/gpt-5.6-luna openai/gpt-5.4-mini])
+      expect(described_class.for(feature: :image_recognition, model: 'openai/gpt-6-luna').models)
+        .to eq(%w[openai/gpt-6-luna openai/gpt-5.6-luna openai/gpt-5.4-mini])
+    end
+
     it 'keeps Luna 6 first for the editor, hints and copilot instead of ranking all listed models together' do
       %i[editor label_suggestion copilot].each do |feature|
         profile = described_class.for(feature: feature, model: 'openai/gpt-6-luna')

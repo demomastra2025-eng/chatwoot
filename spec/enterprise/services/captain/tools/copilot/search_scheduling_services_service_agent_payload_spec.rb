@@ -43,6 +43,22 @@ RSpec.describe Captain::Tools::Copilot::SearchSchedulingServicesService do
     expect(price_row).to include('price', 'resource_id')
   end
 
+  describe 'the ambiguous flag' do
+    it 'stays in the answer for staff and Copilot, also for a single partial match' do
+      expect(search(query: 'консультация терапевта срочная')).to include('match_status' => 'partial_candidates', 'ambiguous' => true)
+    end
+
+    it 'is left out of the answer of the patient agent: it would sit next to the instruction to choose the best match itself' do
+      as_agent
+
+      payload = search(query: 'консультация терапевта срочная')
+
+      expect(payload).to include('match_status' => 'partial_candidates', 'total_count' => 1)
+      expect(payload).not_to have_key('ambiguous')
+      expect(payload['instruction']).to eq(described_class::NAME_DIFFERS_INSTRUCTION)
+    end
+  end
+
   describe 'a name that differs from the request' do
     before { create(:scheduling_service, account: account, name: 'Консультация терапевта повторная') }
 

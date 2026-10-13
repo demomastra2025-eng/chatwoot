@@ -142,8 +142,9 @@ class Captain::Runtime::ExecutorResolver
     names = selectable_names(exclude_current: true)
     raise RetryableError, no_peer_message('council') if names.empty?
 
-    raise RetryableError, 'Council needs parts for at least two different agents: name the executor of the part that is not yours. ' \
-                          "Use one of: #{names.join(', ')}"
+    raise RetryableError, 'Council needs parts for at least two different agents, from the patient\'s latest message only: name the ' \
+                          "executor of each part, one of: #{names.join(', ')}. A latest message with one request needs no plan: " \
+                          'answer it with your tools or transfer it to its colleague.'
   end
 
   def unknown_message(reference, ambiguous)

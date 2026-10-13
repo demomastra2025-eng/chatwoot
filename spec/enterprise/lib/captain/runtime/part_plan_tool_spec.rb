@@ -57,7 +57,9 @@ RSpec.describe Captain::Runtime::PartPlanTool do
 
     expect(properties.keys).to match_array(%w[fragment executor patient relation object_refs link_part_id link_action])
     expect(properties.values.map { |item| item['description'] }).to all(be_present)
-    expect(link['description']).to eq('Number of the open part that this message answers, corrects or cancels, as listed (for #3 write 3).')
+    expect(link['description']).to eq(
+      'Number of the open part whose question this message answers, or that it corrects or cancels, as listed (for #3 write 3).'
+    )
     expect(link['type']).to eq(%w[string integer null])
     expect(properties.values.map { |item| item['description'] }.join(' ')).not_to match(/executor_agent_id|UUID|exact ID/i)
   end

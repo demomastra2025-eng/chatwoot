@@ -42,6 +42,24 @@ RSpec.describe Captain::Tools::Copilot::SearchSchedulingResourcesService do
       .to include('search_status' => 'no_recorded_link', 'total_count' => 0)
   end
 
+  describe 'the ambiguous flag' do
+    before { create(:scheduling_resource, account: account, name: 'Асланов Мурад Другой', specialty: 'Хирург') }
+
+    it 'stays in the answer for staff and Copilot' do
+      expect(search(query: 'Асланов Мурад')).to include('search_status' => 'ambiguous', 'ambiguous' => true)
+    end
+
+    it 'is left out of the answer of the patient agent: it would sit next to the instruction to choose the best match itself' do
+      as_agent
+
+      payload = search(query: 'Асланов Мурад')
+
+      expect(payload).to include('search_status' => 'ambiguous', 'exact_name_matches' => 0)
+      expect(payload).not_to have_key('ambiguous')
+      expect(payload['instruction']).to eq(described_class::NAME_DIFFERS_INSTRUCTION)
+    end
+  end
+
   describe 'a name that differs from the request' do
     before { create(:scheduling_resource, account: account, name: 'Асланов Мурад Другой', specialty: 'Хирург') }
 
