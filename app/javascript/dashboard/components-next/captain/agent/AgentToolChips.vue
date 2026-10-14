@@ -74,7 +74,9 @@ const isCapabilityTool = id =>
   catalogById.value.get(id)?.capability_tool === true;
 
 const mentionedIds = computed(() =>
-  extractCaptainToolReferenceIds(props.instruction).map(String)
+  extractCaptainToolReferenceIds(props.instruction)
+    .map(String)
+    .filter(id => !isCapabilityTool(id))
 );
 
 const hiddenAccessIds = computed(() => {
