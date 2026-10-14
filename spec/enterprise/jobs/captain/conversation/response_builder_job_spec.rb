@@ -298,7 +298,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       thread = create(:communication_thread, account: account, contact: conversation.contact)
       channels = [conversation] + Array.new(2) do
         sibling_inbox = create(:inbox, account: account)
-        create(:captain_inbox, inbox: sibling_inbox, captain_assistant: assistant)
+        expect(sibling_inbox.captain_inbox.captain_assistant_id).to eq(assistant.id)
         create(:conversation, account: account, inbox: sibling_inbox, contact: conversation.contact, status: :pending)
       end
       channels.each do |candidate|
@@ -1012,7 +1012,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
     it 'splits several response attachments into sequential WhatsApp messages' do
       whatsapp_channel = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
       whatsapp_inbox = whatsapp_channel.inbox
-      create(:captain_inbox, captain_assistant: assistant, inbox: whatsapp_inbox)
+      expect(whatsapp_inbox.captain_inbox.captain_assistant_id).to eq(assistant.id)
       whatsapp_conversation = create(:conversation, inbox: whatsapp_inbox, account: account, status: :pending)
       create(:message, conversation: whatsapp_conversation, content: 'вышли файлы', message_type: :incoming)
       whatsapp_conversation.update!(status: :pending)
@@ -1808,7 +1808,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         conversation.reload
         expect(conversation.messages.outgoing.where(private: false).pluck(:content)).to eq(['Сотрудник продолжит диалог с вами.'])
         notes = conversation.messages.outgoing.where(private: true).pluck(:content)
-        expect(notes).to eq([a_string_including('Результаты анализов', unreported_note)])
+        expect(notes).to contain_exactly(a_string_including('Результаты анализов', unreported_note))
         expect(conversation.status).to eq('open')
       end
 
@@ -1983,7 +1983,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
         described_class.perform_now(conversation, assistant)
 
-        expect(conversation.reload.messages.outgoing.last.additional_attributes['captain_trace']).to eq(trace_payload)
+        expect(conversation.reload.messages.outgoing.where(private: true).last.additional_attributes['captain_trace']).to eq(trace_payload)
       end
 
       it 'creates a private note but no public notice when handoff message is disabled' do
