@@ -26,6 +26,13 @@ RSpec.describe Captain::Tools::Operations::AppointmentOperations, type: :model d
   describe 'a booking of the agent' do
     let(:operations) { operations_for(assistant) }
 
+    it 'rejects a resource outside the agent booking scope' do
+      other = create(:scheduling_resource, account: account)
+      assistant.update!(config: assistant.config.merge('booking_scope' => { 'resource_ids' => [other.id] }))
+
+      expect { operations.create_appointment(**booking) }.to raise_error(Scheduling::Error, /booking scope/)
+    end
+
     it 'takes the one service of the specialist when the call names none' do
       appointment = operations.create_appointment(**booking)
 

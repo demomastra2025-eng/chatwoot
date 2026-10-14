@@ -197,6 +197,8 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
 
     merge_optional_config_param!(permitted, :context_access)
     merge_optional_config_param!(permitted, :tool_access)
+    merge_optional_config_param!(permitted, :handoff_team_id)
+    merge_optional_config_param!(permitted, :booking_scope)
     merge_optional_config_param!(permitted, :follow_up_settings)
     merge_optional_config_param!(permitted, :outcome_reason_settings)
     merge_optional_config_param!(permitted, :voice_settings, voice_settings: true)

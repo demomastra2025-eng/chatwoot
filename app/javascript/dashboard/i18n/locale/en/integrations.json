@@ -3825,6 +3825,10 @@
       "PROVIDER_DEFAULT": "Provider default"
     },
     "AGENT_PAGE": {
+      "HANDOFF_TEAM": "Hand off to team",
+      "NO_HANDOFF_TEAM": "No team",
+      "BOOKING_SCOPE": "Booking specialists and rooms",
+      "ALL_BOOKING_RESOURCES": "Empty selection allows all.",
       "BREADCRUMB_ARIA": "Back to AI agents",
       "NAME_PLACEHOLDER": "Agent name",
       "NAME_REQUIRED": "Enter the agent name",

@@ -410,6 +410,27 @@ class Captain::Assistant < ApplicationRecord
   validate :validate_fish_voice_reference
   validate :validate_conversational_model
   validate :validate_follow_up_settings
+  validate :validate_routing_resources
+
+  def handoff_team_id = config.to_h['handoff_team_id'].presence
+
+  def handoff_team
+    account.teams.find_by(id: handoff_team_id) if handoff_team_id.present?
+  end
+
+  def booking_resource_ids
+    Array(config.to_h.dig('booking_scope', 'resource_ids')).map(&:to_i)
+  end
+
+  def validate_routing_resources
+    team_id = handoff_team_id
+    errors.add(:config, 'handoff team must belong to this account') if team_id.present? && !account.teams.exists?(id: team_id)
+    ids = booking_resource_ids
+    return if ids.empty?
+    return if ids.uniq.size == ids.size && account.scheduling_resources.where(id: ids).count == ids.size
+
+    errors.add(:config, 'booking resources must belong to this account')
+  end
 
   scope :ordered, -> { order(created_at: :desc) }
 

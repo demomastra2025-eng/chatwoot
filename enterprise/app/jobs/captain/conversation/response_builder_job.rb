@@ -675,7 +675,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     source = status_reason.present? ? 'captain' : 'system'
     handoff = lambda do
       with_response_persistence_lock(stage: 'response_handoff') do
-        @conversation.bot_handoff!(
+        result = @conversation.bot_handoff!(
           status_reason: status_reason,
           actor: response_assistant,
           source: source,
@@ -683,6 +683,9 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
           audit: audit,
           &
         )
+        team = response_assistant.handoff_team if result == :applied && v2_handoff_tool_fired?
+        @conversation.update!(team: team) if team
+        result
       end
     end
     return handoff.call if reason.blank?

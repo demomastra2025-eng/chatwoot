@@ -32,7 +32,8 @@ class Captain::Tools::Copilot::SearchSchedulingResourcesService < Captain::Tools
       service_id: service_id,
       include_inactive: include_inactive,
       limit: parse_limit(limit),
-      offset: offset
+      offset: offset,
+      resource_ids: (assistant.booking_resource_ids.presence if agent_scope?)
     ).perform
 
     filters = { query: query.to_s.presence, search_by: search_by.to_s.presence || 'all', service_id: service_id,

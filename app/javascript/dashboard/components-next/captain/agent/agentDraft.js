@@ -14,6 +14,8 @@ const DRAFT_FIELDS = Object.freeze([
   'model',
   'thinkingEffort',
   'temperature',
+  'handoffTeamId',
+  'bookingResourceIds',
 ]);
 
 const hasOwn = (object, key) =>
@@ -39,6 +41,8 @@ export const buildAgentDraft = (assistant = {}) => {
     model: toText(config.model),
     thinkingEffort: toText(config.thinking_effort),
     temperature: toTemperature(config.temperature),
+    handoffTeamId: config.handoff_team_id || '',
+    bookingResourceIds: config.booking_scope?.resource_ids || [],
   };
 };
 
@@ -90,6 +94,9 @@ export const isAgentDraftDirty = (base, draft, modelMetadata = null) => {
     trimmed(base.name) !== trimmed(draft.name) ||
     trimmed(base.routingDescription) !== trimmed(draft.routingDescription) ||
     toText(base.instruction) !== toText(draft.instruction) ||
+    String(base.handoffTeamId || '') !== String(draft.handoffTeamId || '') ||
+    JSON.stringify(base.bookingResourceIds || []) !==
+      JSON.stringify(draft.bookingResourceIds || []) ||
     modelSettingsChanged(base, draft, modelMetadata)
   );
 };
@@ -151,6 +158,20 @@ export const buildAgentUpdatePayload = (base, draft, modelMetadata = {}) => {
     };
   }
 
+  if (String(base.handoffTeamId || '') !== String(draft.handoffTeamId || '')) {
+    payload.config ||= {};
+    payload.config.handoff_team_id = draft.handoffTeamId || null;
+  }
+  if (
+    JSON.stringify(base.bookingResourceIds || []) !==
+    JSON.stringify(draft.bookingResourceIds || [])
+  ) {
+    payload.config ||= {};
+    payload.config.booking_scope = {
+      resource_ids: (draft.bookingResourceIds || []).map(Number),
+    };
+  }
+
   return payload;
 };
 
@@ -161,7 +182,9 @@ export const rebaseAgentDraft = (previousBase, nextBase, draft) => {
   if (!previousBase || !draft) return { ...nextBase };
   return DRAFT_FIELDS.reduce((result, field) => {
     result[field] =
-      draft[field] === previousBase[field] ? nextBase[field] : draft[field];
+      JSON.stringify(draft[field]) === JSON.stringify(previousBase[field])
+        ? nextBase[field]
+        : draft[field];
     return result;
   }, {});
 };

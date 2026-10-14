@@ -3179,6 +3179,10 @@
       "PROVIDER_DEFAULT": "По умолчанию у поставщика"
     },
     "AGENT_PAGE": {
+      "HANDOFF_TEAM": "Передавать в команду",
+      "NO_HANDOFF_TEAM": "Без команды",
+      "BOOKING_SCOPE": "Специалисты и кабинеты для записи",
+      "ALL_BOOKING_RESOURCES": "Если ничего не выбрано, доступны все.",
       "BREADCRUMB_ARIA": "Вернуться к списку ИИ-агентов",
       "NAME_PLACEHOLDER": "Имя агента",
       "NAME_REQUIRED": "Введите имя агента",

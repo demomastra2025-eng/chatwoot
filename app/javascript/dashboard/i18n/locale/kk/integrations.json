@@ -2859,6 +2859,10 @@
       "PROVIDER_DEFAULT": "Провайдердің әдепкі мәні"
     },
     "AGENT_PAGE": {
+      "HANDOFF_TEAM": "Командаға беру",
+      "NO_HANDOFF_TEAM": "Команда жоқ",
+      "BOOKING_SCOPE": "Жазылуға арналған мамандар мен кабинеттер",
+      "ALL_BOOKING_RESOURCES": "Таңдау бос болса, барлығы қолжетімді.",
       "BREADCRUMB_ARIA": "ЖИ-агенттер тізіміне оралу",
       "NAME_PLACEHOLDER": "Агент аты",
       "NAME_REQUIRED": "Агент атын енгізіңіз",

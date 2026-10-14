@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { defineComponent, h, nextTick, reactive, ref } from 'vue';
 import { flushPromises, mount } from '@vue/test-utils';
+import SchedulingResourcesAPI from 'dashboard/api/scheduling/resources';
 
 const dispatchMock = vi.fn();
 const useAlertMock = vi.fn();
@@ -48,6 +49,10 @@ const configStore = {
   getSelectedModelForFeature: () => 'default-model',
 };
 const matrixStore = { fetch: vi.fn() };
+
+vi.mock('dashboard/api/scheduling/resources', () => ({
+  default: { get: vi.fn().mockResolvedValue({ data: { payload: [] } }) },
+}));
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: key => key, te: () => true }),
@@ -262,6 +267,7 @@ const instructionTab = wrapper =>
 
 describe('Agent page', () => {
   beforeEach(() => {
+    SchedulingResourcesAPI.get.mockResolvedValue({ data: { payload: [] } });
     policy.isAdmin = true;
     route.query = {};
     route.params = { accountId: '3', assistantId: '12' };

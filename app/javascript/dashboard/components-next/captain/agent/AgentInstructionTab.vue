@@ -10,6 +10,7 @@ import {
 import AgentToolChips from './AgentToolChips.vue';
 import AgentModelBlock from './AgentModelBlock.vue';
 import AgentFollowUpsSummary from './AgentFollowUpsSummary.vue';
+import Select from 'dashboard/components-next/select/Select.vue';
 
 // «Инструкция» tab: the instruction editor with the @ tools / $ fields
 // pickers and the read-only tool chips; side column with the «Модель»,
@@ -21,6 +22,8 @@ const props = defineProps({
   showErrors: { type: Boolean, default: false },
   canEdit: { type: Boolean, default: false },
   instructionMaxLength: { type: Number, default: 20000 },
+  teams: { type: Array, default: () => [] },
+  bookingResources: { type: Array, default: () => [] },
 });
 
 const emit = defineEmits(['update:draft', 'openFollowUps']);
@@ -49,6 +52,13 @@ const thinkingEffort = computed({
 
 const toolAccess = computed(() =>
   resolveAgentToolAccess(props.assistant?.config?.tool_access || {})
+);
+const teamOptions = computed(() => [
+  { value: '', label: t('CAPTAIN.AGENT_PAGE.NO_HANDOFF_TEAM') },
+  ...props.teams.map(team => ({ value: String(team.id), label: team.name })),
+]);
+const selectedResources = computed(() =>
+  (props.draft.bookingResourceIds || []).map(String)
 );
 
 const referenceActions = computed(() => [
@@ -144,6 +154,33 @@ const instructionError = computed(() => {
     </div>
 
     <aside class="flex min-w-0 flex-col gap-6">
+      <div class="flex flex-col gap-3">
+        <label class="flex flex-col gap-1 text-sm text-n-slate-11">
+          {{ t('CAPTAIN.AGENT_PAGE.HANDOFF_TEAM') }}
+          <Select
+            :model-value="String(draft.handoffTeamId || '')"
+            :options="teamOptions"
+            :disabled="!canEdit"
+            @update:model-value="updateDraft({ handoffTeamId: $event })"
+          />
+        </label>
+        <label class="flex flex-col gap-1 text-sm text-n-slate-11">
+          {{ t('CAPTAIN.AGENT_PAGE.BOOKING_SCOPE') }}
+          <Select
+            :model-value="selectedResources"
+            :options="
+              bookingResources.map(resource => ({
+                value: String(resource.id),
+                label: resource.name,
+              }))
+            "
+            :disabled="!canEdit"
+            multiple
+            @update:model-value="updateDraft({ bookingResourceIds: $event })"
+          />
+          <span>{{ t('CAPTAIN.AGENT_PAGE.ALL_BOOKING_RESOURCES') }}</span>
+        </label>
+      </div>
       <AgentModelBlock
         v-model:model="model"
         v-model:temperature="temperature"

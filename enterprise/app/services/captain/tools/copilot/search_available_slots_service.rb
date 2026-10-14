@@ -15,6 +15,13 @@ class Captain::Tools::Copilot::SearchAvailableSlotsService < Captain::Tools::Cop
   param :limit, type: :number, desc: 'Maximum number of slots to return', required: false
 
   def execute(from:, to:, resource_ids: nil, service_id: nil, duration_min: nil, limit: nil)
+    if agent_scope? && assistant.booking_resource_ids.present?
+      allowed = assistant.booking_resource_ids
+      requested = Scheduling::AvailableSlotSearchService.normalize_resource_ids(resource_ids)
+      raise ArgumentError, 'Resource is outside this agent booking scope' if (requested - allowed).any?
+
+      resource_ids = requested.presence || allowed
+    end
     range_from = scheduling_datetime(from, field_name: 'from')
     range_to = scheduling_datetime(to, field_name: 'to')
     scheduling_range!(range_from, range_to, allow_equal: true)

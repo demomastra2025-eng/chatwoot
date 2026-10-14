@@ -1,6 +1,25 @@
 require 'rails_helper'
 
 RSpec.describe Captain::Assistant, type: :model do
+  describe 'handoff and booking scope' do
+    let(:account) { create(:account) }
+    let(:assistant) { create(:captain_assistant, account: account) }
+
+    it 'accepts account resources and a handoff team and rejects cross-account references' do
+      team = create(:team, account: account)
+      resource = create(:scheduling_resource, account: account)
+      assistant.update!(config: assistant.config.merge(
+        'handoff_team_id' => team.id, 'booking_scope' => { 'resource_ids' => [resource.id] }
+      ))
+      expect(assistant.handoff_team).to eq(team)
+      expect(assistant.booking_resource_ids).to eq([resource.id])
+
+      foreign_team = create(:team)
+      assistant.config['handoff_team_id'] = foreign_team.id
+      expect(assistant).not_to be_valid
+    end
+  end
+
   describe 'message sender payloads' do
     it 'exposes only public identity fields in events and webhooks' do
       assistant = build(:captain_assistant, description: 'Private agent instructions', config: { 'model' => 'private-model' })

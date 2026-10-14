@@ -39,6 +39,7 @@ import {
 } from 'dashboard/components-next/captain/agent/agentDraft';
 import { useCaptainConfigStore } from 'dashboard/store/captain/preferences';
 import { useCaptainChannelMatrixStore } from 'dashboard/store/captain/channelMatrix';
+import SchedulingResourcesAPI from 'dashboard/api/scheduling/resources';
 
 // One AI agent: header (name, description, active, «Проверить», «Сохранить»)
 // and the tabs «Инструкция» · «Дожимы» · «Проверка» · «Голос», driven by the
@@ -61,6 +62,8 @@ const channelMatrixStore = useCaptainChannelMatrixStore();
 
 const uiFlags = useMapGetter('captainAssistants/getUIFlags');
 const inboxes = useMapGetter('inboxes/getInboxes');
+const teams = useMapGetter('teams/getTeams');
+const bookingResources = ref([]);
 
 const isAdmin = computed(() => checkPermissions(['administrator']));
 const isPaywalled = computed(
@@ -286,6 +289,14 @@ onMounted(() => {
   window.addEventListener('beforeunload', handleBeforeUnload);
   captainConfigStore.fetch();
   if (isAdmin.value) channelMatrixStore.fetch();
+  store.dispatch('teams/get');
+  SchedulingResourcesAPI.get()
+    .then(response => {
+      bookingResources.value = response.data?.payload || [];
+    })
+    .catch(() => {
+      bookingResources.value = [];
+    });
 });
 
 onBeforeUnmount(() => {
@@ -337,6 +348,8 @@ onBeforeUnmount(() => {
           v-show="activeTab === TABS.INSTRUCTION"
           v-model:draft="draft"
           :assistant="assistant"
+          :teams="teams"
+          :booking-resources="bookingResources"
           :errors="validation.errors"
           :show-errors="isDirty"
           :can-edit="isAdmin"

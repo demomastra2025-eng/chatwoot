@@ -1494,6 +1494,19 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       expect(conversation.messages.outgoing.where(private: false)).to be_empty
     end
 
+    it 'assigns a configured account team after an authorized handoff' do
+      team = create(:team, account: account)
+      assistant.update!(config: assistant.config.merge('handoff_team_id' => team.id))
+      allow(agent_runner_service).to receive(:generate_response).and_return(
+        'response' => 'conversation_handoff', 'handoff_tool_called' => true, 'handoff_authorized' => true
+      )
+
+      described_class.perform_now(conversation, assistant)
+
+      expect(conversation.reload.team).to eq(team)
+      expect(conversation.status).to eq('open')
+    end
+
     it 'does not consume usage when a handoff loses the control fence' do
       allow(Llm::EventBus).to receive(:publish)
       allow(agent_runner_service).to receive(:generate_response).and_return(

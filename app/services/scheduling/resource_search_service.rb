@@ -4,7 +4,7 @@ class Scheduling::ResourceSearchService
   # The equal-name test reads at most this many rows; it only bounds the work, never the words that are compared.
   EXACT_CANDIDATE_LIMIT = 500
 
-  def initialize(account:, query: nil, search_by: 'all', include_inactive: false, service_id: nil, limit: nil, offset: 0) # rubocop:disable Metrics/ParameterLists
+  def initialize(account:, query: nil, search_by: 'all', include_inactive: false, service_id: nil, limit: nil, offset: 0, resource_ids: nil) # rubocop:disable Metrics/ParameterLists
     @account = account
     @query = Scheduling::SearchText.normalize(query)
     @query_truncated = Scheduling::SearchText.truncated?(query)
@@ -13,10 +13,12 @@ class Scheduling::ResourceSearchService
     @service_id = Scheduling::IntegerNumericNormalizer.optional_positive_id(service_id)
     @limit = normalize_limit(limit)
     @offset = normalize_offset(offset)
+    @resource_ids = resource_ids
   end
 
   def perform
     scope = @account.scheduling_resources.not_deleted_from_scheduling
+    scope = scope.where(id: @resource_ids) unless @resource_ids.nil?
     scope = scope.active unless @include_inactive
     scope = filter_by_service(scope)
     scope = filter_by_query(scope)
