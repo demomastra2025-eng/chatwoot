@@ -102,16 +102,14 @@ RSpec.describe Captain::CustomerNoticeService do
 
       expect(user_data(request)).to eq(
         'kind' => 'handoff',
-        'customer_language' => 'ru',
         'customer_messages' => ['Хочу записаться к врачу', 'Мне нужен администратор'],
         'reason_label' => 'Нужен человек',
         'style_guide' => 'Коротко и тепло.'
       )
     end
 
-    it 'writes in Kazakh when the customer writes Kazakh' do
-      conversation.messages.destroy_all
-      customer_says('Дәрігерге жазылғым келеді, қолдау қажет')
+    it 'uses the persisted decision for a Kazakh notice' do
+      conversation.update!(additional_attributes: conversation.additional_attributes.merge('captain_patient_language' => 'kk'))
       request = stub_notice_answer('Қызметкер сізбен әңгімені жалғастырады.')
 
       expect(service.text).to eq('Қызметкер сізбен әңгімені жалғастырады.')
@@ -148,57 +146,25 @@ RSpec.describe Captain::CustomerNoticeService do
   end
 
   describe 'the language of an AI-written message' do
-    def language_of(*messages)
-      messages.each { |content| customer_says(content) }
-      request = stub_notice_answer(answer)
-      service.text
-      user_data(request)['customer_language']
-    end
-
     before { configure_notice(account, handoff_key, mode: 'generated', text: '') }
 
-    {
-      'a Russian text with a Kazakh name inside' => ['Здравствуйте, меня зовут Нұрлан, хочу записаться на прием к терапевту'],
-      'a Russian text with a Kazakh name and a capital acronym' => ['Добрый день! Хочу записать дочь Айгүль на УЗИ'],
-      'a short Russian sentence with a Kazakh name' => ['Меня зовут Нұрлан'],
-      'a Russian text without Kazakh letters' => ['Добрый день, нужна запись к терапевту']
-    }.each do |label, messages|
-      it "is Russian for #{label}" do
-        expect(language_of(*messages)).to eq('ru')
-      end
+    it 'sends no language hint when the decision has none' do
+      customer_says('Fake patient words')
+      request = stub_notice_answer(answer)
+
+      service.text
+
+      expect(user_data(request)).not_to have_key('customer_language')
     end
 
-    {
-      'a Kazakh greeting' => ['Сәлеметсіз бе'],
-      'a Kazakh sentence with the letter і only' => ['Бір кісі келді'],
-      'a Kazakh sentence in capitals' => ['ҚАЙЫРЛЫ КҮН'],
-      'a Kazakh sentence with a Russian service name' => ['Дәрігерге жазылғым келеді, УЗИ қажет']
-    }.each do |label, messages|
-      it "is Kazakh for #{label}" do
-        expect(language_of(*messages)).to eq('kk')
-      end
-    end
+    it 'sends an English hint from the conversation decision' do
+      customer_says('Fake patient words')
+      conversation.update!(additional_attributes: conversation.additional_attributes.merge('captain_patient_language' => 'en'))
+      request = stub_notice_answer('A staff member will continue the conversation.')
 
-    it 'reads the language from the latest customer messages only' do
-      kazakh = 'Сәлеметсіз бе, дәрігерге жазылғым келеді'
+      service.text
 
-      expect(language_of(kazakh, 'Хочу записаться', 'на прием к терапевту', 'на завтра, пожалуйста')).to eq('ru')
-    end
-
-    it 'follows the customer when the latest messages are Kazakh' do
-      expect(language_of('Здравствуйте, хочу записаться', 'на прием', 'к терапевту', 'Сәлеметсіз бе, дәрігерге жазылғым келеді')).to eq('kk')
-    end
-
-    it 'uses the workspace language when the customer wrote no Cyrillic text' do
-      expect(language_of('Hello', '+7 701 000 00 00')).to eq('ru')
-    end
-
-    context 'with a Kazakh workspace' do
-      let(:account) { create(:account, locale: 'kk') }
-
-      it 'uses the workspace language when the customer wrote no Cyrillic text' do
-        expect(language_of('Hello')).to eq('kk')
-      end
+      expect(user_data(request)['customer_language']).to eq('en')
     end
   end
 
@@ -251,13 +217,20 @@ RSpec.describe Captain::CustomerNoticeService do
       expect(service.source).to eq('fallback_builtin')
     end
 
-    it 'falls back to a neutral sentence in Kazakh for a Kazakh customer' do
-      conversation.messages.destroy_all
-      customer_says('Қайырлы күн, дәрігерге жазылғым келеді')
+    it 'falls back to a neutral sentence in the decided Kazakh language' do
+      conversation.update!(additional_attributes: conversation.additional_attributes.to_h.merge('captain_patient_language' => 'kk'))
       configure_notice(account, handoff_key, mode: 'generated', text: '')
       stub_notice_model(error: StandardError.new('boom'))
 
       expect(service.text).to eq('Қызметкер сізбен әңгімені жалғастырады.')
+    end
+
+    it 'falls back to a neutral sentence in the decided English language' do
+      conversation.update!(additional_attributes: conversation.additional_attributes.to_h.merge('captain_patient_language' => 'en'))
+      configure_notice(account, handoff_key, mode: 'generated', text: '')
+      stub_notice_model(error: StandardError.new('boom'))
+
+      expect(service.text).to eq('A staff member will continue the conversation with you.')
     end
 
     it 'has a neutral closing sentence too' do

@@ -9,13 +9,12 @@ RSpec.describe Captain::PatientLanguage do
     expect(liquid).to include("- #{described_class::RULE} Briefly, naming specialists and services as the clinic data names them")
   end
 
-  it 'names the language in words that need no code to detect it: the model decides, in any alphabet' do
-    expect(described_class::RULE).to eq(
-      "Reply in the patient's language: the language of most of the patient's words in the conversation, in any alphabet " \
-      '(Kazakh may be written in Russian or Latin letters). Keep it when a message contains words of another language.'
-    )
-    expect(described_class::FIELD_DESCRIPTION)
-      .to eq("The patient's language per the platform rule, e.g. Kazakh, Russian, English; decide it before writing the reply.")
+  it 'maps only the decision choices to a short prompt line' do
+    expect(described_class::RULE).to eq("Reply in the patient's language.")
+    expect(described_class.line('kk')).to eq('Patient language: Kazakh. Reply in Kazakh.')
+    expect(described_class.line('ru')).to eq('Patient language: Russian. Reply in Russian.')
+    expect(described_class.line('en')).to eq('Patient language: English. Reply in English.')
+    expect(described_class.line('other')).to be_nil
   end
 
   describe 'the structured request to the model' do

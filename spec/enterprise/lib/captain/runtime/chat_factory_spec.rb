@@ -441,6 +441,10 @@ RSpec.describe Captain::Runtime::ChatFactory do
                                   'The patient writes in')
     end
 
+    it 'passes the decided language to a council part' do
+      expect(prompt(patient_language: 'kk')).to include('Patient language: Kazakh. Reply in Kazakh.')
+    end
+
     it 'gives the owner of every patient the same plain example sentences, with no wording of one language to follow' do
       text = prompt(part_customer_message: 'Дүйсенбі 19-ы сағат 9:30-ға ауыстырыңызшы', part_staff_handoff: false)
 

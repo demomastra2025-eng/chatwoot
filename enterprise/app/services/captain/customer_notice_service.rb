@@ -10,7 +10,7 @@
 #                        what the model wrote (no word lists or patterns), it is only trimmed and, when longer than the
 #                        limit, cut at the last sentence end. An error, a timeout or an empty answer falls back to the
 #                        fixed text when there is one, else to a neutral built-in sentence in the customer's language
-#                        (ru or kk): the only place a built-in sentence may appear.
+#                        (ru or kk, chosen from the saved decision or workspace locale).
 # The model call can take seconds, so callers ask for #text before they take the conversation lock. A caller that cannot
 # wait at all passes generate: false: AI mode then goes straight to the fallback text.
 class Captain::CustomerNoticeService
@@ -24,11 +24,13 @@ class Captain::CustomerNoticeService
   BUILTIN_TEXTS = {
     'handoff' => {
       'ru' => 'Сотрудник продолжит диалог с вами.',
-      'kk' => 'Қызметкер сізбен әңгімені жалғастырады.'
+      'kk' => 'Қызметкер сізбен әңгімені жалғастырады.',
+      'en' => 'A staff member will continue the conversation with you.'
     },
     'resolution' => {
       'ru' => 'Диалог закрыт. Если появятся вопросы, напишите нам снова.',
-      'kk' => 'Әңгіме жабылды. Сұрағыңыз болса, бізге қайта жазыңыз.'
+      'kk' => 'Әңгіме жабылды. Сұрағыңыз болса, бізге қайта жазыңыз.',
+      'en' => 'The conversation is closed. If you have more questions, write to us again.'
     }
   }.freeze
   # The sentence end that a too long answer is cut at (a plain length cut; the text is never checked for its content).
@@ -39,7 +41,8 @@ class Captain::CustomerNoticeService
     Kinds: "handoff" means tell the customer that a staff member will continue the conversation. "resolution" means tell the
     customer that the conversation is closed.
     Rules:
-    - Write one or two short polite sentences, in the language of customer_language ("ru" is Russian, "kk" is Kazakh). Address
+    - Write one or two short polite sentences in the patient's language. If customer_language is present, use it
+      ("ru" is Russian, "kk" is Kazakh, "en" is English). Address
       the customer formally.
     - Say only what the kind requires: that a staff member will continue, or that the conversation is closed. Do not promise
       a time, a result or any action, and never say that an action was done (booked, moved, cancelled, paid, confirmed). Give
@@ -141,7 +144,7 @@ class Captain::CustomerNoticeService
   def user_payload
     {
       kind: kind,
-      customer_language: language,
+      customer_language: detected_language,
       customer_messages: customer_messages,
       reason_label: reason_label,
       style_guide: settings['instruction'].to_s.squish.first(Captain::AccountSettings::MESSAGE_INSTRUCTION_MAX_LENGTH).presence
@@ -157,10 +160,13 @@ class Captain::CustomerNoticeService
     end
   end
 
-  # ru or kk, from the latest customer messages (see Captain::CustomerNoticeLanguage); without Cyrillic text the workspace
-  # language decides.
+  def detected_language
+    value = conversation.additional_attributes.to_h[Captain::PatientLanguageDetector::ATTRIBUTE]
+    value if Captain::PatientLanguage::NAMES.key?(value)
+  end
+
   def language
-    @language ||= Captain::CustomerNoticeLanguage.detect(customer_messages, default: workspace_language)
+    detected_language || workspace_language
   end
 
   def workspace_language

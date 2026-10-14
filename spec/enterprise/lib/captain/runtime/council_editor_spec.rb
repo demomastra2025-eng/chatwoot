@@ -290,19 +290,21 @@ RSpec.describe Captain::Runtime::CouncilEditor do
       expect(prompt).not_to match(/Keep every time, date|date[^.]* exactly as written/)
     end
 
-    it 'writes in the language the parts name, by the one language rule of the platform' do
+    it 'uses the run language in the editor prompt' do
+      context[:patient_language] = 'kk'
       edit_parts(message: 'Қабылдау қанша тұрады?')
 
-      expect(Captain::PatientLanguage::RULE).to start_with("Reply in the patient's language: the language of most of the patient's words")
-      expect(instructions.sole).to include(Captain::PatientLanguage::RULE, 'The parts give it in patient_language.',
-                                           'patient_language (the language the text is written in)')
+      expect(instructions.sole).to include(Captain::PatientLanguage::RULE, 'Patient language: Kazakh. Reply in Kazakh.',
+                                           'patient_language (the language the text is written in)',
+                                           'write its month and weekday in words of the patient\'s language')
       expect(instructions.sole).not_to include('Write the whole reply in')
     end
 
-    it 'has no rule that bans English or Latin-script words and names no language of its own: the patient may write in any language' do
+    it 'has no static rule that bans English or Latin-script words or names a fixed language' do
       edit_parts
 
-      expect(instructions.sole.sub(Captain::PatientLanguage::RULE, '')).not_to match(/Latin|English|Russian|Kazakh/i)
+      prompt = instructions.sole.sub(Captain::PatientLanguage::RULE, '')
+      expect(prompt).not_to match(/Latin|English|Russian|Kazakh/i)
     end
 
     it 'reads the reply from a JSON string as well as from an object' do

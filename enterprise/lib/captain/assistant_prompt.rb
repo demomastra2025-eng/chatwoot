@@ -55,7 +55,8 @@ class Captain::AssistantPrompt
     [
       Captain::PromptClock.now_line(@state[:runtime_clock]),
       Captain::PromptClock.night_line(@state[:runtime_clock]),
-      Captain::PromptClock.reply_window_line(@state[:reply_window], time_zone: time_zone)
+      Captain::PromptClock.reply_window_line(@state[:reply_window], time_zone: time_zone),
+      Captain::PatientLanguage.line(@context[:patient_language])
     ].compact.join("\n")
   end
 

@@ -1,12 +1,13 @@
 # frozen_string_literal: true
 
-# The one language rule of the agents. The platform rules (prompts/assistant.liquid), the owner of a council part and the council
-# editor all write for the patient in the language this rule names, and the structured results carry the language the model
-# decided on (patient_language, written before the reply text) so that the language is chosen before the words are.
+# The decision model supplies one language hint for an entire agent run.
 module Captain::PatientLanguage
-  # The sentence that names the language. assistant.liquid carries it as the start of its reply-language rule.
-  RULE = "Reply in the patient's language: the language of most of the patient's words in the conversation, in any alphabet " \
-         '(Kazakh may be written in Russian or Latin letters). Keep it when a message contains words of another language.'
+  NAMES = { 'ru' => 'Russian', 'kk' => 'Kazakh', 'en' => 'English' }.freeze
+  RULE = "Reply in the patient's language."
+  FIELD_DESCRIPTION = 'The language used for the patient reply, e.g. Kazakh, Russian or English.'
 
-  FIELD_DESCRIPTION = "The patient's language per the platform rule, e.g. Kazakh, Russian, English; decide it before writing the reply."
+  def self.line(code)
+    name = NAMES[code]
+    "Patient language: #{name}. Reply in #{name}." if name
+  end
 end

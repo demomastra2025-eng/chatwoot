@@ -38,6 +38,12 @@ RSpec.describe Captain::AssistantPrompt do
     )
   end
 
+  it 'adds the decided language in the Now block' do
+    result = variables(state: { runtime_clock: clock }, patient_language: 'kk')
+
+    expect(result[:now_text].lines.last.strip).to eq('Patient language: Kazakh. Reply in Kazakh.')
+  end
+
   it 'returns empty Now and Patient parts for a run without state, as in a preview' do
     expect(variables).to include(now_text: '', patient_lines: [], instruction: 'Use `faq_lookup` for not specified.')
   end

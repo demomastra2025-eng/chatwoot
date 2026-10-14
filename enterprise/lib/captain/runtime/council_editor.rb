@@ -3,8 +3,8 @@
 require 'timeout'
 
 # The editor of a council: one model call that edits the texts that the owners wrote for their parts into the single
-# message the customer receives. It gets the customer's message and the part texts with their flags and the language each owner
-# wrote in (never facts, parameters or identifiers). It has no tools and it does not reason: editing a text needs no thinking.
+# message the customer receives. It gets the customer's message and the part texts with their flags and the run language hint.
+# It has no tools and it does not reason: editing a text needs no thinking.
 # Its reply is used as returned: nothing in code judges the wording or the language. When the call fails, the caller sends the
 # part texts one after another (see Council#assemble). A council of one part has nothing to merge and does not call it.
 class Captain::Runtime::CouncilEditor
@@ -26,9 +26,6 @@ class Captain::Runtime::CouncilEditor
   # A date keeps its day, year and time as written; its month and weekday are words, and words are the patient's language.
   FACTS_RULE = 'Keep names, numbers, times and prices exactly as in the texts. Keep the day and the year of a date, and write its ' \
                'month and weekday in words of the patient\'s language.'
-  # The language is the one the owners of the parts wrote in; a part without one (a stored part of an earlier attempt) leaves the
-  # editor the language of customer_message.
-  LANGUAGE_RULE = "#{Captain::PatientLanguage::RULE} The parts give it in patient_language.".freeze
   SYSTEM_PROMPT = <<~PROMPT
     You edit the one message that a clinic sends to a patient in a messenger chat. Specialists have already written the text for each
     part of the patient's message. Rewrite these texts into ONE natural message.
@@ -38,7 +35,7 @@ class Captain::Runtime::CouncilEditor
     saying that the part cannot be answered now), patient_language (the language the text is written in), done (true when text reports
     an action already performed, for example a booking), staff_will_answer (true when a staff member will answer this part).
     Rules:
-    - #{LANGUAGE_RULE}
+    - #{Captain::PatientLanguage::RULE}
     - #{FACTS_RULE}
     - Write one short, warm, polite message in messenger style: plain text, no markdown, no lists, natural transitions between the
       parts. Greet at most once, and not at all when the patient did not greet and the texts have no greeting. Do not introduce yourself.
@@ -71,7 +68,10 @@ class Captain::Runtime::CouncilEditor
   end
 
   def initialize(context:, account:, llm_context: nil, model: nil)
-    @context, @account, @llm_context, @model = context, account, llm_context, model
+    @context = context
+    @account = account
+    @llm_context = llm_context
+    @model = model
   end
 
   # parts: the texts of the parts in the order of the requests, each { 'text', 'done', 'staff_will_answer' } and, when the owner
@@ -106,7 +106,8 @@ class Captain::Runtime::CouncilEditor
 
   def request_reply(payload)
     chat = Llm::Runtime.build_chat(**chat_kwargs)
-    chat = chat.with_instructions(SYSTEM_PROMPT)
+    instructions = [SYSTEM_PROMPT, Captain::PatientLanguage.line(@context[:patient_language])].compact.join("\n")
+    chat = chat.with_instructions(instructions)
     chat = Llm::StructuredOutputPolicy.bind!(chat: chat, schema: reply_schema)
     response = Llm::Runtime.ask(chat, payload.to_json, account: @account, model: @model, observability: observability)
     reply_from(response)

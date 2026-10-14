@@ -23,6 +23,7 @@ module Concerns::Agentable
     enhanced_context[:scenarios] = [] if state[:mesh_routing]
     if compact_prompt_template?
       part = context&.context&.[](:part_run).present?
+      enhanced_context[:patient_language] = context&.context&.[](:patient_language)
       return compact_agent_instructions(enhanced_context, state, prompt_state, part: part, done: Captain::DoneActions.for_run(context&.context))
     end
 

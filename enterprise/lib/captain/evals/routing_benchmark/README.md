@@ -9,6 +9,9 @@ guard allows outbound HTTP only to OpenRouter. Records are not marked as Playgro
 records, because the Playground execution boundary blocks every tool for a marked
 record without a live Playground session. A `captain_benchmark_source` marker
 identifies benchmark rows. No cleanup query or permanent fixture row is used.
+Each answered patient turn also makes one language decision through OpenRouter's
+Decisions endpoint with the agent's OpenRouter key. Its usage counts toward the
+benchmark budget.
 
 Run from a process whose PostgreSQL database name ends in `_benchmark` or `_test`.
 Set `REDIS_URL` and `BENCHMARK_REDIS_URL` to the same **dedicated** loopback Redis

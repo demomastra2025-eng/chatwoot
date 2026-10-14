@@ -641,8 +641,8 @@ RSpec.describe Captain::Assistant, type: :model do
       account.enable_features!('crm_deals')
       create(:crm_field_definition, account: account, entity_kind: 'deal')
       assistant.update!(config: {
-        'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => %w[faq_lookup handoff create_deal] } }
-      })
+                          'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => %w[faq_lookup handoff create_deal] } }
+                        })
       expected = %w[faq_lookup handoff resolve_conversation create_deal get_deal search_deals list_deal_pipelines list_deal_stages
                     list_deal_custom_fields]
       expect(assistant.allowed_agent_tool_ids).to match_array(expected)
@@ -867,7 +867,8 @@ RSpec.describe Captain::Assistant, type: :model do
 
   describe 'legacy rule storage' do
     it 'moves custom rules into the editable prompt and clears the separate lists' do
-      assistant = create(:captain_assistant, description: 'Own instructions', response_guidelines: ['Be concise'], guardrails: ['Never invent results'])
+      assistant = create(:captain_assistant, description: 'Own instructions', response_guidelines: ['Be concise'],
+                                             guardrails: ['Never invent results'])
       expect(assistant.description).to eq("Own instructions\n\nBe concise\n\nNever invent results")
       expect(assistant.config).not_to have_key('rules')
       expect(assistant.response_guidelines).to eq([])
@@ -934,13 +935,11 @@ RSpec.describe Captain::Assistant, type: :model do
       )
     end
 
-    it 'renders one language rule: the language of most of the patient words in any alphabet, kept through words of another language' do
+    it 'renders the short language rule' do
       rules = assistant.agent_instructions.split("\n\n").first.lines.map(&:chomp)
 
       expect(rules.grep(/\A- Reply in the patient's language/).sole).to eq(
-        "- Reply in the patient's language: the language of most of the patient's words in the conversation, in any alphabet " \
-        '(Kazakh may be written in Russian or Latin letters). Keep it when a message contains words of another language. ' \
-        'Briefly, naming specialists and services as the clinic data names them, with the date and time.'
+        "- Reply in the patient's language. Briefly, naming specialists and services as the clinic data names them, with the date and time."
       )
       expect(rules).not_to include(a_string_matching(/could be either language/))
     end
@@ -961,7 +960,8 @@ RSpec.describe Captain::Assistant, type: :model do
     end
 
     it 'names the transfer tool of a colleague transfer_to_agent_<id>' do
-      target = create(:captain_assistant, account: account, name: 'Billing Escalations', routing_description: 'Handle complex billing issues and escalations')
+      target = create(:captain_assistant, account: account, name: 'Billing Escalations',
+                                          routing_description: 'Handle complex billing issues and escalations')
 
       expect(target.handoff_tool_name).to eq("transfer_to_agent_#{target.id}")
     end
@@ -1013,8 +1013,9 @@ RSpec.describe Captain::Assistant, type: :model do
 
     it 'does not present outcome reason IDs or classification instructions to the primary agent' do
       assistant.update!(config: assistant.config.merge('outcome_reason_settings' => {
-        'handoff_reasons' => [{ 'id' => 'unique_reason_id', 'label' => 'Unique reason label', 'active' => true }]
-      }))
+                                                         'handoff_reasons' => [{ 'id' => 'unique_reason_id', 'label' => 'Unique reason label',
+                                                                                 'active' => true }]
+                                                       }))
       expect(assistant.agent_instructions).not_to include('unique_reason_id', 'Unique reason label', '# Conversation Outcome Reasons')
     end
 
@@ -1190,7 +1191,9 @@ RSpec.describe Captain::Assistant, type: :model do
           'identifier' => 'ext-1', 'contact_type' => 'lead', 'custom_attributes' => { 'vip_level' => 'gold' }
         }
       end
-      let(:conversation_data) { { 'id' => 9, 'display_id' => 15, 'inbox_id' => 3, 'status' => 'snoozed', 'priority' => 'urgent', 'label_list' => [] } }
+      let(:conversation_data) do
+        { 'id' => 9, 'display_id' => 15, 'inbox_id' => 3, 'status' => 'snoozed', 'priority' => 'urgent', 'label_list' => [] }
+      end
 
       it 'renders only the name and the phone, and no ids, status, email or other contact data' do
         rendered = assistant.agent_instructions(run_context(prompt_context: { contact: contact_data, conversation: conversation_data }))
