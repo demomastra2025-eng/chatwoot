@@ -26,6 +26,10 @@ class Captain::Runtime::LazyAgent < Captain::Runtime::Agent
     @tool_ids ||= Array(@actor.selected_agent_tool_ids).map(&:to_s)
   end
 
+  def handoff_team_id = @actor.handoff_team_id
+  def handoff_team_name = @actor.handoff_team&.name
+  def booking_resource_ids = @actor.booking_resource_ids
+
   def get_system_prompt(context)
     materialized.get_system_prompt(context)
   end

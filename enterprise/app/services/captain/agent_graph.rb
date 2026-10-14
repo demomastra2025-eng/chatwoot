@@ -52,13 +52,29 @@ class Captain::AgentGraph
   end
 
   def allows?(source, target)
-    !!(source && target && source.id != target.id && find(source.id) && find(target.id))
+    !!(source && target && source.id != target.id && find(source.id) && find(target.id) &&
+      Captain::Runtime::TransferCapabilities.useful?(Captain::Runtime::LazyAgent.new(source), Captain::Runtime::LazyAgent.new(target)))
   end
 
   def payload
     agents.map do |actor|
       { id: actor.id, key: "assistant_#{actor.id}", name: actor.name,
         description: actor.routing_description.to_s }
+    end
+  end
+
+  def payload_for(actor)
+    source = Captain::Runtime::LazyAgent.new(actor)
+    allowed = agents.select do |candidate|
+      candidate.id == actor.id || Captain::Runtime::TransferCapabilities.useful?(source, Captain::Runtime::LazyAgent.new(candidate))
+    end
+    allowed.map do |candidate|
+      row = { id: candidate.id, key: "assistant_#{candidate.id}", name: candidate.name }
+      target = Captain::Runtime::LazyAgent.new(candidate)
+      action = candidate.id == actor.id ? '' : Captain::Runtime::TransferCapabilities.actions(source, target)
+      note = candidate.routing_description.to_s.squish.first(120).presence
+      row[:description] = [action, ("Note: #{note}" if note)].compact_blank.join('. ')
+      row
     end
   end
 

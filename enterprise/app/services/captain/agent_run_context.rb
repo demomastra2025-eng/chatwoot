@@ -28,7 +28,7 @@ class Captain::AgentRunContext
     # to transfer to or to bring together: the directory stays empty, so no plan, council, transfer or request
     # queue exists for it (the runtime and the prompt build those only from a non-empty directory).
     peers = graph.peers?
-    context[:agent_graph] = peers ? graph.payload : []
+    context[:agent_graph] = peers ? graph.payload_for(current) : []
     context[:agent_graph_object] = graph
     context[:agent_run_context_object] = self
     context[:agent_inbox_id] = graph.inbox&.id
@@ -54,6 +54,7 @@ class Captain::AgentRunContext
     state = context[:state] ||= {}
     previous_id = state[:assistant_id]
     state[:assistant_id] = actor.id
+    context[:agent_graph] = graph.payload_for(actor) if graph.peers?
     state[:mesh_routing] = true
     state[:assistant_config] = actor.config
     prior_runtime = state[:captain_runtime]
@@ -90,7 +91,9 @@ class Captain::AgentRunContext
       end
     end
     registry.each do |actor, runtime_agent|
-      runtime_agent.register_handoffs(*(registry.except(actor).values))
+      runtime_agent.register_handoffs(*registry.except(actor).values.select do |target|
+        Captain::Runtime::TransferCapabilities.useful?(runtime_agent, target)
+      end)
     end
     registry.values
   end

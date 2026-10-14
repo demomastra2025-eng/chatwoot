@@ -33,6 +33,10 @@ class Captain::Runtime::Agent
     tools.filter_map { |tool| tool.name.to_s.presence if tool.respond_to?(:name) }
   end
 
+  def handoff_team_id = nil
+  def handoff_team_name = nil
+  def booking_resource_ids = []
+
   def get_system_prompt(context)
     case instructions
     when String

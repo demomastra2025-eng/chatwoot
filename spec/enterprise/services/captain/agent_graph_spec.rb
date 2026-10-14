@@ -8,16 +8,16 @@ RSpec.describe Captain::AgentGraph do
   let(:member) { create(:captain_assistant, account: account, channel_scope: 'selected') }
   let(:other) { create(:captain_assistant, account: account, channel_scope: 'selected') }
 
-  it 'routes directly between all active external agents on a text inbox without saved edges' do
+  it 'keeps all active external agents in the channel graph while read-only peers cannot transfer' do
     Captain::AgentChannel.create!(account: account, inbox: inbox, assistant: member)
     Captain::AgentChannel.create!(account: account, inbox: other_inbox, assistant: other)
 
     graph = described_class.new(entry, inbox: inbox)
     expect(graph.agents.map(&:id)).to contain_exactly(entry.id, member.id, other.id)
     expect(graph.peers?).to be(true)
-    expect(graph.allows?(entry, member)).to be(true)
-    expect(graph.allows?(member, entry)).to be(true)
-    expect(graph.allows?(member, other)).to be(true)
+    expect(graph.allows?(entry, member)).to be(false)
+    expect(graph.allows?(member, entry)).to be(false)
+    expect(graph.allows?(member, other)).to be(false)
     expect(graph.allows?(entry, entry)).to be(false)
     expect(graph.payload.first).not_to have_key(:target_ids)
   end
@@ -49,7 +49,7 @@ RSpec.describe Captain::AgentGraph do
 
     expect(graph.agents.map(&:id)).to contain_exactly(entry.id, other.id)
     expect(graph.peers?).to be(true)
-    expect(graph.allows?(entry, other)).to be(true)
+    expect(graph.allows?(entry, other)).to be(false)
   end
 
   it 'ignores the stored allowed-targets list of an agent' do
@@ -60,8 +60,15 @@ RSpec.describe Captain::AgentGraph do
     graph = described_class.new(entry, inbox: inbox)
 
     expect(graph.agents.map(&:id)).to contain_exactly(entry.id, member.id, other.id)
-    expect(graph.allows?(entry, member)).to be(true)
-    expect(graph.allows?(entry, other)).to be(true)
+    expect(graph.allows?(entry, member)).to be(false)
+    expect(graph.allows?(entry, other)).to be(false)
+  end
+
+  it 'allows a colleague with a different handoff team' do
+    team = create(:team, account: account)
+    member.update!(config: member.config.merge('handoff_team_id' => team.id))
+
+    expect(described_class.new(entry, inbox: inbox).allows?(entry, member)).to be(true)
   end
 
   it 'leaves out an agent that is switched off or is not an external agent' do

@@ -178,7 +178,7 @@ RSpec.describe Captain::Runtime::HandoffTool do
       tool = described_class.new(Captain::Runtime::LazyAgent.new(specialist))
 
       expect(tool.name).to eq("transfer_to_agent_#{specialist.id}")
-      expect(tool.description).to eq(%(Transfer the conversation to colleague "Анализы": Подготовка к анализам, цены. #{when_to_use}))
+      expect(tool.description).to eq(%(Transfer the conversation to colleague "Анализы". Note: Подготовка к анализам, цены. #{when_to_use}))
     end
 
     it 'adds one line with what the colleague can do, read from the tool ids of the assistant without building its tools' do
@@ -191,8 +191,7 @@ RSpec.describe Captain::Runtime::HandoffTool do
       tool = described_class.new(lazy)
 
       expect(tool.description).to eq(
-        %(Transfer the conversation to colleague "Продажи": Сделки клиники. ) +
-        "Can: create and update deals; look up deals. #{when_to_use}"
+        %(Transfer the conversation to colleague "Продажи": create and update deals; look up deals. Note: Сделки клиники. #{when_to_use})
       )
     end
 
@@ -202,7 +201,7 @@ RSpec.describe Captain::Runtime::HandoffTool do
       colleague = Captain::Runtime::Agent.new(name: 'assistant_7', tools: tools).tap { |agent| agent.assistant_id = 7 }
 
       expect(described_class.new(colleague).description).to eq(
-        %(Transfer the conversation to colleague "assistant_7". Can: book, reschedule and cancel appointments; look up free slots. #{when_to_use})
+        %(Transfer the conversation to colleague "assistant_7": book, reschedule and cancel appointments; look up free slots. #{when_to_use})
       )
     end
 
@@ -228,13 +227,13 @@ RSpec.describe Captain::Runtime::HandoffTool do
       expect(Captain::Runtime::ChatFactory.send(:build_agent_tools, acting, run_context)).to be_empty
     end
 
-    it 'is offered for every colleague of the graph, with plan_request only for the coordination' do
-      colleague = target
+    it 'does not offer a read-only colleague as a transfer target' do
+      colleague = Captain::Runtime::Agent.new(name: "assistant_#{specialist.id}").tap { |agent| agent.assistant_id = specialist.id }
       acting = Captain::Runtime::Agent.new(name: "assistant_#{entry.id}", handoff_agents: [colleague])
 
       tools = Captain::Runtime::ChatFactory.send(:build_agent_tools, acting, run_context)
 
-      expect(tools.map(&:name)).to eq(["transfer_to_agent_#{specialist.id}", 'plan_request'])
+      expect(tools.map(&:name)).to eq(['plan_request'])
     end
 
     it 'is not offered to a lone agent, which has no colleague to transfer to and no plan to make' do

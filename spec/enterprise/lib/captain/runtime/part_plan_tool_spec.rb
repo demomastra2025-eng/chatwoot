@@ -3,6 +3,14 @@ require 'rails_helper'
 # Test tool constants intentionally live with the examples that exercise them.
 # rubocop:disable Lint/ConstantDefinitionInBlock
 RSpec.describe Captain::Runtime::PartPlanTool do
+  it 'limits executors to available colleagues and hides links when no part is open' do
+    context = { state: { assistant_id: 1 }, agent_graph: [{ id: 1, name: 'Регистратор' }, { id: 2, name: 'Бухгалтерия' }], parts: [] }
+    properties = described_class.new(context).params_schema.dig('properties', 'parts', 'items', 'properties')
+
+    expect(properties.dig('executor', 'enum')).to eq([nil, 'Бухгалтерия'])
+    expect(properties.keys).not_to include('link_part_id', 'link_action')
+  end
+
   class PartPlanToolSpecBookingTool < Captain::Runtime::Tool
     param :title, type: :string, required: true
 

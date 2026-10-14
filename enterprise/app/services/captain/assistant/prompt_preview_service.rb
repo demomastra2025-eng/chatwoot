@@ -69,7 +69,9 @@ class Captain::Assistant::PromptPreviewService
   def scenario_previews = peers.map { |agent| scenario_preview(agent) }
 
   def peers
-    @peers ||= assistant.channel_peers
+    @peers ||= assistant.channel_peers.select do |peer|
+      Captain::Runtime::TransferCapabilities.useful?(Captain::Runtime::LazyAgent.new(assistant), Captain::Runtime::LazyAgent.new(peer))
+    end
   end
 
   def allowed_copilot_tools
@@ -88,7 +90,12 @@ class Captain::Assistant::PromptPreviewService
       list_layer(
         'scenario_handoffs',
         'Scenario handoffs',
-        peers.map { |agent| "#{agent.name}: #{agent.routing_description}" }
+        peers.map do |agent|
+          action = Captain::Runtime::TransferCapabilities.actions(
+            Captain::Runtime::LazyAgent.new(assistant), Captain::Runtime::LazyAgent.new(agent)
+          )
+          "#{agent.name}: #{action}. Note: #{agent.routing_description.to_s.squish.first(120)}"
+        end
       )
     ]
   end

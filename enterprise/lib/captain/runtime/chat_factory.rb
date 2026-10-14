@@ -84,8 +84,8 @@ class Captain::Runtime::ChatFactory
       # keeps its own tools and its human handoff, and loses only the transfer and plan tools.
       part = context_wrapper.context[:part_run]
       transfers_open = !part && !context_wrapper.context[:transfer_guarded]
-      handoff_tools = (transfers_open ? agent.handoff_agents : []).map do |target_agent|
-        Captain::Runtime::ToolWrapper.new(Captain::Runtime::HandoffTool.new(target_agent), context_wrapper)
+      handoff_tools = (transfers_open ? eligible_handoffs(agent) : []).map do |target_agent|
+        Captain::Runtime::ToolWrapper.new(Captain::Runtime::HandoffTool.new(target_agent, source_agent: agent), context_wrapper)
       end
 
       regular_tools = agent.tools.map do |tool|
@@ -95,7 +95,7 @@ class Captain::Runtime::ChatFactory
       coordination_tools = if !part && Captain::Runtime::TaskQueue.in_flight?(context_wrapper.context[:agent_tasks])
                              [Captain::Runtime::TaskQueueTool.new]
                            elsif transfers_open && plan_request_available?(context_wrapper.context)
-                             [Captain::Runtime::PartPlanTool.new]
+                             [Captain::Runtime::PartPlanTool.new(context_wrapper.context)]
                            else
                              []
                            end
@@ -269,7 +269,11 @@ class Captain::Runtime::ChatFactory
     end
 
     def handoff_tool_names(agent)
-      agent.handoff_agents.map { |target_agent| Captain::Runtime::HandoffTool.tool_name_for(target_agent) }
+      eligible_handoffs(agent).map { |target_agent| Captain::Runtime::HandoffTool.tool_name_for(target_agent) }
+    end
+
+    def eligible_handoffs(agent)
+      agent.handoff_agents.select { |target| Captain::Runtime::TransferCapabilities.useful?(agent, target) }
     end
 
     def regular_tool_names(agent)

@@ -2,15 +2,20 @@ require 'rails_helper'
 
 RSpec.describe Captain::AgentRunContext do
   let(:account) { create(:account) }
-  let(:entry) { create(:captain_assistant, account: account, description: 'ENTRY PRIVATE PROMPT') }
+  let(:entry) do
+    create(:captain_assistant, account: account, description: 'ENTRY PRIVATE PROMPT',
+                               config: { 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['handoff'] } } })
+  end
   # The mesh reads channel members from the database, so the specialist must exist before the graph is built.
   let!(:specialist) do
-    create(:captain_assistant, account: account, description: 'SPECIALIST OWN PROMPT', routing_description: 'Запись на приём')
+    create(:captain_assistant, account: account, description: 'SPECIALIST OWN PROMPT', routing_description: 'Запись на приём',
+                               config: { 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => %w[create_appointment handoff] } } })
   end
   let(:conversation) { create(:conversation, account: account) }
   let(:context) { { state: { account_id: account.id, assistant_id: entry.id }, conversation_history: [] } }
 
   after { Current.executed_by = nil }
+  before { account.enable_features!('scheduling') }
 
   it 'does not repeat input checks when an agent is activated' do
     expect(Captain::Safety::CustomRulesRuntime).not_to receive(:check_input!)
@@ -21,17 +26,21 @@ RSpec.describe Captain::AgentRunContext do
     runtime.activate(entry, context)
   end
 
-  it 'builds direct routes in both directions and preserves each agent own prompt' do
+  it 'builds a route to the missing booking action' do
     runtime = described_class.new(entry: entry, conversation: conversation)
     agents = runtime.runtime_agents
     expect(agents.map(&:name)).to contain_exactly("assistant_#{entry.id}", "assistant_#{specialist.id}")
     expect(agents.first.handoff_agents.map(&:assistant_id)).to eq([specialist.id])
-    expect(agents.last.handoff_agents.map(&:assistant_id)).to eq([entry.id])
-    transfer = Captain::Runtime::HandoffTool.new(agents.last)
+    expect(agents.last.handoff_agents).to be_empty
+    transfer = Captain::Runtime::HandoffTool.new(agents.last, source_agent: agents.first)
     expect(transfer.name).to eq("transfer_to_agent_#{specialist.id}")
-    expect(transfer.description).to start_with(%(Transfer the conversation to colleague "#{specialist.name}": #{specialist.routing_description}))
+    expect(transfer.description).to start_with(%(Transfer the conversation to colleague "#{specialist.name}": book appointments. Note:))
     expect(transfer.description).to end_with(Captain::Runtime::HandoffTool::WHEN_TO_USE)
     expect(transfer.description).not_to include("assistant_#{specialist.id}")
+  end
+
+  it 'preserves the specialist own prompt' do
+    runtime = described_class.new(entry: entry, conversation: conversation)
     runtime.prepare(context)
     runtime.activate(specialist, context)
     prompt = specialist.agent_instructions(Captain::Runtime::RunContext.new(context))

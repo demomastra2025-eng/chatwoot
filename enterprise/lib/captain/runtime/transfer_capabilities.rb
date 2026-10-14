@@ -26,6 +26,50 @@ module Captain::Runtime::TransferCapabilities
 
   module_function
 
+  # Only a new action justifies routing. Registry risk is not a write flag:
+  # read tools may have high risk, so identify action ids from the tool registry.
+  WRITE_TOOL_IDS = (%w[create_appointment update_appointment cancel_appointment] + ACTIONS.values.flatten).freeze
+  WRITE_PREFIX = /\A(?:create|update|cancel|change|transition|complete|add|remove|send|edit|assign|resolve|merge|delete|deactivate|reactivate)_/
+
+  def write_tool?(id)
+    return false if id == 'handoff'
+
+    WRITE_TOOL_IDS.include?(id) || (id.match?(WRITE_PREFIX) && Captain::ToolRegistry.definition_for(id).present?)
+  end
+
+  def useful?(source, target)
+    source_ids = Array(source.tool_ids).map(&:to_s)
+    target_ids = Array(target.tool_ids).map(&:to_s)
+    (target_ids - source_ids).any? { |id| write_tool?(id) } ||
+      (target.handoff_team_id.present? && target.handoff_team_id != source.handoff_team_id) ||
+      booking_reach?(source, target, source_ids, target_ids)
+  end
+
+  def booking_reach?(source, target, source_ids, target_ids)
+    return false unless target_ids.intersect?(%w[create_appointment update_appointment])
+    return false unless source_ids.intersect?(%w[create_appointment update_appointment])
+
+    source_scope = Array(source.booking_resource_ids)
+    target_scope = Array(target.booking_resource_ids)
+    source_scope.any? && (target_scope.empty? || (target_scope - source_scope).any?)
+  end
+
+  def actions(source, target)
+    phrases = write_phrases(source, target)
+    if target.handoff_team_id.present? && target.handoff_team_id != source.handoff_team_id
+      phrases << "hands the conversation to the team «#{target.handoff_team_name}»"
+    end
+    phrases << 'books specialists and rooms outside your booking scope' if booking_reach?(source, target, source.tool_ids, target.tool_ids)
+    phrases.join('; ')
+  end
+
+  def write_phrases(source, target)
+    ids = (Array(target.tool_ids).map(&:to_s) - Array(source.tool_ids).map(&:to_s)).select { |id| write_tool?(id) }
+    appointment_ids = ids & APPOINTMENT_VERBS.keys
+    phrases = [line(appointment_ids).delete_prefix('Can: ').delete_suffix('.')].compact_blank
+    phrases + (ids - appointment_ids).filter_map { |id| Captain::ToolRegistry.definition_for(id)&.title&.downcase }
+  end
+
   # tool_ids: the ids (names) of the colleague's tools. Blank when nothing is left to say.
   def line(tool_ids)
     ids = Array(tool_ids).map(&:to_s) - Captain::ToolAccess::SHARED_READ_TOOL_IDS

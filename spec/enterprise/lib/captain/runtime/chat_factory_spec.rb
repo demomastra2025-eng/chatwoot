@@ -338,7 +338,9 @@ RSpec.describe Captain::Runtime::ChatFactory do
       end
 
       it 'binds the transfer tool of each colleague next to plan_request, and sends a single request to the colleague without a plan' do
-        agent.register_handoffs(Captain::Runtime::Agent.new(name: 'assistant_91').tap { |colleague| colleague.assistant_id = 91 })
+        colleague = Captain::Runtime::Agent.new(name: 'assistant_91', tools: [ChatFactorySpecTool.new('create_appointment', 'Book')])
+        colleague.assistant_id = 91
+        agent.register_handoffs(colleague)
         transfer = 'transfer_to_agent_91'
 
         expect(built_tool_names).to eq([transfer, 'plan_request'])
@@ -363,7 +365,11 @@ RSpec.describe Captain::Runtime::ChatFactory do
 
       context 'with its own tools' do
         let(:tools) { [ChatFactorySpecTool.new('create_appointment', 'Book a visit'), ChatFactorySpecTool.new('faq_lookup', 'Search the FAQ')] }
-        let(:colleague) { Captain::Runtime::Agent.new(name: 'assistant_91').tap { |item| item.assistant_id = 91 } }
+        let(:colleague) do
+          Captain::Runtime::Agent.new(name: 'assistant_91', tools: [ChatFactorySpecTool.new('cancel_appointment', 'Cancel')]).tap do |item|
+            item.assistant_id = 91
+          end
+        end
 
         it 'binds exactly the tools of the part, reads and writes alike, and no coordination tool' do
           agent.register_handoffs(Captain::Runtime::Agent.new(name: 'assistant_91'))

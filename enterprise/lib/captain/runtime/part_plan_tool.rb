@@ -1,6 +1,10 @@
 # frozen_string_literal: true
 
 class Captain::Runtime::PartPlanTool < Captain::Runtime::Tool
+  def initialize(context = nil)
+    @planning_context = context
+    super()
+  end
   EXECUTOR_DESCRIPTION = 'The agent that does this action, by its name exactly as listed under Colleagues. Omit it for your own ' \
                          'action. Staff are not an agent: use the handoff tool.'
   FRAGMENT_DESCRIPTION = 'The patient\'s own words that make this one action.'
@@ -86,16 +90,21 @@ class Captain::Runtime::PartPlanTool < Captain::Runtime::Tool
   end
 
   def part_properties
+    names = Array(@planning_context&.dig(:agent_graph)).reject do |agent|
+      agent[:id] == @planning_context.dig(:state, :assistant_id)
+    end.pluck(:name)
     {
       'fragment' => { 'type' => 'string', 'description' => FRAGMENT_DESCRIPTION },
-      'executor' => { 'type' => %w[string null], 'description' => EXECUTOR_DESCRIPTION },
+      'executor' => { 'type' => %w[string null], 'description' => EXECUTOR_DESCRIPTION }.tap do |schema|
+        schema['enum'] = [nil, *names] if @planning_context
+      end,
       'patient' => { 'type' => 'string', 'description' => PATIENT_DESCRIPTION },
       'relation' => { 'type' => 'string', 'enum' => Captain::Runtime::PartRegistry::RELATIONS, 'description' => RELATION_DESCRIPTION }
     }
   end
 
   def link_properties
-    {
+    properties = {
       'object_refs' => { 'type' => 'array', 'description' => OBJECT_REFS_DESCRIPTION,
                          'items' => {
                            'type' => 'object', 'additionalProperties' => false,
@@ -105,6 +114,14 @@ class Captain::Runtime::PartPlanTool < Captain::Runtime::Tool
       'link_part_id' => { 'type' => %w[string integer null], 'description' => LINK_PART_DESCRIPTION },
       'link_action' => { 'type' => 'string', 'enum' => Captain::Runtime::PartRegistry::LINK_ACTIONS, 'description' => LINK_ACTION_DESCRIPTION }
     }
+    return properties unless @planning_context
+
+    open = Captain::Runtime::PartRegistry.listed_parts(@planning_context)
+    return properties.except('link_part_id', 'link_action') if open.empty?
+
+    numbers = open.map { |part| Captain::Runtime::PartRegistry.number_of(Array(@planning_context[:parts]), part['id']) }
+    properties['link_part_id']['enum'] = numbers.flat_map { |number| [number, number.to_s] } + [nil]
+    properties
   end
 
   def rejected(message, retryable:, reason: nil)

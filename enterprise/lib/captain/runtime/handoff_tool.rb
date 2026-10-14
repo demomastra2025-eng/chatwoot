@@ -24,12 +24,13 @@ class Captain::Runtime::HandoffTool < Captain::Runtime::Tool
     Captain::HandoffNaming.tool_name_for(target_agent.name, record_id: record_id)
   end
 
-  def initialize(target_agent)
+  def initialize(target_agent, source_agent: nil)
     @target_agent = target_agent
     @tool_name = self.class.tool_name_for(target_agent)
     display_name = target_agent.respond_to?(:display_name) ? target_agent.display_name : target_agent.name
-    responsibility = target_agent.respond_to?(:routing_description) ? target_agent.routing_description.to_s.squish : ''
-    @tool_description = transfer_description(display_name, responsibility, capabilities_of(target_agent))
+    responsibility = target_agent.respond_to?(:routing_description) ? target_agent.routing_description.to_s.squish.first(120) : ''
+    capabilities = source_agent ? Captain::Runtime::TransferCapabilities.actions(source_agent, target_agent) : capabilities_of(target_agent)
+    @tool_description = transfer_description(display_name, responsibility, capabilities)
     super()
   end
 
@@ -87,8 +88,9 @@ class Captain::Runtime::HandoffTool < Captain::Runtime::Tool
   # One sentence: whom the conversation goes to and what that colleague answers; then what that colleague can do; then when to use it.
   def transfer_description(display_name, responsibility, capabilities)
     title = %(Transfer the conversation to colleague "#{display_name.to_s.squish.tr('"', "'")}")
-    text = responsibility.present? ? "#{title}: #{responsibility}" : "#{title}."
-    text = "#{text.end_with?('.', '!', '?') ? text : "#{text}."} #{capabilities}" if capabilities.present?
+    capabilities = capabilities.to_s.delete_prefix('Can: ')
+    text = capabilities.present? ? "#{title}: #{capabilities}" : "#{title}."
+    text = "#{text.end_with?('.', '!', '?') ? text : "#{text}."} Note: #{responsibility}" if responsibility.present?
     "#{text.end_with?('.', '!', '?') ? text : "#{text}."} #{WHEN_TO_USE}"
   end
 
