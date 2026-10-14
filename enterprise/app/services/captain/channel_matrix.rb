@@ -8,7 +8,7 @@ class Captain::ChannelMatrix
 
     def initialize(errors)
       @errors = errors
-      super(errors.map { |error| error[:message] }.join(', '))
+      super(errors.pluck(:message).join(', '))
     end
   end
 
@@ -19,21 +19,10 @@ class Captain::ChannelMatrix
   def payload
     agents = account.captain_assistants.external_agent.order(:id).to_a
     main_id = account.captain_default_assistant_id&.to_i
-    links = CaptainInbox.where(inbox_id: text_inboxes.map(&:id)).index_by(&:inbox_id)
     {
       default_main_assistant_id: main_id,
-      channels: text_inboxes.map do |inbox|
-        link = links[inbox.id]
-        { inbox_id: inbox.id, name: inbox.name, channel_type: inbox.channel_type,
-          ai_enabled: link&.ai_enabled? || false, main_assistant_id: main_id,
-          assistant_ids: agents.select(&:entry_eligible?).map(&:id),
-          auto_reply_mode: account.captain_reply_time_mode }
-      end,
-      assistants: agents.map do |agent|
-        { id: agent.id, name: agent.name, avatar_url: agent.avatar_url,
-          routing_description: agent.routing_description, active: agent.active?,
-          channel_scope: 'all', inbox_ids: [] }
-      end
+      channels: channel_rows(agents, main_id),
+      assistants: assistant_rows(agents)
     }
   end
 
@@ -53,6 +42,24 @@ class Captain::ChannelMatrix
 
   def text_inboxes
     @text_inboxes ||= account.inboxes.where.not(channel_type: 'Channel::Voice').order(:id).to_a
+  end
+
+  def channel_rows(agents, main_id)
+    links = CaptainInbox.where(inbox_id: text_inboxes.map(&:id)).index_by(&:inbox_id)
+    active_ids = agents.select(&:entry_eligible?).map(&:id)
+    text_inboxes.map do |inbox|
+      { inbox_id: inbox.id, name: inbox.name, channel_type: inbox.channel_type,
+        ai_enabled: links[inbox.id]&.ai_enabled? || false, main_assistant_id: main_id,
+        assistant_ids: active_ids, auto_reply_mode: account.captain_reply_time_mode }
+    end
+  end
+
+  def assistant_rows(agents)
+    agents.map do |agent|
+      { id: agent.id, name: agent.name, avatar_url: agent.avatar_url,
+        routing_description: agent.routing_description, active: agent.active?,
+        channel_scope: 'all', inbox_ids: [] }
+    end
   end
 
   def update_main!(value)

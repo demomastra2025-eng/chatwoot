@@ -52,12 +52,7 @@ class Captain::AccountSettings
   def update!(patch)
     patch = patch.to_unsafe_h if patch.respond_to?(:to_unsafe_h)
     patch = patch.deep_stringify_keys if patch.is_a?(Hash)
-    errors = Captain::AccountSettingsValidation.new(defaults).errors(patch)
-    routing = patch['routing'].is_a?(Hash) ? patch['routing'] : {}
-    if routing['auto_reply_mode'].in?(%w[working_hours outside_working_hours]) &&
-       !@account.workspace_working_hours_configured?
-      errors << { field: 'routing.auto_reply_mode', code: 'schedule_required', message: 'Configure workspace working hours first' }
-    end
+    errors = update_errors(patch)
     raise Invalid, errors if errors.any?
 
     @account.with_lock do
@@ -101,6 +96,16 @@ class Captain::AccountSettings
   end
 
   private
+
+  def update_errors(patch)
+    errors = Captain::AccountSettingsValidation.new(defaults).errors(patch)
+    routing = patch.is_a?(Hash) && patch['routing'].is_a?(Hash) ? patch['routing'] : {}
+    if routing['auto_reply_mode'].in?(%w[working_hours outside_working_hours]) &&
+       !@account.workspace_working_hours_configured?
+      errors << { field: 'routing.auto_reply_mode', code: 'schedule_required', message: 'Configure workspace working hours first' }
+    end
+    errors
+  end
 
   def default_reasons(type)
     Captain::OutcomeReasonConfig::BUILTIN_IDS.fetch(type).map do |id|

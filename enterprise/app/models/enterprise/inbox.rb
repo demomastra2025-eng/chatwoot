@@ -13,10 +13,10 @@ module Enterprise::Inbox
   end
 
   def captain_active?
-    enabled = channel_type == 'Channel::Voice' || captain_inbox&.ai_enabled?
-    enabled && (channel_type == 'Channel::Voice' || account.captain_ai_enabled?) &&
-      (channel_type == 'Channel::Voice' || account.captain_default_assistant_id.to_i == captain_inbox&.captain_assistant_id) &&
-      captain_assistant.present? && captain_assistant.active? && captain_usage_available?
+    return false unless captain_assistant&.active? && captain_usage_available?
+    return true if channel_type == 'Channel::Voice'
+
+    text_captain_active?
   end
 
   def captain_auto_reply_allowed?
@@ -24,6 +24,11 @@ module Enterprise::Inbox
   end
 
   private
+
+  def text_captain_active?
+    captain_inbox&.ai_enabled? && account.captain_ai_enabled? &&
+      account.captain_default_assistant_id.to_i == captain_inbox.captain_assistant_id
+  end
 
   def captain_usage_available?
     account.captain_quota_available?

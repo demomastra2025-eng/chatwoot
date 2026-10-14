@@ -23,7 +23,7 @@ RSpec.describe Captain::AgentGraph do
   end
 
   it 'raises a dedicated error, still an ArgumentError, when the entry agent is disabled' do
-    entry.update_columns(active: false)
+    entry.update!(active: false)
 
     expect { described_class.new(entry, inbox: inbox).agents }
       .to raise_error(described_class::EntryDisabledError, 'The entry agent is disabled')

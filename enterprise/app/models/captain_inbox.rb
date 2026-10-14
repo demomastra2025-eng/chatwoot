@@ -59,8 +59,13 @@ class CaptainInbox < ApplicationRecord
   end
 
   def auto_reply_allowed_now?
-    return false unless ai_enabled? || inbox&.channel_type == 'Channel::Voice'
-    return legacy_voice_auto_reply_allowed_now? if inbox.channel_type == 'Channel::Voice'
+    return legacy_voice_auto_reply_allowed_now? if inbox&.channel_type == 'Channel::Voice'
+    return false unless ai_enabled?
+
+    text_auto_reply_allowed_now?
+  end
+
+  def text_auto_reply_allowed_now?
     return false unless inbox.account.captain_ai_enabled?
     return false unless inbox.account.captain_default_assistant_id.to_i == captain_assistant_id
 
