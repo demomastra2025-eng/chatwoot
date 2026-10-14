@@ -28,6 +28,13 @@ RSpec.describe Scheduling::ResourceSearchService do
     expect(payload[:resources].pluck(:id)).not_to include(inactive_resource.id, deleted_resource.id, other_account_resource.id)
   end
 
+  it 'filters search results to an explicit agent resource scope' do
+    payload = perform(resource_ids: [therapist.id])
+
+    expect(payload[:resources].pluck(:id)).to eq([therapist.id])
+    expect(payload[:total_count]).to eq(1)
+  end
+
   it 'searches by name, specialty, or both without leaking inactive specialists by default' do
     expect(perform(query: 'aigerim', search_by: 'name')[:resources].pluck(:id)).to eq([therapist.id])
     expect(perform(query: 'cosmet', search_by: 'specialty')[:resources].pluck(:id)).to eq([cosmetologist.id])

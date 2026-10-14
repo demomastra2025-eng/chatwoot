@@ -23,6 +23,16 @@ RSpec.describe Captain::Tools::Copilot::SearchAvailableSlotsService do
   end
 
   describe '#execute' do
+    it 'limits an agent search to its booking scope and rejects other resource IDs' do
+      assistant.update!(config: assistant.config.merge('booking_scope' => { 'resource_ids' => [resource.id] }))
+      service.patient_scope = Object.new
+      payload = JSON.parse(service.execute(from: from_time.iso8601, to: to_time.iso8601))
+
+      expect(payload['resources'].map { |item| item['id'] }).to eq([resource.id])
+      refused = service.execute(from: from_time.iso8601, to: to_time.iso8601, resource_ids: [other_resource.id])
+      expect(refused).to include('RESOURCE_UNAVAILABLE')
+    end
+
     it 'returns normalized slots using array resource_ids and service-derived duration' do
       payload = JSON.parse(
         service.execute(

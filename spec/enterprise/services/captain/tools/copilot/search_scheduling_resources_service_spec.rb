@@ -53,6 +53,15 @@ RSpec.describe Captain::Tools::Copilot::SearchSchedulingResourcesService do
       expect(payload['resources'].map { |item| item['id'] }).to contain_exactly(therapist.id, cosmetologist.id)
     end
 
+    it 'shows an agent only the resources in its booking scope' do
+      assistant.update!(config: assistant.config.merge('booking_scope' => { 'resource_ids' => [therapist.id] }))
+      service.patient_scope = Object.new
+
+      payload = JSON.parse(service.execute)
+
+      expect(payload['resources'].map { |item| item['id'] }).to eq([therapist.id])
+    end
+
     it 'filters by specialist name' do
       payload = JSON.parse(service.execute(query: 'aigerim', search_by: 'name'))
 

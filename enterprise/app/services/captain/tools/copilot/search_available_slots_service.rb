@@ -18,7 +18,10 @@ class Captain::Tools::Copilot::SearchAvailableSlotsService < Captain::Tools::Cop
     if agent_scope? && assistant.booking_resource_ids.present?
       allowed = assistant.booking_resource_ids
       requested = Scheduling::AvailableSlotSearchService.normalize_resource_ids(resource_ids)
-      raise ArgumentError, 'Resource is outside this agent booking scope' if (requested - allowed).any?
+      if (requested - allowed).any?
+        raise Scheduling::Error.new(code: 'RESOURCE_UNAVAILABLE', message: 'Resource is outside this agent booking scope',
+                                    status: :not_found, details: { reason: 'resource_outside_scope' })
+      end
 
       resource_ids = requested.presence || allowed
     end
