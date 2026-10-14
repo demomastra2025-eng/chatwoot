@@ -75,17 +75,16 @@ RSpec.describe Captain::Runtime::HandoffTool do
     ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
   end
 
-  it 'refuses a transfer when the channel grid no longer attaches the target' do
+  it 'refuses a transfer when the target becomes inactive' do
     entry = create(:captain_assistant)
     specialist = create(:captain_assistant, account: entry.account, channel_scope: 'selected')
     inbox = create(:inbox, account: entry.account)
-    Captain::AgentChannel.create!(account: entry.account, inbox: inbox, assistant: specialist)
     target = Captain::Runtime::Agent.new(name: "assistant_#{specialist.id}")
     target.assistant_id = specialist.id
     context = { state: { account_id: entry.account_id, assistant_id: entry.id, entry_assistant_id: entry.id },
                 agent_graph: Captain::AgentGraph.new(entry, inbox: inbox).payload, agent_inbox_id: inbox.id }
     tool_context = Captain::Runtime::ToolContext.new(run_context: Captain::Runtime::RunContext.new(context))
-    Captain::AgentChannel.where(assistant_id: specialist.id).delete_all
+    specialist.update!(active: false)
 
     result = described_class.new(target).perform(tool_context)
 

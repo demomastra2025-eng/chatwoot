@@ -128,7 +128,7 @@ RSpec.describe Captain::Tools::AddContactNoteTool, type: :model do
       definition = tool.send(:tool_definition)
 
       expect(definition[:id]).to eq('add_contact_note')
-      expect(definition[:capability_tool]).to be(true)
+      expect(definition[:capability_tool]).to be_falsey
       expect(definition[:required_permissions]).to eq(['contact_manage'])
     end
   end

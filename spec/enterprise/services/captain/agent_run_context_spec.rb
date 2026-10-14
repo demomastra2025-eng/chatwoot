@@ -74,7 +74,7 @@ RSpec.describe Captain::AgentRunContext do
   end
 
   it 'gives the main agent that is alone on its channel no directory and drops a request queue left from other times' do
-    specialist.update!(channel_scope: 'selected')
+    specialist.update!(active: false)
     stale = [{ 'id' => 'old', 'title' => 'Old request', 'assistant_id' => entry.id, 'status' => 'waiting', 'result' => nil }]
     Captain::Conversation::AgentSession.new(entry: entry, conversation: conversation).update_routing(actor_id: entry.id, tasks: stale)
 
@@ -88,7 +88,8 @@ RSpec.describe Captain::AgentRunContext do
 
   describe 'what the agents already did in the conversation' do
     let(:booked) do
-      { 'tool' => 'create_appointment', 'label' => 'Booked', 'text' => 'Терапевт Нурланова Асель, Fri 16.10.2026 09:00', 'request' => 'request:earlier' }
+      { 'tool' => 'create_appointment', 'label' => 'Booked', 'text' => 'Терапевт Нурланова Асель, Fri 16.10.2026 09:00',
+        'request' => 'request:earlier' }
     end
 
     before do
@@ -194,15 +195,13 @@ RSpec.describe Captain::AgentRunContext do
     end
   end
 
-  it 'takes the peers from the channel of the conversation, not from a stored list of the entry agent' do
+  it 'takes every active text-channel peer regardless of stored handoff lists or legacy channel links' do
     entry.update!(handoff_agent_ids: [])
     outsider = create(:captain_assistant, account: account, channel_scope: 'selected')
     runtime = described_class.new(entry: entry, conversation: conversation)
 
-    expect(runtime.runtime_agents.map(&:assistant_id)).to eq([entry.id, specialist.id])
-    expect(runtime.graph.find(outsider.id)).to be_nil
-    Captain::AgentChannel.create!(account: account, inbox: conversation.inbox, assistant: outsider)
-    expect(described_class.new(entry: entry, conversation: conversation).graph.find(outsider.id)).to eq(outsider)
+    expect(runtime.runtime_agents.map(&:assistant_id)).to eq([entry.id, specialist.id, outsider.id])
+    expect(runtime.graph.find(outsider.id)).to eq(outsider)
   end
 
   it 'materializes only the acting agent when building the runtime' do
@@ -239,8 +238,8 @@ RSpec.describe Captain::AgentRunContext do
     ]
     runtime.activate(specialist, context)
     expect(context[:conversation_history]).to eq([
-      { role: :user, content: 'Book for tomorrow' }, { role: :assistant, content: 'What time?' }
-    ])
+                                                   { role: :user, content: 'Book for tomorrow' }, { role: :assistant, content: 'What time?' }
+                                                 ])
   end
 
   it 'falls back to the entry if the previously active agent was disabled' do

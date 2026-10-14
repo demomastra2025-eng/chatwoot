@@ -148,7 +148,8 @@ RSpec.describe Captain::Runtime::Council::PartRun do
     tracking = part_run.call('x')[:tracking]
 
     expect(tracking).to eq(completed_tool_names: ['create_appointment'], completed_actions: ['create_appointment'],
-                           completed_tool_results: [{ tool_name: 'create_appointment', success: true }], artifact_ids: ['doc-1'])
+                           completed_tool_results: [{ tool_name: 'create_appointment', success: true }], artifact_ids: ['doc-1'],
+                           outcome_facts: {})
   end
 
   it 'keeps what the tools did when the run turns stale' do

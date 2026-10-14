@@ -6,7 +6,10 @@ RSpec.describe Captain::Tools::ResolveConversationTool do
   let(:inbox) { create(:inbox, account: account) }
   let(:conversation) { create(:conversation, account: account, inbox: inbox, status: :open) }
   let(:tool) { described_class.new(assistant) }
-  let(:tool_context) { Struct.new(:state).new({ conversation: { id: conversation.id } }) }
+  let(:tool_context) do
+    run_context = Captain::Runtime::RunContext.new({ state: { conversation: { id: conversation.id } } })
+    Captain::Runtime::ToolContext.new(run_context: run_context)
+  end
 
   before do
     Current.executed_by = assistant
