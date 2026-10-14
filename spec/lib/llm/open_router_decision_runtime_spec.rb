@@ -60,13 +60,13 @@ RSpec.describe Llm::OpenRouterRuntime, '#decide' do
   it 'uses the native Decisions transport for custom guardrails without recording checked text' do
     guardrail_model = 'openai/gpt-6-luna-decisions'
     checked_text = 'Fake appointment question.'
+    guardrail_criteria = { 'rule_one' => 'The reply promises a fixed time.', 'none' => 'No rule matches.' }
     stub = stub_request(:post, endpoint).with do |http_request|
       body = JSON.parse(http_request.body)
       expect(body).to include(
         'model' => guardrail_model,
         'state' => { 'candidate_text' => checked_text, 'factual_context' => { 'locale' => 'ru' } },
-        'questions' => { 'reason' => { 'type' => 'choice', 'criteria' => { 'rule_one' => 'The reply promises a fixed time.',
-                                                                            'none' => 'No rule matches.' },
+        'questions' => { 'reason' => { 'type' => 'choice', 'criteria' => guardrail_criteria,
                                        'instructions' => 'Choose the first matching rule ID.' } }
       )
       true
@@ -77,7 +77,7 @@ RSpec.describe Llm::OpenRouterRuntime, '#decide' do
     request = decision_request(
       feature: :custom_guardrail, model: guardrail_model,
       input: { candidate_text: checked_text, factual_context: { locale: 'ru' } },
-      options: { decision_criteria: { 'rule_one' => 'The reply promises a fixed time.', 'none' => 'No rule matches.' },
+      options: { decision_criteria: guardrail_criteria,
                  decision_instructions: 'Choose the first matching rule ID.' }
     )
 
