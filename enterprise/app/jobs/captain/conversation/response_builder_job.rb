@@ -15,6 +15,12 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   # surface in agent-side previews, so it names no provider, error or quota.
   FAILED_TURN_HANDOFF_NOTE = 'Automatic reply could not be generated. Handoff to human agent was triggered.'.freeze
   MODERATION_HANDOFF_NOTE = 'Automatic reply was stopped by the content safety check. Handoff to human agent was triggered.'.freeze
+  PROMPT_INJECTION_HANDOFF_NOTE = 'Automatic reply was stopped by a prompt injection check. Staff will continue.'.freeze
+  CREDENTIALS_HANDOFF_NOTE = 'Automatic reply was stopped by a credential safety check. Staff will continue.'.freeze
+  SAFETY_HANDOFF_NOTES = {
+    'prompt_injection' => PROMPT_INJECTION_HANDOFF_NOTE,
+    'sensitive_info' => CREDENTIALS_HANDOFF_NOTE
+  }.freeze
   MODERATION_BLOCKED_KEY = Captain::Assistant::AgentRunnerService::MODERATION_BLOCKED_KEY
   CUSTOM_GUARDRAIL_KEY = Captain::Safety::CustomRulesRuntime::RESPONSE_KEY
   CUSTOM_GUARDRAIL_HANDOFF_NOTE = 'Automatic reply was stopped by a configured agent check. Handoff to human agent was triggered.'.freeze
@@ -156,7 +162,6 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
   def process_public_response
     if handoff_requested?
-      prepare_handoff_notice
       handoff_applied = process_action(handoff_action_name)
       account.increment_token_usage(@response.dig('usage', 'total_tokens')) if handoff_applied
       handoff_applied
@@ -221,8 +226,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     true
   end
 
-  # What follows a council reply, or the silence of a council whose parts had no text of their own: the staff handoff and the
-  # private note the council asked for. Both are no-ops for any other response.
+  # What follows a council reply, or the silence of a council whose parts had no text of their own.
   def finish_council_reply
     hand_off_after_council_reply
     note_council_parts
@@ -230,8 +234,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
   # A council reply leaves out the part that could not be resolved, and the conversation is handed to staff after it, in silence.
   # The handoff adds a private note only; the council writes no sentence to the customer about it.
-  # A part that failed technically (a tool of its owner failed) is not mentioned in the reply: its handoff is the system's, so it
-  # does not depend on the handoff tool, and it also sends the configured handoff notice (see Captain::CustomerNoticeService).
+  # A part that failed technically is not mentioned in the reply. Its handoff does not depend on the handoff tool.
   def hand_off_after_council_reply
     request = @response&.dig('council_handoff')
     return if request.blank?
@@ -239,9 +242,8 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     technical = request['technical'] == true
     return unless technical || council_handoff_allowed?
 
-    prepare_handoff_notice if technical
     @response['handoff_reason'] = council_handoff_reason(request, technical)
-    process_action('council_handoff')
+    @council_handoff_applied = process_action('council_handoff')
   rescue Captain::Conversation::ControlGenerationStaleError => e
     Rails.logger.info("[CAPTAIN][RunFence] Skipped council handoff conversation_id=#{@conversation.id}: #{e.message}")
   rescue StandardError => e
@@ -269,6 +271,8 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   # A private note for staff that the council asked for, apart from a handoff: the actions that no text told the patient about,
   # and the parts nobody will answer because the conversation cannot go to staff. Requests, no patient data.
   def note_council_parts
+    return if @council_handoff_applied
+
     note = @response&.dig('council_note')
     return if note.blank?
 
@@ -544,7 +548,6 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   # on the handoff tool. It is fenced like every Captain result: a human reply,
   # a status or control change, or a newer customer message wins.
   def handoff_failed_turn
-    prepare_system_handoff_message
     result = @conversation.with_captain_activity_context(reason: provider_error_note_content, reason_type: :inference) do
       with_response_persistence_lock(stage: 'failed_turn_handoff') do
         audit = outcome_reason_config.pending_transition_options(:handoff, explanation: provider_error_note_content).fetch(:audit)
@@ -563,64 +566,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   def create_failed_turn_notifications
     I18n.with_locale(response_assistant.account.locale) do
       create_provider_error_private_note
-      if custom_guardrail_message.present?
-        create_outgoing_message(custom_guardrail_message, preserve_waiting_since: true)
-      else
-        system_handoff_message_service.perform
-      end
-      send_out_of_office_message_if_applicable unless @response[CUSTOM_GUARDRAIL_KEY].is_a?(Hash)
     end
-  end
-
-  # The notice model can take seconds, so the text is written before the response persistence lock is taken. A failure
-  # here only means the text is written again under the lock.
-  def prepare_system_handoff_message
-    system_handoff_message_service.prepare unless custom_guardrail_message.present?
-  rescue StandardError => e
-    Rails.logger.warn("[CAPTAIN][CustomerNotice] could not prepare the system handoff notice: #{e.class.name}")
-  end
-
-  def prepare_handoff_notice
-    handoff_notice.text if response_assistant.handoff_message_enabled?
-  rescue StandardError => e
-    Rails.logger.warn("[CAPTAIN][CustomerNotice] could not prepare the handoff notice: #{e.class.name}")
-  end
-
-  def system_handoff_message_service
-    @system_handoff_message_service ||= Captain::SystemHandoffMessageService.new(conversation: @conversation, assistant: response_assistant)
-  end
-
-  def custom_guardrail_message
-    return @custom_guardrail_message if defined?(@custom_guardrail_message)
-
-    @custom_guardrail_message = nil
-    metadata = @response[CUSTOM_GUARDRAIL_KEY]
-    return unless metadata.is_a?(Hash) && metadata['rule_id'].present?
-
-    rules = custom_guardrail_rules
-    return unless Captain::Safety::CustomRulesConfig.errors(rules).empty?
-
-    rule = rules.find do |item|
-      item['enabled'] && item['id'] == metadata['rule_id'] && item['direction'] == metadata['direction']
-    end
-    text = rule&.[]('message').to_s.strip
-    return if text.blank?
-
-    matches = Llm::RuntimeGuardrails.matches(
-      feature: :assistant, stage: :output, content: text, account: account,
-      preferences: { 'sensitive_info_guardrail' => 'block' }
-    )
-    @custom_guardrail_message = text unless matches.any?(&:blocking?)
-  end
-
-  # The message comes from the account-wide safety profile the check used
-  # (Captain::Safety::CustomRulesEvaluator), never from the legacy agent config.
-  # The conversation, and so its account, is reloaded after generation, so this
-  # is the latest saved profile.
-  def custom_guardrail_rules
-    Captain::AccountSettings.new(account).runtime_rules
-  rescue KeyError
-    nil
   end
 
   # A turn the safety policy blocked, or could not check, has no reply to send.
@@ -630,7 +576,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     return unless @response&.[]('response') == 'conversation_handoff' && @response[MODERATION_BLOCKED_KEY] == true
 
     @response = provider_fallback_response(error_class: 'Llm::SafetyPolicy', error_message: @response['reasoning'].to_s)
-                .merge(MODERATION_BLOCKED_KEY => true)
+                .merge(MODERATION_BLOCKED_KEY => true, 'safety_reason' => @response['safety_reason'])
   end
 
   def normalize_blank_public_response!
@@ -688,21 +634,23 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
   def create_council_handoff_notifications
     I18n.with_locale(response_assistant.account.locale) do
-      create_handoff_private_note
-      create_handoff_message(preserve_waiting_since: true) if technical_council_handoff?
-      send_out_of_office_message_if_applicable
+      create_private_note(council_handoff_note_content)
     end
   end
 
-  def technical_council_handoff?
-    @response&.dig('council_handoff', 'technical') == true
+  def council_handoff_note_content
+    reason = @response['handoff_reason'].to_s.strip.presence || DEFAULT_HANDOFF_PRIVATE_NOTE
+    note = @response['council_note'].to_h
+    details = %w[unreported unanswered].filter_map do |kind|
+      parts = council_note_parts(note[kind])
+      I18n.t("captain.coordination.#{kind == 'unreported' ? 'unreported_action_note' : 'unresolved_handoff'}", parts: parts) if parts.present?
+    end
+    ([reason] + details).join("\n")
   end
 
   def create_handoff_notifications
     I18n.with_locale(response_assistant.account.locale) do
       create_handoff_private_note
-      create_handoff_message(preserve_waiting_since: true) if response_assistant.handoff_message_enabled?
-      send_out_of_office_message_if_applicable
     end
   end
 
@@ -755,40 +703,6 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
       explanation: handoff_activity_reason,
       signal: v2_handoff_tool_fired? ? @response['handoff_outcome_signal'] : nil
     ).fetch(:audit, {})
-  end
-
-  def send_out_of_office_message_if_applicable
-    # Campaign conversations should never receive OOO templates — the campaign itself
-    # serves as the initial outreach, and OOO would be confusing in that context.
-    return if @conversation.campaign.present?
-
-    ::MessageTemplates::Template::OutOfOffice.perform_if_applicable(@conversation)
-  end
-
-  # The text is the workspace handoff message: nothing while it is disabled or has no text, the fixed text, or the text
-  # the notice model wrote. There is no built-in wording here, and the agent's own `handoff_message` is not used.
-  def create_handoff_message(preserve_waiting_since: false)
-    text = handoff_notice.text
-    return if text.blank?
-
-    I18n.with_locale(response_assistant.account.locale) do
-      create_outgoing_message(text, preserve_waiting_since: preserve_waiting_since)
-    end
-  end
-
-  def handoff_notice
-    @handoff_notice ||= Captain::CustomerNoticeService.new(
-      conversation: @conversation, assistant: response_assistant, kind: :handoff, reason_label: handoff_notice_reason_label
-    )
-  end
-
-  # Only the configured label of the reason the system knows at this point (the FAQ had no answer); never the agent's
-  # own internal handoff reason.
-  def handoff_notice_reason_label
-    return unless @response['handoff_outcome_signal'] == 'faq_no_answer'
-
-    reason = outcome_reason_config.resolve('handoff', 'faq_no_answer')
-    reason['label'] if reason && reason['id'] == 'faq_no_answer'
   end
 
   def create_handoff_private_note
@@ -893,8 +807,9 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   def provider_error_note_content
     return CUSTOM_GUARDRAIL_HANDOFF_NOTE if @response&.dig(CUSTOM_GUARDRAIL_KEY).is_a?(Hash)
     return technical_failure_note if @response&.dig('technical_failure').present?
+    return SAFETY_HANDOFF_NOTES.fetch(@response['safety_reason'], MODERATION_HANDOFF_NOTE) if @response&.dig(MODERATION_BLOCKED_KEY) == true
 
-    @response&.dig(MODERATION_BLOCKED_KEY) == true ? MODERATION_HANDOFF_NOTE : FAILED_TURN_HANDOFF_NOTE
+    FAILED_TURN_HANDOFF_NOTE
   end
 
   # A tool of the agent failed technically and the customer got no reply: the note says which tool and what kind of failure, and

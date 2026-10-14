@@ -1159,7 +1159,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       expect(conversation.messages.outgoing.where(private: false).last.content).to eq('Продолжу помогать здесь.')
     end
 
-    it 'applies an authorized strict handoff with one public message and one private note' do
+    it 'applies an authorized strict handoff with one private note and no public message' do
       assistant.update!(config: assistant.config.merge('handoff_requires_explicit_consent' => true))
       save_account_handoff_message(mode: 'generated')
       stub_notice_model('Сотрудник продолжит диалог с вами.')
@@ -1180,13 +1180,12 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         'captain.agent.staff_handoff',
         hash_including(request_id: 'synthetic-request', conversation_id: conversation.id, run_source: 'live')
       ).and_call_original
-      public_message = change { conversation.messages.outgoing.where(private: false).count }.by(1)
+      public_message = change { conversation.messages.outgoing.where(private: false).count }.by(0)
       private_note = change { conversation.messages.outgoing.where(private: true).count }.by(1)
       expect { described_class.perform_now(conversation, assistant) }.to public_message.and(private_note)
 
       expect(conversation.reload.captain_handoff_applied_at).to be_present
-      # The text comes from the notice model, never from the agent's own handoff_message.
-      expect(conversation.messages.outgoing.where(private: false).last.content).to eq('Сотрудник продолжит диалог с вами.')
+      expect(conversation.messages.outgoing.where(private: true).sole.content).to eq('Customer explicitly requested human assistance.')
     end
 
     context 'without phrase-based emergency handoff' do
@@ -1355,43 +1354,14 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         expect(conversation.messages.outgoing.where(sender: assistant)).to be_empty
       end
 
-      # The handoff tool is always available to external agents (owner decision);
-      # only the ordinary handoff message can be switched off.
-      it 'sends the saved static message once even when the ordinary handoff message is disabled' do
-        expect(assistant.handoff_message_enabled?).to be(false)
-
+      # The handoff tool is always available to external agents.
+      it 'hands off silently with one configured-check note, including on retry' do
         2.times { described_class.perform_now(conversation, assistant) }
 
         expect(conversation.reload.status).to eq('open')
-        expect(conversation.captain_handoff_applied_at).to be_present
-        expect(conversation.waiting_since).to be_present
-        expect(conversation.messages.outgoing.where(private: false).pluck(:content)).to eq([approved_message])
-        expect(conversation.messages.where(private: true).pluck(:content)).to eq([described_class::CUSTOM_GUARDRAIL_HANDOFF_NOTE])
-        expect(conversation.status_transitions.last).to have_attributes(source: 'system', actor: assistant)
-        expect(agent_runner_service).to have_received(:generate_response).once
-      end
-
-      it 'loads the latest saved message instead of trusting text in the response payload' do
-        updated_message = 'Staff will handle the request recorded in this conversation.'
-        allow(agent_runner_service).to receive(:generate_response) do
-          save_custom_handoff_rules(saved_rule.merge('message' => updated_message))
-          guardrail_response
-        end
-
-        described_class.perform_now(conversation, assistant)
-
-        expect(conversation.reload.messages.outgoing.where(private: false).pluck(:content)).to eq([updated_message])
-        expect(conversation.messages.where(content: guardrail_response.dig('custom_guardrail', 'approved_message'))).to be_empty
-      end
-
-      it 'does not send payload text when the saved rule has no message' do
-        save_custom_handoff_rules(saved_rule.except('message'))
-
-        described_class.perform_now(conversation, assistant)
-
-        expect(conversation.reload.status).to eq('open')
         expect(conversation.messages.outgoing.where(private: false)).to be_empty
-        expect(conversation.messages.where(private: true).pluck(:content)).to eq([described_class::CUSTOM_GUARDRAIL_HANDOFF_NOTE])
+        expect(conversation.messages.outgoing.where(private: true).pluck(:content))
+          .to eq([described_class::CUSTOM_GUARDRAIL_HANDOFF_NOTE])
       end
 
       %w[disabled deleted direction_changed].each do |change|
@@ -1409,34 +1379,6 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
           expect(conversation.messages.outgoing.where(private: false)).to be_empty
           expect(conversation.messages.where(private: true).pluck(:content)).to eq([described_class::CUSTOM_GUARDRAIL_HANDOFF_NOTE])
         end
-      end
-
-      it 'uses the routed actor and saved profile for the handoff message' do
-        routed_assistant = create(:captain_assistant, account: account)
-        assistant.update!(handoff_agent_ids: [routed_assistant.id])
-        routed_message = 'The specialist has transferred your request to staff.'
-        save_custom_handoff_rules(saved_rule.merge('message' => routed_message))
-        Captain::Conversation::AgentSession.new(entry: assistant, conversation: conversation).update_routing(actor_id: routed_assistant.id)
-        allow(agent_runner_service).to receive(:generate_response).and_return(guardrail_response.merge('agent_id' => routed_assistant.id))
-
-        described_class.perform_now(conversation, assistant)
-
-        public_message = conversation.reload.messages.outgoing.where(private: false).sole
-        expect(public_message).to have_attributes(content: routed_message, sender: routed_assistant)
-        expect(conversation.status_transitions.last).to have_attributes(source: 'system', actor: routed_assistant)
-        expect(conversation.messages.where(private: true).sole.sender).to eq(routed_assistant)
-      end
-
-      it 'blocks a secret-shaped string in the saved static message' do
-        fake_secret_message = 'api_key=FAKE_CUSTOM_GUARDRAIL_SECRET_NOT_REAL_123456'
-        save_custom_handoff_rules(saved_rule.merge('message' => fake_secret_message))
-
-        described_class.perform_now(conversation, assistant)
-
-        expect(conversation.reload.status).to eq('open')
-        expect(conversation.messages.outgoing.where(private: false)).to be_empty
-        expect(conversation.messages.where(content: fake_secret_message)).to be_empty
-        expect(conversation.messages.where(private: true).pluck(:content)).to eq([described_class::CUSTOM_GUARDRAIL_HANDOFF_NOTE])
       end
 
       it 'sends neither the message nor the handoff if a newer customer message wins the locked fence' do
@@ -1501,6 +1443,23 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       expect(conversation.status_transitions.last).to have_attributes(source: 'system', actor: assistant)
       expect(conversation.messages.where(private: true).pluck(:content)).to eq([described_class::MODERATION_HANDOFF_NOTE])
       expect(conversation.messages.outgoing.where(private: false)).to be_empty
+    end
+
+    %w[prompt_injection sensitive_info].each do |reason|
+      it "names a #{reason} safety block in one staff note without exposing the blocked text" do
+        allow(agent_runner_service).to receive(:generate_response).and_return(
+          { 'response' => 'conversation_handoff', 'reasoning' => 'blocked content must remain private',
+            'moderation_blocked' => true, 'safety_reason' => reason }
+        )
+
+        described_class.perform_now(conversation, assistant)
+
+        expected_note = reason == 'prompt_injection' ? described_class::PROMPT_INJECTION_HANDOFF_NOTE : described_class::CREDENTIALS_HANDOFF_NOTE
+        expect(conversation.reload.status).to eq('open')
+        expect(conversation.messages.outgoing.where(private: true).pluck(:content)).to eq([expected_note])
+        expect(conversation.messages.outgoing.where(private: false)).to be_empty
+        expect(conversation.messages.where('content LIKE ?', '%blocked content%')).to be_empty
+      end
     end
 
     it 'keeps an unmarked conversation_handoff value without the handoff tool cancelled' do
@@ -1712,15 +1671,6 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         expect(conversation.reload.messages.where(private: true).pluck(:content).join).not_to include('Айгуль', '7701')
       end
 
-      it 'sends the handoff notice of the workspace through the notice service, as for any handoff of the system' do
-        save_account_handoff_message(text: 'Сотрудник продолжит диалог с вами.')
-
-        described_class.perform_now(conversation, assistant)
-
-        expect(conversation.reload.messages.outgoing.where(private: false).pluck(:content)).to eq(['Сотрудник продолжит диалог с вами.'])
-        expect(conversation.status).to eq('open')
-      end
-
       it 'hands over although the agent has no handoff tool: it is the system that does it' do
         allow_any_instance_of(Captain::Assistant).to receive(:handoff_enabled?).and_return(false)
 
@@ -1730,13 +1680,12 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         expect(conversation.messages.where(private: true).pluck(:content)).to eq([note])
       end
 
-      it 'says nothing about the failure to the customer, whatever the notice is' do
+      it 'sends no public message about the failure, whatever the notice setting is' do
         save_account_handoff_message(text: 'Сотрудник продолжит диалог с вами.')
 
         described_class.perform_now(conversation, assistant)
 
-        public_text = conversation.reload.messages.outgoing.where(private: false).pluck(:content).join
-        expect(public_text).not_to include('create_appointment', 'ошибк', 'не получилось', 'Не удалось')
+        expect(conversation.reload.messages.outgoing.where(private: false)).to be_empty
       end
 
       it 'records the staff handoff like any other handoff' do
@@ -1770,16 +1719,6 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         expect(reply.content).to eq('Приём стоит 5000 тенге.')
         expect(note.content).to eq(technical_note)
         expect(note.id).to be > reply.id
-        expect(conversation.status).to eq('open')
-      end
-
-      it 'follows the reply with the handoff notice of the workspace' do
-        save_account_handoff_message(text: 'Сотрудник продолжит диалог с вами.')
-
-        described_class.perform_now(conversation, assistant)
-
-        public_messages = conversation.reload.messages.outgoing.where(private: false).order(:id)
-        expect(public_messages.pluck(:content)).to eq(['Приём стоит 5000 тенге.', 'Сотрудник продолжит диалог с вами.'])
         expect(conversation.status).to eq('open')
       end
 
@@ -1848,7 +1787,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
       before { allow(agent_runner_service).to receive(:generate_response).and_return(council_response) }
 
-      it 'sends no public message, not even a notice, and hands the conversation to staff in silence with the private notes' do
+      it 'sends no public message and combines the council details into one staff note' do
         save_account_handoff_message(text: 'Сотрудник продолжит диалог с вами.')
 
         described_class.perform_now(conversation, assistant)
@@ -1856,7 +1795,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         conversation.reload
         expect(conversation.messages.outgoing.where(private: false)).to be_empty
         notes = conversation.messages.outgoing.where(private: true).pluck(:content)
-        expect(notes).to include(a_string_including('Результаты анализов'), unreported_note)
+        expect(notes).to eq([a_string_including('Результаты анализов', unreported_note)])
         expect(conversation.status).to eq('open')
       end
 
@@ -1953,14 +1892,14 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         end
       end
 
-      it 'hands the conversation to staff once, with the notice of the workspace, one note that names the failure and nothing else public' do
+      it 'hands the conversation to staff once with one note that names the failure and no public message' do
         save_account_handoff_message(text: notice)
 
         described_class.perform_now(conversation, assistant)
 
         conversation.reload
         expect(conversation.status).to eq('open')
-        expect(conversation.messages.outgoing.where(private: false).pluck(:content)).to eq([notice])
+        expect(conversation.messages.outgoing.where(private: false)).to be_empty
         notes = conversation.messages.outgoing.where(private: true).order(:id).pluck(:content)
         expect(notes.size).to eq(1)
         expect(notes.sole).to include('Automatic reply was stopped by a technical error (create_appointment')
@@ -1976,10 +1915,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       end
     end
 
-    # Regression (PR #13417): wrapping create_handoff_message and bot_handoff! in the
-    # same transaction defers the message's after_create_commit until commit, at which
-    # point it clears waiting_since (bot_response). The handoff path must stay outside
-    # the transaction so the callback fires before bot_handoff! sets waiting_since.
+    # A silent handoff still sets waiting_since for staff reply tracking.
     context 'when handoff is requested' do
       let(:agent) { create(:user, account: account, role: :agent) }
 
@@ -1989,12 +1925,12 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         )
       end
 
-      it 'restores waiting_since after the handoff message callbacks' do
+      it 'sets waiting_since without sending a handoff message' do
         save_account_handoff_message(text: 'Connecting you to a human agent.')
         conversation.update!(waiting_since: nil)
 
         expect { described_class.perform_now(conversation, assistant) }
-          .to change { conversation.messages.outgoing.where(private: false).count }.by(1)
+          .to change { conversation.messages.outgoing.where(private: true).count }.by(1)
 
         conversation.reload
         expect(conversation.status).to eq('open')
@@ -2013,7 +1949,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         expect(conversation.reload.waiting_since).to be_nil
       end
 
-      it 'keeps captain trace on the configured static handoff message' do
+      it 'keeps captain trace on the staff note' do
         save_account_handoff_message(text: 'Connecting you to a human agent.')
         trace_payload = Captain::ToolTraceBuilder.payload([
                                                             Captain::ToolTraceBuilder.step(
@@ -2060,78 +1996,6 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         expect(conversation.reload.status).to eq('open')
       end
 
-      it 'uses the text the notice model wrote when AI handoff message mode is enabled, with the owner instruction' do
-        save_account_handoff_message(mode: 'generated', instruction: 'Коротко и вежливо.')
-        request = {}
-        stub_notice_model
-        allow(Llm::Runtime).to receive(:chat).with(hash_including(feature: :customer_notice)) do |**attributes|
-          request.merge!(attributes)
-          Struct.new(:content).new('Сотрудник продолжит диалог с вами.')
-        end
-        allow(agent_runner_service).to receive(:generate_response).and_return(
-          {
-            'response' => 'conversation_handoff',
-            'handoff_tool_called' => true,
-            'handoff_authorized' => true,
-            'handoff_reason' => 'Internal reason that must stay internal',
-            'handoff_message' => 'I’ll connect you with a specialist who can continue from here.'
-          }
-        )
-
-        described_class.perform_now(conversation, assistant)
-
-        public_message = conversation.reload.messages.outgoing.where(private: false).last
-        expect(public_message.content).to eq('Сотрудник продолжит диалог с вами.')
-        expect(public_message.sender).to eq(assistant)
-        sent = JSON.parse(request[:messages].last[:content])
-        expect(sent).to include('kind' => 'handoff', 'style_guide' => 'Коротко и вежливо.')
-        expect(request.to_s).not_to include('Internal reason that must stay internal')
-        expect(sent).not_to have_key('reason_label')
-      end
-
-      it 'hands the notice model only the configured FAQ reason label, never the agent reason' do
-        save_account_handoff_message(mode: 'generated')
-        stub_notice_model
-        request = {}
-        allow(Llm::Runtime).to receive(:chat).with(hash_including(feature: :customer_notice)) do |**attributes|
-          request.merge!(attributes)
-          Struct.new(:content).new('Сотрудник продолжит диалог с вами.')
-        end
-        allow(agent_runner_service).to receive(:generate_response).and_return(
-          {
-            'response' => 'conversation_handoff',
-            'handoff_tool_called' => true,
-            'handoff_authorized' => true,
-            'handoff_reason' => 'Internal reason',
-            'handoff_outcome_signal' => 'faq_no_answer'
-          }
-        )
-
-        described_class.perform_now(conversation, assistant)
-
-        sent = JSON.parse(request[:messages].last[:content])
-        expect(sent['reason_label']).to eq(I18n.t('captain.outcome_reasons.faq_no_answer', locale: account.locale))
-        expect(request.to_s).not_to include('Internal reason')
-      end
-
-      it 'falls back to the fixed text, then to a neutral sentence, when the notice model fails in AI mode' do
-        save_account_handoff_message(mode: 'generated', text: 'Подключаем сотрудника.')
-        stub_notice_model(error: StandardError.new('boom'))
-
-        described_class.perform_now(conversation, assistant)
-
-        expect(conversation.reload.messages.outgoing.where(private: false).pluck(:content)).to eq(['Подключаем сотрудника.'])
-      end
-
-      it 'falls back to a neutral built-in sentence only when AI mode failed and there is no fixed text' do
-        save_account_handoff_message(mode: 'generated', text: '')
-        stub_notice_model(error: StandardError.new('boom'))
-
-        described_class.perform_now(conversation, assistant)
-
-        expect(conversation.reload.messages.outgoing.where(private: false).pluck(:content)).to eq(['Сотрудник продолжит диалог с вами.'])
-      end
-
       it 'never calls the notice model while the handoff message is disabled, even in AI mode' do
         save_account_handoff_message(enabled: false, mode: 'generated', text: 'Подключаем сотрудника.')
         expect(Llm::Runtime).not_to receive(:chat)
@@ -2139,22 +2003,6 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         expect do
           described_class.perform_now(conversation, assistant)
         end.not_to(change { conversation.messages.outgoing.where(private: false).count })
-      end
-
-      it 'writes the notice before the conversation lock and its transaction are taken, and only once' do
-        save_account_handoff_message(mode: 'generated')
-        baseline_transactions = ActiveRecord::Base.connection.open_transactions
-        transactions_while_writing = []
-        stub_notice_model
-        allow(Llm::Runtime).to receive(:chat).with(hash_including(feature: :customer_notice)) do
-          transactions_while_writing << ActiveRecord::Base.connection.open_transactions
-          Struct.new(:content).new('Сотрудник продолжит диалог с вами.')
-        end
-
-        described_class.perform_now(conversation, assistant)
-
-        expect(transactions_while_writing).to eq([baseline_transactions])
-        expect(conversation.reload.messages.outgoing.where(private: false).pluck(:content)).to eq(['Сотрудник продолжит диалог с вами.'])
       end
 
       it 'creates a private note with the handoff reason when provided by the runtime' do
@@ -2254,7 +2102,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
         expect(agent_runner_service).to have_received(:generate_response).once
         expect(conversation.messages.where(private: true, content: 'Customer requested a person').count).to eq(1)
-        expect(conversation.messages.outgoing.where(private: false, content: 'Сотрудник продолжит диалог с вами.').count).to eq(1)
+        expect(conversation.messages.outgoing.where(private: false)).to be_empty
         expect(conversation.status_transitions.where(to_status: 'open').count).to eq(1)
       end
 
@@ -2276,7 +2124,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         described_class.perform_now(conversation, assistant)
 
         expect(conversation.reload.status_transitions.last).to have_attributes(reason: Captain::OutcomeReasonConfig.new(assistant).pending_label,
-                                                                            source: 'captain')
+                                                                               source: 'captain')
       end
 
       it 'records the AI open activity with the handoff reason' do
@@ -2368,34 +2216,6 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
         expect(conversation.reload.status).to eq('open')
         expect(conversation.messages.where(private: true).last.content).to eq(described_class::FAILED_TURN_HANDOFF_NOTE)
-      end
-
-      it 'sends only the configured handoff message, once, when it is configured' do
-        save_account_handoff_message(text: 'Передаю администратору.')
-
-        2.times { described_class.perform_now(conversation, assistant, expected_last_message_id: conversation.messages.incoming.last.id) }
-
-        expect(conversation.reload.messages.outgoing.where(private: false).pluck(:content)).to eq(['Передаю администратору.'])
-        expect(conversation.messages.where(private: true, content: described_class::FAILED_TURN_HANDOFF_NOTE).count).to eq(1)
-      end
-
-      it 'sends the text the notice model wrote, once, when the handoff message is in AI mode' do
-        save_account_handoff_message(mode: 'generated', text: 'Передаю администратору.', instruction: 'Коротко.')
-        stub_notice_model('Сотрудник продолжит диалог с вами.')
-
-        2.times { described_class.perform_now(conversation, assistant, expected_last_message_id: conversation.messages.incoming.last.id) }
-
-        expect(conversation.reload.messages.outgoing.where(private: false).pluck(:content)).to eq(['Сотрудник продолжит диалог с вами.'])
-        expect(Llm::Runtime).to have_received(:chat).with(hash_including(feature: :customer_notice)).once
-      end
-
-      it 'falls back to the fixed text when the notice model fails in AI mode' do
-        save_account_handoff_message(mode: 'generated', text: 'Передаю администратору.')
-        stub_notice_model(error: Timeout::Error.new('slow'))
-
-        described_class.perform_now(conversation, assistant)
-
-        expect(conversation.reload.messages.outgoing.where(private: false).pluck(:content)).to eq(['Передаю администратору.'])
       end
 
       it 'sends nothing and never calls the notice model when the handoff message is disabled' do
@@ -2892,14 +2712,13 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         )
       end
 
-      it 'sends out of office message after handoff' do
+      it 'does not send an out of office message after handoff' do
         expect do
           described_class.perform_now(conversation, assistant)
-        end.to change { conversation.messages.template.count }.by(1)
+        end.not_to(change { conversation.messages.template.count })
 
         expect(conversation.reload.status).to eq('open')
-        ooo_message = conversation.messages.template.last
-        expect(ooo_message.content).to eq('We are currently closed. Please leave your email.')
+        expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
       end
     end
 
@@ -2940,13 +2759,13 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         allow(agent_runner_service).to receive(:generate_response).and_raise(StandardError, 'API error')
       end
 
-      it 'sends out of office message after the error-triggered system handoff' do
+      it 'does not send an out of office message after the error-triggered system handoff' do
         expect do
           described_class.perform_now(conversation, assistant)
-        end.to change { conversation.messages.template.count }.by(1)
+        end.not_to(change { conversation.messages.template.count })
 
         expect(conversation.reload.status).to eq('open')
-        expect(conversation.messages.template.last.content).to eq('We are currently closed.')
+        expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
       end
     end
 

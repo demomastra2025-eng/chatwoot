@@ -19,7 +19,7 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
 
   describe '#parameters' do
     it 'returns the correct parameters' do
-      # The customer text of a handoff is written by the notice service, so the agent is not asked for a message.
+      # A handoff is silent for the customer, so the agent is not asked for a message.
       expect(tool.parameters.keys).to contain_exactly(:reason)
       expect(tool.parameters[:reason].name).to eq(:reason)
       expect(tool.parameters[:reason].type).to eq('string')
@@ -52,7 +52,7 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
             usage_mode: 'internal_assistant',
             description: 'Mention handoff as a concept, but do not enable its tool.',
             config: assistant.config.deep_merge('handoff_enabled' => false,
-                                                 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['faq_lookup'] } })
+                                                'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['faq_lookup'] } })
           )
 
           expect { tool.execute(tool_context, reason: 'Model tried to transfer') }

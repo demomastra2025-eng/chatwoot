@@ -104,8 +104,8 @@ class Captain::Assistant::AgentRunnerService
   rescue Captain::Safety::CustomRulesRuntime::HandoffRequired => e
     @acting_assistant_id = e.assistant_id
     Captain::Safety::CustomRulesRuntime.response_for(e)
-  rescue Llm::SafetyPolicy::UnsafeContentError, Llm::SafetyPolicy::UnavailableError
-    blocked_by_moderation_response('Revised agent output blocked by safety policy')
+  rescue Llm::SafetyPolicy::UnsafeContentError, Llm::SafetyPolicy::UnavailableError => e
+    blocked_by_moderation_response('Revised agent output blocked by safety policy', safety_reason: e.reason)
   end
 
   def custom_guardrail_actor(actor_id)
@@ -283,6 +283,7 @@ class Captain::Assistant::AgentRunnerService
     if technical_failure_from(result.context).present? && !authorized_handoff_pending?(result.context, handoff_tool_called)
       return technical_failure_response(technical_failure_from(result.context), result.context)
     end
+
     if result.respond_to?(:error) && result.error.present?
       if authorized_handoff_pending?(result.context, handoff_tool_called)
         return human_handoff_response(result.context[:pending_human_handoff],
@@ -308,14 +309,14 @@ class Captain::Assistant::AgentRunnerService
     output = result.output
     response = output.is_a?(Hash) ? output.with_indifferent_access : { 'response' => output.to_s, 'reasoning' => '' }
     response.delete('handoff_authorized')
-    # The model is not asked for either of these any more (a handoff goes through the handoff tool, the notice is written by the
-    # platform); an older or stray value must not reach the response builder.
+    # A handoff goes through the handoff tool; older or stray model values must not reach the response builder.
     response.delete('handoff_message')
     response.delete('handoff_reason')
     response.delete('council_handoff')
     response.delete('council_note')
     response.delete(PROVIDER_ERROR_AUTHORIZED_KEY)
     response.delete(MODERATION_BLOCKED_KEY)
+    response.delete('safety_reason')
     response.delete(Captain::Safety::CustomRulesRuntime::RESPONSE_KEY)
     response['agent_name'] = result.context&.dig(:current_agent)
     response['agent_id'] = @acting_assistant_id
@@ -345,10 +346,10 @@ class Captain::Assistant::AgentRunnerService
     moderate_output!(response, result.context&.dig(:state, :captain_runtime))
     add_playground_usage(response, result)
     response
-  rescue Llm::SafetyPolicy::UnsafeContentError
-    blocked_by_moderation_response('Agent output blocked by moderation policy')
-  rescue Llm::SafetyPolicy::UnavailableError
-    blocked_by_moderation_response('Agent output blocked because moderation policy is unavailable')
+  rescue Llm::SafetyPolicy::UnsafeContentError => e
+    blocked_by_moderation_response('Agent output blocked by moderation policy', safety_reason: e.reason)
+  rescue Llm::SafetyPolicy::UnavailableError => e
+    blocked_by_moderation_response('Agent output blocked because moderation policy is unavailable', safety_reason: e.reason)
   end
 
   # The parts this reply answers: the plan of the request, and the actions of earlier runs that the customer was not told about
@@ -1007,6 +1008,7 @@ class Captain::Assistant::AgentRunnerService
 
   def with_agent_identity(response)
     return response unless response.is_a?(Hash)
+
     response = response.merge('captain_request_id' => @captain_request_id) if @captain_request_id.present?
     return response unless @assistant.persisted?
 
@@ -1331,10 +1333,10 @@ class Captain::Assistant::AgentRunnerService
     @acting_assistant_id = actor.id
     Captain::Safety::CustomRulesRuntime.check_input!(assistant: actor, context: context, text: message_to_process)
     nil
-  rescue Llm::SafetyPolicy::UnsafeContentError
-    blocked_by_moderation_response('Agent input blocked by moderation policy')
-  rescue Llm::SafetyPolicy::UnavailableError
-    blocked_by_moderation_response('Agent input blocked because moderation policy is unavailable')
+  rescue Llm::SafetyPolicy::UnsafeContentError => e
+    blocked_by_moderation_response('Agent input blocked by moderation policy', safety_reason: e.reason)
+  rescue Llm::SafetyPolicy::UnavailableError => e
+    blocked_by_moderation_response('Agent input blocked because moderation policy is unavailable', safety_reason: e.reason)
   end
 
   def moderate_output!(response, runtime_preferences)
@@ -1360,11 +1362,12 @@ class Captain::Assistant::AgentRunnerService
     end
   end
 
-  def blocked_by_moderation_response(reason)
+  def blocked_by_moderation_response(reason, safety_reason: nil)
     {
       'response' => 'conversation_handoff',
       'reasoning' => reason,
-      MODERATION_BLOCKED_KEY => true
+      MODERATION_BLOCKED_KEY => true,
+      'safety_reason' => safety_reason.to_s
     }
   end
 

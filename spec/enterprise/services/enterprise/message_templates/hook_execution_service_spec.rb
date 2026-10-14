@@ -73,7 +73,9 @@ RSpec.describe MessageTemplates::HookExecutionService do
         expect(conversation.status_transitions.last).to have_attributes(
           from_status: 'pending', to_status: 'open', source: 'system', actor_id: nil, actor_type: nil
         )
-        expect(conversation.messages.outgoing).to be_empty
+        expect(conversation.messages.outgoing.where(private: false)).to be_empty
+        expect(conversation.messages.outgoing.where(private: true).pluck(:content))
+          .to eq(['Automatic reply is unavailable outside the agent schedule.'])
         expect(conversation.captain_handoff_applied_at).to be_nil
       end
 
@@ -87,7 +89,9 @@ RSpec.describe MessageTemplates::HookExecutionService do
         create(:message, conversation: conversation, message_type: :incoming, account: account)
 
         expect(conversation.reload.status).to eq('open')
-        expect(conversation.messages.outgoing).to be_empty
+        expect(conversation.messages.outgoing.where(private: false)).to be_empty
+        expect(conversation.messages.outgoing.where(private: true).pluck(:content))
+          .to eq(['Automatic reply is unavailable outside the agent schedule.'])
       end
 
       it 'opens a brand-new conversation when Captain may not answer during working hours' do
@@ -144,7 +148,7 @@ RSpec.describe MessageTemplates::HookExecutionService do
         create(:message, conversation: conversation, message_type: :incoming, account: account)
       end
 
-      it 'sends out-of-office and opens the conversation outside business hours when auto-reply mode is working_hours' do
+      it 'opens the conversation silently outside business hours when auto-reply mode is working_hours' do
         captain_inbox.update!(auto_reply_mode: 'working_hours')
         out_of_office_service = instance_double(MessageTemplates::Template::OutOfOffice)
         allow(MessageTemplates::Template::OutOfOffice).to receive(:new).and_return(out_of_office_service)
@@ -154,9 +158,10 @@ RSpec.describe MessageTemplates::HookExecutionService do
 
         create(:message, conversation: conversation, message_type: :incoming, account: account)
 
-        expect(MessageTemplates::Template::OutOfOffice).to have_received(:new)
+        expect(MessageTemplates::Template::OutOfOffice).not_to have_received(:new)
         expect(conversation.reload.status).to eq('open')
         expect(conversation.status_transitions.last).to have_attributes(source: 'system', actor_id: nil)
+        expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
       end
 
       it 'opens a brand-new conversation outside business hours when auto-reply mode is working_hours' do
@@ -167,7 +172,8 @@ RSpec.describe MessageTemplates::HookExecutionService do
         create(:message, conversation: new_conversation, message_type: :incoming, account: account)
 
         expect(new_conversation.reload.status).to eq('open')
-        expect(new_conversation.messages.template.pluck(:content)).to include('We are currently closed')
+        expect(new_conversation.messages.template).to be_empty
+        expect(new_conversation.messages.outgoing.where(private: true).count).to eq(1)
       end
 
       it 'leaves voice call bubbles alone outside the Captain schedule' do
@@ -191,7 +197,7 @@ RSpec.describe MessageTemplates::HookExecutionService do
         create(:message, conversation: conversation, message_type: :incoming, account: account)
       end
 
-      it 'hands the conversation to people with the out-of-office template when the Captain quota is exceeded outside business hours' do
+      it 'hands the conversation to people silently when Captain quota is exceeded outside business hours' do
         account.update!(
           limits: { 'captain_responses' => 100 },
           custom_attributes: account.custom_attributes.merge('captain_responses_usage' => 100)
@@ -201,7 +207,8 @@ RSpec.describe MessageTemplates::HookExecutionService do
         create(:message, conversation: conversation, message_type: :incoming, account: account)
 
         expect(conversation.reload.status).to eq('open')
-        expect(conversation.messages.template.pluck(:content)).to include('We are currently closed')
+        expect(conversation.messages.template).to be_empty
+        expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
         expect(conversation.messages.outgoing.where(content: 'Transferring to another agent for further assistance.')).to be_empty
       end
 
@@ -272,47 +279,21 @@ RSpec.describe MessageTemplates::HookExecutionService do
         expect(conversation.status_transitions.last).to have_attributes(
           from_status: 'pending', to_status: 'open', source: 'system', actor_id: nil, actor_type: nil
         )
-        expect(conversation.messages.outgoing.where(content: 'Transferring to another agent for further assistance.')).to be_empty
+        expect(conversation.messages.outgoing.where(private: false)).to be_empty
+        expect(conversation.messages.outgoing.where(private: true).pluck(:content))
+          .to eq(['Automatic reply is unavailable because the agent quota is exhausted.'])
       end
 
-      it 'sends only the assistant handoff message when quota is exceeded' do
-        configure_handoff_message(enabled: true, mode: 'fixed', text: 'Сейчас подключим администратора.')
-
-        create(:message, conversation: conversation, message_type: :incoming, account: account)
-        create(:message, conversation: conversation, message_type: :incoming, account: account)
-
-        public_messages = conversation.reload.messages.outgoing.where(private: false)
-        expect(conversation.status).to eq('open')
-        expect(public_messages.pluck(:content)).to eq(['Сейчас подключим администратора.'])
-        expect(public_messages.first.sender).to eq(assistant)
-      end
-
-      # The customer's own message waits for this handoff (a widget request or a webhook), so there is no notice model call.
-      it 'sends the fixed text in AI mode without calling the notice model' do
-        stub_notice_model
-        configure_handoff_message(enabled: true, mode: 'generated', text: 'Сейчас подключим администратора.')
-
-        create(:message, conversation: conversation, message_type: :incoming, account: account)
-
-        public_messages = conversation.reload.messages.outgoing.where(private: false)
-        expect(conversation.status).to eq('open')
-        expect(public_messages.pluck(:content)).to eq(['Сейчас подключим администратора.'])
-        expect(public_messages.first.sender).to eq(assistant)
-        expect(Llm::Runtime).not_to have_received(:chat).with(hash_including(feature: :customer_notice))
-      end
-
-      it 'sends the neutral sentence in AI mode without a fixed text and without calling the notice model' do
-        stub_notice_model
-        configure_handoff_message(enabled: true, mode: 'generated', text: '')
-
-        create(:message, conversation: conversation, message_type: :incoming, account: account, content: 'Мне нужна помощь')
+      it 'writes the quota reason once when another customer message arrives after handoff' do
+        2.times { create(:message, conversation: conversation, message_type: :incoming, account: account) }
 
         expect(conversation.reload.status).to eq('open')
-        expect(conversation.messages.outgoing.where(private: false).pluck(:content)).to eq(['Сотрудник продолжит диалог с вами.'])
-        expect(Llm::Runtime).not_to have_received(:chat).with(hash_including(feature: :customer_notice))
+        expect(conversation.messages.outgoing.where(private: true).pluck(:content))
+          .to eq(['Automatic reply is unavailable because the agent quota is exhausted.'])
+        expect(conversation.messages.outgoing.where(private: false)).to be_empty
       end
 
-      it 'sends no public handoff text when the handoff message is not configured or disabled' do
+      it 'keeps the quota handoff silent regardless of the message setting' do
         configure_handoff_message(enabled: true, mode: 'fixed', text: '')
         create(:message, conversation: conversation, message_type: :incoming, account: account)
         disabled_conversation = create(:conversation, inbox: inbox, account: account, contact: contact, status: :pending)
@@ -323,11 +304,13 @@ RSpec.describe MessageTemplates::HookExecutionService do
 
         [conversation, disabled_conversation].each do |candidate|
           expect(candidate.reload.status).to eq('open')
-          expect(candidate.messages.outgoing).to be_empty
+          expect(candidate.messages.outgoing.where(private: false)).to be_empty
+          expect(candidate.messages.outgoing.where(private: true).pluck(:content))
+            .to eq(['Automatic reply is unavailable because the agent quota is exhausted.'])
         end
       end
 
-      it 'ignores a legacy per-agent handoff message and sends only the workspace one' do
+      it 'ignores a legacy per-agent handoff message' do
         assistant.update!(config: assistant.config.merge(
           'handoff_message_enabled' => true, 'handoff_message_mode' => 'static', 'handoff_message' => 'Legacy agent text'
         ))
@@ -335,7 +318,9 @@ RSpec.describe MessageTemplates::HookExecutionService do
         create(:message, conversation: conversation, message_type: :incoming, account: account)
 
         expect(conversation.reload.status).to eq('open')
-        expect(conversation.messages.outgoing).to be_empty
+        expect(conversation.messages.outgoing.where(private: false)).to be_empty
+        expect(conversation.messages.outgoing.where(private: true).pluck(:content))
+          .to eq(['Automatic reply is unavailable because the agent quota is exhausted.'])
       end
 
       it 'hands off on quota exhaustion even when the handoff tool is disabled, without the hard-coded transfer text' do
@@ -349,12 +334,13 @@ RSpec.describe MessageTemplates::HookExecutionService do
         expect(conversation.messages.outgoing.where(content: 'Transferring to another agent for further assistance.')).to be_empty
       end
 
-      it 'sends the inbox greeting while Captain has no quota' do
+      it 'does not send the inbox greeting while Captain hands off for lack of quota' do
         inbox.update!(greeting_enabled: true, greeting_message: 'Hello! How can we help you?', enable_email_collect: false)
 
         create(:message, conversation: conversation, message_type: :incoming, account: account)
 
-        expect(conversation.reload.messages.template.pluck(:content)).to eq(['Hello! How can we help you?'])
+        expect(conversation.reload.messages.template).to be_empty
+        expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
         expect(conversation.status).to eq('open')
       end
     end
@@ -684,13 +670,13 @@ RSpec.describe MessageTemplates::HookExecutionService do
         )
       end
 
-      it 'sends the out-of-office template once and opens the conversation when quota is exceeded' do
+      it 'opens the conversation without an out-of-office template when quota is exceeded' do
         expect do
           create(:message, conversation: conversation, message_type: :incoming, account: account)
-        end.to change { conversation.messages.template.count }.by(1)
+        end.not_to(change { conversation.messages.template.count })
 
         expect(conversation.reload.status).to eq('open')
-        expect(conversation.messages.template.last.content).to eq('We are currently closed. Please leave your email.')
+        expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
       end
     end
 

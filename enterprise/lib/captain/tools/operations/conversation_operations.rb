@@ -184,8 +184,7 @@ class Captain::Tools::Operations::ConversationOperations < Captain::Tools::Opera
       actor: actor || assistant,
       source: source
     ) do
-      add_private_note(note: reason) if reason.present?
-      ::MessageTemplates::Template::OutOfOffice.perform_if_applicable(conversation) if conversation.campaign.blank?
+      add_private_note(note: reason.presence || 'Conversation handed to staff for assistance.')
     end
     conversation.reload
   end

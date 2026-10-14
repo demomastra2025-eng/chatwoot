@@ -249,19 +249,27 @@ RSpec.describe Captain::Tools::Operations::ConversationOperations do
       transition = conversation.reload.status_transitions.last
       expect(transition).to have_attributes(reason: nil, source: 'system')
       expect(conversation.messages.where(private: true, content: 'Customer requested a human').count).to eq(1)
-      expect(MessageTemplates::Template::OutOfOffice).to have_received(:perform_if_applicable).with(conversation).once
+      expect(MessageTemplates::Template::OutOfOffice).not_to have_received(:perform_if_applicable)
       expect(Llm::EventBus).to have_received(:publish)
         .with('captain.handoff_status_reason_dropped', hash_including(account_id: account.id, conversation_id: conversation.id))
     end
 
-    it 'does not duplicate notes or out-of-office side effects when handoff is retried' do
+    it 'does not duplicate notes or send an out-of-office message when handoff is retried' do
       allow(MessageTemplates::Template::OutOfOffice).to receive(:perform_if_applicable)
 
       2.times { operations.handoff(reason: 'Customer requested a human') }
 
       expect(conversation.reload.messages.where(private: true, content: 'Customer requested a human').count).to eq(1)
       expect(conversation.status_transitions.where(to_status: 'open').count).to eq(1)
-      expect(MessageTemplates::Template::OutOfOffice).to have_received(:perform_if_applicable).with(conversation).once
+      expect(MessageTemplates::Template::OutOfOffice).not_to have_received(:perform_if_applicable)
+    end
+
+    it 'writes one fallback reason when the tool provides no reason' do
+      operations.handoff
+
+      expect(conversation.reload.messages.outgoing.where(private: true).pluck(:content))
+        .to eq(['Conversation handed to staff for assistance.'])
+      expect(conversation.messages.outgoing.where(private: false)).to be_empty
     end
 
     it 'uses a free-text fallback only when it matches a configured open reason' do

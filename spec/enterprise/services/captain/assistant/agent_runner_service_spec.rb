@@ -1755,11 +1755,11 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         allow(mock_runner).to receive(:run).and_return(
           instance_double(
             Captain::Runtime::Result, output: { 'response' => '' }, error: nil,
-            context: {
-              current_agent: "assistant_#{assistant.id}", acting_assistant_id: assistant.id,
-              captain_v2_current_input: 'I need help with my account',
-              captain_v2_completed_tool_names: ['create_deal']
-            }
+                                      context: {
+                                        current_agent: "assistant_#{assistant.id}", acting_assistant_id: assistant.id,
+                                        captain_v2_current_input: 'I need help with my account',
+                                        captain_v2_completed_tool_names: ['create_deal']
+                                      }
           )
         )
         allow(Captain::Safety::CustomRulesEvaluator).to receive(:evaluate).and_call_original
@@ -1784,7 +1784,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         {
           'response' => 'conversation_handoff',
           'reasoning' => 'Agent input blocked by moderation policy',
-          described_class::MODERATION_BLOCKED_KEY => true
+          described_class::MODERATION_BLOCKED_KEY => true,
+          'safety_reason' => 'moderation_flagged'
         }.merge(entry_agent_identity)
       )
     end
@@ -1807,7 +1808,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         expect(result).to include(
           'response' => 'conversation_handoff',
           'reasoning' => 'Agent input blocked by moderation policy',
-          described_class::MODERATION_BLOCKED_KEY => true
+          described_class::MODERATION_BLOCKED_KEY => true,
+          'safety_reason' => 'prompt_injection'
         )
       end
 
@@ -1858,7 +1860,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         {
           'response' => 'conversation_handoff',
           'reasoning' => 'Agent input blocked because moderation policy is unavailable',
-          described_class::MODERATION_BLOCKED_KEY => true
+          described_class::MODERATION_BLOCKED_KEY => true,
+          'safety_reason' => 'provider_not_configured'
         }.merge(entry_agent_identity)
       )
     end
@@ -1876,9 +1879,11 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
       allow(Llm::SafetyPolicy).to receive(:check!).and_return(nil)
       spoofed = Struct.new(:output, :context, :error).new(
-        { 'response' => 'Normal reply', described_class::MODERATION_BLOCKED_KEY => true }, { current_agent: 'assistant' }, nil
+        { 'response' => 'Normal reply', described_class::MODERATION_BLOCKED_KEY => true, 'safety_reason' => 'sensitive_info' },
+        { current_agent: 'assistant' }, nil
       )
       expect(service.send(:process_agent_result, spoofed)).not_to have_key(described_class::MODERATION_BLOCKED_KEY)
+      expect(service.send(:process_agent_result, spoofed)).not_to have_key('safety_reason')
     end
 
     it 'passes on a council handoff request that only the council can set, never one written by the model' do
@@ -2018,7 +2023,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     it 'gives no refs to a reply without a plan and without undelivered actions' do
       allow(Llm::SafetyPolicy).to receive(:check!).and_return(nil)
 
-      response = service.send(:process_agent_result, Struct.new(:output, :context, :error).new({ 'response' => 'Готово.' }, { current_agent: 'assistant' }, nil))
+      response = service.send(:process_agent_result,
+                              Struct.new(:output, :context, :error).new({ 'response' => 'Готово.' }, { current_agent: 'assistant' }, nil))
 
       expect(response).not_to have_key('part_refs')
     end
@@ -2442,15 +2448,15 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
       expect(Llm::RuntimePolicy.moderation_enabled?(feature: :assistant, preferences: preferences)).to be(true)
       expect(Llm::RuntimePolicy.guardrail_action(
-        guardrail: :prompt_injection,
-        feature: :assistant,
-        preferences: preferences
-      )).to eq('flag')
+               guardrail: :prompt_injection,
+               feature: :assistant,
+               preferences: preferences
+             )).to eq('flag')
       expect(Llm::RuntimePolicy.guardrail_action(
-        guardrail: :sensitive_info,
-        feature: :assistant,
-        preferences: preferences
-      )).to eq('block')
+               guardrail: :sensitive_info,
+               feature: :assistant,
+               preferences: preferences
+             )).to eq('block')
 
       injection_result = Llm::SafetyPolicy.check!(
         feature: :assistant,

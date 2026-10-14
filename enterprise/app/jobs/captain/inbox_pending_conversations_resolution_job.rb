@@ -28,7 +28,7 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
       context = auto_completion_context(conversation)
       next unless context
 
-      notice = notice_for(conversation, context[:assistant], true)
+      notice = notice_for(conversation, context[:assistant])
       with_current_agent(conversation, context) do |assistant|
         create_resolution_message(conversation, assistant, notice)
         transition_conversation_status!(conversation, 'resolved', actor: assistant, source: 'system')
@@ -48,8 +48,8 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
       evaluation = evaluate_conversation(conversation, inbox)
 
       activity_reason = evaluation[:complete] ? CAPTAIN_INFERENCE_RESOLVE_ACTIVITY_REASON : CAPTAIN_INFERENCE_HANDOFF_ACTIVITY_REASON
-      # The customer notice is written by its own model (never taken from the evaluation) before any lock is held.
-      notice = notice_for(conversation, context[:assistant], evaluation[:complete])
+      # A closing notice is prepared before any lock is held.
+      notice = notice_for(conversation, context[:assistant]) if evaluation[:complete]
       # Status activity is created after commit, so its context must outlive the
       # transaction opened by the final ownership check.
       conversation.with_captain_activity_context(reason: activity_reason, reason_type: :inference) do
@@ -57,21 +57,16 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
           if evaluation[:complete]
             resolve_conversation(conversation, assistant, evaluation[:reason], notice)
           else
-            handoff_conversation(conversation, assistant, evaluation[:reason], context[:fence], notice)
+            handoff_conversation(conversation, assistant, evaluation[:reason], context[:fence])
           end
         end
       end
     end
   end
 
-  # The closing notice (complete) or the system handoff notice, with its text already written here, outside the
-  # conversation lock, because the notice model can take seconds; a failure only means that it is written again under the lock.
-  def notice_for(conversation, assistant, complete)
-    notice = if complete
-               Captain::CustomerNoticeService.new(conversation: conversation, assistant: assistant, kind: :resolution)
-             else
-               Captain::SystemHandoffMessageService.new(conversation: conversation, assistant: assistant)
-             end
+  # The closing notice is prepared outside the conversation lock because the notice model can take seconds.
+  def notice_for(conversation, assistant)
+    notice = Captain::CustomerNoticeService.new(conversation: conversation, assistant: assistant, kind: :resolution)
     notice.prepare
   rescue StandardError => e
     Rails.logger.warn("[CAPTAIN][CustomerNotice] could not prepare a notice: #{e.class.name}")
@@ -170,28 +165,16 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
     }
   end
 
-  # System safety net, independent of the handoff tool: the note, the
-  # workspace handoff message (when enabled and configured; written beforehand
-  # by the notice service) and the open transition happen once, under the same fence.
-  def handoff_conversation(conversation, assistant, reason, fence, notice)
+  # System safety net, independent of the handoff tool: the note and open
+  # transition happen once, under the same fence.
+  def handoff_conversation(conversation, assistant, reason, fence)
     result = conversation.bot_handoff!(actor: assistant, source: 'system', fence: fence) do
-      create_private_note(conversation, assistant, "Auto-handoff: #{reason}")
-
-      notice.perform
+      create_private_note(conversation, assistant, "Auto-handoff: #{reason.presence || 'completion could not be confirmed'}")
     end
     return unless result == :applied
 
     conversation.dispatch_captain_inference_handoff_event
     # Reloading here would clear the status change before after_commit activity.
-    send_out_of_office_message_if_applicable(conversation)
-  end
-
-  def send_out_of_office_message_if_applicable(conversation)
-    # Campaign conversations should never receive OOO templates — the campaign itself
-    # serves as the initial outreach, and OOO would be confusing in that context.
-    return if conversation.campaign.present?
-
-    ::MessageTemplates::Template::OutOfOffice.perform_if_applicable(conversation)
   end
 
   def transition_conversation_status!(conversation, status, actor:, source:)

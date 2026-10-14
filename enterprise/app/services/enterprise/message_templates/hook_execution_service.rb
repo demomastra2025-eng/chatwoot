@@ -2,8 +2,7 @@ module Enterprise::MessageTemplates::HookExecutionService
   MAX_ATTACHMENT_WAIT_SECONDS = 4
 
   def trigger_templates
-    super
-    return unless should_process_captain_response?
+    return super unless should_process_captain_response?
 
     auto_reply_allowed = inbox.captain_auto_reply_allowed?
     return schedule_captain_response if auto_reply_allowed && inbox.captain_active?
@@ -104,8 +103,7 @@ module Enterprise::MessageTemplates::HookExecutionService
   # conversation that Captain may not answer now must not wait unseen. It opens
   # for people through the standard status transition (system source, no actor),
   # which runs assignment and notifications. This is not a Captain handoff
-  # decision; the customer only gets the inbox templates sent above, plus the
-  # assistant's own handoff message when quota ran out.
+  # decision; the handoff itself sends no customer message.
   def open_conversation_for_human_response(quota_used_up:)
     previous_current = [Current.user, Current.executed_by]
     Current.user = Current.executed_by = nil
@@ -122,6 +120,7 @@ module Enterprise::MessageTemplates::HookExecutionService
     Conversation.transaction do
       next unless Conversation.lock.find(conversation.id).pending?
 
+      create_staff_handoff_note('Automatic reply is unavailable outside the agent schedule.')
       Conversations::StatusTransitionService.new(conversation: conversation, params: { status: 'open' }, source: 'system').perform
     end
   end
@@ -131,15 +130,15 @@ module Enterprise::MessageTemplates::HookExecutionService
   # that came first wins.
   def handoff_without_captain_quota
     Rails.logger.info("[CAPTAIN][AutoReply] Handing conversation #{conversation.id} to people because Captain quota is used up")
-    # This runs in the request or webhook thread of the customer's own message, for an account whose Captain quota is
-    # used up: no notice model call (generate: false), so the message never waits for it. In AI mode the fixed text,
-    # else the neutral sentence, goes out. The text is still written before the handoff takes the conversation lock.
-    notice = Captain::SystemHandoffMessageService.new(conversation: conversation, assistant: inbox.captain_assistant, generate: false)
-    begin
-      notice.prepare
-    rescue StandardError => e
-      Rails.logger.warn("[CAPTAIN][CustomerNotice] could not prepare the quota handoff notice: #{e.class.name}")
+    conversation.bot_handoff!(actor: nil, source: 'system', fence: { last_message_id: message.id }) do
+      create_staff_handoff_note('Automatic reply is unavailable because the agent quota is exhausted.')
     end
-    conversation.bot_handoff!(actor: nil, source: 'system', fence: { last_message_id: message.id }) { notice.perform }
+  end
+
+  def create_staff_handoff_note(content)
+    conversation.messages.create!(
+      message_type: :outgoing, private: true, sender: inbox.captain_assistant,
+      account_id: conversation.account_id, inbox_id: conversation.inbox_id, content: content
+    )
   end
 end
