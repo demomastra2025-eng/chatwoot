@@ -64,7 +64,7 @@ class Captain::Playground::SyntheticNamespace
   end
 
   def id_key?(key)
-    key.to_s.match?(ID_KEYS) && !%w[account_id user_id assistant_id sender_id].include?(key.to_s)
+    key.to_s.match?(ID_KEYS) && %w[account_id user_id assistant_id captain_assistant_id sender_id].exclude?(key.to_s)
   end
 
   def negative_id?(value)
