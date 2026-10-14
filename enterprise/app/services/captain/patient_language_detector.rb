@@ -68,14 +68,15 @@ class Captain::PatientLanguageDetector
   end
 
   def previous_language
-    value = @conversation.additional_attributes.to_h[ATTRIBUTE]
+    value = @conversation.class.where(id: @conversation.id).pick(:additional_attributes).to_h[ATTRIBUTE]
     value if Captain::PatientLanguage::NAMES.key?(value)
   end
 
   def persist(language)
-    @conversation.with_lock do
-      attributes = @conversation.additional_attributes.to_h.merge(ATTRIBUTE => language)
-      @conversation.update_columns(additional_attributes: attributes) # rubocop:disable Rails/SkipsModelValidations
+    conversation = @conversation.class.find(@conversation.id)
+    conversation.with_lock do
+      attributes = conversation.additional_attributes.to_h.merge(ATTRIBUTE => language)
+      conversation.update_columns(additional_attributes: attributes) # rubocop:disable Rails/SkipsModelValidations
     end
   end
 end
