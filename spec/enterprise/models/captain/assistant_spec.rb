@@ -828,9 +828,35 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(assistant.prompt_runtime_agent_tools).to eq([visible_tool])
     end
 
+    it 'binds the notes and the staff notification that the instruction mentions, without a checkbox' do
+      assistant.update!(description: 'Write [@Add Private Note](tool://add_private_note) for staff, put the wish on the card with ' \
+                                     '[@Add Contact Note](tool://add_contact_note) and tell the duty doctor with ' \
+                                     '[@Send Notification](tool://send_notification).',
+                        config: { 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => [] } } })
+
+      expect(assistant.allowed_agent_tool_ids).to include('add_private_note', 'add_contact_note', 'send_notification')
+      expect(assistant.allowed_agent_tools.pluck(:id)).to include('add_private_note', 'add_contact_note', 'send_notification')
+      expect(assistant.prompt_runtime_agent_tools.pluck(:id)).to include('add_private_note', 'add_contact_note', 'send_notification')
+      expect(assistant.voice_runtime_agent_tools.pluck(:id)).to include('add_private_note', 'add_contact_note', 'send_notification')
+    end
+
+    it 'does not bind the notes or the staff notification when the instruction does not mention them' do
+      assistant.update!(description: 'Answer from the FAQ.',
+                        config: { 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => [] } } })
+
+      expect(assistant.allowed_agent_tool_ids).not_to include('add_private_note', 'add_contact_note', 'send_notification')
+    end
+
+    it 'does not bind cancel_response through a mention' do
+      assistant.update!(description: 'Stay silent with [@Cancel Response](tool://cancel_response) when needed.',
+                        config: { 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => [] } } })
+
+      expect(assistant.allowed_agent_tool_ids).not_to include('cancel_response')
+    end
+
     it 'does not activate any unselected capability tool through prompt mentions' do
       assistant.update!(description: 'Use [FAQ](tool://faq_lookup), [Handoff](tool://handoff), ' \
-                                     '[Note](tool://add_private_note), [Resolve](tool://resolve_conversation).',
+                                     '[Resolve](tool://resolve_conversation).',
                         config: { 'feature_faq' => false, 'handoff_enabled' => false, 'auto_completion_enabled' => false,
                                   'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => [] } } })
       expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation')

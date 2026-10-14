@@ -108,6 +108,10 @@ describe('TagTools', () => {
         { id: 'faq_lookup', title: 'FAQ' },
         { id: 'handoff', title: 'Handoff' },
         { id: 'resolve_conversation', title: 'Resolve' },
+        { id: 'cancel_response', title: 'Cancel response' },
+        { id: 'add_private_note', title: 'Private note' },
+        { id: 'add_contact_note', title: 'Contact note' },
+        { id: 'send_notification', title: 'Notification' },
         {
           id: 'future_capability',
           title: 'Future capability',
@@ -137,14 +141,18 @@ describe('TagTools', () => {
       .findComponent({ name: 'ToolsDropdown' })
       .props('items')
       .map(item => item.id);
-    expect(ids).toHaveLength(3);
+    expect(ids).toHaveLength(6);
     expect(ids).toEqual(
       expect.arrayContaining([
         'create_deal',
         'custom_orders',
         'mcp__calendar__slots',
+        'add_private_note',
+        'add_contact_note',
+        'send_notification',
       ])
     );
+    expect(ids).not.toContain('cancel_response');
     wrapper
       .findComponent({ name: 'ToolsDropdown' })
       .vm.$emit('select', ids.indexOf('custom_orders'));

@@ -30,16 +30,15 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'selectTool']);
 
+// Settings-controlled capabilities are never offered for an @-mention. The notes
+// (add_private_note, add_contact_note) and send_notification are mentionable.
 const capabilityToolIds = new Set([
   'faq_lookup',
   'handoff',
   'resolve_conversation',
   'web_search',
   'web_scrape_url',
-  'add_contact_note',
-  'add_private_note',
   'cancel_response',
-  'send_notification',
 ]);
 
 const { t, te } = useI18n();

@@ -70,6 +70,16 @@ RSpec.describe Captain::ToolAccess do
       expect(tools['create_deal'][:mentionable]).to be(true)
       expect(tools['custom_orders'][:mentionable]).to be(true)
     end
+
+    it 'lets an instruction mention the notes and the staff notification but not cancel_response' do
+      allow(assistant).to receive(:available_agent_tools).and_return(
+        %w[add_private_note add_contact_note send_notification cancel_response].map { |id| { id: id } }
+      )
+      allow(assistant).to receive(:available_assistant_tools).and_return([])
+      tools = described_class.definitions_for(assistant).index_by { |tool| tool[:id] }
+      expect(tools.values_at('add_private_note', 'add_contact_note', 'send_notification').pluck(:mentionable)).to all(be(true))
+      expect(tools['cancel_response'][:mentionable]).to be(false)
+    end
   end
 
   describe '.allowed_tool_ids_for' do

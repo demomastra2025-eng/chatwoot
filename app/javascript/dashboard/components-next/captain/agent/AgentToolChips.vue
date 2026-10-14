@@ -11,8 +11,9 @@ import { AGENT_TOOL_SCOPE } from 'dashboard/components-next/captain/pageComponen
 // Read-only row under the instruction: what the agent can call right now.
 // That is every tool mentioned in the instruction plus the hidden
 // non-capability tools still selected in config.tool_access.agent (they work
-// without a mention). Capabilities (FAQ, handoff, notes, web) are global
-// settings and are not listed. The tool catalog is admin-only: on any error
+// without a mention). Capabilities (FAQ, handoff, web) are global
+// settings and are not listed; the notes and the staff notification are
+// ordinary mentionable tools. The tool catalog is admin-only: on any error
 // the row is hidden.
 const props = defineProps({
   assistant: { type: Object, required: true },
@@ -26,10 +27,7 @@ const CAPABILITY_TOOL_IDS = new Set([
   'resolve_conversation',
   'web_search',
   'web_scrape_url',
-  'add_contact_note',
-  'add_private_note',
   'cancel_response',
-  'send_notification',
 ]);
 
 const { t, te } = useI18n();

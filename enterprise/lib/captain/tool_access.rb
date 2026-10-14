@@ -11,9 +11,11 @@ module Captain::ToolAccess
   # tools cannot do. The writing tools and the patient-data tools stay as the clinic configured them.
   SHARED_READ_TOOL_IDS = %w[faq_lookup search_scheduling_services].freeze
   PER_ASSISTANT_WEB_TOOL_IDS = %w[web_search web_scrape_url].freeze
+  # These tools follow a workspace setting, never an @-mention in the instruction. The notes and the staff notification
+  # (add_private_note, add_contact_note, send_notification) are not here: an instruction that mentions one binds it.
+  # cancel_response is not mentionable either: response_mode "suppress" of the response schema covers it.
   CAPABILITY_CONTROLLED_AGENT_TOOL_IDS = %w[
-    faq_lookup web_search web_scrape_url handoff resolve_conversation add_contact_note add_private_note
-    cancel_response send_notification
+    faq_lookup web_search web_scrape_url handoff resolve_conversation cancel_response
   ].freeze
 
   module_function

@@ -469,7 +469,6 @@ class Captain::ToolRegistry
           group_name: 'Conversations',
           icon: 'note-add',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
-          capability_tool: true,
           agent_tool_class: Captain::Tools::AddContactNoteTool,
           assistant_tool_class: Captain::Tools::Copilot::AddContactNoteService,
           required_permissions: %w[contact_manage],
@@ -482,7 +481,6 @@ class Captain::ToolRegistry
           group_name: 'Conversations',
           icon: 'eye-off',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
-          capability_tool: true,
           agent_tool_class: Captain::Tools::AddPrivateNoteTool,
           assistant_tool_class: Captain::Tools::Copilot::AddPrivateNoteService,
           required_permissions: %w[
@@ -577,7 +575,6 @@ class Captain::ToolRegistry
           group_name: 'Conversations',
           icon: 'bell',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
-          capability_tool: true,
           agent_tool_class: Captain::Tools::SendNotificationTool,
           assistant_tool_class: Captain::Tools::Copilot::SendNotificationService,
           required_permissions: %w[

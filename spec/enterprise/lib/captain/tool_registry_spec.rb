@@ -178,13 +178,18 @@ RSpec.describe Captain::ToolRegistry do
     it 'marks capability tools that are controlled through assistant settings checkboxes' do
       handoff = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_AGENT).find { |tool| tool[:id] == 'handoff' }
       cancel_response = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_AGENT).find { |tool| tool[:id] == 'cancel_response' }
-      send_notification = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_ASSISTANT).find { |tool| tool[:id] == 'send_notification' }
-      add_private_note = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_ASSISTANT).find { |tool| tool[:id] == 'add_private_note' }
 
       expect(handoff).to include(id: 'handoff', capability_tool: true)
       expect(cancel_response).to include(id: 'cancel_response', capability_tool: true, risk_level: 'low', idempotent: true)
-      expect(send_notification).to include(id: 'send_notification', capability_tool: true, risk_level: 'medium')
-      expect(add_private_note).to include(id: 'add_private_note', capability_tool: true)
+    end
+
+    it 'keeps the notes and the staff notification as ordinary tools that an instruction can mention' do
+      tools = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_AGENT).index_by { |tool| tool[:id] }
+
+      expect(tools.fetch('send_notification')).to include(risk_level: 'medium')
+      %w[send_notification add_private_note add_contact_note].each do |tool_id|
+        expect(tools.fetch(tool_id)[:capability_tool]).to be_falsey
+      end
     end
   end
 
