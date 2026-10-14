@@ -85,7 +85,10 @@ RSpec.describe Captain::LegacyScenarioConversionService do
     parent.update_columns(config: {
                             'feature_faq' => true, 'feature_web' => true,
                             'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => %w[faq_lookup web_search handoff parent_only] } },
-                            'follow_up_settings' => { 'enabled' => true, 'steps' => [{ 'mode' => 'static', 'message' => 'Check in', 'delay_seconds' => 60 }] }
+                            'follow_up_settings' => {
+                              'enabled' => true,
+                              'steps' => [{ 'mode' => 'static', 'message' => 'Check in', 'delay_seconds' => 60 }]
+                            }
                           })
 
     described_class.new.perform
