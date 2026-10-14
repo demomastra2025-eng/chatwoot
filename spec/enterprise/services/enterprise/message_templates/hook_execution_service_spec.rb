@@ -22,9 +22,20 @@ RSpec.describe MessageTemplates::HookExecutionService do
     )
   end
 
+  def configure_workspace_reply_mode(mode)
+    configure_workspace_hours(open: true) unless account.workspace_working_hours_configured?
+    Captain::AccountSettings.new(account).update!('routing' => { 'auto_reply_mode' => mode })
+  end
+
+  def configure_workspace_hours(open:)
+    schedule = (0..6).map { |day| { 'day_of_week' => day, 'open_all_day' => open, 'closed_all_day' => !open } }
+    account.update!(workspace_working_hours: schedule)
+  end
+
   context 'when captain assistant is configured' do
     context 'when within business hours' do
       before do
+        configure_workspace_hours(open: true)
         inbox.update!(working_hours_enabled: true)
         inbox.working_hours.find_by(day_of_week: Time.current.in_time_zone(inbox.timezone).wday).update!(
           open_all_day: true,
@@ -47,7 +58,7 @@ RSpec.describe MessageTemplates::HookExecutionService do
       end
 
       it 'schedules captain response within business hours when auto-reply mode is working_hours' do
-        captain_inbox.update!(auto_reply_mode: 'working_hours')
+        configure_workspace_reply_mode('working_hours')
 
         expect(Captain::Conversation::ResponseBuilderJob).to receive(:perform_later).with(
           conversation,
@@ -59,7 +70,7 @@ RSpec.describe MessageTemplates::HookExecutionService do
       end
 
       it 'opens the conversation for people within business hours when auto-reply mode is outside_working_hours' do
-        captain_inbox.update!(auto_reply_mode: 'outside_working_hours')
+        configure_workspace_reply_mode('outside_working_hours')
 
         expect(Captain::Conversation::ResponseBuilderJob).not_to receive(:perform_later)
         expect(Captain::Conversation::TypingIndicatorService).to receive(:turn_off).with(
@@ -80,7 +91,7 @@ RSpec.describe MessageTemplates::HookExecutionService do
       end
 
       it 'opens the conversation for people when auto-reply is off, even with the handoff tool disabled' do
-        captain_inbox.update!(auto_reply_mode: 'outside_working_hours')
+        configure_workspace_reply_mode('outside_working_hours')
         assistant.update!(config: assistant.config.deep_merge(
           'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['faq_lookup'] } }
         ))
@@ -95,7 +106,7 @@ RSpec.describe MessageTemplates::HookExecutionService do
       end
 
       it 'opens a brand-new conversation when Captain may not answer during working hours' do
-        captain_inbox.update!(auto_reply_mode: 'outside_working_hours')
+        configure_workspace_reply_mode('outside_working_hours')
         new_conversation = create(:conversation, inbox: inbox, account: account, contact: contact)
         expect(new_conversation.reload.status).to eq('pending')
 
@@ -106,7 +117,7 @@ RSpec.describe MessageTemplates::HookExecutionService do
       end
 
       it 'does not reopen a conversation that left pending before the schedule safety net runs' do
-        captain_inbox.update!(auto_reply_mode: 'outside_working_hours')
+        configure_workspace_reply_mode('outside_working_hours')
         message = create(:message, conversation: conversation, message_type: :incoming, account: account)
         conversation.update!(status: :resolved)
         service = described_class.new(message: message.reload)
@@ -126,6 +137,7 @@ RSpec.describe MessageTemplates::HookExecutionService do
 
     context 'when outside business hours' do
       before do
+        configure_workspace_hours(open: false)
         inbox.update!(
           working_hours_enabled: true,
           out_of_office_message: 'We are currently closed'
@@ -137,7 +149,7 @@ RSpec.describe MessageTemplates::HookExecutionService do
       end
 
       it 'schedules captain response job outside business hours when auto-reply mode is always' do
-        captain_inbox.update!(auto_reply_mode: 'always')
+        configure_workspace_reply_mode('always')
 
         expect(Captain::Conversation::ResponseBuilderJob).to receive(:perform_later).with(
           conversation,
@@ -149,7 +161,7 @@ RSpec.describe MessageTemplates::HookExecutionService do
       end
 
       it 'opens the conversation silently outside business hours when auto-reply mode is working_hours' do
-        captain_inbox.update!(auto_reply_mode: 'working_hours')
+        configure_workspace_reply_mode('working_hours')
         out_of_office_service = instance_double(MessageTemplates::Template::OutOfOffice)
         allow(MessageTemplates::Template::OutOfOffice).to receive(:new).and_return(out_of_office_service)
         allow(out_of_office_service).to receive(:perform).and_return(true)
@@ -165,7 +177,7 @@ RSpec.describe MessageTemplates::HookExecutionService do
       end
 
       it 'opens a brand-new conversation outside business hours when auto-reply mode is working_hours' do
-        captain_inbox.update!(auto_reply_mode: 'working_hours')
+        configure_workspace_reply_mode('working_hours')
         new_conversation = create(:conversation, inbox: inbox, account: account, contact: contact)
         expect(new_conversation.reload.status).to eq('pending')
 
@@ -177,7 +189,7 @@ RSpec.describe MessageTemplates::HookExecutionService do
       end
 
       it 'leaves voice call bubbles alone outside the Captain schedule' do
-        captain_inbox.update!(auto_reply_mode: 'working_hours')
+        configure_workspace_reply_mode('working_hours')
 
         create(:message, conversation: conversation, message_type: :incoming, content_type: :voice_call, account: account)
 
@@ -186,7 +198,7 @@ RSpec.describe MessageTemplates::HookExecutionService do
       end
 
       it 'schedules captain response outside business hours when auto-reply mode is outside_working_hours' do
-        captain_inbox.update!(auto_reply_mode: 'outside_working_hours')
+        configure_workspace_reply_mode('outside_working_hours')
 
         expect(Captain::Conversation::ResponseBuilderJob).to receive(:perform_later).with(
           conversation,
@@ -239,7 +251,7 @@ RSpec.describe MessageTemplates::HookExecutionService do
       end
 
       it 'opens every conversation when outside-hours auto-reply has no active window' do
-        captain_inbox.update!(auto_reply_mode: 'outside_working_hours')
+        configure_workspace_reply_mode('outside_working_hours')
 
         expect(Captain::Conversation::ResponseBuilderJob).not_to receive(:perform_later)
 
@@ -508,6 +520,7 @@ RSpec.describe MessageTemplates::HookExecutionService do
           closed_all_day: true,
           open_all_day: false
         )
+        configure_workspace_hours(open: false)
 
         expect do
           create(:message, conversation: conversation, message_type: :incoming, account: account)
@@ -518,7 +531,8 @@ RSpec.describe MessageTemplates::HookExecutionService do
       end
 
       it 'uses the out-of-office template instead of Captain for open conversations outside business hours' do
-        captain_inbox.update!(auto_reply_mode: 'outside_working_hours', reply_to_open_conversations: true)
+        configure_workspace_reply_mode('outside_working_hours')
+        captain_inbox.update!(reply_to_open_conversations: true)
         inbox.update!(
           working_hours_enabled: true,
           out_of_office_message: 'We are currently closed',
@@ -528,6 +542,7 @@ RSpec.describe MessageTemplates::HookExecutionService do
           closed_all_day: true,
           open_all_day: false
         )
+        configure_workspace_hours(open: false)
 
         expect(Captain::Conversation::ResponseBuilderJob).not_to receive(:perform_later)
 
@@ -564,6 +579,7 @@ RSpec.describe MessageTemplates::HookExecutionService do
         closed_all_day: true,
         open_all_day: false
       )
+      configure_workspace_hours(open: false)
 
       expect do
         create(:message, conversation: conversation, message_type: :incoming, account: account)

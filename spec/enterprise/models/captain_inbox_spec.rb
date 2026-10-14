@@ -46,6 +46,25 @@ RSpec.describe CaptainInbox do
     end
   end
 
+  it 'uses workspace hours even when the channel has different hours' do
+    link = create(:captain_inbox, inbox: inbox, captain_assistant: assistant)
+    inbox.update!(working_hours_enabled: true)
+    inbox.working_hours.find_by!(day_of_week: Time.current.in_time_zone(inbox.timezone).wday)
+         .update!(closed_all_day: true, open_all_day: false)
+    open_schedule = (0..6).map { |day| { 'day_of_week' => day, 'open_all_day' => true, 'closed_all_day' => false } }
+    account.update!(workspace_working_hours: open_schedule,
+                    captain_agent_settings: { 'routing' => { 'auto_reply_mode' => 'working_hours' } })
+    link.inbox.account.reload
+
+    expect(link.auto_reply_allowed_now?).to be(true)
+
+    closed_schedule = open_schedule.map { |day| day.merge('open_all_day' => false, 'closed_all_day' => true) }
+    account.update!(workspace_working_hours: closed_schedule)
+    link.inbox.account.reload
+
+    expect(link.auto_reply_allowed_now?).to be(false)
+  end
+
   it 'allows an active external agent on any text inbox regardless of legacy channel scope' do
     assistant.update!(channel_scope: 'selected')
     assignment = build(:captain_inbox, inbox: inbox, captain_assistant: assistant)
@@ -56,6 +75,7 @@ RSpec.describe CaptainInbox do
   it 'retains the configured entry when the agent is temporarily deactivated' do
     assignment = create(:captain_inbox, inbox: inbox, captain_assistant: assistant)
     assignment.update!(ai_enabled: false)
+    account.update!(captain_default_assistant_id: nil)
     assistant.update!(active: false)
 
     expect(assignment.reload).to be_valid
@@ -74,6 +94,7 @@ RSpec.describe CaptainInbox do
   it 'uses the shared lock when an assistant asynchronously destroys its assignments' do
     captain_inbox = create(:captain_inbox, inbox: inbox, captain_assistant: assistant)
     captain_inbox.update!(ai_enabled: false)
+    account.update!(captain_default_assistant_id: nil)
 
     expect(Telephony::AiVoice::AssistantAssignmentLock).to receive(:acquire!).with(inbox.id).twice.and_call_original
     perform_enqueued_jobs { assistant.destroy! }

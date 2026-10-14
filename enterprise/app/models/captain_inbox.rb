@@ -73,7 +73,8 @@ class CaptainInbox < ApplicationRecord
     return true if mode == AUTO_REPLY_ALWAYS
     return false unless inbox.account.workspace_working_hours_configured?
 
-    mode == AUTO_REPLY_WORKING_HOURS ? inbox.working_now? : inbox.out_of_office?
+    workspace_open = inbox.account.workspace_open_at?
+    mode == AUTO_REPLY_WORKING_HOURS ? workspace_open : !workspace_open
   end
 
   def legacy_voice_auto_reply_allowed_now?

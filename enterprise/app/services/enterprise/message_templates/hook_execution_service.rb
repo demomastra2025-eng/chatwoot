@@ -23,6 +23,7 @@ module Enterprise::MessageTemplates::HookExecutionService
   end
 
   def should_send_email_collect?
+    return false unless message.incoming?
     return false if captain_handling_conversation?
 
     super
@@ -120,7 +121,7 @@ module Enterprise::MessageTemplates::HookExecutionService
     Conversation.transaction do
       next unless Conversation.lock.find(conversation.id).pending?
 
-      create_staff_handoff_note('Automatic reply is unavailable outside the agent schedule.')
+      create_staff_handoff_note('Automatic reply is unavailable outside the agent schedule.') if inbox.captain_assistant.active?
       Conversations::StatusTransitionService.new(conversation: conversation, params: { status: 'open' }, source: 'system').perform
     end
   end
