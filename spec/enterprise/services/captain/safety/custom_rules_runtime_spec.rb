@@ -34,12 +34,11 @@ RSpec.describe Captain::Safety::CustomRulesRuntime do
     expect(Captain::Safety::CustomRulesEvaluator).to have_received(:evaluate).twice
   end
 
-  it 'stops before agent work when the input checker is unavailable' do
+  it 'continues agent work when the input checker is unavailable' do
     unavailable = Captain::Safety::CustomRulesEvaluator::Result.new(status: :unavailable, direction: 'input', reason: :engine_unavailable)
     allow(Captain::Safety::CustomRulesEvaluator).to receive(:evaluate).and_return(unavailable)
     expect(rewriter).not_to receive(:rewrite)
-    expect { described_class.check_input!(assistant: assistant, context: context) }
-      .to raise_error(described_class::HandoffRequired) { |error| expect(error.assistant_id).to eq(assistant.id) }
+    expect { described_class.check_input!(assistant: assistant, context: context) }.not_to raise_error
   end
 
   it 'does not truncate the checked input or include image URLs in the classifier text' do
@@ -75,12 +74,20 @@ RSpec.describe Captain::Safety::CustomRulesRuntime do
     expect(rewriter).to have_received(:rewrite).once
   end
 
-  it 'does not send a replacement when its second check is unavailable' do
+  it 'sends the replacement when its second custom check is unavailable' do
     unavailable = Captain::Safety::CustomRulesEvaluator::Result.new(status: :unavailable, reason: :engine_unavailable)
     allow(Captain::Safety::CustomRulesEvaluator).to receive(:evaluate).and_return(matched, unavailable)
     allow(rewriter).to receive(:rewrite).and_return('A possible answer')
-    expect { described_class.check_output!(assistant: assistant, context: context, response: response) }
-      .to raise_error(described_class::HandoffRequired)
+    expect(described_class.check_output!(assistant: assistant, context: context, response: response)['response']).to eq('A possible answer')
+    expect(Llm::SafetyPolicy).to have_received(:check!).with(hash_including(content: 'A possible answer'))
+  end
+
+  it 'sends the original response when the output checker is unavailable' do
+    unavailable = Captain::Safety::CustomRulesEvaluator::Result.new(status: :unavailable, direction: 'output', reason: :engine_unavailable)
+    allow(Captain::Safety::CustomRulesEvaluator).to receive(:evaluate).and_return(unavailable)
+    expect(rewriter).not_to receive(:rewrite)
+
+    expect(described_class.check_output!(assistant: assistant, context: context, response: response)).to equal(response)
   end
 
   it 'never attempts text repair for a blocking rule' do

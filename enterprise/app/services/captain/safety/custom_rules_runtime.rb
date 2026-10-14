@@ -27,15 +27,15 @@ class Captain::Safety::CustomRulesRuntime
     return if checks.include?(fingerprint)
 
     result = evaluate(assistant: assistant, direction: 'input', text: candidate, context: context)
-    raise HandoffRequired.new(assistant_id: assistant.id, result: result) unless result.allowed?
+    raise HandoffRequired.new(assistant_id: assistant.id, result: result) if result.matched?
 
     checks << fingerprint
   end
 
   def self.check_output!(assistant:, context:, response:)
     result = evaluate(assistant: assistant, direction: 'output', text: response['response'], context: context)
-    return response if result.allowed?
-    raise HandoffRequired.new(assistant_id: assistant.id, result: result) unless result.matched? && result.action == 'rewrite'
+    return response unless result.matched?
+    raise HandoffRequired.new(assistant_id: assistant.id, result: result) unless result.action == 'rewrite'
 
     replacement = Captain::Safety::ResponseRewriteEngine.new.rewrite(
       assistant: assistant, text: response['response'], rule_id: result.rule_id,
@@ -43,9 +43,9 @@ class Captain::Safety::CustomRulesRuntime
     )
     raise HandoffRequired.new(assistant_id: assistant.id, result: result) if replacement.blank?
 
-    # Exactly one text-only repair. A second match or unavailable checker stops the turn.
+    # Exactly one text-only repair. A second match stops the turn.
     checked = evaluate(assistant: assistant, direction: 'output', text: replacement, context: context)
-    raise HandoffRequired.new(assistant_id: assistant.id, result: checked) unless checked.allowed?
+    raise HandoffRequired.new(assistant_id: assistant.id, result: checked) if checked.matched?
 
     Llm::SafetyPolicy.check!(
       feature: :assistant, stage: :output, content: replacement, account: assistant.account,
