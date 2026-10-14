@@ -92,7 +92,7 @@ tools:
     hidden_params: []
 
   search_scheduling_services:
-    description: "Find a service in the clinic catalog by name, synonym or category. The result gives the service ID, duration and prices by specialist. Call it when the patient names a service, before searching slots or booking."
+    description: "Find a service and its prices in the clinic catalog. Search here for a price before saying it is unavailable, and before searching slots or booking a named service."
     params:
       query: "Service words in dictionary form, as the catalog writes them."
       limit: "Max services, up to 50."
@@ -101,7 +101,7 @@ tools:
       - include_inactive
 
   search_available_slots:
-    description: "List free slots in a date range, earliest first. Call it to offer the patient free slots; the start the patient chooses goes to create_appointment or update_appointment. With service_id all specialists who offer the service are searched; resource_ids narrows the search. Offer 2-3 slots spread over the period, not neighbouring starts."
+    description: "Find free appointment times. For a day alone offer 2-3 spread out times. After a taken time or empty day, search following days and offer the 2-3 nearest free times with full dates in one message; keep any existing appointment. After midnight, tomorrow may mean today, so show full dates."
     params:
       from: "Range start, YYYY-MM-DD or YYYY-MM-DDTHH:MM (clinic time). To check one time pass from = that time."
       to: "Range end, same format as from, within 31 days; slots start before it. For one whole day pass the next day's date."
@@ -112,7 +112,7 @@ tools:
     hidden_params: []
 
   create_appointment:
-    description: "Book an appointment with a specialist at a free slot. Call it once the specialist, the start the patient named or chose from the free slots you offered (and the service, if the patient wants one) are known. When the patient named only a day or a part of a day (tomorrow, Monday morning), call search_available_slots, offer 2-3 free slots spread over it in one message, and book after the patient chooses. If the patient named an exact time, call this tool directly: it checks the time and says if it is taken. For a child or another person pass patient: the appointment is booked on the person given there, otherwise on the patient of this conversation."
+    description: "Book a new or additional visit with a specialist. An exact time asked about while booking is a request: book it now when free. For a day alone, offer 2-3 free times and wait for a choice. If the time is taken, search following days and offer the 2-3 nearest free times with full dates. Pass patient for a child or another person."
     params:
       resource_id: "Specialist ID from search_scheduling_resources."
       starts_at: "The start the patient named or chose from the free slots you offered: a slot start copied unchanged, or YYYY-MM-DDTHH:MM clinic time."
@@ -128,7 +128,7 @@ tools:
       - crm_pipeline_id
 
   update_appointment:
-    description: "Reschedule an appointment (new time, specialist or service) or change its comment; pass only what changes. The new start is the time the patient named or chose from the free slots you offered. When the patient named only a day or a part of a day (tomorrow, Monday morning), call search_available_slots, offer 2-3 free slots spread over it in one message, and move the appointment after the patient chooses. If the patient named an exact time, call this tool directly: it checks the time and says if it is taken."
+    description: "Move or change an existing appointment only when the patient asks to change that appointment. For an additional visit use create_appointment. An exact requested time can be tried now. If taken, keep the appointment and offer the 2-3 nearest free times on following days with full dates."
     params:
       appointment_id: "Appointment ID from the Patient block or a tool result; always pass it."
       appointment_access_token: "Another patient's appointment: token from the latest search_appointments."
