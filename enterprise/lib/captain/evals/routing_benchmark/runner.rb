@@ -377,7 +377,7 @@ class Captain::Evals::RoutingBenchmark::Runner
   # The judge is the arbiter of the text of the reply (the checks that read text only give it hints, see Scorer). A turn that is judged
   # and gets no verdict is NOT_EVALUATED: not a pass, not a failure (see #judge_unusable).
   def judge_turn(account, dialogue, turn, response, scored, history, tool_calls)
-    prompt = judge_prompt(dialogue, turn, response, scored, history, tool_calls)
+    prompt = judge_prompt(dialogue, turn, response, scored, history, tool_calls, account)
     result, finish_reason, attempts = ask_judge(account, prompt)
     verdict = { pass: result['pass'], reason: result['reason'].to_s.truncate(300), finish_reason: finish_reason,
                 attempts: (attempts if attempts > 1) }.compact
@@ -479,7 +479,8 @@ class Captain::Evals::RoutingBenchmark::Runner
   # The judge reads what the reply says. Bookings, handoffs and the database changes are facts that code decided from the tool results and
   # the database (shown below). The text checks of the scorer (claims, leaks, another patient's data, the language) are only heuristics:
   # their hits are listed as hints, and the judge decides by meaning whether the reply has the fault.
-  def judge_prompt(dialogue, turn, response, scored, history, tool_calls)
+  def judge_prompt(dialogue, turn, response, scored, history, tool_calls, account = nil)
+    @judge_account = account || @judge_account
     transcript = history.map { |message| "#{message[:role] == 'user' ? 'Customer' : 'Agent'}: #{message[:content]}" }.join("\n")
     <<~PROMPT
       Evaluate the last agent reply of this synthetic dialogue against the criterion of the turn. The criterion says what the reply must
@@ -511,6 +512,7 @@ class Captain::Evals::RoutingBenchmark::Runner
       Tool calls of this turn (agent, tool, success, result): #{judge_tool_results(tool_calls).to_json}
       Council parts and outcomes: #{scored.dig(:evidence, :council).to_json}
       Database changes of this turn: #{scored[:db_delta].to_json}
+      Current appointments in database: #{current_appointments_text(workspace_account_for_judge)}
       #{handoff_line(scored)}
       Hints of the code heuristics for this reply: #{hint_lines(scored)}
       Customer message: #{turn['customer']}
@@ -520,7 +522,7 @@ class Captain::Evals::RoutingBenchmark::Runner
 
   def judge_tool_results(tool_calls)
     Captain::Evals::RoutingBenchmark::ToolTrace.compact(tool_calls).each_with_index.map do |call, index|
-      next call if tool_calls[index][:part_id].blank?
+      next call if tool_calls[index][:result].blank?
 
       call.merge(result: tool_calls[index][:result].to_s.truncate(1000))
     end
@@ -561,6 +563,25 @@ class Captain::Evals::RoutingBenchmark::Runner
   end
 
   # Prices, doctors, seeded appointments, and the knowledge base of the workspace: what a correct reply may state.
+
+  def workspace_account_for_judge
+    @judge_account
+  end
+
+  def current_appointments_text(account)
+    return 'none' unless account
+
+    rows = Scheduling::Appointment.where(account_id: account.id).includes(:resource, :service, :contact, :patient_contact).order(:id).map do |appt|
+      patient = appt.patient_contact&.name || appt.client_name || appt.contact&.name
+      zone = appt.resource&.timezone || 'Asia/Almaty'
+      local_start = appt.starts_at&.in_time_zone(zone)&.iso8601
+      "#{patient}: #{appt.resource&.name} (#{appt.service&.name}) at #{local_start} [#{appt.status}]"
+    end
+    rows.any? ? rows.join('; ').truncate(FACTS_LIMIT) : 'none'
+  rescue StandardError
+    'none'
+  end
+
   def workspace_facts
     data = @workspace_data || {}
     resources_by_key = data.fetch('resources', []).to_h { |row| [row['key'], row['name']] }

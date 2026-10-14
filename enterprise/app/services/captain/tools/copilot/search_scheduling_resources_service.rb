@@ -25,16 +25,34 @@ class Captain::Tools::Copilot::SearchSchedulingResourcesService < Captain::Tools
   def execute(query: nil, search_by: 'all', service_id: nil, include_inactive: false, limit: nil, offset: nil) # rubocop:disable Metrics/ParameterLists
     service_id = verified_optional_record_id(service_id, scope: account.scheduling_services, field_name: 'service_id')
     offset = parse_offset(offset)
+    scoped_resource_ids = assistant.booking_resource_ids.presence if agent_scope?
+    parsed_limit = parse_limit(limit)
     result = Scheduling::ResourceSearchService.new(
       account: account,
       query: query,
       search_by: search_by,
       service_id: service_id,
       include_inactive: include_inactive,
-      limit: parse_limit(limit),
+      limit: parsed_limit,
       offset: offset,
-      resource_ids: (assistant.booking_resource_ids.presence if agent_scope?)
+      resource_ids: scoped_resource_ids
     ).perform
+    if agent_scope? && result[:total_count].zero? && service_id.present? && query.to_s.strip.present? && scoped_resource_ids.present?
+      fallback = Scheduling::ResourceSearchService.new(
+        account: account,
+        query: nil,
+        search_by: nil,
+        service_id: service_id,
+        include_inactive: include_inactive,
+        limit: parsed_limit,
+        offset: offset,
+        resource_ids: scoped_resource_ids
+      ).perform
+      if fallback[:total_count].positive?
+        result = fallback
+        query = nil
+      end
+    end
 
     filters = { query: query.to_s.presence, search_by: search_by.to_s.presence || 'all', service_id: service_id,
                 include_inactive: cast_boolean(include_inactive), offset: offset }.compact

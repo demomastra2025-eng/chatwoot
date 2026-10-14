@@ -160,7 +160,23 @@ class Captain::Evals::RoutingBenchmark::Workspace
   end
 
   def self.faq_embedding_cache
-    @faq_embedding_cache ||= {}
+    @faq_embedding_cache ||= begin
+      path = ENV['BENCHMARK_FAQ_EMBEDDING_CACHE'].to_s
+      path.present? && File.exist?(path) ? JSON.parse(File.read(path)) : {}
+    rescue StandardError
+      {}
+    end
+  end
+
+  def self.persist_faq_embedding_cache!
+    path = ENV['BENCHMARK_FAQ_EMBEDDING_CACHE'].to_s
+    return if path.blank?
+
+    tmp = "#{path}.#{Process.pid}.tmp"
+    File.write(tmp, JSON.generate(faq_embedding_cache))
+    File.rename(tmp, path)
+  rescue StandardError
+    nil
   end
 
   # A provider that fails now and then is asked again; a FAQ that stays unindexed would make every lookup of the dialogue find nothing, so
@@ -176,7 +192,10 @@ class Captain::Evals::RoutingBenchmark::Workspace
     begin
       attempts += 1
       Captain::Llm::UpdateEmbeddingJob.perform_now(response, text)
-      self.class.faq_embedding_cache[text] = response.embedding if response.embedding.present?
+      if response.embedding.present?
+        self.class.faq_embedding_cache[text] = response.embedding.to_a
+        self.class.persist_faq_embedding_cache!
+      end
     rescue Captain::Llm::EmbeddingService::EmbeddingsError
       raise if attempts >= EMBEDDING_ATTEMPTS
 

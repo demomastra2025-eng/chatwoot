@@ -10,8 +10,11 @@ class Captain::Tools::Agent::AppointmentResult
   MAX_SEARCH_RESULTS = 20
   # A booking without service_id for a specialist who offers several services: the code of the business answer that lists them.
   SERVICE_REQUIRED_CODE = 'SERVICE_REQUIRED'.freeze
-  SERVICE_REQUIRED_GUIDANCE = 'The specialist offers several services (see services). Retry with the service_id the patient asked for; ' \
-                              'ask the patient when their words fit none or several.'.freeze
+  SERVICE_REQUIRED_GUIDANCE = 'The specialist offers several services (see services). ' \
+                              'Retry with the service_id that fits the patient\'s request ' \
+                              '(for a general doctor appointment without a named procedure, certificate exam or repeat visit ' \
+                              'within the clinic window, use the specialist\'s primary consultation service_id); ' \
+                              'ask the patient only when two services fit equally.'.freeze
   SERVICE_LIST_PARTIAL = 'The list is partial: search_scheduling_services finds the others.'.freeze
   # The two answers of "nothing was changed" (the statuses of Captain::ToolResult::NO_CHANGE_STATUSES) and their result line.
   STATUS_UNCHANGED = 'unchanged'.freeze

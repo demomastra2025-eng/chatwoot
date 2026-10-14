@@ -1,5 +1,8 @@
 class Captain::Tools::Copilot::SearchAvailableSlotsService < Captain::Tools::Copilot::BaseAccountTool
   include Captain::Tools::Copilot::SchedulingQueryValidation
+  NEXT_AVAILABLE_LOOKAHEAD_DAYS = 7
+  NEXT_AVAILABLE_LIMIT = 6
+
   def self.name
     'search_available_slots'
   end
@@ -15,31 +18,23 @@ class Captain::Tools::Copilot::SearchAvailableSlotsService < Captain::Tools::Cop
   param :limit, type: :number, desc: 'Maximum number of slots to return', required: false
 
   def execute(from:, to:, resource_ids: nil, service_id: nil, duration_min: nil, limit: nil)
-    if agent_scope? && assistant.booking_resource_ids.present?
-      allowed = assistant.booking_resource_ids
-      requested = Scheduling::AvailableSlotSearchService.normalize_resource_ids(resource_ids)
-      if (requested - allowed).any?
-        raise Scheduling::Error.new(code: 'RESOURCE_UNAVAILABLE', message: 'Resource is outside this agent booking scope',
-                                    status: :not_found, details: { reason: 'resource_outside_scope' })
-      end
-
-      resource_ids = requested.presence || allowed
-    end
     range_from = scheduling_datetime(from, field_name: 'from')
     range_to = scheduling_datetime(to, field_name: 'to')
     scheduling_range!(range_from, range_to, allow_equal: true)
     service_id = scheduling_service_id(service_id)
     scheduling_service!(service_id)
-    payload = Scheduling::AvailableSlotSearchService.new(
+    resource_ids = scoped_agent_resource_ids(resource_ids, service_id: service_id)
+    search_params = {
       account: account,
       from: range_from,
       to: range_to,
       resource_ids: resource_ids,
       service_id: service_id,
-      duration_min: duration_min,
-      limit: limit
-    ).perform
+      duration_min: duration_min
+    }
+    payload = Scheduling::AvailableSlotSearchService.new(**search_params, limit: limit).perform
     publish_service_match(payload)
+    payload = attach_next_available_slots(payload, search_params) if agent_scope?
 
     formatted_payload(payload)
   rescue Scheduling::AvailableSlotSearchService::MissingServiceLinkError => e
@@ -60,6 +55,52 @@ class Captain::Tools::Copilot::SearchAvailableSlotsService < Captain::Tools::Cop
   end
 
   private
+
+  def scoped_agent_resource_ids(resource_ids, service_id: nil)
+    return resource_ids unless agent_scope? && assistant.booking_resource_ids.present?
+
+    allowed = assistant.booking_resource_ids
+    requested = Scheduling::AvailableSlotSearchService.normalize_resource_ids(resource_ids)
+    raise_resource_outside_scope! if (requested - allowed).any?
+    return requested if requested.present?
+
+    filter_allowed_by_service(allowed, service_id)
+  end
+
+  def filter_allowed_by_service(allowed, service_id)
+    return allowed if service_id.blank?
+
+    linked = Scheduling::ServicePrice.active.where(account_id: account.id, service_id: service_id).distinct.pluck(:resource_id)
+    return allowed if linked.empty?
+
+    scoped = allowed & linked
+    return scoped if scoped.present?
+
+    raise_resource_outside_scope!
+  end
+
+  def raise_resource_outside_scope!
+    raise Scheduling::Error.new(
+      code: 'RESOURCE_UNAVAILABLE', message: 'Resource is outside this agent booking scope',
+      status: :not_found, details: { reason: 'resource_outside_scope' }
+    )
+  end
+
+  def attach_next_available_slots(payload, search_params)
+    return payload unless payload[:total_slots].to_i.zero?
+
+    next_from = [search_params[:to], search_params[:from] + 1.minute].max
+    lookahead = Scheduling::AvailableSlotSearchService.new(
+      **search_params,
+      from: next_from,
+      to: next_from + NEXT_AVAILABLE_LOOKAHEAD_DAYS.days,
+      limit: NEXT_AVAILABLE_LIMIT
+    ).perform
+    next_slots = Array(lookahead[:slots])
+    next_slots.present? ? payload.merge(next_available_slots: next_slots) : payload
+  rescue StandardError
+    payload
+  end
 
   def publish_service_match(payload)
     match = payload.fetch(:service_match)
