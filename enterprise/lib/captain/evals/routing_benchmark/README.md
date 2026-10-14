@@ -432,7 +432,7 @@ The loader is strict. It refuses, naming the file and the key:
   mutation tool.
 
 `captain:routing_benchmark_fixtures` loads a file set with this loader and prints the first refusal. The specs that load the whole v2 set
-(160 dialogues, 395 turns: the strict loader, the gate coverage, the calendar lint) are skipped unless
+(160 dialogues, 390 turns: the strict loader, the gate coverage, the calendar lint) are skipped unless
 `ROUTING_BENCHMARK_V2_FIXTURES='/path/to/v2/*.yml'` is set:
 
 ```sh

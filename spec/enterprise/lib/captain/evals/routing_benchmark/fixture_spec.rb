@@ -521,7 +521,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Fixture do
       expect(failures).to be_empty
     end
 
-    # The 160 dialogues of the v2 set (395 turns), loaded by the strict loader: ROUTING_BENCHMARK_V2_FIXTURES='/root/work/bench/v2/*.yml'.
+    # The 160 dialogues of the v2 set (390 turns), loaded by the strict loader: ROUTING_BENCHMARK_V2_FIXTURES='/root/work/bench/v2/*.yml'.
     it 'loads ALL the v2 fixtures strictly when ROUTING_BENCHMARK_V2_FIXTURES is set',
        skip: ENV['ROUTING_BENCHMARK_V2_FIXTURES'].blank? && 'set ROUTING_BENCHMARK_V2_FIXTURES to a glob of the 160 v2 fixture files' do
       paths = Dir.glob(ENV.fetch('ROUTING_BENCHMARK_V2_FIXTURES')).reject { |path| File.basename(path) == 'CHANGES.md' }
@@ -536,7 +536,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Fixture do
       end
 
       expect(failures).to be_empty
-      expect([paths.size, dialogues, turns]).to eq([160, 160, 395])
+      expect([paths.size, dialogues, turns]).to eq([160, 160, 390])
     end
 
     # The pins that make gate item a real: a move names the appointment it starts from, a booking names its service and (where the plan

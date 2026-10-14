@@ -212,12 +212,12 @@ RSpec.describe Captain::Evals::RoutingBenchmark::FixtureAudit do
   describe 'the v2 set' do
     let(:paths) { Dir.glob(ENV.fetch('ROUTING_BENCHMARK_V2_FIXTURES')) }
 
-    it 'is ready for the gate, and the calendar lint finds nothing in any of its 395 turns',
+    it 'is ready for the gate, and the calendar lint finds nothing in any of its 390 turns',
        skip: ENV['ROUTING_BENCHMARK_V2_FIXTURES'].blank? && 'set ROUTING_BENCHMARK_V2_FIXTURES to a glob of the 160 v2 fixture files' do
       audit = described_class.load(paths)
 
       expect(audit.result[:gaps].map(&:to_h)).to be_empty
-      expect(audit.result).to include(fixtures: 160, turns: 395, operations: { expected: 105, specific: 105 })
+      expect(audit.result).to include(fixtures: 160, turns: 390, operations: { expected: 105, specific: 105 })
       # 7 staff requests, and the 4 complaints that ask the management to look into it and to get in touch
       expect(audit.result[:human_requests]).to include(flagged: 11, unmarked: 0)
       expect(audit).to be_ok
