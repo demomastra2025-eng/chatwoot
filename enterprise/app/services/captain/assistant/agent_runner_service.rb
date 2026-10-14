@@ -167,6 +167,9 @@ class Captain::Assistant::AgentRunnerService
       input_moderation_response = time_phase('moderate_input') { moderate_input(message_to_process, context) }
       return input_moderation_response if input_moderation_response
 
+      context[:patient_language] = time_phase('detect_patient_language') do
+        Captain::PatientLanguageDetector.new(conversation: @conversation, assistant: @assistant).call if @conversation
+      end
       time_phase('run_agent_with_retries') { run_agent_with_blank_response_retries(message_to_process, context) }
     end
   end

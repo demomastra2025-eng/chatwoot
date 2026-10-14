@@ -148,6 +148,17 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       service.generate_response(message_history: message_history)
     end
 
+    it 'decides the language once before the agent and reuses it in the run context' do
+      detector = instance_double(Captain::PatientLanguageDetector, call: 'kk')
+      allow(Captain::PatientLanguageDetector).to receive(:new).with(conversation: conversation, assistant: assistant).and_return(detector)
+
+      service.generate_response(message_history: message_history)
+
+      expect(detector).to have_received(:call).once
+      expect(mock_runner).to have_received(:run).with(anything, context: hash_including(patient_language: 'kk'),
+                                                                max_turns: anything, runtime_options: anything)
+    end
+
     it 'reports measured playground response latency and only provider-reported reasoning tokens' do
       usage = Struct.new(:thinking_tokens).new(17)
       result = Captain::Runtime::Result.new(
