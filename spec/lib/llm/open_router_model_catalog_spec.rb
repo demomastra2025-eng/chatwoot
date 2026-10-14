@@ -117,6 +117,14 @@ RSpec.describe Llm::OpenRouterModelCatalog do
   end
 
   describe '.model_configs' do
+    it 'reuses persisted model configs across repeated embedding model lookups' do
+      allow(described_class).to receive(:load_db_model_configs).and_return('example/model' => { 'id' => 'example/model' })
+
+      2.times { described_class.send(:db_model_configs) }
+
+      expect(described_class).to have_received(:load_db_model_configs).once
+    end
+
     it 'falls back to bundled OpenRouter models before the API has been refreshed' do
       models = described_class.model_configs
 

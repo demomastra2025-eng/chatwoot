@@ -26,11 +26,13 @@ class Captain::Evals::RoutingBenchmark::Workspace
     @account = Account.create!(name: "Benchmark #{SecureRandom.uuid}", locale: 'ru',
                                internal_attributes: { 'captain_benchmark_source' => true })
     @account.enable_features!(*FEATURES)
+    create_teams!
     create_agents!
     create_channels!
     create_contacts!
     create_knowledge!
     create_calendar!
+    apply_booking_scopes!
     create_deals!
     # With audit_logs on, every executed public tool writes an audit row with its arguments and a result preview
     # (Captain::ToolExecutionAuditService). The benchmark reads them for the triage list and to tell a repeated
@@ -80,10 +82,27 @@ class Captain::Evals::RoutingBenchmark::Workspace
     data.fetch('agents').each do |row|
       config = { 'model' => @model, 'thinking_effort' => @reasoning,
                  'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => row['tool_ids'] } } }
+      config['handoff_team_id'] = @teams.fetch(row['handoff_team']).id if row['handoff_team'].present?
       agents[row.fetch('name')] = Captain::Assistant.create!(
         account: account, name: row.fetch('name'), routing_description: row.fetch('routing_description'),
         description: row.fetch('instructions'), config: config, active: true
       )
+    end
+  end
+
+  def create_teams!
+    @teams = data.fetch('teams', []).to_h { |row| [row.fetch('name'), account.teams.create!(name: row.fetch('name'))] }
+  end
+
+  def apply_booking_scopes!
+    data.fetch('agents').each do |row|
+      next unless row['booking_scope']
+
+      agent = agents.fetch(row.fetch('name'))
+      ids = row.fetch('booking_scope').fetch('resources').map do |name|
+        @resources.values.find { |resource| resource.name == name }.id
+      end
+      agent.update!(config: agent.config.merge('booking_scope' => { 'resource_ids' => ids }))
     end
   end
 
@@ -136,8 +155,7 @@ class Captain::Evals::RoutingBenchmark::Workspace
       actor = agents[row['agent']]
       response = Captain::AssistantResponse.create!(account: account, assistant: actor,
                                                     question: row.fetch('question'), answer: row.fetch('answer'), status: :approved)
-      # Indexing every FAQ of every synthetic clinic costs minutes per dialogue; it runs only when BENCHMARK_FAQ_EMBEDDINGS=1.
-      index!(response) if ENV['BENCHMARK_FAQ_EMBEDDINGS'] == '1'
+      index!(response) unless ENV['BENCHMARK_FAQ_EMBEDDINGS'] == '0'
     end
   end
 

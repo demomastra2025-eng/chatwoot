@@ -5,6 +5,15 @@ require 'tempfile'
 require 'tmpdir'
 
 RSpec.describe Captain::Evals::RoutingBenchmark::Runner do
+  it 'passes council part tool results to the judge beyond the report preview length' do
+    call = { tool: 'search_available_slots', success: true, part_id: 'part-1', result: 'free at 09:00 ' * 40 }
+
+    result = described_class.allocate.send(:judge_tool_results, [call]).first
+
+    expect(result[:result].length).to be > Captain::Evals::RoutingBenchmark::ToolTrace::MAX_RESULT
+    expect(result[:part_id]).to eq('part-1')
+  end
+
   let(:fixture_data) do
     {
       workspace: {

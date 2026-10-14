@@ -502,13 +502,22 @@ class Captain::Evals::RoutingBenchmark::Runner
       #{workspace_facts}
       Transcript so far:
       #{transcript}
-      Tool calls of this turn (agent, tool, success, result): #{Captain::Evals::RoutingBenchmark::ToolTrace.compact(tool_calls).to_json}
+      Tool calls of this turn (agent, tool, success, result): #{judge_tool_results(tool_calls).to_json}
+      Council parts and outcomes: #{scored.dig(:evidence, :council).to_json}
       Database changes of this turn: #{scored[:db_delta].to_json}
       #{handoff_line(scored)}
       Hints of the code heuristics for this reply: #{hint_lines(scored)}
       Customer message: #{turn['customer']}
       Reply to evaluate: #{response['response']}
     PROMPT
+  end
+
+  def judge_tool_results(tool_calls)
+    Captain::Evals::RoutingBenchmark::ToolTrace.compact(tool_calls).each_with_index.map do |call, index|
+      next call if tool_calls[index][:part_id].blank?
+
+      call.merge(result: tool_calls[index][:result].to_s.truncate(1000))
+    end
   end
 
   # The language the fixture expects of this turn, else the one the criterion asks for.

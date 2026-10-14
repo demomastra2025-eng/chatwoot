@@ -3,6 +3,14 @@
 require 'rails_helper'
 
 RSpec.describe Captain::Evals::RoutingBenchmark::Scorer do
+  it 'reports a rejected plan as a warning rather than a forbidden tool' do
+    result = score('Уточните, пожалуйста.',
+                   events: [tool_event('plan_request', success: false)], expect: { must_not_call: ['plan_request'] })
+
+    expect(result[:warnings]).to include('plan_rejected')
+    expect(result[:reasons]).not_to include('forbidden_tool:plan_request')
+  end
+
   let(:account) { create(:account) }
   let(:assistant) { create(:captain_assistant, account: account, name: 'Регистратор') }
   let(:contact) { create(:contact, account: account, name: 'Гульнар Тлеуова') }

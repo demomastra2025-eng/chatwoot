@@ -11,6 +11,7 @@ class Llm::OpenRouterModelCatalog
   PROVIDER = 'openrouter'
   DEFAULT_API_BASE = 'https://openrouter.ai/api/v1'
   CACHE_KEY = 'llm/openrouter/model_catalog'
+  DB_CONFIG_CACHE_KEY = 'llm/openrouter/db_model_configs'
   LAST_REFRESH_AT_CACHE_KEY = 'llm/openrouter/model_catalog/last_refresh_at'
   LAST_REFRESH_ERROR_CACHE_KEY = 'llm/openrouter/model_catalog/last_refresh_error'
   INSTALLATION_CONFIG_KEY = 'CAPTAIN_OPENROUTER_MODEL_CATALOG'
@@ -63,6 +64,7 @@ class Llm::OpenRouterModelCatalog
       )
       persist_embedding_model_profiles(embedding_models_payload, timestamp)
       Rails.cache.write(CACHE_KEY, model_configs)
+      Rails.cache.delete(DB_CONFIG_CACHE_KEY)
       Rails.cache.write(LAST_REFRESH_AT_CACHE_KEY, timestamp)
       Rails.cache.delete(LAST_REFRESH_ERROR_CACHE_KEY)
 
@@ -304,6 +306,10 @@ class Llm::OpenRouterModelCatalog
     end
 
     def db_model_configs
+      Rails.cache.fetch(DB_CONFIG_CACHE_KEY, expires_in: 5.minutes) { load_db_model_configs }
+    end
+
+    def load_db_model_configs
       return {} unless model_catalog_table_available?
 
       embedding_profiles = embedding_profiles_by_model_id

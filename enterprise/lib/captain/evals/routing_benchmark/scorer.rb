@@ -562,6 +562,9 @@ class Captain::Evals::RoutingBenchmark::Scorer
   end
 
   def forbidden_tool_check(context, outcome, name)
+    return if name == 'plan_request' && context.calls.any? { |call| call[:tool] == name && call[:success] == false } &&
+              context.calls.none? { |call| call[:tool] == name && call[:success] == true }
+
     outcome.evaluate("forbidden_tool:#{name}")
     return unless context.tools.include?(name)
 
@@ -1487,6 +1490,7 @@ class Captain::Evals::RoutingBenchmark::Scorer
     list << 'technical_council_handoff' if context.handoff[:council_technical]
     list << 'handoff_marker_without_tool' if context.handoff[:marker_without_tool]
     list << 'late_operation' if context.late.present?
+    list << 'plan_rejected' if context.calls.any? { |call| call[:tool] == 'plan_request' && call[:success] == false }
     list
   end
 

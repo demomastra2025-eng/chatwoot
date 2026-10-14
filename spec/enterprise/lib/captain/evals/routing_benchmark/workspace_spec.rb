@@ -23,6 +23,18 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Workspace do
   before { allow(Captain::Llm::UpdateEmbeddingJob).to receive(:perform_now) }
 
   describe '#create!' do
+    it 'creates fixture teams and named booking scopes for the agent' do
+      data = fixture.data.deep_dup
+      data['workspace']['teams'] = [{ 'name' => 'Бухгалтерия' }]
+      data['workspace']['agents'].first['handoff_team'] = 'Бухгалтерия'
+      data['workspace']['agents'].first['booking_scope'] = { 'resources' => ['Кардиолог Омаров Тимур'] }
+      seeded = described_class.new(Captain::Evals::RoutingBenchmark::Fixture.new(data), model: 'openai/gpt-6-luna', reasoning: 'none').create!
+      actor = seeded.agents.fetch('Регистратор')
+
+      expect(actor.handoff_team.name).to eq('бухгалтерия')
+      expect(seeded.account.scheduling_resources.where(id: actor.booking_resource_ids).pluck(:name)).to eq(['Кардиолог Омаров Тимур'])
+    end
+
     it 'turns audit_logs on for the synthetic account, so executed tools leave their arguments and results' do
       expect(workspace.account.feature_enabled?('audit_logs')).to be(true)
       expect(described_class::FEATURES).not_to include('audit_logs')
@@ -145,13 +157,11 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Workspace do
   end
 
   describe 'the knowledge base' do
-    # Indexing every FAQ of every synthetic clinic costs minutes per dialogue, so a workspace stores the FAQ answers and indexes them
-    # only on request (BENCHMARK_FAQ_EMBEDDINGS=1).
-    it 'stores every FAQ answer without calling the embedding provider unless indexing was asked for' do
+    it 'indexes every FAQ answer by default' do
       response = Captain::AssistantResponse.find_by!(account_id: workspace.account.id)
 
       expect(response).to have_attributes(question: 'Как оплатить?', answer: 'Kaspi QR или наличные.')
-      expect(Captain::Llm::UpdateEmbeddingJob).not_to have_received(:perform_now)
+      expect(Captain::Llm::UpdateEmbeddingJob).to have_received(:perform_now).with(response, 'Как оплатить?: Kaspi QR или наличные.')
     end
 
     def ask_for_indexing
@@ -159,15 +169,18 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Workspace do
       allow(ENV).to receive(:[]).with('BENCHMARK_FAQ_EMBEDDINGS').and_return('1')
     end
 
-    context 'when indexing was asked for' do
-      before { ask_for_indexing }
+    context 'when indexing is disabled' do
+      before do
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with('BENCHMARK_FAQ_EMBEDDINGS').and_return('0')
+      end
 
       # The rows of a dialogue live in a transaction that is never committed, so the callback that indexes a FAQ answer in production
       # does not run, and the FAQ lookup (a vector search) would find nothing.
-      it 'indexes every FAQ answer when the workspace is created' do
-        response = Captain::AssistantResponse.find_by!(account_id: workspace.account.id)
+      it 'stores the answer without indexing it' do
+        Captain::AssistantResponse.find_by!(account_id: workspace.account.id)
 
-        expect(Captain::Llm::UpdateEmbeddingJob).to have_received(:perform_now).with(response, 'Как оплатить?: Kaspi QR или наличные.')
+        expect(Captain::Llm::UpdateEmbeddingJob).not_to have_received(:perform_now)
       end
     end
 

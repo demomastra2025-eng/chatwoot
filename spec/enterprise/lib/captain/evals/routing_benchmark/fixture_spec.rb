@@ -51,6 +51,19 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Fixture do
   end
 
   describe '.new' do
+    it 'accepts account teams and named booking resources and rejects unknown names' do
+      fixture = data.deep_dup
+      fixture[:workspace][:teams] = [{ name: 'Бухгалтерия' }]
+      fixture[:workspace][:resources] = [{ key: 'doctor', name: 'Врач Иванова' }]
+      agent = fixture[:workspace][:agents].first
+      agent[:handoff_team] = 'Бухгалтерия'
+      agent[:booking_scope] = { resources: ['Врач Иванова'] }
+
+      expect { described_class.new(fixture) }.not_to raise_error
+      agent[:booking_scope] = { resources: ['Неизвестный врач'] }
+      expect { described_class.new(fixture) }.to raise_error(described_class::Invalid, /unknown resources/)
+    end
+
     it 'accepts the customer-scoped tools that the real fixtures use' do
       agent = described_class.new(data).workspace.fetch('agents').first
 

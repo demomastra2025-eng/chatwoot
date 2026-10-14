@@ -1,5 +1,11 @@
 # Captain routing benchmark
 
+Fixtures can declare `workspace.teams: [{name: Бухгалтерия}]`, an agent's
+`handoff_team: Бухгалтерия`, and `booking_scope: {resources: ["Терапевт Иванова"]}`.
+Scope names refer to `workspace.resources[].name`; an empty scope allows all.
+FAQ answers are indexed for semantic lookup by default. Set
+`BENCHMARK_FAQ_EMBEDDINGS=0` to skip indexing in a diagnostic run.
+
 This harness creates synthetic accounts in an isolated PostgreSQL database, runs
 customer turns through `Captain::Assistant::AgentRunnerService` and the native
 runner/tools path, reads the resulting database rows and monitoring events, and
