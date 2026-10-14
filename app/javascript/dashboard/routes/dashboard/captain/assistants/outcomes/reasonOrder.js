@@ -14,6 +14,7 @@ export const BUILTIN_REASON_IDS = new Set([
   'question_resolved',
   'customer_declined',
   'no_response',
+  'closed_against_instructions',
   'customer_requested_human',
   'low_confidence',
   'manual_action_required',

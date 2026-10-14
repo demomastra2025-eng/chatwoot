@@ -8,6 +8,7 @@ ru:
       question_resolved: Вопрос решён
       customer_declined: Клиент отказался
       no_response: Нет ответа
+      closed_against_instructions: Закрыто не по правилу клиники
       customer_requested_human: Клиент попросил сотрудника
       low_confidence: Недостаточно уверенности
       manual_action_required: Требуется действие сотрудника

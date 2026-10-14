@@ -13,8 +13,8 @@ RSpec.describe Llm::OpenRouterDecisionClient do
   end
 
   def choose(**overrides)
-    described_class.choose(**{ state: { messages: ['Thank you, answered.'] }, criteria: criteria, instructions: 'Classify the outcome.',
-                              model: model, api_key: 'synthetic-key', api_base: 'https://openrouter.ai/api/v1' }.merge(overrides))
+    described_class.choose(state: { messages: ['Thank you, answered.'] }, criteria: criteria, instructions: 'Classify the outcome.',
+                           model: model, api_key: 'synthetic-key', api_base: 'https://openrouter.ai/api/v1', **overrides)
   end
 
   it 'uses the actual Decisions contract and retains only bounded metadata without prose or raw input' do
@@ -58,6 +58,15 @@ RSpec.describe Llm::OpenRouterDecisionClient do
 
   it 'rejects an unverified model before network access' do
     expect { choose(model: 'microsoft/microsoft-decision-1-fake') }.to raise_error(ArgumentError, /Unsupported decision model/)
+  end
+
+  it 'accepts Mercury Decide on the native decision endpoint' do
+    stub = stub_request(:post, endpoint).with do |request|
+      JSON.parse(request.body)['model'] == 'inception/mercury-decide'
+    end.to_return(status: 200, body: response_body.merge(model: 'inception/mercury-decide').to_json)
+
+    expect(choose(model: 'inception/mercury-decide').choice).to eq('solved')
+    expect(stub).to have_been_requested.once
   end
 
   it 'rejects duplicate-free malformed choices and oversized request data before transport' do

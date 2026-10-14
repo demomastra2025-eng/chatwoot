@@ -244,7 +244,7 @@ RSpec.describe Llm::Config do
         .to eq('openai/gpt-4o-mini-transcribe')
     end
 
-    it 'uses Decision 1 for outcome classification independently of account and general agent defaults' do
+    it 'uses Mercury Decide for outcome classification independently of account and general agent defaults' do
       account = create(:account)
       allow(account).to receive(:captain_models).and_return('outcome_classification' => 'openai/gpt-5.4-mini')
       upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
@@ -254,7 +254,7 @@ RSpec.describe Llm::Config do
                                               'provider' => 'openrouter', 'type' => 'chat', 'capabilities' => %w[structured_output]
                                             })
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(catalog)
-      expect(described_class.model_for(feature: 'outcome_classification', account: account)).to eq('microsoft/microsoft-decision-1')
+      expect(described_class.model_for(feature: 'outcome_classification', account: account)).to eq('inception/mercury-decide')
 
       upsert_installation_config('CAPTAIN_OUTCOME_CLASSIFIER_MODEL', 'openai/gpt-6-luna')
       expect(described_class.model_for(feature: 'outcome_classification', account: account)).to eq('openai/gpt-6-luna')
@@ -268,7 +268,7 @@ RSpec.describe Llm::Config do
       upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return({})
 
-      expect(described_class.model_for(feature: 'outcome_classification')).to eq('microsoft/microsoft-decision-1')
+      expect(described_class.model_for(feature: 'outcome_classification')).to eq('inception/mercury-decide')
     end
 
     it 'uses the installation language decision model and its built-in default' do

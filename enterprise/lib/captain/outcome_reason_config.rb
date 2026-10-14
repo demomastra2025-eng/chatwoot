@@ -5,7 +5,7 @@ class Captain::OutcomeReasonConfig
   DEFAULT_OTHER_LABEL = 'Other'.freeze
   ID_PATTERN = /\A[a-z0-9][a-z0-9_-]{0,63}\z/
   BUILTIN_IDS = {
-    'completion' => %w[goal_achieved question_resolved customer_declined no_response other],
+    'completion' => %w[goal_achieved question_resolved customer_declined no_response closed_against_instructions other],
     'handoff' => %w[customer_requested_human low_confidence manual_action_required complaint_or_conflict tool_or_policy_limit faq_no_answer other]
   }.freeze
 

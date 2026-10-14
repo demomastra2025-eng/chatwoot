@@ -9,7 +9,7 @@ RSpec.describe Llm::OpenRouterCapabilityResolver do
   end
 
   describe '.call' do
-    %w[microsoft/microsoft-decision-1 microsoft/microsoft-decision-1-20261009].each do |model|
+    %w[inception/mercury-decide microsoft/microsoft-decision-1 microsoft/microsoft-decision-1-20261009].each do |model|
       it "allows the native Decision endpoint for the approved outcome model #{model}" do
         allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return({})
 

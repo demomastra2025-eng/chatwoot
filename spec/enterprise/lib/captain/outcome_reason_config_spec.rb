@@ -63,6 +63,12 @@ RSpec.describe Captain::OutcomeReasonConfig do
   describe 'platform reasons' do
     let(:assistant) { create(:captain_assistant, account: create(:account, locale: 'ru')) }
 
+    it 'includes the clinic rule closure reason in completion defaults' do
+      reasons = described_class.new(assistant).reasons('completion')
+      expect(reasons).to include(hash_including('id' => 'closed_against_instructions',
+                                                'label' => 'Закрыто не по правилу клиники'))
+    end
+
     it 'reserves room for built-ins while preserving the former maximum of saved custom reasons' do
       custom = (1..30).map { |index| { 'id' => "custom_#{index}", 'label' => "Custom #{index}" } }
       assistant.update!(config: { 'outcome_reason_settings' => { 'handoff_reasons' => custom } })

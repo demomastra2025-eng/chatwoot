@@ -54,7 +54,7 @@ RSpec.describe Llm::Models do
       expect(described_class.features.dig('image_recognition', 'default')).to eq('openai/gpt-6-luna')
       expect(described_class.features.dig('audio_transcription', 'default')).to eq('openai/gpt-4o-mini-transcribe')
       expect(described_class.features.dig('moderation', 'default')).to eq('openai/gpt-oss-safeguard-20b')
-      expect(described_class.features.dig('outcome_classification', 'default')).to eq('microsoft/microsoft-decision-1')
+      expect(described_class.features.dig('outcome_classification', 'default')).to eq('inception/mercury-decide')
       expect(described_class.features.dig('custom_guardrail', 'default')).to eq('openai/gpt-6-luna')
     end
   end
@@ -67,7 +67,7 @@ RSpec.describe Llm::Models do
     end
 
     it 'selects the native classifier default without changing the independent Luna guardrail default' do
-      expect(described_class.default_model_for('outcome_classification')).to eq('microsoft/microsoft-decision-1')
+      expect(described_class.default_model_for('outcome_classification')).to eq('inception/mercury-decide')
       expect(described_class.default_model_for('custom_guardrail')).to eq('openai/gpt-6-luna')
     end
 
@@ -86,7 +86,7 @@ RSpec.describe Llm::Models do
     end
 
     it 'lists approved Decision models only for outcome classification' do
-      models = %w[microsoft/microsoft-decision-1 microsoft/microsoft-decision-1-20261009]
+      models = %w[inception/mercury-decide microsoft/microsoft-decision-1 microsoft/microsoft-decision-1-20261009]
 
       expect(described_class.models_for('outcome_classification')).to include(*models)
       (described_class.feature_keys - %w[outcome_classification language_detection]).each do |feature|

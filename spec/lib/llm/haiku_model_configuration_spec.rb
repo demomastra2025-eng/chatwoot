@@ -22,7 +22,7 @@ RSpec.describe 'Claude Haiku 5.5 model configuration' do
     expect(JSON.parse(seed_allowlist)).to eq(Llm::Models::DEFAULT_CURATED_MODELS)
     expect(Llm::Models.curated_model_names_for(:assistant, account: account)).to include(model)
     expect(Llm::Models.configured_default_model_for(:assistant)).to eq('openai/gpt-6-luna')
-    expect(Llm::Models.configured_default_model_for(:outcome_classification)).to eq('microsoft/microsoft-decision-1')
+    expect(Llm::Models.configured_default_model_for(:outcome_classification)).to eq('inception/mercury-decide')
     expect(Llm::Models.configured_default_model_for(:custom_guardrail)).to eq('openai/gpt-6-luna')
   end
 

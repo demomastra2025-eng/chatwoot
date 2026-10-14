@@ -45,7 +45,7 @@ RSpec.describe Llm::InstallationModelConfig do
       expect(described_class.normalize('CAPTAIN_DEFAULT_MODEL', model)).not_to be_valid
     end
 
-    %w[microsoft/microsoft-decision-1 microsoft/microsoft-decision-1-20261009].each do |model|
+    %w[inception/mercury-decide microsoft/microsoft-decision-1 microsoft/microsoft-decision-1-20261009].each do |model|
       it "accepts the approved native Decision model #{model} only for the outcome classifier" do
         expect(described_class.normalize('CAPTAIN_OUTCOME_CLASSIFIER_MODEL', " #{model} "))
           .to have_attributes(value: model, error: nil)

@@ -30,6 +30,13 @@ models:
     type: decision
     source: static_openrouter_decision
     capabilities: [decision_classification]
+  inception/mercury-decide:
+    id: inception/mercury-decide
+    provider: openrouter
+    display_name: 'Mercury Decide'
+    type: decision
+    source: static_openrouter_decision
+    capabilities: [decision_classification]
   microsoft/microsoft-decision-1:
     id: microsoft/microsoft-decision-1
     provider: openrouter
@@ -351,6 +358,7 @@ features:
   outcome_classification:
     models:
       [
+        inception/mercury-decide,
         microsoft/microsoft-decision-1,
         microsoft/microsoft-decision-1-20261009,
         openai/gpt-6-luna,
@@ -359,7 +367,7 @@ features:
         gpt-5-mini,
         gpt-5.4-mini,
       ]
-    default: microsoft/microsoft-decision-1
+    default: inception/mercury-decide
   language_detection:
     models: [openai/gpt-6-luna-decisions]
     default: openai/gpt-6-luna-decisions

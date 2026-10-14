@@ -8,6 +8,7 @@ en:
       question_resolved: Question answered
       customer_declined: Customer declined
       no_response: No response
+      closed_against_instructions: Closed against clinic instructions
       customer_requested_human: Customer requested a person
       low_confidence: Insufficient confidence
       manual_action_required: Staff action required
