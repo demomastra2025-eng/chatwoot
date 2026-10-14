@@ -33,6 +33,24 @@ RSpec.describe Captain::Safety::CustomRulesEvaluator do
     expect(result).to be_frozen
   end
 
+  it 'uses Decisions for the configured decision model and maps only the selected input ID' do
+    allow(GlobalConfig).to receive(:get_value).with('CAPTAIN_CUSTOM_GUARDRAIL_MODEL').and_return('openai/gpt-6-luna-decisions')
+    allow(Llm::Runtime).to receive(:decide).and_return(Llm::OpenRouterDecisionClient::Result.new(choice: 'urgent_1'))
+    expect(Llm::Runtime).not_to receive(:build_chat)
+
+    result = described_class.new(clock: clock).evaluate(assistant: assistant, direction: 'input', text: 'I need help.')
+
+    expect(result).to have_attributes(status: :matched, rule_id: 'urgent_1', action: 'handoff', message: rule['message'],
+                                     model: 'openai/gpt-6-luna-decisions')
+  end
+
+  it 'keeps the structured chat engine for a configured chat model' do
+    expect(Captain::Safety::CustomRulesStructuredOutputEngine).to receive(:new).with(account: account).and_return(engine)
+    expect(Llm::Runtime).not_to receive(:decide)
+
+    expect(described_class.new(clock: clock).evaluate(assistant: assistant, direction: 'input', text: 'Hello.')).to be_matched
+  end
+
   it 'returns allowed only for an explicit none selection' do
     allow(engine).to receive(:select).and_return('{"rule_id":"none"}')
 

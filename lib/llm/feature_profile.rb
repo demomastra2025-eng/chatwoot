@@ -78,6 +78,20 @@ class Llm::FeatureProfile
       cost_policy: 'speed_cost',
       fallback_strategy: 'skip'
     },
+    'custom_guardrail' => {
+      config_feature_key: 'custom_guardrail',
+      required_capabilities: %w[decision_classification],
+      timeout_seconds: 20,
+      max_retries: 0,
+      streaming: false,
+      native_endpoint: '/alpha/decisions',
+      structured_output: true,
+      response_healing: false,
+      reasoning_policy: 'disabled',
+      privacy_policy: 'standard',
+      cost_policy: 'guardrail',
+      fallback_strategy: 'skip'
+    },
     'customer_notice' => {
       config_feature_key: 'customer_notice',
       required_capabilities: %w[text_input text_output],

@@ -50,15 +50,22 @@ class Captain::Safety::CustomRulesEvaluator
     safe_context = validated_context(context)
     return unavailable(:invalid_context) if safe_context.nil?
 
-    engine = @engine || Captain::Safety::CustomRulesStructuredOutputEngine.new(account: assistant.account)
+    engine, @model = @engine ? [@engine, @engine.model] : engine_for(assistant.account)
     @started_at = @clock.call
-    @model = engine.model
     payload = response_payload(engine.select(model: @model, rules: rules, direction: @direction, text: text, context: safe_context))
     return unavailable(:invalid_response) unless valid_selection?(payload, rules)
     return result(:allowed) if payload['rule_id'] == Captain::Safety::CustomRulesConfig::NONE_ID
 
     rule = rules.find { |item| item['id'] == payload['rule_id'] }
     result(:matched, rule_id: rule['id'], action: rule['action'], message: rule['message'])
+  end
+
+  def engine_for(account)
+    chat_engine = Captain::Safety::CustomRulesStructuredOutputEngine.new(account: account)
+    model = chat_engine.model
+    return [Captain::Safety::CustomRulesDecisionEngine.new(account: account), model] if Llm::Models.decision_model?(model)
+
+    [chat_engine, model]
   end
 
   def configured_rules(assistant)

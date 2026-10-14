@@ -57,6 +57,35 @@ RSpec.describe Llm::OpenRouterRuntime, '#decide' do
     expect(result.choice).to eq('kk')
   end
 
+  it 'uses the native Decisions transport for custom guardrails without recording checked text' do
+    guardrail_model = 'openai/gpt-6-luna-decisions'
+    checked_text = 'Fake appointment question.'
+    stub = stub_request(:post, endpoint).with do |http_request|
+      body = JSON.parse(http_request.body)
+      expect(body).to include(
+        'model' => guardrail_model,
+        'state' => { 'candidate_text' => checked_text, 'factual_context' => { 'locale' => 'ru' } },
+        'questions' => { 'reason' => { 'type' => 'choice', 'criteria' => { 'rule_one' => 'The reply promises a fixed time.',
+                                                                            'none' => 'No rule matches.' },
+                                       'instructions' => 'Choose the first matching rule ID.' } }
+      )
+      true
+    end.to_return(status: 200, body: response_body.merge(
+      model: guardrail_model, answers: { reason: { choice: 'rule_one', confidence: 0.9 } }
+    ).to_json)
+
+    request = decision_request(
+      feature: :custom_guardrail, model: guardrail_model,
+      input: { candidate_text: checked_text, factual_context: { locale: 'ru' } },
+      options: { decision_criteria: { 'rule_one' => 'The reply promises a fixed time.', 'none' => 'No rule matches.' },
+                 decision_instructions: 'Choose the first matching rule ID.' }
+    )
+
+    expect(Llm::Runtime.decide(request).choice).to eq('rule_one')
+    expect(stub).to have_been_requested.once
+    expect(LlmEvent.find_by!(account_id: account.id, event_name: 'llm.decision.complete').payload.to_json).not_to include(checked_text)
+  end
+
   it 'applies provider preferences and mandatory ZDR before sending the decision state' do
     request = decision_request(
       privacy_profile: 'zdr_required',

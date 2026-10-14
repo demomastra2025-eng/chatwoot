@@ -199,7 +199,7 @@ class Llm::OpenRouterRuntime
   private
 
   def decision_feature?(feature_key)
-    %w[outcome_classification language_detection].include?(feature_key)
+    %w[outcome_classification language_detection custom_guardrail].include?(feature_key)
   end
 
   def decision_criteria(request)
