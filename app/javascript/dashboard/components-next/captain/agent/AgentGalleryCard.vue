@@ -25,9 +25,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  isMain: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['open', 'toggleActive']);
+const emit = defineEmits(['open', 'toggleActive', 'makeMain']);
 
 const { t } = useI18n();
 
@@ -126,18 +127,36 @@ watch(storedActive, () => {
           >
             {{ statusLabel }}
           </span>
+          <span
+            v-if="isMain"
+            class="flex items-center gap-1 text-body-main text-n-amber-11"
+            data-testid="agent-main-label"
+          >
+            <Icon icon="i-lucide-star" class="size-4 fill-current" />
+            {{ t('CAPTAIN.GALLERY.CARD.MAIN') }}
+          </span>
         </div>
       </div>
       <Switch
         v-if="canToggle"
         :model-value="isActive"
-        :disabled="toggling"
+        :disabled="toggling || isMain"
         :aria-label="t('CAPTAIN.ASSISTANTS.ROUTING.ACTIVE')"
         class="mt-0.5"
         data-testid="agent-active-switch"
         @update:model-value="handleToggle"
         @click.stop
       />
+      <button
+        v-if="canToggle && !isMain && isActive"
+        type="button"
+        class="rounded-lg p-1 text-n-slate-11 hover:text-n-amber-11"
+        :aria-label="t('CAPTAIN.GALLERY.CARD.MAKE_MAIN')"
+        data-testid="agent-make-main"
+        @click.stop="emit('makeMain')"
+      >
+        <Icon icon="i-lucide-star" class="size-5" />
+      </button>
     </div>
 
     <p

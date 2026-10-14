@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useMapGetter, useStore } from 'dashboard/composables/store';
 import { usePolicy } from 'dashboard/composables/usePolicy';
+import { useAlert } from 'dashboard/composables';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import { useCaptainChannelMatrixStore } from 'dashboard/store/captain/channelMatrix';
 import { agentChannelSummary } from 'dashboard/helper/captainChannelMatrix';
@@ -90,8 +91,21 @@ const openAgent = agent => {
 };
 
 const handleToggleActive = async (agent, active) => {
+  if (
+    !active &&
+    Number(matrix.value?.default_main_assistant_id) === Number(agent.id)
+  )
+    return;
   const saved = await setActive(agent, active);
   if (saved) refreshMatrix();
+};
+
+const makeMain = async agent => {
+  if (!agent.active || !isAdmin.value) return;
+  const result = await matrixStore.save({
+    default_main_assistant_id: agent.id,
+  });
+  if (!result.ok) useAlert(t('CAPTAIN.CHANNEL_MATRIX.SAVE_ERROR'));
 };
 
 const openCreateDialog = () => {
@@ -155,11 +169,15 @@ onMounted(() => {
             v-for="agent in agents"
             :key="agent.id"
             :assistant="agent"
+            :is-main="
+              Number(matrix?.default_main_assistant_id) === Number(agent.id)
+            "
             :stats="statsById[agent.id] || null"
             :can-toggle="isAdmin"
             :toggling="isToggling(agent.id)"
             @open="openAgent(agent)"
             @toggle-active="value => handleToggleActive(agent, value)"
+            @make-main="makeMain(agent)"
           />
           <AgentNewTile v-if="isAdmin" @click="openCreateDialog" />
         </div>

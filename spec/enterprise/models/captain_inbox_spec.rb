@@ -23,12 +23,33 @@ RSpec.describe CaptainInbox do
     expect(build(:captain_inbox, inbox: inbox, captain_assistant: create(:captain_assistant))).not_to be_valid
   end
 
-  it 'requires the enabled text main agent to work on the inbox' do
+  it 'applies the workspace emergency switch and reply time to text channels' do
+    inbox
+    account.update!(captain_default_assistant_id: assistant.id)
+    link = create(:captain_inbox, inbox: inbox, captain_assistant: assistant, ai_enabled: true)
+    expect(link.auto_reply_allowed_now?).to be(true)
+
+    account.update!(captain_agent_settings: { 'routing' => { 'ai_enabled' => false, 'auto_reply_mode' => 'always' } })
+    link.inbox.account.reload
+    expect(link.auto_reply_allowed_now?).to be(false)
+    expect(described_class.enabled_for_runtime.where(id: link.id)).not_to exist
+
+    schedule = AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.deep_dup
+    account.update!(workspace_working_hours: schedule,
+                    captain_agent_settings: { 'routing' => { 'ai_enabled' => true, 'auto_reply_mode' => 'working_hours' } })
+    link.inbox.account.reload
+    travel_to(ActiveSupport::TimeZone['Asia/Almaty'].local(2026, 9, 7, 10, 0)) do
+      expect(link.auto_reply_allowed_now?).to be(true)
+    end
+    travel_to(ActiveSupport::TimeZone['Asia/Almaty'].local(2026, 9, 6, 10, 0)) do
+      expect(link.auto_reply_allowed_now?).to be(false)
+    end
+  end
+
+  it 'allows an active external agent on any text inbox regardless of legacy channel scope' do
     assistant.update!(channel_scope: 'selected')
     assignment = build(:captain_inbox, inbox: inbox, captain_assistant: assistant)
 
-    expect(assignment).not_to be_valid
-    assistant.agent_channels.create!(account: account, inbox: inbox)
     expect(assignment).to be_valid
   end
 

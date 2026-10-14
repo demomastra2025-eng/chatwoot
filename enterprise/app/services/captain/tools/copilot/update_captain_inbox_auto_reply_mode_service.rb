@@ -18,7 +18,12 @@ class Captain::Tools::Copilot::UpdateCaptainInboxAutoReplyModeService < Captain:
     inbox = account.inboxes.active.find(inbox_id)
     captain_inbox = captain_inbox_for!(inbox)
 
-    captain_inbox.update!(auto_reply_mode: normalized_auto_reply_mode(auto_reply_mode))
+    mode = normalized_auto_reply_mode(auto_reply_mode)
+    if inbox.channel_type == 'Channel::Voice'
+      captain_inbox.update!(auto_reply_mode: mode)
+    else
+      Captain::AccountSettings.new(account).update!('routing' => { 'auto_reply_mode' => mode })
+    end
 
     formatted_payload(update_payload(inbox, captain_inbox))
   rescue StandardError => e
@@ -53,7 +58,7 @@ class Captain::Tools::Copilot::UpdateCaptainInboxAutoReplyModeService < Captain:
       captain: {
         assistant_id: captain_inbox.captain_assistant_id,
         assistant_name: captain_inbox.captain_assistant&.name,
-        auto_reply_mode: captain_inbox.auto_reply_mode,
+        auto_reply_mode: inbox.channel_type == 'Channel::Voice' ? captain_inbox.auto_reply_mode : account.captain_reply_time_mode,
         auto_reply_allowed_now: captain_inbox.auto_reply_allowed_now?,
         reply_to_open_conversations: captain_inbox.reply_to_open_conversations?
       }

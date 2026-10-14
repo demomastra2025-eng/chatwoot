@@ -1,10 +1,7 @@
 # frozen_string_literal: true
 
-# A channel has one entry agent (the main agent of the channel grid). The
-# peers are the active agents the grid attaches to that channel, and together
-# they form a direct mesh. No per-agent allowed-targets list restricts it.
-# Without a channel (no inbox) there is no grid, so the entry agent works alone
-# and has no peers.
+# A text channel enters through the workspace main agent and can reach every
+# other active external agent. Without a channel, the entry agent works alone.
 class Captain::AgentGraph
   MAX_AGENTS = 100
 
@@ -67,13 +64,12 @@ class Captain::AgentGraph
 
   private
 
-  # The active external agents the grid attaches to this channel. Without a
-  # channel, or for an agent that is not external, there is nobody else.
+  # Without a text channel, or for an agent that is not external, there are no peers.
   def channel_members
     return [] unless inbox && entry.external_agent?
 
-    Captain::Assistant.entry_eligible.where(account_id: entry.account_id).order(:id).select do |actor|
-      actor.works_on_inbox?(inbox)
-    end
+    return [] if inbox.channel_type == 'Channel::Voice'
+
+    Captain::Assistant.entry_eligible.where(account_id: entry.account_id).order(:id).to_a
   end
 end

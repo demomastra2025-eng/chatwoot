@@ -13,7 +13,7 @@ class Captain::Tools::Copilot::UpdateInboxWorkingHoursService < Captain::Tools::
         required: true
   param :working_hours_enabled, type: :boolean, desc: 'Legacy parameter; the workspace schedule is always enabled when configured', required: false
 
-  def execute(inbox_id:, working_hours_json:, working_hours_enabled: nil)
+  def execute(inbox_id:, working_hours_json:, **_legacy_options)
     ensure_account_administrator!
 
     inbox = account.inboxes.active.find(inbox_id)

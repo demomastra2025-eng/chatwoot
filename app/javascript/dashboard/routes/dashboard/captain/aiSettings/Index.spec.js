@@ -39,6 +39,12 @@ vi.mock('dashboard/composables/usePolicy', () => ({
   }),
 }));
 
+vi.mock('dashboard/composables/useAccount', () => ({
+  useAccount: () => ({
+    currentAccount: { value: { settings: { workspace_working_hours: [] } } },
+  }),
+}));
+
 vi.mock('dashboard/store/captain/aiSettings', () => ({
   useCaptainAiSettingsStore: () => ({
     uiFlags: testState.uiFlags,
@@ -221,6 +227,31 @@ describe('Captain AI settings page', () => {
       '15'
     );
     expect(wrapper.get('#handoff-message-text').element.value).toBe('Передаю');
+    expect(saveButton(wrapper).attributes('disabled')).toBeDefined();
+  });
+
+  it('exposes one emergency switch and only the always mode without a schedule', async () => {
+    testState.save.mockImplementation(async body => ({
+      ok: true,
+      settings: { ...settingsPayload(), ...body },
+    }));
+    const wrapper = await mountPage();
+    const routing = within(wrapper, 'ai-routing');
+
+    expect(routing.findAll('input[type="checkbox"]')).toHaveLength(1);
+    expect(routing.findAll('option[disabled]')).toHaveLength(2);
+
+    await routing.get('input[type="checkbox"]').setValue(false);
+    await clickSave(wrapper);
+
+    expect(testState.save).toHaveBeenCalledWith({
+      routing: { ai_enabled: false, auto_reply_mode: 'always' },
+    });
+  });
+
+  it('keeps the workspace safety controls alongside routing', async () => {
+    const wrapper = await mountPage();
+    expect(within(wrapper, 'ai-settings-safety').exists()).toBe(true);
     expect(
       wrapper.get('#ai-settings-sensitive_info_action').element.value
     ).toBe('block');

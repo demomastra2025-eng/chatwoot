@@ -9,9 +9,10 @@ RSpec.describe Captain::Tools::Copilot::UpdateCaptainInboxAutoReplyModeService d
   before do
     confirmation_gate = instance_double(Captain::Copilot::ToolConfirmationGate, call: nil)
     allow(Captain::Copilot::ToolConfirmationGate).to receive(:new).and_return(confirmation_gate)
+    account.update!(workspace_working_hours: AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.deep_dup)
   end
 
-  it 'updates an account Captain inbox auto-reply mode' do
+  it 'updates the workspace text auto-reply mode while keeping the legacy channel value' do
     inbox = create(:inbox, account: account, name: 'Support')
     captain_inbox = create(:captain_inbox, inbox: inbox, captain_assistant: assistant, auto_reply_mode: CaptainInbox::AUTO_REPLY_ALWAYS)
 
@@ -26,7 +27,8 @@ RSpec.describe Captain::Tools::Copilot::UpdateCaptainInboxAutoReplyModeService d
       'auto_reply_allowed_now' => false,
       'reply_to_open_conversations' => false
     )
-    expect(captain_inbox.reload.auto_reply_mode).to eq(CaptainInbox::AUTO_REPLY_OUTSIDE_WORKING_HOURS)
+    expect(account.reload.captain_reply_time_mode).to eq(CaptainInbox::AUTO_REPLY_OUTSIDE_WORKING_HOURS)
+    expect(captain_inbox.reload.auto_reply_mode).to eq(CaptainInbox::AUTO_REPLY_ALWAYS)
   end
 
   it 'allows account admins to update a same-account inbox connected to another Captain assistant' do
@@ -38,7 +40,8 @@ RSpec.describe Captain::Tools::Copilot::UpdateCaptainInboxAutoReplyModeService d
 
     expect(payload.dig('captain', 'assistant_id')).to eq(other_assistant.id)
     expect(payload.dig('captain', 'assistant_name')).to eq('Sales AI')
-    expect(captain_inbox.reload.auto_reply_mode).to eq(CaptainInbox::AUTO_REPLY_WORKING_HOURS)
+    expect(account.reload.captain_reply_time_mode).to eq(CaptainInbox::AUTO_REPLY_WORKING_HOURS)
+    expect(captain_inbox.reload.auto_reply_mode).to eq(CaptainInbox::AUTO_REPLY_ALWAYS)
   end
 
   it 'rejects inboxes outside the assistant account' do

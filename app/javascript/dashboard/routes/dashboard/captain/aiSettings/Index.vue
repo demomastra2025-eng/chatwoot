@@ -11,6 +11,7 @@ import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
 import { usePolicy } from 'dashboard/composables/usePolicy';
+import { useAccount } from 'dashboard/composables/useAccount';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import { useCaptainAiSettingsStore } from 'dashboard/store/captain/aiSettings';
 import {
@@ -35,6 +36,10 @@ const { t } = useI18n();
 const route = useRoute();
 const store = useCaptainAiSettingsStore();
 const { shouldShowPaywall } = usePolicy();
+const { currentAccount } = useAccount();
+const hasWorkspaceSchedule = computed(
+  () => currentAccount.value?.settings?.workspace_working_hours?.length === 7
+);
 
 const EMPTY_SERVER_ERRORS = Object.freeze({
   fields: {},
@@ -231,6 +236,47 @@ onBeforeUnmount(() => {
         <p class="mb-0 text-body-main text-n-slate-11">
           {{ t('CAPTAIN.AI_SETTINGS.DESCRIPTION') }}
         </p>
+
+        <section
+          data-testid="ai-routing"
+          class="flex flex-col gap-4 rounded-xl bg-n-solid-2 p-5 outline outline-1 -outline-offset-1 outline-n-weak"
+        >
+          <label class="flex items-center gap-3 text-body-main text-n-slate-12">
+            <input
+              v-model="draft.routing.ai_enabled"
+              type="checkbox"
+              :disabled="isSaving"
+            />
+            {{ t('CAPTAIN.AI_SETTINGS.ROUTING.MASTER') }}
+          </label>
+          <label class="flex flex-col gap-2 text-body-main text-n-slate-12">
+            {{ t('CAPTAIN.AI_SETTINGS.ROUTING.REPLY_TIME') }}
+            <select
+              v-model="draft.routing.auto_reply_mode"
+              class="rounded-lg border border-n-weak bg-n-solid-1 p-2"
+              :disabled="isSaving"
+            >
+              <option value="always">
+                {{ t('CAPTAIN.AI_SETTINGS.ROUTING.ALWAYS') }}
+              </option>
+              <option value="working_hours" :disabled="!hasWorkspaceSchedule">
+                {{ t('CAPTAIN.AI_SETTINGS.ROUTING.WORKING_HOURS') }}
+              </option>
+              <option
+                value="outside_working_hours"
+                :disabled="!hasWorkspaceSchedule"
+              >
+                {{ t('CAPTAIN.AI_SETTINGS.ROUTING.OUTSIDE_WORKING_HOURS') }}
+              </option>
+            </select>
+          </label>
+          <p
+            v-if="!hasWorkspaceSchedule"
+            class="mb-0 text-body-main text-n-slate-11"
+          >
+            {{ t('CAPTAIN.AI_SETTINGS.ROUTING.SCHEDULE_REQUIRED') }}
+          </p>
+        </section>
 
         <Banner
           v-if="serverErrors.general.length"

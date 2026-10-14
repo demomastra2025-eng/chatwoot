@@ -28,7 +28,12 @@ class CaptainInbox < ApplicationRecord
   DEFAULT_AUTO_REPLY_MODE = AUTO_REPLY_ALWAYS
 
   scope :enabled_for_runtime, lambda {
-    joins(:inbox).where('(captain_inboxes.ai_enabled = TRUE OR inboxes.channel_type = ?)', 'Channel::Voice')
+    joins(inbox: :account).where(<<~SQL.squish)
+      inboxes.channel_type = 'Channel::Voice' OR
+      (captain_inboxes.ai_enabled = TRUE AND
+       COALESCE(accounts.settings #>> '{captain_agent_settings,routing,ai_enabled}', 'true') <> 'false' AND
+       accounts.settings ->> 'captain_default_assistant_id' = captain_inboxes.captain_assistant_id::text)
+    SQL
   }
 
   belongs_to :captain_assistant, class_name: 'Captain::Assistant'
@@ -55,7 +60,18 @@ class CaptainInbox < ApplicationRecord
 
   def auto_reply_allowed_now?
     return false unless ai_enabled? || inbox&.channel_type == 'Channel::Voice'
+    return legacy_voice_auto_reply_allowed_now? if inbox.channel_type == 'Channel::Voice'
+    return false unless inbox.account.captain_ai_enabled?
+    return false unless inbox.account.captain_default_assistant_id.to_i == captain_assistant_id
 
+    mode = inbox.account.captain_reply_time_mode
+    return true if mode == AUTO_REPLY_ALWAYS
+    return false unless inbox.account.workspace_working_hours_configured?
+
+    mode == AUTO_REPLY_WORKING_HOURS ? inbox.working_now? : inbox.out_of_office?
+  end
+
+  def legacy_voice_auto_reply_allowed_now?
     {
       AUTO_REPLY_ALWAYS => true,
       AUTO_REPLY_WORKING_HOURS => inbox&.working_now?,

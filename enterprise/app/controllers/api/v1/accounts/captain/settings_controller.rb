@@ -13,7 +13,7 @@ class Api::V1::Accounts::Captain::SettingsController < Api::V1::Accounts::BaseCo
 
   private
 
-  SECTIONS = %w[understanding handoff faq conversation safety].freeze
+  SECTIONS = %w[understanding handoff faq conversation safety routing].freeze
 
   # Only the known sections reach the strict Captain::AccountSettingsValidation schema check.
   def settings_params

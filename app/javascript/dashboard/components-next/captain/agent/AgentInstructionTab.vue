@@ -9,12 +9,11 @@ import {
 } from 'dashboard/components-next/captain/pageComponents/assistant/toolAccessDefaults';
 import AgentToolChips from './AgentToolChips.vue';
 import AgentModelBlock from './AgentModelBlock.vue';
-import AgentChannelsBlock from './AgentChannelsBlock.vue';
 import AgentFollowUpsSummary from './AgentFollowUpsSummary.vue';
 
 // «Инструкция» tab: the instruction editor with the @ tools / $ fields
 // pickers and the read-only tool chips; side column with the «Модель»,
-// «Каналы» and «Дожимы» blocks. The page owns the draft and the save.
+// «Дожимы» blocks. The page owns the draft and the save.
 const props = defineProps({
   assistant: { type: Object, required: true },
   draft: { type: Object, required: true },
@@ -152,7 +151,6 @@ const instructionError = computed(() => {
         :assistant="assistant"
         :disabled="!canEdit"
       />
-      <AgentChannelsBlock :assistant="assistant" :can-configure="canEdit" />
       <AgentFollowUpsSummary
         :assistant="assistant"
         @open="emit('openFollowUps')"

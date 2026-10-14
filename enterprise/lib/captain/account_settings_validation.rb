@@ -28,6 +28,9 @@ class Captain::AccountSettingsValidation
     return [error(path, 'unknown_field', 'is not a setting')] unless @defaults[section].key?(key)
 
     return boolean_errors(value, path) if Captain::AccountSettings::BOOLEAN_FIELDS.fetch(section, []).include?(key)
+    if section == 'routing' && key == 'auto_reply_mode'
+      return CaptainInbox::AUTO_REPLY_MODES.include?(value) ? [] : [error(path, 'invalid_value', 'must be a reply time mode')]
+    end
     return structured_errors(key, value, path) if structured_field?(key)
 
     Captain::AccountSettings::ACTION_FROM_API.key?(value) ? [] : [error(path, 'invalid_value', 'must be block, flag, or off')]

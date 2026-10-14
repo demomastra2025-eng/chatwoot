@@ -41,4 +41,14 @@ module Enterprise::Concerns::Account
     valid_id = value.to_s.match?(/\A[1-9]\d*\z/) && captain_assistants.entry_eligible.exists?(id: value.to_i)
     errors.add(:captain_default_assistant_id, I18n.t('captain.channel_matrix.invalid_default')) unless valid_id
   end
+
+  def captain_ai_enabled?
+    settings.to_h.dig('captain_agent_settings', 'routing', 'ai_enabled') != false
+  end
+
+  def captain_reply_time_mode
+    return CaptainInbox::AUTO_REPLY_ALWAYS unless workspace_working_hours_configured?
+
+    settings.to_h.dig('captain_agent_settings', 'routing', 'auto_reply_mode').presence || CaptainInbox::AUTO_REPLY_ALWAYS
+  end
 end

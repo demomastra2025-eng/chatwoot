@@ -8,9 +8,9 @@ module Concerns::CaptainAgentRouting
   included do
     belongs_to :legacy_scenario, class_name: 'Captain::Scenario', optional: true
     has_many :outgoing_agent_handoffs, class_name: 'Captain::AgentHandoff', foreign_key: :source_assistant_id,
-                                     inverse_of: :source_assistant, dependent: :delete_all
+                                       inverse_of: :source_assistant, dependent: :delete_all
     has_many :incoming_agent_handoffs, class_name: 'Captain::AgentHandoff', foreign_key: :target_assistant_id,
-                                     inverse_of: :target_assistant, dependent: :delete_all
+                                       inverse_of: :target_assistant, dependent: :delete_all
     has_many :handoff_agents, through: :outgoing_agent_handoffs, source: :target_assistant
 
     scope :entry_eligible, -> { where(active: true, usage_mode: 'external_agent') }
@@ -32,11 +32,7 @@ module Concerns::CaptainAgentRouting
   def channel_peers
     return [] unless entry_eligible?
 
-    peers = Captain::Assistant.entry_eligible.where(account_id: account_id).where.not(id: id).order(:id).to_a
-    return peers if ([self] + peers).all? { |agent| agent.channel_scope == 'all' }
-
-    inbox_ids = selected_inbox_ids_by_agent([self] + peers)
-    peers.select { |peer| shares_channel?(self, peer, inbox_ids) }
+    Captain::Assistant.entry_eligible.where(account_id: account_id).where.not(id: id).order(:id).to_a
   end
 
   # Legacy per-agent allowed-targets list. The data is kept, but routing, the

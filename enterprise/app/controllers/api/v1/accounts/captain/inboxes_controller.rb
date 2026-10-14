@@ -11,6 +11,8 @@ class Api::V1::Accounts::Captain::InboxesController < Api::V1::Accounts::BaseCon
     raise_internal_assistant_error! if @assistant.internal_assistant?
 
     inbox = Current.account.inboxes.find(assistant_params[:inbox_id])
+    return enable_workspace_text_channel!(inbox) unless inbox.channel_type == 'Channel::Voice'
+
     @captain_inbox = CaptainInbox.find_by(inbox: inbox)
 
     return render_existing_captain_inbox(inbox) if connected_to_current_assistant?
@@ -25,11 +27,27 @@ class Api::V1::Accounts::Captain::InboxesController < Api::V1::Accounts::BaseCon
 
   def destroy
     @captain_inbox = @assistant.captain_inboxes.find_by!(inbox_id: permitted_params[:inbox_id])
+    if @captain_inbox.inbox.channel_type != 'Channel::Voice'
+      @captain_inbox.update!(ai_enabled: false)
+      return head :no_content
+    end
+
     @captain_inbox.destroy!
     head :no_content
   end
 
   private
+
+  def enable_workspace_text_channel!(inbox)
+    main = Current.account.captain_assistants.entry_eligible.find_by(id: Current.account.captain_default_assistant_id)
+    raise ActionController::BadRequest, 'A workspace main AI agent is required' unless main
+
+    @captain_inbox = CaptainInbox.find_or_initialize_by(inbox: inbox)
+    @captain_inbox.captain_assistant = main
+    @captain_inbox.ai_enabled = true
+    @captain_inbox.save!
+    render :create
+  end
 
   def set_assistant
     @assistant = account_assistants.find(permitted_params[:assistant_id])

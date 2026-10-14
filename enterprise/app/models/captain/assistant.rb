@@ -372,7 +372,7 @@ class Captain::Assistant < ApplicationRecord
            dependent: :destroy_async
   has_many :inboxes,
            through: :captain_inboxes
-  has_many :agent_channels, class_name: 'Captain::AgentChannel', foreign_key: :assistant_id, dependent: :delete_all
+  has_many :agent_channels, class_name: 'Captain::AgentChannel', dependent: :delete_all
   has_many :messages, as: :sender, dependent: :nullify
   has_many :copilot_threads, dependent: :destroy_async
   has_many :scenarios, class_name: 'Captain::Scenario', dependent: :nullify
@@ -428,7 +428,7 @@ class Captain::Assistant < ApplicationRecord
     return false unless inbox && entry_eligible? && inbox.account_id == account_id
     return false if inbox.channel_type == 'Channel::Voice'
 
-    channel_scope == 'all' || agent_channels.exists?(inbox_id: inbox.id)
+    true
   end
 
   def selected_inbox_ids
@@ -1238,5 +1238,4 @@ class Captain::Assistant < ApplicationRecord
     tool_ids = referenced_tool_ids_for_texts(prompt_glossary_texts_for_template(template_name))
     template_name.to_sym == :assistant ? tool_ids | legacy_scenario_explicit_tool_ids : tool_ids
   end
-
 end

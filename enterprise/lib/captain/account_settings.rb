@@ -8,7 +8,8 @@ class Captain::AccountSettings
     'understanding' => %w[voice_messages images documents web_search web_page_reading],
     'handoff' => %w[auto_completion_enabled auto_reply_on_last_incoming],
     'faq' => %w[generate_from_resolved],
-    'safety' => %w[moderation_enabled]
+    'safety' => %w[moderation_enabled],
+    'routing' => %w[ai_enabled]
   }.freeze
   MESSAGE_FIELDS = %w[handoff_message resolution_message].freeze
   # The owner's short "how to write" guide for an AI-written handoff or closing message.
@@ -37,7 +38,9 @@ class Captain::AccountSettings
   end
 
   def value
-    defaults.deep_merge(@account.settings.to_h.fetch(KEY, {}).to_h.deep_stringify_keys)
+    result = defaults.deep_merge(@account.settings.to_h.fetch(KEY, {}).to_h.deep_stringify_keys)
+    result['routing']['auto_reply_mode'] = 'always' unless @account.workspace_working_hours_configured?
+    result
   end
 
   def section(name)
@@ -50,6 +53,11 @@ class Captain::AccountSettings
     patch = patch.to_unsafe_h if patch.respond_to?(:to_unsafe_h)
     patch = patch.deep_stringify_keys if patch.is_a?(Hash)
     errors = Captain::AccountSettingsValidation.new(defaults).errors(patch)
+    routing = patch['routing'].is_a?(Hash) ? patch['routing'] : {}
+    if routing['auto_reply_mode'].in?(%w[working_hours outside_working_hours]) &&
+       !@account.workspace_working_hours_configured?
+      errors << { field: 'routing.auto_reply_mode', code: 'schedule_required', message: 'Configure workspace working hours first' }
+    end
     raise Invalid, errors if errors.any?
 
     @account.with_lock do
@@ -69,6 +77,7 @@ class Captain::AccountSettings
                      'auto_completion_enabled' => true, 'auto_reply_on_last_incoming' => false },
       'faq' => { 'generate_from_resolved' => false },
       'conversation' => { 'message_collapse_window_seconds' => 15 },
+      'routing' => { 'ai_enabled' => true, 'auto_reply_mode' => 'always' },
       # Workspace-wide safety checks edited on the AI settings page. The switch
       # and the two actions are read at run time by
       # Captain::AssistantSafetyPreferences, the custom_rules by

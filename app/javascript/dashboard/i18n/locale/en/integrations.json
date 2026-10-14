@@ -3984,6 +3984,14 @@
         "OUTBOUND": "Agent replies",
         "ADD_RULE": "+ Rule",
         "RULES_LIMIT": "Maximum rules: {count}"
+      },
+      "ROUTING": {
+        "MASTER": "AI replies to customers",
+        "REPLY_TIME": "Reply time",
+        "ALWAYS": "Always",
+        "WORKING_HOURS": "During working hours",
+        "OUTSIDE_WORKING_HOURS": "Outside working hours",
+        "SCHEDULE_REQUIRED": "Configure workspace hours first. Only Always is available."
       }
     },
     "CHANNEL_MATRIX": {
@@ -4016,7 +4024,8 @@
       "SAVE": "Save",
       "SAVED": "Channels saved",
       "SAVE_ERROR": "Could not save. Fix the marked rows and save again.",
-      "LEAVE_CONFIRM": "You have unsaved changes. Leave without saving?"
+      "LEAVE_CONFIRM": "You have unsaved changes. Leave without saving?",
+      "CHANNEL_SWITCH": "AI replies"
     },
     "CHAT_AVATARS": {
       "COUNCIL_CAPTION": "Council reply: {names}",
@@ -4029,7 +4038,9 @@
         "NO_DESCRIPTION": "Add a description",
         "CHANNELS_LINE": "Main in channels: {main} · Channels: {total}",
         "ALL_CHANNELS": "Main in channels: {main} · All channels",
-        "NO_CHANNELS": "Not working on any channel"
+        "NO_CHANNELS": "Not working on any channel",
+        "MAIN": "Main",
+        "MAKE_MAIN": "Make main"
       },
       "CREATE": {
         "TITLE": "New agent",

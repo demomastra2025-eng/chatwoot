@@ -11,6 +11,18 @@ RSpec.describe Captain::Playground::Session do
 
   after { Current.reset }
 
+  it 'starts from the workspace main agent even when opened from another agent card' do
+    main = assistant
+    colleague = create(:captain_assistant, account: account)
+    account.update!(captain_default_assistant_id: main.id)
+
+    session(assistant: colleague).with_lock do |workspace|
+      expect(workspace.entry_assistant).to eq(main)
+      expect(workspace.assistant).to eq(main)
+      expect(workspace.context_reference).to include(entry_assistant_id: main.id)
+    end
+  end
+
   it 'persists synthetic JSON and server history without creating any business records' do
     assistant
     user
@@ -18,7 +30,8 @@ RSpec.describe Captain::Playground::Session do
     id = nil
     session.with_lock do |workspace|
       id = workspace.id
-      workspace.scenario.apply({ contact: { name: 'Changed caller' }, patients: [{ name: 'Second synthetic patient', identifier: '' }] }, mode: 'workspace')
+      workspace.scenario.apply({ contact: { name: 'Changed caller' }, patients: [{ name: 'Second synthetic patient', identifier: '' }] },
+                               mode: 'workspace')
       workspace.record_turn('Hello', { 'response' => 'Reply' })
     end
     session(session_id: id).with_lock do |workspace|
@@ -49,7 +62,7 @@ RSpec.describe Captain::Playground::Session do
       expect(workspace.set_permissions!(read: false, write: true)).to include('read' => false, 'write' => false)
       permitted = workspace.set_permissions!(read: true, write: true)
       workspace.data['action_previews'] << { 'id' => SecureRandom.uuid, 'status' => 'pending', 'generation' => permitted['generation'],
-                                            'expires_at' => 10.minutes.from_now.to_i, 'binding' => workspace.context_reference.stringify_keys }
+                                             'expires_at' => 10.minutes.from_now.to_i, 'binding' => workspace.context_reference.stringify_keys }
       expect(workspace.payload[:action_previews].size).to eq(1)
       revoker = session(session_id: workspace.id)
       revoked = revoker.set_permissions!(read: false, write: true)

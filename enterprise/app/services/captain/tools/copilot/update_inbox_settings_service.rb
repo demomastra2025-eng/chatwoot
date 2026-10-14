@@ -22,10 +22,7 @@ class Captain::Tools::Copilot::UpdateInboxSettingsService < Captain::Tools::Copi
     workspace_assignment = kwargs.key?(:enable_auto_assignment)
     raise ArgumentError, 'No supported inbox settings were provided' if attributes.blank? && !workspace_assignment
 
-    ActiveRecord::Base.transaction do
-      inbox.update!(attributes) if attributes.present?
-      account.update!(conversation_auto_assignment_enabled: cast_boolean(kwargs[:enable_auto_assignment])) if workspace_assignment
-    end
+    update_settings!(inbox, attributes, kwargs)
 
     formatted_payload(
       action: 'update_inbox_settings',
@@ -41,6 +38,13 @@ class Captain::Tools::Copilot::UpdateInboxSettingsService < Captain::Tools::Copi
   end
 
   private
+
+  def update_settings!(inbox, attributes, kwargs)
+    ActiveRecord::Base.transaction do
+      inbox.update!(attributes) if attributes.present?
+      account.update!(conversation_auto_assignment_enabled: cast_boolean(kwargs[:enable_auto_assignment])) if kwargs.key?(:enable_auto_assignment)
+    end
+  end
 
   def inbox_update_attributes(kwargs)
     attributes = {}

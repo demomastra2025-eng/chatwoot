@@ -11,9 +11,22 @@ module Enterprise::Concerns::Inbox
     has_one :telephony_number_binding, dependent: :destroy, class_name: '::Telephony::NumberBinding'
     has_many :telephony_sip_profiles, dependent: :destroy, class_name: '::Telephony::SipProfile'
     validate :ensure_within_non_web_inbox_limit, on: :create
+    after_create :enable_workspace_ai_for_new_text_channel
   end
 
   private
+
+  def enable_workspace_ai_for_new_text_channel
+    return if channel_type == 'Channel::Voice'
+
+    main = account.captain_assistants.entry_eligible.find_by(id: account.captain_default_assistant_id)
+    return unless main
+
+    CaptainInbox.find_or_create_by!(inbox: self) do |link|
+      link.captain_assistant = main
+      link.ai_enabled = true
+    end
+  end
 
   def ensure_within_non_web_inbox_limit
     return if account.blank?

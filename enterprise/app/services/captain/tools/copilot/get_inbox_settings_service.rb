@@ -15,7 +15,7 @@ class Captain::Tools::Copilot::GetInboxSettingsService < Captain::Tools::Copilot
       action: 'get_inbox_settings',
       inbox: inbox_payload(inbox),
       members: member_payloads(inbox),
-      working_hours: inbox.weekly_schedule,
+      working_hours: account.workspace_working_hours_schedule,
       assignment_policy: assignment_policy_payload(inbox.effective_assignment_policy),
       captain: captain_inbox_payload(inbox.captain_inbox)
     )
@@ -35,9 +35,9 @@ class Captain::Tools::Copilot::GetInboxSettingsService < Captain::Tools::Copilot
       name: inbox.name,
       business_name: inbox.business_name,
       channel_type: inbox.display_channel_type,
-      timezone: inbox.timezone,
-      enable_auto_assignment: inbox.enable_auto_assignment,
-      working_hours_enabled: inbox.working_hours_enabled,
+      timezone: account.workspace_working_hours_timezone,
+      enable_auto_assignment: account.conversation_auto_assignment_enabled?,
+      working_hours_enabled: account.workspace_working_hours_configured?,
       out_of_office_message: inbox.out_of_office_message,
       allow_messages_after_resolved: inbox.allow_messages_after_resolved
     }.compact
@@ -74,7 +74,7 @@ class Captain::Tools::Copilot::GetInboxSettingsService < Captain::Tools::Copilot
       enabled: captain_inbox.ai_enabled? || captain_inbox.inbox.channel_type == 'Channel::Voice',
       assistant_id: captain_inbox.captain_assistant_id,
       assistant_name: captain_inbox.captain_assistant&.name,
-      auto_reply_mode: captain_inbox.auto_reply_mode,
+      auto_reply_mode: captain_inbox.inbox.channel_type == 'Channel::Voice' ? captain_inbox.auto_reply_mode : account.captain_reply_time_mode,
       auto_reply_allowed_now: captain_inbox.auto_reply_allowed_now?,
       reply_to_open_conversations: captain_inbox.reply_to_open_conversations?
     }

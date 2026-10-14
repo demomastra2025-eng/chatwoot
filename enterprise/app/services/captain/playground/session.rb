@@ -10,10 +10,12 @@ class Captain::Playground::Session
   def initialize(assistant:, account:, user:, mode: 'workspace', session_id: nil)
     raise ArgumentError, 'Legacy Live Playground is unavailable; reset the session' if mode.to_s == 'live'
 
-    @assistant, @account, @user = assistant, account, user
-    @entry_assistant = assistant
+    @account = account
+    @user = user
+    @entry_assistant = account.captain_assistants.entry_eligible.find_by(id: account.captain_default_assistant_id) || assistant
+    @assistant = @entry_assistant
     @requested_id = session_id.presence
-    @store = Captain::Playground::SessionStore.new(account: account, user: user, assistant: assistant, mode: mode)
+    @store = Captain::Playground::SessionStore.new(account: account, user: user, assistant: @entry_assistant, mode: mode)
   end
 
   def mode = 'workspace'
@@ -22,9 +24,8 @@ class Captain::Playground::Session
   def conversation = nil
   def deep_dup = self
 
-  # The channel whose grid (the agents attached to it, the main one first)
-  # decides which agents this session can transfer to. Without a chosen
-  # channel the entry agent works alone and has no peers.
+  # Choosing a channel makes the active external colleagues available.
+  # Without a channel the workspace main agent works alone.
   def routing_inbox
     return if data.to_h['inbox_id'].blank?
 
@@ -96,6 +97,7 @@ class Captain::Playground::Session
     unless Captain::AgentGraph.new(entry_assistant, inbox: routing_inbox).find(actor.id)
       raise Pundit::NotAuthorizedError, 'Agent is disabled or no longer reachable from the Playground entry agent'
     end
+
     @assistant = actor
     data['active_assistant_id'] = actor.id
     @run_policy = nil
@@ -111,6 +113,7 @@ class Captain::Playground::Session
     unless active && Captain::AgentGraph.new(entry_assistant, inbox: routing_inbox).find(assistant.id)
       raise Pundit::NotAuthorizedError, 'Agent is disabled or no longer reachable from the Playground entry agent'
     end
+
     assistant
   end
 
@@ -124,6 +127,7 @@ class Captain::Playground::Session
       raise ArgumentError, 'Playground execution context does not match the server session'
     end
     raise ArgumentError, 'Playground source is required' unless state.to_h.with_indifferent_access[:source] == 'playground'
+
     actor_id = state.to_h.with_indifferent_access[:assistant_id]
     raise ArgumentError, 'Playground acting agent changed' if actor_id.present? && actor_id.to_i != assistant.id
 
@@ -180,15 +184,16 @@ class Captain::Playground::Session
     if scenario_input.present?
       Array(data['action_previews']).each { |preview| preview['status'] = 'revoked' if preview['status'] == 'pending' }
     end
-    if fresh
-      save!
-      store.set_permissions(session_id: id, read: false, write: false)
-    end
+    return unless fresh
+
+    save!
+    store.set_permissions(session_id: id, read: false, write: false)
   end
 
   def new_data
     configuration = account.crm_field_definitions.active.ordered.map do |definition|
-      definition.attributes.slice('entity_kind', 'key', 'label', 'field_type', 'required', 'default_value', 'description', 'options', 'rules', 'active', 'position')
+      definition.attributes.slice('entity_kind', 'key', 'label', 'field_type', 'required', 'default_value', 'description', 'options', 'rules',
+                                  'active', 'position')
     end
     { 'id' => SecureRandom.uuid, 'version' => 2, 'mode' => mode,
       'scenario' => Captain::Playground::Scenario.default(timezone: account.reporting_timezone).merge('custom_fields' => configuration),
@@ -202,10 +207,8 @@ class Captain::Playground::Session
     raise ArgumentError, 'Playground channel is not available' unless inbox
     return if data['inbox_id'].to_i == inbox.id
 
-    # Another channel has another grid, so the session starts again from the
-    # entry agent: the durable agent session (current agent, task queue, request
-    # parts) belongs to the old grid and is dropped, and pending real-data
-    # previews are revoked.
+    # Switching channels starts again from the main agent. The previous
+    # channel's task state is dropped and pending previews are revoked.
     data['inbox_id'] = inbox.id
     data['active_assistant_id'] = entry_assistant.id
     data.delete(Captain::Conversation::AgentSession::ATTRIBUTE)

@@ -62,11 +62,11 @@ class Captain::Tools::Copilot::ListInboxesService < Captain::Tools::Copilot::Bas
     enabled = cast_boolean(value)
     joined_scope = scope.left_outer_joins(:captain_inbox)
     if enabled
-      return joined_scope.where("(captain_inboxes.ai_enabled = TRUE OR (captain_inboxes.id IS NOT NULL " \
+      return joined_scope.where('(captain_inboxes.ai_enabled = TRUE OR (captain_inboxes.id IS NOT NULL ' \
                                 "AND inboxes.channel_type = 'Channel::Voice'))")
     end
 
-    joined_scope.where("(captain_inboxes.id IS NULL OR (captain_inboxes.ai_enabled = FALSE " \
+    joined_scope.where('(captain_inboxes.id IS NULL OR (captain_inboxes.ai_enabled = FALSE ' \
                        "AND inboxes.channel_type IS DISTINCT FROM 'Channel::Voice'))")
   end
 
@@ -87,8 +87,8 @@ class Captain::Tools::Copilot::ListInboxesService < Captain::Tools::Copilot::Bas
       channel_type: inbox.display_channel_type,
       raw_channel_type: inbox.channel_type,
       timezone: inbox.timezone,
-      enable_auto_assignment: inbox.enable_auto_assignment,
-      working_hours_enabled: inbox.working_hours_enabled,
+      enable_auto_assignment: account.conversation_auto_assignment_enabled?,
+      working_hours_enabled: account.workspace_working_hours_configured?,
       assignment_policy: assignment_policy_payload(assignment_policy),
       captain: captain_inbox_payload(inbox.captain_inbox),
       created_at: inbox.created_at&.iso8601,
@@ -126,7 +126,7 @@ class Captain::Tools::Copilot::ListInboxesService < Captain::Tools::Copilot::Bas
       enabled: captain_inbox.ai_enabled? || captain_inbox.inbox.channel_type == 'Channel::Voice',
       assistant_id: captain_inbox.captain_assistant_id,
       assistant_name: captain_inbox.captain_assistant&.name,
-      auto_reply_mode: captain_inbox.auto_reply_mode,
+      auto_reply_mode: captain_inbox.inbox.channel_type == 'Channel::Voice' ? captain_inbox.auto_reply_mode : account.captain_reply_time_mode,
       auto_reply_allowed_now: captain_inbox.auto_reply_allowed_now?,
       reply_to_open_conversations: captain_inbox.reply_to_open_conversations?,
       available_auto_reply_modes: CaptainInbox::AUTO_REPLY_MODES

@@ -120,6 +120,29 @@ describe('AgentGalleryCard', () => {
     expect(wrapper.find('[data-testid="agent-status"]').exists()).toBe(false);
   });
 
+  it('marks the starred agent and prevents switching it off', () => {
+    const wrapper = mountCard({ canToggle: true, isMain: true });
+
+    expect(wrapper.find('[data-testid="agent-main-label"]').text()).toBe(
+      'CAPTAIN.GALLERY.CARD.MAIN'
+    );
+    expect(
+      wrapper.find('[data-testid="agent-active-switch"]').attributes('disabled')
+    ).toBeDefined();
+    expect(wrapper.find('[data-testid="agent-make-main"]').exists()).toBe(
+      false
+    );
+  });
+
+  it('can star another active agent without opening its card', async () => {
+    const wrapper = mountCard({ canToggle: true });
+
+    await wrapper.find('[data-testid="agent-make-main"]').trigger('click');
+
+    expect(wrapper.emitted('makeMain')).toHaveLength(1);
+    expect(wrapper.emitted('open')).toBeUndefined();
+  });
+
   it('opens the agent on a click or Enter on the card', async () => {
     const wrapper = mountCard({ canToggle: true });
     const card = wrapper.find('[data-testid="agent-gallery-card"]');

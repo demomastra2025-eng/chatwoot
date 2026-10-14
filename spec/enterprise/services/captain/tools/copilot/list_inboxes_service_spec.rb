@@ -12,6 +12,7 @@ RSpec.describe Captain::Tools::Copilot::ListInboxesService do
     create(:inbox_member, inbox: inbox, user: member)
     policy = create(:assignment_policy, account: account, name: 'Sales routing')
     create(:inbox_assignment_policy, inbox: inbox, assignment_policy: policy)
+    account.update!(conversation_assignment_policy_id: policy.id)
     create(:captain_inbox, inbox: inbox, captain_assistant: assistant, auto_reply_mode: CaptainInbox::AUTO_REPLY_ALWAYS)
     create(:inbox, account: create(:account), name: 'Other account')
 

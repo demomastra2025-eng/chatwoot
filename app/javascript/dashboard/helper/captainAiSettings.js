@@ -47,6 +47,7 @@ export const AI_SETTINGS_SECTIONS = Object.freeze([
   'faq',
   'conversation',
   'safety',
+  'routing',
 ]);
 
 export const UNDERSTANDING_KEYS = Object.freeze([
@@ -219,6 +220,7 @@ export const toAiSettingsDraft = (payload, options = {}) => {
   const faq = asObject(data.faq);
   const conversation = asObject(data.conversation);
   const safety = asObject(data.safety);
+  const routing = asObject(data.routing);
   const reasonOptions = { otherLabel: options.otherLabel || '' };
 
   return {
@@ -267,6 +269,10 @@ export const toAiSettingsDraft = (payload, options = {}) => {
         'block'
       ),
       custom_rules: normalizeCustomRules(safety.custom_rules),
+    },
+    routing: {
+      ai_enabled: readBoolean(routing.ai_enabled, true),
+      auto_reply_mode: routing.auto_reply_mode || 'always',
     },
   };
 };
@@ -335,6 +341,10 @@ const SECTION_SERIALIZERS = {
       value.sensitive_info_action
     ),
     custom_rules: (value.custom_rules || []).map(serializeCustomRule),
+  }),
+  routing: value => ({
+    ai_enabled: value.ai_enabled === true,
+    auto_reply_mode: value.auto_reply_mode,
   }),
 };
 

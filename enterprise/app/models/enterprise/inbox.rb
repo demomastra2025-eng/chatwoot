@@ -14,7 +14,9 @@ module Enterprise::Inbox
 
   def captain_active?
     enabled = channel_type == 'Channel::Voice' || captain_inbox&.ai_enabled?
-    enabled && captain_assistant.present? && captain_assistant.active? && captain_usage_available?
+    enabled && (channel_type == 'Channel::Voice' || account.captain_ai_enabled?) &&
+      (channel_type == 'Channel::Voice' || account.captain_default_assistant_id.to_i == captain_inbox&.captain_assistant_id) &&
+      captain_assistant.present? && captain_assistant.active? && captain_usage_available?
   end
 
   def captain_auto_reply_allowed?
