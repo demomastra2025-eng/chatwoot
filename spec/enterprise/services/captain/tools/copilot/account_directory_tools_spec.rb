@@ -99,10 +99,13 @@ RSpec.describe 'Captain account directory copilot tools' do
     let(:service) { described_class.new(assistant, user: admin) }
 
     it 'lists account inbox routing metadata and excludes other accounts' do
+      account.update!(workspace_working_hours: AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.deep_dup)
+      Captain::AccountSettings.new(account).update!('routing' => { 'auto_reply_mode' => CaptainInbox::AUTO_REPLY_WORKING_HOURS })
       inbox = create(:inbox, account: account, name: 'WhatsApp Sales', timezone: 'Asia/Almaty', working_hours_enabled: true)
       other_inbox = create(:inbox, account: create(:account), name: 'External Inbox')
       policy = create(:assignment_policy, account: account, name: 'Sales Round Robin', assign_online_only: false)
       create(:inbox_assignment_policy, inbox: inbox, assignment_policy: policy)
+      account.update!(conversation_assignment_policy_id: policy.id)
       create(:captain_inbox, inbox: inbox, captain_assistant: assistant, auto_reply_mode: CaptainInbox::AUTO_REPLY_WORKING_HOURS)
 
       payload = JSON.parse(service.execute(query: 'sales'))

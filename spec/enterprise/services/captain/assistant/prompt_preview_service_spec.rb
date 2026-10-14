@@ -25,7 +25,8 @@ RSpec.describe Captain::Assistant::PromptPreviewService do
       expect(preview.dig(:assistant, :layers)).to include(
         include(id: 'instruction', title: 'System instruction', enabled: true, value: 'Handle billing questions only.')
       )
-      expect(preview.dig(:assistant, :layers).pluck(:id)).not_to include('system_prompt_structure', 'system_rules', 'response_guidelines', 'guardrails')
+      expect(preview.dig(:assistant,
+                         :layers).pluck(:id)).not_to include('system_prompt_structure', 'system_rules', 'response_guidelines', 'guardrails')
       expect(preview.dig(:assistant, :used_tool_ids)).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation')
       expect(preview.dig(:assistant, :compiled_prompt)).to include('# Platform rules', '# Clinic instructions')
       expect(preview.dig(:assistant, :compiled_prompt)).not_to include('# Platform constraints', '# Reference Glossary')
@@ -104,16 +105,16 @@ RSpec.describe Captain::Assistant::PromptPreviewService do
       expect(preview.dig(:scenarios, 0, :used_tool_ids)).to contain_exactly('faq_lookup', 'handoff', 'resolve_conversation', custom.slug)
     end
 
-    it 'lists the agents of the channel grid as routes and never a stored list of allowed targets' do
+    it 'lists every active external agent regardless of stored handoff lists or legacy channel scope' do
       shared = create(:captain_assistant, account: account, name: 'Shared agent', routing_description: 'Prices')
-      stored_only = create(:captain_assistant, account: account, channel_scope: 'selected')
+      stored_only = create(:captain_assistant, account: account, name: 'Selected agent', routing_description: 'Records', channel_scope: 'selected')
       assistant.update!(handoff_agent_ids: [stored_only.id])
 
       preview = described_class.new(assistant: assistant).preview
 
-      expect(preview[:scenarios].pluck(:id)).to eq([shared.id])
+      expect(preview[:scenarios].pluck(:id)).to eq([shared.id, stored_only.id])
       expect(preview.dig(:assistant, :layers)).to include(
-        include(id: 'scenario_handoffs', enabled: true, values: ['Shared agent: Prices'])
+        include(id: 'scenario_handoffs', enabled: true, values: ['Shared agent: Prices', 'Selected agent: Records'])
       )
     end
 

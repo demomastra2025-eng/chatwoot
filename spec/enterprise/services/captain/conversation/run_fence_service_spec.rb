@@ -90,8 +90,8 @@ RSpec.describe Captain::Conversation::RunFenceService do
     current = state.deep_dup.merge(assistant_id: peer.id, entry_assistant_id: assistant.id)
     fence = described_class.new(assistant: peer, state: current)
     fence.ensure_current!
-    # Routes are channel memberships now: taking the peer off this channel removes its route while it stays active.
-    peer.update!(channel_scope: 'selected')
+    # Only active external agents are routes on a text channel.
+    peer.update!(usage_mode: 'internal_assistant')
 
     expect { fence.ensure_current! }
       .to raise_error(Captain::Conversation::ControlGenerationStaleError, /assistant_changed/)

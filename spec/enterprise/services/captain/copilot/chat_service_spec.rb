@@ -512,17 +512,17 @@ RSpec.describe Captain::Copilot::ChatService do
       expect(service.send(:request_event_context)).to include(user_id: user.id, source: 'playground')
     end
 
-    it 'rejects a conversation that the resolved actor cannot access' do
+    it 'keeps conversation access for workspace staff after a legacy inbox removal request' do
       AccountUser.find_by!(account: account, user: user).update!(role: :agent)
-      inaccessible_inbox = create(:inbox, account: account)
-      inaccessible_conversation = create(:conversation, account: account, inbox: inaccessible_inbox)
-      inaccessible_inbox.remove_members([user.id])
+      channel = create(:inbox, account: account)
+      channel_conversation = create(:conversation, account: account, inbox: channel)
+      channel.remove_members([user.id])
 
-      expect(inaccessible_inbox.inbox_members.exists?(user_id: user.id)).to be(false)
+      expect(channel.inbox_members.exists?(user_id: user.id)).to be(true)
 
       expect do
-        described_class.new(assistant, { user_id: user.id, conversation_id: inaccessible_conversation.display_id })
-      end.to raise_error(ActiveRecord::RecordNotFound)
+        described_class.new(assistant, { user_id: user.id, conversation_id: channel_conversation.display_id })
+      end.not_to raise_error
     end
 
     it 'fails closed when the queued actor no longer belongs to the account' do
