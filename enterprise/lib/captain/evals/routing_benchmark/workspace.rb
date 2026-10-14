@@ -159,13 +159,24 @@ class Captain::Evals::RoutingBenchmark::Workspace
     end
   end
 
+  def self.faq_embedding_cache
+    @faq_embedding_cache ||= {}
+  end
+
   # A provider that fails now and then is asked again; a FAQ that stays unindexed would make every lookup of the dialogue find nothing, so
-  # the last failure is raised.
+  # the last failure is raised. Identical FAQ entries across benchmark dialogues reuse the real embedding vector once computed.
   def index!(response)
+    text = "#{response.question}: #{response.answer}"
+    if (cached = self.class.faq_embedding_cache[text])
+      response.update!(embedding: cached)
+      return
+    end
+
     attempts = 0
     begin
       attempts += 1
-      Captain::Llm::UpdateEmbeddingJob.perform_now(response, "#{response.question}: #{response.answer}")
+      Captain::Llm::UpdateEmbeddingJob.perform_now(response, text)
+      self.class.faq_embedding_cache[text] = response.embedding if response.embedding.present?
     rescue Captain::Llm::EmbeddingService::EmbeddingsError
       raise if attempts >= EMBEDDING_ATTEMPTS
 
@@ -179,7 +190,8 @@ class Captain::Evals::RoutingBenchmark::Workspace
     @services = {}
     data.fetch('resources', []).each do |row|
       @resources[row.fetch('key')] = Scheduling::Resource.create!(
-        account: account, name: row.fetch('name'), specialty: specialty_for(row), timezone: row.fetch('timezone', 'Asia/Almaty')
+        account: account, name: row.fetch('name'), specialty: specialty_for(row),
+        timezone: row.fetch('timezone', 'Asia/Almaty'), inherit_working_hours_from_account: false
       )
     end
     data.fetch('services', []).each do |row|

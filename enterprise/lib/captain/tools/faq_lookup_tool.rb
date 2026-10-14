@@ -6,6 +6,7 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
   SEMANTIC_LOOKUP_TIMEOUT_SECONDS = 8
   TOTAL_LOOKUP_TIMEOUT_SECONDS = 12
   SEMANTIC_DISTANCE_THRESHOLD = 0.3
+  CORROBORATED_DISTANCE_THRESHOLD = 0.62
   SEMANTIC_SIMILARITY_THRESHOLD = 1.0 - SEMANTIC_DISTANCE_THRESHOLD
 
   class TotalLookupTimeout < Timeout::Error; end
@@ -136,7 +137,18 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
         limit: SEMANTIC_RESULT_LIMIT
       ).to_a
       responses = candidates.select { |response| semantic_distance_acceptable?(response) }
-      [responses, semantic_relevance_check(candidates, responses)]
+      return [responses, semantic_relevance_check(candidates, responses)] if responses.any?
+
+      selection = Captain::Knowledge::FaqRelevance.select(candidates, query: query)
+      if selection[:response].present?
+        rescued = [selection[:response]]
+        return [rescued, semantic_relevance_check(candidates, rescued).merge(corroboration: selection[:check])]
+      end
+
+      near = candidates.select { |response| corroborated_distance_acceptable?(response) }
+      lexical = lexical_fallback_responses(query).to_a
+      combined = (lexical + near.first(3)).uniq(&:id).first(SEMANTIC_RESULT_LIMIT)
+      [combined, semantic_relevance_check(candidates, combined)]
     end
   end
 
@@ -158,6 +170,11 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
   def semantic_distance_acceptable?(response)
     distance = response.respond_to?(:neighbor_distance) ? response.neighbor_distance : nil
     distance.present? && distance.to_f <= SEMANTIC_DISTANCE_THRESHOLD
+  end
+
+  def corroborated_distance_acceptable?(response)
+    distance = response.respond_to?(:neighbor_distance) ? response.neighbor_distance : nil
+    distance.present? && distance.to_f <= CORROBORATED_DISTANCE_THRESHOLD
   end
 
   def bounded_cache_fetch(cache, query:)
@@ -204,7 +221,7 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
   end
 
   def lexical_tokens(*queries)
-    queries.compact.join(' ').downcase.scan(/[\p{Alnum}]+/).select { |token| token.length >= 3 }.uniq.first(5)
+    Captain::AssistantResponse.send(:lexical_tokens, queries.compact.join(' '))
   end
 
   def answer_cache(query:, semantic:)

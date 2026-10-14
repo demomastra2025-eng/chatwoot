@@ -162,6 +162,7 @@ RSpec.describe Captain::Runtime::ChatFactory do
 
     it 'does not pass parallel tool call routing for handoff-only Captain agents' do
       handoff_target = Captain::Runtime::Agent.new(name: 'scenario_agent')
+      handoff_target.tool_ids = ['create_appointment']
       handoff_agent = Captain::Runtime::Agent.new(
         name: 'assistant_agent',
         model: 'openai/gpt-5.4-mini',

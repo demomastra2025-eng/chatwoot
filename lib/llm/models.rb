@@ -528,18 +528,31 @@ module Llm::Models
       return unless openrouter_only_feature?(feature_key)
       return unless openrouter_catalog_enabled?(account: account)
 
-      runtime_preferences = runtime_preferences_for(account)
-      required_capabilities = required_capabilities_for(feature_key, runtime_preferences: runtime_preferences)
-      openrouter_default_candidates(feature_key, configured_default, account: account).find do |candidate|
-        candidate_config = model_config(candidate, account: account)
-        dynamic_model_allowed_for_feature?(
-          feature_key,
-          candidate_config,
-          required_capabilities,
-          account: account,
-          runtime_preferences: runtime_preferences,
-          model_id: candidate
-        )
+      Llm::OpenRouterModelCatalog.with_model_configs_snapshot do
+        Llm::OpenRouterEndpointCatalog.with_endpoint_configs_snapshot do
+          Llm::Config.with_runtime_cache do
+            runtime_preferences = runtime_preferences_for(account)
+            required_capabilities = required_capabilities_for(feature_key, runtime_preferences: runtime_preferences)
+            priority = [
+              openrouter_equivalent_model_id(configured_default, account: account),
+              canonical_model_name(configured_default),
+              *OPENROUTER_PREFERRED_FEATURE_MODELS.fetch(feature_key, [])
+            ].compact_blank.uniq
+
+            matched = priority.find do |candidate|
+              candidate_config = model_config(candidate, account: account)
+              dynamic_model_allowed_for_feature?(
+                feature_key,
+                candidate_config,
+                required_capabilities,
+                account: account,
+                runtime_preferences: runtime_preferences,
+                model_id: candidate
+              )
+            end
+            matched || dynamic_models_for_feature(feature_key, account: account).first
+          end
+        end
       end
     end
 
@@ -586,17 +599,21 @@ module Llm::Models
       required_capabilities = required_capabilities_for(feature_key, runtime_preferences: runtime_preferences)
       return [] unless OPENROUTER_DYNAMIC_FEATURE_REQUIREMENTS.key?(feature_key.to_s)
 
-      dynamic_model_configs(account: account).filter_map do |model_name, model_config|
-        if dynamic_model_allowed_for_feature?(
-          feature_key,
-          model_config,
-          required_capabilities,
-          account: account,
-          runtime_preferences: runtime_preferences,
-          runtime_filtered: runtime_filtered,
-          model_id: model_name
-        )
-          model_name
+      Llm::OpenRouterModelCatalog.with_model_configs_snapshot do
+        Llm::OpenRouterEndpointCatalog.with_endpoint_configs_snapshot do
+          dynamic_model_configs(account: account).filter_map do |model_name, model_config|
+            if dynamic_model_allowed_for_feature?(
+              feature_key,
+              model_config,
+              required_capabilities,
+              account: account,
+              runtime_preferences: runtime_preferences,
+              runtime_filtered: runtime_filtered,
+              model_id: model_name
+            )
+              model_name
+            end
+          end
         end
       end
     end

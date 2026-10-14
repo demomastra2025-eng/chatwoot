@@ -15,6 +15,8 @@ namespace :captain do
     # whatever its request id), so parallel parts would not be missed either; the switch stays off by default because of the
     # deadlock.
     ENV['CAPTAIN_COUNCIL_PARALLEL'] ||= 'off'
+    Rails.logger.level = :warn
+    Rails.logger.level = :warn
     pool = ActiveRecord::Base.connection_pool
     pool.pin_connection!(true)
     # The benchmark runs with RAILS_ENV=test, where the LLM event subscriber is not installed by default.

@@ -300,7 +300,7 @@ RSpec.describe Llm::Config do
       upsert_installation_config('CAPTAIN_DEFAULT_MODEL', 'openai/gpt-5.4-mini')
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(transcription_catalog)
 
-      expect(described_class.model_for(feature: 'custom_guardrail', account: account)).to eq('openai/gpt-6-luna')
+      expect(described_class.model_for(feature: 'custom_guardrail', account: account)).to eq('openai/gpt-6-luna-decisions')
 
       upsert_installation_config('CAPTAIN_CUSTOM_GUARDRAIL_MODEL', 'openai/gpt-5.4-mini')
       expect(described_class.model_for(feature: 'custom_guardrail', account: account)).to eq('openai/gpt-5.4-mini')

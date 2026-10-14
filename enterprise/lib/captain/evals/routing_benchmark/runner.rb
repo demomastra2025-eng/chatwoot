@@ -83,15 +83,21 @@ class Captain::Evals::RoutingBenchmark::Runner
     @silent_handoff_error = nil
     @dialogues_total = fixtures.sum { |_path, fixture| fixture.dialogues.size } * @runs
     @dialogues_done = 0
-    fixtures.each do |path, fixture|
-      @runs.times do |run_index|
-        execute_fixture(path, fixture, run_index + 1)
-      rescue BudgetExceeded => e
-        @aborted = true
-        @abort_reason = e.message
-        break
+    Llm::Config.with_runtime_cache do
+      Llm::OpenRouterModelCatalog.with_model_configs_snapshot do
+        Llm::OpenRouterEndpointCatalog.with_endpoint_configs_snapshot do
+          fixtures.each do |path, fixture|
+          @runs.times do |run_index|
+            execute_fixture(path, fixture, run_index + 1)
+          rescue BudgetExceeded => e
+            @aborted = true
+            @abort_reason = e.message
+            break
+          end
+            break if @aborted
+          end
+        end
       end
-      break if @aborted
     end
     report = build_report(labels)
     write_report(report)
@@ -554,12 +560,20 @@ class Captain::Evals::RoutingBenchmark::Runner
     dialogue['rubric'].to_s.split(/\s*Ход\s+1:/, 2).first.to_s.squish
   end
 
-  # Prices, doctors, and the knowledge base of the workspace: what a correct reply may state.
+  # Prices, doctors, seeded appointments, and the knowledge base of the workspace: what a correct reply may state.
   def workspace_facts
     data = @workspace_data || {}
+    resources_by_key = data.fetch('resources', []).to_h { |row| [row['key'], row['name']] }
+    services_by_key = data.fetch('services', []).to_h { |row| [row['key'], row['name']] }
+    contacts_by_key = data.fetch('contacts', []).to_h { |row| [row['key'], row['name']] }
     lines = []
     lines << "Doctors: #{data.fetch('resources', []).pluck('name').join('; ')}"
     lines << "Services: #{data.fetch('services', []).map { |row| "#{row['name']} #{row['base_price']} KZT, #{row['duration_min']} min" }.join('; ')}"
+    appointments = data.fetch('appointments', []).map do |row|
+      "#{contacts_by_key[row['contact']] || row['contact']}: #{resources_by_key[row['resource']] || row['resource']}" \
+        "#{" (#{services_by_key[row['service']]})" if row['service'] && services_by_key[row['service']]} at #{row['starts_at']}"
+    end
+    lines << "Seeded appointments: #{appointments.join('; ')}" if appointments.any?
     data.fetch('knowledge', []).each { |row| lines << "Q: #{row['question']} A: #{row['answer']}" }
     lines.join("\n").truncate(FACTS_LIMIT)
   end

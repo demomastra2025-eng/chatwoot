@@ -29,7 +29,7 @@ RSpec.describe Captain::Runtime::HandoffTool do
 
   it 'halts neutrally after two transfers without requesting staff or a customer question' do
     entry = create(:captain_assistant)
-    specialist = create(:captain_assistant, account: entry.account)
+    specialist = create(:captain_assistant, account: entry.account, config: { 'selected_tool_ids' => ['create_appointment'] })
     inbox = create(:inbox, account: entry.account)
     target = Captain::Runtime::Agent.new(name: "assistant_#{specialist.id}")
     target.assistant_id = specialist.id
@@ -47,8 +47,8 @@ RSpec.describe Captain::Runtime::HandoffTool do
   end
 
   it 'answers an immediate return to the agent that just handed off with a result the model can act on, without a guard' do
-    entry = create(:captain_assistant)
-    specialist = create(:captain_assistant, account: entry.account)
+    entry = create(:captain_assistant, config: { 'selected_tool_ids' => ['create_appointment'] })
+    specialist = create(:captain_assistant, account: entry.account, config: { 'selected_tool_ids' => ['create_deal'] })
     inbox = create(:inbox, account: entry.account)
     target = Captain::Runtime::Agent.new(name: "assistant_#{entry.id}")
     target.assistant_id = entry.id
@@ -96,7 +96,7 @@ RSpec.describe Captain::Runtime::HandoffTool do
 
   describe 'a transfer to one colleague' do
     let!(:entry) { create(:captain_assistant) }
-    let!(:specialist) { create(:captain_assistant, account: entry.account) }
+    let!(:specialist) { create(:captain_assistant, account: entry.account, config: { 'selected_tool_ids' => ['create_appointment'] }) }
     let!(:inbox) { create(:inbox, account: entry.account) }
     let(:target) { Captain::Runtime::Agent.new(name: "assistant_#{specialist.id}").tap { |agent| agent.assistant_id = specialist.id } }
     let(:context) do

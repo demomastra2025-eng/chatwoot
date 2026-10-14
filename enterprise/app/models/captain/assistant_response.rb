@@ -133,8 +133,15 @@ class Captain::AssistantResponse < ApplicationRecord
       .limit(limit)
   end
 
+  LEXICAL_STOP_WORDS = (Captain::Knowledge::FaqRelevance::STOP_WORDS + %w[
+    какие какой какая какое каких сколько когда где кто чем при без или для как что есть ли нужны нужно нужна
+    қандай қанша қашан қайда кім неге бар ма ба па пе ме бе үшін мен бен пен керек болады
+  ]).uniq.freeze
+
   def self.lexical_tokens(query)
-    query.to_s.downcase.scan(/[\p{Alnum}]+/).select { |token| token.length >= 3 }.uniq.first(5)
+    raw = query.to_s.downcase.tr('ё', 'е').scan(/[\p{Alnum}]+/).select { |token| token.length >= 3 }.uniq
+    filtered = raw.reject { |token| LEXICAL_STOP_WORDS.include?(token) }
+    (filtered.presence || raw).first(8)
   end
 
   def self.lexical_bind_values(tokens)

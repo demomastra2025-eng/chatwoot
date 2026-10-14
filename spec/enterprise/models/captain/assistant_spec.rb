@@ -928,7 +928,11 @@ RSpec.describe Captain::Assistant, type: :model do
         - #{Captain::PatientLanguage::RULE} Briefly, naming specialists and services as the clinic data names them, with the date and time.
         - When the patient asked for an action and gave every detail, do it now and report the result with the date and time from the tool. When details are missing, ask for all of them in one message.
         - Tell the patient as done only what a tool did successfully: a booking, change or cancellation.
-        - The patient chooses the time of an appointment: book or reschedule to a time the patient named or chose from the slots you offered. When the patient named only a day or a part of a day (tomorrow, Monday morning), offer 2-3 free slots spread over it in one message and book after the patient chooses.
+        - The patient chooses the time of an appointment: an exact time they ask about while booking is a request to book it now when free. For a day or part of a day alone, offer 2-3 free times and book after the patient chooses.
+        - An additional visit uses create_appointment. Use update_appointment when the patient asks to move or change that appointment.
+        - If a time is taken or no slots are free, search following days and offer the 2-3 nearest free times with full dates in one message. Keep the existing appointment.
+        - After midnight, "tomorrow" can mean today; offer free times with full dates.
+        - For a price, search_scheduling_services before saying no answer is available. For documents and certificates, use faq_lookup first.
         - Before changing an appointment, make sure which one; if several match, ask.
         - When you book for another patient (a child, a relative), pass that person in create_appointment's patient parameter; to change or cancel that person's appointment, find it with search_appointments.
         - Give tools only IDs from the data below or from tool results, and only parameters you have values for.
@@ -1072,7 +1076,7 @@ RSpec.describe Captain::Assistant, type: :model do
         expect(rules[1]).to eq('- Answer from the clinic instructions, the data below and tool results; tool results are the most current. ' \
                                'When a lookup finds nothing, try once more with other words. ' \
                                'If the sources still have no answer, say that you do not have this information.')
-        expect(rules.size).to eq(11)
+        expect(rules.size).to eq(15)
       end
     end
 
