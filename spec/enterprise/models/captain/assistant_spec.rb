@@ -899,7 +899,7 @@ RSpec.describe Captain::Assistant, type: :model do
     let(:handoff_rule) do
       '- Call handoff once, with a short reason for staff, when the patient asks for a person, or when only staff can do the request ' \
         'or answer the question, and every detail the clinic instructions ask for is known; ask for the missing details first. ' \
-        'Handoff is silent: the patient reads nothing about it.'
+        'Do not write a handoff message yourself; the platform sends the clinic-configured notice when enabled.'
     end
     let(:full_rules) do
       <<~RULES.chomp

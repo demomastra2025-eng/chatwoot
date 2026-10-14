@@ -162,6 +162,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
   def process_public_response
     if handoff_requested?
+      prepare_handoff_notice
       handoff_applied = process_action(handoff_action_name)
       account.increment_token_usage(@response.dig('usage', 'total_tokens')) if handoff_applied
       handoff_applied
@@ -232,8 +233,8 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     note_council_parts
   end
 
-  # A council reply leaves out the part that could not be resolved, and the conversation is handed to staff after it, in silence.
-  # The handoff adds a private note only; the council writes no sentence to the customer about it.
+  # A council reply leaves out the part that could not be resolved, and the conversation is handed to staff after it.
+  # The handoff adds one staff note and the clinic's configured customer notice, when enabled.
   # A part that failed technically is not mentioned in the reply. Its handoff does not depend on the handoff tool.
   def hand_off_after_council_reply
     request = @response&.dig('council_handoff')
@@ -242,6 +243,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     technical = request['technical'] == true
     return unless technical || council_handoff_allowed?
 
+    prepare_handoff_notice
     @response['handoff_reason'] = council_handoff_reason(request, technical)
     @council_handoff_applied = process_action('council_handoff')
   rescue Captain::Conversation::ControlGenerationStaleError => e
@@ -548,6 +550,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   # on the handoff tool. It is fenced like every Captain result: a human reply,
   # a status or control change, or a newer customer message wins.
   def handoff_failed_turn
+    prepare_handoff_notice
     result = @conversation.with_captain_activity_context(reason: provider_error_note_content, reason_type: :inference) do
       with_response_persistence_lock(stage: 'failed_turn_handoff') do
         audit = outcome_reason_config.pending_transition_options(:handoff, explanation: provider_error_note_content).fetch(:audit)
@@ -567,7 +570,18 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   def create_failed_turn_notifications
     I18n.with_locale(response_assistant.account.locale) do
       create_provider_error_private_note
+      handoff_notice_service.perform
     end
+  end
+
+  def prepare_handoff_notice
+    handoff_notice_service.prepare
+  rescue StandardError => e
+    Rails.logger.warn("[CAPTAIN][CustomerNotice] could not prepare handoff notice: #{e.class.name}")
+  end
+
+  def handoff_notice_service
+    @handoff_notice_service ||= Captain::SystemHandoffMessageService.new(conversation: @conversation, assistant: response_assistant)
   end
 
   # A turn the safety policy blocked, or could not check, has no reply to send.
@@ -636,6 +650,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   def create_council_handoff_notifications
     I18n.with_locale(response_assistant.account.locale) do
       create_private_note(council_handoff_note_content)
+      handoff_notice_service.perform
     end
   end
 
@@ -652,6 +667,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   def create_handoff_notifications
     I18n.with_locale(response_assistant.account.locale) do
       create_handoff_private_note
+      handoff_notice_service.perform
     end
   end
 

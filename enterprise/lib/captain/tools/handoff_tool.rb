@@ -4,7 +4,8 @@ class Captain::Tools::HandoffTool < Captain::Tools::BasePublicTool
   description 'Hand off the current conversation to a human team'
   param :reason, type: 'string', desc: 'Optional handoff reason for the human team', required: false
 
-  # The handoff is silent for the customer. An older `message` argument is accepted and ignored.
+  # The tool writes no customer message. The platform sends the clinic-configured notice when enabled.
+  # An older `message` argument is accepted and ignored.
   def perform(tool_context, reason: nil, **_legacy_options)
     unless assistant.handoff_enabled? && assistant.selected_agent_tool_ids.include?('handoff')
       return tool_failure('Handoff tool is not enabled for this assistant')

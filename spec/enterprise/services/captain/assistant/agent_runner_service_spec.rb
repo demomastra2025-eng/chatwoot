@@ -451,7 +451,9 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     it 'processes and formats agent result' do
       result = service.generate_response(message_history: message_history)
 
-      expect(result).to match({ 'response' => 'Test response', 'agent_name' => nil, 'handoff_tool_called' => false }.merge(entry_agent_identity))
+      expect(result.except('outcome_run_facts')).to match(
+        { 'response' => 'Test response', 'agent_name' => nil, 'handoff_tool_called' => false }.merge(entry_agent_identity)
+      )
     end
 
     it 'reports the independent agent that answered and the current task outcomes' do
@@ -651,7 +653,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         )
         expect(run_contexts.second).not_to have_key(:captain_v2_handoff_tool_called)
         expect(run_contexts.second).not_to have_key(:captain_v2_completed_tool_names)
-        expect(result).to match(
+        expect(result.except('outcome_run_facts')).to match(
           {
             'response' => 'Recovered answer',
             'agent_name' => 'scenario_agent',
@@ -1155,7 +1157,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
       result = service.generate_response(message_history: message_history)
 
-      expect(result).to include(
+      expect(result.except('outcome_run_facts')).to match(
         {
           'response' => 'conversation_handoff',
           'reasoning' => 'Human handoff requested: Needs manual review',
@@ -1248,7 +1250,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
       result = service.generate_response(message_history: message_history)
 
-      expect(result).to match(
+      expect(result.except('outcome_run_facts')).to match(
         {
           'response' => 'response_cancelled',
           'response_cancelled' => true,
@@ -1791,7 +1793,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
       result = service.generate_response(message_history: message_history)
 
-      expect(result).to include(
+      expect(result.except('outcome_run_facts')).to match(
         {
           'response' => 'conversation_handoff',
           'reasoning' => 'Agent input blocked by moderation policy',
@@ -1869,7 +1871,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
       result = service.generate_response(message_history: message_history)
 
-      expect(result).to include(
+      expect(result.except('outcome_run_facts')).to match(
         {
           'response' => 'conversation_handoff',
           'reasoning' => 'Agent input blocked because moderation policy is unavailable',
@@ -2085,7 +2087,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       it 'formats string response correctly' do
         result = service.generate_response(message_history: message_history)
 
-        expect(result).to match(
+        expect(result.except('outcome_run_facts')).to match(
           {
             'response' => 'Simple string response',
             'reasoning' => '',
@@ -2111,7 +2113,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
         result = service.generate_response(message_history: message_history)
 
-        expect(result).to match(
+        expect(result.except('outcome_run_facts')).to match(
           {
             'response' => described_class::PROVIDER_ERROR_RESPONSE,
             'reasoning' => 'Error occurred: Test error',
@@ -2179,7 +2181,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
           result = service.generate_response(message_history: message_history)
 
-          expect(result).to match(
+          expect(result.except('outcome_run_facts')).to match(
             {
               'response' => described_class::PROVIDER_ERROR_RESPONSE,
               'reasoning' => 'Error occurred: Test error',
@@ -2206,7 +2208,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       it 'returns a provider error handoff response instead of a blank message' do
         result = service.generate_response(message_history: message_history)
 
-        expect(result).to match(
+        expect(result.except('outcome_run_facts')).to match(
           {
             'response' => described_class::PROVIDER_ERROR_RESPONSE,
             'reasoning' => 'Provider error occurred: Quota exceeded',

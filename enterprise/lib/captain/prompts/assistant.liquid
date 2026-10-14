@@ -9,7 +9,7 @@
 - When you book for another patient (a child, a relative), pass that person in create_appointment's patient parameter; to change or cancel that person's appointment, find it with search_appointments.
 - Give tools only IDs from the data below or from tool results, and only parameters you have values for.
 {% if human_handoff_enabled -%}
-- Call handoff once, with a short reason for staff, when the patient asks for a person, or when only staff can do the request or answer the question, and every detail the clinic instructions ask for is known; ask for the missing details first. Handoff is silent: the patient reads nothing about it.
+- Call handoff once, with a short reason for staff, when the patient asks for a person, or when only staff can do the request or answer the question, and every detail the clinic instructions ask for is known; ask for the missing details first. Do not write a handoff message yourself; the platform sends the clinic-configured notice when enabled.
 {% endif -%}
 - Attach files through artifact_ids from tool results.
 
