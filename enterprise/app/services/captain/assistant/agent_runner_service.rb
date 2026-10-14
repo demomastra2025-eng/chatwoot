@@ -73,24 +73,30 @@ class Captain::Assistant::AgentRunnerService
     response = Outbound::PlaygroundDeliveryPolicy.with(policy) do
       guard_public_response(generate_response_in_runtime_cache(message_history))
     end
-    add_playground_latency(with_agent_identity(response), started_at)
+    add_playground_latency(with_agent_identity(with_outcome_facts(response)), started_at)
   rescue Captain::Conversation::ControlGenerationStaleError
     raise
   rescue Captain::Safety::CustomRulesRuntime::HandoffRequired => e
     @acting_assistant_id = e.assistant_id
-    add_playground_latency(with_agent_identity(Captain::Safety::CustomRulesRuntime.response_for(e)), started_at)
+    add_playground_latency(with_agent_identity(with_outcome_facts(Captain::Safety::CustomRulesRuntime.response_for(e))), started_at)
   rescue StandardError => e
     # In rake/local runs, conversation may not be present, so account is optional here.
     ChatwootExceptionTracker.new(e, account: @conversation&.account).capture_exception
     Rails.logger.error "[Captain V2] AgentRunnerService error: #{e.message}"
     Rails.logger.error e.backtrace.join("\n")
 
-    add_playground_latency(with_agent_identity(guard_public_response(error_response(e))), started_at)
+    add_playground_latency(with_agent_identity(with_outcome_facts(guard_public_response(error_response(e)))), started_at)
   ensure
     Current.executed_by = previous_actor
   end
 
   private
+
+  def with_outcome_facts(response)
+    return response unless response.is_a?(Hash)
+
+    response.merge('outcome_run_facts' => Captain::OutcomeFacts.from_run(@custom_guardrail_context, response))
+  end
 
   def guard_public_response(response)
     return response unless response.is_a?(Hash) && response['response'].present?
@@ -320,6 +326,7 @@ class Captain::Assistant::AgentRunnerService
     response.delete(PROVIDER_ERROR_AUTHORIZED_KEY)
     response.delete(MODERATION_BLOCKED_KEY)
     response.delete('safety_reason')
+    response.delete('safety_block')
     response.delete(Captain::Safety::CustomRulesRuntime::RESPONSE_KEY)
     response['agent_name'] = result.context&.dig(:current_agent)
     response['agent_id'] = @acting_assistant_id
@@ -1370,7 +1377,8 @@ class Captain::Assistant::AgentRunnerService
       'response' => 'conversation_handoff',
       'reasoning' => reason,
       MODERATION_BLOCKED_KEY => true,
-      'safety_reason' => safety_reason.to_s
+      'safety_reason' => safety_reason.to_s,
+      'safety_block' => Captain::OutcomeFacts.safety_kind(safety_reason)
     }
   end
 

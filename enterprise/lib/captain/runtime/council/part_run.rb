@@ -139,7 +139,8 @@ class Captain::Runtime::Council::PartRun
       completed_tool_names: Array(context[:captain_v2_completed_tool_names]),
       completed_actions: Array(context[Captain::Runtime::ToolWrapper::COMPLETED_ACTIONS_KEY]),
       completed_tool_results: Array(context[:captain_v2_completed_tool_results]).map { |record| record.to_h.except(:appointment_evidence) },
-      artifact_ids: Array(context[:captain_v2_artifact_ids])
+      artifact_ids: Array(context[:captain_v2_artifact_ids]),
+      outcome_facts: context[:outcome_facts].to_h
     }
   end
 end

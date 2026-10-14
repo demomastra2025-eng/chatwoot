@@ -1155,7 +1155,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
       result = service.generate_response(message_history: message_history)
 
-      expect(result).to match(
+      expect(result).to include(
         {
           'response' => 'conversation_handoff',
           'reasoning' => 'Human handoff requested: Needs manual review',
@@ -1791,12 +1791,13 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
       result = service.generate_response(message_history: message_history)
 
-      expect(result).to match(
+      expect(result).to include(
         {
           'response' => 'conversation_handoff',
           'reasoning' => 'Agent input blocked by moderation policy',
           described_class::MODERATION_BLOCKED_KEY => true,
-          'safety_reason' => 'moderation_flagged'
+          'safety_reason' => 'moderation_flagged',
+          'safety_block' => 'moderation'
         }.merge(entry_agent_identity)
       )
     end
@@ -1820,7 +1821,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
           'response' => 'conversation_handoff',
           'reasoning' => 'Agent input blocked by moderation policy',
           described_class::MODERATION_BLOCKED_KEY => true,
-          'safety_reason' => 'prompt_injection'
+          'safety_reason' => 'prompt_injection',
+          'safety_block' => 'prompt_injection'
         )
       end
 
@@ -1867,12 +1869,13 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
       result = service.generate_response(message_history: message_history)
 
-      expect(result).to match(
+      expect(result).to include(
         {
           'response' => 'conversation_handoff',
           'reasoning' => 'Agent input blocked because moderation policy is unavailable',
           described_class::MODERATION_BLOCKED_KEY => true,
-          'safety_reason' => 'provider_not_configured'
+          'safety_reason' => 'provider_not_configured',
+          'safety_block' => 'moderation'
         }.merge(entry_agent_identity)
       )
     end

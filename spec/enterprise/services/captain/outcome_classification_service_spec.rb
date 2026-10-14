@@ -53,7 +53,7 @@ RSpec.describe Captain::OutcomeClassificationService do
       expect(conversation.reload.status).to eq('resolved')
     end
 
-    it 'expands at most once and excludes private, future and sibling-dialogue content from both requests' do
+    it 'expands at most once and keeps notes while excluding future and sibling-dialogue content' do
       23.times { |index| add_message("Public #{index}") }
       add_message('PRIVATE NOTE', private: true)
       transition
@@ -64,7 +64,8 @@ RSpec.describe Captain::OutcomeClassificationService do
       counts = []
       allow(Llm::Runtime).to receive(:decide) do |args|
         counts << args[:input][:messages].size
-        expect(args[:input].to_json).not_to include('PRIVATE NOTE', 'FUTURE MESSAGE', 'OTHER CONVERSATION')
+        expect(args[:input][:facts][:staff_notes]).to eq(['PRIVATE NOTE'])
+        expect(args[:input].to_json).not_to include('FUTURE MESSAGE', 'OTHER CONVERSATION')
         decision_result
       end
 
@@ -89,6 +90,35 @@ RSpec.describe Captain::OutcomeClassificationService do
     end
   end
 
+  it 'classifies a silent handoff from its staff note and recorded run facts' do
+    event = ConversationStatusTransition.create!(
+      account: account, conversation: conversation, actor: assistant, from_status: 'pending', to_status: 'open',
+      source: 'captain', metadata: { 'outcome_run_facts' => { 'tool_failures' => ['calendar_unavailable'] } }
+    )
+    add_message('The calendar is unavailable', private: true, message_type: :outgoing, sender: assistant)
+
+    described_class.new(event).perform
+
+    expect(Llm::Runtime).to have_received(:chat).with(hash_including(feature: :outcome_classification)) do |args|
+      payload = JSON.parse(args[:messages].last[:content])
+      expect(payload['messages']).to be_empty
+      expect(payload['facts']).to include('public_reply_sent' => false, 'staff_notes' => ['The calendar is unavailable'],
+                                          'tool_failures' => ['calendar_unavailable'])
+      expect(payload['facts']).not_to have_key('clinic_instruction')
+    end
+  end
+
+  it 'accepts the new clinic-rule closure reason from the classifier' do
+    add_message('Please book after payment')
+    event = transition
+    allow(Llm::Runtime).to receive(:chat).and_return(classification.merge('reason_id' => 'closed_against_instructions'))
+
+    described_class.new(event).perform
+
+    expect(event.reload.metadata['outcome_reason_id']).to eq('closed_against_instructions')
+    expect(event.reason).to eq('Закрыто не по правилу клиники')
+  end
+
   it 'queues only committed AI outcomes and never an ordinary message or manual transition' do
     expect { add_message('Спасибо') }.not_to have_enqueued_job(Captain::OutcomeClassificationJob)
     expect { transition }.to have_enqueued_job(Captain::OutcomeClassificationJob)
@@ -108,8 +138,8 @@ RSpec.describe Captain::OutcomeClassificationService do
     end.not_to have_enqueued_job(Captain::OutcomeClassificationJob)
   end
 
-  it 'uses at most six public messages from the exact dialogue as of the transition, without the agent prompt' do
-    assistant.update!(description: 'PRIVATE SYSTEM INSTRUCTION')
+  it 'uses at most six public messages from the exact dialogue and supplies the clinic instruction on completion' do
+    assistant.update!(description: 'Close only after payment is received.')
     9.times { |index| add_message("Message #{index}") }
     add_message('PRIVATE NOTE', private: true)
     transition
@@ -125,8 +155,11 @@ RSpec.describe Captain::OutcomeClassificationService do
       expect(args.fetch(:tools, [])).to be_empty
       payload = JSON.parse(args[:messages].last[:content])
       expect(payload['messages'].size).to eq(6)
+      expect(payload['messages']).to all(exclude('id'))
       expect(payload['messages'].map { |row| row['content'] }).to eq((3..8).map { |index| "Message #{index}" })
-      expect(args[:messages].to_json).not_to include('PRIVATE', 'FUTURE CUSTOMER MESSAGE', 'OTHER DIALOGUE')
+      expect(payload['facts']['staff_notes']).to eq(['PRIVATE NOTE'])
+      expect(payload['facts']['clinic_instruction']).to include('Close only after payment is received.')
+      expect(args[:messages].to_json).not_to include('FUTURE CUSTOMER MESSAGE', 'OTHER DIALOGUE')
     end
     expect(transition.reload.metadata['outcome_reason_id']).to eq('question_resolved')
     expect(transition.reason).to eq('Вопрос решён')

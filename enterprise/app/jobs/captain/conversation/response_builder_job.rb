@@ -551,6 +551,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     result = @conversation.with_captain_activity_context(reason: provider_error_note_content, reason_type: :inference) do
       with_response_persistence_lock(stage: 'failed_turn_handoff') do
         audit = outcome_reason_config.pending_transition_options(:handoff, explanation: provider_error_note_content).fetch(:audit)
+        audit[:metadata][:outcome_run_facts] = @response['outcome_run_facts'] if @response['outcome_run_facts'].present?
         @conversation.bot_handoff!(actor: response_assistant, source: 'system', fence: current_response_fence, audit: audit) do
           create_failed_turn_notifications
         end
@@ -698,11 +699,13 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def handoff_transition_audit
-    outcome_reason_config.pending_transition_options(
+    audit = outcome_reason_config.pending_transition_options(
       :handoff,
       explanation: handoff_activity_reason,
       signal: v2_handoff_tool_fired? ? @response['handoff_outcome_signal'] : nil
     ).fetch(:audit, {})
+    audit[:metadata][:outcome_run_facts] = @response['outcome_run_facts'] if @response['outcome_run_facts'].present?
+    audit
   end
 
   def create_handoff_private_note
@@ -1111,8 +1114,9 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     {
       'response' => PROVIDER_ERROR_HANDOFF_RESPONSE,
       'error_class' => error_class,
-      'error_message' => error_message
-    }
+      'error_message' => error_message,
+      'outcome_run_facts' => @response&.[]('outcome_run_facts')
+    }.compact
   end
 
   def publish_provider_fallback_without_status_reason

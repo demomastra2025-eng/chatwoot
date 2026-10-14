@@ -14,6 +14,7 @@ class Captain::Tools::ResolveConversationTool < Captain::Tools::BasePublicTool
     params = { status: 'resolved' }
     outcome_config = Captain::OutcomeReasonConfig.new(assistant)
     audit = outcome_config.pending_transition_options(:completion, explanation: reason).fetch(:audit)
+    audit[:metadata][:outcome_run_facts] = Captain::OutcomeFacts.from_run(tool_context.context)
 
     transition = lambda do
       Conversations::StatusTransitionService.new(

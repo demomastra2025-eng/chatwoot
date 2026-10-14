@@ -147,12 +147,14 @@ class Captain::Runtime::ToolWrapper
 
   # An exception of a tool (or of the code around it) is an internal failure: the run ends and staff take over.
   def handle_execution_error(error)
-    record_mutating_tool_result(Captain::ToolResult.failure(error: error, retryable: false))
+    failure = Captain::ToolResult.failure(error: error, retryable: false)
+    record_mutating_tool_result(failure)
+    Captain::OutcomeFacts.record_tool(context_wrapper_context, @tool.name, failure)
     register_technical_failure('tool' => Captain::Runtime::ToolFailure.canonical_name(@tool.name), 'kind' => Captain::Runtime::ToolFailure::TECHNICAL,
                                'reason' => 'exception', 'error_class' => error.class.name)
     @context_wrapper.callback_manager.emit_tool_complete(
       @tool.name,
-      Captain::ToolResult.failure(error: error),
+      failure,
       @context_wrapper
     )
     raise error
@@ -189,6 +191,7 @@ class Captain::Runtime::ToolWrapper
     cache_non_retryable_failure(normalized_args, final_result)
     record_mutating_tool_result(final_result)
     record_completed_action(final_result)
+    Captain::OutcomeFacts.record_tool(context_wrapper_context, @tool.name, final_result) unless halt_result?(final_result)
     @context_wrapper.callback_manager.emit_tool_complete(@tool.name, final_result, @context_wrapper)
     return final_result if halt_result?(final_result)
 
@@ -535,12 +538,14 @@ class Captain::Runtime::ToolWrapper
   end
 
   def complete_and_render(result)
+    Captain::OutcomeFacts.record_tool(context_wrapper_context, @tool.name, result)
     @context_wrapper.callback_manager.emit_tool_complete(@tool.name, result, @context_wrapper)
     Captain::ToolResult.render(result)
   end
 
   def complete_and_halt(result)
     normalized_result = Captain::ToolResult.normalize(result, retryable: false)
+    Captain::OutcomeFacts.record_tool(context_wrapper_context, @tool.name, normalized_result)
     @context_wrapper.callback_manager.emit_tool_complete(@tool.name, normalized_result, @context_wrapper)
     halt_completed_result(normalized_result)
   end

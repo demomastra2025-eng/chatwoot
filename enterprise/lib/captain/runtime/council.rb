@@ -42,6 +42,7 @@ class Captain::Runtime::Council
     :captain_v2_mutating_tool_executions, :captain_v2_current_tool_batch_id, :captain_v2_mutating_tool_calls_by_batch,
     :captain_v2_bound_tool_ids, :captain_v2_bound_tool_ids_by_agent, :captain_v2_bound_tool_gate, :captain_v2_completed_tool_names,
     :captain_v2_completed_tool_results, :captain_v2_completed_actions, :captain_v2_service_specific_scheduling, :captain_faq_outcome,
+    :outcome_facts,
     :captain_v2_handoff_tool_called,
     :pending_handoff, :pending_human_handoff, :pending_response_cancellation, :handoff_count, :previous_handoff_source_id,
     :part_plan, :part_plan_refused, :part_plan_processed, :transfer_guard, :transfer_guard_active, :transfer_guarded,
@@ -583,6 +584,10 @@ class Captain::Runtime::Council
         (@context[Captain::Runtime::ToolWrapper::COMPLETED_ACTIONS_KEY] ||= []).concat(Array(tracking[:completed_actions]))
         merged = (@context[:captain_v2_completed_tool_results] ||= []).concat(Array(tracking[:completed_tool_results]))
         @context[:captain_v2_completed_tool_results] = merged.last(MAX_COMPLETED_TOOL_RESULT_RECORDS)
+        facts = @context[:outcome_facts] ||= {}
+        tracking[:outcome_facts].to_h.each do |kind, values|
+          facts[kind] = (Array(facts[kind]) + Array(values)).last(Captain::OutcomeFacts::LIMIT)
+        end
         @context[:captain_v2_artifact_ids] = Array(@context[:captain_v2_artifact_ids]) | Array(tracking[:artifact_ids])
       end
       @results = []

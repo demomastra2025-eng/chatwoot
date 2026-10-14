@@ -17,7 +17,7 @@ RSpec.describe Captain::OutcomeDecisionEngine do
   end
 
   def classify(expansion_available: true)
-    engine.classify(messages: [{ role: 'customer', content: 'Спасибо, всё понятно' }],
+    engine.classify(messages: [{ role: 'customer', content: 'Спасибо, всё понятно' }], facts: { public_reply_sent: true },
                     reasons: [{ 'id' => 'question_resolved', 'label' => 'Вопрос решён' }, { 'id' => 'other', 'label' => 'Другое' }],
                     outcome: 'completion', locale: 'ru', expansion_available: expansion_available)
   end
@@ -27,7 +27,7 @@ RSpec.describe Captain::OutcomeDecisionEngine do
       expect(args).to include(feature: :outcome_classification, model: model, account: account, conversation: conversation)
       expect(args[:input]).to include(outcome: 'completion', expansion_available: true)
       expect(args[:options][:decision_criteria].keys).to eq(%w[question_resolved other NEEDS_MORE_CONTEXT])
-      expect(args[:input].to_json).not_to include('PRIVATE AGENT INSTRUCTIONS')
+      expect(args[:input][:facts]).to eq(public_reply_sent: true)
       expect(args.keys & %i[temperature max_tokens tools messages]).to be_empty
       result
     end
@@ -43,5 +43,9 @@ RSpec.describe Captain::OutcomeDecisionEngine do
     [true, false].each do |available|
       expect(classify(expansion_available: available)).to include('reason_id' => 'other', 'needs_more_context' => true, 'explanation' => '')
     end
+  end
+
+  it 'defines a clinic-rule closure criterion for the built-in completion reason' do
+    expect(described_class::BUILTIN_CRITERIA.fetch('closed_against_instructions')).to include('clinic instruction')
   end
 end
