@@ -44,6 +44,7 @@ class Account < ApplicationRecord
   include AccountEmailRateLimitable
 
   include AccountSettingsSchema
+  include AccountWorkspaceWorkingHours
 
   DEFAULT_QUERY_SETTING = {
     flag_query_mode: :bit_operator,
@@ -70,6 +71,7 @@ class Account < ApplicationRecord
   store_accessor :settings, :conversation_status_reason_config
   store_accessor :settings, :scheduling_contact_required, :scheduling_company_enabled
   store_accessor :settings, :conversation_assignment_policy_id
+  store_accessor :settings, :conversation_auto_assignment_enabled
   include AccountCaptainAutoResolve
 
   has_many :account_users, dependent: :destroy_async
@@ -172,6 +174,15 @@ class Account < ApplicationRecord
   before_validation :normalize_default_settings
   after_create_commit :notify_creation
   after_update_commit :refresh_crm_appointment_timezone, if: :saved_change_to_reporting_timezone?
+  after_update_commit :sync_workspace_working_hours!, if: :workspace_schedule_changed?
+
+  def workspace_schedule_changed?
+    return false unless saved_change_to_settings?
+
+    keys = %w[workspace_timezone workspace_working_hours workspace_breaks workspace_days_off]
+    before, after = saved_change_to_settings
+    before.to_h.slice(*keys) != after.to_h.slice(*keys)
+  end
   after_destroy :remove_account_sequences
 
   def agents
@@ -240,6 +251,11 @@ class Account < ApplicationRecord
 
   def workspace_assignment_policy_selected?
     conversation_assignment_policy_id.present?
+  end
+
+  def conversation_auto_assignment_enabled?
+    value = conversation_auto_assignment_enabled
+    value.nil? || ActiveModel::Type::Boolean.new.cast(value)
   end
 
   def workspace_assignment_policy

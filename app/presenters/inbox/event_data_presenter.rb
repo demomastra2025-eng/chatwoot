@@ -7,7 +7,7 @@ class Inbox::EventDataPresenter < SimpleDelegator
 
       # Auto Assignment config
       auto_assignment_config: auto_assignment_config,
-      enable_auto_assignment: enable_auto_assignment,
+      enable_auto_assignment: enable_auto_assignment?,
 
       # Feature flag for message events
       enable_email_collect: enable_email_collect,
@@ -20,10 +20,10 @@ class Inbox::EventDataPresenter < SimpleDelegator
       sender_name_type: sender_name_type,
 
       # Business hour config
-      timezone: timezone,
+      timezone: account.workspace_working_hours_timezone,
       out_of_office_message: out_of_office_message,
-      working_hours_enabled: working_hours_enabled,
-      working_hours: working_hours.as_json,
+      working_hours_enabled: account.workspace_working_hours_configured?,
+      working_hours: account.workspace_working_hours_configured? ? account.workspace_working_hours_schedule : [],
 
       created_at: created_at,
       updated_at: updated_at,

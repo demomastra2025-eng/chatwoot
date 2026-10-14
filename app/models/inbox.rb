@@ -45,6 +45,7 @@ class Inbox < ApplicationRecord
   include Reportable
   include Avatarable
   include OutOfOffisable
+  attribute :inherit_working_hours_from_account, :boolean, default: true
   include AccountCacheRevalidator
   include InboxAgentAvailability
 
@@ -124,8 +125,9 @@ class Inbox < ApplicationRecord
   # Removes multiple members from the inbox
   # @param user_ids [Array<Integer>] Array of user IDs to remove
   # @return [void]
-  def remove_members(user_ids)
-    inbox_members.where(user_id: user_ids).destroy_all
+  def remove_members(_user_ids)
+    # Channel membership follows workspace membership. Retain this method for old API clients.
+    add_account_members
     update_account_cache
   end
 
@@ -373,9 +375,19 @@ class Inbox < ApplicationRecord
   end
 
   def effective_assignment_policy
-    return assignment_policy unless workspace_assignment_policy_applies?
-
     account.workspace_assignment_policy
+  end
+
+  def enable_auto_assignment?
+    account.conversation_auto_assignment_enabled?
+  end
+
+  def out_of_office?
+    !account.workspace_open_at?
+  end
+
+  def working_now?
+    account.workspace_open_at?
   end
 
   def workspace_assignment_policy_unavailable?
@@ -391,9 +403,6 @@ class Inbox < ApplicationRecord
     locked_account.with_lock('FOR NO KEY UPDATE') do
       next if deleting? || self[:deletion_attempt_id].present?
       next if locked_account.custom_attributes.to_h['marked_for_deletion_at'].present?
-      # Voice inbox membership controls access to a phone line and must be
-      # granted by an administrator for each employee.
-      next if channel_type == 'Channel::Voice'
 
       locked_account.users.ids.each { |user_id| inbox_members.find_or_create_by!(user_id: user_id) }
     end

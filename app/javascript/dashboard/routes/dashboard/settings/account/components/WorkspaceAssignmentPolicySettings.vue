@@ -19,9 +19,17 @@ const selectedPolicyId = ref('');
 const isFetching = ref(false);
 const fetchFailed = ref(false);
 const isSaving = ref(false);
+const autoAssignmentEnabled = ref(true);
 const isWorkspaceAdmin = computed(() => checkPermissions(['administrator']));
 const savedPolicyId = computed(
   () => currentAccount.value?.settings?.conversation_assignment_policy_id
+);
+watch(
+  () => currentAccount.value?.settings?.conversation_auto_assignment_enabled,
+  value => {
+    autoAssignmentEnabled.value = value !== false;
+  },
+  { immediate: true }
 );
 const hasUnavailableSavedPolicy = computed(
   () =>
@@ -123,6 +131,24 @@ const savePolicy = async () => {
     isSaving.value = false;
   }
 };
+
+const saveAutoAssignment = async () => {
+  if (!isWorkspaceAdmin.value || isSaving.value) return;
+  isSaving.value = true;
+  try {
+    await updateAccount(
+      { conversation_auto_assignment_enabled: autoAssignmentEnabled.value },
+      { silent: true }
+    );
+  } catch {
+    autoAssignmentEnabled.value = !autoAssignmentEnabled.value;
+    useAlert(
+      t('GENERAL_SETTINGS.CONVERSATIONS.ASSIGNMENT_POLICY_UPDATE_ERROR')
+    );
+  } finally {
+    isSaving.value = false;
+  }
+};
 </script>
 
 <template>
@@ -133,6 +159,16 @@ const savePolicy = async () => {
     "
   >
     <div class="flex flex-col gap-4">
+      <label class="flex items-center gap-3 text-sm text-n-slate-12">
+        <input
+          v-model="autoAssignmentEnabled"
+          data-test="workspace-auto-assignment"
+          type="checkbox"
+          :disabled="!isWorkspaceAdmin || isSaving"
+          @change="saveAutoAssignment"
+        />
+        {{ t('GENERAL_SETTINGS.CONVERSATIONS.AUTO_ASSIGNMENT_ENABLED') }}
+      </label>
       <label class="flex flex-col gap-2 text-sm font-medium text-n-slate-12">
         {{ t('GENERAL_SETTINGS.CONVERSATIONS.ASSIGNMENT_POLICY_LABEL') }}
         <Select

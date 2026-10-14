@@ -8,6 +8,12 @@ class Api::V1::Accounts::Scheduling::ResourceWorkRulesController < Api::V1::Acco
   end
 
   def update
+    if @scheduling_resource.inherit_working_hours_from_account?
+      raise Scheduling::Error.new(code: 'WORK_RULES_INHERITED',
+                                  message: 'Disable workspace schedule inheritance before editing specialist hours',
+                                  status: :unprocessable_content)
+    end
+
     rules_payload = params.permit(work_rules: [:weekday, :start_minute, :end_minute, :active])[:work_rules] || []
 
     ApplicationRecord.transaction do

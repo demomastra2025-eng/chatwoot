@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_10_11_191500) do
+ActiveRecord::Schema[7.2].define(version: 2026_10_14_101000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1898,6 +1898,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_11_191500) do
     t.string "greeting_message"
     t.string "email_address"
     t.boolean "working_hours_enabled", default: false
+    t.boolean "inherit_working_hours_from_account", default: true, null: false
     t.string "out_of_office_message"
     t.string "timezone", default: "Asia/Almaty"
     t.boolean "enable_email_collect", default: true
@@ -2926,6 +2927,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_11_191500) do
 
   create_table "scheduling_resources", force: :cascade do |t|
     t.bigint "account_id", null: false
+    t.boolean "inherit_working_hours_from_account", default: false, null: false
     t.bigint "user_id"
     t.string "name", null: false
     t.string "specialty"

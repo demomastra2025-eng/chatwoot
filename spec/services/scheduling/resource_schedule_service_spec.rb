@@ -84,6 +84,21 @@ RSpec.describe Scheduling::ResourceScheduleService do
     expect(day[:time_offs]).to eq([])
   end
 
+  it 'keeps a personal specialist schedule on a workspace day off' do
+    account.update!(workspace_days_off: [{ 'date' => monday.to_date.iso8601 }])
+
+    expect(perform[:days].first[:working]).to be(true)
+  end
+
+  it 'closes an inheriting specialist on a workspace day off' do
+    account.update!(workspace_working_hours: AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.deep_dup,
+                    workspace_days_off: [{ 'date' => monday.to_date.iso8601 }])
+    resource.update!(inherit_working_hours_from_account: true)
+    resource.apply_workspace_working_hours!
+
+    expect(perform[:days].first[:working]).to be(false)
+  end
+
   it 'rejects reversed ranges at the domain layer' do
     expect { perform(from: tuesday, to: monday) }.to raise_error(ArgumentError, 'to must be greater than from')
   end

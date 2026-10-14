@@ -67,7 +67,7 @@ RSpec.describe AutoAssignment::PeriodicAssignmentJob, type: :job do
 
       context 'when auto assignment is disabled' do
         before do
-          inbox.update!(enable_auto_assignment: false)
+          account.update!(conversation_auto_assignment_enabled: false)
           InboxAssignmentPolicy.where(inbox: inbox).destroy_all
         end
 
@@ -76,6 +76,13 @@ RSpec.describe AutoAssignment::PeriodicAssignmentJob, type: :job do
 
           described_class.new.perform
         end
+      end
+
+      it 'ignores a disabled legacy inbox switch when the workspace switch is on' do
+        inbox.update!(enable_auto_assignment: false)
+        expect(AutoAssignment::AssignmentJob).to receive(:enqueue).with(inbox_id: inbox.id)
+
+        described_class.new.perform
       end
     end
 

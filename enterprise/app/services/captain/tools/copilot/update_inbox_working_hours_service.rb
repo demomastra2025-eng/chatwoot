@@ -5,13 +5,13 @@ class Captain::Tools::Copilot::UpdateInboxWorkingHoursService < Captain::Tools::
     'update_inbox_working_hours'
   end
 
-  description 'Update weekly working hours for one account inbox using a JSON array of day schedules'
+  description 'Update workspace weekly working hours using a JSON array of day schedules'
   param :inbox_id, type: :number, desc: 'Account inbox ID', required: true
   param :working_hours_json,
         type: :string,
         desc: 'JSON array with day_of_week, closed_all_day/open_all_day, open_hour/open_minutes, close_hour/close_minutes',
         required: true
-  param :working_hours_enabled, type: :boolean, desc: 'Optional working-hours toggle for the inbox', required: false
+  param :working_hours_enabled, type: :boolean, desc: 'Legacy parameter; the workspace schedule is always enabled when configured', required: false
 
   def execute(inbox_id:, working_hours_json:, working_hours_enabled: nil)
     ensure_account_administrator!
@@ -19,20 +19,17 @@ class Captain::Tools::Copilot::UpdateInboxWorkingHoursService < Captain::Tools::
     inbox = account.inboxes.active.find(inbox_id)
     entries = parse_working_hours!(working_hours_json)
 
-    ActiveRecord::Base.transaction do
-      inbox.update!(working_hours_enabled: cast_boolean(working_hours_enabled)) unless working_hours_enabled.nil?
-      entries.each { |entry| upsert_working_hour!(inbox, entry) }
-    end
+    account.update!(workspace_working_hours: entries)
 
     formatted_payload(
       action: 'update_inbox_working_hours',
       inbox: {
         id: inbox.id,
         name: inbox.name,
-        timezone: inbox.timezone,
-        working_hours_enabled: inbox.reload.working_hours_enabled
+        timezone: account.workspace_working_hours_timezone,
+        working_hours_enabled: account.workspace_working_hours_configured?
       },
-      working_hours: inbox.weekly_schedule
+      working_hours: account.workspace_working_hours_schedule
     )
   rescue StandardError => e
     tool_failure(e)
@@ -59,11 +56,5 @@ class Captain::Tools::Copilot::UpdateInboxWorkingHoursService < Captain::Tools::
     end
   rescue JSON::ParserError
     raise ArgumentError, 'working_hours_json must be valid JSON'
-  end
-
-  def upsert_working_hour!(inbox, entry)
-    working_hour = inbox.working_hours.find_or_initialize_by(day_of_week: entry['day_of_week'])
-    working_hour.assign_attributes(entry.except('day_of_week'))
-    working_hour.save!
   end
 end

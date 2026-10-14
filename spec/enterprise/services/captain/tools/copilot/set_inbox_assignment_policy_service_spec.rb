@@ -11,7 +11,7 @@ RSpec.describe Captain::Tools::Copilot::SetInboxAssignmentPolicyService do
     allow(Captain::Copilot::ToolConfirmationGate).to receive(:new).and_return(confirmation_gate)
   end
 
-  it 'attaches an account assignment policy to an inbox' do
+  it 'selects an account assignment policy for the workspace' do
     inbox = create(:inbox, account: account, name: 'Support')
     policy = create(:assignment_policy, account: account, name: 'Support routing', assign_online_only: false)
 
@@ -20,10 +20,11 @@ RSpec.describe Captain::Tools::Copilot::SetInboxAssignmentPolicyService do
     expect(payload['action']).to eq('set_inbox_assignment_policy')
     expect(payload['inbox']).to include('id' => inbox.id, 'name' => 'Support')
     expect(payload['assignment_policy']).to include('id' => policy.id, 'name' => 'Support routing', 'assign_online_only' => false)
-    expect(inbox.reload.assignment_policy).to eq(policy)
+    expect(account.reload.workspace_assignment_policy).to eq(policy)
+    expect(inbox.reload.effective_assignment_policy).to eq(policy)
   end
 
-  it 'replaces an existing inbox assignment policy' do
+  it 'replaces the effective workspace policy while preserving the legacy link' do
     inbox = create(:inbox, account: account)
     old_policy = create(:assignment_policy, account: account, name: 'Old routing')
     new_policy = create(:assignment_policy, account: account, name: 'New routing')
@@ -31,7 +32,8 @@ RSpec.describe Captain::Tools::Copilot::SetInboxAssignmentPolicyService do
 
     service.execute(inbox_id: inbox.id, assignment_policy_id: new_policy.id)
 
-    expect(inbox.reload.assignment_policy).to eq(new_policy)
+    expect(account.reload.workspace_assignment_policy).to eq(new_policy)
+    expect(inbox.reload.assignment_policy).to eq(old_policy)
   end
 
   it 'rejects inboxes and policies outside the assistant account' do
@@ -41,7 +43,7 @@ RSpec.describe Captain::Tools::Copilot::SetInboxAssignmentPolicyService do
     result = service.execute(inbox_id: inbox.id, assignment_policy_id: other_policy.id)
 
     expect(result).to start_with('ERROR: ActiveRecord::RecordNotFound')
-    expect(inbox.reload.assignment_policy).to be_nil
+    expect(account.reload.workspace_assignment_policy).to be_nil
   end
 
   it 'does not mutate until the backend confirmation gate permits execution' do
@@ -52,7 +54,7 @@ RSpec.describe Captain::Tools::Copilot::SetInboxAssignmentPolicyService do
     payload = JSON.parse(service.execute(inbox_id: inbox.id, assignment_policy_id: policy.id))
 
     expect(payload['message']).to include('Operator confirmation is required')
-    expect(inbox.reload.assignment_policy).to be_nil
+    expect(account.reload.workspace_assignment_policy).to be_nil
   end
 
   it 'enforces admin permission inside execute before mutating' do
@@ -65,7 +67,7 @@ RSpec.describe Captain::Tools::Copilot::SetInboxAssignmentPolicyService do
     result = non_admin_service.execute(inbox_id: inbox.id, assignment_policy_id: policy.id)
 
     expect(result).to start_with('ERROR: ArgumentError: Account administrator permission is required')
-    expect(inbox.reload.assignment_policy).to be_nil
+    expect(account.reload.workspace_assignment_policy).to be_nil
   end
 
   it 'is active only for account administrators' do

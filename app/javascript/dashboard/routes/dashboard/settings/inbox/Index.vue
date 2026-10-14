@@ -355,14 +355,6 @@ const getCapabilityChips = inbox => {
     );
   }
 
-  if (inbox.enable_auto_assignment) {
-    chips.push(t('INBOX_MGMT.LIST.CHIPS.AUTO_ASSIGNMENT'));
-  }
-
-  if (inbox.working_hours_enabled) {
-    chips.push(t('INBOX_MGMT.LIST.CHIPS.WORKING_HOURS'));
-  }
-
   if (inbox.greeting_enabled) {
     chips.push(t('INBOX_MGMT.LIST.CHIPS.GREETING'));
   }

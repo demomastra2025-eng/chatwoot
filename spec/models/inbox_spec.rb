@@ -50,8 +50,8 @@ RSpec.describe Inbox do
       create(:inbox_assignment_policy, inbox: inbox, assignment_policy: legacy_policy)
     end
 
-    it 'preserves per-inbox policies until a workspace policy is selected' do
-      expect(inbox.effective_assignment_policy).to eq(legacy_policy)
+    it 'does not use stored per-inbox policies' do
+      expect(inbox.effective_assignment_policy).to be_nil
     end
 
     it 'uses the selected enabled workspace policy for regular channels' do
@@ -156,7 +156,6 @@ RSpec.describe Inbox do
   end
 
   describe 'concerns' do
-    it_behaves_like 'out_of_offisable'
     it_behaves_like 'avatarable'
   end
 
@@ -198,14 +197,14 @@ RSpec.describe Inbox do
       expect(inbox.reload.inbox_members.where(user: agent).ids).to eq([membership.id])
     end
 
-    it 'does not restore manually removed members when an existing inbox is updated' do
+    it 'keeps workspace membership when an old client requests removal' do
       agent = create(:user, account: account)
       inbox = create(:inbox, account: account)
       inbox.remove_members([agent.id])
 
       inbox.update!(name: 'Renamed inbox')
 
-      expect(inbox.reload.members).to be_empty
+      expect(inbox.reload.members.ids).to include(agent.id)
     end
 
     it 'does not add defaults to an inbox created in a deletion state' do
@@ -278,11 +277,11 @@ RSpec.describe Inbox do
       allow(Rails.configuration.dispatcher).to receive(:dispatch)
     end
 
-    it 'removes the members and resets cache keys' do
+    it 'keeps workspace members when removal is requested' do
       expect(inbox.reload.inbox_members.size).to eq(3)
 
       inbox.remove_members(users.map(&:id))
-      expect(inbox.reload.inbox_members.size).to eq(0)
+      expect(inbox.reload.inbox_members.size).to eq(3)
 
       expect(Rails.configuration.dispatcher).to have_received(:dispatch).at_least(:once)
                                                                         .with(

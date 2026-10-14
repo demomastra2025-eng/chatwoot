@@ -31,7 +31,10 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
   end
 
   def update
+    was_inheriting = @scheduling_resource.inherit_working_hours_from_account?
     @scheduling_resource.update!(resource_params)
+    @scheduling_resource.use_personal_working_hours! if was_inheriting && !@scheduling_resource.inherit_working_hours_from_account?
+    @scheduling_resource.apply_workspace_working_hours! if @scheduling_resource.inherit_working_hours_from_account?
     render_payload(Scheduling::PayloadBuilder.resource(@scheduling_resource))
   end
 
@@ -56,6 +59,7 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
         :description,
         :color,
         :timezone,
+        :inherit_working_hours_from_account,
         :slot_duration_min,
         :compensation_type,
         :compensation_value,

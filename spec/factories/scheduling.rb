@@ -3,6 +3,7 @@
 FactoryBot.define do
   factory :scheduling_resource, class: 'Scheduling::Resource' do
     account
+    inherit_working_hours_from_account { false }
     sequence(:name) { |n| "Resource #{n}" }
     timezone { Scheduling::Constants::DEFAULT_TIMEZONE }
     slot_duration_min { 30 }

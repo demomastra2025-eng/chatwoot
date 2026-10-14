@@ -46,6 +46,9 @@ class Scheduling::Resource < ApplicationRecord
   has_many :work_rules, class_name: 'Scheduling::WorkRule', dependent: :destroy_async, inverse_of: :resource
   has_many :workday_overrides, class_name: 'Scheduling::WorkdayOverride', dependent: :destroy_async, inverse_of: :resource
 
+  attribute :inherit_working_hours_from_account, :boolean, default: true
+  after_create :apply_workspace_working_hours!, if: :inherit_working_hours_from_account?
+
   validates :name, :timezone, presence: true
   validates :slot_duration_min,
             inclusion: {
@@ -76,7 +79,59 @@ class Scheduling::Resource < ApplicationRecord
     )
   end
 
+  def apply_workspace_working_hours!
+    return unless inherit_working_hours_from_account?
+
+    with_lock do
+      update!(timezone: account.workspace_working_hours_timezone) if timezone != account.workspace_working_hours_timezone
+      workspace_schedule_days.each { |day| sync_workspace_day!(day) }
+      break_rules.find_each { |rule| rule.update!(active: false) }
+      account.workspace_break_schedule.each { |entry| sync_workspace_break!(entry) }
+    end
+  end
+
+  def sync_workspace_schedule!
+    apply_workspace_working_hours! if inherit_working_hours_from_account?
+  end
+
+  def use_personal_working_hours!
+    update!(inherit_working_hours_from_account: false)
+    work_rules.find_each { |rule| rule.update!(active: false) }
+    break_rules.find_each { |rule| rule.update!(active: false) }
+  end
+
   private
+
+  def workspace_schedule_days
+    return account.workspace_working_hours_schedule if account.workspace_working_hours_configured?
+
+    (0..6).map { |weekday| { 'day_of_week' => weekday, 'closed_all_day' => false, 'open_all_day' => true } }
+  end
+
+  def sync_workspace_day!(day)
+    closed = ActiveModel::Type::Boolean.new.cast(day['closed_all_day'])
+    full_day = closed || ActiveModel::Type::Boolean.new.cast(day['open_all_day'])
+    attributes = {
+      active: !closed,
+      start_minute: full_day ? 0 : (day['open_hour'].to_i * 60) + day['open_minutes'].to_i,
+      end_minute: full_day ? 1440 : (day['close_hour'].to_i * 60) + day['close_minutes'].to_i
+    }
+    work_rules.find_or_initialize_by(weekday: day['day_of_week']).update!(**attributes, account: account)
+  end
+
+  def sync_workspace_break!(entry)
+    start_minute = minute_for_clock(entry['start_time'])
+    end_minute = minute_for_clock(entry['end_time'])
+    entry['days'].each do |weekday|
+      rule = break_rules.find_or_initialize_by(weekday: weekday, start_minute: start_minute, end_minute: end_minute)
+      rule.update!(active: true, account: account, title: entry['title'])
+    end
+  end
+
+  def minute_for_clock(value)
+    hour, minute = value.split(':').map(&:to_i)
+    (hour * 60) + minute
+  end
 
   def compensation_percent_within_range
     return unless compensation_type == 'percent'

@@ -27,7 +27,9 @@
       "PROVIDER_DIFFERS": "График отличается от местных правил расписания.",
       "PROVIDER_SHOW_SCHEDULE": "Показать график",
       "PROVIDER_HIDE_SCHEDULE": "Скрыть график",
-      "MEDELEMENT_TEMPLATE_HINT": "типовой шаблон OneLink, не график MedElement"
+      "MEDELEMENT_TEMPLATE_HINT": "типовой шаблон OneLink, не график MedElement",
+      "INHERIT_HOURS": "Компанияның жұмыс уақытын қолдану",
+      "INHERIT_HOURS_HINT": "Жеке кестені орнату үшін осы баптауды өшіріп, маманды сақтаңыз."
     },
     "CALENDAR": {
       "ALL_RESOURCES_UNAVAILABLE": "Барлық мамандар қолжетімсіз",

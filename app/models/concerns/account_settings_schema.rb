@@ -17,6 +17,54 @@ module AccountSettingsSchema
         'scheduling_contact_required': { 'type': %w[boolean null] },
         'scheduling_company_enabled': { 'type': %w[boolean null] },
         'conversation_assignment_policy_id': { 'type': %w[integer null] },
+        'conversation_auto_assignment_enabled': { 'type': %w[boolean null] },
+        'workspace_timezone': { 'type': %w[string null] },
+        'workspace_working_hours': {
+          'type': %w[array null],
+          'items': {
+            'type': 'object',
+            'properties': {
+              'day_of_week': { 'type': 'integer', 'minimum': 0, 'maximum': 6 },
+              'closed_all_day': { 'type': 'boolean' },
+              'open_all_day': { 'type': 'boolean' },
+              'open_hour': { 'type': %w[integer null] },
+              'open_minutes': { 'type': %w[integer null] },
+              'close_hour': { 'type': %w[integer null] },
+              'close_minutes': { 'type': %w[integer null] }
+            },
+            'required': %w[day_of_week closed_all_day open_all_day],
+            'additionalProperties': false
+          },
+          'minItems': 7,
+          'maxItems': 7
+        },
+        'workspace_breaks': {
+          'type': %w[array null],
+          'items': {
+            'type': 'object',
+            'properties': {
+              'title': { 'type': %w[string null] },
+              'start_time': { 'type': 'string' },
+              'end_time': { 'type': 'string' },
+              'days': { 'type': 'array', 'items': { 'type': 'integer' } }
+            },
+            'required': %w[start_time end_time days],
+            'additionalProperties': false
+          }
+        },
+        'workspace_days_off': {
+          'type': %w[array null],
+          'items': {
+            'type': 'object',
+            'properties': {
+              'date': { 'type': 'string' },
+              'title': { 'type': %w[string null] },
+              'recurring_yearly': { 'type': %w[boolean null] }
+            },
+            'required': %w[date],
+            'additionalProperties': false
+          }
+        },
         'dashboard_sidebar_item_order': {
           'type': %w[array null],
           'items': { 'type': 'string' }

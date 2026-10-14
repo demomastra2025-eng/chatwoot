@@ -19,11 +19,9 @@ import GoogleReauthorize from './channels/google/Reauthorize.vue';
 import WhatsappReauthorize from './channels/whatsapp/Reauthorize.vue';
 import InboxHealthAPI from 'dashboard/api/inboxHealth';
 import PreChatFormSettings from './PreChatForm/Settings.vue';
-import WeeklyAvailability from './components/WeeklyAvailability.vue';
 import GreetingsEditor from 'shared/components/GreetingsEditor.vue';
 import ConfigurationPage from './settingsPage/ConfigurationPage.vue';
 import CustomerSatisfactionPage from './settingsPage/CustomerSatisfactionPage.vue';
-import CollaboratorsPage from './settingsPage/CollaboratorsPage.vue';
 import WhatsAppTemplatesPage from './settingsPage/WhatsAppTemplatesPage.vue';
 import BotConfiguration from './components/BotConfiguration.vue';
 import AccountHealth from './components/AccountHealth.vue';
@@ -80,7 +78,6 @@ const sanitizeWeixinDiagnostics = value => {
 export default {
   components: {
     BotConfiguration,
-    CollaboratorsPage,
     ConfigurationPage,
     CustomerSatisfactionPage,
     FacebookReauthorize,
@@ -91,7 +88,6 @@ export default {
     SettingsToggleSection,
     SettingsFieldSection,
     SettingsAccordion,
-    WeeklyAvailability,
     SenderNameExamplePreview,
     LockToSingleConversationPreview,
     MicrosoftReauthorize,
@@ -578,19 +574,11 @@ export default {
           key: 'inbox-settings',
           name: this.$t('INBOX_MGMT.TABS.SETTINGS'),
         },
-        {
-          key: 'collaborators',
-          name: this.$t('INBOX_MGMT.TABS.COLLABORATORS'),
-        },
       ];
 
       if (!this.isAVoiceChannel) {
         visibleToAllChannelTabs = [
           ...visibleToAllChannelTabs,
-          {
-            key: 'business-hours',
-            name: this.$t('INBOX_MGMT.TABS.BUSINESS_HOURS'),
-          },
           {
             key: 'csat',
             name: this.$t('INBOX_MGMT.TABS.CSAT'),
@@ -727,7 +715,7 @@ export default {
       return getInboxIconByType(type, medium, 'line');
     },
     bannerMaxWidth() {
-      const narrowTabs = ['collaborators'];
+      const narrowTabs = [];
       const wideIfWebWidget = ['configuration', 'inbox-settings'];
       if (narrowTabs.includes(this.selectedTabKey)) return 'max-w-4xl';
       if (wideIfWebWidget.includes(this.selectedTabKey)) {
@@ -4635,9 +4623,6 @@ export default {
           </div>
         </div>
 
-        <div v-if="selectedTabKey === 'collaborators'" class="mx-6 max-w-4xl">
-          <CollaboratorsPage :inbox="inbox" />
-        </div>
         <div
           v-if="selectedTabKey === 'configuration'"
           class="mx-6"
@@ -4650,9 +4635,6 @@ export default {
         </div>
         <div v-if="selectedTabKey === 'pre-chat-form'">
           <PreChatFormSettings :inbox="inbox" />
-        </div>
-        <div v-if="selectedTabKey === 'business-hours'">
-          <WeeklyAvailability :inbox="inbox" />
         </div>
         <div v-if="selectedTabKey === 'bot-configuration'">
           <BotConfiguration :inbox="inbox" />

@@ -65,6 +65,7 @@ const resourceForm = reactive({
   slotDurationMin: 30,
   specialty: '',
   timezone: 'Asia/Almaty',
+  inheritWorkingHoursFromAccount: true,
   userId: '',
 });
 
@@ -208,6 +209,7 @@ const resetResourceForm = () => {
     slotDurationMin: 30,
     specialty: '',
     timezone: 'Asia/Almaty',
+    inheritWorkingHoursFromAccount: true,
     userId: '',
   });
 };
@@ -406,6 +408,8 @@ const openEditResource = resource => {
     slotDurationMin: resource.slotDurationMin || 30,
     specialty: resource.specialty || '',
     timezone: resource.timezone || 'Asia/Almaty',
+    inheritWorkingHoursFromAccount:
+      resource.inheritWorkingHoursFromAccount === true,
     userId: resource.userId || '',
   });
   resourceDrawerOpen.value = true;
@@ -442,6 +446,8 @@ const saveResource = async () => {
       ),
       specialty: resourceForm.specialty,
       timezone: resourceForm.timezone,
+      inherit_working_hours_from_account:
+        resourceForm.inheritWorkingHoursFromAccount,
       user_id: toNumeric(resourceForm.userId),
     });
     closeResourceDrawer();
@@ -493,6 +499,7 @@ const deleteResource = async () => {
 };
 
 const openScheduleEditor = async resource => {
+  if (resource.inheritWorkingHoursFromAccount) return;
   activeResource.value = resource;
   scheduleDrawerOpen.value = true;
   scheduleTab.value = 'work';
@@ -720,7 +727,10 @@ onMounted(async () => {
                 @click="openEditResource(resource)"
               />
               <Button
-                v-if="!importedResource(resource)"
+                v-if="
+                  !importedResource(resource) &&
+                  !resource.inheritWorkingHoursFromAccount
+                "
                 size="sm"
                 variant="ghost"
                 color="slate"
@@ -789,6 +799,23 @@ onMounted(async () => {
               <span>{{ $t('SCHEDULING.GENERAL.ACTIVE') }}</span>
             </label>
           </template>
+
+          <label
+            v-if="!editingImportedResource"
+            class="flex items-center gap-2 text-sm text-n-slate-12"
+          >
+            <Switch v-model="resourceForm.inheritWorkingHoursFromAccount" />
+            <span>{{ $t('SCHEDULING.RESOURCES.INHERIT_HOURS') }}</span>
+          </label>
+          <p
+            v-if="
+              !editingImportedResource &&
+              resourceForm.inheritWorkingHoursFromAccount
+            "
+            class="mb-0 text-sm text-n-slate-11"
+          >
+            {{ $t('SCHEDULING.RESOURCES.INHERIT_HOURS_HINT') }}
+          </p>
 
           <div class="grid gap-4 md:grid-cols-2">
             <Input

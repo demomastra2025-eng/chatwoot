@@ -94,7 +94,7 @@ describe('Voice channel setup', () => {
     expect(wrapper.text()).not.toContain('INBOX_MGMT.ADD.VOICE.SIPUNI');
   });
 
-  it('carries explicit Twilio line access selection into the agents step', async () => {
+  it('finishes Twilio setup without a staff selection step', async () => {
     routeMock.query = { provider: 'twilio' };
     const wrapper = buildWrapper();
     Object.assign(wrapper.vm.twilioState, {
@@ -109,7 +109,7 @@ describe('Voice channel setup', () => {
     await flushPromises();
 
     expect(routerReplaceMock).toHaveBeenCalledWith({
-      name: 'settings_inboxes_add_agents',
+      name: 'settings_inbox_finish',
       params: { accountId: 530, inbox_id: 101 },
       query: { provider: 'twilio' },
     });

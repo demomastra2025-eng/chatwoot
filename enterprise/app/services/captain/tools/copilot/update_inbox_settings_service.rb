@@ -5,7 +5,7 @@ class Captain::Tools::Copilot::UpdateInboxSettingsService < Captain::Tools::Copi
     'update_inbox_settings'
   end
 
-  description 'Update safe account inbox settings such as name, timezone, auto-assignment, working-hours toggle, and out-of-office text'
+  description 'Update account inbox details and the workspace auto-assignment switch'
   param :inbox_id, type: :number, desc: 'Account inbox ID', required: true
   param :name, type: :string, desc: 'Optional inbox display name', required: false
   param :timezone, type: :string, desc: 'Optional TZInfo timezone identifier, for example Asia/Almaty', required: false
@@ -19,14 +19,18 @@ class Captain::Tools::Copilot::UpdateInboxSettingsService < Captain::Tools::Copi
 
     inbox = account.inboxes.active.find(inbox_id)
     attributes = inbox_update_attributes(kwargs)
-    raise ArgumentError, 'No supported inbox settings were provided' if attributes.blank?
+    workspace_assignment = kwargs.key?(:enable_auto_assignment)
+    raise ArgumentError, 'No supported inbox settings were provided' if attributes.blank? && !workspace_assignment
 
-    inbox.update!(attributes)
+    ActiveRecord::Base.transaction do
+      inbox.update!(attributes) if attributes.present?
+      account.update!(conversation_auto_assignment_enabled: cast_boolean(kwargs[:enable_auto_assignment])) if workspace_assignment
+    end
 
     formatted_payload(
       action: 'update_inbox_settings',
       inbox: inbox_payload(inbox.reload),
-      updated_fields: attributes.keys.map(&:to_s)
+      updated_fields: attributes.keys.map(&:to_s) + (workspace_assignment ? ['enable_auto_assignment'] : [])
     )
   rescue StandardError => e
     tool_failure(e)
@@ -43,8 +47,6 @@ class Captain::Tools::Copilot::UpdateInboxSettingsService < Captain::Tools::Copi
     assign_string(attributes, kwargs, :name)
     assign_string(attributes, kwargs, :timezone)
     assign_string(attributes, kwargs, :out_of_office_message, allow_blank: true)
-    assign_boolean(attributes, kwargs, :enable_auto_assignment)
-    assign_boolean(attributes, kwargs, :working_hours_enabled)
     assign_boolean(attributes, kwargs, :allow_messages_after_resolved)
     attributes
   end
@@ -70,8 +72,8 @@ class Captain::Tools::Copilot::UpdateInboxSettingsService < Captain::Tools::Copi
       name: inbox.name,
       channel_type: inbox.display_channel_type,
       timezone: inbox.timezone,
-      enable_auto_assignment: inbox.enable_auto_assignment,
-      working_hours_enabled: inbox.working_hours_enabled,
+      enable_auto_assignment: account.conversation_auto_assignment_enabled?,
+      working_hours_enabled: account.workspace_working_hours_configured?,
       out_of_office_message: inbox.out_of_office_message,
       allow_messages_after_resolved: inbox.allow_messages_after_resolved
     }.compact

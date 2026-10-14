@@ -11,20 +11,12 @@ RSpec.describe Captain::Tools::Copilot::UpdateInboxWorkingHoursService do
     allow(Captain::Copilot::ToolConfirmationGate).to receive(:new).and_return(confirmation_gate)
   end
 
-  it 'updates inbox working hours and toggle inside the assistant account' do
+  it 'updates workspace working hours while preserving legacy inbox rows' do
     inbox = create(:inbox, account: account, working_hours_enabled: false)
-    schedule = [
-      {
-        day_of_week: 1,
-        open_hour: 10,
-        open_minutes: 30,
-        close_hour: 19,
-        close_minutes: 0,
-        open_all_day: false,
-        closed_all_day: false
-      },
-      { day_of_week: 6, open_all_day: false, closed_all_day: true }
-    ]
+    schedule = AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.deep_dup
+    schedule[1]['open_hour'] = 10
+    schedule[1]['open_minutes'] = 30
+    schedule[1]['close_hour'] = 19
 
     payload = JSON.parse(service.execute(
                            inbox_id: inbox.id,
@@ -34,10 +26,10 @@ RSpec.describe Captain::Tools::Copilot::UpdateInboxWorkingHoursService do
 
     expect(payload['action']).to eq('update_inbox_working_hours')
     expect(payload['inbox']).to include('id' => inbox.id, 'working_hours_enabled' => true)
-    monday = inbox.working_hours.find_by(day_of_week: 1)
-    saturday = inbox.working_hours.find_by(day_of_week: 6)
-    expect(monday).to have_attributes(open_hour: 10, open_minutes: 30, close_hour: 19, close_minutes: 0)
-    expect(saturday).to be_closed_all_day
+    monday = account.reload.workspace_working_hours_schedule[1]
+    expect(monday).to include('open_hour' => 10, 'open_minutes' => 30, 'close_hour' => 19)
+    expect(account.workspace_working_hours_schedule[6]['closed_all_day']).to be(true)
+    expect(inbox.reload.working_hours_enabled).to be(false)
   end
 
   it 'rejects invalid working hours JSON' do

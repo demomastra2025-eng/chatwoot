@@ -33,7 +33,7 @@ RSpec.describe AccountUser do
       expect(membership.reload.role).to eq('agent')
     end
 
-    it 'keeps Voice inbox membership explicit when the line or employee is created' do
+    it 'joins a voice inbox without changing SIP assignment' do
       voice_channel = create(:channel_voice, :sipuni, account: account_user.account)
       voice_inbox = account_user.account.inboxes.find_by!(channel: voice_channel)
       new_user = create(:user)
@@ -41,11 +41,7 @@ RSpec.describe AccountUser do
       create(:account_user, account: account_user.account, user: new_user)
 
       expect(inbox.reload.members.ids).to include(new_user.id)
-      expect(voice_inbox.reload.members.ids).not_to include(new_user.id)
-
-      voice_inbox.add_members([new_user.id])
-
-      expect(voice_inbox.reload.members.ids).to contain_exactly(new_user.id)
+      expect(voice_inbox.reload.members.ids).to include(new_user.id)
     end
 
     it 'preserves unsaved account feature flags while joining the new employee to inboxes' do
@@ -97,12 +93,12 @@ RSpec.describe AccountUser do
       expect(new_user.inboxes).to be_empty
     end
 
-    it 'does not restore manually removed memberships when the workspace member is updated' do
+    it 'keeps workspace membership when an old client requests removal' do
       inbox.remove_members([account_user.user_id])
 
       account_user.update!(availability: :busy)
 
-      expect(inbox.reload.members).to be_empty
+      expect(inbox.reload.members.ids).to include(account_user.user_id)
     end
 
     it 'invalidates inbox data after adding the new workspace employee' do

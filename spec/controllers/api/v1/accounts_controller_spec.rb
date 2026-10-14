@@ -303,7 +303,7 @@ RSpec.describe 'Accounts API', type: :request do
         end
       end
 
-      it 'allows an administrator to return the workspace policy setting to legacy behavior' do
+      it 'allows an administrator to use the workspace default assignment behavior' do
         policy = create(:assignment_policy, account: account)
         account.update!(conversation_assignment_policy_id: policy.id)
 
@@ -314,6 +314,20 @@ RSpec.describe 'Accounts API', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(account.reload.workspace_assignment_policy_selected?).to be(false)
+      end
+
+      it 'updates the workspace assignment switch and weekly schedule' do
+        schedule = AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.deep_dup
+
+        patch "/api/v1/accounts/#{account.id}",
+              params: { conversation_auto_assignment_enabled: false,
+                        workspace_timezone: 'Asia/Almaty', workspace_working_hours: schedule },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(account.reload.conversation_auto_assignment_enabled?).to be(false)
+        expect(account.workspace_working_hours_schedule).to eq(schedule)
       end
 
       it 'will not update onboarding step if onboarding step is not present in account custom attributes' do

@@ -145,7 +145,12 @@ class Api::V1::AccountsController < Api::BaseController
       :auto_resolve_label,
       :scheduling_contact_required,
       :scheduling_company_enabled,
+      :workspace_timezone,
+      { workspace_working_hours: %i[day_of_week closed_all_day open_all_day open_hour open_minutes close_hour close_minutes] },
+      { workspace_breaks: [:title, :start_time, :end_time, { days: [] }] },
+      { workspace_days_off: %i[date title recurring_yearly] },
       :conversation_assignment_policy_id,
+      :conversation_auto_assignment_enabled,
       *DASHBOARD_NAVIGATION_SETTINGS_PARAMS
     ]
   end

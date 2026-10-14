@@ -201,7 +201,8 @@
       "ASSIGNMENT_POLICY_UPDATE_SUCCESS": "Assignment policy updated.",
       "ASSIGNMENT_POLICY_UPDATE_ERROR": "Couldn't update the assignment policy. Please try again.",
       "UPDATE_SUCCESS": "Conversation settings updated",
-      "UPDATE_ERROR": "Could not update conversation settings. Please try again."
+      "UPDATE_ERROR": "Could not update conversation settings. Please try again.",
+      "AUTO_ASSIGNMENT_ENABLED": "Auto assign conversations"
     },
     "SIDEBAR_VISIBILITY": {
       "TITLE": "Sidebar settings",
@@ -212,6 +213,36 @@
       "SAVE": "Save settings",
       "UPDATE_SUCCESS": "Sidebar settings updated",
       "UPDATE_ERROR": "Could not update sidebar settings. Please try again."
+    },
+    "WORKING_HOURS": {
+      "TITLE": "Workspace working hours",
+      "DESCRIPTION": "Default schedule for channels that use Workspace settings.",
+      "ENABLE": "Enable Workspace schedule",
+      "ENABLE_HELP": "Changes apply immediately to every channel inheriting Workspace working hours.",
+      "TIMEZONE": "Timezone",
+      "SAVE": "Save working hours",
+      "UPDATE_SUCCESS": "Workspace working hours updated.",
+      "UPDATE_ERROR": "Could not update Workspace working hours.",
+      "START": "Start",
+      "END": "End",
+      "REMOVE": "Remove",
+      "DATE": "Date",
+      "BREAKS": {
+        "TITLE": "Breaks",
+        "DESCRIPTION": "Shared breaks applied to specialists who inherit the Workspace schedule.",
+        "ADD": "Add break",
+        "EMPTY": "No breaks configured.",
+        "NAME": "Break name"
+      },
+      "DAYS_OFF": {
+        "TITLE": "Days off and holidays",
+        "DESCRIPTION": "Dates when the organization is closed for all specialists.",
+        "ADD": "Add day off",
+        "EMPTY": "No days off configured.",
+        "NAME": "Day off name",
+        "YEARLY": "Repeat yearly"
+      },
+      "EMPTY_HINT": "Until a schedule is saved, the workspace is always open."
     }
   },
   "FORMS": {

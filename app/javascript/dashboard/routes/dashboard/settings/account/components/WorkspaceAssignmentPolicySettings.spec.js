@@ -81,7 +81,7 @@ describe('WorkspaceAssignmentPolicySettings', () => {
     alertMock.mockReset();
   });
 
-  it('keeps the existing channel settings until an administrator selects a workspace policy', async () => {
+  it('shows the workspace default until an administrator selects a policy', async () => {
     const wrapper = mountComponent();
     await flushPromises();
 
@@ -114,7 +114,7 @@ describe('WorkspaceAssignmentPolicySettings', () => {
     );
   });
 
-  it('lets an administrator clear a stale selected policy to return to legacy settings', async () => {
+  it('lets an administrator clear a stale selected policy', async () => {
     currentAccount.value.settings.conversation_assignment_policy_id = 21;
     const wrapper = mountComponent();
     await flushPromises();
@@ -131,6 +131,20 @@ describe('WorkspaceAssignmentPolicySettings', () => {
 
     expect(updateAccountMock).toHaveBeenCalledWith(
       { conversation_assignment_policy_id: null },
+      { silent: true }
+    );
+  });
+
+  it('saves the workspace auto-assignment switch', async () => {
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    await wrapper
+      .get('[data-test="workspace-auto-assignment"]')
+      .setValue(false);
+
+    expect(updateAccountMock).toHaveBeenCalledWith(
+      { conversation_auto_assignment_enabled: false },
       { silent: true }
     );
   });

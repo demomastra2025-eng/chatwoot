@@ -367,7 +367,9 @@
       "SUCCESS_SAVE": "Specialist saved",
       "TIMEZONE": "Timezone",
       "USER_ID": "Linked user ID",
-      "WORK_RULES": "Work rules"
+      "WORK_RULES": "Work rules",
+      "INHERIT_HOURS": "Use workspace working hours",
+      "INHERIT_HOURS_HINT": "To set a personal schedule, turn this off and save the specialist."
     },
     "SERVICES": {
       "ADD": "Add service",

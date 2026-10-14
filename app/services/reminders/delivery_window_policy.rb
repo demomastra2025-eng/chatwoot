@@ -67,15 +67,12 @@ class Reminders::DeliveryWindowPolicy
 
   def call
     inbox = resolved_inbox
-    return allowed_result(inbox) if inbox.blank? || !inbox.working_hours_enabled?
+    return allowed_result(inbox) if inbox.blank? || !inbox.account.workspace_working_hours_configured?
 
-    schedule = inbox.working_hours.to_a
-    return allowed_result(inbox) if schedule.blank?
+    current_time = now.in_time_zone(inbox.account.workspace_working_hours_timezone)
+    return allowed_result(inbox) if inbox.account.workspace_open_at?(now)
 
-    current_time = now.in_time_zone(inbox.timezone.presence || 'UTC')
-    return allowed_result(inbox) if open_at?(current_time, schedule)
-
-    next_open_at, close_at = next_open_window(current_time, schedule)
+    next_open_at, close_at = next_open_window(current_time, inbox.account)
     return Result.new(allowed: false, scheduled_at: (now + RETRY_WHEN_NO_WINDOW).utc, inbox: inbox, reason: 'no_working_window') unless next_open_at
 
     Result.new(
@@ -107,29 +104,50 @@ class Reminders::DeliveryWindowPolicy
     conversation&.inbox || reminder.target_inbox || reminder.target_conversation&.inbox || reminder.conversation&.inbox
   end
 
-  def open_at?(time, schedule)
-    working_hour = schedule_for(time, schedule)
-    return false if working_hour.blank? || working_hour.closed_all_day?
-    return true if working_hour.open_all_day?
-
-    time >= open_time_for(time, working_hour) && time <= close_time_for(time, working_hour)
-  end
-
-  def next_open_window(current_time, schedule)
+  def next_open_window(current_time, account)
     8.times do |offset|
       candidate_day = current_time.to_date + offset
-      working_hour = schedule.find { |entry| entry.day_of_week == candidate_day.wday }
-      next if working_hour.blank? || working_hour.closed_all_day?
+      next if account.workspace_day_off?(candidate_day)
 
-      open_at = time_on_day(current_time, candidate_day, working_hour.open_hour || 0, working_hour.open_minutes || 0)
-      close_at = working_hour.open_all_day? ? time_on_day(current_time, candidate_day, 23, 59, 59) : close_time_for(open_at, working_hour)
-      next if offset.zero? && current_time > close_at
-      next if offset.zero? && current_time >= open_at && !working_hour.open_all_day?
+      day = account.workspace_working_hours_schedule.find { |entry| entry['day_of_week'].to_i == candidate_day.wday }
+      next if day.blank? || ActiveModel::Type::Boolean.new.cast(day['closed_all_day'])
 
-      return [open_at, close_at]
+      windows_for_day(account, day).each do |start_minute, end_minute|
+        open_at = time_on_day(current_time, candidate_day, start_minute)
+        close_at = time_on_day(current_time, candidate_day, end_minute)
+        next if close_at <= current_time
+
+        return [[open_at, current_time].max, close_at]
+      end
     end
 
     nil
+  end
+
+  def windows_for_day(account, day)
+    start_minute, end_minute = working_minutes_for(day)
+    breaks = account.workspace_break_schedule.select { |entry| entry['days'].include?(day['day_of_week'].to_i) }
+    breaks.reduce([[start_minute, end_minute]]) do |windows, entry|
+      subtract_break(windows, minute_for_time(entry['start_time']), minute_for_time(entry['end_time']))
+    end
+  end
+
+  def working_minutes_for(day)
+    return [0, 1440] if ActiveModel::Type::Boolean.new.cast(day['open_all_day'])
+
+    [(day['open_hour'].to_i * 60) + day['open_minutes'].to_i,
+     (day['close_hour'].to_i * 60) + day['close_minutes'].to_i]
+  end
+
+  def subtract_break(windows, break_start, break_end)
+    windows.flat_map do |left, right|
+      [[left, [right, break_start].min], [[left, break_end].max, right]].select { |first, last| first < last }
+    end
+  end
+
+  def minute_for_time(value)
+    hour, minute = value.split(':').map(&:to_i)
+    (hour * 60) + minute
   end
 
   def scheduled_with_buffer(open_at, close_at)
@@ -144,19 +162,10 @@ class Reminders::DeliveryWindowPolicy
     Digest::SHA256.hexdigest("reminder-working-hours-#{reminder.id}").first(8).to_i(16) % (max_seconds + 1)
   end
 
-  def schedule_for(time, schedule)
-    schedule.find { |entry| entry.day_of_week == time.to_date.wday }
-  end
-
-  def open_time_for(time, working_hour)
-    time_on_day(time, time.to_date, working_hour.open_hour || 0, working_hour.open_minutes || 0)
-  end
-
-  def close_time_for(time, working_hour)
-    time_on_day(time, time.to_date, working_hour.close_hour || 23, working_hour.close_minutes || 59, 59)
-  end
-
-  def time_on_day(reference_time, date, hour, minute, second = 0)
-    reference_time.change(year: date.year, month: date.month, day: date.day, hour: hour, min: minute, sec: second)
+  def time_on_day(reference_time, date, minutes)
+    date += 1 if minutes == 1440
+    minutes %= 1440
+    reference_time.change(year: date.year, month: date.month, day: date.day,
+                          hour: minutes / 60, min: minutes % 60, sec: 0)
   end
 end

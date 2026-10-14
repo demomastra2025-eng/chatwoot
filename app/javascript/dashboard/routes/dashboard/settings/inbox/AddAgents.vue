@@ -3,7 +3,6 @@
 import { mapGetters } from 'vuex';
 import { useAlert } from 'dashboard/composables';
 
-import InboxMembersAPI from '../../../../api/inboxMembers';
 import VoiceAPI from 'dashboard/api/channel/voice/voiceAPIClient';
 import {
   virtualPbxErrorsText,
@@ -162,7 +161,11 @@ export default {
     }
 
     this.$store.dispatch('agents/get');
-    await Promise.all([this.loadInboxMembers(), this.loadVirtualPbxStatus()]);
+    await this.loadVirtualPbxStatus();
+    if (!this.isVirtualPbxProfileAssignmentInbox) {
+      await (this.$router || router).replace(this.finishRoute());
+      return;
+    }
     this.ensureVirtualPbxProfilesForSelectedAgents();
   },
   methods: {
@@ -190,23 +193,6 @@ export default {
     handleAgentRemove(index) {
       this.selectedAgentIds.splice(index, 1);
     },
-    normalizeMembers(members) {
-      return (members || [])
-        .map(member => Number(member.id || member.user_id))
-        .filter(id => id);
-    },
-    async loadInboxMembers() {
-      try {
-        const response = await InboxMembersAPI.show(
-          this.$route.params.inbox_id
-        );
-        this.selectedAgentIds = this.normalizeMembers(
-          response?.data?.payload || response?.payload || []
-        );
-      } catch {
-        this.selectedAgentIds = [];
-      }
-    },
     async loadVirtualPbxStatus() {
       this.isLoadingVirtualPbx = true;
       try {
@@ -231,6 +217,9 @@ export default {
         const userId = Number(profile.user_id);
         if (!userId) return;
 
+        if (!this.selectedAgentIds.includes(userId)) {
+          this.selectedAgentIds.push(userId);
+        }
         this.virtualPbxProfiles[userId] = {
           userId,
           internalExtension: profile.internal_extension || '',
@@ -388,10 +377,6 @@ export default {
       const inboxId = this.$route.params.inbox_id;
 
       try {
-        await InboxMembersAPI.update({
-          inboxId,
-          agentList: this.selectedAgentIds,
-        });
         if (this.isVirtualPbxProfileAssignmentInbox) {
           await this.updateVirtualPbxProfiles(inboxId);
           useAlert(this.$t('INBOX_MGMT.AGENTS.SAVE_SUCCESS'));
@@ -424,13 +409,6 @@ export default {
           <template #content>
             <div class="text-sm w-full text-n-slate-11 space-y-2">
               <p>{{ $t('INBOX_MGMT.ADD.AGENTS.DESC') }}</p>
-              <p>
-                <strong>{{
-                  $t('INBOX_MGMT.ADD.AGENTS.ADMIN_NOTE_LABEL')
-                }}</strong>
-                {{ ' ' }}
-                {{ $t('INBOX_MGMT.ADD.AGENTS.ADMIN_NOTE') }}
-              </p>
             </div>
           </template>
         </PageHeader>

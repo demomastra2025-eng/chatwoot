@@ -18,9 +18,14 @@ RSpec.describe Reminders::DeliveryWindowPolicy do
     )
   end
 
+  before do
+    account.update!(workspace_timezone: 'UTC',
+                    workspace_working_hours: AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.deep_dup)
+  end
+
   describe '#call' do
-    it 'allows delivery when inbox working hours are disabled' do
-      inbox.update!(working_hours_enabled: false)
+    it 'allows delivery when the workspace has no schedule' do
+      account.update!(workspace_working_hours: nil)
 
       result = described_class.new(reminder: reminder, conversation: conversation, now: Time.zone.parse('2026-05-02 23:00:00 UTC')).call
 
@@ -58,11 +63,26 @@ RSpec.describe Reminders::DeliveryWindowPolicy do
     end
 
     it 'treats an open-all-day schedule as 24x7 for that day' do
-      inbox.working_hours.find_by(day_of_week: 6).update!(open_all_day: true, closed_all_day: false)
+      schedule = account.workspace_working_hours_schedule
+      schedule[6].merge!('open_all_day' => true, 'closed_all_day' => false)
+      account.update!(workspace_working_hours: schedule)
 
       result = described_class.new(reminder: reminder, conversation: conversation, now: Time.zone.parse('2026-05-02 23:00:00 UTC')).call
 
       expect(result).to be_allowed
+    end
+
+    it 'reschedules during a workspace break to the end of that break' do
+      account.update!(workspace_breaks: [{ 'days' => [1], 'start_time' => '12:00', 'end_time' => '13:00' }])
+
+      result = described_class.new(reminder: reminder, conversation: conversation,
+                                   now: Time.zone.parse('2026-05-04 12:15:00 UTC')).call
+
+      expect(result).to be_blocked
+      expect(result.scheduled_at).to be_between(
+        Time.zone.parse('2026-05-04 13:00:00 UTC'),
+        Time.zone.parse('2026-05-04 13:30:00 UTC')
+      ).inclusive
     end
   end
 

@@ -17,15 +17,13 @@ class Api::V1::Accounts::InboxMembersController < Api::V1::Accounts::BaseControl
 
   def update
     authorize @inbox, :update?
-    update_agents_list
+    @inbox.add_members(Current.account.users.ids)
     fetch_updated_agents
   end
 
   def destroy
     authorize @inbox, :destroy?
-    ActiveRecord::Base.transaction do
-      @inbox.remove_members(params[:user_ids])
-    end
+    @inbox.add_members(Current.account.users.ids)
     head :ok
   end
 
@@ -35,23 +33,8 @@ class Api::V1::Accounts::InboxMembersController < Api::V1::Accounts::BaseControl
     @agents = Current.account.users.where(id: @inbox.members.select(:user_id))
   end
 
-  def update_agents_list
-    # get all the user_ids which the inbox currently has as members.
-    # get the list of  user_ids from params
-    # the missing ones are the agents which are to be deleted from the inbox
-    # the new ones are the agents which are to be added to the inbox
-    ActiveRecord::Base.transaction do
-      @inbox.add_members(agents_to_be_added_ids)
-      @inbox.remove_members(agents_to_be_removed_ids)
-    end
-  end
-
   def agents_to_be_added_ids
     requested_agents_ids - @current_agents_ids
-  end
-
-  def agents_to_be_removed_ids
-    @current_agents_ids - requested_agents_ids
   end
 
   def requested_agents_ids

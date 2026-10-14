@@ -1,6 +1,16 @@
 require 'rails_helper'
 
 RSpec.describe ReportingEventHelper, type: :helper do
+  describe '#business_hours' do
+    it 'uses the workspace schedule even when the legacy inbox flag is off' do
+      account = create(:account, workspace_timezone: 'UTC', workspace_working_hours: AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.deep_dup)
+      inbox = create(:inbox, account: account, working_hours_enabled: false)
+      from = Time.zone.parse('2026-05-04 10:00:00 UTC')
+
+      expect(helper.business_hours(inbox, from, from + 1.hour)).to eq(3600)
+    end
+  end
+
   describe '#last_non_human_activity' do
     let(:account) { create(:account) }
     let(:inbox) { create(:inbox, account: account) }

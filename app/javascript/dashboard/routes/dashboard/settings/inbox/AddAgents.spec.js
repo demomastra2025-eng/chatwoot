@@ -2,19 +2,10 @@ import { flushPromises, shallowMount } from '@vue/test-utils';
 
 import AddAgents from './AddAgents.vue';
 
-const inboxMembersUpdateMock = vi.hoisted(() => vi.fn());
-const inboxMembersShowMock = vi.hoisted(() => vi.fn());
 const routerReplaceMock = vi.hoisted(() => vi.fn());
 const getVirtualPbxStatusMock = vi.hoisted(() => vi.fn());
 const updateVirtualPbxChannelMock = vi.hoisted(() => vi.fn());
 const alertMock = vi.hoisted(() => vi.fn());
-
-vi.mock('../../../../api/inboxMembers', () => ({
-  default: {
-    show: inboxMembersShowMock,
-    update: inboxMembersUpdateMock,
-  },
-}));
 
 vi.mock('dashboard/api/channel/voice/voiceAPIClient', () => ({
   default: {
@@ -69,30 +60,18 @@ const buildWrapper = ({
 
 describe('AddAgents', () => {
   beforeEach(() => {
-    inboxMembersUpdateMock.mockReset();
-    inboxMembersShowMock.mockReset();
     routerReplaceMock.mockReset();
     getVirtualPbxStatusMock.mockReset();
     updateVirtualPbxChannelMock.mockReset();
     alertMock.mockReset();
-    inboxMembersUpdateMock.mockResolvedValue({});
-    inboxMembersShowMock.mockResolvedValue({ data: { payload: [] } });
     getVirtualPbxStatusMock.mockRejectedValue(new Error('not virtual pbx'));
     updateVirtualPbxChannelMock.mockResolvedValue({ payload: { errors: [] } });
   });
 
-  it('preserves route context when moving to the finish step', async () => {
-    const wrapper = buildWrapper();
-    await flushPromises();
-    wrapper.vm.selectedAgentIds = [7, 8];
-
-    await wrapper.vm.addAgents();
+  it('skips the staff step and preserves route context for Twilio', async () => {
+    buildWrapper();
     await flushPromises();
 
-    expect(inboxMembersUpdateMock).toHaveBeenCalledWith({
-      inboxId: '4690',
-      agentList: [7, 8],
-    });
     expect(routerReplaceMock).toHaveBeenCalledWith({
       name: 'settings_inbox_finish',
       params: {
@@ -103,12 +82,15 @@ describe('AddAgents', () => {
     });
   });
 
-  it('keeps the employee picker available for a Voice inbox without a provider query', async () => {
+  it('skips the SIP profile step for a voice inbox without a profile provider', async () => {
     buildWrapper({ routeQuery: {} });
     await flushPromises();
 
-    expect(routerReplaceMock).not.toHaveBeenCalled();
-    expect(inboxMembersShowMock).toHaveBeenCalledWith('4690');
+    expect(routerReplaceMock).toHaveBeenCalledWith({
+      name: 'settings_inbox_finish',
+      params: { accountId: '530', inbox_id: '4690' },
+      query: {},
+    });
     expect(getVirtualPbxStatusMock).toHaveBeenCalledWith('4690');
   });
 
@@ -124,8 +106,6 @@ describe('AddAgents', () => {
       params: { accountId: '530', inbox_id: '4690' },
       query: { provider: 'twilio' },
     });
-    expect(inboxMembersShowMock).not.toHaveBeenCalled();
-    expect(inboxMembersUpdateMock).not.toHaveBeenCalled();
     expect(getVirtualPbxStatusMock).not.toHaveBeenCalled();
   });
 
@@ -154,10 +134,6 @@ describe('AddAgents', () => {
     await wrapper.vm.addAgents();
     await flushPromises();
 
-    expect(inboxMembersUpdateMock).toHaveBeenCalledWith({
-      inboxId: '4690',
-      agentList: [7],
-    });
     expect(updateVirtualPbxChannelMock).toHaveBeenCalledWith(
       '4690',
       {
@@ -187,6 +163,29 @@ describe('AddAgents', () => {
       },
       query: { provider: 'sipuni' },
     });
+  });
+
+  it('selects only users with existing SIP profiles when editing a phone channel', async () => {
+    getVirtualPbxStatusMock.mockResolvedValue({
+      payload: {
+        ui_config: {
+          channel: { provider_kind: 'sipuni' },
+          employees: [{ user_id: 7, internal_extension: '207' }],
+        },
+      },
+    });
+    const wrapper = buildWrapper({
+      agents: [
+        { id: 7, name: 'Operator One' },
+        { id: 8, name: 'Operator Two' },
+      ],
+      routeQuery: { provider: 'sipuni' },
+    });
+    await flushPromises();
+
+    expect(wrapper.vm.selectedAgentIds).toEqual([7]);
+    expect(wrapper.vm.virtualPbxProfiles[7].internalExtension).toBe('207');
+    expect(wrapper.vm.virtualPbxProfiles[8]).toBeUndefined();
   });
 
   it('saves Virtual PBX Binotel employee SIP credentials without remote commit', async () => {
@@ -345,7 +344,6 @@ describe('AddAgents', () => {
     await wrapper.vm.addAgents();
     await flushPromises();
 
-    expect(inboxMembersUpdateMock).not.toHaveBeenCalled();
     expect(updateVirtualPbxChannelMock).not.toHaveBeenCalled();
     expect(alertMock).toHaveBeenCalledWith(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.INTERNAL_EXTENSION.REQUIRED'

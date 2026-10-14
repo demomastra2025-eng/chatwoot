@@ -26,16 +26,17 @@ RSpec.describe Captain::Tools::Copilot::UpdateInboxSettingsService do
 
     expect(payload['action']).to eq('update_inbox_settings')
     expect(payload['updated_fields']).to include(
-      'name', 'timezone', 'enable_auto_assignment', 'working_hours_enabled', 'out_of_office_message', 'allow_messages_after_resolved'
+      'name', 'timezone', 'enable_auto_assignment', 'out_of_office_message', 'allow_messages_after_resolved'
     )
     expect(inbox.reload).to have_attributes(
       name: 'New Support',
       timezone: 'Asia/Almaty',
-      enable_auto_assignment: false,
-      working_hours_enabled: true,
       out_of_office_message: 'We are closed',
       allow_messages_after_resolved: false
     )
+    expect(account.reload.conversation_auto_assignment_enabled?).to be(false)
+    expect(inbox.enable_auto_assignment?).to be(false)
+    expect(inbox[:enable_auto_assignment]).to be(true)
   end
 
   it 'rejects inboxes outside the assistant account' do
