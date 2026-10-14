@@ -6,7 +6,9 @@ require 'uri'
 require 'timeout'
 
 class Llm::OpenRouterDecisionClient
-  SUPPORTED_MODELS = %w[microsoft/microsoft-decision-1 microsoft/microsoft-decision-1-20261009].freeze
+  SUPPORTED_MODELS = %w[
+    microsoft/microsoft-decision-1 microsoft/microsoft-decision-1-20261009 openai/gpt-6-luna-decisions
+  ].freeze
   DEFAULT_API_BASE = 'https://openrouter.ai/api/v1'
   REQUEST_TIMEOUT_SECONDS = 110
   MAX_RESPONSE_BYTES = 1_048_576

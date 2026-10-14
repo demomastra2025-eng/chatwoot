@@ -271,6 +271,17 @@ RSpec.describe Llm::Config do
       expect(described_class.model_for(feature: 'outcome_classification')).to eq('microsoft/microsoft-decision-1')
     end
 
+    it 'uses the installation language decision model and its built-in default' do
+      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
+      upsert_installation_config('CAPTAIN_LANGUAGE_DETECTION_MODEL', '')
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return({})
+
+      expect(described_class.model_for(feature: 'language_detection')).to eq('openai/gpt-6-luna-decisions')
+
+      upsert_installation_config('CAPTAIN_LANGUAGE_DETECTION_MODEL', 'openai/gpt-6-luna-decisions')
+      expect(described_class.model_for(feature: 'language_detection')).to eq('openai/gpt-6-luna-decisions')
+    end
+
     it 'preserves an explicit dated Decision model selected by the platform' do
       upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
       upsert_installation_config('CAPTAIN_OUTCOME_CLASSIFIER_MODEL', 'microsoft/microsoft-decision-1-20261009')

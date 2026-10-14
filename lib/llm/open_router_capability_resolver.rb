@@ -58,8 +58,8 @@ class Llm::OpenRouterCapabilityResolver
       end
 
       if model_config['type'] == 'decision' &&
-         (feature_key != 'outcome_classification' || !Llm::Models.decision_model?(canonical_model))
-        reasons << reason('decision_model_unsupported', 'Decision models are supported only for outcome classification with an approved model ID.')
+         (%w[outcome_classification language_detection].exclude?(feature_key) || !Llm::Models.decision_model?(canonical_model))
+        reasons << reason('decision_model_unsupported', 'Decision model is unavailable for this feature or model ID.')
         return result(canonical_model, feature_key, false, reasons, missing, model_config, endpoint_metadata)
       end
 

@@ -32,15 +32,29 @@ RSpec.describe Llm::OpenRouterRuntime, '#decide' do
   end
 
   def decision_request(**overrides)
-    Llm::FeatureRequest.new(**{
-      feature: :outcome_classification, account: account, model: model, input: state,
-      options: { decision_criteria: criteria, decision_instructions: instructions }
-    }.merge(overrides))
+    Llm::FeatureRequest.new(feature: :outcome_classification, account: account, model: model, input: state,
+                            options: { decision_criteria: criteria, decision_instructions: instructions }, **overrides)
   end
 
   def private_values
     [state['messages'].first['content'], criteria['synthetic_completed_answer'], instructions,
      'synthetic_completed_answer', 'SYNTHETIC_PRIVATE_PROVIDER_TEXT', api_key]
+  end
+
+  it 'uses the same Decisions transport for language detection' do
+    language_model = 'openai/gpt-6-luna-decisions'
+    stub_request(:post, endpoint).to_return(status: 200, body: response_body.merge(
+      model: language_model, answers: { reason: { choice: 'kk', confidence: 0.9 } }
+    ).to_json)
+
+    request = decision_request(
+      feature: :language_detection, model: language_model,
+      input: { messages: '1. Fake patient words' },
+      options: { decision_criteria: { 'ru' => 'Russian.', 'kk' => 'Kazakh.' }, decision_instructions: 'Choose a language.' }
+    )
+    result = Llm::Runtime.decide(request)
+
+    expect(result.choice).to eq('kk')
   end
 
   it 'applies provider preferences and mandatory ZDR before sending the decision state' do
@@ -147,7 +161,7 @@ RSpec.describe Llm::OpenRouterRuntime, '#decide' do
     request = decision_request
     # Current stored budget policies are advisory; exercise the runtime's refusal boundary explicitly.
     expect(Llm::BudgetEvaluator).to receive(:evaluate!).with(request: request, model: model)
-      .and_raise(StandardError, 'synthetic budget refusal')
+                                                       .and_raise(StandardError, 'synthetic budget refusal')
 
     expect { Llm::Runtime.decide(request) }.to raise_error(StandardError, 'synthetic budget refusal')
     expect(a_request(:post, endpoint)).not_to have_been_made
@@ -161,7 +175,7 @@ RSpec.describe Llm::OpenRouterRuntime, '#decide' do
       expect(Llm::BudgetEvaluator).not_to receive(:evaluate!)
 
       expect { Llm::Runtime.decide(decision_request(feature: feature)) }
-        .to raise_error(ArgumentError, 'Decisions is only available for outcome classification.')
+        .to raise_error(ArgumentError, 'Decisions is unavailable for this feature.')
       expect(a_request(:post, endpoint)).not_to have_been_made
       expect(LlmUsageEvent.where(account_id: account.id)).to be_empty
     end

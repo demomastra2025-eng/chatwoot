@@ -153,7 +153,7 @@ class Llm::OpenRouterRuntime
 
   def decide(request)
     request = normalize_request(request)
-    raise ArgumentError, 'Decisions is only available for outcome classification.' unless request.feature_key == 'outcome_classification'
+    raise ArgumentError, 'Decisions is unavailable for this feature.' unless decision_feature?(request.feature_key)
 
     model = resolve_model(request)
     raise ArgumentError, 'Unsupported decision model.' unless Llm::OpenRouterDecisionClient.supported_model?(model)
@@ -163,11 +163,9 @@ class Llm::OpenRouterRuntime
     headers = Llm::OpenRouterHeaders.build(include_cache: false)
     metadata = native_routing_metadata(request, model, profile, headers).merge(openrouter_native_endpoint: '/alpha/decisions')
     # FeatureRequest symbolises nested options; the Decisions contract uses string category IDs.
-    criteria = request.options[:decision_criteria]
-    criteria = criteria.stringify_keys if criteria.is_a?(Hash)
     observe_native_request(request, model, 'decision.complete', routing_metadata: metadata) do
       Llm::OpenRouterDecisionClient.choose(
-        state: request.input, criteria: criteria, instructions: request.options[:decision_instructions],
+        state: request.input, criteria: decision_criteria(request), instructions: request.options[:decision_instructions],
         model: model, api_key: api_key!(request), api_base: api_base(request),
         provider: profile.provider_preferences, headers: headers.headers
       )
@@ -199,6 +197,15 @@ class Llm::OpenRouterRuntime
   end
 
   private
+
+  def decision_feature?(feature_key)
+    %w[outcome_classification language_detection].include?(feature_key)
+  end
+
+  def decision_criteria(request)
+    criteria = request.options[:decision_criteria]
+    criteria.is_a?(Hash) ? criteria.stringify_keys : criteria
+  end
 
   def normalize_request(request, feature: nil)
     return request if request.is_a?(Llm::FeatureRequest)

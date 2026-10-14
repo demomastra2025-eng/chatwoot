@@ -177,6 +177,7 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
             CAPTAIN_MODERATION_MODEL: 'openai/gpt-oss-safeguard-20b',
             CAPTAIN_CUSTOM_GUARDRAIL_MODEL: 'openai/gpt-6-luna',
             CAPTAIN_OUTCOME_CLASSIFIER_MODEL: 'microsoft/microsoft-decision-1',
+            CAPTAIN_LANGUAGE_DETECTION_MODEL: 'openai/gpt-6-luna-decisions',
             CAPTAIN_EMBEDDING_MODEL: 'text-embedding-3-small',
             CAPTAIN_LABEL_SUGGESTION_MODEL: 'gpt-5.4-mini',
             CAPTAIN_ASSISTANT_MODEL_ALLOWLIST: '["openai/gpt-6-luna", " openai/gpt-5.6-luna ", "openai/gpt-6-luna"]'
@@ -194,6 +195,7 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
           expect(response).to have_http_status(:success)
           expect(response.body).to include(*model_config_names, 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')
           expect(response.body).to include('Короткий список моделей для основного агента', 'Модель расшифровки голоса')
+          expect(response.body).to include('Модель определения языка пациента')
         end
 
         it 'lists the same fields on the community plan config page' do

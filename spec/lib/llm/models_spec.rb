@@ -89,7 +89,7 @@ RSpec.describe Llm::Models do
       models = %w[microsoft/microsoft-decision-1 microsoft/microsoft-decision-1-20261009]
 
       expect(described_class.models_for('outcome_classification')).to include(*models)
-      (described_class.feature_keys - ['outcome_classification']).each do |feature|
+      (described_class.feature_keys - %w[outcome_classification language_detection]).each do |feature|
         expect(described_class.models_for(feature)).not_to include(*models)
         models.each { |model| expect(described_class.model_allowed_for_feature?(feature, model)).to be(false) }
       end

@@ -26,12 +26,18 @@ RSpec.describe Llm::OpenRouterCapabilityResolver do
     it 'rejects Decision models for guardrails and every other normal Captain feature' do
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return({})
 
-      (Llm::Models.feature_keys - ['outcome_classification']).each do |feature|
+      (Llm::Models.feature_keys - %w[outcome_classification language_detection]).each do |feature|
         result = described_class.call(model_id: 'microsoft/microsoft-decision-1', feature: feature)
 
         expect(result).not_to be_allowed
         expect(result.reasons).to include(hash_including(code: 'decision_model_unsupported'))
       end
+    end
+
+    it 'allows the language decision model for detection' do
+      result = described_class.call(model_id: 'openai/gpt-6-luna-decisions', feature: :language_detection)
+
+      expect(result).to be_allowed
     end
 
     it 'rejects unapproved Decision IDs even when catalog metadata claims the native capability' do

@@ -321,6 +321,11 @@
   description: 'Выбирает причину после передачи сотруднику или завершения. Получает короткий фрагмент и при необходимости один расширенный. Не меняет статус и не отвечает клиенту. Пусто — Microsoft Decision 1. Также можно выбрать модель со структурированным ответом.'
   value: 'microsoft/microsoft-decision-1'
   locked: false
+- name: CAPTAIN_LANGUAGE_DETECTION_MODEL
+  display_title: 'Модель определения языка пациента'
+  description: 'Определяет основной язык последних 20 сообщений пациента перед ответом агента. Пусто — openai/gpt-6-luna-decisions.'
+  value: 'openai/gpt-6-luna-decisions'
+  locked: false
 - name: CAPTAIN_LABEL_SUGGESTION_MODEL
   display_title: 'Модель подсказок меток'
   description: 'Модель для подсказок меток в диалоге (AI-подсказки); клиенты только включают или выключают подсказки. Пусто — берётся «Модель ИИ по умолчанию».'

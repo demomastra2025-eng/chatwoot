@@ -38,6 +38,13 @@ RSpec.describe Llm::InstallationModelConfig do
       expect(described_class.normalize('CAPTAIN_OUTCOME_CLASSIFIER_MODEL', 'vendor/unknown')).not_to be_valid
     end
 
+    it 'allows the language decision model only in its installation slot' do
+      model = 'openai/gpt-6-luna-decisions'
+      expect(described_class.normalize('CAPTAIN_LANGUAGE_DETECTION_MODEL', model)).to have_attributes(value: model, error: nil)
+      expect(described_class.normalize('CAPTAIN_LANGUAGE_DETECTION_MODEL', 'openai/gpt-6-luna')).not_to be_valid
+      expect(described_class.normalize('CAPTAIN_DEFAULT_MODEL', model)).not_to be_valid
+    end
+
     %w[microsoft/microsoft-decision-1 microsoft/microsoft-decision-1-20261009].each do |model|
       it "accepts the approved native Decision model #{model} only for the outcome classifier" do
         expect(described_class.normalize('CAPTAIN_OUTCOME_CLASSIFIER_MODEL', " #{model} "))

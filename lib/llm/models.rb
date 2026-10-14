@@ -21,6 +21,7 @@ module Llm::Models
     'editor' => [],
     'label_suggestion' => [],
     'outcome_classification' => %w[structured_output],
+    'language_detection' => %w[decision_classification],
     'custom_guardrail' => %w[structured_output],
     'customer_notice' => [],
     'assistant' => %w[structured_output tool_calling tool_choice],
@@ -75,11 +76,13 @@ module Llm::Models
     def providers = CONFIG['providers']
     def legacy_providers = CONFIG['legacy_providers'] || {}
     def configured_models = CONFIG['models']
+
     def models(account: nil)
       configured_models.merge(dynamic_model_configs(account: account)) do |model_name, configured, dynamic|
         decision_model?(model_name) ? configured : dynamic
       end
     end
+
     def features = CONFIG['features']
     def feature_keys = CONFIG['features'].keys
 
@@ -128,7 +131,7 @@ module Llm::Models
 
     def required_capability_sets_for(feature, runtime_preferences: nil, model_name: nil)
       feature_key = feature.to_s
-      if feature_key == 'outcome_classification' && decision_model?(model_name)
+      if %w[outcome_classification language_detection].include?(feature_key) && decision_model?(model_name)
         return [{ type: 'decision', capabilities: %w[decision_classification] }]
       end
 
@@ -220,7 +223,7 @@ module Llm::Models
 
       model_config = model_config(canonical_name, account: account)
       return false if model_config.blank?
-      return false if decision_model?(canonical_name) && feature_key != 'outcome_classification'
+      return false if decision_model?(canonical_name) && %w[outcome_classification language_detection].exclude?(feature_key)
 
       if configured_static_model_for_feature?(feature_key, canonical_name)
         return model_config_allowed_for_feature?(
@@ -694,7 +697,7 @@ module Llm::Models
     def model_config_allowed_for_feature?(feature_key, model_config, account: nil, runtime_filtered: true)
       return false if model_config.blank?
       if model_config['type'] == 'decision'
-        return feature_key.to_s == 'outcome_classification' && decision_model?(model_config['id'])
+        return %w[outcome_classification language_detection].include?(feature_key.to_s) && decision_model?(model_config['id'])
       end
 
       return true unless feature_key.to_s == 'help_center_search'
