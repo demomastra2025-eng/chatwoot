@@ -46,10 +46,10 @@ RSpec.describe Llm::InstallationModelConfig do
     end
 
     %w[inception/mercury-decide microsoft/microsoft-decision-1 microsoft/microsoft-decision-1-20261009].each do |model|
-      it "accepts the approved native Decision model #{model} only for the outcome classifier" do
+      it "accepts the approved native Decision model #{model} for classification and custom guardrails" do
         expect(described_class.normalize('CAPTAIN_OUTCOME_CLASSIFIER_MODEL', " #{model} "))
           .to have_attributes(value: model, error: nil)
-        expect(described_class.normalize('CAPTAIN_CUSTOM_GUARDRAIL_MODEL', model)).not_to be_valid
+        expect(described_class.normalize('CAPTAIN_CUSTOM_GUARDRAIL_MODEL', model)).to be_valid
         expect(described_class.normalize('CAPTAIN_MODERATION_MODEL', model)).not_to be_valid
         expect(described_class.normalize('CAPTAIN_DEFAULT_MODEL', model)).not_to be_valid
       end
@@ -75,10 +75,11 @@ RSpec.describe Llm::InstallationModelConfig do
       model
     end
 
-    it 'accepts absent and blank values and keeps the built-in Luna fallback valid' do
+    it 'accepts absent and blank values and keeps both Luna model choices valid' do
       expect(described_class.normalize(config_name, nil)).to have_attributes(value: '', error: nil)
       expect(described_class.normalize(config_name, '  ')).to have_attributes(value: '', error: nil)
       expect(described_class.normalize(config_name, Llm::Config::DEFAULT_MODEL)).to be_valid
+      expect(described_class.normalize(config_name, 'openai/gpt-6-luna-decisions')).to be_valid
     end
 
     it 'accepts a supported catalog chat model and removes surrounding whitespace' do

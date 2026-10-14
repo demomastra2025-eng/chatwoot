@@ -16,7 +16,7 @@ RSpec.describe Captain::Safety::CustomRulesStructuredOutputEngine do
 
   before do
     allow(GlobalConfig).to receive(:get_value).and_call_original
-    allow(GlobalConfig).to receive(:get_value).with('CAPTAIN_CUSTOM_GUARDRAIL_MODEL').and_return(nil)
+    allow(GlobalConfig).to receive(:get_value).with('CAPTAIN_CUSTOM_GUARDRAIL_MODEL').and_return(model)
     allow(Llm::Models).to receive(:supports_structured_output?).with(model, account: account).and_return(true)
     allow(Llm::Models).to receive(:model_config).and_call_original
     allow(Llm::Models).to receive(:model_config).with(model, account: account)
@@ -34,10 +34,11 @@ RSpec.describe Captain::Safety::CustomRulesStructuredOutputEngine do
     engine.select(model: engine.model, rules: rules, direction: 'output', text: text, context: context)
   end
 
-  it 'uses the Luna default independently of the existing provider moderation setting' do
+  it 'uses the Luna Decisions default independently of the existing provider moderation setting' do
+    allow(GlobalConfig).to receive(:get_value).with('CAPTAIN_CUSTOM_GUARDRAIL_MODEL').and_return(nil)
     expect(Llm::Config).not_to receive(:moderation_model)
 
-    expect(engine.model).to eq(Llm::Config::DEFAULT_MODEL)
+    expect(engine.model).to eq('openai/gpt-6-luna-decisions')
   end
 
   it 'reads the separate global configuration and canonicalizes a configured model' do

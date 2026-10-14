@@ -299,8 +299,8 @@
   locked: false
 - name: CAPTAIN_CUSTOM_GUARDRAIL_MODEL
   display_title: 'Модель пользовательских проверок входящих сообщений и ответов'
-  description: 'Проверяет условия, заданные в профиле агента. Модель должна поддерживать структурированный ответ. Пусто — OpenAI GPT-6 Luna. При ошибке проверки автоматический ответ останавливается и диалог передаётся сотруднику.'
-  value: 'openai/gpt-6-luna'
+  description: 'Проверяет условия, заданные в профиле агента. Подходит модель решений или чата со структурированным ответом. Пусто — OpenAI GPT-6 Luna Decisions. При ошибке проверки агент продолжает ответ без этой проверки.'
+  value: 'openai/gpt-6-luna-decisions'
   locked: false
 - name: CAPTAIN_CUSTOMER_NOTICE_MODEL
   display_title: 'Модель сообщений при передаче и завершении'

@@ -18,12 +18,12 @@ RSpec.describe 'Claude Haiku 5.5 model configuration' do
     allow(Llm::OpenRouterEndpointCatalog).to receive(:endpoint_metadata).and_return({})
   end
 
-  it 'offers the exact model in both default lists without replacing any feature default' do
+  it 'offers the exact model in both default lists while preserving the configured feature defaults' do
     expect(JSON.parse(seed_allowlist)).to eq(Llm::Models::DEFAULT_CURATED_MODELS)
     expect(Llm::Models.curated_model_names_for(:assistant, account: account)).to include(model)
     expect(Llm::Models.configured_default_model_for(:assistant)).to eq('openai/gpt-6-luna')
     expect(Llm::Models.configured_default_model_for(:outcome_classification)).to eq('inception/mercury-decide')
-    expect(Llm::Models.configured_default_model_for(:custom_guardrail)).to eq('openai/gpt-6-luna')
+    expect(Llm::Models.configured_default_model_for(:custom_guardrail)).to eq('openai/gpt-6-luna-decisions')
   end
 
   it 'identifies the confirmed canonical model without claiming unsupported capabilities' do

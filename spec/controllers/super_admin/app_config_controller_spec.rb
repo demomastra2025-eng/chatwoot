@@ -259,16 +259,15 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
             .to eq('microsoft/microsoft-decision-1-20261009')
         end
 
-        it 'rejects Decision as the custom guardrail model and retains both explicit existing settings' do
+        it 'accepts Decision as the custom guardrail model and retains the outcome setting' do
           upsert_installation_config('CAPTAIN_CUSTOM_GUARDRAIL_MODEL', 'openai/gpt-6-luna')
           upsert_installation_config('CAPTAIN_OUTCOME_CLASSIFIER_MODEL', 'openai/gpt-5.4-mini')
 
           post '/super_admin/app_config?config=captain',
                params: { app_config: { CAPTAIN_CUSTOM_GUARDRAIL_MODEL: 'microsoft/microsoft-decision-1' } }
 
-          expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
-          expect(flash[:alert]).to include('CAPTAIN_CUSTOM_GUARDRAIL_MODEL', 'microsoft/microsoft-decision-1')
-          expect(InstallationConfig.find_by(name: 'CAPTAIN_CUSTOM_GUARDRAIL_MODEL')&.value).to eq('openai/gpt-6-luna')
+          expect(response).to redirect_to(super_admin_settings_path)
+          expect(InstallationConfig.find_by(name: 'CAPTAIN_CUSTOM_GUARDRAIL_MODEL')&.value).to eq('microsoft/microsoft-decision-1')
           expect(InstallationConfig.find_by(name: 'CAPTAIN_OUTCOME_CLASSIFIER_MODEL')&.value).to eq('openai/gpt-5.4-mini')
         end
 

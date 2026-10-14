@@ -55,7 +55,7 @@ RSpec.describe Llm::Models do
       expect(described_class.features.dig('audio_transcription', 'default')).to eq('openai/gpt-4o-mini-transcribe')
       expect(described_class.features.dig('moderation', 'default')).to eq('openai/gpt-oss-safeguard-20b')
       expect(described_class.features.dig('outcome_classification', 'default')).to eq('inception/mercury-decide')
-      expect(described_class.features.dig('custom_guardrail', 'default')).to eq('openai/gpt-6-luna')
+      expect(described_class.features.dig('custom_guardrail', 'default')).to eq('openai/gpt-6-luna-decisions')
     end
   end
 
@@ -66,9 +66,9 @@ RSpec.describe Llm::Models do
       allow(Llm::OpenRouterEndpointCatalog).to receive(:endpoint_metadata).and_return({})
     end
 
-    it 'selects the native classifier default without changing the independent Luna guardrail default' do
+    it 'selects independent Decision defaults for the outcome classifier and custom guardrail' do
       expect(described_class.default_model_for('outcome_classification')).to eq('inception/mercury-decide')
-      expect(described_class.default_model_for('custom_guardrail')).to eq('openai/gpt-6-luna')
+      expect(described_class.default_model_for('custom_guardrail')).to eq('openai/gpt-6-luna-decisions')
     end
 
     it 'keeps native transport metadata authoritative even when a refreshed chat catalog claims chat capabilities' do
@@ -85,11 +85,13 @@ RSpec.describe Llm::Models do
       expect(described_class.supports_tool_calling?(model)).to be(false)
     end
 
-    it 'lists approved Decision models only for outcome classification' do
+    it 'allows approved Decision models for outcome classification and custom guardrails' do
       models = %w[inception/mercury-decide microsoft/microsoft-decision-1 microsoft/microsoft-decision-1-20261009]
 
       expect(described_class.models_for('outcome_classification')).to include(*models)
-      (described_class.feature_keys - %w[outcome_classification language_detection]).each do |feature|
+      expect(described_class.models_for('custom_guardrail')).to include('openai/gpt-6-luna-decisions')
+      models.each { |model| expect(described_class.model_allowed_for_feature?('custom_guardrail', model)).to be(true) }
+      (described_class.feature_keys - %w[outcome_classification language_detection custom_guardrail]).each do |feature|
         expect(described_class.models_for(feature)).not_to include(*models)
         models.each { |model| expect(described_class.model_allowed_for_feature?(feature, model)).to be(false) }
       end
