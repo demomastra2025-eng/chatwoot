@@ -524,7 +524,7 @@ class Captain::Evals::RoutingBenchmark::Runner
     Captain::Evals::RoutingBenchmark::ToolTrace.compact(tool_calls).each_with_index.map do |call, index|
       next call if tool_calls[index][:result].blank?
 
-      call.merge(result: tool_calls[index][:result].to_s.truncate(1000))
+      call.merge(result: tool_calls[index][:result].to_s.truncate(4000))
     end
   end
 
@@ -534,7 +534,7 @@ class Captain::Evals::RoutingBenchmark::Runner
     names = { 'ru' => 'Russian', 'kk' => 'Kazakh', 'en' => 'English' }
     return 'the language the criterion asks for' if code.empty?
 
-    "#{names.fetch(code, code)} (#{code}), the language of the patient (a clinic term in another language is fine)"
+    "#{names.fetch(code, code)} (#{code}), the language of the patient (a clinic term or quoted catalog service/doctor name in another language is fine)"
   end
 
   # What the code knows about the staff handoff, which the tool calls do not show when a council hands over a part it cannot answer.
@@ -559,7 +559,18 @@ class Captain::Evals::RoutingBenchmark::Runner
 
   # The dialogue rubric up to the first "Ход 1:": who the patient is and the rules for all replies.
   def rubric_header(dialogue)
-    dialogue['rubric'].to_s.split(/\s*Ход\s+1:/, 2).first.to_s.squish
+    header = dialogue['rubric'].to_s.split(/\s*Ход\s+1:/, 2).first.to_s.squish
+    return header if header.present?
+
+    dialogue_customer_text(dialogue)
+  end
+
+  def dialogue_customer_text(dialogue)
+    key = dialogue['contact'].to_s
+    return '' if key.empty?
+
+    name = (@workspace_data || {}).fetch('contacts', []).find { |row| row['key'] == key }&.dig('name')
+    name ? "Пациент — #{name} (#{key})." : "Пациент — #{key}."
   end
 
   # Prices, doctors, seeded appointments, and the knowledge base of the workspace: what a correct reply may state.

@@ -1,5 +1,5 @@
 class Captain::ToolExecutionAuditService
-  MAX_RESULT_PREVIEW_LENGTH = 1000
+  MAX_RESULT_PREVIEW_LENGTH = 6000
   SENSITIVE_KEY_PATTERN = /
     (otp|token|secret|password|credential|authorization|process_?id|session|
      api_?key|access_?key|refresh|url|link|webhook|metadata|source_?text|content|artifact|

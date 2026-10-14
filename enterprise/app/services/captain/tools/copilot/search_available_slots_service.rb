@@ -36,7 +36,7 @@ class Captain::Tools::Copilot::SearchAvailableSlotsService < Captain::Tools::Cop
     publish_service_match(payload)
     payload = attach_next_available_slots(payload, search_params) if agent_scope?
 
-    formatted_payload(payload)
+    formatted_payload(prioritize_slot_keys(payload))
   rescue Scheduling::AvailableSlotSearchService::MissingServiceLinkError => e
     scheduling_tool_failure(Scheduling::Error.new(
       code: 'SERVICE_NOT_AVAILABLE_FOR_RESOURCE', status: :unprocessable_content,
@@ -84,6 +84,10 @@ class Captain::Tools::Copilot::SearchAvailableSlotsService < Captain::Tools::Cop
       code: 'RESOURCE_UNAVAILABLE', message: 'Resource is outside this agent booking scope',
       status: :not_found, details: { reason: 'resource_outside_scope' }
     )
+  end
+
+  def prioritize_slot_keys(payload)
+    payload.slice(:total_slots, :slots, :next_available_slots).merge(payload)
   end
 
   def attach_next_available_slots(payload, search_params)
