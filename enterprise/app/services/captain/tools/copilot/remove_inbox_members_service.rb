@@ -5,9 +5,9 @@ class Captain::Tools::Copilot::RemoveInboxMembersService < Captain::Tools::Copil
     'remove_inbox_members'
   end
 
-  description 'Remove one or more account users from an inbox membership list'
+  description 'Process a legacy inbox member removal request; workspace members remain on every inbox'
   param :inbox_id, type: :number, desc: 'Account inbox ID', required: true
-  param :user_ids, type: :string, desc: 'Comma-separated account user IDs to remove from inbox members', required: true
+  param :user_ids, type: :string, desc: 'Comma-separated account user IDs in the removal request', required: true
 
   def execute(inbox_id:, user_ids:)
     ensure_account_administrator!
@@ -16,12 +16,14 @@ class Captain::Tools::Copilot::RemoveInboxMembersService < Captain::Tools::Copil
     users = account_users!(user_ids)
     ids_to_remove = users.map(&:id) & inbox.members.pluck(:id)
     inbox.remove_members(ids_to_remove) if ids_to_remove.any?
+    inbox.reload
+    removed_ids = ids_to_remove - inbox.members.pluck(:id)
 
     formatted_payload(
       action: 'remove_inbox_members',
       inbox: inbox_payload(inbox),
-      removed_user_ids: ids_to_remove,
-      members: member_payloads(inbox.reload)
+      removed_user_ids: removed_ids,
+      members: member_payloads(inbox)
     )
   rescue StandardError => e
     tool_failure(e)

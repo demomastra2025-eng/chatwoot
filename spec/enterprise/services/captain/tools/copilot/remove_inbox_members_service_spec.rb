@@ -11,18 +11,16 @@ RSpec.describe Captain::Tools::Copilot::RemoveInboxMembersService do
     allow(Captain::Copilot::ToolConfirmationGate).to receive(:new).and_return(confirmation_gate)
   end
 
-  it 'removes account users from an inbox' do
+  it 'retains workspace members and reports that no users were removed' do
     inbox = create(:inbox, account: account)
     member = create(:user, account: account, name: 'Operator One')
     other_member = create(:user, account: account, name: 'Operator Two')
-    create(:inbox_member, inbox: inbox, user: member)
-    create(:inbox_member, inbox: inbox, user: other_member)
 
     payload = JSON.parse(service.execute(inbox_id: inbox.id, user_ids: member.id.to_s))
 
     expect(payload['action']).to eq('remove_inbox_members')
-    expect(payload['removed_user_ids']).to eq([member.id])
-    expect(inbox.reload.members).to contain_exactly(user, other_member)
+    expect(payload['removed_user_ids']).to be_empty
+    expect(inbox.reload.members).to contain_exactly(user, member, other_member)
   end
 
   it 'rejects users outside the assistant account' do

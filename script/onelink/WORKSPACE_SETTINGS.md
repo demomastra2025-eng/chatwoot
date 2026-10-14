@@ -12,6 +12,8 @@ Migration `20260901131000` copies the first enabled inbox's complete weekly sche
 
 Every account user is a member of every account inbox, including voice inboxes. The SIP phone and extension assignment still belongs to a specific user. Migration `20261014100000` inserts missing inbox memberships with conflict handling, selects the workspace auto assignment value by inbox majority (ties are on), and copies an account's linked assignment policy. Existing per inbox values and policy links remain stored. New users and inboxes fill memberships automatically.
 
+Legacy inbox membership removal requests retain workspace members. The Copilot removal tool reports only IDs actually removed, so its `removed_user_ids` array is empty when workspace membership keeps those users.
+
 The channel collaborators and working hours pages are removed. Virtual PBX setup still has a SIP profile step where an operator is assigned a phone and extension; it no longer changes inbox membership. Twilio and text channels finish without a staff selection step. The public and dashboard inbox payloads project the workspace schedule and assignment switch. Response time reporting uses the workspace weekly hours; its historical metric still omits break and day off intervals.
 
 ## Text AI routing

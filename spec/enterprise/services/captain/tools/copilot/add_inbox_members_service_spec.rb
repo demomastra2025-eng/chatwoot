@@ -11,15 +11,14 @@ RSpec.describe Captain::Tools::Copilot::AddInboxMembersService do
     allow(Captain::Copilot::ToolConfirmationGate).to receive(:new).and_return(confirmation_gate)
   end
 
-  it 'adds account users to an inbox' do
+  it 'reports account users who already belong to every inbox' do
     inbox = create(:inbox, account: account)
     member = create(:user, account: account, name: 'Operator One')
-    inbox.remove_members([member.id])
 
     payload = JSON.parse(service.execute(inbox_id: inbox.id, user_ids: member.id.to_s))
 
     expect(payload['action']).to eq('add_inbox_members')
-    expect(payload['added_user_ids']).to eq([member.id])
+    expect(payload['added_user_ids']).to be_empty
     expect(inbox.reload.members).to contain_exactly(user, member)
   end
 
