@@ -55,7 +55,7 @@ RSpec.describe Captain::OutcomeClassificationService do
 
     it 'expands at most once and keeps notes while excluding future and sibling-dialogue content' do
       23.times { |index| add_message("Public #{index}") }
-      add_message('PRIVATE NOTE', private: true)
+      add_message('PRIVATE NOTE', private: true, message_type: :outgoing, sender: assistant)
       transition
       add_message('FUTURE MESSAGE')
       sibling = create(:conversation, account: account, contact: conversation.contact)
@@ -141,7 +141,7 @@ RSpec.describe Captain::OutcomeClassificationService do
   it 'uses at most six public messages from the exact dialogue and supplies the clinic instruction on completion' do
     assistant.update!(description: 'Close only after payment is received.')
     9.times { |index| add_message("Message #{index}") }
-    add_message('PRIVATE NOTE', private: true)
+    add_message('PRIVATE NOTE', private: true, message_type: :outgoing, sender: assistant)
     transition
     add_message('FUTURE CUSTOMER MESSAGE')
     sibling = create(:conversation, account: account, contact: conversation.contact)
@@ -155,7 +155,7 @@ RSpec.describe Captain::OutcomeClassificationService do
       expect(args.fetch(:tools, [])).to be_empty
       payload = JSON.parse(args[:messages].last[:content])
       expect(payload['messages'].size).to eq(6)
-      expect(payload['messages']).to all(exclude('id'))
+      expect(payload['messages']).to all(satisfy { |row| !row.key?('id') })
       expect(payload['messages'].map { |row| row['content'] }).to eq((3..8).map { |index| "Message #{index}" })
       expect(payload['facts']['staff_notes']).to eq(['PRIVATE NOTE'])
       expect(payload['facts']['clinic_instruction']).to include('Close only after payment is received.')

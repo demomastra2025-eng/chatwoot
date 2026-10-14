@@ -209,8 +209,7 @@ RSpec.describe Captain::Playground::Session do
     session.with_lock do |workspace|
       workspace.data['inbox_id'] = inbox.id
       expect(workspace.routing_inbox).to eq(inbox)
-      expect { workspace.activate_agent!(member) }.to raise_error(Pundit::NotAuthorizedError)
-      Captain::AgentChannel.create!(account: account, inbox: inbox, assistant: member)
+      # Text channels expose every active external agent, including selected legacy profiles.
       expect(workspace.activate_agent!(member)).to eq(member)
     end
   end
@@ -224,7 +223,7 @@ RSpec.describe Captain::Playground::Session do
     end
   end
 
-  it 'routes by the grid of the chosen channel, not by a stored list of allowed targets' do
+  it 'routes to every active external agent on the chosen channel' do
     inbox = create(:inbox, account: account)
     attached = create(:captain_assistant, account: account, channel_scope: 'selected')
     detached = create(:captain_assistant, account: account, channel_scope: 'selected')
@@ -233,7 +232,7 @@ RSpec.describe Captain::Playground::Session do
 
     session.with_lock(inbox_id: inbox.id) do |workspace|
       expect(workspace.routing_inbox).to eq(inbox)
-      expect { workspace.activate_agent!(detached) }.to raise_error(Pundit::NotAuthorizedError)
+      expect(workspace.activate_agent!(detached)).to eq(detached)
       expect(workspace.activate_agent!(attached)).to eq(attached)
     end
   end

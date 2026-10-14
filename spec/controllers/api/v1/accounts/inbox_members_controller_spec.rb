@@ -74,6 +74,7 @@ RSpec.describe 'Workspace inbox membership API', type: :request do
   it 'rejects invalid POST user IDs without changing membership' do
     channel = inbox
     staff = agent
+    admin
     existing_ids = channel.inbox_members.ids
 
     post path, headers: headers, as: :json,
@@ -101,7 +102,7 @@ RSpec.describe 'Workspace inbox membership API', type: :request do
                 params: { inbox_id: 0, user_ids: [] }
     expect(response).to have_http_status(:not_found)
 
-    delete path, headers: admin.create_new_auth_token, as: :json,
+    delete path, headers: headers.merge(response.headers.slice('access-token', 'client', 'uid')), as: :json,
                  params: { inbox_id: 0, user_ids: [] }
     expect(response).to have_http_status(:not_found)
   end

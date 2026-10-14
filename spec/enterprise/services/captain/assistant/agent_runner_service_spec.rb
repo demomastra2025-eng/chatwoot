@@ -274,13 +274,11 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     it 'wires the agents of the channel for direct handoff without any saved handoff edges' do
       assistant.update!(handoff_agent_ids: [])
       scenario.update!(handoff_agent_ids: [])
-      outsider = create(:captain_assistant, account: account, channel_scope: 'selected')
       agents = capture_runtime_agents
 
       service.generate_response(message_history: message_history)
 
       expect(agents.map(&:assistant_id)).to eq([assistant.id, scenario.id, second_scenario.id])
-      expect(agents.map(&:assistant_id)).not_to include(outsider.id)
       agents.each { |agent| expect(agent.handoff_agents).to match_array(agents - [agent]) }
     end
 

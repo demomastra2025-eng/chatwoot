@@ -230,6 +230,7 @@ RSpec.describe Llm::Config do
         'custom_guardrail' => 'CAPTAIN_CUSTOM_GUARDRAIL_MODEL',
         'customer_notice' => 'CAPTAIN_CUSTOMER_NOTICE_MODEL',
         'label_suggestion' => 'CAPTAIN_LABEL_SUGGESTION_MODEL',
+        'language_detection' => 'CAPTAIN_LANGUAGE_DETECTION_MODEL',
         'outcome_classification' => 'CAPTAIN_OUTCOME_CLASSIFIER_MODEL'
       )
     end
