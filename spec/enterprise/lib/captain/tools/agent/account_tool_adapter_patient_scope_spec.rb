@@ -57,7 +57,7 @@ RSpec.describe Captain::Tools::Agent::AccountToolAdapter do
     end
     definition = Captain::ToolRegistry.definition_for('get_appointment_provider_status')
     expect(definition.allowed_scopes).to eq([Captain::ToolAccess::SCOPE_ASSISTANT])
-    expect(definition.assistant_tool_class).to eq(Captain::Tools::Copilot::GetAppointmentProviderStatusService)
+    expect(definition.assistant_tool_class).to eq(Captain::Tools::Account::GetAppointmentProviderStatusService)
   end
 
   it 'does not expose another clinical patient merely because the same caller booked them' do
@@ -220,7 +220,7 @@ RSpec.describe Captain::Tools::Agent::AccountToolAdapter do
     staff = create(:user, account: account)
     create(:scheduling_appointment, account: account, contact: contact)
     foreign = create(:scheduling_appointment, account: account, contact: other_contact)
-    service = Captain::Tools::Copilot::SearchAppointmentsService.new(assistant, user: staff)
+    service = Captain::Tools::Account::SearchAppointmentsService.new(assistant, user: staff)
 
     expect(JSON.parse(service.execute).fetch('appointments').pluck('id')).to include(foreign.id)
   end

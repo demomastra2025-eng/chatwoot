@@ -123,7 +123,7 @@ module Captain::Playground::TaskTools
       end
     end
     records.sort_by! { |task| [task['due_at'].blank? ? 1 : 0, task['due_at'].to_s, -parse_sort_time(task['updated_at']), -task['id']] }
-    limit = Captain::Tools::Copilot::BaseAccountTool.allocate.send(:parse_limit, @args['limit'])
+    limit = Captain::Tools::Account::BaseAccountTool.allocate.send(:parse_limit, @args['limit'])
     { tasks: records.first(limit).map { |record| native_task_payload(record) }, total_count: records.size, simulated: true }
   end
 

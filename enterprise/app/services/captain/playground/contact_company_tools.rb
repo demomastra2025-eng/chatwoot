@@ -17,7 +17,7 @@ module Captain::Playground::ContactCompanyTools
     contact_company_arguments!
     raise ArgumentError, 'Record is not available' unless @args.fetch('contact_id').to_s == caller['id'].to_s
 
-    { contact: native_contact_payload(caller, Captain::Tools::Copilot::GetContactService) }
+    { contact: native_contact_payload(caller, Captain::Tools::Account::GetContactService) }
   end
 
   def search_contacts
@@ -30,7 +30,7 @@ module Captain::Playground::ContactCompanyTools
         (@args['name'].blank? || synthetic_ilike?(record['name'], @args['name']))
     end
     { filters: @args.slice('email', 'phone_number', 'name'), total_count: records.size,
-      contacts: records.first(contact_company_limit).map { |record| native_contact_payload(record, Captain::Tools::Copilot::SearchContactsService) } }
+      contacts: records.first(contact_company_limit).map { |record| native_contact_payload(record, Captain::Tools::Account::SearchContactsService) } }
   end
 
   def update_contact
@@ -53,7 +53,7 @@ module Captain::Playground::ContactCompanyTools
     attributes['updated_at'] = Time.current.iso8601 if attributes.except('created_at', 'updated_at') !=
                                                     contact_projection(caller).attributes.slice(*CONTACT_PROJECTION_FIELDS).except('created_at', 'updated_at')
     caller.merge!(attributes)
-    { action: 'update_contact', contact: native_contact_payload(caller, Captain::Tools::Copilot::UpdateContactService), simulated: true }
+    { action: 'update_contact', contact: native_contact_payload(caller, Captain::Tools::Account::UpdateContactService), simulated: true }
   end
 
   def company_details
@@ -112,7 +112,7 @@ module Captain::Playground::ContactCompanyTools
   end
 
   def contact_company_limit
-    Captain::Tools::Copilot::BaseAccountTool.allocate.send(:parse_limit, @args['limit'])
+    Captain::Tools::Account::BaseAccountTool.allocate.send(:parse_limit, @args['limit'])
   end
 
   def native_contact_payload(record, service)

@@ -1371,15 +1371,15 @@ RSpec.describe Captain::CustomTool, type: :model do
       end
     end
 
-    describe '#copilot_tool' do
+    describe '#account_tool' do
       let(:assistant) { create(:captain_assistant, account: account) }
 
-      it 'returns the native copilot custom http tool wrapper' do
+      it 'returns the native account custom HTTP tool wrapper' do
         tool = create(:captain_custom_tool, account: account)
 
-        tool_instance = tool.copilot_tool(assistant)
+        tool_instance = tool.account_tool(assistant)
 
-        expect(tool_instance).to be_a(Captain::Tools::Copilot::CustomHttpTool)
+        expect(tool_instance).to be_a(Captain::Tools::Account::CustomHttpTool)
         expect(tool_instance.name).to eq(tool.slug)
       end
     end

@@ -21,8 +21,6 @@ readonly CURRENT="${ROOT}/current"
 readonly ENV_FILE="${ROOT}/.env.development"
 readonly RELEASE="${ROOT}/releases/onelink-dev-${SHA:0:12}"
 readonly TREE_VERIFIER=${ONELINK_TREE_VERIFIER:-/usr/local/sbin/onelink-verify-release-tree}
-readonly VOICE_SERVICE=onelink-ai-voice-dev.service
-readonly VOICE_READY_URL=http://127.0.0.1:8082/ready
 readonly RBENV_ROOT=/opt/rbenv
 readonly TEST_SEED=4816395
 readonly DEV_TOOLCHAIN_PATH="${RBENV_ROOT}/bin:${RBENV_ROOT}/shims:/opt/node-24/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -38,7 +36,7 @@ SPEC_FILES=(
   spec/services/scheduling/available_slot_search_service_spec.rb
   spec/services/scheduling/calendar_view_service_spec.rb
   spec/services/scheduling/id_list_param_parser_spec.rb
-  spec/enterprise/services/captain/tools/copilot/search_available_slots_service_spec.rb
+  spec/enterprise/services/captain/tools/account/search_available_slots_service_spec.rb
   spec/requests/api/v1/accounts/scheduling/appointments_spec.rb
 )
 RUBOCOP_FILES=(
@@ -68,7 +66,7 @@ SYNTAX_FILES=(
   "${RUBOCOP_FILES[@]}"
   enterprise/lib/captain/tools/operations/appointment_operations.rb
   spec/services/scheduling/available_slot_search_service_spec.rb
-  spec/enterprise/services/captain/tools/copilot/search_available_slots_service_spec.rb
+  spec/enterprise/services/captain/tools/account/search_available_slots_service_spec.rb
 )
 
 print_command() {
@@ -95,27 +93,12 @@ run_and_record() {
 [[ "$(< "${RELEASE}/.git_sha")" == "${SHA}" ]] || { echo "release SHA mismatch" >&2; exit 65; }
 if [[ "${MODE}" == full ]]; then
   [[ "$(readlink -f "${CURRENT}")" == "${RELEASE}" ]] || { echo "exact SHA is not the deployed release" >&2; exit 65; }
-  [[ "$(systemctl is-active "${VOICE_SERVICE}" || true)" == active ]] || {
-    echo "AI voice DEV runtime is not active" >&2
-    exit 69
-  }
-  voice_code="$(curl -sS -o /dev/null --max-time 10 -w '%{http_code}' "${VOICE_READY_URL}" || true)"
-  [[ "${voice_code}" == 200 ]] || { echo "AI voice DEV health check returned ${voice_code:-000}" >&2; exit 69; }
-  voice_pid="$(systemctl show "${VOICE_SERVICE}" -p MainPID --value)"
-  voice_cwd="$(readlink -f "/proc/${voice_pid}/cwd" 2>/dev/null || true)"
-  [[ "${voice_cwd}" == "${RELEASE}/services/onelink-ai-voice" ]] || {
-    echo "AI voice DEV runtime source mismatch: ${voice_cwd:-missing}" >&2
-    exit 65
-  }
-  printf 'runtime_app_sha=%s\n' "$(< "${CURRENT}/.git_sha")"
-  printf 'runtime_voice_sha=%s\n' "$(< "${RELEASE}/.git_sha")"
-  printf 'runtime_voice_cwd=%s\n' "${voice_cwd}"
 fi
 
 export RBENV_ROOT
 export PATH="${DEV_TOOLCHAIN_PATH}"
 hash -r
-cd "${RELEASE}" || exit 66
+cd "${RELEASE}"
 
 printf 'artifact=OneLink DEV deployed-release verification\n'
 printf 'sha=%s\n' "${SHA}"

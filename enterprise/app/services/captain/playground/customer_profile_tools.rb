@@ -21,14 +21,14 @@ module Captain::Playground::CustomerProfileTools
   end
 
   def my_contact_payload
-    Captain::Tools::Copilot::GetMyContactService.payload(contact_projection(caller)).deep_dup
+    Captain::Tools::Account::GetMyContactService.payload(contact_projection(caller)).deep_dup
   end
 
   def update_my_contact
     customer_profile_arguments!
     commit_my_contact!(my_contact_candidate(my_contact_changes))
     { success: true, contact: my_contact_payload, simulated: true }
-  rescue Captain::Tools::Copilot::UpdateMyContactService::InvalidBirthDate
+  rescue Captain::Tools::Account::UpdateMyContactService::InvalidBirthDate
     { success: false, reason: 'validation_error', field: 'birth_date', simulated: true }
   rescue ArgumentError
     { success: false, reason: 'validation_error', simulated: true }
@@ -36,7 +36,7 @@ module Captain::Playground::CustomerProfileTools
 
   # Same field mapping and value rules as the production service, applied to the scenario caller.
   def my_contact_changes
-    rules = Captain::Tools::Copilot::UpdateMyContactService.allocate
+    rules = Captain::Tools::Account::UpdateMyContactService.allocate
     attributes = @args.slice('first_name', 'last_name', 'middle_name', 'iin', 'phone_number', 'email').symbolize_keys
                       .transform_values { |value| value.is_a?(String) ? value.strip.presence : value }
     attributes[:name] = attributes.delete(:first_name) if attributes.key?(:first_name)
@@ -78,7 +78,7 @@ module Captain::Playground::CustomerProfileTools
     status = @args['status'].to_s.presence || 'any'
     raise ArgumentError, 'Invalid status' unless MY_DEAL_STATUSES.include?(status)
 
-    rules = Captain::Tools::Copilot::ListMyDealsService.allocate
+    rules = Captain::Tools::Account::ListMyDealsService.allocate
     limit = rules.send(:validated_limit, @args['limit'])
     offset = rules.send(:parse_offset, @args['offset'])
     deals = my_deals_in_scope(status, @args['pipeline'])

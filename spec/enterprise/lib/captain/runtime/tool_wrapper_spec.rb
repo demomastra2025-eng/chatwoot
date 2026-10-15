@@ -1383,7 +1383,7 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     end
 
     it 'does not end the run for a lookup of a specialist that does not exist or cannot be scheduled: the agent searches again' do
-      reader = Class.new { include Captain::Tools::Copilot::SchedulingQueryValidation }.new
+      reader = Class.new { include Captain::Tools::Account::SchedulingQueryValidation }.new
       missing = reader.send(:scheduling_tool_failure, Scheduling::Error.new(code: 'RESOURCE_NOT_FOUND', message: 'Resource not found',
                                                                            status: :not_found, details: { reason: 'unknown_resource' }))
       bad_ids = reader.send(:scheduling_tool_failure, Scheduling::Error.new(code: 'INVALID_RESOURCE_IDS', message: 'resource_ids must be integers',
@@ -1395,7 +1395,7 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     end
 
     it 'still ends the run for an internal failure of a scheduling read tool' do
-      reader = Class.new { include Captain::Tools::Copilot::SchedulingQueryValidation }.new
+      reader = Class.new { include Captain::Tools::Account::SchedulingQueryValidation }.new
       broken = reader.send(:scheduling_tool_failure, RuntimeError.new('boom'))
 
       expect(read_only_wrapper.call(result: broken)).to be_a(RubyLLM::Tool::Halt)

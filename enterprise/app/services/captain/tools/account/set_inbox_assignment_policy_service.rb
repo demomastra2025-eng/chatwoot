@@ -1,0 +1,59 @@
+# frozen_string_literal: true
+
+class Captain::Tools::Account::SetInboxAssignmentPolicyService < Captain::Tools::Account::BaseAccountTool
+  def self.name
+    'set_inbox_assignment_policy'
+  end
+
+  description 'Set the workspace assignment policy from an account inbox'
+  param :inbox_id, type: :number, desc: 'Account inbox ID', required: true
+  param :assignment_policy_id, type: :number, desc: 'Account assignment policy ID to attach to the inbox', required: true
+
+  def execute(inbox_id:, assignment_policy_id:)
+    ensure_account_administrator!
+
+    inbox = account.inboxes.active.find(inbox_id)
+    policy = account.assignment_policies.find(assignment_policy_id)
+    account.update!(conversation_assignment_policy_id: policy.id)
+
+    formatted_payload(
+      action: 'set_inbox_assignment_policy',
+      inbox: {
+        id: inbox.id,
+        name: inbox.name,
+        channel_type: inbox.display_channel_type
+      },
+      assignment_policy: policy_payload(account.workspace_assignment_policy)
+    )
+  rescue StandardError => e
+    tool_failure(e)
+  end
+
+  def active?
+    account_administrator?
+  end
+
+  private
+
+  def policy_payload(policy)
+    return nil if policy.blank?
+
+    {
+      id: policy.id,
+      name: policy.name,
+      enabled: policy.enabled,
+      assignment_order: policy.assignment_order,
+      conversation_priority: policy.conversation_priority,
+      fair_distribution_limit: policy.fair_distribution_limit,
+      fair_distribution_window: policy.fair_distribution_window,
+      assignment_delay_minutes: policy.assignment_delay_minutes,
+      max_open_conversations: policy.max_open_conversations,
+      assign_online_only: policy.assign_online_only,
+      assign_pending_conversations: policy.assign_pending_conversations,
+      exclusion_rules: policy.exclusion_rules,
+      monthly_new_client_quota: policy.monthly_new_client_quota,
+      sticky_owner_enabled: policy.sticky_owner_enabled,
+      sticky_owner_duration_days: policy.sticky_owner_duration_days
+    }
+  end
+end

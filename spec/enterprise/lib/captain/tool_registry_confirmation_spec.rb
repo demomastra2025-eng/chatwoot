@@ -18,13 +18,13 @@ RSpec.describe Captain::ToolRegistry do
         group_name: 'Confirmations',
         risk_level: 'high',
         agent_tool_class: Captain::Tools::RequestConfirmationTool,
-        assistant_tool_class: Captain::Tools::Copilot::RequestConfirmationService
+        assistant_tool_class: Captain::Tools::Account::RequestConfirmationService
       )
       expect(resolve_definition).to have_attributes(
         group_name: 'Confirmations',
         risk_level: 'high',
         agent_tool_class: Captain::Tools::ResolveConfirmationTool,
-        assistant_tool_class: Captain::Tools::Copilot::ResolveConfirmationService
+        assistant_tool_class: Captain::Tools::Account::ResolveConfirmationService
       )
     end
   end

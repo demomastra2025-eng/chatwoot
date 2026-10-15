@@ -116,7 +116,7 @@ class Captain::ToolRegistry
           group_name: 'AI Admin',
           icon: 'bot',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::ListCaptainAssistantsService,
+          assistant_tool_class: Captain::Tools::Account::ListCaptainAssistantsService,
           risk_level: 'low'
         ),
         definition(
@@ -126,7 +126,7 @@ class Captain::ToolRegistry
           group_name: 'AI Admin',
           icon: 'bot',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::GetCaptainAssistantService,
+          assistant_tool_class: Captain::Tools::Account::GetCaptainAssistantService,
           risk_level: 'low'
         ),
         definition(
@@ -136,7 +136,7 @@ class Captain::ToolRegistry
           group_name: 'AI Admin',
           icon: 'preview-link',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::PreviewCaptainAssistantPromptService,
+          assistant_tool_class: Captain::Tools::Account::PreviewCaptainAssistantPromptService,
           risk_level: 'low'
         ),
         definition(
@@ -146,7 +146,7 @@ class Captain::ToolRegistry
           group_name: 'AI Admin',
           icon: 'bot-add',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::UpdateCaptainAssistantService,
+          assistant_tool_class: Captain::Tools::Account::UpdateCaptainAssistantService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -158,7 +158,7 @@ class Captain::ToolRegistry
           group_name: 'AI Admin',
           icon: 'bot',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::ListCaptainScenariosService,
+          assistant_tool_class: Captain::Tools::Account::ListCaptainScenariosService,
           risk_level: 'low'
         ),
         definition(
@@ -168,7 +168,7 @@ class Captain::ToolRegistry
           group_name: 'AI Admin',
           icon: 'bot',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::GetCaptainScenarioService,
+          assistant_tool_class: Captain::Tools::Account::GetCaptainScenarioService,
           risk_level: 'low'
         ),
         definition(
@@ -178,7 +178,7 @@ class Captain::ToolRegistry
           group_name: 'AI Admin',
           icon: 'bot-add',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::CreateCaptainScenarioService,
+          assistant_tool_class: Captain::Tools::Account::CreateCaptainScenarioService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -190,7 +190,7 @@ class Captain::ToolRegistry
           group_name: 'AI Admin',
           icon: 'edit',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::UpdateCaptainScenarioService,
+          assistant_tool_class: Captain::Tools::Account::UpdateCaptainScenarioService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -202,7 +202,7 @@ class Captain::ToolRegistry
           group_name: 'AI Admin',
           icon: 'toggle-on',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::SetCaptainScenarioStatusService,
+          assistant_tool_class: Captain::Tools::Account::SetCaptainScenarioStatusService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -214,7 +214,7 @@ class Captain::ToolRegistry
           group_name: 'AI Admin',
           icon: 'delete',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::DeleteCaptainScenarioService,
+          assistant_tool_class: Captain::Tools::Account::DeleteCaptainScenarioService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -226,7 +226,7 @@ class Captain::ToolRegistry
           group_name: 'AI Admin',
           icon: 'document',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::ListCaptainKnowledgeDocumentsService,
+          assistant_tool_class: Captain::Tools::Account::ListCaptainKnowledgeDocumentsService,
           risk_level: 'low'
         ),
         definition(
@@ -236,7 +236,7 @@ class Captain::ToolRegistry
           group_name: 'AI Admin',
           icon: 'document',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::GetCaptainKnowledgeDocumentService,
+          assistant_tool_class: Captain::Tools::Account::GetCaptainKnowledgeDocumentService,
           risk_level: 'low'
         ),
         definition(
@@ -246,7 +246,7 @@ class Captain::ToolRegistry
           group_name: 'AI Admin',
           icon: 'document-add',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::CreateCaptainKnowledgeDocumentService,
+          assistant_tool_class: Captain::Tools::Account::CreateCaptainKnowledgeDocumentService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -258,7 +258,7 @@ class Captain::ToolRegistry
           group_name: 'AI Admin',
           icon: 'edit',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::UpdateCaptainKnowledgeDocumentService,
+          assistant_tool_class: Captain::Tools::Account::UpdateCaptainKnowledgeDocumentService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -270,7 +270,7 @@ class Captain::ToolRegistry
           group_name: 'AI Admin',
           icon: 'arrow-sync',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::ResyncCaptainKnowledgeDocumentService,
+          assistant_tool_class: Captain::Tools::Account::ResyncCaptainKnowledgeDocumentService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -282,7 +282,7 @@ class Captain::ToolRegistry
           group_name: 'AI Admin',
           icon: 'delete',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::DeleteCaptainKnowledgeDocumentService,
+          assistant_tool_class: Captain::Tools::Account::DeleteCaptainKnowledgeDocumentService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -294,7 +294,7 @@ class Captain::ToolRegistry
           group_name: 'AI Admin',
           icon: 'book-open',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::ListCaptainKnowledgeEntriesService,
+          assistant_tool_class: Captain::Tools::Account::ListCaptainKnowledgeEntriesService,
           risk_level: 'low'
         ),
         definition(
@@ -304,7 +304,7 @@ class Captain::ToolRegistry
           group_name: 'AI Admin',
           icon: 'book-open',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::GetCaptainKnowledgeEntryService,
+          assistant_tool_class: Captain::Tools::Account::GetCaptainKnowledgeEntryService,
           risk_level: 'low'
         ),
         definition(
@@ -314,7 +314,7 @@ class Captain::ToolRegistry
           group_name: 'AI Admin',
           icon: 'book-add',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::CreateCaptainKnowledgeEntryService,
+          assistant_tool_class: Captain::Tools::Account::CreateCaptainKnowledgeEntryService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -326,7 +326,7 @@ class Captain::ToolRegistry
           group_name: 'AI Admin',
           icon: 'edit',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::UpdateCaptainKnowledgeEntryService,
+          assistant_tool_class: Captain::Tools::Account::UpdateCaptainKnowledgeEntryService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -338,7 +338,7 @@ class Captain::ToolRegistry
           group_name: 'AI Admin',
           icon: 'delete',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::DeleteCaptainKnowledgeEntryService,
+          assistant_tool_class: Captain::Tools::Account::DeleteCaptainKnowledgeEntryService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -350,7 +350,7 @@ class Captain::ToolRegistry
           group_name: 'AI Admin',
           icon: 'plug',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::ListCaptainCustomToolsService,
+          assistant_tool_class: Captain::Tools::Account::ListCaptainCustomToolsService,
           risk_level: 'low'
         ),
         definition(
@@ -360,7 +360,7 @@ class Captain::ToolRegistry
           group_name: 'AI Admin',
           icon: 'plug',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::GetCaptainCustomToolService,
+          assistant_tool_class: Captain::Tools::Account::GetCaptainCustomToolService,
           risk_level: 'low'
         ),
         definition(
@@ -370,7 +370,7 @@ class Captain::ToolRegistry
           group_name: 'AI Admin',
           icon: 'plug-add',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::CreateCaptainCustomToolService,
+          assistant_tool_class: Captain::Tools::Account::CreateCaptainCustomToolService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -382,7 +382,7 @@ class Captain::ToolRegistry
           group_name: 'AI Admin',
           icon: 'edit',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::UpdateCaptainCustomToolService,
+          assistant_tool_class: Captain::Tools::Account::UpdateCaptainCustomToolService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -394,7 +394,7 @@ class Captain::ToolRegistry
           group_name: 'AI Admin',
           icon: 'toggle-on',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::SetCaptainCustomToolStatusService,
+          assistant_tool_class: Captain::Tools::Account::SetCaptainCustomToolStatusService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -406,7 +406,7 @@ class Captain::ToolRegistry
           group_name: 'AI Admin',
           icon: 'delete',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::DeleteCaptainCustomToolService,
+          assistant_tool_class: Captain::Tools::Account::DeleteCaptainCustomToolService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -419,7 +419,7 @@ class Captain::ToolRegistry
           icon: 'document',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::ListCaptainDocumentsService,
+          assistant_tool_class: Captain::Tools::Account::ListCaptainDocumentsService,
           risk_level: 'low'
         ),
         definition(
@@ -431,7 +431,7 @@ class Captain::ToolRegistry
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           capability_tool: true,
           agent_tool_class: Captain::Tools::FaqLookupTool,
-          assistant_tool_class: Captain::Tools::Copilot::FaqLookupService,
+          assistant_tool_class: Captain::Tools::Account::FaqLookupService,
           risk_level: 'low'
         ),
         definition(
@@ -443,7 +443,7 @@ class Captain::ToolRegistry
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           required_runtime_flags: %w[web_search],
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::WebSearchService,
+          assistant_tool_class: Captain::Tools::Account::WebSearchService,
           risk_level: 'low',
           idempotent: true,
           external_content: true
@@ -457,7 +457,7 @@ class Captain::ToolRegistry
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           required_runtime_flags: %w[web_scrape],
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::WebScrapeUrlService,
+          assistant_tool_class: Captain::Tools::Account::WebScrapeUrlService,
           risk_level: 'low',
           idempotent: true,
           external_content: true
@@ -470,7 +470,7 @@ class Captain::ToolRegistry
           icon: 'note-add',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::AddContactNoteTool,
-          assistant_tool_class: Captain::Tools::Copilot::AddContactNoteService,
+          assistant_tool_class: Captain::Tools::Account::AddContactNoteService,
           required_permissions: %w[contact_manage],
           risk_level: 'medium'
         ),
@@ -482,7 +482,7 @@ class Captain::ToolRegistry
           icon: 'eye-off',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::AddPrivateNoteTool,
-          assistant_tool_class: Captain::Tools::Copilot::AddPrivateNoteService,
+          assistant_tool_class: Captain::Tools::Account::AddPrivateNoteService,
           required_permissions: %w[
             conversation_manage
             conversation_unassigned_manage
@@ -498,7 +498,7 @@ class Captain::ToolRegistry
           icon: 'tag',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::AddLabelToConversationTool,
-          assistant_tool_class: Captain::Tools::Copilot::AddLabelToConversationService,
+          assistant_tool_class: Captain::Tools::Account::AddLabelToConversationService,
           required_permissions: %w[
             conversation_manage
             conversation_unassigned_manage
@@ -514,7 +514,7 @@ class Captain::ToolRegistry
           icon: 'exclamation-triangle',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::UpdatePriorityTool,
-          assistant_tool_class: Captain::Tools::Copilot::UpdatePriorityService,
+          assistant_tool_class: Captain::Tools::Account::UpdatePriorityService,
           required_permissions: %w[
             conversation_manage
             conversation_unassigned_manage
@@ -530,7 +530,7 @@ class Captain::ToolRegistry
           icon: 'checkmark',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::ResolveConversationTool,
-          assistant_tool_class: Captain::Tools::Copilot::ResolveConversationService,
+          assistant_tool_class: Captain::Tools::Account::ResolveConversationService,
           required_permissions: %w[
             conversation_manage
             conversation_unassigned_manage
@@ -547,7 +547,7 @@ class Captain::ToolRegistry
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           capability_tool: true,
           agent_tool_class: Captain::Tools::HandoffTool,
-          assistant_tool_class: Captain::Tools::Copilot::HandoffService,
+          assistant_tool_class: Captain::Tools::Account::HandoffService,
           required_permissions: %w[
             conversation_manage
             conversation_unassigned_manage
@@ -564,7 +564,7 @@ class Captain::ToolRegistry
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           capability_tool: true,
           agent_tool_class: Captain::Tools::CancelResponseTool,
-          assistant_tool_class: Captain::Tools::Copilot::CancelResponseService,
+          assistant_tool_class: Captain::Tools::Account::CancelResponseService,
           risk_level: 'low',
           idempotent: true
         ),
@@ -576,7 +576,7 @@ class Captain::ToolRegistry
           icon: 'bell',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::SendNotificationTool,
-          assistant_tool_class: Captain::Tools::Copilot::SendNotificationService,
+          assistant_tool_class: Captain::Tools::Account::SendNotificationService,
           required_permissions: %w[
             conversation_manage
             conversation_unassigned_manage
@@ -591,7 +591,7 @@ class Captain::ToolRegistry
           group_name: 'Conversations',
           icon: 'chat',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::GetConversationService,
+          assistant_tool_class: Captain::Tools::Account::GetConversationService,
           required_permissions: %w[
             conversation_manage
             conversation_unassigned_manage
@@ -607,7 +607,7 @@ class Captain::ToolRegistry
           icon: 'search',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::SearchConversationsService,
+          assistant_tool_class: Captain::Tools::Account::SearchConversationsService,
           required_permissions: %w[
             conversation_manage
             conversation_unassigned_manage
@@ -623,7 +623,7 @@ class Captain::ToolRegistry
           icon: 'user',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::GetContactService,
+          assistant_tool_class: Captain::Tools::Account::GetContactService,
           required_permissions: %w[contact_manage],
           risk_level: 'low'
         ),
@@ -635,7 +635,7 @@ class Captain::ToolRegistry
           icon: 'user',
           allowed_scopes: [Captain::ToolAccess::SCOPE_AGENT],
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::GetMyContactService,
+          assistant_tool_class: Captain::Tools::Account::GetMyContactService,
           required_permissions: %w[contact_manage],
           risk_level: 'low',
           selected_by_default: false
@@ -648,7 +648,7 @@ class Captain::ToolRegistry
           icon: 'search',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::SearchContactsService,
+          assistant_tool_class: Captain::Tools::Account::SearchContactsService,
           required_permissions: %w[contact_manage],
           risk_level: 'low'
         ),
@@ -659,7 +659,7 @@ class Captain::ToolRegistry
           group_name: 'Contacts',
           icon: 'user-add',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::CreateContactService,
+          assistant_tool_class: Captain::Tools::Account::CreateContactService,
           required_permissions: %w[contact_manage],
           risk_level: 'medium',
           idempotent: true
@@ -672,7 +672,7 @@ class Captain::ToolRegistry
           icon: 'user-edit',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::UpdateContactTool,
-          assistant_tool_class: Captain::Tools::Copilot::UpdateContactService,
+          assistant_tool_class: Captain::Tools::Account::UpdateContactService,
           required_permissions: %w[contact_manage],
           risk_level: 'medium'
         ),
@@ -684,7 +684,7 @@ class Captain::ToolRegistry
           icon: 'user-edit',
           allowed_scopes: [Captain::ToolAccess::SCOPE_AGENT],
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::UpdateMyContactService,
+          assistant_tool_class: Captain::Tools::Account::UpdateMyContactService,
           required_permissions: %w[contact_manage],
           risk_level: 'medium',
           selected_by_default: false
@@ -697,7 +697,7 @@ class Captain::ToolRegistry
           icon: 'briefcase',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::GetCompanyService,
+          assistant_tool_class: Captain::Tools::Account::GetCompanyService,
           risk_level: 'low'
         ),
         definition(
@@ -708,7 +708,7 @@ class Captain::ToolRegistry
           icon: 'search',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::SearchCompaniesService,
+          assistant_tool_class: Captain::Tools::Account::SearchCompaniesService,
           risk_level: 'low'
         ),
         definition(
@@ -719,7 +719,7 @@ class Captain::ToolRegistry
           icon: 'briefcase',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::CreateCompanyTool,
-          assistant_tool_class: Captain::Tools::Copilot::CreateCompanyService,
+          assistant_tool_class: Captain::Tools::Account::CreateCompanyService,
           required_permissions: %w[contact_manage],
           risk_level: 'high',
           idempotent: true
@@ -732,7 +732,7 @@ class Captain::ToolRegistry
           icon: 'briefcase-edit',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::UpdateCompanyTool,
-          assistant_tool_class: Captain::Tools::Copilot::UpdateCompanyService,
+          assistant_tool_class: Captain::Tools::Account::UpdateCompanyService,
           required_permissions: %w[contact_manage],
           risk_level: 'medium'
         ),
@@ -744,7 +744,7 @@ class Captain::ToolRegistry
           icon: 'money',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::GetDealService,
+          assistant_tool_class: Captain::Tools::Account::GetDealService,
           required_features: %w[crm_deals],
           required_permissions: %w[crm_deal_view crm_deal_manage],
           risk_level: 'low'
@@ -758,7 +758,7 @@ class Captain::ToolRegistry
           icon: 'search',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::SearchDealsService,
+          assistant_tool_class: Captain::Tools::Account::SearchDealsService,
           required_features: %w[crm_deals],
           required_permissions: %w[crm_deal_view crm_deal_manage],
           risk_level: 'low'
@@ -771,7 +771,7 @@ class Captain::ToolRegistry
           icon: 'money',
           allowed_scopes: [Captain::ToolAccess::SCOPE_AGENT],
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::ListMyDealsService,
+          assistant_tool_class: Captain::Tools::Account::ListMyDealsService,
           required_features: %w[crm_deals],
           required_permissions: %w[crm_deal_view crm_deal_manage],
           risk_level: 'low',
@@ -787,7 +787,7 @@ class Captain::ToolRegistry
           icon: 'table',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::ListDealPipelinesService,
+          assistant_tool_class: Captain::Tools::Account::ListDealPipelinesService,
           required_features: %w[crm_deals],
           required_permissions: %w[crm_deal_view crm_deal_manage],
           risk_level: 'low',
@@ -801,7 +801,7 @@ class Captain::ToolRegistry
           icon: 'list',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::ListDealStagesService,
+          assistant_tool_class: Captain::Tools::Account::ListDealStagesService,
           required_features: %w[crm_deals],
           required_permissions: %w[crm_deal_view crm_deal_manage],
           risk_level: 'low',
@@ -815,7 +815,7 @@ class Captain::ToolRegistry
           icon: 'custom-field',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::ListDealCustomFieldsTool,
-          assistant_tool_class: Captain::Tools::Copilot::ListDealCustomFieldsService,
+          assistant_tool_class: Captain::Tools::Account::ListDealCustomFieldsService,
           required_features: %w[crm_deals],
           required_permissions: %w[crm_deal_view crm_deal_manage],
           risk_level: 'low',
@@ -829,7 +829,7 @@ class Captain::ToolRegistry
           icon: 'history',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::GetDealTimelineService,
+          assistant_tool_class: Captain::Tools::Account::GetDealTimelineService,
           required_features: %w[crm_deals],
           required_permissions: %w[crm_deal_view crm_deal_manage],
           risk_level: 'low'
@@ -842,7 +842,7 @@ class Captain::ToolRegistry
           icon: 'money',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::CreateDealTool,
-          assistant_tool_class: Captain::Tools::Copilot::CreateDealService,
+          assistant_tool_class: Captain::Tools::Account::CreateDealService,
           required_features: %w[crm_deals],
           required_permissions: %w[crm_deal_manage],
           risk_level: 'high',
@@ -857,7 +857,7 @@ class Captain::ToolRegistry
           icon: 'money-edit',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::UpdateDealTool,
-          assistant_tool_class: Captain::Tools::Copilot::UpdateDealService,
+          assistant_tool_class: Captain::Tools::Account::UpdateDealService,
           required_features: %w[crm_deals],
           required_permissions: %w[crm_deal_manage],
           risk_level: 'medium'
@@ -870,7 +870,7 @@ class Captain::ToolRegistry
           icon: 'arrow-right',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::TransitionDealStageTool,
-          assistant_tool_class: Captain::Tools::Copilot::TransitionDealStageService,
+          assistant_tool_class: Captain::Tools::Account::TransitionDealStageService,
           required_features: %w[crm_deals],
           required_permissions: %w[crm_deal_manage],
           risk_level: 'high'
@@ -882,7 +882,7 @@ class Captain::ToolRegistry
           group_name: 'CRM Deals',
           icon: 'comment',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::AddDealCommentService,
+          assistant_tool_class: Captain::Tools::Account::AddDealCommentService,
           required_features: %w[crm_deals],
           required_permissions: %w[crm_deal_manage],
           risk_level: 'medium'
@@ -895,7 +895,7 @@ class Captain::ToolRegistry
           icon: 'checklist',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::GetTaskService,
+          assistant_tool_class: Captain::Tools::Account::GetTaskService,
           required_features: %w[crm_tasks],
           required_permissions: %w[crm_task_view crm_task_manage],
           risk_level: 'low'
@@ -908,7 +908,7 @@ class Captain::ToolRegistry
           icon: 'search',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::SearchTasksService,
+          assistant_tool_class: Captain::Tools::Account::SearchTasksService,
           required_features: %w[crm_tasks],
           required_permissions: %w[crm_task_view crm_task_manage],
           risk_level: 'low'
@@ -921,7 +921,7 @@ class Captain::ToolRegistry
           icon: 'custom-field',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::ListTaskCustomFieldsTool,
-          assistant_tool_class: Captain::Tools::Copilot::ListTaskCustomFieldsService,
+          assistant_tool_class: Captain::Tools::Account::ListTaskCustomFieldsService,
           required_features: %w[crm_tasks],
           required_permissions: %w[crm_task_view crm_task_manage],
           risk_level: 'low',
@@ -935,7 +935,7 @@ class Captain::ToolRegistry
           icon: 'history',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::GetTaskTimelineService,
+          assistant_tool_class: Captain::Tools::Account::GetTaskTimelineService,
           required_features: %w[crm_tasks],
           required_permissions: %w[crm_task_view crm_task_manage],
           risk_level: 'low'
@@ -948,7 +948,7 @@ class Captain::ToolRegistry
           icon: 'checklist',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::CreateTaskTool,
-          assistant_tool_class: Captain::Tools::Copilot::CreateTaskService,
+          assistant_tool_class: Captain::Tools::Account::CreateTaskService,
           required_features: %w[crm_tasks],
           required_permissions: %w[crm_task_manage],
           risk_level: 'high',
@@ -962,7 +962,7 @@ class Captain::ToolRegistry
           icon: 'template',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::ListChannelTemplatesTool,
-          assistant_tool_class: Captain::Tools::Copilot::ListChannelTemplatesService,
+          assistant_tool_class: Captain::Tools::Account::ListChannelTemplatesService,
           required_permissions: %w[outbound_manage],
           risk_level: 'low'
         ),
@@ -980,7 +980,7 @@ class Captain::ToolRegistry
           icon: 'clock-plus',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::CreateTouchTool,
-          assistant_tool_class: Captain::Tools::Copilot::CreateTouchService,
+          assistant_tool_class: Captain::Tools::Account::CreateTouchService,
           required_permissions: %w[outbound_manage],
           risk_level: 'high',
           idempotent: true,
@@ -994,7 +994,7 @@ class Captain::ToolRegistry
           icon: 'clock-x',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::CancelTouchTool,
-          assistant_tool_class: Captain::Tools::Copilot::CancelTouchService,
+          assistant_tool_class: Captain::Tools::Account::CancelTouchService,
           required_permissions: %w[outbound_manage],
           risk_level: 'high',
           idempotent: true
@@ -1007,7 +1007,7 @@ class Captain::ToolRegistry
           icon: 'trash',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::DeleteTouchTool,
-          assistant_tool_class: Captain::Tools::Copilot::DeleteTouchService,
+          assistant_tool_class: Captain::Tools::Account::DeleteTouchService,
           required_permissions: %w[outbound_manage],
           risk_level: 'high'
         ),
@@ -1019,7 +1019,7 @@ class Captain::ToolRegistry
           icon: 'clock-x',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::CancelTouchesTool,
-          assistant_tool_class: Captain::Tools::Copilot::CancelTouchesService,
+          assistant_tool_class: Captain::Tools::Account::CancelTouchesService,
           required_permissions: %w[outbound_manage],
           risk_level: 'high',
           idempotent: true
@@ -1032,7 +1032,7 @@ class Captain::ToolRegistry
           icon: 'check-circle',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::RequestConfirmationTool,
-          assistant_tool_class: Captain::Tools::Copilot::RequestConfirmationService,
+          assistant_tool_class: Captain::Tools::Account::RequestConfirmationService,
           risk_level: 'high',
           requires_confirmation: false,
           idempotent: true
@@ -1045,7 +1045,7 @@ class Captain::ToolRegistry
           icon: 'search',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::GetConfirmationRequestTool,
-          assistant_tool_class: Captain::Tools::Copilot::GetConfirmationRequestService,
+          assistant_tool_class: Captain::Tools::Account::GetConfirmationRequestService,
           required_permissions: %w[
             conversation_manage
             conversation_unassigned_manage
@@ -1062,7 +1062,7 @@ class Captain::ToolRegistry
           icon: 'check',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::ResolveConfirmationTool,
-          assistant_tool_class: Captain::Tools::Copilot::ResolveConfirmationService,
+          assistant_tool_class: Captain::Tools::Account::ResolveConfirmationService,
           risk_level: 'high',
           requires_confirmation: false
         ),
@@ -1074,7 +1074,7 @@ class Captain::ToolRegistry
           icon: 'checklist-edit',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::UpdateTaskTool,
-          assistant_tool_class: Captain::Tools::Copilot::UpdateTaskService,
+          assistant_tool_class: Captain::Tools::Account::UpdateTaskService,
           required_features: %w[crm_tasks],
           required_permissions: %w[crm_task_manage],
           risk_level: 'medium'
@@ -1087,7 +1087,7 @@ class Captain::ToolRegistry
           icon: 'shuffle',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::ChangeTaskStatusTool,
-          assistant_tool_class: Captain::Tools::Copilot::ChangeTaskStatusService,
+          assistant_tool_class: Captain::Tools::Account::ChangeTaskStatusService,
           required_features: %w[crm_tasks],
           required_permissions: %w[crm_task_manage],
           risk_level: 'high'
@@ -1099,7 +1099,7 @@ class Captain::ToolRegistry
           group_name: 'CRM Tasks',
           icon: 'check',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::CompleteTaskService,
+          assistant_tool_class: Captain::Tools::Account::CompleteTaskService,
           required_features: %w[crm_tasks],
           required_permissions: %w[crm_task_manage],
           risk_level: 'medium'
@@ -1111,7 +1111,7 @@ class Captain::ToolRegistry
           group_name: 'CRM Tasks',
           icon: 'comment',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::AddTaskCommentService,
+          assistant_tool_class: Captain::Tools::Account::AddTaskCommentService,
           required_features: %w[crm_tasks],
           required_permissions: %w[crm_task_manage],
           risk_level: 'medium'
@@ -1124,7 +1124,7 @@ class Captain::ToolRegistry
           icon: 'calendar',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::GetAppointmentService,
+          assistant_tool_class: Captain::Tools::Account::GetAppointmentService,
           required_features: %w[scheduling],
           risk_level: 'low'
         ),
@@ -1136,7 +1136,7 @@ class Captain::ToolRegistry
           icon: 'calendar',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::ListMyAppointmentsService,
+          assistant_tool_class: Captain::Tools::Account::ListMyAppointmentsService,
           required_features: %w[scheduling],
           risk_level: 'low',
           selected_by_default: false
@@ -1144,12 +1144,12 @@ class Captain::ToolRegistry
         definition(
           id: 'search_appointments',
           title: 'Search Appointments',
-          description: Captain::Tools::Copilot::SearchAppointmentsService.description,
+          description: Captain::Tools::Account::SearchAppointmentsService.description,
           group_name: 'Scheduling',
           icon: 'search',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::SearchAppointmentsService,
+          assistant_tool_class: Captain::Tools::Account::SearchAppointmentsService,
           required_features: %w[scheduling],
           risk_level: 'low'
         ),
@@ -1162,7 +1162,7 @@ class Captain::ToolRegistry
           icon: 'custom-field',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::ListAppointmentCustomFieldsTool,
-          assistant_tool_class: Captain::Tools::Copilot::ListAppointmentCustomFieldsService,
+          assistant_tool_class: Captain::Tools::Account::ListAppointmentCustomFieldsService,
           required_features: %w[scheduling],
           risk_level: 'low',
           idempotent: true
@@ -1170,24 +1170,24 @@ class Captain::ToolRegistry
         definition(
           id: 'list_scheduling_resources',
           title: 'List Specialists',
-          description: Captain::Tools::Copilot::ListSchedulingResourcesService.description,
+          description: Captain::Tools::Account::ListSchedulingResourcesService.description,
           group_name: 'Scheduling',
           icon: 'users',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::ListSchedulingResourcesService,
+          assistant_tool_class: Captain::Tools::Account::ListSchedulingResourcesService,
           required_features: %w[scheduling],
           risk_level: 'low'
         ),
         definition(
           id: 'search_scheduling_resources',
           title: 'Search Specialists',
-          description: Captain::Tools::Copilot::SearchSchedulingResourcesService.description,
+          description: Captain::Tools::Account::SearchSchedulingResourcesService.description,
           group_name: 'Scheduling',
           icon: 'user',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::SearchSchedulingResourcesService,
+          assistant_tool_class: Captain::Tools::Account::SearchSchedulingResourcesService,
           required_features: %w[scheduling],
           risk_level: 'low'
         ),
@@ -1199,43 +1199,43 @@ class Captain::ToolRegistry
           icon: 'calendar-clock',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::GetSchedulingResourceScheduleService,
+          assistant_tool_class: Captain::Tools::Account::GetSchedulingResourceScheduleService,
           required_features: %w[scheduling],
           risk_level: 'low'
         ),
         definition(
           id: 'get_scheduling_resource_availability',
           title: 'Get Specialist Availability',
-          description: Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService.description,
+          description: Captain::Tools::Account::GetSchedulingResourceAvailabilityService.description,
           group_name: 'Scheduling',
           icon: 'calendar-search',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService,
+          assistant_tool_class: Captain::Tools::Account::GetSchedulingResourceAvailabilityService,
           required_features: %w[scheduling],
           risk_level: 'low'
         ),
         definition(
           id: 'search_scheduling_services',
           title: 'Search Services',
-          description: Captain::Tools::Copilot::SearchSchedulingServicesService.description,
+          description: Captain::Tools::Account::SearchSchedulingServicesService.description,
           group_name: 'Scheduling',
           icon: 'search',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::SearchSchedulingServicesService,
+          assistant_tool_class: Captain::Tools::Account::SearchSchedulingServicesService,
           required_features: %w[scheduling],
           risk_level: 'low'
         ),
         definition(
           id: 'search_available_slots',
           title: 'Search Available Slots',
-          description: Captain::Tools::Copilot::SearchAvailableSlotsService.description,
+          description: Captain::Tools::Account::SearchAvailableSlotsService.description,
           group_name: 'Scheduling',
           icon: 'calendar',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::SearchAvailableSlotsService,
+          assistant_tool_class: Captain::Tools::Account::SearchAvailableSlotsService,
           required_features: %w[scheduling],
           risk_level: 'low'
         ),
@@ -1247,7 +1247,7 @@ class Captain::ToolRegistry
           icon: 'calendar-plus',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::CreateAppointmentTool,
-          assistant_tool_class: Captain::Tools::Copilot::CreateAppointmentService,
+          assistant_tool_class: Captain::Tools::Account::CreateAppointmentService,
           required_features: %w[scheduling],
           risk_level: 'high',
           idempotent: true
@@ -1260,7 +1260,7 @@ class Captain::ToolRegistry
           icon: 'calendar-edit',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::UpdateAppointmentTool,
-          assistant_tool_class: Captain::Tools::Copilot::UpdateAppointmentService,
+          assistant_tool_class: Captain::Tools::Account::UpdateAppointmentService,
           required_features: %w[scheduling],
           risk_level: 'high'
         ),
@@ -1272,7 +1272,7 @@ class Captain::ToolRegistry
           icon: 'calendar-x',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::CancelAppointmentTool,
-          assistant_tool_class: Captain::Tools::Copilot::CancelAppointmentService,
+          assistant_tool_class: Captain::Tools::Account::CancelAppointmentService,
           required_features: %w[scheduling],
           risk_level: 'high'
         ),
@@ -1283,7 +1283,7 @@ class Captain::ToolRegistry
           group_name: 'Scheduling',
           icon: 'calendar-check',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::GetAppointmentProviderStatusService,
+          assistant_tool_class: Captain::Tools::Account::GetAppointmentProviderStatusService,
           required_features: %w[scheduling],
           risk_level: 'low',
           idempotent: true
@@ -1296,7 +1296,7 @@ class Captain::ToolRegistry
           icon: 'book-open',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::GetArticleService,
+          assistant_tool_class: Captain::Tools::Account::GetArticleService,
           required_permissions: %w[knowledge_base_manage],
           risk_level: 'low'
         ),
@@ -1310,7 +1310,7 @@ class Captain::ToolRegistry
           icon: 'search',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::SearchArticlesService,
+          assistant_tool_class: Captain::Tools::Account::SearchArticlesService,
           required_permissions: %w[knowledge_base_manage],
           risk_level: 'low'
         ),
@@ -1322,7 +1322,7 @@ class Captain::ToolRegistry
           icon: 'search',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::SearchLinearIssuesService,
+          assistant_tool_class: Captain::Tools::Account::SearchLinearIssuesService,
           risk_level: 'low',
           external_content: true
         ),
@@ -1334,7 +1334,7 @@ class Captain::ToolRegistry
           icon: 'send',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::SendMessageToConversationService,
+          assistant_tool_class: Captain::Tools::Account::SendMessageToConversationService,
           required_permissions: %w[
             conversation_manage
             conversation_unassigned_manage
@@ -1352,7 +1352,7 @@ class Captain::ToolRegistry
           icon: 'user-switch',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::AssignConversationService,
+          assistant_tool_class: Captain::Tools::Account::AssignConversationService,
           required_permissions: %w[
             conversation_manage
             conversation_unassigned_manage
@@ -1367,7 +1367,7 @@ class Captain::ToolRegistry
           group_name: 'Account',
           icon: 'building',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::GetWorkspaceProfileService,
+          assistant_tool_class: Captain::Tools::Account::GetWorkspaceProfileService,
           risk_level: 'low',
           selected_by_default: false,
           idempotent: true
@@ -1379,7 +1379,7 @@ class Captain::ToolRegistry
           group_name: 'Account',
           icon: 'building-edit',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::UpdateWorkspaceProfileService,
+          assistant_tool_class: Captain::Tools::Account::UpdateWorkspaceProfileService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -1391,7 +1391,7 @@ class Captain::ToolRegistry
           group_name: 'Account',
           icon: 'plug-zap',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::GetMcpAccessPolicyService,
+          assistant_tool_class: Captain::Tools::Account::GetMcpAccessPolicyService,
           risk_level: 'low',
           selected_by_default: false,
           idempotent: true
@@ -1403,7 +1403,7 @@ class Captain::ToolRegistry
           group_name: 'Account',
           icon: 'plug-zap',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::UpdateMcpAccessPolicyService,
+          assistant_tool_class: Captain::Tools::Account::UpdateMcpAccessPolicyService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -1415,7 +1415,7 @@ class Captain::ToolRegistry
           group_name: 'Account',
           icon: 'users',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::ListAccountUsersService,
+          assistant_tool_class: Captain::Tools::Account::ListAccountUsersService,
           risk_level: 'low',
           selected_by_default: false
         ),
@@ -1426,7 +1426,7 @@ class Captain::ToolRegistry
           group_name: 'Account',
           icon: 'people-team',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::ListTeamsService,
+          assistant_tool_class: Captain::Tools::Account::ListTeamsService,
           risk_level: 'low',
           selected_by_default: false
         ),
@@ -1437,7 +1437,7 @@ class Captain::ToolRegistry
           group_name: 'Account',
           icon: 'user-plus',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::CreateUserInviteService,
+          assistant_tool_class: Captain::Tools::Account::CreateUserInviteService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -1449,7 +1449,7 @@ class Captain::ToolRegistry
           group_name: 'Account',
           icon: 'shield',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::UpdateUserRoleService,
+          assistant_tool_class: Captain::Tools::Account::UpdateUserRoleService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -1461,7 +1461,7 @@ class Captain::ToolRegistry
           group_name: 'Account',
           icon: 'presence-available',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::UpdateUserAvailabilityService,
+          assistant_tool_class: Captain::Tools::Account::UpdateUserAvailabilityService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -1473,7 +1473,7 @@ class Captain::ToolRegistry
           group_name: 'Account',
           icon: 'user-minus',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::DeactivateUserService,
+          assistant_tool_class: Captain::Tools::Account::DeactivateUserService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -1485,7 +1485,7 @@ class Captain::ToolRegistry
           group_name: 'Account',
           icon: 'user-check',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::ReactivateUserService,
+          assistant_tool_class: Captain::Tools::Account::ReactivateUserService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -1497,7 +1497,7 @@ class Captain::ToolRegistry
           group_name: 'Account',
           icon: 'people-team',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::AssignUserToTeamService,
+          assistant_tool_class: Captain::Tools::Account::AssignUserToTeamService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -1509,7 +1509,7 @@ class Captain::ToolRegistry
           group_name: 'Account',
           icon: 'user-minus',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::RemoveUserFromTeamService,
+          assistant_tool_class: Captain::Tools::Account::RemoveUserFromTeamService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -1521,7 +1521,7 @@ class Captain::ToolRegistry
           group_name: 'Account',
           icon: 'people-team-add',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::CreateTeamService,
+          assistant_tool_class: Captain::Tools::Account::CreateTeamService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -1533,7 +1533,7 @@ class Captain::ToolRegistry
           group_name: 'Account',
           icon: 'edit',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::UpdateTeamService,
+          assistant_tool_class: Captain::Tools::Account::UpdateTeamService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -1545,7 +1545,7 @@ class Captain::ToolRegistry
           group_name: 'Account',
           icon: 'archive',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::ArchiveTeamService,
+          assistant_tool_class: Captain::Tools::Account::ArchiveTeamService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -1557,7 +1557,7 @@ class Captain::ToolRegistry
           group_name: 'Account',
           icon: 'inbox',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::ListInboxesService,
+          assistant_tool_class: Captain::Tools::Account::ListInboxesService,
           risk_level: 'low',
           selected_by_default: false,
           idempotent: true
@@ -1569,7 +1569,7 @@ class Captain::ToolRegistry
           group_name: 'Account',
           icon: 'routing',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::ListAssignmentPoliciesService,
+          assistant_tool_class: Captain::Tools::Account::ListAssignmentPoliciesService,
           risk_level: 'low',
           selected_by_default: false,
           idempotent: true
@@ -1581,7 +1581,7 @@ class Captain::ToolRegistry
           group_name: 'Account',
           icon: 'routing',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::SetInboxAssignmentPolicyService,
+          assistant_tool_class: Captain::Tools::Account::SetInboxAssignmentPolicyService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -1593,7 +1593,7 @@ class Captain::ToolRegistry
           group_name: 'Account',
           icon: 'settings',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::GetInboxSettingsService,
+          assistant_tool_class: Captain::Tools::Account::GetInboxSettingsService,
           risk_level: 'low',
           selected_by_default: false,
           idempotent: true
@@ -1605,7 +1605,7 @@ class Captain::ToolRegistry
           group_name: 'Account',
           icon: 'settings',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::UpdateInboxSettingsService,
+          assistant_tool_class: Captain::Tools::Account::UpdateInboxSettingsService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -1617,7 +1617,7 @@ class Captain::ToolRegistry
           group_name: 'Account',
           icon: 'clock',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::UpdateInboxWorkingHoursService,
+          assistant_tool_class: Captain::Tools::Account::UpdateInboxWorkingHoursService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -1629,7 +1629,7 @@ class Captain::ToolRegistry
           group_name: 'Account',
           icon: 'user-plus',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::AddInboxMembersService,
+          assistant_tool_class: Captain::Tools::Account::AddInboxMembersService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -1641,7 +1641,7 @@ class Captain::ToolRegistry
           group_name: 'Account',
           icon: 'user-minus',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::RemoveInboxMembersService,
+          assistant_tool_class: Captain::Tools::Account::RemoveInboxMembersService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -1653,7 +1653,7 @@ class Captain::ToolRegistry
           group_name: 'Account',
           icon: 'bot',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::UpdateCaptainInboxAutoReplyModeService,
+          assistant_tool_class: Captain::Tools::Account::UpdateCaptainInboxAutoReplyModeService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -1666,7 +1666,7 @@ class Captain::ToolRegistry
           icon: 'refresh',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::RetryFailedMessageService,
+          assistant_tool_class: Captain::Tools::Account::RetryFailedMessageService,
           required_permissions: %w[
             conversation_manage
             conversation_unassigned_manage
@@ -1683,7 +1683,7 @@ class Captain::ToolRegistry
           icon: 'edit',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::EditMessageService,
+          assistant_tool_class: Captain::Tools::Account::EditMessageService,
           required_permissions: %w[
             conversation_manage
             conversation_unassigned_manage
@@ -1701,7 +1701,7 @@ class Captain::ToolRegistry
           icon: 'language',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::TranslateMessageService,
+          assistant_tool_class: Captain::Tools::Account::TranslateMessageService,
           required_permissions: %w[
             conversation_manage
             conversation_unassigned_manage
@@ -1717,7 +1717,7 @@ class Captain::ToolRegistry
           icon: 'search',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::SearchCannedResponsesService,
+          assistant_tool_class: Captain::Tools::Account::SearchCannedResponsesService,
           risk_level: 'low'
         ),
         definition(
@@ -1727,7 +1727,7 @@ class Captain::ToolRegistry
           group_name: 'Support content',
           icon: 'note-add',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::CreateCannedResponseService,
+          assistant_tool_class: Captain::Tools::Account::CreateCannedResponseService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -1739,7 +1739,7 @@ class Captain::ToolRegistry
           group_name: 'Support content',
           icon: 'file-text',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::GetCannedResponseService,
+          assistant_tool_class: Captain::Tools::Account::GetCannedResponseService,
           risk_level: 'low',
           idempotent: true
         ),
@@ -1750,7 +1750,7 @@ class Captain::ToolRegistry
           group_name: 'Support content',
           icon: 'edit',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::UpdateCannedResponseService,
+          assistant_tool_class: Captain::Tools::Account::UpdateCannedResponseService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -1762,7 +1762,7 @@ class Captain::ToolRegistry
           group_name: 'Support content',
           icon: 'trash',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::DeleteCannedResponseService,
+          assistant_tool_class: Captain::Tools::Account::DeleteCannedResponseService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -1775,7 +1775,7 @@ class Captain::ToolRegistry
           icon: 'users',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::MergeContactsService,
+          assistant_tool_class: Captain::Tools::Account::MergeContactsService,
           required_permissions: %w[contact_manage],
           risk_level: 'high',
           requires_confirmation: true
@@ -1787,7 +1787,7 @@ class Captain::ToolRegistry
           group_name: 'Automation',
           icon: 'list',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::ListMacrosService,
+          assistant_tool_class: Captain::Tools::Account::ListMacrosService,
           risk_level: 'low',
           idempotent: true
         ),
@@ -1798,7 +1798,7 @@ class Captain::ToolRegistry
           group_name: 'Automation',
           icon: 'file-text',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::GetMacroService,
+          assistant_tool_class: Captain::Tools::Account::GetMacroService,
           risk_level: 'low',
           idempotent: true
         ),
@@ -1809,7 +1809,7 @@ class Captain::ToolRegistry
           group_name: 'Automation',
           icon: 'plus-circle',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::CreateMacroService,
+          assistant_tool_class: Captain::Tools::Account::CreateMacroService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -1821,7 +1821,7 @@ class Captain::ToolRegistry
           group_name: 'Automation',
           icon: 'edit',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::UpdateMacroService,
+          assistant_tool_class: Captain::Tools::Account::UpdateMacroService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -1833,7 +1833,7 @@ class Captain::ToolRegistry
           group_name: 'Automation',
           icon: 'trash',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::DeleteMacroService,
+          assistant_tool_class: Captain::Tools::Account::DeleteMacroService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -1845,7 +1845,7 @@ class Captain::ToolRegistry
           group_name: 'Automation',
           icon: 'bolt',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::ExecuteMacroService,
+          assistant_tool_class: Captain::Tools::Account::ExecuteMacroService,
           risk_level: 'high',
           requires_confirmation: true
         ),
@@ -1926,7 +1926,7 @@ class Captain::ToolRegistry
           group_name: 'Operations',
           icon: 'activity',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::GetAccountHealthService,
+          assistant_tool_class: Captain::Tools::Account::GetAccountHealthService,
           risk_level: 'low',
           idempotent: true
         ),
@@ -1937,7 +1937,7 @@ class Captain::ToolRegistry
           group_name: 'Operations',
           icon: 'alert-triangle',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::GetRecentAccountErrorsService,
+          assistant_tool_class: Captain::Tools::Account::GetRecentAccountErrorsService,
           risk_level: 'low',
           idempotent: true
         ),
@@ -1948,7 +1948,7 @@ class Captain::ToolRegistry
           group_name: 'Operations',
           icon: 'list-checks',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::GetToolExecutionLogService,
+          assistant_tool_class: Captain::Tools::Account::GetToolExecutionLogService,
           risk_level: 'low',
           idempotent: true
         ),
@@ -1959,7 +1959,7 @@ class Captain::ToolRegistry
           group_name: 'Operations',
           icon: 'route',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::TraceAiResponseService,
+          assistant_tool_class: Captain::Tools::Account::TraceAiResponseService,
           risk_level: 'low',
           idempotent: true
         ),
@@ -1970,7 +1970,7 @@ class Captain::ToolRegistry
           group_name: 'Operations',
           icon: 'send',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::TraceMessageDeliveryService,
+          assistant_tool_class: Captain::Tools::Account::TraceMessageDeliveryService,
           required_permissions: %w[
             conversation_manage
             conversation_unassigned_manage
@@ -1986,7 +1986,7 @@ class Captain::ToolRegistry
           group_name: 'Operations',
           icon: 'inbox',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::GetChannelHealthService,
+          assistant_tool_class: Captain::Tools::Account::GetChannelHealthService,
           risk_level: 'low',
           idempotent: true
         ),
@@ -1997,7 +1997,7 @@ class Captain::ToolRegistry
           group_name: 'Operations',
           icon: 'activity',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::GetWhatsappWebDiagnosticsService,
+          assistant_tool_class: Captain::Tools::Account::GetWhatsappWebDiagnosticsService,
           risk_level: 'low'
         ),
         definition(
@@ -2007,7 +2007,7 @@ class Captain::ToolRegistry
           group_name: 'Operations',
           icon: 'refresh',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::ReconnectWhatsappWebService,
+          assistant_tool_class: Captain::Tools::Account::ReconnectWhatsappWebService,
           risk_level: 'medium',
           requires_confirmation: true
         ),
@@ -2018,7 +2018,7 @@ class Captain::ToolRegistry
           group_name: 'Conversations',
           icon: 'tag',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::CreateLabelService,
+          assistant_tool_class: Captain::Tools::Account::CreateLabelService,
           risk_level: 'medium',
           requires_confirmation: true
         ),
@@ -2029,7 +2029,7 @@ class Captain::ToolRegistry
           group_name: 'Conversations',
           icon: 'tag',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::UpdateLabelService,
+          assistant_tool_class: Captain::Tools::Account::UpdateLabelService,
           risk_level: 'medium',
           requires_confirmation: true
         ),
@@ -2041,7 +2041,7 @@ class Captain::ToolRegistry
           icon: 'tag',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
-          assistant_tool_class: Captain::Tools::Copilot::RemoveLabelFromConversationService,
+          assistant_tool_class: Captain::Tools::Account::RemoveLabelFromConversationService,
           required_permissions: %w[
             conversation_manage
             conversation_unassigned_manage
@@ -2056,7 +2056,7 @@ class Captain::ToolRegistry
           group_name: 'Outbound',
           icon: 'megaphone',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::ListCampaignsService,
+          assistant_tool_class: Captain::Tools::Account::ListCampaignsService,
           risk_level: 'low'
         ),
         definition(
@@ -2066,7 +2066,7 @@ class Captain::ToolRegistry
           group_name: 'Outbound',
           icon: 'megaphone',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::GetCampaignService,
+          assistant_tool_class: Captain::Tools::Account::GetCampaignService,
           risk_level: 'low'
         ),
         definition(
@@ -2076,7 +2076,7 @@ class Captain::ToolRegistry
           group_name: 'Outbound',
           icon: 'eye',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::PreviewCampaignService,
+          assistant_tool_class: Captain::Tools::Account::PreviewCampaignService,
           risk_level: 'low'
         ),
         definition(
@@ -2086,7 +2086,7 @@ class Captain::ToolRegistry
           group_name: 'Outbound',
           icon: 'chart',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::GetCampaignAnalyticsService,
+          assistant_tool_class: Captain::Tools::Account::GetCampaignAnalyticsService,
           risk_level: 'low'
         ),
         definition(
@@ -2096,7 +2096,7 @@ class Captain::ToolRegistry
           group_name: 'Outbound',
           icon: 'megaphone',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::CreateCampaignService,
+          assistant_tool_class: Captain::Tools::Account::CreateCampaignService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -2108,7 +2108,7 @@ class Captain::ToolRegistry
           group_name: 'Outbound',
           icon: 'megaphone',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::UpdateCampaignService,
+          assistant_tool_class: Captain::Tools::Account::UpdateCampaignService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -2120,7 +2120,7 @@ class Captain::ToolRegistry
           group_name: 'Outbound',
           icon: 'trash',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::DeleteCampaignService,
+          assistant_tool_class: Captain::Tools::Account::DeleteCampaignService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -2132,7 +2132,7 @@ class Captain::ToolRegistry
           group_name: 'Outbound',
           icon: 'send',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::LaunchCampaignService,
+          assistant_tool_class: Captain::Tools::Account::LaunchCampaignService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -2144,7 +2144,7 @@ class Captain::ToolRegistry
           group_name: 'Outbound',
           icon: 'send-copy',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::TestSendCampaignService,
+          assistant_tool_class: Captain::Tools::Account::TestSendCampaignService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -2156,7 +2156,7 @@ class Captain::ToolRegistry
           group_name: 'Outbound',
           icon: 'dismiss-circle',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::CancelCampaignService,
+          assistant_tool_class: Captain::Tools::Account::CancelCampaignService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -2168,7 +2168,7 @@ class Captain::ToolRegistry
           group_name: 'Outbound',
           icon: 'refresh',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::RestartCampaignService,
+          assistant_tool_class: Captain::Tools::Account::RestartCampaignService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -2180,7 +2180,7 @@ class Captain::ToolRegistry
           group_name: 'Outbound',
           icon: 'play',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::ResumeCampaignService,
+          assistant_tool_class: Captain::Tools::Account::ResumeCampaignService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -2192,7 +2192,7 @@ class Captain::ToolRegistry
           group_name: 'Outbound',
           icon: 'refresh',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::RetryFailedCampaignDeliveriesService,
+          assistant_tool_class: Captain::Tools::Account::RetryFailedCampaignDeliveriesService,
           risk_level: 'high',
           requires_confirmation: true,
           selected_by_default: false
@@ -2204,7 +2204,7 @@ class Captain::ToolRegistry
           group_name: 'Integrations',
           icon: 'link',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::CreateWebhookService,
+          assistant_tool_class: Captain::Tools::Account::CreateWebhookService,
           risk_level: 'high',
           requires_confirmation: true
         ),
@@ -2215,7 +2215,7 @@ class Captain::ToolRegistry
           group_name: 'Integrations',
           icon: 'link',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::UpdateWebhookService,
+          assistant_tool_class: Captain::Tools::Account::UpdateWebhookService,
           risk_level: 'high',
           requires_confirmation: true
         )

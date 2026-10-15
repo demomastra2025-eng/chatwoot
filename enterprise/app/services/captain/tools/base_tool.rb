@@ -54,9 +54,9 @@ class Captain::Tools::BaseTool < RubyLLM::Tool
   end
 
   def legacy_copilot_tool?
-    is_a?(Captain::Tools::Copilot::BaseAccountTool) ||
-      is_a?(Captain::Tools::Copilot::CustomHttpTool) ||
-      is_a?(Captain::Tools::Copilot::McpTool)
+    is_a?(Captain::Tools::Account::BaseAccountTool) ||
+      is_a?(Captain::Tools::Account::CustomHttpTool) ||
+      is_a?(Captain::Tools::Account::McpTool)
   end
 
   def tool_safety_arguments(arguments)

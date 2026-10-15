@@ -108,9 +108,9 @@ RSpec.describe Captain::Runtime::ToolFailure do
     end
   end
 
-  # The failure of a scheduling read tool, as the tool renders it (Captain::Tools::Copilot::SchedulingQueryValidation).
+  # The failure of a scheduling read tool, as the tool renders it (Captain::Tools::Account::SchedulingQueryValidation).
   def scheduling_read_failure(code: nil, status: :unprocessable_content, reason: nil, raised: nil)
-    reader = Class.new { include Captain::Tools::Copilot::SchedulingQueryValidation }.new
+    reader = Class.new { include Captain::Tools::Account::SchedulingQueryValidation }.new
     raised ||= Scheduling::Error.new(code: code, message: 'The tool failed', status: status, details: { reason: reason }.compact)
     reader.send(:scheduling_tool_failure, raised)
   end

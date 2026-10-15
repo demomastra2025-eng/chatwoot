@@ -34,7 +34,7 @@ module Captain::Playground::KnowledgeTools
   def faq_lookup
     query = knowledge_query!
     matches, strategy = knowledge_matches(query, exact: true)
-    formatter = Captain::Tools::Copilot::FaqLookupService.allocate
+    formatter = Captain::Tools::Account::FaqLookupService.allocate
     payloads = matches.map do |record|
       if record['type'] == 'document_chunk'
         formatter.send(:document_chunk_payload, knowledge_chunk_snapshot(record))
@@ -54,7 +54,7 @@ module Captain::Playground::KnowledgeTools
     end.sort_by { |record| [-knowledge_timestamp(record['created_at']), -record['id'].to_i] }
     documents = documents.first(knowledge_limit(default: 10, max: 20))
     documents.select! { |record| record['sendable'] == true } if ActiveModel::Type::Boolean.new.cast(@args['sendable_only'])
-    formatter = Captain::Tools::Copilot::ListCaptainDocumentsService.allocate
+    formatter = Captain::Tools::Account::ListCaptainDocumentsService.allocate
     session_id = @session.id
     # A simulated artifact can never become a production DocumentArtifactToken.
     formatter.define_singleton_method(:document_artifact_id) { |document| "trial_#{session_id}_document_#{document.id}" }
@@ -87,7 +87,7 @@ module Captain::Playground::KnowledgeTools
     records = knowledge_records('canned_responses').select do |record|
       knowledge_text_match?(record, %w[short_code content], @args['query'])
     end.sort_by { |record| [record['short_code'].to_s, record['id'].to_i] }
-    formatter = Captain::Tools::Copilot::SearchCannedResponsesService.allocate
+    formatter = Captain::Tools::Account::SearchCannedResponsesService.allocate
     payloads = records.first(knowledge_limit).map do |record|
       formatter.send(:canned_response_payload, knowledge_snapshot(CannedSnapshot, record))
     end
@@ -130,8 +130,8 @@ module Captain::Playground::KnowledgeTools
     query
   end
 
-  def knowledge_limit(default: Captain::Tools::Copilot::BaseAccountTool::MAX_RESULTS, max: Captain::Tools::Copilot::BaseAccountTool::MAX_RESULTS)
-    Captain::Tools::Copilot::BaseAccountTool.allocate.send(:parse_limit, @args['limit'], default: default, max: max)
+  def knowledge_limit(default: Captain::Tools::Account::BaseAccountTool::MAX_RESULTS, max: Captain::Tools::Account::BaseAccountTool::MAX_RESULTS)
+    Captain::Tools::Account::BaseAccountTool.allocate.send(:parse_limit, @args['limit'], default: default, max: max)
   end
 
   def knowledge_text_match?(record, fields, query)
@@ -167,7 +167,7 @@ module Captain::Playground::KnowledgeTools
   def knowledge_article_payload(record, details: false)
     article = knowledge_snapshot(ArticleSnapshot, record, portal: SourceSnapshot.new(name: record['portal_name']),
                                 author: SourceSnapshot.new(name: record['author_name']))
-    formatter = details ? Captain::Tools::Copilot::GetArticleService : Captain::Tools::Copilot::SearchArticlesService
+    formatter = details ? Captain::Tools::Account::GetArticleService : Captain::Tools::Account::SearchArticlesService
     formatter.allocate.send(:article_payload, article)
   end
 end

@@ -168,7 +168,7 @@ RSpec.describe Captain::Copilot::ChatService do
       service = described_class.new(assistant, config)
       tools = service.instance_variable_get(:@tools)
 
-      expect(tools.map(&:class)).to contain_exactly(Captain::Tools::Copilot::CustomHttpTool)
+      expect(tools.map(&:class)).to contain_exactly(Captain::Tools::Account::CustomHttpTool)
       expect(tools.first.name).to eq(custom_tool.slug)
     end
 
@@ -188,7 +188,7 @@ RSpec.describe Captain::Copilot::ChatService do
       service = described_class.new(assistant, config)
       tools = service.instance_variable_get(:@tools)
 
-      expect(tools.map(&:class)).to contain_exactly(Captain::Tools::Copilot::FaqLookupService)
+      expect(tools.map(&:class)).to contain_exactly(Captain::Tools::Account::FaqLookupService)
       expect(tools.first.name).to eq('faq_lookup')
       expect(tools.first.instance_variable_get(:@conversation)).to eq(conversation)
     end

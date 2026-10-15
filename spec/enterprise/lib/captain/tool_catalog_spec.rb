@@ -317,7 +317,7 @@ RSpec.describe Captain::ToolCatalog do
         conversation: nil
       )
 
-      expect(tool).to be_a(Captain::Tools::Copilot::CustomHttpTool)
+      expect(tool).to be_a(Captain::Tools::Account::CustomHttpTool)
     end
 
     it 'builds a custom agent tool via the dynamic public tool path' do
@@ -349,7 +349,7 @@ RSpec.describe Captain::ToolCatalog do
         conversation: nil
       )
 
-      expect(tool).to be_a(Captain::Tools::Copilot::McpTool)
+      expect(tool).to be_a(Captain::Tools::Account::McpTool)
     end
   end
 

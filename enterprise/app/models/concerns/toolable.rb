@@ -45,8 +45,8 @@ module Concerns::Toolable
     tool_class.new(assistant, self, **)
   end
 
-  def copilot_tool(assistant, user: nil, conversation: nil, copilot_thread: nil)
-    Captain::Tools::Copilot::CustomHttpTool.new(
+  def account_tool(assistant, user: nil, conversation: nil, copilot_thread: nil)
+    Captain::Tools::Account::CustomHttpTool.new(
       assistant,
       self,
       user: user,
@@ -183,6 +183,8 @@ module Concerns::Toolable
     response_data = parse_response_body(raw_response_body)
     render_template(response_template, { 'response' => response_data, 'r' => response_data })
   end
+
+  alias copilot_tool account_tool
 
   private
 

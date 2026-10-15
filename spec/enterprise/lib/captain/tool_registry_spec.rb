@@ -204,7 +204,7 @@ RSpec.describe Captain::ToolRegistry do
 
   describe '.resolve_assistant_tool_class' do
     it 'uses the explicit registry mapping for assistant tools' do
-      expect(described_class.resolve_assistant_tool_class('faq_lookup')).to eq(Captain::Tools::Copilot::FaqLookupService)
+      expect(described_class.resolve_assistant_tool_class('faq_lookup')).to eq(Captain::Tools::Account::FaqLookupService)
     end
   end
 

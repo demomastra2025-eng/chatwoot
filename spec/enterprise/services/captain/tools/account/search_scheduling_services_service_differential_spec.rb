@@ -1,0 +1,212 @@
+require 'rails_helper'
+
+# Differential corpus: pairs of clinic service names that differ by one small word, one number or one qualifier, so that a
+# search which drops short words or merges partial overlaps would present the wrong service as the one clear match.
+# For every pair, with A and B named by the patient:
+# - both present: each name is the confident candidate for its own text;
+# - only the other one present: the text never produces an exact name match. The other service may still be listed for
+#   confirmation, and it is the confident candidate only as the sole match whose name holds every word of the text (the
+#   pairs where one name is the other plus words, see sole_matches), together with the instruction to name it exactly.
+# All data is synthetic.
+RSpec.describe Captain::Tools::Account::SearchSchedulingServicesService do
+  # text => the only service that may then be offered as the confident candidate
+  # ("Анализ натощак" is no sole match of "Анализ не натощак": a negation of a word of the text turns its meaning around)
+  sole_matches = {
+    'ЭКГ' => 'ЭКГ суточное мониторирование',
+    'УЗИ малого таза' => 'УЗИ органов малого таза',
+    'МРТ головного мозга' => 'МРТ головного мозга с ангиографией',
+    'УЗИ щитовидной железы' => 'УЗИ щитовидной железы с цветным картированием',
+    'Анализ крови' => 'Анализ крови биохимический',
+    'Консультация терапевта' => 'Консультация терапевта онлайн',
+    'Рентген' => 'Рентген черепа',
+    'Гепатит' => 'Гепатит В',
+    'МРТ ладони' => 'МРТ ладони и предплечья'
+  }.freeze
+
+  pairs = [
+    # with / without
+    ['МРТ головного мозга с контрастом', 'МРТ головного мозга без контраста'],
+    ['КТ органов грудной клетки с контрастом', 'КТ органов грудной клетки без контраста'],
+    ['МРТ шеи с контрастом', 'МРТ шеи без контраста'],
+    ['МРТ позвоночника с контрастом', 'МРТ позвоночника без контраста'],
+    ['Удаление зуба с анестезией', 'Удаление зуба без анестезии'],
+    ['Пломбирование зуба с анестезией', 'Пломбирование зуба без анестезии'],
+    ['Колоноскопия под наркозом', 'Колоноскопия без наркоза'],
+    ['Гастроскопия с седацией', 'Гастроскопия без седации'],
+    ['ЭКГ с нагрузкой', 'ЭКГ без нагрузки'],
+    ['УЗИ с допплерографией', 'УЗИ без допплерографии'],
+    ['Чистка зубов с ультразвуком', 'Чистка зубов без ультразвука'],
+    ['Анализ крови с лейкоцитарной формулой', 'Анализ крови без лейкоцитарной формулы'],
+    ['Консультация с осмотром', 'Консультация без осмотра'],
+    ['Массаж с маслом', 'Массаж без масла'],
+    ['Лечение каналов с рентгеном', 'Лечение каналов без рентгена'],
+    # before / after / during
+    ['Анализ крови при беременности', 'Анализ крови после беременности'],
+    ['Консультация до операции', 'Консультация после операции'],
+    ['Осмотр до родов', 'Осмотр после родов'],
+    ['Реабилитация до эндопротезирования', 'Реабилитация после эндопротезирования'],
+    ['Анализ мочи до приема препарата', 'Анализ мочи после приема препарата'],
+    ['Приём до обеда', 'Приём после обеда'],
+    ['Приём врача до 14 лет', 'Приём врача после 14 лет'],
+    ['Контроль при лечении', 'Контроль после лечения'],
+    ['УЗИ плода до 12 недель', 'УЗИ плода после 12 недель'],
+    ['Глюкоза натощак', 'Глюкоза после еды'],
+    ['Анализ натощак', 'Анализ не натощак'],
+    ['Ведение беременности в первом триместре', 'Ведение беременности во втором триместре'],
+    # for whom
+    ['УЗИ для детей', 'УЗИ для взрослых'],
+    ['Массаж для детей', 'Массаж для взрослых'],
+    ['Осмотр для женщин', 'Осмотр для мужчин'],
+    ['Прививка для детей', 'Прививка для взрослых'],
+    ['Консультация для беременных', 'Консультация для кормящих'],
+    ['Приём терапевта для пенсионеров', 'Приём терапевта для студентов'],
+    ['Витамины для мужчин', 'Витамины для женщин'],
+    ['Приём кардиолога детский', 'Приём кардиолога взрослый'],
+    # first / repeated, kind, place
+    ['Приём терапевта первичный', 'Приём терапевта повторный'],
+    ['Консультация онколога первичная', 'Консультация онколога повторная'],
+    ['Приём хирурга первичный', 'Приём хирурга повторный'],
+    ['Рентген зубов панорамный', 'Рентген зубов прицельный'],
+    ['Анализ мочи общий', 'Анализ мочи суточный'],
+    ['Анализ крови утром', 'Анализ крови вечером'],
+    ['Лазерное удаление родинок', 'Хирургическое удаление родинок'],
+    ['Консультация врача очная', 'Консультация врача онлайн'],
+    ['Приём на дому', 'Приём в клинике'],
+    ['Вакцина живая', 'Вакцина инактивированная'],
+    ['Постоянная коронка', 'Временная коронка'],
+    # left / right / upper / lower
+    ['МРТ левого коленного сустава', 'МРТ правого коленного сустава'],
+    ['Рентген левой кисти', 'Рентген правой кисти'],
+    ['УЗИ левой почки', 'УЗИ правой почки'],
+    ['Массаж левой руки', 'Массаж правой руки'],
+    ['МРТ верхней челюсти', 'МРТ нижней челюсти'],
+    ['КТ грудного отдела', 'КТ поясничного отдела'],
+    # numbers and units
+    ['МРТ 1.5 Тл', 'МРТ 3 Тл'],
+    ['КТ 64 срезов', 'КТ 128 срезов'],
+    ['Холтер 24 часа', 'Холтер 48 часов'],
+    ['Приём 30 минут', 'Приём 60 минут'],
+    ['Пакет 5 процедур', 'Пакет 10 процедур'],
+    ['Лазерная эпиляция 1 зона', 'Лазерная эпиляция 2 зоны'],
+    # roman numerals and one-letter codes
+    ['Гепатит I', 'Гепатит II'],
+    ['Гепатит B', 'Гепатит C'],
+    ['Витамин D', 'Витамин D3'],
+    ['Гормон Т3 свободный', 'Гормон Т4 свободный'],
+    ['Витамин B12', 'Витамин B1'],
+    ['Витамин C', 'Витамин K'],
+    ['Группа крови A', 'Группа крови B'],
+    ['Антитела IgG к токсоплазме', 'Антитела IgM к токсоплазме'],
+    ['Антитела к ВИЧ 1', 'Антитела к ВИЧ 2'],
+    ['Тест на COVID-19 IgG', 'Тест на COVID-19 IgM'],
+    ['Анализ на ХГЧ свободный', 'Анализ на ХГЧ общий'],
+    # the same words, but a qualifier or a number is attached to another word
+    ['МРТ без контраста с седацией', 'МРТ с контрастом без седации'],
+    ['КТ без контраста с анестезией', 'КТ с контрастом без анестезии'],
+    ['Лечение зуба с анестезией без рентгена', 'Лечение зуба без анестезии с рентгеном'],
+    ['УЗИ плода с допплерометрией без 3D', 'УЗИ плода без допплерометрии с 3D'],
+    ['Рентген с описанием без диска', 'Рентген без описания с диском'],
+    ['Массаж 10 сеансов по 30 минут', 'Массаж 30 сеансов по 10 минут'],
+    ['Пакет 5 процедур на 10 дней', 'Пакет 10 процедур на 5 дней'],
+    ['Холтер 24 часа 3 канала', 'Холтер 3 часа 24 канала'],
+    ['Приём гинеколога до беременности после родов', 'Приём гинеколога после беременности до родов'],
+    ['Вакцинация детей от 1 до 6 лет', 'Вакцинация детей от 6 до 1 лет'],
+    ['Анализ крови до еды после нагрузки', 'Анализ крови после еды до нагрузки'],
+    ['Приём врача для детей без родителей', 'Приём врача без детей для родителей'],
+    ['Консультация онлайн для взрослых без записи', 'Консультация без онлайн записи для взрослых'],
+    # one name is the other one plus words
+    ['ЭКГ', 'ЭКГ суточное мониторирование'],
+    ['УЗИ малого таза', 'УЗИ органов малого таза'],
+    ['МРТ головного мозга', 'МРТ головного мозга с ангиографией'],
+    ['УЗИ щитовидной железы', 'УЗИ щитовидной железы с цветным картированием'],
+    ['Анализ крови', 'Анализ крови биохимический'],
+    ['Консультация терапевта', 'Консультация терапевта онлайн'],
+    ['Рентген', 'Рентген черепа'],
+    ['Гепатит', 'Гепатит В'],
+    ['МРТ кисти', 'МРТ кисты'],
+    ['МРТ кистей', 'МРТ стопы'],
+    ['МРТ ладони', 'МРТ ладони и предплечья'],
+    ['УЗИ почки', 'УЗИ почек'],
+    ['Биопсия лимфоузла', 'Биопсия лимфоузлов'],
+    ['Рентген ребра', 'Рентген ребер'],
+    ['УЗИ яичника', 'УЗИ яичников'],
+    ['Пункция сустава', 'Пункция суставов']
+  ]
+
+  let(:account) { create(:account) }
+  let(:user) { create(:user, account: account) }
+  let(:assistant) { create(:captain_assistant, account: account) }
+  let(:tool) { described_class.new(assistant, user: user) }
+
+  before { account.enable_features!('scheduling') }
+
+  def search(query)
+    JSON.parse(tool.execute(query: query))
+  end
+
+  it 'covers at least sixty pairs' do
+    expect(pairs.size).to be >= 60
+    expect(pairs.flatten.uniq.size).to eq(pairs.flatten.size)
+  end
+
+  it 'takes the sole matches from the pairs of the corpus' do
+    sole_matches.each do |text, longer|
+      expect(pairs.any? { |pair| pair.sort == [text, longer].sort }).to be(true), "#{text.inspect} and #{longer.inspect} are no pair"
+    end
+  end
+
+  it 'does not confidently offer another body part or a broader service for МРТ кисти when several services fit' do
+    create(:scheduling_service, account: account, name: 'МРТ стопы')
+    create(:scheduling_service, account: account, name: 'МРТ кисти и предплечья')
+    create(:scheduling_service, account: account, name: 'МРТ кисти и запястья')
+
+    payload = search('МРТ кисти')
+
+    expect(payload['match_status']).not_to eq('candidate')
+    expect(payload['exact_name_matches']).to eq(0)
+    expect(payload['instruction']).to include('exact name') if payload['total_count'].positive?
+  end
+
+  it 'offers the one broader service as the sole match for МРТ кисти, not another body part' do
+    create(:scheduling_service, account: account, name: 'МРТ стопы')
+    broader = create(:scheduling_service, account: account, name: 'МРТ кисти и предплечья')
+
+    payload = search('МРТ кисти')
+
+    expect(payload).to include('match_status' => 'candidate', 'total_count' => 1, 'exact_name_matches' => 0,
+                               'instruction' => described_class::SINGLE_MATCH_INSTRUCTION)
+    expect(payload['services'].pluck('id')).to eq([broader.id])
+  end
+
+  pairs.each do |name_a, name_b|
+    it "keeps #{name_a.inspect} and #{name_b.inspect} apart" do
+      service_a = create(:scheduling_service, account: account, name: name_a)
+      service_b = create(:scheduling_service, account: account, name: name_b)
+
+      [[name_a, service_a], [name_b, service_b]].each do |name, service|
+        payload = search(name)
+
+        expect(payload).to include('match_status' => 'candidate', 'exact_name_matches' => 1), "both present, query #{name.inspect}"
+        expect(payload['services'].first['id']).to eq(service.id)
+      end
+
+      [[name_a, service_b, service_a], [name_b, service_a, service_b]].each do |name, other, own|
+        own.update!(active: false)
+
+        payload = search(name)
+
+        expect(payload['exact_name_matches']).to eq(0), "only #{other.name.inspect} present, query #{name.inspect}"
+        expect(payload['services'].pluck('id')).to all(eq(other.id))
+        if sole_matches[name] == other.name
+          expect(payload).to include('match_status' => 'candidate', 'total_count' => 1,
+                                     'instruction' => described_class::SINGLE_MATCH_INSTRUCTION), "sole match, query #{name.inspect}"
+        else
+          expect(payload['match_status']).not_to eq('candidate'), "only #{other.name.inspect} present, query #{name.inspect}"
+          expect(payload['instruction']).to include('Choose the best match') if payload['total_count'].positive?
+        end
+
+        own.update!(active: true)
+      end
+    end
+  end
+end

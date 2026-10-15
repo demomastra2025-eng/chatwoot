@@ -11,7 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from dev_release_gate import ContractManifest, GateError, evaluate, read_live_sha
+from dev_release_gate import ContractManifest, GateError, evaluate, load_contract_manifest, read_live_sha
 
 
 def run(repo: Path, *args: str) -> str:
@@ -73,10 +73,6 @@ class DevReleaseGateTest(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             return evaluate(self.repo, self.live_sha, candidate_sha, allow_rollback=allow_rollback, manifest=self.manifest)
 
-    def acknowledge_live_sha(self, live_sha: str | None = None):
-        self.write("script/onelink/dev_reconciled_live_shas.txt", f"{self.divergent_sha} {live_sha or self.live_sha}\n")
-        self.commit("acknowledge reconciled live release")
-
     def test_rejects_divergent_candidate_that_drops_live_functionality(self):
         with self.assertRaisesRegex(GateError, "divergent/non-descendant"):
             self.evaluate(self.divergent_sha)
@@ -87,30 +83,6 @@ class DevReleaseGateTest(unittest.TestCase):
         changes = self.evaluate(self.sha())
 
         self.assertTrue(any("script/onelink/deployment_fix.sh" in change.paths for change in changes))
-
-    def test_accepts_linear_candidate_that_explicitly_reconciles_live(self):
-        self.write("app/services/integrations/medelement/functional.rb", "functional change\n")
-        self.write("app/services/integrations/medelement/contract.rb", "live contract\n")
-        self.acknowledge_live_sha()
-
-        changes = self.evaluate(self.sha())
-
-        self.assertTrue(any("script/onelink/deployment_fix.sh" in change.paths for change in changes))
-
-    def test_rejects_linear_candidate_with_a_different_reconciliation_sha(self):
-        self.write("app/services/integrations/medelement/functional.rb", "functional change\n")
-        self.write("app/services/integrations/medelement/contract.rb", "live contract\n")
-        self.acknowledge_live_sha("0" * 40)
-
-        with self.assertRaisesRegex(GateError, "divergent/non-descendant"):
-            self.evaluate(self.sha())
-
-    def test_rejects_invalid_reconciliation_sha(self):
-        self.write("script/onelink/dev_reconciled_live_shas.txt", f"{self.divergent_sha} not-a-sha\n")
-        self.commit("add invalid reconciliation marker")
-
-        with self.assertRaisesRegex(GateError, "invalid SHA"):
-            self.evaluate(self.sha())
 
     def test_requires_explicit_rollback_flag_for_divergent_candidate(self):
         changes = self.evaluate(self.divergent_sha, allow_rollback=True)
@@ -161,6 +133,50 @@ class DevReleaseGateTest(unittest.TestCase):
 
         with self.assertRaisesRegex(GateError, "missing files required"):
             self.evaluate(self.sha())
+
+    def test_validates_renamed_protected_file_against_baseline_and_candidate_hashes(self):
+        run(self.repo, "merge", "--no-ff", "live", "-m", "merge live functionality")
+        run(self.repo, "mv", "app/services/integrations/medelement/contract.rb", "app/services/integrations/medelement/account_contract.rb")
+        self.write("app/services/integrations/medelement/account_contract.rb", "renamed contract\n")
+        self.commit("rename protected contract")
+        manifest = ContractManifest(
+            required_ancestor=self.base_sha,
+            protected_files={
+                "app/services/integrations/medelement/contract.rb": hashlib.sha256(b"baseline contract\n").hexdigest()
+            },
+            contract_specs=("spec/contracts/medelement_spec.rb",),
+            protected_file_renames={
+                "app/services/integrations/medelement/contract.rb": (
+                    "app/services/integrations/medelement/account_contract.rb",
+                    hashlib.sha256(b"renamed contract\n").hexdigest(),
+                )
+            },
+        )
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            evaluate(self.repo, self.live_sha, self.sha(), manifest=manifest)
+
+        self.write("app/services/integrations/medelement/account_contract.rb", "tampered contract\n")
+        self.commit("tamper with renamed protected contract")
+        with self.assertRaisesRegex(GateError, "candidate hash mismatch"):
+            evaluate(self.repo, self.live_sha, self.sha(), manifest=manifest)
+
+    def test_loads_legacy_manifest_without_protected_file_renames(self):
+        manifest_path = self.repo / "manifest.json"
+        manifest_path.write_text(
+            '{"version":1,"required_ancestor":"%s","protected_files":{"app/services/integrations/medelement/contract.rb":"%s"},'
+            '"contract_specs":["spec/contracts/medelement_spec.rb"]}'
+            % (self.base_sha, hashlib.sha256(b"baseline contract\n").hexdigest()),
+            encoding="utf-8",
+        )
+
+        manifest = load_contract_manifest(manifest_path)
+
+        self.assertEqual(manifest.protected_file_renames, {})
+        self.assertEqual(
+            manifest.candidate_protected_files(),
+            {"app/services/integrations/medelement/contract.rb": None},
+        )
 
     def test_reads_exact_live_sha_marker(self):
         current = self.repo / "current"

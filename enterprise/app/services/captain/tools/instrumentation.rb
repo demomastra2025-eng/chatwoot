@@ -84,7 +84,7 @@ module Captain::Tools::Instrumentation
     return unless tool_scope_name == Captain::ToolAccess::SCOPE_ASSISTANT
     return inactive_tool_result unless active?
 
-    Captain::Copilot::ToolConfirmationGate.new(
+    Captain::Tools::ToolConfirmationGate.new(
       copilot_thread: @copilot_thread,
       tool_definition: tool_definition,
       arguments: arguments,
