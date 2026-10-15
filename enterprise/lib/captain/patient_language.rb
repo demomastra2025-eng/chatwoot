@@ -5,12 +5,9 @@ module Captain::PatientLanguage
   NAMES = { 'ru' => 'Russian', 'kk' => 'Kazakh', 'en' => 'English' }.freeze
   RULE = "Reply in the patient's language."
   FIELD_DESCRIPTION = (
-    'The language for this reply: Kazakh, Russian or English. When the "# Now" section of the system prompt contains a ' \
-    '"Patient language: <Language>. Reply in <Language>." line, you MUST set patient_language to that exact <Language> and write ' \
-    'the entire reply in that language — even after calling tools or when earlier turns or tool results are in another language. ' \
-    'When no "Patient language:" line is present, use the language of the latest user message (a bare "да"/"ок" keeps the language ' \
-    'of the preceding turn; in Kazakh, repeated enclitic particles before the final negation word mean "neither ... nor ... none", ' \
-    'not Russian "yes").'
+    'The language used for the patient reply: Kazakh, Russian or English. Follow the "Patient language:" line in "# Now" ' \
+    'when present, even when tool results or earlier turns use another language; otherwise use the language of the latest ' \
+    'patient message (a bare one-word confirmation keeps the language of the preceding turn).'
   ).freeze
 
   def self.line(code)
