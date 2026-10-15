@@ -91,6 +91,7 @@ RSpec.configure do |config|
   config.include CsvSpecHelpers
   config.include InstagramSpecHelpers
   config.include InstallationConfigHelpers
+  config.include ChannelVisibilityHelpers
   config.include Devise::Test::IntegrationHelpers, type: :request
   config.include ActiveSupport::Testing::TimeHelpers
   config.include ActionCable::TestHelper

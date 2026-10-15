@@ -299,6 +299,8 @@ ru:
         extend_trial: "Продление триала"
         expire_trial: "Завершение триала"
         apply_plan: "Применение тарифа"
+        update_channel_visibility: "Изменение видимости каналов"
+        update_channel_override: "Изменение каналов клиники"
         cleanup_storage: "Перемещение в корзину"
         empty_trash: "Очистка корзины"
     plans:
@@ -321,6 +323,60 @@ ru:
       notes:
         trial_active: "Клиника на пробном периоде. По его окончании функции пробного периода будут отключены, даже если тариф применён."
         trial_expired: "Пробный период клиники закончился: лимиты операторов и каналов остаются нулевыми, пока их не вернут вручную или не продлят пробный период."
+    channels:
+      title: "Каналы"
+      description: "Какие каналы клиники видят в кабинете оператора и могут подключать. Скрытый канал пропадает из кабинета и не создаётся на сервере; уже подключённые каналы продолжают работать. Для одной клиники канал можно открыть или закрыть на её карточке."
+      columns:
+        channel: "Канал"
+        visibility: "Показывать клиникам"
+        inboxes: "Подключено"
+        overrides: "Исключения клиник"
+      shown: "Показан"
+      hidden: "Скрыт"
+      default_shown: "по умолчанию показан"
+      default_hidden: "по умолчанию скрыт"
+      needs_feature: "Нужна включённая функция клиники"
+      switch_label: "Показывать клиникам: %{channel}"
+      save: "Сохранить"
+      updated_at: "Последнее изменение: %{time} (Астана)"
+      never_changed: "Настройки ещё не менялись: действуют значения по умолчанию."
+      flashes:
+        saved: "Настройки каналов сохранены."
+        unchanged: "Ничего не изменилось: настройки каналов прежние."
+        invalid: "Не удалось сохранить: в запросе неизвестный канал или значение. Настройки не изменены."
+      account:
+        title: "Каналы клиники"
+        description: "Платформа решает, какие каналы видят клиники. Здесь канал можно открыть или закрыть только для этой клиники. Уже подключённые каналы продолжают работать."
+        columns:
+          now: "Сейчас у клиники"
+          setting: "Настройка для клиники"
+        states:
+          default: "Как у платформы (%{state})"
+          shown: "Показать"
+          hidden: "Скрыть"
+        status:
+          available: "Доступен"
+          hidden: "Скрыт"
+          missing_feature: "Нет нужной функции"
+        select_label: "Канал для клиники: %{channel}"
+      names:
+        website: "Сайт (чат на сайте)"
+        facebook: "Facebook Messenger"
+        instagram: "Instagram"
+        whatsapp_cloud: "WhatsApp Cloud API"
+        whatsapp_twilio: "WhatsApp через Twilio"
+        whatsapp_web: "WhatsApp Web"
+        telegram_bot: "Telegram-бот"
+        telegram_personal: "Telegram (личный аккаунт)"
+        email: "Email"
+        voice: "Звонки (телефония)"
+        tiktok: "TikTok"
+        twitter: "Twitter / X"
+        sms: "SMS"
+        api: "API"
+        line: "Line"
+        weixin: "WeChat / Weixin"
+        vk_community: "VK"
     resources:
       accounts: "Аккаунты"
       account: "Аккаунт"
@@ -375,6 +431,7 @@ ru:
         platform_apps: "Платформенные приложения"
         agent_bots: "AI-боты"
         platform_banners: "Баннеры"
+        channels: "Каналы"
     shell:
       filter: "Фильтр"
       filter_all: "Все"
@@ -451,6 +508,9 @@ ru:
         plan_applied: "Тариф применён: %{plan}."
         plan_unknown_module: "Такого модуля нет. Выберите модули из списка."
         plan_apply_failed: "Не удалось применить тариф. Состояние клиники не изменено, повторите попытку."
+        channel_overrides_saved: "Каналы клиники сохранены."
+        channel_overrides_unchanged: "Ничего не изменилось: настройки каналов клиники прежние."
+        channel_overrides_invalid: "Не удалось сохранить: в запросе неизвестный канал или значение. Настройки не изменены."
       storage:
         status_unlimited: "Без лимита"
         status_critical: "Занято более 95%"
