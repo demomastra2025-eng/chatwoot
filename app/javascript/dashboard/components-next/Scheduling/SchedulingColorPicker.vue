@@ -73,7 +73,7 @@ const selectPaletteColor = color => {
         <template v-if="!compact">
           <span class="flex min-w-0 items-center gap-3">
             <span
-              class="size-6 shrink-0 rounded-lg outline outline-1 outline-n-alpha-black1 dark:outline-white/10"
+              class="size-6 shrink-0 rounded-lg outline outline-1 outline-black/10 dark:outline-white/10"
               :style="{ backgroundColor: colorValue }"
             />
             <span class="truncate text-sm font-medium text-n-slate-12">
@@ -103,7 +103,7 @@ const selectPaletteColor = color => {
             v-for="color in palette"
             :key="color"
             type="button"
-            class="size-6 rounded-full p-0 outline outline-1 outline-n-alpha-black1 transition-transform hover:scale-110 focus-visible:outline-2 focus-visible:outline-n-brand dark:outline-white/10"
+            class="size-6 rounded-full p-0 outline outline-1 outline-black/10 transition-transform hover:scale-110 focus-visible:outline-2 focus-visible:outline-n-brand dark:outline-white/10"
             :class="
               colorValue.toUpperCase() === String(color).toUpperCase()
                 ? 'ring-2 ring-n-slate-8 ring-offset-2 ring-offset-n-surface-1'
@@ -126,7 +126,7 @@ const selectPaletteColor = color => {
             <template #default="{ style }">
               <ColorAreaArea
                 :style="style"
-                class="relative h-40 w-full overflow-hidden rounded-xl outline outline-1 outline-n-alpha-black1 dark:outline-white/10"
+                class="relative h-40 w-full overflow-hidden rounded-xl outline outline-1 outline-black/10 dark:outline-white/10"
               >
                 <ColorAreaThumb
                   class="size-4 rounded-full border-2 border-white shadow-[0_0_0_1px_rgba(15,23,42,0.16)]"
@@ -143,7 +143,7 @@ const selectPaletteColor = color => {
             class="relative flex h-4 w-full touch-none select-none items-center"
           >
             <ColorSliderTrack
-              class="relative h-3 grow overflow-hidden rounded-full outline outline-1 outline-n-alpha-black1 dark:outline-white/10"
+              class="relative h-3 grow overflow-hidden rounded-full outline outline-1 outline-black/10 dark:outline-white/10"
             />
             <ColorSliderThumb
               class="block size-4 rounded-full border-2 border-white bg-white shadow-[0_1px_4px_rgba(15,23,42,0.2)]"

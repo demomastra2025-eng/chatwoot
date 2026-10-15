@@ -177,7 +177,7 @@ const barHeight = index => {
           :class="{ 'animate-ping': status === 'connecting' }"
         />
         <div
-          class="relative flex size-28 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 via-n-blue-9 to-n-teal-9 shadow-xl shadow-n-blue-9/25 transition-transform duration-100"
+          class="relative flex size-28 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 via-blue-500 to-cyan-400 shadow-xl shadow-blue-500/25 transition-transform duration-100"
           :style="{ transform: `scale(${1 + level * 0.08})` }"
         >
           <div class="size-14 rounded-full bg-white/20 backdrop-blur-md" />

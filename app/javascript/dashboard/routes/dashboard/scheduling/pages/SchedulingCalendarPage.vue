@@ -2226,7 +2226,7 @@ onMounted(async () => {
     >
       <div
         v-if="formStore.isOpen"
-        class="modal-mask fixed inset-0 z-[110] bg-n-alpha-black1 p-3 backdrop-blur-[4px]"
+        class="modal-mask fixed inset-0 z-[110] bg-black/35 p-3 backdrop-blur-[4px]"
       >
         <div :class="appointmentDrawerModalClass">
           <aside

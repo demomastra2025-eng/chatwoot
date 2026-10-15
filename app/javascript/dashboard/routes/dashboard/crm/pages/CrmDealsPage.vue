@@ -4611,7 +4611,7 @@ watch(
         :class="
           isDealPage
             ? 'flex min-h-0 min-w-0 flex-1'
-            : 'modal-mask fixed inset-0 z-[110] bg-n-alpha-black1 p-3 backdrop-blur-[4px]'
+            : 'modal-mask fixed inset-0 z-[110] bg-black/35 p-3 backdrop-blur-[4px]'
         "
       >
         <div :class="drawerModalClass">

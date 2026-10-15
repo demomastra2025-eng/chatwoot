@@ -298,7 +298,7 @@ watch(
       {{ label }}
     </label>
 
-    <div class="flex min-w-0 rounded-lg shadow-xs shadow-n-alpha-black2">
+    <div class="flex min-w-0 rounded-lg shadow-xs shadow-black/[.04]">
       <div :class="selectSurfaceClass">
         <span
           v-if="showCountryFlag"

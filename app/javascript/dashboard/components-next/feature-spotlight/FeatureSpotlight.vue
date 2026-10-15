@@ -30,7 +30,7 @@ const openLink = link => {
   <section class="custom-dashed-border rounded-2xl py-5 px-6">
     <div class="flex flex-col md:flex-row items-start md:items-center gap-6">
       <div
-        class="flex-shrink-0 bg-n-slate-3 w-[7.5rem] h-[6.5rem] rounded-lg flex items-center justify-center overflow-hidden"
+        class="flex-shrink-0 bg-gray-800 w-[7.5rem] h-[6.5rem] rounded-lg flex items-center justify-center overflow-hidden"
       >
         <img
           v-if="!imageError && thumbnail"
