@@ -272,6 +272,7 @@ export class JanusSipVoiceClient extends EventTarget {
     this.recordedChunks = [];
     this.recordingAudioContext = null;
     this.recordingDestination = null;
+    this.recordingChannelMerger = null;
     this.recordingSources = [];
     this.recordingCallRef = null;
     this.recordingProvider = null;
@@ -1787,14 +1788,18 @@ export class JanusSipVoiceClient extends EventTarget {
       this.recordingAudioContext = new AudioContextConstructor();
       this.recordingDestination =
         this.recordingAudioContext.createMediaStreamDestination();
+      this.configureDualChannelRecordingDestination(this.recordingDestination);
+      this.recordingChannelMerger = this.createRecordingChannelMerger();
       localTracks.forEach(track =>
         this.connectRecordingTrack(track, {
           gain: this.recordingGainValue('local'),
+          channelIndex: 0,
         })
       );
       remoteTracks.forEach(track =>
         this.connectRecordingTrack(track, {
           gain: this.recordingGainValue('remote'),
+          channelIndex: 1,
         })
       );
       this.recordingMimeType = this.preferredRecordingMimeType(
@@ -2077,7 +2082,42 @@ export class JanusSipVoiceClient extends EventTarget {
     return Math.min(gain, WEBPHONE_RECORDING_MAX_GAIN);
   }
 
-  connectRecordingTrack(track, { gain = 1 } = {}) {
+  // eslint-disable-next-line class-methods-use-this
+  configureDualChannelRecordingDestination(destination) {
+    if (!destination) return;
+
+    try {
+      destination.channelCount = 2;
+      destination.channelCountMode = 'explicit';
+      destination.channelInterpretation = 'discrete';
+    } catch {
+      // Read-only channel properties in test doubles or restricted browsers are safe to ignore.
+    }
+  }
+
+  createRecordingChannelMerger() {
+    if (
+      !this.recordingAudioContext ||
+      typeof this.recordingAudioContext.createChannelMerger !== 'function' ||
+      !this.recordingDestination
+    ) {
+      return null;
+    }
+
+    const merger = this.recordingAudioContext.createChannelMerger(2);
+    try {
+      merger.channelCount = 1;
+      merger.channelCountMode = 'explicit';
+      merger.channelInterpretation = 'speakers';
+    } catch {
+      // Read-only channel properties in test doubles are safe to ignore.
+    }
+    merger.connect(this.recordingDestination);
+    this.recordingSources.push(merger);
+    return merger;
+  }
+
+  connectRecordingTrack(track, { gain = 1, channelIndex = 0 } = {}) {
     const MediaStreamConstructor = this.mediaStreamConstructor();
     if (!MediaStreamConstructor) {
       throw new Error('MediaStream is not available');
@@ -2085,6 +2125,7 @@ export class JanusSipVoiceClient extends EventTarget {
 
     const stream = new MediaStreamConstructor([track]);
     const source = this.recordingAudioContext.createMediaStreamSource(stream);
+    let outputNode = source;
     if (
       gain !== 1 &&
       typeof this.recordingAudioContext.createGain === 'function'
@@ -2092,13 +2133,18 @@ export class JanusSipVoiceClient extends EventTarget {
       const gainNode = this.recordingAudioContext.createGain();
       gainNode.gain.value = gain;
       source.connect(gainNode);
-      gainNode.connect(this.recordingDestination);
       this.recordingSources.push(source, gainNode);
+      outputNode = gainNode;
+    } else {
+      this.recordingSources.push(source);
+    }
+
+    if (this.recordingChannelMerger) {
+      outputNode.connect(this.recordingChannelMerger, 0, channelIndex);
       return;
     }
 
-    source.connect(this.recordingDestination);
-    this.recordingSources.push(source);
+    outputNode.connect(this.recordingDestination);
   }
 
   // eslint-disable-next-line class-methods-use-this
@@ -2185,6 +2231,7 @@ export class JanusSipVoiceClient extends EventTarget {
       finalized = true;
       const chunks = [...this.recordedChunks];
       const durationMs = startedAt ? Date.now() - startedAt : null;
+      const dualChannelRecorded = Boolean(this.recordingChannelMerger);
       this.resetRecordingState({ preservePersistencePending: true });
 
       if (!upload || !callRef || chunks.length === 0) {
@@ -2204,6 +2251,9 @@ export class JanusSipVoiceClient extends EventTarget {
         duration_ms: durationMs,
         reason,
         terminal_status: terminalStatus,
+        layout: dualChannelRecorded ? 'dual_channel' : 'mixed_mono',
+        channels: dualChannelRecorded ? 2 : 1,
+        channel_layout: dualChannelRecorded ? 'stereo' : 'mono',
       })
         .catch(() => {
           if (direction !== 'outbound') return null;
@@ -2249,6 +2299,7 @@ export class JanusSipVoiceClient extends EventTarget {
     this.recordedChunks = [];
     this.recordingAudioContext = null;
     this.recordingDestination = null;
+    this.recordingChannelMerger = null;
     this.recordingSources = [];
     this.recordingCallRef = null;
     this.recordingProvider = null;

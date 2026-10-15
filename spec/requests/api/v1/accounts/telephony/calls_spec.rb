@@ -416,7 +416,14 @@ RSpec.describe 'Telephony Calls API', type: :request do
     expect(call_session.metadata['recording']).to include(
       'content_type' => 'audio/webm',
       'sha256' => Digest::SHA256.hexdigest(recording_body),
-      'writer' => 'browser_janus_media_recorder'
+      'writer' => 'browser_janus_media_recorder',
+      'layout' => 'dual_channel',
+      'channels' => 2,
+      'channel_layout' => 'stereo',
+      'channel_map' => {
+        'channel_1' => 'user_audio',
+        'channel_2' => 'peer_audio'
+      }
     )
     expect(File.binread(recording_path)).to eq(recording_body)
 

@@ -33,7 +33,8 @@ class Captain::OpenAiMessageBuilderService
 
   def generate_content
     parts = []
-    parts << text_part(@message.content) if @message.content.present?
+    primary_text = primary_message_text
+    parts << text_part(primary_text) if primary_text.present?
     referral_context = meta_ad_referral_context
     parts << text_part(referral_context) if referral_context.present?
     parts.concat(attachment_parts(@message.attachments)) if @message.attachments.any?
@@ -45,6 +46,20 @@ class Captain::OpenAiMessageBuilderService
   end
 
   private
+
+  def primary_message_text
+    return voice_call_message_text if @message.voice_call?
+
+    @message.content
+  end
+
+  def voice_call_message_text
+    transcript = @message.voice_call_transcript_for_llm
+    return @message.content if transcript.blank?
+
+    header = @message.content.presence || 'Voice Call'
+    "#{header}\nPhone call transcript (Оператор = clinic manager, Клиент = patient):\n#{transcript}"
+  end
 
   def text_part(text)
     { type: 'text', text: text }

@@ -232,6 +232,7 @@ const fakeAudioTrack = id => ({
 
 const installRecordingMocks = ({ stopImmediately = true } = {}) => {
   const createdDestinations = [];
+  const createdMergers = [];
   const createdSources = [];
   const createdGains = [];
   const original = {
@@ -260,6 +261,17 @@ const installRecordingMocks = ({ stopImmediately = true } = {}) => {
       createdDestinations.push(destination);
       return destination;
     };
+
+  AudioContextMock.prototype.createChannelMerger = function createChannelMerger(
+    numberOfInputs = 2
+  ) {
+    const merger = {
+      numberOfInputs,
+      connect: vi.fn(),
+    };
+    createdMergers.push(merger);
+    return merger;
+  };
 
   AudioContextMock.prototype.createMediaStreamSource =
     function createMediaStreamSource() {
@@ -316,6 +328,7 @@ const installRecordingMocks = ({ stopImmediately = true } = {}) => {
 
   return {
     createdDestinations,
+    createdMergers,
     createdGains,
     createdSources,
     MediaRecorderMock,
@@ -2875,9 +2888,10 @@ describe('janusSipVoiceClient', () => {
     }
   });
 
-  it('records both browser SIP sides without fixed gain that can clip speech', () => {
+  it('records both browser SIP sides in 2 separate stereo channels without fixed gain that can clip speech', () => {
     const {
       createdDestinations,
+      createdMergers,
       createdGains,
       createdSources,
       MediaRecorderMock,
@@ -2896,12 +2910,20 @@ describe('janusSipVoiceClient', () => {
 
       expect(MediaRecorderMock.instances).toHaveLength(1);
       expect(createdSources).toHaveLength(2);
+      expect(createdMergers).toHaveLength(1);
       expect(createdGains).toHaveLength(0);
-      expect(createdSources[0].connect).toHaveBeenCalledWith(
+      expect(createdMergers[0].connect).toHaveBeenCalledWith(
         createdDestinations[0]
       );
+      expect(createdSources[0].connect).toHaveBeenCalledWith(
+        createdMergers[0],
+        0,
+        0
+      );
       expect(createdSources[1].connect).toHaveBeenCalledWith(
-        createdDestinations[0]
+        createdMergers[0],
+        0,
+        1
       );
     } finally {
       restore();
@@ -3058,8 +3080,13 @@ describe('janusSipVoiceClient', () => {
     ['binotel', 'inbound'],
     ['binotel', 'outbound'],
   ])('records local and peer audio for %s %s calls', (provider, direction) => {
-    const { createdDestinations, createdSources, MediaRecorderMock, restore } =
-      installRecordingMocks();
+    const {
+      createdDestinations,
+      createdMergers,
+      createdSources,
+      MediaRecorderMock,
+      restore,
+    } = installRecordingMocks();
     try {
       const client = createJanusSipVoiceClient();
       client.sessionConfig = {
@@ -3089,11 +3116,19 @@ describe('janusSipVoiceClient', () => {
       );
       expect(MediaRecorderMock.instances).toHaveLength(1);
       expect(createdSources).toHaveLength(2);
-      expect(createdSources[0].connect).toHaveBeenCalledWith(
+      expect(createdMergers).toHaveLength(1);
+      expect(createdMergers[0].connect).toHaveBeenCalledWith(
         createdDestinations[0]
       );
+      expect(createdSources[0].connect).toHaveBeenCalledWith(
+        createdMergers[0],
+        0,
+        0
+      );
       expect(createdSources[1].connect).toHaveBeenCalledWith(
-        createdDestinations[0]
+        createdMergers[0],
+        0,
+        1
       );
 
       client.handleCallDisconnected({ reason: 'remote_hangup' });
@@ -3272,6 +3307,65 @@ describe('janusSipVoiceClient', () => {
           provider: 'sipuni',
           direction: 'outbound',
           reason: 'remote_hangup',
+        })
+      );
+    } finally {
+      restore();
+    }
+  });
+
+  it('records Beeline calls in 2 separate stereo channels (left = operator, right = patient)', () => {
+    const {
+      createdDestinations,
+      createdMergers,
+      createdSources,
+      MediaRecorderMock,
+      restore,
+    } = installRecordingMocks();
+    try {
+      const client = createJanusSipVoiceClient();
+      client.sessionConfig = {
+        provider: 'beeline',
+        callingSupported: true,
+        janusServer:
+          'wss://janus-beeline.188-241-217-162.sslip.io/janus-beeline',
+        recordingStrategy: 'browser_fallback',
+      };
+      client.currentCallRef = 'beeline:local:stereo-call-1';
+      client.currentCallDirection = 'inbound';
+      client.callMediaAccepted = true;
+      client.localTracks = { local: fakeAudioTrack('local') };
+      client.remoteTracks = { remote: fakeAudioTrack('remote') };
+
+      client.startRecordingIfReady();
+      client.handleCallDisconnected({ reason: 'remote_hangup' });
+
+      expect(MediaRecorderMock.instances).toHaveLength(1);
+      expect(createdDestinations[0].channelCount).toBe(2);
+      expect(createdDestinations[0].channelInterpretation).toBe('discrete');
+      expect(createdMergers).toHaveLength(1);
+      expect(createdMergers[0].connect).toHaveBeenCalledWith(
+        createdDestinations[0]
+      );
+      expect(createdSources[0].connect).toHaveBeenCalledWith(
+        createdMergers[0],
+        0,
+        0
+      );
+      expect(createdSources[1].connect).toHaveBeenCalledWith(
+        createdMergers[0],
+        0,
+        1
+      );
+      expect(uploadRecordingMock).toHaveBeenCalledWith(
+        'beeline:local:stereo-call-1',
+        expect.any(Blob),
+        expect.objectContaining({
+          provider: 'beeline',
+          direction: 'inbound',
+          layout: 'dual_channel',
+          channels: 2,
+          channel_layout: 'stereo',
         })
       );
     } finally {

@@ -134,7 +134,10 @@ class LlmFormatter::ConversationLlmFormatter < LlmFormatter::DefaultLlmFormatter
       call_ref = call_session.external_call_ref.to_s
       next if call_ref.blank? || seen_call_refs.include?(call_ref)
 
-      lines = voice_transcript_lines('transcript_items' => call_session_transcript_items(call_session))
+      lines = voice_transcript_lines(
+        'transcript_items' => call_session_transcript_items(call_session),
+        'transcript' => call_session.metadata&.dig('recording', 'transcription', 'text')
+      )
       next if lines.blank?
 
       "Call #{call_ref}:\n#{lines.join("\n")}"

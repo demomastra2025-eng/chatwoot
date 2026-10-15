@@ -157,6 +157,31 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
       end
     end
 
+    context 'when message is a voice_call with a call recording transcript' do
+      let(:message) do
+        create(
+          :message,
+          content: 'Voice Call',
+          content_type: :voice_call,
+          content_attributes: {
+            'data' => {
+              'status' => 'completed',
+              'transcript' => "Оператор: Здравствуйте, клиника OneLink\nКлиент: Запишите меня на приём завтра в 15:00"
+            }
+          }
+        )
+      end
+
+      it 'includes the phone call transcript so Captain knows what the manager and patient discussed' do
+        expect(service.generate_content).to include(
+          'Voice Call',
+          'Phone call transcript (Оператор = clinic manager, Клиент = patient):',
+          'Оператор: Здравствуйте, клиника OneLink',
+          'Клиент: Запишите меня на приём завтра в 15:00'
+        )
+      end
+    end
+
     context 'when message has text content and attachments' do
       before do
         attachment = message.attachments.build(account_id: message.account_id, file_type: :image, external_url: 'https://example.com/image.jpg')

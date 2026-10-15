@@ -121,28 +121,22 @@ class Telephony::BrowserRecordingUploadService
 
   def recording_ready_payload(stored_recording)
     {
-      account_id: call_session.account_id,
-      call_ref: call_session.external_call_ref,
-      provider: call_session.provider,
-      event: 'recording_ready',
+      account_id: call_session.account_id, call_ref: call_session.external_call_ref,
+      provider: call_session.provider, event: 'recording_ready',
       event_key: "browser_recording:#{call_session.account_id}:#{call_session.id}:#{stored_recording.sha256}",
-      occurred_at: Time.current.iso8601,
-      recording_ref: stored_recording.storage_key,
-      storage_key: stored_recording.storage_key,
-      byte_size: stored_recording.byte_size,
-      content_type: stored_recording.content_type,
-      sha256: stored_recording.sha256,
+      occurred_at: Time.current.iso8601, recording_ref: stored_recording.storage_key,
+      storage_key: stored_recording.storage_key, byte_size: stored_recording.byte_size,
+      content_type: stored_recording.content_type, sha256: stored_recording.sha256,
       callee_leg_answered: call_session.direction == 'outbound',
+      layout: 'dual_channel', mode: 'operator', recorded_by: 'browser',
+      channels: 2, channel_layout: 'stereo',
+      channel_map: { 'channel_1' => 'user_audio', 'channel_2' => 'peer_audio' },
       metadata: recording_metadata
     }.merge(recording_timing_payload).compact
   end
 
   def recording_timing_payload
-    {
-      duration_ms: duration_ms,
-      duration_seconds: resolved_duration_seconds,
-      answered_at: inferred_answered_at&.iso8601(3)
-    }
+    { duration_ms: duration_ms, duration_seconds: resolved_duration_seconds, answered_at: inferred_answered_at&.iso8601(3) }
   end
 
   def recording_metadata

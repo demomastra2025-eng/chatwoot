@@ -164,4 +164,46 @@ RSpec.describe Telephony::CallRecordingTranscriptionService, type: :service do
 
     expect(service.perform).to include(success: true, transcript: transcript)
   end
+
+  it 'includes explicit 2-channel stereo speaker mapping in the prompt for dual-channel recordings' do
+    call_session.update!(
+      metadata: call_session.metadata.deep_merge(
+        'recording' => {
+          'layout' => 'dual_channel',
+          'channels' => 2,
+          'channel_layout' => 'stereo',
+          'channel_map' => {
+            'channel_1' => 'user_audio',
+            'channel_2' => 'peer_audio'
+          }
+        }
+      )
+    )
+
+    expect(Llm::Runtime).to receive(:transcribe).with(
+      hash_including(
+        options: hash_including(
+          prompt: a_string_including(
+            'Channel 1 (Left channel) is Оператор (clinic manager)',
+            'Channel 2 (Right channel) is Клиент (patient/customer)'
+          )
+        )
+      )
+    ).and_return(response)
+
+    expect(described_class.new(call_session).perform).to include(success: true, transcript: transcript)
+  end
+
+  it 'stages and transcribes a recording from remote S3 storage when not cached on local disk' do
+    FileUtils.rm_f(recording_path)
+    allow(Storage::VoiceRecordingRemoteStorage).to receive(:download)
+      .with('voice-recordings/1/operator-call-1/recording.wav')
+      .and_return("RIFF\x24\x00\x00\x00WAVEfmt ")
+
+    result = described_class.new(call_session).perform
+
+    expect(result).to include(success: true, transcript: transcript)
+    expect(Storage::VoiceRecordingRemoteStorage).to have_received(:download)
+      .with('voice-recordings/1/operator-call-1/recording.wav')
+  end
 end

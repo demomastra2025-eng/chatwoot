@@ -66,7 +66,7 @@ class Llm::OpenRouterAudioInput
         ffmpeg,
         '-y', '-nostdin', '-hide_banner', '-loglevel', 'error',
         '-i', source_file_path,
-        '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le',
+        '-vn', '-ar', '16000', '-c:a', 'pcm_s16le',
         destination_file_path
       )
 

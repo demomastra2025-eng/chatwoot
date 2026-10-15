@@ -368,25 +368,58 @@ class Message < ApplicationRecord
   # Returns message content suitable for LLM consumption
   # Falls back to audio transcription or attachment placeholder when content is nil
   def content_for_llm
+    voice_call_llm = voice_call_content_for_llm
+    return voice_call_llm if voice_call_llm.present?
     return content if content.present?
 
-    audio_transcription = attachments
-                          .where(file_type: :audio)
-                          .filter_map { |att| att.meta&.dig('transcribed_text') }
-                          .join(' ')
-                          .presence
+    attachment_content_for_llm
+  end
+
+  def voice_call_content_for_llm
+    return unless voice_call?
+
+    transcript = voice_call_transcript_for_llm
+    "[Voice Call] #{transcript}" if transcript.present?
+  end
+
+  def attachment_content_for_llm
+    audio_transcription = audio_attachment_transcription_for_llm
     return "[Voice Message] #{audio_transcription}" if audio_transcription.present?
 
-    if Llm::RuntimePolicy.web_access_enabled?(:document_parse, account: account)
-      document_text = attachments
-                      .where(file_type: :file)
-                      .filter_map { |att| att.meta&.dig('parsed_text').presence || att.meta&.dig('transcribed_text').presence }
-                      .join(' ')
-                      .presence
-      return "[File Attachment] #{document_text}" if document_text.present?
-    end
+    document_text = document_attachment_text_for_llm
+    return "[File Attachment] #{document_text}" if document_text.present?
 
     '[Attachment]' if attachments.any?
+  end
+
+  def audio_attachment_transcription_for_llm
+    attachments.where(file_type: :audio).filter_map { |att| att.meta&.dig('transcribed_text') }.join(' ').presence
+  end
+
+  def document_attachment_text_for_llm
+    return unless Llm::RuntimePolicy.web_access_enabled?(:document_parse, account: account)
+
+    attachments
+      .where(file_type: :file)
+      .filter_map { |att| att.meta&.dig('parsed_text').presence || att.meta&.dig('transcribed_text').presence }
+      .join(' ')
+      .presence
+  end
+
+  def voice_call_transcript_for_llm
+    raw_data = message_attributes_hash(content_attributes)[:data]
+    data = message_attributes_hash(raw_data)
+    items = Array(data[:transcript_items]).filter_map do |item|
+      entry = message_attributes_hash(item)
+      text = entry[:text].to_s.strip
+      next if text.blank?
+
+      speaker = entry[:speaker].to_s.in?(%w[caller customer contact user]) ? 'Клиент' : 'Оператор'
+      "#{speaker}: #{text}"
+    end
+    return items.join("\n") if items.present?
+
+    data[:transcript].to_s.strip.presence
   end
 
   def ai_voice_transcript_turn?

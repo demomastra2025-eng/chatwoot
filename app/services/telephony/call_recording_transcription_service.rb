@@ -90,7 +90,7 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
   end
 
   def transcribe_recording
-    file_path = recording_file_path!
+    file_path, staged_remote_file = resolve_recording_file!
     provider_file_path = audio_file_path_for_provider(file_path)
     response = if openrouter_chat_transcription?
                  transcribe_with_openrouter_chat(provider_file_path)
@@ -101,6 +101,7 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
     response.respond_to?(:text) ? response.text.to_s : response.to_s
   ensure
     FileUtils.rm_f(provider_file_path) if provider_file_path.present? && provider_file_path != file_path
+    FileUtils.rm_f(file_path) if staged_remote_file && file_path.present?
   end
 
   def transcribe_with_transcription_endpoint(file_path)
@@ -152,22 +153,74 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
     TranscriptionResult.new(text: response&.content.to_s)
   end
 
+  def resolve_recording_file!
+    local_path = local_recording_file_path
+    return [local_path, false] if local_path.present?
+
+    remote_path = stage_remote_recording_file
+    return [remote_path, true] if remote_path.present?
+
+    raise RecordingNotFound, 'Recording file could not be found'
+  end
+
   def recording_file_path!
+    path, = resolve_recording_file!
+    path
+  end
+
+  def local_recording_file_path
+    storage_key = validated_recording_storage_key!
+    storage_root = Rails.root.join('storage').realpath
+    candidate_storage_keys(storage_key).each do |candidate_key|
+      resolved = validated_local_candidate_path(storage_root, candidate_key)
+      return resolved if resolved.present?
+    end
+
+    nil
+  rescue Errno::ENOENT, Errno::EACCES, Errno::ELOOP
+    nil
+  end
+
+  def validated_recording_storage_key!
     storage_key = recording_storage_key
     raise RecordingNotFound, 'Recording storage key is missing' if storage_key.blank?
-
     raise RecordingNotFound, 'Recording file could not be found' unless storage_key.start_with?('voice-recordings/')
 
-    storage_root = Rails.root.join('storage').realpath
-    path = storage_root.join(storage_key).cleanpath
-    raise RecordingNotFound, 'Recording file could not be found' unless path.to_s.start_with?("#{storage_root}/") && File.file?(path)
+    storage_key
+  end
+
+  def validated_local_candidate_path(storage_root, candidate_key)
+    path = storage_root.join(candidate_key).cleanpath
+    return unless path.to_s.start_with?("#{storage_root}/") && File.file?(path)
 
     real_path = Pathname.new(File.realpath(path.to_s))
     raise RecordingNotFound, 'Recording file could not be found' unless real_path.to_s.start_with?("#{storage_root}/")
 
     real_path.to_s
-  rescue Errno::ENOENT, Errno::EACCES, Errno::ELOOP
-    raise RecordingNotFound, 'Recording file could not be found'
+  end
+
+  def stage_remote_recording_file
+    storage_key = recording_storage_key
+    return if storage_key.blank? || !storage_key.start_with?('voice-recordings/')
+
+    candidate_storage_keys(storage_key).each do |candidate_key|
+      bytes = Storage::VoiceRecordingRemoteStorage.download(candidate_key)
+      next if bytes.blank?
+
+      ext = File.extname(candidate_key).presence || '.mp3'
+      tempfile = Tempfile.new(['call-recording-remote-', ext], binmode: true)
+      tempfile.write(bytes)
+      tempfile.close
+      return tempfile.path
+    end
+
+    nil
+  end
+
+  def candidate_storage_keys(storage_key)
+    keys = [storage_key]
+    keys << storage_key.sub(/\.(wav|wave|pcm)\z/i, '.mp3') if storage_key.match?(/\.(wav|wave|pcm)\z/i)
+    keys.uniq
   end
 
   def recording_storage_key
@@ -252,9 +305,40 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
   def transcription_prompt
     [
       'Transcribe the attached call recording accurately. Return only the transcript text, without markdown or commentary.',
-      'If speaker roles are clear, label them as Клиент and Оператор.',
+      speaker_channel_prompt,
       account.captain_audio_transcription_prompt.presence
     ].compact.join("\n")
+  end
+
+  def speaker_channel_prompt
+    return 'If speaker roles are clear, label them as Клиент and Оператор.' unless dual_channel_recording?
+
+    channel_1_role = channel_role_label('channel_1', default: 'Оператор (clinic manager)')
+    channel_2_role = channel_role_label('channel_2', default: 'Клиент (patient/customer)')
+    [
+      'This is a 2-channel stereo call recording where each speaker is recorded on a separate channel:',
+      "Channel 1 (Left channel) is #{channel_1_role}, and Channel 2 (Right channel) is #{channel_2_role}.",
+      'Use this stereo channel separation to attribute every turn accurately and label speakers as Оператор and Клиент.'
+    ].join(' ')
+  end
+
+  def dual_channel_recording?
+    recording_metadata['layout'].to_s == 'dual_channel' ||
+      recording_metadata['channel_layout'].to_s == 'stereo' ||
+      recording_metadata['channels'].to_i == 2 ||
+      recording_metadata['channel_map'].is_a?(Hash)
+  end
+
+  def channel_role_label(channel_key, default:)
+    role = recording_metadata.dig('channel_map', channel_key).to_s
+    case role
+    when 'user_audio', 'operator', 'agent'
+      'Оператор (clinic manager)'
+    when 'peer_audio', 'caller', 'customer', 'client'
+      'Клиент (patient/customer)'
+    else
+      default
+    end
   end
 
   def openrouter_transcription_prompt

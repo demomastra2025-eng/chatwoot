@@ -1507,5 +1507,22 @@ RSpec.describe Message do
 
       expect(message.content_for_llm).to eq('[File Attachment] Parsed file text')
     end
+
+    it 'returns the phone call transcript for voice_call messages when available' do
+      conversation = create(:conversation)
+      message = create(
+        :message,
+        conversation: conversation,
+        content: 'Voice Call',
+        content_type: :voice_call,
+        content_attributes: {
+          'data' => {
+            'transcript' => "Оператор: Чем могу помочь?\nКлиент: Нужно перенести запись"
+          }
+        }
+      )
+
+      expect(message.content_for_llm).to eq("[Voice Call] Оператор: Чем могу помочь?\nКлиент: Нужно перенести запись")
+    end
   end
 end

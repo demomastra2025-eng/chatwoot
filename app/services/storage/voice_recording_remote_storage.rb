@@ -63,6 +63,16 @@ module Storage::VoiceRecordingRemoteStorage
     nil
   end
 
+  def download(storage_key)
+    return unless valid_key?(storage_key) && enabled?
+    return unless active_storage_service.exist?(storage_key.to_s)
+
+    active_storage_service.download(storage_key.to_s)
+  rescue StandardError => e
+    Rails.logger.warn("[VoiceRecordingRemoteStorage] Download failed key=#{storage_key} error=#{e.class.name}: #{e.message}")
+    nil
+  end
+
   def valid_key?(storage_key)
     key = storage_key.to_s
     key.start_with?(PREFIX) && key.exclude?('..')
