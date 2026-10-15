@@ -1024,6 +1024,8 @@ Rails.application.routes.draw do
       resource :push_diagnostics, only: [:show, :create] do
         post :destroy_subscriptions, on: :collection
       end
+      # Platform switches of the channels clinics may connect (InstallationConfig CHANNEL_VISIBILITY)
+      resource :channels, only: [:show, :update]
 
       # order of resources affect the order of sidebar navigation in super admin
       resources :accounts, only: [:index, :new, :create, :show, :edit, :update, :destroy] do
@@ -1033,6 +1035,7 @@ Rails.application.routes.draw do
         post :expire_trial, on: :member
         post :apply_plan, on: :member
         get :plan_preview, on: :member
+        post :channel_overrides, on: :member
         post :impersonate, on: :member
         get :export, on: :collection
         if ChatwootApp.enterprise?

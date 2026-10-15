@@ -25,6 +25,7 @@ Resources that nobody placed in a group land in "Дополнительно".
     monitorings
     settings
     audits
+    channels
   ]
 
   primary_nav_items = Administrate::Namespace.new(namespace).resources.filter_map do |resource|
@@ -99,6 +100,7 @@ Resources that nobody placed in a group land in "Дополнительно".
       <% if resource_urls['platform_banners'] %>
         <%= render 'nav_item', icon: 'i-lucide-megaphone', url: resource_urls['platform_banners'], label: t('super_admin.navigation.items.platform_banners'), active: super_admin_nav_active?(:platform_banners) %>
       <% end %>
+      <%= render 'nav_item', icon: 'i-lucide-messages-square', url: super_admin_channels_path, label: t('super_admin.navigation.items.channels'), active: super_admin_nav_active?(:channels) %>
       <% extra_items.each do |item| %>
         <%= render 'nav_item', icon: 'i-lucide-circle-dot', url: item[:url], label: super_admin_resource_label(item[:resource]), active: super_admin_nav_active?(item[:resource].resource.to_sym) %>
       <% end %>

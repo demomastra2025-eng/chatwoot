@@ -31,7 +31,7 @@
       <div>
         <label class="block text-xs font-medium text-n-slate-11 mb-1"><%= t('super_admin.audits.action') %></label>
         <%= f.select :audit_action,
-                     options_for_select([[t('super_admin.audits.all_actions'), '']] + %w[create update destroy impersonate start_trial extend_trial expire_trial apply_plan cleanup_storage empty_trash].map { |action| [t("super_admin.audits.actions.#{action}", default: action.humanize), action] }, params[:audit_action]),
+                     options_for_select([[t('super_admin.audits.all_actions'), '']] + %w[create update destroy impersonate start_trial extend_trial expire_trial apply_plan update_channel_override update_channel_visibility cleanup_storage empty_trash].map { |action| [t("super_admin.audits.actions.#{action}", default: action.humanize), action] }, params[:audit_action]),
                      {},
                      class: "text-sm border border-n-strong rounded px-2.5 py-1.5 bg-n-solid-2" %>
       </div>

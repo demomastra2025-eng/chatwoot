@@ -121,6 +121,7 @@ RSpec.describe 'Super Admin render smoke', type: :request do
       'monitoring' => '/super_admin/monitoring',
       'logs' => '/super_admin/logs',
       'push diagnostics' => '/super_admin/push_diagnostics',
+      'channels' => '/super_admin/channels',
       'AI analytics' => '/super_admin/captain_observability'
     }.each do |name, path|
       it "opens #{name}" do

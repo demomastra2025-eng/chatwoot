@@ -141,6 +141,18 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     render json: Accounts::ApplyPlan.new(account: requested_resource, modules: modules, actor: current_super_admin).preview
   end
 
+  # The clinic's own channel switches: `overrides[channel]` is default (follow the platform), shown or hidden.
+  # Channels that are not sent keep their switch. Leaves one entry in the audit log with what changed.
+  def channel_overrides
+    changes = Accounts::ChannelOverrides.new(
+      account: requested_resource, actor: current_super_admin, request: request
+    ).apply(submitted_channel_overrides)
+    flash_key = changes.any? ? :channel_overrides_saved : :channel_overrides_unchanged
+    redirect_to_account(notice: I18n.t("super_admin.accounts.flashes.#{flash_key}"))
+  rescue Accounts::ChannelOverrides::InvalidOverrides
+    redirect_to_account(alert: I18n.t('super_admin.accounts.flashes.channel_overrides_invalid'))
+  end
+
   def impersonate
     target_user = impersonation_target_user
     if target_user.present?
@@ -247,6 +259,11 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     Accounts::Plans.normalize_modules(raw)
   rescue ArgumentError
     nil
+  end
+
+  def submitted_channel_overrides
+    raw = params[:overrides]
+    raw.respond_to?(:to_unsafe_h) ? raw.to_unsafe_h : raw
   end
 
   # An account that cannot take the plan stays created; the operator is told and can apply it from the card.

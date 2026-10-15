@@ -73,6 +73,8 @@ end %>
   </div>
 </section>
 
+<%= render partial: "channels", locals: { account: page.resource } %>
+
 <%= render 'super_admin/shared/account_user_form', page: page, namespace: namespace, resource_type: 'account' %>
 
 <% if ChatwootApp.enterprise? %>

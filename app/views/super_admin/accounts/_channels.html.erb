@@ -1,0 +1,80 @@
+<%#
+# Channels of one clinic
+
+The platform switches decide which channels clinics can connect (super admin
+«Каналы»). This card lets the operator open or close a channel for THIS clinic
+only: «Как у платформы», «Показать» or «Скрыть». A channel that needs a feature
+flag the clinic does not have stays unavailable even when it is shown. Saving
+posts to `channel_overrides` and leaves an entry in the audit log; inboxes that
+are already connected keep working.
+
+## Local variables:
+
+- `account`: the clinic (Account).
+%>
+
+<%
+  availability = Accounts::AvailableChannels.new(account)
+  option_labels = {
+    Accounts::ChannelOverrides::DEFAULT_STATE => nil,
+    Channels::Catalog::SHOWN => t('super_admin.channels.account.states.shown'),
+    Channels::Catalog::HIDDEN => t('super_admin.channels.account.states.hidden')
+  }
+  badge_base = 'inline-flex h-[22px] items-center rounded-md px-2 text-xs font-medium outline outline-1 -outline-offset-1'
+%>
+
+<section class="main-content__body">
+  <section class="admin-card" aria-labelledby="account-channels-title">
+    <h2 class="admin-card__title" id="account-channels-title"><%= t('super_admin.channels.account.title') %></h2>
+    <p class="m-0 px-5 pt-3 text-sm text-n-slate-11"><%= t('super_admin.channels.account.description') %></p>
+
+    <%= form_with url: channel_overrides_super_admin_account_path(account), method: :post, local: true do %>
+      <div class="admin-card--table mt-2">
+        <table aria-labelledby="account-channels-title">
+          <thead>
+            <tr>
+              <th scope="col"><%= t('super_admin.channels.columns.channel') %></th>
+              <th scope="col"><%= t('super_admin.channels.account.columns.now') %></th>
+              <th scope="col"><%= t('super_admin.channels.account.columns.setting') %></th>
+            </tr>
+          </thead>
+          <tbody>
+            <% Channels::Catalog.entries.each do |entry| %>
+              <%
+                override = availability.override(entry.key)
+                platform_shown = availability.platform_state(entry.key) == Channels::Catalog::SHOWN
+                platform_label = platform_shown ? t('super_admin.channels.shown').downcase : t('super_admin.channels.hidden').downcase
+                if availability.available?(entry.key)
+                  status = t('super_admin.channels.account.status.available')
+                  status_classes = 'bg-n-teal-2 text-n-teal-11 outline-n-teal-4'
+                elsif availability.visible?(entry.key)
+                  status = t('super_admin.channels.account.status.missing_feature')
+                  status_classes = 'bg-n-amber-2 text-n-amber-11 outline-n-amber-4'
+                else
+                  status = t('super_admin.channels.account.status.hidden')
+                  status_classes = 'bg-n-slate-3 text-n-slate-11 outline-n-weak'
+                end
+                options = option_labels.map { |state, label| [label || t('super_admin.channels.account.states.default', state: platform_label), state] }
+              %>
+              <tr data-channel="<%= entry.key %>">
+                <td class="font-medium text-n-slate-12"><%= entry.name %></td>
+                <td><span class="<%= badge_base %> <%= status_classes %>"><%= status %></span></td>
+                <td>
+                  <%= select_tag "overrides[#{entry.key}]",
+                                 options_for_select(options, override || Accounts::ChannelOverrides::DEFAULT_STATE),
+                                 id: "override-#{entry.key}",
+                                 class: 'max-w-xs',
+                                 'aria-label': t('super_admin.channels.account.select_label', channel: entry.name) %>
+                </td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="form-actions px-5 py-4">
+        <%= submit_tag t('super_admin.channels.save'), name: nil %>
+      </div>
+    <% end %>
+  </section>
+</section>

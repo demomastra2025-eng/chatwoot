@@ -43,7 +43,7 @@ RSpec.describe 'Super Admin sidebar', type: :request do
       expect(link_texts(group('ai'))).to eq(['Модели ИИ', 'AI-аналитика'])
       expect(link_texts(group('system')).first(6)).to eq(['Мониторинг', 'Логи', 'Очереди', 'Статус сервера', 'Журнал аудита', 'Push-диагностика'])
       expect(link_texts(group('system'))).to include('Настройки')
-      expect(link_texts(group('extra'))).to eq(['Платформенные приложения', 'AI-боты', 'Баннеры'])
+      expect(link_texts(group('extra'))).to eq(['Платформенные приложения', 'AI-боты', 'Баннеры', 'Каналы'])
     end
 
     it 'links every entry to its page' do
@@ -61,7 +61,8 @@ RSpec.describe 'Super Admin sidebar', type: :request do
         'Настройки' => '/super_admin/settings',
         'Платформенные приложения' => '/super_admin/platform_apps',
         'AI-боты' => '/super_admin/agent_bots',
-        'Баннеры' => '/super_admin/platform_banners'
+        'Баннеры' => '/super_admin/platform_banners',
+        'Каналы' => '/super_admin/channels'
       }.each do |label, href|
         expect(link(label)['href']).to eq(href), "#{label} should link to #{href}"
       end
@@ -121,7 +122,7 @@ RSpec.describe 'Super Admin sidebar', type: :request do
       get '/super_admin'
 
       expect(link('Баннеры')).to be_nil
-      expect(link_texts(group('extra'))).to eq(['Платформенные приложения', 'AI-боты'])
+      expect(link_texts(group('extra'))).to eq(['Платформенные приложения', 'AI-боты', 'Каналы'])
     end
   end
 
@@ -182,6 +183,9 @@ RSpec.describe 'Super Admin sidebar', type: :request do
 
       get '/super_admin/agent_bots'
       expect(current_labels).to eq(['AI-боты'])
+
+      get '/super_admin/channels'
+      expect(current_labels).to eq(['Каналы'])
     end
 
     it 'opens the settings list and marks the config page that is shown' do

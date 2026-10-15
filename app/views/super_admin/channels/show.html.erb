@@ -1,0 +1,83 @@
+<%#
+# Channels
+
+The platform switch of every channel a clinic can connect: a table with the
+switch «Показывать клиникам», the number of inboxes that exist and the number of
+clinics that have an exception of their own (set on the clinic card). Saving
+writes InstallationConfig CHANNEL_VISIBILITY and leaves an entry in the audit
+log. A hidden channel disappears from the operator app and cannot be created;
+inboxes that are already connected keep working.
+
+## Local variables (controller instance variables):
+
+- `@rows`: one hash per catalog channel: `entry`, `shown`, `inboxes`, `overrides`.
+- `@updated_at`: the moment the settings were last saved (UTC), or nil.
+%>
+
+<% content_for(:title) do %><%= t('super_admin.channels.title') %><% end %>
+
+<header class="main-content__header" role="banner">
+  <div class="main-content__heading">
+    <h1 class="main-content__page-title" id="page-title"><%= content_for(:title) %></h1>
+    <p class="main-content__description"><%= t('super_admin.channels.description') %></p>
+  </div>
+</header>
+
+<section class="main-content__body">
+  <%= form_with url: super_admin_channels_path, method: :patch, local: true do %>
+    <div class="admin-card admin-card--table">
+      <table aria-labelledby="page-title">
+        <thead>
+          <tr>
+            <th scope="col"><%= t('super_admin.channels.columns.channel') %></th>
+            <th scope="col"><%= t('super_admin.channels.columns.visibility') %></th>
+            <th scope="col" class="cell-label--number"><%= t('super_admin.channels.columns.inboxes') %></th>
+            <th scope="col" class="cell-label--number"><%= t('super_admin.channels.columns.overrides') %></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% @rows.each do |row| %>
+            <% entry = row[:entry] %>
+            <tr data-channel="<%= entry.key %>">
+              <td>
+                <div class="font-medium text-n-slate-12"><%= entry.name %></div>
+                <% if entry.flag.present? %>
+                  <div class="text-xs text-n-slate-11"><%= t('super_admin.channels.needs_feature') %></div>
+                <% end %>
+              </td>
+              <td>
+                <div class="flex items-center gap-3">
+                  <%# Hidden field first: an unchecked switch still sends «hidden». %>
+                  <%= hidden_field_tag "channels[#{entry.key}]", Channels::Catalog::HIDDEN, id: nil %>
+                  <label class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center">
+                    <%= check_box_tag "channels[#{entry.key}]", Channels::Catalog::SHOWN, row[:shown],
+                                      id: "channel-#{entry.key}", class: 'peer sr-only',
+                                      'aria-label': t('super_admin.channels.switch_label', channel: entry.name) %>
+                    <span class="absolute inset-0 rounded-full bg-n-slate-6 transition-colors peer-checked:bg-n-brand-solid peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-n-brand" aria-hidden="true"></span>
+                    <span class="pointer-events-none absolute left-0.5 top-0.5 size-4 rounded-full bg-n-background shadow-md transition-transform peer-checked:translate-x-4" aria-hidden="true"></span>
+                  </label>
+                  <span class="text-sm text-n-slate-12"><%= row[:shown] ? t('super_admin.channels.shown') : t('super_admin.channels.hidden') %></span>
+                  <span class="text-xs text-n-slate-11"><%= entry.shown_by_default? ? t('super_admin.channels.default_shown') : t('super_admin.channels.default_hidden') %></span>
+                </div>
+              </td>
+              <td class="cell-data--number"><%= row[:inboxes] %></td>
+              <td class="cell-data--number"><%= row[:overrides] %></td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="form-actions mt-4">
+      <%= submit_tag t('super_admin.channels.save'), name: nil %>
+      <span class="text-xs text-n-slate-11">
+        <% if @updated_at %>
+          <%# Times are shown in Astana time (UTC+5), never in UTC. %>
+          <%= t('super_admin.channels.updated_at', time: @updated_at.getlocal(Accounts::Plans::ASTANA_OFFSET).strftime('%d.%m.%Y %H:%M')) %>
+        <% else %>
+          <%= t('super_admin.channels.never_changed') %>
+        <% end %>
+      </span>
+    </div>
+  <% end %>
+</section>
