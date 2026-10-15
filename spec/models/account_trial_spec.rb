@@ -292,7 +292,7 @@ RSpec.describe Account, type: :model do
       it 'does not expire a stale selection after the account was upgraded to a paid plan' do
         account.activate_trial!(3)
         expire_in_the_past!(account)
-        stale_selection = Account.find(account.id)
+        stale_selection = described_class.find(account.id)
         account.update!(custom_attributes: account.custom_attributes.merge('plan_type' => 'growth'))
 
         expect(stale_selection.expire_trial!(only_if_expired: true)).to be(false)
