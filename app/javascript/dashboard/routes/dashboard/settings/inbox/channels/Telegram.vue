@@ -6,11 +6,16 @@ import ChannelSelector from 'dashboard/components/ChannelSelector.vue';
 import TelegramBot from './TelegramBot.vue';
 import TelegramPersonal from './TelegramPersonal.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
+import { isChannelAvailable } from '../helpers/channelAvailability';
+import { useAccount } from 'dashboard/composables/useAccount';
 
 const route = useRoute();
 const router = useRouter();
 const { t } = useI18n();
+const { currentAccount } = useAccount();
 
+// The provider keys are also the channels of the platform catalog. A provider
+// the platform or the clinic's settings do not allow is hidden, not greyed out.
 const PROVIDER_TYPES = {
   BOT: 'telegram_bot',
   PERSONAL: 'telegram_personal',
@@ -19,20 +24,26 @@ const PROVIDER_TYPES = {
 const selectedProvider = computed(() => route.query.provider);
 const showProviderSelection = computed(() => !selectedProvider.value);
 
-const availableProviders = computed(() => [
-  {
-    key: PROVIDER_TYPES.BOT,
-    title: t('INBOX_MGMT.ADD.AUTH.CHANNEL.TELEGRAM_BOT.TITLE'),
-    description: t('INBOX_MGMT.ADD.AUTH.CHANNEL.TELEGRAM_BOT.DESCRIPTION'),
-    icon: 'i-woot-telegram',
-  },
-  {
-    key: PROVIDER_TYPES.PERSONAL,
-    title: t('INBOX_MGMT.ADD.AUTH.CHANNEL.TELEGRAM_PERSONAL.TITLE'),
-    description: t('INBOX_MGMT.ADD.AUTH.CHANNEL.TELEGRAM_PERSONAL.DESCRIPTION'),
-    icon: 'i-woot-telegram',
-  },
-]);
+const availableProviders = computed(() =>
+  [
+    {
+      key: PROVIDER_TYPES.BOT,
+      title: t('INBOX_MGMT.ADD.AUTH.CHANNEL.TELEGRAM_BOT.TITLE'),
+      description: t('INBOX_MGMT.ADD.AUTH.CHANNEL.TELEGRAM_BOT.DESCRIPTION'),
+      icon: 'i-woot-telegram',
+    },
+    {
+      key: PROVIDER_TYPES.PERSONAL,
+      title: t('INBOX_MGMT.ADD.AUTH.CHANNEL.TELEGRAM_PERSONAL.TITLE'),
+      description: t(
+        'INBOX_MGMT.ADD.AUTH.CHANNEL.TELEGRAM_PERSONAL.DESCRIPTION'
+      ),
+      icon: 'i-woot-telegram',
+    },
+  ].filter(provider =>
+    isChannelAvailable(currentAccount.value?.available_channels, provider.key)
+  )
+);
 
 const selectedComponent = computed(() => {
   return selectedProvider.value === PROVIDER_TYPES.PERSONAL

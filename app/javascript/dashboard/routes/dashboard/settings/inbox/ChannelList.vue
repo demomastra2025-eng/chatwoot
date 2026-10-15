@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { useMapGetter } from 'dashboard/composables/store';
 import { getInboxFlowRouteName } from './helpers/inboxFlowRoutes';
+import { isTileAvailable } from './helpers/channelAvailability';
 
 import { useAccount } from 'dashboard/composables/useAccount';
 
@@ -21,6 +22,12 @@ const enabledFeatures = ref({});
 const hasTiktokConfigured = computed(() => {
   return window.chatwootConfig?.tiktokAppId;
 });
+
+// Channels the platform and the clinic's settings allow. Missing in an old
+// cached payload: then every channel is offered, as before.
+const availableChannels = computed(
+  () => currentAccount.value?.available_channels
+);
 
 const channelList = computed(() => {
   const { apiChannelName } = globalConfig.value;
@@ -116,7 +123,10 @@ const channelList = computed(() => {
     icon: 'i-woot-voice',
   });
 
-  return channels;
+  // A channel that is not available is hidden, not greyed out
+  return channels.filter(channel =>
+    isTileAvailable(availableChannels.value, channel.key)
+  );
 });
 
 const initializeEnabledFeatures = async () => {

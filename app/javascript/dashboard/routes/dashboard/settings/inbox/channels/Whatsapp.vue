@@ -9,10 +9,13 @@ import WhatsappEmbeddedSignup from './WhatsappEmbeddedSignup.vue';
 import ChannelSelector from 'dashboard/components/ChannelSelector.vue';
 import { getWhatsAppEmbeddedSignupConfigErrors } from './whatsapp/utils';
 import { getInboxFlowRouteName } from '../helpers/inboxFlowRoutes';
+import { isChannelAvailable } from '../helpers/channelAvailability';
+import { useAccount } from 'dashboard/composables/useAccount';
 
 const route = useRoute();
 const router = useRouter();
 const { t } = useI18n();
+const { currentAccount } = useAccount();
 
 const PROVIDER_TYPES = {
   WHATSAPP: 'whatsapp',
@@ -36,26 +39,41 @@ const showProviderSelection = computed(() => !selectedProvider.value);
 
 const showConfiguration = computed(() => Boolean(selectedProvider.value));
 
-const availableProviders = computed(() => [
-  {
-    key: PROVIDER_TYPES.WHATSAPP,
-    title: t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.WHATSAPP_CLOUD'),
-    description: t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.WHATSAPP_CLOUD_DESC'),
-    icon: 'i-woot-whatsapp',
-  },
-  {
-    key: PROVIDER_TYPES.TWILIO,
-    title: t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.TWILIO'),
-    description: t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.TWILIO_DESC'),
-    icon: 'i-woot-twilio',
-  },
-  {
-    key: PROVIDER_TYPES.WHATSAPP_WEB,
-    title: t('INBOX_MGMT.ADD.AUTH.CHANNEL.WHATSAPP_WEB.TITLE'),
-    description: t('INBOX_MGMT.ADD.AUTH.CHANNEL.WHATSAPP_WEB.DESCRIPTION'),
-    icon: 'i-woot-whatsapp',
-  },
-]);
+// The channel of the platform catalog each provider connects. A provider the
+// platform or the clinic's settings do not allow is hidden, not greyed out.
+const PROVIDER_CHANNELS = {
+  [PROVIDER_TYPES.WHATSAPP]: 'whatsapp_cloud',
+  [PROVIDER_TYPES.TWILIO]: 'whatsapp_twilio',
+  [PROVIDER_TYPES.WHATSAPP_WEB]: 'whatsapp_web',
+};
+
+const availableProviders = computed(() =>
+  [
+    {
+      key: PROVIDER_TYPES.WHATSAPP,
+      title: t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.WHATSAPP_CLOUD'),
+      description: t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.WHATSAPP_CLOUD_DESC'),
+      icon: 'i-woot-whatsapp',
+    },
+    {
+      key: PROVIDER_TYPES.TWILIO,
+      title: t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.TWILIO'),
+      description: t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.TWILIO_DESC'),
+      icon: 'i-woot-twilio',
+    },
+    {
+      key: PROVIDER_TYPES.WHATSAPP_WEB,
+      title: t('INBOX_MGMT.ADD.AUTH.CHANNEL.WHATSAPP_WEB.TITLE'),
+      description: t('INBOX_MGMT.ADD.AUTH.CHANNEL.WHATSAPP_WEB.DESCRIPTION'),
+      icon: 'i-woot-whatsapp',
+    },
+  ].filter(provider =>
+    isChannelAvailable(
+      currentAccount.value?.available_channels,
+      PROVIDER_CHANNELS[provider.key]
+    )
+  )
+);
 
 const selectProvider = providerValue => {
   if (providerValue === PROVIDER_TYPES.WHATSAPP_WEB) {
