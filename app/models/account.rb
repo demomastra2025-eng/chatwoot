@@ -25,7 +25,11 @@
 
 # rubocop:disable Metrics/ClassLength
 class Account < ApplicationRecord
-  TRIAL_FEATURES = %w[
+  # What a new trial grants: the base plan plus the trial modules of config/account_plans.yml.
+  TRIAL_FEATURES = Accounts::Plans.trial_features
+  # The fixed list that trials granted before the plans existed (it names a `channel_whatsapp` flag that never
+  # existed). A trial that started then has no list in its snapshot and keeps ending with exactly this one.
+  LEGACY_TRIAL_FEATURES = %w[
     channel_website channel_whatsapp channel_voice voice_recorder
     captain_integration agent_bots crm help_center macros canned_responses
     inbox_management team_management custom_attributes automations
@@ -306,7 +310,16 @@ class Account < ApplicationRecord
     snapshot.is_a?(Hash) && snapshot['features'].is_a?(Array)
   end
 
-  def extend_trial!(days = 3)
+  # The flags the running or ended trial of this account granted; empty when there is no snapshot-backed trial.
+  # Trials that started before the list was stored get the legacy fixed list.
+  def granted_trial_features
+    snapshot = custom_attributes&.[](TRIAL_SNAPSHOT_KEY)
+    return [] unless snapshot.is_a?(Hash) && snapshot['features'].is_a?(Array)
+
+    trial_features_for(snapshot)
+  end
+
+  def extend_trial!(days = Accounts::Plans.trial_days)
     with_lock do
       reload
       raise ArgumentError, 'Only a snapshot-backed trial can be extended' unless trial? && trial_snapshot?
@@ -325,13 +338,13 @@ class Account < ApplicationRecord
   end
 
   # Starts a full-feature trial. The snapshot, feature activation and expiry write happen under one row lock.
-  def activate_trial!(days = 3)
+  def activate_trial!(days = Accounts::Plans.trial_days)
     with_lock do
       reload
       current_plan = custom_attributes.to_h['plan_type']
       raise ArgumentError, 'A paid or manually assigned plan cannot be replaced by a trial' if current_plan.present? && current_plan != 'trial'
 
-      snapshot_pre_trial_state!
+      snapshot_trial_state!(TRIAL_FEATURES)
       enable_features(*TRIAL_FEATURES)
       attrs = (custom_attributes || {}).deep_dup
       attrs['plan_type'] = 'trial'
@@ -354,7 +367,7 @@ class Account < ApplicationRecord
       attrs['trial_expires_at'] = 1.minute.ago.iso8601
       attrs['trial_expired_at'] = Time.current.iso8601
       self.custom_attributes = attrs
-      disable_features(*(TRIAL_FEATURES - snapshot['features']))
+      disable_features(*(trial_features_for(snapshot) - snapshot['features']))
       self.limits = (limits || {}).merge(TRIAL_LOCKED_LIMITS.index_with { 0 })
       save!
       true
@@ -576,8 +589,29 @@ class Account < ApplicationRecord
   # An expired trial that gets extended gets its trial features and its previous limits back.
   def reopen_trial!
     snapshot = custom_attributes[TRIAL_SNAPSHOT_KEY] || {}
-    enable_features(*TRIAL_FEATURES) if snapshot.key?('features')
+    enable_features(*trial_features_for(snapshot)) if snapshot.key?('features')
     self.limits = (limits || {}).except(*TRIAL_LOCKED_LIMITS).merge(snapshot['limits'] || {})
+  end
+
+  # The exact list a trial granted is stored in its snapshot when the trial starts, so later changes of the plans
+  # never change what an already running trial takes back. A snapshot without a list is a trial from before that.
+  def trial_features_for(snapshot)
+    stored = snapshot['trial_features']
+    stored.is_a?(Array) && stored.any? ? stored : LEGACY_TRIAL_FEATURES
+  end
+
+  # Takes the pre-trial snapshot and stores in it the exact list of flags this trial grants. A snapshot that already
+  # existed without a list stands for the legacy grant, which stays part of what this trial hands out and takes back.
+  def snapshot_trial_state!(features)
+    had_snapshot = custom_attributes.to_h[TRIAL_SNAPSHOT_KEY].is_a?(Hash)
+    snapshot_pre_trial_state!
+
+    attrs = (custom_attributes || {}).deep_dup
+    snapshot = attrs[TRIAL_SNAPSHOT_KEY]
+    return unless snapshot.is_a?(Hash)
+
+    snapshot['trial_features'] = (snapshot['trial_features'] || (had_snapshot ? LEGACY_TRIAL_FEATURES : [])) | features
+    self.custom_attributes = attrs
   end
 
   def storage_limit_account

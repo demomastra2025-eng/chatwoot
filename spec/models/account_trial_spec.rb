@@ -44,6 +44,117 @@ RSpec.describe Account, type: :model do
       end
     end
 
+    describe 'trial features from the plans' do
+      let(:plans) { Accounts::Plans }
+
+      def legacy_trial_account(features: [])
+        account.enable_features!(*Account::LEGACY_TRIAL_FEATURES, 'channel_email', 'campaigns')
+        account.update!(
+          custom_attributes: {
+            'plan_type' => 'trial', 'trial_expires_at' => 1.hour.ago.iso8601,
+            'trial_snapshot' => { 'features' => features, 'limits' => { 'agents' => 7 }, 'taken_at' => 2.days.ago.iso8601 }
+          },
+          limits: { 'agents' => 7 }
+        )
+        account
+      end
+
+      it 'grants the base plus the trial modules, without the fake channel_whatsapp flag' do
+        expect(Account::TRIAL_FEATURES).to eq(plans.trial_features)
+        expect(Account::TRIAL_FEATURES).to include('channel_voice', 'captain_integration', 'crm', 'channel_email', 'labels')
+        expect(Account::TRIAL_FEATURES).not_to include('channel_whatsapp', 'campaigns', 'sla', 'scheduling_finance')
+      end
+
+      it 'takes its length from the plans' do
+        account.activate_trial!
+
+        expect(account.trial_expires_at).to be_within(1.minute).of(plans.trial_days.days.from_now)
+      end
+
+      it 'stores the exact list it granted in the snapshot' do
+        account.activate_trial!(3)
+
+        expect(account.custom_attributes['trial_snapshot']['trial_features']).to eq(Account::TRIAL_FEATURES)
+        expect(account.granted_trial_features).to eq(Account::TRIAL_FEATURES)
+      end
+
+      it 'ends with the list stored in its snapshot, whatever the plans say later' do
+        account.activate_trial!(3)
+        attrs = account.custom_attributes.deep_dup
+        attrs['trial_snapshot']['trial_features'] = %w[crm channel_voice]
+        account.update!(custom_attributes: attrs)
+        account.enable_features!('channel_email')
+
+        account.expire_trial!
+        account.reload
+
+        expect(account.feature_enabled?('crm')).to be(false)
+        expect(account.feature_enabled?('channel_voice')).to be(false)
+        expect(account.feature_enabled?('captain_integration')).to be(true)
+        expect(account.feature_enabled?('channel_email')).to be(true)
+      end
+
+      it 'gives back exactly the stored list when an ended trial is extended' do
+        account.activate_trial!(3)
+        attrs = account.custom_attributes.deep_dup
+        attrs['trial_snapshot']['trial_features'] = %w[crm channel_voice]
+        account.update!(custom_attributes: attrs)
+        account.expire_trial!
+        account.disable_features!('channel_email')
+
+        account.extend_trial!(3)
+        account.reload
+
+        expect(account.feature_enabled?('crm')).to be(true)
+        expect(account.feature_enabled?('channel_voice')).to be(true)
+        expect(account.feature_enabled?('channel_email')).to be(false)
+      end
+
+      it 'ends a trial that began before the list was stored with exactly the old fixed list' do
+        legacy_trial_account
+
+        expect(account.expire_trial!).to be(true)
+        account.reload
+
+        Account::LEGACY_TRIAL_FEATURES.each do |flag|
+          expect(account.feature_enabled?(flag)).to be(false)
+        end
+        expect(account.feature_enabled?('channel_email')).to be(true)
+        expect(account.feature_enabled?('campaigns')).to be(true)
+        expect(account.limits).to include('agents' => 0, 'inboxes' => 0)
+      end
+
+      it 'reopens a trial that began before the list was stored with the old fixed list only' do
+        legacy_trial_account
+        account.expire_trial!
+        account.disable_features!('channel_email')
+
+        account.extend_trial!(3)
+        account.reload
+
+        expect(account.feature_enabled?('channel_voice')).to be(true)
+        expect(account.feature_enabled?('captain_integration')).to be(true)
+        expect(account.feature_enabled?('channel_email')).to be(false)
+        expect(account.limits['agents']).to eq(7)
+      end
+
+      it 'sees the legacy list as granted by a trial that has no list in its snapshot' do
+        legacy_trial_account
+
+        expect(account.granted_trial_features).to eq(Account::LEGACY_TRIAL_FEATURES)
+        expect(create(:account).granted_trial_features).to eq([])
+      end
+
+      it 'keeps the legacy grant when such a trial is started again' do
+        legacy_trial_account
+        account.update!(custom_attributes: account.custom_attributes.merge('trial_expires_at' => 1.day.from_now.iso8601))
+
+        account.activate_trial!(3)
+
+        expect(account.custom_attributes['trial_snapshot']['trial_features']).to include(*Account::LEGACY_TRIAL_FEATURES, *Account::TRIAL_FEATURES)
+      end
+    end
+
     describe 'reversible trial' do
       def expire_in_the_past!(acc)
         acc.update!(custom_attributes: acc.custom_attributes.merge('trial_expires_at' => 1.hour.ago.iso8601))
