@@ -1,0 +1,319 @@
+# Russian texts of the clinic list, the clinic card and the clinic forms of the super admin.
+# The main file of the super admin is super_admin.ru.yml; the names of the plan and its modules live there.
+ru:
+  helpers:
+    label:
+      account:
+        section_main: "Основное"
+        section_limits: "Лимиты"
+        section_features: "Тонкая настройка"
+      account_user:
+        account_id: "Клиника"
+        user_id: "Пользователь"
+        inviter_id: "Пригласил"
+
+  administrate:
+    field_hints:
+      account:
+        name: "Так клиника называется в списке и в кабинете оператора."
+        locale: "Язык интерфейса и уведомлений по умолчанию."
+        status: "Заблокированная клиника не может войти в кабинет."
+
+  super_admin:
+    index:
+      account:
+        description: "Все клиники платформы: тариф, пробный период, хранилище и каналы."
+        new: "Новая клиника"
+
+    locales:
+      ru: "Русский"
+      kk: "Қазақша"
+      en: "English"
+
+    shell:
+      astana_time_hint: "Время по Астане (UTC+5)."
+
+    account_users:
+      roles:
+        administrator: "Администратор"
+        agent: "Оператор"
+
+    plans:
+      not_assigned: "Не назначен"
+      drift:
+        title: "Функции клиники изменены вручную"
+        short: "изменён"
+        summary: "Изменено вручную: +%{extra} −%{missing} относительно тарифа «%{plan}»"
+        extra: "Включены сверх тарифа: %{features}."
+        missing: "Выключены, хотя тариф их включает: %{features}."
+        reset: "Сбросить к тарифу"
+        reset_confirm: "Вернуть функции клиники к тарифу? Ручные изменения функций сбросятся."
+
+    users:
+      impersonate:
+        title: "Вход в кабинет клиники"
+        warning: "Внимание: любые действия после входа выполняются от имени пользователя %{name}. Вход записывается в журнал аудита."
+        enter: "Войти под пользователем — %{clinic}"
+        no_clinics: "Пользователь не состоит ни в одной клинике, вход под ним недоступен."
+
+    accounts:
+      controller:
+        create:
+          success: "Клиника создана."
+        update:
+          success: "Клиника сохранена."
+        destroy:
+          success: "Клиника удалена."
+      columns:
+        clinic: "Клиника"
+        plan: "Тариф"
+        operators: "Операторы"
+        storage: "Хранилище"
+        channels: "Каналы"
+        status: "Статус"
+        actions: "Действия"
+      statuses:
+        active: "Активна"
+        suspended: "Заблокирована"
+        deleting: "На удаление"
+      list:
+        no_limit: "без лимита"
+        storage_pending: "Данных о хранилище ещё нет: замер выполняется раз в час."
+        storage_label: "Хранилище занято на %{percent}%"
+        storage_of: "%{used} из %{total}"
+      trial:
+        ended_at: "Пробный период завершён %{time}."
+        unknown_time: "ранее"
+        manual_note: "Пробный период задан вручную, без снимка прежних функций: продлить или завершить его кнопками нельзя."
+        short_days: "%{count} дн."
+        short_hours: "%{count} ч."
+        short_minutes: "%{count} мин."
+        chip_active: "Пробный · осталось %{left}"
+        chip_expired: "Пробный истёк"
+
+    limits:
+      unlimited: "Не ограничено"
+      of: "из"
+      blocked: "Лимит 0: запрещено"
+      meter_label: "%{label}: заполнено на %{percent}%"
+      no_usage: "Данных о расходе нет"
+      default: "По умолчанию"
+      default_placeholder: "По умолчанию"
+      current_override: "Сейчас задано: %{value} ГБ"
+      unlimited_value_note: "Значение %{value} означает «не ограничено»: так тариф записывает отсутствие лимита."
+      form_hint_html: "Оставьте поле пустым, чтобы действовало значение по умолчанию. Значение <code>0</code> запрещает действие для клиники."
+      show_hint_html: "Только собственные значения клиники. Пустое поле в форме значит «по умолчанию», <code>0</code> — действие запрещено."
+      form_note_html: "Расход только для чтения. Счётчики, которые можно сбросить, находятся на %{link}."
+      card_link: "карточке клиники"
+      form_note_new: "Расход виден на карточке клиники после её создания."
+      excluded_ids_hint: "ID пользователей через запятую, пробел или с новой строки. Эти пользователи не учитываются в лимите операторов."
+      excluded_ids_none: "Нет"
+      agents:
+        label: "Операторы"
+        hint: "Сколько пользователей может быть в клинике."
+      inboxes:
+        label: "Каналы"
+        hint: "Сколько каналов можно подключить всего."
+      conversations:
+        label: "Диалоги за 30 дней"
+        hint: "Сколько новых диалогов клиника может получить за последние 30 дней."
+      non_web_inboxes:
+        label: "Основные каналы"
+        hint: "Подключения WhatsApp, личного Telegram и API. Чат на сайте в этот лимит не входит."
+      storage_bytes:
+        label: "Хранилище"
+        input_label: "Хранилище, ГБ"
+        hint: "Общий объём файлов клиники: вложения, записи звонков, документы. В форме лимит задаётся в гигабайтах, можно дробное число, например 1,5."
+      captain_responses:
+        label: "Ответы ИИ"
+        hint: "Сколько ответов ИИ-агентов доступно в текущем периоде."
+      captain_documents:
+        label: "Документы ИИ"
+        hint: "Сколько документов можно загрузить в базу знаний ИИ."
+      captain_tokens:
+        label: "Токены ИИ"
+        hint: "Сколько токенов ИИ можно потратить в текущем периоде."
+      emails:
+        label: "Письма в день"
+        hint: "Сколько исходящих писем клиника может отправить за сутки: стенограммы, уведомления, письма автоматизаций."
+
+    fine_tuning:
+      title: "Тонкая настройка"
+      hint: "Отдельные функции поверх тарифа. Опасные и служебные настройки здесь не показываются."
+      manual: "вручную"
+      always_on: "Всегда включены: %{features}."
+      never_on: "Никогда не включаются: %{features}."
+      internal: "Служебные настройки платформы здесь не показываются."
+      none_enabled: "Нет включённых функций"
+      groups:
+        channels: "Каналы и почта"
+        telephony: "Телефония"
+        chats: "Диалоги и автоматизация"
+        crm: "CRM и запись"
+        other: "Прочее"
+
+    clinic_card:
+      breadcrumb: "Путь"
+      created: "создана %{date}"
+      actions:
+        enter: "Войти в аккаунт"
+        enter_hint: "Беспарольный вход в кабинет клиники глазами администратора аккаунта"
+      plan:
+        title: "Тариф"
+        hint: "Тариф задаёт функции и лимиты клиники: база и модули. Применение записывается в журнал аудита."
+        unassigned_title: "Тариф не назначен"
+        unassigned_text: "Функции и лимиты клиники сейчас настроены вручную. «Назначить базу» включит базу и отмеченные модули; сначала покажем, что изменится."
+        choose: "Выбор модулей"
+        always_included: "Всегда включена"
+        includes: "Входит: %{features}"
+        no_script: "Без JavaScript изменения применяются сразу, без предпросмотра."
+        hint_assigned: "Измените модули, чтобы увидеть, что изменится."
+        hint_unassigned: "Перед назначением покажем, что изменится."
+        apply: "Применить"
+        assign: "Назначить базу"
+      preview:
+        assign: "Клинике будет назначен тариф «%{plan}». Что изменится:"
+        same: "Тариф «%{plan}» будет применён заново. Что изменится:"
+        change: "Тариф «%{from}» сменится на «%{to}». Что изменится:"
+        enable: "Включится: %{count}"
+        disable: "Выключится: %{count}"
+        limits: "Лимиты"
+        nothing: "ничего"
+        no_changes: "Функции и лимиты клиники уже совпадают с тарифом; изменится только запись о тарифе."
+        not_set: "не задан"
+        footer: "Ручные изменения функций сбросятся. Уже подключённые каналы продолжат работать."
+      usage:
+        title: "Лимиты и расход"
+        hint: "Что использовано и какой лимит у клиники. Пока свой лимит не задан, действует значение по умолчанию; свои лимиты задаются в «Редактировать»."
+        reset_title: "Сброс счётчиков"
+        reset_hint: "Сбрасываются только счётчики, которые копятся сами. Лимит клиники не меняется. Диалоги, каналы, хранилище и документы ИИ считаются автоматически."
+        counters:
+          responses:
+            label: "Ответы ИИ"
+            current: "Использовано: %{value}"
+            button: "Сбросить ответы ИИ"
+          tokens:
+            label: "Токены ИИ"
+            current: "Использовано: %{value}"
+            button: "Сбросить токены ИИ"
+          emails:
+            label: "Письма за сегодня"
+            current: "Отправлено сегодня: %{value}"
+            button: "Сбросить счётчик писем"
+      users:
+        title: "Пользователи"
+        total: "Всего: %{count}"
+        empty: "В клинике пока нет пользователей"
+        more: "Показаны первые %{shown} из %{total}."
+        columns:
+          name: "Имя"
+          email: "E-mail"
+          role: "Роль"
+          last_sign_in: "Последний вход"
+      technical:
+        title: "Технические данные"
+        hint: "Служебные атрибуты клиники и пользователи, не учитываемые в лимите."
+        attributes: "Дополнительные параметры"
+        no_attributes: "Параметров нет"
+        "yes": "Да"
+        "no": "Нет"
+        excluded_ids: "Не учитываются в лимите операторов"
+      info:
+        title: "Основное"
+        locale: "Язык"
+        timezone: "Часовой пояс клиники"
+        timezone_default: "не задан"
+        created: "Создана"
+        plan_applied: "Тариф применён"
+        plan_version: "версия %{version}"
+      maintenance:
+        title: "Обслуживание"
+        hint: "Редкие действия. Каждое спрашивает подтверждение."
+        reset_cache: "Сбросить кэш интерфейса"
+        reset_cache_confirm: "Сбросить кэш интерфейса клиники? При следующей загрузке данные придут с сервера заново."
+        seed: "Создать демо-данные"
+        seed_confirm: "Вы уверены? Данные клиники будут заменены демо-данными."
+        seed_hint: "Демо-данные перезапишут существующие данные клиники. Действие нужно только для тестов."
+        destroy: "Удалить клинику"
+        destroy_confirm: "Удалить клинику «%{name}»? Клиника и все её данные будут удалены. Это нельзя отменить."
+      new:
+        description: "Название, язык и модули. Лимиты, отдельные функции и каналы настраиваются на карточке клиники."
+        plan_hint: "База включена всегда. Отметьте модули, которые нужны клинике; их можно поменять позже."
+        trial_hint: "Пробный период на %{days} дн. включает на это время: %{modules}. По окончании эти функции отключатся."
+        start_trial: "Запустить пробный период на %{days} дн."
+        submit: "Создать клинику"
+
+    features:
+      inbound_emails: "Входящая почта"
+      channel_email: "Канал: e-mail"
+      channel_facebook: "Канал: Facebook Messenger"
+      channel_twitter: "Канал: Twitter (устарело)"
+      ip_lookup: "Определение места по IP"
+      disable_branding: "Без брендинга OneLink"
+      email_continuity_on_api_channel: "Продолжение переписки по e-mail в API-канале"
+      help_center: "База знаний"
+      agent_bots: "Боты"
+      macros: "Макросы"
+      agent_management: "Управление операторами"
+      team_management: "Управление командами"
+      inbox_management: "Управление каналами"
+      labels: "Метки"
+      custom_attributes: "Атрибуты"
+      automations: "Автоматизации"
+      canned_responses: "Быстрые ответы"
+      integrations: "Интеграции"
+      voice_recorder: "Голосовые сообщения"
+      report_rollup: "Ускоренные отчёты"
+      channel_website: "Канал: чат на сайте"
+      campaigns: "Рассылки"
+      reports: "Отчёты"
+      crm: "CRM"
+      auto_resolve_conversations: "Автозакрытие диалогов"
+      custom_reply_email: "Свой адрес для ответов"
+      custom_reply_domain: "Свой домен для ответов"
+      audit_logs: "Журнал аудита"
+      response_bot: "Бот ответов (устарело)"
+      message_reply_to: "Ответ на сообщение (устарело)"
+      insert_article_in_reply: "Статья в ответе (устарело)"
+      inbox_view: "Представление входящих"
+      sla: "SLA"
+      help_center_embedding_search: "Умный поиск по базе знаний"
+      linear_integration: "Интеграция с Linear"
+      captain_integration: "ИИ-агенты"
+      custom_roles: "Роли доступа"
+      chatwoot_v4: "Интерфейс версии 4"
+      report_v4: "Отчёты версии 4 (устарело)"
+      contact_chatwoot_support_team: "Чат поддержки Chatwoot"
+      shopify_integration: "Интеграция с Shopify"
+      search_with_gin: "Быстрый поиск по сообщениям"
+      channel_instagram: "Канал: Instagram"
+      crm_integration: "Интеграция с CRM"
+      channel_voice: "Телефония"
+      notion_integration: "Интеграция с Notion"
+      captain_integration_v2: "ИИ-агенты, версия 2"
+      whatsapp_embedded_signup: "Быстрое подключение WhatsApp (устарело)"
+      whatsapp_campaign: "Рассылки в WhatsApp"
+      crm_v2: "CRM, версия 2"
+      assignment_v2: "Автораспределение, версия 2"
+      twilio_content_templates: "Шаблоны Twilio (устарело)"
+      advanced_search: "Расширенный поиск"
+      saml: "Единый вход SAML"
+      advanced_search_indexing: "Индексация расширенного поиска"
+      reply_mailer_migration: "Миграция почтовых ответов"
+      quoted_email_reply: "Цитирование в e-mail"
+      companies: "Компании"
+      channel_tiktok: "Канал: TikTok"
+      csat_review_notes: "Заметки к оценкам клиентов"
+      captain_tasks: "Задачи ИИ-агентов"
+      conversation_required_attributes: "Обязательные поля диалога"
+      advanced_assignment: "Расширенное автораспределение"
+      scheduling: "Запись на приём"
+      captain_scheduling_grounding_guard: "Проверка записи ИИ-агентом"
+      scheduling_finance: "Финансы записи"
+      crm_deals: "Сделки"
+      crm_tasks: "Задачи"
+      whatsapp_call: "Звонки WhatsApp"
+      custom_tools: "Свои инструменты агента"
+      communication_threads: "Один чат на пациента"
+      deferred_touch_materialization: "Отложенные касания"
+      captain_openrouter_byok: "Свой ключ OpenRouter у клиники"
