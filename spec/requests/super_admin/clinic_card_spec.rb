@@ -198,6 +198,42 @@ RSpec.describe 'Super Admin clinic card', type: :request do
         expect(Nokogiri::HTML(response.body).at_css("[data-testid='plan-drift']")).to be_nil
       end
     end
+
+    context 'when the clinic is on a trial and was changed by hand' do
+      let(:trial_flags) { Accounts::Plans.module_features('ai_agents') }
+
+      before do
+        Accounts::ApplyPlan.new(account: account, modules: []).call
+        account.activate_trial!(3)
+        account.enable_features!('sla')
+      end
+
+      it 'counts only the change made by hand, not the functions of the trial' do
+        open_card
+
+        expect(text(block('plan-drift'))).to include(I18n.t('super_admin.plans.drift.summary', extra: 1, missing: 0, plan: 'База'))
+        expect(text(block('plan-drift'))).to include('Включены сверх тарифа: SLA.')
+      end
+
+      it 'resets to the plan without switching off the functions the trial granted, and the notice goes away' do
+        post "#{card_path}/apply_plan", params: { modules: [] }
+
+        account.reload
+        expect(account.trial_active?).to be(true)
+        expect(account.feature_enabled?('sla')).to be(false)
+        trial_flags.each { |flag| expect(account.feature_enabled?(flag)).to be(true) }
+        get card_path
+        expect(Nokogiri::HTML(response.body).at_css("[data-testid='plan-drift']")).to be_nil
+      end
+
+      it 'does not list the functions of the trial in the preview of the reset' do
+        get "#{card_path}/plan_preview", params: { fragment: 1, modules: [] }
+
+        disable = text(Nokogiri::HTML.fragment(response.body).at_css('[data-preview="disable"]'))
+        expect(disable).to include('Выключится: 1', 'SLA')
+        expect(disable).not_to include('ИИ-агенты')
+      end
+    end
   end
 
   describe 'the plan preview fragment' do

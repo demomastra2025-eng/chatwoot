@@ -13,7 +13,8 @@
 # * limits  : numbers of the plan are written; keys the plan leaves null are not touched.
 #             With keep_existing_limits the account's own values win, the plan only fills the blanks (new accounts).
 # * custom_attributes: plan = 'base', plan_modules, plan_version, plan_applied_at (ISO 8601, Astana time).
-#   The trial attributes (plan_type 'trial', trial_expires_at, trial_snapshot ...) are left exactly as they are.
+#   The trial attributes (plan_type 'trial', trial_expires_at, trial_snapshot ...) are left exactly as they are, and the
+#   functions a running trial granted stay switched on (the trial takes them back itself when it ends).
 class Accounts::ApplyPlan
   class UnknownModule < ArgumentError; end
 
@@ -25,7 +26,8 @@ class Accounts::ApplyPlan
 
   # What applying the plan changes (preview) or changed (call).
   # limits: { 'conversations' => { 'from' => 500, 'to' => 100000 } }
-  # notes : facts the operator should know, e.g. 'trial_active' (the account is on a trial that has its own end)
+  # notes : facts the operator should know, e.g. 'trial_active' (the account is on a trial that has its own end) or
+  #         'trial_expired' (a trial has ended and still holds the operator and channel limits at zero)
   Diff = Struct.new(:plan, :modules, :plan_version, :previous_plan, :previous_modules, :previous_version,
                     :enable, :disable, :limits, :notes, keyword_init: true) do
     def changed?
@@ -77,7 +79,7 @@ class Accounts::ApplyPlan
   def build_diff
     attributes = account.custom_attributes.to_h
     enabled = account.enabled_features.keys
-    desired = Accounts::Plans.features_for(modules)
+    desired = desired_features
 
     Diff.new(
       plan: Accounts::Plans::BASE_KEY, modules: modules, plan_version: Accounts::Plans.version,
@@ -86,6 +88,15 @@ class Accounts::ApplyPlan
       disable: (Accounts::Plans.managed_features - desired) & enabled,
       limits: limit_changes, notes: notes
     )
+  end
+
+  # The flags base + the chosen modules switch on. While a trial runs, the functions it granted count as wanted too
+  # (the same expectation as Accounts::PlanDrift): the trial ends by itself and takes them back, so applying or
+  # resetting the plan in the meantime must not switch them off early.
+  def desired_features
+    features = Accounts::Plans.features_for(modules)
+    features |= account.granted_trial_features.intersection(Featurable::FEATURE_NAMES) if account.trial_active?
+    features
   end
 
   def limit_changes
@@ -101,8 +112,15 @@ class Accounts::ApplyPlan
   def notes
     notes = []
     notes << 'trial_active' if account.trial_active?
-    notes << 'trial_expired' if account.trial_snapshot? && account.trial_expired?
+    notes << 'trial_expired' if account.trial_snapshot? && account.trial_expired? && locked_trial_limits?
     notes
+  end
+
+  # An ended trial of a clinic without a plan holds its operator and channel limits at zero; a clinic that had a plan
+  # when the trial ended kept its limits (see Account#expire_trial!)
+  def locked_trial_limits?
+    current = account.limits.to_h
+    Account::TRIAL_LOCKED_LIMITS.any? { |key| current[key].is_a?(Numeric) && current[key].zero? }
   end
 
   def write(diff)

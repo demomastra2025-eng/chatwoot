@@ -41,6 +41,63 @@ RSpec.describe Account, type: :model do
         expect(account.trial_active?).to be(false)
         expect(account.limits['agents']).to eq(0)
         expect(account.limits['inboxes']).to eq(0)
+        expect(account.custom_attributes['trial_snapshot']).to include('limits_locked' => true)
+      end
+    end
+
+    describe 'a clinic that has a plan' do
+      before do
+        account.update!(limits: { 'agents' => 7, 'inboxes' => 9 })
+        Accounts::ApplyPlan.new(account: account, modules: %w[quality]).call
+        account.activate_trial!(3)
+      end
+
+      it 'loses the functions of the trial when it ends, but keeps the plan and its limits' do
+        expect(account.expire_trial!).to be(true)
+        account.reload
+
+        expect(account.feature_enabled?('captain_integration')).to be(false)
+        expect(account.feature_enabled?('sla')).to be(true)
+        expect(account.feature_enabled?('crm')).to be(true)
+        expect(account.limits).to include('agents' => 7, 'inboxes' => 9)
+        expect(account.custom_attributes).to include('plan' => 'base', 'plan_modules' => %w[quality])
+        expect(account.custom_attributes['trial_snapshot']).to include('limits_locked' => false)
+      end
+
+      it 'is not locked out of operators and channels by the scheduled expiry either' do
+        account.update!(custom_attributes: account.custom_attributes.merge('trial_expires_at' => 1.hour.ago.iso8601))
+
+        Accounts::ExpireTrialsJob.perform_now
+
+        expect(account.reload.custom_attributes['trial_expired_at']).to be_present
+        expect(account.limits).to include('agents' => 7, 'inboxes' => 9)
+      end
+
+      it 'keeps the limits set after the end when the trial is extended' do
+        account.expire_trial!
+        account.update!(limits: account.limits.merge('agents' => 12))
+
+        account.extend_trial!(3)
+        account.reload
+
+        expect(account.trial_active?).to be(true)
+        expect(account.feature_enabled?('captain_integration')).to be(true)
+        expect(account.limits).to include('agents' => 12, 'inboxes' => 9)
+      end
+    end
+
+    describe 'a clinic that got its plan after the trial had locked its limits' do
+      it 'gets the earlier limits back when the trial is extended' do
+        account.update!(limits: { 'agents' => 7 })
+        account.activate_trial!(3)
+        account.expire_trial!
+        expect(account.limits).to include('agents' => 0, 'inboxes' => 0)
+
+        Accounts::ApplyPlan.new(account: account, modules: []).call
+        account.extend_trial!(3)
+
+        expect(account.reload.limits).to include('agents' => 7)
+        expect(account.limits).not_to have_key('inboxes')
       end
     end
 

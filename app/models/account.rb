@@ -357,6 +357,10 @@ class Account < ApplicationRecord
 
   # Ends only a snapshot-backed trial. Scheduled expiry rechecks expiry under this lock; an explicit
   # superadmin action may end an active trial early, but cannot mutate a manually assigned plan.
+  #
+  # The functions the trial granted are taken back. A clinic without a plan (a trial from before the plans) is also
+  # locked out of new operators and channels (limits 0, the earlier values stay in the snapshot); a clinic that has
+  # a plan keeps the limits of its plan, so the end of the trial leaves it able to work.
   def expire_trial!(only_if_expired: false)
     with_lock do
       reload
@@ -364,11 +368,13 @@ class Account < ApplicationRecord
       snapshot = attrs[TRIAL_SNAPSHOT_KEY]
       return false unless eligible_for_trial_expiry?(attrs, snapshot, only_if_expired)
 
+      lock_limits = attrs[Accounts::ApplyPlan::PLAN_KEY].blank?
+      snapshot['limits_locked'] = lock_limits
       attrs['trial_expires_at'] = 1.minute.ago.iso8601
       attrs['trial_expired_at'] = Time.current.iso8601
       self.custom_attributes = attrs
       disable_features(*(trial_features_for(snapshot) - snapshot['features']))
-      self.limits = (limits || {}).merge(TRIAL_LOCKED_LIMITS.index_with { 0 })
+      self.limits = (limits || {}).merge(TRIAL_LOCKED_LIMITS.index_with { 0 }) if lock_limits
       save!
       true
     end
@@ -586,10 +592,14 @@ class Account < ApplicationRecord
     self.custom_attributes = attrs.merge(TRIAL_SNAPSHOT_KEY => snapshot)
   end
 
-  # An expired trial that gets extended gets its trial features and its previous limits back.
+  # An expired trial that gets extended gets its trial features and, if the end of the trial locked them, its previous
+  # limits back. A trial that ended on a clinic with a plan did not touch the limits, so there is nothing to give back
+  # (an older snapshot has no `limits_locked` and always locked them).
   def reopen_trial!
     snapshot = custom_attributes[TRIAL_SNAPSHOT_KEY] || {}
     enable_features(*trial_features_for(snapshot)) if snapshot.key?('features')
+    return if snapshot['limits_locked'] == false
+
     self.limits = (limits || {}).except(*TRIAL_LOCKED_LIMITS).merge(snapshot['limits'] || {})
   end
 

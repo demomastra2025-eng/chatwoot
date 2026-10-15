@@ -162,6 +162,16 @@ RSpec.describe Accounts::ApplyPlan do
       expect(account.reload.limits).to include('agents' => 0, 'inboxes' => 0)
     end
 
+    it 'does not claim zero limits for an ended trial of a clinic that had a plan, which kept its limits' do
+      account.update!(limits: { 'agents' => 7 })
+      service.call
+      account.activate_trial!(3)
+      account.expire_trial!
+
+      expect(service.preview.notes).to eq([])
+      expect(account.reload.limits).to include('agents' => 7)
+    end
+
     it 'writes one audit entry with the actor, before and after' do
       account.enable_features!('scheduling_finance')
 
@@ -192,6 +202,43 @@ RSpec.describe Accounts::ApplyPlan do
 
       expect(Account.find(account.id).attributes).to eq(stored)
       expect(Audited::Audit.where(action: 'apply_plan')).to be_empty
+    end
+  end
+
+  describe 'during a running trial' do
+    before do
+      service.call
+      account.activate_trial!(3)
+      account.enable_features!('sla')
+    end
+
+    it 'does not list the functions the trial granted among the ones to switch off' do
+      preview = service.preview
+
+      expect(preview.disable).to eq(%w[sla])
+      expect(preview.enable).to be_empty
+    end
+
+    it 'resets only what was changed by hand and keeps the functions of the trial on' do
+      diff = service.call
+
+      expect(diff.disable).to eq(%w[sla])
+      expect(enabled_flags).to include(*plans.module_features('ai_agents'))
+      expect(enabled_flags).not_to include('sla')
+      expect(Accounts::PlanDrift.call(account)).to eq(extra: [], missing: [])
+    end
+
+    it 'does not hold on to the functions of a trial that has ended' do
+      account.expire_trial!
+      account.enable_features!('captain_integration')
+
+      expect(service.preview.disable).to include('captain_integration', 'sla')
+    end
+
+    it 'switches a trial function back on that was switched off by hand, as the drift of the clinic says' do
+      account.disable_features!('captain_tasks')
+
+      expect(service.preview.enable).to eq(%w[captain_tasks])
     end
   end
 
