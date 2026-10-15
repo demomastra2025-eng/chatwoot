@@ -131,7 +131,7 @@ const refreshData = () => {
         </span>
 
         <button
-          class="px-3.5 py-1.5 text-xs font-medium rounded-lg border border-n-strong bg-n-solid-2 text-n-slate-12 hover:bg-n-alpha-1 transition shadow-sm flex items-center gap-1.5"
+          class="reset-base px-3.5 py-1.5 text-xs font-medium rounded-lg border border-n-strong bg-n-solid-2 text-n-slate-12 hover:bg-n-alpha-1 transition shadow-sm flex items-center gap-1.5"
           :disabled="isRefreshing"
           @click="refreshData"
         >
@@ -140,7 +140,7 @@ const refreshData = () => {
         </button>
 
         <button
-          class="px-3.5 py-1.5 text-xs font-medium rounded-lg border border-n-strong bg-n-solid-2 text-n-slate-12 hover:bg-n-alpha-1 transition shadow-sm"
+          class="reset-base px-3.5 py-1.5 text-xs font-medium rounded-lg border border-n-strong bg-n-solid-2 text-n-slate-12 hover:bg-n-alpha-1 transition shadow-sm"
           @click="showChart = !showChart"
         >
           {{
@@ -251,12 +251,12 @@ const refreshData = () => {
             v-model="searchQuery"
             type="text"
             :placeholder="t('HEALTH_MATRIX.TOOLBAR.SEARCH_PLACEHOLDER')"
-            class="w-full pl-3 pr-4 py-2 text-sm border border-n-strong rounded-lg bg-transparent text-n-slate-12 placeholder:text-n-slate-10 focus:outline-none focus:ring-2 focus:ring-n-brand focus:border-n-brand"
+            class="w-full"
           />
         </div>
 
         <button
-          class="px-4 py-2 text-xs font-semibold rounded-lg border transition flex items-center gap-1.5"
+          class="reset-base px-4 py-2 text-xs font-semibold rounded-lg border transition flex items-center gap-1.5"
           :class="
             onlyNeedsAttention
               ? 'bg-n-ruby-10 text-white border-n-ruby-10 shadow-sm'

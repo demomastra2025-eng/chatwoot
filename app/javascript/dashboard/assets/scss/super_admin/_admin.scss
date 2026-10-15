@@ -1,0 +1,748 @@
+// Restyle of the Administrate markup on the design tokens (light and dark).
+//
+// Administrate still ships its own stylesheet (app/assets/stylesheets/
+// administrate/**, linked before the Vite CSS) because gem field partials emit
+// its class names. This file takes that markup over: page header and body,
+// buttons, tables, cells, the show page, forms, flashes, pagination, search.
+// Everything is drawn with `n-*` tokens, so one rule serves both themes.
+// The look follows the operator app: rounded-lg controls, rounded-xl blocks
+// drawn with a 1px outline, almost no shadows.
+//
+// How the cascade works out:
+//   * The Vite CSS is loaded after the sprockets CSS in <head> (dev: injected
+//     by JS, production: <link> after the stylesheet partial), so a rule of
+//     equal specificity wins here.
+//   * The gem's heavier selectors are repeated with the same specificity on
+//     purpose: `button:not(.reset-base)` (0,1,1), `.button:not(.reset-base)`
+//     (0,2,0), `input[type="submit"]:not(.reset-base)` (0,2,1), the
+//     `[type="text"]:hover/:focus/:disabled:hover` family and `a:hover`.
+//     Variants (`.button--secondary`, ...) are stricter than the base so they
+//     win over it.
+//   * Rules live in `@layer base`: Tailwind always emits them (component rules
+//     without a matching class in the sources are dropped) and utility classes
+//     in the views still win over the rules that are not repeated gem
+//     selectors. Add `reset-base` to a button that carries its own utilities.
+//
+// Remove the matching blocks when the sprockets stylesheet is retired.
+
+$administrate-fields: '[type="color"]', '[type="date"]',
+  '[type="datetime-local"]', '[type="email"]', '[type="month"]',
+  '[type="number"]', '[type="password"]', '[type="search"]', '[type="tel"]',
+  '[type="text"]', '[type="time"]', '[type="url"]', '[type="week"]',
+  'input:not([type])', 'textarea';
+
+$administrate-buttons: 'button:not(.reset-base)',
+  'input[type="button"]:not(.reset-base)',
+  'input[type="reset"]:not(.reset-base)',
+  'input[type="submit"]:not(.reset-base)', '.button:not(.reset-base)';
+
+@layer base {
+  // ------------------------------------------------------------------ page
+  // The shell is a flex row (sidebar + <main>); `.main-content` is the old
+  // absolutely positioned column of the gem layout and must not offset anything.
+  .main-content {
+    @apply min-w-0 flex-1;
+    position: static;
+    left: auto;
+    right: auto;
+    top: auto;
+    font-size: inherit;
+  }
+
+  body {
+    font-size: 14px;
+    line-height: 21px;
+  }
+
+  hr {
+    @apply border-n-weak;
+  }
+
+  .main-content__header {
+    @apply flex flex-wrap items-start justify-between gap-4 bg-transparent px-4 pt-5 sm:px-7;
+    border-bottom-width: 0;
+    min-height: 0;
+    padding-bottom: 0;
+  }
+
+  .main-content__heading {
+    @apply flex min-w-0 flex-col gap-1;
+  }
+
+  .main-content__page-title {
+    @apply m-0 text-heading-1 text-n-slate-12;
+  }
+
+  .main-content__description {
+    @apply m-0 max-w-3xl text-body-main text-n-slate-11;
+  }
+
+  .main-content__actions {
+    @apply flex flex-wrap items-center gap-2;
+  }
+
+  .main-content__body {
+    @apply px-4 pt-5 sm:px-7;
+    font-size: 14px;
+    padding-bottom: 0;
+
+    table {
+      font-size: 14px;
+    }
+
+    form {
+      margin-top: 0;
+    }
+  }
+
+  // Blocks: a 1px outline on a solid surface (in light mode the surfaces are
+  // near-white, so the outline is what makes the block visible).
+  .admin-card {
+    @apply rounded-xl bg-n-solid-2 outline outline-1 -outline-offset-1 outline-n-container;
+  }
+
+  .admin-card--table {
+    @apply overflow-x-auto;
+  }
+
+  .admin-card__title {
+    @apply m-0 border-b border-n-weak px-5 py-4 text-heading-2 text-n-slate-12;
+  }
+
+  // A table that sits inside a show page value is already inside a block.
+  .attribute-data .admin-card {
+    @apply rounded-none bg-transparent;
+    outline-width: 0;
+  }
+
+  // ----------------------------------------------------------------- links
+  // The gem turns every hovered link near-black and draws a dark focus ring;
+  // neither works on a dark page. Links inherit their colour; classes and
+  // `hover:` variants on the link itself pick the colour where it matters.
+  a:hover,
+  .cell-label:hover a {
+    color: inherit;
+  }
+
+  a:focus,
+  tbody tr:focus {
+    outline: none;
+  }
+
+  a:focus-visible,
+  tbody tr:focus-visible,
+  summary:focus-visible {
+    @apply outline outline-2 outline-offset-2 outline-n-brand;
+  }
+
+  // Links that carry data (belongs_to, has_many and similar) read as links.
+  .attribute-data a {
+    @apply text-n-brand;
+  }
+
+  .attribute-data a:hover {
+    @apply text-n-brand underline;
+    text-underline-offset: 2px;
+  }
+
+  // The column headers of a table inside a value are sort links, not data links.
+  .attribute-data thead a,
+  .attribute-data thead a:hover {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  // --------------------------------------------------------------- buttons
+  // Primary button: solid brand pill, h-9. `.button` also styles links.
+  #{$administrate-buttons} {
+    @apply inline-flex h-9 cursor-pointer select-none items-center justify-center gap-2 whitespace-nowrap rounded-lg border-0 bg-n-brand-solid px-3.5 py-0 align-middle text-sm font-medium leading-none text-n-brand-contrast no-underline transition-all duration-100 ease-out;
+    appearance: none;
+    -webkit-font-smoothing: antialiased;
+
+    &:hover {
+      @apply bg-n-brand-solid text-n-brand-contrast;
+      filter: brightness(1.1);
+    }
+
+    &:focus {
+      outline: none;
+    }
+
+    &:focus-visible {
+      @apply outline outline-2 outline-offset-2 outline-n-brand;
+    }
+
+    &:active {
+      transform: scale(0.98);
+    }
+
+    &:disabled {
+      @apply cursor-not-allowed opacity-50;
+      transform: none;
+
+      &:hover {
+        @apply bg-n-brand-solid;
+        filter: none;
+      }
+    }
+  }
+
+  // Secondary: neutral surface with an outline.
+  .button.button--secondary:not(.reset-base) {
+    @apply bg-n-button-color text-n-slate-12 outline outline-1 -outline-offset-1 outline-n-container;
+
+    &:hover {
+      @apply bg-n-alpha-2 text-n-slate-12;
+      filter: none;
+    }
+
+    &:focus-visible {
+      @apply outline-2 outline-offset-2 outline-n-brand;
+    }
+  }
+
+  // Alt: outlined, quiet.
+  .button.button--alt:not(.reset-base) {
+    @apply bg-transparent text-n-slate-11 outline outline-1 -outline-offset-1 outline-n-strong;
+    margin-bottom: 0;
+
+    &:hover {
+      @apply bg-n-slate-9/10 text-n-slate-11;
+      filter: none;
+    }
+
+    &:focus-visible {
+      @apply outline-2 outline-offset-2 outline-n-brand;
+    }
+  }
+
+  // Danger: destructive action.
+  .button.button--danger:not(.reset-base) {
+    @apply bg-n-ruby-9 text-white;
+
+    &:hover {
+      @apply bg-n-ruby-10 text-white;
+      filter: none;
+    }
+  }
+
+  // ---------------------------------------------------------------- tables
+  // Any table: token row lines and a quiet hover. Only the rows of the
+  // collection (`js-table-row`) are links, so only they get the pointer.
+  tr {
+    @apply border-b border-n-weak;
+  }
+
+  tbody tr:hover {
+    @apply bg-n-alpha-1;
+    cursor: auto;
+  }
+
+  tbody tr.js-table-row:hover {
+    cursor: pointer;
+  }
+
+  td img {
+    max-height: 2rem;
+  }
+
+  // The tables of the Administrate pages live in an `.admin-card`: header row
+  // in text-xs secondary, rows separated by cell borders, 20px card padding.
+  .admin-card table {
+    @apply w-full text-left text-sm;
+  }
+
+  .admin-card tr {
+    border-bottom-width: 0;
+  }
+
+  .admin-card th,
+  .admin-card td {
+    @apply px-3 align-middle;
+  }
+
+  .admin-card thead th {
+    @apply border-b border-n-weak py-2.5 text-xs font-medium text-n-slate-11;
+  }
+
+  .admin-card tbody td {
+    @apply border-b border-n-weak py-3 text-n-slate-12;
+  }
+
+  .admin-card tbody tr:last-child td {
+    border-bottom-width: 0;
+  }
+
+  .admin-card td:first-child,
+  .admin-card th:first-child {
+    padding-left: 1.25rem;
+  }
+
+  .admin-card td:last-child,
+  .admin-card th:last-child {
+    padding-right: 1.25rem;
+  }
+
+  // ----------------------------------------------------------------- cells
+  .cell-label--asc,
+  .cell-label--desc {
+    @apply font-medium text-n-slate-12;
+  }
+
+  .cell-label__sort-indicator {
+    @apply ms-1 inline-flex align-middle text-n-slate-12;
+    float: none;
+  }
+
+  .cell-label__sort-indicator--desc {
+    transform: rotate(180deg);
+  }
+
+  .cell-data--number,
+  .cell-label--number {
+    @apply tabular-nums;
+    text-align: right;
+  }
+
+  tbody tr td.cell-data--avatar-field {
+    @apply text-start;
+
+    img {
+      @apply size-7;
+      max-height: 1.75rem;
+    }
+  }
+
+  .cell-data__secret-field {
+    @apply text-n-slate-11;
+
+    [data-secret-toggler],
+    [data-secret-copier] {
+      @apply h-auto;
+      min-width: 0;
+      filter: none;
+      transform: none;
+    }
+  }
+
+  .action-edit {
+    @apply text-n-slate-11;
+  }
+
+  .action-edit:hover {
+    @apply text-n-slate-12 underline;
+    text-underline-offset: 2px;
+  }
+
+  .text-color-red,
+  .text-color-red:hover {
+    @apply text-n-ruby-11;
+  }
+
+  // ------------------------------------------------------------- show page
+  // A card of label/value rows. `dt`/`dd` (or the older `div` pairs) are the
+  // grid cells, so any list of `.attribute-label` + `.attribute-data` pairs
+  // inside `.attribute-list` lines up.
+  .attribute-list {
+    display: grid;
+    grid-template-columns: minmax(8rem, 16rem) minmax(0, 1fr);
+    margin: 0;
+  }
+
+  .attribute-label,
+  .attribute-data {
+    @apply m-0 border-t border-n-weak px-5 py-3;
+    clear: none;
+    float: none;
+    width: auto;
+  }
+
+  .attribute-label {
+    @apply pe-4 text-sm font-normal normal-case text-n-slate-11;
+    letter-spacing: normal;
+  }
+
+  .attribute-data {
+    @apply text-n-slate-12;
+    overflow-wrap: anywhere;
+  }
+
+  .attribute-list > :nth-child(-n + 2) {
+    border-top-width: 0;
+  }
+
+  .attribute-label + .attribute-data {
+    @apply ps-0;
+  }
+
+  @media (max-width: 639px) {
+    .attribute-list {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .attribute-label {
+      @apply pb-0 pe-5;
+    }
+
+    .attribute-data {
+      @apply border-t-0 pt-1 ps-5;
+    }
+
+    .attribute-list > :nth-child(2) {
+      border-top-width: 0;
+    }
+
+    .attribute-list > :nth-child(n + 3):nth-child(odd) {
+      border-top-width: 1px;
+    }
+  }
+
+  .attribute-data--avatar-field {
+    height: auto;
+    width: auto;
+  }
+
+  .attribute--nested,
+  .field-unit--nested {
+    @apply m-0 w-full max-w-none border-0 p-0;
+  }
+
+  // ----------------------------------------------------------------- forms
+  fieldset legend,
+  legend {
+    @apply p-0 text-heading-2 text-n-slate-12;
+  }
+
+  label {
+    @apply text-sm font-medium text-n-slate-12;
+  }
+
+  #{$administrate-fields} {
+    @apply block h-9 w-full rounded-lg border-0 bg-n-alpha-black2 px-3 text-sm text-n-slate-12 outline outline-1 -outline-offset-1 outline-n-weak transition-all;
+    appearance: none;
+
+    &::placeholder {
+      @apply text-n-slate-10;
+    }
+
+    &:hover {
+      @apply outline-n-slate-6;
+    }
+
+    &:focus {
+      @apply outline outline-1 -outline-offset-1 outline-n-brand;
+    }
+
+    &:disabled {
+      @apply cursor-not-allowed bg-n-alpha-2 text-n-slate-11 opacity-60;
+
+      &:hover {
+        @apply outline-n-weak;
+        border: 0;
+      }
+    }
+  }
+
+  textarea {
+    @apply h-auto min-h-[5.5rem] py-2;
+    resize: vertical;
+  }
+
+  [type="search"] {
+    &::-webkit-search-cancel-button {
+      appearance: none;
+    }
+  }
+
+  select {
+    @apply block h-9 w-full cursor-pointer rounded-lg border-0 bg-n-alpha-black2 py-0 ps-3 pe-9 text-sm text-n-slate-12 outline outline-1 -outline-offset-1 outline-n-weak transition-all;
+    appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, rgb(var(--slate-10)) 50%), linear-gradient(135deg, rgb(var(--slate-10)) 50%, transparent 50%);
+    background-position: calc(100% - 17px) calc(50% + 1px), calc(100% - 12px) calc(50% + 1px);
+    background-repeat: no-repeat;
+    background-size: 5px 5px, 5px 5px;
+
+    &:hover {
+      @apply outline-n-slate-6;
+    }
+
+    &:focus {
+      @apply outline outline-1 -outline-offset-1 outline-n-brand;
+    }
+
+    &:disabled {
+      @apply cursor-not-allowed opacity-60;
+    }
+
+    &[multiple],
+    &[size]:not([size="1"]) {
+      @apply h-auto py-2 pe-3;
+      background-image: none;
+    }
+  }
+
+  [type="checkbox"],
+  [type="radio"] {
+    @apply m-0 inline-block size-4 shrink-0 cursor-pointer rounded border border-solid border-n-strong bg-transparent align-middle;
+    appearance: none;
+
+    &:focus {
+      outline: none;
+    }
+
+    &:focus-visible {
+      @apply outline outline-2 outline-offset-2 outline-n-brand;
+    }
+
+    &:checked {
+      @apply border-n-brand-solid bg-n-brand-solid;
+    }
+
+    &:disabled {
+      @apply cursor-not-allowed opacity-50;
+    }
+  }
+
+  [type="checkbox"]:checked {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E");
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: 100% 100%;
+  }
+
+  [type="radio"] {
+    @apply rounded-full;
+  }
+
+  [type="radio"]:checked {
+    background-image: radial-gradient(circle, rgb(var(--brand-contrast)) 0 32%, transparent 36%);
+  }
+
+  [type="file"] {
+    @apply w-full text-sm text-n-slate-11;
+  }
+
+  [type="file"]::file-selector-button {
+    @apply me-3 h-8 cursor-pointer rounded-lg border-0 bg-n-button-color px-3 text-sm font-medium text-n-slate-12 outline outline-1 -outline-offset-1 outline-n-container;
+  }
+
+  [type="file"]:focus {
+    outline: none;
+  }
+
+  [type="file"]:focus-visible {
+    @apply outline outline-2 outline-offset-2 outline-n-brand;
+  }
+
+  // One field: label above the control, hint below it.
+  .field-unit {
+    @apply relative mb-5 flex w-full flex-col items-stretch gap-1.5;
+  }
+
+  .field-unit::after {
+    display: none;
+  }
+
+  .field-unit__label {
+    @apply m-0 w-full;
+    float: none;
+    text-align: left;
+  }
+
+  .field-unit__field {
+    @apply m-0 w-full max-w-none;
+    float: none;
+  }
+
+  .field-unit__hint {
+    @apply text-xs text-n-slate-11;
+  }
+
+  // Rails wraps an invalid field in `.field_with_errors`; the wrapper must not
+  // take part in the layout, the control and its label turn red instead.
+  .field_with_errors {
+    display: contents;
+  }
+
+  .field_with_errors label {
+    @apply text-n-ruby-11;
+  }
+
+  .field_with_errors input,
+  .field_with_errors select,
+  .field_with_errors textarea,
+  .field_with_errors input:hover,
+  .field_with_errors select:hover,
+  .field_with_errors textarea:hover,
+  .field_with_errors input:focus,
+  .field_with_errors select:focus,
+  .field_with_errors textarea:focus {
+    @apply outline-n-ruby-8;
+  }
+
+  .field-unit--required label::after {
+    @apply text-n-ruby-9;
+  }
+
+  // A switch row: control first, label next to it.
+  .field-unit--boolean {
+    @apply flex-row-reverse items-center justify-end gap-2;
+  }
+
+  .field-unit--boolean .field-unit__label,
+  .field-unit--boolean .field-unit__field {
+    @apply w-auto;
+  }
+
+  .form-section {
+    @apply m-0 min-w-0 border-0 p-0;
+  }
+
+  .form-section > legend {
+    @apply mb-4 w-full;
+    float: left;
+  }
+
+  .form-section > legend + * {
+    clear: both;
+  }
+
+  .form-actions {
+    @apply flex flex-wrap items-center gap-2;
+    margin-left: 0;
+  }
+
+  // ---------------------------------------------------------------- flashes
+  .flash-notice,
+  .flash-success,
+  .flash-alert,
+  .flash-error {
+    @apply m-0 text-left;
+  }
+
+  .flash a {
+    color: inherit;
+    text-decoration: underline;
+  }
+
+  // -------------------------------------------------------------- pagination
+  .pagination {
+    @apply mt-5 flex flex-wrap items-center justify-center gap-1 p-0 text-sm text-n-slate-11;
+  }
+
+  .pagination .first,
+  .pagination .prev,
+  .pagination .page,
+  .pagination .next,
+  .pagination .last {
+    @apply m-0;
+  }
+
+  .pagination .first a,
+  .pagination .prev a,
+  .pagination .page a,
+  .pagination .next a,
+  .pagination .last a,
+  .pagination .page.current,
+  .pagination .page.gap {
+    @apply inline-flex h-8 min-w-8 items-center justify-center rounded-lg px-2;
+  }
+
+  .pagination a:hover {
+    @apply bg-n-alpha-2 text-n-slate-12;
+  }
+
+  .pagination .current {
+    @apply bg-n-slate-4 font-medium text-n-slate-12;
+  }
+
+  // ----------------------------------------------------------------- search
+  .search {
+    @apply relative m-0 ms-auto w-full max-w-full sm:w-64;
+  }
+
+  .search__input {
+    @apply pl-9 pr-9;
+  }
+
+  .search__eyeglass-icon {
+    @apply pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-n-slate-10;
+  }
+
+  .search__clear-link {
+    @apply absolute right-2.5 top-1/2 flex size-4 -translate-y-1/2 items-center justify-center text-n-slate-10;
+  }
+
+  .search__clear-link:hover {
+    @apply text-n-slate-12;
+  }
+
+  // ------------------------------------------------- segmented filter control
+  .collection-toolbar {
+    @apply mb-4 flex flex-wrap items-center justify-between gap-3;
+  }
+
+  .segmented {
+    @apply inline-flex max-w-full flex-wrap gap-0.5 rounded-lg bg-n-solid-2 p-0.5 outline outline-1 -outline-offset-1 outline-n-weak;
+  }
+
+  .segmented__item {
+    @apply inline-flex h-[30px] items-center rounded-md px-2.5 text-[13px] text-n-slate-11 no-underline hover:bg-n-alpha-2;
+  }
+
+  .segmented__item:hover {
+    @apply text-n-slate-11;
+  }
+
+  .segmented__item[aria-current="true"] {
+    @apply bg-n-slate-4 font-medium text-n-slate-12;
+  }
+
+  .segmented__item[aria-current="true"]:hover {
+    @apply bg-n-slate-4 text-n-slate-12;
+  }
+
+  // -------------------------------------------------------------- selectize
+  // The belongs-to search field replaces its <select> with selectize markup
+  // whose structural stylesheet paints white boxes.
+  .selectize-control {
+    @apply w-full;
+  }
+
+  .selectize-dropdown,
+  .selectize-input,
+  .selectize-input input {
+    @apply text-sm text-n-slate-12;
+  }
+
+  .selectize-input,
+  .selectize-control.single .selectize-input.input-active {
+    @apply min-h-9 rounded-lg border-0 bg-n-alpha-black2 px-3 py-1.5 outline outline-1 -outline-offset-1 outline-n-weak;
+    box-shadow: none;
+  }
+
+  .selectize-input.focus {
+    @apply outline-n-brand;
+    box-shadow: none;
+  }
+
+  .selectize-input.full {
+    @apply bg-n-alpha-black2;
+  }
+
+  .selectize-input.dropdown-active {
+    @apply rounded-lg;
+  }
+
+  .selectize-dropdown {
+    @apply mt-1 rounded-lg border-0 bg-n-solid-2 outline outline-1 -outline-offset-1 outline-n-container;
+  }
+
+  .selectize-dropdown .option {
+    @apply px-3 py-1.5;
+  }
+
+  .selectize-dropdown .active {
+    @apply bg-n-alpha-2 text-n-slate-12;
+  }
+}

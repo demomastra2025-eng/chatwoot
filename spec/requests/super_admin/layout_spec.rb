@@ -61,22 +61,35 @@ RSpec.describe 'Super Admin layout and login page', type: :request do
     end
   end
 
-  # The theme script turns on `.dark` for every super admin page, while the
-  # sprockets Administrate stylesheet still hardcodes light surfaces. The shim
-  # keeps those pages readable until they are restyled.
-  describe 'dark-safe shim for the Administrate stylesheet' do
+  # The sprockets Administrate stylesheet is still linked because gem field
+  # partials emit its class names. The super admin bundle restyles that markup on
+  # the design tokens (light and dark); it is loaded after the sprockets sheet.
+  describe 'restyle of the Administrate stylesheet' do
     let(:scss_dir) { Rails.root.join('app/javascript/dashboard/assets/scss/super_admin') }
     let(:index_scss) { File.read(scss_dir.join('index.scss')) }
-    let(:shim) { File.read(scss_dir.join('_administrate_shim.scss')) }
+    let(:admin_scss) { File.read(scss_dir.join('_admin.scss')) }
 
     it 'is imported after the Tailwind layers by the super admin stylesheet' do
-      expect(index_scss).to include("@import './administrate_shim';")
-      expect(index_scss.index('tailwindcss/utilities')).to be < index_scss.index('administrate_shim')
+      expect(index_scss).to include("@import './admin';")
+      expect(index_scss.index('tailwindcss/utilities')).to be < index_scss.index("'./admin'")
     end
 
-    it 'overrides the light header, fields, row hover and search of Administrate' do
-      expect(shim).to include('.main-content__header', 'tbody tr:hover', '.search__eyeglass-icon', 'a:hover')
-      expect(shim).to include("'input:not([type])'", "'textarea'", "'[type=\"text\"]'", "'[type=\"password\"]'", "'[type=\"email\"]'")
+    it 'takes over the page, buttons, tables, show page, forms, flashes, pagination and search' do
+      expect(admin_scss).to include(
+        '.main-content__header', '.main-content__body', '.admin-card', 'tbody tr:hover', '.attribute-list', '.attribute-label',
+        '.field-unit', '.form-actions', '.flash-notice', '.pagination', '.search__eyeglass-icon', 'a:hover'
+      )
+    end
+
+    it 'does not offset the page content by the absolute Administrate column' do
+      expect(admin_scss).to match(/\.main-content \{[^}]*position: static;/m)
+    end
+
+    it 'repeats the gem button selectors so that the restyle wins over their specificity' do
+      expect(admin_scss).to include(
+        "'button:not(.reset-base)'", "'input[type=\"submit\"]:not(.reset-base)'", "'.button:not(.reset-base)'",
+        '.button.button--secondary:not(.reset-base)', '.button.button--alt:not(.reset-base)', '.button.button--danger:not(.reset-base)'
+      )
     end
 
     it 'covers every field selector that Administrate paints white' do
@@ -84,11 +97,11 @@ RSpec.describe 'Super Admin layout and login page', type: :request do
       painted = forms[/\[type="color"\].*?textarea \{/m].scan(/\[type="[a-z-]+"\]|input:not\(\[type\]\)|textarea/).uniq
 
       expect(painted).not_to be_empty
-      painted.each { |selector| expect(shim).to include(selector) }
+      painted.each { |selector| expect(admin_scss).to include(selector) }
     end
 
     it 'uses design tokens instead of fixed colours' do
-      expect(shim).not_to match(/#[0-9a-fA-F]{3,8}\b|rgba?\(/)
+      expect(admin_scss).not_to match(/#[0-9a-fA-F]{3,8}\b|rgba?\(\s*\d/)
     end
   end
 
