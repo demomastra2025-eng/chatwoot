@@ -28,8 +28,9 @@ RSpec.describe Captain::Runtime::HandoffTool do
   end
 
   it 'halts neutrally after two transfers without requesting staff or a customer question' do
-    entry = create(:captain_assistant)
-    specialist = create(:captain_assistant, account: entry.account, config: { 'selected_tool_ids' => ['create_appointment'] })
+    entry = create(:captain_assistant, config: { 'tool_access' => { 'agent' => { 'tool_ids' => ['faq_lookup'] } } })
+    specialist = create(:captain_assistant, account: entry.account,
+                                            config: { 'tool_access' => { 'agent' => { 'tool_ids' => ['create_task'] } } })
     inbox = create(:inbox, account: entry.account)
     target = Captain::Runtime::Agent.new(name: "assistant_#{specialist.id}")
     target.assistant_id = specialist.id
@@ -47,8 +48,9 @@ RSpec.describe Captain::Runtime::HandoffTool do
   end
 
   it 'answers an immediate return to the agent that just handed off with a result the model can act on, without a guard' do
-    entry = create(:captain_assistant, config: { 'selected_tool_ids' => ['create_appointment'] })
-    specialist = create(:captain_assistant, account: entry.account, config: { 'selected_tool_ids' => ['create_deal'] })
+    entry = create(:captain_assistant, config: { 'tool_access' => { 'agent' => { 'tool_ids' => ['create_task'] } } })
+    specialist = create(:captain_assistant, account: entry.account,
+                                            config: { 'tool_access' => { 'agent' => { 'tool_ids' => ['update_task'] } } })
     inbox = create(:inbox, account: entry.account)
     target = Captain::Runtime::Agent.new(name: "assistant_#{entry.id}")
     target.assistant_id = entry.id
@@ -95,8 +97,11 @@ RSpec.describe Captain::Runtime::HandoffTool do
   end
 
   describe 'a transfer to one colleague' do
-    let!(:entry) { create(:captain_assistant) }
-    let!(:specialist) { create(:captain_assistant, account: entry.account, config: { 'selected_tool_ids' => ['create_appointment'] }) }
+    let!(:entry) { create(:captain_assistant, config: { 'tool_access' => { 'agent' => { 'tool_ids' => ['faq_lookup'] } } }) }
+    let!(:specialist) do
+      create(:captain_assistant, account: entry.account,
+                                 config: { 'tool_access' => { 'agent' => { 'tool_ids' => ['create_task'] } } })
+    end
     let!(:inbox) { create(:inbox, account: entry.account) }
     let(:target) { Captain::Runtime::Agent.new(name: "assistant_#{specialist.id}").tap { |agent| agent.assistant_id = specialist.id } }
     let(:context) do

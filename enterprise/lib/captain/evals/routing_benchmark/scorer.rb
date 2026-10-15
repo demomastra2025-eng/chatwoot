@@ -489,7 +489,7 @@ class Captain::Evals::RoutingBenchmark::Scorer
     infra_checks(context, outcome)
     agents = Array(expected['agents'] || expected['agent'])
     acted_agents = [context.acting_agent]
-    if context.council && open_parts?
+    if context.council && (open_parts? || @part_states.any?)
       acted_agents |= Array(context.turn_events.council.to_h[:parts]).filter_map { |part| part[:owner] }
       acted_agents |= context.calls.filter_map { |call| call[:agent] }
     end
@@ -499,7 +499,7 @@ class Captain::Evals::RoutingBenchmark::Scorer
   end
 
   def open_parts?
-    @part_states.any?
+    @part_states.values.intersect?(OPEN_PART_STATES)
   end
 
   # A turn the runtime did not carry through: no request id, a tool that failed technically (the run was handed to staff, or a part
@@ -571,7 +571,7 @@ class Captain::Evals::RoutingBenchmark::Scorer
   end
 
   def forbidden_tool_check(context, outcome, name)
-    return if name == 'plan_request' && open_parts?
+    return if name == 'plan_request' && (open_parts? || @part_states.any?)
     return if name == 'plan_request' && context.calls.any? { |call| call[:tool] == name && call[:success] == false } &&
               context.calls.none? { |call| call[:tool] == name && call[:success] == true }
 
@@ -671,7 +671,7 @@ class Captain::Evals::RoutingBenchmark::Scorer
   def expected_transfers(context)
     stated = context.expected['transfers']
     return stated if stated.nil? || @turn_number <= 1 || context.routing.blank?
-    return 0 if context.expected['council'] == true || (context.expected['council'] == 'any' && context.council) || (context.council && open_parts?)
+    return 0 if context.expected['council'] == true || (context.expected['council'] == 'any' && context.council) || (context.council && (open_parts? || @part_states.any?))
 
     before = context.routing.to_h.symbolize_keys.fetch(:before, {}).to_h.symbolize_keys
     holder = agent_names[before[:current_assistant_id]&.to_i]

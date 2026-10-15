@@ -3,6 +3,7 @@
 class Captain::Runtime::Agent
   attr_reader :name, :instructions, :model, :tools, :handoff_agents, :temperature, :response_schema, :headers, :params
   attr_accessor :context_preparer, :assistant_id
+  attr_writer :tool_ids
 
   def initialize(name:, instructions: nil, model: LlmConstants::DEFAULT_MODEL, tools: [], handoff_agents: [],
                  temperature: 0.7, response_schema: nil, headers: nil, params: nil)
@@ -30,6 +31,8 @@ class Captain::Runtime::Agent
 
   # The names of the tools the agent acts with (the transfer tool of a colleague describes what the colleague can do from them).
   def tool_ids
+    return Array(@tool_ids) if defined?(@tool_ids) && @tool_ids
+
     tools.filter_map { |tool| tool.name.to_s.presence if tool.respond_to?(:name) }
   end
 
