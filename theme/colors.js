@@ -225,6 +225,21 @@ export const colors = {
       12: 'rgb(var(--violet-12) / <alpha-value>)',
     },
 
+    // Semantic status and ordinal chart colours (vars are defined in
+    // _next-colors.scss for light and dark).
+    status: {
+      good: 'rgb(var(--status-good) / <alpha-value>)',
+      warn: 'rgb(var(--status-warn) / <alpha-value>)',
+      bad: 'rgb(var(--status-bad) / <alpha-value>)',
+    },
+    chart: {
+      1: 'rgb(var(--chart-1) / <alpha-value>)',
+      2: 'rgb(var(--chart-2) / <alpha-value>)',
+      3: 'rgb(var(--chart-3) / <alpha-value>)',
+      4: 'rgb(var(--chart-4) / <alpha-value>)',
+      5: 'rgb(var(--chart-5) / <alpha-value>)',
+    },
+
     black: '#000000',
     brand: 'rgb(var(--brand-color) / <alpha-value>)',
     'brand-solid': 'rgb(var(--brand-solid) / <alpha-value>)',
