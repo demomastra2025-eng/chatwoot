@@ -14,6 +14,15 @@ module SuperAdmin::AccountFeaturesHelper
     end
   end
 
+  # The Russian name of a flag (super_admin.features.<flag>); a flag without one falls back to its English display
+  # name. A spec keeps every flag of features.yml translated.
+  def self.feature_label(name)
+    key = "super_admin.features.#{name}"
+    return I18n.t(key) if I18n.exists?(key)
+
+    feature_display_names[name.to_s].presence || name.to_s.humanize
+  end
+
   def self.filter_internal_features(features)
     return features if ChatwootApp.chatwoot_cloud?
 

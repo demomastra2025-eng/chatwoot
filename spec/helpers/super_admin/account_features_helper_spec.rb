@@ -16,4 +16,22 @@ RSpec.describe SuperAdmin::AccountFeaturesHelper do
       expect(described_class.filtered_features({ 'companies' => false })).to include(%w[companies Companies] => false)
     end
   end
+
+  describe '.feature_label' do
+    it 'has a Russian name for every flag of features.yml' do
+      missing = Featurable::FEATURE_NAMES.reject { |name| I18n.exists?("super_admin.features.#{name}", :ru) }
+
+      expect(missing).to be_empty
+    end
+
+    it 'names the flags the plans talk about in plain Russian' do
+      expect(described_class.feature_label('captain_integration')).to eq('ИИ-агенты')
+      expect(described_class.feature_label('channel_voice')).to eq('Телефония')
+      expect(described_class.feature_label('scheduling_finance')).to eq('Финансы записи')
+    end
+
+    it 'falls back to a readable name for a flag nobody translated' do
+      expect(described_class.feature_label('some_new_flag')).to eq('Some new flag')
+    end
+  end
 end

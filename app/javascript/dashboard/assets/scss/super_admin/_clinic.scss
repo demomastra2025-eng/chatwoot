@@ -1,0 +1,234 @@
+// Building blocks of the clinic list and the clinic card, drawn with the same
+// `n-*` tokens as the rest of the super admin (so one rule serves both themes):
+// blocks, badges, usage meters, switches, collapsible blocks, plan cards and
+// key/value lists.
+//
+// They live in `@layer base` for the same reason as `_admin.scss`: Tailwind
+// always emits them (class names built in helpers are not scanned), and a
+// utility class in a view still wins over them. Colours come from tokens only.
+
+@layer base {
+  // ---------------------------------------------------------------- blocks
+  // A block of a page: a 1px outline on a solid surface, the way the operator
+  // app draws settings sections.
+  .admin-block {
+    @apply flex min-w-0 flex-col gap-4 rounded-xl bg-n-solid-2 px-5 py-4 outline outline-1 -outline-offset-1 outline-n-container;
+  }
+
+  .admin-block__head {
+    @apply flex min-w-0 flex-col gap-0.5;
+  }
+
+  // Title and hint on the left (they take what is left), a badge or a button on the right.
+  .admin-block__head-row {
+    @apply flex flex-wrap items-start justify-between gap-3;
+  }
+
+  .admin-block__head-row > .admin-block__head {
+    flex: 1 1 20rem;
+  }
+
+  .admin-block__title {
+    @apply m-0 text-heading-2 text-n-slate-12;
+  }
+
+  .admin-block__hint {
+    @apply m-0 text-body-main text-n-slate-11;
+  }
+
+  .admin-block__footer {
+    @apply flex flex-wrap items-center justify-end gap-2;
+  }
+
+  .admin-block__note {
+    @apply m-0 text-xs text-n-slate-10;
+  }
+
+  // ---------------------------------------------------------------- badges
+  .admin-badge {
+    @apply inline-flex h-[22px] items-center gap-1 whitespace-nowrap rounded-md bg-n-slate-2 px-2 text-xs font-medium text-n-slate-12 outline outline-1 -outline-offset-1 outline-n-slate-4;
+  }
+
+  .admin-badge--teal {
+    @apply bg-n-teal-2 text-n-teal-11 outline-n-teal-4;
+  }
+
+  .admin-badge--amber {
+    @apply bg-n-amber-2 text-n-amber-11 outline-n-amber-4;
+  }
+
+  .admin-badge--ruby {
+    @apply bg-n-ruby-2 text-n-ruby-11 outline-n-ruby-4;
+  }
+
+  .admin-badge--iris {
+    @apply bg-n-iris-2 text-n-iris-11 outline-n-iris-4;
+  }
+
+  .admin-badge--blue {
+    @apply bg-n-blue-2 text-n-blue-11 outline-n-blue-4;
+  }
+
+  .admin-badge--quiet {
+    @apply bg-transparent text-n-slate-11 outline-n-weak;
+  }
+
+  // A notice line inside a block (drift, trial note, preview): tinted surface.
+  .admin-notice {
+    @apply flex flex-wrap items-center justify-between gap-3 rounded-xl bg-n-slate-2 px-3.5 py-2.5 text-n-slate-12 outline outline-1 -outline-offset-1 outline-n-weak;
+  }
+
+  .admin-notice--amber {
+    @apply bg-n-amber-2 text-n-amber-11 outline-n-amber-4;
+  }
+
+  .admin-notice--teal {
+    @apply bg-n-teal-2 text-n-teal-11 outline-n-teal-4;
+  }
+
+  .admin-notice--ruby {
+    @apply bg-n-ruby-2 text-n-ruby-11 outline-n-ruby-4;
+  }
+
+  // ----------------------------------------------------------------- meter
+  // A thin usage bar. The fill width is set inline (`style="width: 42%"`).
+  .admin-meter {
+    @apply h-1.5 w-full overflow-hidden rounded-full bg-n-slate-4;
+  }
+
+  .admin-meter__fill {
+    @apply h-full rounded-full bg-n-teal-10;
+    min-width: 3px;
+  }
+
+  .admin-meter__fill--warn {
+    @apply bg-n-amber-10;
+  }
+
+  .admin-meter__fill--bad {
+    @apply bg-n-ruby-10;
+  }
+
+  .admin-meter__fill--idle {
+    @apply bg-n-slate-8;
+  }
+
+  // ---------------------------------------------------------------- switch
+  // <label class="admin-switch"> checkbox.admin-switch__input + track + thumb.
+  // The checkbox stays a real form control (works without JS, keyboard and
+  // screen readers); the track and thumb only draw its state.
+  .admin-switch {
+    @apply relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center;
+  }
+
+  .admin-switch__input {
+    @apply sr-only;
+  }
+
+  .admin-switch__track {
+    @apply absolute inset-0 rounded-full bg-n-slate-6 transition-colors;
+  }
+
+  .admin-switch__thumb {
+    @apply pointer-events-none absolute left-0.5 top-0.5 size-4 rounded-full bg-n-background shadow-md transition-transform;
+  }
+
+  .admin-switch__input:checked ~ .admin-switch__track {
+    @apply bg-n-brand-solid;
+  }
+
+  .admin-switch__input:checked ~ .admin-switch__thumb {
+    transform: translateX(1rem);
+  }
+
+  .admin-switch__input:focus-visible ~ .admin-switch__track {
+    @apply outline outline-2 outline-offset-2 outline-n-brand;
+  }
+
+  .admin-switch__input:disabled ~ .admin-switch__track,
+  .admin-switch__input:disabled ~ .admin-switch__thumb {
+    @apply opacity-50;
+  }
+
+  // ----------------------------------------------------------- collapsible
+  // <details class="admin-collapse"><summary>...</summary><div class="admin-collapse__body">
+  .admin-collapse {
+    @apply min-w-0 rounded-xl bg-n-solid-2 outline outline-1 -outline-offset-1 outline-n-container;
+  }
+
+  .admin-collapse > summary {
+    @apply flex cursor-pointer list-none items-center justify-between gap-3 rounded-xl px-5 py-4;
+  }
+
+  .admin-collapse > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .admin-collapse__chevron {
+    @apply shrink-0 text-n-slate-11 transition-transform;
+  }
+
+  details[open] > summary .admin-collapse__chevron {
+    transform: rotate(180deg);
+  }
+
+  .admin-collapse__body {
+    @apply border-t border-n-weak px-5 pb-5 pt-4;
+  }
+
+  // ------------------------------------------------------------- plan card
+  // Base and module cards of the clinic plan. A module card is selected while
+  // its switch is on (`:has` keeps this working without JS).
+  // A module card is a <label>, which the shell draws in medium weight: the card text is regular.
+  .admin-plan-card {
+    @apply relative flex min-w-0 flex-col gap-3 rounded-xl bg-n-solid-1 p-4 font-normal outline outline-1 -outline-offset-1 outline-n-weak;
+  }
+
+  .admin-plan-card--module {
+    @apply cursor-pointer;
+  }
+
+  .admin-plan-card--module:hover {
+    @apply outline-n-strong;
+  }
+
+  .admin-plan-card:has(.admin-switch__input:checked) {
+    @apply outline-2 outline-n-blue-9;
+  }
+
+  .admin-plan-card--base {
+    @apply bg-n-iris-2 outline-n-iris-4;
+  }
+
+  .admin-plan-card--base:has(.admin-switch__input:checked) {
+    @apply outline-1 outline-n-iris-4;
+  }
+
+  // ---------------------------------------------------- key / value lists
+  .admin-kv {
+    @apply m-0 flex flex-col;
+  }
+
+  .admin-kv__row {
+    @apply flex items-baseline justify-between gap-3 border-t border-n-weak py-2.5 first:border-t-0 first:pt-0;
+  }
+
+  .admin-kv__key {
+    @apply m-0 shrink-0 text-n-slate-11;
+  }
+
+  .admin-kv__value {
+    @apply m-0 min-w-0 text-end text-n-slate-12;
+    overflow-wrap: anywhere;
+  }
+
+  // Two columns of usage meters
+  .admin-usage-grid {
+    @apply grid grid-cols-1 gap-x-8 gap-y-5 sm:grid-cols-2;
+  }
+
+  // The page of a clinic: the main column and a narrow side column.
+  .admin-card-layout {
+    @apply grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_20rem];
+  }
+}
