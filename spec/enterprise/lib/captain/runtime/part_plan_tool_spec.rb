@@ -636,6 +636,29 @@ RSpec.describe Captain::Runtime::PartPlanTool do
       expect(JSON.parse(planner.call(mode: 'council', parts: parts))).to include('mode' => 'council')
       expect(context[:part_plan_accepted]).to be(true)
     end
+
+    it 'coalesces excess unlinked parts per executor and defaults link_action to new in multi-agent councils' do
+      context[:parts] = [{ 'id' => '1', 'version' => 1, 'state' => 'waiting_customer', 'executor_agent_id' => lab_agent[:id], 'fragment' => '1' }]
+      result = JSON.parse(
+        planner.call(
+          mode: 'council',
+          parts: [
+            { fragment: 'Запись к кардиологу' },
+            { fragment: 'Запись к неврологу' },
+            { fragment: 'Запись к эндокринологу' },
+            { fragment: 'Цена анализа крови', executor: 'Лаборатория' }
+          ]
+        )
+      )
+
+      expect(result['mode']).to eq('council')
+      expect(result['parts'].size).to eq(2)
+      planned = context[:parts].last(2)
+      expect(planned.first['fragment']).to eq(
+        'Запись к кардиологу; Запись к неврологу; Запись к эндокринологу'
+      )
+      expect(planned.map { |item| item['link_action'] }).to eq(%w[new new])
+    end
   end
 end
 # rubocop:enable Lint/ConstantDefinitionInBlock

@@ -186,6 +186,17 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
                                  availability_scope: 'service_unconfirmed', candidate_resource_ids: [])
     end
 
+    it 'allows searching an explicitly requested MedElement specialist with an unlinked service using the service duration' do
+      store_provider_day(provider_resource)
+
+      payload = perform(resource_ids: [provider_resource.id], service_id: service_record.id, limit: 1)
+
+      expect(payload[:total_slots]).to eq(1)
+      expect(payload[:duration_min]).to eq(30)
+      expect(payload[:service_link_status]).to eq('price_link_unverified')
+      expect(payload[:availability_scope]).to eq('service_unconfirmed')
+    end
+
     it 'rejects an explicitly requested resource whose link is inactive with the pinned message and a dedicated error class' do
       link(local_resource, active: false)
 

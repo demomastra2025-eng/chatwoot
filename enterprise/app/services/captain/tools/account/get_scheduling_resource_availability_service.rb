@@ -68,9 +68,11 @@ class Captain::Tools::Account::GetSchedulingResourceAvailabilityService < Captai
 
   def availability_metadata(resource, service_record)
     provider_required = Scheduling::AvailableSlotSearchService.provider_related?(resource)
+    has_active_link = service_record.present? &&
+                      resource.service_prices.active.exists?(account_id: account.id, service_id: service_record.id)
     link_status = if service_record.blank?
                     'not_requested'
-                  elsif provider_required
+                  elsif provider_required || !has_active_link
                     'price_link_unverified'
                   else
                     'local_configured'
@@ -95,12 +97,20 @@ class Captain::Tools::Account::GetSchedulingResourceAvailabilityService < Captai
     service_record = scheduling_service!(service_id)
 
     active_price = resource.service_prices.active.find_by(account_id: account.id, service_id: service_record.id)
-    if active_price.blank?
+    if active_price.blank? && !unlinked_service_allowed_for_resource?(resource, service_record)
       raise Scheduling::Error.new(code: 'SERVICE_NOT_AVAILABLE_FOR_RESOURCE',
                                   message: 'No recorded service-price link for this resource; provider eligibility is unverified',
                                   status: :unprocessable_content, details: { reason: 'service_not_linked' })
     end
 
     service_record
+  end
+
+  def unlinked_service_allowed_for_resource?(resource, service_record)
+    return false if Scheduling::ServicePrice.active.where(account_id: account.id, service_id: service_record.id).exists?
+    return false if Scheduling::ServicePrice.where(service_id: service_record.id, resource_id: resource.id).exists?
+
+    Scheduling::AvailableSlotSearchService.provider_related?(resource) ||
+      !resource.service_prices.active.where(account_id: account.id).exists?
   end
 end

@@ -32,6 +32,7 @@ class Captain::Tools::ResolveConversationTool < Captain::Tools::BasePublicTool
       transition.call
     end
     conversation.reload
+    record_resolved_tool_state!(tool_context, conversation)
 
     tool_success(
       data: {
@@ -46,6 +47,20 @@ class Captain::Tools::ResolveConversationTool < Captain::Tools::BasePublicTool
   end
 
   private
+
+  def record_resolved_tool_state!(tool_context, conversation)
+    new_transition_id = conversation.status_transitions.maximum(:id)
+    if tool_context.state.is_a?(Hash)
+      tool_context.state[:captain_resolved_by_tool] = true
+      if tool_context.state[:captain_response_fence].is_a?(Hash) && new_transition_id.present?
+        tool_context.state[:captain_response_fence][:status_transition_id] = new_transition_id
+      end
+    end
+    return unless tool_context.context.is_a?(Hash)
+
+    tool_context.context[:captain_v2_resolve_tool_called] = true
+    tool_context.context[:captain_v2_resolved_status_transition_id] = new_transition_id if new_transition_id.present?
+  end
 
   def permissions
     %w[conversation_manage conversation_unassigned_manage conversation_participating_manage]

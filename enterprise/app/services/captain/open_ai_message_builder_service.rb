@@ -108,12 +108,16 @@ class Captain::OpenAiMessageBuilderService
     keys.lazy.map { |key| referral[key] }.find(&:present?)
   end
 
-  def image_description_part(attachment, image_url)
-    description = Captain::ImageRecognitionService.new(
+  def recognize_image(attachment, image_url)
+    Captain::ImageRecognitionService.new(
       account: @message.account,
       attachment: attachment,
       image_url: image_url
     ).perform
+  end
+
+  def image_description_part(attachment, image_url)
+    description = recognize_image(attachment, image_url)
     text_part("Image attachment: #{description}") if description.present?
   end
 
@@ -137,6 +141,11 @@ class Captain::OpenAiMessageBuilderService
     return [] unless image_understanding_enabled?
 
     image_attachments.each_with_object([]) do |attachment, parts|
+      if sticker_or_gif_attachment?(attachment)
+        parts << text_part('User shared a sticker') if @message.content.blank?
+        next
+      end
+
       url = get_attachment_url(attachment)
       next if url.blank?
       next if @budget && !@budget.include_image?
@@ -146,11 +155,28 @@ class Captain::OpenAiMessageBuilderService
     end.compact
   end
 
+  def sticker_or_gif_attachment?(attachment)
+    return true if @message.content_type.to_s == 'sticker'
+    return true if attachment.meta.to_h['is_sticker'] == true
+    return true if attachment.external_url.to_s.match?(/giphy\.com|\.gif(\?|\z)/i)
+    return true if attachment.extension.to_s.casecmp('gif').zero?
+
+    attachment.file.attached? && attachment.file.blob&.content_type.to_s == 'image/gif'
+  end
+
+  def attachment_purged?(attachment)
+    return true if attachment.respond_to?(:file_purged?) && attachment.file_purged?
+    return true if attachment.respond_to?(:additional_attributes) && attachment.additional_attributes.to_h['file_purged'] == true
+
+    attachment.meta.to_h['file_purged'] == true
+  end
+
   def image_url_part(url)
     { type: 'image_url', image_url: { url: url } }
   end
 
   def get_attachment_url(attachment)
+    return nil if attachment_purged?(attachment)
     return attachment.download_url if attachment.download_url.present?
     return attachment.external_url if attachment.external_url.present?
 

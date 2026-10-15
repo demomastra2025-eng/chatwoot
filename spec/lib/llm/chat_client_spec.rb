@@ -473,5 +473,25 @@ RSpec.describe Llm::ChatClient do
         described_class.ask(chat, content)
       end.to raise_error(Llm::CapabilityPolicy::UnsupportedCapabilityError, /image inputs/)
     end
+
+    it 'strips missing history attachments and retries when Faraday::ResourceNotFound is raised during ask' do
+      stale_content = RubyLLM::Content.new('', ['https://example.com/expired_sticker.png'])
+      history_msg = Struct.new(:content).new(stale_content)
+      messages = [history_msg]
+      allow(chat).to receive(:messages).and_return(messages)
+      calls = 0
+      allow(chat).to receive(:ask) do |arg|
+        calls += 1
+        raise Faraday::ResourceNotFound, 'the server responded with status 404' if calls == 1
+
+        "Recovered: #{arg}"
+      end
+
+      result = described_class.ask(chat, 'Hello after sticker')
+
+      expect(result).to eq('Recovered: Hello after sticker')
+      expect(stale_content.attachments).to be_empty
+      expect(stale_content.text).to eq('Message without content')
+    end
   end
 end

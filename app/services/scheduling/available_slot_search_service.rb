@@ -115,7 +115,24 @@ class Scheduling::AvailableSlotSearchService
 
   def verify_requested_links!(resolved)
     linked_ids = active_price_links.where(resource_id: resolved.map(&:id)).distinct.pluck(:resource_id)
-    raise MissingServiceLinkError, MISSING_LINK_ERROR if (resolved.map(&:id) - linked_ids).present?
+    return if (resolved.map(&:id) - linked_ids).empty?
+    return if unlinked_service_allowed_for_resources?(resolved)
+
+    raise MissingServiceLinkError, MISSING_LINK_ERROR
+  end
+
+  def unlinked_service_allowed_for_resources?(resolved)
+    return false if service.blank? || resolved.blank?
+    return false if active_price_links.exists?
+    return false if Scheduling::ServicePrice.where(service_id: service.id, resource_id: resolved.map(&:id)).exists?
+
+    resolved.all? do |resource|
+      provider_related?(resource) || !resource.service_prices.active.where(account_id: @account.id).exists?
+    end
+  end
+
+  def unlinked_service_fallback?
+    @service_id.present? && service.present? && resources.present? && !active_price_links.exists?
   end
 
   def normalized_slots
@@ -156,7 +173,8 @@ class Scheduling::AvailableSlotSearchService
 
     unless medelement_resource?(resource)
       record_availability(resource_id: resource.id, status: 'local_only')
-      return label_service_eligibility(starting_in_window(local_slots(resource)), 'local_configured')
+      eligibility = unlinked_service_fallback? ? 'price_link_unverified' : 'local_configured'
+      return label_service_eligibility(starting_in_window(local_slots(resource)), eligibility)
     end
 
     integrated_slots(resource)
@@ -265,7 +283,7 @@ class Scheduling::AvailableSlotSearchService
   def service_link_status
     return 'not_requested' if @service_id.blank?
     return 'no_recorded_link' if resources.blank?
-    return 'price_link_unverified' if resources.any? { |resource| provider_related?(resource) }
+    return 'price_link_unverified' if resources.any? { |resource| provider_related?(resource) } || unlinked_service_fallback?
 
     'local_configured'
   end
@@ -286,7 +304,8 @@ class Scheduling::AvailableSlotSearchService
   end
 
   def service_match_confirmed?
-    @service_id.present? && service.present? && resources.present? && resources.none? { |resource| provider_related?(resource) }
+    @service_id.present? && service.present? && resources.present? &&
+      resources.none? { |resource| provider_related?(resource) } && !unlinked_service_fallback?
   end
 
   def medelement_resource?(resource)

@@ -148,6 +148,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def process_response
+    sync_resolved_status_transition_fence!
     ensure_response_fence_current!(stage: 'response_processing')
     return unless current_buffer_state_valid?
 
@@ -166,7 +167,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
       handoff_applied = process_action(handoff_action_name)
       account.increment_token_usage(@response.dig('usage', 'total_tokens')) if handoff_applied
       handoff_applied
-    elsif conversation_allows_captain_response?
+    elsif conversation_allows_captain_response? || conversation_resolved_by_tool?
       process_pending_response
     else
       false
@@ -312,6 +313,13 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     end
   end
 
+  def sync_resolved_status_transition_fence!
+    return unless v2_resolve_tool_fired?
+    return if @response['resolved_status_transition_id'].blank? || @expected_status_transition_id.blank?
+
+    @expected_status_transition_id = @response['resolved_status_transition_id']
+  end
+
   def ensure_response_fence_current!(stage:)
     ensure_response_actor_current! if @response_assistant
     Captain::Conversation::RunFenceService.new(
@@ -321,7 +329,8 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
         assistant_id: response_assistant.id,
         entry_assistant_id: @assistant.id,
         conversation: { id: @conversation.id },
-        captain_response_fence: response_fence
+        captain_response_fence: response_fence,
+        captain_resolved_by_tool: v2_resolve_tool_fired?
       },
       stage: stage
     ).ensure_current!
@@ -615,6 +624,14 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     @response&.[]('handoff_tool_called')
   end
 
+  def v2_resolve_tool_fired?
+    ActiveModel::Type::Boolean.new.cast(@response&.[]('resolve_tool_called'))
+  end
+
+  def conversation_resolved_by_tool?
+    v2_resolve_tool_fired? && @conversation.resolved?
+  end
+
   def process_action(action)
     result = bot_handoff_with_activity_reason(
       handoff_reason_for(action),
@@ -733,6 +750,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def schedule_first_follow_up(outgoing_message)
+    return if @conversation.resolved?
     return schedule_council_follow_ups(outgoing_message) if @response['council_contributors'].present?
 
     settings = response_assistant.config.to_h.deep_stringify_keys.fetch('follow_up_settings', {}).to_h
@@ -1358,14 +1376,14 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def conversation_eligible_for_response?
-    return false unless conversation_allows_captain_response? || v2_handoff_tool_fired?
+    return false unless conversation_allows_captain_response? || v2_handoff_tool_fired? || conversation_resolved_by_tool?
     return false unless @conversation.inbox.captain_active?
 
     @conversation.inbox.captain_assistant&.id == @assistant.id
   end
 
   def control_generation_current?
-    @conversation.captain_ai_control_active? &&
+    (@conversation.captain_ai_control_active? || conversation_resolved_by_tool?) &&
       !Captain::Conversation::ControlService.human_response_after?(@conversation, @expected_last_message_id) &&
       @conversation.current_captain_control_generation.to_i == @expected_control_generation.to_i
   end

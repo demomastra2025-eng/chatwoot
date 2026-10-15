@@ -922,17 +922,19 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
          as: :json
 
     expect(response).to have_http_status(:created)
-    expect(response_body.dig('payload', 'service_amount')).to eq(20_000)
-    expect(response_body.dig('payload', 'prepaid_amount')).to eq(0)
-    expect(response_body.dig('payload', 'settlement_amount')).to eq(0)
-    expect(response_body.dig('payload', 'prepaid_payment_method')).to be_nil
-    expect(response_body.dig('payload', 'settlement_payment_method')).to be_nil
-    expect(response_body.dig('payload', 'compensation_type_snapshot')).to be_nil
-    expect(response_body.dig('payload', 'compensation_value_snapshot')).to eq(0)
-    expect(response_body.dig('payload', 'compensation_percent_snapshot')).to eq(0)
-    expect(response_body.dig('payload', 'payments')).to eq([])
-    expect(response_body.dig('payload', 'expense')).to be_nil
-    expect(response_body.dig('payload')).not_to have_key('payment_status')
+    expect(response_body['payload']).to include(
+      'service_amount' => 20_000,
+      'prepaid_amount' => 0,
+      'settlement_amount' => 0,
+      'prepaid_payment_method' => nil,
+      'settlement_payment_method' => nil,
+      'compensation_type_snapshot' => nil,
+      'compensation_value_snapshot' => 0,
+      'compensation_percent_snapshot' => 0,
+      'payments' => [],
+      'expense' => nil
+    )
+    expect(response_body['payload']).not_to have_key('payment_status')
   end
 
   it 'rejects fractional money amounts when creating an appointment' do
@@ -1577,7 +1579,7 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
 
   it 'returns a stable calendar payload shape' do
     conversation = create(:conversation, account: account, contact: contact)
-    appointment = create(
+    create(
       :scheduling_appointment,
       resource: resource,
       account: account,

@@ -46,7 +46,11 @@ class Captain::Runtime::ExecutorResolver
 
     items = parts.map { |raw| raw.to_h.deep_stringify_keys }
     resolved = items.map { |item| with_executor_id(item, mode) }
-    check_council!(resolved) if mode == 'council'
+    if mode == 'council'
+      resolved = coalesce_council_parts(resolved)
+      resolved = default_multi_agent_council_link_action(resolved)
+      check_council!(resolved)
+    end
     resolved
   end
 
@@ -138,6 +142,42 @@ class Captain::Runtime::ExecutorResolver
   # A council is separate actions for at least two agents, or the continuation of open parts (one part is enough: the
   # patient answers a question of the agent that asked it). A plan that is neither tells the route that fits: the agent's own
   # tools, the link to the open part of the colleague, or the transfer tool of the one colleague.
+  def coalesce_council_parts(parts)
+    return parts if parts.size <= Captain::Runtime::PartRegistry::MAX_COUNCIL_PARTS
+
+    grouped = []
+    unlinked_by_key = {}
+    parts.each do |item|
+      if item['link_part_id'].blank?
+        key = [item['executor_agent_id'], item['patient'].to_s.strip, item['relation'].to_s.strip]
+        if (existing = unlinked_by_key[key])
+          existing_frag = existing['fragment'].to_s.strip
+          next_frag = item['fragment'].to_s.strip
+          existing['fragment'] = [existing_frag, next_frag].reject(&:blank?).join('; ')
+          next
+        end
+        copy = item.dup
+        unlinked_by_key[key] = copy
+        grouped << copy
+      else
+        grouped << item
+      end
+    end
+    grouped
+  end
+
+  def default_multi_agent_council_link_action(parts)
+    return parts unless parts.pluck('executor_agent_id').uniq.size >= 2
+
+    parts.map do |item|
+      if item['link_part_id'].blank? && item['link_action'].blank?
+        item.merge('link_action' => 'new')
+      else
+        item
+      end
+    end
+  end
+
   def check_council!(resolved)
     executors = resolved.pluck('executor_agent_id').uniq
     return if executors.size >= 2 || resolved.all? { |item| continuation?(item) }

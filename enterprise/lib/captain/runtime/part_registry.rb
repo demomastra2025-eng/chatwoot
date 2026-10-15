@@ -156,13 +156,17 @@ class Captain::Runtime::PartRegistry
     raise ArgumentError, self.class.invalid_mode_message(parts) unless MODES.include?(mode)
 
     max_parts = mode == 'council' ? MAX_COUNCIL_PARTS : MAX_PARTS_PER_MESSAGE
-    if mode == 'council' && (!parts.is_a?(Array) || !parts.size.between?(1, max_parts))
+    initial_max = block_given? ? MAX_PARTS_PER_MESSAGE : max_parts
+    if mode == 'council' && (!parts.is_a?(Array) || !parts.size.between?(1, initial_max))
       raise ArgumentError, 'A council has one to three parts: put the actions that one agent does into one part.'
     end
-    raise ArgumentError, 'parts needs one to thirty items: one item per action.' unless parts.is_a?(Array) && parts.size.between?(1, max_parts)
+    raise ArgumentError, 'parts needs one to thirty items: one item per action.' unless parts.is_a?(Array) && parts.size.between?(1, initial_max)
     raise ArgumentError, ALREADY_PLANNED if @context[:part_plan_accepted]
 
     parts = yield(parts) if block_given?
+    if mode == 'council' && (!parts.is_a?(Array) || !parts.size.between?(1, max_parts))
+      raise ArgumentError, 'A council has one to three parts: put the actions that one agent does into one part.'
+    end
     previous = Array(@context[:parts])
     linked_ids = parts.filter_map { |item| item.to_h.stringify_keys['link_part_id'].presence }
     if linked_ids.uniq.size != linked_ids.size

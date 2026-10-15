@@ -412,6 +412,34 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
       )
     end
 
+    context 'with sticker or gif image attachments' do
+      it 'replaces sticker attachment with a text note and does not pass image_url' do
+        message.update!(content_type: 'sticker')
+        message.attachments.create!(
+          account: message.account,
+          file_type: :image,
+          external_url: 'https://lookaside.fbsbx.com/ig_messaging_cdn/?asset_id=123'
+        )
+
+        result = service.send(:image_parts, message.attachments.where(file_type: :image))
+
+        expect(result).to eq([{ type: 'text', text: 'User shared a sticker' }])
+      end
+
+      it 'skips purged image attachments so expired URLs are not sent' do
+        message.attachments.create!(
+          account: message.account,
+          file_type: :image,
+          external_url: 'https://lookaside.fbsbx.com/ig_messaging_cdn/?asset_id=expired',
+          meta: { 'file_purged' => true }
+        )
+
+        result = service.send(:image_parts, message.attachments.where(file_type: :image))
+
+        expect(result).to eq([])
+      end
+    end
+
     context 'with image attachments without URLs' do
       let(:image_attachment) do
         attachment = message.attachments.build(account_id: message.account_id, file_type: :image, external_url: nil)

@@ -12,6 +12,7 @@ class Scheduling::ResourceScheduleService
     @resource_payload = resource_payload
     return unless snapshots
 
+    @snapshots = snapshots
     @holidays = snapshots.fetch(:holidays)
     @workday_overrides = snapshots.fetch(:workday_overrides)
     @time_offs = snapshots.fetch(:time_offs)
@@ -34,6 +35,8 @@ class Scheduling::ResourceScheduleService
   private
 
   def day_payload(date)
+    return provider_day_payload(date) if provider_hours?
+
     override = workday_overrides.find { |item| item.date == date }
     matching_holidays = holidays_for_date(date)
     workspace_closed = @resource.inherit_working_hours_from_account? && @account.workspace_day_off?(date)
@@ -175,6 +178,52 @@ class Scheduling::ResourceScheduleService
 
   def local_time(date, minute_of_day)
     time_zone.local(date.year, date.month, date.day, minute_of_day / 60, minute_of_day % 60, 0)
+  end
+
+  def provider_hours?
+    return @provider_hours if defined?(@provider_hours)
+
+    @provider_hours = @snapshots.nil? &&
+                      @resource.respond_to?(:custom_attributes) &&
+                      Scheduling::ResourceHoursPolicy.new(resource: @resource).provider_hours?
+  end
+
+  def provider_day_payload(date)
+    day = provider_schedule_days[date]
+    working_intervals = if day&.status == 'confirmed'
+                          Array(day.windows).filter_map do |window|
+                            attrs = window.to_h.with_indifferent_access
+                            start_min = attrs[:start_minute].to_i
+                            end_min = attrs[:end_minute].to_i
+                            next if end_min <= start_min
+
+                            interval_hash(local_time(date, start_min), local_time(date, end_min))
+                          end
+                        else
+                          []
+                        end
+    serialized_windows = serialize_intervals(working_intervals)
+    source = if day&.status.in?(%w[confirmed empty_confirmed])
+               'medelement'
+             else
+               'medelement_unconfirmed'
+             end
+
+    {
+      date: date.iso8601,
+      working: serialized_windows.any?,
+      source: source,
+      windows: serialized_windows,
+      breaks: [],
+      holidays: [],
+      time_offs: []
+    }
+  end
+
+  def provider_schedule_days
+    @provider_schedule_days ||= Integrations::Medelement::ScheduleDay
+                                .where(account_id: @account.id, resource_id: @resource.id, date: local_dates)
+                                .index_by(&:date)
   end
 
   def time_zone

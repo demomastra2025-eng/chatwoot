@@ -16,7 +16,7 @@ RSpec.describe Captain::Tools::Account::GetSchedulingResourceScheduleService do
   end
 
   describe '#execute' do
-    it 'adds a short labelled provider snapshot note without changing local working windows' do
+    it 'returns only confirmed MedElement windows for a MedElement specialist and ignores local work_rules' do
       resource.update!(custom_attributes: { 'medelement_specialist_code' => 'doctor-1' })
       hook = create(:integrations_hook, :medelement, account: account)
       Integrations::Medelement::ScheduleDay.create!(
@@ -28,7 +28,25 @@ RSpec.describe Captain::Tools::Account::GetSchedulingResourceScheduleService do
       payload = JSON.parse(service.execute(resource_id: resource.id, from: monday.iso8601, to: tuesday.iso8601))
 
       expect(payload['provider_schedule_note']).to include('10:00–12:00', 'по данным MedElement на')
-      expect(payload['days'].first['windows'].first['start_at']).to eq('2026-04-20T09:00:00+05:00')
+      expect(payload['days'].first['working']).to be(true)
+      expect(payload['days'].first['source']).to eq('medelement')
+      expect(payload['days'].first['windows']).to eq([
+                                                       {
+                                                         'start_at' => '2026-04-20T10:00:00+05:00',
+                                                         'end_at' => '2026-04-20T12:00:00+05:00'
+                                                       }
+                                                     ])
+      expect(payload['days'].first['breaks']).to eq([])
+    end
+
+    it 'returns working: false and no local template windows when MedElement schedule day is not confirmed' do
+      resource.update!(custom_attributes: { 'medelement_specialist_code' => 'doctor-1' })
+
+      payload = JSON.parse(service.execute(resource_id: resource.id, from: monday.iso8601, to: tuesday.iso8601))
+
+      expect(payload['days'].first['working']).to be(false)
+      expect(payload['days'].first['windows']).to eq([])
+      expect(payload['days'].first['breaks']).to eq([])
     end
 
     it 'labels the seeded OneLink hours as a template for a MedElement doctor' do

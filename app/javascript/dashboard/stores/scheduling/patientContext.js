@@ -255,11 +255,13 @@ export const useConversationPatientContextStore = defineStore(
               Number(patient.account_id) === Number(key.split(':')[0]) &&
               Number(patient.communication_contact_id) === Number(contactId)
           );
+          entry.loading = false;
           entry.loaded = true;
           const desired = this.selections[key] || entry.selectedId || contactId;
           if (!this.select(key, desired)) this.select(key, contactId);
         } catch (error) {
           if (!isCurrent()) return;
+          this.contexts[key].loading = false;
           this.contexts[key].error = error;
           this.contexts[key].patients = [];
           this.contexts[key].selectedId = null;

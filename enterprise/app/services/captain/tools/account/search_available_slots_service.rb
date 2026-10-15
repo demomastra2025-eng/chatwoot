@@ -141,7 +141,12 @@ class Captain::Tools::Account::SearchAvailableSlotsService < Captain::Tools::Acc
     dates = (range_from.to_date..end_date).to_a
     weekdays = dates.map(&:wday).uniq
     resources.none? do |res|
-      res.work_rules.active.exists?(weekday: weekdays) || res.workday_overrides.exists?(date: dates)
+      if Scheduling::ResourceHoursPolicy.new(resource: res).provider_hours?
+        days = Integrations::Medelement::ScheduleDay.where(account_id: account.id, resource_id: res.id, date: dates).pluck(:status)
+        days.include?('confirmed') || days.empty? || days.any? { |st| st != 'empty_confirmed' }
+      else
+        res.work_rules.active.exists?(weekday: weekdays) || res.workday_overrides.exists?(date: dates)
+      end
     end
   rescue StandardError
     false

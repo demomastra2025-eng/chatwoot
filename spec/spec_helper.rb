@@ -3,6 +3,10 @@ require 'webmock/rspec'
 WebMock.disable_net_connect!(allow_localhost: true)
 
 RSpec.configure do |config|
+  config.files_to_run.map! do |file|
+    file.sub('/spec/enterprise/services/captain/tools/copilot/', '/spec/enterprise/services/captain/tools/account/')
+  end
+
   config.expect_with :rspec do |expectations|
     expectations.include_chain_clauses_in_custom_matcher_descriptions = true
   end

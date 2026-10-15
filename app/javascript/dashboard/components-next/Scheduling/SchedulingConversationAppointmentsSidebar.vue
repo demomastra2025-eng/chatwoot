@@ -469,8 +469,12 @@ const conversationDisplayIds = computed(() => {
     ...new Set(
       ids.map(id => Number(id)).filter(id => Number.isFinite(id) && id > 0)
     ),
-  ];
+  ].sort((a, b) => a - b);
 });
+
+const sidebarLookupConversationIds = computed(() =>
+  props.patientContextEnabled ? '' : conversationDisplayIds.value.join(',')
+);
 
 const lookupParams = computed(() => {
   if (props.patientContextEnabled) {
@@ -595,7 +599,7 @@ const captureSidebarContext = () => ({
   accountId: accountId.value,
   chatId: String(props.currentChat?.id || ''),
   contactId: String(contactId.value || ''),
-  conversationIds: conversationDisplayIds.value.join(','),
+  conversationIds: sidebarLookupConversationIds.value,
   patientContextId: selectedPatientContextId.value,
   patientContextKey: props.patientContextKey,
   generation: providerReviewGeneration,
@@ -609,7 +613,7 @@ const isCurrentSidebarContext = context =>
   context.patientContextId === selectedPatientContextId.value &&
   context.patientContextKey === props.patientContextKey &&
   patientContextReady.value &&
-  context.conversationIds === conversationDisplayIds.value.join(',');
+  context.conversationIds === sidebarLookupConversationIds.value;
 const captureProviderContext = appointment => ({
   ...captureSidebarContext(),
   appointmentId: Number(appointment?.id),
@@ -2489,17 +2493,21 @@ onBeforeUnmount(() => {
   providerCommandsStore.ui.error = null;
 });
 
-watch(
-  () => [
+const sidebarContextSignature = computed(() =>
+  JSON.stringify([
     accountId.value,
-    props.currentChat?.id,
-    contactId.value,
-    conversationDisplayIds.value.join(','),
-    selectedPatientContextId.value,
-    props.patientContextKey,
-    props.patientContextLoading,
-    props.patientContextEnabled,
-  ],
+    props.currentChat?.id ?? null,
+    contactId.value ?? null,
+    sidebarLookupConversationIds.value,
+    selectedPatientContextId.value ?? null,
+    props.patientContextKey ?? null,
+    patientContextReady.value,
+    Boolean(props.patientContextEnabled),
+  ])
+);
+
+watch(
+  sidebarContextSignature,
   async () => {
     rememberPatientDraft();
     cancelAllFormWindows();

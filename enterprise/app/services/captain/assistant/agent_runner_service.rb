@@ -339,6 +339,11 @@ class Captain::Assistant::AgentRunnerService
     refs = part_refs_for(result.context)
     response['part_refs'] = refs if refs.any?
     response['handoff_tool_called'] = handoff_tool_called
+    if ActiveModel::Type::Boolean.new.cast(result.context&.dig(:captain_v2_resolve_tool_called))
+      response['resolve_tool_called'] = true
+      resolved_transition_id = result.context&.dig(:captain_v2_resolved_status_transition_id)
+      response['resolved_status_transition_id'] = resolved_transition_id if resolved_transition_id.present?
+    end
     sanitize_response_artifact_ids!(response, result.context)
     return suppressed_response(response) if provider_booking_notification_deferred?(result.context)
 

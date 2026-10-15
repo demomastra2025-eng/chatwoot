@@ -25,7 +25,14 @@ class Llm::ChatClient
 
     def complete(chat, model: nil, observability: nil)
       observe_chat_request(chat, model: model, observability: observability) do
-        Llm::StructuredOutputPolicy.execute(chat: chat) { chat.complete }
+        Llm::StructuredOutputPolicy.execute(chat: chat) do
+          chat.complete
+        rescue Faraday::ResourceNotFound
+          raise unless strip_missing_attachments_from_chat!(chat)
+
+          Rails.logger.warn('[Llm::ChatClient] Attachment URL returned 404 during complete; retrying without attachments')
+          chat.complete
+        end
       end
     end
 
@@ -88,20 +95,59 @@ class Llm::ChatClient
 
     def perform_ask(chat, content, model:, account: nil)
       Llm::StructuredOutputPolicy.execute(chat: chat) do
-        if content.is_a?(RubyLLM::Content)
-          attachments = content.attachments.filter_map { |attachment| attachment_source(attachment) }
-          if attachments.any?
-            Llm::CapabilityPolicy.ensure_input_supported!(model: resolved_model_name(chat, model), content: content, account: account)
+        messages_before = chat.respond_to?(:messages) && chat.messages.is_a?(Array) ? chat.messages.length : nil
+        begin
+          ask_with_content(chat, content, model: model, account: account)
+        rescue Faraday::ResourceNotFound
+          had_content_attachments = content.is_a?(RubyLLM::Content) && content.attachments.present?
+          if messages_before && chat.respond_to?(:messages) && chat.messages.is_a?(Array)
+            chat.messages.pop while chat.messages.length > messages_before
           end
-          if attachments.any?
-            chat.ask(content.text, with: attachments)
-          else
-            chat.ask(content.text)
-          end
-        else
-          chat.ask(content)
+          had_history_attachments = strip_missing_attachments_from_chat!(chat)
+          raise unless had_content_attachments || had_history_attachments
+
+          Rails.logger.warn('[Llm::ChatClient] Attachment URL returned 404 during ask; retrying without attachments')
+          fallback_text = content.is_a?(RubyLLM::Content) ? content.text.to_s.presence || 'Message without content' : content
+          chat.ask(fallback_text)
         end
       end
+    end
+
+    def ask_with_content(chat, content, model:, account: nil)
+      if content.is_a?(RubyLLM::Content)
+        attachments = content.attachments.filter_map { |attachment| attachment_source(attachment) }
+        if attachments.any?
+          Llm::CapabilityPolicy.ensure_input_supported!(model: resolved_model_name(chat, model), content: content, account: account)
+        end
+        if attachments.any?
+          chat.ask(content.text, with: attachments)
+        else
+          chat.ask(content.text)
+        end
+      else
+        chat.ask(content)
+      end
+    end
+
+    def strip_missing_attachments_from_chat!(chat)
+      return false unless chat.respond_to?(:messages) && chat.messages.is_a?(Array)
+
+      stripped = false
+      chat.messages.each do |msg|
+        msg_content = msg.respond_to?(:content) ? msg.content : nil
+        next unless msg_content.is_a?(RubyLLM::Content) && msg_content.attachments.present?
+
+        msg_content.attachments.clear
+        if msg_content.text.to_s.strip.blank?
+          if msg_content.respond_to?(:text=)
+            msg_content.text = 'Message without content'
+          else
+            msg_content.instance_variable_set(:@text, 'Message without content')
+          end
+        end
+        stripped = true
+      end
+      stripped
     end
 
     def build_chat(context:, model:, account: nil)

@@ -3496,4 +3496,29 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     await flushPromises();
     expect(SchedulingAppointmentsAPI.get).not.toHaveBeenCalled();
   });
+
+  it('does not reset the create form or reload appointments when conversation_ids order changes', async () => {
+    SchedulingAppointmentsAPI.get.mockResolvedValue({ data: { payload: [] } });
+    const wrapper = mountComponent({
+      ...defaultCurrentChat(),
+      conversation_ids: [200, 100],
+    });
+    await flushPromises();
+    expect(wrapper.vm.isCreating).toBe(true);
+    wrapper.vm.createForm.comment = 'Keep draft';
+    const initialCalls = SchedulingAppointmentsAPI.get.mock.calls.length;
+
+    await wrapper.setProps({
+      currentChat: {
+        ...defaultCurrentChat(),
+        conversation_ids: [100, 200],
+      },
+    });
+    await flushPromises();
+
+    expect(SchedulingAppointmentsAPI.get.mock.calls.length).toBe(initialCalls);
+    expect(wrapper.vm.isCreating).toBe(true);
+    expect(wrapper.vm.createForm.comment).toBe('Keep draft');
+    wrapper.unmount();
+  });
 });

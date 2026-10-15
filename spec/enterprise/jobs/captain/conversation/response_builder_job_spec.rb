@@ -217,6 +217,24 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       ).once
     end
 
+    it 'delivers the final public AI reply when resolve_conversation tool resolved the conversation during the run' do
+      allow(agent_runner_service).to receive(:generate_response) do
+        conversation.update!(status: :resolved)
+        transition_id = conversation.status_transitions.order(:id).last&.id
+        {
+          'response' => 'Рады были помочь! Всего доброго!',
+          'resolve_tool_called' => true,
+          'resolved_status_transition_id' => transition_id
+        }
+      end
+
+      described_class.perform_now(conversation, assistant)
+
+      expect(conversation.reload.status).to eq('resolved')
+      expect(conversation.messages.outgoing.where(sender: assistant, private: false).last&.content)
+        .to eq('Рады были помочь! Всего доброго!')
+    end
+
     it 'does not issue a standalone conversation-status query before responding' do
       queries = []
       observer = ->(_name, _start, _finish, _id, payload) { queries << payload[:sql] }

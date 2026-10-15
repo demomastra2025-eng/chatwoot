@@ -108,7 +108,11 @@ class Captain::Conversation::RunFenceService
   end
 
   def conversation_allows_captain_response?
-    conversation.pending?
+    conversation.pending? || resolved_by_captain_tool?
+  end
+
+  def resolved_by_captain_tool?
+    ActiveModel::Type::Boolean.new.cast(state[:captain_resolved_by_tool]) && conversation.resolved?
   end
 
   def last_message_current?

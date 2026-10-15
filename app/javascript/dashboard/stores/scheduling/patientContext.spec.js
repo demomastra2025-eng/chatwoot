@@ -370,4 +370,19 @@ describe('conversation patient context', () => {
     expect(patientBirthDate(dto)).toBe('');
     expect(patientBookingContact(dto).birthDate).toBe('');
   });
+
+  it('clears loading before selecting patient during load so synchronous watchers observe ready state immediately', async () => {
+    const store = useConversationPatientContextStore();
+    let loadingDuringSelect = null;
+    const origSelect = store.select.bind(store);
+    vi.spyOn(store, 'select').mockImplementation((ctxKey, id) => {
+      loadingDuringSelect = store.contexts[ctxKey]?.loading;
+      return origSelect(ctxKey, id);
+    });
+
+    await store.load(key, 42);
+
+    expect(loadingDuringSelect).toBe(false);
+    expect(store.contexts[key].loaded).toBe(true);
+  });
 });
