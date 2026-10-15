@@ -100,6 +100,19 @@ RSpec.describe 'Super Admin sidebar', type: :request do
       expect(nav.at_css('[data-testid="environment-badge"]').text.strip).to eq(Rails.env.upcase)
     end
 
+    it 'puts the environment badge under the console name so neither is cut off' do
+      badge = nav.at_css('[data-testid="environment-badge"]')
+      caption = badge.parent.css('span').find { |node| node.text.strip == 'Супер-админка' }
+
+      expect(caption).to be_present
+      expect(badge.parent.name).to eq('div')
+      expect(badge.parent['class'].split).to include('flex-col')
+      # the caption keeps the whole width of the column; the badge is its own row
+      expect(caption['class'].split).to include('max-w-full')
+      expect(badge['class'].split).not_to include('ms-auto')
+      expect(badge.parent.element_children.index(badge)).to be > badge.parent.element_children.index(caption)
+    end
+
     it 'offers the menu button for narrow screens' do
       toggle = nav.at_css('button[data-nav-toggle]')
 

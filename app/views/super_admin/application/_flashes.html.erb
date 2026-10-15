@@ -11,9 +11,9 @@ the operator app (tinted surface, matching outline, no emoji).
   where the keys are the type of flash (alert, error, notice, etc)
   and the values are the message to be displayed.
 
-Flash values are plain text and are escaped. A flash that needs markup (for
-example a link) must say so explicitly: store an `html_safe` string built with
-`link_to` / `content_tag` in the controller, never user-supplied text.
+Flash values are plain text and are always escaped; they cannot carry markup.
+Error messages built from user input are safe to put in a flash. A message that
+needs a link belongs on the page itself, not in a flash.
 %>
 <%
   flash_tones = {

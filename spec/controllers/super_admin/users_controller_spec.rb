@@ -252,6 +252,14 @@ RSpec.describe 'Super Admin Users API', type: :request do
         expect(response.body).not_to include('sso_auth_token')
       end
 
+      it 'words the sign-in block in Russian, without English leftovers or emoji' do
+        get "/super_admin/users/#{user.id}"
+
+        expect(response.body).to include('Вход в кабинет клиники', 'Войти под пользователем — First Impersonation Account')
+        expect(response.body).not_to include('Impersonate')
+        expect(response.body).not_to match(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/)
+      end
+
       it 'impersonates the opened user through the chosen account' do
         post "/super_admin/accounts/#{second_account.id}/impersonate", params: { user_id: user.id }
 

@@ -17,7 +17,7 @@
     <div class="bg-n-ruby-3 border border-n-ruby-6 text-n-ruby-11 px-4 py-3 rounded relative mb-5" role="alert">
     <strong class="font-bold">Внимание!</strong>
     <span class="block sm:inline">Обнаружены несанкционированные изменения премиум-параметров в OneLink. Для продолжения их использования обновите ваш тарифный план.
-      Контакты для связи:</span><span class="inline rounded-full bg-n-ruby-9 px-2 text-white ml-2">sales@one-link.kz</span>
+      Контакты для связи:</span><span class="inline rounded-full bg-n-ruby-9 px-2 text-n-brand-contrast ml-2">sales@one-link.kz</span>
     </div>
   <% end %>
 
@@ -45,7 +45,7 @@
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-2 gap-y-3">
       <% SuperAdmin::FeaturesHelper.available_features.each do |feature, attrs| %>
         <div class="group outline outline-1 outline-n-container p-4 rounded-lg relative shadow-sm">
-          <span class="<%= attrs[:enabled] ? 'bg-n-teal-9 text-white': 'bg-n-slate-8 text-n-slate-12' %> absolute rounded-full p-1 inline-flex right-4 top-5">
+          <span class="<%= attrs[:enabled] ? 'bg-n-teal-9 text-n-brand-contrast': 'bg-n-slate-8 text-n-slate-12' %> absolute rounded-full p-1 inline-flex right-4 top-5">
             <svg width="14" height="14"><use xlink:href="<%= attrs[:enabled] ? '#icon-tick-line': '#icon-lock-line' %>" /></svg>
           </span>
           <div class="visible <% if !attrs[:enabled] %> group-hover:invisible <% end %> flex items-center justify-center w-10 h-10 mb-2 border border-n-weak border-solid text-n-slate-12 rounded-full">

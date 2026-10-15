@@ -103,6 +103,43 @@ RSpec.describe 'Super Admin layout and login page', type: :request do
     it 'uses design tokens instead of fixed colours' do
       expect(admin_scss).not_to match(/#[0-9a-fA-F]{3,8}\b|rgba?\(\s*\d/)
     end
+
+    it 'has no literal white: the danger label and the checkbox tick use the brand contrast token' do
+      expect(admin_scss).not_to match(/(?:text|bg|border|outline)-white|stroke=['"]white['"]|:\s*white\b/)
+      expect(admin_scss).to include('.button.button--danger:not(.reset-base)', 'rgb(var(--brand-contrast))')
+      expect(admin_scss).to match(/\.button--danger:not\(\.reset-base\) \{\s*@apply bg-n-ruby-9 text-n-brand-contrast;/)
+    end
+
+    it 'draws the secret field buttons as quiet icon buttons, without a brand fill on hover' do
+      block = admin_scss[/\.cell-data__secret-field \{.*?\n  \}\n/m]
+
+      expect(block).to include('[data-secret-toggler]', '[data-secret-copier]', 'bg-transparent', 'hover')
+      expect(block).not_to include('brand-solid')
+    end
+
+    it 'defines the blocks of the clinic card on tokens only' do
+      clinic_scss = File.read(scss_dir.join('_clinic.scss'))
+
+      expect(index_scss).to include("@import './clinic';")
+      expect(clinic_scss).to include(
+        '.admin-block', '.admin-badge', '.admin-meter', '.admin-switch', '.admin-collapse', '.admin-plan-card', '.admin-kv'
+      )
+      expect(clinic_scss).not_to match(/#[0-9a-fA-F]{3,8}\b|rgba?\(\s*\d|\bwhite\b/)
+    end
+
+    it 'leaves no hard-coded select chevron colour behind' do
+      stylesheets = Dir[Rails.root.join('app/javascript/dashboard/assets/scss/super_admin/*.scss'), Rails.root.join('app/views/super_admin/**/*.erb')]
+
+      expect(stylesheets.map { |path| File.read(path) }.join).not_to include('23293f54')
+    end
+  end
+
+  describe 'flash messages markup' do
+    it 'tells nobody to mark flash text as html_safe' do
+      partial = File.read(Rails.root.join('app/views/super_admin/application/_flashes.html.erb'))
+
+      expect(partial).not_to include('html_safe')
+    end
   end
 
   describe 'GET /super_admin/sign_in' do

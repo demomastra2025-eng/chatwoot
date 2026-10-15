@@ -1,0 +1,32 @@
+<%#
+# Sign in as a user
+
+One button per clinic the user belongs to. The sign-in is a POST on purpose: the
+one-time login grant is only created (and audited) when a button is pressed,
+not on every page view. Every grant is scoped to one clinic membership, so the
+user is entered through each of their clinics separately.
+
+## Local variables:
+
+- `page`: the `Administrate::Page::Show` of the user.
+%>
+<% accounts = page.resource.accounts.order(:name) %>
+
+<section class="main-content__body">
+  <section class="admin-block" aria-labelledby="impersonate-title">
+    <div class="admin-block__head">
+      <h2 class="admin-block__title" id="impersonate-title"><%= t('super_admin.users.impersonate.title') %></h2>
+      <p class="admin-block__hint text-n-ruby-11"><%= t('super_admin.users.impersonate.warning', name: page.resource.name) %></p>
+    </div>
+
+    <% if accounts.any? %>
+      <div class="flex flex-wrap gap-2">
+        <% accounts.each do |account| %>
+          <%= button_to(t('super_admin.users.impersonate.enter', clinic: account.name), [:impersonate, :super_admin, account], params: { user_id: page.resource.id }, method: :post, form: { target: "_blank" }, class: "button button--secondary") %>
+        <% end %>
+      </div>
+    <% else %>
+      <p class="admin-block__hint"><%= t('super_admin.users.impersonate.no_clinics') %></p>
+    <% end %>
+  </section>
+</section>

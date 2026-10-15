@@ -216,14 +216,21 @@ $administrate-buttons: 'button:not(.reset-base)',
     }
   }
 
-  // Danger: destructive action.
+  // Danger: destructive action. The label colour is the brand contrast token
+  // (light in both themes), not a fixed colour.
   .button.button--danger:not(.reset-base) {
-    @apply bg-n-ruby-9 text-white;
+    @apply bg-n-ruby-9 text-n-brand-contrast;
 
     &:hover {
-      @apply bg-n-ruby-10 text-white;
+      @apply bg-n-ruby-10 text-n-brand-contrast;
       filter: none;
     }
+  }
+
+  // Small button for actions inside a block (h-8, like the compact buttons of
+  // the operator app).
+  .button.button--small:not(.reset-base) {
+    @apply h-8 px-3 text-[13px];
   }
 
   // ---------------------------------------------------------------- tables
@@ -313,15 +320,27 @@ $administrate-buttons: 'button:not(.reset-base)',
     }
   }
 
+  // The reveal and copy buttons of a secret are quiet icon buttons: no brand
+  // fill, a soft hover. The selectors outrank the gem's `button:not(.reset-base)`
+  // (and its :hover) on purpose.
   .cell-data__secret-field {
     @apply text-n-slate-11;
 
     [data-secret-toggler],
     [data-secret-copier] {
-      @apply h-auto;
+      @apply inline-flex size-7 items-center justify-center rounded-md bg-transparent p-0 text-n-slate-11;
       min-width: 0;
       filter: none;
       transform: none;
+
+      &:hover {
+        @apply bg-n-alpha-2 text-n-slate-12;
+        filter: none;
+      }
+
+      &:active {
+        transform: none;
+      }
     }
   }
 
@@ -503,11 +522,19 @@ $administrate-buttons: 'button:not(.reset-base)',
     }
   }
 
-  [type="checkbox"]:checked {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E");
-    background-position: center;
-    background-repeat: no-repeat;
-    background-size: 100% 100%;
+  // The tick is a mask painted with the brand contrast token, so it follows the
+  // theme (an SVG data URI cannot read a CSS variable).
+  [type="checkbox"] {
+    position: relative;
+  }
+
+  [type="checkbox"]:checked::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-color: rgb(var(--brand-contrast));
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
   }
 
   [type="radio"] {
