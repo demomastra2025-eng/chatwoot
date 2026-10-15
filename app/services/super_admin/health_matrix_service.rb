@@ -172,7 +172,8 @@ class SuperAdmin::HealthMatrixService
       telephony_healthy: accounts.count { |a| a[:telephony][:state] == 'healthy' },
       git_sha: GIT_HASH.presence || 'unknown',
       incomplete_sources: Array(@failed_sources).uniq,
-      updated_at: Time.current.strftime('%H:%M:%S')
+      # shown on the dashboard as «Обновлено: …», in Astana time (UTC+5)
+      updated_at: SuperAdmin::DisplayHelper.format_time(Time.current, '%H:%M:%S')
     }
   end
 end

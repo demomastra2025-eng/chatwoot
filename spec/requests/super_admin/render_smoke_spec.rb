@@ -90,6 +90,10 @@ RSpec.describe 'Super Admin render smoke', type: :request do
           if resource == :account_users
             # An account user has no page of its own; it sends you to its user.
             expect(response).to redirect_to(super_admin_user_path(record.user))
+          elsif resource == :accounts
+            # The clinic card is made of blocks, not of one list of attributes.
+            expect_shell("/super_admin/#{resource}/#{record.id}")
+            expect(page.at_css('main [data-testid="plan-block"]')).to be_present
           else
             expect_shell("/super_admin/#{resource}/#{record.id}")
             expect(page.at_css('main dl.attribute-list')).to be_present
@@ -162,6 +166,63 @@ RSpec.describe 'Super Admin render smoke', type: :request do
 
       expect(response).to have_http_status(:ok)
       expect(response.body).to include(I18n.t('super_admin.shell.empty'))
+    end
+
+    it 'opens the clinic list with every filter' do
+      create(:account)
+
+      AccountDashboard::COLLECTION_FILTERS.each_key do |filter|
+        get '/super_admin/accounts', params: { search: "#{filter}:" }
+
+        expect_shell("/super_admin/accounts?search=#{filter}:")
+        expect(page.at_css('[data-testid="clinics-table"]')).to be_present
+      end
+    end
+  end
+
+  # The clinic list, card and forms are made of blocks that depend on the state of the clinic (plan, trial, drift,
+  # status); every state has to render all of them.
+  describe 'the clinic pages for a clinic in every state' do
+    states = {
+      'without a plan' => ->(_account) {},
+      'with the base' => ->(account) { Accounts::ApplyPlan.new(account: account, modules: []).call },
+      'with every module' => ->(account) { Accounts::ApplyPlan.new(account: account, modules: Accounts::Plans.module_keys).call },
+      'on a trial' => ->(account) { account.activate_trial!(3) },
+      'after a trial' => lambda { |account|
+        account.activate_trial!(3)
+        account.expire_trial!
+      },
+      'with the base and a trial' => lambda { |account|
+        Accounts::ApplyPlan.new(account: account, modules: []).call
+        account.activate_trial!(3)
+      },
+      'changed by hand' => lambda { |account|
+        Accounts::ApplyPlan.new(account: account, modules: %w[ai_agents]).call
+        account.enable_features!('sla')
+        account.disable_features!('crm')
+      },
+      'with limits' => ->(account) { account.update!(limits: { 'agents' => 3, 'storage_bytes' => 1.gigabyte, 'conversations' => 0 }) },
+      'suspended' => ->(account) { account.update!(status: :suspended) },
+      'being deleted' => ->(account) { account.update!(custom_attributes: { 'marked_for_deletion_at' => 3.days.from_now.iso8601 }) }
+    }
+
+    states.each do |name, prepare|
+      it "opens the list, the card, the edit form and the plan preview for a clinic #{name}" do
+        account = create(:account, name: "Clinic #{name}")
+        create(:user, account: account, role: :administrator)
+        create(:inbox, account: account)
+        prepare.call(account)
+
+        card = "/super_admin/accounts/#{account.id}"
+        ['/super_admin/accounts', card, "#{card}/edit", '/super_admin/accounts/new'].each do |path|
+          get path
+          expect_shell(path)
+        end
+
+        get "/super_admin/accounts/#{account.id}/plan_preview", params: { fragment: 1, modules: %w[broadcasts] }
+        expect(response).to have_http_status(:ok)
+        expect(response.body).not_to include('translation missing')
+      end
     end
   end
 end

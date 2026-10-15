@@ -190,6 +190,14 @@ RSpec.describe SuperAdmin::HealthMatrixService, type: :service do
 
         expect(summary[:incomplete_sources]).to eq([])
       end
+
+      it 'stamps the summary with the time of day in Astana time (UTC+5)' do
+        travel_to(Time.utc(2026, 10, 15, 12, 0, 7)) do
+          _matrix, summary = described_class.new.build(force_refresh: true)
+
+          expect(summary[:updated_at]).to eq('17:00:07')
+        end
+      end
     end
 
     context 'when caching and calculating summary' do
