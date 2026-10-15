@@ -7,6 +7,7 @@
 // read the same CSS variables (light + .dark). Never copy token values here.
 @import '../next-colors';
 @import './typography';
+@import './administrate_shim';
 
 body {
   font-family: Geist, -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;

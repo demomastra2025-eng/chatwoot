@@ -1,0 +1,78 @@
+// Temporary dark-safe shim for the Administrate sprockets stylesheet
+// (app/assets/stylesheets/administrate/**).
+//
+// The super admin now follows the operator theme (`.dark` on <html>), but the
+// Administrate stylesheet still hardcodes light surfaces (white header, white
+// inputs, light row hover, light search box) and dark link colours. Without
+// this shim a dark theme gives light text on those light surfaces, or dark
+// text on a dark page.
+//
+// How it works: the Vite CSS is loaded after the sprockets CSS, so rules with
+// the same specificity win here. Everything uses design tokens, so one rule
+// serves light and dark. Rules live in `@layer base` so Tailwind always emits
+// them (component rules without a matching class in the sources are dropped)
+// and so utility classes in the views still win over them.
+//
+// Remove this file when the Administrate pages are restyled and the sprockets
+// stylesheet is gone.
+
+$administrate-fields: '[type="color"]', '[type="date"]',
+  '[type="datetime-local"]', '[type="email"]', '[type="month"]',
+  '[type="number"]', '[type="password"]', '[type="search"]', '[type="tel"]',
+  '[type="text"]', '[type="time"]', '[type="url"]', '[type="week"]',
+  'input:not([type])', 'textarea';
+
+@layer base {
+  // components/_main-content.scss: header was white.
+  .main-content__header {
+    @apply bg-n-background border-n-weak;
+  }
+
+  // base/_forms.scss: fields were white with a light grey border.
+  @each $field in $administrate-fields {
+    #{$field} {
+      @apply bg-n-alpha-black2 text-n-slate-12 border-n-weak;
+    }
+
+    #{$field}:hover {
+      @apply border-n-strong;
+    }
+
+    #{$field}:focus {
+      @apply border-n-brand;
+    }
+
+    #{$field}:disabled {
+      @apply bg-n-alpha-2 text-n-slate-11;
+    }
+  }
+
+  select {
+    @apply bg-n-alpha-black2 text-n-slate-12;
+  }
+
+  // base/_tables.scss: hovered rows were light grey.
+  tbody tr:hover {
+    @apply bg-n-alpha-1;
+  }
+
+  // base/_typography.scss and components/_cells.scss: hovered links turned
+  // near-black, which is invisible on a dark page.
+  a:hover,
+  .cell-label:hover a {
+    color: inherit;
+  }
+
+  .cell-label:hover svg {
+    @apply fill-n-slate-12;
+  }
+
+  // components/_search.scss: icon colours were fixed dark greys.
+  .search__eyeglass-icon {
+    @apply fill-n-slate-11;
+  }
+
+  .search__clear-icon:hover {
+    @apply fill-n-slate-12;
+  }
+}

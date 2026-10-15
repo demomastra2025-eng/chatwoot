@@ -61,6 +61,37 @@ RSpec.describe 'Super Admin layout and login page', type: :request do
     end
   end
 
+  # The theme script turns on `.dark` for every super admin page, while the
+  # sprockets Administrate stylesheet still hardcodes light surfaces. The shim
+  # keeps those pages readable until they are restyled.
+  describe 'dark-safe shim for the Administrate stylesheet' do
+    let(:scss_dir) { Rails.root.join('app/javascript/dashboard/assets/scss/super_admin') }
+    let(:index_scss) { File.read(scss_dir.join('index.scss')) }
+    let(:shim) { File.read(scss_dir.join('_administrate_shim.scss')) }
+
+    it 'is imported after the Tailwind layers by the super admin stylesheet' do
+      expect(index_scss).to include("@import './administrate_shim';")
+      expect(index_scss.index('tailwindcss/utilities')).to be < index_scss.index('administrate_shim')
+    end
+
+    it 'overrides the light header, fields, row hover and search of Administrate' do
+      expect(shim).to include('.main-content__header', 'tbody tr:hover', '.search__eyeglass-icon', 'a:hover')
+      expect(shim).to include("'input:not([type])'", "'textarea'", "'[type=\"text\"]'", "'[type=\"password\"]'", "'[type=\"email\"]'")
+    end
+
+    it 'covers every field selector that Administrate paints white' do
+      forms = File.read(Rails.root.join('app/assets/stylesheets/administrate/base/_forms.scss'))
+      painted = forms[/\[type="color"\].*?textarea \{/m].scan(/\[type="[a-z-]+"\]|input:not\(\[type\]\)|textarea/).uniq
+
+      expect(painted).not_to be_empty
+      painted.each { |selector| expect(shim).to include(selector) }
+    end
+
+    it 'uses design tokens instead of fixed colours' do
+      expect(shim).not_to match(/#[0-9a-fA-F]{3,8}\b|rgba?\(/)
+    end
+  end
+
   describe 'GET /super_admin/sign_in' do
     before { get '/super_admin/sign_in' }
 
