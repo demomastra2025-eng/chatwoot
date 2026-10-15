@@ -1,7 +1,18 @@
 module SuperAdmin::NavigationHelper
+  # The settings group is open on the instance settings page and on every
+  # config page except the AI models one, which has its own sidebar entry.
   def settings_open?
-    params[:controller].in? %w[super_admin/settings super_admin/app_configs]
+    super_admin_nav_active?(:settings) || (super_admin_nav_active?(:app_configs) && !super_admin_ai_models_page?)
   end
+
+  # The "Модели ИИ" page is the `captain` config page of the app config.
+  def super_admin_ai_models_page? = super_admin_nav_active?(:app_configs) && params[:config].to_s == 'captain'
+
+  # True when the current request is served by one of the given controllers
+  # (names relative to the namespace, e.g. `:accounts` for super_admin/accounts).
+  # Used to mark the current sidebar entry, so nested pages (show, edit, new)
+  # keep their section highlighted.
+  def super_admin_nav_active?(*controllers) = controllers.map { |name| "super_admin/#{name}" }.include?(params[:controller])
 
   # Label of the environment badge in the sidebar. Production shows nothing.
   def super_admin_environment_label

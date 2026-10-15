@@ -1,100 +1,126 @@
 <%#
 # Navigation
-This partial is used to display the navigation in Administrate.
+
+The grouped sidebar of the super admin (240px, same recipe as the operator app
+sidebar): brand header with the environment badge, four captioned groups and a
+footer with the way back to the operator cabinet and "Выйти".
+
+On narrow screens the sidebar is a top bar and the groups open with the menu
+button.
+
+Entries that map to an Administrate resource only appear when the resource has
+an index route, so hidden resources stay hidden. Banners exist only on cloud.
+Resources that nobody placed in a group land in "Дополнительно".
 %>
 
 <%
-  sidebar_icons = {
-    accounts: 'icon-building-4-line',
-    users: 'icon-user-follow-line',
-    platform_apps: 'icon-apps-2-line',
-    platform_banners: 'icon-megaphone-line',
-    agent_bots: 'icon-robot-line',
-  }
+  hidden_primary_nav_resources = %w[
+    account_users
+    access_tokens
+    installation_configs
+    dashboard
+    devise/sessions
+    app_configs
+    instance_statuses
+    monitorings
+    settings
+    audits
+  ]
+
+  primary_nav_items = Administrate::Namespace.new(namespace).resources.filter_map do |resource|
+    next if hidden_primary_nav_resources.include?(resource.resource)
+    next if resource.resource == 'platform_banners' && !ChatwootApp.chatwoot_cloud?
+
+    begin
+      {
+        resource: resource,
+        url: resource_index_route(resource)
+      }
+    rescue ActionController::UrlGenerationError
+      nil
+    end
+  end
+
+  resource_urls = primary_nav_items.to_h { |item| [item[:resource].resource, item[:url]] }
+  placed_resources = %w[accounts users platform_apps agent_bots platform_banners]
+  extra_items = primary_nav_items.reject { |item| placed_resources.include?(item[:resource].resource) }
+  environment_label = super_admin_environment_label
 %>
 
-<div class="border-n-weak border-r w-60 flex-shrink-0 justify-between h-full flex flex-col bg-n-background" role="navigation">
-  <%
-    hidden_primary_nav_resources = %w[
-      account_users
-      access_tokens
-      installation_configs
-      dashboard
-      devise/sessions
-      app_configs
-      instance_statuses
-      monitorings
-      settings
-      audits
-    ]
-
-    primary_nav_items = Administrate::Namespace.new(namespace).resources.filter_map do |resource|
-      next if hidden_primary_nav_resources.include?(resource.resource)
-      next if resource.resource == 'platform_banners' && !ChatwootApp.chatwoot_cloud?
-
-      begin
-        {
-          resource: resource,
-          url: resource_index_route(resource)
-        }
-      rescue ActionController::UrlGenerationError
-        nil
-      end
-    end
-  %>
-  <div>
-    <!-- Logo & Brand Header with Environment Badge -->
-    <div class="flex flex-col mx-4 mb-3 border-n-weak border-b py-4">
-      <div class="flex items-center">
-        <%# width/height keep the SVG (3315x2707 intrinsic) at 39x32 before any CSS has loaded. %>
-        <%= link_to image_tag('/brand-assets/logo_thumbnail.svg', alt: 'OneLink', width: 39, height: 32, class: 'h-8 w-auto shrink-0'), super_admin_root_url %>
-        <div class="flex flex-col ml-2.5">
-          <div class="text-sm font-bold text-n-slate-12 leading-tight">OneLink Admin</div>
-          <div class="text-[11px] text-n-slate-11" title="Super Admin Console">Панель супер-админа</div>
-        </div>
-      </div>
-
-      <!-- Environment badge: only outside production -->
-      <% environment_label = super_admin_environment_label %>
-      <% if environment_label.present? %>
-        <div class="mt-3 flex items-center gap-1.5 bg-n-amber-2 px-2.5 py-1.5 rounded-md border border-n-amber-4 text-[11px]" data-testid="environment-badge">
-          <span class="inline-block w-2 h-2 rounded-full bg-n-amber-9"></span>
-          <span class="font-semibold text-n-amber-11"><%= environment_label %></span>
-        </div>
-      <% end %>
+<nav role="navigation" aria-label="<%= t('super_admin.navigation.aria_label') %>" class="flex shrink-0 flex-col border-b border-n-weak bg-n-background md:h-full md:w-60 md:border-b-0 md:border-r">
+  <%# Brand header. The logo carries width/height so it is never drawn at its natural size before the CSS arrives. %>
+  <div class="flex items-center gap-2.5 px-4 py-3 md:px-4 md:pb-3.5 md:pt-4">
+    <%= link_to image_tag('/brand-assets/logo_thumbnail.svg', alt: t('super_admin.navigation.brand'), width: 39, height: 32, class: 'h-7 w-auto shrink-0'), super_admin_root_path, class: 'flex shrink-0' %>
+    <div class="flex min-w-0 flex-col">
+      <span class="truncate text-sm font-semibold leading-[18px] text-n-slate-12"><%= t('super_admin.navigation.brand') %></span>
+      <span class="truncate text-xs leading-4 text-n-slate-11" title="Super Admin Console"><%= t('super_admin.navigation.console') %></span>
     </div>
+    <% if environment_label.present? %>
+      <span class="ms-auto rounded-md bg-n-amber-2 px-1.5 text-[11px] font-medium leading-[18px] text-n-amber-11 outline outline-1 -outline-offset-1 outline-n-amber-4" data-testid="environment-badge"><%= environment_label %></span>
+    <% end %>
+    <button type="button" class="reset-base <%= environment_label.present? ? 'ms-2' : 'ms-auto' %> inline-flex size-8 shrink-0 items-center justify-center rounded-lg border-0 bg-transparent text-n-slate-11 outline outline-1 -outline-offset-1 outline-n-container hover:bg-n-alpha-2 md:hidden" aria-controls="super-admin-menu" aria-expanded="false" aria-label="<%= t('super_admin.navigation.menu') %>" data-nav-toggle>
+      <span class="i-lucide-menu size-4" aria-hidden="true"></span>
+    </button>
+  </div>
 
-    <!-- Navigation List -->
-    <ul class="my-2">
-      <%= render partial: "nav_item", locals: { icon: 'icon-grid-line', url: super_admin_root_url, label: 'Сводка здоровья' } %>
-
-      <% primary_nav_items.each do |item| %>
-        <%= render partial: "nav_item", locals: {
-            icon: sidebar_icons[item[:resource].resource.to_sym] || 'icon-apps-2-line',
-            url: item[:url],
-            label: super_admin_resource_label(item[:resource]),
-          }
-        %>
+  <div id="super-admin-menu" class="hidden max-h-[70vh] min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2.5 pb-3 md:flex md:max-h-none">
+    <%= render layout: 'nav_group', locals: { id: 'nav-group-clinics', title: t('super_admin.navigation.groups.clinics') } do %>
+      <%= render 'nav_item', icon: 'i-lucide-layout-dashboard', url: super_admin_root_path, label: t('super_admin.navigation.items.dashboard'), active: super_admin_nav_active?(:dashboard) %>
+      <% if resource_urls['accounts'] %>
+        <%= render 'nav_item', icon: 'i-lucide-building-2', url: resource_urls['accounts'], label: t('super_admin.navigation.items.accounts'), active: super_admin_nav_active?(:accounts, :account_users) %>
       <% end %>
+      <% if resource_urls['users'] %>
+        <%= render 'nav_item', icon: 'i-lucide-users', url: resource_urls['users'], label: t('super_admin.navigation.items.users'), active: super_admin_nav_active?(:users) %>
+      <% end %>
+    <% end %>
 
-      <!-- Custom Audits Log link -->
-      <%= render partial: "nav_item", locals: { icon: 'icon-file-list-3-line', url: super_admin_audits_path, label: 'Журнал аудита' } %>
+    <%= render layout: 'nav_group', locals: { id: 'nav-group-ai', title: t('super_admin.navigation.groups.ai') } do %>
+      <%= render 'nav_item', icon: 'i-lucide-cpu', url: super_admin_app_config_path(config: 'captain'), label: t('super_admin.navigation.items.ai_models'), active: super_admin_ai_models_page? %>
+      <%= render 'nav_item', icon: 'i-lucide-chart-column', url: super_admin_captain_observability_path, label: t('super_admin.navigation.items.ai_analytics'), active: super_admin_nav_active?(:captain_observability) %>
+    <% end %>
 
+    <%= render layout: 'nav_group', locals: { id: 'nav-group-system', title: t('super_admin.navigation.groups.system') } do %>
+      <%= render 'nav_item', icon: 'i-lucide-activity', url: super_admin_monitoring_path, label: t('super_admin.navigation.items.monitoring'), active: super_admin_nav_active?(:monitorings) %>
+      <%= render 'nav_item', icon: 'i-lucide-file-text', url: super_admin_logs_path, label: t('super_admin.navigation.items.logs'), active: super_admin_nav_active?(:logs) %>
+      <%= render 'nav_item', icon: 'i-lucide-layers', url: sidekiq_web_url, label: t('super_admin.navigation.items.queues') %>
+      <%= render 'nav_item', icon: 'i-lucide-server', url: super_admin_instance_status_path, label: t('super_admin.navigation.items.instance_status'), active: super_admin_nav_active?(:instance_statuses) %>
+      <%= render 'nav_item', icon: 'i-lucide-shield-check', url: super_admin_audits_path, label: t('super_admin.navigation.items.audits'), active: super_admin_nav_active?(:audits) %>
+      <%= render 'nav_item', icon: 'i-lucide-bell', url: super_admin_push_diagnostics_path, label: t('super_admin.navigation.items.push_diagnostics'), active: super_admin_nav_active?(:push_diagnostics) %>
       <%= render 'settings_menu', open: settings_open? %>
-    </ul>
-  </div>
+    <% end %>
 
-  <!-- Bottom Navigation -->
-  <div class="border-t border-n-weak pt-2">
-    <ul class="my-2">
-      <%= render partial: "nav_item", locals: { icon: 'icon-line-chart-line', url: super_admin_monitoring_url, label: 'Мониторинг (Grafana)' } %>
-      <%= render partial: "nav_item", locals: { icon: 'icon-mail-send-fill', url: super_admin_push_diagnostics_url, label: 'Диагностика Push' } %>
-      <%= render partial: "nav_item", locals: { icon: 'icon-robot-line', url: super_admin_captain_observability_url, label: 'AI-аналитика' } %>
-      <%= render partial: "nav_item", locals: { icon: 'icon-file-list-3-line', url: super_admin_logs_url, label: 'Системные логи' } %>
-      <%= render partial: "nav_item", locals: { icon: 'icon-mist-fill', url: sidekiq_web_url, label: 'Очереди Sidekiq' } %>
-      <%= render partial: "nav_item", locals: { icon: 'icon-health-book-line', url: super_admin_instance_status_url, label: 'Статус инстанса' } %>
-      <%= render partial: "nav_item", locals: { icon: 'icon-dashboard-line', url: app_path, label: 'Кабинет оператора', title: 'Agent Dashboard' } %>
-      <%= render partial: "nav_item", locals: { icon: 'icon-logout-circle-r-line', url: super_admin_logout_url, label: 'Выйти' } %>
-    </ul>
+    <%= render layout: 'nav_group', locals: { id: 'nav-group-extra', title: t('super_admin.navigation.groups.extra') } do %>
+      <% if resource_urls['platform_apps'] %>
+        <%= render 'nav_item', icon: 'i-lucide-box', url: resource_urls['platform_apps'], label: t('super_admin.navigation.items.platform_apps'), active: super_admin_nav_active?(:platform_apps) %>
+      <% end %>
+      <% if resource_urls['agent_bots'] %>
+        <%= render 'nav_item', icon: 'i-lucide-bot', url: resource_urls['agent_bots'], label: t('super_admin.navigation.items.agent_bots'), active: super_admin_nav_active?(:agent_bots) %>
+      <% end %>
+      <% if resource_urls['platform_banners'] %>
+        <%= render 'nav_item', icon: 'i-lucide-megaphone', url: resource_urls['platform_banners'], label: t('super_admin.navigation.items.platform_banners'), active: super_admin_nav_active?(:platform_banners) %>
+      <% end %>
+      <% extra_items.each do |item| %>
+        <%= render 'nav_item', icon: 'i-lucide-circle-dot', url: item[:url], label: super_admin_resource_label(item[:resource]), active: super_admin_nav_active?(item[:resource].resource.to_sym) %>
+      <% end %>
+    <% end %>
+
+    <div class="mt-auto flex flex-col gap-0.5 border-t border-n-weak pt-2.5">
+      <%= render 'nav_item', icon: 'i-lucide-external-link', url: app_path, label: t('super_admin.navigation.agent_app'), title: 'Agent Dashboard' %>
+      <%= render 'nav_item', icon: 'i-lucide-log-out', url: super_admin_logout_path, label: t('super_admin.navigation.logout') %>
+    </div>
   </div>
-</div>
+</nav>
+
+<script>
+  (function () {
+    var toggle = document.querySelector('[data-nav-toggle]');
+    var menu = document.getElementById('super-admin-menu');
+    if (!toggle || !menu) return;
+    toggle.addEventListener('click', function () {
+      var opened = menu.classList.contains('hidden');
+      menu.classList.toggle('hidden', !opened);
+      menu.classList.toggle('flex', opened);
+      toggle.setAttribute('aria-expanded', opened ? 'true' : 'false');
+    });
+  })();
+</script>

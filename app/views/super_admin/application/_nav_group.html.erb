@@ -1,0 +1,16 @@
+<%#
+# Sidebar group
+
+A captioned block of sidebar entries.
+
+## Local variables:
+
+- `id`: DOM id of the caption (labels the group).
+- `title`: caption text, rendered uppercase by CSS.
+
+Render with a block: `render layout: 'nav_group', locals: { id:, title: } do ... end`.
+%>
+<div role="group" aria-labelledby="<%= id %>" class="flex flex-col gap-0.5 pb-1 pt-2">
+  <span id="<%= id %>" class="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-n-slate-10"><%= title %></span>
+  <%= yield %>
+</div>

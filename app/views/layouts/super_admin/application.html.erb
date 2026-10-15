@@ -38,11 +38,14 @@ Pages that need the Vue bundle (`superadmin_pages`) add it with
 </head>
 <body class="w-full h-full bg-n-background text-n-slate-12 antialiased">
   <%= render "icons" %>
-  <div class="flex w-full h-full">
+  <%# Column on phones (top bar, then page), row from md up (sidebar, then page). %>
+  <div class="flex h-full w-full flex-col md:flex-row">
     <%= render "navigation" -%>
-    <main class="w-full overflow-auto" role="main">
+    <main class="min-h-0 min-w-0 flex-1 overflow-auto bg-n-surface-1" role="main">
       <%= render "flashes" -%>
-      <%= yield %>
+      <div class="pb-10">
+        <%= yield %>
+      </div>
     </main>
   </div>
   <%= render "javascript" %>

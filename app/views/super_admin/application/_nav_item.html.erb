@@ -1,7 +1,32 @@
-<li class="px-4 mb-1">
-  <% text_class_name = current_page?(url) ? 'text-n-slate-12 bg-n-alpha-2 font-medium' : 'text-n-slate-11' %>
-  <%= link_to(url, class: text_class_name + " -ml-1 focus:outline-none cursor-pointer flex items-center px-2 py-1.5 hover:text-n-slate-12 hover:bg-n-alpha-2 rounded-lg", title: local_assigns[:title]) do %>
-    <svg width="16" height="16"><use xlink:href="#<%= icon %>" /></svg>
-    <span class="ml-2 text-sm"><%= label %></span>
-  <% end %>
-</li>
+<%#
+# Sidebar entry
+
+One row of the grouped sidebar (see `_navigation`). The rows follow the
+operator app sidebar: h-8, rounded-lg, secondary text when idle, solid brand
+pill when current.
+
+The `hover:text-*` classes are deliberate: the Administrate stylesheet colours
+every `a:hover`, and a variant class is the only thing that outranks it.
+
+## Local variables:
+
+- `icon`: Tailwind icon class, e.g. `i-lucide-users`. Spelled out in the
+  caller so Tailwind sees the class.
+- `url`: link target.
+- `label`: link text.
+- `active`: true for the current section (optional).
+- `title`: native tooltip (optional).
+%>
+<%
+  active = local_assigns.fetch(:active, false)
+  row_classes = 'flex h-8 items-center gap-2 rounded-lg px-2 text-sm'
+  state_classes = if active
+                    'bg-n-brand-solid font-medium text-n-brand-contrast hover:text-n-brand-contrast'
+                  else
+                    'text-n-slate-11 hover:bg-n-alpha-2 hover:text-n-slate-11'
+                  end
+%>
+<%= link_to url, class: "#{row_classes} #{state_classes}", title: local_assigns[:title], aria: { current: (active ? 'page' : nil) } do %>
+  <span class="<%= icon %> size-4 shrink-0" aria-hidden="true"></span>
+  <span class="min-w-0 truncate"><%= label %></span>
+<% end %>

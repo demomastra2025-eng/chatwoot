@@ -1,24 +1,40 @@
-<li class="px-4 mb-1">
-  <details class="group" <%= 'open' if open %>>
-    <summary class="-ml-1 flex items-center px-2 py-1.5 cursor-pointer rounded-lg <%= open ? 'text-n-slate-12 bg-n-alpha-2 font-medium' : 'text-n-slate-11 hover:text-n-slate-12 hover:bg-n-alpha-2' %> list-none">
-      <%= link_to super_admin_settings_url, class: 'flex items-center flex-1' do %>
-        <svg width="16" height="16"><use xlink:href="#icon-settings-2-line" /></svg>
-        <span class="ml-2 text-sm">Настройки</span>
+<%#
+# Sidebar: instance settings
+
+A collapsible sidebar entry. The summary links to the instance settings page,
+the chevron opens the list of config pages (general, channels, integrations).
+The AI models page has its own entry in the "ИИ" group and is not repeated here.
+
+## Local variables:
+
+- `open`: true while a settings page is shown, so the list starts expanded.
+%>
+<%
+  on_settings_page = super_admin_nav_active?(:settings)
+  current_config = params[:config].presence || 'general'
+  summary_state = if on_settings_page
+                    'bg-n-brand-solid font-medium text-n-brand-contrast hover:text-n-brand-contrast'
+                  else
+                    'text-n-slate-11 hover:bg-n-alpha-2 hover:text-n-slate-11'
+                  end
+%>
+<details class="group" <%= 'open' if open %>>
+  <summary class="flex h-8 cursor-pointer list-none items-center gap-1 rounded-lg pe-1.5 text-sm [&::-webkit-details-marker]:hidden <%= summary_state %>">
+    <%= link_to super_admin_settings_path, class: 'flex h-8 min-w-0 flex-1 items-center gap-2 ps-2', aria: { current: (on_settings_page ? 'page' : nil) } do %>
+      <span class="i-lucide-settings size-4 shrink-0" aria-hidden="true"></span>
+      <span class="min-w-0 truncate"><%= t('super_admin.navigation.items.settings') %></span>
+    <% end %>
+    <span class="i-lucide-chevron-down size-4 shrink-0 transition-transform duration-200 group-open:rotate-180" aria-hidden="true"></span>
+  </summary>
+  <div class="mt-0.5 flex flex-col gap-0.5 ps-6">
+    <% settings_pages.each do |feature_key, attrs| %>
+      <% next if attrs['config_key'] == 'captain' %>
+      <% page_active = super_admin_nav_active?(:app_configs) && current_config == attrs['config_key'] %>
+      <%= link_to super_admin_app_config_path(config: attrs['config_key']),
+                  class: "flex h-8 items-center rounded-lg px-2 text-sm hover:bg-n-alpha-2 #{page_active ? 'bg-n-alpha-2 font-medium text-n-slate-12 hover:text-n-slate-12' : 'text-n-slate-11 hover:text-n-slate-11'}",
+                  aria: { current: (page_active ? 'page' : nil) } do %>
+        <span class="min-w-0 truncate"><%= attrs['name'] %></span>
       <% end %>
-      <svg class="ml-auto w-4 h-4 transition-transform duration-200 group-open:rotate-180" viewBox="0 0 20 20" fill="currentColor">
-        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
-      </svg>
-    </summary>
-    <ul class="ml-4 mt-1">
-      <% settings_pages.each do |_feature_key, attrs| %>
-        <% url = super_admin_app_config_url(config: attrs['config_key']) %>
-        <li class="px-4 mb-1">
-          <% text_class = current_page?(url) ? 'text-n-slate-12 bg-n-alpha-2 font-medium' : 'text-n-slate-11' %>
-          <%= link_to url, class: text_class + ' -ml-1 flex items-center px-2 py-1.5 hover:text-n-slate-12 hover:bg-n-alpha-2 rounded-lg' do %>
-            <span class="ml-2 text-sm"><%= attrs['name'] %></span>
-          <% end %>
-        </li>
-      <% end %>
-    </ul>
-  </details>
-</li>
+    <% end %>
+  </div>
+</details>
