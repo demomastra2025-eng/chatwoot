@@ -368,13 +368,7 @@ class Account < ApplicationRecord
       snapshot = attrs[TRIAL_SNAPSHOT_KEY]
       return false unless eligible_for_trial_expiry?(attrs, snapshot, only_if_expired)
 
-      lock_limits = attrs[Accounts::ApplyPlan::PLAN_KEY].blank?
-      snapshot['limits_locked'] = lock_limits
-      attrs['trial_expires_at'] = 1.minute.ago.iso8601
-      attrs['trial_expired_at'] = Time.current.iso8601
-      self.custom_attributes = attrs
-      disable_features(*(trial_features_for(snapshot) - snapshot['features']))
-      self.limits = (limits || {}).merge(TRIAL_LOCKED_LIMITS.index_with { 0 }) if lock_limits
+      mark_trial_expired(attrs, snapshot)
       save!
       true
     end
@@ -577,6 +571,18 @@ class Account < ApplicationRecord
     self.custom_attributes = attrs.merge(TRIAL_SNAPSHOT_KEY => snapshot)
   end
   # rubocop:enable Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
+
+  # Writes the end of the trial into the (unsaved) account: the dates, the functions taken back and, for a clinic
+  # without a plan, the locked limits. `snapshot` is the trial snapshot inside `attrs`.
+  def mark_trial_expired(attrs, snapshot)
+    lock_limits = attrs[Accounts::ApplyPlan::PLAN_KEY].blank?
+    snapshot['limits_locked'] = lock_limits
+    attrs['trial_expires_at'] = 1.minute.ago.iso8601
+    attrs['trial_expired_at'] = Time.current.iso8601
+    self.custom_attributes = attrs
+    disable_features(*(trial_features_for(snapshot) - snapshot['features']))
+    self.limits = (limits || {}).merge(TRIAL_LOCKED_LIMITS.index_with { 0 }) if lock_limits
+  end
 
   def eligible_for_trial_expiry?(attrs, snapshot, only_if_expired)
     trial? && snapshot.is_a?(Hash) && snapshot['features'].is_a?(Array) &&
