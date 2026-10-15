@@ -1,5 +1,6 @@
 class Captain::ToolExecutionAuditService
-  MAX_RESULT_PREVIEW_LENGTH = 6000
+  MAX_RESULT_PREVIEW_LENGTH = 1000
+  TEST_RESULT_PREVIEW_LENGTH = 6000
   SENSITIVE_KEY_PATTERN = /
     (otp|token|secret|password|credential|authorization|process_?id|session|
      api_?key|access_?key|refresh|url|link|webhook|metadata|source_?text|content|artifact|
@@ -123,9 +124,13 @@ class Captain::ToolExecutionAuditService
         JSON.generate(serializable_value(value))
       end
 
-    preview.truncate(MAX_RESULT_PREVIEW_LENGTH)
+    preview.truncate(max_result_preview_length)
   rescue StandardError
-    fallback_redacted_string(value).truncate(MAX_RESULT_PREVIEW_LENGTH)
+    fallback_redacted_string(value).truncate(max_result_preview_length)
+  end
+
+  def max_result_preview_length
+    Rails.env.test? || @runtime_context[:source].to_s == 'benchmark' ? TEST_RESULT_PREVIEW_LENGTH : MAX_RESULT_PREVIEW_LENGTH
   end
 
   def fallback_redacted_string(value)

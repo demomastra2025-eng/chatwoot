@@ -14,8 +14,9 @@ class Captain::Runtime::PartPlanTool < Captain::Runtime::Tool
                          'carried out only when the part before it succeeded. conditional ("if X then Y"): its owner decides from ' \
                          'the result of the part before it; list the part that decides first and the conditional part after it. ' \
                          'The patient\'s reaction to an open part goes into link_action.'
-  LINK_PART_DESCRIPTION = 'Only when the message answers, corrects or cancels an open part of a colleague: its number from the list ' \
-                          'of open parts (for #3 write 3). Leave it out for a new action.'
+  LINK_PART_DESCRIPTION = 'Only when the message answers, corrects or cancels that colleague\'s open part (not when it only confirms ' \
+                          'an action already listed under Done in this conversation): its number from the list of open parts (for #3 write 3). ' \
+                          'Leave it out for a new action.'
   LINK_ACTION_DESCRIPTION = 'new: a separate new action, also while other parts are open. answer, correction, cancellation: ' \
                             'the patient\'s reaction to the linked open part.'
   MODE_DESCRIPTION = 'council: actions for different agents, or one open part of another agent that the message answers, corrects or ' \
@@ -164,10 +165,10 @@ class Captain::Runtime::PartPlanTool < Captain::Runtime::Tool
   def with_part_ids(parts, context)
     return parts unless parts.is_a?(Array)
 
-    parts.map { |part| part.is_a?(Hash) ? with_part_id(part, context) : part }
+    parts.map { |part| part.is_a?(Hash) ? with_part_id(part, context, single: parts.one?) : part }
   end
 
-  def with_part_id(part, context)
+  def with_part_id(part, context, single: false)
     key = part.key?(:link_part_id) ? :link_part_id : 'link_part_id'
     return part if part[key].blank?
 
@@ -175,7 +176,13 @@ class Captain::Runtime::PartPlanTool < Captain::Runtime::Tool
     id = registry.part_id_for(context[:parts], part[key])
     raise ArgumentError, registry.unknown_link_message(context, part[key]) unless Array(context[:parts]).any? { |item| item['id'] == id }
 
-    part.merge(key => id)
+    updated = part.merge(key => id)
+    if single && context&.dig(:captain_v2_current_input).present?
+      full_input = Captain::Runtime::CouncilEditor.customer_text(context[:captain_v2_current_input]).strip
+      f_key = updated.key?(:fragment) ? :fragment : 'fragment'
+      updated = updated.merge(f_key => full_input) if full_input.present?
+    end
+    updated
   end
 
   # The model reads agents by name only: an accepted part shows its executor's name, never a numeric id.

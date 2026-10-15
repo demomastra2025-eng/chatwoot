@@ -11,6 +11,8 @@
 # Only after two transfers in one run does the guard stop transfers for good (see Runner#continue_after_transfer_guard).
 class Captain::Runtime::HandoffTool < Captain::Runtime::Tool
   PLANNED_MESSAGE = 'This message is already planned: each agent of the plan answers its part.'
+  WITH_STAFF_MESSAGE = 'This colleague already handed their part of the conversation to staff, who will answer it. ' \
+                       'Reply to the patient yourself to confirm that their request is already passed to staff (do not call handoff or transfer).'
   # The last sentence of every transfer tool: when to use it. Actions of two or more agents are a plan (plan_request).
   WHEN_TO_USE = 'Use it when the patient\'s message holds actions of this colleague only; the colleague also answers the questions ' \
                 'of the message.'
@@ -49,6 +51,10 @@ class Captain::Runtime::HandoffTool < Captain::Runtime::Tool
       record_guard(context, 'plan_accepted')
       return Captain::ToolResult.failure(error: PLANNED_MESSAGE, retryable: true)
     end
+    if target_part_with_staff?(context)
+      record_guard(context, 'part_with_staff')
+      return Captain::ToolResult.failure(error: WITH_STAFF_MESSAGE, retryable: true)
+    end
 
     if context[:agent_graph].present?
       source_id = context.dig(:state, :assistant_id)
@@ -84,6 +90,15 @@ class Captain::Runtime::HandoffTool < Captain::Runtime::Tool
   end
 
   private
+
+  def target_part_with_staff?(context)
+    target_id = @target_agent.assistant_id
+    return false if target_id.blank?
+
+    parts = Array(context[:parts]).select { |part| part['executor_agent_id'] == target_id }
+    parts.any? { |part| part['handed_to_staff'] == true } &&
+      parts.none? { |part| Captain::Runtime::PartRegistry::OPEN_STATES.include?(part['state']) && part['handed_to_staff'] != true }
+  end
 
   # One sentence: whom the conversation goes to and what that colleague answers; then what that colleague can do; then when to use it.
   def transfer_description(display_name, responsibility, capabilities)

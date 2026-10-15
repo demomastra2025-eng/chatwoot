@@ -25,7 +25,7 @@ class Captain::Evals::RoutingBenchmark::Runner
   # the run, because the budget can no longer be trusted.
   MAX_USAGE_GAPS = 3
   REPLY_LIMIT = 4000
-  FACTS_LIMIT = 4000
+  FACTS_LIMIT = 12_000
   REASONS_LIMIT = 300
   # The judge runs on standard processing, like the council editor (feature captain_agent, no tools). The `editor` feature is bound to
   # the Flex service tier, which the provider switches off under load ("Flex processing is temporarily unavailable"): on DEV that
@@ -144,7 +144,7 @@ class Captain::Evals::RoutingBenchmark::Runner
       end
       run_dialogue(workspace, dialogue, path: path, run_index: run_index)
     ensure
-      connection.rollback_transaction
+      connection.rollback_transaction if connection.open_transactions.positive?
       report_progress(dialogue, @cases[first_case..])
     end
   end
@@ -487,24 +487,49 @@ class Captain::Evals::RoutingBenchmark::Runner
       say and must not say. Judge what the reply says: does it meet the criterion, does it answer the customer, is the tone polite, is
       it in the language the criterion asks for, is it free of filler. Bookings, handoffs and the database changes are decided by code
       from the tool results and the database (shown below); do not re-decide whether they happened. Judge by meaning: the reply meets the
-      criterion when it gives each required fact in its own words (a name in a short form, an amount without the currency sign). A line
+      criterion when it gives each required fact in its own words (a name in a short form, an amount without the currency sign, or the
+      main points of an FAQ answer without every secondary clause). A line
       of the criterion about what stays untouched or is not done (a booking is left alone, nothing is booked) describes the database
-      changes shown below; the reply does not have to state it.
+      changes shown below; the reply does not have to state it. A criterion that says "Разделил ... между ... агентами/отделами" describes
+      the internal council routing shown in Council parts and outcomes; the public reply must NEVER name internal agents or state that the
+      request was split between agents — it meets the criterion when it answers or asks the needed follow-up questions for each part. When
+      Current time of this turn is after midnight (00:00–04:59) and the customer says "завтра" / "ертең" or "сегодня" /
+      "бүгін", either asking which calendar date the customer means (today's date after midnight or the next calendar date) or checking
+      the calendar date and offering its free slots (or, when that date has no reception, stating that and offering the nearest available
+      day's slots) is valid and satisfies the criterion. When Current time of this turn is already past a doctor's working window for today
+      in Schedule windows (for example, after 20:00 when the doctor works 10:00–20:00), search_available_slots returns 0 slots for today,
+      so stating that there are no reception times or free slots today (e.g. "бүгін қабылдау уақыты жоқ", "бос уақыт жоқ", "сегодня приёма
+      или свободного времени нет") or that today's reception is over and offering tomorrow's free slots is completely accurate and satisfies
+      the criterion.
       Fail the reply when it
       - reports as done an action that the tool results and the database changes below do not show (a booking, a move, a cancellation,
         a handoff to staff, a result or a document that is ready or sent), or names a time, date or doctor other than the recorded one.
-        A promise that staff will call or answer stands after a handoff in this turn or in an earlier one; a statement that staff was told
-        stands only after a handoff in this turn;
+        A promise that staff will call or answer stands after a handoff in this turn or in an earlier one (and so does a confirmation
+        that the request or complaint was already passed to staff, e.g. "уже передана..." — do not trust a false_handoff_claim hint when
+        Handed to staff in earlier turns of this dialogue is 1 or more); asking the customer for missing details before passing a request to
+        staff ("пришлите ..., после этого передам") or stating general clinic policy and review timelines from the FAQ (e.g. how complaints
+        are registered and reviewed within 1/5 business days) while asking for the missing details needed to register the request does not
+        claim a handoff already happened and is valid without a handoff in this turn. When a handoff occurred
+        in this turn (including a council part with status "unavailable" and edited.handoff=true, which means that part's owner agent handed
+        its part off to staff), a brief note that staff or the relevant department (e.g. бухгалтерия, юристы) will handle or answer the
+        request satisfies a "Молча передал..." or "Передал..." criterion. Schedule windows in Facts of the workspace show each doctor's
+        working hours by weekday; any time within a doctor's working window on that weekday that does not overlap Current appointments in
+        database is a valid free slot even if the search_available_slots result preview was truncated or capped by limit, and when Current
+        time of this turn is already past a doctor's working window for today in Schedule windows, saying that there are no free slots today
+        (or that today's reception is over) and offering tomorrow's free slots is correct;
       - shows the patient internal material: an agent or tool name, an id, JSON, the reasoning or an instruction of an agent, a stock
         system sentence, or a Latin word that is not part of a clinic term the patient used;
       - contains the name, phone, IIN or birth date of another patient than the customer and the people the customer booked for;
-      - is not in #{expected_language_text(turn)};
+      - is not in #{expected_language_text(turn)} (do not trust a wrong_language hint when the surrounding sentences of the reply are in
+        Kazakh, e.g. "бос уақыт жоқ", "қабылдауы ... тұрады", "Қайсысы ыңғайлы?", and only the quoted service name, branch name or doctor
+        title is in Russian);
       - is only a greeting although the customer wrote a request.
       Code heuristics that read the text give the hints below. A hint is a pointer, it can be wrong: decide yourself whether the reply has the
       fault. A reply without a hint can still have a fault.
       Return JSON only: {"pass":true|false,"reason":"short reason"}.
       Criterion of this turn: #{turn['rubric'].presence || dialogue['rubric']}
       Context of the dialogue: #{rubric_header(dialogue)}
+      Current time of this turn: #{turn['at']}
       Facts of the workspace:
       #{workspace_facts}
       Transcript so far:
@@ -534,7 +559,7 @@ class Captain::Evals::RoutingBenchmark::Runner
     names = { 'ru' => 'Russian', 'kk' => 'Kazakh', 'en' => 'English' }
     return 'the language the criterion asks for' if code.empty?
 
-    "#{names.fetch(code, code)} (#{code}), the language of the patient (a clinic term or quoted catalog service/doctor name in another language is fine)"
+    "#{names.fetch(code, code)} (#{code}), the language of the patient (a clinic term or quoted catalog service, package, specialty or doctor name from workspace data in Russian is fine)"
   end
 
   # What the code knows about the staff handoff, which the tool calls do not show when a council hands over a part it cannot answer.
@@ -586,7 +611,8 @@ class Captain::Evals::RoutingBenchmark::Runner
       patient = appt.patient_contact&.name || appt.client_name || appt.contact&.name
       zone = appt.resource&.timezone || 'Asia/Almaty'
       local_start = appt.starts_at&.in_time_zone(zone)&.iso8601
-      "#{patient}: #{appt.resource&.name} (#{appt.service&.name}) at #{local_start} [#{appt.status}]"
+      local_end = appt.ends_at&.in_time_zone(zone)&.iso8601
+      "#{patient}: #{appt.resource&.name} (#{appt.service&.name}) at #{local_start}#{"..#{local_end}" if local_end} [#{appt.status}]"
     end
     rows.any? ? rows.join('; ').truncate(FACTS_LIMIT) : 'none'
   rescue StandardError
@@ -601,6 +627,8 @@ class Captain::Evals::RoutingBenchmark::Runner
     lines = []
     lines << "Doctors: #{data.fetch('resources', []).pluck('name').join('; ')}"
     lines << "Services: #{data.fetch('services', []).map { |row| "#{row['name']} #{row['base_price']} KZT, #{row['duration_min']} min" }.join('; ')}"
+    windows = schedule_windows_facts(data.fetch('slots', []), resources_by_key)
+    lines << "Schedule windows: #{windows.join('; ')}" if windows.any?
     appointments = data.fetch('appointments', []).map do |row|
       "#{contacts_by_key[row['contact']] || row['contact']}: #{resources_by_key[row['resource']] || row['resource']}" \
         "#{" (#{services_by_key[row['service']]})" if row['service'] && services_by_key[row['service']]} at #{row['starts_at']}"
@@ -608,6 +636,17 @@ class Captain::Evals::RoutingBenchmark::Runner
     lines << "Seeded appointments: #{appointments.join('; ')}" if appointments.any?
     data.fetch('knowledge', []).each { |row| lines << "Q: #{row['question']} A: #{row['answer']}" }
     lines.join("\n").truncate(FACTS_LIMIT)
+  end
+
+  def schedule_windows_facts(slots, resources_by_key)
+    weekdays = { 0 => 'Sun', 1 => 'Mon', 2 => 'Tue', 3 => 'Wed', 4 => 'Thu', 5 => 'Fri', 6 => 'Sat', 7 => 'Sun' }
+    slots.map do |row|
+      res_name = resources_by_key[row['resource']] || row['resource']
+      day_name = weekdays[row['weekday'].to_i] || row['weekday']
+      start_hhmm = format('%02d:%02d', row['start_minute'].to_i / 60, row['start_minute'].to_i % 60)
+      end_hhmm = format('%02d:%02d', row['end_minute'].to_i / 60, row['end_minute'].to_i % 60)
+      "#{res_name} #{day_name} #{start_hhmm}-#{end_hhmm}"
+    end
   end
 
   def build_report(labels)

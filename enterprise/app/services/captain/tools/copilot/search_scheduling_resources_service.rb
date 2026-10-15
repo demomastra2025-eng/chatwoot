@@ -27,7 +27,7 @@ class Captain::Tools::Copilot::SearchSchedulingResourcesService < Captain::Tools
     offset = parse_offset(offset)
     scoped_resource_ids = assistant.booking_resource_ids.presence if agent_scope?
     parsed_limit = parse_limit(limit)
-    result = Scheduling::ResourceSearchService.new(
+    search_params = {
       account: account,
       query: query,
       search_by: search_by,
@@ -36,22 +36,10 @@ class Captain::Tools::Copilot::SearchSchedulingResourcesService < Captain::Tools
       limit: parsed_limit,
       offset: offset,
       resource_ids: scoped_resource_ids
-    ).perform
-    if agent_scope? && result[:total_count].zero? && service_id.present? && query.to_s.strip.present? && scoped_resource_ids.present?
-      fallback = Scheduling::ResourceSearchService.new(
-        account: account,
-        query: nil,
-        search_by: nil,
-        service_id: service_id,
-        include_inactive: include_inactive,
-        limit: parsed_limit,
-        offset: offset,
-        resource_ids: scoped_resource_ids
-      ).perform
-      if fallback[:total_count].positive?
-        result = fallback
-        query = nil
-      end
+    }
+    result = Scheduling::ResourceSearchService.new(**search_params).perform
+    if agent_scope? && result[:total_count].zero? && query.to_s.strip.present?
+      result, query = fallback_agent_search(result, search_params)
     end
 
     filters = { query: query.to_s.presence, search_by: search_by.to_s.presence || 'all', service_id: service_id,
@@ -66,6 +54,24 @@ class Captain::Tools::Copilot::SearchSchedulingResourcesService < Captain::Tools
   end
 
   private
+
+  def fallback_agent_search(result, search_params)
+    query = search_params[:query]
+    if search_params[:service_id].present? && search_params[:resource_ids].present?
+      fallback = Scheduling::ResourceSearchService.new(**search_params, query: nil, search_by: nil).perform
+      return [fallback, nil] if fallback[:total_count].positive?
+    end
+
+    tokens = Scheduling::SearchText.tokens(query)
+    if tokens.size > 1
+      tokens.each do |token|
+        fallback = Scheduling::ResourceSearchService.new(**search_params, query: token).perform
+        return [fallback, token] if fallback[:total_count].positive?
+      end
+    end
+
+    [result, query]
+  end
 
   def formatted_search_payload(result, filters)
     sole = sole_match?(result, filters)

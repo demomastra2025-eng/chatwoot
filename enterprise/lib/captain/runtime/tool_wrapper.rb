@@ -53,7 +53,9 @@ class Captain::Runtime::ToolWrapper
 
   def call(args)
     ensure_response_run_current!
-    if context_wrapper_context[:pending_handoff] || context_wrapper_context[:pending_human_handoff] ||
+    if context_wrapper_context[:pending_handoff] ||
+       (context_wrapper_context[:pending_human_handoff] && @tool.name.to_s != 'plan_request') ||
+       (context_wrapper_context[:part_plan] && !context_wrapper_context[:part_run] && @tool.name.to_s != 'handoff') ||
        context_wrapper_context[:pending_response_cancellation] || context_wrapper_context[:technical_failure]
       return RubyLLM::Tool::Halt.new('Control has been transferred; remaining calls in this batch were not executed.')
     end

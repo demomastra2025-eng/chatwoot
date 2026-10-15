@@ -1,34 +1,23 @@
 # frozen_string_literal: true
 
-# The structured result of one council part. The owner agent writes the final patient text of its part and reports how the
-# part ended; whether an action was performed is NOT reported here but computed by code from the tool results of the run
-# (see Council::PartRun), so a model can never claim an action by setting a field.
 class Captain::Runtime::PartSchema < RubyLLM::Schema
-  # status is an enum, so the provider offers the model these four values and nothing else (see Council::PartRun).
+  LANGUAGE_DESCRIPTION = Captain::PatientLanguage::FIELD_DESCRIPTION
+  CUSTOMER_TEXT_DESCRIPTION = 'The final text for this part only, addressed to the patient politely, one to three short ' \
+                              'sentences in the patient\'s language, no greeting, no markdown. When a question is needed, ' \
+                              'end with that question. For a named person other than the writer (a child, a relative), ' \
+                              'name that person in the text. Leave blank only when this part needs no text for the patient.'
+  QUESTIONS_DESCRIPTION = 'Every question that customer_text contains, word for word; empty when it contains no question.'
   STATUSES = %w[answered needs_information out_of_scope unavailable].freeze
-  CUSTOMER_TEXT_DESCRIPTION = (
-    'The final text of THIS part for the patient, in the patient\'s language. Say only what your tool results show. ' \
-    'Empty string when there is nothing to say.'
-  ).freeze
-  STATUS_DESCRIPTION = (
-    'Exactly one of: answered (the part is answered or its action is done), needs_information (you asked the patient, in one ' \
-    'message, for everything still missing, and wait), out_of_scope (not your responsibility; no action was taken), ' \
-    'unavailable (cannot be resolved now).'
-  ).freeze
-  QUESTIONS_DESCRIPTION = 'Every question for the patient that customer_text contains, word for word. Empty array when none.'
-  SOURCES_DESCRIPTION = (
-    'Where the facts came from: tool names, document titles, or "instructions". Empty array when customer_text states no fact.'
-  ).freeze
-  SUGGESTED_AGENT_DESCRIPTION = 'When out_of_scope: the exact name of the responsible agent from the list. Otherwise an empty string.'
-  REASONING_DESCRIPTION = 'One short internal sentence on how the part ended. Never shown to the patient.'
+  STATUS_DESCRIPTION = 'answered (answered or action done), needs_information (you asked the patient, in one message, for ' \
+                       'everything still missing, and wait), out_of_scope (another agent handles this), or unavailable ' \
+                       '(cannot be resolved now, or a staff-only request such as a complaint, certificate or test result ' \
+                       'already has all required details).'
 
-  # patient_language comes first: the owner names the language before it writes the text. It is for the logs and for the editor
-  # (see Captain::Runtime::CouncilEditor); the text is used as it is.
-  string :patient_language, description: Captain::PatientLanguage::FIELD_DESCRIPTION
+  string :patient_language, description: LANGUAGE_DESCRIPTION
   string :customer_text, description: CUSTOMER_TEXT_DESCRIPTION
   string :status, enum: STATUSES, description: STATUS_DESCRIPTION
   array :questions, of: :string, description: QUESTIONS_DESCRIPTION
-  array :sources, of: :string, description: SOURCES_DESCRIPTION
-  string :suggested_agent, description: SUGGESTED_AGENT_DESCRIPTION
-  string :reasoning, description: REASONING_DESCRIPTION
+  array :sources, of: :string, description: 'Tool names, document titles, or "instructions" for facts from your own instructions.'
+  string :suggested_agent, description: 'Exact name of the responsible agent from the list in your prompt when out_of_scope; otherwise empty string.'
+  string :reasoning, description: 'Internal reasoning, never shown to the patient.'
 end

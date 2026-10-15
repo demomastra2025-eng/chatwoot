@@ -14,7 +14,7 @@
 # Captain::Runtime::AgentToolTexts reads this file once.
 tools:
   get_appointment:
-    description: "Show one appointment by its ID: date, time, specialist, status. To find an appointment use list_my_appointments or search_appointments."
+    description: "Show one appointment by its ID: date, time, specialist, status. When the patient asks when they are booked or to find an appointment, use list_my_appointments or search_appointments."
     params:
       appointment_id: "Appointment ID from the Patient block or a tool result."
       appointment_access_token: "Another patient's appointment: token from the latest search_appointments."
@@ -61,7 +61,7 @@ tools:
   search_scheduling_resources:
     description: "Find a specialist or room by name words (any order) or specialty; an empty query lists all. Call it to get the specialist ID before checking slots or booking. With service_id it keeps only those who offer that service."
     params:
-      query: "Name or specialty words in dictionary form, as the catalog writes them."
+      query: "One specialty word or name in dictionary form, as the catalog writes it (do not combine synonyms)."
       service_id: "Service ID from search_scheduling_services."
       limit: "Max results, up to 50."
       offset: "next_offset from the previous result."

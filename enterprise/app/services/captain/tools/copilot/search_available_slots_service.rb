@@ -21,6 +21,13 @@ class Captain::Tools::Copilot::SearchAvailableSlotsService < Captain::Tools::Cop
     range_from = scheduling_datetime(from, field_name: 'from')
     range_to = scheduling_datetime(to, field_name: 'to')
     scheduling_range!(range_from, range_to, allow_equal: true)
+    if agent_scope?
+      now = Time.current.in_time_zone(range_from.time_zone)
+      if range_from < now && (range_to > now || range_from.to_date == now.to_date)
+        range_from = now
+        range_to = [range_to, range_from].max
+      end
+    end
     service_id = scheduling_service_id(service_id)
     scheduling_service!(service_id)
     resource_ids = scoped_agent_resource_ids(resource_ids, service_id: service_id)

@@ -57,7 +57,13 @@ class Captain::Runtime::PartRegistry
     last = last_reply_text(context[:conversation_history])
     return false if last.blank?
 
-    Array(context[:parts]).any? do |part|
+    parts = Array(context[:parts])
+    return false if parts.any? do |part|
+      part['executor_agent_id'] == actor_id && part['state'] == 'done' && part['acted'] == true &&
+        deliveries_of_version(part).any? { |delivery| delivery['content'].to_s.strip == last }
+    end
+
+    parts.any? do |part|
       part['state'] == 'waiting_customer' && part['executor_agent_id'] != actor_id &&
         deliveries_of_version(part).any? { |delivery| delivery['content'].to_s.strip == last }
     end
@@ -281,9 +287,19 @@ class Captain::Runtime::PartRegistry
   def validate_plan!(mode, normalized, clarification)
     continuations = normalized.all? { |part| part['version'] > 1 }
     # A council is separate actions for different agents, or the answer to an open part of another agent (one part is enough).
-    if mode == 'council' && !continuations && normalized.pluck('executor_agent_id').uniq.size < 2
-      raise ArgumentError, 'A council needs actions for at least two different agents. When all actions belong to one colleague, ' \
-                           'transfer the conversation with that colleague\'s transfer tool.'
+    if mode == 'council' && !continuations
+      actor_id = @context.dig(:state, :assistant_id)
+      real_parts = normalized.reject do |part|
+        part['version'] == 1 && part['executor_agent_id'] != actor_id &&
+          Array(@context[:parts]).any? { |p| p['executor_agent_id'] == part['executor_agent_id'] && p['handed_to_staff'] == true }
+      end
+      if real_parts.size < normalized.size && real_parts.pluck('executor_agent_id').uniq.all? { |id| id == actor_id }
+        raise ArgumentError, OWN_WORK_NOTE
+      end
+      if real_parts.pluck('executor_agent_id').uniq.size < 2
+        raise ArgumentError, 'A council needs actions for at least two different agents. When all actions belong to one colleague, ' \
+                             'transfer the conversation with that colleague\'s transfer tool.'
+      end
     end
     return unless mode == 'clarify'
 

@@ -187,7 +187,9 @@ class Captain::Runtime::Runner
     end.uniq
     "An open part of #{names.join(', ').presence || 'another agent'} waits for the customer's answer: its question was the last " \
       'thing the customer was told. If this message answers, corrects or cancels that part, call plan_request with mode council ' \
-      'and ONLY that part linked by its number (see the open parts). Otherwise reply normally.'
+      'and ONLY that part linked by its number (see the open parts). Otherwise reply normally (for example, when the message ' \
+      'only confirms or thanks for an action that was already completed in an earlier turn, confirm that it is already done ' \
+      'without calling plan_request).'
   end
 
   def plan_required_before_reply?(session)
