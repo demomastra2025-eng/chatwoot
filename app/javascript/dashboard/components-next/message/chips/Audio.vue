@@ -122,8 +122,6 @@ const waveformInitFrameId = ref(0);
 const { uid } = getCurrentInstance();
 
 const playbackSpeedLabel = computed(() => `${playbackSpeed.value}x`);
-const seekBackwardLabel = '-10s';
-const seekForwardLabel = '+10s';
 
 const FALLBACK_BAR_HEIGHTS = [
   28, 45, 62, 35, 78, 92, 60, 42, 55, 80, 100, 75, 48, 30, 52, 85, 96, 70, 45,
@@ -367,27 +365,6 @@ const seek = event => {
   currentTime.value = nextTime;
 };
 
-const seekBy = deltaSeconds => {
-  if (!duration.value) return;
-
-  const nextTime = Math.max(
-    0,
-    Math.min(duration.value, currentTime.value + deltaSeconds)
-  );
-
-  if (waveSurfer.value && !isFallbackMode.value) {
-    waveSurfer.value.setTime?.(nextTime);
-    currentTime.value = nextTime;
-    return;
-  }
-
-  const audio = audioElement.value;
-  if (!audio) return;
-
-  audio.currentTime = nextTime;
-  currentTime.value = nextTime;
-};
-
 const playNativeAudio = async () => {
   const audio = audioElement.value;
   if (!audio) return;
@@ -606,22 +583,6 @@ watchEffect(() => {
           @input="seek"
         />
       </div>
-      <button
-        v-if="isAudioReady"
-        class="border-0 h-6 px-1.5 grid place-content-center bg-n-alpha-2 hover:bg-alpha-3 rounded-lg text-[10px] font-semibold text-n-slate-11 hover:text-n-slate-12 select-none"
-        :title="seekBackwardLabel"
-        @click="seekBy(-10)"
-      >
-        {{ seekBackwardLabel }}
-      </button>
-      <button
-        v-if="isAudioReady"
-        class="border-0 h-6 px-1.5 grid place-content-center bg-n-alpha-2 hover:bg-alpha-3 rounded-lg text-[10px] font-semibold text-n-slate-11 hover:text-n-slate-12 select-none"
-        :title="seekForwardLabel"
-        @click="seekBy(10)"
-      >
-        {{ seekForwardLabel }}
-      </button>
       <button
         class="p-0 border-0 size-8 grid place-content-center"
         @click="toggleMute"

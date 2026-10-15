@@ -218,13 +218,12 @@ describe('Audio chip playback', () => {
     );
   });
 
-  it('cycles playback speeds including 1.25x and supports seek buttons', async () => {
+  it('cycles playback speeds including 1.25x and does not render +/-10s seek buttons', async () => {
     withContainerWidth(300);
     const chip = mountChip();
     await flushPromises();
 
     const [waveSurfer] = waveSurferState.instances;
-    waveSurfer.setTime = vi.fn();
     waveSurfer.handlers.ready(30);
     await flushPromises();
 
@@ -255,23 +254,15 @@ describe('Audio chip playback', () => {
     expect(waveSurfer.setPlaybackRate).toHaveBeenCalledWith(1);
     expect(speedButton.text()).toBe('1x');
 
-    // Seek buttons
+    // +/-10s seek buttons are not rendered
     const seekForwardBtn = chip
       .findAll('button')
       .find(btn => btn.text() === '+10s');
     const seekBackwardBtn = chip
       .findAll('button')
       .find(btn => btn.text() === '-10s');
-    expect(seekForwardBtn.exists()).toBe(true);
-    expect(seekBackwardBtn.exists()).toBe(true);
-
-    await seekForwardBtn.trigger('click');
-    expect(waveSurfer.setTime).toHaveBeenCalledWith(10);
-
-    waveSurfer.handlers.timeupdate?.(15);
-    await flushPromises();
-    await seekBackwardBtn.trigger('click');
-    expect(waveSurfer.setTime).toHaveBeenCalledWith(5);
+    expect(seekForwardBtn).toBeUndefined();
+    expect(seekBackwardBtn).toBeUndefined();
   });
   it('uses native playback when Safari cannot decode an MP3 waveform', async () => {
     withContainerWidth(300);
