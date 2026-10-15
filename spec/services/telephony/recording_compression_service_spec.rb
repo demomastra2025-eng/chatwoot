@@ -71,7 +71,7 @@ RSpec.describe Telephony::RecordingCompressionService do
       expect(File.exist?(storage_dir.join('unowned.mp3'))).to be(false)
     end
 
-    it 'compresses a valid WAV file to MP3 and updates CallSession' do
+    it 'compresses a valid WAV file to MP3 and updates CallSession' do # rubocop:disable RSpec/MultipleExpectations
       FileUtils.mkdir_p(storage_dir)
       wav_path = storage_dir.join('sample_call.wav')
       _stdout, stderr, source_status = Open3.capture3('ffmpeg', '-nostdin', '-y', '-f', 'lavfi', '-i', 'sine=frequency=1000:duration=2', '-ac', '2',
@@ -85,13 +85,17 @@ RSpec.describe Telephony::RecordingCompressionService do
         metadata: { 'recording' => { 'storage_key' => "voice-recordings/test_suite/#{account.id}/sample_call.wav" } }
       )
 
+      duration_cmd = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1']
+      input_duration, = Open3.capture3(*duration_cmd, wav_path.to_s)
+
       result = described_class.compress!(call_session: call_session)
 
       expect(result).to include(success: true, new_storage_key: "voice-recordings/test_suite/#{account.id}/sample_call.mp3")
-      expect(result[:freed_bytes]).to eq(0)
-      expect(result[:retained_original_bytes]).to be > 0
+      expect(result[:freed_bytes]).to be > 0
+      expect(result[:retained_original_bytes]).to eq(0)
+      expect(result[:retained_original_expires_at]).to be_nil
       expect(File.exist?(storage_dir.join('sample_call.mp3'))).to be(true)
-      expect(File.exist?(wav_path)).to be(true)
+      expect(File.exist?(wav_path)).to be(false)
 
       call_session.reload
       expect(call_session.recording_ref).to eq("voice-recordings/test_suite/#{account.id}/sample_call.mp3")
@@ -99,6 +103,7 @@ RSpec.describe Telephony::RecordingCompressionService do
       expect(call_session.metadata.dig('recording', 'retained_original',
                                        'storage_key')).to eq("voice-recordings/test_suite/#{account.id}/sample_call.wav")
       expect(call_session.metadata.dig('recording', 'retained_original', 'expires_at')).to be_present
+      expect(call_session.metadata.dig('recording', 'retained_original', 'purged_at')).to be_present
 
       comp_file = storage_dir.join('sample_call.mp3')
       probe_cmd = [
@@ -111,8 +116,6 @@ RSpec.describe Telephony::RecordingCompressionService do
       channels, = Open3.capture3(*probe_cmd)
       expect(channels.strip).to eq('2')
 
-      duration_cmd = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1']
-      input_duration, = Open3.capture3(*duration_cmd, wav_path.to_s)
       output_duration, = Open3.capture3(*duration_cmd, comp_file.to_s)
       expect((Float(output_duration) - Float(input_duration)).abs).to be <= 1.0
       _decode_out, decode_error, decode_status = Open3.capture3('ffmpeg', '-nostdin', '-v', 'error', '-i', comp_file.to_s, '-f', 'null', '-')
@@ -148,7 +151,7 @@ RSpec.describe Telephony::RecordingCompressionService do
 
         expect(conversation.reload.additional_attributes['storage_key']).to eq(key.sub('.wav', '.mp3'))
         expect(conversation.additional_attributes['keep']).to be(true)
-        expect(File.exist?(wav_path)).to be(true)
+        expect(File.exist?(wav_path)).to be(false)
       end
 
       it 'does not overwrite or remove an MP3 already published at the target path' do
@@ -186,22 +189,31 @@ RSpec.describe Telephony::RecordingCompressionService do
         expect(call_session.metadata['recording']['content_type']).to eq('audio/wav')
       end
 
+      # rubocop:disable RSpec/MultipleExpectations
       it 'rewrites only the messages that reference the recording, without firing message events' do
         conversation = call_session.conversation
-        mentioned = create(:message, account: account, conversation: conversation, inbox: conversation.inbox,
-                                     content_attributes: { 'data' => { 'recording_ref' => wav_path.to_s, 'storage_key' => key, 'recording' => { 'storage_key' => key }, 'transcript' => 'preserve me' }, 'other' => { 'keep' => true } })
+        mentioned_attrs = {
+          'data' => {
+            'recording_ref' => wav_path.to_s, 'storage_key' => key,
+            'recording' => { 'storage_key' => key }, 'transcript' => 'preserve me'
+          },
+          'other' => { 'keep' => true }
+        }
+        mentioned = create(:message, account: account, conversation: conversation,
+                                     inbox: conversation.inbox, content_attributes: mentioned_attrs)
         legacy = create(:message, account: account, conversation: conversation, inbox: conversation.inbox,
-                                 content_attributes: { 'data' => { 'recording_ref' => 'call.wav', 'transcript' => 'legacy transcript' } })
+                                  content_attributes: { 'data' => { 'recording_ref' => 'call.wav', 'transcript' => 'legacy transcript' } })
         conversation.update!(
           additional_attributes: { 'recording' => { 'storage_key' => 'call.wav' }, 'keep' => true }
         )
         collision_path = Storage::RecordingPaths.root.join('voice-recordings/provider-two', account.id.to_s, 'call.wav')
         FileUtils.mkdir_p(collision_path.dirname)
         File.write(collision_path, 'other provider recording')
+        other_key = "voice-recordings/provider-two/#{account.id}/call.wav"
         unrelated = create(:message, account: account, conversation: conversation, inbox: conversation.inbox,
-                                     content_attributes: { 'data' => { 'recording' => { 'storage_key' => "voice-recordings/provider-two/#{account.id}/call.wav" } } })
+                                     content_attributes: { 'data' => { 'recording' => { 'storage_key' => other_key } } })
         unrelated_conversation = create(:conversation, account: account, inbox: conversation.inbox,
-                                                        additional_attributes: { 'recording' => { 'recording_ref' => "voice-recordings/provider-two/#{account.id}/call.wav" } })
+                                                       additional_attributes: { 'recording' => { 'recording_ref' => other_key } })
         dispatcher = Rails.configuration.dispatcher
         allow(dispatcher).to receive(:dispatch).and_call_original
 
@@ -221,6 +233,7 @@ RSpec.describe Telephony::RecordingCompressionService do
           .to eq("voice-recordings/provider-two/#{account.id}/call.wav")
         expect(dispatcher).not_to have_received(:dispatch).with(Events::Types::MESSAGE_UPDATED, anything, anything)
       end
+      # rubocop:enable RSpec/MultipleExpectations
     end
 
     it 'requests one background refresh for ten successful compressions without calculating storage inline' do

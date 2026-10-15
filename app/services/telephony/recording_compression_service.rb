@@ -6,8 +6,7 @@ require 'securerandom'
 require 'digest'
 
 # Re-encodes a WAV call recording as a 64 kbps stereo MP3 and atomically updates references only
-# after the new file has been decoded and validated. The original remains available for 30 days.
-# Keep conversion, validation, atomic publication and rollback together so references never point at unverified media.
+# after the new file has been decoded and validated, then immediately removes the source WAV.
 class Telephony::RecordingCompressionService
   CompressionError = Class.new(StandardError)
   DurationDriftError = Class.new(StandardError)
@@ -77,7 +76,6 @@ class Telephony::RecordingCompressionService
   def compress_file!(source_path)
     orig_size = File.size(source_path)
     orig_duration = probe_duration(source_path)
-
     temp_path = Pathname.new("#{source_path}.compressing_#{SecureRandom.hex(4)}.mp3")
     target_storage_key = storage_key.sub(/\.(wav|wave|pcm)\z/i, '.mp3')
 
@@ -92,19 +90,13 @@ class Telephony::RecordingCompressionService
       raise CompressionError, 'Compressed output already exists' if target_path.exist?
 
       compressed = Compressed.new(temp_path, target_path, target_storage_key, File.size(temp_path), comp_duration, orig_size)
-      swap_recording!(compressed)
+      swap_recording!(compressed, source_path)
 
       {
-        success: true,
-        original_bytes: orig_size,
-        compressed_bytes: compressed.byte_size,
-        # Physical quota still includes both copies for the 30-day recovery window.
-        freed_bytes: 0,
-        retained_original_bytes: orig_size,
-        retained_original_expires_at: ORIGINAL_RETENTION_DAYS.days.from_now.iso8601,
-        original_storage_key: storage_key,
-        new_storage_key: target_storage_key,
-        duration: comp_duration
+        success: true, original_bytes: orig_size, compressed_bytes: compressed.byte_size,
+        freed_bytes: [orig_size - compressed.byte_size, 0].max,
+        retained_original_bytes: 0, retained_original_expires_at: nil,
+        original_storage_key: storage_key, new_storage_key: target_storage_key, duration: comp_duration
       }
     ensure
       FileUtils.rm_f(temp_path)
@@ -112,19 +104,27 @@ class Telephony::RecordingCompressionService
   end
   # rubocop:enable Metrics/MethodLength
 
-  # Publish first, then atomically switch the database. Keep the original file untouched for recovery.
-  def swap_recording!(compressed)
+  # Publish first, then atomically switch the database, then immediately remove the source WAV.
+  def swap_recording!(compressed, source_path = nil)
     File.link(compressed.temp_path, compressed.target_path)
     published_identity = File.stat(compressed.target_path).then { |stat| [stat.dev, stat.ino] }
     File.unlink(compressed.temp_path)
 
     session = update_database_records!(compressed)
+    purge_source_wav!(source_path, compressed.target_path)
     refresh_storage_breakdown(session)
   rescue Errno::EEXIST
     raise CompressionError, 'Compressed output already exists'
   rescue StandardError
     unlink_published_file_if_owned(compressed.target_path, published_identity)
     raise
+  end
+
+  def purge_source_wav!(source_path, target_path)
+    return unless source_path && source_path.to_s != target_path.to_s
+    return unless File.file?(target_path) && File.size(target_path).positive?
+
+    FileUtils.rm_f(source_path)
   end
 
   def unlink_published_file_if_owned(path, identity)
@@ -138,16 +138,9 @@ class Telephony::RecordingCompressionService
 
   def execute_ffmpeg!(source_path, temp_path)
     cmd = [
-      'ffmpeg', '-nostdin', '-loglevel', 'error', '-y',
-      '-i', source_path.to_s,
-      '-vn',
-      '-ar', TARGET_SAMPLE_RATE.to_s,
-      '-ac', '2',
-      '-b:a', TARGET_BITRATE,
-      '-f', 'mp3',
-      temp_path.to_s
+      'ffmpeg', '-nostdin', '-loglevel', 'error', '-y', '-i', source_path.to_s,
+      '-vn', '-ar', TARGET_SAMPLE_RATE.to_s, '-ac', '2', '-b:a', TARGET_BITRATE, '-f', 'mp3', temp_path.to_s
     ]
-
     _stdout, stderr, status = run_command(cmd)
     return if status.success?
 
@@ -161,8 +154,7 @@ class Telephony::RecordingCompressionService
 
   def validate_duration_drift!(orig_dur, comp_dur)
     unless orig_dur.finite? && comp_dur.finite? && orig_dur.positive? && comp_dur.positive?
-      raise DurationDriftError,
-            'Could not verify input and output durations'
+      raise DurationDriftError, 'Could not verify input and output durations'
     end
 
     drift = (comp_dur - orig_dur).abs
@@ -172,13 +164,7 @@ class Telephony::RecordingCompressionService
   end
 
   def probe_duration(file_path)
-    cmd = [
-      'ffprobe', '-v', 'error',
-      '-show_entries', 'format=duration',
-      '-of', 'default=noprint_wrappers=1:nokey=1',
-      file_path.to_s
-    ]
-
+    cmd = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', file_path.to_s]
     stdout, stderr, status = run_command(cmd)
     raise CompressionError, "ffprobe failed: #{stderr.lines.last(3).join(' ').strip}" unless status.success?
 
@@ -198,8 +184,6 @@ class Telephony::RecordingCompressionService
     raise CompressionError, "Compressed output could not be decoded: #{stderr.lines.last(3).join(' ').strip}"
   end
 
-  # Runs an external command without a shell and kills it when it exceeds TIMEOUT_SECONDS, so a stuck
-  # ffmpeg can never occupy a worker thread forever.
   def run_command(cmd)
     Open3.popen3(*cmd) do |stdin, stdout, stderr, wait_thread|
       stdin.close
@@ -222,22 +206,17 @@ class Telephony::RecordingCompressionService
     nil
   end
 
-  # Everything the database knows about the recording moves to the new file in one transaction. Errors
-  # are not swallowed: the caller must know that the original may not be removed.
   def update_database_records!(compressed)
     session = call_session || find_call_session
     raise CompressionError, 'Call session not found for recording reference' unless session
 
-    Telephony::RecordingReferenceUpdater.new(
-      session: session, old_key: storage_key, compressed: compressed
-    ).perform!
+    Telephony::RecordingReferenceUpdater.new(session: session, old_key: storage_key, compressed: compressed).perform!
   end
 
   def refresh_storage_breakdown(session)
     Accounts::StorageOverviewService.new(account: session.account).invalidate!
   rescue StandardError => e
-    Rails.logger.warn("[RecordingCompressionService] Storage refresh request failed account=#{session&.account_id} " \
-                      "error=#{e.class.name}")
+    Rails.logger.warn("[RecordingCompressionService] Storage refresh request failed account=#{session&.account_id} error=#{e.class.name}")
   end
 
   def find_call_session

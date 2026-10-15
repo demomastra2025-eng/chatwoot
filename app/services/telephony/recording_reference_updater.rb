@@ -51,21 +51,17 @@ class Telephony::RecordingReferenceUpdater
       'byte_size' => byte_size,
       'compressed' => true,
       'codec' => CODEC,
-      # Playback serves the file with this type; leaving "audio/wav" here would label an MP3 as WAV.
       'content_type' => CONTENT_TYPE
     )
     recording['duration_seconds'] = duration.round if duration.positive?
+    now_iso = Time.current.iso8601
     recording['retained_original'] = {
-      'storage_key' => old_key,
-      'byte_size' => original_byte_size,
-      'expires_at' => ORIGINAL_RETENTION_DAYS.days.from_now.iso8601
+      'storage_key' => old_key, 'byte_size' => original_byte_size,
+      'expires_at' => now_iso, 'purged_at' => now_iso
     }
     meta.merge('recording' => recording)
   end
 
-  # Only the messages of this conversation that actually mention the recording are rewritten, and the
-  # rewrite skips model callbacks: re-pointing old calls must not fire message.updated webhooks and
-  # automations for every historical message.
   def update_messages!
     return if session.conversation_id.blank?
 
@@ -77,7 +73,7 @@ class Telephony::RecordingReferenceUpdater
 
         attributes = message.content_attributes.is_a?(Hash) ? message.content_attributes.deep_dup : {}
         data = attributes['data']
-        next unless data.is_a?(Hash) && rewrite_recording_data!(data)
+        next unless data.is_a?(Hash) && rewrite_recording_data!(data, update_nested_meta: true)
 
         data['recording_url'] = playback_url if playback_url
         attributes['data'] = data
@@ -104,52 +100,51 @@ class Telephony::RecordingReferenceUpdater
     return false unless path
 
     Storage::RecordingPaths.reference_matches_paths?(
-      reference, [path], account_id: session.account_id,
-      aliases: old_reference_aliases, qualified_references: qualified_references, conservative: false
+      reference, [path],
+      account_id: session.account_id,
+      aliases: old_reference_aliases,
+      qualified_references: qualified_references,
+      conservative: false
     )
   end
 
-  def rewrite_recording_data!(data)
-    changed = false
-    recording = data['recording']
-    qualified_references = [
+  def rewrite_recording_data!(container, update_nested_meta: false)
+    recording = container['recording']
+    refs = extract_qualified_references(container, recording)
+    changed = rewrite_nested_recording!(recording, refs, update_nested_meta: update_nested_meta)
+    changed = rewrite_key_if_matches!(container, 'storage_key', refs) || changed
+    rewrite_key_if_matches!(container, 'recording_ref', refs) || changed
+  end
+
+  def extract_qualified_references(container, recording)
+    [
       recording.is_a?(Hash) ? recording['storage_key'] : nil,
       recording.is_a?(Hash) ? recording['recording_ref'] : nil,
-      data['storage_key'],
-      data['recording_ref']
+      container['storage_key'],
+      container['recording_ref']
     ].compact_blank
-    recording_storage_matches = recording.is_a?(Hash) && recording_reference_matches?(
-      recording['storage_key'], qualified_references: qualified_references
-    )
-    top_storage_matches = recording_reference_matches?(
-      data['storage_key'], qualified_references: qualified_references
-    )
+  end
 
-    if recording.is_a?(Hash) && recording_storage_matches
+  def rewrite_nested_recording!(recording, refs, update_nested_meta: false)
+    return false unless recording.is_a?(Hash)
+
+    changed = false
+    if recording_reference_matches?(recording['storage_key'], qualified_references: refs)
       recording['storage_key'] = new_key
-      recording['byte_size'] = byte_size
-      recording['content_type'] = CONTENT_TYPE if recording.key?('content_type')
+      if update_nested_meta
+        recording['byte_size'] = byte_size
+        recording['content_type'] = CONTENT_TYPE if recording.key?('content_type')
+      end
       changed = true
     end
+    rewrite_key_if_matches!(recording, 'recording_ref', refs) || changed
+  end
 
-    if recording.is_a?(Hash) && recording_reference_matches?(
-      recording['recording_ref'], qualified_references: qualified_references
-    )
-      recording['recording_ref'] = new_key
-      changed = true
-    end
+  def rewrite_key_if_matches!(hash, key, refs)
+    return false unless recording_reference_matches?(hash[key], qualified_references: refs)
 
-    if top_storage_matches
-      data['storage_key'] = new_key
-      changed = true
-    end
-
-    if recording_reference_matches?(data['recording_ref'], qualified_references: qualified_references)
-      data['recording_ref'] = new_key
-      changed = true
-    end
-
-    changed
+    hash[key] = new_key
+    true
   end
 
   def conversation_reference_conditions
@@ -171,48 +166,23 @@ class Telephony::RecordingReferenceUpdater
     return if session.conversation_id.blank?
 
     conversations = Conversation.where(id: session.conversation_id, account_id: session.account_id)
-                                 .where(conversation_reference_conditions, refs: old_reference_aliases)
-    conversations.find_each do |candidate|
-      candidate.with_lock do
-        conversation = Conversation.find_by(id: candidate.id, account_id: session.account_id)
-        next unless conversation
+                                .where(conversation_reference_conditions, refs: old_reference_aliases)
+    conversations.find_each { |candidate| update_locked_conversation!(candidate) }
+  end
 
-        conversation.reload
-        attributes = conversation.additional_attributes
-        next unless attributes.is_a?(Hash)
+  def update_locked_conversation!(candidate)
+    candidate.with_lock do
+      conversation = Conversation.find_by(id: candidate.id, account_id: session.account_id)
+      return unless conversation
 
-        updated = attributes.deep_dup
-        recording = updated['recording']
-        changed = false
-        qualified_references = [
-          recording.is_a?(Hash) ? recording['storage_key'] : nil,
-          recording.is_a?(Hash) ? recording['recording_ref'] : nil,
-          updated['storage_key'],
-          updated['recording_ref']
-        ].compact_blank
-        if recording.is_a?(Hash)
-          if recording_reference_matches?(recording['storage_key'], qualified_references: qualified_references)
-            recording['storage_key'] = new_key
-            changed = true
-          end
-          if recording_reference_matches?(recording['recording_ref'], qualified_references: qualified_references)
-            recording['recording_ref'] = new_key
-            changed = true
-          end
-        end
-        if recording_reference_matches?(updated['storage_key'], qualified_references: qualified_references)
-          updated['storage_key'] = new_key
-          changed = true
-        end
-        if recording_reference_matches?(updated['recording_ref'], qualified_references: qualified_references)
-          updated['recording_ref'] = new_key
-          changed = true
-        end
-        next unless changed
+      conversation.reload
+      attributes = conversation.additional_attributes
+      return unless attributes.is_a?(Hash)
 
-        updated['recording'] = recording if recording.is_a?(Hash)
-        conversation.update!(additional_attributes: updated)
-      end
+      updated = attributes.deep_dup
+      return unless rewrite_recording_data!(updated)
+
+      conversation.update!(additional_attributes: updated)
     end
   end
 end
