@@ -57,7 +57,7 @@ const openLink = link => {
         />
 
         <div class="relative flex flex-col items-start gap-4 z-20">
-          <div class="flex-shrink-0 bg-gray-800 w-full h-[7.5rem] rounded-lg">
+          <div class="flex-shrink-0 bg-n-slate-3 w-full h-[7.5rem] rounded-lg">
             <img
               v-if="!imageError && thumbnail"
               :src="thumbnail"

@@ -176,7 +176,7 @@ defineExpose({ handleOpen });
   <Teleport to="body">
     <div
       v-if="show"
-      class="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[10001]"
+      class="fixed inset-0 bg-n-black/90 flex items-center justify-center z-[10001]"
       @click="close"
     >
       <div v-if="isGenerating" class="flex items-center justify-center">

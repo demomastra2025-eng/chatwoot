@@ -172,7 +172,7 @@ watch(
   <Teleport to="body">
     <div
       v-if="isOpen"
-      class="fixed inset-0 z-[9999] bg-black font-interDisplay"
+      class="fixed inset-0 z-[9999] bg-n-black font-interDisplay"
     >
       <div class="relative w-full h-full overflow-hidden">
         <div

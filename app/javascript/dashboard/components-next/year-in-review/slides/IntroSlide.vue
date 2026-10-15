@@ -16,7 +16,7 @@ const { t } = useI18n();
 
 <template>
   <div
-    class="absolute inset-0 flex flex-col items-center justify-center text-black px-8 md:px-16 lg:px-24 py-10 md:py-16 lg:py-20 bg-cover bg-center min-h-[700px]"
+    class="absolute inset-0 flex flex-col items-center justify-center text-n-black px-8 md:px-16 lg:px-24 py-10 md:py-16 lg:py-20 bg-cover bg-center min-h-[700px]"
     :style="{
       backgroundImage: `url('/assets/images/dashboard/year-in-review/first-frame-bg.png')`,
     }"

@@ -125,7 +125,7 @@ useEventListener(document, 'keydown', event => {
   >
     <div
       v-if="modelValue"
-      class="fixed inset-0 z-[110] flex justify-end bg-black/35 p-2 backdrop-blur-[4px] sm:p-3 md:hidden"
+      class="fixed inset-0 z-[110] flex justify-end bg-n-alpha-black1 p-2 backdrop-blur-[4px] sm:p-3 md:hidden"
     >
       <Transition
         enter-active-class="transition-transform duration-200 ease-out"

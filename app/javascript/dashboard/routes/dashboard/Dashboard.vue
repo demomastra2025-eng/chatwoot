@@ -232,7 +232,7 @@ export default {
         >
           <div
             v-if="!isTrialExpired"
-            class="flex items-center justify-between px-4 py-2 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-900/50 text-amber-900 dark:text-amber-100 text-xs sm:text-sm font-medium z-10 flex-shrink-0"
+            class="flex items-center justify-between px-4 py-2 bg-n-amber-2 border-b border-n-amber-6 text-n-amber-11 text-xs sm:text-sm font-medium z-10 flex-shrink-0"
             data-testid="trial-active-banner"
           >
             <div class="flex items-center gap-2 truncate">
@@ -243,14 +243,14 @@ export default {
             <router-link
               v-if="canChoosePlan"
               :to="{ name: 'billing_settings_index', params: { accountId } }"
-              class="ml-3 px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-md shadow-xs transition-colors shrink-0"
+              class="ml-3 px-3 py-1 bg-n-amber-9 hover:bg-n-amber-10 text-n-black text-xs font-semibold rounded-md shadow-xs transition-colors shrink-0"
             >
               {{ $t('TRIAL_BANNER.CHOOSE_PLAN') }}
             </router-link>
           </div>
           <div
             v-else
-            class="flex items-center justify-between px-4 py-2 bg-red-50 dark:bg-red-950/40 border-b border-red-200 dark:border-red-900/50 text-red-900 dark:text-red-100 text-xs sm:text-sm font-medium z-10 flex-shrink-0"
+            class="flex items-center justify-between px-4 py-2 bg-red-50 dark:bg-n-ruby-3 border-b border-red-200 dark:border-red-900/50 text-red-900 dark:text-red-100 text-xs sm:text-sm font-medium z-10 flex-shrink-0"
             data-testid="trial-expired-banner"
           >
             <div class="flex items-center gap-2 truncate">

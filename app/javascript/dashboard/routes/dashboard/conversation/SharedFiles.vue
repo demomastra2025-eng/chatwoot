@@ -340,12 +340,12 @@ const displayFileMeta = attachment => {
             />
 
             <div
-              class="absolute inset-0 transition-opacity duration-200 opacity-0 pointer-events-none group-hover:opacity-100 bg-gradient-to-t from-black/40 via-transparent to-transparent"
+              class="absolute inset-0 transition-opacity duration-200 opacity-0 pointer-events-none group-hover:opacity-100 bg-gradient-to-t from-n-black/40 via-transparent to-transparent"
             />
 
             <div
               v-if="hasVideoPreview(attachment)"
-              class="absolute inset-0 flex items-center justify-center pointer-events-none bg-gradient-to-t from-black/30 via-transparent to-transparent"
+              class="absolute inset-0 flex items-center justify-center pointer-events-none bg-gradient-to-t from-n-black/30 via-transparent to-transparent"
             >
               <div
                 class="flex items-center justify-center rounded-full size-7 bg-white/95 shadow-md"

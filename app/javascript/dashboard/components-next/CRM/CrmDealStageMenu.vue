@@ -166,7 +166,7 @@ useEventListener(window, 'scroll', updateDropdownPosition, {
         <span class="inline-flex min-w-0 items-center gap-1.5">
           <span
             v-if="!isListVariant"
-            class="size-2.5 shrink-0 rounded-full outline outline-1 outline-black/10 dark:outline-white/10"
+            class="size-2.5 shrink-0 rounded-full outline outline-1 outline-n-alpha-black1 dark:outline-white/10"
             :style="{ backgroundColor: currentStageColor }"
           />
           <span class="truncate">{{ currentStageLabel }}</span>
@@ -188,7 +188,7 @@ useEventListener(window, 'scroll', updateDropdownPosition, {
         >
           <template #thumbnail="{ item }">
             <span
-              class="size-2.5 shrink-0 rounded-full outline outline-1 outline-black/10 dark:outline-white/10"
+              class="size-2.5 shrink-0 rounded-full outline outline-1 outline-n-alpha-black1 dark:outline-white/10"
               :style="{ backgroundColor: item.color || fallbackStageColor }"
             />
           </template>

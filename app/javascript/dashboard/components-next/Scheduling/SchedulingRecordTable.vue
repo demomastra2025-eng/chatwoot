@@ -93,12 +93,12 @@ const handleHeaderSort = column => {
         <button
           v-if="column.sortable"
           type="button"
-          class="inline-flex w-full items-center gap-1 border-0 bg-transparent p-0 text-inherit"
+          class="inline-flex w-full items-center gap-1 border-0 bg-transparent p-0 text-current"
           :class="[
             column.align === 'end' ? 'justify-end' : 'justify-start',
             resolveSortDirection(column.key)
               ? 'text-n-slate-12'
-              : 'text-inherit',
+              : 'text-current',
           ]"
           @click="handleHeaderSort(column)"
         >

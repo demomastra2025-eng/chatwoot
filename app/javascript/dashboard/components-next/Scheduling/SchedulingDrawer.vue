@@ -85,7 +85,7 @@ const widthClass = computed(() => {
 const isCentered = computed(() => props.placement === 'center');
 
 const overlayClass = computed(() => [
-  'fixed inset-0 z-[110] bg-black/35 p-2 backdrop-blur-[4px] sm:p-3',
+  'fixed inset-0 z-[110] bg-n-alpha-black1 p-2 backdrop-blur-[4px] sm:p-3',
   isCentered.value ? 'flex items-center justify-center' : 'flex justify-end',
 ]);
 
