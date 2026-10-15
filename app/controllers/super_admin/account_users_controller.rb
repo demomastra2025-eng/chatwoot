@@ -21,7 +21,7 @@ class SuperAdmin::AccountUsersController < SuperAdmin::ApplicationController
     if requested_resource.destroy
       flash[:notice] = translate_with_resource('destroy.success')
     else
-      flash[:error] = requested_resource.errors.full_messages.join('<br/>')
+      flash[:error] = requested_resource.errors.full_messages.join(', ')
     end
     redirect_back(fallback_location: [namespace, requested_resource.account])
   end
