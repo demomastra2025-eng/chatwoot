@@ -56,7 +56,7 @@
                 Глобальный: <%= key_status[:global_configured] ? 'да' : 'нет' %>, workspace: <%= key_status[:account_configured] ? 'да' : 'нет' %>
               </div>
               <div class="text-xs text-n-slate-10">
-                Тип: <%= key_details[:key_type].presence || 'unknown' %>, проверен: <%= key_health[:checked_at].presence || 'never' %>
+                Тип: <%= key_details[:key_type].presence || 'неизвестно' %>, проверен: <%= super_admin_time(key_health[:checked_at]) || 'никогда' %>
               </div>
               <% if key_health[:error].present? %>
                 <div class="mt-1 text-xs text-n-ruby-11"><%= key_health[:error] %></div>
@@ -72,20 +72,20 @@
                   Всего: <%= number_with_precision(credits[:total_credits].to_f, precision: 2) %>, расход: <%= number_with_precision(credits[:total_usage].to_f, precision: 2) %>
                 </div>
               <% else %>
-                <div class="mt-1 font-semibold text-n-slate-12"><%= credits[:status].presence || 'not checked' %></div>
+                <div class="mt-1 font-semibold text-n-slate-12"><%= credits[:status].presence || 'не проверялось' %></div>
                 <div class="text-xs text-n-slate-11"><%= credits[:reason].presence || credits[:error].presence || 'Для синхронизации кредитов нужен management key.' %></div>
               <% end %>
               <div class="text-xs text-n-slate-10">
-                Лимит ключа: <%= key_details[:limit].present? ? number_with_precision(key_details[:limit].to_f, precision: 2) : 'none' %>,
-                осталось: <%= key_details[:limit_remaining].present? ? number_with_precision(key_details[:limit_remaining].to_f, precision: 2) : 'unknown' %>
+                Лимит ключа: <%= key_details[:limit].present? ? number_with_precision(key_details[:limit].to_f, precision: 2) : 'нет' %>,
+                осталось: <%= key_details[:limit_remaining].present? ? number_with_precision(key_details[:limit_remaining].to_f, precision: 2) : 'неизвестно' %>
               </div>
             </div>
             <div class="rounded-md border border-n-weak bg-n-slate-3 p-3">
               <div class="text-xs font-medium uppercase text-n-slate-11">Каталог моделей</div>
-              <div class="mt-1 font-semibold text-n-slate-12"><%= catalog[:last_refreshed_at].presence || 'never' %></div>
-              <div class="text-xs text-n-slate-11">Статус: <%= catalog[:refresh_status] || 'unknown' %>, источник: <%= catalog[:source] || 'unknown' %><%= catalog[:using_fallback] ? ' (fallback)' : '' %></div>
+              <div class="mt-1 font-semibold text-n-slate-12"><%= super_admin_time(catalog[:last_refreshed_at]) || 'никогда' %></div>
+              <div class="text-xs text-n-slate-11">Статус: <%= catalog[:refresh_status] || 'неизвестно' %>, источник: <%= catalog[:source] || 'неизвестно' %><%= catalog[:using_fallback] ? ' (fallback)' : '' %></div>
               <% if catalog[:last_started_at].present? %>
-                <div class="text-xs text-n-slate-10">Старт: <%= catalog[:last_started_at] %></div>
+                <div class="text-xs text-n-slate-10">Старт: <%= super_admin_time(catalog[:last_started_at]) %></div>
               <% end %>
             </div>
             <div class="rounded-md border border-n-weak bg-n-slate-3 p-3">
@@ -97,14 +97,14 @@
             <div class="rounded-md border border-n-weak bg-n-slate-3 p-3">
               <div class="text-xs font-medium uppercase text-n-slate-11">Endpoints</div>
               <div class="mt-1 font-semibold text-n-slate-12"><%= endpoints[:total_endpoints] || 0 %> endpoint</div>
-              <div class="text-xs text-n-slate-11">Статус: <%= endpoints[:refresh_status] || 'unknown' %>, провайдеры: <%= Array(endpoints[:providers]).first(5).join(', ').presence || 'none' %></div>
+              <div class="text-xs text-n-slate-11">Статус: <%= endpoints[:refresh_status] || 'неизвестно' %>, провайдеры: <%= Array(endpoints[:providers]).first(5).join(', ').presence || 'нет' %></div>
               <div class="text-xs text-n-slate-10">Устаревшие: <%= endpoints[:stale_endpoints] || 0 %>, ждут refresh: <%= endpoints[:pending_model_count] || 0 %></div>
             </div>
             <div class="rounded-md border border-n-weak bg-n-slate-3 p-3">
               <div class="text-xs font-medium uppercase text-n-slate-11">Runtime</div>
               <div class="mt-1 font-semibold text-n-slate-12"><%= runtime[:total_events] || 0 %> событий / <%= runtime[:request_count] || 0 %> запросов</div>
               <div class="text-xs text-n-slate-11">Ошибки: <%= runtime[:error_count] || 0 %>, провайдер: <%= runtime[:provider_failure_count] || 0 %></div>
-              <div class="text-xs text-n-slate-10">Стоимость: <%= number_with_precision(runtime[:estimated_cost].to_f, precision: 6) %>, последнее: <%= runtime[:last_event_at].presence || 'never' %></div>
+              <div class="text-xs text-n-slate-10">Стоимость: <%= number_with_precision(runtime[:estimated_cost].to_f, precision: 6) %>, последнее: <%= super_admin_time(runtime[:last_event_at]) || 'никогда' %></div>
             </div>
           </div>
 
@@ -203,7 +203,7 @@
                 <div class="rounded-md border border-n-weak p-2">
                   <div class="font-medium text-n-slate-12"><%= feature_key %></div>
                   <div class="text-xs text-n-slate-11">
-                    Доступно: <%= feature.to_h[:available_model_count] || 0 %>, выбрано: <%= feature.to_h[:selected_model].presence || 'none' %>, default: <%= feature.to_h[:default_model].presence || 'none' %>
+                    Доступно: <%= feature.to_h[:available_model_count] || 0 %>, выбрано: <%= feature.to_h[:selected_model].presence || 'нет' %>, default: <%= feature.to_h[:default_model].presence || 'нет' %>
                   </div>
                   <% if feature_policy.present? %>
                     <div class="mt-1 text-xs text-n-slate-11">
@@ -239,7 +239,7 @@
                   <div class="truncate font-medium text-n-slate-12"><%= model[:display_name] || model[:id] %></div>
                   <div class="truncate text-xs text-n-slate-11"><%= model[:id] %></div>
                   <div class="mt-1 text-xs text-n-slate-11">
-                    Тип: <%= model[:type].presence || 'unknown' %>, endpoints: <%= model[:endpoint_count] || 0 %>, провайдеры: <%= Array(model[:endpoint_providers]).first(3).join(', ').presence || 'none' %>
+                    Тип: <%= model[:type].presence || 'неизвестно' %>, endpoints: <%= model[:endpoint_count] || 0 %>, провайдеры: <%= Array(model[:endpoint_providers]).first(3).join(', ').presence || 'нет' %>
                   </div>
                   <% if hidden_reasons.present? %>
                     <div class="mt-1 text-xs text-n-amber-11">Почему скрыта: <%= hidden_reasons.join(', ') %></div>
@@ -292,7 +292,7 @@
                         <span class="rounded-full border px-2 py-0.5 <%= status_class %>"><%= status_label %></span>
                       </td>
                       <td class="py-2 pr-4"><%= operation[:scope].presence || 'superadmin' %></td>
-                      <td class="py-2 pr-4"><%= Array(operation[:capabilities]).join(', ').presence || 'none' %></td>
+                      <td class="py-2 pr-4"><%= Array(operation[:capabilities]).join(', ').presence || 'нет' %></td>
                       <td class="py-2"><%= operation[:reason].presence || 'Без комментария.' %></td>
                     </tr>
                   <% end %>

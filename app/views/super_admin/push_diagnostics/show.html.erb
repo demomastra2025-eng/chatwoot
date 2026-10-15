@@ -113,10 +113,7 @@
                     <% end %>
                   </td>
                   <td class="px-3 py-2 first:!pl-4 last:!pr-4 whitespace-nowrap"><%= super_admin_time(sub.created_at) %></td>
-                  <td class="px-3 py-2 first:!pl-4 last:!pr-4 whitespace-nowrap">
-                    <%= super_admin_time(sub.updated_at) %>
-                    <span class="text-xs text-n-slate-10">(<%= time_ago_in_words(sub.updated_at) %> ago)</span>
-                  </td>
+                  <td class="px-3 py-2 first:!pl-4 last:!pr-4 whitespace-nowrap"><%= super_admin_time(sub.updated_at) %></td>
                 </tr>
               <% end %>
             </tbody>

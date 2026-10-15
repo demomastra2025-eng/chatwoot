@@ -41,6 +41,39 @@ RSpec.describe 'Super Admin times in Astana time', type: :request do
     expect(row[I18n.t('super_admin.accounts.csv.headers').last]).to eq('15.10.2026 17:05')
   end
 
+  describe 'the OpenRouter diagnostics of the AI config page' do
+    let(:diagnostics) do
+      {
+        key_status: { health: { checked_at: '2026-10-15T12:05:09Z', key: {} } },
+        catalog: { last_refreshed_at: '2026-10-15T12:05:09Z', last_started_at: '2026-10-15T12:00:00Z' },
+        runtime: { last_event_at: '2026-10-15T12:05:09Z' }
+      }
+    end
+
+    before do
+      allow(ChatwootHub).to receive(:pricing_plan).and_return('enterprise')
+      allow(Llm::OpenRouterDiagnostics).to receive(:call).and_return(diagnostics)
+    end
+
+    it 'shows every moment in Astana time, not as an ISO string in UTC' do
+      get '/super_admin/app_config?config=captain'
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include('15.10.2026 17:05', 'Старт: 15.10.2026 17:00')
+      expect(response.body).not_to include('2026-10-15T12:05:09Z')
+    end
+
+    it 'says «никогда» and «неизвестно» in Russian when there is nothing to show' do
+      allow(Llm::OpenRouterDiagnostics).to receive(:call).and_return({})
+
+      get '/super_admin/app_config?config=captain'
+
+      section = response.body[%r{OpenRouter</div>.*?Модели</div>}m].to_s
+      expect(section).to include('проверен: никогда', 'неизвестно')
+      expect(section).not_to match(/\bnever\b|\bunknown\b/)
+    end
+  end
+
   describe 'the confirmation time of a user' do
     # the factory confirms the user right after creating it, so the moment is written afterwards
     let(:user) { create(:user).tap { |record| record.update_columns(confirmed_at: moment) } } # rubocop:disable Rails/SkipsModelValidations

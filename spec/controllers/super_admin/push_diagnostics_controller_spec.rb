@@ -30,6 +30,17 @@ RSpec.describe 'Super Admin Push Diagnostics', type: :request do
       expect(response.body).to include('…123456')
       expect(response.body).not_to include('push-token-123456')
     end
+
+    it 'shows when a subscription was changed in Astana time, with no English «ago» next to it' do
+      subscription = create(:notification_subscription, :fcm, user: user, identifier: 'operator-device')
+      subscription.update_columns(updated_at: Time.utc(2026, 10, 15, 12, 5, 9)) # rubocop:disable Rails/SkipsModelValidations
+      sign_in(super_admin, scope: :super_admin)
+
+      get '/super_admin/push_diagnostics', params: { user_query: user.email }
+
+      expect(response.body).to include('15.10.2026 17:05')
+      expect(response.body).not_to match(/\bago\b/)
+    end
   end
 
   describe 'POST /super_admin/push_diagnostics' do
