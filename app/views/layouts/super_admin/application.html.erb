@@ -10,14 +10,19 @@ By default, it renders:
   (if provided by a `content_for` block in a nested page)
 - Flashes
 - Links to stylesheets and JavaScripts
+
+Pages that need the Vue bundle (`superadmin_pages`) add it with
+`content_for(:vue_entry)`; it is printed in <head> below.
 %>
 
 <!DOCTYPE html>
-<html lang="<%= I18n.locale %>" class="w-full h-full">
+<html lang="ru" class="w-full h-full bg-n-background">
 <head>
   <meta charset="utf-8">
   <meta name="ROBOTS" content="NOODP">
-  <meta name="viewport" content="initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <%# Must run before any CSS so the theme is correct on first paint. %>
+  <%= render "super_admin/application/theme_script" %>
   <title>
     <%= content_for?(:title) ? "#{content_for(:title)} - OneLink Admin" : 'OneLink Admin' %>
   </title>
@@ -28,9 +33,10 @@ By default, it renders:
   <%= render "stylesheet" %>
   <%= vite_client_tag %>
   <%= vite_javascript_tag 'superadmin' %>
+  <%= yield :vue_entry %>
   <%= csrf_meta_tags %>
 </head>
-<body class="antialiased w-full h-full">
+<body class="w-full h-full bg-n-background text-n-slate-12 antialiased">
   <%= render "icons" %>
   <div class="flex w-full h-full">
     <%= render "navigation" -%>

@@ -1,0 +1,29 @@
+<%#
+# Theme script
+
+Applies the colour theme before any CSS is parsed, so there is no flash of the
+wrong theme. It reads the same `color_scheme` key as the operator app
+(`dark`, `light` or `auto`; missing means `auto`), falls back to the operating
+system setting and puts the `dark` class on <html> (the design tokens flip
+under `.dark`). Render it in <head> before the stylesheets.
+%>
+<script>
+  (function () {
+    var scheme = 'auto';
+    var prefersDark = false;
+    try {
+      scheme = String(window.localStorage.getItem('color_scheme') || 'auto').replace(/"/g, '');
+    } catch (e) {}
+    try {
+      prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    } catch (e) {}
+    var dark = scheme === 'dark' || (scheme !== 'light' && prefersDark);
+    var root = document.documentElement;
+    if (dark) {
+      root.classList.add('dark');
+    } else {
+      root.classList.remove('dark');
+    }
+    root.style.colorScheme = dark ? 'dark' : 'light';
+  })();
+</script>

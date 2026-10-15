@@ -2,6 +2,11 @@
   Сводка здоровья клиентов (OneLink Health Matrix)
 <% end %>
 
+<%# The Vue bundle is needed only here; the layout prints it in <head> via `yield :vue_entry`. %>
+<% content_for(:vue_entry) do %>
+  <%= vite_javascript_tag 'superadmin_pages' %>
+<% end %>
+
 <%= render_vue_component('DashboardIndex', {
   accountsCount: @accounts_count,
   usersCount: @users_count,
