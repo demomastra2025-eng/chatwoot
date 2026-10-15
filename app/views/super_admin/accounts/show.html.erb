@@ -1,86 +1,97 @@
 <%#
-# Show
+# Clinic card
 
-This view is the template for the show page.
-It renders the attributes of a resource,
-as well as a link to its edit page.
+The page of one clinic. Header: name, status, #id, creation date (Astana time),
+«Войти в аккаунт» and «Редактировать». Main column: plan (base + modules, with
+the preview of what a change does), limits and spend, channels, «Тонкая
+настройка» (collapsed), users, technical data (collapsed). Side column: trial,
+basic facts, maintenance.
 
 ## Local variables:
 
-- `page`:
-  An instance of [Administrate::Page::Show][1].
-  Contains methods for accessing the resource to be displayed on the page,
-  as well as helpers for describing how each attribute of the resource
-  should be displayed.
+- `page`: an `Administrate::Page::Show`; `page.resource` is the clinic.
+%>
+<%
+  account = page.resource
+  state = SuperAdmin::AccountPlanState.new(account)
+  status = if account.custom_attributes.to_h['marked_for_deletion_at'].present?
+             :deleting
+           else
+             account.suspended? ? :suspended : :active
+           end
+  status_tone = { active: 'admin-badge--teal', suspended: 'admin-badge--amber', deleting: 'admin-badge--ruby' }.fetch(status)
+  target_user = account.administrators.first || account.users.first
+%>
 
-[1]: http://www.rubydoc.info/gems/administrate/Administrate/Page/Show %>
-
-<% content_for(:title) do
-  t("administrate.actions.show_resource", name: page.page_title)
-end %>
+<% content_for(:title) { account.name } %>
 
 <header class="main-content__header" role="banner">
   <div class="main-content__heading">
-    <h1 class="main-content__page-title">
-      <%= content_for(:title) %>
-    </h1>
+    <nav aria-label="<%= t('super_admin.clinic_card.breadcrumb') %>" class="text-[13px] text-n-slate-11">
+      <%= link_to t('super_admin.navigation.items.accounts'), super_admin_accounts_path, class: 'text-n-brand hover:underline' %>
+      <span class="mx-1.5 text-n-slate-10" aria-hidden="true">/</span>
+      <span><%= account.name %></span>
+    </nav>
+    <div class="flex flex-wrap items-center gap-2.5">
+      <h1 class="main-content__page-title"><%= account.name %></h1>
+      <span class="admin-badge <%= status_tone %>" data-testid="account-status"><%= t("super_admin.accounts.statuses.#{status}") %></span>
+    </div>
+    <p class="main-content__description" data-testid="account-meta">
+      <span class="tabular-nums">#<%= account.id %></span>
+      · <%= t('super_admin.clinic_card.created', date: super_admin_date(account.created_at)) %>
+    </p>
   </div>
 
   <div class="main-content__actions">
-    <% target_user = page.resource.administrators.first || page.resource.users.first %>
     <% if target_user.present? %>
       <%# POST on purpose: the one-time login token is only created (and audited) when the button is pressed, not on every page view. %>
-      <%= button_to("Войти в аккаунт", [:impersonate, :super_admin, page.resource], method: :post, form: { target: "_blank" }, class: "button button--secondary", title: "Беспарольный вход в кабинет клиента глазами администратора аккаунта") %>
+      <%= button_to(t('super_admin.clinic_card.actions.enter'), [:impersonate, :super_admin, account], method: :post, form: { target: "_blank" },
+                    class: "button button--secondary", title: t('super_admin.clinic_card.actions.enter_hint')) %>
     <% end %>
-    <%= if accessible_action?(page.resource, :edit)
-      link_to(t("administrate.actions.edit"), [:edit, namespace, page.resource], class: "button")
-    end %>
+    <%= link_to(t("administrate.actions.edit"), [:edit, namespace, account], class: "button") if accessible_action?(account, :edit) %>
   </div>
 </header>
 
 <section class="main-content__body">
-  <div class="flex flex-col gap-5">
-    <% page.attributes.each do |title, attributes| %>
-      <% if title.present? && title == 'all_features' %>
-        <% regular_features, premium_features =
-          attributes.partition do |attr|
-            !SuperAdmin::AccountFeaturesHelper.account_premium_features.include?(
-              attr.data.keys.first,
-            )
-          end %>
+  <div class="admin-card-layout">
+    <div class="flex min-w-0 flex-col gap-5">
+      <%= render 'plan', account: account, state: state %>
 
-        <section class="admin-card">
-          <% [regular_features, premium_features].reject(&:empty?).each_with_index do |features, index| %>
-            <dl class="attribute-list <%= 'border-t border-n-weak' if index.positive? %>">
-              <% features.each do |attribute| %>
-                <dt class="attribute-label" id="<%= attribute.name %>">
-                  <%= t(
-                    "helpers.label.#{resource_name}.#{attribute.name}",
-                    default: page.resource.class.human_attribute_name(attribute.name),
-                  ) %>
-                </dt>
-
-                <dd class="attribute-data attribute-data--<%=attribute.html_class%>"
-                    ><%= render_field attribute, page: page %></dd>
-              <% end %>
-            </dl>
-          <% end %>
-        </section>
-      <% else %>
-        <%= render "attribute_list", title: title, attributes: attributes, page: page %>
+      <% if ChatwootApp.enterprise? %>
+        <%= render 'limits_usage', account: account, usage: SuperAdmin::AccountUsage.new(account) %>
       <% end %>
-    <% end %>
+
+      <%= render 'channels', account: account %>
+
+      <details class="admin-collapse" id="fine-tuning" data-testid="fine-tuning-block">
+        <summary>
+          <span class="flex min-w-0 flex-col gap-0.5">
+            <span class="text-heading-2 text-n-slate-12"><%= t('super_admin.fine_tuning.title') %></span>
+            <span class="text-body-main text-n-slate-11"><%= t('super_admin.fine_tuning.hint') %></span>
+          </span>
+          <span class="admin-collapse__chevron i-lucide-chevron-down size-4" aria-hidden="true"></span>
+        </summary>
+        <div class="admin-collapse__body">
+          <%= form_with url: super_admin_account_path(account), method: :patch, local: true, class: 'flex flex-col gap-5' do %>
+            <%# The update expects an `account` parameter; the name is sent back unchanged. %>
+            <%= hidden_field_tag 'account[name]', account.name, id: nil %>
+            <%= render 'fine_tuning', account: account %>
+            <div class="admin-block__footer">
+              <%= submit_tag t('super_admin.shell.save'), name: nil %>
+            </div>
+          <% end %>
+        </div>
+      </details>
+
+      <%= render 'users', account: account, page: page %>
+
+      <%= render 'technical', account: account %>
+    </div>
+
+    <div class="flex min-w-0 flex-col gap-5">
+      <%= render 'trial', account: account, state: state %>
+      <%= render 'info', account: account, state: state %>
+      <%= render 'maintenance', account: account %>
+    </div>
   </div>
 </section>
-
-<%= render partial: "channels", locals: { account: page.resource } %>
-
-<%= render 'super_admin/shared/account_user_form', page: page, namespace: namespace, resource_type: 'account' %>
-
-<% if ChatwootApp.enterprise? %>
-  <%= render partial: "usage_controls", locals: { account: page.resource } %>
-<% end %>
-
-<%= render partial: "seed_data", locals: { page: page } %>
-
-<%= render partial: "reset_cache", locals: { page: page } %>

@@ -1,0 +1,42 @@
+<%#
+# The base and module cards of the plan
+
+The base is part of every clinic: a card without a switch. A module is a switch
+(`modules[]`) on its card; the card is selected while the switch is on. Used by
+the plan block of the clinic card and by the new-clinic form.
+
+## Local variables:
+
+- `chosen`: the keys of the modules that are switched on.
+%>
+<% feature_label = SuperAdmin::AccountFeaturesHelper.method(:feature_label) %>
+
+<fieldset class="m-0 min-w-0 border-0 p-0">
+  <legend class="sr-only"><%= t('super_admin.clinic_card.plan.choose') %></legend>
+  <div class="grid grid-cols-[repeat(auto-fit,minmax(13rem,1fr))] gap-3">
+    <div class="admin-plan-card admin-plan-card--base" data-plan-card="base">
+      <div class="flex items-start justify-between gap-3">
+        <span class="text-heading-3 text-n-slate-12"><%= t('super_admin.plans.base.name') %></span>
+        <span class="admin-badge admin-badge--iris"><%= t('super_admin.clinic_card.plan.always_included') %></span>
+      </div>
+      <p class="m-0 text-[13px] text-n-slate-11"><%= t('super_admin.plans.base.description') %></p>
+    </div>
+
+    <% Accounts::Plans.module_keys.each do |key| %>
+      <label class="admin-plan-card admin-plan-card--module" for="plan-module-<%= key %>" data-plan-card="<%= key %>">
+        <span class="flex items-start justify-between gap-3">
+          <span class="text-heading-3 text-n-slate-12"><%= Accounts::Plans.module_name(key) %></span>
+          <span class="admin-switch">
+            <%= check_box_tag 'modules[]', key, chosen.include?(key), id: "plan-module-#{key}", class: 'admin-switch__input' %>
+            <span class="admin-switch__track" aria-hidden="true"></span>
+            <span class="admin-switch__thumb" aria-hidden="true"></span>
+          </span>
+        </span>
+        <span class="text-[13px] text-n-slate-11"><%= t("super_admin.plans.modules.#{key}.description") %></span>
+        <span class="text-xs text-n-slate-10">
+          <%= t('super_admin.clinic_card.plan.includes', features: Accounts::Plans.module_features(key).map { |name| feature_label.call(name) }.join(', ')) %>
+        </span>
+      </label>
+    <% end %>
+  </div>
+</fieldset>

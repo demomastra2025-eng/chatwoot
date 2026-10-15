@@ -1,9 +1,0 @@
-<section class="main-content__body">
- <hr/>
-  <%= form_for([:reset_cache, namespace, page.resource], method: :post, html: { class: "form" }) do |f| %>
-    <div class="form-actions">
-      <p class="pb-3">Это действие очистит ключи кэша IndexedDB из Redis. <br>При следующей загрузке данные будут получены с сервера заново.</p>
-      <%= f.submit 'Сбросить кэш фронтенда' %>
-    </div>
-  <% end %>
-</section>

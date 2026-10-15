@@ -1,0 +1,39 @@
+<%#
+# One limit with its spend
+
+Label, «used из limit» (or «не ограничено»), a meter and the hint of the limit.
+Sizes are in ГБ/МБ, numbers have a space between thousands. A limit of 0 means
+the action is forbidden and is marked as such.
+
+## Local variables:
+
+- `row`: a `SuperAdmin::AccountUsage::Row`.
+%>
+<%
+  format_value = ->(number) { row.bytes ? super_admin_bytes(number) : super_admin_number(number) }
+  fill_class = { good: '', warn: 'admin-meter__fill--warn', bad: 'admin-meter__fill--bad', idle: 'admin-meter__fill--idle' }.fetch(row.tone)
+  fill_width = [[row.percent.to_f, 0].max, 100].min
+%>
+<div class="flex min-w-0 flex-col gap-1.5" data-usage="<%= row.key %>">
+  <div class="flex flex-wrap items-baseline justify-between gap-x-3">
+    <span class="text-n-slate-12"><%= row.label %></span>
+    <span class="tabular-nums font-medium text-n-slate-12">
+      <%= format_value.call(row.consumed) %>
+      <% if row.unlimited %>
+        <span class="font-normal text-n-slate-11">· <%= t('super_admin.limits.unlimited') %></span>
+      <% else %>
+        <span class="font-normal text-n-slate-11"><%= t('super_admin.limits.of') %> <%= format_value.call(row.total) %></span>
+      <% end %>
+    </span>
+  </div>
+
+  <% if row.blocked? %>
+    <span class="admin-badge admin-badge--ruby w-fit"><%= t('super_admin.limits.blocked') %></span>
+  <% elsif !row.unlimited %>
+    <div class="admin-meter" role="img" aria-label="<%= t('super_admin.limits.meter_label', label: row.label, percent: row.percent) %>">
+      <div class="admin-meter__fill <%= fill_class %>" style="width: <%= fill_width %>%"></div>
+    </div>
+  <% end %>
+
+  <span class="text-xs text-n-slate-10"><%= row.hint %></span>
+</div>

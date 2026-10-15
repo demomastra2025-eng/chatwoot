@@ -38,7 +38,8 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   #
   def resource_params
     permitted_params = super
-    permitted_params[:limits] = normalize_limits(permitted_params[:limits])
+    # A request without `limits` (the «Тонкая настройка» switches of the card) must not wipe the limits of the clinic.
+    permitted_params[:limits] = normalize_limits(permitted_params[:limits]) if permitted_params.key?(:limits)
     merge_selected_feature_flags!(permitted_params)
     merge_limit_counter_user_exclusions!(permitted_params)
     permitted_params
@@ -48,7 +49,8 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   # for more information
 
   # A new account gets the base plan (plus the optional `modules` param) right after it is saved. The limits the
-  # operator typed into the form win over the plan; the plan only fills the blanks.
+  # operator typed into the form win over the plan; the plan only fills the blanks. `start_trial` starts a trial on
+  # top of it.
   def create
     modules = requested_plan_modules
     return redirect_to(new_super_admin_account_path, alert: I18n.t('super_admin.accounts.flashes.plan_unknown_module')) if modules.nil?
@@ -56,6 +58,7 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     super do |account|
       yield(account) if block_given?
       apply_plan_to_new_account(account, modules)
+      start_trial_for_new_account(account) if start_trial_requested?
     end
   end
 
@@ -133,12 +136,18 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   end
 
   # What applying the plan would change, as JSON (nothing is written): flags to switch on and off, limit changes
-  # and notes. The clinic card renders it before the operator confirms.
+  # and notes. The clinic card asks for the same thing as an HTML fragment (`fragment=1`) and shows it before the
+  # operator confirms.
   def plan_preview
     modules = requested_plan_modules
     return render(json: { error: I18n.t('super_admin.accounts.flashes.plan_unknown_module') }, status: :unprocessable_content) if modules.nil?
 
-    render json: Accounts::ApplyPlan.new(account: requested_resource, modules: modules, actor: current_super_admin).preview
+    diff = Accounts::ApplyPlan.new(account: requested_resource, modules: modules, actor: current_super_admin).preview
+    if params[:fragment].present?
+      render partial: 'super_admin/accounts/plan_preview', locals: { diff: diff }, formats: [:html]
+    else
+      render json: diff
+    end
   end
 
   # The clinic's own channel switches: `overrides[channel]` is default (follow the platform), shown or hidden.
@@ -172,7 +181,7 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     end
   end
 
-  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity, Metrics/MethodLength, Metrics/BlockLength
+  # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
   def export
     require 'csv'
 
@@ -184,24 +193,15 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
       ]
 
       accounts.find_each do |acc|
-        plan = acc.custom_attributes&.dig('plan_type').presence || 'custom'
-        trial_status = if plan != 'trial'
-                         I18n.t('super_admin.accounts.csv.no_trial')
-                       elsif acc.trial_active?
-                         I18n.t('super_admin.accounts.csv.active')
-                       else
-                         I18n.t('super_admin.accounts.csv.expired')
+        plan_state = SuperAdmin::AccountPlanState.new(acc)
+        trial_status = case plan_state.trial_state
+                       when :none then I18n.t('super_admin.accounts.csv.no_trial')
+                       when :active then I18n.t('super_admin.accounts.csv.active')
+                       else I18n.t('super_admin.accounts.csv.expired')
                        end
 
-        trial_exp = if acc.custom_attributes&.dig('trial_expires_at').present?
-                      begin
-                        Time.zone.parse(acc.custom_attributes['trial_expires_at'].to_s).strftime('%d.%m.%Y %H:%M')
-                      rescue StandardError
-                        '-'
-                      end
-                    else
-                      '-'
-                    end
+        # Times are Astana time (UTC+5)
+        trial_exp = SuperAdmin::DisplayHelper.format_time(plan_state.trial_expires_at) || '-'
 
         storage_bytes = acc.limits&.[]('storage_bytes')
         limit_gb = storage_bytes.present? ? (storage_bytes.to_f / 1.gigabyte).round(1) : I18n.t('super_admin.accounts.csv.unlimited')
@@ -213,7 +213,7 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
         csv << [
           acc.id,
           csv_safe(acc.name),
-          csv_safe(plan.titleize),
+          plan_state.label,
           trial_status,
           trial_exp,
           acc.users.size,
@@ -221,15 +221,15 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
           used_mb,
           limit_gb,
           acc.status,
-          acc.created_at.strftime('%d.%m.%Y %H:%M')
+          SuperAdmin::DisplayHelper.format_time(acc.created_at)
         ]
       end
     end
 
-    filename = "onelink-accounts-#{Time.current.strftime('%Y%m%d_%H%M%S')}.csv"
+    filename = "onelink-accounts-#{SuperAdmin::DisplayHelper.format_time(Time.current, '%Y%m%d_%H%M%S')}.csv"
     send_data "\uFEFF#{csv_data}", filename: filename, type: 'text/csv; charset=utf-8; header=present', disposition: 'attachment'
   end
-  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity, Metrics/MethodLength, Metrics/BlockLength
+  # rubocop:enable Metrics/AbcSize, Metrics/MethodLength
 
   def destroy
     account = Account.find(params[:id])
@@ -273,6 +273,35 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   rescue StandardError => e
     Rails.logger.warn("[SuperAdmin] Plan apply on create failed for account #{account.id}: #{e.class.name}: #{e.message}")
     flash[:alert] = I18n.t('super_admin.accounts.flashes.plan_apply_failed')
+  end
+
+  # A new clinic speaks Russian until the operator picks another language (the column default is English)
+  def new_resource(*)
+    resource = super
+    resource.locale = I18n.default_locale.to_s if action_name == 'new'
+    resource
+  end
+
+  def start_trial_requested?
+    ActiveModel::Type::Boolean.new.cast(params[:start_trial]) ? true : false
+  end
+
+  # The trial starts after the plan, so its snapshot holds the plan and the trial modules switch off when it ends.
+  # An account that cannot take the trial stays created; the operator is told and can start it from the card.
+  def start_trial_for_new_account(account)
+    account.activate_trial!(Accounts::Plans.trial_days)
+    SuperAdmin::AccountAudit.record(
+      account: account, actor: current_super_admin, action: 'start_trial',
+      changes: { 'trial_expires_at' => account.custom_attributes['trial_expires_at'] }, request: request
+    )
+  rescue StandardError => e
+    Rails.logger.warn("[SuperAdmin] Trial on create failed for account #{account.id}: #{e.class.name}: #{e.message}")
+    flash[:alert] = I18n.t('super_admin.accounts.flashes.trial_operation_failed')
+  end
+
+  # The notices of the clinic pages are worded for a clinic («Клиника создана»), not for the generic «Аккаунт»
+  def translate_with_resource(key)
+    I18n.t("super_admin.accounts.controller.#{key}", default: super)
   end
 
   def normalize_limits(raw_limits)

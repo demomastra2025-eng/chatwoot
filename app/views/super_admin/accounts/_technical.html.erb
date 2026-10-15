@@ -1,0 +1,70 @@
+<%#
+# Technical data of a clinic
+
+Collapsed. The service attributes of the clinic (`custom_attributes`) as a
+readable list of key and value instead of a Ruby hash, and the users the
+operator limit does not count.
+
+## Local variables:
+
+- `account`: the clinic (Account).
+%>
+<%
+  attributes = account.custom_attributes.to_h.sort_by { |key, _value| key.to_s }
+  excluded_ids = account.respond_to?(:limit_counter_excluded_user_ids) ? account.limit_counter_excluded_user_ids : []
+%>
+
+<details class="admin-collapse" data-testid="technical-block">
+  <summary>
+    <span class="flex min-w-0 flex-col gap-0.5">
+      <span class="text-heading-2 text-n-slate-12"><%= t('super_admin.clinic_card.technical.title') %></span>
+      <span class="text-body-main text-n-slate-11"><%= t('super_admin.clinic_card.technical.hint') %></span>
+    </span>
+    <span class="admin-collapse__chevron i-lucide-chevron-down size-4" aria-hidden="true"></span>
+  </summary>
+
+  <div class="admin-collapse__body flex flex-col gap-5">
+    <div class="flex flex-col gap-2">
+      <h3 class="m-0 text-heading-3 text-n-slate-12"><%= t('super_admin.clinic_card.technical.attributes') %></h3>
+      <% if attributes.empty? %>
+        <p class="admin-block__note"><%= t('super_admin.clinic_card.technical.no_attributes') %></p>
+      <% else %>
+        <dl class="admin-kv" data-testid="custom-attributes">
+          <% attributes.each do |key, value| %>
+            <% complex = value.is_a?(Hash) || value.is_a?(Array) %>
+            <div class="admin-kv__row flex-wrap" data-attribute="<%= key %>">
+              <dt class="admin-kv__key font-mono text-xs"><%= key %></dt>
+              <% if complex %>
+                <dd class="admin-kv__value w-full basis-full text-start">
+                  <pre class="m-0 max-h-48 overflow-auto whitespace-pre-wrap rounded-lg bg-n-slate-2 p-2 font-mono text-[11px] text-n-slate-12"><%= JSON.pretty_generate(value) %></pre>
+                </dd>
+              <% else %>
+                <dd class="admin-kv__value">
+                  <% if value.nil? %>
+                    <span class="text-n-slate-10">—</span>
+                  <% elsif value == true || value == false %>
+                    <%= value ? t('super_admin.clinic_card.technical.yes') : t('super_admin.clinic_card.technical.no') %>
+                  <% else %>
+                    <%= value %>
+                  <% end %>
+                </dd>
+              <% end %>
+            </div>
+          <% end %>
+        </dl>
+      <% end %>
+    </div>
+
+    <div class="flex flex-col gap-2">
+      <h3 class="m-0 text-heading-3 text-n-slate-12"><%= t('super_admin.clinic_card.technical.excluded_ids') %></h3>
+      <p class="admin-block__note"><%= t('super_admin.limits.excluded_ids_hint') %></p>
+      <p class="m-0 tabular-nums text-n-slate-12" data-testid="excluded-ids">
+        <% if excluded_ids.any? %>
+          <%= excluded_ids.join(', ') %>
+        <% else %>
+          <span class="text-n-slate-10"><%= t('super_admin.limits.excluded_ids_none') %></span>
+        <% end %>
+      </p>
+    </div>
+  </div>
+</details>

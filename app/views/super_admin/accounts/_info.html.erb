@@ -1,0 +1,35 @@
+<%#
+# Basic facts of a clinic
+
+A short key/value block of the side column: language, time zone, creation
+date and when the plan was applied. All times are Astana time.
+
+## Local variables:
+
+- `account`: the clinic (Account).
+- `state`: its `SuperAdmin::AccountPlanState`.
+%>
+<%
+  locale_name = AccountDashboard.locale_options.find { |_name, code| code == account.locale.to_s }&.first || account.locale
+  rows = [
+    [t('super_admin.clinic_card.info.locale'), locale_name],
+    [t('super_admin.clinic_card.info.timezone'), account.reporting_timezone.presence || t('super_admin.clinic_card.info.timezone_default')],
+    [t('super_admin.clinic_card.info.created'), super_admin_time(account.created_at)]
+  ]
+  if state.assigned?
+    applied = [super_admin_time(state.applied_at), (t('super_admin.clinic_card.info.plan_version', version: state.version) if state.version)].compact.join(' · ')
+    rows << [t('super_admin.clinic_card.info.plan_applied'), applied.presence || '—']
+  end
+%>
+
+<section class="admin-block" aria-labelledby="info-title" data-testid="info-block">
+  <h2 class="admin-block__title" id="info-title"><%= t('super_admin.clinic_card.info.title') %></h2>
+  <dl class="admin-kv">
+    <% rows.each do |key, value| %>
+      <div class="admin-kv__row">
+        <dt class="admin-kv__key"><%= key %></dt>
+        <dd class="admin-kv__value"><%= value %></dd>
+      </div>
+    <% end %>
+  </dl>
+</section>

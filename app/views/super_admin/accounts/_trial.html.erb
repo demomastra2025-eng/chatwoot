@@ -1,0 +1,71 @@
+<%#
+# Trial of a clinic
+
+The state of the trial and the actions: start (for a clinic that has not had
+one), extend and end now (for a trial started from the admin panel). All times
+are Astana time.
+
+## Local variables:
+
+- `account`: the clinic (Account).
+- `state`: its `SuperAdmin::AccountPlanState`.
+%>
+<%
+  days = Accounts::Plans.trial_days
+  trial_state = state.trial_state
+  remaining = state.trial_remaining
+  badge = { none: ['admin-badge--quiet', t('super_admin.accounts.trial.inactive')],
+            active: ['admin-badge--teal', t('super_admin.accounts.trial.active')],
+            expired: ['admin-badge--amber', t('super_admin.accounts.trial.expired')] }.fetch(trial_state)
+  remaining_text = if remaining.nil?
+                     nil
+                   elsif remaining[:days].positive?
+                     t('super_admin.accounts.trial.remaining_days', days: remaining[:days], hours: remaining[:hours])
+                   elsif remaining[:hours].positive?
+                     t('super_admin.accounts.trial.remaining_hours', hours: remaining[:hours], minutes: remaining[:minutes])
+                   else
+                     t('super_admin.accounts.trial.remaining_minutes', minutes: remaining[:minutes])
+                   end
+%>
+
+<section class="admin-block" aria-labelledby="trial-title" data-testid="trial-block" data-trial-state="<%= trial_state %>">
+  <div class="admin-block__head-row">
+    <h2 class="admin-block__title" id="trial-title"><%= t('super_admin.accounts.trial.title') %></h2>
+    <span class="admin-badge <%= badge.first %>"><%= badge.last %></span>
+  </div>
+
+  <% if trial_state == :active %>
+    <p class="admin-block__hint">
+      <%= remaining_text %>
+      <br>
+      <span class="text-n-slate-10"><%= t('super_admin.accounts.trial.until') %> <%= super_admin_time(state.trial_expires_at) %></span>
+    </p>
+  <% elsif trial_state == :expired %>
+    <p class="admin-block__hint">
+      <%= t('super_admin.accounts.trial.ended_at', time: super_admin_time(state.trial_expired_at || state.trial_expires_at) || t('super_admin.accounts.trial.unknown_time')) %>
+    </p>
+  <% else %>
+    <p class="admin-block__hint"><%= t('super_admin.accounts.trial.description', days: days) %></p>
+  <% end %>
+
+  <% if trial_state != :none && !state.trial_managed? %>
+    <p class="admin-block__note"><%= t('super_admin.accounts.trial.manual_note') %></p>
+  <% end %>
+
+  <% if state.trial_managed? || state.can_start_trial? %>
+    <div class="flex flex-wrap gap-2">
+      <% if state.trial_managed? %>
+        <%= button_to t('super_admin.accounts.trial.extend', days: days), [:extend_trial, :super_admin, account], method: :post,
+                      class: 'button button--small button--secondary', form_class: 'inline-block',
+                      data: { confirm: t('super_admin.accounts.trial.extend_confirm', days: days) } %>
+        <%= button_to t('super_admin.accounts.trial.expire'), [:expire_trial, :super_admin, account], method: :post,
+                      class: 'button button--small button--alt', form_class: 'inline-block',
+                      data: { confirm: t('super_admin.accounts.trial.expire_confirm') } %>
+      <% else %>
+        <%= button_to t('super_admin.accounts.trial.start', days: days), [:extend_trial, :super_admin, account], method: :post, params: { start: true },
+                      class: 'button button--small button--secondary', form_class: 'inline-block',
+                      data: { confirm: t('super_admin.accounts.trial.start_confirm', days: days) } %>
+      <% end %>
+    </div>
+  <% end %>
+</section>

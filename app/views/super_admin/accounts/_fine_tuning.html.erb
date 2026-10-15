@@ -1,0 +1,56 @@
+<%#
+# Switches of «Тонкая настройка»
+
+Single functions on top of the plan, in groups (see SuperAdmin::FineTuning).
+Only flags a plan can switch are offered: the always-on operational flags and
+the flags no plan enables are not shown, and neither are the platform's
+internal switches. A switch whose state differs from the plan is marked
+«вручную».
+
+The switches post `enabled_features[feature_<flag>]` (a hidden «false» before
+the checkbox, so an unchecked switch is sent too) to the normal update of the
+clinic. The caller supplies the <form>: the clinic card has its own, the edit
+form is one.
+
+## Local variables:
+
+- `account`: the clinic (Account).
+- `columns` (optional): 2 for a narrow container (the edit form), 3 by default.
+%>
+<%
+  tuning = SuperAdmin::FineTuning.new(account)
+  feature_label = SuperAdmin::AccountFeaturesHelper.method(:feature_label)
+  grid_classes = local_assigns.fetch(:columns, 3) == 2 ? 'md:grid-cols-2' : 'md:grid-cols-2 xl:grid-cols-3'
+%>
+
+<div class="flex flex-col gap-5" data-testid="fine-tuning">
+  <div class="grid grid-cols-1 gap-x-8 gap-y-5 <%= grid_classes %>">
+    <% tuning.groups.each do |group| %>
+      <section class="flex min-w-0 flex-col" aria-labelledby="fine-group-<%= group.key %>">
+        <h3 class="m-0 pb-1 text-xs font-semibold uppercase tracking-wider text-n-slate-10" id="fine-group-<%= group.key %>"><%= group.title %></h3>
+        <% group.switches.each do |switch| %>
+          <label class="flex min-h-9 cursor-pointer items-center justify-between gap-3 font-normal" for="feature-<%= switch.name %>" data-flag="<%= switch.name %>">
+            <span class="flex min-w-0 flex-wrap items-center gap-x-1.5">
+              <span class="text-n-slate-12"><%= switch.label %></span>
+              <% if switch.manual %>
+                <span class="text-[11px] text-n-amber-11" data-manual="true"><%= t('super_admin.fine_tuning.manual') %></span>
+              <% end %>
+            </span>
+            <span class="admin-switch">
+              <%= hidden_field_tag "enabled_features[feature_#{switch.name}]", 'false', id: nil %>
+              <%= check_box_tag "enabled_features[feature_#{switch.name}]", 'true', switch.enabled, id: "feature-#{switch.name}", class: 'admin-switch__input' %>
+              <span class="admin-switch__track" aria-hidden="true"></span>
+              <span class="admin-switch__thumb" aria-hidden="true"></span>
+            </span>
+          </label>
+        <% end %>
+      </section>
+    <% end %>
+  </div>
+
+  <p class="admin-block__note">
+    <%= t('super_admin.fine_tuning.always_on', features: Accounts::Plans.locked_on.map { |name| feature_label.call(name) }.join(', ')) %>
+    <%= t('super_admin.fine_tuning.never_on', features: tuning.never_enabled_labels.join(', ')) %>
+    <%= t('super_admin.fine_tuning.internal') %>
+  </p>
+</div>

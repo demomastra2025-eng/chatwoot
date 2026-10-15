@@ -1,0 +1,66 @@
+<%#
+# What applying the plan would change
+
+An HTML fragment, answered by `plan_preview?fragment=1` and put above the
+«Применить» button by the plan block: the functions that would be switched on
+and off, the limits that would change and the facts the operator should know
+(for example that the clinic is on a trial). Nothing is written by drawing it.
+
+## Local variables:
+
+- `diff`: an `Accounts::ApplyPlan::Diff` (the server-computed preview).
+%>
+<%
+  feature_label = SuperAdmin::AccountFeaturesHelper.method(:feature_label)
+  names = ->(flags) { flags.map { |flag| feature_label.call(flag) }.sort }
+  limit_value = lambda do |key, value|
+    next t('super_admin.clinic_card.preview.not_set') if value.nil?
+    next t('super_admin.limits.unlimited') if value.to_i == ChatwootApp.max_limit.to_i
+
+    key.to_s == 'storage_bytes' ? super_admin_bytes(value) : super_admin_number(value)
+  end
+  next_plan = Accounts::Plans.plan_label(diff.modules)
+  headline = if diff.previous_plan.blank?
+               t('super_admin.clinic_card.preview.assign', plan: next_plan)
+             elsif diff.previous_modules.sort == diff.modules.sort
+               t('super_admin.clinic_card.preview.same', plan: next_plan)
+             else
+               t('super_admin.clinic_card.preview.change', from: Accounts::Plans.plan_label(diff.previous_modules), to: next_plan)
+             end
+%>
+<div class="flex flex-col gap-3 rounded-xl bg-n-solid-1 p-4 outline outline-1 -outline-offset-1 outline-n-strong" data-testid="plan-preview" data-changed="<%= diff.changed? %>">
+  <span class="font-medium text-n-slate-12"><%= headline %></span>
+
+  <% if diff.changed? %>
+    <div class="grid grid-cols-[repeat(auto-fit,minmax(15rem,1fr))] gap-3 text-[13px]">
+      <div class="flex flex-col gap-0.5" data-preview="enable">
+        <span class="font-medium text-n-teal-11"><%= t('super_admin.clinic_card.preview.enable', count: diff.enable.size) %></span>
+        <span class="text-n-slate-11"><%= diff.enable.any? ? names.call(diff.enable).join(', ') : t('super_admin.clinic_card.preview.nothing') %></span>
+      </div>
+      <div class="flex flex-col gap-0.5" data-preview="disable">
+        <span class="font-medium text-n-ruby-11"><%= t('super_admin.clinic_card.preview.disable', count: diff.disable.size) %></span>
+        <span class="text-n-slate-11"><%= diff.disable.any? ? names.call(diff.disable).join(', ') : t('super_admin.clinic_card.preview.nothing') %></span>
+      </div>
+      <div class="flex flex-col gap-0.5" data-preview="limits">
+        <span class="font-medium text-n-slate-12"><%= t('super_admin.clinic_card.preview.limits') %></span>
+        <% if diff.limits.any? %>
+          <ul class="m-0 flex list-none flex-col gap-0.5 p-0 text-n-slate-11">
+            <% diff.limits.each do |key, change| %>
+              <li><%= t("super_admin.limits.#{key}.label") %>: <%= limit_value.call(key, change['from']) %> → <%= limit_value.call(key, change['to']) %></li>
+            <% end %>
+          </ul>
+        <% else %>
+          <span class="text-n-slate-11"><%= t('super_admin.clinic_card.preview.nothing') %></span>
+        <% end %>
+      </div>
+    </div>
+  <% else %>
+    <span class="text-[13px] text-n-slate-11"><%= t('super_admin.clinic_card.preview.no_changes') %></span>
+  <% end %>
+
+  <% diff.notes.each do |note| %>
+    <span class="text-[13px] text-n-amber-11" data-preview-note="<%= note %>"><%= t("super_admin.plans.notes.#{note}") %></span>
+  <% end %>
+
+  <span class="text-[13px] text-n-slate-10"><%= t('super_admin.clinic_card.preview.footer') %></span>
+</div>

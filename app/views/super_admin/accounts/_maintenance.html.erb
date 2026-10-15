@@ -1,0 +1,35 @@
+<%#
+# Maintenance of a clinic
+
+Rare actions: reset the interface cache of the clinic, generate demo data (only
+where seeding is enabled) and delete the clinic. Every button asks first.
+
+## Local variables:
+
+- `account`: the clinic (Account).
+%>
+<% seeding_enabled = ActiveModel::Type::Boolean.new.cast(ENV.fetch('ENABLE_ACCOUNT_SEEDING', !Rails.env.production?)) %>
+
+<section class="admin-block" aria-labelledby="maintenance-title" data-testid="maintenance-block">
+  <div class="admin-block__head">
+    <h2 class="admin-block__title" id="maintenance-title"><%= t('super_admin.clinic_card.maintenance.title') %></h2>
+    <p class="admin-block__hint"><%= t('super_admin.clinic_card.maintenance.hint') %></p>
+  </div>
+
+  <div class="flex flex-wrap gap-2">
+    <%= button_to t('super_admin.clinic_card.maintenance.reset_cache'), [:reset_cache, :super_admin, account], method: :post,
+                  class: 'button button--small button--alt', form_class: 'inline-block',
+                  data: { confirm: t('super_admin.clinic_card.maintenance.reset_cache_confirm') } %>
+    <% if seeding_enabled %>
+      <%= button_to t('super_admin.clinic_card.maintenance.seed'), [:seed, :super_admin, account], method: :post,
+                    class: 'button button--small button--alt', form_class: 'inline-block',
+                    data: { confirm: t('super_admin.clinic_card.maintenance.seed_confirm') } %>
+    <% end %>
+    <%= button_to t('super_admin.clinic_card.maintenance.destroy'), [:super_admin, account], method: :delete,
+                  class: 'button button--small button--danger', form_class: 'inline-block',
+                  data: { confirm: t('super_admin.clinic_card.maintenance.destroy_confirm', name: account.name) } %>
+  </div>
+  <% if seeding_enabled %>
+    <p class="admin-block__note"><%= t('super_admin.clinic_card.maintenance.seed_hint') %></p>
+  <% end %>
+</section>

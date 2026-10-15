@@ -1,0 +1,70 @@
+<%#
+# Users of a clinic
+
+The members with their role (Администратор / Оператор), e-mail and last
+sign-in (Astana time), each linking to the user page; below, a collapsed form
+that adds a member.
+
+## Local variables:
+
+- `account`: the clinic (Account).
+- `page`: the `Administrate::Page::Show` of the clinic (the add-member form needs it).
+%>
+<%
+  limit = 50
+  members = account.account_users.includes(:user).order(:id)
+  total = members.size
+  shown = members.limit(limit).to_a
+%>
+
+<section class="admin-card" aria-labelledby="users-title" data-testid="users-block">
+  <div class="flex flex-wrap items-baseline justify-between gap-2 border-b border-n-weak px-5 py-4">
+    <h2 class="m-0 text-heading-2 text-n-slate-12" id="users-title"><%= t('super_admin.clinic_card.users.title') %></h2>
+    <span class="text-xs tabular-nums text-n-slate-11"><%= t('super_admin.clinic_card.users.total', count: total) %></span>
+  </div>
+
+  <div class="admin-card--table">
+    <table aria-labelledby="users-title">
+      <thead>
+        <tr>
+          <th scope="col"><%= t('super_admin.clinic_card.users.columns.name') %></th>
+          <th scope="col"><%= t('super_admin.clinic_card.users.columns.email') %></th>
+          <th scope="col"><%= t('super_admin.clinic_card.users.columns.role') %></th>
+          <th scope="col"><%= t('super_admin.clinic_card.users.columns.last_sign_in') %></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% if shown.empty? %>
+          <tr>
+            <td colspan="4" class="py-8 text-center text-n-slate-11"><%= t('super_admin.clinic_card.users.empty') %></td>
+          </tr>
+        <% end %>
+        <% shown.each do |membership| %>
+          <% user = membership.user %>
+          <tr data-user-id="<%= user.id %>">
+            <td><%= link_to user.name, super_admin_user_path(user), class: 'font-medium text-n-slate-12 hover:text-n-brand' %></td>
+            <td class="text-n-slate-11"><%= user.email %></td>
+            <td>
+              <span class="admin-badge <%= membership.administrator? ? 'admin-badge--iris' : 'admin-badge--quiet' %>"><%= t("super_admin.account_users.roles.#{membership.role}") %></span>
+            </td>
+            <td class="whitespace-nowrap tabular-nums text-n-slate-11"><%= super_admin_time(user.current_sign_in_at || user.last_sign_in_at) || '—' %></td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+
+  <% if total > limit %>
+    <p class="admin-block__note border-t border-n-weak px-5 py-3"><%= t('super_admin.clinic_card.users.more', shown: limit, total: total) %></p>
+  <% end %>
+
+  <details class="border-t border-n-weak">
+    <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-3 text-n-slate-12">
+      <span class="font-medium"><%= t('super_admin.shell.add_user_to_account') %></span>
+      <span class="admin-collapse__chevron i-lucide-chevron-down size-4" aria-hidden="true"></span>
+    </summary>
+    <div class="px-5 pb-5 pt-1">
+      <%= render 'super_admin/shared/account_user_form', page: page, namespace: namespace, resource_type: 'account', embedded: true %>
+    </div>
+  </details>
+</section>

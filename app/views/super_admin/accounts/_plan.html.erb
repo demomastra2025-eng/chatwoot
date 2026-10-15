@@ -1,0 +1,134 @@
+<%#
+# Plan of a clinic: the base and the modules
+
+The base is always included. A module is a switch on its card. Changing the
+switches asks the server what applying the plan would change (`plan_preview`,
+an HTML fragment) and shows it above the «Применить» button; nothing is written
+until the button is pressed (`apply_plan`, audited). A clinic with no plan shows
+«Тариф не назначен» and «Назначить базу», with the preview first. Without
+JavaScript the form still works: it applies at once, with no preview.
+
+A clinic whose functions were switched by hand (see «Тонкая настройка») shows
+«Изменено вручную: +N −M» and «Сбросить к тарифу» (applies the same plan again).
+
+## Local variables:
+
+- `account`: the clinic (Account).
+- `state`: its `SuperAdmin::AccountPlanState`.
+%>
+
+<%
+  chosen = state.modules
+  drift = state.drift
+  feature_label = SuperAdmin::AccountFeaturesHelper.method(:feature_label)
+%>
+
+<section class="admin-block" aria-labelledby="plan-title" data-testid="plan-block">
+  <div class="admin-block__head-row">
+    <div class="admin-block__head">
+      <h2 class="admin-block__title" id="plan-title"><%= t('super_admin.clinic_card.plan.title') %></h2>
+      <p class="admin-block__hint"><%= t('super_admin.clinic_card.plan.hint') %></p>
+    </div>
+    <span class="admin-badge <%= state.assigned? ? 'admin-badge--iris' : 'admin-badge--quiet' %>" data-testid="plan-label"><%= state.label %></span>
+  </div>
+
+  <% unless state.assigned? %>
+    <div class="admin-notice" role="status" data-testid="plan-unassigned">
+      <span class="flex flex-col gap-0.5">
+        <span class="font-medium"><%= t('super_admin.clinic_card.plan.unassigned_title') %></span>
+        <span class="text-[13px] text-n-slate-11"><%= t('super_admin.clinic_card.plan.unassigned_text') %></span>
+      </span>
+    </div>
+  <% end %>
+
+  <% if state.drifted? %>
+    <div class="admin-notice admin-notice--amber" data-testid="plan-drift">
+      <span class="flex min-w-0 flex-col gap-0.5">
+        <span class="font-medium"><%= t('super_admin.plans.drift.summary', extra: drift[:extra].size, missing: drift[:missing].size, plan: state.label) %></span>
+        <% if drift[:extra].any? %>
+          <span class="text-[13px]"><%= t('super_admin.plans.drift.extra', features: drift[:extra].map { |name| feature_label.call(name) }.sort.join(', ')) %></span>
+        <% end %>
+        <% if drift[:missing].any? %>
+          <span class="text-[13px]"><%= t('super_admin.plans.drift.missing', features: drift[:missing].map { |name| feature_label.call(name) }.sort.join(', ')) %></span>
+        <% end %>
+      </span>
+      <%# Applying the same plan again brings the functions back to it. %>
+      <%= button_to t('super_admin.plans.drift.reset'), [:apply_plan, :super_admin, account], method: :post, params: { modules: chosen },
+                    class: 'button button--small button--secondary', form_class: 'shrink-0',
+                    data: { confirm: t('super_admin.plans.drift.reset_confirm') } %>
+    </div>
+  <% end %>
+
+  <%= form_with url: apply_plan_super_admin_account_path(account), method: :post, local: true, class: 'flex flex-col gap-4',
+                data: { plan_form: true, assigned: state.assigned?.to_s, initial_modules: chosen.to_json,
+                        preview_url: plan_preview_super_admin_account_path(account) } do %>
+    <%= render 'plan_cards', chosen: chosen %>
+
+    <div data-plan-preview aria-live="polite" hidden></div>
+
+    <noscript>
+      <p class="admin-block__note"><%= t('super_admin.clinic_card.plan.no_script') %></p>
+    </noscript>
+
+    <div class="admin-block__footer">
+      <span class="admin-block__note" data-plan-hint><%= state.assigned? ? t('super_admin.clinic_card.plan.hint_assigned') : t('super_admin.clinic_card.plan.hint_unassigned') %></span>
+      <%= button_tag(state.assigned? ? t('super_admin.clinic_card.plan.apply') : t('super_admin.clinic_card.plan.assign'), type: 'submit', class: 'button', data: { plan_submit: true }) %>
+    </div>
+  <% end %>
+</section>
+
+<script>
+  (function () {
+    var form = document.querySelector('[data-plan-form]');
+    if (!form) return;
+    var box = form.querySelector('[data-plan-preview]');
+    var submit = form.querySelector('[data-plan-submit]');
+    var hint = form.querySelector('[data-plan-hint]');
+    var assigned = form.getAttribute('data-assigned') === 'true';
+    var initial = JSON.parse(form.getAttribute('data-initial-modules') || '[]').slice().sort().join(',');
+    var requestId = 0;
+
+    function selected() {
+      return Array.prototype.map.call(form.querySelectorAll('input[name="modules[]"]:checked'), function (input) { return input.value; });
+    }
+
+    // A clinic with a plan can apply once the modules differ; a clinic without one can always take the base.
+    function sync() {
+      var modules = selected();
+      var changed = !assigned || modules.slice().sort().join(',') !== initial;
+      submit.disabled = !changed;
+      if (!changed) {
+        requestId += 1;
+        box.hidden = true;
+        box.innerHTML = '';
+        hint.hidden = false;
+        return;
+      }
+      var query = new URLSearchParams();
+      query.append('fragment', '1');
+      modules.forEach(function (module) { query.append('modules[]', module); });
+      var current = (requestId += 1);
+      fetch(form.getAttribute('data-preview-url') + '?' + query.toString(), {
+        credentials: 'same-origin',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      })
+        .then(function (response) { return response.ok ? response.text() : Promise.reject(response.status); })
+        .then(function (html) {
+          if (current !== requestId) return;
+          box.innerHTML = html;
+          box.hidden = false;
+          hint.hidden = true;
+        })
+        .catch(function () {
+          if (current !== requestId) return;
+          box.hidden = true;
+          hint.hidden = false;
+        });
+    }
+
+    form.addEventListener('change', function (event) {
+      if (event.target && event.target.name === 'modules[]') sync();
+    });
+    sync();
+  })();
+</script>

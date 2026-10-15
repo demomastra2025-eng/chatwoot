@@ -1,0 +1,73 @@
+<%#
+# Limits and spend of a clinic
+
+Every limit with what is used, a meter and a hint (operators, channels,
+conversations, main channels, storage, AI answers, AI documents, AI tokens,
+mail per day); «Не ограничено» when there is no limit, sizes in ГБ/МБ. Below:
+where the storage goes and the buttons that reset the counters that can be reset.
+
+## Local variables:
+
+- `account`: the clinic (Account).
+- `usage`: its `SuperAdmin::AccountUsage` (the overview is computed once).
+%>
+<%
+  # A snapshot without a breakdown is treated like a measurement that has not finished
+  breakdown = account.storage_breakdown.presence || { calculating: true }
+  breakdown_keys = %i[recordings audio images videos documents captain other trash]
+  counters = [
+    { key: :responses, consumed: usage.overview.dig(:captain, :responses, :consumed), action: :reset_captain_responses_usage },
+    { key: :tokens, consumed: usage.overview.dig(:captain, :tokens, :consumed), action: :reset_captain_tokens_usage },
+    { key: :emails, consumed: usage.overview.dig(:emails, :consumed), action: :reset_email_usage }
+  ]
+%>
+
+<section class="admin-block" aria-labelledby="usage-title" data-testid="usage-block">
+  <div class="admin-block__head">
+    <h2 class="admin-block__title" id="usage-title"><%= t('super_admin.clinic_card.usage.title') %></h2>
+    <p class="admin-block__hint"><%= t('super_admin.clinic_card.usage.hint') %></p>
+  </div>
+
+  <div class="admin-usage-grid">
+    <% usage.rows.each do |row| %>
+      <%= render 'super_admin/accounts/usage_row', row: row %>
+    <% end %>
+  </div>
+
+  <p class="admin-block__note"><%= t('super_admin.accounts.storage.informational_notice') %></p>
+
+  <div class="flex flex-col gap-3 border-t border-n-weak pt-4" data-testid="storage-breakdown">
+    <h3 class="m-0 text-heading-3 text-n-slate-12"><%= t('super_admin.accounts.storage.breakdown') %></h3>
+    <% if breakdown[:calculating] %>
+      <p class="admin-block__note" role="status"><%= t('storage_management.calculating') %></p>
+    <% else %>
+      <dl class="m-0 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <% breakdown_keys.each do |key| %>
+          <div class="rounded-lg bg-n-slate-2 px-3 py-2 outline outline-1 -outline-offset-1 outline-n-weak">
+            <dt class="text-xs text-n-slate-11"><%= t("super_admin.accounts.storage.#{key}") %></dt>
+            <dd class="m-0 mt-0.5 font-medium tabular-nums text-n-slate-12"><%= super_admin_bytes(breakdown[key].to_i) %></dd>
+          </div>
+        <% end %>
+      </dl>
+    <% end %>
+  </div>
+
+  <div class="flex flex-col gap-3 border-t border-n-weak pt-4" data-testid="counter-resets">
+    <div class="admin-block__head">
+      <h3 class="m-0 text-heading-3 text-n-slate-12"><%= t('super_admin.clinic_card.usage.reset_title') %></h3>
+      <p class="admin-block__note"><%= t('super_admin.clinic_card.usage.reset_hint') %></p>
+    </div>
+    <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+      <% counters.each do |counter| %>
+        <div class="flex flex-col gap-2 rounded-lg p-3 outline outline-1 -outline-offset-1 outline-n-weak">
+          <span class="text-n-slate-12"><%= t("super_admin.clinic_card.usage.counters.#{counter[:key]}.label") %></span>
+          <span class="text-xs text-n-slate-11">
+            <%= t("super_admin.clinic_card.usage.counters.#{counter[:key]}.current", value: super_admin_number(counter[:consumed].to_i)) %>
+          </span>
+          <%= button_to t("super_admin.clinic_card.usage.counters.#{counter[:key]}.button"), [counter[:action], :super_admin, account], method: :post,
+                        class: 'button button--small button--secondary w-full', form_class: 'block w-full mt-auto' %>
+        </div>
+      <% end %>
+    </div>
+  </div>
+</section>
