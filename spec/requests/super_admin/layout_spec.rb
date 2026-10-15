@@ -1,0 +1,134 @@
+require 'rails_helper'
+
+RSpec.describe 'Super Admin layout and login page', type: :request do
+  let(:super_admin) { create(:super_admin, password: 'Password1!') }
+  let(:page) { Nokogiri::HTML(response.body) }
+
+  # The first <head> child that loads CSS or JS from a file.
+  def first_asset_index(head)
+    head.element_children.index do |node|
+      (node.name == 'link' && node['rel'] == 'stylesheet') || (node.name == 'script' && node['src'].present?)
+    end
+  end
+
+  def theme_script_index(head)
+    head.element_children.index { |node| node.name == 'script' && node['src'].blank? && node.text.include?('color_scheme') }
+  end
+
+  describe 'navigation of signed-in pages' do
+    before { sign_in(super_admin, scope: :super_admin) }
+
+    it 'gives the logo explicit width and height so it never renders at its natural size' do
+      get '/super_admin/users'
+
+      logo = page.at_css('[role="navigation"] img')
+      expect(logo).to be_present
+      expect(logo['src']).to include('/brand-assets/logo_thumbnail.svg')
+      expect(logo['width']).to eq('39')
+      expect(logo['height']).to eq('32')
+    end
+
+    it 'declares Russian and the design-system body classes' do
+      get '/super_admin/users'
+
+      expect(page.at_css('html')['lang']).to eq('ru')
+      expect(page.at_css('body')['class'].split).to include('bg-n-background', 'text-n-slate-12', 'antialiased')
+    end
+
+    it 'applies the theme in <head> before any stylesheet or script file' do
+      get '/super_admin/users'
+
+      head = page.at_css('head')
+      expect(theme_script_index(head)).to be_present
+      expect(theme_script_index(head)).to be < first_asset_index(head)
+      script = head.element_children[theme_script_index(head)].text
+      expect(script).to include("'color_scheme'", 'prefers-color-scheme', "classList.add('dark')", 'colorScheme')
+    end
+
+    it 'does not load the Vue bundle on pages that do not need it' do
+      get '/super_admin/users'
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).not_to include('superadmin_pages')
+    end
+
+    it 'loads the Vue bundle in <head> on the dashboard and keeps its mount point' do
+      get '/super_admin'
+
+      expect(response).to have_http_status(:ok)
+      expect(page.at_css('head script[src*="superadmin_pages"]')).to be_present
+      expect(page.at_css('#app[data-component-name="DashboardIndex"]')).to be_present
+    end
+  end
+
+  describe 'GET /super_admin/sign_in' do
+    before { get '/super_admin/sign_in' }
+
+    it 'renders exactly one logo image with explicit width and height' do
+      images = page.css('img')
+
+      expect(images.size).to eq(1)
+      expect(images.first['src']).to include('/brand-assets/logo')
+      expect(images.first['width']).to be_present
+      expect(images.first['height']).to be_present
+    end
+
+    it 'is a complete Russian document with charset and viewport' do
+      expect(page.at_css('html')['lang']).to eq('ru')
+      expect(page.at_css('meta[charset]')).to be_present
+      expect(page.at_css('meta[name="viewport"]')).to be_present
+    end
+
+    it 'applies the theme in <head> before any stylesheet or script file' do
+      head = page.at_css('head')
+
+      expect(theme_script_index(head)).to be_present
+      expect(theme_script_index(head)).to be < first_asset_index(head)
+    end
+
+    it 'posts to the session route and has the Russian copy' do
+      form = page.at_css('form')
+
+      expect(form['action']).to eq(super_admin_session_path)
+      expect(form['method']).to eq('post')
+      expect(page.at_css('input[type="email"][name="super_admin[email]"]')).to be_present
+      expect(page.at_css('input[type="password"][name="super_admin[password]"]')).to be_present
+      expect(response.body).to include('Вход в супер-админку', 'Только для администраторов платформы OneLink', 'E-mail', 'Пароль', 'Войти')
+    end
+
+    it 'labels the fields so they can be focused by their label' do
+      %w[super_admin_email super_admin_password].each do |id|
+        expect(page.at_css("label[for=\"#{id}\"]")).to be_present
+        expect(page.at_css("##{id}")).to be_present
+      end
+    end
+
+    it 'uses design-system tokens instead of the legacy palette and has no emoji' do
+      expect(response.body).to include('bg-n-brand-solid')
+      expect(response.body).not_to match(/\b(?:bg|text|ring|border)-(?:woot|slate|gray)-\d/)
+      expect(response.body).not_to match(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/)
+    end
+  end
+
+  describe 'POST /super_admin/sign_in' do
+    it 'sends a signed-in admin to the dashboard' do
+      post '/super_admin/sign_in', params: { super_admin: { email: super_admin.email, password: 'Password1!' } }
+
+      expect(response).to redirect_to(super_admin_root_path)
+      follow_redirect!
+      expect(response).to have_http_status(:ok)
+      expect(page.at_css('#app[data-component-name="DashboardIndex"]')).to be_present
+    end
+
+    it 'shows a failed sign-in as an alert on the login page' do
+      post '/super_admin/sign_in', params: { super_admin: { email: super_admin.email, password: 'nope' } }
+      follow_redirect!
+
+      alert = page.at_css('[role="alert"]')
+      expect(alert).to be_present
+      expect(alert.text.strip).to be_present
+      expect(alert.text).not_to include('%{')
+      expect(alert['class']).to include('text-n-ruby-11')
+    end
+  end
+end
