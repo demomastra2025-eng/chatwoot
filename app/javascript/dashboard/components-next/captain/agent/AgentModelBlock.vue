@@ -120,7 +120,7 @@ const readOnlyModelName = computed(() => {
 
 <template>
   <section
-    class="flex flex-col outline outline-1 -outline-offset-1 outline-n-container rounded-xl bg-n-solid-2 divide-y divide-n-weak"
+    class="flex flex-col outline outline-1 -outline-offset-1 outline-n-weak rounded-xl bg-n-solid-2 divide-y divide-n-weak"
     data-test="agent-model-block"
   >
     <div class="px-5 py-4">

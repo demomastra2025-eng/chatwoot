@@ -11,7 +11,7 @@ const { t } = useI18n();
 <template>
   <button
     type="button"
-    class="flex min-h-36 w-full flex-col items-center justify-center gap-2 rounded-xl px-5 py-4 text-center outline-dashed outline-1 -outline-offset-1 outline-n-weak transition-colors hover:bg-n-alpha-1 hover:outline-n-brand focus-visible:outline-n-brand"
+    class="flex min-h-32 w-full flex-col items-center justify-center gap-2 rounded-xl px-5 py-4 text-center outline-dashed outline-1 -outline-offset-1 outline-n-weak transition-colors hover:bg-n-alpha-1 hover:outline-n-brand focus-visible:outline-n-brand"
     data-testid="agent-new-tile"
     @click="emit('click')"
   >

@@ -107,7 +107,7 @@ const moderationError = computed(() => props.errors.moderation_enabled || '');
       </div>
       <div
         data-testid="safety-standard"
-        class="flex flex-col gap-4 rounded-xl bg-n-solid-1 p-4 outline outline-1 -outline-offset-1 outline-n-weak"
+        class="flex flex-col gap-4 rounded-xl bg-n-solid-2 p-4 outline outline-1 -outline-offset-1 outline-n-weak"
       >
         <div class="flex flex-col gap-1">
           <div class="flex items-center justify-between gap-3">

@@ -189,7 +189,7 @@ defineExpose({ dialogRef });
           :src="state.avatarUrl"
           :name="trimmedName"
           :size="72"
-          :icon-name="trimmedName ? null : 'i-woot-captain'"
+          icon-name="i-woot-captain"
           rounded-full
           allow-upload
           @upload="handleAvatarUpload"

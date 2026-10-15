@@ -18,6 +18,7 @@ const AvatarStub = defineComponent({
     src: { type: String, default: '' },
     name: { type: String, default: '' },
     size: { type: Number, default: 32 },
+    iconName: { type: String, default: null },
     roundedFull: Boolean,
   },
   setup(props) {
@@ -27,6 +28,7 @@ const AvatarStub = defineComponent({
         'data-src': props.src,
         'data-name': props.name,
         'data-size': props.size,
+        'data-icon-name': props.iconName,
         'data-rounded-full': props.roundedFull,
       });
   },
@@ -70,7 +72,7 @@ const mountCard = (props = {}) =>
   });
 
 describe('AgentGalleryCard', () => {
-  it('shows the avatar, the name and the routing description', () => {
+  it('shows the AI agent avatar with icon fallback, name and routing description', () => {
     const wrapper = mountCard();
 
     const avatar = wrapper.findComponent({ name: 'Avatar' });
@@ -78,6 +80,7 @@ describe('AgentGalleryCard', () => {
       src: assistant.avatar_url,
       name: 'Мөлдір',
       size: 40,
+      iconName: 'i-woot-captain',
       roundedFull: true,
     });
     expect(wrapper.text()).toContain('Мөлдір');
@@ -85,6 +88,9 @@ describe('AgentGalleryCard', () => {
     expect(
       wrapper.find('[data-testid="agent-description-hint"]').exists()
     ).toBe(false);
+    expect(wrapper.find('[data-testid="agent-channels-line"]').exists()).toBe(
+      false
+    );
   });
 
   it('asks to add a description when the agent has none', () => {
@@ -174,43 +180,5 @@ describe('AgentGalleryCard', () => {
     // The parent kept the stored value (the save failed).
     await wrapper.setProps({ toggling: false });
     expect(switchValue()).toBe(true);
-  });
-
-  it('summarises the channels of the agent', () => {
-    const wrapper = mountCard({
-      stats: { scope: 'selected', mainCount: 2, memberCount: 3 },
-    });
-
-    expect(wrapper.find('[data-testid="agent-channels-line"]').text()).toBe(
-      'CAPTAIN.GALLERY.CARD.CHANNELS_LINE {"main":2,"total":3}'
-    );
-  });
-
-  it('says «all channels» when the channel count is unknown', () => {
-    const wrapper = mountCard({
-      stats: { scope: 'all', mainCount: 1, memberCount: null },
-    });
-
-    expect(wrapper.find('[data-testid="agent-channels-line"]').text()).toBe(
-      'CAPTAIN.GALLERY.CARD.ALL_CHANNELS {"main":1}'
-    );
-  });
-
-  it('says when the agent works on no channel', () => {
-    const wrapper = mountCard({
-      stats: { scope: 'selected', mainCount: 0, memberCount: 0 },
-    });
-
-    expect(wrapper.find('[data-testid="agent-channels-line"]').text()).toBe(
-      'CAPTAIN.GALLERY.CARD.NO_CHANNELS'
-    );
-  });
-
-  it('hides the channel line without stats', () => {
-    const wrapper = mountCard({ stats: null });
-
-    expect(wrapper.find('[data-testid="agent-channels-line"]').exists()).toBe(
-      false
-    );
   });
 });

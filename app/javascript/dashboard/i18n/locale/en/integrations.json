@@ -3888,7 +3888,10 @@
         "OFF": "Off",
         "STEPS": "Steps: {count}",
         "OPEN": "Open"
-      }
+      },
+      "BOOKING_SCOPE_ALL": "All specialists and rooms",
+      "BOOKING_SCOPE_SELECTED": "Selected: {count}",
+      "BOOKING_SCOPE_EMPTY": "No specialists or rooms configured in scheduling yet"
     },
     "AGENT_TABS": {
       "FOLLOW_UPS": {
@@ -4029,7 +4032,9 @@
       "SAVED": "Channels saved",
       "SAVE_ERROR": "Could not save. Fix the marked rows and save again.",
       "LEAVE_CONFIRM": "You have unsaved changes. Leave without saving?",
-      "CHANNEL_SWITCH": "AI replies"
+      "CHANNEL_SWITCH": "AI replies",
+      "DISABLE_ALL": "Disable all channels",
+      "ENABLE_ALL": "Enable all channels"
     },
     "CHAT_AVATARS": {
       "COUNCIL_CAPTION": "Council reply: {names}",
@@ -4065,7 +4070,9 @@
       "ERRORS": {
         "MAIN_AGENT_IN_USE": "This agent is the main agent in channels: {channels}. First choose another main agent on the Channels page.",
         "TOGGLE_FAILED": "Could not change the agent status. Please try again."
-      }
+      },
+      "DISABLE_ALL_AGENTS": "Disable all agents",
+      "ENABLE_ALL_AGENTS": "Enable all agents"
     },
     "NAV": {
       "GROUP": "AI agents",

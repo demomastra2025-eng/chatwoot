@@ -649,8 +649,7 @@ const avatarInfo = computed(() => {
   const { sender } = props;
   const { name, type, avatarUrl, thumbnail } = sender || {};
 
-  // AI agent: its photo, or the initials of its name; the generic Captain
-  // icon only when the agent has no name.
+  // AI agent: its photo, or the Captain icon colored by its name.
   if (isCaptainAssistantSender(sender, props.senderType)) {
     const agentName = String(name ?? '').trim();
     const src = avatarUrl || '';
@@ -658,7 +657,7 @@ const avatarInfo = computed(() => {
     return {
       name: agentName,
       src,
-      iconName: agentName || src ? null : 'i-woot-captain',
+      iconName: src ? null : 'i-woot-captain',
     };
   }
 

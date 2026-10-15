@@ -310,7 +310,7 @@ onBeforeUnmount(() => {
     :feature-flag="FEATURE_FLAGS.CAPTAIN"
     :show-pagination-footer="false"
     :show-know-more="false"
-    content-width="full"
+    content-width="default"
   >
     <template #header="{ showPaywall }">
       <AgentPageHeader

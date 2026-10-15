@@ -199,6 +199,8 @@ const handleMenuAction = ({ action }) => {
           :src="avatarSrc"
           :name="displayName"
           :size="48"
+          icon-name="i-woot-captain"
+          rounded-full
           :allow-upload="canEdit && !isAvatarBusy"
           @upload="handleAvatarUpload"
           @delete="handleAvatarDelete"

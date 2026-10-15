@@ -9,6 +9,7 @@ import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import { useCaptainChannelMatrixStore } from 'dashboard/store/captain/channelMatrix';
 import { agentChannelSummary } from 'dashboard/helper/captainChannelMatrix';
 
+import Button from 'dashboard/components-next/button/Button.vue';
 import PageLayout from 'dashboard/components-next/captain/PageLayout.vue';
 import CaptainPaywall from 'dashboard/components-next/captain/pageComponents/Paywall.vue';
 import AgentGalleryCard from 'dashboard/components-next/captain/agent/AgentGalleryCard.vue';
@@ -26,6 +27,7 @@ const { setActive, isToggling } = useAgentActiveToggle();
 
 const createDialogRef = ref(null);
 const hasLoaded = ref(false);
+const isBulkToggling = ref(false);
 
 const uiFlags = useMapGetter('captainAssistants/getUIFlags');
 // getRecords already hides the internal assistants: only AI agents are listed.
@@ -34,6 +36,9 @@ const inboxes = useMapGetter('inboxes/getInboxes');
 
 const isAdmin = computed(() => checkPermissions(['administrator']));
 const matrix = computed(() => matrixStore.getMatrix || null);
+const mainAgentId = computed(() =>
+  Number(matrix.value?.default_main_assistant_id || 0)
+);
 
 const agents = computed(() =>
   [...(assistants.value || [])].sort((first, second) => {
@@ -47,6 +52,14 @@ const agents = computed(() =>
       { sensitivity: 'base' }
     );
   })
+);
+
+const toggleableAgents = computed(() =>
+  agents.value.filter(agent => Number(agent.id) !== mainAgentId.value)
+);
+
+const hasActiveToggleableAgents = computed(() =>
+  toggleableAgents.value.some(agent => agent.active !== false)
 );
 
 const isFetching = computed(
@@ -91,13 +104,27 @@ const openAgent = agent => {
 };
 
 const handleToggleActive = async (agent, active) => {
-  if (
-    !active &&
-    Number(matrix.value?.default_main_assistant_id) === Number(agent.id)
-  )
-    return;
+  if (!active && mainAgentId.value === Number(agent.id)) return;
   const saved = await setActive(agent, active);
   if (saved) refreshMatrix();
+};
+
+const handleToggleAllAgents = async () => {
+  if (!isAdmin.value || isBulkToggling.value || !toggleableAgents.value.length)
+    return;
+  const nextActive = !hasActiveToggleableAgents.value;
+  const targets = toggleableAgents.value.filter(
+    agent => (agent.active !== false) !== nextActive
+  );
+  if (!targets.length) return;
+
+  isBulkToggling.value = true;
+  try {
+    await Promise.all(targets.map(agent => setActive(agent, nextActive)));
+    refreshMatrix();
+  } finally {
+    isBulkToggling.value = false;
+  }
 };
 
 const makeMain = async agent => {
@@ -153,7 +180,26 @@ onMounted(() => {
     </template>
 
     <template #body>
-      <div class="flex flex-col gap-4">
+      <div class="flex flex-col gap-4 pb-6">
+        <div
+          v-if="isAdmin && toggleableAgents.length"
+          class="flex items-center justify-end"
+        >
+          <Button
+            :label="
+              hasActiveToggleableAgents
+                ? t('CAPTAIN.GALLERY.DISABLE_ALL_AGENTS')
+                : t('CAPTAIN.GALLERY.ENABLE_ALL_AGENTS')
+            "
+            color="slate"
+            variant="faded"
+            size="sm"
+            :disabled="isBulkToggling"
+            :is-loading="isBulkToggling"
+            data-testid="agents-toggle-all"
+            @click="handleToggleAllAgents"
+          />
+        </div>
         <p
           v-if="!agents.length"
           class="mb-0 text-body-main text-n-slate-11"
@@ -169,12 +215,10 @@ onMounted(() => {
             v-for="agent in agents"
             :key="agent.id"
             :assistant="agent"
-            :is-main="
-              Number(matrix?.default_main_assistant_id) === Number(agent.id)
-            "
+            :is-main="mainAgentId === Number(agent.id)"
             :stats="statsById[agent.id] || null"
             :can-toggle="isAdmin"
-            :toggling="isToggling(agent.id)"
+            :toggling="isToggling(agent.id) || isBulkToggling"
             @open="openAgent(agent)"
             @toggle-active="value => handleToggleActive(agent, value)"
             @make-main="makeMain(agent)"

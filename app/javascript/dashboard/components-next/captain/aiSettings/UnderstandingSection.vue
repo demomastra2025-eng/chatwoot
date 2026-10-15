@@ -65,7 +65,7 @@ const update = (key, value) => {
     </header>
 
     <div
-      class="flex flex-col divide-y divide-n-weak rounded-xl outline outline-1 -outline-offset-1 outline-n-weak"
+      class="flex flex-col divide-y divide-n-weak rounded-xl bg-n-solid-2 outline outline-1 -outline-offset-1 outline-n-weak"
     >
       <div
         v-for="row in rows"

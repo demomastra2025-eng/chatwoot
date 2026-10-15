@@ -44,6 +44,7 @@ const contributorKey = (contributor, index) =>
       :name="contributor.name || ''"
       :src="contributor.avatarUrl || contributor.avatar_url || ''"
       :size="size"
+      icon-name="i-woot-captain"
       rounded-full
       class="rounded-full ring-2 ring-n-background"
     />

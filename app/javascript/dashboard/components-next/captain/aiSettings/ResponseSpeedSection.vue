@@ -38,7 +38,7 @@ const updateSeconds = value => {
     </header>
 
     <div
-      class="flex flex-col gap-1 rounded-xl bg-n-solid-1 p-4 outline outline-1 -outline-offset-1 outline-n-weak"
+      class="flex flex-col gap-1 rounded-xl bg-n-solid-2 p-4 outline outline-1 -outline-offset-1 outline-n-weak"
     >
       <Input
         id="ai-settings-collapse-window"

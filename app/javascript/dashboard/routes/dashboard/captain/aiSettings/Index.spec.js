@@ -230,23 +230,15 @@ describe('Captain AI settings page', () => {
     expect(saveButton(wrapper).attributes('disabled')).toBeDefined();
   });
 
-  it('exposes one emergency switch and only the always mode without a schedule', async () => {
-    testState.save.mockImplementation(async body => ({
-      ok: true,
-      settings: { ...settingsPayload(), ...body },
-    }));
+  it('exposes the reply time selector without a duplicate master checkbox and locks schedule modes without a schedule', async () => {
     const wrapper = await mountPage();
     const routing = within(wrapper, 'ai-routing');
 
-    expect(routing.findAll('input[type="checkbox"]')).toHaveLength(1);
+    expect(routing.findAll('input[type="checkbox"]')).toHaveLength(0);
     expect(routing.findAll('option[disabled]')).toHaveLength(2);
-
-    await routing.get('input[type="checkbox"]').setValue(false);
-    await clickSave(wrapper);
-
-    expect(testState.save).toHaveBeenCalledWith({
-      routing: { ai_enabled: false, auto_reply_mode: 'always' },
-    });
+    expect(routing.get('#ai-settings-auto-reply-mode').element.value).toBe(
+      'always'
+    );
   });
 
   it('keeps the workspace safety controls alongside routing', async () => {

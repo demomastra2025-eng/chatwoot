@@ -11,8 +11,7 @@ const props = defineProps({
     type: Object,
     required: true,
   },
-  // { mainCount, memberCount, scope } from agentChannelSummary; memberCount
-  // is null when the agent works on all channels and the exact list is unknown.
+  // eslint-disable-next-line vue/no-unused-properties
   stats: {
     type: Object,
     default: null,
@@ -54,26 +53,6 @@ const statusLabel = computed(() =>
   )
 );
 
-const channelsLine = computed(() => {
-  const { stats } = props;
-  if (!stats) return '';
-
-  const main = Number(stats.mainCount) || 0;
-  const hasMemberCount =
-    stats.memberCount !== null && stats.memberCount !== undefined;
-
-  if (!hasMemberCount) {
-    return stats.scope === 'all'
-      ? t('CAPTAIN.GALLERY.CARD.ALL_CHANNELS', { main })
-      : '';
-  }
-
-  const total = Number(stats.memberCount) || 0;
-  if (!total) return t('CAPTAIN.GALLERY.CARD.NO_CHANNELS');
-
-  return t('CAPTAIN.GALLERY.CARD.CHANNELS_LINE', { main, total });
-});
-
 const handleOpen = () => {
   emit('open');
 };
@@ -99,18 +78,19 @@ watch(storedActive, () => {
   <div
     role="button"
     tabindex="0"
-    class="group flex min-h-36 w-full cursor-pointer flex-col gap-3 rounded-xl bg-n-solid-2 px-5 py-4 outline outline-1 -outline-offset-1 outline-n-container transition-colors hover:bg-n-alpha-2 focus-visible:outline-n-brand"
+    class="group flex min-h-32 w-full cursor-pointer flex-col gap-3 rounded-xl bg-n-solid-2 px-5 py-4 outline outline-1 -outline-offset-1 outline-n-weak transition-colors hover:bg-n-alpha-2 focus-visible:outline-n-brand"
     data-testid="agent-gallery-card"
     @click="handleOpen"
     @keydown.enter.self.prevent="handleOpen"
     @keydown.space.self.prevent="handleOpen"
   >
-    <div class="flex items-start justify-between gap-3">
+    <div class="flex items-center justify-between gap-3">
       <div class="flex min-w-0 items-center gap-3">
         <Avatar
           :src="assistant.avatar_url || ''"
           :name="agentName"
           :size="40"
+          icon-name="i-woot-captain"
           rounded-full
         />
         <div class="flex min-w-0 flex-col">
@@ -137,26 +117,26 @@ watch(storedActive, () => {
           </span>
         </div>
       </div>
-      <Switch
-        v-if="canToggle"
-        :model-value="isActive"
-        :disabled="toggling || isMain"
-        :aria-label="t('CAPTAIN.ASSISTANTS.ROUTING.ACTIVE')"
-        class="mt-0.5"
-        data-testid="agent-active-switch"
-        @update:model-value="handleToggle"
-        @click.stop
-      />
-      <button
-        v-if="canToggle && !isMain && isActive"
-        type="button"
-        class="rounded-lg p-1 text-n-slate-11 hover:text-n-amber-11"
-        :aria-label="t('CAPTAIN.GALLERY.CARD.MAKE_MAIN')"
-        data-testid="agent-make-main"
-        @click.stop="emit('makeMain')"
-      >
-        <Icon icon="i-lucide-star" class="size-5" />
-      </button>
+      <div v-if="canToggle" class="flex shrink-0 items-center gap-2">
+        <button
+          v-if="!isMain && isActive"
+          type="button"
+          class="inline-flex size-7 items-center justify-center rounded-lg text-n-slate-11 transition-colors hover:bg-n-alpha-2 hover:text-n-amber-11"
+          :aria-label="t('CAPTAIN.GALLERY.CARD.MAKE_MAIN')"
+          data-testid="agent-make-main"
+          @click.stop="emit('makeMain')"
+        >
+          <Icon icon="i-lucide-star" class="size-4" />
+        </button>
+        <Switch
+          :model-value="isActive"
+          :disabled="toggling || isMain"
+          :aria-label="t('CAPTAIN.ASSISTANTS.ROUTING.ACTIVE')"
+          data-testid="agent-active-switch"
+          @update:model-value="handleToggle"
+          @click.stop
+        />
+      </div>
     </div>
 
     <p
@@ -173,14 +153,5 @@ watch(storedActive, () => {
     >
       {{ t('CAPTAIN.GALLERY.CARD.NO_DESCRIPTION') }}
     </p>
-
-    <div
-      v-if="channelsLine"
-      class="mt-auto flex min-w-0 items-center gap-1.5 text-body-main text-n-slate-11"
-      data-testid="agent-channels-line"
-    >
-      <Icon icon="i-lucide-messages-square" class="size-4 shrink-0" />
-      <span class="truncate">{{ channelsLine }}</span>
-    </div>
   </div>
 </template>

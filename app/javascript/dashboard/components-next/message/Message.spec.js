@@ -347,13 +347,13 @@ describe('Message', () => {
     expect(gridClasses(wrapper)).toContain('grid-cols-[minmax(0,1fr)_24px]');
   });
 
-  it('shows initials, not the generic icon, for an AI agent without a photo', () => {
+  it('shows the Captain icon colored by name for an AI agent without a photo', () => {
     const wrapper = createWrapper(captainProps({ avatarUrl: '' }));
 
     expect(wrapper.findComponent({ name: 'Avatar' }).props()).toMatchObject({
       name: 'Айгерим Ассистент',
       src: '',
-      iconName: null,
+      iconName: 'i-woot-captain',
     });
   });
 
@@ -367,7 +367,7 @@ describe('Message', () => {
     expect(wrapper.findComponent({ name: 'Avatar' }).props()).toMatchObject({
       name: 'Sales AI',
       src: '',
-      iconName: null,
+      iconName: 'i-woot-captain',
     });
   });
 

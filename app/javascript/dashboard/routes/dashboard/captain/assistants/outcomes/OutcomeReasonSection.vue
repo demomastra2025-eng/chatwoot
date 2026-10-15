@@ -45,7 +45,7 @@ const isInvalid = reason =>
 <template>
   <section
     :data-testid="`outcome-section-${type}`"
-    class="flex flex-col rounded-xl outline outline-1 -outline-offset-1 outline-n-weak"
+    class="flex flex-col rounded-xl bg-n-solid-2 outline outline-1 -outline-offset-1 outline-n-weak"
   >
     <header class="flex flex-col gap-1 px-4 py-3">
       <h4 class="mb-0 text-heading-3 text-n-slate-12">
@@ -85,12 +85,6 @@ const isInvalid = reason =>
           "
           :placeholder="t('CAPTAIN.ASSISTANTS.OUTCOMES.PLACEHOLDER')"
         />
-        <Switch
-          v-if="!isReasonLocked(reason)"
-          v-model="reason.enabled"
-          :disabled="disabled"
-          :aria-label="t('CAPTAIN.ASSISTANTS.OUTCOMES.ACTIVE')"
-        />
         <Button
           v-if="!isBuiltInReason(reason)"
           data-testid="outcome-remove"
@@ -102,7 +96,12 @@ const isInvalid = reason =>
           :aria-label="t('CAPTAIN.ASSISTANTS.OUTCOMES.REMOVE')"
           @click="emit('remove', reason.id)"
         />
-        <span v-else class="size-6 shrink-0" aria-hidden="true" />
+        <Switch
+          v-if="!isReasonLocked(reason)"
+          v-model="reason.enabled"
+          :disabled="disabled"
+          :aria-label="t('CAPTAIN.ASSISTANTS.OUTCOMES.ACTIVE')"
+        />
       </li>
     </ul>
 

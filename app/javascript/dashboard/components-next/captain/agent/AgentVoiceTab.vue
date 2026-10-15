@@ -87,7 +87,7 @@ defineExpose({ isDirty, save });
 
 <template>
   <div
-    class="flex w-full max-w-3xl flex-col gap-6"
+    class="flex w-full flex-col gap-6"
     data-testid="agent-voice-tab"
   >
     <div class="flex flex-col gap-1">

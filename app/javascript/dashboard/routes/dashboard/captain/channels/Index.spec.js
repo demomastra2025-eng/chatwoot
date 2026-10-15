@@ -101,21 +101,32 @@ describe('Captain text channel switches', () => {
     });
   });
 
-  it('lists only text channels with one switch each', async () => {
+  it('lists only text channels with icons and one switch each', async () => {
     const wrapper = await mountPage();
     expect(wrapper.text()).toContain('WhatsApp');
     expect(wrapper.text()).toContain('Telegram');
     expect(wrapper.text()).not.toContain('Calls');
-    expect(wrapper.findAll('input[type="checkbox"]')).toHaveLength(2);
+    expect(wrapper.findAll('[role="switch"]')).toHaveLength(2);
+    expect(wrapper.findAll('[data-testid="channel-icon"]')).toHaveLength(2);
   });
 
   it('saves only changed channel switches', async () => {
     const wrapper = await mountPage();
-    await wrapper.findAll('input[type="checkbox"]')[1].setValue(true);
+    await wrapper.findAll('[role="switch"]')[1].trigger('click');
     await wrapper.find('[data-testid="save"]').trigger('click');
     await flushPromises();
     expect(state.save).toHaveBeenCalledWith({
       channels: [{ inbox_id: 6, ai_enabled: true }],
+    });
+  });
+
+  it('allows disabling all channels at once', async () => {
+    const wrapper = await mountPage();
+    await wrapper.find('[data-testid="channels-toggle-all"]').trigger('click');
+    await wrapper.find('[data-testid="save"]').trigger('click');
+    await flushPromises();
+    expect(state.save).toHaveBeenCalledWith({
+      channels: [{ inbox_id: 5, ai_enabled: false }],
     });
   });
 
@@ -125,7 +136,7 @@ describe('Captain text channel switches', () => {
     const wrapper = await mountPage();
     expect(
       wrapper
-        .findAll('input[type="checkbox"]')
+        .findAll('[role="switch"]')
         .every(input => input.attributes('disabled') !== undefined)
     ).toBe(true);
   });

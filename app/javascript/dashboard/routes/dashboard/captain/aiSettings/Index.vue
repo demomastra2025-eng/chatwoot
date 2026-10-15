@@ -24,6 +24,7 @@ import {
 import PageLayout from 'dashboard/components-next/captain/PageLayout.vue';
 import CaptainPaywall from 'dashboard/components-next/captain/pageComponents/Paywall.vue';
 import Banner from 'dashboard/components-next/banner/Banner.vue';
+import Select from 'dashboard/components-next/select/Select.vue';
 import UnderstandingSection from 'dashboard/components-next/captain/aiSettings/UnderstandingSection.vue';
 import HandoffSection from 'dashboard/components-next/captain/aiSettings/HandoffSection.vue';
 import KnowledgeSection from 'dashboard/components-next/captain/aiSettings/KnowledgeSection.vue';
@@ -40,6 +41,23 @@ const { currentAccount } = useAccount();
 const hasWorkspaceSchedule = computed(
   () => currentAccount.value?.settings?.workspace_working_hours?.length === 7
 );
+
+const replyTimeOptions = computed(() => [
+  {
+    value: 'always',
+    label: t('CAPTAIN.AI_SETTINGS.ROUTING.ALWAYS'),
+  },
+  {
+    value: 'working_hours',
+    label: t('CAPTAIN.AI_SETTINGS.ROUTING.WORKING_HOURS'),
+    disabled: !hasWorkspaceSchedule.value,
+  },
+  {
+    value: 'outside_working_hours',
+    label: t('CAPTAIN.AI_SETTINGS.ROUTING.OUTSIDE_WORKING_HOURS'),
+    disabled: !hasWorkspaceSchedule.value,
+  },
+]);
 
 const EMPTY_SERVER_ERRORS = Object.freeze({
   fields: {},
@@ -206,7 +224,7 @@ onBeforeUnmount(() => {
     :is-fetching="isLoading"
     :show-know-more="false"
     :show-pagination-footer="false"
-    content-width="form"
+    content-width="default"
     @click="save"
   >
     <template #paywall>
@@ -239,37 +257,21 @@ onBeforeUnmount(() => {
 
         <section
           data-testid="ai-routing"
-          class="flex flex-col gap-4 rounded-xl bg-n-solid-2 p-5 outline outline-1 -outline-offset-1 outline-n-weak"
+          class="flex flex-col gap-2 rounded-xl bg-n-solid-2 p-4 outline outline-1 -outline-offset-1 outline-n-weak"
         >
-          <label class="flex items-center gap-3 text-body-main text-n-slate-12">
-            <input
-              v-model="draft.routing.ai_enabled"
-              type="checkbox"
-              :disabled="isSaving"
-            />
-            {{ t('CAPTAIN.AI_SETTINGS.ROUTING.MASTER') }}
-          </label>
-          <label class="flex flex-col gap-2 text-body-main text-n-slate-12">
+          <label
+            for="ai-settings-auto-reply-mode"
+            class="mb-0 text-heading-3 text-n-slate-12"
+          >
             {{ t('CAPTAIN.AI_SETTINGS.ROUTING.REPLY_TIME') }}
-            <select
-              v-model="draft.routing.auto_reply_mode"
-              class="rounded-lg border border-n-weak bg-n-solid-1 p-2"
-              :disabled="isSaving"
-            >
-              <option value="always">
-                {{ t('CAPTAIN.AI_SETTINGS.ROUTING.ALWAYS') }}
-              </option>
-              <option value="working_hours" :disabled="!hasWorkspaceSchedule">
-                {{ t('CAPTAIN.AI_SETTINGS.ROUTING.WORKING_HOURS') }}
-              </option>
-              <option
-                value="outside_working_hours"
-                :disabled="!hasWorkspaceSchedule"
-              >
-                {{ t('CAPTAIN.AI_SETTINGS.ROUTING.OUTSIDE_WORKING_HOURS') }}
-              </option>
-            </select>
           </label>
+          <Select
+            id="ai-settings-auto-reply-mode"
+            v-model="draft.routing.auto_reply_mode"
+            :options="replyTimeOptions"
+            :disabled="isSaving"
+            class="w-full sm:max-w-xs"
+          />
           <p
             v-if="!hasWorkspaceSchedule"
             class="mb-0 text-body-main text-n-slate-11"
