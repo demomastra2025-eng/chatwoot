@@ -57,7 +57,7 @@ as well as a link to its edit page.
     <dt class="attribute-label" id="mfa_enabled">MFA</dt>
     <dd class="attribute-data attribute-data--string">
       <% mfa_enabled = page.resource.mfa_enabled? %>
-      <span class="<%= mfa_enabled ? 'bg-green-100/70 text-green-800' : 'bg-slate-100 text-slate-700' %> inline-flex items-center px-2 h-4 leading-4 rounded-xl text-xxs font-medium">
+      <span class="<%= mfa_enabled ? 'bg-n-teal-3/70 text-n-teal-11' : 'bg-n-slate-5 text-n-slate-12' %> inline-flex items-center px-2 h-4 leading-4 rounded-xl text-xxs font-medium">
         <%= mfa_enabled ? 'Включено' : 'Выключено' %>
       </span>
     </dd>

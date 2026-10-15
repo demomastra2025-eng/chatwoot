@@ -9,19 +9,19 @@
     <h1 class="text-base font-medium leading-6 text-n-slate-12" id="page-title">
       <%= content_for(:title) %>
     </h1>
-    <p class="text-sm font-normal leading-5 text-slate-500 m-0">Управление параметрами инстанса OneLink, настройками модулей и интеграций</p>
+    <p class="text-sm font-normal leading-5 text-n-slate-11 m-0">Управление параметрами инстанса OneLink, настройками модулей и интеграций</p>
   </div>
 </header>
 <section class="main-content__body px-8">
   <% if Redis::Alfred.get(Redis::Alfred::CHATWOOT_INSTALLATION_CONFIG_RESET_WARNING) %>
-    <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-5" role="alert">
+    <div class="bg-n-ruby-3 border border-n-ruby-6 text-n-ruby-11 px-4 py-3 rounded relative mb-5" role="alert">
     <strong class="font-bold">Внимание!</strong>
     <span class="block sm:inline">Обнаружены несанкционированные изменения премиум-параметров в OneLink. Для продолжения их использования обновите ваш тарифный план.
-      Контакты для связи:</span><span class="inline rounded-full bg-red-200 px-2 text-white ml-2">sales@one-link.kz</span>
+      Контакты для связи:</span><span class="inline rounded-full bg-n-ruby-9 px-2 text-white ml-2">sales@one-link.kz</span>
     </div>
   <% end %>
 
-  <div class="bg-white py-2 px-4 xl:px-0">
+  <div class="bg-n-solid-2 py-2 px-4 xl:px-0">
     <%= javascript_include_tag "secretField" %>
     <div class="flex items-center mb-6">
       <h4 class="text-sm font-medium leading-5 h-5 text-n-slate-12 mr-4">Идентификатор установки</h4>
@@ -45,10 +45,10 @@
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-2 gap-y-3">
       <% SuperAdmin::FeaturesHelper.available_features.each do |feature, attrs| %>
         <div class="group outline outline-1 outline-n-container p-4 rounded-lg relative shadow-sm">
-          <span class="<%= attrs[:enabled] ? 'bg-green-400 text-white': 'bg-slate-300 text-slate-800' %> absolute rounded-full p-1 inline-flex right-4 top-5">
+          <span class="<%= attrs[:enabled] ? 'bg-n-teal-9 text-white': 'bg-n-slate-8 text-n-slate-12' %> absolute rounded-full p-1 inline-flex right-4 top-5">
             <svg width="14" height="14"><use xlink:href="<%= attrs[:enabled] ? '#icon-tick-line': '#icon-lock-line' %>" /></svg>
           </span>
-          <div class="visible <% if !attrs[:enabled] %> group-hover:invisible <% end %> flex items-center justify-center w-10 h-10 mb-2 border border-slate-100 border-solid text-slate-800 rounded-full">
+          <div class="visible <% if !attrs[:enabled] %> group-hover:invisible <% end %> flex items-center justify-center w-10 h-10 mb-2 border border-n-weak border-solid text-n-slate-12 rounded-full">
             <svg width="20" height="20"><use xlink:href="#<%= attrs[:icon] %>" /></svg>
           </div>
           <% if !attrs[:enabled] %>
@@ -64,10 +64,10 @@
             <div class="flex items-center gap-2">
               <h3 class="text-n-slate-12 font-medium"><%= feature_label(attrs) %></h3>
               <% if attrs[:enterprise] %>
-                <span class="px-2 h-4 leading-4 rounded-xl text-green-800 font-medium bg-green-100/70 text-xxs">EE</span>
+                <span class="px-2 h-4 leading-4 rounded-xl text-n-teal-11 font-medium bg-n-teal-3/70 text-xxs">EE</span>
               <% end %>
               <% if attrs[:config_key].present? && attrs[:enabled] %>
-                <a class="inline-flex items-center justify-center h-5 w-5 hover:bg-slate-50 rounded-sm" href="/super_admin/app_config?config=<%= attrs[:config_key] %>">
+                <a class="inline-flex items-center justify-center h-5 w-5 hover:bg-n-alpha-1 rounded-sm" href="/super_admin/app_config?config=<%= attrs[:config_key] %>">
                   <svg width="18" height="18"><use xlink:href="#icon-gear" /></svg>
                 </a>
               <% end %>

@@ -5,7 +5,7 @@
 </header>
 
 <section class="main-content__body">
-  <p class="text-sm text-slate-600 mb-6">
+  <p class="text-sm text-n-slate-11 mb-6">
     Send a test push notification to a specific user's registered devices to diagnose delivery issues.
     Results show the sanitized FCM / Web Push / relay response so you can see exactly what failed without exposing stored push credentials.
   </p>
@@ -16,23 +16,23 @@
       <%= f.text_field :user_query,
                        value: @query,
                        placeholder: 'user@example.com or numeric user ID',
-                       class: 'border border-slate-100 p-1.5 rounded-md w-80' %>
-      <%= f.submit 'Look up', class: 'border border-slate-200 bg-slate-50 px-3 py-1.5 rounded-md cursor-pointer' %>
+                       class: 'border border-n-weak p-1.5 rounded-md w-80' %>
+      <%= f.submit 'Look up', class: 'border border-n-weak bg-n-slate-3 px-3 py-1.5 rounded-md cursor-pointer' %>
     <% end %>
     <% if @query.present? && @user.nil? %>
-      <p class="text-sm text-red-600 mt-2">No user found for "<%= @query %>".</p>
+      <p class="text-sm text-n-ruby-11 mt-2">No user found for "<%= @query %>".</p>
     <% end %>
   </div>
 
   <% if @user %>
-    <div class="mb-6 border border-slate-100 rounded-md p-4 bg-slate-25">
+    <div class="mb-6 border border-n-weak rounded-md p-4 bg-n-slate-2">
       <p class="text-sm">
         <strong><%= @user.name %></strong>
         &middot; <%= @user.email %>
         &middot; ID <%= @user.id %>
       </p>
       <% if @user.accounts.any? %>
-        <p class="text-xs text-slate-500 mt-1">
+        <p class="text-xs text-n-slate-11 mt-1">
           Accounts:
           <% @user.accounts.each_with_index do |account, index| %>
             <%= ', ' if index.positive? %>
@@ -44,33 +44,33 @@
 
     <div class="mb-8">
       <h2 class="text-base font-semibold mb-2">2. Select subscriptions (<%= @subscriptions.count %>)</h2>
-      <p class="text-xs text-amber-700 mb-3">
+      <p class="text-xs text-n-amber-11 mb-3">
         ⚠️ This sends a real push to every selected device. Use only when diagnosing a reported issue.
       </p>
 
       <% if @subscriptions.empty? %>
-        <p class="text-sm text-slate-600">This user has no push subscriptions registered.</p>
+        <p class="text-sm text-n-slate-11">This user has no push subscriptions registered.</p>
       <% else %>
         <%= form_with url: super_admin_push_diagnostics_path, method: :post, local: true do |f| %>
           <%= f.hidden_field :user_id, value: @user.id %>
           <div class="mb-4 max-w-2xl">
             <div class="mb-3">
-              <%= label_tag :push_title, 'Title', class: 'block text-xs font-medium text-slate-600 mb-1' %>
+              <%= label_tag :push_title, 'Title', class: 'block text-xs font-medium text-n-slate-11 mb-1' %>
               <%= text_field_tag :push_title,
                                   params[:push_title].presence || Notification::PushTestService.default_title,
-                                  class: 'border border-slate-100 p-1.5 rounded-md w-full text-sm' %>
+                                  class: 'border border-n-weak p-1.5 rounded-md w-full text-sm' %>
             </div>
             <div>
-              <%= label_tag :push_body, 'Body', class: 'block text-xs font-medium text-slate-600 mb-1' %>
+              <%= label_tag :push_body, 'Body', class: 'block text-xs font-medium text-n-slate-11 mb-1' %>
               <%= text_area_tag :push_body,
                                  params[:push_body].presence || Notification::PushTestService.default_body,
                                  rows: 2,
-                                 class: 'border border-slate-100 p-1.5 rounded-md w-full text-sm' %>
+                                 class: 'border border-n-weak p-1.5 rounded-md w-full text-sm' %>
             </div>
-            <p class="text-xs text-slate-400 mt-1">Customers will see this text as a real push notification on their device.</p>
+            <p class="text-xs text-n-slate-10 mt-1">Customers will see this text as a real push notification on their device.</p>
           </div>
-          <table class="w-full text-sm border border-slate-100 rounded-md">
-            <thead class="text-left text-xs text-slate-500 bg-slate-25">
+          <table class="w-full text-sm border border-n-weak rounded-md">
+            <thead class="text-left text-xs text-n-slate-11 bg-n-slate-2">
               <tr>
                 <th class="px-3 py-2 align-middle first:!pl-4 last:!pr-4"><input type="checkbox" id="toggle-all"></th>
                 <th class="px-3 py-2 first:!pl-4 last:!pr-4">ID</th>
@@ -95,7 +95,7 @@
                   <% token_display = attrs['push_token'].present? ? "…#{attrs['push_token'].to_s.last(6)}" : '—' %>
                 <% end %>
                 <% extra_attrs = attrs.except('endpoint', 'p256dh', 'auth', 'push_token', 'device_id') %>
-                <tr class="border-t border-slate-100 align-middle">
+                <tr class="border-t border-n-weak align-middle">
                   <td class="px-3 py-2 first:!pl-4 last:!pr-4">
                     <%= check_box_tag 'subscription_ids[]', sub.id, false, class: 'subscription-checkbox' %>
                   </td>
@@ -106,16 +106,16 @@
                   <td class="px-3 py-2 first:!pl-4 last:!pr-4 text-xs align-top">
                     <% if extra_attrs.present? %>
                       <% extra_attrs.each do |k, v| %>
-                        <div><span class="text-slate-500"><%= k %>:</span> <span class="font-mono"><%= v.to_s.truncate(40) %></span></div>
+                        <div><span class="text-n-slate-11"><%= k %>:</span> <span class="font-mono"><%= v.to_s.truncate(40) %></span></div>
                       <% end %>
                     <% else %>
-                      <span class="text-slate-400">—</span>
+                      <span class="text-n-slate-10">—</span>
                     <% end %>
                   </td>
                   <td class="px-3 py-2 first:!pl-4 last:!pr-4 whitespace-nowrap"><%= sub.created_at.strftime('%Y-%m-%d %H:%M') %></td>
                   <td class="px-3 py-2 first:!pl-4 last:!pr-4 whitespace-nowrap">
                     <%= sub.updated_at.strftime('%Y-%m-%d %H:%M') %>
-                    <span class="text-xs text-slate-400">(<%= time_ago_in_words(sub.updated_at) %> ago)</span>
+                    <span class="text-xs text-n-slate-10">(<%= time_ago_in_words(sub.updated_at) %> ago)</span>
                   </td>
                 </tr>
               <% end %>
@@ -123,12 +123,12 @@
           </table>
           <div class="mt-4 flex gap-2">
             <%= f.submit 'Send Test Push to Selected',
-                         class: 'border border-slate-200 bg-slate-50 px-3 py-1.5 rounded-md cursor-pointer font-medium' %>
+                         class: 'border border-n-weak bg-n-slate-3 px-3 py-1.5 rounded-md cursor-pointer font-medium' %>
             <%= submit_tag 'Delete Selected Subscriptions',
                            formaction: destroy_subscriptions_super_admin_push_diagnostics_path,
                            formmethod: 'post',
                            data: { confirm: "Delete the selected subscription(s)? The user won't receive pushes on those devices until their app re-registers." },
-                           class: 'border border-red-200 bg-red-50 text-red-700 px-3 py-1.5 rounded-md cursor-pointer font-medium' %>
+                           class: 'border border-n-ruby-4 bg-n-ruby-2 text-n-ruby-11 px-3 py-1.5 rounded-md cursor-pointer font-medium' %>
           </div>
         <% end %>
       <% end %>
@@ -137,8 +137,8 @@
     <% if @results.present? %>
       <div class="mb-8">
         <h2 class="text-base font-semibold mb-2">3. Results</h2>
-        <table class="w-full text-sm border border-slate-100 rounded-md">
-          <thead class="text-left text-xs text-slate-500 bg-slate-25">
+        <table class="w-full text-sm border border-n-weak rounded-md">
+          <thead class="text-left text-xs text-n-slate-11 bg-n-slate-2">
             <tr>
               <th class="px-3 py-2 first:!pl-4 last:!pr-4">Sub ID</th>
               <th class="px-3 py-2 first:!pl-4 last:!pr-4">Type</th>
@@ -150,7 +150,7 @@
           </thead>
           <tbody>
             <% @results.each do |r| %>
-              <tr class="border-t border-slate-100 align-top">
+              <tr class="border-t border-n-weak align-top">
                 <td class="px-3 py-2 first:!pl-4 last:!pr-4"><%= r[:id] %></td>
                 <td class="px-3 py-2 first:!pl-4 last:!pr-4"><%= r[:type] %></td>
                 <td class="px-3 py-2 first:!pl-4 last:!pr-4 font-mono text-xs break-all"><%= r[:device] %></td>
@@ -158,9 +158,9 @@
                 <td class="px-3 py-2 first:!pl-4 last:!pr-4">
                   <%
                     color = {
-                      success: 'bg-green-100 text-green-800',
-                      failure: 'bg-red-100 text-red-800',
-                      skipped: 'bg-slate-100 text-slate-600'
+                      success: 'bg-n-teal-3 text-n-teal-11',
+                      failure: 'bg-n-ruby-3 text-n-ruby-11',
+                      skipped: 'bg-n-slate-5 text-n-slate-11'
                     }[r[:status]]
                   %>
                   <span class="px-2 py-0.5 rounded-full text-xs <%= color %>"><%= r[:status] %></span>

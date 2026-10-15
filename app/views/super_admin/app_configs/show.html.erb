@@ -40,97 +40,97 @@
       'pdf_inputs' => 'PDF-вход',
       'image_generation' => 'Генерация изображений'
     } %>
-    <div class="mb-8 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+    <div class="mb-8 rounded-lg border border-n-weak bg-n-solid-2 px-4 py-3 text-sm text-n-slate-12">
       <div class="flex flex-wrap items-start justify-between gap-4">
         <div class="min-w-0 flex-1">
-          <div class="font-medium text-slate-900">OpenRouter</div>
-          <div class="mt-1 text-slate-500">
+          <div class="font-medium text-n-slate-12">OpenRouter</div>
+          <div class="mt-1 text-n-slate-11">
             Состояние ключа, кредитов, каталога моделей, endpoint-провайдеров, политик и admin-операций. API-ключи здесь не отображаются.
           </div>
 
           <div class="mt-4 grid gap-3 md:grid-cols-4">
-            <div class="rounded-md border border-slate-100 bg-slate-50 p-3">
-              <div class="text-xs font-medium uppercase text-slate-500">Ключ</div>
-              <div class="mt-1 font-semibold text-slate-900"><%= key_health[:status].presence || (key_status[:effective_configured] ? 'configured' : 'missing') %></div>
-              <div class="text-xs text-slate-500">
+            <div class="rounded-md border border-n-weak bg-n-slate-3 p-3">
+              <div class="text-xs font-medium uppercase text-n-slate-11">Ключ</div>
+              <div class="mt-1 font-semibold text-n-slate-12"><%= key_health[:status].presence || (key_status[:effective_configured] ? 'configured' : 'missing') %></div>
+              <div class="text-xs text-n-slate-11">
                 Глобальный: <%= key_status[:global_configured] ? 'да' : 'нет' %>, workspace: <%= key_status[:account_configured] ? 'да' : 'нет' %>
               </div>
-              <div class="text-xs text-slate-400">
+              <div class="text-xs text-n-slate-10">
                 Тип: <%= key_details[:key_type].presence || 'unknown' %>, проверен: <%= key_health[:checked_at].presence || 'never' %>
               </div>
               <% if key_health[:error].present? %>
-                <div class="mt-1 text-xs text-red-600"><%= key_health[:error] %></div>
+                <div class="mt-1 text-xs text-n-ruby-11"><%= key_health[:error] %></div>
               <% end %>
             </div>
-            <div class="rounded-md border border-slate-100 bg-slate-50 p-3">
-              <div class="text-xs font-medium uppercase text-slate-500">Кредиты и лимиты</div>
+            <div class="rounded-md border border-n-weak bg-n-slate-3 p-3">
+              <div class="text-xs font-medium uppercase text-n-slate-11">Кредиты и лимиты</div>
               <% if credits[:status] == 'available' %>
-                <div class="mt-1 font-semibold text-slate-900">
+                <div class="mt-1 font-semibold text-n-slate-12">
                   <%= number_with_precision(credits[:remaining_credits].to_f, precision: 2) %> осталось
                 </div>
-                <div class="text-xs text-slate-500">
+                <div class="text-xs text-n-slate-11">
                   Всего: <%= number_with_precision(credits[:total_credits].to_f, precision: 2) %>, расход: <%= number_with_precision(credits[:total_usage].to_f, precision: 2) %>
                 </div>
               <% else %>
-                <div class="mt-1 font-semibold text-slate-900"><%= credits[:status].presence || 'not checked' %></div>
-                <div class="text-xs text-slate-500"><%= credits[:reason].presence || credits[:error].presence || 'Для синхронизации кредитов нужен management key.' %></div>
+                <div class="mt-1 font-semibold text-n-slate-12"><%= credits[:status].presence || 'not checked' %></div>
+                <div class="text-xs text-n-slate-11"><%= credits[:reason].presence || credits[:error].presence || 'Для синхронизации кредитов нужен management key.' %></div>
               <% end %>
-              <div class="text-xs text-slate-400">
+              <div class="text-xs text-n-slate-10">
                 Лимит ключа: <%= key_details[:limit].present? ? number_with_precision(key_details[:limit].to_f, precision: 2) : 'none' %>,
                 осталось: <%= key_details[:limit_remaining].present? ? number_with_precision(key_details[:limit_remaining].to_f, precision: 2) : 'unknown' %>
               </div>
             </div>
-            <div class="rounded-md border border-slate-100 bg-slate-50 p-3">
-              <div class="text-xs font-medium uppercase text-slate-500">Каталог моделей</div>
-              <div class="mt-1 font-semibold text-slate-900"><%= catalog[:last_refreshed_at].presence || 'never' %></div>
-              <div class="text-xs text-slate-500">Статус: <%= catalog[:refresh_status] || 'unknown' %>, источник: <%= catalog[:source] || 'unknown' %><%= catalog[:using_fallback] ? ' (fallback)' : '' %></div>
+            <div class="rounded-md border border-n-weak bg-n-slate-3 p-3">
+              <div class="text-xs font-medium uppercase text-n-slate-11">Каталог моделей</div>
+              <div class="mt-1 font-semibold text-n-slate-12"><%= catalog[:last_refreshed_at].presence || 'never' %></div>
+              <div class="text-xs text-n-slate-11">Статус: <%= catalog[:refresh_status] || 'unknown' %>, источник: <%= catalog[:source] || 'unknown' %><%= catalog[:using_fallback] ? ' (fallback)' : '' %></div>
               <% if catalog[:last_started_at].present? %>
-                <div class="text-xs text-slate-400">Старт: <%= catalog[:last_started_at] %></div>
+                <div class="text-xs text-n-slate-10">Старт: <%= catalog[:last_started_at] %></div>
               <% end %>
             </div>
-            <div class="rounded-md border border-slate-100 bg-slate-50 p-3">
-              <div class="text-xs font-medium uppercase text-slate-500">Модели</div>
-              <div class="mt-1 font-semibold text-slate-900"><%= catalog[:total_models] || 0 %> моделей</div>
-              <div class="text-xs text-slate-500"><%= catalog[:counts_by_type].to_h.map { |type, count| "#{type}: #{count}" }.join(', ') %></div>
-              <div class="text-xs text-slate-400">Устаревшие: <%= catalog[:stale_models] || 0 %>, отключенные: <%= catalog[:disabled_models] || 0 %></div>
+            <div class="rounded-md border border-n-weak bg-n-slate-3 p-3">
+              <div class="text-xs font-medium uppercase text-n-slate-11">Модели</div>
+              <div class="mt-1 font-semibold text-n-slate-12"><%= catalog[:total_models] || 0 %> моделей</div>
+              <div class="text-xs text-n-slate-11"><%= catalog[:counts_by_type].to_h.map { |type, count| "#{type}: #{count}" }.join(', ') %></div>
+              <div class="text-xs text-n-slate-10">Устаревшие: <%= catalog[:stale_models] || 0 %>, отключенные: <%= catalog[:disabled_models] || 0 %></div>
             </div>
-            <div class="rounded-md border border-slate-100 bg-slate-50 p-3">
-              <div class="text-xs font-medium uppercase text-slate-500">Endpoints</div>
-              <div class="mt-1 font-semibold text-slate-900"><%= endpoints[:total_endpoints] || 0 %> endpoint</div>
-              <div class="text-xs text-slate-500">Статус: <%= endpoints[:refresh_status] || 'unknown' %>, провайдеры: <%= Array(endpoints[:providers]).first(5).join(', ').presence || 'none' %></div>
-              <div class="text-xs text-slate-400">Устаревшие: <%= endpoints[:stale_endpoints] || 0 %>, ждут refresh: <%= endpoints[:pending_model_count] || 0 %></div>
+            <div class="rounded-md border border-n-weak bg-n-slate-3 p-3">
+              <div class="text-xs font-medium uppercase text-n-slate-11">Endpoints</div>
+              <div class="mt-1 font-semibold text-n-slate-12"><%= endpoints[:total_endpoints] || 0 %> endpoint</div>
+              <div class="text-xs text-n-slate-11">Статус: <%= endpoints[:refresh_status] || 'unknown' %>, провайдеры: <%= Array(endpoints[:providers]).first(5).join(', ').presence || 'none' %></div>
+              <div class="text-xs text-n-slate-10">Устаревшие: <%= endpoints[:stale_endpoints] || 0 %>, ждут refresh: <%= endpoints[:pending_model_count] || 0 %></div>
             </div>
-            <div class="rounded-md border border-slate-100 bg-slate-50 p-3">
-              <div class="text-xs font-medium uppercase text-slate-500">Runtime</div>
-              <div class="mt-1 font-semibold text-slate-900"><%= runtime[:total_events] || 0 %> событий / <%= runtime[:request_count] || 0 %> запросов</div>
-              <div class="text-xs text-slate-500">Ошибки: <%= runtime[:error_count] || 0 %>, провайдер: <%= runtime[:provider_failure_count] || 0 %></div>
-              <div class="text-xs text-slate-400">Стоимость: <%= number_with_precision(runtime[:estimated_cost].to_f, precision: 6) %>, последнее: <%= runtime[:last_event_at].presence || 'never' %></div>
+            <div class="rounded-md border border-n-weak bg-n-slate-3 p-3">
+              <div class="text-xs font-medium uppercase text-n-slate-11">Runtime</div>
+              <div class="mt-1 font-semibold text-n-slate-12"><%= runtime[:total_events] || 0 %> событий / <%= runtime[:request_count] || 0 %> запросов</div>
+              <div class="text-xs text-n-slate-11">Ошибки: <%= runtime[:error_count] || 0 %>, провайдер: <%= runtime[:provider_failure_count] || 0 %></div>
+              <div class="text-xs text-n-slate-10">Стоимость: <%= number_with_precision(runtime[:estimated_cost].to_f, precision: 6) %>, последнее: <%= runtime[:last_event_at].presence || 'never' %></div>
             </div>
           </div>
 
           <% if catalog[:last_refresh_error].present? %>
-            <div class="mt-3 rounded-md bg-red-50 px-3 py-2 text-red-700">Последняя ошибка каталога: <%= catalog[:last_refresh_error] %></div>
+            <div class="mt-3 rounded-md bg-n-ruby-2 px-3 py-2 text-n-ruby-11">Последняя ошибка каталога: <%= catalog[:last_refresh_error] %></div>
           <% end %>
           <% if endpoints[:last_refresh_error].present? %>
-            <div class="mt-3 rounded-md bg-amber-50 px-3 py-2 text-amber-700">Предупреждение обновления endpoints: <%= endpoints[:last_refresh_error] %></div>
+            <div class="mt-3 rounded-md bg-n-amber-2 px-3 py-2 text-n-amber-11">Предупреждение обновления endpoints: <%= endpoints[:last_refresh_error] %></div>
           <% end %>
 
           <div class="mt-4 grid gap-3 md:grid-cols-2">
-            <div class="rounded-md border border-slate-100 p-3">
-              <div class="text-xs font-medium uppercase text-slate-500">Изменения каталога</div>
+            <div class="rounded-md border border-n-weak p-3">
+              <div class="text-xs font-medium uppercase text-n-slate-11">Изменения каталога</div>
               <div class="mt-2 flex flex-wrap gap-2">
                 <% %i[new changed removed capability_changed price_changed].each do |diff_key| %>
                   <% diff_item = catalog_diff.fetch(diff_key, {}).to_h %>
-                  <span class="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700"><%= diff_key %>: <%= diff_item[:count] || 0 %></span>
+                  <span class="rounded-full bg-n-slate-5 px-2 py-1 text-xs text-n-slate-12"><%= diff_key %>: <%= diff_item[:count] || 0 %></span>
                 <% end %>
               </div>
             </div>
-            <div class="rounded-md border border-slate-100 p-3">
-              <div class="text-xs font-medium uppercase text-slate-500">Изменения endpoints</div>
+            <div class="rounded-md border border-n-weak p-3">
+              <div class="text-xs font-medium uppercase text-n-slate-11">Изменения endpoints</div>
               <div class="mt-2 flex flex-wrap gap-2">
                 <% %i[new changed removed provider_changed price_changed failed_model_ids].each do |diff_key| %>
                   <% diff_item = endpoint_diff.fetch(diff_key, {}).to_h %>
-                  <span class="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700"><%= diff_key %>: <%= diff_item[:count] || 0 %></span>
+                  <span class="rounded-full bg-n-slate-5 px-2 py-1 text-xs text-n-slate-12"><%= diff_key %>: <%= diff_item[:count] || 0 %></span>
                 <% end %>
               </div>
             </div>
@@ -138,54 +138,54 @@
 
           <div class="mt-4 grid gap-4 lg:grid-cols-3">
             <div>
-              <div class="text-xs font-medium uppercase text-slate-500">Возможности моделей</div>
+              <div class="text-xs font-medium uppercase text-n-slate-11">Возможности моделей</div>
               <div class="mt-2 flex flex-wrap gap-2">
                 <% catalog[:capability_counts].to_h.each do |capability, count| %>
-                  <span class="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700"><%= capability %>: <%= count %></span>
+                  <span class="rounded-full bg-n-slate-5 px-2 py-1 text-xs text-n-slate-12"><%= capability %>: <%= count %></span>
                 <% end %>
               </div>
             </div>
             <div>
-              <div class="text-xs font-medium uppercase text-slate-500">Endpoint-провайдеры</div>
+              <div class="text-xs font-medium uppercase text-n-slate-11">Endpoint-провайдеры</div>
               <div class="mt-2 flex flex-wrap gap-2">
                 <% endpoints[:provider_counts].to_h.first(8).each do |provider, count| %>
-                  <span class="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700"><%= provider %>: <%= count %></span>
+                  <span class="rounded-full bg-n-slate-5 px-2 py-1 text-xs text-n-slate-12"><%= provider %>: <%= count %></span>
                 <% end %>
               </div>
             </div>
             <div>
-              <div class="text-xs font-medium uppercase text-slate-500">Runtime-сигналы</div>
+              <div class="text-xs font-medium uppercase text-n-slate-11">Runtime-сигналы</div>
               <div class="mt-2 flex flex-wrap gap-2">
                 <% runtime[:by_feature].to_h.first(6).each do |feature, count| %>
-                  <span class="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700"><%= feature %>: <%= count %></span>
+                  <span class="rounded-full bg-n-slate-5 px-2 py-1 text-xs text-n-slate-12"><%= feature %>: <%= count %></span>
                 <% end %>
                 <% runtime[:recent_error_codes].to_h.first(4).each do |code, count| %>
-                  <span class="rounded-full bg-amber-50 px-2 py-1 text-xs text-amber-700"><%= code %>: <%= count %></span>
+                  <span class="rounded-full bg-n-amber-2 px-2 py-1 text-xs text-n-amber-11"><%= code %>: <%= count %></span>
                 <% end %>
               </div>
             </div>
             <div>
-              <div class="text-xs font-medium uppercase text-slate-500">Политика workspace</div>
+              <div class="text-xs font-medium uppercase text-n-slate-11">Политика workspace</div>
               <% if workspace_policy[:error].present? %>
-                <div class="mt-2 rounded-md bg-red-50 px-2 py-1 text-xs text-red-700"><%= workspace_policy[:error] %></div>
+                <div class="mt-2 rounded-md bg-n-ruby-2 px-2 py-1 text-xs text-n-ruby-11"><%= workspace_policy[:error] %></div>
               <% else %>
                 <% provider_preferences = workspace_policy[:provider_preferences].to_h %>
                 <% guardrails = workspace_policy[:guardrails].to_h %>
-                <div class="mt-2 text-xs text-slate-600">
+                <div class="mt-2 text-xs text-n-slate-11">
                   Профиль: <%= workspace_policy[:privacy_profile] %>, workspace: <%= workspace_policy[:workspace] %>
                 </div>
                 <div class="mt-2 flex flex-wrap gap-2">
                   <% provider_preferences.each do |key, value| %>
-                    <span class="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700"><%= key %>: <%= value %></span>
+                    <span class="rounded-full bg-n-slate-5 px-2 py-1 text-xs text-n-slate-12"><%= key %>: <%= value %></span>
                   <% end %>
                 </div>
                 <div class="mt-2 flex flex-wrap gap-2">
                   <% guardrails.each do |guardrail_key, guardrail| %>
-                    <span class="rounded-full bg-slate-50 px-2 py-1 text-xs text-slate-600"><%= guardrail_key %>: <%= guardrail.to_h[:status] %></span>
+                    <span class="rounded-full bg-n-slate-3 px-2 py-1 text-xs text-n-slate-11"><%= guardrail_key %>: <%= guardrail.to_h[:status] %></span>
                   <% end %>
                 </div>
                 <% if guardrails_summary[:status_counts].present? %>
-                  <div class="mt-2 text-xs text-slate-500">
+                  <div class="mt-2 text-xs text-n-slate-11">
                     Защита функций: <%= guardrails_summary[:status_counts].to_h.map { |status, count| "#{status}: #{count}" }.join(', ') %>
                   </div>
                 <% end %>
@@ -194,19 +194,19 @@
           </div>
 
           <div class="mt-4">
-            <div class="text-xs font-medium uppercase text-slate-500">Доступность функций</div>
+            <div class="text-xs font-medium uppercase text-n-slate-11">Доступность функций</div>
             <div class="mt-2 grid gap-2 md:grid-cols-2">
               <% features.each do |feature_key, feature| %>
                 <% selected_diagnostics = feature.to_h[:selected_model_diagnostics].to_h %>
                 <% feature_policy = feature.to_h[:policy].to_h %>
                 <% feature_extensions = Array(feature_policy[:extensions]) %>
-                <div class="rounded-md border border-slate-100 p-2">
-                  <div class="font-medium text-slate-800"><%= feature_key %></div>
-                  <div class="text-xs text-slate-500">
+                <div class="rounded-md border border-n-weak p-2">
+                  <div class="font-medium text-n-slate-12"><%= feature_key %></div>
+                  <div class="text-xs text-n-slate-11">
                     Доступно: <%= feature.to_h[:available_model_count] || 0 %>, выбрано: <%= feature.to_h[:selected_model].presence || 'none' %>, default: <%= feature.to_h[:default_model].presence || 'none' %>
                   </div>
                   <% if feature_policy.present? %>
-                    <div class="mt-1 text-xs text-slate-500">
+                    <div class="mt-1 text-xs text-n-slate-11">
                       Политика: cache <%= feature_policy[:cache_policy] || 'disabled' %>, tools <%= Array(feature_policy[:allowed_server_tools]).join(', ').presence || 'blocked' %>, plugins <%= Array(feature_policy[:allowed_plugins]).join(', ').presence || 'blocked' %>
                     </div>
                   <% end %>
@@ -215,7 +215,7 @@
                       <% feature_extensions.each do |extension| %>
                         <% extension = extension.to_h.with_indifferent_access %>
                         <% extension_status = extension[:status].to_s %>
-                        <% extension_status_class = extension_status == 'implemented' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700' %>
+                        <% extension_status_class = extension_status == 'implemented' ? 'border-n-teal-4 bg-n-teal-2 text-n-teal-11' : 'border-n-amber-4 bg-n-amber-2 text-n-amber-11' %>
                         <span class="rounded-full border px-2 py-0.5 text-xs <%= extension_status_class %>">
                           <%= extension_label_map[extension[:product_label_key].to_s] || extension[:product_label_key].to_s.humanize %>
                         </span>
@@ -223,7 +223,7 @@
                     </div>
                   <% end %>
                   <% if selected_diagnostics[:allowed] == false && selected_diagnostics[:reason_codes].present? %>
-                    <div class="mt-1 text-xs text-amber-700">Предупреждение по выбранной модели: <%= selected_diagnostics[:reason_codes].join(', ') %></div>
+                    <div class="mt-1 text-xs text-n-amber-11">Предупреждение по выбранной модели: <%= selected_diagnostics[:reason_codes].join(', ') %></div>
                   <% end %>
                 </div>
               <% end %>
@@ -231,47 +231,47 @@
           </div>
 
           <div class="mt-4">
-            <div class="text-xs font-medium uppercase text-slate-500">Диагностика моделей</div>
+            <div class="text-xs font-medium uppercase text-n-slate-11">Диагностика моделей</div>
             <div class="mt-2 grid gap-2 md:grid-cols-2">
               <% model_eligibility.first(6).each do |model| %>
                 <% hidden_reasons = model.to_h[:features].to_h.values.flat_map { |feature| Array(feature[:reason_codes]) }.uniq.first(5) %>
-                <div class="rounded-md border border-slate-100 p-2">
-                  <div class="truncate font-medium text-slate-800"><%= model[:display_name] || model[:id] %></div>
-                  <div class="truncate text-xs text-slate-500"><%= model[:id] %></div>
-                  <div class="mt-1 text-xs text-slate-500">
+                <div class="rounded-md border border-n-weak p-2">
+                  <div class="truncate font-medium text-n-slate-12"><%= model[:display_name] || model[:id] %></div>
+                  <div class="truncate text-xs text-n-slate-11"><%= model[:id] %></div>
+                  <div class="mt-1 text-xs text-n-slate-11">
                     Тип: <%= model[:type].presence || 'unknown' %>, endpoints: <%= model[:endpoint_count] || 0 %>, провайдеры: <%= Array(model[:endpoint_providers]).first(3).join(', ').presence || 'none' %>
                   </div>
                   <% if hidden_reasons.present? %>
-                    <div class="mt-1 text-xs text-amber-700">Почему скрыта: <%= hidden_reasons.join(', ') %></div>
+                    <div class="mt-1 text-xs text-n-amber-11">Почему скрыта: <%= hidden_reasons.join(', ') %></div>
                   <% else %>
-                    <div class="mt-1 text-xs text-emerald-700">В sample нет причин скрывать модель</div>
+                    <div class="mt-1 text-xs text-n-teal-11">В sample нет причин скрывать модель</div>
                   <% end %>
                 </div>
               <% end %>
             </div>
           </div>
 
-          <div class="mt-5 rounded-md border border-slate-100 bg-slate-50 p-3">
+          <div class="mt-5 rounded-md border border-n-weak bg-n-slate-3 p-3">
             <div class="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <div class="text-xs font-medium uppercase text-slate-500">Операции</div>
-                <div class="mt-1 text-xs text-slate-500">
+                <div class="text-xs font-medium uppercase text-n-slate-11">Операции</div>
+                <div class="mt-1 text-xs text-n-slate-11">
                   Что OpenRouter-слой умеет выполнять из админки сейчас, а что намеренно закрыто до отдельного rollout.
                 </div>
               </div>
               <div class="flex flex-wrap gap-2 text-xs">
-                <span class="rounded-full bg-emerald-50 px-2 py-1 text-emerald-700">
+                <span class="rounded-full bg-n-teal-2 px-2 py-1 text-n-teal-11">
                   готово: <%= Array(admin_operations[:implemented]).size %>
                 </span>
-                <span class="rounded-full bg-amber-50 px-2 py-1 text-amber-700">
+                <span class="rounded-full bg-n-amber-2 px-2 py-1 text-n-amber-11">
                   отложено: <%= Array(admin_operations[:deferred]).size %>
                 </span>
               </div>
             </div>
 
             <div class="mt-3 overflow-x-auto">
-              <table class="min-w-full divide-y divide-slate-200 text-left text-xs">
-                <thead class="text-slate-500">
+              <table class="min-w-full divide-y divide-n-weak text-left text-xs">
+                <thead class="text-n-slate-11">
                   <tr>
                     <th class="py-2 pr-4 font-medium">Операция</th>
                     <th class="py-2 pr-4 font-medium">Статус</th>
@@ -280,14 +280,14 @@
                     <th class="py-2 font-medium">Комментарий</th>
                   </tr>
                 </thead>
-                <tbody class="divide-y divide-slate-100 text-slate-700">
+                <tbody class="divide-y divide-n-weak text-n-slate-12">
                   <% openrouter_operations.each do |operation| %>
                     <% operation = operation.to_h.with_indifferent_access %>
                     <% status = operation[:status].to_s %>
                     <% status_label = status == 'implemented' ? 'Готово' : 'Отложено' %>
-                    <% status_class = status == 'implemented' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700' %>
+                    <% status_class = status == 'implemented' ? 'border-n-teal-4 bg-n-teal-2 text-n-teal-11' : 'border-n-amber-4 bg-n-amber-2 text-n-amber-11' %>
                     <tr>
-                      <td class="py-2 pr-4 font-medium text-slate-900"><%= operation[:title] || operation[:id] %></td>
+                      <td class="py-2 pr-4 font-medium text-n-slate-12"><%= operation[:title] || operation[:id] %></td>
                       <td class="py-2 pr-4">
                         <span class="rounded-full border px-2 py-0.5 <%= status_class %>"><%= status_label %></span>
                       </td>
@@ -298,7 +298,7 @@
                   <% end %>
                   <% if openrouter_operations.blank? %>
                     <tr>
-                      <td colspan="5" class="py-3 text-slate-500">Операции OpenRouter пока не описаны.</td>
+                      <td colspan="5" class="py-3 text-n-slate-11">Операции OpenRouter пока не описаны.</td>
                     </tr>
                   <% end %>
                 </tbody>
@@ -311,11 +311,11 @@
           <%= button_to 'Проверить ключ и кредиты',
                         refresh_openrouter_key_health_super_admin_app_config_path(config: 'captain'),
                         method: :post,
-                        class: 'inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50' %>
+                        class: 'inline-flex items-center rounded-md border border-n-strong bg-n-solid-2 px-4 py-2 text-sm font-medium text-n-slate-12 hover:bg-n-alpha-1' %>
           <%= button_to 'Обновить каталог моделей',
                         refresh_openrouter_models_super_admin_app_config_path(config: 'captain'),
                         method: :post,
-                        class: 'inline-flex items-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800' %>
+                        class: 'inline-flex items-center rounded-lg bg-n-brand-solid px-4 py-2 text-sm font-medium text-n-brand-contrast hover:brightness-110' %>
         </div>
       </div>
     </div>
@@ -342,46 +342,46 @@
               <div data-role="rows" class="flex flex-col gap-3"></div>
               <button
                 type="button"
-                class="reset-base inline-flex w-fit items-center rounded-md border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 add-captain-system-prompt"
+                class="reset-base inline-flex w-fit items-center rounded-md border border-n-weak px-3 py-1.5 text-sm font-medium text-n-slate-12 hover:bg-n-alpha-1 add-captain-system-prompt"
               >
                 + Добавить системный промпт
               </button>
               <template>
-                <div data-role="prompt-row" class="rounded-lg border border-slate-200 bg-white p-4">
+                <div data-role="prompt-row" class="rounded-lg border border-n-weak bg-n-solid-2 p-4">
                   <div class="mb-3 flex items-center justify-between gap-3">
-                    <p class="text-sm font-semibold text-slate-800">Системный промпт</p>
+                    <p class="text-sm font-semibold text-n-slate-12">Системный промпт</p>
                     <button
                       type="button"
-                      class="reset-base rounded-md border border-rose-200 px-2 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50 remove-captain-system-prompt"
+                      class="reset-base rounded-md border border-n-ruby-4 px-2 py-1 text-xs font-medium text-n-ruby-11 hover:bg-n-ruby-3 remove-captain-system-prompt"
                     >
                       Удалить
                     </button>
                   </div>
                   <input type="hidden" data-field="id" />
                   <div class="mb-3">
-                    <label class="mb-1 block text-xs font-medium text-slate-600">Группа</label>
+                    <label class="mb-1 block text-xs font-medium text-n-slate-11">Группа</label>
                     <input
                       type="text"
                       data-field="group"
-                      class="w-full rounded-md border border-slate-200 px-2 py-1.5 text-sm"
+                      class="w-full rounded-md border border-n-weak px-2 py-1.5 text-sm"
                       placeholder="Строгие правила"
                     />
                   </div>
                   <div class="mb-3">
-                    <label class="mb-1 block text-xs font-medium text-slate-600">Текст промпта</label>
+                    <label class="mb-1 block text-xs font-medium text-n-slate-11">Текст промпта</label>
                     <textarea
                       data-field="content"
                       rows="5"
-                      class="w-full rounded-md border border-slate-200 px-2 py-1.5 font-mono text-xs"
+                      class="w-full rounded-md border border-n-weak px-2 py-1.5 font-mono text-xs"
                       placeholder="Введите текст системного промпта"
                     ></textarea>
                   </div>
                   <div>
-                    <label class="mb-1 block text-xs font-medium text-slate-600">Слот (опционально)</label>
+                    <label class="mb-1 block text-xs font-medium text-n-slate-11">Слот (опционально)</label>
                     <input
                       type="text"
                       data-field="slot"
-                      class="w-full rounded-md border border-slate-200 px-2 py-1.5 text-sm"
+                      class="w-full rounded-md border border-n-weak px-2 py-1.5 text-sm"
                       placeholder="assistant_system_context"
                     />
                   </div>
@@ -392,14 +392,14 @@
             <%= form.select "app_config[#{key}]",
               [["True", true], ["False", false]],
               { selected: ActiveModel::Type::Boolean.new.cast(@app_config[key]) },
-              class: "mt-2 border border-slate-100 p-1 rounded-md"
+              class: "mt-2 border border-n-weak p-1 rounded-md"
             %>
           <% elsif @installation_configs[key]&.dig('type') == 'code' %>
             <%= form.text_area "app_config[#{key}]",
                 value: @app_config[key],
                 rows: 12,
                 wrap: 'off',
-                class: "mt-2 border font-mono text-xs border-slate-100 p-1 rounded-md overflow-scroll"
+                class: "mt-2 border font-mono text-xs border-n-weak p-1 rounded-md overflow-scroll"
             %>
           <% elsif @installation_configs[key]&.dig('type') == 'secret' %>
             <% mask_secret_value = masked_secret_config?(key) && @app_config[key].present? %>
@@ -408,11 +408,11 @@
                   id: "app_config_#{key}",
                   value: mask_secret_value ? nil : @app_config[key],
                   placeholder: mask_secret_value ? 'Configured — leave blank to keep current key' : nil,
-                  class: "mt-2 border border-slate-100 p-1.5 pr-8 rounded-md w-full"
+                  class: "mt-2 border border-n-weak p-1.5 pr-8 rounded-md w-full"
               %>
               <button
                 type="button"
-                class="absolute reset-base !bg-white top-1/2 !outline-0 !text-n-slate-11 -translate-y-1/2 right-2 p-1 hover:!bg-n-slate-5 rounded-sm toggle-password"
+                class="absolute reset-base !bg-n-solid-2 top-1/2 !outline-0 !text-n-slate-11 -translate-y-1/2 right-2 p-1 hover:!bg-n-slate-5 rounded-sm toggle-password"
                 data-target="app_config_<%= key %>"
               >
                 <svg class="eye-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -425,13 +425,13 @@
             <%= form.select "app_config[#{key}]",
               @installation_configs[key]['options'].map { |val, label| [label, val] },
               { selected: @app_config[key] },
-              class: "mt-2 border border-slate-100 p-1 rounded-md"
+              class: "mt-2 border border-n-weak p-1 rounded-md"
             %>
         <% else %>
           <%= form.text_field "app_config[#{key}]", value: @app_config[key] %>
         <% end %>
           <%if @installation_configs[key]&.dig('description').present? %>
-            <p class="pt-2 text-xs italic text-slate-400">
+            <p class="pt-2 text-xs italic text-n-slate-10">
               <%= @installation_configs[key]&.dig('description') %>
             </p>
           <% end %>
