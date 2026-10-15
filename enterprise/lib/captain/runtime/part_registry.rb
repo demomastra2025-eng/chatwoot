@@ -286,8 +286,21 @@ class Captain::Runtime::PartRegistry
 
   def validate_plan!(mode, normalized, clarification)
     continuations = normalized.all? { |part| part['version'] > 1 }
-    # A council is separate actions for different agents, or the answer to an open part of another agent (one part is enough).
-    if mode == 'council' && !continuations && normalized.pluck('executor_agent_id').uniq.size < 2
+    actor_id = @context.dig(:state, :assistant_id)
+    real_parts = if actor_id.present?
+                   normalized.reject do |part|
+                     part['version'] == 1 && part['executor_agent_id'] != actor_id &&
+                       part['fragment'].to_s.strip.match?(/\A(да|иә|ия|ок|хорошо|ладно|жарайды)\W*\z/i) &&
+                       Array(@context[:parts]).any? { |stored| stored['executor_agent_id'] == part['executor_agent_id'] && stored['handed_to_staff'] == true }
+                   end
+                 else
+                   normalized
+                 end
+    if mode == 'council' && !continuations && real_parts.pluck('executor_agent_id').uniq.size < 2
+      if actor_id.present? && real_parts.all? { |part| part['executor_agent_id'] == actor_id }
+        raise ArgumentError, "Every part of this plan is yours. #{OWN_WORK_NOTE}"
+      end
+
       raise ArgumentError, 'A council needs actions for at least two different agents. When all actions belong to one colleague, ' \
                            'transfer the conversation with that colleague\'s transfer tool.'
     end

@@ -37,6 +37,7 @@ class Captain::AgentRunContext
     context[:parts] = saved['parts'] || []
     # What the agents already did in this conversation (see Captain::DoneActions): the prompt of every agent that takes the turn.
     context[:done_actions] = Array(saved['done'])
+    close_handed_off_history!(context, current)
     context[:agent_tasks].each do |task|
       next if Captain::Runtime::TaskQueue::TERMINAL.include?(task['status']) || graph.find(task['assistant_id'])
 
@@ -99,6 +100,26 @@ class Captain::AgentRunContext
   end
 
   private
+
+  # A silent handoff leaves no public assistant reply in the transcript. When the conversation returns to the AI on a later
+  # turn, close the earlier user message that was already handed off so the model does not treat it as an unanswered message of
+  # the current turn.
+  def close_handed_off_history!(context, actor)
+    history = Array(context[:conversation_history])
+    last = history.last
+    return unless last && last[:role].to_s == 'user'
+
+    text = last[:content].to_s.squish
+    handoff = Array(context[:done_actions]).find do |entry|
+      entry.to_h['tool'] == Captain::DoneActions::HANDOFF_TOOL &&
+        (entry.to_h['user_message'].blank? || entry.to_h['user_message'].to_s.squish == text)
+    end
+    return unless handoff
+
+    reason = handoff.to_h['text'].to_s
+    note = reason.present? ? "Запрос передан специалистам: #{reason}." : 'Запрос передан специалистам.'
+    context[:conversation_history] = history + [{ role: :assistant, content: note, agent_name: actor.agent_name }]
+  end
 
   def public_history(history)
     Array(history).filter_map do |raw|

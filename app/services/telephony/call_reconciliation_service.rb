@@ -708,8 +708,20 @@ class Telephony::CallReconciliationService
 
   def answered_session?(session)
     return true if session.answered_at.present?
+    return true if leg_answer_evidence?(session)
 
     STATUS_PROGRESS.fetch(session.canonical_status, -1) >= STATUS_PROGRESS.fetch('in_progress')
+  end
+
+  def leg_answer_evidence?(session)
+    Array.wrap(session.legs).any? do |leg|
+      next false unless leg.is_a?(Hash)
+
+      leg = leg.deep_stringify_keys
+      next false if session.direction == 'outbound' && leg['leg'].to_s == 'operator'
+
+      ANSWER_EVIDENCE_EVENT_TYPES.include?(leg['event_type'].to_s)
+    end
   end
 
   def customer_answered_session?(session)
@@ -829,7 +841,7 @@ class Telephony::CallReconciliationService
   end
 
   def missing_sipuni_provider_status(session)
-    return 'completed' if session.canonical_status == 'in_progress' || session.answered_at.present?
+    return 'completed' if answered_session?(session)
     return 'no_answer' if session.direction == 'outbound'
     return 'no_answer' if route_action(session) == 'operator'
 
@@ -845,7 +857,7 @@ class Telephony::CallReconciliationService
   end
 
   def missing_native_sip_status(session)
-    return 'completed' if session.canonical_status == 'in_progress' || session.answered_at.present?
+    return 'completed' if answered_session?(session)
     return 'no_answer' if session.direction == 'outbound'
     return 'no_answer' if route_action(session) == 'operator'
 

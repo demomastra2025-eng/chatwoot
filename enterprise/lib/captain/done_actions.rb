@@ -28,6 +28,8 @@ module Captain::DoneActions
   COMPANY_LABELS = { 'create_company' => 'Created company', 'update_company' => 'Updated company' }.freeze
   PATIENT_TOOLS = %w[update_contact update_my_contact].freeze
   PATIENT_LABEL = 'Updated patient data'
+  HANDOFF_TOOL = 'handoff'
+  HANDOFF_LABEL = 'Handed off to staff'
 
   module_function
 
@@ -73,6 +75,13 @@ module Captain::DoneActions
   def line_of(entry, request)
     mark = entry['request'].present? && entry['request'] == request ? CURRENT : EARLIER
     ["- #{[entry['label'], entry['text']].compact_blank.join(': ')}", mark].join(' ')
+  end
+
+  def handoff_entry(reason:, request:, user_message: nil)
+    { 'tool' => HANDOFF_TOOL, 'label' => HANDOFF_LABEL, 'text' => quoted(reason).to_s.first(TEXT_LIMIT),
+      'request' => request.to_s, 'user_message' => user_message.to_s.squish.first(500).presence }.compact
+  rescue StandardError
+    nil
   end
 
   def describe(name, arguments, facts, pending:)

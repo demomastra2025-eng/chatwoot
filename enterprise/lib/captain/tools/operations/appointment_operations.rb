@@ -29,6 +29,7 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
     @persisted_creation = nil
     @already_booked_appointment = nil
     ensure_feature_enabled!('scheduling', 'Scheduling is not enabled for this account')
+    resource_id = resolve_agent_resource_id(resource_id, service_id)
     enforce_booking_scope!(resource_id)
     starts_at, ends_at = normalize_appointment_times(resource_id: resource_id, starts_at: starts_at, ends_at: ends_at)
     validated_service = validate_booking_inputs!(starts_at: starts_at, ends_at: ends_at, duration_min: duration_min, service_id: service_id)
@@ -294,6 +295,18 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
   def scoped_appointment!(appointment)
     enforce_booking_scope!(appointment.resource_id)
     appointment
+  end
+
+  def resolve_agent_resource_id(resource_id, service_id)
+    return resource_id unless actor.is_a?(Captain::Assistant) && service_id.present?
+    return resource_id if account.scheduling_resources.exists?(id: resource_id)
+
+    linked = Scheduling::ServicePrice.active.where(account_id: account.id, service_id: service_id).distinct.pluck(:resource_id)
+    allowed = assistant.booking_resource_ids
+    linked &= allowed if allowed.present?
+    linked.one? ? linked.first : resource_id
+  rescue StandardError
+    resource_id
   end
 
   def enforce_booking_scope!(resource_id)

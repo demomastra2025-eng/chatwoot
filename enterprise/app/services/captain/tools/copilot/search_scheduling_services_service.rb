@@ -67,7 +67,31 @@ class Captain::Tools::Copilot::SearchSchedulingServicesService < Captain::Tools:
   # unverified; the patient agent gets the rows without that label (a label that names no action gave the model a reason to
   # doubt the price and to hand the conversation over).
   def service_payload(service, prices)
-    Scheduling::PayloadBuilder.service(service, prices: []).merge(prices: prices)
+    payload = Scheduling::PayloadBuilder.service(service, prices: []).merge(prices: prices)
+    return payload unless agent_scope? && service.name.to_s.include?('+')
+
+    components = package_component_services(service)
+    return payload if components.size < 2
+
+    payload.merge(component_services: components, components_total_price: components.sum { |item| item[:base_price].to_i })
+  end
+
+  def package_component_services(service)
+    raw = service.name.to_s.split(':', 2).last.to_s
+    parts = raw.split('+').map(&:strip).reject(&:blank?)
+    return [] if parts.size < 2
+
+    active_scope = account.scheduling_services.active.where.not(id: service.id)
+    parts.filter_map do |part|
+      candidates = Scheduling::ServiceSearch.new(scope: active_scope, query: part).call.limit(5).to_a
+      match = candidates.find { |item| !item.name.to_s.include?('+') && !item.name.to_s.match?(/повторн/i) } ||
+              candidates.find { |item| !item.name.to_s.include?('+') }
+      next unless match
+
+      { id: match.id, name: match.name, base_price: match.base_price.to_f }
+    end.uniq { |item| item[:id] }
+  rescue StandardError
+    []
   end
 
   def price_rows_by_service(services)

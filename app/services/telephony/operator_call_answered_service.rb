@@ -114,11 +114,18 @@ class Telephony::OperatorCallAnsweredService
   def repair_completed_answer_state!
     call_session.with_lock do
       call_session.reload
-      next unless call_session.status == 'completed'
-
-      answered_at = call_session.answered_at || resolved_answered_at
-      attributes = completed_answer_attributes(answered_at)
-      call_session.update!(attributes) if attributes.present?
+      if call_session.status == 'completed'
+        answered_at = call_session.answered_at || resolved_answered_at
+        attributes = completed_answer_attributes(answered_at)
+        call_session.update!(attributes) if attributes.present?
+      elsif !call_session.terminal? && (call_session.status != 'in_progress' || call_session.answered_at.blank? || call_session.answered_by.blank?)
+        answered_at = call_session.answered_at || resolved_answered_at
+        call_session.update!(
+          status: 'in_progress',
+          answered_at: answered_at,
+          answered_by: call_session.answered_by.presence || "user:#{user.id}"
+        )
+      end
     end
   end
 

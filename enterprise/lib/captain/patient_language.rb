@@ -7,7 +7,8 @@ module Captain::PatientLanguage
   FIELD_DESCRIPTION = (
     'The language used for the patient reply: Kazakh, Russian or English. Follow the "Patient language:" line in "# Now" ' \
     'when present, even when tool results or earlier turns use another language; otherwise use the language of the latest ' \
-    'patient message (a bare one-word confirmation keeps the language of the preceding turn).'
+    'patient message (a bare one-word confirmation keeps the language of the preceding turn; in Kazakh, repeated particles ' \
+    '"да/де/та/те" before a final negation word "жоқ/емес" mean "neither ... nor ... none", not affirmative).'
   ).freeze
 
   def self.line(code)

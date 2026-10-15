@@ -31,6 +31,7 @@ class Captain::Tools::Copilot::SearchAvailableSlotsService < Captain::Tools::Cop
     service_id = scheduling_service_id(service_id)
     scheduling_service!(service_id)
     resource_ids = scoped_agent_resource_ids(resource_ids, service_id: service_id)
+    service_id ||= inferred_agent_service_id(resource_ids) if duration_min.blank?
     search_params = {
       account: account,
       from: range_from,
@@ -63,6 +64,18 @@ class Captain::Tools::Copilot::SearchAvailableSlotsService < Captain::Tools::Cop
 
   private
 
+  def inferred_agent_service_id(resource_ids)
+    return unless agent_scope?
+
+    ids = Scheduling::AvailableSlotSearchService.normalize_resource_ids(resource_ids)
+    return if ids.blank?
+
+    service_ids = Scheduling::ServicePrice.active.where(account_id: account.id, resource_id: ids).distinct.pluck(:service_id)
+    service_ids.first if service_ids.one?
+  rescue StandardError
+    nil
+  end
+
   def scoped_agent_resource_ids(resource_ids, service_id: nil)
     return resource_ids unless agent_scope? && assistant.booking_resource_ids.present?
 
@@ -94,23 +107,60 @@ class Captain::Tools::Copilot::SearchAvailableSlotsService < Captain::Tools::Cop
   end
 
   def prioritize_slot_keys(payload)
-    payload.slice(:total_slots, :slots, :next_available_slots).merge(payload)
+    payload.slice(:total_slots, :slots, :requested_range_status, :requested_range_note, :next_available_slots).merge(payload)
   end
 
   def attach_next_available_slots(payload, search_params)
     return payload unless payload[:total_slots].to_i.zero?
 
+    if no_schedule_for_requested_range?(payload[:candidate_resource_ids], search_params[:from], search_params[:to])
+      payload = payload.merge(
+        requested_range_status: 'no_reception_scheduled',
+        requested_range_note: 'В запрошенный день приёма по расписанию нет (не приёмный день); сообщите, что приёма по расписанию нет, и предложите ближайшие дни приёма из next_available_slots.'
+      )
+    end
     next_from = [search_params[:to], search_params[:from] + 1.minute].max
     lookahead = Scheduling::AvailableSlotSearchService.new(
       **search_params,
       from: next_from,
       to: next_from + NEXT_AVAILABLE_LOOKAHEAD_DAYS.days,
-      limit: NEXT_AVAILABLE_LIMIT
+      limit: Scheduling::AvailableSlotSearchService::MAX_LIMIT
     ).perform
-    next_slots = Array(lookahead[:slots])
+    next_slots = select_next_available_slots(Array(lookahead[:slots]), search_params[:from])
     next_slots.present? ? payload.merge(next_available_slots: next_slots) : payload
   rescue StandardError
     payload
+  end
+
+  def no_schedule_for_requested_range?(resource_ids, range_from, range_to)
+    ids = Array(resource_ids)
+    return false if ids.empty?
+
+    resources = account.scheduling_resources.where(id: ids)
+    end_date = [(range_to - 1.second).to_date, range_from.to_date].max
+    dates = (range_from.to_date..end_date).to_a
+    weekdays = dates.map(&:wday).uniq
+    resources.none? do |res|
+      res.work_rules.active.exists?(weekday: weekdays) || res.workday_overrides.exists?(date: dates)
+    end
+  rescue StandardError
+    false
+  end
+
+  def select_next_available_slots(slots, requested_from)
+    return [] if slots.empty?
+
+    candidates = slots
+    if requested_from.present? && requested_from.hour >= 12
+      min_minute = (requested_from.hour * 60) + requested_from.min
+      afternoon = slots.select do |slot|
+        starts_at = Time.zone.parse(slot[:starts_at].to_s)
+        ((starts_at.hour * 60) + starts_at.min) >= min_minute
+      end
+      candidates = afternoon if afternoon.present?
+    end
+    half_hour = candidates.select { |slot| (Time.zone.parse(slot[:starts_at].to_s).min % 30).zero? }
+    (half_hour.size >= 3 ? half_hour : candidates).first(NEXT_AVAILABLE_LIMIT)
   end
 
   def publish_service_match(payload)

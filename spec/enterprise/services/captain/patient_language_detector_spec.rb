@@ -22,7 +22,7 @@ RSpec.describe Captain::PatientLanguageDetector do
     allow(Llm::Runtime).to receive(:decide).and_return(decision.new(value))
   end
 
-  it 'sends one decision with the last 20 incoming messages, numbered oldest first' do
+  it 'sends one decision with the latest incoming patient message' do
     21.times { |i| patient_says("Fake patient words #{i}") }
     create(:message, account: account, conversation: conversation, inbox: conversation.inbox, message_type: :outgoing,
                      content: 'Fake staff words')
@@ -31,7 +31,7 @@ RSpec.describe Captain::PatientLanguageDetector do
     expect(detector.call).to eq('kk')
     expect(Llm::Runtime).to have_received(:decide).once.with(hash_including(
                                                                feature: :language_detection, model: model,
-                                                               input: { messages: (1..20).map { |i| "#{i}. Fake patient words #{i}" }.join("\n") },
+                                                               input: { messages: 'Fake patient words 20' },
                                                                options: { decision_criteria: described_class::CRITERIA,
                                                                           decision_instructions: described_class::INSTRUCTIONS }
                                                              ))
@@ -46,7 +46,7 @@ RSpec.describe Captain::PatientLanguageDetector do
     choose('en')
 
     expect(detector.call).to eq('en')
-    expect(Llm::Runtime).to have_received(:decide).with(hash_including(input: { messages: '1. Fake voice words' }))
+    expect(Llm::Runtime).to have_received(:decide).with(hash_including(input: { messages: 'Fake voice words' }))
   end
 
   it 'keeps the last decided language for unknown and clears it for other' do

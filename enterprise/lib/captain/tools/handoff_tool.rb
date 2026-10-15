@@ -38,6 +38,15 @@ class Captain::Tools::HandoffTool < Captain::Tools::BasePublicTool
       timestamp: Time.current
     }.compact
     tool_context.context[AUTHORIZED_CONTEXT_KEY] = true
+    done = Captain::DoneActions.handoff_entry(
+      reason: reason,
+      request: Captain::Runtime::TaskQueue.new(tool_context.context).request_scope,
+      user_message: tool_context.context[:captain_v2_current_input]
+    )
+    return unless done
+
+    tool_context.context[:agent_session]&.record_done(done)
+    tool_context.context[:done_actions] = Captain::DoneActions.remember(tool_context.context[:done_actions], done)
   end
 
   # TODO: Future enhancement - Add team assignment capability

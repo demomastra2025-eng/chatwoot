@@ -67,8 +67,8 @@ class Llm::FeatureProfile
     'language_detection' => {
       config_feature_key: 'language_detection',
       required_capabilities: %w[decision_classification],
-      timeout_seconds: 2,
-      max_retries: 0,
+      timeout_seconds: 8,
+      max_retries: 1,
       streaming: false,
       native_endpoint: '/alpha/decisions',
       structured_output: true,

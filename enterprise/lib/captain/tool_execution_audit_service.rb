@@ -130,7 +130,8 @@ class Captain::ToolExecutionAuditService
   end
 
   def max_result_preview_length
-    Rails.env.test? || @runtime_context[:source].to_s == 'benchmark' ? TEST_RESULT_PREVIEW_LENGTH : MAX_RESULT_PREVIEW_LENGTH
+    benchmark = @runtime_context[:source].to_s == 'benchmark' || assistant&.account&.internal_attributes.to_h['captain_benchmark_source'] == true
+    Rails.env.test? || benchmark ? TEST_RESULT_PREVIEW_LENGTH : MAX_RESULT_PREVIEW_LENGTH
   end
 
   def fallback_redacted_string(value)

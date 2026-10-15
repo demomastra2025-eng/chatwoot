@@ -1344,6 +1344,7 @@ class Telephony::EventsIngestionService
     return false if webphone_terminal_completion_event?(call_session)
     return false if fresh_terminal_event?(call_session, occurred_at)
     return false if repairable_stale_ai_answer_event?(call_session)
+    return false if repairable_stale_answer_event?(call_session)
 
     occurred_at.present? && call_session.last_event_at.present? && occurred_at < call_session.last_event_at
   end
@@ -1359,6 +1360,15 @@ class Telephony::EventsIngestionService
     return false unless event_older_than_last_event?(call_session)
 
     call_session.answered_at.blank? || call_session.answered_by.blank?
+  end
+
+  def repairable_stale_answer_event?(call_session)
+    return false if call_session.terminal?
+    return false unless resolved_status == 'in_progress'
+    return false unless resolved_event_type.to_s.in?(%w[operator_answered callee_answered customer_answered transfer_answered answered answer])
+    return false unless event_older_than_last_event?(call_session)
+
+    call_session.canonical_status != 'in_progress' || call_session.answered_at.blank? || call_session.answered_by.blank?
   end
 
   def event_older_than_last_event?(call_session)

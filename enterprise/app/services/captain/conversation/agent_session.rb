@@ -175,6 +175,12 @@ class Captain::Conversation::AgentSession
     end
   end
 
+  def record_done(done)
+    return if done.blank?
+
+    record { |data| remember_done(data, done) }
+  end
+
   # Context copies within the same run must share the same durable session and
   # temporary Playground instance, not independently overwrite its state.
   def deep_dup = self
