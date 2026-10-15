@@ -51,6 +51,7 @@ form is one.
   <p class="admin-block__note">
     <%= t('super_admin.fine_tuning.always_on', features: Accounts::Plans.locked_on.map { |name| feature_label.call(name) }.join(', ')) %>
     <%= t('super_admin.fine_tuning.never_on', features: tuning.never_enabled_labels.join(', ')) %>
-    <%= t('super_admin.fine_tuning.internal') %>
+    <% internal = tuning.internal_labels %>
+    <%= internal.any? ? t('super_admin.fine_tuning.internal_listed', features: internal.join(', ')) : t('super_admin.fine_tuning.internal') %>
   </p>
 </div>

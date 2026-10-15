@@ -74,4 +74,20 @@ RSpec.describe SuperAdmin::FineTuning do
       expect(labels.join).not_to include('устарело')
     end
   end
+
+  describe '#internal_labels' do
+    it 'names the owner decisions that have no switch here, and nothing that has one' do
+      labels = tuning.internal_labels
+
+      expect(labels).to include('Один чат на пациента', 'Автораспределение, версия 2', 'Свой ключ OpenRouter у клиники')
+      expect(described_class::OWNER_DECISION_FLAGS & names).to be_empty
+    end
+
+    it 'leaves out a decision flag that the application no longer has' do
+      account # created while every flag still exists
+      stub_const('Featurable::FEATURE_NAMES', Featurable::FEATURE_NAMES - ['communication_threads'])
+
+      expect(tuning.internal_labels).not_to include('Один чат на пациента')
+    end
+  end
 end

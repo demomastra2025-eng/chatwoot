@@ -25,6 +25,8 @@ class SuperAdmin::FineTuning
     'crm' => %w[crm companies crm_deals crm_tasks scheduling]
   }.freeze
   OTHER_GROUP = 'other'
+  # Internal flags that differ from clinic to clinic by a decision of the owner (see `internal` in config/account_plans.yml)
+  OWNER_DECISION_FLAGS = %w[communication_threads assignment_v2 captain_openrouter_byok].freeze
 
   def initialize(account)
     @account = account
@@ -43,6 +45,13 @@ class SuperAdmin::FineTuning
   def never_enabled_labels
     deprecated = SuperAdmin::AccountFeaturesHelper.account_features.select { |feature| feature['deprecated'] }.pluck('name')
     names = (Accounts::Plans.never_enabled & Featurable::FEATURE_NAMES) - deprecated
+    names.map { |name| SuperAdmin::AccountFeaturesHelper.feature_label(name) }
+  end
+
+  # Names of the per-clinic switches the panel does not offer because they are the owner's decisions, not plan options.
+  # The note under the switches lists them, so an operator who looks for one knows it is not here on purpose.
+  def internal_labels
+    names = OWNER_DECISION_FLAGS & Accounts::Plans.internal & Featurable::FEATURE_NAMES
     names.map { |name| SuperAdmin::AccountFeaturesHelper.feature_label(name) }
   end
 

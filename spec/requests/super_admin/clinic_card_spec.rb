@@ -662,6 +662,13 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       expect(note).to include('Никогда не включаются:', 'Роли доступа', 'Единый вход SAML')
     end
 
+    it 'tells which owner decisions are not offered here, and who switches them' do
+      open_card
+
+      note = text(fine_tuning)
+      expect(note).to include('Решения владельца для отдельной клиники', 'Один чат на пациента', 'их включает разработчик по запросу')
+      expect(fine_tuning.at_css('input#feature-communication_threads')).to be_nil
+    end
   end
 
   describe 'the users block' do
