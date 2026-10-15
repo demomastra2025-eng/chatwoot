@@ -252,6 +252,23 @@ describe('FloatingCallWidget', () => {
     wrapper.unmount();
   });
 
+  it('keeps an inbound SIP call visible but silent while WhatsApp is active', () => {
+    whatsappCallsState.hasActiveCall = true;
+    mockSession.incomingCalls = [
+      {
+        callSid: 'sipuni:incoming-while-whatsapp-active',
+        callDirection: 'inbound',
+        status: 'ringing',
+      },
+    ];
+
+    const wrapper = mountComponent();
+
+    expect(wrapper.find('[aria-label="Call"]').exists()).toBe(true);
+    expect(ringtoneState.isActive.value).toBe(false);
+    wrapper.unmount();
+  });
+
   it('shows one logical inbound call and selects the local Janus branch', async () => {
     mockSession.incomingCalls = [
       {

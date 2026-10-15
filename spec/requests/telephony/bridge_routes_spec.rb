@@ -1205,6 +1205,100 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     expect(response.parsed_body).not_to have_key('agent_aor')
   end
 
+  it 'keeps one operator unavailable across different provider SIP profiles' do
+    user = create(:user, account: account, role: :agent)
+    create_operator_sip_profile(
+      account: account, inbox: voice_inbox, user: user, agent_aor: 'sip:504@ats01.kz.sipuni.com'
+    )
+    beeline_inbox = create(:inbox, account: account)
+    beeline_profile = create_operator_sip_profile(
+      account: account, inbox: beeline_inbox, user: user, agent_aor: 'sip:601@cloudpbx.beeline.kz'
+    )
+    create(
+      :telephony_call_session,
+      account: account, inbox: beeline_inbox, provider: 'beeline', direction: 'inbound', status: 'in_progress',
+      external_call_ref: 'beeline-call-on-other-line',
+      metadata: { 'operator_claim' => { 'user_id' => user.id, 'sip_profile_id' => beeline_profile.id } }
+    )
+    number_binding.routing_policy.update!(mode: 'operator', fallback_mode: 'reject')
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      post path,
+           params: { call_ref: 'sipuni-call-while-beeline-busy', ingress_number: voice_channel.phone_number,
+                     caller_number: '+155****5011', diagnostic: true },
+           headers: { 'X-Bridge-Secret' => 'bridge-secret' }, as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include('action' => 'reject', 'reason' => 'operator_unavailable')
+    expect(response.parsed_body).not_to have_key('agent_aors')
+  end
+
+  it 'routes to another operator when one unified voice profile is busy on WhatsApp' do
+    busy_user = create(:user, account: account, role: :agent)
+    available_user = create(:user, account: account, role: :agent)
+    create_operator_sip_profile(
+      account: account, inbox: voice_inbox, user: busy_user, agent_aor: 'sip:504@ats01.kz.sipuni.com'
+    )
+    available_profile = create_operator_sip_profile(
+      account: account, inbox: voice_inbox, user: available_user, agent_aor: 'sip:505@ats01.kz.sipuni.com'
+    )
+    create(:call, account: account, provider: :whatsapp, status: 'in_progress', accepted_by_agent_id: busy_user.id)
+    number_binding.routing_policy.update!(mode: 'operator', fallback_mode: 'reject')
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      post path,
+           params: { call_ref: 'sipuni-call-while-whatsapp-busy', ingress_number: voice_channel.phone_number,
+                     caller_number: '+155****5012', diagnostic: true },
+           headers: { 'X-Bridge-Secret' => 'bridge-secret' }, as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include('action' => 'operator', 'agent_aors' => [available_profile.agent_aor])
+    expect(response.parsed_body['operator_candidates']).to contain_exactly(include('user_id' => available_user.id))
+  end
+
+  it 'rejects a targeted SIP call when the same operator is on WhatsApp' do
+    user = create(:user, account: account, role: :agent)
+    sip_profile = create_operator_sip_profile(
+      account: account, inbox: voice_inbox, user: user, agent_aor: 'sip:504@ats01.kz.sipuni.com'
+    )
+    create(:call, account: account, provider: :whatsapp, status: 'in_progress', accepted_by_agent_id: user.id)
+    number_binding.routing_policy.update!(
+      mode: 'operator', settings: { 'operator_distribution_mode' => 'targeted' }, fallback_mode: 'reject'
+    )
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      post path,
+           params: { call_ref: 'targeted-sipuni-while-whatsapp-busy', ingress_number: voice_channel.phone_number,
+                     caller_number: '+155****5014', diagnostic: true,
+                     metadata: { target_extension: sip_profile.internal_extension } },
+           headers: { 'X-Bridge-Secret' => 'bridge-secret' }, as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include('action' => 'reject', 'reason' => 'target_operator_busy')
+  end
+
+  it 'does not mistake a ringing unclaimed WhatsApp call for an occupied operator' do
+    user = create(:user, account: account, role: :agent)
+    sip_profile = create_operator_sip_profile(
+      account: account, inbox: voice_inbox, user: user, agent_aor: 'sip:504@ats01.kz.sipuni.com'
+    )
+    create(:call, account: account, provider: :whatsapp, status: 'ringing')
+    number_binding.routing_policy.update!(mode: 'operator', fallback_mode: 'reject')
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      post path,
+           params: { call_ref: 'sipuni-call-while-whatsapp-ringing', ingress_number: voice_channel.phone_number,
+                     caller_number: '+155****5013', diagnostic: true },
+           headers: { 'X-Bridge-Secret' => 'bridge-secret' }, as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include('action' => 'operator', 'agent_aors' => [sip_profile.agent_aor])
+  end
+
   it 'excludes already claimed SIP profiles from the managed Virtual PBX operator pool' do
     primary_user = create(:user, account: account, role: :agent)
     secondary_user = create(:user, account: account, role: :agent)

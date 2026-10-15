@@ -181,6 +181,7 @@ describe('WhatsappCallWidget ringtone', () => {
 
     expect(wrapper.text()).toContain('Customer');
     expect(acceptButton.attributes('disabled')).toBeDefined();
+    expect(ringtoneState.isActive.value).toBe(false);
     await acceptButton.trigger('click');
     expect(mockSession.acceptCall).not.toHaveBeenCalled();
     wrapper.unmount();

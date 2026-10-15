@@ -157,7 +157,7 @@ const visibleCalls = computed(() =>
   )
 );
 const ringingCalls = computed(() =>
-  props.silent || isJoining.value
+  props.silent || isJoining.value || operatorBusy.value
     ? []
     : visibleCalls.value.filter(
         call =>

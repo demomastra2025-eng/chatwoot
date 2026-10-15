@@ -775,13 +775,13 @@ class Telephony::InboundRoutingService
   end
 
   def without_busy_operator_candidates(candidates)
-    busy_binding_ids = busy_operator_binding_ids(candidates.filter_map(&:agent_binding_id))
-    busy_sip_profile_ids = busy_operator_sip_profile_ids(candidates.filter_map(&:sip_profile_id))
+    busy_user_ids = Telephony::OperatorBusyService.busy_user_ids(
+      account: number_binding.account,
+      user_ids: candidates.filter_map(&:user_id),
+      excluding_telephony_call_ref: call_ref
+    )
 
-    candidates.reject do |candidate|
-      busy_binding_ids.include?(candidate.agent_binding_id) ||
-        busy_sip_profile_ids.include?(candidate.sip_profile_id)
-    end
+    candidates.reject { |candidate| busy_user_ids.include?(candidate.user_id) }
   end
 
   def primary_operator_candidate
@@ -800,29 +800,6 @@ class Telephony::InboundRoutingService
     return [] unless scope.exists?
 
     scope.map { |profile| OperatorCandidate.new(source: :sip_profile, sip_profile: profile) }
-  end
-
-  def busy_operator_binding_ids(candidate_ids)
-    return [] if candidate_ids.blank?
-
-    Telephony::CallSession.active
-                          .where(account_id: number_binding.account_id, agent_binding_id: candidate_ids)
-                          .where.not(external_call_ref: call_ref)
-                          .distinct
-                          .pluck(:agent_binding_id)
-  end
-
-  def busy_operator_sip_profile_ids(candidate_ids)
-    candidate_ids = candidate_ids.filter_map { |value| value.presence&.to_i }.uniq
-    return [] if candidate_ids.blank?
-
-    Telephony::CallSession.active
-                          .where(account_id: number_binding.account_id)
-                          .where.not(external_call_ref: call_ref)
-                          .pluck(:metadata)
-                          .filter_map { |metadata| metadata.to_h.dig('operator_claim', 'sip_profile_id').presence&.to_i }
-                          .select { |sip_profile_id| candidate_ids.include?(sip_profile_id) }
-                          .uniq
   end
 
   def operator_candidate_sort_key(candidate)

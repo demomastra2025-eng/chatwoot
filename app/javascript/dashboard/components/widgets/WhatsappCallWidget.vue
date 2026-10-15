@@ -55,7 +55,7 @@ const operatorBusy = computed(
 );
 const shouldPlayIncomingCallRingtone = computed(
   () =>
-    !hasActiveCall.value &&
+    !operatorBusy.value &&
     !isAccepting.value &&
     visibleIncomingCalls.value.length > 0
 );
