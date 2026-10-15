@@ -19,7 +19,7 @@
       </p>
       <% if fleet_range.present? %>
         <p class="text-xs text-n-slate-11 mt-1">
-          <%= fleet_range.begin.in_time_zone.strftime('%Y-%m-%d %H:%M') %> to <%= fleet_range.end.in_time_zone.strftime('%Y-%m-%d %H:%M') %>
+          <%= super_admin_time(fleet_range.begin) %> — <%= super_admin_time(fleet_range.end) %>
         </p>
       <% end %>
     </div>
@@ -84,7 +84,7 @@
                   <td class="px-3 py-3 text-n-slate-12"><%= number_with_delimiter(row[:request_count]) %></td>
                   <td class="px-3 py-3 text-n-ruby-11"><%= number_with_delimiter(row[:error_count]) %></td>
                   <td class="px-3 py-3 text-n-slate-12"><%= number_to_currency(row[:estimated_cost]) %></td>
-                  <td class="px-3 py-3 text-n-slate-11"><%= row[:last_event_at]&.in_time_zone&.strftime('%Y-%m-%d %H:%M') || 'n/a' %></td>
+                  <td class="px-3 py-3 text-n-slate-11"><%= super_admin_time(row[:last_event_at]) || 'n/a' %></td>
                 </tr>
               <% end %>
             </tbody>
@@ -145,7 +145,7 @@
           </div>
           <div class="flex items-center justify-between gap-3 rounded-lg bg-n-slate-3 px-4 py-3">
             <span>Last event</span>
-            <span class="font-medium"><%= snapshot[:last_event_at]&.in_time_zone&.strftime('%Y-%m-%d %H:%M') || 'n/a' %></span>
+            <span class="font-medium"><%= super_admin_time(snapshot[:last_event_at]) || 'n/a' %></span>
           </div>
         </div>
       </div>

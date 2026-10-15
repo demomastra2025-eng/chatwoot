@@ -74,7 +74,7 @@
           <% @audits.each do |audit| %>
             <tr class="hover:bg-n-alpha-1 transition-colors">
               <td class="px-4 py-3 whitespace-nowrap text-xs text-n-slate-11 font-mono">
-                <%= audit.created_at.strftime('%Y-%m-%d %H:%M:%S') %>
+                <%= super_admin_time(audit.created_at, '%d.%m.%Y %H:%M:%S') %>
               </td>
               <td class="px-4 py-3 text-xs text-n-slate-12">
                 <% if audit.user.present? %>

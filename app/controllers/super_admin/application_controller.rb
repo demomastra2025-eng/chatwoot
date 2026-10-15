@@ -11,6 +11,7 @@ class SuperAdmin::ApplicationController < Administrate::ApplicationController
   include SwitchLocale
 
   helper SuperAdmin::NavigationHelper
+  helper SuperAdmin::DisplayHelper
   helper_method :render_vue_component, :settings_open?, :settings_pages, :super_admin_resource_label
   # authenticiation done via devise : SuperAdmin Model
   before_action :authenticate_super_admin!

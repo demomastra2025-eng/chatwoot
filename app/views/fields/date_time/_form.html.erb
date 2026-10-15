@@ -1,0 +1,20 @@
+<%#
+# DateTime Form Partial
+
+Replaces the Administrate partial: the input holds Astana wall-clock time
+(UTC+5). The controllers of the resources that edit a time convert it back
+(`SuperAdmin::DisplayHelper.parse_input`).
+
+## Local variables:
+
+- `f`: the form builder.
+- `field`: an `Administrate::Field::DateTime`.
+%>
+
+<div class="field-unit__label">
+  <%= f.label field.attribute %>
+</div>
+<div class="field-unit__field">
+  <%= f.datetime_local_field field.attribute, step: 1, value: super_admin_input_time(field.data) %>
+  <p class="mt-1 text-xs text-n-slate-11"><%= t('super_admin.shell.astana_time_hint') %></p>
+</div>

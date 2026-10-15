@@ -73,7 +73,7 @@ inboxes that are already connected keep working.
       <span class="text-xs text-n-slate-11">
         <% if @updated_at %>
           <%# Times are shown in Astana time (UTC+5), never in UTC. %>
-          <%= t('super_admin.channels.updated_at', time: @updated_at.getlocal(Accounts::Plans::ASTANA_OFFSET).strftime('%d.%m.%Y %H:%M')) %>
+          <%= t('super_admin.channels.updated_at', time: super_admin_time(@updated_at)) %>
         <% else %>
           <%= t('super_admin.channels.never_changed') %>
         <% end %>

@@ -4,5 +4,7 @@
 <div class="field-unit__field">
   <% value = field.data %>
   <% value = Time.current if value.blank? && action_name == 'new' %>
-  <%= f.datetime_local_field field.attribute, step: 1, value: value %>
+  <%# The input holds Astana wall-clock time; the controller converts it back to a moment. %>
+  <%= f.datetime_local_field field.attribute, step: 1, value: super_admin_input_time(value) %>
+  <p class="mt-1 text-xs text-n-slate-11"><%= t('super_admin.shell.astana_time_hint') %></p>
 </div>

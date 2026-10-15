@@ -60,6 +60,7 @@ class SuperAdmin::UsersController < SuperAdmin::ApplicationController
     permitted_params = super
     permitted_params.delete(:password) if permitted_params[:password].blank?
     fill_blank_name(permitted_params)
+    read_confirmed_at_as_astana_time(permitted_params)
     permitted_params
   end
 
@@ -70,6 +71,13 @@ class SuperAdmin::UsersController < SuperAdmin::ApplicationController
   end
 
   private
+
+  # The form shows the time in Astana time (UTC+5) and the browser sends that wall-clock time back.
+  def read_confirmed_at_as_astana_time(permitted_params)
+    return unless permitted_params.key?(:confirmed_at)
+
+    permitted_params[:confirmed_at] = SuperAdmin::DisplayHelper.parse_input(permitted_params[:confirmed_at])
+  end
 
   # users.name is required, but the admin form lets the operator fill only the display name.
   # Administrate turns blank strings into nil, so fall back to the display name and then to

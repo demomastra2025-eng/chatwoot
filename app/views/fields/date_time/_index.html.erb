@@ -1,0 +1,14 @@
+<%#
+# DateTime Index Partial
+
+Replaces the Administrate partial: a time is shown as «дд.мм.гггг чч:мм» in
+Astana time (UTC+5), never in UTC.
+
+## Local variables:
+
+- `field`: an `Administrate::Field::DateTime`.
+%>
+
+<% if field.data %>
+  <%= super_admin_time(field.data) %>
+<% end %>
