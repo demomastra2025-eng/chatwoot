@@ -29,6 +29,28 @@ RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
     end
   end
 
+  describe 'GET /super_admin/accounts with a search term' do
+    before do
+      sign_in(super_admin, scope: :super_admin)
+      create(:account, name: 'Searchable clinic')
+    end
+
+    it 'finds accounts by name' do
+      get '/super_admin/accounts', params: { search: 'Searchable' }
+
+      expect(response).to have_http_status(:success)
+      expect(response.body).to include('Searchable clinic')
+      expect(response.body).not_to include(CGI.escapeHTML(account.name))
+    end
+
+    it 'combines a filter with a text search' do
+      get '/super_admin/accounts', params: { search: 'active: Searchable' }
+
+      expect(response).to have_http_status(:success)
+      expect(response.body).to include('Searchable clinic')
+    end
+  end
+
   describe 'GET /super_admin/accounts/new' do
     it 'renders the new workspace form for a super admin' do
       sign_in(super_admin, scope: :super_admin)
