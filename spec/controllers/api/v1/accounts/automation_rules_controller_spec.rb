@@ -251,15 +251,14 @@ RSpec.describe 'Api::V1::Accounts::AutomationRulesController', type: :request do
 
       it 'saves appointment automation rules with native appointment actions' do
         account.enable_features!('scheduling')
-        account.enable_features!('scheduling_finance')
 
         appointment_params = params.merge(
           event_name: 'appointment_updated',
           conditions: [
             {
-              attribute_key: 'status',
+              attribute_key: 'payment_status',
               filter_operator: 'equal_to',
-              values: ['scheduled'],
+              values: ['paid'],
               query_operator: nil
             }
           ],

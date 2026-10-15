@@ -23,14 +23,12 @@ Observed path families include:
 - `/api/v1/accounts/{account_id}/scheduling/resources`
 - `/api/v1/accounts/{account_id}/scheduling/services`
 - `/api/v1/accounts/{account_id}/scheduling/appointments`
-- `/api/v1/accounts/{account_id}/scheduling/appointments/{appointment_id}/payments`
 
 Use scheduling APIs for:
 
 - resources and calendars
 - services and booking configuration
 - appointments
-- payment and finance-related scheduling records
 
 ## CRM And Business Workflow Areas
 

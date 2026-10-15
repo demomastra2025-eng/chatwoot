@@ -1,6 +1,4 @@
 class Api::V1::Accounts::Scheduling::ServicesController < Api::V1::Accounts::Scheduling::BaseController
-  COMPENSATION_KEYS = %i[compensation_type compensation_value compensation_percent].freeze
-
   before_action :check_admin_authorization?, except: [:index, :show]
   before_action :set_service, only: [:show, :update, :destroy]
   before_action :ensure_provider_writable_service!, only: [:update, :destroy]
@@ -60,15 +58,7 @@ class Api::V1::Accounts::Scheduling::ServicesController < Api::V1::Accounts::Sch
       resource: Current.account.scheduling_resources.not_deleted_from_scheduling.find(resource_id),
       price: normalize_integer_numeric_value(price, field_name: :price),
       active: active
-    }.merge(compensation_payload(payload))
-  end
-
-  # The specialist rate is not edited in the UI any more, so a price row may omit it:
-  # only the rate keys that were sent are applied and stored values stay untouched.
-  def compensation_payload(payload)
-    payload.slice(*COMPENSATION_KEYS).to_h do |key, value|
-      [key, key == :compensation_type ? value : normalize_integer_numeric_value(value, field_name: key)]
-    end
+    }
   end
 
   def normalize_integer_numeric_value(value, field_name:)
@@ -78,8 +68,8 @@ class Api::V1::Accounts::Scheduling::ServicesController < Api::V1::Accounts::Sch
   def price_payloads
     return nil unless params.key?(:prices) || params.key?(:employee_prices)
 
-    raw_prices = params.permit(prices: [:resource_id, :price, :compensation_type, :compensation_value, :compensation_percent, :active],
-                               employee_prices: [:employee_id, :price, :compensation_type, :compensation_value, :compensation_percent, :active])
+    raw_prices = params.permit(prices: [:resource_id, :price, :active],
+                               employee_prices: [:employee_id, :price, :active])
     raw_prices[:prices] || raw_prices[:employee_prices] || []
   end
 
@@ -121,10 +111,7 @@ class Api::V1::Accounts::Scheduling::ServicesController < Api::V1::Accounts::Sch
 
     payloads.each do |item|
       attrs = normalize_price_payload(item, service: service)
-      resource = attrs.delete(:resource)
-      price = service.prices.find_or_initialize_by(resource: resource)
-      # A new price starts from the specialist's own rate, as the form used to prefill it.
-      price.assign_attributes(resource.slice(*COMPENSATION_KEYS)) if price.new_record?
+      price = service.prices.find_or_initialize_by(resource: attrs.delete(:resource))
       price.assign_attributes(attrs)
       price.save!
       keep_ids << price.id

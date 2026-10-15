@@ -30,11 +30,6 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
     idempotency_key
     service_name_snapshot
     service_amount
-    prepaid_amount
-    prepaid_payment_method
-    settlement_amount
-    settlement_payment_method
-    payment_status
   ].freeze
 
   before_action :set_appointment, only: [:show, :update, :cancel, :create_conversation, :destroy]
@@ -160,8 +155,6 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
 
   def appointments_with_payload_associations
     Current.account.scheduling_appointments.includes(
-      :payments,
-      :expense,
       :contact,
       :patient_contact,
       :resource,
@@ -180,8 +173,7 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
   end
 
   def filter_by_status_params(scope)
-    scope = filter_by_csv(scope, :status, params[:status])
-    filter_by_csv(scope, :payment_status, params[:payment_status])
+    filter_by_csv(scope, :status, params[:status])
   end
 
   def set_appointment

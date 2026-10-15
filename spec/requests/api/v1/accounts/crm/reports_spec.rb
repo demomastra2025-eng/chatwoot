@@ -22,10 +22,6 @@ RSpec.describe 'CRM Deal Reports API', type: :request do
       'appointments_count' => 1,
       'meeting_tasks_count' => 1,
       'meetings_count' => 1,
-      'payments_amount_minor' => 12_000,
-      'cash_amount_minor' => 5_000,
-      'non_cash_amount_minor' => 7_000,
-      'trade_in_amount_minor' => 0,
       'bad_rate' => 33.3,
       'lead_to_deal_conversion' => 33.3
     }
@@ -154,10 +150,8 @@ RSpec.describe 'CRM Deal Reports API', type: :request do
   end
 
   def create_manager_appointment_activities(owner)
-    appointment = create(:scheduling_appointment, account: account, owner: owner, status: 'completed',
-                                                  starts_at: 1.day.ago, ends_at: 1.day.ago + 30.minutes)
-    create(:scheduling_payment, account: account, appointment: appointment, amount: 5_000, payment_method: 'cash')
-    create(:scheduling_payment, account: account, appointment: appointment, amount: 7_000, payment_method: 'card')
+    create(:scheduling_appointment, account: account, owner: owner, status: 'completed',
+                                   starts_at: 1.day.ago, ends_at: 1.day.ago + 30.minutes)
   end
 
   def assert_manager_effectiveness_row(row)

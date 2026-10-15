@@ -66,7 +66,6 @@ RSpec.describe 'Captain assistant ops tool registry' do
       'add_inbox_members',
       'remove_inbox_members',
       'update_captain_inbox_auto_reply_mode',
-      'add_appointment_payment',
       'list_macros',
       'get_macro',
       'create_macro',

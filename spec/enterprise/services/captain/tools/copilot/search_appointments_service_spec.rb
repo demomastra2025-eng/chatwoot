@@ -10,9 +10,9 @@ RSpec.describe Captain::Tools::Copilot::SearchAppointmentsService do
   let(:conversation) { create(:conversation, account: account, contact: contact) }
   let!(:appointment1) do
     create(:scheduling_appointment, account: account, resource: resource, contact: contact, client_name: 'Aruzhan', status: 'scheduled',
-                                    payment_status: 'awaiting_payment', conversation: conversation)
+                                    conversation: conversation)
   end
-  let!(:appointment2) { create(:scheduling_appointment, account: account, client_name: 'Dana', status: 'cancelled', payment_status: 'cancelled') }
+  let!(:appointment2) { create(:scheduling_appointment, account: account, client_name: 'Dana', status: 'cancelled') }
 
   before do
     account.enable_features!('scheduling')

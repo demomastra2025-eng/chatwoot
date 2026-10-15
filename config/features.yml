@@ -247,9 +247,6 @@
 - name: captain_scheduling_grounding_guard
   display_name: Captain Scheduling Grounding Guard
   enabled: false
-- name: scheduling_finance
-  display_name: Scheduling Finance
-  enabled: true
 - name: crm_deals
   display_name: CRM Deals
   enabled: false

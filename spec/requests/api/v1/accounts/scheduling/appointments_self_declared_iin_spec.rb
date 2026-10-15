@@ -22,7 +22,7 @@ RSpec.describe 'Scheduling appointments and self-declared patient IINs', type: :
 
   before do
     create(:scheduling_work_rule, resource: resource, account: account, weekday: 1, start_minute: 9 * 60, end_minute: 18 * 60)
-    account.enable_features!('scheduling', 'scheduling_finance')
+    account.enable_features!('scheduling')
     result = Integrations::Medelement::ResourceAvailabilityService::Result.new(status: 'fresh', checked_at: Time.current, slots: [{}], reason: nil)
     allow(Integrations::Medelement::ResourceAvailabilityService).to receive(:new)
       .and_return(instance_double(Integrations::Medelement::ResourceAvailabilityService, perform: result))
