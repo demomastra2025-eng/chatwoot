@@ -10,11 +10,28 @@ const operatorClaimUserId = claim =>
   claim?.claimed_by_user_id ||
   claim?.claimedByUserId;
 
-const operatorCandidateUserIds = candidates =>
-  (Array.isArray(candidates) ? candidates : [])
-    .map(candidate => candidate?.user_id ?? candidate?.userId)
+const extractOperatorCandidateUserIds = (candidates, call = null) => {
+  const fromCandidates = (Array.isArray(candidates) ? candidates : []).map(
+    candidate =>
+      typeof candidate === 'object'
+        ? (candidate?.user_id ?? candidate?.userId)
+        : candidate
+  );
+  const rawCandidateIds =
+    call?.operatorCandidateUserIds || call?.operator_candidate_user_ids;
+  const fromCandidateIds = Array.isArray(rawCandidateIds)
+    ? rawCandidateIds
+    : [];
+  const targetUserId =
+    call?.targetUserId ??
+    call?.target_user_id ??
+    call?.chatwootUserId ??
+    call?.chatwoot_user_id;
+
+  return [...fromCandidates, ...fromCandidateIds, targetUserId]
     .filter(isPresent)
     .map(String);
+};
 
 // Whether the server addressed the call to this employee: he took it, or he
 // is one of the operators it rings for. A call that says nothing about its
@@ -29,8 +46,9 @@ export const isCallForCurrentUser = (call, currentUserId) => {
     return String(claimedByUserId) === String(currentUserId);
   }
 
-  return operatorCandidateUserIds(
-    call?.operatorCandidates || call?.operator_candidates
+  return extractOperatorCandidateUserIds(
+    call?.operatorCandidates || call?.operator_candidates,
+    call
   ).includes(String(currentUserId));
 };
 
@@ -46,8 +64,9 @@ export const isCallAddressedToAnotherOperator = (call, currentUserId) => {
     return String(claimedByUserId) !== String(currentUserId);
   }
 
-  const candidateUserIds = operatorCandidateUserIds(
-    call?.operatorCandidates || call?.operator_candidates
+  const candidateUserIds = extractOperatorCandidateUserIds(
+    call?.operatorCandidates || call?.operator_candidates,
+    call
   );
   return (
     candidateUserIds.length > 0 &&
@@ -619,6 +638,8 @@ export const useCallsStore = defineStore('calls', {
       caller,
       operatorClaim,
       operatorCandidates,
+      operatorCandidateUserIds,
+      targetUserId,
       operatorInternalExtension,
       sipProfileId,
       janusCallRef,
@@ -761,6 +782,23 @@ export const useCallsStore = defineStore('calls', {
         return;
       }
 
+      if (
+        !call &&
+        !ownedActiveLogicalCall &&
+        !startedByCurrentUser &&
+        isCallAddressedToAnotherOperator(
+          {
+            operatorClaim,
+            operatorCandidates,
+            operatorCandidateUserIds,
+            targetUserId,
+          },
+          currentUserId
+        )
+      ) {
+        return;
+      }
+
       // An in-progress call nobody here is tracking and the server did not
       // address to this employee belongs to someone else: no card for it.
       if (
@@ -769,7 +807,12 @@ export const useCallsStore = defineStore('calls', {
         !ownedActiveLogicalCall &&
         !startedByCurrentUser &&
         !isCallForCurrentUser(
-          { operatorClaim, operatorCandidates },
+          {
+            operatorClaim,
+            operatorCandidates,
+            operatorCandidateUserIds,
+            targetUserId,
+          },
           currentUserId
         )
       ) {

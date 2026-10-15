@@ -1197,6 +1197,8 @@ class Telephony::WebphoneService
   def browser_sip_incoming_operator_payload(route_metadata, profile)
     {
       operator_candidates: route_metadata['operator_candidates'],
+      operator_candidate_user_ids: route_metadata['operator_candidate_user_ids'].presence || [profile.user_id].compact.presence,
+      target_user_id: route_metadata['target_user_id'].presence || profile.user_id,
       operator_internal_extension: route_metadata['operator_internal_extension'] || profile.internal_extension,
       sip_profile_id: profile.id,
       sipProfileId: profile.id,

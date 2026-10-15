@@ -481,7 +481,6 @@ class Telephony::EventsIngestionService
     tokens = account.users.where(id: user_ids).filter_map(&:pubsub_token)
     inbox = account.inboxes.find_by(id: call_session.inbox_id)
     native_sip_operator_scope = native_sip_call_session?(call_session) &&
-                                call_session.direction == 'inbound' &&
                                 user_ids.present?
     if inbox.present? && !native_sip_operator_scope
       member_user_ids = inbox.inbox_members.select(:user_id)
@@ -577,6 +576,9 @@ class Telephony::EventsIngestionService
       caller: realtime_call_status_caller_payload(contact, call_session),
       operator_claim: operator_claim,
       operator_candidates: route_metadata['operator_candidates'],
+      operator_candidate_user_ids: route_metadata['operator_candidate_user_ids'].presence ||
+        Array.wrap(route_metadata['target_user_id'].presence || route_metadata['chatwoot_user_id'].presence).presence,
+      target_user_id: route_metadata['target_user_id'].presence || route_metadata['chatwoot_user_id'].presence,
       operator_internal_extension: operator_claim['internal_extension'].presence || route_metadata['operator_internal_extension'],
       sip_profile_id: sip_profile_id,
       sipProfileId: sip_profile_id,
@@ -2318,9 +2320,15 @@ class Telephony::EventsIngestionService
       'operator_candidate_agent_refs',
       'operator_candidate_agent_aors',
       'operator_internal_extension',
+      'target_user_id',
       'logical_call_key',
       'call_group_key'
     )
+    target_user_id = route_metadata['target_user_id'].presence || route_metadata['chatwoot_user_id'].presence
+    if target_user_id.present?
+      meta['target_user_id'] ||= target_user_id
+      meta['operator_candidate_user_ids'] = Array(meta['operator_candidate_user_ids']).presence || [target_user_id]
+    end
     if (logical_key = logical_call_key(call_session)).present?
       meta['logical_call_key'] = logical_key
       meta['call_group_key'] = logical_key

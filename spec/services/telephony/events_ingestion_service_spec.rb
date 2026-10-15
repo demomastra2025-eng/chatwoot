@@ -708,6 +708,18 @@ RSpec.describe Telephony::EventsIngestionService do
 
       expect(tokens).to include(target_operator.pubsub_token)
       expect(tokens).not_to include(other_member.pubsub_token, foreign_member.pubsub_token)
+
+      meta = described_class.new(payload: payload).send(:voice_message_meta, existing_call_session)
+      expect(meta['target_user_id']).to eq(target_operator.id)
+      expect(meta['operator_candidate_user_ids']).to eq([target_operator.id])
+
+      existing_call_session.update!(direction: 'outbound')
+      outbound_tokens = described_class.new(payload: payload).send(
+        :realtime_call_status_pubsub_tokens,
+        existing_call_session
+      )
+      expect(outbound_tokens).to include(target_operator.pubsub_token)
+      expect(outbound_tokens).not_to include(other_member.pubsub_token, foreign_member.pubsub_token)
     end
 
     it 'announces the operator activity of the call after a status event' do

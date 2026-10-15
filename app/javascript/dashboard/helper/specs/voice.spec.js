@@ -466,4 +466,31 @@ describe('voice helper', () => {
       })
     );
   });
+
+  it('ignores ringing inbound calls targeted at another operator via target_user_id even when operator_candidates is absent', () => {
+    handleVoiceCallCreated(
+      {
+        content_type: 'voice_call',
+        conversation_id: 92258,
+        inbox_id: 242,
+        sender: { id: 156259 },
+        content_attributes: {
+          data: {
+            call_sid: 'beeline:janus:87:468029711',
+            call_direction: 'inbound',
+            provider: 'beeline',
+            status: 'ringing',
+            meta: {
+              target_user_id: 162,
+              operator_candidate_user_ids: [162],
+            },
+          },
+        },
+      },
+      6
+    );
+
+    const callsStore = useCallsStore();
+    expect(callsStore.calls).toEqual([]);
+  });
 });

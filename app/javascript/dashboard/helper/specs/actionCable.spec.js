@@ -687,6 +687,25 @@ describe('ActionCableConnector', () => {
       expect(callsStore.calls).toEqual([]);
     });
 
+    it('does not ring for a call addressed to other operator_candidates or target_user_id', () => {
+      const callsStore = useCallsStore();
+
+      actionCable.onReceived({
+        event: 'voice_call.incoming',
+        data: {
+          account_id: 74,
+          call_sid: 'beeline:janus:87:other-operator',
+          status: 'ringing',
+          call_direction: 'inbound',
+          provider: 'beeline',
+          inbox_id: 242,
+          target_user_id: 162,
+        },
+      });
+
+      expect(callsStore.calls).toEqual([]);
+    });
+
     it('shows no card for server-managed Janus voice calls the AI agent handles', () => {
       const callsStore = useCallsStore();
 

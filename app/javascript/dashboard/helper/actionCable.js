@@ -733,7 +733,18 @@ class ActionCableConnector extends BaseActionCableConnector {
     // somebody else already took does not ring here.)
     if (
       isCallAddressedToAnotherOperator(
-        { operatorClaim: data.operator_claim || data.operatorClaim },
+        {
+          operatorClaim: data.operator_claim || data.operatorClaim,
+          operatorCandidates:
+            data.operator_candidates || data.operatorCandidates,
+          operatorCandidateUserIds:
+            data.operator_candidate_user_ids || data.operatorCandidateUserIds,
+          targetUserId:
+            data.target_user_id ||
+            data.targetUserId ||
+            data.chatwoot_user_id ||
+            data.chatwootUserId,
+        },
         this.app.$store.getters.getCurrentUserID
       )
     ) {
@@ -770,6 +781,16 @@ class ActionCableConnector extends BaseActionCableConnector {
       operatorClaim: data.operator_claim || data.operatorClaim || null,
       operatorCandidates:
         data.operator_candidates || data.operatorCandidates || null,
+      operatorCandidateUserIds:
+        data.operator_candidate_user_ids ||
+        data.operatorCandidateUserIds ||
+        null,
+      targetUserId:
+        data.target_user_id ||
+        data.targetUserId ||
+        data.chatwoot_user_id ||
+        data.chatwootUserId ||
+        null,
       operatorInternalExtension:
         data.operator_internal_extension || data.operatorInternalExtension,
       sipProfileId: data.sip_profile_id || data.sipProfileId,
@@ -829,6 +850,16 @@ class ActionCableConnector extends BaseActionCableConnector {
       operatorClaim: data.operator_claim || data.operatorClaim || null,
       operatorCandidates:
         data.operator_candidates || data.operatorCandidates || null,
+      operatorCandidateUserIds:
+        data.operator_candidate_user_ids ||
+        data.operatorCandidateUserIds ||
+        null,
+      targetUserId:
+        data.target_user_id ||
+        data.targetUserId ||
+        data.chatwoot_user_id ||
+        data.chatwootUserId ||
+        null,
       operatorInternalExtension:
         data.operator_internal_extension || data.operatorInternalExtension,
       sipProfileId: data.sip_profile_id || data.sipProfileId,

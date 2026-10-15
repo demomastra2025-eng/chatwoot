@@ -179,6 +179,18 @@ function extractCallData(message) {
       contentData.operatorCandidates ||
       contentMeta?.operator_candidates ||
       contentMeta?.operatorCandidates,
+    operatorCandidateUserIds:
+      contentData.operator_candidate_user_ids ||
+      contentData.operatorCandidateUserIds ||
+      contentMeta?.operator_candidate_user_ids ||
+      contentMeta?.operatorCandidateUserIds,
+    targetUserId:
+      contentData.target_user_id ||
+      contentData.targetUserId ||
+      contentMeta?.target_user_id ||
+      contentMeta?.targetUserId ||
+      contentMeta?.chatwoot_user_id ||
+      contentMeta?.chatwootUserId,
     operatorInternalExtension:
       contentData.operator_internal_extension ||
       contentData.operatorInternalExtension ||
@@ -210,6 +222,8 @@ export function handleVoiceCallCreated(message, currentUserId) {
     caller,
     operatorClaim,
     operatorCandidates,
+    operatorCandidateUserIds,
+    targetUserId,
     operatorInternalExtension,
     accountId,
     conversationDbId,
@@ -242,6 +256,8 @@ export function handleVoiceCallCreated(message, currentUserId) {
       caller,
       operatorClaim,
       operatorCandidates,
+      operatorCandidateUserIds,
+      targetUserId,
       operatorInternalExtension,
       accountId,
       conversationDbId,
@@ -270,7 +286,12 @@ export function handleVoiceCallCreated(message, currentUserId) {
   // A call that rings for other operators only is not this employee's.
   if (
     isCallAddressedToAnotherOperator(
-      { operatorClaim, operatorCandidates },
+      {
+        operatorClaim,
+        operatorCandidates,
+        operatorCandidateUserIds,
+        targetUserId,
+      },
       currentUserId
     )
   ) {
@@ -293,6 +314,8 @@ export function handleVoiceCallCreated(message, currentUserId) {
     caller,
     operatorClaim,
     operatorCandidates,
+    operatorCandidateUserIds,
+    targetUserId,
     operatorInternalExtension,
     accountId,
     conversationDbId,
@@ -326,6 +349,8 @@ export function handleVoiceCallUpdated(commit, message, currentUserId) {
     caller,
     operatorClaim,
     operatorCandidates,
+    operatorCandidateUserIds,
+    targetUserId,
     operatorInternalExtension,
     accountId,
     conversationDbId,
@@ -370,6 +395,8 @@ export function handleVoiceCallUpdated(commit, message, currentUserId) {
     caller,
     operatorClaim,
     operatorCandidates,
+    operatorCandidateUserIds,
+    targetUserId,
     operatorInternalExtension,
     accountId,
     conversationDbId,
@@ -412,6 +439,8 @@ export function handleVoiceCallUpdated(commit, message, currentUserId) {
       caller,
       operatorClaim,
       operatorCandidates,
+      operatorCandidateUserIds,
+      targetUserId,
       operatorInternalExtension,
       accountId,
       conversationDbId,
