@@ -174,6 +174,7 @@ const boardSort = reactive({
 });
 const boardSortDirections = reactive({});
 const hasRestoredPreferences = ref(false);
+let restoredPreferencesAccountKey = null;
 const persistedPreferencesByAccount = useLocalStorage(
   TASKS_PREFERENCES_STORAGE_KEY,
   {}
@@ -868,8 +869,8 @@ const sanitizeTasksPreferences = preferences => {
 };
 
 const restoreTasksPreferences = () => {
-  const stored =
-    persistedPreferencesByAccount.value?.[accountPreferenceKey.value] || {};
+  const preferenceKey = accountPreferenceKey.value;
+  const stored = persistedPreferencesByAccount.value?.[preferenceKey] || {};
   const preferences = sanitizeTasksPreferences(stored);
 
   currentPresentation.value = preferences.currentPresentation;
@@ -882,14 +883,19 @@ const restoreTasksPreferences = () => {
   Object.assign(boardSortDirections, preferences.boardSortDirections);
   Object.assign(filters, preferences.filters);
   listQuickFilters.q = preferences.listQuickFilters.q;
+  restoredPreferencesAccountKey = preferenceKey;
 };
 
-const persistTasksPreferences = () => {
-  if (!hasRestoredPreferences.value) return;
+const persistTasksPreferences = (targetKey = accountPreferenceKey.value) => {
+  if (
+    !hasRestoredPreferences.value ||
+    restoredPreferencesAccountKey !== targetKey
+  )
+    return;
 
   persistedPreferencesByAccount.value = {
     ...(persistedPreferencesByAccount.value || {}),
-    [accountPreferenceKey.value]: sanitizeTasksPreferences({
+    [targetKey]: sanitizeTasksPreferences({
       boardSort: { ...boardSort },
       boardSortDirections: { ...boardSortDirections },
       currentCalendarView: currentCalendarView.value,
@@ -2693,6 +2699,7 @@ onBeforeUnmount(() => {
 });
 
 watch(accountId, async nextAccountId => {
+  persistTasksPreferences(restoredPreferencesAccountKey);
   taskUiActionGeneration += 1;
   taskPageInitializationGeneration += 1;
   scheduleTaskListReload.cancel();
