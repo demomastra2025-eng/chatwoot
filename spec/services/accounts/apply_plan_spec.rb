@@ -150,7 +150,14 @@ RSpec.describe Accounts::ApplyPlan do
 
       expect(account.reload.custom_attributes).to include(trial_state)
       expect(account.custom_attributes['plan']).to eq('base')
-      expect(diff.notes).to eq(['trial_active'])
+      expect(diff.notes).to eq(%w[trial_active trial_locks_limits])
+    end
+
+    it 'does not warn about the limits when the trial a super admin started will keep them once the plan is applied' do
+      account.activate_trial!(3, keep_limits: true)
+
+      expect(account.trial_locks_limits?).to be(true) # the clinic has no plan yet ...
+      expect(service.preview.notes).to eq(['trial_active']) # ... but the preview asks for the moment after it has one
     end
 
     it 'tells that an ended trial still holds the operator and channel limits at zero' do
@@ -165,11 +172,20 @@ RSpec.describe Accounts::ApplyPlan do
     it 'does not claim zero limits for an ended trial of a clinic that had a plan, which kept its limits' do
       account.update!(limits: { 'agents' => 7 })
       service.call
-      account.activate_trial!(3)
+      account.activate_trial!(3, keep_limits: true)
       account.expire_trial!
 
       expect(service.preview.notes).to eq([])
       expect(account.reload.limits).to include('agents' => 7)
+    end
+
+    it 'does not blame the trial for a zero limit the clinic was given on purpose after a trial that kept its limits' do
+      service.call
+      account.activate_trial!(3, keep_limits: true)
+      account.expire_trial!
+      account.update!(limits: account.limits.merge('inboxes' => 0))
+
+      expect(service.preview.notes).to eq([])
     end
 
     it 'writes one audit entry with the actor, before and after' do

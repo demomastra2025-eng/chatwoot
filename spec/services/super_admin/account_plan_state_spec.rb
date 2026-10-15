@@ -62,6 +62,32 @@ RSpec.describe SuperAdmin::AccountPlanState do
     end
   end
 
+  describe '#trial_locks_limits?' do
+    it 'is true for the trial the card could start on a clinic without a plan' do
+      expect(state.trial_locks_limits?).to be(true)
+    end
+
+    it 'is false for the trial the card could start on a clinic with a plan' do
+      Accounts::ApplyPlan.new(account: account, modules: []).call
+
+      expect(state.trial_locks_limits?).to be(false)
+    end
+
+    it 'follows the trial itself once there is one: a trial nobody chose locks, even with a plan' do
+      Accounts::ApplyPlan.new(account: account, modules: []).call
+      account.activate_trial!(3)
+
+      expect(state.trial_locks_limits?).to be(true)
+    end
+
+    it 'follows the trial itself: a trial a super admin started on a clinic with a plan keeps the limits' do
+      Accounts::ApplyPlan.new(account: account, modules: []).call
+      account.activate_trial!(3, keep_limits: true)
+
+      expect(state.trial_locks_limits?).to be(false)
+    end
+  end
+
   describe 'the trial' do
     it 'is none for a clinic that never had one' do
       expect(state.trial_state).to eq(:none)

@@ -251,7 +251,8 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
       requested_resource.extend_trial!(Accounts::Plans.trial_days)
       'extend_trial'
     elsif params[:start].present?
-      requested_resource.activate_trial!(Accounts::Plans.trial_days)
+      # A trial a super admin chose for a clinic that has a plan only lends it modules: its end leaves the limits alone
+      requested_resource.activate_trial!(Accounts::Plans.trial_days, keep_limits: true)
       'start_trial'
     end
   end
@@ -295,7 +296,7 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   # The trial starts after the plan, so its snapshot holds the plan and the trial modules switch off when it ends.
   # An account that cannot take the trial stays created; the operator is told and can start it from the card.
   def start_trial_for_new_account(account)
-    account.activate_trial!(Accounts::Plans.trial_days)
+    account.activate_trial!(Accounts::Plans.trial_days, keep_limits: true)
     SuperAdmin::AccountAudit.record(
       account: account, actor: current_super_admin, action: 'start_trial',
       changes: { 'trial_expires_at' => account.custom_attributes['trial_expires_at'] }, request: request

@@ -45,11 +45,16 @@ RSpec.describe Account, type: :model do
       end
     end
 
-    describe 'a clinic that has a plan' do
+    describe 'a clinic that has a plan, with a trial a super admin started for it (keep_limits)' do
       before do
         account.update!(limits: { 'agents' => 7, 'inboxes' => 9 })
         Accounts::ApplyPlan.new(account: account, modules: %w[quality]).call
-        account.activate_trial!(3)
+        account.activate_trial!(3, keep_limits: true)
+      end
+
+      it 'remembers in the snapshot that the end of the trial keeps the limits' do
+        expect(account.custom_attributes['trial_snapshot']).to include('keep_limits' => true)
+        expect(account.trial_locks_limits?).to be(false)
       end
 
       it 'loses the functions of the trial when it ends, but keeps the plan and its limits' do
@@ -83,6 +88,113 @@ RSpec.describe Account, type: :model do
         expect(account.trial_active?).to be(true)
         expect(account.feature_enabled?('captain_integration')).to be(true)
         expect(account.limits).to include('agents' => 12, 'inboxes' => 9)
+      end
+    end
+
+    describe 'a clinic that has a plan from the system and started its trial by itself (self-registration)' do
+      before do
+        account.update!(limits: { 'agents' => 7, 'inboxes' => 9 })
+        Accounts::ApplyPlan.new(account: account, modules: [], keep_existing_limits: true).call
+        account.activate_trial!(3)
+      end
+
+      it 'is locked out of new operators and channels when the trial ends, as it was before the plans' do
+        expect(account.trial_locks_limits?).to be(true)
+
+        expect(account.expire_trial!).to be(true)
+        account.reload
+
+        expect(account.limits).to include('agents' => 0, 'inboxes' => 0)
+        expect(account.custom_attributes['trial_snapshot']).to include('limits_locked' => true, 'keep_limits' => false)
+        expect(account.feature_enabled?('crm')).to be(true) # the base stays, only the modules of the trial go
+        expect(account.feature_enabled?('captain_integration')).to be(false)
+      end
+
+      it 'is locked out by the scheduled expiry too' do
+        account.update!(custom_attributes: account.custom_attributes.merge('trial_expires_at' => 1.hour.ago.iso8601))
+
+        Accounts::ExpireTrialsJob.perform_now
+
+        expect(account.reload.limits).to include('agents' => 0, 'inboxes' => 0)
+      end
+
+      it 'gets its earlier limits back when the trial is extended' do
+        account.expire_trial!
+
+        account.extend_trial!(3)
+
+        expect(account.reload.limits).to include('agents' => 7, 'inboxes' => 9)
+      end
+
+      it 'is locked even after a super admin applied a plan to it during the trial' do
+        Accounts::ApplyPlan.new(account: account, modules: %w[quality], actor: create(:super_admin)).call
+
+        account.expire_trial!
+
+        expect(account.reload.limits).to include('agents' => 0, 'inboxes' => 0)
+      end
+    end
+
+    describe 'a trial a super admin started on a clinic that has no plan' do
+      it 'locks the limits when it ends: keeping them needs a plan' do
+        account.update!(limits: { 'agents' => 7 })
+        account.activate_trial!(3, keep_limits: true)
+        expect(account.trial_locks_limits?).to be(true)
+
+        account.expire_trial!
+
+        expect(account.reload.limits).to include('agents' => 0, 'inboxes' => 0)
+        expect(account.custom_attributes['trial_snapshot']).to include('limits_locked' => true)
+      end
+
+      it 'keeps the limits once the clinic gets a plan before the trial ends' do
+        account.update!(limits: { 'agents' => 7 })
+        account.activate_trial!(3, keep_limits: true)
+        Accounts::ApplyPlan.new(account: account, modules: []).call
+        expect(account.reload.trial_locks_limits?).to be(false)
+
+        account.expire_trial!
+
+        expect(account.reload.limits).to include('agents' => 7)
+        expect(account.limits).not_to include('inboxes' => 0)
+      end
+    end
+
+    describe 'a module applied while the trial runs' do
+      before do
+        Accounts::ApplyPlan.new(account: account, modules: []).call
+        account.activate_trial!(3)
+      end
+
+      it 'is still on when the trial ends: it belongs to the clinic now' do
+        Accounts::ApplyPlan.new(account: account, modules: %w[ai_agents]).call
+
+        account.expire_trial!
+        account.reload
+
+        Accounts::Plans.module_features('ai_agents').each { |flag| expect(account.feature_enabled?(flag)).to be(true) }
+        expect(Accounts::PlanDrift.call(account)).to eq(extra: [], missing: [])
+      end
+
+      it 'does not keep the trial functions of the modules that were not chosen' do
+        Accounts::ApplyPlan.new(account: account, modules: %w[quality]).call
+
+        account.expire_trial!
+        account.reload
+
+        expect(account.feature_enabled?('sla')).to be(true)
+        expect(account.feature_enabled?('captain_integration')).to be(false)
+        expect(Accounts::PlanDrift.call(account)).to eq(extra: [], missing: [])
+      end
+
+      it 'survives a second end of the trial after an extension' do
+        Accounts::ApplyPlan.new(account: account, modules: %w[ai_agents]).call
+        account.expire_trial!
+
+        account.extend_trial!(3)
+        account.expire_trial!
+
+        expect(account.reload.feature_enabled?('captain_integration')).to be(true)
       end
     end
 
@@ -193,6 +305,21 @@ RSpec.describe Account, type: :model do
         expect(account.feature_enabled?('captain_integration')).to be(true)
         expect(account.feature_enabled?('channel_email')).to be(false)
         expect(account.limits['agents']).to eq(7)
+      end
+
+      it 'keeps the base when a clinic on a legacy trial got the base from the card, and takes back only what the plan does not want' do
+        legacy_trial_account
+        account.update!(custom_attributes: account.custom_attributes.merge('trial_expires_at' => 1.day.from_now.iso8601))
+        Accounts::ApplyPlan.new(account: account, modules: []).call
+
+        expect(account.expire_trial!).to be(true)
+        account.reload
+
+        %w[channel_voice voice_recorder crm help_center macros canned_responses agent_bots automations].each do |flag|
+          expect(account.feature_enabled?(flag)).to be(true), "#{flag} should stay"
+        end
+        expect(account.feature_enabled?('captain_integration')).to be(false)
+        expect(account.limits).to include('agents' => 0, 'inboxes' => 0) # a trial nobody chose for the clinic still locks
       end
 
       it 'sees the legacy list as granted by a trial that has no list in its snapshot' do

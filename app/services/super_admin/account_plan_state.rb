@@ -27,7 +27,7 @@ class SuperAdmin::AccountPlanState
 
   # The modules that were chosen and still exist in the registry, in registry order
   def modules
-    Accounts::Plans.module_keys & Array(attributes[Accounts::ApplyPlan::MODULES_KEY]).map(&:to_s)
+    Accounts::Plans.known_modules(attributes[Accounts::ApplyPlan::MODULES_KEY])
   end
 
   def label
@@ -73,6 +73,14 @@ class SuperAdmin::AccountPlanState
     return false if trial_managed?
 
     attributes['plan_type'].blank? || account.trial?
+  end
+
+  # Whether the end of the trial blocks new operators and channels. A trial that exists says so itself; for the trial
+  # the card could start it depends on the plan (a trial a super admin starts on a clinic with a plan keeps the limits).
+  def trial_locks_limits?
+    return account.trial_locks_limits? if trial_managed?
+
+    !assigned?
   end
 
   def trial_expires_at

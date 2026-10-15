@@ -234,6 +234,30 @@ RSpec.describe 'Super Admin clinic card', type: :request do
         expect(disable).not_to include('ИИ-агенты')
       end
     end
+
+    context 'when a module is applied from the card while the trial runs' do
+      before do
+        Accounts::ApplyPlan.new(account: account, modules: []).call
+        account.activate_trial!(3)
+        post "#{card_path}/apply_plan", params: { modules: %w[ai_agents] }
+      end
+
+      it 'stays switched on when the trial ends, and the clinic is not shown as changed by hand' do
+        expect(account.reload.expire_trial!).to be(true)
+
+        account.reload
+        Accounts::Plans.module_features('ai_agents').each { |flag| expect(account.feature_enabled?(flag)).to be(true) }
+        open_card
+        expect(block('plan-label').text.squish).to eq('База + ИИ-агенты')
+        expect(block('plan-drift')).to be_nil
+      end
+
+      it 'is not switched off when the trial is ended with the button of the card either' do
+        post "#{card_path}/expire_trial"
+
+        expect(account.reload.feature_enabled?('captain_integration')).to be(true)
+      end
+    end
   end
 
   describe 'the plan preview fragment' do
@@ -285,12 +309,24 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       expect(text(fragment)).to include('Тариф «База» будет применён заново', 'уже совпадают с тарифом')
     end
 
-    it 'warns that the clinic is on a trial' do
+    it 'warns that the clinic is on a trial, and that its end will block operators and channels' do
       account.activate_trial!(3)
 
       preview(%w[quality])
 
-      expect(Nokogiri::HTML.fragment(response.body).at_css('[data-preview-note="trial_active"]')).to be_present
+      fragment = Nokogiri::HTML.fragment(response.body)
+      expect(text(fragment.at_css('[data-preview-note="trial_active"]'))).to include('отключатся функции, которые дал пробный период и которых нет в тарифе')
+      expect(text(fragment.at_css('[data-preview-note="trial_locks_limits"]'))).to include('лимиты операторов и каналов станут нулевыми')
+    end
+
+    it 'does not warn about the limits when the trial was started by a super admin and keeps them' do
+      account.activate_trial!(3, keep_limits: true)
+
+      preview(%w[quality])
+
+      fragment = Nokogiri::HTML.fragment(response.body)
+      expect(fragment.at_css('[data-preview-note="trial_active"]')).to be_present
+      expect(fragment.at_css('[data-preview-note="trial_locks_limits"]')).to be_nil
     end
 
     it 'still answers JSON when no fragment is asked for' do
@@ -388,15 +424,27 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       expect(trial.at_css('form[action$="/extend_trial"] button')['data-confirm']).to include('лимиты клиники не изменятся')
     end
 
-    it 'asks before ending a running trial and says what happens to the limits of a clinic with a plan' do
+    it 'asks before ending a running trial and says what happens to the limits of a clinic with a plan and a trial a super admin started' do
       Accounts::ApplyPlan.new(account: account, modules: []).call
-      account.activate_trial!(3)
+      account.activate_trial!(3, keep_limits: true)
 
       open_card
 
       confirm = block('trial-block').at_css("form[action='#{card_path}/expire_trial'] button")['data-confirm']
       expect(confirm).to include('остальные функции и лимиты клиники не изменятся')
       expect(confirm).not_to include('станут нулевыми')
+      expect(text(block('trial-block').at_css('[data-testid="trial-end-note"]'))).to include('Лимиты клиники при этом не меняются')
+    end
+
+    it 'says that the end of a trial nobody chose for the clinic (self-registration) blocks operators and channels, plan or not' do
+      Accounts::ApplyPlan.new(account: account, modules: []).call
+      account.activate_trial!(3)
+
+      open_card
+
+      confirm = block('trial-block').at_css("form[action='#{card_path}/expire_trial'] button")['data-confirm']
+      expect(confirm).to include('лимиты операторов и каналов станут нулевыми')
+      expect(text(block('trial-block').at_css('[data-testid="trial-end-note"]'))).to include('Лимиты операторов и каналов при этом станут нулевыми')
     end
   end
 
@@ -613,6 +661,7 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       expect(note).to include('Всегда включены: Управление операторами')
       expect(note).to include('Никогда не включаются:', 'Роли доступа', 'Единый вход SAML')
     end
+
   end
 
   describe 'the users block' do

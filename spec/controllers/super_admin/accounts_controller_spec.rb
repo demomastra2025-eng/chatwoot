@@ -332,6 +332,29 @@ RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
         expect(account.custom_attributes['trial_snapshot']).to be_present
       end
 
+      it 'starts a trial whose end keeps the limits of a clinic that has a plan (a super admin chose it)' do
+        Accounts::ApplyPlan.new(account: account, modules: []).call
+        account.update!(limits: account.limits.merge('agents' => 6))
+        sign_in(super_admin, scope: :super_admin)
+
+        post "/super_admin/accounts/#{account.id}/extend_trial", params: { start: true }
+
+        expect(account.reload.custom_attributes['trial_snapshot']).to include('keep_limits' => true)
+        account.expire_trial!
+        expect(account.reload.limits).to include('agents' => 6)
+        expect(account.limits).not_to include('inboxes' => 0)
+      end
+
+      it 'starts a trial whose end locks the limits of a clinic that has no plan' do
+        account.update!(limits: { 'agents' => 6 })
+        sign_in(super_admin, scope: :super_admin)
+
+        post "/super_admin/accounts/#{account.id}/extend_trial", params: { start: true }
+        account.reload.expire_trial!
+
+        expect(account.reload.limits).to include('agents' => 0, 'inboxes' => 0)
+      end
+
       it 'writes the extension to the audit log' do
         account.activate_trial!(3)
         account.update!(custom_attributes: account.custom_attributes.merge('trial_expires_at' => 1.day.from_now.iso8601))

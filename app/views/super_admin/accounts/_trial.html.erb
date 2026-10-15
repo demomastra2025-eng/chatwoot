@@ -13,8 +13,8 @@ are Astana time.
 <%
   days = Accounts::Plans.trial_days
   trial_state = state.trial_state
-  # What the end of the trial does to the limits depends on the plan (see Account#expire_trial!)
-  limits_key = state.assigned? ? 'kept' : 'locked'
+  # What the end of the trial does to the limits is decided by how the trial was started (see Account#trial_locks_limits?)
+  limits_key = state.trial_locks_limits? ? 'locked' : 'kept'
   remaining = state.trial_remaining
   badge = { none: ['admin-badge--quiet', t('super_admin.accounts.trial.inactive')],
             active: ['admin-badge--teal', t('super_admin.accounts.trial.active')],
@@ -42,6 +42,12 @@ are Astana time.
       <br>
       <span class="text-n-slate-10"><%= t('super_admin.accounts.trial.until') %> <%= super_admin_time(state.trial_expires_at) %></span>
     </p>
+    <% if state.trial_managed? %>
+      <p class="admin-block__note" data-testid="trial-end-note">
+        <%= t('super_admin.accounts.trial.at_end') %>
+        <%= t("super_admin.accounts.trial.limits_#{limits_key}") %>
+      </p>
+    <% end %>
   <% elsif trial_state == :expired %>
     <p class="admin-block__hint">
       <%= t('super_admin.accounts.trial.ended_at', time: super_admin_time(state.trial_expired_at || state.trial_expires_at) || t('super_admin.accounts.trial.unknown_time')) %>

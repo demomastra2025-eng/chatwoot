@@ -95,6 +95,29 @@ RSpec.describe AccountBuilder do
           expect(account.enabled_features.keys).not_to include(*plans.module_features('ai_agents'))
         end
 
+        it 'blocks new operators and channels when its trial ends, as a self-registered clinic always was (the plan does not lift that)' do
+          account.update!(limits: account.limits.merge('agents' => 5, 'inboxes' => 8))
+
+          expect(account.trial_locks_limits?).to be(true)
+          expect(account.expire_trial!).to be(true)
+          account.reload
+
+          expect(account.limits).to include('agents' => 0, 'inboxes' => 0)
+          expect(account.custom_attributes['trial_snapshot']).to include('limits_locked' => true)
+          expect(account.limits).to include('conversations' => ChatwootApp.max_limit, 'non_web_inboxes' => ChatwootApp.max_limit)
+        end
+
+        it 'lifts the block again when the ended trial is extended' do
+          account.expire_trial!
+
+          account.extend_trial!
+          account.reload
+
+          expect(account.trial_active?).to be(true)
+          expect(account.limits).not_to include('agents' => 0)
+          expect(account.limits).not_to include('inboxes' => 0)
+        end
+
         it 'leaves an audit entry for the plan, written by the system' do
           expect(Audited::Audit.where(auditable_id: account.id, action: 'apply_plan').last).to have_attributes(user_id: nil, comment: 'system')
         end

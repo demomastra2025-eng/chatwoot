@@ -51,7 +51,7 @@ class Accounts::Plans
 
     delegate :version, :base_features, :base_limits, :module_keys, :module?, :module_features, :module_limits,
              :locked_on, :never_enabled, :internal, :classified_features, :managed_features, :unclassified_features,
-             :features_for, :limits_for, :normalize_modules, :module_for_feature,
+             :features_for, :limits_for, :normalize_modules, :known_modules, :module_for_feature,
              :trial_days, :trial_modules, :trial_features, to: :current
   end
 
@@ -130,6 +130,12 @@ class Accounts::Plans
     raise ArgumentError, "Unknown plan modules: #{unknown.join(', ')}" if unknown.any?
 
     module_keys & requested
+  end
+
+  # The keys among `modules` that exist in the registry, in registry order. Unlike #normalize_modules it never raises:
+  # it reads what an account stored earlier, and a module removed from the file since then is simply ignored.
+  def known_modules(modules)
+    module_keys & Array(modules).map(&:to_s)
   end
 
   # The module that owns a flag, or nil

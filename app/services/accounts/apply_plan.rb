@@ -26,7 +26,8 @@ class Accounts::ApplyPlan
 
   # What applying the plan changes (preview) or changed (call).
   # limits: { 'conversations' => { 'from' => 500, 'to' => 100000 } }
-  # notes : facts the operator should know, e.g. 'trial_active' (the account is on a trial that has its own end) or
+  # notes : facts the operator should know, e.g. 'trial_active' (the account is on a trial that has its own end),
+  #         'trial_locks_limits' (and its end will put the operator and channel limits at zero) or
   #         'trial_expired' (a trial has ended and still holds the operator and channel limits at zero)
   Diff = Struct.new(:plan, :modules, :plan_version, :previous_plan, :previous_modules, :previous_version,
                     :enable, :disable, :limits, :notes, keyword_init: true) do
@@ -111,14 +112,22 @@ class Accounts::ApplyPlan
 
   def notes
     notes = []
-    notes << 'trial_active' if account.trial_active?
+    if account.trial_active?
+      notes << 'trial_active'
+      # Asked for the moment after the plan is applied: that is when a trial a super admin started keeps the limits
+      notes << 'trial_locks_limits' if account.trial_snapshot? && account.trial_locks_limits?(assuming_plan: true)
+    end
     notes << 'trial_expired' if account.trial_snapshot? && account.trial_expired? && locked_trial_limits?
     notes
   end
 
-  # An ended trial of a clinic without a plan holds its operator and channel limits at zero; a clinic that had a plan
-  # when the trial ended kept its limits (see Account#expire_trial!)
+  # The end of the trial put the operator and channel limits at zero and they are still there. The snapshot says whether
+  # the end locked them at all (see Account#expire_trial!): a zero the clinic was given on purpose after a trial that
+  # kept the limits is not the trial's (an older snapshot has no `limits_locked` and always locked them).
   def locked_trial_limits?
+    snapshot = account.custom_attributes.to_h[Account::TRIAL_SNAPSHOT_KEY]
+    return false if snapshot.is_a?(Hash) && snapshot['limits_locked'] == false
+
     current = account.limits.to_h
     Account::TRIAL_LOCKED_LIMITS.any? { |key| current[key].is_a?(Numeric) && current[key].zero? }
   end

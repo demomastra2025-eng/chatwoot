@@ -36,7 +36,7 @@ class Accounts::PlanDrift
 
   # Modules that were chosen and still exist in the registry
   def applied_modules
-    Accounts::Plans.module_keys & Array(@account.custom_attributes.to_h[Accounts::ApplyPlan::MODULES_KEY]).map(&:to_s)
+    Accounts::Plans.known_modules(@account.custom_attributes.to_h[Accounts::ApplyPlan::MODULES_KEY])
   end
 
   def expected_features

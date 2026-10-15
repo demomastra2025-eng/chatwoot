@@ -338,13 +338,18 @@ class Account < ApplicationRecord
   end
 
   # Starts a full-feature trial. The snapshot, feature activation and expiry write happen under one row lock.
-  def activate_trial!(days = Accounts::Plans.trial_days)
+  #
+  # What the end of the trial does to the limits is decided here. By default it blocks new operators and channels
+  # (agents and inboxes go to 0): that is the rule for a clinic that signs up by itself or comes through the Platform
+  # API. A super admin who starts a trial on a clinic that has a plan passes `keep_limits: true`: the trial then only
+  # lends modules and its end leaves the limits alone (see #trial_locks_limits?).
+  def activate_trial!(days = Accounts::Plans.trial_days, keep_limits: false)
     with_lock do
       reload
       current_plan = custom_attributes.to_h['plan_type']
       raise ArgumentError, 'A paid or manually assigned plan cannot be replaced by a trial' if current_plan.present? && current_plan != 'trial'
 
-      snapshot_trial_state!(TRIAL_FEATURES)
+      snapshot_trial_state!(TRIAL_FEATURES, keep_limits: keep_limits)
       enable_features(*TRIAL_FEATURES)
       attrs = (custom_attributes || {}).deep_dup
       attrs['plan_type'] = 'trial'
@@ -358,9 +363,9 @@ class Account < ApplicationRecord
   # Ends only a snapshot-backed trial. Scheduled expiry rechecks expiry under this lock; an explicit
   # superadmin action may end an active trial early, but cannot mutate a manually assigned plan.
   #
-  # The functions the trial granted are taken back. A clinic without a plan (a trial from before the plans) is also
-  # locked out of new operators and channels (limits 0, the earlier values stay in the snapshot); a clinic that has
-  # a plan keeps the limits of its plan, so the end of the trial leaves it able to work.
+  # The functions the trial granted are taken back, except the ones the plan of the clinic wants (a module applied
+  # during the trial belongs to the clinic). The clinic is also locked out of new operators and channels (limits 0, the
+  # earlier values stay in the snapshot) unless the trial does not lock the limits, see #trial_locks_limits?.
   def expire_trial!(only_if_expired: false)
     with_lock do
       reload
@@ -372,6 +377,15 @@ class Account < ApplicationRecord
       save!
       true
     end
+  end
+
+  # Whether the end of the trial of this clinic blocks new operators and channels (agents and inboxes limits go to 0).
+  # It does, unless a super admin started the trial on a clinic that has a plan (`keep_limits` in the trial snapshot):
+  # a trial that nobody chose for the clinic (self-registration, the Platform API) keeps ending the way it always did.
+  #
+  # `assuming_plan: true` answers for the moment after a plan has been applied (the preview of the plan uses it).
+  def trial_locks_limits?(assuming_plan: false)
+    locks_limits_at_trial_end?(custom_attributes.to_h, assuming_plan: assuming_plan)
   end
 
   # Upload/quota reads use the last background measurement. A cold HTTP read must never traverse recording directories.
@@ -572,16 +586,31 @@ class Account < ApplicationRecord
   end
   # rubocop:enable Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
 
-  # Writes the end of the trial into the (unsaved) account: the dates, the functions taken back and, for a clinic
-  # without a plan, the locked limits. `snapshot` is the trial snapshot inside `attrs`.
+  # Writes the end of the trial into the (unsaved) account: the dates, the functions taken back and, unless the trial
+  # keeps the limits, the locked limits. `snapshot` is the trial snapshot inside `attrs`.
   def mark_trial_expired(attrs, snapshot)
-    lock_limits = attrs[Accounts::ApplyPlan::PLAN_KEY].blank?
+    lock_limits = locks_limits_at_trial_end?(attrs)
     snapshot['limits_locked'] = lock_limits
     attrs['trial_expires_at'] = 1.minute.ago.iso8601
     attrs['trial_expired_at'] = Time.current.iso8601
     self.custom_attributes = attrs
-    disable_features(*(trial_features_for(snapshot) - snapshot['features']))
+    disable_features(*(trial_features_for(snapshot) - snapshot['features'] - planned_features(attrs)))
     self.limits = (limits || {}).merge(TRIAL_LOCKED_LIMITS.index_with { 0 }) if lock_limits
+  end
+
+  # `keep_limits` is written into the snapshot by #activate_trial!; it only counts for a clinic that has a plan.
+  def locks_limits_at_trial_end?(attrs, assuming_plan: false)
+    snapshot = attrs[TRIAL_SNAPSHOT_KEY]
+    keeps = snapshot.is_a?(Hash) && snapshot['keep_limits'] == true
+    !(keeps && (assuming_plan || attrs[Accounts::ApplyPlan::PLAN_KEY].present?))
+  end
+
+  # The functions the plan of the clinic wants on (base, its modules, the always-on ones); none without a plan. A
+  # module applied during the trial is in this list, so the end of the trial leaves it switched on.
+  def planned_features(attrs)
+    return [] if attrs[Accounts::ApplyPlan::PLAN_KEY].blank?
+
+    Accounts::Plans.features_for(Accounts::Plans.known_modules(attrs[Accounts::ApplyPlan::MODULES_KEY]))
   end
 
   def eligible_for_trial_expiry?(attrs, snapshot, only_if_expired)
@@ -616,9 +645,10 @@ class Account < ApplicationRecord
     stored.is_a?(Array) && stored.any? ? stored : LEGACY_TRIAL_FEATURES
   end
 
-  # Takes the pre-trial snapshot and stores in it the exact list of flags this trial grants. A snapshot that already
-  # existed without a list stands for the legacy grant, which stays part of what this trial hands out and takes back.
-  def snapshot_trial_state!(features)
+  # Takes the pre-trial snapshot and stores in it the exact list of flags this trial grants and whether its end keeps the
+  # limits. A snapshot that already existed without a list stands for the legacy grant, which stays part of what this
+  # trial hands out and takes back.
+  def snapshot_trial_state!(features, keep_limits: false)
     had_snapshot = custom_attributes.to_h[TRIAL_SNAPSHOT_KEY].is_a?(Hash)
     snapshot_pre_trial_state!
 
@@ -627,6 +657,7 @@ class Account < ApplicationRecord
     return unless snapshot.is_a?(Hash)
 
     snapshot['trial_features'] = (snapshot['trial_features'] || (had_snapshot ? LEGACY_TRIAL_FEATURES : [])) | features
+    snapshot['keep_limits'] = keep_limits
     self.custom_attributes = attrs
   end
 
