@@ -8,10 +8,15 @@ class Platform::Api::V1::AccountsController < PlatformController
 
   def show; end
 
+  # A new account gets the base plan first; the limits and features the platform app sends are applied after it,
+  # so what the caller asked for wins over the plan.
   def create
-    @resource = Account.create!(account_params)
-    update_resource_features
-    @resource.save!
+    ActiveRecord::Base.transaction do
+      @resource = Account.create!(account_params)
+      Accounts::ApplyPlan.new(account: @resource, modules: [], keep_existing_limits: true).call
+      update_resource_features
+      @resource.save!
+    end
     @platform_app.platform_app_permissibles.find_or_create_by(permissible: @resource)
   end
 

@@ -61,9 +61,12 @@ RSpec.describe 'Platform Accounts API', type: :request do
 
         json_response = response.parsed_body
         created_account = Account.find(json_response['id'])
-        expect(created_account.enabled_features.keys).to match_array(%w[inbox_management ip_lookup help_center])
+        # the base plan is applied first, the features the caller sends are applied on top of it
+        expect(created_account.enabled_features.keys).to include('inbox_management', 'ip_lookup', 'help_center')
+        expect(created_account.enabled_features.keys).not_to include('disable_branding')
         expect(json_response['name']).to include('Test Account')
-        expect(json_response['features'].keys).to match_array(%w[inbox_management ip_lookup help_center])
+        expect(json_response['features'].keys).to include('inbox_management', 'ip_lookup', 'help_center')
+        expect(json_response['features'].keys).not_to include('disable_branding')
       end
 
       it 'creates an account with limits settings' do
@@ -74,6 +77,47 @@ RSpec.describe 'Platform Accounts API', type: :request do
         expect(response.body).to include('Test Account')
         expect(response.body).to include('5')
         expect(response.body).to include('10')
+      end
+
+      describe 'the plan of a new account' do
+        let(:headers) { { api_access_token: platform_app.access_token.token } }
+        let(:plans) { Accounts::Plans }
+
+        def create_account(params)
+          post '/platform/api/v1/accounts', params: { name: 'Planned Account' }.merge(params), headers: headers, as: :json
+          Account.find(response.parsed_body['id'])
+        end
+
+        it 'applies the base plan to a new account' do
+          created = create_account({})
+
+          expect(created.custom_attributes).to include('plan' => 'base', 'plan_modules' => [], 'plan_version' => plans.version)
+          expect(created.enabled_features.keys).to include(*plans.base_features, *plans.locked_on)
+          expect(created.enabled_features.keys).not_to include(*plans.never_enabled, *plans.module_features('ai_agents'))
+          expect(created.limits).to include('conversations' => ChatwootApp.max_limit, 'non_web_inboxes' => ChatwootApp.max_limit)
+        end
+
+        it 'lets the limits and features the caller sends win over the plan' do
+          created = create_account(limits: { conversations: 50, agents: 3 }, features: { campaigns: true, crm: false })
+
+          expect(created.limits).to include('conversations' => 50, 'agents' => 3, 'non_web_inboxes' => ChatwootApp.max_limit)
+          expect(created.feature_enabled?('campaigns')).to be(true)
+          expect(created.feature_enabled?('crm')).to be(false)
+        end
+
+        it 'writes one system entry in the audit log' do
+          created = create_account({})
+
+          expect(Audited::Audit.where(auditable_id: created.id, action: 'apply_plan').last).to have_attributes(user_id: nil, comment: 'system')
+        end
+
+        it 'creates no account when the plan cannot be applied' do
+          allow_any_instance_of(Accounts::ApplyPlan).to receive(:call).and_raise(StandardError, 'boom') # rubocop:disable RSpec/AnyInstance
+
+          expect do
+            post '/platform/api/v1/accounts', params: { name: 'Planned Account' }, headers: headers, as: :json
+          end.not_to change(Account, :count)
+        end
       end
     end
   end

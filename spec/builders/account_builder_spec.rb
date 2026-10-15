@@ -63,6 +63,42 @@ RSpec.describe AccountBuilder do
            .and change(User, :count).by(1)
            .and change(AccountUser, :count).by(1)
       end
+
+      describe 'the plan of a new account' do
+        let(:plans) { Accounts::Plans }
+        let(:account) { account_builder.perform.last.reload }
+
+        it 'gets the base plan, then a trial of the base plus the trial modules' do
+          expect(account.custom_attributes).to include('plan' => 'base', 'plan_modules' => [], 'plan_version' => plans.version,
+                                                       'plan_type' => 'trial')
+          expect(account.trial_active?).to be(true)
+          expect(account.trial_expires_at).to be_within(1.minute).of(plans.trial_days.days.from_now)
+          expect(account.enabled_features.keys).to include(*plans.base_features, *plans.locked_on, *plans.module_features('ai_agents'))
+        end
+
+        it 'does not get the flags that no plan offers' do
+          expect(account.enabled_features.keys).not_to include(*plans.never_enabled)
+        end
+
+        it 'is not trapped by the global defaults of 500 conversations and no channels besides the website widget' do
+          expect(account.limits).to include('conversations' => ChatwootApp.max_limit, 'non_web_inboxes' => ChatwootApp.max_limit)
+        end
+
+        it 'takes the base flags into the trial snapshot, so the end of the trial removes only the modules' do
+          expect(account.custom_attributes['trial_snapshot']['features']).to include(*plans.base_features)
+          expect(account.custom_attributes['trial_snapshot']['features']).not_to include(*plans.module_features('ai_agents'))
+
+          account.expire_trial!
+          account.reload
+
+          expect(account.enabled_features.keys).to include(*plans.base_features)
+          expect(account.enabled_features.keys).not_to include(*plans.module_features('ai_agents'))
+        end
+
+        it 'leaves an audit entry for the plan, written by the system' do
+          expect(Audited::Audit.where(auditable_id: account.id, action: 'apply_plan').last).to have_attributes(user_id: nil, comment: 'system')
+        end
+      end
     end
   end
 end

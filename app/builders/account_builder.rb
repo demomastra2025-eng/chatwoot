@@ -43,9 +43,12 @@ class AccountBuilder
     end
   end
 
+  # A new account gets the base plan first (so the trial snapshot is taken from it), then the trial adds the trial
+  # modules on top. When the trial ends, only the modules go away.
   def create_account
     @account = Account.create!(name: account_name, locale: I18n.locale)
-    @account.activate_trial!(3)
+    Accounts::ApplyPlan.new(account: @account, modules: [], keep_existing_limits: true).call
+    @account.activate_trial!
     Current.account = @account
   end
 
