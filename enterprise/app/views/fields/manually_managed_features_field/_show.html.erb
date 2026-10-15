@@ -11,13 +11,13 @@
 
 <% if selected_features.present? %>
   <div class="w-full">
-    <p class="text-gray-400 text-xs italic mb-2">Features that remain enabled even when account plan is downgraded</p>
+    <p class="text-n-slate-10 text-xs italic mb-2">Features that remain enabled even when account plan is downgraded</p>
     
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
       <% selected_features.each do |feature| %>
-        <div class="flex items-center justify-between p-3 bg-white rounded-md outline outline-n-container outline-1 shadow-sm">
+        <div class="flex items-center justify-between p-3 bg-n-solid-2 rounded-md outline outline-n-container outline-1 shadow-sm">
           <span class="text-sm text-n-slate-12"><%= all_feature_display_names[feature] || feature.humanize %></span>
-          <span class="bg-green-400 text-white rounded-full p-1 inline-flex right-4 top-5">
+          <span class="bg-n-teal-9 text-white rounded-full p-1 inline-flex right-4 top-5">
             <svg width="12" height="12"><use xlink:href="#icon-tick-line" /></svg>
           </span>
         </div>
@@ -27,5 +27,5 @@
     <hr class="my-8 border-t border-n-weak">
   </div>
 <% else %>
-  <p class="text-gray-400 text-xs italic">No manually managed features configured</p>
+  <p class="text-n-slate-10 text-xs italic">No manually managed features configured</p>
 <% end %>

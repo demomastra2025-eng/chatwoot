@@ -19,17 +19,17 @@
   <%= f.label :manually_managed_features %>
 </div>
 <div class="field-unit__field feature-container">
-  <p class="text-gray-400 text-xs italic mb-4">Features that remain enabled even when account plan is downgraded</p>
+  <p class="text-n-slate-10 text-xs italic mb-4">Features that remain enabled even when account plan is downgraded</p>
   
   <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
     <% premium_features_with_display.each do |feature_key, display_name| %>
-      <div class="flex items-center justify-between p-3 bg-white rounded-lg shadow-sm outline outline-1 outline-n-container">
-        <span class="text-sm text-slate-700"><%= display_name %></span>
+      <div class="flex items-center justify-between p-3 bg-n-solid-2 rounded-lg shadow-sm outline outline-1 outline-n-container">
+        <span class="text-sm text-n-slate-12"><%= display_name %></span>
         <span>
           <%= check_box_tag "account[manually_managed_features][]", 
                          feature_key, 
                          selected_features.include?(feature_key), 
-                         class: "h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-600" %>
+                         class: "h-4 w-4 rounded border-n-strong text-n-violet-11 focus:ring-n-brand" %>
         </span>
       </div>
     <% end %>

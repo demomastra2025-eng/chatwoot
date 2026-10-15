@@ -10,7 +10,7 @@
   <div class="w-full">
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
       <% rows.each do |row| %>
-        <div class="p-3 bg-white rounded-md outline outline-n-container outline-1 shadow-sm">
+        <div class="p-3 bg-n-solid-2 rounded-md outline outline-n-container outline-1 shadow-sm">
           <div class="text-sm text-n-slate-12"><%= row[:label] %></div>
           <div class="mt-2 text-base font-medium text-n-slate-12">
             <%= format_usage.call(row[:consumed], row[:bytes]) %> / <%= row[:unlimited] ? unlimited_label : format_usage.call(row[:total_count], row[:bytes]) %>
@@ -23,5 +23,5 @@
     </div>
   </div>
 <% else %>
-  <p class="text-gray-400 text-xs italic">No usage data available</p>
+  <p class="text-n-slate-10 text-xs italic">No usage data available</p>
 <% end %>
