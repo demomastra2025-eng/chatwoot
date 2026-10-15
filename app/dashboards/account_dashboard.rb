@@ -12,9 +12,7 @@ class AccountDashboard < Administrate::BaseDashboard
                                  attributes = {
                                    limits: AccountLimitsField,
                                    account_usage_overview: AccountUsageField,
-                                   limit_counter_excluded_user_ids_raw: CommaSeparatedIdsField.with_options(
-                                     label: 'Limit counter excluded user IDs'
-                                   )
+                                   limit_counter_excluded_user_ids_raw: CommaSeparatedIdsField
                                  }
 
                                  # Only show manually managed features in Chatwoot Cloud deployment
@@ -28,6 +26,23 @@ class AccountDashboard < Administrate::BaseDashboard
                                  {}
                                end
 
+  # The language order of the form: the clinics of the platform speak Russian first, then Kazakh, then English.
+  LOCALE_ORDER = %w[ru kk en].freeze
+
+  # [["Русский", "ru"], ["Қазақша", "kk"], ["English", "en"]]: the select of the form shows the names of the languages
+  def self.locale_options
+    options = ENABLED_LANGUAGES_CONFIG.values.map do |language|
+      code = language[:iso_639_1_code]
+      [I18n.t("super_admin.locales.#{code}", default: language[:name]), code]
+    end
+    options.sort_by { |_name, code| LOCALE_ORDER.index(code) || LOCALE_ORDER.size }
+  end
+
+  # [["Активна", "active"], ["Заблокирована", "suspended"]]
+  def self.status_options
+    %w[active suspended].map { |status| [I18n.t("super_admin.accounts.statuses.#{status}"), status] }
+  end
+
   ATTRIBUTE_TYPES = {
     id: Field::Number.with_options(searchable: true),
     name: Field::String.with_options(searchable: true),
@@ -35,8 +50,9 @@ class AccountDashboard < Administrate::BaseDashboard
     updated_at: Field::DateTime,
     users: CountField,
     conversations: CountField,
-    locale: Field::Select.with_options(collection: ENABLED_LANGUAGES_CONFIG.map { |_x, y| y[:iso_639_1_code] }),
-    status: Field::Select.with_options(collection: [%w[Active active], %w[Suspended suspended]]),
+    # Lambdas: the names are looked up when the form is drawn, not when the class loads.
+    locale: Field::Select.with_options(collection: -> { AccountDashboard.locale_options }),
+    status: Field::Select.with_options(collection: -> { AccountDashboard.status_options }),
     account_users: Field::HasMany,
     custom_attributes: Field::String
   }.merge(enterprise_attribute_types).freeze
@@ -44,14 +60,11 @@ class AccountDashboard < Administrate::BaseDashboard
   # COLLECTION_ATTRIBUTES
   # an array of attributes that will be displayed on the model's index page.
   #
-  # By default, it's limited to four items to reduce clutter on index pages.
-  # Feel free to add, remove, or rearrange items.
+  # The clinic list draws its own table (app/views/super_admin/accounts/_collection.html.erb); these attributes only
+  # decide what Administrate preloads and which column headers can sort.
   COLLECTION_ATTRIBUTES = %i[
     id
     name
-    locale
-    users
-    conversations
     status
   ].freeze
 
@@ -102,6 +115,23 @@ class AccountDashboard < Administrate::BaseDashboard
     status
   ] + enterprise_form_attributes).freeze
 
+  # A new clinic is created with a name and a language; the plan modules and the trial are chosen on the same page
+  # (app/views/super_admin/accounts/new.html.erb) and applied right after the account is saved.
+  FORM_ATTRIBUTES_NEW = %i[name locale].freeze
+
+  # The edit form in three sections. The keys are the section legends (helpers.label.account.<key>).
+  enterprise_limit_section = ChatwootApp.enterprise? ? %i[limits limit_counter_excluded_user_ids_raw account_usage_overview] : []
+  enterprise_feature_section = if ChatwootApp.enterprise?
+                                 ChatwootApp.chatwoot_cloud? ? %i[manually_managed_features all_features] : %i[all_features]
+                               else
+                                 []
+                               end
+  FORM_ATTRIBUTES_EDIT = {
+    section_main: %i[name locale status],
+    section_limits: enterprise_limit_section,
+    section_features: enterprise_feature_section
+  }.reject { |_section, section_attributes| section_attributes.empty? }.freeze
+
   # COLLECTION_FILTERS
   # a hash that defines filters that can be used while searching via the search
   # field of the dashboard.
@@ -127,11 +157,11 @@ class AccountDashboard < Administrate::BaseDashboard
     **MODULE_FILTERS
   }.freeze
 
+  # The order is the order of the segmented control above the list:
+  # status, trial, plan (none, base, one per module), then the rest.
   COLLECTION_FILTERS = {
     active: ->(resources) { resources.where(status: :active) },
     suspended: ->(resources) { resources.where(status: :suspended) },
-    recent: ->(resources) { resources.where('created_at > ?', 30.days.ago) },
-    **PLAN_FILTERS,
     trial_active: lambda { |resources|
       resources.where(
         "custom_attributes->>'plan_type' = 'trial' AND (custom_attributes->>'trial_expires_at')::timestamp > ?",
@@ -145,6 +175,8 @@ class AccountDashboard < Administrate::BaseDashboard
         Time.current
       )
     },
+    **PLAN_FILTERS,
+    recent: ->(resources) { resources.where('created_at > ?', 30.days.ago) },
     storage_high: lambda { |resources|
       resources.where(
         "COALESCE((limits->>'storage_bytes')::numeric, 0) > 0 AND " \
@@ -168,12 +200,13 @@ class AccountDashboard < Administrate::BaseDashboard
   # to prevent an error from being raised (wrong number of arguments)
   # Reference: https://github.com/thoughtbot/administrate/pull/2356/files#diff-4e220b661b88f9a19ac527c50d6f1577ef6ab7b0bed2bfdf048e22e6bfa74a05R204
   def permitted_attributes(action)
-    attrs = super + [limits: {}]
+    # The status is not on the new-clinic form, but a request that sends it keeps working.
+    attrs = super + [:status, { limits: {} }]
     attrs << :limit_counter_excluded_user_ids_raw if ChatwootApp.enterprise?
 
     # Add manually_managed_features to permitted attributes only for Chatwoot Cloud
     attrs << { manually_managed_features: [] } if ChatwootApp.chatwoot_cloud?
 
-    attrs
+    attrs.uniq
   end
 end

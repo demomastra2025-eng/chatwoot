@@ -1,0 +1,13 @@
+<%#
+# Select Index Partial
+
+Replaces the Administrate partial: when the options are [name, value] pairs
+(the status and language of a clinic, the role of a member) the name of the
+current value is shown instead of the raw value.
+
+## Local variables:
+
+- `field`: an `Administrate::Field::Select`.
+%>
+<% option = field.selectable_options.find { |candidate| candidate.is_a?(Array) && candidate.last.to_s == field.data.to_s } %>
+<%= option ? option.first : field.data %>

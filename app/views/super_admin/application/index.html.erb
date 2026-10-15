@@ -27,14 +27,18 @@ It renders the `_collection` partial to display details about the resources.
 <% content_for(:title) do %>
   <%= super_admin_resource_label(page.resource_name.to_s.pluralize) %>
 <% end %>
+<%# A resource can add a line under the title and name its "create" button in super_admin.index.<resource>. %>
+<% index_description = I18n.t("super_admin.index.#{page.resource_name}.description", default: nil) %>
+<% new_label = I18n.t("super_admin.index.#{page.resource_name}.new", default: nil) ||
+               t("administrate.actions.new_resource", name: super_admin_resource_label(page.resource_name).downcase) %>
 
 <header class="main-content__header" role="banner">
   <div class="main-content__heading">
     <h1 class="main-content__page-title" id="page-title">
       <%= content_for(:title) %>
     </h1>
-    <% if content_for?(:description) %>
-      <p class="main-content__description"><%= content_for(:description) %></p>
+    <% if index_description.present? %>
+      <p class="main-content__description"><%= index_description %></p>
     <% end %>
   </div>
 
@@ -46,10 +50,7 @@ It renders the `_collection` partial to display details about the resources.
       <% end %>
     <% end %>
     <%= link_to(
-      t(
-        "administrate.actions.new_resource",
-        name: super_admin_resource_label(page.resource_name).downcase
-      ),
+      new_label,
       [:new, namespace, page.resource_path.to_sym],
       class: "button",
     ) if accessible_action?(new_resource, :new) %>

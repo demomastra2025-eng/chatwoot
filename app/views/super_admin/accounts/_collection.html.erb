@@ -1,0 +1,118 @@
+<%#
+# Clinics table
+
+The clinic list: clinic (name and #id), plan chips, operators used / limit,
+storage fill, number of channels and status. The numbers of the whole page are
+read at once (`SuperAdmin::AccountListStats`), so the page costs the same few
+queries for 2 or for 20 clinics.
+
+## Local variables (same as the generic `_collection`):
+
+- `collection_presenter` / `page`: the `Administrate::Page::Collection`.
+- `collection_field_name`: the resource name used by the sort links.
+- `resources`: the clinics of this page.
+- `table_title`: id of the heading that names the table.
+%>
+
+<%
+  rows = resources.to_a
+  stats = SuperAdmin::AccountListStats.new(rows)
+  sorted_by_name = collection_presenter.ordered_by?(:name)
+  name_order = collection_presenter.ordered_html_class(:name)
+  status_tones = { active: 'teal', suspended: 'amber', deleting: 'ruby' }
+  meter_tones = { good: '', warn: 'admin-meter__fill--warn', bad: 'admin-meter__fill--bad', idle: 'admin-meter__fill--idle' }
+%>
+
+<div class="admin-card admin-card--table">
+  <table aria-labelledby="<%= table_title %>" data-testid="clinics-table">
+    <thead>
+      <tr>
+        <th class="cell-label cell-label--string cell-label--<%= name_order %>" scope="col" role="columnheader" aria-sort="<%= sort_order(name_order) %>">
+          <%= link_to(sanitized_order_params(page, collection_field_name).merge(collection_presenter.order_params_for(:name, key: collection_field_name))) do %>
+            <%= t('super_admin.accounts.columns.clinic') %>
+            <% if sorted_by_name %>
+              <span class="cell-label__sort-indicator cell-label__sort-indicator--<%= name_order %>">
+                <span class="i-lucide-arrow-up size-3.5" aria-hidden="true"></span>
+              </span>
+            <% end %>
+          <% end %>
+        </th>
+        <th scope="col"><%= t('super_admin.accounts.columns.plan') %></th>
+        <th scope="col" class="cell-label--number"><%= t('super_admin.accounts.columns.operators') %></th>
+        <th scope="col"><%= t('super_admin.accounts.columns.storage') %></th>
+        <th scope="col" class="cell-label--number"><%= t('super_admin.accounts.columns.channels') %></th>
+        <th scope="col"><%= t('super_admin.accounts.columns.status') %></th>
+        <th scope="col"><span class="sr-only"><%= t('super_admin.accounts.columns.actions') %></span></th>
+      </tr>
+    </thead>
+
+    <tbody>
+      <% if rows.empty? %>
+        <tr>
+          <td colspan="7" class="py-10 text-center text-n-slate-11"><%= t('super_admin.shell.empty') %></td>
+        </tr>
+      <% end %>
+
+      <% rows.each do |account| %>
+        <% row = stats.for(account) %>
+        <tr class="js-table-row" tabindex="0" role="link" data-url="<%= super_admin_account_path(account) %>" data-account-id="<%= account.id %>">
+          <td>
+            <%= link_to account.name, super_admin_account_path(account), class: 'font-medium text-n-slate-12 hover:text-n-brand' %>
+            <div class="text-xs tabular-nums text-n-slate-10">#<%= account.id %></div>
+          </td>
+
+          <td>
+            <div class="flex flex-wrap items-center gap-1.5">
+              <% row.plan.chips.each do |chip| %>
+                <span class="admin-badge admin-badge--<%= chip.tone %>"><%= chip.text %></span>
+              <% end %>
+              <% if row.plan.drifted? %>
+                <span class="text-xs text-n-amber-11" title="<%= t('super_admin.plans.drift.title') %>"><%= t('super_admin.plans.drift.short') %></span>
+              <% end %>
+            </div>
+          </td>
+
+          <td class="cell-data--number whitespace-nowrap">
+            <% if row.operators_unlimited? %>
+              <span class="tabular-nums"><%= super_admin_number(row.operators_used) %></span>
+              <span class="text-xs text-n-slate-10"><%= t('super_admin.accounts.list.no_limit') %></span>
+            <% else %>
+              <span class="tabular-nums <%= 'text-n-ruby-11 font-medium' if row.operators_used > row.operators_limit %>"><%= super_admin_number(row.operators_used) %></span>
+              <span class="text-n-slate-10">/ <%= super_admin_number(row.operators_limit) %></span>
+            <% end %>
+          </td>
+
+          <td>
+            <% storage = row.storage %>
+            <% if storage.nil? %>
+              <span class="text-n-slate-10" title="<%= t('super_admin.accounts.list.storage_pending') %>">—</span>
+            <% else %>
+              <div class="flex w-40 flex-col gap-1">
+                <div class="admin-meter" role="img" aria-label="<%= t('super_admin.accounts.list.storage_label', percent: storage.percent || 0) %>">
+                  <div class="admin-meter__fill <%= meter_tones.fetch(storage.tone) %>" style="width: <%= storage.unlimited ? 100 : [storage.percent.to_f, 100].min %>%"></div>
+                </div>
+                <span class="text-xs tabular-nums text-n-slate-11">
+                  <% if storage.unlimited %>
+                    <%= super_admin_bytes(storage.consumed) %> · <%= t('super_admin.accounts.list.no_limit') %>
+                  <% else %>
+                    <%= t('super_admin.accounts.list.storage_of', used: super_admin_bytes(storage.consumed), total: super_admin_bytes(storage.total)) %>
+                  <% end %>
+                </span>
+              </div>
+            <% end %>
+          </td>
+
+          <td class="cell-data--number tabular-nums"><%= super_admin_number(row.channels) %></td>
+
+          <td>
+            <span class="admin-badge admin-badge--<%= status_tones.fetch(row.status) %>"><%= t("super_admin.accounts.statuses.#{row.status}") %></span>
+          </td>
+
+          <td class="text-end">
+            <%= link_to(t('administrate.actions.edit'), [:edit, namespace, account], class: 'action-edit') if authorized_action?(account, :edit) %>
+          </td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+</div>
