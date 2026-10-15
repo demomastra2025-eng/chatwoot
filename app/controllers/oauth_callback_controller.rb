@@ -8,6 +8,9 @@ class OauthCallbackController < ApplicationController
     )
 
     handle_response
+  rescue Channels::NotAvailable
+    # Not an error of the integration: the e-mail channel is closed for this clinic, so there is nothing to report
+    redirect_to oauth_error_redirect_url, allow_other_host: true
   rescue StandardError => e
     ChatwootExceptionTracker.new(e).capture_exception
     redirect_to oauth_error_redirect_url, allow_other_host: true
@@ -75,7 +78,10 @@ class OauthCallbackController < ApplicationController
     raise NotImplementedError
   end
 
+  # Only a NEW mailbox is guarded: an existing channel is a reauthorization (find_or_create_inbox) and never gets here.
   def create_channel_with_inbox
+    Accounts::AvailableChannels.ensure_available!(account, 'email')
+
     ActiveRecord::Base.transaction do
       channel_email = Channel::Email.create!(email: users_data['email'], account: account)
 

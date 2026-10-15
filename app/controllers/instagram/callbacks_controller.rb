@@ -11,6 +11,9 @@ class Instagram::CallbacksController < ApplicationController
     end
 
     process_successful_authorization
+  rescue Channels::NotAvailable => e
+    # Not an error of the integration: the channel is closed for this clinic, so there is nothing to report to the tracker
+    redirect_to_error_page('error_type' => 'channel_not_available', 'code' => 403, 'error_message' => e.message)
   rescue StandardError => e
     handle_error(e)
   end
@@ -168,7 +171,10 @@ class Instagram::CallbacksController < ApplicationController
     channel_instagram
   end
 
+  # Only a NEW connection is guarded: an existing channel or a reauthorization (find_or_create_inbox) never gets here.
   def create_channel_with_inbox(user_details)
+    Accounts::AvailableChannels.ensure_available!(account, 'instagram')
+
     ActiveRecord::Base.transaction do
       expires_at = Time.current + @long_lived_token_response['expires_in'].seconds
 

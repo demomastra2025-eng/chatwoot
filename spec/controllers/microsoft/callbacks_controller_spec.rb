@@ -7,6 +7,8 @@ RSpec.describe 'Microsoft::CallbacksController', type: :request do
   let(:email) { Faker::Internet.email }
   let(:state) { account.to_sgid(expires_in: 15.minutes).to_s }
 
+  before { account.enable_features!('channel_email') }
+
   describe 'GET /microsoft/callback' do
     let(:response_body_success) do
       { id_token: JWT.encode({ email: email, name: 'test' }, nil, 'none'), access_token: SecureRandom.hex(10), token_type: 'Bearer',

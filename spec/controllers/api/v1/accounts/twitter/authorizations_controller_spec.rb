@@ -28,6 +28,9 @@ RSpec.describe 'Twitter Authorization API', type: :request do
       end
 
       it 'creates a new authorization and returns the redirect url' do
+        # Twitter is hidden by the platform by default: this clinic has the flag and an exception for it
+        account.enable_features!('channel_twitter')
+        show_channels_for(account, 'twitter')
         allow(Twitty::Facade).to receive(:new).and_return(twitter_client)
         allow(twitter_client).to receive(:request_oauth_token).and_return(twitter_response)
         allow(twitter_response).to receive(:status).and_return('200')

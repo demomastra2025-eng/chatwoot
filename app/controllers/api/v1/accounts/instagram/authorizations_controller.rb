@@ -1,6 +1,10 @@
 class Api::V1::Accounts::Instagram::AuthorizationsController < Api::V1::Accounts::OauthAuthorizationController
   include InstagramConcern
   include Instagram::IntegrationHelper
+  include ChannelAvailabilityGuard
+
+  # With an inbox_id this reauthorizes an existing inbox, which is never guarded; without one it starts a new connection.
+  before_action -> { ensure_channel_available!('instagram') }, only: [:create], if: -> { params[:inbox_id].blank? }
 
   def create
     # https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/business-login#step-1--get-authorization

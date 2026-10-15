@@ -12,6 +12,7 @@ RSpec.describe Instagram::CallbacksController do
   let(:exception_tracker) { instance_double(ChatwootExceptionTracker) }
 
   before do
+    account.enable_features!('channel_instagram')
     allow(controller).to receive(:verify_instagram_token).and_return(account.id)
     allow(controller).to receive(:instagram_client).and_return(oauth_client)
     allow(controller).to receive(:base_url).and_return('https://one-link.kz')
@@ -65,6 +66,36 @@ RSpec.describe Instagram::CallbacksController do
         expect(existing_channel.access_token).to eq('long_lived_test_token')
         expect(existing_channel.instagram_id).to eq('12345')
         expect(existing_channel.reauthorization_required?).to be false
+      end
+
+      context 'when Instagram is closed for the clinic' do
+        before { change_platform_channel_visibility('instagram' => 'hidden') }
+
+        it 'creates nothing, sends the clinic back to the connection page with the reason and reports no error' do
+          expect do
+            get :show, params: valid_params
+          end.to not_change(Channel::Instagram, :count).and not_change(Inbox, :count)
+
+          expect(response).to redirect_to(
+            app_new_instagram_inbox_url(
+              account_id: account.id,
+              error_type: 'channel_not_available',
+              code: 403,
+              error_message: Channels::Catalog.unavailable_message('instagram')
+            )
+          )
+          expect(exception_tracker).not_to have_received(:capture_exception)
+        end
+
+        it 'still renews the token of a channel that is already connected' do
+          existing_channel = create(:channel_instagram, account: account, instagram_id: '12345', access_token: 'old_token')
+          create(:inbox, channel: existing_channel, account: account, name: 'old_username')
+
+          get :show, params: valid_params
+
+          expect(existing_channel.reload.access_token).to eq('long_lived_test_token')
+          expect(response.location).not_to include('channel_not_available')
+        end
       end
 
       it 'does not create channel or inbox when initial webhook subscription fails' do

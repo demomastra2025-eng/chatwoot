@@ -22,6 +22,8 @@ if resource.custom_attributes.present?
 end
 json.domain @account.domain
 json.features @account.enabled_features
+# The channels this clinic may connect (platform switch, clinic override and feature flag already applied)
+json.available_channels Accounts::AvailableChannels.for(@account)
 json.id @account.id
 json.locale @account.locale
 json.logo_url @account.logo_url

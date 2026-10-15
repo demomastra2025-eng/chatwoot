@@ -1,7 +1,10 @@
 class Api::V1::Accounts::Twitter::AuthorizationsController < Api::V1::Accounts::BaseController
   include TwitterConcern
+  include ChannelAvailabilityGuard
 
   before_action :check_authorization
+  # The Twitter flow only ever connects a new profile (there is no reauthorization), so every start is guarded.
+  before_action -> { ensure_channel_available!('twitter') }, only: [:create]
 
   def create
     @response = twitter_client.request_oauth_token(url: twitter_callback_url)

@@ -2,6 +2,7 @@ require 'rails_helper'
 
 RSpec.describe 'Callbacks API', type: :request do
   before do
+    account.enable_features!('channel_facebook')
     stub_request(:any, /graph.facebook.com/)
     # Mock new and return instance doubles defined above
     allow(Koala::Facebook::OAuth).to receive(:new).and_return(koala_oauth)

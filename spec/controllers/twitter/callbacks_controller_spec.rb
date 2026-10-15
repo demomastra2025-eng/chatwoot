@@ -14,7 +14,12 @@ RSpec.describe 'Twitter::CallbacksController', type: :request do
   let(:account) { create(:account) }
   let(:webhook_service) { double }
 
+  # Twitter is hidden by the platform by default: this clinic has the flag and an exception for it. (The spec used to
+  # stub JSON.parse for the whole process, which also made every jsonb column unreadable, the exception included; the
+  # controller never calls JSON.parse, so the stub is gone.)
   before do
+    account.enable_features!('channel_twitter')
+    show_channels_for(account, 'twitter')
     allow(Twitty::Facade).to receive(:new).and_return(twitter_client)
     allow(Redis::Alfred).to receive(:get).and_return(account.id)
     allow(Redis::Alfred).to receive(:delete).and_return('OK')
@@ -22,7 +27,6 @@ RSpec.describe 'Twitter::CallbacksController', type: :request do
     allow(twitter_response).to receive(:raw_response).and_return(raw_response)
     allow(raw_response).to receive(:body).and_return('oauth_token=1&oauth_token_secret=1&user_id=100&screen_name=chatwoot')
     allow(twitter_client).to receive(:user_show).and_return(user_object_rsponse)
-    allow(JSON).to receive(:parse).and_return(user_object_rsponse)
     allow(Twitter::WebhookSubscribeService).to receive(:new).and_return(webhook_service)
   end
 
@@ -36,6 +40,17 @@ RSpec.describe 'Twitter::CallbacksController', type: :request do
       expect(account.inboxes.count).to be 1
       expect(account.twitter_profiles.last.inbox.name).to eq 'chatwoot'
       expect(account.twitter_profiles.last.profile_id).to eq '100'
+    end
+
+    it 'creates nothing and sends the clinic back to the connection page when Twitter is closed for it' do
+      hide_channels_for(account, 'twitter')
+      expect(webhook_service).not_to receive(:perform)
+
+      get twitter_callback_url
+
+      expect(response).to redirect_to app_new_twitter_inbox_url(account_id: account.id)
+      expect(account.reload.inboxes.count).to be 0
+      expect(account.twitter_profiles.count).to be 0
     end
 
     it 'does not create inbox if subscription fails' do

@@ -54,7 +54,15 @@ RSpec.describe 'TikTok Callbacks', type: :request do
       .to_return(status: 200, body: business_response, headers: { 'Content-Type' => 'application/json' })
   end
 
+  # TikTok is hidden by the platform by default: a NEW connection needs the channel shown and its flag on
+  # (a clinic exception here), while an existing channel is renewed whatever the switches say (next example).
+  def open_tiktok_for_the_clinic
+    account.enable_features!('channel_tiktok')
+    show_channels_for(account, 'tiktok')
+  end
+
   it 'creates channel and inbox and redirects to agents step for new connections' do
+    open_tiktok_for_the_clinic
     expect(Avatar::AvatarFromUrlJob).to receive(:perform_later).with(instance_of(Inbox), 'https://www.example.com/avatar.png')
 
     with_modified_env TIKTOK_APP_ID: client_id, TIKTOK_APP_SECRET: client_secret do
@@ -73,7 +81,39 @@ RSpec.describe 'TikTok Callbacks', type: :request do
     expect(response).to redirect_to(app_tiktok_inbox_agents_url(account_id: account.id, inbox_id: inbox.id))
   end
 
-  it 'updates an existing channel and redirects to settings' do
+  it 'creates nothing and sends the clinic back to the connection page when TikTok is closed for it' do
+    account.enable_features!('channel_tiktok')
+
+    with_modified_env TIKTOK_APP_ID: client_id, TIKTOK_APP_SECRET: client_secret do
+      expect do
+        get '/tiktok/callback', params: { code: 'valid_code', state: state }
+      end.to not_change(Channel::Tiktok, :count).and not_change(Inbox, :count)
+    end
+
+    expect(response).to redirect_to(
+      app_new_tiktok_inbox_url(
+        account_id: account.id,
+        error_type: 'channel_not_available',
+        code: 403,
+        error_message: Channels::Catalog.unavailable_message('tiktok')
+      )
+    )
+  end
+
+  it 'creates nothing when the clinic lacks the TikTok feature flag, even when the channel is shown' do
+    account.disable_features!('channel_tiktok')
+    show_channels_for(account, 'tiktok')
+
+    with_modified_env TIKTOK_APP_ID: client_id, TIKTOK_APP_SECRET: client_secret do
+      expect do
+        get '/tiktok/callback', params: { code: 'valid_code', state: state }
+      end.to not_change(Channel::Tiktok, :count).and not_change(Inbox, :count)
+    end
+
+    expect(response.location).to include('error_type=channel_not_available')
+  end
+
+  it 'updates an existing channel and redirects to settings, also while TikTok is hidden' do
     existing_channel = create(
       :channel_tiktok,
       account: account,

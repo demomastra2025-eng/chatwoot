@@ -1,6 +1,10 @@
 class Twitter::CallbacksController < Twitter::BaseController
   include TwitterConcern
 
+  # Twitter only ever connects a NEW profile here, so a clinic that has no Twitter channel (closed while the
+  # authorization was under way) is sent back to the connection page before any token is exchanged.
+  before_action :redirect_when_channel_closed, only: [:show]
+
   def show
     return redirect_to twitter_app_redirect_url if permitted_params[:denied]
 
@@ -41,6 +45,12 @@ class Twitter::CallbacksController < Twitter::BaseController
       oauth_token: permitted_params[:oauth_token],
       oauth_verifier: permitted_params[:oauth_verifier]
     )
+  end
+
+  def redirect_when_channel_closed
+    return if Accounts::AvailableChannels.available?(account, 'twitter')
+
+    redirect_to twitter_app_redirect_url
   end
 
   def create_inbox

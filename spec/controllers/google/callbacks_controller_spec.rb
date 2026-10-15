@@ -7,6 +7,8 @@ RSpec.describe 'Google::CallbacksController', type: :request do
   let(:email) { Faker::Internet.email }
   let(:state) { account.to_sgid(expires_in: 15.minutes).to_s }
 
+  before { account.enable_features!('channel_email') }
+
   describe 'GET /google/callback' do
     let(:response_body_success) do
       { id_token: JWT.encode({ email: email, name: 'test' }, nil, 'none'), access_token: SecureRandom.hex(10), token_type: 'Bearer',
@@ -33,6 +35,35 @@ RSpec.describe 'Google::CallbacksController', type: :request do
       expect(inbox.channel.reload.provider_config.keys).to include('access_token', 'refresh_token', 'expires_on')
       expect(inbox.channel.reload.provider_config['access_token']).to eq response_body_success[:access_token]
       expect(inbox.channel.imap_address).to eq 'imap.gmail.com'
+    end
+
+    context 'when e-mail is closed for the clinic' do
+      before do
+        change_platform_channel_visibility('email' => 'hidden')
+        stub_request(:post, 'https://accounts.google.com/o/oauth2/token')
+          .with(body: { 'code' => code, 'grant_type' => 'authorization_code',
+                        'redirect_uri' => "#{base_url}/google/callback" })
+          .to_return(status: 200, body: response_body_success.to_json, headers: { 'Content-Type' => 'application/json' })
+      end
+
+      it 'creates no mailbox, sends the clinic back to the connection page and reports no error' do
+        expect(ChatwootExceptionTracker).not_to receive(:new)
+
+        expect do
+          get google_callback_url, params: { code: code, state: state }
+        end.not_to change(account.inboxes, :count)
+
+        expect(response).to redirect_to("#{base_url}/app/accounts/#{account.id}/settings/inboxes/new/google?error=oauth_callback_failed")
+      end
+
+      it 'still renews the token of a mailbox that is already connected' do
+        channel_email = create(:channel_email, account: account, imap_login: email)
+
+        get google_callback_url, params: { code: code, state: state }
+
+        expect(response).to redirect_to app_email_inbox_settings_url(account_id: account.id, inbox_id: channel_email.inbox.id)
+        expect(channel_email.reload.provider_config['access_token']).to eq response_body_success[:access_token]
+      end
     end
 
     it 'updates inbox channel config if inbox exists with imap_login and authentication is successful' do

@@ -1,5 +1,6 @@
 class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   include Api::V1::InboxesHelper
+  include ChannelAvailabilityGuard
   rescue_from Telephony::Error, with: :render_telephony_error
   rescue_from Whatsapp::WabaLock::LockAcquisitionError, with: :render_waba_lock_contention
   rescue_from WhatsappWeb::LifecycleLock::LockAcquisitionError, with: :render_whatsapp_web_lock_contention
@@ -11,6 +12,9 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   before_action :validate_limit, only: [:create]
   # we are already handling the authorization in fetch inbox
   before_action :check_authorization, except: [:show]
+  # Creating an inbox of a channel the clinic does not have (hidden by the platform, flag off) is refused with 403.
+  # Updating or reconnecting an existing inbox never asks.
+  before_action :ensure_requested_channel_available!, only: [:create]
   before_action :render_pending_deletion_response,
                 only: [:update, :avatar, :set_agent_bot, :refresh_whatsapp_web_qr, :reconnect_whatsapp_web,
                        :reauthorize_whatsapp_web, :disconnect_whatsapp_web, :repair_whatsapp_web]
@@ -198,6 +202,12 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
 
   def fetch_agent_bot
     @agent_bot = AgentBot.accessible_to(Current.account).find(params[:agent_bot]) if params[:agent_bot]
+  end
+
+  def ensure_requested_channel_available!
+    channel_params = params[:channel]
+    type = channel_params[:type] if channel_params.respond_to?(:key?)
+    ensure_channel_available!(Channels::Catalog.key_for_create(type))
   end
 
   def create_channel

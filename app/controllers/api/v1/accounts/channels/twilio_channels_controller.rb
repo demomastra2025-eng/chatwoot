@@ -2,7 +2,10 @@
 # No need to retain this controller as we could handle everything centrally in inboxes controller
 
 class Api::V1::Accounts::Channels::TwilioChannelsController < Api::V1::Accounts::BaseController
+  include ChannelAvailabilityGuard
+
   before_action :authorize_request
+  before_action :ensure_requested_channel_available!
 
   def create
     process_create
@@ -11,6 +14,13 @@ class Api::V1::Accounts::Channels::TwilioChannelsController < Api::V1::Accounts:
   end
 
   private
+
+  # Twilio is two catalog channels: WhatsApp through Twilio, and SMS
+  def ensure_requested_channel_available!
+    channel_params = params[:twilio_channel]
+    medium = channel_params[:medium] if channel_params.respond_to?(:key?)
+    ensure_channel_available!(Channels::Catalog.key_for_twilio_medium(medium))
+  end
 
   def authorize_request
     authorize ::Inbox

@@ -1,5 +1,6 @@
 class Api::V1::Accounts::Whatsapp::AuthorizationsController < Api::V1::Accounts::BaseController
   include WhatsappEmbeddedSignupAttemptHandling
+  include ChannelAvailabilityGuard
 
   AUTHORIZATION_ONLY_PROVIDER_CONFIG_KEYS = %w[calling_capabilities token_health].freeze
 
@@ -13,6 +14,9 @@ class Api::V1::Accounts::Whatsapp::AuthorizationsController < Api::V1::Accounts:
   end
 
   before_action :check_admin_authorization?
+  # Without an inbox_id the embedded signup connects a NEW WhatsApp Cloud inbox; with one it reauthorizes an existing
+  # inbox, which is never guarded.
+  before_action -> { ensure_channel_available!('whatsapp_cloud') }, only: [:create], if: -> { params[:inbox_id].blank? }
   before_action :fetch_and_validate_inbox, if: -> { params[:inbox_id].present? }
 
   # POST /api/v1/accounts/:account_id/whatsapp/authorization

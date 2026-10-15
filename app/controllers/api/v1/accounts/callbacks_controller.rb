@@ -2,7 +2,12 @@ class Api::V1::Accounts::CallbacksController < Api::V1::Accounts::BaseController
   FACEBOOK_FETCH_ERROR_MESSAGE = 'Failed to fetch Facebook pages. Please try again.'.freeze
   FACEBOOK_REGISTER_ERROR_MESSAGE = 'Failed to register Facebook page. Please try again.'.freeze
 
+  include ChannelAvailabilityGuard
+
   before_action :inbox, only: [:reauthorize_page]
+  # Listing the pages and registering one are the two steps that connect a NEW Facebook inbox; reauthorize_page
+  # (an existing inbox) is not guarded.
+  before_action -> { ensure_channel_available!('facebook') }, only: [:facebook_pages, :register_facebook_page]
 
   def register_facebook_page
     ActiveRecord::Base.transaction { register_facebook_page! }

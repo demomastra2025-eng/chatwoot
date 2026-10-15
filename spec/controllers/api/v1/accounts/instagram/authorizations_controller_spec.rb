@@ -16,6 +16,8 @@ RSpec.describe 'Instagram Authorization API', type: :request do
       let(:agent) { create(:user, account: account, role: :agent) }
       let(:administrator) { create(:user, account: account, role: :administrator) }
 
+      before { account.enable_features!('channel_instagram') }
+
       it 'returns unauthorized for agent' do
         post "/api/v1/accounts/#{account.id}/instagram/authorization",
              headers: agent.create_new_auth_token,

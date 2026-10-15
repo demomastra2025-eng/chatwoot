@@ -9,6 +9,8 @@ RSpec.describe '/api/v1/accounts/{account.id}/channels/twilio_channel', type: :r
   let(:twilio_webhook_setup_service) { instance_double(Twilio::WebhookSetupService) }
 
   before do
+    # SMS is hidden by the platform by default; this clinic has an exception for it
+    show_channels_for(account, 'sms')
     allow(Twilio::REST::Client).to receive(:new).and_return(twilio_client)
     allow(Twilio::WebhookSetupService).to receive(:new).and_return(twilio_webhook_setup_service)
     allow(twilio_webhook_setup_service).to receive(:perform)

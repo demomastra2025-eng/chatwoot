@@ -4,6 +4,9 @@ RSpec.describe 'Weixin inbox creation', type: :request do
   let(:account) { create(:account, limits: { inboxes: 10, non_web_inboxes: 10 }) }
   let(:admin) { create(:user, account: account, role: :administrator) }
 
+  # WeChat is hidden by the platform by default; this clinic has an exception for it
+  before { show_channels_for(account, 'weixin') }
+
   it 'creates a QR-first Weixin inbox from display_name without requiring top-level name' do
     expect do
       post "/api/v1/accounts/#{account.id}/inboxes",

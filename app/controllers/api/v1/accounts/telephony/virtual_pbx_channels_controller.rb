@@ -10,6 +10,8 @@ class Api::V1::Accounts::Telephony::VirtualPbxChannelsController < Api::V1::Acco
   ].freeze
 
   before_action :check_admin_authorization?
+  # create is the only action that adds a NEW voice inbox; updating and provisioning an existing one is never guarded.
+  before_action :ensure_voice_channel_available!, only: [:create]
 
   def show
     render_payload(provisioning_service.show(inbox_id: params.require(:id), include_diagnostics: include_diagnostics?))
@@ -91,6 +93,12 @@ class Api::V1::Accounts::Telephony::VirtualPbxChannelsController < Api::V1::Acco
   end
 
   private
+
+  def ensure_voice_channel_available!
+    Accounts::AvailableChannels.ensure_available!(Current.account, 'voice')
+  rescue Channels::NotAvailable => e
+    raise Telephony::Error.new(code: 'CHANNEL_NOT_AVAILABLE', message: e.message, status: :forbidden, details: { channel: e.channel_key })
+  end
 
   def provisioning_service
     @provisioning_service ||= Telephony::VirtualPbx::ProvisioningService.new(account: Current.account, current_user: Current.user)

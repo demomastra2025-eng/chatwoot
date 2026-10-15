@@ -13,6 +13,8 @@ RSpec.describe 'Enterprise Inboxes API', type: :request do
         { name: 'test', auto_assignment_config: { max_assignment_limit: 10 }, channel: { type: 'web_widget', website_url: 'test.com' } }
       end
 
+      before { account.enable_features!('channel_website', 'channel_voice') }
+
       it 'creates a webwidget inbox with auto assignment config' do
         post "/api/v1/accounts/#{account.id}/inboxes",
              headers: admin.create_new_auth_token,

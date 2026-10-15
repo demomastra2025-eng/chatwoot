@@ -673,6 +673,13 @@ RSpec.describe 'Inboxes API', type: :request do
       let(:admin) { create(:user, account: account, role: :administrator) }
       let(:valid_params) { { name: 'test', channel: { type: 'web_widget', website_url: 'test.com' } } }
 
+      # The platform hides api, sms and line by default (see spec/requests/api/v1/accounts/channel_availability_guard_spec.rb);
+      # this clinic has an exception for them, and the flags of the channels it creates.
+      before do
+        account.enable_features!('channel_website', 'channel_email')
+        show_channels_for(account, 'api', 'sms', 'line')
+      end
+
       it 'will not create inbox for agent' do
         agent = create(:user, account: account, role: :agent)
 
