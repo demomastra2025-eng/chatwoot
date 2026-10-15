@@ -98,6 +98,34 @@ RSpec.describe 'Super Admin clinic forms', type: :request do
       expect(created.feature_enabled?('crm')).to be(true)
     end
 
+    it 'leaves the clinic able to add operators and channels when its trial ends (the limits are not locked)' do
+      created = create_clinic('Клиника Центр', modules: %w[quality], start_trial: '1')
+      created.update!(limits: created.limits.merge('agents' => 5, 'inboxes' => 8))
+
+      expect(created.expire_trial!).to be(true)
+
+      expect(created.reload.limits).to include('agents' => 5, 'inboxes' => 8)
+      get "/super_admin/accounts/#{created.id}"
+      usage = Nokogiri::HTML(response.body).at_css('[data-usage="agents"]')
+      expect(usage.text.squish).to include('из 5')
+      expect(usage.text).not_to include('Лимит 0')
+    end
+
+    it 'does not lock the limits of a clinic created with a trial and no limits set either' do
+      created = create_clinic('Клиника Пустая', start_trial: '1')
+
+      created.expire_trial!
+
+      expect(created.reload.limits).not_to include('agents' => 0)
+      expect(created.limits).not_to include('inboxes' => 0)
+    end
+
+    it 'says on the form what happens to the limits when the trial ends' do
+      get '/super_admin/accounts/new'
+
+      expect(text(page.at_css('[data-testid="new-trial-block"]'))).to include('лимиты клиники останутся как есть')
+    end
+
     it 'keeps English when the operator picks it (only the empty form defaults to Russian)' do
       post '/super_admin/accounts', params: { account: { name: 'English clinic', locale: 'en' } }
 

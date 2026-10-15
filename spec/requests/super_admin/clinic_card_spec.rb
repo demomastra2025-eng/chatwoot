@@ -342,7 +342,16 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       expect(trial.at_css("form[action='#{card_path}/extend_trial']")).to be_present
     end
 
-    it 'does not offer buttons for a trial typed in by hand, and says why' do
+    it 'does not offer to end a trial that has already ended (it would always fail)' do
+      account.activate_trial!(3)
+      account.expire_trial!
+
+      open_card
+
+      expect(block('trial-block').at_css("form[action='#{card_path}/expire_trial']")).to be_nil
+    end
+
+    it 'does not offer to end or extend a trial typed in by hand, and says why' do
       account.update!(custom_attributes: { 'plan_type' => 'trial', 'trial_expires_at' => 2.days.from_now.iso8601 })
 
       open_card
@@ -350,6 +359,44 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       trial = block('trial-block')
       expect(text(trial)).to include('задан вручную')
       expect(trial.at_css("form[action='#{card_path}/expire_trial']")).to be_nil
+      expect(text(trial.at_css("form[action='#{card_path}/extend_trial']"))).to eq('Запустить на 3 дн.')
+    end
+
+    it 'tells what starting a trial does to a trial typed in by hand: the present functions stay after it ends' do
+      account.update!(custom_attributes: { 'plan_type' => 'trial', 'trial_expires_at' => 2.days.from_now.iso8601 })
+
+      open_card
+
+      expect(text(block('trial-block'))).to include('запомнит нынешние функции клиники как её собственные', 'останутся включёнными')
+    end
+
+    it 'says that a clinic without a plan loses its operator and channel limits when the trial ends' do
+      open_card
+
+      trial = block('trial-block')
+      expect(text(trial)).to include('Лимиты операторов и каналов при этом станут нулевыми')
+      expect(trial.at_css('form[action$="/extend_trial"] button')['data-confirm']).to include('лимиты операторов и каналов станут нулевыми')
+    end
+
+    it 'says that a clinic with a plan keeps its limits when the trial ends' do
+      Accounts::ApplyPlan.new(account: account, modules: []).call
+
+      open_card
+
+      trial = block('trial-block')
+      expect(text(trial)).to include('Лимиты клиники при этом не меняются')
+      expect(trial.at_css('form[action$="/extend_trial"] button')['data-confirm']).to include('лимиты клиники не изменятся')
+    end
+
+    it 'asks before ending a running trial and says what happens to the limits of a clinic with a plan' do
+      Accounts::ApplyPlan.new(account: account, modules: []).call
+      account.activate_trial!(3)
+
+      open_card
+
+      confirm = block('trial-block').at_css("form[action='#{card_path}/expire_trial'] button")['data-confirm']
+      expect(confirm).to include('остальные функции и лимиты клиники не изменятся')
+      expect(confirm).not_to include('станут нулевыми')
     end
   end
 

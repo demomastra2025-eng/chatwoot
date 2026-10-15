@@ -196,6 +196,19 @@ RSpec.describe 'Super Admin render smoke', type: :request do
         Accounts::ApplyPlan.new(account: account, modules: []).call
         account.activate_trial!(3)
       },
+      'with the base after a trial' => lambda { |account|
+        Accounts::ApplyPlan.new(account: account, modules: []).call
+        account.activate_trial!(3)
+        account.expire_trial!
+      },
+      'with a trial typed in by hand' => lambda { |account|
+        account.update!(custom_attributes: { 'plan_type' => 'trial', 'trial_expires_at' => 2.days.from_now.iso8601 })
+      },
+      'on a trial and changed by hand' => lambda { |account|
+        Accounts::ApplyPlan.new(account: account, modules: []).call
+        account.activate_trial!(3)
+        account.enable_features!('sla')
+      },
       'changed by hand' => lambda { |account|
         Accounts::ApplyPlan.new(account: account, modules: %w[ai_agents]).call
         account.enable_features!('sla')

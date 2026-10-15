@@ -13,6 +13,8 @@ are Astana time.
 <%
   days = Accounts::Plans.trial_days
   trial_state = state.trial_state
+  # What the end of the trial does to the limits depends on the plan (see Account#expire_trial!)
+  limits_key = state.assigned? ? 'kept' : 'locked'
   remaining = state.trial_remaining
   badge = { none: ['admin-badge--quiet', t('super_admin.accounts.trial.inactive')],
             active: ['admin-badge--teal', t('super_admin.accounts.trial.active')],
@@ -45,11 +47,17 @@ are Astana time.
       <%= t('super_admin.accounts.trial.ended_at', time: super_admin_time(state.trial_expired_at || state.trial_expires_at) || t('super_admin.accounts.trial.unknown_time')) %>
     </p>
   <% else %>
-    <p class="admin-block__hint"><%= t('super_admin.accounts.trial.description', days: days) %></p>
+    <p class="admin-block__hint">
+      <%= t('super_admin.accounts.trial.description', days: days) %>
+      <%= t("super_admin.accounts.trial.limits_#{limits_key}") %>
+    </p>
   <% end %>
 
   <% if trial_state != :none && !state.trial_managed? %>
-    <p class="admin-block__note"><%= t('super_admin.accounts.trial.manual_note') %></p>
+    <p class="admin-block__note">
+      <%= t('super_admin.accounts.trial.manual_note') %>
+      <%= t('super_admin.accounts.trial.manual_start_note') if state.can_start_trial? %>
+    </p>
   <% end %>
 
   <% if state.trial_managed? || state.can_start_trial? %>
@@ -58,13 +66,16 @@ are Astana time.
         <%= button_to t('super_admin.accounts.trial.extend', days: days), [:extend_trial, :super_admin, account], method: :post,
                       class: 'button button--small button--secondary', form_class: 'inline-block',
                       data: { confirm: t('super_admin.accounts.trial.extend_confirm', days: days) } %>
-        <%= button_to t('super_admin.accounts.trial.expire'), [:expire_trial, :super_admin, account], method: :post,
-                      class: 'button button--small button--alt', form_class: 'inline-block',
-                      data: { confirm: t('super_admin.accounts.trial.expire_confirm') } %>
+        <%# An ended trial cannot be ended again (expire_trial! refuses it), so the button is only there while it runs. %>
+        <% if trial_state == :active %>
+          <%= button_to t('super_admin.accounts.trial.expire'), [:expire_trial, :super_admin, account], method: :post,
+                        class: 'button button--small button--alt', form_class: 'inline-block',
+                        data: { confirm: t("super_admin.accounts.trial.expire_confirm_#{limits_key}") } %>
+        <% end %>
       <% else %>
         <%= button_to t('super_admin.accounts.trial.start', days: days), [:extend_trial, :super_admin, account], method: :post, params: { start: true },
                       class: 'button button--small button--secondary', form_class: 'inline-block',
-                      data: { confirm: t('super_admin.accounts.trial.start_confirm', days: days) } %>
+                      data: { confirm: t("super_admin.accounts.trial.start_confirm_#{limits_key}", days: days) } %>
       <% end %>
     </div>
   <% end %>
