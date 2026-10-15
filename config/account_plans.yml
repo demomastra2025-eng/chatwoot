@@ -1,0 +1,139 @@
+# Account plans: BASE + MODULES. There are no tariffs and no prices here (or anywhere in the code).
+#
+# Every clinic gets the base. Modules are switched on per clinic on top of it.
+# Accounts::Plans loads this file, validates it and freezes it; Accounts::ApplyPlan writes it into an account.
+#
+# Every flag of config/features.yml sits in exactly ONE of these places:
+#   base          the flags of the base plan
+#   modules.*     the flags of one module
+#   locked_on     operational flags that must always stay on (hidden from manual tuning)
+#   never_enabled flags a plan switches OFF (and the platform never offers): dangerous, removed or deprecated.
+#                 May name flags that are absent from features.yml (another branch deletes scheduling_finance).
+#   internal      flags a plan never touches: whatever the account has is kept as it is
+#
+# Limits: a number sets the limit, `unlimited` stores ChatwootApp.max_limit (the code treats it as "no limit"),
+# null leaves the clinic's own value untouched. A key that is not listed is invalid; base lists every key.
+version: 1
+
+base:
+  features:
+    # Chats
+    - channel_website
+    - channel_email
+    - inbound_emails
+    - channel_facebook
+    - channel_instagram
+    - channel_tiktok # shown to clinics only when the platform channel switch allows it; the flag itself is base
+    - auto_resolve_conversations
+    - macros
+    - canned_responses
+    - agent_bots
+    - automations
+    - integrations
+    - reports
+    - help_center
+    # CRM and booking
+    - crm
+    - companies
+    - crm_deals
+    - crm_tasks
+    - scheduling
+    # Telephony is part of the base
+    - channel_voice
+    - whatsapp_call
+    - voice_recorder
+  limits:
+    # Owner sets the numbers later: null = the clinic keeps its own value.
+    agents: null
+    storage_bytes: null
+    # Not limited by the plan. Without an explicit value the global installation defaults apply, and those are a
+    # trap for a new clinic (500 conversations per 30 days, 0 channels besides the website widget).
+    conversations: unlimited
+    non_web_inboxes: unlimited
+    # Not decided or governed elsewhere: no limit unless a clinic has its own value.
+    inboxes: null
+    emails: null # daily mail limit, governed by ACCOUNT_EMAILS_LIMIT
+    captain_responses: null # AI quotas, governed by the Captain plan quota settings
+    captain_documents: null
+    captain_tokens: null
+
+modules:
+  ai_agents:
+    features:
+      - captain_integration
+      - captain_integration_v2
+      - captain_tasks
+      - help_center_embedding_search
+    limits: {}
+  broadcasts:
+    features:
+      - campaigns
+      - whatsapp_campaign
+    limits: {}
+  quality:
+    features:
+      - sla
+      - audit_logs
+      - csat_review_notes
+    limits: {}
+  extensions:
+    features:
+      - custom_tools
+      - crm_integration
+      - conversation_required_attributes
+      - disable_branding
+    limits: {}
+
+# Operational flags: always on, never offered for manual tuning.
+locked_on:
+  - agent_management
+  - team_management
+  - inbox_management
+  - labels
+  - custom_attributes
+
+# Switched off by every plan.
+never_enabled:
+  - scheduling_finance # being removed by another branch
+  - custom_roles
+  - saml
+  - captain_scheduling_grounding_guard
+  - contact_chatwoot_support_team # the Chatwoot support widget
+  # Deprecated Chatwoot flags (config/features.yml `deprecated: true`)
+  - channel_twitter
+  - response_bot
+  - message_reply_to
+  - insert_article_in_reply
+  - report_v4
+  - whatsapp_embedded_signup
+  - twilio_content_templates
+
+# Plans never touch these: infrastructure switches, owner decisions that are still open, flags without a product meaning.
+internal:
+  - ip_lookup # needs the geo database
+  - email_continuity_on_api_channel # dead flag, API channel is hidden by default
+  - report_rollup # read path switched by a rake task after a parity check
+  - custom_reply_email # dead flag
+  - custom_reply_domain # dead flag
+  - inbox_view
+  - linear_integration
+  - notion_integration
+  - shopify_integration
+  - chatwoot_v4 # dead flag
+  - search_with_gin
+  - crm_v2
+  - assignment_v2 # switches the auto-assignment engine: an owner decision, not a plan option
+  - advanced_assignment
+  - advanced_search
+  - advanced_search_indexing
+  - reply_mailer_migration
+  - quoted_email_reply # dead flag
+  - communication_threads # one chat per patient: an owner decision, not a plan option
+  - deferred_touch_materialization
+  - captain_openrouter_byok
+
+# New accounts get a short trial of the base plus these modules.
+trial:
+  days: 3
+  modules:
+    - ai_agents

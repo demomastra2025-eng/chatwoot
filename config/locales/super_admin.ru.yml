@@ -298,8 +298,29 @@ ru:
         start_trial: "Запуск триала"
         extend_trial: "Продление триала"
         expire_trial: "Завершение триала"
+        apply_plan: "Применение тарифа"
         cleanup_storage: "Перемещение в корзину"
         empty_trash: "Очистка корзины"
+    plans:
+      base:
+        name: "База"
+        description: "Чаты, CRM, запись, телефония, автоматизации, отчёты, база знаний"
+      modules:
+        ai_agents:
+          name: "ИИ-агенты"
+          description: "Агенты, которые отвечают клиентам, записывают на приём и ищут ответы в базе знаний"
+        broadcasts:
+          name: "Рассылки"
+          description: "Массовые рассылки клиентам в WhatsApp и других каналах"
+        quality:
+          name: "Контроль качества"
+          description: "SLA, журнал аудита и оценки клиентов с заметками"
+        extensions:
+          name: "Расширения"
+          description: "Свои инструменты агента, интеграция с CRM, обязательные поля диалога, без брендинга"
+      notes:
+        trial_active: "Клиника на пробном периоде. По его окончании функции пробного периода будут отключены, даже если тариф применён."
+        trial_expired: "Пробный период клиники закончился: лимиты операторов и каналов остаются нулевыми, пока их не вернут вручную или не продлят пробный период."
     resources:
       accounts: "Аккаунты"
       account: "Аккаунт"
@@ -367,10 +388,12 @@ ru:
         active: "Активные"
         suspended: "Заблокированные"
         recent: "Новые за 30 дней"
-        starter: "Тариф: Starter"
-        growth: "Тариф: Growth"
-        advanced: "Тариф: Advanced"
-        enterprise: "Тариф: Enterprise"
+        no_plan: "Без тарифа"
+        plan_base: "База"
+        module_ai_agents: "Модуль: ИИ-агенты"
+        module_broadcasts: "Модуль: Рассылки"
+        module_quality: "Модуль: Контроль качества"
+        module_extensions: "Модуль: Расширения"
         trial_active: "Активный триал"
         trial_expired: "Истёкший триал"
         storage_high: "Диск больше 80%"
@@ -425,6 +448,9 @@ ru:
         no_users_to_impersonate: "В этом аккаунте нет пользователей для входа."
         account_deletion_started: "Удаление аккаунта выполняется в фоновом режиме."
         cache_reset: "Кэш Redis очищен."
+        plan_applied: "Тариф применён: %{plan}."
+        plan_unknown_module: "Такого модуля нет. Выберите модули из списка."
+        plan_apply_failed: "Не удалось применить тариф. Состояние клиники не изменено, повторите попытку."
       storage:
         status_unlimited: "Без лимита"
         status_critical: "Занято более 95%"
