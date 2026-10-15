@@ -154,10 +154,7 @@ onMounted(load);
                 class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-n-alpha-2 text-n-slate-12"
                 data-testid="channel-icon"
               >
-                <Icon
-                  :icon="channelIcon(channel)"
-                  class="size-5 shrink-0"
-                />
+                <Icon :icon="channelIcon(channel)" class="size-5 shrink-0" />
               </span>
               <span class="truncate text-heading-3 text-n-slate-12">
                 {{ channel.name }}

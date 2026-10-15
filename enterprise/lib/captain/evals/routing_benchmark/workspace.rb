@@ -64,6 +64,26 @@ class Captain::Evals::RoutingBenchmark::Workspace
     CaptainInbox.find_by!(inbox: inbox).captain_assistant
   end
 
+  def self.faq_embedding_cache
+    @faq_embedding_cache ||= begin
+      path = ENV['BENCHMARK_FAQ_EMBEDDING_CACHE'].to_s
+      path.present? && File.exist?(path) ? JSON.parse(File.read(path)) : {}
+    rescue StandardError
+      {}
+    end
+  end
+
+  def self.persist_faq_embedding_cache!
+    path = ENV['BENCHMARK_FAQ_EMBEDDING_CACHE'].to_s
+    return if path.blank?
+
+    tmp = "#{path}.#{Process.pid}.tmp"
+    File.write(tmp, JSON.generate(faq_embedding_cache))
+    File.rename(tmp, path)
+  rescue StandardError
+    nil
+  end
+
   private
 
   def data = @fixture.workspace
@@ -157,26 +177,6 @@ class Captain::Evals::RoutingBenchmark::Workspace
                                                     question: row.fetch('question'), answer: row.fetch('answer'), status: :approved)
       index!(response) unless ENV['BENCHMARK_FAQ_EMBEDDINGS'] == '0'
     end
-  end
-
-  def self.faq_embedding_cache
-    @faq_embedding_cache ||= begin
-      path = ENV['BENCHMARK_FAQ_EMBEDDING_CACHE'].to_s
-      path.present? && File.exist?(path) ? JSON.parse(File.read(path)) : {}
-    rescue StandardError
-      {}
-    end
-  end
-
-  def self.persist_faq_embedding_cache!
-    path = ENV['BENCHMARK_FAQ_EMBEDDING_CACHE'].to_s
-    return if path.blank?
-
-    tmp = "#{path}.#{Process.pid}.tmp"
-    File.write(tmp, JSON.generate(faq_embedding_cache))
-    File.rename(tmp, path)
-  rescue StandardError
-    nil
   end
 
   # A provider that fails now and then is asked again; a FAQ that stays unindexed would make every lookup of the dialogue find nothing, so

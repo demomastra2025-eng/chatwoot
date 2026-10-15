@@ -267,10 +267,7 @@ defineExpose({ isDirty, save });
 </script>
 
 <template>
-  <div
-    class="flex w-full flex-col gap-6"
-    data-testid="follow-ups-tab"
-  >
+  <div class="flex w-full flex-col gap-6" data-testid="follow-ups-tab">
     <SettingsToggleSection
       v-model="state.enabled"
       :header="t('CAPTAIN.AGENT_TABS.FOLLOW_UPS.TITLE')"

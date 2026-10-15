@@ -121,10 +121,7 @@ const handlePageChange = event => {
           >
             <BackButton v-if="backUrl" :back-url="backUrl" />
             <div class="flex items-center gap-4">
-              <span
-                v-if="headerTitle"
-                class="text-heading-2 text-n-slate-12"
-              >
+              <span v-if="headerTitle" class="text-heading-2 text-n-slate-12">
                 {{ headerTitle }}
               </span>
               <div

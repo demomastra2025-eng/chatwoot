@@ -86,10 +86,7 @@ defineExpose({ isDirty, save });
 </script>
 
 <template>
-  <div
-    class="flex w-full flex-col gap-6"
-    data-testid="agent-voice-tab"
-  >
+  <div class="flex w-full flex-col gap-6" data-testid="agent-voice-tab">
     <div class="flex flex-col gap-1">
       <h3 class="mb-0 text-heading-2 text-n-slate-12">
         {{ t('CAPTAIN.AGENT_TABS.VOICE.TITLE') }}
