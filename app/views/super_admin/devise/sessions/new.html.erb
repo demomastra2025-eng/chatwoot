@@ -1,53 +1,51 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru" class="h-full bg-n-background">
   <head>
-    <title>OneLink Admin</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <%# Must run before any CSS so the theme is correct on first paint. %>
+    <%= render "super_admin/application/theme_script" %>
+    <title>Вход в супер-админку - OneLink Admin</title>
     <link rel="icon" href="/favicon.ico?v=onelink-brand">
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png?v=onelink-brand">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=onelink-brand">
     <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=onelink-brand">
     <%= vite_client_tag %>
     <%= vite_javascript_tag 'superadmin' %>
+    <%= csrf_meta_tags %>
   </head>
-  <body>
-    <div class="h-full w-full antialiased">
-      <main class="flex flex-col bg-woot-25 min-h-screen w-full py-20 sm:px-6 lg:px-8 dark:bg-slate-900">
-        <section class="max-w-5xl mx-auto">
-          <img src="/brand-assets/logo.svg" alt="OneLink" width="118" height="96" class="mx-auto h-24 w-auto block dark:hidden">
-          <img src="/brand-assets/logo_dark.svg" alt="OneLink" width="118" height="96" class="mx-auto h-24 w-auto hidden dark:block">
-          <h2 class="mt-6 text-center text-3xl font-medium text-slate-900 dark:text-woot-50">
-            Здравствуйте, администратор 👋
-          </h2>
-        </section>
-        <section class="bg-white shadow sm:mx-auto mt-11 sm:w-full sm:max-w-lg dark:bg-slate-800 p-11 sm:shadow-lg sm:rounded-lg mb-8 mt-15">
-          <div>
-            <%= form_for(resource, as: resource_name, url: '/super_admin/sign_in') do |f| %>
-              <% if flash[:error].present? %>
-                <div data-alert class="rounded-md bg-red-500 p-4 text-white text-sm mb-5"><%= flash[:error] %></div>
-              <% end %>
-              <div class="mb-5">
-                <label for="email_address" class="flex justify-between text-sm font-medium leading-6 text-slate-900 dark:text-white">
-                  Электронная почта
-                </label>
-                <div class="mt-1">
-                  <%= f.email_field :email, autofocus: true, autocomplete: "email", placeholder: "Email, например: admin@one-link.kz", class: "block w-full rounded-md border-0 px-3 py-3 appearance-none shadow-sm ring-1 ring-inset text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-woot-500 sm:text-sm sm:leading-6 outline-none dark:bg-slate-700 dark:ring-slate-600 dark:focus:ring-woot-500 ring-slate-200" %>
-                </div>
-              </div>
-              <div class="mb-5">
-                <label for="password" class="flex justify-between text-sm font-medium leading-6 text-slate-900 dark:text-white">
-                  Пароль
-                </label>
-                <div class="mt-1">
-                  <%= f.password_field :password, autocomplete: "current-password",  placeholder: "Пароль", class: "block w-full rounded-md border-0 px-3 py-3 appearance-none shadow-sm ring-1 ring-inset text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-woot-500 sm:text-sm sm:leading-6 outline-none dark:bg-slate-700 dark:ring-slate-600 dark:focus:ring-woot-500 ring-slate-200" %>
-                </div>
-              </div>
-              <button type="submit" class="flex items-center w-full justify-center rounded-md bg-woot-500 py-3 px-3 text-base font-medium text-white shadow-sm hover:bg-woot-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-woot-500 cursor-pointer">
-                <span>Войти в панель</span>
-              </button>
-            <% end %>
+  <body class="h-full bg-n-background text-n-slate-12 antialiased">
+    <main class="flex min-h-full w-full items-center justify-center px-4 py-12">
+      <div class="flex w-full max-w-[400px] flex-col items-center gap-6">
+        <header class="flex flex-col items-center gap-3 text-center">
+          <%# One logo for both themes (the light and dark files are identical); width/height keep it from rendering at its natural size before CSS. %>
+          <img src="/brand-assets/logo.svg" alt="OneLink" width="49" height="40" class="block h-10 w-auto">
+          <h1 class="m-0 text-heading-1 text-n-slate-12">Вход в супер-админку</h1>
+          <p class="m-0 text-body-main text-n-slate-11">Только для администраторов платформы OneLink</p>
+        </header>
+
+        <%= form_for(resource, as: resource_name, url: super_admin_session_path, html: { class: 'flex w-full flex-col gap-4 rounded-xl bg-n-solid-2 p-6 outline outline-1 -outline-offset-1 outline-n-container' }) do |f| %>
+          <% if flash[:error].present? %>
+            <div role="alert" data-alert class="rounded-lg bg-n-ruby-2 px-3 py-2 text-sm text-n-ruby-11 outline outline-1 -outline-offset-1 outline-n-ruby-4"><%= flash[:error] %></div>
+          <% end %>
+
+          <div class="flex flex-col gap-1.5">
+            <%= f.label :email, 'E-mail', class: 'text-heading-3 text-n-slate-12' %>
+            <%= f.email_field :email, autofocus: true, autocomplete: 'username', placeholder: 'admin@one-link.kz',
+                  class: 'block h-10 w-full rounded-lg border-0 bg-n-alpha-black2 px-3 py-2.5 text-sm text-n-slate-12 outline outline-1 outline-offset-[-1px] outline-n-weak transition-all placeholder:text-n-slate-10 hover:outline-n-slate-6 focus:outline-n-brand' %>
           </div>
-        </section>
-      </main>
-    </div>
+
+          <div class="flex flex-col gap-1.5">
+            <%= f.label :password, 'Пароль', class: 'text-heading-3 text-n-slate-12' %>
+            <%= f.password_field :password, autocomplete: 'current-password', placeholder: '••••••••',
+                  class: 'block h-10 w-full rounded-lg border-0 bg-n-alpha-black2 px-3 py-2.5 text-sm text-n-slate-12 outline outline-1 outline-offset-[-1px] outline-n-weak transition-all placeholder:text-n-slate-10 hover:outline-n-slate-6 focus:outline-n-brand' %>
+          </div>
+
+          <button type="submit" class="flex h-10 w-full cursor-pointer items-center justify-center rounded-lg border-0 bg-n-brand-solid px-4 text-sm font-medium text-n-brand-contrast transition-all hover:brightness-110 active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-n-brand">Войти</button>
+        <% end %>
+
+        <p class="m-0 text-center text-label-small text-n-slate-10">После входа открывается «Сводка» с состоянием всех клиник.</p>
+      </div>
+    </main>
   </body>
 </html>
