@@ -155,8 +155,9 @@ vi.mock('dashboard/composables/useIncomingCallRingtone', () => ({
 
 import FloatingCallWidget from './FloatingCallWidget.vue';
 
-const mountComponent = () =>
+const mountComponent = (props = {}) =>
   mount(FloatingCallWidget, {
+    props,
     global: {
       mocks: { $t: t },
       stubs: {
@@ -214,6 +215,39 @@ describe('FloatingCallWidget', () => {
 
     expect(ringtoneState.sourceId).toBe('voice');
     expect(ringtoneState.isActive.value).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('renders inside a shared call dock without its own fixed positioning', () => {
+    mockSession.incomingCalls = [
+      {
+        callSid: 'sipuni:shared-dock',
+        callDirection: 'inbound',
+        status: 'ringing',
+      },
+    ];
+
+    const wrapper = mountComponent({ embedded: true });
+
+    expect(wrapper.find('.fixed').exists()).toBe(false);
+    expect(wrapper.find('.relative.flex.flex-col').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('keeps an inbound SIP call visible but silent while WhatsApp is active', () => {
+    whatsappCallsState.hasActiveCall = true;
+    mockSession.incomingCalls = [
+      {
+        callSid: 'sipuni:incoming-while-whatsapp-active',
+        callDirection: 'inbound',
+        status: 'ringing',
+      },
+    ];
+
+    const wrapper = mountComponent();
+
+    expect(wrapper.find('[aria-label="Call"]').exists()).toBe(true);
+    expect(ringtoneState.isActive.value).toBe(false);
     wrapper.unmount();
   });
 

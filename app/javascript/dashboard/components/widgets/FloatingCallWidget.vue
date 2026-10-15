@@ -15,6 +15,10 @@ import {
 } from 'dashboard/helper/voiceCallStage';
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 
+defineProps({
+  embedded: { type: Boolean, default: false },
+});
+
 const router = useRouter();
 const store = useStore();
 const whatsappCallsStore = useWhatsappCallsStore();
@@ -114,6 +118,7 @@ const visibleCalls = computed(() =>
 );
 const shouldPlayIncomingCallRingtone = computed(
   () =>
+    !operatorBusy.value &&
     !isJoining.value &&
     visibleCalls.value.some(
       call =>
@@ -769,7 +774,12 @@ onUnmounted(stopElapsedTimer);
   <div class="contents">
     <template v-if="visibleCalls.length">
       <div
-        class="fixed ltr:right-4 rtl:left-4 bottom-4 z-50 flex flex-col gap-2 w-[320px] sm:w-[340px] max-w-[calc(100vw-2rem)]"
+        class="flex flex-col gap-2"
+        :class="
+          embedded
+            ? 'relative w-full'
+            : 'fixed ltr:right-4 rtl:left-4 bottom-4 z-50 w-[320px] sm:w-[340px] max-w-[calc(100vw-2rem)]'
+        "
       >
         <div
           v-for="call in visibleCalls"

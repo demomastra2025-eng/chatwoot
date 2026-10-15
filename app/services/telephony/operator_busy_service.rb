@@ -1,4 +1,51 @@
 class Telephony::OperatorBusyService
+  class << self
+    def busy_user_ids(account:, user_ids:, excluding_telephony_call_ref: nil)
+      user_ids = Array(user_ids).compact.map(&:to_i).uniq
+      return [] if user_ids.blank?
+
+      sessions = account.telephony_call_sessions.active
+      sessions = sessions.where.not(external_call_ref: excluding_telephony_call_ref) if excluding_telephony_call_ref.present?
+      rows = sessions.pluck(:agent_binding_id, :direction, :metadata)
+
+      (binding_user_ids(account, rows, user_ids) + profile_user_ids(account, rows, user_ids) +
+        claimed_user_ids(rows) + accepted_call_user_ids(account, user_ids)).uniq & user_ids
+    end
+
+    private
+
+    def binding_user_ids(account, rows, user_ids)
+      binding_ids = rows.filter_map(&:first)
+      account.telephony_agent_bindings.where(id: binding_ids, user_id: user_ids).pluck(:user_id)
+    end
+
+    def profile_user_ids(account, rows, user_ids)
+      profile_ids = rows.filter_map { |_, _, metadata| hash_from(metadata, 'operator_claim')['sip_profile_id'] }
+      account.telephony_sip_profiles.where(id: profile_ids, user_id: user_ids).pluck(:user_id)
+    end
+
+    def claimed_user_ids(rows)
+      rows.flat_map do |_, direction, metadata|
+        ids = [hash_from(metadata, 'operator_claim')['user_id']]
+        if direction == 'outbound'
+          ids << hash_from(metadata, 'operator_identity')['user_id']
+          ids << hash_from(metadata, 'metadata')['chatwoot_user_id']
+        end
+        ids.compact.map(&:to_i)
+      end
+    end
+
+    def accepted_call_user_ids(account, user_ids)
+      return [] unless defined?(Call)
+
+      account.calls.active.where(accepted_by_agent_id: user_ids).distinct.pluck(:accepted_by_agent_id)
+    end
+
+    def hash_from(value, key)
+      value.is_a?(Hash) && value[key].is_a?(Hash) ? value[key] : {}
+    end
+  end
+
   def initialize(account:, user:, excluding_telephony_call: nil, excluding_whatsapp_call: nil)
     @account = account
     @user = user
@@ -57,6 +104,14 @@ class Telephony::OperatorBusyService
       SQL
       user_id: user.id.to_s
     ).first
+    @busy_telephony_call ||= claimed_profile_call(scope)
+  end
+
+  def claimed_profile_call(scope)
+    profile_ids = account.telephony_sip_profiles.where(user_id: user.id).pluck(:id)
+    return if profile_ids.blank?
+
+    scope.where("telephony_call_sessions.metadata -> 'operator_claim' ->> 'sip_profile_id' IN (?)", profile_ids.map(&:to_s)).first
   end
 
   def busy_whatsapp_call

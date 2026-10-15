@@ -347,6 +347,132 @@ RSpec.describe 'Api::V1::Accounts::Mcp', type: :request do
       expect(response.body).not_to include('super-secret-token')
     end
 
+    it 'keeps safe assistant identities in JSON-string results even when another field needs redaction' do
+      assistant.update!(name: 'Intermedical DEV Test', description: 'See https://example.test/guide')
+
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: mcp_request(
+             id: 'captain-list-1',
+             method: 'tools/call',
+             params: { name: 'list_captain_assistants', arguments: {} }
+           ).to_json,
+           headers: mcp_headers(admin)
+
+      expect(response).to have_http_status(:success)
+      expect(json_response.dig(:result, :isError)).to be(false)
+      listed = json_response.dig(:result, :structuredContent, :assistants).first
+      expect(listed).to include(id: assistant.id, name: 'Intermedical DEV Test', description: '[FILTERED]')
+      expect(JSON.parse(json_response.dig(:result, :content, 0, :text)).dig('assistants', 0, 'id')).to eq(assistant.id)
+      expect(response.body).not_to include('https://example.test/guide')
+    end
+
+    it 'keeps assistant IDs while masking personal details in structured Captain results' do
+      assistant.update!(description: 'Contact patient@example.test for help')
+
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: mcp_request(id: 'captain-list-private-1', method: 'tools/call',
+                               params: { name: 'list_captain_assistants', arguments: {} }).to_json,
+           headers: mcp_headers(admin)
+
+      listed = json_response.dig(:result, :structuredContent, :assistants).first
+      expect(listed).to include(id: assistant.id, name: assistant.name, description: 'Contact [FILTERED] for help')
+      expect(response.body).not_to include('patient@example.test')
+
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: mcp_request(id: 'users-private-1', method: 'tools/call',
+                               params: { name: 'list_account_users', arguments: { limit: 1 } }).to_json,
+           headers: mcp_headers(admin)
+
+      user = json_response.dig(:result, :structuredContent, :users).first
+      expect(user).to include(id: admin.id, name: '[FILTERED]', email: '[FILTERED]')
+      expect(response.body).not_to include(admin.email)
+    end
+
+    it 'keeps the workspace ID and settings when a URL field is redacted' do
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: mcp_request(
+             id: 'workspace-1',
+             method: 'tools/call',
+             params: { name: 'get_workspace_profile', arguments: {} }
+           ).to_json,
+           headers: mcp_headers(admin)
+
+      expect(response).to have_http_status(:success)
+      expect(json_response.dig(:result, :isError)).to be(false)
+      expect(json_response.dig(:result, :structuredContent, :workspace)).to include(
+        id: account.id,
+        name: account.name,
+        settings: be_a(Hash)
+      )
+    end
+
+    it 'keeps the MCP policy readable without returning sensitive fields' do
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: mcp_request(
+             id: 'policy-1',
+             method: 'tools/call',
+             params: { name: 'get_mcp_access_policy', arguments: {} }
+           ).to_json,
+           headers: mcp_headers(admin)
+
+      expect(response).to have_http_status(:success)
+      expect(json_response.dig(:result, :isError)).to be(false)
+      expect(json_response.dig(:result, :structuredContent, :mcp, :mcp_access)).to include(enabled: true)
+    end
+
+    it 'confirms and audits assistant prompt/settings changes before returning the saved version' do
+      account.update!(mcp_access: {
+                        max_risk_level: 'high',
+                        allowed_tool_ids: %w[update_captain_assistant get_captain_assistant]
+                      })
+      arguments = {
+        assistant_id: assistant.id,
+        description: 'DEV test prompt edit',
+        config_json: { feature_faq: true }.to_json
+      }
+
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: mcp_request(id: 'edit-1', method: 'tools/call',
+                               params: { name: 'update_captain_assistant', arguments: arguments }).to_json,
+           headers: mcp_headers(admin)
+
+      expect(json_response.dig(:result, :isError)).to be(true)
+      expect(assistant.reload.description).not_to eq('DEV test prompt edit')
+
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: mcp_request(
+             id: 'edit-2', method: 'tools/call',
+             params: { name: 'update_captain_assistant', arguments: arguments.merge(_confirm: true) }
+           ).to_json,
+           headers: mcp_headers(admin)
+
+      expect(json_response.dig(:result, :isError)).to be(false)
+      expect(assistant.reload).to have_attributes(description: 'DEV test prompt edit')
+      expect(assistant.config['feature_faq']).to be(true)
+      audit = Enterprise::AuditLog.where(user: admin, action: 'captain_tool_execute').last&.audited_changes
+      expect(audit).to include(
+        'tool_id' => 'update_captain_assistant',
+        'source' => 'mcp_captain'
+      )
+      expect(audit.dig('arguments', 'assistant_id')).to eq(assistant.id)
+      expect(audit.dig('arguments', 'description')).to eq('[FILTERED]')
+      expect(audit.dig('arguments', 'config_json')).to eq('[FILTERED]')
+      expect(JSON.generate(audit)).not_to include('DEV test prompt edit')
+
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: mcp_request(
+             id: 'read-1', method: 'tools/call',
+             params: { name: 'get_captain_assistant', arguments: { assistant_id: assistant.id } }
+           ).to_json,
+           headers: mcp_headers(admin)
+
+      expect(json_response.dig(:result, :isError)).to be(false)
+      expect(json_response.dig(:result, :structuredContent, :assistant)).to include(
+        id: assistant.id,
+        description: 'DEV test prompt edit'
+      )
+    end
+
     it 'executes registry-backed Captain tools without enumerating the full assistant catalog' do
       allow(Captain::ToolCatalog).to receive(:available_tools_for).and_raise('full catalog should not be enumerated for direct calls')
       allow(Llm::SafetyPolicy).to receive(:check!).and_raise('MCP direct Captain calls should not run copilot runtime moderation')

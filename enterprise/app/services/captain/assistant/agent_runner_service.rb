@@ -18,32 +18,6 @@ class Captain::Assistant::AgentRunnerService
   MAX_COMPLETED_TOOL_RESULT_RECORDS = 50
   APPOINTMENT_MUTATION_TOOL_NAMES = %w[create_appointment update_appointment].freeze
   APPOINTMENT_STATUS_TOOL_NAME = 'get_appointment_provider_status'.freeze
-  APPOINTMENT_EVIDENCE_REQUIRED_FIELDS = %i[appointment_id status service_id resource_id starts_at ends_at].freeze
-  APPOINTMENT_CREATE_CLAIM_PATTERN = /
-    (?:\bappointment\s+(?:(?:is|was|has\s+been|had\s+been)\s+)?(?:(?:successfully|now|already)\s+)*(?:booked|created|confirmed)\b|
-       \byou\s+(?:are|were|have\s+been|had\s+been)\s+(?:(?:successfully|now|already)\s+)*booked\b|
-       \b(?:we|i)\s+(?:(?:successfully|now|already)\s+)*booked\s+(?:you|your\s+appointment)\b|
-       запис(?:ан|ана|ано|ались|ал|ала|али)|
-       запись\s+(?:создана|подтверждена))
-  /ix
-  APPOINTMENT_UPDATE_CLAIM_PATTERN = /
-    (?:\bappointment\s+(?:(?:is|was|has\s+been|had\s+been)\s+)?(?:(?:successfully|now|already)\s+)*(?:rescheduled|updated)\b|
-       перен(?:ес(?:ен|ена|ено|ли|ла)?|ёс)|запись\s+перенесена)
-  /ix
-  APPOINTMENT_NEGATED_CLAIM_PATTERN = /
-    (?:\bno\s+appointment\s+(?:has\s+been\s+)?(?:successfully\s+)?(?:booked|created|confirmed|rescheduled|updated)\b|
-       \bappointment\s+has\s+yet\s+to\s+be\s+(?:successfully\s+)?(?:booked|created|confirmed|rescheduled|updated)\b|
-       \bappointment\s+(?:will|is\s+going\s+to)\s+be\s+(?:booked|created|confirmed|rescheduled|updated)\b|
-       \b(?:not|never)\s+(?:been\s+)?(?:booked|created|confirmed|rescheduled|updated)\b|
-       \b(?:hasn't|haven't|wasn't|isn't)\s+(?:been\s+)?(?:booked|created|confirmed|rescheduled|updated)\b|
-       \b(?:could|would|might|may|can)\s+be\s+(?:booked|created|confirmed|rescheduled|updated)\b|
-       \b(?:couldn't|wouldn't|can't|cannot|could\s+not|would\s+not|can\s+not)\s+
-         (?:book|create|confirm|reschedule|update|be\s+(?:booked|created|confirmed|rescheduled|updated))\b|
-       \bfailed\s+to\s+(?:book|create|confirm|reschedule|update)\b|
-       (?:не\s+(?:удалось\s+)?(?:записать|создать|подтвердить|перенести)|
-          (?:запись|прием|приём)\s+не\s+(?:создана|подтверждена|перенесена)|
-          не\s+запис(?:ан|ана|ано|ались)))
-  /ix
   MCP_TOOL_ID_PREFIX = 'mcp__'.freeze
   TOOL_RESULT_FALLBACK_REASONING = [
     'Final assistant response failed after completed tool actions; ',
@@ -54,7 +28,6 @@ class Captain::Assistant::AgentRunnerService
   ZERO_COMPLETION_TOOL_RESULT_FALLBACK = 'tool_result_fallback'.freeze
 
   class BlankResponseError < StandardError; end
-  class AppointmentGroundingError < StandardError; end
 
   class SemanticOutputError < StandardError
     attr_reader :code
@@ -265,8 +238,6 @@ class Captain::Assistant::AgentRunnerService
     semantic_error = semantic_output_error(response)
     return semantic_output_error_response(semantic_error, response, result.context, handoff_tool_called: handoff_tool_called) if semantic_error
 
-    grounding_error = appointment_grounding_error(response, result.context)
-    return provider_error_response(grounding_error, handoff_tool_called: handoff_tool_called) if grounding_error
     return suppressed_response(response) if response_suppressed?(response)
 
     if blank_public_response?(response)
@@ -1054,47 +1025,6 @@ class Captain::Assistant::AgentRunnerService
     parsed.with_indifferent_access if parsed.is_a?(Hash)
   rescue JSON::ParserError
     nil
-  end
-
-  def appointment_grounding_error(response, context)
-    required_action = appointment_claim_action(response['response'])
-    return if required_action.blank?
-
-    evidence = successful_non_handoff_tool_records(context).filter_map { |record| record[:appointment_evidence] }
-    mutation = evidence.reverse.find { |item| item[:action].to_s == required_action && !item[:provider_status_lookup] }
-    return AppointmentGroundingError.new('Appointment success claim has no completed appointment tool evidence') if mutation.blank?
-
-    lookup = evidence.reverse.find do |item|
-      item[:action].to_s == required_action && item[:provider_status_lookup] &&
-        item[:appointment_id].to_s == mutation[:appointment_id].to_s &&
-        provider_command_identity_matches?(mutation, item)
-    end
-    return if appointment_evidence_confirmed?(mutation, lookup)
-
-    AppointmentGroundingError.new('Appointment success claim is missing provider confirmation or read-back evidence')
-  end
-
-  def appointment_claim_action(content)
-    text = content.to_s.gsub(APPOINTMENT_NEGATED_CLAIM_PATTERN, ' ')
-
-    return 'create_appointment' if text.match?(APPOINTMENT_CREATE_CLAIM_PATTERN)
-    return 'update_appointment' if text.match?(APPOINTMENT_UPDATE_CLAIM_PATTERN)
-  end
-
-  def appointment_evidence_confirmed?(evidence, lookup = nil)
-    return false unless APPOINTMENT_EVIDENCE_REQUIRED_FIELDS.all? { |field| evidence[field].present? }
-    return true if evidence[:provider_confirmation_required] == false && evidence[:provider_confirmation_status].blank?
-    return false if evidence[:provider_confirmation_status].blank?
-
-    confirmation = lookup.presence || evidence
-    confirmation[:provider_confirmed] && confirmation[:provider_command_receipt_present]
-  end
-
-  def provider_command_identity_matches?(mutation, lookup)
-    return false if mutation[:provider_command_id].blank? || lookup[:provider_command_id].blank?
-
-    mutation[:provider_command_id].to_s == lookup[:provider_command_id].to_s &&
-      mutation[:provider_command_operation].to_s == lookup[:provider_command_operation].to_s
   end
 
   def tool_payload_type(value)

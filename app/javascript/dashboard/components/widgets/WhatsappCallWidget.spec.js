@@ -72,8 +72,9 @@ vi.mock('dashboard/stores/calls', () => ({
 
 import WhatsappCallWidget from './WhatsappCallWidget.vue';
 
-const mountComponent = () =>
+const mountComponent = (props = {}) =>
   mount(WhatsappCallWidget, {
+    props,
     global: {
       stubs: { Avatar: { template: '<div class="avatar" />' } },
     },
@@ -100,6 +101,18 @@ describe('WhatsappCallWidget ringtone', () => {
 
     expect(ringtoneState.sourceId).toBe('whatsapp');
     expect(ringtoneState.isActive.value).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('renders inside a shared call dock without its own fixed positioning', () => {
+    mockSession.incomingCalls = [
+      { callId: 'wa-shared-dock', caller: { name: 'Customer' } },
+    ];
+
+    const wrapper = mountComponent({ embedded: true });
+
+    expect(wrapper.find('.fixed').exists()).toBe(false);
+    expect(wrapper.find('.relative.flex.flex-col').exists()).toBe(true);
     wrapper.unmount();
   });
 
@@ -130,6 +143,7 @@ describe('WhatsappCallWidget ringtone', () => {
 
     expect(wrapper.text()).toContain('Customer');
     expect(acceptButton.attributes('disabled')).toBeDefined();
+    expect(ringtoneState.isActive.value).toBe(false);
     await acceptButton.trigger('click');
     expect(mockSession.acceptCall).not.toHaveBeenCalled();
     wrapper.unmount();

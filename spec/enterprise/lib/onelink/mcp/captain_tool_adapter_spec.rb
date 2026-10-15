@@ -91,6 +91,22 @@ RSpec.describe Onelink::Mcp::CaptainToolAdapter do
     end
   end
 
+  describe 'MCP result redaction' do
+    it 'retains assistant identities but masks contact names, emails, and phone numbers' do
+      payload = {
+        assistants: [{ id: 99, name: 'DEV Test' }],
+        contacts: [{ id: 17, name: 'Patient Name', phone_number: '+77001234567' }],
+        note: 'Contact patient@example.test for help'
+      }
+
+      expect(adapter.send(:redact_value, payload)).to eq(
+        assistants: [{ id: 99, name: 'DEV Test' }],
+        contacts: [{ id: 17, name: '[FILTERED]', phone_number: '[FILTERED]' }],
+        note: 'Contact [FILTERED] for help'
+      )
+    end
+  end
+
   describe '#tools' do
     context 'when assistant tool access is not explicitly configured' do
       it 'uses the available tool catalog once instead of resolving it again through allowed_tools_for' do

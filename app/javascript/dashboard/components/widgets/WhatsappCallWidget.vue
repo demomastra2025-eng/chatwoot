@@ -9,6 +9,10 @@ import { emitter } from 'shared/helpers/mitt';
 import { BUS_EVENTS } from 'shared/constants/busEvents';
 import { useCallsStore } from 'dashboard/stores/calls';
 
+defineProps({
+  embedded: { type: Boolean, default: false },
+});
+
 const { t } = useI18n();
 const router = useRouter();
 const callsStore = useCallsStore();
@@ -54,7 +58,7 @@ const operatorBusy = computed(
 );
 const shouldPlayIncomingCallRingtone = computed(
   () =>
-    !hasActiveCall.value &&
+    !operatorBusy.value &&
     !isAccepting.value &&
     visibleIncomingCalls.value.length > 0
 );
@@ -174,7 +178,12 @@ onUnmounted(() => {
 <template>
   <div
     v-show="callError || visibleIncomingCalls.length || showActiveCall"
-    class="fixed ltr:right-4 rtl:left-4 bottom-20 z-50 flex flex-col gap-2 w-72"
+    class="flex flex-col gap-2"
+    :class="
+      embedded
+        ? 'relative w-full'
+        : 'fixed ltr:right-4 rtl:left-4 bottom-20 z-50 w-72'
+    "
   >
     <!-- Error banner -->
     <div

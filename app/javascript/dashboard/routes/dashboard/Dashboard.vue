@@ -184,8 +184,12 @@ export default {
           @toggle="toggleMobileSidebar"
         />
         <CopilotContainer v-if="shouldMountCopilot" />
-        <FloatingCallWidget />
-        <WhatsappCallWidget v-if="hasWhatsappCall" />
+        <div
+          class="fixed ltr:right-4 rtl:left-4 bottom-4 z-50 flex flex-col gap-2 w-[320px] sm:w-[340px] max-w-[calc(100vw-2rem)] max-h-[calc(100vh-6rem)] overflow-y-auto"
+        >
+          <WhatsappCallWidget v-if="hasWhatsappCall" embedded />
+          <FloatingCallWidget embedded />
+        </div>
       </template>
       <AddAccountModal
         :show="showCreateAccountModal"

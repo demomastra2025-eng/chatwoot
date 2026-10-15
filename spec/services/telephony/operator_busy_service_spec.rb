@@ -5,6 +5,30 @@ RSpec.describe Telephony::OperatorBusyService do
   let(:user) { create(:user, account: account, role: :agent) }
   let(:service) { described_class.new(account: account, user: user) }
 
+  describe '.busy_user_ids' do
+    it 'resolves a claimed SIP profile to its user even without a user id in the claim' do
+      profile = create(:telephony_sip_profile, account: account, user: user)
+      session = create(
+        :telephony_call_session, account: account, status: 'connecting', direction: 'inbound',
+                                 metadata: { 'operator_claim' => { 'sip_profile_id' => profile.id } }
+      )
+
+      expect(described_class.busy_user_ids(account: account, user_ids: [user.id])).to eq([user.id])
+      expect(
+        described_class.busy_user_ids(
+          account: account, user_ids: [user.id], excluding_telephony_call_ref: session.external_call_ref
+        )
+      ).to be_empty
+    end
+
+    it 'ignores accepted calls in another account' do
+      other_account = create(:account)
+      create(:call, account: other_account, status: 'in_progress', accepted_by_agent_id: user.id, provider: :whatsapp)
+
+      expect(described_class.busy_user_ids(account: account, user_ids: [user.id])).to be_empty
+    end
+  end
+
   describe '#busy?' do
     it 'is false when the operator has no active call' do
       expect(service.busy?).to be(false)
@@ -28,6 +52,17 @@ RSpec.describe Telephony::OperatorBusyService do
         account: account,
         status: 'in_progress',
         metadata: { 'operator_claim' => { 'user_id' => user.id } }
+      )
+
+      expect(service.busy?).to be(true)
+      expect(service.busy_details).to include(channel: 'voice')
+    end
+
+    it 'detects an active call claimed only through a SIP profile' do
+      profile = create(:telephony_sip_profile, account: account, user: user)
+      create(
+        :telephony_call_session, account: account, direction: 'inbound', status: 'in_progress',
+                                 metadata: { 'operator_claim' => { 'sip_profile_id' => profile.id } }
       )
 
       expect(service.busy?).to be(true)

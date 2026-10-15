@@ -8,6 +8,13 @@ module Onelink
       AUDIT_SOURCE = 'mcp_captain'
       AUDIT_AGENT = 'onelink-mcp'
       CONFIRMATION_RISK_LEVELS = %w[medium high custom].freeze
+      PERSONAL_FIELD_KEYS = %w[
+        email phone phone_number mobile mobile_number identifier address
+        contact_name sender_name assignee_name customer_name patient_name display_name
+      ].freeze
+      PERSONAL_RECORD_KEYS = %w[user users contact contacts member members patient patients sender senders assignee assignees].freeze
+      EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i
+      PHONE_PATTERN = /(?<!\w)\+?\d[\d\s().-]{8,}\d(?!\w)/
 
       def initialize(auth_context:)
         @auth_context = auth_context
@@ -437,7 +444,14 @@ module Onelink
 
       def response_text(normalized)
         return redact_value(normalized[:error]).to_s if normalized[:error].present?
-        return redact_value(normalized[:message]).to_s if normalized[:message].present?
+        if normalized[:message].present?
+          parsed_message = parse_json(normalized[:message])
+          if parsed_message.is_a?(Hash) || parsed_message.is_a?(Array)
+            return JSON.pretty_generate(redact_value(parsed_message))
+          end
+
+          return redact_value(normalized[:message]).to_s
+        end
         return JSON.pretty_generate(redact_value(normalized[:data])) if normalized[:data].present?
 
         'Done'
@@ -446,9 +460,29 @@ module Onelink
       end
 
       def redact_value(value)
-        Captain::ToolTraceRedactor.call(value)
+        redact_personal_data(Captain::ToolTraceRedactor.call(value))
       rescue StandardError
         '[FILTERED]'
+      end
+
+      def redact_personal_data(value, personal_record: false)
+        case value
+        when Hash
+          value.each_with_object({}) do |(key, item), redacted|
+            field = key.to_s
+            redacted[key] = if PERSONAL_FIELD_KEYS.include?(field) || (personal_record && field == 'name')
+                              '[FILTERED]'
+                            else
+                              redact_personal_data(item, personal_record: PERSONAL_RECORD_KEYS.include?(field))
+                            end
+          end
+        when Array
+          value.map { |item| redact_personal_data(item, personal_record: personal_record) }
+        when String
+          value.gsub(EMAIL_PATTERN, '[FILTERED]').gsub(PHONE_PATTERN, '[FILTERED]')
+        else
+          value
+        end
       end
 
       def parse_json(text)

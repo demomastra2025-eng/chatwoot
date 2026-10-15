@@ -673,6 +673,46 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(binotel_profile.reload.registered_for_routing?).to be(true)
   end
 
+  it 'notifies only the Beeline SIP profile chosen by the PBX in a broadcast channel' do
+    connection = create(:telephony_provider_connection, account: account, provider_kind: 'beeline', host: 'cloudpbx.beeline.kz')
+    channel = create(
+      :channel_voice, account: account, provider: 'beeline', phone_number: voice_phone_number,
+                      provider_config: { provider_kind: 'beeline', provider_connection_id: connection.id,
+                                         number_ref: 'beeline-company-number', routing_mode: 'operator',
+                                         operator_distribution_mode: 'broadcast' }
+    )
+    other_operator = create(:user, account: account, role: :agent)
+    [administrator, other_operator].each { |user| create(:inbox_member, inbox: channel.inbox, user: user) }
+    profiles = [administrator, other_operator].each_with_index.map do |user, index|
+      extension = (1001 + index).to_s
+      create(
+        :telephony_sip_profile, account: account, inbox: channel.inbox, user: user,
+                                provider_connection: connection, internal_extension: extension,
+                                sip_username: extension, sip_password: 'test-only-password',
+                                sip_host: 'cloudpbx.beeline.kz', agent_ref: "beeline-profile-#{extension}",
+                                agent_aor: "sip:#{extension}@cloudpbx.beeline.kz",
+                                availability_mode: 'browser_webphone', status: 'active'
+      )
+    end
+    profiles.each { |profile| mark_sip_profile_registered!(profile) }
+    selected_profile = profiles.last
+    allow(ActionCable.server).to receive(:broadcast)
+
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/incoming",
+         params: {
+           inbox_id: channel.inbox.id, provider: 'beeline', call_ref: 'beeline-pbx-selected-1002',
+           from: 'sip:+77000000001@cloudpbx.beeline.kz', to: "sip:#{selected_profile.sip_username}@cloudpbx.beeline.kz"
+         }.merge(sip_presence_params(selected_profile)),
+         headers: other_operator.create_new_auth_token, as: :json
+
+    expect(response).to have_http_status(:ok)
+    call_ref = "beeline:janus:#{selected_profile.id}:beeline-pbx-selected-1002"
+    session = account.telephony_call_sessions.find_by!(external_call_ref: call_ref)
+    expect(session.metadata.dig('metadata', 'operator_candidate_sip_profile_ids')).to eq([selected_profile.id])
+    expect(ActionCable.server).to have_received(:broadcast).with(selected_profile.user.pubsub_token, anything)
+    expect(ActionCable.server).not_to have_received(:broadcast).with(administrator.pubsub_token, anything)
+  end
+
   it 'accepts a legacy incoming event missing only the registration instance from the active browser lease' do
     _sipuni_profile, binotel_profile, _asterisk_profile = create_native_janus_browser_profiles
     mark_sip_profile_registered!(binotel_profile)

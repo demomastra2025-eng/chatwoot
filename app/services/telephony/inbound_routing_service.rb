@@ -55,9 +55,10 @@ class Telephony::InboundRoutingService
     end
   end
 
-  def initialize(payload:, runtime_capabilities: [])
+  def initialize(payload:, runtime_capabilities: [], trusted_target_sip_profile_id: nil)
     @payload = payload.deep_stringify_keys
     @runtime_capabilities = Array(runtime_capabilities).map(&:to_s).map(&:strip).compact_blank.uniq
+    @trusted_target_sip_profile_id = trusted_target_sip_profile_id
   end
 
   def perform
@@ -76,7 +77,7 @@ class Telephony::InboundRoutingService
 
   private
 
-  attr_reader :payload, :runtime_capabilities
+  attr_reader :payload, :runtime_capabilities, :trusted_target_sip_profile_id
 
   def routed_decision
     recursive_runtime_decision = recursive_runtime_call_active_decision
@@ -667,6 +668,7 @@ class Telephony::InboundRoutingService
   def target_operator_candidate_matches?(candidate)
     profile = candidate.sip_profile
     return false if profile.blank?
+    return false if trusted_beeline_profile_target? && profile.id.to_s != trusted_target_sip_profile_id.to_s
 
     extension_matches = target_operator_extension.blank? || profile.internal_extension.to_s == target_operator_extension
     aor_matches = target_operator_aor.blank? || normalized_sip_aor(profile.agent_aor) == normalized_sip_aor(target_operator_aor)
@@ -710,13 +712,13 @@ class Telephony::InboundRoutingService
   end
 
   def without_busy_operator_candidates(candidates)
-    busy_binding_ids = busy_operator_binding_ids(candidates.filter_map(&:agent_binding_id))
-    busy_sip_profile_ids = busy_operator_sip_profile_ids(candidates.filter_map(&:sip_profile_id))
+    busy_user_ids = Telephony::OperatorBusyService.busy_user_ids(
+      account: number_binding.account,
+      user_ids: candidates.filter_map(&:user_id),
+      excluding_telephony_call_ref: call_ref
+    )
 
-    candidates.reject do |candidate|
-      busy_binding_ids.include?(candidate.agent_binding_id) ||
-        busy_sip_profile_ids.include?(candidate.sip_profile_id)
-    end
+    candidates.reject { |candidate| busy_user_ids.include?(candidate.user_id) }
   end
 
   def primary_operator_candidate
@@ -735,29 +737,6 @@ class Telephony::InboundRoutingService
     return [] unless scope.exists?
 
     scope.map { |profile| OperatorCandidate.new(source: :sip_profile, sip_profile: profile) }
-  end
-
-  def busy_operator_binding_ids(candidate_ids)
-    return [] if candidate_ids.blank?
-
-    Telephony::CallSession.active
-                          .where(account_id: number_binding.account_id, agent_binding_id: candidate_ids)
-                          .where.not(external_call_ref: call_ref)
-                          .distinct
-                          .pluck(:agent_binding_id)
-  end
-
-  def busy_operator_sip_profile_ids(candidate_ids)
-    candidate_ids = candidate_ids.filter_map { |value| value.presence&.to_i }.uniq
-    return [] if candidate_ids.blank?
-
-    Telephony::CallSession.active
-                          .where(account_id: number_binding.account_id)
-                          .where.not(external_call_ref: call_ref)
-                          .pluck(:metadata)
-                          .filter_map { |metadata| metadata.to_h.dig('operator_claim', 'sip_profile_id').presence&.to_i }
-                          .select { |sip_profile_id| candidate_ids.include?(sip_profile_id) }
-                          .uniq
   end
 
   def operator_candidate_sort_key(candidate)
@@ -935,8 +914,14 @@ class Telephony::InboundRoutingService
   end
 
   def operator_distribution_mode
+    return Telephony::RoutingPolicy::OPERATOR_DISTRIBUTION_TARGETED if trusted_beeline_profile_target?
+
     @operator_distribution_mode ||= routing_policy&.operator_distribution_mode ||
                                     Telephony::RoutingPolicy::OPERATOR_DISTRIBUTION_BROADCAST
+  end
+
+  def trusted_beeline_profile_target?
+    trusted_target_sip_profile_id.present? && number_binding&.provider == 'beeline' && routing_policy&.operator_mode?
   end
 
   def targeted_operator_distribution?

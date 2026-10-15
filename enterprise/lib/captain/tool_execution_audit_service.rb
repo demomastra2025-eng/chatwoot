@@ -17,6 +17,9 @@ class Captain::ToolExecutionAuditService
     delete_captain_knowledge_entry
   ].freeze
   KNOWLEDGE_ENTRY_SENSITIVE_ARGUMENT_KEYS = %w[question answer].freeze
+  ASSISTANT_UPDATE_SENSITIVE_KEYS = %w[
+    name description config_json response_guidelines_json guardrails_json response_guidelines guardrails
+  ].freeze
 
   class << self
     def record(...)
@@ -166,7 +169,13 @@ class Captain::ToolExecutionAuditService
   end
 
   def sensitive_key?(key)
-    key.to_s.match?(SENSITIVE_KEY_PATTERN) || knowledge_entry_sensitive_argument_key?(key)
+    key.to_s.match?(SENSITIVE_KEY_PATTERN) ||
+      knowledge_entry_sensitive_argument_key?(key) ||
+      assistant_update_sensitive_key?(key)
+  end
+
+  def assistant_update_sensitive_key?(key)
+    tool_id == 'update_captain_assistant' && ASSISTANT_UPDATE_SENSITIVE_KEYS.include?(key.to_s)
   end
 
   def knowledge_entry_sensitive_argument_key?(key)
