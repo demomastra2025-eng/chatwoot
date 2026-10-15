@@ -1,48 +1,22 @@
 require 'administrate/field/base'
 require 'bigdecimal'
 
+# The limit overrides of a clinic (Account#limits): one input per limit on the form. The Russian name and hint of every
+# limit live in super_admin.limits.<key>.{label,hint}; a blank input means «use the default».
 class AccountLimitsField < Administrate::Field::Base
   STORAGE_GB_IN_BYTES = 1.gigabyte
 
+  # key => how the input behaves. `bytes` limits are typed in gigabytes (decimals allowed).
   LIMIT_DEFINITIONS = {
-    agents: {
-      label: 'Users',
-      hint: 'Maximum users in this account.'
-    },
-    inboxes: {
-      label: 'Channels',
-      hint: 'Maximum total channels in this account.'
-    },
-    conversations: {
-      label: 'Conversations',
-      hint: 'Maximum new conversations allowed during the current monthly window.'
-    },
-    non_web_inboxes: {
-      label: 'Main channels',
-      hint: 'Maximum main channels in this account. Counts WhatsApp Cloud, WhatsApp Web, Telegram Personal, and API channels.'
-    },
-    storage_bytes: {
-      label: 'Storage quota (GB)',
-      hint: 'Account-wide file storage quota in gigabytes. Decimals are allowed, for example 1.5.',
-      bytes: true,
-      step: '0.1'
-    },
-    captain_responses: {
-      label: 'Captain responses',
-      hint: 'Allowed Captain response count in the current quota window.'
-    },
-    captain_documents: {
-      label: 'Captain documents',
-      hint: 'Maximum Captain documents allowed for this account.'
-    },
-    captain_tokens: {
-      label: 'Captain tokens',
-      hint: 'Allowed Captain token usage in the current quota window.'
-    },
-    emails: {
-      label: 'Outbound emails per day',
-      hint: 'Daily outbound email quota for account emails such as transcripts, notifications, and automation emails.'
-    }
+    agents: {},
+    inboxes: {},
+    conversations: {},
+    non_web_inboxes: {},
+    storage_bytes: { bytes: true, step: '0.1' },
+    captain_responses: {},
+    captain_documents: {},
+    captain_tokens: {},
+    emails: {}
   }.freeze
 
   def rows
@@ -51,6 +25,8 @@ class AccountLimitsField < Administrate::Field::Base
     LIMIT_DEFINITIONS.map do |key, meta|
       meta.merge(
         key: key,
+        label: label_for(key),
+        hint: I18n.t("super_admin.limits.#{key}.hint"),
         input_id: "account_limits_#{key}",
         value: normalize_value(key, overrides[key])
       )
@@ -58,18 +34,19 @@ class AccountLimitsField < Administrate::Field::Base
   end
 
   def to_s
-    configured_rows.map do |row|
-      value = row[:value]
-      next "#{row[:key]}: inherited" if value.nil?
-
-      "#{row[:key]}: #{formatted_value(row)}"
-    end.join(', ')
+    configured_rows.map { |row| "#{row[:label]}: #{formatted_value(row)}" }.join(', ')
   end
 
   private
 
+  # The input of the storage limit says that it takes gigabytes
+  def label_for(key)
+    I18n.t("super_admin.limits.#{key}.input_label", default: I18n.t("super_admin.limits.#{key}.label"))
+  end
+
   def configured_rows
-    rows.select { |row| row[:value].present? || row[:value] == 0 }
+    # 0 counts: a limit of 0 is a value (forbidden), not a blank
+    rows.select { |row| row[:value].present? }
   end
 
   def normalized_overrides
@@ -85,7 +62,7 @@ class AccountLimitsField < Administrate::Field::Base
   end
 
   def formatted_value(row)
-    return format('%.2f GB', row[:value].to_f).sub(/\.00 GB\z/, ' GB') if row[:bytes]
+    return "#{ActiveSupport::NumberHelper.number_to_rounded(row[:value].to_f, precision: 2, strip_insignificant_zeros: true)} ГБ" if row[:bytes]
 
     row[:value]
   end

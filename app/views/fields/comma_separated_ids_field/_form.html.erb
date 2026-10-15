@@ -1,14 +1,12 @@
 <div class="field-unit field-unit--text">
-  <%= f.label field.attribute,
-              field.options.fetch(:label, field.attribute.to_s.humanize),
-              class: "field-unit__label" %>
+  <%= f.label field.attribute, class: "field-unit__label" %>
   <div class="field-unit__field">
     <%= f.text_area field.attribute,
                     value: field.to_s,
                     rows: 3,
                     placeholder: "12, 34, 56" %>
-    <p class="text-xs text-n-slate-11 mt-2">
-      Comma, space, or newline separated user IDs. These users will be excluded from workspace limit counters.
+    <p class="mt-2 text-xs text-n-slate-11">
+      <%= t('super_admin.limits.excluded_ids_hint') %>
     </p>
   </div>
 </div>

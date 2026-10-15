@@ -2,18 +2,21 @@
   <%= f.label field.attribute %>
 </div>
 <div class="field-unit__field">
-  <p class="text-xs text-n-slate-11 mb-4">
-    Leave a field blank to inherit the global or plan value. Use <code>0</code> to block that capability for the account.
+  <p class="mb-4 mt-0 text-xs text-n-slate-11">
+    <%= t('super_admin.limits.form_hint_html') %>
   </p>
 
-  <div class="space-y-4">
+  <div class="flex flex-col gap-4">
     <% field.rows.each do |row| %>
-      <div>
-        <label class="block font-medium mb-1" for="<%= row[:input_id] %>"><%= row[:label] %></label>
-        <%= number_field_tag "account[limits][#{row[:key]}]", row[:value], id: row[:input_id], min: 0, step: row[:step] || 1, class: "w-full" %>
-        <p class="mt-1 text-xs text-n-slate-11"><%= row[:hint] %></p>
+      <div class="flex flex-col gap-1">
+        <label class="block font-medium" for="<%= row[:input_id] %>"><%= row[:label] %></label>
+        <%= number_field_tag "account[limits][#{row[:key]}]", row[:value], id: row[:input_id], min: 0, step: row[:step] || 1, class: "w-full", placeholder: t('super_admin.limits.default_placeholder') %>
+        <p class="m-0 text-xs text-n-slate-11"><%= row[:hint] %></p>
+        <% if !row[:bytes] && row[:value].to_i == ChatwootApp.max_limit.to_i %>
+          <p class="m-0 text-xs text-n-slate-11"><%= t('super_admin.limits.unlimited_value_note', value: super_admin_number(row[:value])) %></p>
+        <% end %>
         <% if row[:bytes] && row[:value].present? %>
-          <p class="mt-1 text-xs text-n-slate-11">Current override: <%= number_with_precision(row[:value], precision: 2, strip_insignificant_zeros: true) %> GB</p>
+          <p class="m-0 text-xs text-n-slate-11"><%= t('super_admin.limits.current_override', value: number_with_precision(row[:value], precision: 2, strip_insignificant_zeros: true, separator: ',')) %></p>
         <% end %>
       </div>
     <% end %>

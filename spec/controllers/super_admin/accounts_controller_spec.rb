@@ -58,7 +58,8 @@ RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
       get '/super_admin/accounts/new'
 
       expect(response).to have_http_status(:success)
-      expect(response.body).to include('Outbound emails today')
+      expect(response.body).to include('Создать клинику', 'Всегда включена')
+      expect(response.body).not_to include('Outbound emails today')
     end
   end
 
@@ -241,15 +242,17 @@ RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
         expect(response).to have_http_status(:success)
       end
 
-      it 'renders a toggle for every visible account feature' do
+      it 'renders a toggle for every function a plan can switch, and none for the dangerous or internal ones' do
         sign_in(super_admin, scope: :super_admin)
         get "/super_admin/accounts/#{account.id}/edit"
 
         expect(response).to have_http_status(:success)
 
-        visible_features = SuperAdmin::AccountFeaturesHelper.filtered_features(account.all_features)
-        visible_features.each_key do |feature_key, _display_name|
+        SuperAdmin::FineTuning.new(account).flag_names.each do |feature_key|
           expect(response.body).to include(%(name="enabled_features[feature_#{feature_key}]"))
+        end
+        %w[custom_roles saml scheduling_finance agent_management chatwoot_v4].each do |feature_key|
+          expect(response.body).not_to include(%(name="enabled_features[feature_#{feature_key}]"))
         end
       end
     end

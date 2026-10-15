@@ -1,0 +1,93 @@
+<%#
+# New clinic
+
+A short form: name, language, the plan modules (the base is always included
+and is applied right after the clinic is saved, together with the chosen
+modules) and an optional trial. Everything else (limits, single functions,
+channels) is set on the clinic card.
+
+## Local variables:
+
+- `page`: an `Administrate::Page::Form` for a new Account.
+%>
+<%
+  chosen = Accounts::Plans.module_keys & Array(params[:modules]).map(&:to_s)
+  trial_modules = Accounts::Plans.trial_modules.map { |key| Accounts::Plans.module_name(key) }.join(', ')
+  fields = page.attributes('new').values.flatten
+%>
+
+<% content_for(:title) { t('super_admin.index.account.new') } %>
+
+<header class="main-content__header">
+  <div class="main-content__heading">
+    <h1 class="main-content__page-title"><%= content_for(:title) %></h1>
+    <p class="main-content__description"><%= t('super_admin.clinic_card.new.description') %></p>
+  </div>
+
+  <div class="main-content__actions">
+    <%= link_to(super_admin_accounts_path, class: "button button--secondary") do %>
+      <span class="i-lucide-arrow-left size-4" aria-hidden="true"></span>
+      <%= t("administrate.actions.back") %>
+    <% end %>
+  </div>
+</header>
+
+<section class="main-content__body">
+  <%= form_for([namespace, page.resource], html: { class: "form flex max-w-3xl flex-col gap-4" }) do |f| %>
+    <% if page.resource.errors.any? %>
+      <div id="error_explanation" role="alert" class="rounded-xl bg-n-ruby-2 px-4 py-3 text-sm text-n-ruby-11 outline outline-1 -outline-offset-1 outline-n-ruby-4">
+        <h2 class="m-0 text-heading-3 text-n-ruby-11">
+          <%= t(
+            "administrate.form.errors",
+            count: page.resource.errors.count,
+            pluralized_errors: pluralize(page.resource.errors.count, t("administrate.form.error")),
+            resource_name: display_resource_name(page.resource_name, singular: true)
+          ) %>
+        </h2>
+
+        <ul class="mt-1 list-disc ps-5">
+          <% page.resource.errors.full_messages.each do |message| %>
+            <li><%= message %></li>
+          <% end %>
+        </ul>
+      </div>
+    <% end %>
+
+    <div class="admin-card">
+      <div class="flex flex-col px-5 pb-0 pt-5">
+        <% fields.each do |attribute| %>
+          <div class="field-unit field-unit--<%= attribute.html_class %> field-unit--<%= requireness(attribute) %>">
+            <%= render_field attribute, f: f %>
+            <% hint_key = "administrate.field_hints.#{page.resource_name}.#{attribute.name}" %>
+            <% if I18n.exists?(hint_key) -%>
+              <div class="field-unit__hint"><%= I18n.t(hint_key) %></div>
+            <% end -%>
+          </div>
+        <% end %>
+      </div>
+    </div>
+
+    <section class="admin-block" aria-labelledby="new-plan-title" data-testid="new-plan-block">
+      <div class="admin-block__head">
+        <h2 class="admin-block__title" id="new-plan-title"><%= t('super_admin.clinic_card.plan.title') %></h2>
+        <p class="admin-block__hint"><%= t('super_admin.clinic_card.new.plan_hint') %></p>
+      </div>
+      <%= render 'plan_cards', chosen: chosen %>
+    </section>
+
+    <section class="admin-block" aria-labelledby="new-trial-title" data-testid="new-trial-block">
+      <div class="admin-block__head">
+        <h2 class="admin-block__title" id="new-trial-title"><%= t('super_admin.accounts.trial.title') %></h2>
+        <p class="admin-block__hint"><%= t('super_admin.clinic_card.new.trial_hint', days: Accounts::Plans.trial_days, modules: trial_modules) %></p>
+      </div>
+      <label class="flex cursor-pointer items-center gap-2.5" for="start-trial">
+        <%= check_box_tag 'start_trial', '1', params[:start_trial].present?, id: 'start-trial' %>
+        <span class="text-n-slate-12"><%= t('super_admin.clinic_card.new.start_trial', days: Accounts::Plans.trial_days) %></span>
+      </label>
+    </section>
+
+    <div class="form-actions">
+      <%= f.submit t('super_admin.clinic_card.new.submit') %>
+    </div>
+  <% end %>
+</section>
