@@ -522,7 +522,7 @@ RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
 
       get '/super_admin/accounts/export'
 
-      rows = CSV.parse(response.body.delete_prefix("﻿"), headers: true)
+      rows = CSV.parse(response.body.delete_prefix("\uFEFF"), headers: true)
       statuses = rows.to_h { |row| [row['Название'], row['Статус']] }
       expect(statuses).to include(account.name => 'Активна', 'Заблокированная' => 'Заблокирована', 'Уходящая' => 'На удаление')
     end

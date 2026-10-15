@@ -315,7 +315,8 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       preview(%w[quality])
 
       fragment = Nokogiri::HTML.fragment(response.body)
-      expect(text(fragment.at_css('[data-preview-note="trial_active"]'))).to include('отключатся функции, которые дал пробный период и которых нет в тарифе')
+      active_note = text(fragment.at_css('[data-preview-note="trial_active"]'))
+      expect(active_note).to include('отключатся функции, которые дал пробный период и которых нет в тарифе')
       expect(text(fragment.at_css('[data-preview-note="trial_locks_limits"]'))).to include('лимиты операторов и каналов станут нулевыми')
     end
 
