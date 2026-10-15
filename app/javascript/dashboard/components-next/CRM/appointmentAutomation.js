@@ -1,3 +1,41 @@
+export const APPOINTMENT_AUTOMATION_EVENTS = [
+  {
+    key: 'scheduled',
+    priority: 5,
+    matchConditions: ['scheduled', 'provider_confirmed'],
+    saveConditions: ['scheduled'],
+    defaultScope: 'nearest',
+  },
+  {
+    key: 'patient_confirmed',
+    priority: 4,
+    matchConditions: ['patient_confirmed'],
+    saveConditions: ['patient_confirmed'],
+    defaultScope: 'nearest',
+  },
+  {
+    key: 'attended',
+    priority: 1,
+    matchConditions: ['attended'],
+    saveConditions: ['attended'],
+    defaultScope: 'any',
+  },
+  {
+    key: 'no_show',
+    priority: 2,
+    matchConditions: ['no_show'],
+    saveConditions: ['no_show'],
+    defaultScope: 'nearest',
+  },
+  {
+    key: 'cancelled',
+    priority: 3,
+    matchConditions: ['cancelled'],
+    saveConditions: ['cancelled'],
+    defaultScope: 'nearest',
+  },
+];
+
 export const appointmentAutomationDraft = (config = {}) => {
   const calendar =
     config.autoCreateFromCalendar ?? config.auto_create_from_calendar ?? false;

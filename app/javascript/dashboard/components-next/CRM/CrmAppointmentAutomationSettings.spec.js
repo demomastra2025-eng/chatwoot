@@ -5,10 +5,6 @@ import { appointmentAutomationDraft } from './appointmentAutomation';
 import CrmAppointmentAutomationSettings from './CrmAppointmentAutomationSettings.vue';
 
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: key => key }) }));
-// The toggle-block headers render Switch.vue through SettingsToggleSection,
-// which imports it as ToggleSwitch, while the source rows import it as Switch.
-// Stub both names with the same switch-like button so every switch is found
-// by role and by its own row, independent of the render order.
 const SwitchStub = {
   name: 'Switch',
   props: ['modelValue', 'disabled'],
@@ -21,6 +17,7 @@ const pipeline = () => ({
   stages: [
     { id: 4, name: 'Booked', outcome: 'open' },
     { id: 5, name: 'Follow up', outcome: 'open' },
+    { id: 7, name: 'Completed', outcome: 'won' },
     {
       id: 6,
       name: 'Lost',
@@ -53,30 +50,17 @@ const mountSettings = (props = {}) => {
         Switch: SwitchStub,
         ToggleSwitch: SwitchStub,
         SchedulingSelectField: true,
-        Button: {
-          props: ['label', 'disabled'],
-          emits: ['click'],
-          template: `<button :disabled="disabled" @click="$emit('click')">{{ label }}</button>`,
-        },
       },
     },
   });
 };
 
 describe('appointment automation settings draft', () => {
-  it('keeps ordered rules and source changes in the parent draft without a child Save', async () => {
+  it('maps visit lifecycle events to stages in priority order and automatically enables won attendance', async () => {
     const wrapper = mountSettings();
     const draft = wrapper.props('modelValue');
     expect(draft.auto_create_deals).toBe(false);
-    await wrapper
-      .findAll('button')
-      .find(
-        button =>
-          button.attributes('aria-label') ===
-            'CRM.APPOINTMENT_AUTOMATION.MOVE_UP' &&
-          button.attributes('disabled') === undefined
-      )
-      .trigger('click');
+
     wrapper
       .findComponent('[data-testid="appointment-auto-create-deals"]')
       .vm.$emit('update:modelValue', true);
@@ -89,6 +73,15 @@ describe('appointment automation settings draft', () => {
     expect(calendarSource.find('[role="switch"]').exists()).toBe(true);
     await calendarSource.find('[role="switch"]').trigger('click');
     await nextTick();
+
+    wrapper
+      .findComponent('[data-testid="appointment-event-stage-attended"]')
+      .vm.$emit('update:modelValue', 7);
+    wrapper
+      .findComponent('[data-testid="appointment-event-stage-cancelled"]')
+      .vm.$emit('update:modelValue', '');
+    await nextTick();
+
     expect(
       wrapper
         .findAll('button')
@@ -98,10 +91,20 @@ describe('appointment automation settings draft', () => {
     expect(wrapper.vm.buildPayload()).toMatchObject({
       auto_create_deals: true,
       auto_create_from_calendar: true,
-      success_mode: 'manual',
+      success_mode: 'any_attended',
       rules: [
-        { stage_id: 5, scope: 'all', conditions: ['cancelled'] },
-        { stage_id: 4, scope: 'any', conditions: ['provider_confirmed'] },
+        {
+          stage_id: 7,
+          scope: 'any',
+          conditions: ['attended'],
+          closing_reasons: [],
+        },
+        {
+          stage_id: 4,
+          scope: 'any',
+          conditions: ['provider_confirmed'],
+          closing_reasons: [],
+        },
       ],
     });
   });
@@ -166,7 +169,7 @@ describe('appointment automation settings draft', () => {
 
   it('uses the replacement parent draft when the selected pipeline changes', async () => {
     const wrapper = mountSettings();
-    expect(wrapper.findAll('fieldset')).toHaveLength(2);
+    expect(wrapper.findAll('fieldset')).toHaveLength(5);
     const nextPipeline = { id: 9, name: 'Other', stages: [] };
     await wrapper.setProps({
       pipeline: nextPipeline,
@@ -224,39 +227,33 @@ describe('appointment automation settings draft', () => {
     expect(wrapper.vm.buildPayload()).toBe(null);
   });
 
-  it('offers aggregation and success modes while disabling all controls for view-only or saving', async () => {
+  it('toggles pause on manual move and disables all controls for view-only or saving', async () => {
     const wrapper = mountSettings({ canManage: false });
     const fields = wrapper.findAllComponents({ name: 'SchedulingSelectField' });
-    expect(
-      fields
-        .find(field => field.props('modelValue') === 'manual')
-        .props('options')
-        .map(option => option.value)
-    ).toEqual([
-      'manual',
-      'any_attended',
-      'selected_attended',
-      'all_required_attended',
-    ]);
-    expect(
-      fields
-        .find(field => field.props('modelValue') === 'any')
-        .props('options')
-        .map(option => option.value)
-    ).toEqual(['any', 'all', 'selected', 'nearest']);
+    expect(fields).toHaveLength(5);
+    expect(fields[0].props('options')[0]).toEqual({
+      value: '',
+      label: 'CRM.APPOINTMENT_AUTOMATION.NO_STAGE_CHANGE',
+    });
     expect(fields.every(field => field.props('disabled'))).toBe(true);
     expect(
       wrapper
         .findAll('fieldset')
         .every(field => field.attributes('disabled') !== undefined)
     ).toBe(true);
+
+    await wrapper.setProps({ canManage: true, saving: false });
+    const pauseSwitch = wrapper.get(
+      '[data-testid="appointment-pause-on-manual-move"]'
+    );
+    expect(pauseSwitch.attributes('aria-checked')).toBe('false');
+    await pauseSwitch.trigger('click');
+    await nextTick();
+    expect(wrapper.vm.buildPayload().manual_stage_change).toBe('pause');
+
     await wrapper.setProps({ canManage: true, saving: true });
-    // Both toggle blocks (auto-create deals, rules) render their header switch.
     const switches = wrapper.findAll('[role="switch"]');
-    expect(switches.length).toBeGreaterThanOrEqual(2);
+    expect(switches.length).toBeGreaterThanOrEqual(3);
     expect(switches.every(control => control.element.disabled)).toBe(true);
-    expect(
-      wrapper.findAll('button').every(button => button.element.disabled)
-    ).toBe(true);
   });
 });

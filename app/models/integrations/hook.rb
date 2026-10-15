@@ -20,6 +20,7 @@ class Integrations::Hook < ApplicationRecord
   attr_readonly :app_id, :account_id, :inbox_id, :hook_type
   before_validation :ensure_hook_type
   before_validation :ensure_reference_id
+  before_validation :ensure_medelement_defaults, if: :medelement?
   after_create :trigger_setup_if_crm
   before_destroy :ensure_no_active_medelement_operations, if: :medelement?
   after_commit :sync_medelement_schedule, on: [:create, :update], if: :medelement?
@@ -77,7 +78,6 @@ class Integrations::Hook < ApplicationRecord
     app_id == 'macrocrm'
   end
 
-
   def macrocrm_manager_changed_webhook_url
     frontend_url = ENV.fetch('FRONTEND_URL', nil)
     return if frontend_url.blank? || reference_id.blank? || !macrocrm?
@@ -93,7 +93,6 @@ class Integrations::Hook < ApplicationRecord
   rescue JSON::ParserError
     {}
   end
-
 
   def disable
     update(status: 'disabled')
@@ -133,7 +132,6 @@ class Integrations::Hook < ApplicationRecord
   def ensure_required_access_token
     return unless app.present? && app.params[:access_token_required]
 
-
     return if access_token.present?
 
     errors.add(:access_token, "can't be blank")
@@ -150,6 +148,12 @@ class Integrations::Hook < ApplicationRecord
     errors.add(:access_token, "is missing required Medelement credentials: #{missing_keys.join(', ')}")
   end
 
+  def ensure_medelement_defaults
+    previous = persisted? && settings_was.is_a?(Hash) ? settings_was : {}
+    merged = previous.merge(settings || {})
+    merged['timezone'] = merged['timezone'].presence || Scheduling::Constants::DEFAULT_TIMEZONE
+    self.settings = merged
+  end
 
   def ensure_reference_id
     return unless macrocrm?

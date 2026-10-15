@@ -40,15 +40,21 @@ RSpec.describe Integrations::App do
       expect(app.params.visible_properties).to include('organization_id')
     end
 
-    it 'marks integer inputs for numeric payload coercion' do
-      integer_fields = app.params.settings_form_schema.select do |field|
-        %w[receptions_days_back receptions_days_forward throttle_ms].include?(field.name)
-      end
+    it 'exposes only essential clinic controls without internal sync timer clutter' do
+      field_names = app.params.settings_form_schema.map(&:name)
 
-      expect(integer_fields.to_h { |field| [field.name, field.value_type] }).to eq(
-        'receptions_days_back' => 'integer',
-        'receptions_days_forward' => 'integer',
-        'throttle_ms' => 'integer'
+      expect(field_names).to eq(
+        %w[
+          company_login
+          password
+          enabled
+          organization_id
+          write_enabled
+          remove_reception_on_cancel
+        ]
+      )
+      expect(app.params.visible_properties).to eq(
+        %w[organization_id write_enabled remove_reception_on_cancel]
       )
     end
   end

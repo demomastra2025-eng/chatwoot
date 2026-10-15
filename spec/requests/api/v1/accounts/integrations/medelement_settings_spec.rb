@@ -38,6 +38,7 @@ RSpec.describe 'Medelement integration settings', type: :request do
     expect(response).to have_http_status(:success)
     expect(account.hooks.find_by!(app_id: 'medelement').settings).to include(
       'organization_id' => 'company-1',
+      'timezone' => 'Asia/Almaty',
       'write_enabled' => true
     )
   end
@@ -53,7 +54,7 @@ RSpec.describe 'Medelement integration settings', type: :request do
               company_login: '',
               password: ''
             },
-            settings: hook.settings.merge('write_enabled' => true)
+            settings: { 'organization_id' => hook.settings['organization_id'], 'write_enabled' => true }
           },
           headers: admin.create_new_auth_token,
           as: :json

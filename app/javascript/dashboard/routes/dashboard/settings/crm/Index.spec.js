@@ -1029,15 +1029,8 @@ describe('CRM pipeline settings', () => {
     });
     appointments.props('modelValue').enabled = true;
     await nextTick();
-    await appointments
-      .findAll('button')
-      .find(button => button.text() === 'CRM.APPOINTMENT_AUTOMATION.ADD_RULE')
-      .trigger('click');
     appointments
-      .findAllComponents({ name: 'SchedulingSelectField' })
-      .find(
-        field => field.props('label') === 'CRM.APPOINTMENT_AUTOMATION.STAGE'
-      )
+      .findComponent('[data-testid="appointment-event-stage-scheduled"]')
       .vm.$emit('update:modelValue', clientId);
     await nextTick();
     await wrapper.get('[data-testid="save-settings-button"]').trigger('click');
