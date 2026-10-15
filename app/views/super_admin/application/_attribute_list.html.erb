@@ -1,0 +1,32 @@
+<%#
+# Attribute list
+
+One card of label/value rows of a show page: the attributes of one fieldset
+(`title` is blank for the main group). Used by the show pages of the
+resources and of accounts and users.
+
+## Local variables:
+
+- `title`: heading of the group, blank for the main one.
+- `attributes`: the attributes (`Administrate::Field::Base`) of the group.
+- `page`: the `Administrate::Page::Show`.
+%>
+<section class="admin-card">
+  <% if title.present? %>
+    <h2 class="admin-card__title"><%= t "helpers.label.#{page.resource_name}.#{title}", default: title %></h2>
+  <% end %>
+
+  <dl class="attribute-list">
+    <% attributes.each do |attribute| %>
+      <dt class="attribute-label" id="<%= attribute.name %>">
+        <%= t(
+          "helpers.label.#{resource_name}.#{attribute.name}",
+          default: page.resource.class.human_attribute_name(attribute.name),
+        ) %>
+      </dt>
+
+      <dd class="attribute-data attribute-data--<%= attribute.html_class %>"
+          ><%= render_field attribute, page: page %></dd>
+    <% end %>
+  </dl>
+</section>

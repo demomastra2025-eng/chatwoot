@@ -1,12 +1,19 @@
+<%#
+# Search
+
+The search box of the index page: magnifier inside the field, a clear button
+while a term is active.
+
+## Local variables:
+
+- `search_term`: the term currently searched for (may be blank).
+- `resource_name`: label of the searched resource, used for the placeholder.
+%>
 <form class="search" role="search">
-  <label class="search__label" for="search">
-    <svg class="search__eyeglass-icon" role="img">
-      <title>
-        <%= t("administrate.search.label", resource: resource_name) %>
-      </title>
-      <use xlink:href="#icon-eyeglass" />
-    </svg>
+  <label class="sr-only" for="search">
+    <%= t("administrate.search.label", resource: resource_name) %>
   </label>
+  <span class="search__eyeglass-icon i-lucide-search" aria-hidden="true"></span>
 
   <input class="search__input"
          id="search"
@@ -15,10 +22,10 @@
          placeholder="<%= t("administrate.search.label", resource: resource_name) %>"
          value="<%= search_term %>">
 
-  <%= link_to clear_search_params, class: "search__clear-link" do %>
-    <svg class="search__clear-icon" role="img">
-      <title><%= t("administrate.search.clear") %></title>
-      <use xlink:href="#icon-cancel" />
-    </svg>
+  <% if search_term.present? %>
+    <%= link_to clear_search_params, class: "search__clear-link", title: t("administrate.search.clear") do %>
+      <span class="i-lucide-x size-4" aria-hidden="true"></span>
+      <span class="sr-only"><%= t("administrate.search.clear") %></span>
+    <% end %>
   <% end %>
-</form> 
+</form>
