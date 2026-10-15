@@ -13,7 +13,7 @@ This partial is used to display the navigation in Administrate.
   }
 %>
 
-<div class="border-slate-200 border-r w-60 flex-shrink-0 justify-between h-full flex flex-col bg-slate-50" role="navigation">
+<div class="border-n-weak border-r w-60 flex-shrink-0 justify-between h-full flex flex-col bg-n-background" role="navigation">
   <%
     hidden_primary_nav_resources = %w[
       account_users
@@ -44,22 +44,22 @@ This partial is used to display the navigation in Administrate.
   %>
   <div>
     <!-- Logo & Brand Header with Environment Badge -->
-    <div class="flex flex-col mx-4 mb-3 border-slate-200 border-b py-4">
+    <div class="flex flex-col mx-4 mb-3 border-n-weak border-b py-4">
       <div class="flex items-center">
         <%# width/height keep the SVG (3315x2707 intrinsic) at 39x32 before any CSS has loaded. %>
         <%= link_to image_tag('/brand-assets/logo_thumbnail.svg', alt: 'OneLink', width: 39, height: 32, class: 'h-8 w-auto shrink-0'), super_admin_root_url %>
         <div class="flex flex-col ml-2.5">
-          <div class="text-sm font-bold text-slate-900 leading-tight">OneLink Admin</div>
-          <div class="text-[11px] text-slate-500" title="Super Admin Console">Панель супер-админа</div>
+          <div class="text-sm font-bold text-n-slate-12 leading-tight">OneLink Admin</div>
+          <div class="text-[11px] text-n-slate-11" title="Super Admin Console">Панель супер-админа</div>
         </div>
       </div>
 
       <!-- Environment badge: only outside production -->
       <% environment_label = super_admin_environment_label %>
       <% if environment_label.present? %>
-        <div class="mt-3 flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded border border-slate-200 text-[11px]" data-testid="environment-badge">
-          <span class="inline-block w-2 h-2 rounded-full bg-amber-500"></span>
-          <span class="font-semibold text-amber-800"><%= environment_label %></span>
+        <div class="mt-3 flex items-center gap-1.5 bg-n-amber-2 px-2.5 py-1.5 rounded-md border border-n-amber-4 text-[11px]" data-testid="environment-badge">
+          <span class="inline-block w-2 h-2 rounded-full bg-n-amber-9"></span>
+          <span class="font-semibold text-n-amber-11"><%= environment_label %></span>
         </div>
       <% end %>
     </div>
@@ -85,7 +85,7 @@ This partial is used to display the navigation in Administrate.
   </div>
 
   <!-- Bottom Navigation -->
-  <div class="border-t border-slate-200 pt-2 bg-slate-50/50">
+  <div class="border-t border-n-weak pt-2">
     <ul class="my-2">
       <%= render partial: "nav_item", locals: { icon: 'icon-line-chart-line', url: super_admin_monitoring_url, label: 'Мониторинг (Grafana)' } %>
       <%= render partial: "nav_item", locals: { icon: 'icon-mail-send-fill', url: super_admin_push_diagnostics_url, label: 'Диагностика Push' } %>
