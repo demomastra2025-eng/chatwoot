@@ -14,12 +14,7 @@ basic facts, maintenance.
 <%
   account = page.resource
   state = SuperAdmin::AccountPlanState.new(account)
-  status = if account.custom_attributes.to_h['marked_for_deletion_at'].present?
-             :deleting
-           else
-             account.suspended? ? :suspended : :active
-           end
-  status_tone = { active: 'admin-badge--teal', suspended: 'admin-badge--amber', deleting: 'admin-badge--ruby' }.fetch(status)
+  status_tone = { active: 'admin-badge--teal', suspended: 'admin-badge--amber', deleting: 'admin-badge--ruby' }.fetch(state.status)
   target_user = account.administrators.first || account.users.first
 %>
 
@@ -34,7 +29,7 @@ basic facts, maintenance.
     </nav>
     <div class="flex flex-wrap items-center gap-2.5">
       <h1 class="main-content__page-title"><%= account.name %></h1>
-      <span class="admin-badge <%= status_tone %>" data-testid="account-status"><%= t("super_admin.accounts.statuses.#{status}") %></span>
+      <span class="admin-badge <%= status_tone %>" data-testid="account-status"><%= state.status_label %></span>
     </div>
     <p class="main-content__description" data-testid="account-meta">
       <span class="tabular-nums">#<%= account.id %></span>

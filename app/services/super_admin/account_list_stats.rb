@@ -28,13 +28,14 @@ class SuperAdmin::AccountListStats
   end
 
   def for(account)
+    plan = SuperAdmin::AccountPlanState.new(account)
     Row.new(
-      plan: SuperAdmin::AccountPlanState.new(account),
+      plan: plan,
       operators_used: @member_counts.fetch(account.id, 0) - @excluded_counts.fetch(account.id, 0),
       operators_limit: operators_limit(account),
       storage: storage(account),
       channels: @channel_counts.fetch(account.id, 0),
-      status: status(account)
+      status: plan.status
     )
   end
 
@@ -82,12 +83,5 @@ class SuperAdmin::AccountListStats
     return :warn if percent >= SuperAdmin::AccountUsage::WARNING_PERCENT
 
     :good
-  end
-
-  # :deleting beats :suspended beats :active
-  def status(account)
-    return :deleting if account.custom_attributes.to_h['marked_for_deletion_at'].present?
-
-    account.suspended? ? :suspended : :active
   end
 end

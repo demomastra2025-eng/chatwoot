@@ -220,7 +220,7 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
           acc.inboxes.size,
           used_mb,
           limit_gb,
-          acc.status,
+          plan_state.status_label,
           SuperAdmin::DisplayHelper.format_time(acc.created_at)
         ]
       end

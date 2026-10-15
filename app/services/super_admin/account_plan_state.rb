@@ -1,14 +1,15 @@
 # frozen_string_literal: true
 
 # What the plan of one clinic looks like on screen: the plan and its modules, how far the flags have moved away from it
-# ("changed by hand"), and the trial. It only reads the account (custom_attributes and the feature flags), so it costs no
-# queries and is safe to build for every row of a list.
+# ("changed by hand"), the trial, and the status of the clinic. It only reads the account (custom_attributes and the
+# feature flags), so it costs no queries and is safe to build for every row of a list.
 #
 #   state = SuperAdmin::AccountPlanState.new(account)
 #   state.label      # => "База + ИИ-агенты", or "Не назначен"
 #   state.chips      # => [Chip(text: "База", tone: :iris), Chip(text: "ИИ-агенты", tone: :slate), ...]
 #   state.drift      # => { extra: ["sla"], missing: [] }  (nil when the clinic has no plan)
 #   state.trial_state # => :none | :active | :expired
+#   state.status     # => :active | :suspended | :deleting (state.status_label is its Russian name)
 class SuperAdmin::AccountPlanState
   Chip = Struct.new(:text, :tone, keyword_init: true)
 
@@ -19,6 +20,17 @@ class SuperAdmin::AccountPlanState
 
   def initialize(account)
     @account = account
+  end
+
+  # :deleting beats :suspended beats :active. The one place that decides what status a clinic shows (card, list, CSV).
+  def status
+    return :deleting if attributes['marked_for_deletion_at'].present?
+
+    account.suspended? ? :suspended : :active
+  end
+
+  def status_label
+    I18n.t("super_admin.accounts.statuses.#{status}")
   end
 
   def assigned?

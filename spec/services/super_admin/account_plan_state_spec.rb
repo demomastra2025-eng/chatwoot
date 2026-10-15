@@ -62,6 +62,27 @@ RSpec.describe SuperAdmin::AccountPlanState do
     end
   end
 
+  describe '#status' do
+    it 'is active for a clinic in good standing, with its Russian name' do
+      expect(state.status).to eq(:active)
+      expect(state.status_label).to eq('Активна')
+    end
+
+    it 'is suspended for a blocked clinic' do
+      account.update!(status: :suspended)
+
+      expect(state.status).to eq(:suspended)
+      expect(state.status_label).to eq('Заблокирована')
+    end
+
+    it 'puts «на удаление» before «заблокирована»' do
+      account.update!(status: :suspended, custom_attributes: { 'marked_for_deletion_at' => 3.days.from_now.iso8601 })
+
+      expect(state.status).to eq(:deleting)
+      expect(state.status_label).to eq('На удаление')
+    end
+  end
+
   describe '#trial_locks_limits?' do
     it 'is true for the trial the card could start on a clinic without a plan' do
       expect(state.trial_locks_limits?).to be(true)
