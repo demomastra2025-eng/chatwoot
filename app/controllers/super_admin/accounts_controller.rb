@@ -41,12 +41,23 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     permitted_params[:limits] = normalize_limits(permitted_params[:limits])
     merge_selected_feature_flags!(permitted_params)
     merge_limit_counter_user_exclusions!(permitted_params)
-    merge_plan_type!(permitted_params)
     permitted_params
   end
 
   # See https://administrate-prototype.herokuapp.com/customizing_controller_actions
   # for more information
+
+  # A new account gets the base plan (plus the optional `modules` param) right after it is saved. The limits the
+  # operator typed into the form win over the plan; the plan only fills the blanks.
+  def create
+    modules = requested_plan_modules
+    return redirect_to(new_super_admin_account_path, alert: I18n.t('super_admin.accounts.flashes.plan_unknown_module')) if modules.nil?
+
+    super do |account|
+      yield(account) if block_given?
+      apply_plan_to_new_account(account, modules)
+    end
+  end
 
   def seed
     Internal::SeedAccountJob.perform_later(requested_resource)
@@ -104,6 +115,30 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   rescue StandardError => e
     Rails.logger.warn("[SuperAdmin] Trial expiry failed for account #{requested_resource.id}: #{e.class.name}")
     redirect_to_account(alert: I18n.t('super_admin.accounts.flashes.trial_operation_failed'))
+  end
+
+  # Writes base + the chosen modules (`modules[]`; none = the base alone) into the account and audits it.
+  def apply_plan
+    modules = requested_plan_modules
+    return redirect_to_account(alert: I18n.t('super_admin.accounts.flashes.plan_unknown_module')) if modules.nil?
+
+    account = requested_resource
+    begin
+      Accounts::ApplyPlan.new(account: account, modules: modules, actor: current_super_admin, request: request).call
+    rescue StandardError => e
+      Rails.logger.warn("[SuperAdmin] Plan apply failed for account #{account.id}: #{e.class.name}: #{e.message}")
+      return redirect_to_account(alert: I18n.t('super_admin.accounts.flashes.plan_apply_failed'))
+    end
+    redirect_to_account(notice: I18n.t('super_admin.accounts.flashes.plan_applied', plan: Accounts::Plans.plan_label(modules)))
+  end
+
+  # What applying the plan would change, as JSON (nothing is written): flags to switch on and off, limit changes
+  # and notes. The clinic card renders it before the operator confirms.
+  def plan_preview
+    modules = requested_plan_modules
+    return render(json: { error: I18n.t('super_admin.accounts.flashes.plan_unknown_module') }, status: :unprocessable_content) if modules.nil?
+
+    render json: Accounts::ApplyPlan.new(account: requested_resource, modules: modules, actor: current_super_admin).preview
   end
 
   def impersonate
@@ -195,12 +230,32 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
 
   def apply_trial_extension
     if requested_resource.trial? && requested_resource.trial_snapshot?
-      requested_resource.extend_trial!(3)
+      requested_resource.extend_trial!(Accounts::Plans.trial_days)
       'extend_trial'
     elsif params[:start].present?
-      requested_resource.activate_trial!(3)
+      requested_resource.activate_trial!(Accounts::Plans.trial_days)
       'start_trial'
     end
+  end
+
+  # The `modules` param as a list of known module keys; nil when it is malformed or names an unknown module.
+  def requested_plan_modules
+    raw = params[:modules]
+    return [] if raw.blank?
+    return nil unless raw.is_a?(Array) || raw.is_a?(String)
+
+    Accounts::Plans.normalize_modules(raw)
+  rescue ArgumentError
+    nil
+  end
+
+  # An account that cannot take the plan stays created; the operator is told and can apply it from the card.
+  def apply_plan_to_new_account(account, modules)
+    Accounts::ApplyPlan.new(account: account, modules: modules, actor: current_super_admin, request: request,
+                            keep_existing_limits: true).call
+  rescue StandardError => e
+    Rails.logger.warn("[SuperAdmin] Plan apply on create failed for account #{account.id}: #{e.class.name}: #{e.message}")
+    flash[:alert] = I18n.t('super_admin.accounts.flashes.plan_apply_failed')
   end
 
   def normalize_limits(raw_limits)
@@ -222,26 +277,6 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   def gb_to_bytes(value)
     (BigDecimal(value.to_s) * STORAGE_GB_IN_BYTES).round(0).to_i
   end
-
-  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
-  def merge_plan_type!(permitted_params)
-    return unless params[:account]&.key?(:plan_type)
-
-    plan_type = params[:account][:plan_type].presence
-    updated_custom_attributes = (permitted_params[:custom_attributes] || requested_resource.custom_attributes || {}).deep_dup
-
-    if plan_type.present?
-      updated_custom_attributes['plan_type'] = plan_type
-      if plan_type == 'trial' && updated_custom_attributes['trial_expires_at'].blank?
-        updated_custom_attributes['trial_expires_at'] = 3.days.from_now.iso8601
-      end
-    elsif params[:account][:plan_type] == ''
-      updated_custom_attributes.delete('plan_type')
-    end
-
-    permitted_params[:custom_attributes] = updated_custom_attributes
-  end
-  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
 
   def merge_limit_counter_user_exclusions!(permitted_params)
     return unless params[:account]&.key?(:limit_counter_excluded_user_ids_raw)
@@ -339,12 +374,7 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
 
   # Operator actions that change an account or reach into it leave an explicit entry in the audit log.
   def record_super_admin_audit(action, changes = {})
-    Audited::Audit.create!(
-      auditable: requested_resource, associated: requested_resource, action: action, audited_changes: changes,
-      user: current_super_admin, remote_address: request.remote_ip, request_uuid: request.request_id, comment: 'super_admin'
-    )
-  rescue StandardError => e
-    Rails.logger.error("[SuperAdmin] Could not record audit '#{action}' for account #{requested_resource&.id}: #{e.class.name}: #{e.message}")
+    SuperAdmin::AccountAudit.record(account: requested_resource, actor: current_super_admin, action: action, changes: changes, request: request)
   end
 
   def redirect_to_account(notice: nil, alert: nil)

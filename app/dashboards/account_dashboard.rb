@@ -112,14 +112,26 @@ class AccountDashboard < Administrate::BaseDashboard
   #   COLLECTION_FILTERS = {
   #     open: ->(resources) { resources.where(open: true) }
   #   }.freeze
+  #
+  # The plan filters follow the plans registry: accounts with no plan, with the base plan, and one filter per module.
+  MODULE_FILTERS = Accounts::Plans.module_keys.to_h do |module_key|
+    [
+      :"module_#{module_key}",
+      ->(resources) { resources.where("custom_attributes->'plan_modules' @> ?::jsonb", [module_key].to_json) }
+    ]
+  end.freeze
+
+  PLAN_FILTERS = {
+    no_plan: ->(resources) { resources.where("custom_attributes->>'plan' IS NULL") },
+    plan_base: ->(resources) { resources.where("custom_attributes->>'plan' = ?", Accounts::Plans::BASE_KEY) },
+    **MODULE_FILTERS
+  }.freeze
+
   COLLECTION_FILTERS = {
     active: ->(resources) { resources.where(status: :active) },
     suspended: ->(resources) { resources.where(status: :suspended) },
     recent: ->(resources) { resources.where('created_at > ?', 30.days.ago) },
-    starter: ->(resources) { resources.where("custom_attributes->>'plan_type' = 'starter'") },
-    growth: ->(resources) { resources.where("custom_attributes->>'plan_type' = 'growth'") },
-    advanced: ->(resources) { resources.where("custom_attributes->>'plan_type' = 'advanced'") },
-    enterprise: ->(resources) { resources.where("custom_attributes->>'plan_type' = 'enterprise'") },
+    **PLAN_FILTERS,
     trial_active: lambda { |resources|
       resources.where(
         "custom_attributes->>'plan_type' = 'trial' AND (custom_attributes->>'trial_expires_at')::timestamp > ?",
@@ -157,7 +169,6 @@ class AccountDashboard < Administrate::BaseDashboard
   # Reference: https://github.com/thoughtbot/administrate/pull/2356/files#diff-4e220b661b88f9a19ac527c50d6f1577ef6ab7b0bed2bfdf048e22e6bfa74a05R204
   def permitted_attributes(action)
     attrs = super + [limits: {}]
-    attrs << :plan_type
     attrs << :limit_counter_excluded_user_ids_raw if ChatwootApp.enterprise?
 
     # Add manually_managed_features to permitted attributes only for Chatwoot Cloud

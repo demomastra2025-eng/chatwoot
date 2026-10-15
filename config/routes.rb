@@ -1031,6 +1031,8 @@ Rails.application.routes.draw do
         post :reset_cache, on: :member
         post :extend_trial, on: :member
         post :expire_trial, on: :member
+        post :apply_plan, on: :member
+        get :plan_preview, on: :member
         post :impersonate, on: :member
         get :export, on: :collection
         if ChatwootApp.enterprise?

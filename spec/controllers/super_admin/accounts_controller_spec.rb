@@ -200,7 +200,7 @@ RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
         expect(account.reload.feature_enabled?('inbox_view')).to be(true)
       end
 
-      it 'does not copy existing account attributes when creating with an id param' do
+      it 'does not copy existing account attributes when creating with an id param', :aggregate_failures do
         account.enable_features!('inbox_view')
         account.update!(custom_attributes: { 'existing_workspace_setting' => 'keep on source' })
         sign_in(super_admin, scope: :super_admin)
@@ -228,10 +228,11 @@ RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
 
         created_account = Account.find_by!(name: created_name)
         expect(response).to redirect_to(super_admin_account_path(created_account))
-        expect(created_account.limits).to eq({ 'agents' => 12, 'conversations' => 0 })
-        expect(created_account.custom_attributes).to eq(
-          'limit_counter_excluded_user_ids' => [12, 15, 19]
-        )
+        # the limits typed into the form win; the base plan only fills the blanks (non_web_inboxes)
+        expect(created_account.limits).to eq({ 'agents' => 12, 'conversations' => 0, 'non_web_inboxes' => ChatwootApp.max_limit })
+        expect(created_account.custom_attributes).to include('limit_counter_excluded_user_ids' => [12, 15, 19])
+        expect(created_account.custom_attributes).to include('plan' => 'base', 'plan_modules' => [])
+        expect(created_account.custom_attributes).not_to have_key('existing_workspace_setting')
         expect(created_account.feature_enabled?('inbox_view')).to be(false)
         expect(created_account.feature_enabled?('crm')).to be(true)
 
@@ -518,15 +519,14 @@ RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
       expect(breakdown).to include(:audio, :images, :videos, :documents, :captain, :other, :total)
     end
 
-    it 'provides smart collection filters for tariffs and trial' do
+    it 'provides smart collection filters for plans and trial' do
       expect(AccountDashboard::COLLECTION_FILTERS.keys).to include(
-        :active, :suspended, :recent, :starter, :growth, :advanced, :enterprise,
+        :active, :suspended, :recent, :no_plan, :plan_base, :module_ai_agents, :module_broadcasts, :module_quality, :module_extensions,
         :trial_active, :trial_expired, :storage_high, :marked_for_deletion
       )
 
-      account.update!(custom_attributes: { 'plan_type' => 'starter' })
-      expect(AccountDashboard::COLLECTION_FILTERS[:starter].call(Account.all)).to include(account)
-      expect(AccountDashboard::COLLECTION_FILTERS[:growth].call(Account.all)).not_to include(account)
+      expect(AccountDashboard::COLLECTION_FILTERS[:no_plan].call(Account.all)).to include(account)
+      expect(AccountDashboard::COLLECTION_FILTERS[:plan_base].call(Account.all)).not_to include(account)
     end
   end
 
