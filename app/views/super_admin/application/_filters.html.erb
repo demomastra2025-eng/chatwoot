@@ -14,7 +14,8 @@ prefix of the dashboard (`COLLECTION_FILTERS`).
   and knows which attributes should be displayed in the resource's table.
 
 Labels come from `super_admin.shell.filters.<name>`; a filter without a
-translation shows its humanized name.
+translation shows its humanized name. An optional tooltip comes from
+`super_admin.shell.filter_hints.<name>`.
 
 [1]: http://www.rubydoc.info/gems/administrate/Administrate/Page/Collection
 %>
@@ -34,9 +35,11 @@ translation shows its humanized name.
   <div class="segmented" role="group" aria-label="<%= t('super_admin.shell.filter') %>">
     <%= link_to t('super_admin.shell.filter_all'), url_for(search: nil), class: 'segmented__item', aria: { current: (current_filter.nil? ? 'true' : nil) } %>
     <% dashboard_class::COLLECTION_FILTERS.each_key do |filter_name| %>
+      <%# A filter that counts differently from what the list shows says so in a tooltip (`super_admin.shell.filter_hints.<name>`). %>
       <%= link_to t("super_admin.shell.filters.#{filter_name}", default: filter_name.to_s.titleize),
                   url_for(search: "#{filter_name}:"),
                   class: 'segmented__item',
+                  title: t("super_admin.shell.filter_hints.#{filter_name}", default: '').presence,
                   aria: { current: (filter_name.to_s == current_filter ? 'true' : nil) } %>
     <% end %>
   </div>

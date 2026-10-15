@@ -37,7 +37,7 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   # and `dashboard`:
   #
   def resource_params
-    permitted_params = super
+    permitted_params = fine_tuning_only_request? ? ActionController::Parameters.new.permit : super
     # A request without `limits` (the «Тонкая настройка» switches of the card) must not wipe the limits of the clinic.
     permitted_params[:limits] = normalize_limits(permitted_params[:limits]) if permitted_params.key?(:limits)
     merge_selected_feature_flags!(permitted_params)
@@ -239,6 +239,12 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   end
 
   private
+
+  # The «Тонкая настройка» form of the clinic card posts only the switches (`enabled_features`) and no `account` group.
+  # Re-sending the name the page was drawn with would undo a rename made in another tab or by another administrator.
+  def fine_tuning_only_request?
+    action_name == 'update' && !params.key?(:account) && params[:enabled_features].present?
+  end
 
   def apply_trial_extension
     if requested_resource.trial? && requested_resource.trial_snapshot?

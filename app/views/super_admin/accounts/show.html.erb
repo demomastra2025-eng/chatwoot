@@ -73,8 +73,7 @@ basic facts, maintenance.
         </summary>
         <div class="admin-collapse__body">
           <%= form_with url: super_admin_account_path(account), method: :patch, local: true, class: 'flex flex-col gap-5' do %>
-            <%# The update expects an `account` parameter; the name is sent back unchanged. %>
-            <%= hidden_field_tag 'account[name]', account.name, id: nil %>
+            <%# Only the switches are posted: the update does not re-send the name, so it cannot undo a rename made elsewhere. %>
             <%= render 'fine_tuning', account: account %>
             <div class="admin-block__footer">
               <%= submit_tag t('super_admin.shell.save'), name: nil %>

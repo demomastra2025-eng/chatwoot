@@ -233,6 +233,14 @@ RSpec.describe 'Super Admin clinic list', type: :request do
       )
     end
 
+    it 'say in a tooltip that «Диск > 80%» counts chat attachments only, while the list meter counts recordings too' do
+      get '/super_admin/accounts'
+
+      titled = page.css('.segmented .segmented__item[title]')
+      expect(titled.map { |item| text(item) }).to eq(['Диск > 80%'])
+      expect(titled.first['title']).to include('записи звонков в этот фильтр не входят')
+    end
+
     it 'show the trial clinics' do
       trial = create(:account, name: 'Trial clinic')
       trial.activate_trial!(3)

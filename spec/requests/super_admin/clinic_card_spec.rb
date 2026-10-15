@@ -578,6 +578,23 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       expect(flash[:notice]).to eq('Клиника сохранена.')
     end
 
+    it 'posts only the switches, without the name, so a rename made elsewhere in the meantime is not undone' do
+      account.update!(limits: { 'agents' => 5 })
+      open_card
+      expect(fine_tuning.at_css('form').css('[name^="account"]')).to be_empty
+
+      account.update!(name: 'Клиника Новая') # renamed in another tab while this page was open
+      patch card_path, params: { enabled_features: { feature_sla: 'true', feature_crm: 'false' } }
+
+      expect(response).to redirect_to(card_path)
+      account.reload
+      expect(account.name).to eq('Клиника Новая')
+      expect(account.feature_enabled?('sla')).to be(true)
+      expect(account.feature_enabled?('crm')).to be(false)
+      expect(account.limits).to eq('agents' => 5)
+      expect(flash[:notice]).to eq('Клиника сохранена.')
+    end
+
     it 'does not touch the functions it does not show' do
       account.enable_features!('inbox_view', 'scheduling_finance')
 
