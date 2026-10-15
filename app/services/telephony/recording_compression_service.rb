@@ -111,6 +111,9 @@ class Telephony::RecordingCompressionService
     File.unlink(compressed.temp_path)
 
     session = update_database_records!(compressed)
+    Storage::VoiceRecordingRemoteStorage.upload_file(
+      compressed.storage_key, compressed.target_path, content_type: Telephony::RecordingReferenceUpdater::CONTENT_TYPE
+    )
     purge_source_wav!(source_path, compressed.target_path)
     refresh_storage_breakdown(session)
   rescue Errno::EEXIST

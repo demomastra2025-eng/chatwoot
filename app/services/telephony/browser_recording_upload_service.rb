@@ -92,6 +92,7 @@ class Telephony::BrowserRecordingUploadService
 
     FileUtils.mkdir_p(final_path.dirname)
     FileUtils.mv(tmp_path, final_path) unless File.file?(final_path)
+    Storage::VoiceRecordingRemoteStorage.upload_file(storage_key, final_path, content_type: recording_content_type)
     final_path
   end
 

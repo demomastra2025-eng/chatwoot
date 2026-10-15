@@ -106,6 +106,7 @@ class Telephony::ExternalRecordingCacheService
     tmp_path = path.dirname.join(".#{path.basename}.tmp-#{SecureRandom.hex(8)}")
     File.binwrite(tmp_path, recording_result.data)
     FileUtils.mv(tmp_path, path)
+    Storage::VoiceRecordingRemoteStorage.upload_file(storage_key, path, content_type: recording_result.content_type)
     path
   ensure
     FileUtils.rm_f(tmp_path) if defined?(tmp_path) && tmp_path.present?

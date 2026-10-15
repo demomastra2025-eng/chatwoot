@@ -38,6 +38,11 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
       return
     end
 
+    if (remote_url = remote_storage_recording_url).present?
+      redirect_to remote_url, allow_other_host: true
+      return
+    end
+
     if external_recording_url.present?
       if proxy_external_recording?
         proxy_external_recording!
@@ -358,6 +363,17 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
       disposition: 'inline',
       filename: File.basename(path),
       x_sendfile: true
+    )
+  end
+
+  def remote_storage_recording_url
+    key = recording_storage_key
+    return if key.blank?
+
+    Storage::VoiceRecordingRemoteStorage.url_for(
+      key,
+      filename: File.basename(key.to_s),
+      content_type: recording_content_type
     )
   end
 
