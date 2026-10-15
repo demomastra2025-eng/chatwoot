@@ -97,6 +97,8 @@ const statusClass = computed(() => {
   return classes[props.status] || 'border-n-weak text-n-slate-11';
 });
 
+const normalizeTracePanelValue = value => String(value || '').trim();
+
 const tracePanels = computed(() =>
   [
     {
@@ -104,14 +106,14 @@ const tracePanels = computed(() =>
       label: t('CAPTAIN.COPILOT.TOOL_TRACE.INPUT'),
       copyLabel: t('CAPTAIN.COPILOT.TOOL_TRACE.COPY_INPUT'),
       icon: 'i-lucide-log-in',
-      value: props.input,
+      value: normalizeTracePanelValue(props.input),
     },
     {
       id: 'output',
       label: t('CAPTAIN.COPILOT.TOOL_TRACE.OUTPUT'),
       copyLabel: t('CAPTAIN.COPILOT.TOOL_TRACE.COPY_OUTPUT'),
       icon: 'i-lucide-log-out',
-      value: props.output,
+      value: normalizeTracePanelValue(props.output),
     },
   ].filter(panel => panel.value)
 );
@@ -178,14 +180,14 @@ const copyTracePanel = async value => {
               <button
                 v-tooltip.top="panel.copyLabel"
                 type="button"
-                class="skip-context-menu absolute right-1 top-1 inline-flex h-8 w-8 items-center justify-center text-n-slate-11 hover:text-n-slate-12"
+                class="skip-context-menu absolute right-1 top-1 inline-flex h-6 w-6 items-center justify-center text-n-slate-11 hover:text-n-slate-12"
                 :aria-label="panel.copyLabel"
                 @click.stop.prevent="copyTracePanel(panel.value)"
               >
-                <Icon icon="i-lucide-copy" class="h-6 w-6" />
+                <Icon icon="i-lucide-copy" class="h-3.5 w-3.5" />
               </button>
               <div
-                class="max-h-64 overflow-auto whitespace-pre-wrap break-words px-2 pb-2 pt-9 font-mono text-xs text-n-slate-12"
+                class="max-h-64 overflow-auto whitespace-pre-wrap break-words py-1.5 pl-2 pr-8 font-mono text-xs text-n-slate-12"
               >
                 {{ panel.value }}
               </div>

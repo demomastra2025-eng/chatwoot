@@ -488,6 +488,25 @@ describe('buildCaptainToolTraceMessages', () => {
     ).toEqual(['finish']);
   });
 
+  it('trims leading whitespace from tool trace input and output values', () => {
+    const [{ message }] = buildCaptainToolTraceMessages({
+      captainTrace: {
+        toolCalls: [
+          {
+            tool_call_id: 'call-trim-1',
+            tool_name: 'faq_lookup',
+            status: 'completed',
+            input: { query: '   график работы МРТ   ' },
+            output: '   Найдено: 1   ',
+          },
+        ],
+      },
+    });
+
+    expect(message.input).toBe('Query: график работы МРТ');
+    expect(message.output).toBe('Найдено: 1');
+  });
+
   it('returns an empty array when trace data is missing', () => {
     expect(buildCaptainToolTraceMessages({})).toEqual([]);
     expect(buildCaptainToolTraceMessages(null)).toEqual([]);

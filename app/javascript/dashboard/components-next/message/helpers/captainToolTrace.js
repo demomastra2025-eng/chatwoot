@@ -180,7 +180,7 @@ const humanizePrimitive = value => {
   if (value === true) return 'Да';
   if (value === false) return 'Нет';
   if (value === null || value === undefined || value === '') return '—';
-  return String(value);
+  return String(value).trim() || '—';
 };
 
 const unwrapCaptainToolEnvelope = value => {
@@ -287,9 +287,9 @@ export const formatToolTraceDetail = value => {
   const redacted = redactValue(normalized);
 
   try {
-    return formatReadableValue(redacted);
+    return formatReadableValue(redacted).trim();
   } catch {
-    if (typeof redacted === 'string') return redacted;
+    if (typeof redacted === 'string') return redacted.trim();
 
     try {
       return JSON.stringify(redacted, null, 2);

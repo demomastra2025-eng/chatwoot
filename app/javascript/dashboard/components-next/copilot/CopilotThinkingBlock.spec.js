@@ -106,4 +106,24 @@ describe('CopilotThinkingBlock', () => {
     );
     expect(wrapper.find('icon-stub').attributes('icon')).toBe('i-lucide-brain');
   });
+
+  it('trims leading and trailing whitespace in tool input and output panels', () => {
+    const wrapper = mountComponent({
+      toolName: 'search_documentation',
+      status: 'finish',
+      input: '   Query: pricing\n',
+      output: '\n  Total: 2   ',
+    });
+
+    const inputContent = wrapper.find(
+      '[data-tool-trace-panel="input"] .whitespace-pre-wrap'
+    );
+    const outputContent = wrapper.find(
+      '[data-tool-trace-panel="output"] .whitespace-pre-wrap'
+    );
+
+    expect(inputContent.text()).toBe('Query: pricing');
+    expect(outputContent.text()).toBe('Total: 2');
+    expect(inputContent.classes()).not.toContain('pt-9');
+  });
 });

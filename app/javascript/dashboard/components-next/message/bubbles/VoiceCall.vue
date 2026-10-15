@@ -858,7 +858,7 @@ const handleJoinCall = async () => {
                     <Icon icon="i-lucide-copy" class="h-5 w-5" />
                   </button>
                   <div
-                    class="max-h-48 overflow-auto whitespace-pre-wrap break-words px-1.5 pb-1.5 pt-8 font-mono text-[11px] text-n-slate-12"
+                    class="max-h-48 overflow-auto whitespace-pre-wrap break-words py-1.5 pl-1.5 pr-8 font-mono text-[11px] text-n-slate-12"
                   >
                     {{ panel.value }}
                   </div>
