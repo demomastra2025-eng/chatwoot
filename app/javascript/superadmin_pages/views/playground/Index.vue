@@ -99,7 +99,7 @@ export default {
 </script>
 
 <template>
-  <section class="flex flex-col w-full h-full bg-slate-25">
+  <section class="flex flex-col w-full h-full bg-n-slate-2">
     <PlaygroundHeader
       :response-source-name="componentData.responseSourceName"
       :response-source-path="componentData.responseSourcePath"
@@ -123,7 +123,7 @@ export default {
         ref="messageInput"
         v-model="messageContent"
         :rows="4"
-        class="resize-none block p-2.5 w-full text-sm text-gray-900 bg-gray-50 rounded-lg border !outline-2 border-slate-100 focus:ring-woot-500 focus:border-woot-500 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-woot-500 dark:focus:border-woot-500"
+        class="resize-none block p-2.5 w-full text-sm text-n-slate-12 bg-n-slate-2 rounded-lg border !outline-2 border-n-weak placeholder:text-n-slate-10 focus:ring-n-brand focus:border-n-brand"
         placeholder="Type a message... [CMD/CTRL + Enter to send]"
         autofocus
         autocomplete="off"
