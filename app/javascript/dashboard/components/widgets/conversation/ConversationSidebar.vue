@@ -216,12 +216,6 @@ const closeAppointmentsSidebar = () => {
       },
     ]"
   >
-    <SchedulingConversationPatientSelector
-      v-if="patientContextEnabled && patientContextKey"
-      :context-key="patientContextKey"
-      :entry="patientEntry"
-      :conversation-display-id="patientConversationDisplayId"
-    />
     <div class="flex flex-1 overflow-y-auto overflow-x-hidden">
       <ContactPanel
         v-if="activeTab === 'contact'"
@@ -230,7 +224,16 @@ const closeAppointmentsSidebar = () => {
         :selected-patient="selectedPatient"
         :patient-context-enabled="patientContextEnabled"
         :patient-context-key="patientContextKey"
-      />
+      >
+        <template #after-header>
+          <SchedulingConversationPatientSelector
+            v-if="patientContextEnabled && patientContextKey"
+            :context-key="patientContextKey"
+            :entry="patientEntry"
+            :conversation-display-id="patientConversationDisplayId"
+          />
+        </template>
+      </ContactPanel>
       <div v-if="activeTab === 'deals'" class="min-w-0 flex-1">
         <CrmConversationDealsSidebar
           :current-chat="currentChat"
@@ -248,7 +251,16 @@ const closeAppointmentsSidebar = () => {
           "
           @patient-bound="refreshBoundPatient"
           @close="closeAppointmentsSidebar"
-        />
+        >
+          <template #after-header>
+            <SchedulingConversationPatientSelector
+              v-if="patientContextEnabled && patientContextKey"
+              :context-key="patientContextKey"
+              :entry="patientEntry"
+              :conversation-display-id="patientConversationDisplayId"
+            />
+          </template>
+        </SchedulingConversationAppointmentsSidebar>
       </div>
     </div>
   </div>

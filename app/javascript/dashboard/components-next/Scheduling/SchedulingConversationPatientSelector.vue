@@ -44,11 +44,7 @@ const form = reactive({
 const options = computed(() =>
   (props.entry?.patients || []).map(patient => ({
     value: patient.id,
-    label: [
-      patientDisplayName(patient),
-      formatPatientBirthDate(patient) ||
-        t('SCHEDULING.PATIENT_CONTEXT.NO_BIRTH_DATE'),
-    ]
+    label: [patientDisplayName(patient), formatPatientBirthDate(patient)]
       .filter(Boolean)
       .join(' · '),
   }))
@@ -154,98 +150,115 @@ const savePatient = async () => {
 
 <template>
   <section
-    class="shrink-0 border-b border-n-weak px-4 py-3"
+    class="shrink-0 border-b border-n-weak bg-n-alpha-1 px-3 py-2"
     data-test="patient-selector"
   >
-    <label class="grid min-w-0 gap-2 text-xs font-medium text-n-slate-11">
-      {{ t('SCHEDULING.PATIENT_CONTEXT.SELECT_PATIENT') }}
-      <Select
-        :model-value="entry?.selectedId || ''"
-        :options="options"
-        :disabled="!entry?.loaded || entry?.loading || entry?.saving"
-        class="w-full"
-        @update:model-value="selectPatient"
+    <div class="flex items-center justify-between gap-2">
+      <label
+        class="flex min-w-0 flex-1 items-center gap-2 text-xs font-medium text-n-slate-11"
+      >
+        <span class="shrink-0">
+          {{ t('SCHEDULING.PATIENT_CONTEXT.SELECT_PATIENT') }}
+        </span>
+        <Select
+          :model-value="entry?.selectedId || ''"
+          :options="options"
+          :disabled="!entry?.loaded || entry?.loading || entry?.saving"
+          class="min-w-0 flex-1"
+          @update:model-value="selectPatient"
+        />
+      </label>
+      <Button
+        v-if="!isCreating && entry?.loaded"
+        size="xs"
+        variant="faded"
+        color="slate"
+        icon="i-lucide-user-plus"
+        class="shrink-0"
+        :title="t('SCHEDULING.PATIENT_CONTEXT.NEW_PATIENT')"
+        :label="t('SCHEDULING.PATIENT_CONTEXT.NEW_PATIENT')"
+        @click="startCreate"
       />
-    </label>
-    <p class="mb-0 mt-2 text-xs text-n-slate-10">
-      {{ t('SCHEDULING.PATIENT_CONTEXT.SELECTION_SCOPE') }}
-    </p>
-    <div v-if="entry?.error" class="mt-2 grid gap-2" role="alert">
+    </div>
+    <div v-if="entry?.error" class="mt-2 flex items-center justify-between gap-2" role="alert">
       <p class="m-0 text-xs text-n-ruby-9">
         {{ t('SCHEDULING.PATIENT_CONTEXT.LOAD_ERROR') }}
       </p>
       <Button
-        size="sm"
+        size="xs"
         variant="ghost"
         :label="t('DESIGN_SYSTEM.STATE.RETRY')"
         @click="patientStore.load(contextKey, entry.contactId, { force: true })"
       />
     </div>
-    <Button
-      v-if="!isCreating && entry?.loaded"
-      size="sm"
-      variant="ghost"
-      icon="i-lucide-user-plus"
-      class="mt-2"
-      :label="t('SCHEDULING.PATIENT_CONTEXT.NEW_PATIENT')"
-      @click="startCreate"
-    />
     <form
       v-if="isCreating"
-      class="mt-3 grid max-h-[min(32rem,50dvh)] gap-3 overflow-y-auto"
+      class="mt-2.5 grid max-h-[min(32rem,55dvh)] gap-2.5 overflow-y-auto rounded-lg border border-n-weak bg-n-solid-1 p-3"
       @submit.prevent="savePatient"
     >
       <p class="m-0 text-xs text-n-slate-11">
         {{ t('SCHEDULING.PATIENT_CONTEXT.CREATE_DESCRIPTION') }}
       </p>
-      <Input
-        v-model="form.first_name"
-        :label="t('SCHEDULING.APPOINTMENT_FORM.CLIENT_FIRST_NAME')"
-        :disabled="entry?.saving"
-      />
-      <Input
-        v-model="form.last_name"
-        :label="t('SCHEDULING.APPOINTMENT_FORM.CLIENT_LAST_NAME')"
-        :disabled="entry?.saving"
-      />
-      <Input
-        v-model="form.middle_name"
-        :label="t('SCHEDULING.APPOINTMENT_FORM.CLIENT_MIDDLE_NAME')"
-        :disabled="entry?.saving"
-      />
-      <Input
-        v-model="form.iin"
-        :label="t('SCHEDULING.CONTACT.IIN')"
-        :message="iinError"
-        :message-type="iinError ? 'error' : 'info'"
-        inputmode="numeric"
-        maxlength="12"
-        :disabled="entry?.saving"
-      />
+      <div class="grid grid-cols-2 gap-2">
+        <Input
+          v-model="form.last_name"
+          size="sm"
+          :label="t('SCHEDULING.APPOINTMENT_FORM.CLIENT_LAST_NAME')"
+          :disabled="entry?.saving"
+        />
+        <Input
+          v-model="form.first_name"
+          size="sm"
+          :label="t('SCHEDULING.APPOINTMENT_FORM.CLIENT_FIRST_NAME')"
+          :disabled="entry?.saving"
+        />
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <Input
+          v-model="form.middle_name"
+          size="sm"
+          :label="t('SCHEDULING.APPOINTMENT_FORM.CLIENT_MIDDLE_NAME')"
+          :disabled="entry?.saving"
+        />
+        <Input
+          v-model="form.iin"
+          size="sm"
+          :label="t('SCHEDULING.CONTACT.IIN')"
+          :message="iinError"
+          :message-type="iinError ? 'error' : 'info'"
+          inputmode="numeric"
+          maxlength="12"
+          :disabled="entry?.saving"
+        />
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <Input
+          v-model="form.birth_date"
+          type="date"
+          size="sm"
+          :label="t('SCHEDULING.CONTACT.BIRTH_DATE')"
+          :disabled="entry?.saving"
+        />
+        <label class="grid gap-1 text-xs text-n-slate-11">
+          {{ t('SCHEDULING.CONTACT.GENDER_LABEL') }}
+          <Select
+            v-model="form.gender"
+            :options="genderOptions"
+            :disabled="entry?.saving"
+            class="w-full"
+          />
+        </label>
+      </div>
       <Input
         v-model="form.phone"
+        size="sm"
         :label="t('SCHEDULING.PATIENT_CONTEXT.OWN_PHONE')"
         :disabled="entry?.saving"
       />
-      <Input
-        v-model="form.birth_date"
-        type="date"
-        :label="t('SCHEDULING.CONTACT.BIRTH_DATE')"
-        :disabled="entry?.saving"
-      />
-      <label class="grid gap-2 text-xs text-n-slate-11">
-        {{ t('SCHEDULING.CONTACT.GENDER_LABEL') }}
-        <Select
-          v-model="form.gender"
-          :options="genderOptions"
-          :disabled="entry?.saving"
-          class="w-full"
-        />
-      </label>
       <p v-if="error" class="m-0 text-xs text-n-ruby-9" role="alert">
         {{ error }}
       </p>
-      <div class="flex justify-end gap-2">
+      <div class="flex justify-end gap-2 pt-1">
         <Button
           type="button"
           size="sm"
@@ -259,7 +272,7 @@ const savePatient = async () => {
           size="sm"
           :disabled="isInvalid || entry?.saving"
           :is-loading="entry?.saving"
-          :label="t('SCHEDULING.PATIENT_CONTEXT.NEW_PATIENT')"
+          :label="t('SCHEDULING.GENERAL.SAVE')"
         />
       </div>
     </form>

@@ -157,6 +157,7 @@ onMounted(() => {
       :title="$t('CONVERSATION.SIDEBAR.CONTACT')"
       @close="closeContactPanel"
     />
+    <slot name="after-header" />
     <SchedulingPatientDetails
       v-if="patientContextEnabled && selectedPatient"
       :key="`${patientContextKey}:${selectedPatient.id}`"

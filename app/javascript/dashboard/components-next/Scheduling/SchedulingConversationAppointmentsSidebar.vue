@@ -122,6 +122,18 @@ const availabilityByForm = reactive({});
 const availabilityRequests = new Map();
 let availabilityRequestId = 0;
 const openAppointmentKeys = ref([]);
+const expandedClientForms = reactive({});
+const toggleClientFields = key => {
+  expandedClientForms[key] = !expandedClientForms[key];
+};
+const isClientFieldsOpen = (form, key) =>
+  Boolean(
+    expandedClientForms[key] ||
+      !form?.clientFirstName?.trim() ||
+      medelementLastNameError(form) ||
+      medelementPhoneError(form) ||
+      medelementIinError(form)
+  );
 const scrollContainer = ref(null);
 const isCreating = ref(false);
 const isSavingCreate = ref(false);
@@ -2558,6 +2570,7 @@ watch(
       @click="handleHeaderAction"
       @close="emit('close')"
     />
+    <slot name="after-header" />
 
     <div
       ref="scrollContainer"
@@ -2645,6 +2658,35 @@ watch(
                     />
                   </div>
 
+                  <div class="rounded-lg border border-n-weak bg-n-alpha-1 px-2.5 py-1.5">
+                    <div class="flex items-center justify-between gap-2">
+                      <div class="flex min-w-0 items-center gap-1.5 text-xs">
+                        <span class="i-lucide-user-round size-3.5 shrink-0 text-n-slate-10" />
+                        <span class="truncate font-medium text-n-slate-12">
+                          {{ fullPatientName(createForm) || $t('SCHEDULING.PATIENT_CONTEXT.SELECT_PATIENT') }}
+                        </span>
+                        <span v-if="createForm.clientPhone" class="shrink-0 text-n-slate-10">
+                          · {{ createForm.clientPhone }}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        class="shrink-0 text-xs font-medium text-n-blue-text hover:underline"
+                        @click="toggleClientFields(NEW_APPOINTMENT_KEY)"
+                      >
+                        {{
+                          isClientFieldsOpen(createForm, NEW_APPOINTMENT_KEY)
+                            ? $t('SCHEDULING.GENERAL.CANCEL')
+                            : $t('SCHEDULING.GENERAL.EDIT')
+                        }}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div
+                    v-show="isClientFieldsOpen(createForm, NEW_APPOINTMENT_KEY)"
+                    class="grid gap-2.5 rounded-lg border border-n-weak bg-n-alpha-1/40 p-2.5"
+                  >
                   <div class="scheduling-appointment-drawer-row">
                     <label
                       class="scheduling-appointment-drawer-label"
@@ -2776,6 +2818,7 @@ watch(
                       size="sm"
                       @update:model-value="updatePatientIin(createForm, $event)"
                     />
+                  </div>
                   </div>
 
                   <div class="scheduling-appointment-drawer-row">
@@ -3289,6 +3332,49 @@ watch(
                     />
                   </div>
 
+                  <div class="rounded-lg border border-n-weak bg-n-alpha-1 px-2.5 py-1.5">
+                    <div class="flex items-center justify-between gap-2">
+                      <div class="flex min-w-0 items-center gap-1.5 text-xs">
+                        <span class="i-lucide-user-round size-3.5 shrink-0 text-n-slate-10" />
+                        <span class="truncate font-medium text-n-slate-12">
+                          {{
+                            fullPatientName(appointmentForms[appointmentKey(appointment)]) ||
+                              $t('SCHEDULING.PATIENT_CONTEXT.SELECT_PATIENT')
+                          }}
+                        </span>
+                        <span
+                          v-if="appointmentForms[appointmentKey(appointment)].clientPhone"
+                          class="shrink-0 text-n-slate-10"
+                        >
+                          · {{ appointmentForms[appointmentKey(appointment)].clientPhone }}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        class="shrink-0 text-xs font-medium text-n-blue-text hover:underline"
+                        @click="toggleClientFields(appointmentKey(appointment))"
+                      >
+                        {{
+                          isClientFieldsOpen(
+                            appointmentForms[appointmentKey(appointment)],
+                            appointmentKey(appointment)
+                          )
+                            ? $t('SCHEDULING.GENERAL.CANCEL')
+                            : $t('SCHEDULING.GENERAL.EDIT')
+                        }}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div
+                    v-show="
+                      isClientFieldsOpen(
+                        appointmentForms[appointmentKey(appointment)],
+                        appointmentKey(appointment)
+                      )
+                    "
+                    class="grid gap-2.5 rounded-lg border border-n-weak bg-n-alpha-1/40 p-2.5"
+                  >
                   <div class="scheduling-appointment-drawer-row">
                     <label
                       class="scheduling-appointment-drawer-label"
@@ -3474,6 +3560,7 @@ watch(
                         )
                       "
                     />
+                  </div>
                   </div>
 
                   <div class="scheduling-appointment-drawer-row">
