@@ -350,6 +350,29 @@ $administrate-buttons: 'button:not(.reset-base)',
     }
   }
 
+  // The «Показать таблицу» switch of a chart (DsChartFrame, a component shared with the operator app, which is why it
+  // is not touched there) is a quiet text button, not a primary one. This is the look its own utilities give it in the
+  // operator app; here they lose to the gem's `button:not(.reset-base)`, so the selector outranks it (and its :hover).
+  button[data-test-id='ds-chart-table-toggle']:not(.reset-base) {
+    @apply m-0 inline-block h-auto cursor-pointer select-auto whitespace-normal rounded-ds-control bg-transparent px-1.5 py-0.5 align-baseline text-ds-caption text-n-slate-11;
+    font-weight: inherit;
+    filter: none;
+    transition: none;
+
+    &:hover {
+      @apply bg-n-slate-3 text-n-slate-12;
+      filter: none;
+    }
+
+    &:focus-visible {
+      outline-offset: 0;
+    }
+
+    &:active {
+      transform: none;
+    }
+  }
+
   .action-edit {
     @apply text-n-slate-11;
   }

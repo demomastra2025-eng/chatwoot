@@ -117,6 +117,16 @@ RSpec.describe 'Super Admin layout and login page', type: :request do
       expect(block).not_to include('brand-solid')
     end
 
+    it 'quiets the table switch of a chart here, in a rule scoped to the super admin, not in the shared component' do
+      block = admin_scss[/button\[data-test-id='ds-chart-table-toggle'\]:not\(\.reset-base\) \{.*?^  \}$/m]
+      component = File.read(Rails.root.join('app/javascript/dashboard/components-next/ds/DsChartFrame.vue'))
+
+      expect(block).to include('bg-transparent', 'text-n-slate-11', 'transform: none', '&:hover')
+      expect(block).not_to include('brand-solid')
+      expect(component).to include('data-test-id="ds-chart-table-toggle"')
+      expect(component[/<button[^>]*ds-chart-table-toggle[^>]*>/m]).not_to include('reset-base')
+    end
+
     it 'defines the blocks of the clinic card on tokens only' do
       clinic_scss = File.read(scss_dir.join('_clinic.scss'))
 

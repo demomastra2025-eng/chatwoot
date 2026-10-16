@@ -372,7 +372,7 @@ const tableRows = computed(() =>
       <button
         v-if="hasData && !error"
         type="button"
-        class="reset-base m-0 rounded-ds-control bg-transparent px-1.5 py-0.5 text-ds-caption text-n-slate-11 hover:bg-n-slate-3 hover:text-n-slate-12 focus-visible:outline focus-visible:outline-2 focus-visible:outline-n-brand"
+        class="m-0 rounded-ds-control bg-transparent px-1.5 py-0.5 text-ds-caption text-n-slate-11 hover:bg-n-slate-3 hover:text-n-slate-12 focus-visible:outline focus-visible:outline-2 focus-visible:outline-n-brand"
         :aria-pressed="showTable"
         data-test-id="ds-chart-table-toggle"
         @click="showTable = !showTable"
