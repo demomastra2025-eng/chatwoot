@@ -7,7 +7,7 @@ import {
 
 const accounts = [
   { id: 1, name: 'Acme Inc', needs_attention: false },
-  { id: 12, name: 'Клиника «Сезим»', needs_attention: true },
+  { id: 12, name: 'Аккаунт «Сезим»', needs_attention: true },
   { id: 3, name: 'Медцентр «Достар»', needs_attention: false },
 ];
 

@@ -368,7 +368,7 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     flash[:alert] = I18n.t('super_admin.accounts.flashes.trial_operation_failed')
   end
 
-  # The notices of the clinic pages are worded for a clinic («Клиника создана»), not for the generic «Аккаунт»
+  # The notices of the account pages are worded for our own pages («Аккаунт создан»), not for the generic «Account»
   def translate_with_resource(key)
     I18n.t("super_admin.accounts.controller.#{key}", default: super)
   end

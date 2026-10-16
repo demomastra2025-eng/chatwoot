@@ -34,7 +34,7 @@ class SuperAdmin::AccountUsersController < SuperAdmin::ApplicationController
 
   private
 
-  # The notices are worded for a clinic («Пользователь добавлен в клинику»), not for the generic «Account user»
+  # The notices are worded for our own pages («Пользователь добавлен в аккаунт»), not for the generic «Account user»
   def translate_with_resource(key)
     I18n.t("super_admin.account_users.controller.#{key}", default: super)
   end

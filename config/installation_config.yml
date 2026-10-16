@@ -322,8 +322,8 @@
   value: 'inception/mercury-decide'
   locked: false
 - name: CAPTAIN_LANGUAGE_DETECTION_MODEL
-  display_title: 'Модель определения языка пациента'
-  description: 'Определяет основной язык последних 20 сообщений пациента перед ответом агента. Пусто — openai/gpt-6-luna-decisions.'
+  display_title: 'Модель определения языка клиента'
+  description: 'Определяет основной язык последних 20 сообщений клиента перед ответом агента. Пусто — openai/gpt-6-luna-decisions.'
   value: 'openai/gpt-6-luna-decisions'
   locked: false
 - name: CAPTAIN_LABEL_SUGGESTION_MODEL

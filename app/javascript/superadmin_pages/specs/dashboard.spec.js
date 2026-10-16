@@ -24,7 +24,7 @@ const clinic = (id, name, extra = {}) => ({
 const componentData = {
   healthAccounts: [
     clinic(1, 'Acme Inc'),
-    clinic(2, 'Клиника «Сезим»', {
+    clinic(2, 'Аккаунт «Сезим»', {
       status: 'suspended',
       whatsapp: { state: 'error', label: 'Требует авторизации' },
       failed_messages: 4,

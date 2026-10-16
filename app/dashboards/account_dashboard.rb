@@ -38,7 +38,7 @@ class AccountDashboard < Administrate::BaseDashboard
     options.sort_by { |_name, code| LOCALE_ORDER.index(code) || LOCALE_ORDER.size }
   end
 
-  # [["Активна", "active"], ["Заблокирована", "suspended"]]
+  # [["Активен", "active"], ["Заблокирован", "suspended"]]
   def self.status_options
     %w[active suspended].map { |status| [I18n.t("super_admin.accounts.statuses.#{status}"), status] }
   end
