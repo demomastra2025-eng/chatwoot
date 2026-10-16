@@ -5,13 +5,20 @@ require 'cgi'
 require 'json'
 require 'uri'
 
-class Telephony::Wazo::ApiClient # rubocop:disable Metrics/ClassLength -- explicit Wazo Confd resource surface
+class Telephony::Wazo::ApiClient # rubocop:disable Metrics/ClassLength -- explicit Wazo Confd, Calld, and Call-Logd resource surface
   TOKEN_PATH = '/api/auth/0.1/token'
   SIP_ENDPOINTS_PATH = '/api/confd/1.1/endpoints/sip'
   USERS_PATH = '/api/confd/1.1/users'
   LINES_PATH = '/api/confd/1.1/lines'
   EXTENSIONS_PATH = '/api/confd/1.1/extensions'
+  TRUNKS_PATH = '/api/confd/1.1/trunks'
+  REGISTRATIONS_SIP_PATH = '/api/confd/1.1/registrations/sip'
+  CONTEXTS_PATH = '/api/confd/1.1/contexts'
+  INCALLS_PATH = '/api/confd/1.1/incalls'
+  OUTCALLS_PATH = '/api/confd/1.1/outcalls'
   CDR_PATH = '/api/call-logd/1.0/cdr'
+  CALLS_PATH = '/api/calld/1.0/calls'
+  TRANSFERS_PATH = '/api/calld/1.0/transfers'
   REQUEST_TIMEOUT = 15
 
   def self.configured?
@@ -150,6 +157,167 @@ class Telephony::Wazo::ApiClient # rubocop:disable Metrics/ClassLength -- explic
 
   def dissociate_line_sip_endpoint(line_id, endpoint_uuid)
     delete_resource("#{LINES_PATH}/#{escape(line_id)}/endpoints/sip/#{escape(endpoint_uuid)}")
+  end
+
+  # --- Confd Trunk, Context & Routing APIs ---
+
+  def trunks
+    payload = request(:get, TRUNKS_PATH, params: { limit: 1000 })
+    Array.wrap(payload['items'])
+  end
+
+  def trunk(id)
+    request(:get, "#{TRUNKS_PATH}/#{escape(id)}")
+  end
+
+  def create_trunk(payload)
+    request(:post, TRUNKS_PATH, body: payload)
+  end
+
+  def update_trunk(id, payload)
+    request(:put, "#{TRUNKS_PATH}/#{escape(id)}", body: payload)
+  end
+
+  def delete_trunk(id)
+    delete_resource("#{TRUNKS_PATH}/#{escape(id)}")
+  end
+
+  def associate_trunk_sip_endpoint(trunk_id, endpoint_uuid)
+    request(:put, "#{TRUNKS_PATH}/#{escape(trunk_id)}/endpoints/sip/#{escape(endpoint_uuid)}")
+  end
+
+  def associate_trunk_register_sip(trunk_id, register_uuid)
+    request(:put, "#{TRUNKS_PATH}/#{escape(trunk_id)}/registers/sip/#{escape(register_uuid)}")
+  end
+
+  def sip_registrations
+    payload = request(:get, REGISTRATIONS_SIP_PATH, params: { limit: 1000 })
+    Array.wrap(payload['items'])
+  end
+
+  def create_sip_registration(payload)
+    request(:post, REGISTRATIONS_SIP_PATH, body: payload)
+  end
+
+  def update_sip_registration(uuid, payload)
+    request(:put, "#{REGISTRATIONS_SIP_PATH}/#{escape(uuid)}", body: payload)
+  end
+
+  def delete_sip_registration(uuid)
+    delete_resource("#{REGISTRATIONS_SIP_PATH}/#{escape(uuid)}")
+  end
+
+  def contexts
+    payload = request(:get, CONTEXTS_PATH, params: { limit: 1000 })
+    Array.wrap(payload['items'])
+  end
+
+  def create_context(payload)
+    request(:post, CONTEXTS_PATH, body: payload)
+  end
+
+  def update_context(id, payload)
+    request(:put, "#{CONTEXTS_PATH}/#{escape(id)}", body: payload)
+  end
+
+  def associate_context_contexts(context_id, included_context_ids)
+    request(:put, "#{CONTEXTS_PATH}/#{escape(context_id)}/contexts",
+            body: { contexts: Array(included_context_ids).map { |cid| { id: cid } } })
+  end
+
+  def incalls
+    payload = request(:get, INCALLS_PATH, params: { limit: 1000 })
+    Array.wrap(payload['items'])
+  end
+
+  def create_incall(payload)
+    request(:post, INCALLS_PATH, body: payload)
+  end
+
+  def update_incall(id, payload)
+    request(:put, "#{INCALLS_PATH}/#{escape(id)}", body: payload)
+  end
+
+  def associate_incall_extension(incall_id, extension_id)
+    request(:put, "#{INCALLS_PATH}/#{escape(incall_id)}/extensions/#{escape(extension_id)}")
+  end
+
+  def outcalls
+    payload = request(:get, OUTCALLS_PATH, params: { limit: 1000 })
+    Array.wrap(payload['items'])
+  end
+
+  def create_outcall(payload)
+    request(:post, OUTCALLS_PATH, body: payload)
+  end
+
+  def update_outcall(id, payload)
+    request(:put, "#{OUTCALLS_PATH}/#{escape(id)}", body: payload)
+  end
+
+  def associate_outcall_trunks(outcall_id, trunk_ids)
+    request(:put, "#{OUTCALLS_PATH}/#{escape(outcall_id)}/trunks",
+            body: { trunks: Array(trunk_ids).map { |tid| { id: tid } } })
+  end
+
+  def associate_outcall_extension(outcall_id, extension_id, payload = {})
+    request(:put, "#{OUTCALLS_PATH}/#{escape(outcall_id)}/extensions/#{escape(extension_id)}", body: payload)
+  end
+
+  # --- Calld Active Calls, Recording & Transfer APIs ---
+
+  def active_calls(recurse: false)
+    payload = request(:get, CALLS_PATH, params: { recurse: recurse })
+    Array.wrap(payload['items'])
+  end
+
+  def active_call(call_id)
+    request(:get, "#{CALLS_PATH}/#{escape(call_id)}")
+  end
+
+  def hangup_call(call_id)
+    delete_resource("#{CALLS_PATH}/#{escape(call_id)}")
+  end
+
+  def start_call_recording(call_id)
+    request(:put, "#{CALLS_PATH}/#{escape(call_id)}/record/start")
+  end
+
+  def stop_call_recording(call_id)
+    request(:put, "#{CALLS_PATH}/#{escape(call_id)}/record/stop")
+  end
+
+  def pause_call_recording(call_id)
+    request(:put, "#{CALLS_PATH}/#{escape(call_id)}/record/pause")
+  end
+
+  def resume_call_recording(call_id)
+    request(:put, "#{CALLS_PATH}/#{escape(call_id)}/record/resume")
+  end
+
+  def connect_call_to_user(call_id, user_uuid, timeout: 30)
+    request(:put, "#{CALLS_PATH}/#{escape(call_id)}/user/#{escape(user_uuid)}", body: { timeout: timeout })
+  end
+
+  def initiate_transfer(transferred_call:, initiator_call:, context:, exten:, flow: 'blind', variables: {}, timeout: nil)
+    body = {
+      transferred_call: transferred_call.to_s,
+      initiator_call: initiator_call.to_s,
+      context: context.to_s,
+      exten: exten.to_s,
+      flow: flow.to_s
+    }
+    body[:variables] = variables if variables.present?
+    body[:timeout] = timeout if timeout.present?
+    request(:post, TRANSFERS_PATH, body: body)
+  end
+
+  def complete_transfer(transfer_id)
+    request(:put, "#{TRANSFERS_PATH}/#{escape(transfer_id)}/complete")
+  end
+
+  def cancel_transfer(transfer_id)
+    delete_resource("#{TRANSFERS_PATH}/#{escape(transfer_id)}")
   end
 
   private

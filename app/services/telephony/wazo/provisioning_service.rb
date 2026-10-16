@@ -10,6 +10,7 @@ class Telephony::Wazo::ProvisioningService # rubocop:disable Metrics/ClassLength
     @inbox = inbox
     @client = client
     @sip_context = sip_context.to_s.strip
+    @deferred_caller_id_line_ids = Set.new
     return if @sip_context.present?
 
     raise Telephony::Error.new(
@@ -120,13 +121,14 @@ class Telephony::Wazo::ProvisioningService # rubocop:disable Metrics/ClassLength
     created = {}
     remote_refs = resolve_graph_resources!(profile, endpoint, created)
     user_uuid, line_id, extension_id, endpoint_uuid = remote_refs.values_at(:user_uuid, :line_id, :extension_id, :endpoint_uuid)
-    associate_graph!(user_uuid, line_id, extension_id, endpoint_uuid)
+    associate_graph!(user_uuid, line_id, extension_id, endpoint_uuid, profile)
     persist_remote_refs!(profile, name, remote_refs)
 
     graph_operation(created, name, remote_refs)
   rescue StandardError
-    rollback_errors = rollback_created!(created || {})
-    clear_created_remote_refs!(profile, created || {}) if rollback_errors.empty?
+    rollback_created = created || {}
+    rollback_errors = rollback_created!(rollback_created)
+    clear_created_remote_refs!(profile, rollback_created) if rollback_errors.empty?
     raise
   end
 
@@ -282,9 +284,19 @@ class Telephony::Wazo::ProvisioningService # rubocop:disable Metrics/ClassLength
     end
     raise_extension_recovery_error! if conflicting
 
-    remote = client.create_line(line_payload(profile).merge(extensions: [extension_payload(profile)]))
-    line_id = remote['id'].presence
-    extension_id = managed_extension_for_profile(remote, profile)&.fetch('id', nil)
+    begin
+      remote = client.create_line(line_payload(profile).merge(extensions: [extension_payload(profile)]))
+      line_id = remote['id'].presence
+      extension_id = managed_extension_for_profile(remote, profile)&.fetch('id', nil)
+    rescue Telephony::Error => e
+      raise unless e.details.to_h[:http_status] == 400
+
+      remote_line = client.create_line(context: sip_context)
+      line_id = remote_line['id'].presence
+      remote_ext = client.create_extension(extension_payload(profile))
+      extension_id = remote_ext['id'].presence
+      @deferred_caller_id_line_ids << line_id.to_s if line_id.present?
+    end
     raise_extension_recovery_error! if line_id.blank? || extension_id.blank?
 
     [line_id, extension_id, line_id, extension_id]
@@ -329,10 +341,13 @@ class Telephony::Wazo::ProvisioningService # rubocop:disable Metrics/ClassLength
     )
   end
 
-  def associate_graph!(user_uuid, line_id, extension_id, endpoint_uuid)
-    client.associate_user_line(user_uuid, line_id)
-    client.associate_line_extension(line_id, extension_id)
+  def associate_graph!(user_uuid, line_id, extension_id, endpoint_uuid, profile = nil)
     client.associate_line_sip_endpoint(line_id, endpoint_uuid)
+    if profile.present? && @deferred_caller_id_line_ids.delete?(line_id.to_s)
+      client.update_line(line_id, line_payload(profile))
+    end
+    client.associate_line_extension(line_id, extension_id)
+    client.associate_user_line(user_uuid, line_id)
   end
 
   def rollback_created!(created)
@@ -531,7 +546,8 @@ class Telephony::Wazo::ProvisioningService # rubocop:disable Metrics/ClassLength
       aor_section_options: [%w[max_contacts 5], %w[remove_existing yes], %w[qualify_frequency 30]],
       auth_section_options: [['username', profile.sip_username], ['password', profile.sip_password]],
       endpoint_section_options: [
-        ['context', sip_context], ['disallow', 'all'], ['allow', 'opus,alaw,ulaw'],
+        ['context', sip_context], ['transport', 'transport-udp'],
+        ['disallow', 'all'], ['allow', 'opus,alaw,ulaw'],
         ['direct_media', 'no'], ['force_rport', 'yes'], ['rewrite_contact', 'yes'], ['rtp_symmetric', 'yes']
       ]
     }

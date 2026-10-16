@@ -55,12 +55,17 @@ class Telephony::Wazo::CallLogSyncService
     "telephony:wazo:cdr:cursor:#{connection.id}"
   end
 
-  def ingest(row, extension)
+  def ingest(row, extension) # rubocop:disable Metrics/AbcSize,Metrics/CyclomaticComplexity,Metrics/PerceivedComplexity -- Wazo v1/v24 CDR schema normalization
     return false unless row.is_a?(Hash)
 
-    direction = row['direction'].to_s.downcase
+    direction = (row['direction'] || row['call_direction']).to_s.downcase
     return false unless %w[inbound outbound].include?(direction)
-    operator_extension = direction == 'inbound' ? row['destination_internal_exten'] : row['source_internal_exten']
+
+    operator_extension = if direction == 'inbound'
+                           row['destination_internal_exten'] || row['destination_internal_extension']
+                         else
+                           row['source_internal_exten'] || row['source_internal_extension']
+                         end
     return false unless operator_extension.to_s == extension
 
     binding = find_binding(row, direction)
@@ -69,14 +74,19 @@ class Telephony::Wazo::CallLogSyncService
     profile = connection.sip_profiles.find_by(inbox_id: binding.inbox_id, internal_extension: extension, enabled: true)
     return false unless profile&.user_id
 
-    started_at = parse_time(row['date'])
-    ended_at = parse_time(row['date_end'])
+    started_at = parse_time(row['date'] || row['start'])
+    ended_at = parse_time(row['date_end'] || row['end'])
     return false unless started_at && ended_at
 
     cdr_ref = row['conversation_id'].presence || row['id'].presence
     return false unless cdr_ref
 
-    caller = normalize(direction == 'inbound' ? row['source_exten'] : row['destination_exten'])
+    raw_caller = if direction == 'inbound'
+                   row['source_exten'] || row['source_extension']
+                 else
+                   row['destination_exten'] || row['destination_extension']
+                 end
+    caller = normalize(raw_caller)
     return false unless caller
 
     cdr_ref = "wazo:cdr:#{cdr_ref}"
@@ -85,7 +95,7 @@ class Telephony::Wazo::CallLogSyncService
       did: normalize(binding.phone_number), direction: direction, started_at: started_at,
       cdr_ref: cdr_ref
     )
-    answered_at = parse_time(row['date_answer'])
+    answered_at = parse_time(row['date_answer'] || row['answer'])
     voicemail = ActiveModel::Type::Boolean.new.cast(row['reached_voicemail'])
     answered_at = nil if voicemail
     status = if answered_at
@@ -130,9 +140,12 @@ class Telephony::Wazo::CallLogSyncService
 
   def find_binding(row, direction)
     candidates = if direction == 'inbound'
-                   row.values_at('requested_exten', 'destination_exten')
+                   row.values_at('requested_exten', 'requested_extension', 'destination_exten', 'destination_extension')
                  else
-                   row.values_at('source_line_identity', 'source_exten', 'requested_exten', 'destination_exten')
+                   row.values_at(
+                     'source_line_identity', 'source_exten', 'source_extension',
+                     'requested_exten', 'requested_extension', 'destination_exten', 'destination_extension'
+                   )
                  end
     dids = candidates.filter_map { |value| normalize(value) }.uniq
     bindings.find do |binding|
