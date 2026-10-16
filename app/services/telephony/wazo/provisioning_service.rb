@@ -547,7 +547,7 @@ class Telephony::Wazo::ProvisioningService # rubocop:disable Metrics/ClassLength
       auth_section_options: [['username', profile.sip_username], ['password', profile.sip_password]],
       endpoint_section_options: [
         ['context', sip_context], ['transport', 'transport-udp'],
-        ['disallow', 'all'], ['allow', 'opus,alaw,ulaw'],
+        ['disallow', 'all'], ['allow', 'alaw,ulaw,opus'],
         ['direct_media', 'no'], ['force_rport', 'yes'], ['rewrite_contact', 'yes'], ['rtp_symmetric', 'yes']
       ]
     }
