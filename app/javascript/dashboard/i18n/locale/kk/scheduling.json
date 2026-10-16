@@ -129,6 +129,128 @@
       "INVALID_IIN": "ЖСН дұрыс емес",
       "MEDELEMENT_PATIENT_IDENTITY_CONFLICT": "Пациент деректері байланыстырылған MedElement картасына сәйкес келмейді. Пациент картасын таңдаңыз немесе бөлек жазба жасаңыз.",
       "MEDELEMENT_CANCELLATION_MODE_CHANGED": "MedElement жүйесіндегі болдырмау параметрі өзгерді. Қайта әрекеттенбес бұрын жазбаны жаңартып, болдырмау режимін тексеріңіз."
+    },
+    "NAV": {
+      "REMINDERS": "Еске салғыштар"
+    },
+    "REMINDERS": {
+      "HEADER": {
+        "TITLE": "Еске салғыштар",
+        "SUBTITLE": "Жазылу құрылғанда, ауыстырылғанда, тоқтатылғанда, сапар алдында және аяқталғаннан кейін WhatsApp арқылы автоматты хабарламалар"
+      },
+      "CHANNEL_LABEL": "Жіберуге арналған WhatsApp арнасы",
+      "NO_WHATSAPP_INBOX": "Еске салғыш үлгілерін жіберу үшін WhatsApp Cloud арнасын қосыңыз.",
+      "ACTIONS": {
+        "SYNC_TEMPLATES": "Мәртебелерді жаңарту",
+        "CREATE_CUSTOM_TEMPLATE": "Жеке үлгі",
+        "GENERATE_PACK": "Үлгілер шебері (RU / KK)",
+        "SAVE_PRESET": "Сценарийді сақтау"
+      },
+      "SUMMARY": {
+        "ACTIVE_PRESETS": "Белсенді сценарийлер: {active} / {total}",
+        "APPROVED_TEMPLATES": "Мақұлданған үлгілер: {count}",
+        "PENDING_TEMPLATES": "Meta модерациясында: {count}"
+      },
+      "STATUS": {
+        "ACTIVE": "Белсенді",
+        "INACTIVE": "Өшірулі",
+        "NO_TEMPLATE": "Үлгі таңдалмаған"
+      },
+      "TEMPLATE_STATUS": {
+        "APPROVED": "Мақұлданған",
+        "PENDING": "Meta модерациясында",
+        "REJECTED": "Meta қабылдамады",
+        "DISABLED": "Өшірулі"
+      },
+      "FIELDS": {
+        "TEMPLATE": "WhatsApp үлгісі",
+        "TEMPLATE_PLACEHOLDER": "Хабарлама үлгісін таңдаңыз",
+        "DAY_BEFORE_TIME": "Алдыңғы күнгі жіберу уақыты",
+        "CONFIRM_VIA_BUTTON": "WhatsApp батырмасымен растау",
+        "CONFIRM_VIA_BUTTON_HINT": "Клиент батырманы басқанда жазылу мәртебесі автоматты түрде «Расталды» болады",
+        "REVIEW_DELAY": "Сапар аяқталғаннан кейін қашан жіберу керек",
+        "VARIABLE_BINDINGS": "Жазылу деректерін үлгі айнымалыларына байланыстыру"
+      },
+      "REVIEW_DELAY": {
+        "IMMEDIATE": "Сапар аяқталғаннан кейін бірден",
+        "HOURS_1": "1 сағаттан кейін",
+        "HOURS_2": "2 сағаттан кейін",
+        "HOURS_3": "3 сағаттан кейін"
+      },
+      "PREVIEW": {
+        "TITLE": "WhatsApp алдын ала қарау",
+        "EMPTY": "Сол жақтан үлгіні таңдаңыз немесе 1 басумен дайын үлгілер жинағын жасаңыз"
+      },
+      "VARIABLES": {
+        "CLIENT_NAME": "Клиент аты",
+        "APPOINTMENT_DATE": "Жазылу күні",
+        "APPOINTMENT_TIME": "Жазылу уақыты",
+        "SPECIALIST_NAME": "Маман",
+        "SERVICE_NAME": "Қызмет",
+        "CLIENT_PHONE": "Клиент телефоны"
+      },
+      "PRESETS": {
+        "appointment_created": {
+          "TITLE": "Жазылу құрылды",
+          "DESCRIPTION": "Күнтізбеде немесе сыртқы жүйеде жазылу құрылғаннан кейін бірден жіберіледі"
+        },
+        "appointment_rescheduled": {
+          "TITLE": "Жазылу ауыстырылды",
+          "DESCRIPTION": "Жазылу күні немесе уақыты өзгергенде бірден жіберіледі"
+        },
+        "appointment_cancelled": {
+          "TITLE": "Жазылу тоқтатылды",
+          "DESCRIPTION": "Клиентке жазылудың тоқтатылғаны туралы хабарлайды"
+        },
+        "appointment_day_before": {
+          "TITLE": "1 күн бұрын еске салу",
+          "DESCRIPTION": "Сапардан бір күн бұрын белгіленген уақытта растау батырмасымен жіберіледі"
+        },
+        "appointment_two_hours_before": {
+          "TITLE": "2 сағат бұрын еске салу",
+          "DESCRIPTION": "Сапар басталғанға дейін 2 сағат бұрын қысқаша еске салу"
+        },
+        "appointment_review_request": {
+          "TITLE": "Сапардан кейін пікір сұрау",
+          "DESCRIPTION": "Сапар аяқталғаннан кейін сапаны бақылау және пікір жинау үшін жіберіледі"
+        }
+      },
+      "PACK_MODAL": {
+        "TITLE": "Еске салғыш үлгілерінің шебері (RU / KK)",
+        "DESCRIPTION": "6 әмбебап WhatsApp үлгісін жасап, бір басумен Meta модерациясына жіберіңіз.",
+        "LANGUAGE_LABEL": "Хабарлама тілі",
+        "LANG_BOTH": "Екі тілде (Қазақша + Русский)",
+        "LANG_RU": "Тек орысша",
+        "LANG_KK": "Тек қазақша",
+        "INCLUDE_COMPANY": "Компания атауын көрсету",
+        "INCLUDE_COMPANY_HINT": "Компания атауы үлгі мәтініне қосылады",
+        "COMPANY_NAME_RU": "Компания атауы (орысша)",
+        "COMPANY_NAME_KK": "Компания атауы (қазақша)",
+        "COMPANY_NAME_PLACEHOLDER": "Мысалы: Сұлулық және денсаулық орталығы",
+        "GREET_BY_NAME": "Клиенттің атымен амандасу ({{имя клиента}})",
+        "INCLUDE_DATETIME": "Жазылу күні мен уақытын көрсету",
+        "INCLUDE_SPECIALIST": "Маманды көрсету",
+        "INCLUDE_SERVICE": "Қызметті көрсету",
+        "CONFIRMATION_BUTTON": "1 күн бұрын еске салғышта «Жазылуды растаймын» батырмасы",
+        "CONFIRMATION_BUTTON_HINT": "Күнтізбедегі жазылуды автоматты түрде растайтын жылдам жауап батырмасын қосады",
+        "INCLUDE_LOCATION_URL": "Карта сілтемесі бар батырма қосу (2ГИС / Google Maps)",
+        "LOCATION_URL_LABEL": "Карта сілтемесі",
+        "PREVIEW_SECTION": "Жасалатын үлгілерді алдын ала қарау",
+        "READY_COUNT": "Жасауға дайын: {count} / {total}",
+        "EXISTS_BADGE": "Бар",
+        "SUBMIT": "Meta-ға жіберу ({count})",
+        "APPLY_EXISTING": "Бар үлгілерді байланыстыру",
+        "SUCCESS": "Meta модерациясына жіберілген үлгілер саны: {count}",
+        "ALREADY_EXISTS_NOTICE": "Жинақтағы барлық үлгілер осы арнада бұрыннан бар",
+        "ERROR": "Meta-да үлгілерді жасау мүмкін болмады"
+      },
+      "ERRORS": {
+        "INBOX_REQUIRED": "WhatsApp арнасын таңдаңыз",
+        "TEMPLATE_REQUIRED": "Сценарий үшін WhatsApp үлгісін таңдаңыз",
+        "INVALID_LOCATION_URL": "Картаға дұрыс сілтеме енгізіңіз (https://)"
+      },
+      "SAVE_SUCCESS": "Еске салғыш сценарийі сақталды",
+      "SAVE_ERROR": "Еске салғыш сценарийін сақтау мүмкін болмады"
     }
   }
 }

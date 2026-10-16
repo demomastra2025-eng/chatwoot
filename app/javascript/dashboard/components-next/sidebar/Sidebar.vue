@@ -1411,6 +1411,12 @@ const menuItems = computed(() => {
                   label: t('SIDEBAR.SCHEDULING_EXCEPTIONS'),
                   to: accountScopedRoute('scheduling_exceptions'),
                 },
+                {
+                  name: 'Scheduling Reminders',
+                  visibilityKey: 'Scheduling:Reminders',
+                  label: t('SIDEBAR.SCHEDULING_REMINDERS'),
+                  to: accountScopedRoute('scheduling_reminders'),
+                },
                 ...(hasSchedulingSettings.value
                   ? [
                       {

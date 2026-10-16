@@ -28,6 +28,7 @@ import {
   TEMPLATE_CATEGORY_OPTIONS,
   TEMPLATE_HEADER_TYPE_OPTIONS,
 } from 'dashboard/helper/whatsappTemplateLibrary';
+import { APPOINTMENT_SEMANTIC_VARIABLES } from 'dashboard/helper/appointmentTemplatePresets';
 
 const props = defineProps({
   inboxId: {
@@ -52,11 +53,21 @@ const submitError = ref('');
 const form = reactive(createEmptyWhatsAppTemplateForm());
 let mediaUploadGeneration = 0;
 
-function syncExampleMap(currentMap, variables) {
+function syncExampleMap(currentMap, variables, fallbackExamples = {}) {
   return Object.fromEntries(
-    variables.map(variable => [variable, currentMap?.[variable] || ''])
+    variables.map(variable => [
+      variable,
+      currentMap?.[variable] || fallbackExamples?.[variable] || '',
+    ])
   );
 }
+
+const insertSemanticVariable = token => {
+  const current = String(form.bodyText || '');
+  const separator =
+    current && !current.endsWith(' ') && !current.endsWith('\n') ? ' ' : '';
+  form.bodyText = `${current}${separator}${token}`;
+};
 
 function placeholderToken(variable) {
   return `{{${variable}}}`;
@@ -542,7 +553,8 @@ watch(
   variableInfo => {
     form.bodyExamples = syncExampleMap(
       form.bodyExamples,
-      variableInfo.variables
+      variableInfo.variables,
+      variableInfo.examples
     );
   },
   { immediate: true }
@@ -816,6 +828,20 @@ defineExpose({
               t('WHATSAPP_TEMPLATES.MANAGEMENT.VARIABLE_HINT', exampleVariables)
             }}
           </p>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-1.5">
+          <button
+            v-for="semVar in APPOINTMENT_SEMANTIC_VARIABLES"
+            :key="semVar.key"
+            type="button"
+            data-testid="semantic-variable-chip"
+            class="inline-flex items-center gap-1 rounded-lg border border-n-weak bg-n-alpha-black2 px-2.5 py-1 text-xs font-medium text-n-slate-12 transition-colors hover:border-n-brand/60 hover:bg-n-brand/10 hover:text-n-brand"
+            @click="insertSemanticVariable(semVar.token)"
+          >
+            <span class="i-lucide-plus size-3" />
+            <span>{{ semVar.defaultLabel }}</span>
+          </button>
         </div>
 
         <TextArea

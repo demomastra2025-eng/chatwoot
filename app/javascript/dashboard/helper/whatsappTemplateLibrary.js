@@ -4,6 +4,10 @@ import {
   MEDIA_FORMATS,
   extractTemplateVariables,
 } from './templateHelper';
+import {
+  findSemanticVariableByToken,
+  serializeSemanticTemplateText,
+} from './appointmentTemplatePresets';
 
 export const DEFAULT_TEMPLATE_LANGUAGE = 'en';
 export const DEFAULT_TEMPLATE_CATEGORY = 'UTILITY';
@@ -114,9 +118,25 @@ export const hasDanglingTemplateVariable = text => {
     return false;
   }
 
-  return (
-    /^{{\s*\d+\s*}}/.test(trimmedText) || /{{\s*\d+\s*}}$/.test(trimmedText)
-  );
+  const leadingMatch = trimmedText.match(/^{{\s*([^}]+?)\s*}}/);
+  if (
+    leadingMatch &&
+    (/^\d+$/.test(leadingMatch[1].trim()) ||
+      Boolean(findSemanticVariableByToken(leadingMatch[1])))
+  ) {
+    return true;
+  }
+
+  const trailingMatch = trimmedText.match(/{{\s*([^}]+?)\s*}}$/);
+  if (
+    trailingMatch &&
+    (/^\d+$/.test(trailingMatch[1].trim()) ||
+      Boolean(findSemanticVariableByToken(trailingMatch[1])))
+  ) {
+    return true;
+  }
+
+  return false;
 };
 
 export const extractSequentialTemplateVariables = text => {
@@ -130,6 +150,21 @@ export const extractSequentialTemplateVariables = text => {
   }
 
   if (!placeholders.every(value => /^\d+$/.test(value))) {
+    if (
+      placeholders.every(
+        value =>
+          /^\d+$/.test(value) || Boolean(findSemanticVariableByToken(value))
+      )
+    ) {
+      const serialized = serializeSemanticTemplateText(text);
+      return {
+        variables: serialized.variables,
+        examples: serialized.examples,
+        semanticMap: serialized.semanticMap,
+        error: serialized.error,
+      };
+    }
+
     return {
       variables: [],
       error: 'Variables must use numeric placeholders like {{1}}',
@@ -212,15 +247,30 @@ export const buildWhatsAppTemplatePayload = form => {
     };
   }
 
+  const rawBodyText = compactString(form.bodyText);
+  const hasSemanticBodyTokens = (
+    rawBodyText.match(/{{\s*([^}]+?)\s*}}/g) || []
+  ).some(token => {
+    const inner = token.replace(/{{|}}/g, '').trim();
+    return !/^\d+$/.test(inner) && Boolean(findSemanticVariableByToken(inner));
+  });
+  const serializedBody = hasSemanticBodyTokens
+    ? serializeSemanticTemplateText(rawBodyText, form.bodyExamples)
+    : null;
+
   return {
     ...basePayload,
     header_type: form.headerType,
     header_text: compactString(form.headerText),
-    body_text: compactString(form.bodyText),
+    body_text: serializedBody ? serializedBody.serializedText : rawBodyText,
     footer_text: compactString(form.footerText),
     sample_media_url: compactString(form.sampleMediaUrl),
     sample_media_blob_id: compactString(form.sampleMediaBlobId),
-    body_examples: compactObject(form.bodyExamples),
+    body_examples: compactObject(
+      serializedBody
+        ? { ...serializedBody.examples, ...compactObject(form.bodyExamples) }
+        : form.bodyExamples
+    ),
     header_examples: compactObject(form.headerExamples),
     buttons: form.buttons.map(normalizeTemplateButton),
   };

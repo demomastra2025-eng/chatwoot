@@ -559,7 +559,8 @@
       "AI": "AI"
     },
     "VISIBILITY": "Navigation",
-    "STORAGE": "Storage"
+    "STORAGE": "Storage",
+    "SCHEDULING_REMINDERS": "Reminders"
   },
   "LEAD_FORMS": {
     "KICKER": "Lead intake",

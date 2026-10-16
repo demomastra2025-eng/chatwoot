@@ -557,7 +557,8 @@
       "AI": "AI"
     },
     "VISIBILITY": "Навигация",
-    "STORAGE": "Хранилище"
+    "STORAGE": "Хранилище",
+    "SCHEDULING_REMINDERS": "Напоминания"
   },
   "LEAD_FORMS": {
     "KICKER": "Прием заявок",

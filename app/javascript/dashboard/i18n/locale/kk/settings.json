@@ -542,7 +542,8 @@
       "AI": "AI"
     },
     "VISIBILITY": "Навигация",
-    "STORAGE": "Қойма"
+    "STORAGE": "Қойма",
+    "SCHEDULING_REMINDERS": "Еске салғыштар"
   },
   "LEAD_FORMS": {
     "KICKER": "Lead intake",

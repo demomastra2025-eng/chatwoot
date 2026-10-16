@@ -22,7 +22,8 @@
       "CALENDAR": "Calendar",
       "RESOURCES": "Specialists",
       "SERVICES": "Services",
-      "EXCEPTIONS": "Breaks"
+      "EXCEPTIONS": "Breaks",
+      "REMINDERS": "Reminders"
     },
     "VIEWS": {
       "CALENDAR": "Calendar",
@@ -500,6 +501,125 @@
       "4": "Thursday",
       "5": "Friday",
       "6": "Saturday"
+    },
+    "REMINDERS": {
+      "HEADER": {
+        "TITLE": "Reminders",
+        "SUBTITLE": "Automated WhatsApp notifications for booking creation, rescheduling, cancellation, upcoming visit reminders, and post-visit feedback"
+      },
+      "CHANNEL_LABEL": "WhatsApp channel",
+      "NO_WHATSAPP_INBOX": "Connect a WhatsApp Cloud inbox to send template appointment reminders.",
+      "ACTIONS": {
+        "SYNC_TEMPLATES": "Sync statuses",
+        "CREATE_CUSTOM_TEMPLATE": "Custom template",
+        "GENERATE_PACK": "Template Wizard (RU / KK)",
+        "SAVE_PRESET": "Save scenario"
+      },
+      "SUMMARY": {
+        "ACTIVE_PRESETS": "Active scenarios: {active} of {total}",
+        "APPROVED_TEMPLATES": "Approved templates: {count}",
+        "PENDING_TEMPLATES": "Pending Meta review: {count}"
+      },
+      "STATUS": {
+        "ACTIVE": "Active",
+        "INACTIVE": "Disabled",
+        "NO_TEMPLATE": "No template selected"
+      },
+      "TEMPLATE_STATUS": {
+        "APPROVED": "Approved",
+        "PENDING": "Pending review",
+        "REJECTED": "Rejected",
+        "DISABLED": "Disabled"
+      },
+      "FIELDS": {
+        "TEMPLATE": "WhatsApp template",
+        "TEMPLATE_PLACEHOLDER": "Select a message template",
+        "DAY_BEFORE_TIME": "Send time the day before",
+        "CONFIRM_VIA_BUTTON": "Confirm via WhatsApp button",
+        "CONFIRM_VIA_BUTTON_HINT": "When the client taps the quick-reply button, the booking status automatically updates to Confirmed",
+        "REVIEW_DELAY": "When to send after visit completion",
+        "VARIABLE_BINDINGS": "Bind booking fields to template variables"
+      },
+      "REVIEW_DELAY": {
+        "IMMEDIATE": "Immediately after visit completion",
+        "HOURS_1": "1 hour after visit",
+        "HOURS_2": "2 hours after visit",
+        "HOURS_3": "3 hours after visit"
+      },
+      "PREVIEW": {
+        "TITLE": "WhatsApp Preview",
+        "EMPTY": "Select a template on the left or generate a ready-to-use pack in 1 click"
+      },
+      "VARIABLES": {
+        "CLIENT_NAME": "Client name",
+        "APPOINTMENT_DATE": "Booking date",
+        "APPOINTMENT_TIME": "Booking time",
+        "SPECIALIST_NAME": "Specialist",
+        "SERVICE_NAME": "Service",
+        "CLIENT_PHONE": "Client phone"
+      },
+      "PRESETS": {
+        "appointment_created": {
+          "TITLE": "Booking created",
+          "DESCRIPTION": "Sent immediately when a booking is created in the calendar or synced from an external integration"
+        },
+        "appointment_rescheduled": {
+          "TITLE": "Booking rescheduled",
+          "DESCRIPTION": "Sent immediately when the booking date or time changes"
+        },
+        "appointment_cancelled": {
+          "TITLE": "Booking cancelled",
+          "DESCRIPTION": "Notifies the client about cancellation and invites them to pick a new time"
+        },
+        "appointment_day_before": {
+          "TITLE": "1 day before reminder",
+          "DESCRIPTION": "Sent the day before the visit at the configured time with an optional confirmation button"
+        },
+        "appointment_two_hours_before": {
+          "TITLE": "2 hours before reminder",
+          "DESCRIPTION": "Short reminder sent 2 hours before the visit starts"
+        },
+        "appointment_review_request": {
+          "TITLE": "Post-visit feedback request",
+          "DESCRIPTION": "Sent after the visit is completed to collect feedback"
+        }
+      },
+      "PACK_MODAL": {
+        "TITLE": "Reminder Template Wizard (RU / KK)",
+        "DESCRIPTION": "Generate a complete set of 6 universal WhatsApp templates and submit them to Meta in one click.",
+        "LANGUAGE_LABEL": "Message language",
+        "LANG_BOTH": "Bilingual (Қазақша + Русский)",
+        "LANG_RU": "Russian only",
+        "LANG_KK": "Kazakh only",
+        "INCLUDE_COMPANY": "Include company name",
+        "INCLUDE_COMPANY_HINT": "Your company or branch name will be included in the template text",
+        "COMPANY_NAME_RU": "Company name (Russian)",
+        "COMPANY_NAME_KK": "Company name (Kazakh)",
+        "COMPANY_NAME_PLACEHOLDER": "e.g. Prime Studio",
+        "GREET_BY_NAME": "Greet client by name ({{имя клиента}})",
+        "INCLUDE_DATETIME": "Include booking date and time",
+        "INCLUDE_SPECIALIST": "Include specialist",
+        "INCLUDE_SERVICE": "Include service",
+        "CONFIRMATION_BUTTON": "Add Confirm Booking button to 1-day reminder",
+        "CONFIRMATION_BUTTON_HINT": "Adds a quick-reply button that automatically marks the booking as Confirmed",
+        "INCLUDE_LOCATION_URL": "Add map / directions link button (2GIS / Google Maps)",
+        "LOCATION_URL_LABEL": "Map or directions URL",
+        "PREVIEW_SECTION": "Generated templates preview",
+        "READY_COUNT": "To create: {count} of {total}",
+        "EXISTS_BADGE": "Exists",
+        "SUBMIT": "Submit templates to Meta ({count})",
+        "APPLY_EXISTING": "Bind existing templates",
+        "SUCCESS": "Submitted templates to Meta for review: {count}",
+        "ALREADY_EXISTS_NOTICE": "All templates in the pack already exist in this channel and have been bound",
+        "ERROR": "Failed to create templates in Meta"
+      },
+      "ERRORS": {
+        "INBOX_REQUIRED": "Please select a WhatsApp channel",
+        "TEMPLATE_REQUIRED": "Please select a WhatsApp template for this scenario",
+        "INVALID_LOCATION_URL": "Please enter a valid map URL starting with https://"
+      },
+      "SAVE_SUCCESS": "Reminder scenario saved",
+      "SAVE_ERROR": "Failed to save reminder scenario"
     }
   }
 }

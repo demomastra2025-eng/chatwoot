@@ -10,6 +10,8 @@ const SchedulingResourcesPage = () =>
   import('./pages/SchedulingResourcesPage.vue');
 const SchedulingServicesPage = () =>
   import('./pages/SchedulingServicesPage.vue');
+const SchedulingRemindersPage = () =>
+  import('./pages/SchedulingRemindersPage.vue');
 const schedulingMeta = {
   featureFlag: FEATURE_FLAGS.SCHEDULING,
   permissions: SCHEDULING_ACCESS_PERMISSIONS,
@@ -51,6 +53,12 @@ export const routes = [
     path: frontendURL('accounts/:accountId/scheduling/exceptions'),
     name: 'scheduling_exceptions',
     component: SchedulingExceptionsPage,
+    meta: schedulingAdminMeta,
+  },
+  {
+    path: frontendURL('accounts/:accountId/scheduling/reminders'),
+    name: 'scheduling_reminders',
+    component: SchedulingRemindersPage,
     meta: schedulingAdminMeta,
   },
 ];
