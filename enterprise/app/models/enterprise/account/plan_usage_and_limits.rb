@@ -227,19 +227,10 @@ module Enterprise::Account::PlanUsageAndLimits # rubocop:disable Metrics/ModuleL
     errors.add(:limits, ': Invalid data') unless self[:limits].is_a? Hash
     self[:limits] = {} if self[:limits].blank?
 
+    # The keys come from the one list of the plans (Accounts::Plans::LIMIT_KEYS), so a limit added there is accepted here
     limit_schema = {
       'type' => 'object',
-      'properties' => {
-        'inboxes' => { 'type': 'number', 'minimum': 0 },
-        'agents' => { 'type': 'number', 'minimum': 0 },
-        'conversations' => { 'type': 'number', 'minimum': 0 },
-        'non_web_inboxes' => { 'type': 'number', 'minimum': 0 },
-        'storage_bytes' => { 'type': 'number', 'minimum': 0 },
-        'captain_responses' => { 'type': 'number', 'minimum': 0 },
-        'captain_documents' => { 'type': 'number', 'minimum': 0 },
-        'captain_tokens' => { 'type': 'number', 'minimum': 0 },
-        'emails' => { 'type': 'number', 'minimum': 0 }
-      },
+      'properties' => Accounts::Plans::LIMIT_KEYS.index_with { { 'type': 'number', 'minimum': 0 } },
       'required' => [],
       'additionalProperties' => false
     }

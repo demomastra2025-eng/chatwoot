@@ -20,7 +20,8 @@ class Accounts::Plans
   UNLIMITED = 'unlimited'
   # Kazakhstan is a single time zone (UTC+5) since 2024-03-01; every time a person reads is shown in it.
   ASTANA_OFFSET = '+05:00'
-  # The keys of Account#limits (see Enterprise::Account::PlanUsageAndLimits#validate_limit_keys)
+  # The keys of Account#limits. The one list: the validation of Account#limits (Enterprise::Account::PlanUsageAndLimits
+  # #validate_limit_keys) is built from it, so a key added here is accepted by the model and the plans can set it.
   LIMIT_KEYS = %w[
     inboxes agents conversations non_web_inboxes storage_bytes captain_responses captain_documents captain_tokens emails
   ].freeze

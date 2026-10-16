@@ -93,6 +93,18 @@ RSpec.describe Accounts::Plans do
       expect(Account.new(name: 'All keys', limits: described_class::LIMIT_KEYS.index_with(1))).to be_valid
     end
 
+    it 'is the one list of limit keys: the account accepts each of them, nothing else, and follows the list when it changes' do
+      described_class::LIMIT_KEYS.each do |key|
+        expect(Account.new(name: 'One key', limits: { key => 1 })).to be_valid, key
+      end
+      expect(Account.new(name: 'Ghost', limits: { 'ghost_limit' => 1 })).not_to be_valid
+      expect(Account.new(name: 'Negative', limits: described_class::LIMIT_KEYS.index_with(-1))).not_to be_valid
+
+      stub_const('Accounts::Plans::LIMIT_KEYS', [*described_class::LIMIT_KEYS, 'ghost_limit'].freeze)
+
+      expect(Account.new(name: 'Ghost', limits: { 'ghost_limit' => 1 })).to be_valid
+    end
+
     it 'turns unlimited into the platform maximum so the global defaults cannot trap a new clinic' do
       limits = plans.limits_for([])
 
