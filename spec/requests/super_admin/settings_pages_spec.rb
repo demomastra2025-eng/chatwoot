@@ -174,7 +174,7 @@ RSpec.describe 'Super admin settings pages', type: :request do
     end
 
     it 'keeps the two actions' do
-      forms = block.css('form.button_to').map { |form| form['action'] }
+      forms = block.css('form').pluck('action')
 
       expect(forms).to contain_exactly('/super_admin/app_config/refresh_openrouter_key_health?config=captain',
                                        '/super_admin/app_config/refresh_openrouter_models?config=captain')
