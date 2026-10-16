@@ -9,7 +9,7 @@
 <%
   # A form that comes back with errors keeps the organization that was picked, although it was not saved with the rest
   sent = params[:account]
-  selected = sent.respond_to?(:key?) && sent.key?(:organization_id) ? sent[:organization_id].to_s : field.data
+  selected = sent.respond_to?(:key?) && sent.key?(:organization_id) ? sent[:organization_id].to_s : field.data.to_s
 %>
 
 <div class="field-unit__label">
