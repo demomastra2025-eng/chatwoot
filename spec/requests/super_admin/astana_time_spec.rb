@@ -98,4 +98,62 @@ RSpec.describe 'Super Admin times in Astana time', type: :request do
       expect(user.reload.confirmed_at).to eq(Time.utc(2026, 10, 15, 18, 30))
     end
   end
+
+  # The datetime input of a form shows Astana wall-clock time, so whatever controller serves the form must turn it back
+  # into a moment: the base controller does it for the attributes of any dashboard.
+  describe 'every form that edits a date and time' do
+    def dashboard_classes
+      Dir[Rails.root.join('{app,enterprise/app}/dashboards/*_dashboard.rb')].map { |path| File.basename(path, '.rb').camelize.constantize }
+    end
+
+    def time_field?(type)
+      field_class = type.respond_to?(:deferred_class) ? type.deferred_class : type
+      field_class.is_a?(Class) && field_class <= Administrate::Field::DateTime
+    end
+
+    def time_form_attributes(dashboard)
+      names = %w[new create edit update].flat_map do |action|
+        form = dashboard.form_attributes(action)
+        form.is_a?(Hash) ? form.values.flatten : Array(form)
+      end
+      names.uniq.select { |name| time_field?(dashboard.attribute_types[name]) }
+    end
+
+    def resource_params_owners(controller)
+      owners = []
+      method = controller.instance_method(:resource_params)
+      while method
+        owners << method.owner
+        method = method.super_method
+      end
+      owners
+    end
+
+    it 'is served by a controller whose resource_params reaches the conversion of the base controller' do
+      edited = dashboard_classes.select { |klass| time_form_attributes(klass.new).any? }
+
+      expect(edited).to include(UserDashboard)
+      edited.each do |klass|
+        controller = "SuperAdmin::#{klass.name.delete_suffix('Dashboard').pluralize}Controller".constantize
+
+        expect(resource_params_owners(controller)).to include(SuperAdmin::ApplicationController), klass.name
+      end
+    end
+
+    it 'converts the time of an attribute of any dashboard, whatever the controller' do
+      dashboard = instance_double(UserDashboard, attribute_types: { confirmed_at: ConfirmedAtField, created_at: Administrate::Field::DateTime,
+                                                                   name: Administrate::Field::String,
+                                                                   note: Administrate::Field::String.with_options(searchable: true) })
+      controller = SuperAdmin::UsersController.new
+      allow(controller).to receive(:dashboard).and_return(dashboard)
+
+      expect(controller.send(:astana_input_attributes)).to eq(%i[confirmed_at created_at])
+    end
+
+    it 'saves the time of an edit form as the same moment, for a date and time the controller lists' do
+      patch "/super_admin/users/#{create(:user).id}", params: { user: { confirmed_at: '2026-10-15T00:30' } }
+
+      expect(User.order(:id).last.confirmed_at).to eq(Time.utc(2026, 10, 14, 19, 30))
+    end
+  end
 end

@@ -30,7 +30,26 @@ class SuperAdmin::ApplicationController < Administrate::ApplicationController
     )
   end
 
+  # Every date and time input of a form holds Astana wall-clock time (app/views/fields/date_time/_form.html.erb), so it
+  # is turned back into a moment here, for the attributes of ANY dashboard that are edited as a date and time. A
+  # controller that overrides this method calls `super`.
+  def resource_params
+    permitted = super
+    astana_input_attributes.each do |name|
+      permitted[name] = SuperAdmin::DisplayHelper.parse_input(permitted[name]) if permitted.key?(name)
+    end
+    permitted
+  end
+
   private
+
+  # The attributes of the dashboard that are edited with the datetime input (Field::DateTime and its subclasses)
+  def astana_input_attributes
+    dashboard.attribute_types.filter_map do |name, type|
+      field_class = type.respond_to?(:deferred_class) ? type.deferred_class : type
+      name if field_class.is_a?(Class) && field_class <= Administrate::Field::DateTime
+    end
+  end
 
   def render_vue_component(component_name, props = {})
     html_options = {

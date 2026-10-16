@@ -2,8 +2,10 @@
 # DateTime Form Partial
 
 Replaces the Administrate partial: the input holds Astana wall-clock time
-(UTC+5). The controllers of the resources that edit a time convert it back
-(`SuperAdmin::DisplayHelper.parse_input`).
+(UTC+5). The base controller turns it back into a moment for every dashboard
+(`SuperAdmin::ApplicationController#resource_params`, which uses
+`SuperAdmin::DisplayHelper.parse_input`); a controller that overrides
+`resource_params` calls `super`.
 
 ## Local variables:
 
