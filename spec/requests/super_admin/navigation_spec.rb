@@ -39,7 +39,7 @@ RSpec.describe 'Super Admin sidebar', type: :request do
     end
 
     it 'lists the clinics, AI and system entries' do
-      expect(link_texts(group('clinics'))).to eq(%w[Сводка Аккаунты Пользователи])
+      expect(link_texts(group('clinics'))).to eq(%w[Сводка Организации Аккаунты Пользователи])
       expect(link_texts(group('ai'))).to eq(['Модели ИИ', 'AI-аналитика'])
       expect(link_texts(group('system')).first(6)).to eq(['Мониторинг', 'Логи', 'Очереди', 'Статус сервера', 'Журнал аудита', 'Push-диагностика'])
       expect(link_texts(group('system'))).to include('Настройки')
@@ -49,6 +49,7 @@ RSpec.describe 'Super Admin sidebar', type: :request do
     it 'links every entry to its page' do
       {
         'Сводка' => '/super_admin',
+        'Организации' => '/super_admin/organizations',
         'Аккаунты' => '/super_admin/accounts',
         'Пользователи' => '/super_admin/users',
         'Модели ИИ' => '/super_admin/app_config?config=captain',
@@ -167,6 +168,17 @@ RSpec.describe 'Super Admin sidebar', type: :request do
 
       get "/super_admin/accounts/#{account.id}/edit"
       expect(current_labels).to eq(['Аккаунты'])
+    end
+
+    it 'marks the organizations on the list, show, new and edit pages' do
+      organization = create(:organization)
+
+      ['/super_admin/organizations', "/super_admin/organizations/#{organization.id}", '/super_admin/organizations/new',
+       "/super_admin/organizations/#{organization.id}/edit"].each do |path|
+        get path
+
+        expect(current_labels).to eq(['Организации']), "#{path} should mark Организации, marked #{current_labels}"
+      end
     end
 
     it 'marks the users' do

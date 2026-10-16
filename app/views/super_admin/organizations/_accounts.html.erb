@@ -1,0 +1,132 @@
+<%#
+# «Аккаунты» of an organization
+
+The accounts that belong to the organization: name (a link to the account), plan chips, operators used / limit,
+channels and status, with «Отвязать» per row (asks first; the account itself stays as it is) and a totals row. Below the
+table, «Привязать аккаунт»: a select of the accounts that have no organization yet. The numbers of all rows are read at
+once (`SuperAdmin::AccountListStats`).
+
+## Local variables:
+
+- `organization`: the Organization.
+%>
+<%
+  accounts = organization.accounts.order(:name, :id).to_a
+  stats = SuperAdmin::AccountListStats.new(accounts)
+  rows = accounts.map { |account| [account, stats.for(account)] }
+  status_tones = { active: 'teal', suspended: 'amber', deleting: 'ruby' }
+
+  operators_used_total = rows.sum { |_account, row| row.operators_used }
+  limited = rows.reject { |_account, row| row.operators_unlimited? }
+  # A limit can only be added up when every account has one
+  operators_limit_total = limited.sum { |_account, row| row.operators_limit } if rows.any? && limited.size == rows.size
+  channels_total = rows.sum { |_account, row| row.channels }
+
+  candidates = Account.where(organization_id: nil).order(:name, :id).pluck(:name, :id)
+  options = candidates.map { |name, id| ["#{name} · ##{id}", id] }
+%>
+
+<section class="admin-card" aria-labelledby="organization-accounts-title" data-testid="accounts-block">
+  <div class="flex flex-wrap items-baseline justify-between gap-2 border-b border-n-weak px-5 py-4">
+    <h2 class="m-0 text-heading-2 text-n-slate-12" id="organization-accounts-title"><%= t('super_admin.organizations.card.accounts.title') %></h2>
+    <span class="text-xs tabular-nums text-n-slate-11"><%= t('super_admin.organizations.card.accounts.total', count: rows.size) %></span>
+  </div>
+
+  <div class="admin-card--table">
+    <table aria-labelledby="organization-accounts-title">
+      <thead>
+        <tr>
+          <th scope="col"><%= t('super_admin.accounts.columns.clinic') %></th>
+          <th scope="col"><%= t('super_admin.accounts.columns.plan') %></th>
+          <th scope="col" class="cell-label--number"><%= t('super_admin.accounts.columns.operators') %></th>
+          <th scope="col" class="cell-label--number"><%= t('super_admin.accounts.columns.channels') %></th>
+          <th scope="col"><%= t('super_admin.accounts.columns.status') %></th>
+          <th scope="col"><span class="sr-only"><%= t('super_admin.accounts.columns.actions') %></span></th>
+        </tr>
+      </thead>
+
+      <tbody>
+        <% if rows.empty? %>
+          <tr>
+            <td colspan="6" class="py-8 text-center text-n-slate-11"><%= t('super_admin.organizations.card.accounts.empty') %></td>
+          </tr>
+        <% end %>
+
+        <% rows.each do |account, row| %>
+          <tr data-account-id="<%= account.id %>">
+            <td>
+              <%= link_to account.name, super_admin_account_path(account), class: 'font-medium text-n-slate-12 hover:text-n-brand' %>
+              <div class="text-xs tabular-nums text-n-slate-10">#<%= account.id %></div>
+            </td>
+
+            <td>
+              <div class="flex flex-wrap items-center gap-1.5">
+                <% row.plan.chips.each do |chip| %>
+                  <span class="admin-badge admin-badge--<%= chip.tone %>"><%= chip.text %></span>
+                <% end %>
+                <% if row.plan.drifted? %>
+                  <span class="text-xs text-n-amber-11" title="<%= t('super_admin.plans.drift.title') %>"><%= t('super_admin.plans.drift.short') %></span>
+                <% end %>
+              </div>
+            </td>
+
+            <td class="cell-data--number whitespace-nowrap">
+              <% if row.operators_unlimited? %>
+                <span class="tabular-nums"><%= super_admin_number(row.operators_used) %></span>
+                <span class="text-xs text-n-slate-10"><%= t('super_admin.accounts.list.no_limit') %></span>
+              <% else %>
+                <span class="tabular-nums <%= 'text-n-ruby-11 font-medium' if row.operators_used > row.operators_limit %>"><%= super_admin_number(row.operators_used) %></span>
+                <span class="text-n-slate-10">/ <%= super_admin_number(row.operators_limit) %></span>
+              <% end %>
+            </td>
+
+            <td class="cell-data--number tabular-nums"><%= super_admin_number(row.channels) %></td>
+
+            <td>
+              <span class="admin-badge admin-badge--<%= status_tones.fetch(row.status) %>"><%= row.plan.status_label %></span>
+            </td>
+
+            <td class="text-end">
+              <%= button_to t('super_admin.organizations.card.accounts.unlink'), unlink_account_super_admin_organization_path(organization),
+                            method: :delete, params: { account_id: account.id },
+                            class: 'button button--small button--alt', form_class: 'inline-block',
+                            data: { confirm: t('super_admin.organizations.card.accounts.unlink_confirm', account: account.name, organization: organization.name) } %>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+
+      <% if rows.any? %>
+        <tfoot>
+          <tr data-testid="accounts-totals">
+            <th scope="row" class="font-medium"><%= t('super_admin.organizations.card.accounts.totals') %></th>
+            <td></td>
+            <td class="cell-data--number whitespace-nowrap font-medium">
+              <span class="tabular-nums"><%= super_admin_number(operators_used_total) %></span>
+              <% if operators_limit_total %>
+                <span class="font-normal text-n-slate-10">/ <%= super_admin_number(operators_limit_total) %></span>
+              <% end %>
+            </td>
+            <td class="cell-data--number font-medium tabular-nums"><%= super_admin_number(channels_total) %></td>
+            <td></td>
+            <td></td>
+          </tr>
+        </tfoot>
+      <% end %>
+    </table>
+  </div>
+
+  <div class="border-t border-n-weak px-5 py-4" data-testid="link-account">
+    <% if options.empty? %>
+      <p class="admin-block__note"><%= t('super_admin.organizations.card.accounts.none_to_link') %></p>
+    <% else %>
+      <%= form_with url: link_account_super_admin_organization_path(organization), method: :post, local: true, class: 'flex flex-wrap items-end gap-3' do %>
+        <div class="flex min-w-0 flex-1 basis-64 flex-col gap-1.5">
+          <%= label_tag :account_id, t('super_admin.organizations.card.accounts.link_label'), class: 'text-xs text-n-slate-11' %>
+          <%= select_tag :account_id, options_for_select(options), prompt: t('super_admin.organizations.card.accounts.link_prompt'), required: true %>
+        </div>
+        <%= submit_tag t('super_admin.organizations.card.accounts.link'), name: nil %>
+      <% end %>
+    <% end %>
+  </div>
+</section>

@@ -1,0 +1,31 @@
+<%#
+# «Реквизиты» of an organization
+
+A key/value block of the side column: legal name, BIN, address, phone and the e-mail for billing documents. A value
+that is not filled in shows a dash.
+
+## Local variables:
+
+- `organization`: the Organization.
+%>
+<%
+  rows = [
+    [t('super_admin.organizations.card.requisites.legal_name'), organization.legal_name],
+    [t('super_admin.organizations.card.requisites.bin'), organization.bin],
+    [t('super_admin.organizations.card.requisites.address'), organization.address],
+    [t('super_admin.organizations.card.requisites.phone'), organization.phone],
+    [t('super_admin.organizations.card.requisites.billing_email'), organization.billing_email]
+  ]
+%>
+
+<section class="admin-block" aria-labelledby="requisites-title" data-testid="requisites-block">
+  <h2 class="admin-block__title" id="requisites-title"><%= t('super_admin.organizations.card.requisites.title') %></h2>
+  <dl class="admin-kv">
+    <% rows.each do |key, value| %>
+      <div class="admin-kv__row">
+        <dt class="admin-kv__key"><%= key %></dt>
+        <dd class="admin-kv__value"><%= value.presence || '—' %></dd>
+      </div>
+    <% end %>
+  </dl>
+</section>

@@ -9,10 +9,11 @@ require 'rails_helper'
 RSpec.describe 'Super Admin render smoke', type: :request do
   # Administrate resources that have dashboards, and a record of each to open
   # its show and edit pages.
-  resources = %i[accounts users account_users agent_bots installation_configs access_tokens platform_apps platform_banners]
+  resources = %i[organizations accounts users account_users agent_bots installation_configs access_tokens platform_apps platform_banners]
 
   def build_record(resource)
     {
+      organizations: -> { create(:organization, :with_requisites) },
       accounts: -> { create(:account) },
       users: -> { create(:user) },
       account_users: -> { create(:account_user) },
@@ -112,6 +113,10 @@ RSpec.describe 'Super Admin render smoke', type: :request do
             # The clinic card is made of blocks, not of one list of attributes.
             expect_shell("/super_admin/#{resource}/#{record.id}")
             expect(page.at_css('main [data-testid="plan-block"]')).to be_present
+          elsif resource == :organizations
+            # The organization card is made of blocks as well.
+            expect_shell("/super_admin/#{resource}/#{record.id}")
+            expect(page.at_css('main [data-testid="accounts-block"]')).to be_present
           else
             expect_shell("/super_admin/#{resource}/#{record.id}")
             expect(page.at_css('main dl.attribute-list')).to be_present
@@ -273,6 +278,57 @@ RSpec.describe 'Super Admin render smoke', type: :request do
         get "/super_admin/accounts/#{account.id}/plan_preview", params: { fragment: 1, modules: %w[broadcasts] }
         expect(response).to have_http_status(:ok)
         expect(response.body).not_to include('translation missing')
+      end
+    end
+  end
+
+  # The organization pages and the account pages next to them, for an organization with and without requisites, with and
+  # without accounts, and for an account with and without an organization.
+  describe 'the organization pages' do
+    def open_pages(*paths)
+      paths.each do |path|
+        get path
+        expect_shell(path)
+      end
+    end
+
+    it 'open for an organization without requisites and without accounts' do
+      organization = create(:organization)
+
+      open_pages('/super_admin/organizations', "/super_admin/organizations/#{organization.id}",
+                 "/super_admin/organizations/#{organization.id}/edit", '/super_admin/organizations/new')
+    end
+
+    it 'open for an organization with requisites and accounts in different states' do
+      organization = create(:organization, :with_requisites)
+      plain = create(:account, name: 'Without a plan', organization: organization)
+      create(:user, account: plain, role: :administrator)
+      with_plan = create(:account, name: 'With modules', organization: organization)
+      Accounts::ApplyPlan.new(account: with_plan, modules: Accounts::Plans.module_keys).call
+      create(:inbox, account: with_plan)
+      create(:account, name: 'Suspended', organization: organization, status: :suspended)
+      create(:account, name: 'Being deleted', organization: organization,
+                       custom_attributes: { 'marked_for_deletion_at' => 3.days.from_now.iso8601 })
+      create(:account, name: 'Free account')
+
+      open_pages('/super_admin/organizations', "/super_admin/organizations/#{organization.id}", "/super_admin/organizations/#{organization.id}/edit")
+      expect(page.css('input[name="organization[bin]"]').first['value']).to eq(organization.bin)
+    end
+
+    it 'open for a search, a sort and a search without results' do
+      create(:organization, :with_requisites)
+
+      open_pages('/super_admin/organizations?search=%D0%9E%D1%80%D0%B3', '/super_admin/organizations?search=nothing-like-this',
+                 '/super_admin/organizations?organization%5Border%5D=bin&organization%5Bdirection%5D=desc')
+    end
+
+    it 'keep the account cards, the list and the edit form working for an account with an organization and without one' do
+      organization = create(:organization, :with_requisites)
+      linked = create(:account, name: 'Linked', organization: organization)
+      free = create(:account, name: 'Not linked')
+
+      [linked, free].each do |account|
+        open_pages('/super_admin/accounts', "/super_admin/accounts/#{account.id}", "/super_admin/accounts/#{account.id}/edit")
       end
     end
   end

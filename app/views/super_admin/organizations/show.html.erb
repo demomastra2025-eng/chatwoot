@@ -1,0 +1,52 @@
+<%#
+# Organization card
+
+The page of one organization, the paying parent of accounts. Header: name, #id, creation date (Astana time), «Редактировать»
+and «Удалить». Main column: the accounts of the organization (with a form that links one more and «Отвязать» per
+row). Side column: «Реквизиты» and «Договор».
+
+## Local variables:
+
+- `page`: an `Administrate::Page::Show`; `page.resource` is the organization.
+%>
+<% organization = page.resource %>
+
+<% content_for(:title) { organization.name } %>
+
+<header class="main-content__header" role="banner">
+  <div class="main-content__heading">
+    <nav aria-label="<%= t('super_admin.organizations.card.breadcrumb') %>" class="text-[13px] text-n-slate-11">
+      <%= link_to t('super_admin.navigation.items.organizations'), super_admin_organizations_path, class: 'text-n-brand hover:underline' %>
+      <span class="mx-1.5 text-n-slate-10" aria-hidden="true">/</span>
+      <span><%= organization.name %></span>
+    </nav>
+    <h1 class="main-content__page-title"><%= organization.name %></h1>
+    <p class="main-content__description" data-testid="organization-meta">
+      <span class="tabular-nums">#<%= organization.id %></span>
+      · <%= t('super_admin.organizations.card.created', date: super_admin_date(organization.created_at)) %>
+    </p>
+  </div>
+
+  <div class="main-content__actions">
+    <%= link_to(t('administrate.actions.edit'), [:edit, namespace, organization], class: 'button') if accessible_action?(organization, :edit) %>
+    <% if accessible_action?(organization, :destroy) %>
+      <%# Refused with a message while accounts are linked; the button asks first either way. %>
+      <%= button_to t('administrate.actions.destroy'), [namespace, organization], method: :delete,
+                    class: 'button button--danger', form_class: 'inline-block',
+                    data: { confirm: t('super_admin.organizations.card.destroy_confirm', name: organization.name) } %>
+    <% end %>
+  </div>
+</header>
+
+<section class="main-content__body">
+  <div class="admin-card-layout">
+    <div class="flex min-w-0 flex-col gap-5">
+      <%= render 'accounts', organization: organization %>
+    </div>
+
+    <div class="flex min-w-0 flex-col gap-5">
+      <%= render 'requisites', organization: organization %>
+      <%= render 'contract', organization: organization %>
+    </div>
+  </div>
+</section>

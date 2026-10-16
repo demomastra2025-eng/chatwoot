@@ -25,6 +25,8 @@ module SuperAdmin::NavigationHelper
     resource_name = resource.respond_to?(:resource) ? resource.resource.to_s : resource.to_s
 
     labels = {
+      'organizations' => I18n.t('super_admin.resources.organizations', default: 'Организации'),
+      'organization' => I18n.t('super_admin.resources.organization', default: 'Организация'),
       'accounts' => I18n.t('super_admin.resources.accounts', default: 'Аккаунты'),
       'account' => I18n.t('super_admin.resources.account', default: 'Аккаунт'),
       'users' => I18n.t('super_admin.resources.users', default: 'Пользователи'),

@@ -1,0 +1,28 @@
+<%#
+# «Договор» of an organization
+
+The contract number and date and the notes of the operator. The date is a calendar date, printed as it is stored.
+
+## Local variables:
+
+- `organization`: the Organization.
+%>
+<%
+  rows = [
+    [t('super_admin.organizations.card.contract.number'), organization.contract_number],
+    [t('super_admin.organizations.card.contract.date'), super_admin_calendar_date(organization.contract_date)],
+    [t('super_admin.organizations.card.contract.notes'), organization.notes]
+  ]
+%>
+
+<section class="admin-block" aria-labelledby="contract-title" data-testid="contract-block">
+  <h2 class="admin-block__title" id="contract-title"><%= t('super_admin.organizations.card.contract.title') %></h2>
+  <dl class="admin-kv">
+    <% rows.each do |key, value| %>
+      <div class="admin-kv__row">
+        <dt class="admin-kv__key"><%= key %></dt>
+        <dd class="admin-kv__value whitespace-pre-line"><%= value.presence || '—' %></dd>
+      </div>
+    <% end %>
+  </dl>
+</section>

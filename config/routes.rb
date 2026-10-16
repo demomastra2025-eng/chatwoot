@@ -1028,6 +1028,11 @@ Rails.application.routes.draw do
       resource :channels, only: [:show, :update]
 
       # order of resources affect the order of sidebar navigation in super admin
+      # The paying parent of accounts; `link_account` / `unlink_account` move accounts in and out of it
+      resources :organizations, only: [:index, :new, :create, :show, :edit, :update, :destroy] do
+        post :link_account, on: :member
+        delete :unlink_account, on: :member
+      end
       resources :accounts, only: [:index, :new, :create, :show, :edit, :update, :destroy] do
         post :seed, on: :member
         post :reset_cache, on: :member

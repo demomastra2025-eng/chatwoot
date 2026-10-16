@@ -43,7 +43,7 @@ Resources that nobody placed in a group land in "Дополнительно".
   end
 
   resource_urls = primary_nav_items.to_h { |item| [item[:resource].resource, item[:url]] }
-  placed_resources = %w[accounts users platform_apps agent_bots platform_banners]
+  placed_resources = %w[organizations accounts users platform_apps agent_bots platform_banners]
   extra_items = primary_nav_items.reject { |item| placed_resources.include?(item[:resource].resource) }
   environment_label = super_admin_environment_label
 %>
@@ -71,6 +71,9 @@ Resources that nobody placed in a group land in "Дополнительно".
   <div id="super-admin-menu" class="hidden max-h-[70vh] min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2.5 pb-3 md:flex md:max-h-none">
     <%= render layout: 'nav_group', locals: { id: 'nav-group-clinics', title: t('super_admin.navigation.groups.clinics') } do %>
       <%= render 'nav_item', icon: 'i-lucide-layout-dashboard', url: super_admin_root_path, label: t('super_admin.navigation.items.dashboard'), active: super_admin_nav_active?(:dashboard) %>
+      <% if resource_urls['organizations'] %>
+        <%= render 'nav_item', icon: 'i-lucide-landmark', url: resource_urls['organizations'], label: t('super_admin.navigation.items.organizations'), active: super_admin_nav_active?(:organizations) %>
+      <% end %>
       <% if resource_urls['accounts'] %>
         <%= render 'nav_item', icon: 'i-lucide-building-2', url: resource_urls['accounts'], label: t('super_admin.navigation.items.accounts'), active: super_admin_nav_active?(:accounts, :account_users) %>
       <% end %>

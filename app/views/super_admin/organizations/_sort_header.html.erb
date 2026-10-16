@@ -1,0 +1,24 @@
+<%#
+# Sortable column header
+
+One header cell of the organization list that sorts by its attribute: the link flips the direction, the arrow marks
+the current order.
+
+## Local variables:
+
+- `attribute`: the attribute the column sorts by (a column of the dashboard).
+- `label`: the header text.
+- `numeric`: true for a column of numbers (aligned to the right), optional.
+- `collection_presenter` / `page` / `collection_field_name`: the ones of the list.
+%>
+<% order = collection_presenter.ordered_html_class(attribute) %>
+<th class="cell-label cell-label--<%= order %> <%= 'cell-label--number' if local_assigns[:numeric] %>" scope="col" role="columnheader" aria-sort="<%= sort_order(order) %>">
+  <%= link_to(sanitized_order_params(page, collection_field_name).merge(collection_presenter.order_params_for(attribute, key: collection_field_name))) do %>
+    <%= label %>
+    <% if collection_presenter.ordered_by?(attribute) %>
+      <span class="cell-label__sort-indicator cell-label__sort-indicator--<%= order %>">
+        <span class="i-lucide-arrow-up size-3.5" aria-hidden="true"></span>
+      </span>
+    <% end %>
+  <% end %>
+</th>

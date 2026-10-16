@@ -1,0 +1,22 @@
+<%#
+# Contract of an organization in one line
+
+«№ 12 от 15.03.2026», «№ 12» or «от 15.03.2026»; a dash when the organization has neither. The date is a calendar
+date (no time of day), so it is printed as it is stored.
+
+## Local variables:
+
+- `organization`: the Organization.
+%>
+<%
+  number = organization.contract_number.presence
+  date = organization.contract_date && super_admin_calendar_date(organization.contract_date)
+  text = if number && date
+           t('super_admin.organizations.contract.both', number: number, date: date)
+         elsif number
+           t('super_admin.organizations.contract.number', number: number)
+         elsif date
+           t('super_admin.organizations.contract.date', date: date)
+         end
+%>
+<%= text || '—' %>

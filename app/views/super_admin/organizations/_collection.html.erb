@@ -1,0 +1,72 @@
+<%#
+# Organizations table
+
+The organization list: name (with the legal name under it), BIN, contract (number and date), the number of accounts,
+the operators they use and their channels, creation date (Astana time). The numbers of the whole page are read at once
+(`SuperAdmin::OrganizationListStats`), so the page costs the same few queries for 2 or for 20 organizations.
+
+## Local variables (same as the generic `_collection`):
+
+- `collection_presenter` / `page`: the `Administrate::Page::Collection`.
+- `collection_field_name`: the resource name used by the sort links.
+- `resources`: the organizations of this page.
+- `table_title`: id of the heading that names the table.
+%>
+
+<%
+  rows = resources.to_a
+  stats = SuperAdmin::OrganizationListStats.new(rows)
+%>
+
+<div class="admin-card admin-card--table">
+  <table aria-labelledby="<%= table_title %>" data-testid="organizations-table">
+    <thead>
+      <tr>
+        <%= render 'sort_header', attribute: :name, label: t('super_admin.organizations.columns.name'), collection_presenter: collection_presenter, page: page, collection_field_name: collection_field_name %>
+        <%= render 'sort_header', attribute: :bin, label: t('super_admin.organizations.columns.bin'), collection_presenter: collection_presenter, page: page, collection_field_name: collection_field_name %>
+        <th scope="col"><%= t('super_admin.organizations.columns.contract') %></th>
+        <th scope="col" class="cell-label--number"><%= t('super_admin.organizations.columns.accounts') %></th>
+        <th scope="col" class="cell-label--number"><%= t('super_admin.organizations.columns.operators') %></th>
+        <th scope="col" class="cell-label--number"><%= t('super_admin.organizations.columns.channels') %></th>
+        <%= render 'sort_header', attribute: :created_at, label: t('super_admin.organizations.columns.created'), collection_presenter: collection_presenter, page: page, collection_field_name: collection_field_name %>
+        <th scope="col"><span class="sr-only"><%= t('super_admin.organizations.columns.actions') %></span></th>
+      </tr>
+    </thead>
+
+    <tbody>
+      <% if rows.empty? %>
+        <tr>
+          <td colspan="8" class="py-10 text-center text-n-slate-11"><%= t('super_admin.shell.empty') %></td>
+        </tr>
+      <% end %>
+
+      <% rows.each do |organization| %>
+        <% row = stats.for(organization) %>
+        <tr class="js-table-row" tabindex="0" role="link" data-url="<%= super_admin_organization_path(organization) %>" data-organization-id="<%= organization.id %>">
+          <td>
+            <%= link_to organization.name, super_admin_organization_path(organization), class: 'font-medium text-n-slate-12 hover:text-n-brand' %>
+            <% if organization.legal_name.present? && organization.legal_name != organization.name %>
+              <div class="text-xs text-n-slate-10"><%= organization.legal_name %></div>
+            <% end %>
+          </td>
+
+          <td class="whitespace-nowrap tabular-nums"><%= organization.bin.presence || '—' %></td>
+
+          <td class="whitespace-nowrap">
+            <%= render 'contract_text', organization: organization %>
+          </td>
+
+          <td class="cell-data--number tabular-nums"><%= super_admin_number(row.accounts) %></td>
+          <td class="cell-data--number tabular-nums"><%= super_admin_number(row.operators) %></td>
+          <td class="cell-data--number tabular-nums"><%= super_admin_number(row.channels) %></td>
+
+          <td class="whitespace-nowrap tabular-nums text-n-slate-11"><%= super_admin_date(organization.created_at) %></td>
+
+          <td class="text-end">
+            <%= link_to(t('administrate.actions.edit'), [:edit, namespace, organization], class: 'action-edit') if authorized_action?(organization, :edit) %>
+          </td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+</div>
