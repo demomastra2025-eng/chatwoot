@@ -2,6 +2,7 @@
 import rawEmojis from './emojisGroup.json';
 import FluentIcon from 'shared/components/FluentIcon/Index.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
+import AppleEmoji from './AppleEmoji.vue';
 import {
   getFrequentEmojiItems,
   recordEmojiUsage,
@@ -9,6 +10,7 @@ import {
 import {
   enrichEmojiCategories,
   matchesEmojiSearch,
+  getCategoryLabelKey,
 } from './emojiSearchKeywords';
 
 const SEARCH_KEY = 'Search';
@@ -16,20 +18,8 @@ const FREQUENT_KEY = 'Frequent';
 const ENRICHED_EMOJIS = enrichEmojiCategories(rawEmojis);
 const FLAT_EMOJI_CATALOG = ENRICHED_EMOJIS.flatMap(c => c.emojis);
 
-const CATEGORY_I18N_MAP = {
-  smileys_emotion: 'EMOJI.CATEGORIES.SMILEYS_AND_EMOTION',
-  people_body: 'EMOJI.CATEGORIES.PEOPLE_AND_BODY',
-  animals_nature: 'EMOJI.CATEGORIES.ANIMALS_AND_NATURE',
-  food_drink: 'EMOJI.CATEGORIES.FOOD_AND_DRINK',
-  travel_places: 'EMOJI.CATEGORIES.TRAVEL_AND_PLACES',
-  activities: 'EMOJI.CATEGORIES.ACTIVITIES',
-  objects: 'EMOJI.CATEGORIES.OBJECTS',
-  symbols: 'EMOJI.CATEGORIES.SYMBOLS',
-  flags: 'EMOJI.CATEGORIES.FLAGS',
-};
-
 export default {
-  components: { FluentIcon, NextButton },
+  components: { FluentIcon, NextButton, AppleEmoji },
   props: {
     onClick: {
       type: Function,
@@ -57,7 +47,6 @@ export default {
       return [...this.emojis];
     },
     frequentEmojis() {
-      // Touch usageVersion so this recomputes after clicking an emoji
       // eslint-disable-next-line no-unused-expressions
       this.usageVersion;
       return getFrequentEmojiItems(FLAT_EMOJI_CATALOG, 16);
@@ -66,31 +55,26 @@ export default {
       if (this.selectedKey === FREQUENT_KEY) {
         return this.frequentEmojis;
       }
-      const selectedCategory = this.emojis.find(
-        category => category.name === this.selectedKey
+      const selectedCategoryName = this.emojis.find(category =>
+        category.name === this.selectedKey ? category.name : null
       );
-      return selectedCategory?.emojis || [];
+      return selectedCategoryName?.emojis || [];
     },
     filterAllEmojisBySearch() {
-      const trimmed = this.search.trim();
-      return this.emojis.map(category => {
-        const allEmojis = trimmed
-          ? category.emojis.filter(emoji => matchesEmojiSearch(emoji, trimmed))
-          : category.emojis;
-        return allEmojis.length > 0
-          ? { ...category, emojis: allEmojis }
-          : { ...category, emojis: [] };
-      });
+      const query = this.search.trim();
+      return this.emojis
+        .map(category => {
+          const allEmojis = query
+            ? category.emojis.filter(emoji => matchesEmojiSearch(emoji, query))
+            : category.emojis;
+          return allEmojis.length > 0
+            ? { ...category, emojis: allEmojis }
+            : null;
+        })
+        .filter(Boolean);
     },
     hasNoSearch() {
       return this.selectedKey !== SEARCH_KEY && this.search === '';
-    },
-    showFrequentInAllView() {
-      return (
-        this.selectedKey === SEARCH_KEY &&
-        this.search.trim() === '' &&
-        this.frequentEmojis.length > 0
-      );
     },
     hasEmptySearchResult() {
       return this.filterAllEmojisBySearch.every(
@@ -98,53 +82,43 @@ export default {
       );
     },
   },
-  watch: {
-    search() {
-      this.selectedKey = SEARCH_KEY;
-    },
-    selectedKey() {
-      return this.selectedKey === SEARCH_KEY ? this.focusSearchInput() : null;
-    },
-  },
   mounted() {
     this.focusSearchInput();
   },
   methods: {
-    handleEmojiClick(emoji) {
-      if (emoji) {
-        recordEmojiUsage(emoji);
-        this.usageVersion += 1;
-      }
-      this.onClick(emoji);
-    },
     changeCategory(category) {
       this.search = '';
-      if (this.$refs.emojiItem) {
-        this.$refs.emojiItem.scrollTo({ top: 0 });
-      }
+      this.$refs.emojiItem.scrollTop = 0;
       this.selectedKey = category;
     },
     getFirstEmojiByCategoryName(categoryName) {
-      const categoryItem = this.emojis.find(
-        category => category.name === categoryName
+      const categoryItem = this.emojis.find(category =>
+        category.name === categoryName ? category : null
       );
       return categoryItem ? categoryItem.emojis[0].emoji : '';
     },
-    getCategoryTitle(category) {
+    categoryTitle(category) {
       if (!category) return '';
-      if (typeof category === 'string') {
-        if (category === FREQUENT_KEY) {
-          return this.$t('EMOJI.FREQUENTLY_USED');
-        }
-        const found = this.emojis.find(c => c.name === category);
-        if (!found) return category;
-        return this.getCategoryTitle(found);
+      if (category === FREQUENT_KEY) {
+        return this.$t('EMOJI.FREQUENTLY_USED');
       }
-      const key = CATEGORY_I18N_MAP[category.slug];
-      if (key && this.$te && this.$te(key)) {
-        return this.$t(key);
+      const i18nKey = getCategoryLabelKey(category.slug);
+      if (i18nKey && this.$te(i18nKey)) {
+        return this.$t(i18nKey);
       }
       return category.name;
+    },
+    selectedCategoryTitle() {
+      if (this.selectedKey === FREQUENT_KEY) {
+        return this.$t('EMOJI.FREQUENTLY_USED');
+      }
+      const cat = this.emojis.find(c => c.name === this.selectedKey);
+      return this.categoryTitle(cat);
+    },
+    handleClick(emoji) {
+      recordEmojiUsage(emoji);
+      this.usageVersion += 1;
+      this.onClick(emoji);
     },
     focusSearchInput() {
       this.$nextTick(() => {
@@ -158,16 +132,16 @@ export default {
 <template>
   <div
     role="dialog"
-    class="emoji-dialog bg-n-background shadow-xl rounded-xl outline outline-1 outline-n-weak box-content h-[20rem] absolute right-0 -top-[95px] w-[21rem] z-20"
+    class="emoji-dialog bg-n-background shadow-lg rounded-md border border-n-weak box-content p-2 right-0 -top-96 h-[20.5rem] w-80 absolute z-20"
     :class="{ 'emoji-dialog--inline': inline }"
   >
-    <div class="flex flex-col h-full justify-between">
-      <div class="flex gap-2 m-2 sticky top-2">
+    <div class="flex flex-col">
+      <div class="flex gap-1 m-1">
         <input
           ref="searchbar"
           v-model="search"
           type="text"
-          class="focus:box-shadow-blue dark:focus:box-shadow-dark !mb-0 !h-8 !text-sm !rounded-lg"
+          class="focus:box-shadow-blue dark:focus:box-shadow-dark !mb-0 !h-8 !text-sm w-full bg-n-alpha-black2 dark:bg-n-solid-1 rounded-lg px-2.5 text-n-slate-12 border-0"
           :placeholder="$t('EMOJI.PLACEHOLDER')"
         />
         <NextButton
@@ -175,67 +149,69 @@ export default {
           faded
           sm
           slate
-          class="flex-shrink-0"
+           class="flex-shrink-0"
           :label="$t('EMOJI.REMOVE')"
-          @click="handleEmojiClick('')"
+          @click="onClick('')"
         />
       </div>
       <div v-if="hasNoSearch" ref="emojiItem" class="emoji-item">
         <h5
-          class="text-xs text-n-slate-11 font-semibold tracking-wide uppercase leading-normal m-0 py-1.5 px-2.5"
+          class="text-xs text-n-slate-11 font-medium leading-normal m-0 py-1 px-2 capitalize"
         >
-          {{ getCategoryTitle(selectedKey) }}
+          {{ selectedCategoryTitle() }}
         </h5>
         <div class="emoji--row">
           <button
             v-for="item in filterEmojisByCategory"
-            :key="item.slug || item.emoji"
+            :key="item.slug"
             type="button"
-            class="emoji--item emoji-font"
+            class="emoji--item"
+            track-by="$index"
             :title="item.name"
-            @click="handleEmojiClick(item.emoji)"
+            @click="handleClick(item.emoji)"
           >
-            {{ item.emoji }}
+            <AppleEmoji :emoji="item.emoji" size-class="size-[22px]" />
           </button>
         </div>
       </div>
       <div v-else ref="emojiItem" class="emoji-item">
-        <div v-if="showFrequentInAllView" class="mb-1">
+        <div v-if="search === '' && frequentEmojis.length > 0">
           <h5
-            class="text-xs text-n-slate-11 font-semibold tracking-wide uppercase leading-normal m-0 py-1.5 px-2.5 flex items-center gap-1"
+            class="text-xs text-n-slate-11 font-medium leading-normal m-0 py-1 px-2"
           >
             {{ $t('EMOJI.FREQUENTLY_USED') }}
           </h5>
           <div class="emoji--row">
             <button
               v-for="item in frequentEmojis"
-              :key="`freq-${item.emoji}`"
+              :key="`freq-${item.slug || item.emoji}`"
               type="button"
-              class="emoji--item emoji-font"
+              class="emoji--item"
               :title="item.name"
-              @click="handleEmojiClick(item.emoji)"
+              @click="handleClick(item.emoji)"
             >
-              {{ item.emoji }}
+              <AppleEmoji :emoji="item.emoji" size-class="size-[22px]" />
             </button>
           </div>
         </div>
         <div v-for="category in filterAllEmojisBySearch" :key="category.slug">
           <h5
             v-if="category.emojis.length > 0"
-            class="text-xs text-n-slate-11 font-semibold tracking-wide uppercase leading-normal m-0 py-1.5 px-2.5"
+            class="text-xs text-n-slate-11 font-medium leading-normal m-0 py-1 px-2 capitalize"
           >
-            {{ getCategoryTitle(category) }}
+            {{ categoryTitle(category) }}
           </h5>
           <div v-if="category.emojis.length > 0" class="emoji--row">
             <button
               v-for="item in category.emojis"
-              :key="item.slug || item.emoji"
+              :key="item.slug"
               type="button"
-              class="emoji--item emoji-font"
+              class="emoji--item"
+              track-by="$index"
               :title="item.name"
-              @click="handleEmojiClick(item.emoji)"
+              @click="handleClick(item.emoji)"
             >
-              {{ item.emoji }}
+              <AppleEmoji :emoji="item.emoji" size-class="size-[22px]" />
             </button>
           </div>
         </div>
@@ -246,18 +222,18 @@ export default {
           <div class="text-n-slate-11 mb-2">
             <FluentIcon icon="emoji" size="48" />
           </div>
-          <span class="text-n-slate-11 text-sm font-medium">
+          <span class="text-n-slate-11 text-sm font-medium text-center">
             {{ $t('EMOJI.NOT_FOUND') }}
           </span>
         </div>
       </div>
 
-      <div
-        class="emoji-dialog--footer relative w-full py-0 rounded-b-xl px-1 bg-n-slate-3"
-        role="menu"
+      <nav
+        class="emoji-dialog--footer relative w-[calc(100%+1rem)] py-1 -bottom-2 -left-2 bg-n-slate-3 rounded-b-md"
+        role="navigation"
       >
         <ul
-          class="flex relative left-[2px] rtl:left-[unset] rtl:right-[2px] list-none m-0 overflow-x-auto py-1 px-0 items-center"
+          class="flex relative left-[2px] list-none m-0 overflow-auto py-1 px-0"
         >
           <li>
             <button
@@ -277,7 +253,7 @@ export default {
               :class="{ active: selectedKey === 'Frequent' }"
               @click="changeCategory('Frequent')"
             >
-              <FluentIcon icon="clock" size="16" class="text-n-slate-11" />
+              <span class="i-lucide-clock-3 size-4 text-n-slate-11" />
             </button>
           </li>
           <li
@@ -287,22 +263,27 @@ export default {
           >
             <button
               type="button"
-              class="emoji--item emoji-font"
-              :title="getCategoryTitle(category)"
+              class="emoji--item"
+              :title="categoryTitle(category)"
               :class="{ active: selectedKey === category.name }"
               @click="changeCategory(category.name)"
             >
-              {{ getFirstEmojiByCategoryName(category.name) }}
+              <AppleEmoji
+                :emoji="getFirstEmojiByCategoryName(category.name)"
+                size-class="size-4"
+              />
             </button>
           </li>
         </ul>
-      </div>
+      </nav>
     </div>
   </div>
 </template>
 
 <style scoped>
+@tailwind base;
 @tailwind components;
+@tailwind utilities;
 
 @layer components {
   .box-shadow-blue {

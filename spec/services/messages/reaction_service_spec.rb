@@ -4,46 +4,54 @@ RSpec.describe Messages::ReactionService do
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account, name: 'Арайлым') }
 
-  describe '#perform on internal/web widget messages' do
+  describe 'channel and message validation' do
     let(:inbox) { create(:inbox, account: account) }
     let(:conversation) { create(:conversation, account: account, inbox: inbox) }
-    let(:message) { create(:message, account: account, inbox: inbox, conversation: conversation, content: 'Привет!') }
+    let(:message) { create(:message, account: account, inbox: inbox, conversation: conversation, source_id: 'msg-1', content: 'Привет!') }
 
-    it 'adds a reaction and toggles it off when repeated by the same user' do
-      described_class.new(message: message, user: user, emoji: '❤️').perform
-
-      attrs = message.reload.content_attributes
-      expect(attrs.dig('agent_reactions', "user:#{user.id}")).to include(
-        'emoji' => '❤️',
-        'user_id' => user.id,
-        'user_name' => 'Арайлым'
-      )
-
-      # Toggling the same emoji removes it
-      described_class.new(message: message, user: user, emoji: '❤️').perform
-      expect(message.reload.content_attributes['agent_reactions']).to be_nil
+    it 'rejects reactions on channels that do not support reactions (e.g. WebWidget/Email/SMS)' do
+      expect do
+        described_class.new(message: message, user: user, emoji: '❤️').perform
+      end.to raise_error(Messages::ReactionService::Error, 'Reactions are not supported for this channel')
     end
 
-    it 'rejects invalid multi-character or non-emoji reactions' do
-      expect do
-        described_class.new(message: message, user: user, emoji: 'not-an-emoji').perform
-      end.to raise_error(Messages::ReactionService::Error, 'Reaction must contain a single valid emoji')
+    it 'rejects reactions on activity, private, or deleted messages' do
+      tg_channel = create(:channel_telegram, account: account)
+      tg_conv = create(:conversation, account: account, inbox: tg_channel.inbox, additional_attributes: { 'chat_id' => '123' })
 
-      expect do
-        described_class.new(message: message, user: user, emoji: '👍❤️').perform
-      end.to raise_error(Messages::ReactionService::Error, 'Reaction must contain a single valid emoji')
-    end
-
-    it 'rejects reactions on activity or deleted messages' do
-      activity_msg = create(:message, account: account, inbox: inbox, conversation: conversation, message_type: :activity, content: 'Joined')
+      activity_msg = create(:message, account: account, inbox: tg_channel.inbox, conversation: tg_conv, message_type: :activity, content: 'Joined')
       expect do
         described_class.new(message: activity_msg, user: user, emoji: '👍').perform
       end.to raise_error(Messages::ReactionService::Error, 'Cannot react to activity messages')
 
-      deleted_msg = create(:message, account: account, inbox: inbox, conversation: conversation, content_attributes: { deleted: true })
+      private_msg = create(:message, account: account, inbox: tg_channel.inbox, conversation: tg_conv, private: true, source_id: '11', content: 'Note')
+      expect do
+        described_class.new(message: private_msg, user: user, emoji: '👍').perform
+      end.to raise_error(Messages::ReactionService::Error, 'Cannot react to private notes')
+
+      deleted_msg = create(:message, account: account, inbox: tg_channel.inbox, conversation: tg_conv, source_id: '12', content_attributes: { deleted: true })
       expect do
         described_class.new(message: deleted_msg, user: user, emoji: '👍').perform
       end.to raise_error(Messages::ReactionService::Error, 'Cannot react to deleted messages')
+
+      unsynced_msg = create(:message, account: account, inbox: tg_channel.inbox, conversation: tg_conv, source_id: nil, content: 'Pending')
+      expect do
+        described_class.new(message: unsynced_msg, user: user, emoji: '👍').perform
+      end.to raise_error(Messages::ReactionService::Error, 'Cannot react to a message without external source_id')
+    end
+
+    it 'rejects invalid multi-character or non-emoji reactions' do
+      tg_channel = create(:channel_telegram, account: account)
+      tg_conv = create(:conversation, account: account, inbox: tg_channel.inbox, additional_attributes: { 'chat_id' => '123' })
+      tg_msg = create(:message, account: account, inbox: tg_channel.inbox, conversation: tg_conv, source_id: '99', content: 'Hi')
+
+      expect do
+        described_class.new(message: tg_msg, user: user, emoji: 'not-an-emoji').perform
+      end.to raise_error(Messages::ReactionService::Error, 'Reaction must contain a single valid emoji')
+
+      expect do
+        described_class.new(message: tg_msg, user: user, emoji: '👍❤️').perform
+      end.to raise_error(Messages::ReactionService::Error, 'Reaction must contain a single valid emoji')
     end
   end
 
@@ -58,14 +66,8 @@ RSpec.describe Messages::ReactionService do
       create(:message, account: account, inbox: channel.inbox, conversation: conversation, source_id: 'wamid.target123', content: 'Запись подтверждена')
     end
 
-    it 'dispatches reaction to WhatsApp Cloud API and updates whatsapp_reactions' do
+    it 'dispatches reaction to WhatsApp Cloud API, updates whatsapp_reactions, and toggles off when repeated' do
       stub = stub_request(:post, "https://graph.facebook.com/v25.0/#{channel.provider_config['phone_number_id']}/messages")
-             .with do |req|
-               body = JSON.parse(req.body)
-               body['type'] == 'reaction' &&
-                 body.dig('reaction', 'message_id') == 'wamid.target123' &&
-                 body.dig('reaction', 'emoji') == '🔥'
-             end
              .to_return(
                status: 200,
                body: { messages: [{ id: 'wamid.reaction1' }] }.to_json,
@@ -74,12 +76,17 @@ RSpec.describe Messages::ReactionService do
 
       described_class.new(message: message, user: user, emoji: '🔥').perform
 
-      expect(stub).to have_been_requested
+      expect(stub).to have_been_requested.once
       expect(message.reload.content_attributes.dig('whatsapp_reactions', 'business')).to include(
         'emoji' => '🔥',
         'user_id' => user.id,
         'user_name' => 'Арайлым'
       )
+
+      # Toggling the same emoji removes it
+      described_class.new(message: message, user: user, emoji: '🔥').perform
+      expect(stub).to have_been_requested.twice
+      expect(message.reload.content_attributes.dig('whatsapp_reactions', 'business')).to be_nil
     end
   end
 

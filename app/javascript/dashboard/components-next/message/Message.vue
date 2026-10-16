@@ -160,6 +160,7 @@ const route = useRoute();
 const inboxGetter = useMapGetter('inboxes/getInbox');
 const inbox = computed(() => inboxGetter.value(props.inboxId) || {});
 const {
+  isAWhatsAppCloudChannel,
   isAWhatsAppWebChannel,
   isATelegramChannel,
   isATelegramPersonalChannel,
@@ -504,6 +505,11 @@ const contextMenuEnabledOptions = computed(() => {
     Math.floor(Date.now() / 1000) - createdAt <= 15 * 60;
   const canEditOnTelegram =
     isATelegramChannel.value || isATelegramPersonalChannel.value;
+  const canReactOnChannel =
+    isAWhatsAppCloudChannel.value ||
+    isAWhatsAppWebChannel.value ||
+    isATelegramChannel.value ||
+    isATelegramPersonalChannel.value;
   const isEditableAttachment =
     !hasAttachments ||
     (props.attachments.length === 1 &&
@@ -541,6 +547,9 @@ const contextMenuEnabledOptions = computed(() => {
       props.inboxSupportsReplyTo.outgoing &&
       !isFailedOrProcessing,
     react:
+      canReactOnChannel &&
+      !props.private &&
+      !!props.sourceId &&
       !isFailedOrProcessing &&
       !isMessageDeleted.value &&
       isBubble.value,
@@ -728,6 +737,7 @@ provideMessageContext({
   orientation,
   isBotOrAgentMessage,
   shouldGroupWithNext,
+  canReact: computed(() => contextMenuEnabledOptions.value.react),
 });
 </script>
 

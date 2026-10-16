@@ -15,6 +15,7 @@ import {
 import MenuItem from '../../../components/widgets/conversation/contextMenu/menuItem.vue';
 import { useTrack } from 'dashboard/composables';
 import NextButton from 'dashboard/components-next/button/Button.vue';
+import AppleEmoji from 'shared/components/emoji/AppleEmoji.vue';
 import {
   getQuickReactions,
   recordReactionUsage,
@@ -28,6 +29,7 @@ const EmojiInput = defineAsyncComponent(
 export default {
   components: {
     AddCannedModal,
+    AppleEmoji,
     EmojiInput,
     MenuItem,
     ContextMenu,
@@ -287,7 +289,7 @@ export default {
             :disabled="isSubmittingReaction"
             @click.stop="handleQuickReaction(emoji)"
           >
-            {{ emoji }}
+            <AppleEmoji :emoji="emoji" size-class="size-5" />
           </button>
           <button
             type="button"

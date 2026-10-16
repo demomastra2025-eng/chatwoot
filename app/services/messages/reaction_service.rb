@@ -30,7 +30,20 @@ class Messages::ReactionService
 
   def validate_message!
     raise Error, 'Cannot react to activity messages' if message.activity?
+    raise Error, 'Cannot react to private notes' if message.private?
     raise Error, 'Cannot react to deleted messages' if (message.content_attributes || {}).with_indifferent_access[:deleted]
+    raise Error, 'Reactions are not supported for this channel' unless reaction_supported_channel?
+    raise Error, 'Cannot react to a message without external source_id' if message.source_id.blank?
+  end
+
+  def reaction_supported_channel?
+    whatsapp_cloud_channel? ||
+      channel.is_a?(Channel::WhatsappWeb) ||
+      telegram_like_channel?
+  end
+
+  def whatsapp_cloud_channel?
+    channel.is_a?(Channel::Whatsapp) && channel.provider == 'whatsapp_cloud'
   end
 
   def validate_emoji!(value)

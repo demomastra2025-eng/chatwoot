@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useStore } from 'dashboard/composables/store';
 import { useAlert } from 'dashboard/composables';
+import AppleEmoji from 'shared/components/emoji/AppleEmoji.vue';
 import { useMessageContext } from './provider.js';
 import { extractNormalizedReactions } from './helpers/messageReactions';
 import { recordReactionUsage } from 'shared/helpers/emojiUsage';
@@ -12,6 +13,7 @@ const {
   conversationId,
   contentAttributes,
   currentUserId,
+  canReact,
 } = useMessageContext();
 const { t } = useI18n();
 const store = useStore();
@@ -26,6 +28,11 @@ const reactions = computed(() =>
 );
 
 const hasReactions = computed(() => reactions.value.length > 0);
+const isChannelReactionAllowed = computed(() => Boolean(canReact?.value));
+
+function isPillInteractive(item) {
+  return Boolean(item.interactive && isChannelReactionAllowed.value);
+}
 
 function reactionTooltip(item) {
   if (item.label) {
@@ -38,7 +45,7 @@ function reactionTooltip(item) {
 }
 
 async function handleToggleReaction(item) {
-  if (!item.interactive || !item.emoji || pendingEmoji.value) return;
+  if (!isPillInteractive(item) || !item.emoji || pendingEmoji.value) return;
 
   pendingEmoji.value = item.emoji;
   try {
@@ -71,19 +78,19 @@ async function handleToggleReaction(item) {
       :key="item.key"
       type="button"
       :title="reactionTooltip(item)"
-      :disabled="!item.interactive || pendingEmoji === item.emoji"
+      :disabled="!isPillInteractive(item) || pendingEmoji === item.emoji"
       class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium transition-all duration-150 skip-context-menu border"
       :class="[
         item.reactedByMe
           ? 'bg-n-brand/15 text-n-brand border-n-brand/40 hover:bg-n-brand/25'
           : 'bg-n-alpha-black2 dark:bg-n-solid-3 text-n-slate-12 border-n-weak hover:bg-n-alpha-3',
-        item.interactive ? 'cursor-pointer active:scale-95' : 'cursor-default',
+        isPillInteractive(item)
+          ? 'cursor-pointer active:scale-95'
+          : 'cursor-default',
       ]"
       @click.stop="handleToggleReaction(item)"
     >
-      <span class="emoji-font text-sm leading-none skip-context-menu">
-        {{ item.emoji }}
-      </span>
+      <AppleEmoji :emoji="item.emoji" size-class="size-4" />
       <span v-if="item.label" class="text-[11px] skip-context-menu">
         {{ item.label }}
       </span>

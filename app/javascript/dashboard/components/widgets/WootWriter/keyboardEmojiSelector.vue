@@ -1,6 +1,7 @@
 <script setup>
 import { shallowRef, computed, onMounted } from 'vue';
 import emojiGroups from 'shared/components/emoji/emojisGroup.json';
+import AppleEmoji from 'shared/components/emoji/AppleEmoji.vue';
 import {
   enrichEmojiCategories,
   matchesEmojiSearch,
@@ -77,9 +78,9 @@ onMounted(() => {
   >
     <template #default="{ item, selected }">
       <span
-        class="max-w-full inline-flex items-center gap-1 min-w-0 mb-0 text-sm font-medium text-n-slate-12 group-hover:text-n-brand truncate"
+        class="max-w-full inline-flex items-center gap-1.5 min-w-0 mb-0 text-sm font-medium text-n-slate-12 group-hover:text-n-brand truncate"
       >
-        <span class="emoji-font text-base leading-none">{{ item.emoji }}</span>
+        <AppleEmoji :emoji="item.emoji" size-class="size-4" />
         <p
           class="relative mb-0 truncate bottom-px"
           :class="{
