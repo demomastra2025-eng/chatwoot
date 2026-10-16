@@ -1,5 +1,5 @@
 <script setup>
-import { shallowRef, computed, onMounted } from 'vue';
+import { computed } from 'vue';
 import emojiGroups from 'shared/components/emoji/emojisGroup.json';
 import AppleEmoji from 'shared/components/emoji/AppleEmoji.vue';
 import {
@@ -19,10 +19,22 @@ const props = defineProps({
     default: '',
   },
 });
-
 const emit = defineEmits(['selectEmoji']);
-
-const allEmojis = shallowRef([]);
+const MAX_SUGGESTIONS = 24;
+const ALL_SEARCHABLE_EMOJIS = Object.freeze(
+  enrichEmojiCategories(emojiGroups).flatMap(({ emojis }) =>
+    emojis.map(({ name, slug, searchText, ...rest }) =>
+      Object.freeze({
+        ...rest,
+        name,
+        slug,
+        searchText,
+        searchString:
+          `${name.replace(/\s+/g, '')} ${slug} ${searchText || ''}`.toLowerCase(),
+      })
+    )
+  )
+);
 
 const items = computed(() => {
   if (!props.searchKey) return [];
@@ -30,31 +42,24 @@ const items = computed(() => {
   const frequentList = getSortedStoredEmojis(FREQUENT_EMOJIS_STORAGE_KEY);
   const frequentRank = new Map(frequentList.map((e, idx) => [e, idx]));
 
-  const filtered = allEmojis.value.filter(
+  const filtered = ALL_SEARCHABLE_EMOJIS.filter(
     emoji =>
       emoji.searchString.includes(searchTerm) ||
       matchesEmojiSearch(emoji, searchTerm)
   );
 
-  return filtered.sort((a, b) => {
-    const rankA = frequentRank.has(a.emoji) ? frequentRank.get(a.emoji) : 9999;
-    const rankB = frequentRank.has(b.emoji) ? frequentRank.get(b.emoji) : 9999;
-    return rankA - rankB;
-  });
+  return filtered
+    .sort((a, b) => {
+      const rankA = frequentRank.has(a.emoji)
+        ? frequentRank.get(a.emoji)
+        : 9999;
+      const rankB = frequentRank.has(b.emoji)
+        ? frequentRank.get(b.emoji)
+        : 9999;
+      return rankA - rankB;
+    })
+    .slice(0, MAX_SUGGESTIONS);
 });
-
-function loadEmojis() {
-  const enriched = enrichEmojiCategories(emojiGroups);
-  allEmojis.value = enriched.flatMap(({ emojis }) =>
-    emojis.map(({ name, slug, searchText, ...rest }) => ({
-      ...rest,
-      name,
-      slug,
-      searchText,
-      searchString: `${name.replace(/\s+/g, '')} ${slug} ${searchText || ''}`.toLowerCase(),
-    }))
-  );
-}
 
 function handleMentionClick(item = {}) {
   if (item.emoji) {
@@ -62,10 +67,6 @@ function handleMentionClick(item = {}) {
   }
   emit('selectEmoji', item.emoji);
 }
-
-onMounted(() => {
-  loadEmojis();
-});
 </script>
 
 <!-- eslint-disable-next-line vue/no-root-v-if -->

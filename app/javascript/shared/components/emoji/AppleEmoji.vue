@@ -5,7 +5,7 @@ import { getAppleEmojiUrl } from 'shared/helpers/appleEmoji';
 const props = defineProps({
   emoji: {
     type: String,
-    required: true,
+    default: '',
   },
   sizeClass: {
     type: String,
@@ -13,16 +13,25 @@ const props = defineProps({
   },
 });
 
+const failedUrls = new Set();
+
+const imageUrl = computed(() => getAppleEmojiUrl(props.emoji));
 const hasError = ref(false);
 
 watch(
-  () => props.emoji,
-  () => {
-    hasError.value = false;
-  }
+  imageUrl,
+  url => {
+    hasError.value = Boolean(url && failedUrls.has(url));
+  },
+  { immediate: true }
 );
 
-const imageUrl = computed(() => getAppleEmojiUrl(props.emoji));
+function handleError() {
+  if (imageUrl.value) {
+    failedUrls.add(imageUrl.value);
+  }
+  hasError.value = true;
+}
 </script>
 
 <template>
@@ -34,7 +43,8 @@ const imageUrl = computed(() => getAppleEmojiUrl(props.emoji));
     class="apple-emoji inline-block object-contain select-none pointer-events-none shrink-0"
     draggable="false"
     loading="lazy"
-    @error="hasError = true"
+    decoding="async"
+    @error="handleError"
   />
   <span v-else class="emoji-font leading-none select-none">{{ emoji }}</span>
 </template>

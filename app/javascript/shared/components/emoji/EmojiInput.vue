@@ -15,6 +15,8 @@ import {
 
 const SEARCH_KEY = 'Search';
 const FREQUENT_KEY = 'Frequent';
+const INITIAL_EMOJI_BATCH = 72;
+const SCROLL_EMOJI_BATCH = 96;
 const ENRICHED_EMOJIS = enrichEmojiCategories(rawEmojis);
 const FLAT_EMOJI_CATALOG = ENRICHED_EMOJIS.flatMap(c => c.emojis);
 
@@ -40,6 +42,8 @@ export default {
       emojis: ENRICHED_EMOJIS,
       search: '',
       usageVersion: 0,
+      visibleCategoriesCount: 1,
+      visibleItemLimit: INITIAL_EMOJI_BATCH,
     };
   },
   computed: {
@@ -60,6 +64,9 @@ export default {
       );
       return selectedCategoryName?.emojis || [];
     },
+    visibleCategoryEmojis() {
+      return this.filterEmojisByCategory.slice(0, this.visibleItemLimit);
+    },
     filterAllEmojisBySearch() {
       const query = this.search.trim();
       return this.emojis
@@ -73,6 +80,31 @@ export default {
         })
         .filter(Boolean);
     },
+    visibleAllEmojisBySearch() {
+      const matchingCategories = this.filterAllEmojisBySearch;
+      if (this.search.trim() !== '') {
+        let remaining = this.visibleItemLimit;
+        return matchingCategories
+          .map(category => {
+            if (remaining <= 0) return null;
+            const sliced = category.emojis.slice(0, remaining);
+            remaining -= sliced.length;
+            return sliced.length > 0 ? { ...category, emojis: sliced } : null;
+          })
+          .filter(Boolean);
+      }
+
+      return matchingCategories
+        .slice(0, this.visibleCategoriesCount)
+        .map((category, idx) =>
+          idx === this.visibleCategoriesCount - 1
+            ? {
+                ...category,
+                emojis: category.emojis.slice(0, this.visibleItemLimit),
+              }
+            : category
+        );
+    },
     hasNoSearch() {
       return this.selectedKey !== SEARCH_KEY && this.search === '';
     },
@@ -82,14 +114,50 @@ export default {
       );
     },
   },
+  watch: {
+    search() {
+      this.visibleCategoriesCount = 1;
+      this.visibleItemLimit = INITIAL_EMOJI_BATCH;
+      if (this.$refs.emojiItem) {
+        this.$refs.emojiItem.scrollTop = 0;
+      }
+    },
+  },
   mounted() {
     this.focusSearchInput();
   },
   methods: {
     changeCategory(category) {
       this.search = '';
-      this.$refs.emojiItem.scrollTop = 0;
+      this.visibleCategoriesCount = 1;
+      this.visibleItemLimit = INITIAL_EMOJI_BATCH;
+      if (this.$refs.emojiItem) {
+        this.$refs.emojiItem.scrollTop = 0;
+      }
       this.selectedKey = category;
+    },
+    handleEmojiScroll(event) {
+      const el = event?.target || this.$refs.emojiItem;
+      if (!el) return;
+      if (el.scrollTop + el.clientHeight < el.scrollHeight - 160) return;
+
+      if (this.hasNoSearch || this.search.trim() !== '') {
+        this.visibleItemLimit += SCROLL_EMOJI_BATCH;
+        return;
+      }
+
+      const matchingCategories = this.filterAllEmojisBySearch;
+      const activeCategory =
+        matchingCategories[this.visibleCategoriesCount - 1];
+      if (
+        activeCategory &&
+        this.visibleItemLimit < activeCategory.emojis.length
+      ) {
+        this.visibleItemLimit += SCROLL_EMOJI_BATCH;
+      } else if (this.visibleCategoriesCount < matchingCategories.length) {
+        this.visibleCategoriesCount += 1;
+        this.visibleItemLimit = SCROLL_EMOJI_BATCH;
+      }
     },
     getFirstEmojiByCategoryName(categoryName) {
       const categoryItem = this.emojis.find(category =>
@@ -149,12 +217,17 @@ export default {
           faded
           sm
           slate
-           class="flex-shrink-0"
+          class="flex-shrink-0"
           :label="$t('EMOJI.REMOVE')"
           @click="onClick('')"
         />
       </div>
-      <div v-if="hasNoSearch" ref="emojiItem" class="emoji-item">
+      <div
+        v-if="hasNoSearch"
+        ref="emojiItem"
+        class="emoji-item"
+        @scroll.passive="handleEmojiScroll"
+      >
         <h5
           class="text-xs text-n-slate-11 font-medium leading-normal m-0 py-1 px-2 capitalize"
         >
@@ -162,7 +235,7 @@ export default {
         </h5>
         <div class="emoji--row">
           <button
-            v-for="item in filterEmojisByCategory"
+            v-for="item in visibleCategoryEmojis"
             :key="item.slug"
             type="button"
             class="emoji--item"
@@ -174,7 +247,12 @@ export default {
           </button>
         </div>
       </div>
-      <div v-else ref="emojiItem" class="emoji-item">
+      <div
+        v-else
+        ref="emojiItem"
+        class="emoji-item"
+        @scroll.passive="handleEmojiScroll"
+      >
         <div v-if="search === '' && frequentEmojis.length > 0">
           <h5
             class="text-xs text-n-slate-11 font-medium leading-normal m-0 py-1 px-2"
@@ -194,7 +272,7 @@ export default {
             </button>
           </div>
         </div>
-        <div v-for="category in filterAllEmojisBySearch" :key="category.slug">
+        <div v-for="category in visibleAllEmojisBySearch" :key="category.slug">
           <h5
             v-if="category.emojis.length > 0"
             class="text-xs text-n-slate-11 font-medium leading-normal m-0 py-1 px-2 capitalize"
@@ -256,11 +334,7 @@ export default {
               <span class="i-lucide-clock-3 size-4 text-n-slate-11" />
             </button>
           </li>
-          <li
-            v-for="category in categories"
-            :key="category.slug"
-            @click="changeCategory(category.name)"
-          >
+          <li v-for="category in categories" :key="category.slug">
             <button
               type="button"
               class="emoji--item"
@@ -281,29 +355,22 @@ export default {
 </template>
 
 <style scoped>
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+.box-shadow-blue:focus {
+  box-shadow:
+    0 0 0 1px #1f93ff,
+    0 0 1px 2px #c7e3ff;
+}
 
-@layer components {
-  .box-shadow-blue {
-    box-shadow:
-      0 0 0 1px #1f93ff,
-      0 0 1px 2px #c7e3ff;
-  }
-
-  .box-shadow-dark {
-    box-shadow:
-      0 0 0 1px #212222,
-      0 0 1px 2px #4c5155;
-  }
+.dark .box-shadow-dark:focus {
+  box-shadow:
+    0 0 0 1px #212222,
+    0 0 1px 2px #4c5155;
 }
 </style>
 
 <style lang="scss">
 .emoji-font {
-  font-family:
-    'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
+  font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
     'Noto Color Emoji', sans-serif;
 }
 

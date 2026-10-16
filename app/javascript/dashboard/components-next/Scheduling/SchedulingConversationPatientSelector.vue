@@ -138,7 +138,10 @@ const startEdit = () => {
   if (!canEditSelected.value || props.entry?.saving) return;
   resetForm();
   const current = selectedPatient.value;
-  const nameParts = schedulingContactNameParts(current);
+  const nameParts = schedulingContactNameParts({
+    ...current,
+    fullName: current.full_name || current.fullName || current.name,
+  });
   const attributes =
     current.custom_attributes || current.customAttributes || {};
   Object.assign(form, {
@@ -245,7 +248,9 @@ const savePatient = async () => {
           >
             {{ options[0].label }}
           </span>
-          <span :class="{ 'sr-only': options.length <= 1 && options[0]?.label }">
+          <span
+            :class="{ 'sr-only': options.length <= 1 && options[0]?.label }"
+          >
             {{ t('SCHEDULING.PATIENT_CONTEXT.SELECT_PATIENT') }}
           </span>
         </label>

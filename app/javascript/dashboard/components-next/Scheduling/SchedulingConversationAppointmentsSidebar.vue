@@ -122,18 +122,6 @@ const availabilityByForm = reactive({});
 const availabilityRequests = new Map();
 let availabilityRequestId = 0;
 const openAppointmentKeys = ref([]);
-const expandedClientForms = reactive({});
-const toggleClientFields = key => {
-  expandedClientForms[key] = !expandedClientForms[key];
-};
-const isClientFieldsOpen = (form, key) =>
-  Boolean(
-    expandedClientForms[key] ||
-      !form?.clientFirstName?.trim() ||
-      medelementLastNameError(form) ||
-      medelementPhoneError(form) ||
-      medelementIinError(form)
-  );
 const scrollContainer = ref(null);
 const isCreating = ref(false);
 const isSavingCreate = ref(false);
@@ -2603,6 +2591,16 @@ watch(
   },
   { flush: 'sync' }
 );
+const expandedClientForms = reactive({});
+const isClientFieldsOpen = (form, key) =>
+  Boolean(
+    expandedClientForms[key] ||
+      (!props.patientContextEnabled &&
+        (!form?.clientFirstName?.trim() ||
+          medelementLastNameError(form) ||
+          medelementPhoneError(form) ||
+          medelementIinError(form)))
+  );
 </script>
 
 <template>
@@ -2705,138 +2703,144 @@ watch(
                     v-show="isClientFieldsOpen(createForm, NEW_APPOINTMENT_KEY)"
                     class="grid gap-2.5 rounded-lg border border-n-weak bg-n-alpha-1/40 p-2.5"
                   >
-                  <div class="scheduling-appointment-drawer-row">
-                    <label
-                      class="scheduling-appointment-drawer-label"
-                      for="scheduling-conversation-appointment-client-first-name"
-                    >
-                      {{ $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_FIRST_NAME') }}
-                    </label>
-                    <Input
-                      id="scheduling-conversation-appointment-client-first-name"
-                      class="scheduling-appointment-drawer-control"
-                      custom-input-class="!rounded-md !bg-n-alpha-black2"
-                      :aria-label="
-                        $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_FIRST_NAME')
-                      "
-                      :model-value="createForm.clientFirstName"
-                      size="sm"
-                      @update:model-value="
-                        updatePatientNamePart(
-                          createForm,
-                          'clientFirstName',
-                          $event
-                        )
-                      "
-                    />
-                  </div>
+                    <div class="scheduling-appointment-drawer-row">
+                      <label
+                        class="scheduling-appointment-drawer-label"
+                        for="scheduling-conversation-appointment-client-first-name"
+                      >
+                        {{
+                          $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_FIRST_NAME')
+                        }}
+                      </label>
+                      <Input
+                        id="scheduling-conversation-appointment-client-first-name"
+                        class="scheduling-appointment-drawer-control"
+                        custom-input-class="!rounded-md !bg-n-alpha-black2"
+                        :aria-label="
+                          $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_FIRST_NAME')
+                        "
+                        :model-value="createForm.clientFirstName"
+                        size="sm"
+                        @update:model-value="
+                          updatePatientNamePart(
+                            createForm,
+                            'clientFirstName',
+                            $event
+                          )
+                        "
+                      />
+                    </div>
 
-                  <div class="scheduling-appointment-drawer-row">
-                    <label
-                      class="scheduling-appointment-drawer-label"
-                      for="scheduling-conversation-appointment-client-last-name"
-                    >
-                      {{ $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_LAST_NAME') }}
-                    </label>
-                    <Input
-                      id="scheduling-conversation-appointment-client-last-name"
-                      class="scheduling-appointment-drawer-control"
-                      custom-input-class="!rounded-md !bg-n-alpha-black2"
-                      :aria-label="
-                        $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_LAST_NAME')
-                      "
-                      :model-value="createForm.clientLastName"
-                      :message="medelementLastNameError(createForm)"
-                      :message-type="
-                        medelementLastNameError(createForm) ? 'error' : 'info'
-                      "
-                      size="sm"
-                      @update:model-value="
-                        updatePatientNamePart(
-                          createForm,
-                          'clientLastName',
-                          $event
-                        )
-                      "
-                    />
-                  </div>
+                    <div class="scheduling-appointment-drawer-row">
+                      <label
+                        class="scheduling-appointment-drawer-label"
+                        for="scheduling-conversation-appointment-client-last-name"
+                      >
+                        {{ $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_LAST_NAME') }}
+                      </label>
+                      <Input
+                        id="scheduling-conversation-appointment-client-last-name"
+                        class="scheduling-appointment-drawer-control"
+                        custom-input-class="!rounded-md !bg-n-alpha-black2"
+                        :aria-label="
+                          $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_LAST_NAME')
+                        "
+                        :model-value="createForm.clientLastName"
+                        :message="medelementLastNameError(createForm)"
+                        :message-type="
+                          medelementLastNameError(createForm) ? 'error' : 'info'
+                        "
+                        size="sm"
+                        @update:model-value="
+                          updatePatientNamePart(
+                            createForm,
+                            'clientLastName',
+                            $event
+                          )
+                        "
+                      />
+                    </div>
 
-                  <div class="scheduling-appointment-drawer-row">
-                    <label
-                      class="scheduling-appointment-drawer-label"
-                      for="scheduling-conversation-appointment-client-middle-name"
-                    >
-                      {{ $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_MIDDLE_NAME') }}
-                    </label>
-                    <Input
-                      id="scheduling-conversation-appointment-client-middle-name"
-                      class="scheduling-appointment-drawer-control"
-                      custom-input-class="!rounded-md !bg-n-alpha-black2"
-                      :aria-label="
-                        $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_MIDDLE_NAME')
-                      "
-                      :model-value="createForm.clientMiddleName"
-                      size="sm"
-                      @update:model-value="
-                        updatePatientNamePart(
-                          createForm,
-                          'clientMiddleName',
-                          $event
-                        )
-                      "
-                    />
-                  </div>
+                    <div class="scheduling-appointment-drawer-row">
+                      <label
+                        class="scheduling-appointment-drawer-label"
+                        for="scheduling-conversation-appointment-client-middle-name"
+                      >
+                        {{
+                          $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_MIDDLE_NAME')
+                        }}
+                      </label>
+                      <Input
+                        id="scheduling-conversation-appointment-client-middle-name"
+                        class="scheduling-appointment-drawer-control"
+                        custom-input-class="!rounded-md !bg-n-alpha-black2"
+                        :aria-label="
+                          $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_MIDDLE_NAME')
+                        "
+                        :model-value="createForm.clientMiddleName"
+                        size="sm"
+                        @update:model-value="
+                          updatePatientNamePart(
+                            createForm,
+                            'clientMiddleName',
+                            $event
+                          )
+                        "
+                      />
+                    </div>
 
-                  <div class="scheduling-appointment-drawer-row">
-                    <label
-                      class="scheduling-appointment-drawer-label"
-                      for="scheduling-conversation-appointment-client-phone"
-                    >
-                      {{ $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_PHONE') }}
-                    </label>
-                    <Input
-                      id="scheduling-conversation-appointment-client-phone"
-                      class="scheduling-appointment-drawer-control"
-                      custom-input-class="!rounded-md !bg-n-alpha-black2"
-                      :aria-label="
-                        $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_PHONE')
-                      "
-                      :model-value="createForm.clientPhone"
-                      :message="medelementPhoneError(createForm)"
-                      :message-type="
-                        medelementPhoneError(createForm) ? 'error' : 'info'
-                      "
-                      size="sm"
-                      @update:model-value="createForm.clientPhone = $event"
-                    />
-                  </div>
+                    <div class="scheduling-appointment-drawer-row">
+                      <label
+                        class="scheduling-appointment-drawer-label"
+                        for="scheduling-conversation-appointment-client-phone"
+                      >
+                        {{ $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_PHONE') }}
+                      </label>
+                      <Input
+                        id="scheduling-conversation-appointment-client-phone"
+                        class="scheduling-appointment-drawer-control"
+                        custom-input-class="!rounded-md !bg-n-alpha-black2"
+                        :aria-label="
+                          $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_PHONE')
+                        "
+                        :model-value="createForm.clientPhone"
+                        :message="medelementPhoneError(createForm)"
+                        :message-type="
+                          medelementPhoneError(createForm) ? 'error' : 'info'
+                        "
+                        size="sm"
+                        @update:model-value="createForm.clientPhone = $event"
+                      />
+                    </div>
 
-                  <div
-                    v-if="isMedelementResource(selectedCreateResource)"
-                    class="scheduling-appointment-drawer-row"
-                  >
-                    <label
-                      class="scheduling-appointment-drawer-label"
-                      for="scheduling-conversation-appointment-client-iin"
+                    <div
+                      v-if="isMedelementResource(selectedCreateResource)"
+                      class="scheduling-appointment-drawer-row"
                     >
-                      {{ $t('SCHEDULING.CONTACT.IIN') }}
-                    </label>
-                    <Input
-                      id="scheduling-conversation-appointment-client-iin"
-                      class="scheduling-appointment-drawer-control"
-                      custom-input-class="!rounded-md !bg-n-alpha-black2"
-                      :aria-label="$t('SCHEDULING.CONTACT.IIN')"
-                      :model-value="createForm.clientIdentifier"
-                      :message="medelementIinError(createForm)"
-                      :message-type="
-                        medelementIinError(createForm) ? 'error' : 'info'
-                      "
-                      inputmode="numeric"
-                      autocomplete="off"
-                      size="sm"
-                      @update:model-value="updatePatientIin(createForm, $event)"
-                    />
-                  </div>
+                      <label
+                        class="scheduling-appointment-drawer-label"
+                        for="scheduling-conversation-appointment-client-iin"
+                      >
+                        {{ $t('SCHEDULING.CONTACT.IIN') }}
+                      </label>
+                      <Input
+                        id="scheduling-conversation-appointment-client-iin"
+                        class="scheduling-appointment-drawer-control"
+                        custom-input-class="!rounded-md !bg-n-alpha-black2"
+                        :aria-label="$t('SCHEDULING.CONTACT.IIN')"
+                        :model-value="createForm.clientIdentifier"
+                        :message="medelementIinError(createForm)"
+                        :message-type="
+                          medelementIinError(createForm) ? 'error' : 'info'
+                        "
+                        inputmode="numeric"
+                        autocomplete="off"
+                        size="sm"
+                        @update:model-value="
+                          updatePatientIin(createForm, $event)
+                        "
+                      />
+                    </div>
                   </div>
 
                   <div class="scheduling-appointment-drawer-row">
@@ -3359,192 +3363,196 @@ watch(
                     "
                     class="grid gap-2.5 rounded-lg border border-n-weak bg-n-alpha-1/40 p-2.5"
                   >
-                  <div class="scheduling-appointment-drawer-row">
-                    <label
-                      class="scheduling-appointment-drawer-label"
-                      :for="`scheduling-conversation-appointment-client-first-name-${appointment.id}`"
-                    >
-                      {{ $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_FIRST_NAME') }}
-                    </label>
-                    <Input
-                      :id="`scheduling-conversation-appointment-client-first-name-${appointment.id}`"
-                      class="scheduling-appointment-drawer-control"
-                      custom-input-class="!rounded-md !bg-n-alpha-black2"
-                      :aria-label="
-                        $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_FIRST_NAME')
-                      "
-                      :model-value="
-                        appointmentForms[appointmentKey(appointment)]
-                          .clientFirstName
-                      "
-                      size="sm"
-                      @update:model-value="
-                        updatePatientNamePart(
-                          appointmentForms[appointmentKey(appointment)],
-                          'clientFirstName',
-                          $event
-                        )
-                      "
-                    />
-                  </div>
+                    <div class="scheduling-appointment-drawer-row">
+                      <label
+                        class="scheduling-appointment-drawer-label"
+                        :for="`scheduling-conversation-appointment-client-first-name-${appointment.id}`"
+                      >
+                        {{
+                          $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_FIRST_NAME')
+                        }}
+                      </label>
+                      <Input
+                        :id="`scheduling-conversation-appointment-client-first-name-${appointment.id}`"
+                        class="scheduling-appointment-drawer-control"
+                        custom-input-class="!rounded-md !bg-n-alpha-black2"
+                        :aria-label="
+                          $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_FIRST_NAME')
+                        "
+                        :model-value="
+                          appointmentForms[appointmentKey(appointment)]
+                            .clientFirstName
+                        "
+                        size="sm"
+                        @update:model-value="
+                          updatePatientNamePart(
+                            appointmentForms[appointmentKey(appointment)],
+                            'clientFirstName',
+                            $event
+                          )
+                        "
+                      />
+                    </div>
 
-                  <div class="scheduling-appointment-drawer-row">
-                    <label
-                      class="scheduling-appointment-drawer-label"
-                      :for="`scheduling-conversation-appointment-client-last-name-${appointment.id}`"
-                    >
-                      {{ $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_LAST_NAME') }}
-                    </label>
-                    <Input
-                      :id="`scheduling-conversation-appointment-client-last-name-${appointment.id}`"
-                      class="scheduling-appointment-drawer-control"
-                      custom-input-class="!rounded-md !bg-n-alpha-black2"
-                      :aria-label="
-                        $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_LAST_NAME')
-                      "
-                      :model-value="
-                        appointmentForms[appointmentKey(appointment)]
-                          .clientLastName
-                      "
-                      :message="
-                        medelementLastNameError(
+                    <div class="scheduling-appointment-drawer-row">
+                      <label
+                        class="scheduling-appointment-drawer-label"
+                        :for="`scheduling-conversation-appointment-client-last-name-${appointment.id}`"
+                      >
+                        {{ $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_LAST_NAME') }}
+                      </label>
+                      <Input
+                        :id="`scheduling-conversation-appointment-client-last-name-${appointment.id}`"
+                        class="scheduling-appointment-drawer-control"
+                        custom-input-class="!rounded-md !bg-n-alpha-black2"
+                        :aria-label="
+                          $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_LAST_NAME')
+                        "
+                        :model-value="
                           appointmentForms[appointmentKey(appointment)]
-                        )
-                      "
-                      :message-type="
-                        medelementLastNameError(
-                          appointmentForms[appointmentKey(appointment)]
-                        )
-                          ? 'error'
-                          : 'info'
-                      "
-                      size="sm"
-                      @update:model-value="
-                        updatePatientNamePart(
-                          appointmentForms[appointmentKey(appointment)],
-                          'clientLastName',
-                          $event
-                        )
-                      "
-                    />
-                  </div>
+                            .clientLastName
+                        "
+                        :message="
+                          medelementLastNameError(
+                            appointmentForms[appointmentKey(appointment)]
+                          )
+                        "
+                        :message-type="
+                          medelementLastNameError(
+                            appointmentForms[appointmentKey(appointment)]
+                          )
+                            ? 'error'
+                            : 'info'
+                        "
+                        size="sm"
+                        @update:model-value="
+                          updatePatientNamePart(
+                            appointmentForms[appointmentKey(appointment)],
+                            'clientLastName',
+                            $event
+                          )
+                        "
+                      />
+                    </div>
 
-                  <div class="scheduling-appointment-drawer-row">
-                    <label
-                      class="scheduling-appointment-drawer-label"
-                      :for="`scheduling-conversation-appointment-client-middle-name-${appointment.id}`"
-                    >
-                      {{ $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_MIDDLE_NAME') }}
-                    </label>
-                    <Input
-                      :id="`scheduling-conversation-appointment-client-middle-name-${appointment.id}`"
-                      class="scheduling-appointment-drawer-control"
-                      custom-input-class="!rounded-md !bg-n-alpha-black2"
-                      :aria-label="
-                        $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_MIDDLE_NAME')
-                      "
-                      :model-value="
-                        appointmentForms[appointmentKey(appointment)]
-                          .clientMiddleName
-                      "
-                      size="sm"
-                      @update:model-value="
-                        updatePatientNamePart(
-                          appointmentForms[appointmentKey(appointment)],
-                          'clientMiddleName',
-                          $event
-                        )
-                      "
-                    />
-                  </div>
+                    <div class="scheduling-appointment-drawer-row">
+                      <label
+                        class="scheduling-appointment-drawer-label"
+                        :for="`scheduling-conversation-appointment-client-middle-name-${appointment.id}`"
+                      >
+                        {{
+                          $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_MIDDLE_NAME')
+                        }}
+                      </label>
+                      <Input
+                        :id="`scheduling-conversation-appointment-client-middle-name-${appointment.id}`"
+                        class="scheduling-appointment-drawer-control"
+                        custom-input-class="!rounded-md !bg-n-alpha-black2"
+                        :aria-label="
+                          $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_MIDDLE_NAME')
+                        "
+                        :model-value="
+                          appointmentForms[appointmentKey(appointment)]
+                            .clientMiddleName
+                        "
+                        size="sm"
+                        @update:model-value="
+                          updatePatientNamePart(
+                            appointmentForms[appointmentKey(appointment)],
+                            'clientMiddleName',
+                            $event
+                          )
+                        "
+                      />
+                    </div>
 
-                  <div class="scheduling-appointment-drawer-row">
-                    <label
-                      class="scheduling-appointment-drawer-label"
-                      :for="`scheduling-conversation-appointment-client-phone-${appointment.id}`"
-                    >
-                      {{ $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_PHONE') }}
-                    </label>
-                    <Input
-                      :id="`scheduling-conversation-appointment-client-phone-${appointment.id}`"
-                      class="scheduling-appointment-drawer-control"
-                      custom-input-class="!rounded-md !bg-n-alpha-black2"
-                      :aria-label="
-                        $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_PHONE')
-                      "
-                      :model-value="
-                        appointmentForms[appointmentKey(appointment)]
-                          .clientPhone
-                      "
-                      :message="
-                        medelementPhoneError(
+                    <div class="scheduling-appointment-drawer-row">
+                      <label
+                        class="scheduling-appointment-drawer-label"
+                        :for="`scheduling-conversation-appointment-client-phone-${appointment.id}`"
+                      >
+                        {{ $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_PHONE') }}
+                      </label>
+                      <Input
+                        :id="`scheduling-conversation-appointment-client-phone-${appointment.id}`"
+                        class="scheduling-appointment-drawer-control"
+                        custom-input-class="!rounded-md !bg-n-alpha-black2"
+                        :aria-label="
+                          $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_PHONE')
+                        "
+                        :model-value="
                           appointmentForms[appointmentKey(appointment)]
-                        )
-                      "
-                      :message-type="
-                        medelementPhoneError(
-                          appointmentForms[appointmentKey(appointment)]
-                        )
-                          ? 'error'
-                          : 'info'
-                      "
-                      size="sm"
-                      @update:model-value="
-                        appointmentForms[
-                          appointmentKey(appointment)
-                        ].clientPhone = $event
-                      "
-                    />
-                  </div>
+                            .clientPhone
+                        "
+                        :message="
+                          medelementPhoneError(
+                            appointmentForms[appointmentKey(appointment)]
+                          )
+                        "
+                        :message-type="
+                          medelementPhoneError(
+                            appointmentForms[appointmentKey(appointment)]
+                          )
+                            ? 'error'
+                            : 'info'
+                        "
+                        size="sm"
+                        @update:model-value="
+                          appointmentForms[
+                            appointmentKey(appointment)
+                          ].clientPhone = $event
+                        "
+                      />
+                    </div>
 
-                  <div
-                    v-if="
-                      isMedelementResource(
-                        selectedResourceForForm(
-                          appointmentForms[appointmentKey(appointment)]
+                    <div
+                      v-if="
+                        isMedelementResource(
+                          selectedResourceForForm(
+                            appointmentForms[appointmentKey(appointment)]
+                          )
                         )
-                      )
-                    "
-                    class="scheduling-appointment-drawer-row"
-                  >
-                    <label
-                      class="scheduling-appointment-drawer-label"
-                      :for="`scheduling-conversation-appointment-client-iin-${appointment.id}`"
+                      "
+                      class="scheduling-appointment-drawer-row"
                     >
-                      {{ $t('SCHEDULING.CONTACT.IIN') }}
-                    </label>
-                    <Input
-                      :id="`scheduling-conversation-appointment-client-iin-${appointment.id}`"
-                      class="scheduling-appointment-drawer-control"
-                      custom-input-class="!rounded-md !bg-n-alpha-black2"
-                      :aria-label="$t('SCHEDULING.CONTACT.IIN')"
-                      :model-value="
-                        appointmentForms[appointmentKey(appointment)]
-                          .clientIdentifier
-                      "
-                      :message="
-                        medelementIinError(
+                      <label
+                        class="scheduling-appointment-drawer-label"
+                        :for="`scheduling-conversation-appointment-client-iin-${appointment.id}`"
+                      >
+                        {{ $t('SCHEDULING.CONTACT.IIN') }}
+                      </label>
+                      <Input
+                        :id="`scheduling-conversation-appointment-client-iin-${appointment.id}`"
+                        class="scheduling-appointment-drawer-control"
+                        custom-input-class="!rounded-md !bg-n-alpha-black2"
+                        :aria-label="$t('SCHEDULING.CONTACT.IIN')"
+                        :model-value="
                           appointmentForms[appointmentKey(appointment)]
-                        )
-                      "
-                      :message-type="
-                        medelementIinError(
-                          appointmentForms[appointmentKey(appointment)]
-                        )
-                          ? 'error'
-                          : 'info'
-                      "
-                      inputmode="numeric"
-                      autocomplete="off"
-                      size="sm"
-                      @update:model-value="
-                        updatePatientIin(
-                          appointmentForms[appointmentKey(appointment)],
-                          $event
-                        )
-                      "
-                    />
-                  </div>
+                            .clientIdentifier
+                        "
+                        :message="
+                          medelementIinError(
+                            appointmentForms[appointmentKey(appointment)]
+                          )
+                        "
+                        :message-type="
+                          medelementIinError(
+                            appointmentForms[appointmentKey(appointment)]
+                          )
+                            ? 'error'
+                            : 'info'
+                        "
+                        inputmode="numeric"
+                        autocomplete="off"
+                        size="sm"
+                        @update:model-value="
+                          updatePatientIin(
+                            appointmentForms[appointmentKey(appointment)],
+                            $event
+                          )
+                        "
+                      />
+                    </div>
                   </div>
 
                   <div class="scheduling-appointment-drawer-row">
