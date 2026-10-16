@@ -214,7 +214,7 @@ RSpec.describe 'Super Admin Users API', type: :request do
   describe 'GET /super_admin/users/:id' do
     let!(:user) { create(:user, name: 'MFA Enabled User', otp_required_for_login: true) }
 
-    it 'shows the MFA status on the user detail page' do
+    it 'shows the two-factor state on the user detail page, in Russian' do
       sign_in(super_admin, scope: :super_admin)
 
       get "/super_admin/users/#{user.id}"
@@ -222,8 +222,8 @@ RSpec.describe 'Super Admin Users API', type: :request do
       labels = doc.css('dt.attribute-label').map { |label| label.text.squish }
 
       expect(response).to have_http_status(:success)
-      expect(labels).to include('MFA')
-      expect(response.body).to include('Enabled')
+      expect(labels).to include('Двухфакторная аутентификация')
+      expect(doc.at_css('#mfa_enabled + dd').text.squish).to include('Включена')
       expect(response.body).to include(CGI.escapeHTML(user.name))
     end
 
