@@ -351,5 +351,5 @@ ru:
       whatsapp_call: "Звонки WhatsApp"
       custom_tools: "Свои инструменты агента"
       communication_threads: "Один чат на контакт"
-      deferred_touch_materialization: "Отложенные касания"
+      deferred_touch_materialization: "Отложенная обработка событий"
       captain_openrouter_byok: "Свой ключ OpenRouter у аккаунта"

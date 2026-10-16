@@ -30,6 +30,13 @@ RSpec.describe SuperAdmin::AccountFeaturesHelper do
       expect(described_class.feature_label('scheduling_finance')).to eq('Финансы записи')
     end
 
+    it 'does not call anything a «касание» or a touch: those words are not shown to anyone' do
+      labels = I18n.t('super_admin.features', locale: :ru).values
+
+      expect(labels.grep(/касани|touch/i)).to be_empty
+      expect(described_class.feature_label('deferred_touch_materialization')).to eq('Отложенная обработка событий')
+    end
+
     it 'falls back to a readable name for a flag nobody translated' do
       expect(described_class.feature_label('some_new_flag')).to eq('Some new flag')
     end
