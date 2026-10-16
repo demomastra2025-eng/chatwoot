@@ -62,9 +62,11 @@ RSpec.describe 'Super Admin render smoke', type: :request do
     body.text.squish
   end
 
+  def english_ui_words = %w[Create Edit Delete Search Unlimited never ago Inherited Cancel Submit Loading]
+
   def expect_no_english(path)
     text = reading_text
-    found = text.scan(/\b(?:#{ENGLISH_UI_WORDS.join('|')})\b/).uniq
+    found = text.scan(/\b(?:#{english_ui_words.join('|')})\b/).uniq
     expect(found).to be_empty, "GET #{path} says #{found.join(', ')} in English"
     expect(text).not_to match(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/), "GET #{path} has an emoji"
   end
