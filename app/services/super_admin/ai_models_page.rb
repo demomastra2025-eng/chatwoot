@@ -60,11 +60,12 @@ class SuperAdmin::AiModelsPage
     'classifiers' => %w[
       CAPTAIN_OUTCOME_CLASSIFIER_MODEL CAPTAIN_LANGUAGE_DETECTION_MODEL CAPTAIN_LABEL_SUGGESTION_MODEL CAPTAIN_CUSTOMER_NOTICE_MODEL
     ],
-    'prompts' => %w[CAPTAIN_SYSTEM_PROMPTS CAPTAIN_AI_AGENT_SYSTEM_PROMPT CAPTAIN_AI_ASSISTANT_SYSTEM_PROMPT],
     'connection' => %w[
       CAPTAIN_OPENROUTER_API_KEY CAPTAIN_OPENROUTER_MANAGEMENT_API_KEY CAPTAIN_OPENROUTER_ENDPOINT CAPTAIN_FIRECRAWL_API_KEY
       ACCOUNT_CAPTAIN_TOKENS_LIMIT
-    ]
+    ],
+    # last: the installation prompts are a long list
+    'prompts' => %w[CAPTAIN_SYSTEM_PROMPTS CAPTAIN_AI_AGENT_SYSTEM_PROMPT CAPTAIN_AI_ASSISTANT_SYSTEM_PROMPT]
   }.freeze
   OTHER_GROUP = 'other'
   # Slots whose built-in value is "the default model of the installation" (see Llm::Config#installation_model_for)

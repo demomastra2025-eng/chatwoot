@@ -34,8 +34,8 @@ RSpec.describe 'Super admin settings pages', type: :request do
         'voice' => 'Голос и расшифровка',
         'images' => 'Картинки',
         'classifiers' => 'Классификаторы и служебные модели',
-        'prompts' => 'Системные промпты',
-        'connection' => 'Подключение и лимиты'
+        'connection' => 'Подключение и лимиты',
+        'prompts' => 'Системные промпты'
       }
     end
 

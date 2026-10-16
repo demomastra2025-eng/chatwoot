@@ -13,10 +13,10 @@ RSpec.describe SuperAdmin::AiModelsPage do
 
   describe '#groups' do
     it 'arranges the settings by purpose, in the order of the page, with a Russian title' do
-      expect(page.groups.map(&:key)).to eq(%w[agent safety knowledge voice images classifiers prompts connection])
+      expect(page.groups.map(&:key)).to eq(%w[agent safety knowledge voice images classifiers connection prompts])
       expect(page.groups.map(&:title)).to eq(
         ['Основная модель агентов', 'Модерация и защита', 'Поиск по базе знаний', 'Голос и расшифровка', 'Картинки',
-         'Классификаторы и служебные модели', 'Системные промпты', 'Подключение и лимиты']
+         'Классификаторы и служебные модели', 'Подключение и лимиты', 'Системные промпты']
       )
     end
 

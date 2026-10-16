@@ -3,10 +3,11 @@
 
 The settings of the AI agents of the platform as cards grouped by purpose
 (SuperAdmin::AiModelsPage): the main agent model, moderation and safety,
-knowledge base search, voice, images, classifiers and service models, system
-prompts, the connection to OpenRouter. Every card says whether the value is set
-by the platform or follows the built-in default. One form saves them all; the
-diagnostics of OpenRouter sit below it, collapsed.
+knowledge base search, voice, images, classifiers and service models, the
+connection to OpenRouter, system prompts. Every card says whether the value
+is set by the platform or follows the built-in default. One form saves them all.
+The diagnostics of OpenRouter are one collapsed block above it (the system
+prompts make the form long, and the block has forms of its own).
 
 ## Local variables (controller instance variables):
 
@@ -14,6 +15,8 @@ diagnostics of OpenRouter sit below it, collapsed.
 - `@openrouter_diagnostics`: the hash of Llm::OpenRouterDiagnostics.
 %>
 <div class="flex flex-col gap-8">
+  <%= render 'openrouter_diagnostics', diagnostics: @openrouter_diagnostics.to_h %>
+
   <%= form_with url: super_admin_app_config_url(config: @config), method: :post, local: true, class: 'flex flex-col gap-8', data: { testid: 'ai-models-form' } do %>
     <% @ai_models_page.groups.each do |group| %>
       <section class="flex flex-col gap-3" aria-labelledby="ai-group-<%= group.key %>" data-testid="ai-group-<%= group.key %>">
@@ -35,6 +38,4 @@ diagnostics of OpenRouter sit below it, collapsed.
       <%= submit_tag t('super_admin.app_config.save'), name: nil %>
     </div>
   <% end %>
-
-  <%= render 'openrouter_diagnostics', diagnostics: @openrouter_diagnostics.to_h %>
 </div>
