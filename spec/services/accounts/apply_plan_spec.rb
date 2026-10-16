@@ -17,14 +17,14 @@ RSpec.describe Accounts::ApplyPlan do
 
   describe '#preview' do
     it 'lists what would be switched on and off and what would change in the limits' do
-      account.enable_features!('scheduling_finance', 'campaigns', 'crm')
+      account.enable_features!('captain_scheduling_grounding_guard', 'campaigns', 'crm')
 
       preview = service(%w[ai_agents]).preview
 
       expect(preview).to have_attributes(plan: 'base', modules: %w[ai_agents], plan_version: 1, previous_plan: nil, previous_modules: [])
       expect(preview.enable).to include('channel_email', 'channel_voice', 'captain_integration', 'labels')
       expect(preview.enable).not_to include('crm')
-      expect(preview.disable).to contain_exactly('scheduling_finance', 'campaigns')
+      expect(preview.disable).to contain_exactly('captain_scheduling_grounding_guard', 'campaigns')
       expect(preview.limits).to eq(
         'conversations' => { 'from' => nil, 'to' => ChatwootApp.max_limit },
         'non_web_inboxes' => { 'from' => nil, 'to' => ChatwootApp.max_limit }
@@ -33,7 +33,7 @@ RSpec.describe Accounts::ApplyPlan do
     end
 
     it 'writes nothing: no flags, no limits, no attributes, no audit row' do
-      account.enable_features!('scheduling_finance')
+      account.enable_features!('captain_scheduling_grounding_guard')
       stored = Account.find(account.id).attributes
 
       expect { service(%w[ai_agents quality]).preview }.not_to change(Audited::Audit, :count)
@@ -80,7 +80,7 @@ RSpec.describe Accounts::ApplyPlan do
     end
 
     it 'switches the never_enabled flags off, including the deprecated ones' do
-      account.enable_features!('scheduling_finance', 'custom_roles', 'saml', 'channel_twitter', 'contact_chatwoot_support_team')
+      account.enable_features!('captain_scheduling_grounding_guard', 'custom_roles', 'saml', 'channel_twitter', 'contact_chatwoot_support_team')
 
       service(plans.module_keys).call
 
@@ -189,7 +189,7 @@ RSpec.describe Accounts::ApplyPlan do
     end
 
     it 'writes one audit entry with the actor, before and after' do
-      account.enable_features!('scheduling_finance')
+      account.enable_features!('captain_scheduling_grounding_guard')
 
       expect { service(%w[ai_agents]).call }.to change { Audited::Audit.where(action: 'apply_plan').count }.by(1)
 
@@ -200,7 +200,7 @@ RSpec.describe Accounts::ApplyPlan do
         'after' => { 'plan' => 'base', 'plan_modules' => %w[ai_agents], 'plan_version' => 1 }
       )
       expect(audit.audited_changes['features']['enabled']).to include('crm', 'captain_integration')
-      expect(audit.audited_changes['features']['disabled']).to eq(%w[scheduling_finance])
+      expect(audit.audited_changes['features']['disabled']).to eq(%w[captain_scheduling_grounding_guard])
       expect(audit.audited_changes['limits']).to include('conversations' => { 'from' => nil, 'to' => ChatwootApp.max_limit })
     end
 

@@ -277,14 +277,14 @@ RSpec.describe 'Super Admin clinic card', type: :request do
     end
 
     it 'says what would change, in Russian' do
-      account.enable_features!('scheduling_finance')
+      account.enable_features!('captain_scheduling_grounding_guard')
 
       preview(%w[ai_agents])
 
       fragment = Nokogiri::HTML.fragment(response.body)
       expect(text(fragment.at_css('span.font-medium'))).to eq('Аккаунту будет назначен тариф «База + ИИ-агенты». Что изменится:')
       expect(text(fragment.at_css('[data-preview="enable"]'))).to include('Включится:', 'ИИ-агенты', 'CRM')
-      expect(text(fragment.at_css('[data-preview="disable"]'))).to include('Выключится: 1', 'Финансы записи')
+      expect(text(fragment.at_css('[data-preview="disable"]'))).to include('Выключится: 1', 'Проверка записи ИИ-агентом')
       expect(text(fragment.at_css('[data-preview="limits"]'))).to include('Диалоги за 30 дней', 'Не ограничено')
     end
 
@@ -580,7 +580,7 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       expect(switch_names).to match_array(expected)
       expect(switch_names).not_to include(
         'enabled_features[feature_agent_management]', 'enabled_features[feature_team_management]', 'enabled_features[feature_custom_roles]',
-        'enabled_features[feature_saml]', 'enabled_features[feature_scheduling_finance]', 'enabled_features[feature_chatwoot_v4]'
+        'enabled_features[feature_saml]', 'enabled_features[feature_captain_scheduling_grounding_guard]', 'enabled_features[feature_chatwoot_v4]'
       )
     end
 
@@ -647,13 +647,13 @@ RSpec.describe 'Super Admin clinic card', type: :request do
     end
 
     it 'does not touch the functions it does not show' do
-      account.enable_features!('inbox_view', 'scheduling_finance')
+      account.enable_features!('inbox_view', 'captain_scheduling_grounding_guard')
 
       patch card_path, params: { account: { name: account.name }, enabled_features: { feature_sla: 'true' } }
 
       account.reload
       expect(account.feature_enabled?('inbox_view')).to be(true)
-      expect(account.feature_enabled?('scheduling_finance')).to be(true)
+      expect(account.feature_enabled?('captain_scheduling_grounding_guard')).to be(true)
       expect(account.feature_enabled?('agent_management')).to be(true)
     end
 

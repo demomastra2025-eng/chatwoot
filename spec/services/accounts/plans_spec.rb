@@ -50,7 +50,7 @@ RSpec.describe Accounts::Plans do
 
     it 'keeps the dangerous and deprecated flags switched off by every plan' do
       expect(plans.never_enabled).to include(
-        'scheduling_finance', 'custom_roles', 'saml', 'captain_scheduling_grounding_guard', 'contact_chatwoot_support_team'
+        'custom_roles', 'saml', 'captain_scheduling_grounding_guard', 'contact_chatwoot_support_team'
       )
       expect(plans.never_enabled).to include(*deprecated_features)
     end

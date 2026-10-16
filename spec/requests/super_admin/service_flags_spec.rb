@@ -211,24 +211,26 @@ RSpec.describe 'Super admin service flags and feature changes', type: :request d
     end
 
     it 'does not refuse a function no plan enables that the clinic already has: other fields still save' do
-      account.enable_features!('scheduling_finance')
+      account.enable_features!('captain_scheduling_grounding_guard')
 
-      patch card_path, params: { account: { name: 'Аккаунт Новый' }, enabled_features: { feature_scheduling_finance: 'true', feature_sla: 'true' } }
+      patch card_path,
+            params: { account: { name: 'Аккаунт Новый' },
+                      enabled_features: { feature_captain_scheduling_grounding_guard: 'true', feature_sla: 'true' } }
 
       expect(response).to redirect_to(card_path)
       account.reload
       expect(account.name).to eq('Аккаунт Новый')
-      expect(account.feature_enabled?('scheduling_finance')).to be(true)
+      expect(account.feature_enabled?('captain_scheduling_grounding_guard')).to be(true)
       expect(account.feature_enabled?('sla')).to be(true)
     end
 
     it 'lets a function no plan enables be switched off' do
-      account.enable_features!('scheduling_finance')
+      account.enable_features!('captain_scheduling_grounding_guard')
 
-      patch card_path, params: { enabled_features: { feature_scheduling_finance: 'false' } }
+      patch card_path, params: { enabled_features: { feature_captain_scheduling_grounding_guard: 'false' } }
 
       expect(response).to redirect_to(card_path)
-      expect(account.reload.feature_enabled?('scheduling_finance')).to be(false)
+      expect(account.reload.feature_enabled?('captain_scheduling_grounding_guard')).to be(false)
     end
 
     it 'refuses a new clinic that asks for a function no plan enables, and creates nothing' do

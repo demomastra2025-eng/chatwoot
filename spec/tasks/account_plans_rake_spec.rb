@@ -22,7 +22,7 @@ RSpec.describe 'accounts:plan_report rake task' do # rubocop:disable RSpec/Descr
   let!(:using_broadcasts) do
     create(:account, name: 'Using broadcasts').tap do |record|
       record.disable_features!(*Featurable::FEATURE_NAMES)
-      record.enable_features!('campaigns', 'scheduling_finance')
+      record.enable_features!('campaigns', 'captain_scheduling_grounding_guard')
     end
   end
   let!(:already_on_plan) do
@@ -37,7 +37,7 @@ RSpec.describe 'accounts:plan_report rake task' do # rubocop:disable RSpec/Descr
 
     expect(output).to include('Plan report (read-only')
     expect(output).to include("##{using_broadcasts.id} Using broadcasts | modules used: broadcasts")
-    expect(output).to match(/disable \(1\): scheduling_finance/)
+    expect(output).to match(/disable \(1\): captain_scheduling_grounding_guard/)
     expect(output).to match(/enable\s+\(\d+\):.*\bcrm\b/)
     expect(output).to include('limit conversations: nil -> 100000')
     expect(output).to include("##{already_on_plan.id} Already on the plan | modules used: quality")

@@ -251,7 +251,7 @@ RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
         SuperAdmin::FineTuning.new(account).flag_names.each do |feature_key|
           expect(response.body).to include(%(name="enabled_features[feature_#{feature_key}]"))
         end
-        %w[custom_roles saml scheduling_finance agent_management chatwoot_v4].each do |feature_key|
+        %w[custom_roles saml captain_scheduling_grounding_guard agent_management chatwoot_v4].each do |feature_key|
           expect(response.body).not_to include(%(name="enabled_features[feature_#{feature_key}]"))
         end
       end

@@ -108,7 +108,7 @@ RSpec.describe 'Super admin account plans', type: :request do
     end
 
     it 'returns the diff as JSON and writes nothing', :aggregate_failures do
-      account.enable_features!('scheduling_finance')
+      account.enable_features!('captain_scheduling_grounding_guard')
       stored = Account.find(account.id).attributes
       sign_in(super_admin, scope: :super_admin)
 
@@ -121,7 +121,7 @@ RSpec.describe 'Super admin account plans', type: :request do
       body = response.parsed_body
       expect(body).to include('plan' => 'base', 'modules' => %w[ai_agents], 'plan_version' => 1, 'changed' => true)
       expect(body['enable']).to include('crm', 'captain_integration')
-      expect(body['disable']).to eq(%w[scheduling_finance])
+      expect(body['disable']).to eq(%w[captain_scheduling_grounding_guard])
       expect(body['limits']).to include('conversations' => { 'from' => nil, 'to' => ChatwootApp.max_limit })
       expect(Account.find(account.id).attributes).to eq(stored)
     end
@@ -159,7 +159,7 @@ RSpec.describe 'Super admin account plans', type: :request do
       expect(response).to redirect_to(super_admin_account_path(created))
       expect(created.custom_attributes).to include('plan' => 'base', 'plan_modules' => [])
       expect(created.feature_enabled?('crm')).to be(true)
-      expect(created.feature_enabled?('scheduling_finance')).to be(false)
+      expect(created.feature_enabled?('captain_scheduling_grounding_guard')).to be(false)
       expect(created.limits).to include('conversations' => ChatwootApp.max_limit)
     end
 

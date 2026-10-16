@@ -22,7 +22,7 @@ RSpec.describe SuperAdmin::FineTuning do
 
     expect(names & hidden).to be_empty
     expect(names).not_to include('agent_management', 'team_management', 'inbox_management', 'labels', 'custom_attributes')
-    expect(names).not_to include('custom_roles', 'saml', 'scheduling_finance')
+    expect(names).not_to include('custom_roles', 'saml', 'captain_scheduling_grounding_guard')
   end
 
   it 'groups the base by area, then one group per module' do
@@ -70,7 +70,7 @@ RSpec.describe SuperAdmin::FineTuning do
     it 'names the flags no plan enables, without the deprecated ones' do
       labels = tuning.never_enabled_labels
 
-      expect(labels).to include('Роли доступа', 'Единый вход SAML', 'Финансы записи')
+      expect(labels).to include('Роли доступа', 'Единый вход SAML', 'Проверка записи ИИ-агентом')
       expect(labels.join).not_to include('устарело')
     end
   end

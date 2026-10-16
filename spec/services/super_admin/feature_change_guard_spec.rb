@@ -20,22 +20,23 @@ RSpec.describe SuperAdmin::FeatureChangeGuard do
 
   describe 'a function no plan ever enables' do
     it 'cannot be switched on while it is off' do
-      account.disable_features!('scheduling_finance', 'saml')
+      account.disable_features!('captain_scheduling_grounding_guard', 'saml')
 
-      expect(reasons('scheduling_finance' => true, 'saml' => true)).to eq('scheduling_finance' => :never_enabled, 'saml' => :never_enabled)
+      expect(reasons('captain_scheduling_grounding_guard' => true,
+                     'saml' => true)).to eq('captain_scheduling_grounding_guard' => :never_enabled, 'saml' => :never_enabled)
     end
 
     it 'does not block a clinic that already has it: asking for the state it has is no change' do
-      account.enable_features!('scheduling_finance')
+      account.enable_features!('captain_scheduling_grounding_guard')
 
-      expect(reasons('scheduling_finance' => true)).to be_empty
-      expect(guard.changes('scheduling_finance' => true)).to be_empty
+      expect(reasons('captain_scheduling_grounding_guard' => true)).to be_empty
+      expect(guard.changes('captain_scheduling_grounding_guard' => true)).to be_empty
     end
 
     it 'may be switched off' do
-      account.enable_features!('scheduling_finance')
+      account.enable_features!('captain_scheduling_grounding_guard')
 
-      expect(reasons('scheduling_finance' => false)).to be_empty
+      expect(reasons('captain_scheduling_grounding_guard' => false)).to be_empty
     end
   end
 

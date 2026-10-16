@@ -23,9 +23,9 @@ RSpec.describe Accounts::PlanDrift do
 
   it 'lists a flag that was switched on by hand as extra' do
     apply
-    account.enable_features!('campaigns', 'sla', 'scheduling_finance')
+    account.enable_features!('campaigns', 'sla', 'captain_scheduling_grounding_guard')
 
-    expect(described_class.call(account)[:extra]).to match_array(%w[campaigns sla scheduling_finance])
+    expect(described_class.call(account)[:extra]).to match_array(%w[campaigns sla captain_scheduling_grounding_guard])
     expect(described_class.call(account)[:missing]).to be_empty
   end
 
