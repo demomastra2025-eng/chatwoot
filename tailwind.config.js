@@ -39,8 +39,46 @@ const tailwindConfig = {
     './app/javascript/dashboard/routes/dashboard/**/**/*.js',
     './app/views/**/*.html.erb',
   ],
+  // Class names the super admin stylesheets (assets/scss/super_admin) define for markup that is not in the files
+  // Tailwind scans: partials of the Administrate gems, Rails (`field_with_errors`), and names assembled at run
+  // time (`cell-label--asc`, `attribute-data--avatar-field`). Without the list Tailwind drops their rules as unused.
+  safelist: [
+    'admin-notice--teal',
+    'as-field',
+    'attachments-listing',
+    'attribute--nested',
+    'attribute-data--avatar-field',
+    'cell-data--avatar-field',
+    'cell-label--asc',
+    'cell-label--desc',
+    'cell-label__sort-indicator--desc',
+    'field-unit--boolean',
+    'field-unit--required',
+    'field_with_errors',
+    'flash-alert',
+    'flash-error',
+    'flash-notice',
+    'flash-success',
+    'input-active',
+    'remove-attachment-link',
+    'selectize-control',
+    'selectize-dropdown',
+    'selectize-input',
+  ],
   theme: {
     extend: {
+      // Radius and type of the Ds* components (components-next/ds); the super admin draws with them too.
+      borderRadius: {
+        'ds-card': '10px',
+        'ds-control': '7px',
+      },
+      fontSize: {
+        'ds-caption': ['12.5px', '1.4'],
+        'ds-figure': [
+          '30px',
+          { lineHeight: '1.15', letterSpacing: '-0.03em', fontWeight: '600' },
+        ],
+      },
       fontFamily: {
         sans: brandSansFonts,
         inter: brandSansFonts,

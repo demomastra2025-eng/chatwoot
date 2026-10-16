@@ -118,13 +118,28 @@ describe('the «Сводка» body', () => {
   it('shows only the clinics that need attention', async () => {
     const wrapper = render();
     const attention = wrapper
-      .findAll('[role="radio"]')
+      .findAll('.segmented__item')
       .find(button => button.text() === ru.DASHBOARD.TOOLBAR.VIEW_ATTENTION);
 
     await attention.trigger('click');
 
     expect(rows(wrapper)).toHaveLength(1);
     expect(rows(wrapper)[0].text()).toContain('Сезим');
+  });
+
+  it('marks the chosen view and switches back to every clinic', async () => {
+    const wrapper = render();
+    const [all, attention] = wrapper.findAll('.segmented__item');
+
+    expect(all.attributes('aria-current')).toBe('true');
+    expect(attention.attributes('aria-current')).toBeUndefined();
+
+    await attention.trigger('click');
+    expect(attention.attributes('aria-current')).toBe('true');
+    expect(all.attributes('aria-current')).toBeUndefined();
+
+    await all.trigger('click');
+    expect(rows(wrapper)).toHaveLength(3);
   });
 
   it('says so when nothing matches', async () => {

@@ -49,16 +49,19 @@ Resources that nobody placed in a group land in "Дополнительно".
 %>
 
 <nav role="navigation" aria-label="<%= t('super_admin.navigation.aria_label') %>" class="flex shrink-0 flex-col border-b border-n-weak bg-n-background md:h-full md:w-60 md:border-b-0 md:border-r">
-  <%# Brand header. The logo carries width/height so it is never drawn at its natural size before the CSS arrives. %>
-  <div class="flex items-center gap-2.5 px-4 py-3 md:px-4 md:pb-3.5 md:pt-4">
+  <%# Brand header. The logo carries width/height so it is never drawn at its natural size before the CSS arrives.
+      The name and the environment badge share one line that wraps (the badge drops under the name when the line is
+      too narrow), the caption sits under them: nothing is cut off or overlaps at any width. %>
+  <div class="flex items-center gap-2.5 px-4 py-3 md:px-4 md:pb-3.5 md:pt-5">
     <%= link_to image_tag('/brand-assets/logo_thumbnail.svg', alt: t('super_admin.navigation.brand'), width: 39, height: 32, class: 'h-7 w-auto shrink-0'), super_admin_root_path, class: 'flex shrink-0' %>
-    <%# The environment badge sits under the caption, so neither of them is cut off in the 240px sidebar. %>
-    <div class="flex min-w-0 flex-col items-start">
-      <span class="max-w-full truncate text-sm font-semibold leading-[18px] text-n-slate-12"><%= t('super_admin.navigation.brand') %></span>
-      <span class="max-w-full truncate text-xs leading-4 text-n-slate-11"><%= t('super_admin.navigation.console') %></span>
-      <% if environment_label.present? %>
-        <span class="mt-1 max-w-full truncate rounded-md bg-n-amber-2 px-1.5 text-[11px] font-medium leading-[18px] text-n-amber-11 outline outline-1 -outline-offset-1 outline-n-amber-4" data-testid="environment-badge"><%= environment_label %></span>
-      <% end %>
+    <div class="flex min-w-0 flex-col justify-center gap-0.5">
+      <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span class="text-sm font-semibold leading-[18px] text-n-slate-12"><%= t('super_admin.navigation.brand') %></span>
+        <% if environment_label.present? %>
+          <span class="shrink-0 whitespace-nowrap rounded-md bg-n-amber-2 px-1.5 text-[11px] font-medium leading-[18px] text-n-amber-11 outline outline-1 -outline-offset-1 outline-n-amber-4" data-testid="environment-badge"><%= environment_label %></span>
+        <% end %>
+      </div>
+      <span class="text-xs leading-4 text-n-slate-11"><%= t('super_admin.navigation.console') %></span>
     </div>
     <button type="button" class="reset-base ms-auto inline-flex size-8 shrink-0 items-center justify-center rounded-lg border-0 bg-transparent text-n-slate-11 outline outline-1 -outline-offset-1 outline-n-container hover:bg-n-alpha-2 md:hidden" aria-controls="super-admin-menu" aria-expanded="false" aria-label="<%= t('super_admin.navigation.menu') %>" data-nav-toggle>
       <span class="i-lucide-menu size-4" aria-hidden="true"></span>

@@ -4,7 +4,6 @@ import { useI18n } from 'vue-i18n';
 import {
   DsCard,
   DsChartFrame,
-  DsSegmented,
   DsState,
   DsStatGroup,
   DsStatusDot,
@@ -138,11 +137,22 @@ const clinicUrl = account => `/super_admin/accounts/${account.id}`;
           :placeholder="t('DASHBOARD.TOOLBAR.SEARCH_PLACEHOLDER')"
           :aria-label="t('DASHBOARD.TOOLBAR.SEARCH_PLACEHOLDER')"
         />
-        <DsSegmented
-          v-model="view"
-          :options="viewOptions"
-          :label="t('DASHBOARD.TOOLBAR.VIEW')"
-        />
+        <div
+          class="segmented"
+          role="group"
+          :aria-label="t('DASHBOARD.TOOLBAR.VIEW')"
+        >
+          <button
+            v-for="option in viewOptions"
+            :key="option.value"
+            type="button"
+            class="segmented__item reset-base"
+            :aria-current="view === option.value ? 'true' : null"
+            @click="view = option.value"
+          >
+            {{ option.label }}
+          </button>
+        </div>
       </div>
 
       <DsState
