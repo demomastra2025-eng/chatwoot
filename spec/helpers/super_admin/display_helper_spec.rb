@@ -43,6 +43,17 @@ RSpec.describe SuperAdmin::DisplayHelper do
     end
   end
 
+  describe '.format_calendar_date' do
+    it 'prints a date without a time of day as it is stored, whatever the zone of the server' do
+      expect(described_class.format_calendar_date(Date.new(2026, 3, 15))).to eq('15.03.2026')
+      Time.use_zone('Pacific/Honolulu') { expect(described_class.format_calendar_date(Date.new(2026, 3, 15))).to eq('15.03.2026') }
+    end
+
+    it 'is nil for a blank date' do
+      expect(described_class.format_calendar_date(nil)).to be_nil
+    end
+  end
+
   describe '.parse_input' do
     it 'reads a datetime-local value as Astana wall-clock time' do
       expect(described_class.parse_input('2026-10-15T17:00')).to eq(Time.utc(2026, 10, 15, 12, 0))

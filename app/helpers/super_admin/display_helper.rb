@@ -25,6 +25,12 @@ module SuperAdmin::DisplayHelper
       in_astana(time)&.strftime(format)
     end
 
+    # A calendar date (the date of a contract: no time of day, no zone) as it is stored: "15.10.2026". It is never
+    # moved to another day by a zone; nil for a blank date.
+    def format_calendar_date(date)
+      date&.strftime(DATE_FORMAT)
+    end
+
     # A value typed into a datetime-local input is Astana wall-clock time; anything that names its own zone or
     # offset is left to the normal parsing.
     def parse_input(value)
@@ -77,6 +83,11 @@ module SuperAdmin::DisplayHelper
   # "15.10.2026"
   def super_admin_date(time)
     SuperAdmin::DisplayHelper.format_time(time, DATE_FORMAT)
+  end
+
+  # "15.10.2026" for a date without a time of day (the date of a contract)
+  def super_admin_calendar_date(date)
+    SuperAdmin::DisplayHelper.format_calendar_date(date)
   end
 
   # The value of a datetime-local input, in Astana time

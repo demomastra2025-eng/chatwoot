@@ -24,7 +24,6 @@ class SuperAdmin::AccountListStats
     @member_counts = AccountUser.where(account_id: ids).group(:account_id).count
     @channel_counts = Inbox.where(account_id: ids).group(:account_id).count
     @excluded_counts = excluded_member_counts
-    @storage_snapshots = Accounts::StorageOverviewService.snapshots_for(@accounts)
     @global_agent_limit = GlobalConfig.get('ACCOUNT_AGENTS_LIMIT')['ACCOUNT_AGENTS_LIMIT']
   end
 
@@ -32,12 +31,22 @@ class SuperAdmin::AccountListStats
     plan = SuperAdmin::AccountPlanState.new(account)
     Row.new(
       plan: plan,
-      operators_used: @member_counts.fetch(account.id, 0) - @excluded_counts.fetch(account.id, 0),
+      operators_used: operators_used(account),
       operators_limit: operators_limit(account),
       storage: storage(account),
-      channels: @channel_counts.fetch(account.id, 0),
+      channels: channels(account),
       status: plan.status
     )
+  end
+
+  # Members of the clinic that the operator limit counts
+  def operators_used(account)
+    @member_counts.fetch(account.id, 0) - @excluded_counts.fetch(account.id, 0)
+  end
+
+  # Inboxes (channels) of the clinic
+  def channels(account)
+    @channel_counts.fetch(account.id, 0)
   end
 
   # The same answer as Account#agent_limit_metadata (a spec compares them), without a config read per clinic.
@@ -67,8 +76,14 @@ class SuperAdmin::AccountListStats
     end
   end
 
+  # The hourly snapshots of the page, read with one MGET the first time a row asks for the storage (the organization
+  # pages only need the counts and never pay for it)
+  def storage_snapshots
+    @storage_snapshots ||= Accounts::StorageOverviewService.snapshots_for(@accounts)
+  end
+
   def storage(account)
-    summary = @storage_snapshots[account.id]&.dig(:limits)
+    summary = storage_snapshots[account.id]&.dig(:limits)
     return if summary.blank?
 
     unlimited = summary[:unlimited] ? true : false
