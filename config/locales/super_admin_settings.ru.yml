@@ -4,6 +4,9 @@
 # title and description of config/installation_config.yml (see SuperAdmin::AppConfigLabels).
 ru:
   super_admin:
+    installation_configs:
+      reserved: "Параметр «%{name}» настраивается на странице «Каналы», здесь его менять нельзя."
+
     settings:
       description: "Параметры установки OneLink, функции платформы и подключённые интеграции."
       refreshed: "Статус установки обновлён."

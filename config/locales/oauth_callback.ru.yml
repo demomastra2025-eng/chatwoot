@@ -1,0 +1,6 @@
+# The page a clinic sees when it comes back from Google or Microsoft while the e-mail channel is closed for it.
+ru:
+  oauth_callback:
+    channel_not_available:
+      title: "Подключение недоступно"
+      back: "Вернуться в кабинет"
