@@ -245,7 +245,7 @@ const loadPage = async () => {
     await Promise.all([
       store.dispatch('inboxes/get'),
       store.dispatch('attributes/get'),
-      referencesStore.fetchPipelines().catch(() => []),
+      referencesStore.loadPipelines().catch(() => []),
       fetchLeadIntake(),
     ]);
   } catch (error) {

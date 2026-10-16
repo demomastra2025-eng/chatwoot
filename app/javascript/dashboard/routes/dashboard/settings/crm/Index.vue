@@ -511,8 +511,8 @@ const openLeadForms = () =>
   router.push({
     name: 'lead_forms_index',
     params: { accountId: accountId.value },
-    ...(selectedPipelineId.value
-      ? { query: { pipelineId: String(selectedPipelineId.value) } }
+    ...(selectedPipeline.value?.id
+      ? { query: { pipelineId: String(selectedPipeline.value.id) } }
       : {}),
   });
 

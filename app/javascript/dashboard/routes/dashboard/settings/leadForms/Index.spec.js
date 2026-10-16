@@ -42,7 +42,7 @@ const mockReferencesStore = reactive({
       ],
     },
   ],
-  fetchPipelines: vi.fn(() => Promise.resolve()),
+  loadPipelines: vi.fn(() => Promise.resolve()),
 });
 
 const mockLeadFormsGet = vi.fn(() =>
