@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_10_14_102000) do
+ActiveRecord::Schema[7.2].define(version: 2026_10_16_100000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -100,6 +100,8 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_14_102000) do
     t.jsonb "internal_attributes", default: {}, null: false
     t.jsonb "settings", default: {}
     t.jsonb "feature_flags_overflow", default: [], null: false
+    t.bigint "organization_id"
+    t.index ["organization_id"], name: "index_accounts_on_organization_id"
     t.index ["status"], name: "index_accounts_on_status"
   end
 
@@ -2618,6 +2620,23 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_14_102000) do
     t.index ["user_id"], name: "index_notifications_on_user_id"
   end
 
+  create_table "organizations", force: :cascade do |t|
+    t.string "name", null: false
+    t.string "legal_name"
+    t.string "bin"
+    t.string "contract_number"
+    t.date "contract_date"
+    t.string "billing_email"
+    t.string "phone"
+    t.text "address"
+    t.text "notes"
+    t.jsonb "custom_attributes", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["bin"], name: "index_organizations_on_bin", unique: true
+    t.index "lower((name)::text)", name: "index_organizations_on_lower_name"
+  end
+
   create_table "platform_app_permissibles", force: :cascade do |t|
     t.bigint "platform_app_id", null: false
     t.string "permissible_type", null: false
@@ -3697,6 +3716,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_14_102000) do
   add_foreign_key "account_user_lifecycle_snapshots", "accounts", on_delete: :cascade
   add_foreign_key "account_user_lifecycle_snapshots", "users", column: "deactivated_by_id", on_delete: :nullify
   add_foreign_key "account_user_lifecycle_snapshots", "users", on_delete: :cascade
+  add_foreign_key "accounts", "organizations"
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
   add_foreign_key "assignment_client_ownerships", "accounts", name: "fk_rails_assignment_client_ownerships_account"

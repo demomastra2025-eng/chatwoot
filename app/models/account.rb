@@ -12,6 +12,7 @@
 #  limits                 :jsonb
 #  locale                 :integer          default("en")
 #  name                   :string           not null
+#  organization_id        :bigint
 #  settings               :jsonb
 #  status                 :integer          default("active")
 #  support_email          :string(100)
@@ -20,7 +21,12 @@
 #
 # Indexes
 #
-#  index_accounts_on_status  (status)
+#  index_accounts_on_organization_id  (organization_id)
+#  index_accounts_on_status           (status)
+#
+# Foreign Keys
+#
+#  fk_rails_...  (organization_id => organizations.id)
 #
 
 # rubocop:disable Metrics/ClassLength
@@ -77,6 +83,9 @@ class Account < ApplicationRecord
   store_accessor :settings, :conversation_assignment_policy_id
   store_accessor :settings, :conversation_auto_assignment_enabled
   include AccountCaptainAutoResolve
+
+  # The paying parent (requisites, BIN, contract); an account without one works as before
+  belongs_to :organization, optional: true
 
   has_many :account_users, dependent: :destroy_async
   has_many :agent_bot_inboxes, dependent: :destroy_async

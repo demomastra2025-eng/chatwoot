@@ -3,6 +3,7 @@
 require 'rails_helper'
 
 RSpec.describe Account do
+  it { is_expected.to belong_to(:organization).optional }
   it { is_expected.to have_many(:users).through(:account_users) }
   it { is_expected.to have_many(:account_users) }
   it { is_expected.to have_many(:inboxes).dependent(:destroy_async) }

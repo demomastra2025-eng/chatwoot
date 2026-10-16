@@ -1,0 +1,152 @@
+# Russian texts of the «Организации» of the super admin: the organization is the paying parent of accounts
+# (requisites, BIN, contract). The main file of the super admin is super_admin.ru.yml.
+ru:
+  activerecord:
+    models:
+      organization:
+        one: "Организация"
+        few: "Организации"
+        many: "Организаций"
+        other: "Организации"
+    attributes:
+      organization:
+        id: "ID"
+        name: "Название"
+        legal_name: "Юридическое название"
+        bin: "БИН"
+        contract_number: "Номер договора"
+        contract_date: "Дата договора"
+        billing_email: "E-mail для счетов"
+        phone: "Телефон"
+        address: "Адрес"
+        notes: "Заметки"
+        accounts: "Аккаунты"
+        created_at: "Создана"
+        updated_at: "Изменена"
+    errors:
+      models:
+        organization:
+          attributes:
+            bin:
+              invalid_bin: "должен состоять из 12 цифр"
+              taken: "уже указан у другой организации"
+            billing_email:
+              invalid: "указан неверно"
+
+  helpers:
+    label:
+      organization:
+        id: "ID"
+        name: "Название"
+        legal_name: "Юридическое название"
+        bin: "БИН"
+        contract_number: "Номер договора"
+        contract_date: "Дата договора"
+        billing_email: "E-mail для счетов"
+        phone: "Телефон"
+        address: "Адрес"
+        notes: "Заметки"
+        accounts: "Аккаунты"
+        created_at: "Создана"
+        updated_at: "Изменена"
+        section_requisites: "Реквизиты"
+        section_contract: "Договор"
+
+  administrate:
+    field_hints:
+      organization:
+        name: "Так организация называется в списках."
+        legal_name: "Название из договора, например ТОО с формой собственности."
+        bin: "12 цифр"
+        address: "Юридический или фактический адрес."
+        billing_email: "Для счетов и закрывающих документов."
+        contract_number: "Как в договоре."
+        notes: "Видны только администраторам платформы."
+
+  super_admin:
+    resources:
+      organizations: "Организации"
+      organization: "Организация"
+
+    navigation:
+      items:
+        organizations: "Организации"
+
+    index:
+      organization:
+        description: "Организации платформы: реквизиты, БИН, договор и входящие в них аккаунты."
+        new: "Новая организация"
+
+    audits:
+      types:
+        organization: "Организация"
+      actions:
+        link_account: "Привязка аккаунта"
+        unlink_account: "Отвязка аккаунта"
+        link_organization: "Привязка к организации"
+        unlink_organization: "Отвязка от организации"
+
+    organizations:
+      controller:
+        create:
+          success: "Организация создана."
+        update:
+          success: "Организация сохранена."
+        destroy:
+          success: "Организация удалена."
+      columns:
+        name: "Название"
+        bin: "БИН"
+        contract: "Договор"
+        accounts: "Аккаунтов"
+        operators: "Операторов"
+        channels: "Каналов"
+        created: "Создана"
+        actions: "Действия"
+      contract:
+        both: "№ %{number} от %{date}"
+        number: "№ %{number}"
+        date: "от %{date}"
+      flashes:
+        destroy_refused:
+          one: "Организацию нельзя удалить: к ней привязан %{count} аккаунт. Сначала отвяжите его."
+          few: "Организацию нельзя удалить: к ней привязано %{count} аккаунта. Сначала отвяжите их."
+          many: "Организацию нельзя удалить: к ней привязано %{count} аккаунтов. Сначала отвяжите их."
+          other: "Организацию нельзя удалить: к ней привязано %{count} аккаунта. Сначала отвяжите их."
+        account_missing: "Выберите аккаунт из списка."
+        account_taken: "Аккаунт «%{account}» уже привязан к организации «%{organization}». Сначала отвяжите его там."
+        account_linked: "Аккаунт «%{account}» привязан к организации."
+        account_already_linked: "Аккаунт «%{account}» уже привязан к этой организации."
+        account_unlinked: "Аккаунт «%{account}» отвязан от организации."
+        account_not_linked: "Этот аккаунт не привязан к организации."
+      card:
+        breadcrumb: "Путь"
+        created: "создана %{date}"
+        destroy_confirm: "Удалить организацию «%{name}»? Организацию, к которой привязаны аккаунты, удалить нельзя."
+        requisites:
+          title: "Реквизиты"
+          legal_name: "Юридическое название"
+          bin: "БИН"
+          address: "Адрес"
+          phone: "Телефон"
+          billing_email: "E-mail для счетов"
+        contract:
+          title: "Договор"
+          number: "Номер"
+          date: "Дата"
+          notes: "Заметки"
+        accounts:
+          title: "Аккаунты"
+          total:
+            one: "%{count} аккаунт"
+            few: "%{count} аккаунта"
+            many: "%{count} аккаунтов"
+            other: "%{count} аккаунта"
+          empty: "К организации не привязан ни один аккаунт."
+          totals: "Итого"
+          unlink: "Отвязать"
+          unlink_confirm: "Отвязать аккаунт «%{account}» от организации «%{organization}»? Сам аккаунт, его тариф и данные не изменятся."
+          link_label: "Аккаунт без организации"
+          link_prompt: "Выберите аккаунт"
+          link: "Привязать аккаунт"
+          none_to_link: "Все аккаунты уже привязаны к организациям."
