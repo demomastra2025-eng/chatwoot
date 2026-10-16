@@ -34,7 +34,7 @@ class Llm::Monitoring::FleetSnapshot
              :account_id,
              Arel.sql('COUNT(*)'),
              Arel.sql("SUM(CASE WHEN event_name = 'llm.chat.complete' THEN 1 ELSE 0 END)"),
-             Arel.sql("SUM(CASE WHEN error = TRUE THEN 1 ELSE 0 END)"),
+             Arel.sql('SUM(CASE WHEN error = TRUE THEN 1 ELSE 0 END)'),
              Arel.sql('SUM(COALESCE(estimated_cost, 0))'),
              Arel.sql('MAX(created_at)')
            )

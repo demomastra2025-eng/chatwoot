@@ -38,12 +38,13 @@ RSpec.describe 'Super Admin AI analytics', type: :request do
   end
 
   it 'says so when there was no activity' do
-    allow(Llm::Monitoring::FleetSnapshot).to receive(:new).and_return(instance_double(Llm::Monitoring::FleetSnapshot, call: { snapshot: {}, top_accounts: [] }))
+    allow(Llm::Monitoring::FleetSnapshot).to receive(:new).and_return(instance_double(Llm::Monitoring::FleetSnapshot,
+                                                                                      call: { snapshot: {}, top_accounts: [] }))
 
     get '/super_admin/captain_observability'
 
     expect(page.at_css('[data-testid="ai-top-empty"]').text).to include('активности ИИ не найдено')
-    expect(page.at_css('main').text).not_to match(/No fleet|n\/a|Estimated cost|\$0\.00/)
+    expect(page.at_css('main').text).not_to match(%r{No fleet|n/a|Estimated cost|\$0\.00})
   end
 
   it 'has no English words and no emoji in what it draws' do

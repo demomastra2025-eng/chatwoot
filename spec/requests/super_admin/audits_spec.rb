@@ -41,7 +41,8 @@ RSpec.describe 'Super Admin Audits', type: :request do
       end
 
       it 'names the kind of object and the action in Russian' do
-        Audited::Audit.create!(auditable: account, associated: account, action: 'apply_plan', audited_changes: { 'plan' => 'base' }, comment: 'super_admin')
+        Audited::Audit.create!(auditable: account, associated: account, action: 'apply_plan', audited_changes: { 'plan' => 'base' },
+                               comment: 'super_admin')
 
         get '/super_admin/audits'
         page = Nokogiri::HTML(response.body)

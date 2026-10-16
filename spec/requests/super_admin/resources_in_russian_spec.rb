@@ -5,6 +5,7 @@ require 'rails_helper'
 # titles of the «new» pages, the avatar and file fields).
 RSpec.describe 'Super Admin lists and forms in Russian', type: :request do
   let(:super_admin) { create(:super_admin) }
+
   # Not memoized: some examples open several pages in a row.
   def page = Nokogiri::HTML(response.body)
 

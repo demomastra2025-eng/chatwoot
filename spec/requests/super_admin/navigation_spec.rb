@@ -100,21 +100,24 @@ RSpec.describe 'Super Admin sidebar', type: :request do
       expect(nav.at_css('[data-testid="environment-badge"]').text.strip).to eq(Rails.env.upcase)
     end
 
-    it 'keeps the environment badge on the line of the brand name, which wraps, so nothing is cut off or overlaps' do
+    it 'keeps the environment badge on the line of the brand name, which wraps when the sidebar is too narrow for both' do
+      badge = nav.at_css('[data-testid="environment-badge"]')
+      line = badge.parent
+
+      expect(line['class'].split).to include('flex', 'flex-wrap')
+      expect(line.element_children.first.text.strip).to eq('OneLink')
+      expect(line.element_children).to include(badge)
+    end
+
+    it 'puts the console name on a line of its own under them and truncates nothing, so nothing is cut off' do
       badge = nav.at_css('[data-testid="environment-badge"]')
       line = badge.parent
       column = line.parent
       caption = column.element_children.find { |node| node.text.strip == 'Супер-админка' }
 
-      # name and badge share a line that wraps when the sidebar is too narrow for both
-      expect(line['class'].split).to include('flex', 'flex-wrap')
-      expect(line.element_children.first.text.strip).to eq('OneLink')
-      expect(line.element_children).to include(badge)
-      # the caption is its own line under them, the column cannot overflow its box
       expect(caption).to be_present
       expect(column.element_children.index(caption)).to be > column.element_children.index(line)
       expect(column['class'].split).to include('flex-col', 'min-w-0')
-      # nothing is truncated: the badge keeps its width, the texts have no ellipsis
       expect(badge['class'].split).to include('shrink-0', 'whitespace-nowrap')
       expect(column.css('[class~="truncate"]')).to be_empty
     end
