@@ -158,7 +158,7 @@ catalog, which models each function can use) are one more level down.
                 <p class="admin-stat__value"><%= t("#{scope}.feature_names.#{feature_key}", default: feature_key.to_s.humanize) %></p>
                 <p class="admin-stat__note">
                   <%= t("#{scope}.features.line", available: diagnostics_count(feature[:available_model_count]),
-                                                  selected: feature[:selected_model].presence || none, default: feature[:default_model].presence || none) %>
+                                                  selected: feature[:selected_model].presence || none, built_in: feature[:default_model].presence || none) %>
                 </p>
                 <% if selected_diagnostics[:allowed] == false && selected_diagnostics[:reason_codes].present? %>
                   <p class="admin-stat__note text-n-amber-11"><%= t("#{scope}.features.warning", reasons: selected_diagnostics[:reason_codes].join(', ')) %></p>

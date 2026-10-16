@@ -144,7 +144,7 @@ ru:
             provider_changed: "сменился провайдер"
             failed_model_ids: "не удалось обновить"
           features:
-            line: "Доступно моделей: %{available}, выбрана: %{selected}, по умолчанию: %{default}"
+            line: "Доступно моделей: %{available}, выбрана: %{selected}, по умолчанию: %{built_in}"
             warning: "Предупреждение по выбранной модели: %{reasons}"
           feature_names:
             editor: "Редактор текста"
