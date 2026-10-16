@@ -18,10 +18,13 @@
 //     `[type="text"]:hover/:focus/:disabled:hover` family and `a:hover`.
 //     Variants (`.button--secondary`, ...) are stricter than the base so they
 //     win over it.
-//   * Rules live in `@layer base`: Tailwind always emits them (component rules
-//     without a matching class in the sources are dropped) and utility classes
-//     in the views still win over the rules that are not repeated gem
-//     selectors. Add `reset-base` to a button that carries its own utilities.
+//   * Rules live in `@layer base`: utility classes in the views still win over
+//     the rules that are not repeated gem selectors. Tailwind keeps a rule with
+//     a class selector only when that class name appears in the files it scans
+//     (views, Vue); a class that is built at run time or comes from a gem or
+//     from Rails (`cell-label--asc`, `field_with_errors`, ...) has to be in the
+//     `safelist` of tailwind.config.js, or its rule is silently dropped.
+//     Add `reset-base` to a button that carries its own utilities.
 //
 // Remove the matching blocks when the sprockets stylesheet is retired.
 

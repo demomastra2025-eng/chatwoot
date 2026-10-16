@@ -3,9 +3,11 @@
 // blocks, badges, usage meters, switches, collapsible blocks, plan cards and
 // key/value lists.
 //
-// They live in `@layer base` for the same reason as `_admin.scss`: Tailwind
-// always emits them (class names built in helpers are not scanned), and a
-// utility class in a view still wins over them. Colours come from tokens only.
+// They live in `@layer base` for the same reason as `_admin.scss`: a utility
+// class in a view still wins over them. Tailwind keeps them only for class
+// names it finds in the views (a name built in a helper is not found: spell it
+// out in a view or add it to the safelist of tailwind.config.js). Colours come
+// from tokens only.
 
 @layer base {
   // ---------------------------------------------------------------- blocks
