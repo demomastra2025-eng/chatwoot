@@ -310,19 +310,22 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   end
 
   # Moves the account to the organization (:none unlinks it) through SuperAdmin::OrganizationLinks, which writes only the
-  # foreign key and leaves the entries of the audit log on both sides with the super admin as the actor. Returns what to
-  # tell the operator, nil when the account was where it was asked to be.
+  # foreign key and leaves the entries of the audit log on both sides with the super admin as the actor. The page this
+  # request came from may be out of date, so the organization the account leaves is the one the links found under the
+  # lock of the account row (the account card and the edit form may move an account from wherever it is). Returns what
+  # to tell the operator, nil when the account was where it was asked to be.
   def change_organization(account, target)
     links = SuperAdmin::OrganizationLinks.new(actor: current_super_admin, request: request)
-    previous = account.organization
     if target == :none
-      return unless links.unlink(account: account)
+      result = links.unlink(account: account)
+      return unless result.changed?
 
-      organization_flash(:unlinked, organization: previous.name)
+      organization_flash(:unlinked, organization: result.previous.name)
     else
-      return unless links.link(account: account, organization: target)
+      result = links.link(account: account, organization: target)
+      return unless result.changed?
 
-      organization_flash(previous ? :moved : :linked, organization: target.name)
+      organization_flash(result.previous ? :moved : :linked, organization: target.name)
     end
   end
 

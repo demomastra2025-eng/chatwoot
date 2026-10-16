@@ -632,6 +632,39 @@ RSpec.describe 'Super Admin organizations', type: :request do
         expect(audits_of(account, 'link_organization')).to be_empty
       end
 
+      # The select was drawn while the account was free; `stale` is the account as that page saw it. Another super admin
+      # changes the holder between the page and this request, so the controller reads the stale record.
+      def serve_stale(stale)
+        allow(Account).to receive(:find_by).and_call_original
+        allow(Account).to receive(:find_by).with(id: stale.id.to_s).and_return(stale)
+      end
+
+      it 'refuses an account that was linked to another organization after the page was drawn, and changes nothing' do
+        other = create(:organization, name: 'Нур')
+        stale = Account.find(account.id)
+        account.update_columns(organization_id: other.id) # rubocop:disable Rails/SkipsModelValidations
+        serve_stale(stale)
+
+        link
+
+        follow_redirect!
+        expect(page.at_css('.flashes').text).to include('Аккаунт «Филиал 1» уже привязан к организации «Нур». Сначала отвяжите его там.')
+        expect(account.reload.organization).to eq(other)
+        expect(Audited::Audit.where(action: %w[link_organization unlink_organization link_account unlink_account])).to be_empty
+      end
+
+      it 'says it is already linked here when the account was linked to this organization after the page was drawn' do
+        stale = Account.find(account.id)
+        account.update_columns(organization_id: organization.id) # rubocop:disable Rails/SkipsModelValidations
+        serve_stale(stale)
+
+        link
+
+        follow_redirect!
+        expect(page.at_css('.flashes').text).to include('уже привязан к этой организации')
+        expect(Audited::Audit.where(action: %w[link_organization link_account])).to be_empty
+      end
+
       it 'asks to choose an account when none is sent or the number is unknown' do
         link(account_id: '')
         follow_redirect!
@@ -694,6 +727,40 @@ RSpec.describe 'Super Admin organizations', type: :request do
         expect(page.at_css('.flashes').text).to include('Этот аккаунт не привязан к организации.')
         expect(foreign.reload.organization).to eq(other)
         expect(audits_of(foreign)).to be_empty
+      end
+
+      # The card was drawn with the account in its table; `stale` is the account as that page saw it
+      def serve_stale(stale)
+        allow(Account).to receive(:find_by).and_call_original
+        allow(Account).to receive(:find_by).with(id: stale.id.to_s).and_return(stale)
+      end
+
+      it 'does not unlink an account that was moved to another organization after the page was drawn' do
+        other = create(:organization, name: 'Нур')
+        stale = Account.find(account.id)
+        account.update_columns(organization_id: other.id) # rubocop:disable Rails/SkipsModelValidations
+        serve_stale(stale)
+
+        unlink
+
+        follow_redirect!
+        expect(page.at_css('.flashes').text).to include('Этот аккаунт не привязан к организации.')
+        expect(account.reload.organization).to eq(other)
+        expect(audits_of(account)).to be_empty
+        expect(audits_of(organization, 'unlink_account')).to be_empty
+        expect(audits_of(other, 'unlink_account')).to be_empty
+      end
+
+      it 'does not unlink twice an account that another super admin unlinked after the page was drawn' do
+        stale = Account.find(account.id)
+        account.update_columns(organization_id: nil) # rubocop:disable Rails/SkipsModelValidations
+        serve_stale(stale)
+
+        unlink
+
+        follow_redirect!
+        expect(page.at_css('.flashes').text).to include('Этот аккаунт не привязан к организации.')
+        expect(Audited::Audit.where(action: %w[unlink_organization unlink_account])).to be_empty
       end
 
       it 'does not unlink an account that has no organization' do

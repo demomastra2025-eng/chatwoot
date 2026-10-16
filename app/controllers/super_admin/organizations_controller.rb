@@ -37,27 +37,29 @@ class SuperAdmin::OrganizationsController < SuperAdmin::ApplicationController
     redirect_to [namespace, organization], alert: flash_text('destroy_refused', count: organization.accounts.count)
   end
 
-  # Links an account that has no organization yet (an account of another organization is moved from its own page)
+  # Links an account that has no organization yet (an account of another organization is moved from its own page).
+  # Whether the account is still free is decided under the lock of its row (SuperAdmin::OrganizationLinks), not by the
+  # page: somebody may have linked it elsewhere since the select was drawn.
   def link_account
     account = Account.find_by(id: params[:account_id])
     return redirect_to_card(alert: flash_text('account_missing')) if account.nil?
 
-    holder = account.organization
-    if holder.present? && holder != requested_resource
-      return redirect_to_card(alert: flash_text('account_taken', account: account.name, organization: holder.name))
-    end
-
-    linked = organization_links.link(account: account, organization: requested_resource)
+    linked = organization_links.link(account: account, organization: requested_resource, expected_holder: nil).changed?
     redirect_to_card(notice: flash_text(linked ? 'account_linked' : 'account_already_linked', account: account.name))
+  rescue SuperAdmin::OrganizationLinks::Refused => e
+    redirect_to_card(alert: flash_text('account_taken', account: account.name, organization: e.holder.name))
   end
 
-  # Unlinks an account of this organization; the account itself stays as it is
+  # Unlinks an account of this organization; the account itself stays as it is. It is unlinked only if it is still
+  # linked to THIS organization when its row is locked.
   def unlink_account
-    account = requested_resource.accounts.find_by(id: params[:account_id])
+    account = Account.find_by(id: params[:account_id])
     return redirect_to_card(alert: flash_text('account_not_linked')) if account.nil?
 
-    organization_links.unlink(account: account)
+    organization_links.unlink(account: account, expected_holder: requested_resource)
     redirect_to_card(notice: flash_text('account_unlinked', account: account.name))
+  rescue SuperAdmin::OrganizationLinks::Refused
+    redirect_to_card(alert: flash_text('account_not_linked'))
   end
 
   private

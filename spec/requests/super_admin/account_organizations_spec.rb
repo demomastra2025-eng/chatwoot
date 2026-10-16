@@ -184,6 +184,59 @@ RSpec.describe 'Super Admin account organizations', type: :request do
         expect(audits_of(alatau, 'unlink_account').sole.audited_changes).to eq('account_id' => account.id, 'account_name' => 'Филиал 1')
       end
 
+      # Another super admin moves the account between the moment this request is read and the moment it is written
+      def move_account_meanwhile(to)
+        allow(SuperAdmin::OrganizationLinks).to receive(:new).and_wrap_original do |original, **options|
+          account.update_columns(organization_id: to.id) # rubocop:disable Rails/SkipsModelValidations
+          original.call(**options)
+        end
+      end
+
+      it 'moves the account from the organization it holds now, and records that one as the organization it left' do
+        link(alatau.id)
+        Audited::Audit.delete_all
+        third = create(:organization, name: 'Третья')
+        move_account_meanwhile(third)
+
+        link(nur.id)
+
+        expect(account.reload.organization).to eq(nur)
+        follow_redirect!
+        expect(page.at_css('.flashes').text).to include('Аккаунт перенесён в организацию «Нур».')
+        expect(audits_of(account, 'link_organization').sole.audited_changes)
+          .to eq('organization_id' => [third.id, nur.id], 'organization_name' => %w[Третья Нур])
+        expect(audits_of(third, 'unlink_account').count).to eq(1)
+        expect(audits_of(alatau, 'unlink_account')).to be_empty
+        expect(audits_of(nur, 'link_account').count).to eq(1)
+      end
+
+      it 'says which organization «Без организации» took the account from when it was moved meanwhile' do
+        link(alatau.id)
+        Audited::Audit.delete_all
+        move_account_meanwhile(nur)
+
+        link('')
+
+        expect(account.reload.organization).to be_nil
+        follow_redirect!
+        expect(page.at_css('.flashes').text).to include('Аккаунт отвязан от организации «Нур».')
+        expect(audits_of(account, 'unlink_organization').sole.audited_changes)
+          .to eq('organization_id' => [nur.id, nil], 'organization_name' => ['Нур', nil])
+        expect(audits_of(alatau, 'unlink_account')).to be_empty
+      end
+
+      it 'says nothing changed and records nothing when the account was moved meanwhile to the organization asked for' do
+        link(alatau.id)
+        Audited::Audit.delete_all
+        move_account_meanwhile(nur)
+
+        link(nur.id)
+
+        follow_redirect!
+        expect(page.at_css('.flashes').text).to include('Организация аккаунта не изменилась.')
+        expect(Audited::Audit.count).to eq(0)
+      end
+
       it 'says nothing changed and records nothing when the account is already where it is asked to be' do
         link(alatau.id)
         Audited::Audit.delete_all
@@ -326,6 +379,23 @@ RSpec.describe 'Super Admin account organizations', type: :request do
         expect(audits_of(account, 'unlink_organization').sole.user).to eq(super_admin)
         expect(audits_of(alatau, 'unlink_account').sole.user).to eq(super_admin)
         expect(audits_of(account, 'update')).to be_empty
+      end
+
+      it 'records the organization the account really left when another super admin moved it while the form was open' do
+        third = create(:organization, name: 'Третья')
+        account
+        allow(SuperAdmin::OrganizationLinks).to receive(:new).and_wrap_original do |original, **options|
+          account.update_columns(organization_id: third.id) # rubocop:disable Rails/SkipsModelValidations
+          original.call(**options)
+        end
+
+        patch "/super_admin/accounts/#{account.id}", params: { account: { name: 'Филиал 1 (новый)', organization_id: nur.id } }
+
+        expect(account.reload).to have_attributes(name: 'Филиал 1 (новый)', organization: nur)
+        expect(audits_of(account, 'link_organization').sole.audited_changes)
+          .to eq('organization_id' => [third.id, nur.id], 'organization_name' => %w[Третья Нур])
+        expect(audits_of(third, 'unlink_account').count).to eq(1)
+        expect(audits_of(alatau, 'unlink_account')).to be_empty
       end
 
       it 'records and says nothing about the organization when the form sends the one it was drawn with' do
