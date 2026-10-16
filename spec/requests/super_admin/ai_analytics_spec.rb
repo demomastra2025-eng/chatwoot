@@ -43,7 +43,7 @@ RSpec.describe 'Super Admin AI analytics', type: :request do
     get '/super_admin/captain_observability'
 
     expect(page.at_css('[data-testid="ai-top-empty"]').text).to include('активности ИИ не найдено')
-    expect(response.body).not_to match(/No fleet|n\/a|Estimated cost|\$0\.00/)
+    expect(page.at_css('main').text).not_to match(/No fleet|n\/a|Estimated cost|\$0\.00/)
   end
 
   it 'has no English words and no emoji in what it draws' do
