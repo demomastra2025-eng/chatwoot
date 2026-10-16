@@ -1,5 +1,6 @@
 # refer : https://redis.io/commands
 
+# rubocop:disable Metrics/ModuleLength
 module Redis::Alfred
   include Redis::RedisKeys
 
@@ -186,3 +187,4 @@ class Redis::CompareAndDelete
     end
   end
 end
+# rubocop:enable Metrics/ModuleLength

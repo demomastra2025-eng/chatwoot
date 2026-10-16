@@ -136,7 +136,7 @@ RSpec.describe SuperAdmin::AiModelsPage do
 
     it 'covers every masked key of the captain page' do
       masked = masked_keys & keys
-      masked.each { |key| values[key] = "value-of-#{key}" }
+      values.merge!(masked.index_with { |key| "value-of-#{key}" })
 
       masked.each do |key|
         expect(slot(key)).to have_attributes(value: nil, configured: true), key
