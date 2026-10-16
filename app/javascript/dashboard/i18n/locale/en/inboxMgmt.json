@@ -440,7 +440,15 @@
           "BEELINE": "Beeline Cloud PBX",
           "BEELINE_DESC": "Connect Beeline Cloud PBX through Janus SIP and the browser webphone.",
           "TWILIO": "Twilio",
-          "TWILIO_DESC": "Connect Twilio phone numbers and browser calling."
+          "TWILIO_DESC": "Connect Twilio phone numbers and browser calling.",
+          "ALTEL": "Altel Business (OneLink PBX)",
+          "ALTEL_DESC": "Connect an Altel Business multi-channel SIP line via OneLink Wazo PBX and browser webphone.",
+          "TELE2": "Tele2 Business (OneLink PBX)",
+          "TELE2_DESC": "Connect a Tele2 Business SIP line via OneLink Wazo PBX and browser webphone.",
+          "KAZAKHTELECOM": "Kazakhtelecom iD Phone (OneLink PBX)",
+          "KAZAKHTELECOM_DESC": "Connect a Kazakhtelecom iD Phone multi-channel SIP trunk via OneLink Wazo PBX.",
+          "KCELL": "Kcell / Activ (OneLink PBX)",
+          "KCELL_DESC": "Connect a Kcell / Activ corporate SIP trunk via OneLink Wazo PBX."
         },
         "PHONE_NUMBER": {
           "LABEL": "Phone Number",
@@ -634,6 +642,37 @@
             "NOT_VOICE_CHANNEL": "This inbox is not a call channel.",
             "UNSUPPORTED_PROVIDER": "This call provider cannot be managed here.",
             "FEATURE_DISABLED": "Calls are not enabled for this account."
+          },
+          "CARRIER_SETTINGS": {
+            "TITLE": "Telecom Carrier & Lines (OneLink PBX SIP Trunk)",
+            "SUBTITLE": "Select your telecom operator, channel capacity, and carrier SIP credentials for automatic inbound/outbound trunk setup on Wazo PBX.",
+            "CARRIER_KIND_LABEL": "Telecom Carrier",
+            "CARRIER_KIND_PLACEHOLDER": "None selected (internal PBX operators only)",
+            "CARRIERS": {
+              "ALTEL": "Altel Business",
+              "TELE2": "Tele2 Business",
+              "KAZAKHTELECOM": "Kazakhtelecom (iD Phone)",
+              "KCELL": "Kcell / Activ Business",
+              "BEELINE_TRUNK": "Beeline (SIP Trunk to PBX)",
+              "CUSTOM": "Custom SIP Carrier"
+            },
+            "MAX_CHANNELS_LABEL": "Total Concurrent Channels",
+            "RESERVED_INBOUND_LABEL": "Reserved Inbound-Only Channels",
+            "RING_STRATEGY_LABEL": "Inbound Ring Group Strategy",
+            "RING_STRATEGIES": {
+              "ALL": "Ring all available operators simultaneously (all)",
+              "LEAST_RECENT": "Ring least recently called operator first (least_recent)",
+              "MEMORIZED_ROUND_ROBIN": "Memorized round robin (memorized_round_robin)"
+            },
+            "GROUP_EXTENSION_LABEL": "Ring Group Extension (e.g. 2001)",
+            "TRUNK_USERNAME_LABEL": "Carrier Trunk SIP Username",
+            "TRUNK_USERNAME_PLACEHOLDER": "e.g. 77085012233",
+            "TRUNK_PASSWORD_LABEL": "Carrier Trunk SIP Password",
+            "TRUNK_PASSWORD_PLACEHOLDER": "Carrier SIP trunk password",
+            "TRUNK_DOMAIN_LABEL": "Carrier SIP Domain",
+            "TRUNK_DOMAIN_PLACEHOLDER": "e.g. sip.altel.kz or sip.telecom.kz",
+            "TRUNK_HOST_LABEL": "Carrier SIP Host / IP",
+            "TRUNK_HOST_PLACEHOLDER": "e.g. sip.altel.kz"
           }
         },
         "TWILIO": {

@@ -146,6 +146,20 @@ RSpec.describe Telephony::Wazo::CallLogSyncService do
     expect { service.perform }.to raise_error(Telephony::Error)
   end
 
+  it 'downloads CDR recording media when present and session has no recording_ref' do
+    wav_bytes = "RIFF\x24\x00\x00\x00WAVEfmt "
+    row['recordings'] = [{ 'uuid' => 'rec-uuid-123' }]
+    expect(client).to receive(:cdr_recording_media).with('cdr-one', 'rec-uuid-123').and_return(wav_bytes)
+    allow(Telephony::CompressRecordingsJob).to receive(:perform_later)
+
+    service.perform
+
+    session = account.telephony_call_sessions.find_by!(external_call_ref: 'wazo:cdr:conversation-one')
+    expect(session.recording_ref).to start_with("voice-recordings/wazo/#{account.id}/")
+    expect(session.recording_ref).to end_with(".wav")
+    expect(Telephony::CompressRecordingsJob).to have_received(:perform_later).with(call_session_id: session.id)
+  end
+
   private
 
   def browser_event(ref, event:, **attributes)

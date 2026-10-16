@@ -27,12 +27,45 @@ const router = useRouter();
 
 const PROVIDER_TYPES = {
   WAZO: 'wazo',
+  ALTEL: 'altel',
+  TELE2: 'tele2',
+  KAZAKHTELECOM: 'kazakhtelecom',
+  KCELL: 'kcell',
   ASTERISK_ANALOG: 'asterisk_analog',
   SIPUNI: 'sipuni',
   BINOTEL: 'binotel',
   BEELINE: 'beeline',
   TWILIO: 'twilio',
 };
+
+const WAZO_CARRIER_PROVIDERS = [
+  PROVIDER_TYPES.ALTEL,
+  PROVIDER_TYPES.TELE2,
+  PROVIDER_TYPES.KAZAKHTELECOM,
+  PROVIDER_TYPES.KCELL,
+];
+
+const CARRIER_PRESETS = {
+  altel: { domain: 'astpbx.tele2.kz', host: '91.185.24.71', maxChannels: 2 },
+  tele2: { domain: 'astpbx.tele2.kz', host: '91.185.24.71', maxChannels: 2 },
+  kazakhtelecom: {
+    domain: 'sip.telecom.kz',
+    host: 'sip.telecom.kz',
+    maxChannels: 5,
+  },
+  kcell: { domain: 'sip.kcell.kz', host: 'sip.kcell.kz', maxChannels: 5 },
+  beeline_trunk: {
+    domain: 'cloudpbx.beeline.kz',
+    host: '46.227.186.231',
+    maxChannels: 5,
+  },
+  custom: { domain: '', host: '', maxChannels: 5 },
+};
+
+const initialCarrierKind = () =>
+  WAZO_CARRIER_PROVIDERS.includes(route.query.provider)
+    ? route.query.provider
+    : '';
 
 const normalizedRouteProvider = provider =>
   provider === 'kazakhstan' ? PROVIDER_TYPES.WAZO : provider;
@@ -43,6 +76,9 @@ const channelBadgePath = fileName =>
 const initialConnectionHost = () => {
   if (route.query.provider === PROVIDER_TYPES.BEELINE) {
     return 'cloudpbx.beeline.kz';
+  }
+  if (WAZO_CARRIER_PROVIDERS.includes(route.query.provider)) {
+    return window.chatwootConfig?.wazoSipHost || '';
   }
   return '';
 };
@@ -65,9 +101,16 @@ const kazakhstanState = reactive({
   channelName: '',
   phoneNumber: '',
   providerKind:
-    normalizedRouteProvider(route.query.provider) === PROVIDER_TYPES.WAZO
+    normalizedRouteProvider(route.query.provider) === PROVIDER_TYPES.WAZO ||
+    WAZO_CARRIER_PROVIDERS.includes(route.query.provider)
       ? PROVIDER_TYPES.WAZO
       : '',
+  carrierKind: initialCarrierKind(),
+  maxChannels: CARRIER_PRESETS[initialCarrierKind()]?.maxChannels || 2,
+  trunkUsername: '',
+  trunkPassword: '',
+  trunkDomain: CARRIER_PRESETS[initialCarrierKind()]?.domain || '',
+  trunkHost: CARRIER_PRESETS[initialCarrierKind()]?.host || '',
   providerAccountNumber: '',
   ingressNumber: '',
   connectionHost: initialConnectionHost(),
@@ -124,7 +167,9 @@ const isAsteriskAnalogSelectedProvider = computed(
   () => selectedProvider.value === PROVIDER_TYPES.ASTERISK_ANALOG
 );
 const isWazoSelectedProvider = computed(
-  () => selectedProvider.value === PROVIDER_TYPES.WAZO
+  () =>
+    selectedProvider.value === PROVIDER_TYPES.WAZO ||
+    WAZO_CARRIER_PROVIDERS.includes(selectedProvider.value)
 );
 const isDirectProviderOwnedSipProvider = computed(
   () =>
@@ -151,11 +196,66 @@ const isWazoProvider = computed(
 );
 const showProviderSelection = computed(() => !selectedProvider.value);
 
+const wazoCarrierOptions = computed(() => [
+  {
+    value: 'altel',
+    label: t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.CARRIERS.ALTEL'),
+  },
+  {
+    value: 'tele2',
+    label: t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.CARRIERS.TELE2'),
+  },
+  {
+    value: 'kazakhtelecom',
+    label: t(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.CARRIERS.KAZAKHTELECOM'
+    ),
+  },
+  {
+    value: 'kcell',
+    label: t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.CARRIERS.KCELL'),
+  },
+  {
+    value: 'beeline_trunk',
+    label: t(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.CARRIERS.BEELINE_TRUNK'
+    ),
+  },
+  {
+    value: 'custom',
+    label: t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.CARRIERS.CUSTOM'),
+  },
+]);
+
 const availableProviders = computed(() => [
   {
     key: PROVIDER_TYPES.WAZO,
     title: t('INBOX_MGMT.ADD.VOICE.PROVIDERS.WAZO'),
     description: t('INBOX_MGMT.ADD.VOICE.PROVIDERS.WAZO_DESC'),
+    icon: 'i-ri-phone-fill channel-icon-voice',
+  },
+  {
+    key: PROVIDER_TYPES.ALTEL,
+    title: t('INBOX_MGMT.ADD.VOICE.PROVIDERS.ALTEL'),
+    description: t('INBOX_MGMT.ADD.VOICE.PROVIDERS.ALTEL_DESC'),
+    icon: 'i-ri-phone-fill channel-icon-voice',
+  },
+  {
+    key: PROVIDER_TYPES.TELE2,
+    title: t('INBOX_MGMT.ADD.VOICE.PROVIDERS.TELE2'),
+    description: t('INBOX_MGMT.ADD.VOICE.PROVIDERS.TELE2_DESC'),
+    icon: 'i-ri-phone-fill channel-icon-voice',
+  },
+  {
+    key: PROVIDER_TYPES.KAZAKHTELECOM,
+    title: t('INBOX_MGMT.ADD.VOICE.PROVIDERS.KAZAKHTELECOM'),
+    description: t('INBOX_MGMT.ADD.VOICE.PROVIDERS.KAZAKHTELECOM_DESC'),
+    icon: 'i-ri-phone-fill channel-icon-voice',
+  },
+  {
+    key: PROVIDER_TYPES.KCELL,
+    title: t('INBOX_MGMT.ADD.VOICE.PROVIDERS.KCELL'),
+    description: t('INBOX_MGMT.ADD.VOICE.PROVIDERS.KCELL_DESC'),
     icon: 'i-ri-phone-fill channel-icon-voice',
   },
   {
@@ -331,12 +431,35 @@ const twilioFormErrors = computed(() => ({
     : '',
 }));
 
+function onCarrierKindChange() {
+  const preset = CARRIER_PRESETS[kazakhstanState.carrierKind];
+  if (!preset) return;
+  kazakhstanState.trunkDomain = preset.domain || '';
+  kazakhstanState.trunkHost = preset.host || '';
+  kazakhstanState.maxChannels = preset.maxChannels || 2;
+}
+
 function selectProvider(provider) {
-  if (provider === PROVIDER_TYPES.WAZO) {
+  if (
+    provider === PROVIDER_TYPES.WAZO ||
+    WAZO_CARRIER_PROVIDERS.includes(provider)
+  ) {
     kazakhstanState.providerKind = PROVIDER_TYPES.WAZO;
     kazakhstanState.connectionPort = '5060';
     kazakhstanState.connectionTransport = 'udp';
     kazakhstanState.connectionOutboundProxy = '';
+    if (WAZO_CARRIER_PROVIDERS.includes(provider)) {
+      kazakhstanState.carrierKind = provider;
+      onCarrierKindChange();
+      if (
+        !kazakhstanState.connectionHost &&
+        window.chatwootConfig?.wazoSipHost
+      ) {
+        kazakhstanState.connectionHost = window.chatwootConfig.wazoSipHost;
+      }
+    } else {
+      kazakhstanState.carrierKind = '';
+    }
   }
   if (provider === PROVIDER_TYPES.SIPUNI) {
     kazakhstanState.providerKind = 'sipuni';
@@ -419,6 +542,24 @@ function getVirtualPbxPayload() {
     isBeelineProvider.value
   ) {
     payload.metadata.outbound_dial_format = kazakhstanState.outboundDialFormat;
+  }
+
+  if (isWazoProvider.value && kazakhstanState.carrierKind) {
+    connection.carrier_kind = kazakhstanState.carrierKind;
+    connection.max_channels = Number(kazakhstanState.maxChannels) || 2;
+    if (kazakhstanState.trunkUsername.trim()) {
+      connection.trunk_username = kazakhstanState.trunkUsername.trim();
+    }
+    if (kazakhstanState.trunkPassword) {
+      connection.trunk_password = kazakhstanState.trunkPassword;
+    }
+    if (kazakhstanState.trunkDomain.trim()) {
+      connection.trunk_domain = kazakhstanState.trunkDomain.trim();
+    }
+    if (kazakhstanState.trunkHost.trim()) {
+      connection.trunk_host = kazakhstanState.trunkHost.trim();
+    }
+    payload.metadata.carrier_kind = kazakhstanState.carrierKind;
   }
 
   return payload;
@@ -561,13 +702,7 @@ async function createTwilioChannel() {
       </div>
 
       <form
-        v-if="
-          selectedProvider === PROVIDER_TYPES.WAZO ||
-          selectedProvider === PROVIDER_TYPES.SIPUNI ||
-          selectedProvider === PROVIDER_TYPES.ASTERISK_ANALOG ||
-          selectedProvider === PROVIDER_TYPES.BINOTEL ||
-          selectedProvider === PROVIDER_TYPES.BEELINE
-        "
+        v-if="isDirectProviderOwnedSipProvider"
         class="flex flex-col gap-4 flex-wrap mx-0"
         @submit.prevent="createKazakhstanChannel"
       >
@@ -616,6 +751,111 @@ async function createTwilioChannel() {
               {{ option.label }}
             </option>
           </Select>
+        </div>
+
+        <div
+          v-if="isWazoProvider"
+          class="rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak flex flex-col gap-4"
+        >
+          <div class="flex flex-col gap-2">
+            <label class="text-sm font-medium text-n-slate-12">
+              {{
+                t(
+                  'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.CARRIER_KIND_LABEL'
+                )
+              }}
+            </label>
+            <Select
+              v-model="kazakhstanState.carrierKind"
+              class="w-full px-3 py-2"
+              @change="onCarrierKindChange"
+            >
+              <option value="">
+                {{
+                  t(
+                    'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.CARRIER_KIND_PLACEHOLDER'
+                  )
+                }}
+              </option>
+              <option
+                v-for="option in wazoCarrierOptions"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </option>
+            </Select>
+          </div>
+
+          <div
+            v-if="kazakhstanState.carrierKind"
+            class="grid grid-cols-1 gap-4 md:grid-cols-2"
+          >
+            <Input
+              v-model="kazakhstanState.maxChannels"
+              type="number"
+              min="1"
+              max="100"
+              :label="
+                t(
+                  'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.MAX_CHANNELS_LABEL'
+                )
+              "
+            />
+            <Input
+              v-model="kazakhstanState.trunkUsername"
+              :label="
+                t(
+                  'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_USERNAME_LABEL'
+                )
+              "
+              :placeholder="
+                t(
+                  'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_USERNAME_PLACEHOLDER'
+                )
+              "
+            />
+            <Input
+              v-model="kazakhstanState.trunkPassword"
+              type="password"
+              :label="
+                t(
+                  'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_PASSWORD_LABEL'
+                )
+              "
+              :placeholder="
+                t(
+                  'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_PASSWORD_PLACEHOLDER'
+                )
+              "
+            />
+            <Input
+              v-model="kazakhstanState.trunkDomain"
+              :label="
+                t(
+                  'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_DOMAIN_LABEL'
+                )
+              "
+              :placeholder="
+                t(
+                  'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_DOMAIN_PLACEHOLDER'
+                )
+              "
+            />
+            <Input
+              v-model="kazakhstanState.trunkHost"
+              :label="
+                t(
+                  'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_HOST_LABEL'
+                )
+              "
+              :placeholder="
+                t(
+                  'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_HOST_PLACEHOLDER'
+                )
+              "
+            />
+          </div>
         </div>
 
         <button

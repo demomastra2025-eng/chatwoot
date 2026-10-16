@@ -57,6 +57,7 @@ const formatProvider = provider => {
   if (normalizedProvider === 'telegram_personal') return 'Telegram Personal';
   if (normalizedProvider === 'sipuni') return 'Sipuni';
   if (normalizedProvider === 'binotel') return 'Binotel';
+  if (normalizedProvider.startsWith('wazo (')) return normalizeValue(provider);
   if (normalizedProvider === 'twilio') return 'Twilio';
   if (normalizedProvider === 'google') return 'Google';
   if (normalizedProvider === 'microsoft') return 'Microsoft';
@@ -137,7 +138,26 @@ const getPrimaryAccountName = inbox => {
 };
 
 const getProvider = inbox => {
-  return pickFirstValue([inbox.provider, inbox.telephony?.provider]);
+  const baseProvider = pickFirstValue([
+    inbox.provider,
+    inbox.telephony?.provider,
+  ]);
+  const carrierKind = pickFirstValue([
+    inbox.provider_config?.carrier_kind,
+    inbox.telephony?.carrier_kind,
+  ]).toLowerCase();
+  if (baseProvider.toLowerCase() === 'wazo' && carrierKind) {
+    const carrierLabels = {
+      altel: 'Altel',
+      tele2: 'Tele2',
+      kazakhtelecom: 'Kazakhtelecom',
+      kcell: 'Kcell / Activ',
+      beeline_trunk: 'Beeline',
+    };
+    const label = carrierLabels[carrierKind] || capitalizeWords(carrierKind);
+    return `Wazo (${label})`;
+  }
+  return baseProvider;
 };
 
 const addDetail = (details, { icon, label, value, title }) => {

@@ -60,10 +60,61 @@ RSpec.describe Telephony::Wazo::TrunkProvisioningService do
 
     expect(result).to eq(
       did: '77085012233',
+      carrier_kind: 'custom',
       trunk_endpoint_uuid: 'ep-trunk-1',
       trunk_id: 10,
       outcall_id: 20,
       incall_id: 30
+    )
+  end
+
+  it 'applies carrier preset defaults (send_pai for Kazakhtelecom) and routes incall to a Wazo Ring Group' do
+    allow(client).to receive(:sip_endpoints).and_return([])
+    expect(client).to receive(:create_sip_endpoint).with(
+      hash_including(
+        name: 'trunk_77273001122',
+        label: 'OneLink Kazakhtelecom (iD Phone) Trunk 77273001122',
+        endpoint_section_options: array_including(
+          ['from_domain', 'sip.telecom.kz'],
+          ['send_pai', 'yes']
+        )
+      )
+    ).and_return('uuid' => 'ep-kt-1')
+
+    allow(client).to receive(:trunks).and_return([])
+    expect(client).to receive(:create_trunk).with(context: 'ctx-incall-1').and_return('id' => 11)
+    expect(client).to receive(:associate_trunk_sip_endpoint).with(11, 'ep-kt-1')
+
+    allow(client).to receive(:outcalls).and_return([])
+    expect(client).to receive(:create_outcall).and_return('id' => 21)
+    expect(client).to receive(:associate_outcall_trunks).with(21, [11])
+
+    allow(client).to receive(:extensions).and_return([])
+    allow(client).to receive(:create_extension).and_return('id' => 201)
+    allow(client).to receive(:associate_outcall_extension)
+
+    allow(client).to receive(:incalls).and_return([])
+    expect(client).to receive(:create_incall).with(
+      destination: { type: 'group', group_id: 7, ring_time: 45 },
+      description: 'OneLink DID 77273001122'
+    ).and_return('id' => 31)
+    expect(client).to receive(:associate_incall_extension).with(31, 201)
+
+    result = service.provision_trunk!(
+      did: '+7 727 300 11 22',
+      carrier_kind: 'kazakhtelecom',
+      trunk_username: 'kt_user',
+      trunk_password: 'kt_password',
+      target_wazo_group_id: 7
+    )
+
+    expect(result).to eq(
+      did: '77273001122',
+      carrier_kind: 'kazakhtelecom',
+      trunk_endpoint_uuid: 'ep-kt-1',
+      trunk_id: 11,
+      outcall_id: 21,
+      incall_id: 31
     )
   end
 end

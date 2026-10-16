@@ -3,6 +3,8 @@
 class Api::V1::Accounts::Telephony::VirtualPbxChannelsController < Api::V1::Accounts::Telephony::BaseController
   VIRTUAL_PBX_METADATA_KEYS = %i[
     environment source notes pbx_platform outbound_dial_format outboundDialFormat dial_format dialFormat
+    carrier_kind trunk_username trunk_password trunk_domain trunk_host trunk_port
+    max_channels reserved_inbound_channels ring_strategy group_extension
     inbound_route_verified outbound_route_verified event_ingress_verified recording_verified
     wazo_verified_configuration_fingerprint
   ].freeze
@@ -109,7 +111,7 @@ class Api::V1::Accounts::Telephony::VirtualPbxChannelsController < Api::V1::Acco
       :provider_number,
       :tel_url,
       :expected_configuration_version,
-      connection: %i[host port transport sip_domain outbound_proxy codec username password send_register],
+      connection: %i[host port transport sip_domain outbound_proxy codec username password send_register carrier_kind trunk_username trunk_password trunk_domain trunk_host trunk_port max_channels reserved_inbound_channels ring_strategy group_extension],
       routing: %i[mode fallback_mode ai_enabled operator_agent_aor operator_distribution_mode],
       metadata: VIRTUAL_PBX_METADATA_KEYS,
       profiles: %i[id user_id profile_kind internal_extension sip_username sip_password enabled availability_mode]

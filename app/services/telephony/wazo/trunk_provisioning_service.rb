@@ -7,6 +7,61 @@ class Telephony::Wazo::TrunkProvisioningService
     { exten: '_87XXXXXXXXX', strip_digits: 1, external_prefix: '7' }
   ].freeze
 
+  CARRIER_PRESETS = {
+    'altel' => {
+      label: 'Altel Business (АТС OneLink)',
+      default_domain: 'astpbx.tele2.kz',
+      default_host: '91.185.24.71',
+      default_port: 5060,
+      send_pai: false,
+      registration_required: true
+    },
+    'tele2' => {
+      label: 'Tele2 Business (АТС OneLink)',
+      default_domain: 'astpbx.tele2.kz',
+      default_host: '91.185.24.71',
+      default_port: 5060,
+      send_pai: false,
+      registration_required: true
+    },
+    'kazakhtelecom' => {
+      label: 'Казахтелеком iD Phone (АТС OneLink)',
+      default_domain: 'sip.telecom.kz',
+      default_host: 'sip.telecom.kz',
+      default_port: 5060,
+      send_pai: true,
+      registration_required: true
+    },
+    'kcell' => {
+      label: 'Kcell / Activ (АТС OneLink)',
+      default_domain: 'sip.kcell.kz',
+      default_host: 'sip.kcell.kz',
+      default_port: 5060,
+      send_pai: true,
+      registration_required: true
+    },
+    'beeline_trunk' => {
+      label: 'Билайн SIP-транк (АТС OneLink)',
+      default_domain: 'sip.beeline.kz',
+      default_host: 'sip.beeline.kz',
+      default_port: 5060,
+      send_pai: true,
+      registration_required: true
+    },
+    'custom' => {
+      label: 'Другой SIP-оператор (АТС OneLink)',
+      default_domain: nil,
+      default_host: nil,
+      default_port: 5060,
+      send_pai: false,
+      registration_required: true
+    }
+  }.freeze
+
+  def self.carrier_presets
+    CARRIER_PRESETS.deep_dup
+  end
+
   def initialize(
     client: Telephony::Wazo::ApiClient.new,
     incall_context: ENV.fetch('TELEPHONY_WAZO_INCALL_CONTEXT', nil),
@@ -17,24 +72,54 @@ class Telephony::Wazo::TrunkProvisioningService
     @outcall_context = outcall_context.to_s.strip
   end
 
-  def provision_trunk!(did:, trunk_username:, trunk_password:, trunk_domain:, trunk_host: nil, trunk_port: 5060, target_wazo_user_id: nil)
+  def provision_trunk!(
+    did:,
+    trunk_username:,
+    trunk_password:,
+    trunk_domain: nil,
+    trunk_host: nil,
+    trunk_port: nil,
+    carrier_kind: 'custom',
+    target_wazo_user_id: nil,
+    target_wazo_group_id: nil
+  )
     clean_did = sanitize_did(did)
     ensure_contexts_present!(clean_did)
+    preset = CARRIER_PRESETS.fetch(carrier_kind.to_s.strip.downcase, CARRIER_PRESETS['custom'])
+    resolved_domain = trunk_domain.to_s.strip.presence || preset[:default_domain]
+    resolved_host = trunk_host.to_s.strip.presence || preset[:default_host] || resolved_domain
+    resolved_port = (trunk_port.presence || preset[:default_port] || 5060).to_i
+
+    if resolved_domain.blank? || resolved_host.blank?
+      raise Telephony::Error.new(
+        code: 'WAZO_TRUNK_DOMAIN_REQUIRED',
+        message: 'SIP trunk domain and host are required for carrier provisioning',
+        status: :unprocessable_content
+      )
+    end
 
     endpoint_uuid = upsert_trunk_endpoint!(
       clean_did: clean_did,
       trunk_username: trunk_username,
       trunk_password: trunk_password,
-      trunk_domain: trunk_domain,
-      trunk_host: trunk_host.presence || trunk_domain,
-      trunk_port: trunk_port
+      trunk_domain: resolved_domain,
+      trunk_host: resolved_host,
+      trunk_port: resolved_port,
+      send_pai: preset[:send_pai]
     )
     trunk_id = upsert_trunk_resource!(clean_did: clean_did, endpoint_uuid: endpoint_uuid)
     outcall_id = upsert_outcall_routing!(clean_did: clean_did, trunk_id: trunk_id)
-    incall_id = upsert_incall_routing!(clean_did: clean_did, target_wazo_user_id: target_wazo_user_id) if target_wazo_user_id.present?
+    incall_id = if target_wazo_group_id.present? || target_wazo_user_id.present?
+                  upsert_incall_routing!(
+                    clean_did: clean_did,
+                    target_wazo_user_id: target_wazo_user_id,
+                    target_wazo_group_id: target_wazo_group_id
+                  )
+                end
 
     {
       did: clean_did,
+      carrier_kind: CARRIER_PRESETS.key?(carrier_kind.to_s.strip.downcase) ? carrier_kind.to_s.strip.downcase : 'custom',
       trunk_endpoint_uuid: endpoint_uuid,
       trunk_id: trunk_id,
       outcall_id: outcall_id,
@@ -64,8 +149,22 @@ class Telephony::Wazo::TrunkProvisioningService
     )
   end
 
-  def upsert_trunk_endpoint!(clean_did:, trunk_username:, trunk_password:, trunk_domain:, trunk_host:, trunk_port:)
+  def upsert_trunk_endpoint!(clean_did:, trunk_username:, trunk_password:, trunk_domain:, trunk_host:, trunk_port:, send_pai: false)
     name = "trunk_#{clean_did}"
+    endpoint_options = [
+      ['context', incall_context],
+      ['transport', 'transport-udp'],
+      ['from_user', trunk_username.to_s],
+      ['from_domain', trunk_domain.to_s],
+      ['disallow', 'all'],
+      ['allow', 'alaw,ulaw,opus'],
+      ['direct_media', 'no'],
+      ['rtp_symmetric', 'yes'],
+      ['force_rport', 'yes'],
+      ['rewrite_contact', 'yes']
+    ]
+    endpoint_options << ['send_pai', 'yes'] if send_pai
+
     payload = {
       name: name,
       label: "OneLink Trunk #{clean_did}",
@@ -77,18 +176,7 @@ class Telephony::Wazo::TrunkProvisioningService
         ['username', trunk_username.to_s],
         ['password', trunk_password.to_s]
       ],
-      endpoint_section_options: [
-        ['context', incall_context],
-        ['transport', 'transport-udp'],
-        ['from_user', trunk_username.to_s],
-        ['from_domain', trunk_domain.to_s],
-        ['disallow', 'all'],
-        ['allow', 'alaw,ulaw,opus'],
-        ['direct_media', 'no'],
-        ['rtp_symmetric', 'yes'],
-        ['force_rport', 'yes'],
-        ['rewrite_contact', 'yes']
-      ]
+      endpoint_section_options: endpoint_options
     }
     existing = client.sip_endpoints.find { |ep| ep['name'] == name }
     if existing
@@ -137,8 +225,12 @@ class Telephony::Wazo::TrunkProvisioningService
     outcall_id
   end
 
-  def upsert_incall_routing!(clean_did:, target_wazo_user_id:)
-    destination = { type: 'user', user_id: target_wazo_user_id.to_i, ring_time: 45 }
+  def upsert_incall_routing!(clean_did:, target_wazo_user_id: nil, target_wazo_group_id: nil)
+    destination = if target_wazo_group_id.present?
+                    { type: 'group', group_id: target_wazo_group_id.to_i, ring_time: 45 }
+                  else
+                    { type: 'user', user_id: target_wazo_user_id.to_i, ring_time: 45 }
+                  end
     existing = client.incalls.find do |inc|
       Array(inc['extensions']).any? { |e| e['exten'].to_s == clean_did }
     end

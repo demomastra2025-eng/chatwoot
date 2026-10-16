@@ -14,7 +14,17 @@ class Telephony::VirtualPbx::ConfigBuilder
   }.freeze
   WAZO_VERIFICATION_METADATA_KEYS = (WAZO_LIVE_VERIFICATION_FLAGS.keys + ['wazo_verified_configuration_fingerprint']).freeze
   WAZO_PROVIDER_RUNTIME_ATTRIBUTES = %w[last_reconciled_at remote_drift_detected_at remote_drift_summary].freeze
-  WAZO_PROVIDER_RUNTIME_METADATA_KEYS = %w[max_call_duration_seconds].freeze
+  WAZO_PROVIDER_RUNTIME_METADATA_KEYS = %w[
+    max_call_duration_seconds
+    wazo_synced_at
+    wazo_group_id
+    wazo_group_uuid
+    wazo_group_extension_id
+    wazo_trunk_id
+    wazo_trunk_endpoint_uuid
+    wazo_outcall_id
+    wazo_incall_id
+  ].freeze
   UNKNOWN_PROVIDER_TEMPLATE = {
     label: 'SIP provider',
     default_transport: 'udp',
@@ -111,6 +121,10 @@ class Telephony::VirtualPbx::ConfigBuilder
     PROVIDER_TEMPLATES.deep_dup
   end
 
+  def self.carrier_templates
+    Telephony::Wazo::TrunkProvisioningService.carrier_presets
+  end
+
   def self.to_ui_config(config)
     new(account: nil).ui_config_from(config)
   end
@@ -128,6 +142,12 @@ class Telephony::VirtualPbx::ConfigBuilder
     routing = (config[:routing] || {}).with_indifferent_access
     ownership = (config[:ownership] || {}).with_indifferent_access
     provider_template = template_for(config[:provider_kind])
+    carrier_kind = first_present(provider_connection_metadata[:carrier_kind], config.dig(:metadata, :carrier_kind))
+    carrier_preset = Telephony::Wazo::TrunkProvisioningService::CARRIER_PRESETS[carrier_kind.to_s]
+    trunk_pwd_configured = if provider_connection_metadata.key?(:trunk_password_configured) || provider_connection_metadata.key?(:trunk_password)
+                             ActiveModel::Type::Boolean.new.cast(provider_connection_metadata[:trunk_password_configured]) ||
+                               provider_connection_metadata[:trunk_password].present?
+                           end
 
     {
       id: config[:id],
@@ -139,11 +159,15 @@ class Telephony::VirtualPbx::ConfigBuilder
         name: config[:name],
         provider_kind: config[:provider_kind],
         provider_label: provider_template[:label],
+        carrier_kind: carrier_kind,
+        carrier_label: carrier_preset&.dig(:label),
         display_phone_number: phone_numbers[:display_phone_number]
       }.compact,
       connection: {
         provider_kind: config[:provider_kind],
         provider_label: provider_template[:label],
+        carrier_kind: carrier_kind,
+        carrier_label: carrier_preset&.dig(:label),
         display_name: provider_connection[:name] || provider_template[:label],
         provider_number: first_present(phone_numbers[:provider_account_number], phone_numbers[:display_phone_number]),
         host: provider_connection[:host],
@@ -154,6 +178,15 @@ class Telephony::VirtualPbx::ConfigBuilder
         codec: provider_connection_metadata[:codec],
         outbound_dial_format: provider_connection_metadata[:outbound_dial_format],
         outboundDialFormat: provider_connection_metadata[:outbound_dial_format],
+        trunk_username: provider_connection_metadata[:trunk_username],
+        trunk_password_configured: trunk_pwd_configured,
+        trunk_domain: provider_connection_metadata[:trunk_domain],
+        trunk_host: provider_connection_metadata[:trunk_host],
+        trunk_port: provider_connection_metadata[:trunk_port],
+        max_channels: provider_connection_metadata[:max_channels],
+        reserved_inbound_channels: provider_connection_metadata[:reserved_inbound_channels],
+        ring_strategy: provider_connection_metadata[:ring_strategy],
+        group_extension: provider_connection_metadata[:group_extension],
         send_register: provider_connection[:send_register],
         configured: provider_connection.present? || phone_numbers[:ingress_number].present?,
         status: provider_connection[:status] || (config[:ready] ? 'ready' : 'action_required'),
@@ -440,7 +473,7 @@ class Telephony::VirtualPbx::ConfigBuilder
       app_ref: provider_owned_sip ? nil : binding&.configured_app_ref,
       runtime_app_ref: provider_owned_sip ? nil : binding&.runtime_app_ref,
       trunk_ref: provider_owned_sip ? nil : binding&.trunk_ref,
-      provider_connection: binding&.provider_connection&.to_virtual_pbx_h,
+      provider_connection: sanitize(binding&.provider_connection&.to_virtual_pbx_h),
       last_synced_at: binding&.last_synced_at,
       provisioning_status: telephony_attribute(binding, :provisioning_status),
       last_reconciled_at: telephony_attribute(binding, :last_reconciled_at),

@@ -1,6 +1,9 @@
 # frozen_string_literal: true
 
-class Telephony::Wazo::CallLogSyncService
+require 'digest'
+require 'fileutils'
+
+class Telephony::Wazo::CallLogSyncService # rubocop:disable Metrics/ClassLength
   PAGE_SIZE = 100
   MAX_PAGES = 100
   OVERLAP = 5.minutes
@@ -135,7 +138,68 @@ class Telephony::Wazo::CallLogSyncService
     event = connection.account.telephony_events.find_by(event_key: payload[:event_key])
     raise 'Wazo CDR ingestion did not complete' unless event&.processed?
 
+    import_cdr_recording_if_needed!(session, row, cdr_ref) unless voicemail
     true
+  end
+
+  def import_cdr_recording_if_needed!(session, row, cdr_ref)
+    return if session.recording_ref.present?
+
+    cdr_id = row['id'].presence
+    recordings = Array.wrap(row['recordings'])
+    recording_uuid = recordings.filter_map { |r| r['uuid'].presence if r.is_a?(Hash) }.first
+    return if cdr_id.blank? || recording_uuid.blank?
+
+    raw_audio = client.cdr_recording_media(cdr_id, recording_uuid)
+    return if raw_audio.blank?
+
+    sha256 = Digest::SHA256.hexdigest(raw_audio)
+    storage_key = wazo_recording_storage_key(session.external_call_ref, sha256)
+    persist_wazo_recording_file!(storage_key, raw_audio, sha256)
+
+    ready_payload = {
+      'event' => 'recording_ready',
+      'event_key' => "#{cdr_ref}:recording:#{recording_uuid}",
+      'call_ref' => session.external_call_ref,
+      'account_id' => connection.account_id,
+      'inbox_id' => session.inbox_id,
+      'number_ref' => session.number_ref,
+      'provider' => 'wazo',
+      'recording_ref' => storage_key,
+      'storage_key' => storage_key,
+      'byte_size' => raw_audio.bytesize,
+      'content_type' => 'audio/wav',
+      'sha256' => sha256,
+      'metadata' => {
+        'recording_import' => {
+          'source' => 'wazo_cdr_media',
+          'wazo_cdr_id' => cdr_id,
+          'wazo_recording_uuid' => recording_uuid,
+          'storage_key' => storage_key,
+          'sha256' => sha256
+        }
+      }
+    }
+    updated_session = Telephony::EventsIngestionService.new(payload: ready_payload).perform || session.reload
+    Telephony::VoiceMessageRecordingSyncService.new(call_session: updated_session).perform
+    Telephony::CompressRecordingsJob.perform_later(call_session_id: updated_session.id)
+  rescue StandardError => e
+    Rails.logger.warn("WAZO_CDR_RECORDING_IMPORT_FAILED connection_id=#{connection.id} cdr_ref=#{cdr_ref} error=#{e.class.name}: #{e.message}")
+  end
+
+  def wazo_recording_storage_key(call_ref, sha256)
+    safe_ref = call_ref.to_s.gsub(/[^a-zA-Z0-9._-]/, '_')
+    "voice-recordings/wazo/#{connection.account_id}/#{safe_ref}/#{sha256}.wav"
+  end
+
+  def persist_wazo_recording_file!(storage_key, raw_audio, sha256)
+    storage_root = Rails.root.join('storage').cleanpath
+    path = storage_root.join(storage_key).cleanpath
+    raise 'Invalid Wazo recording storage path' unless path.to_s.start_with?("#{storage_root}/")
+    return if File.file?(path) && Digest::SHA256.file(path).hexdigest.casecmp?(sha256)
+
+    FileUtils.mkdir_p(File.dirname(path))
+    File.binwrite(path, raw_audio)
   end
 
   def find_binding(row, direction)

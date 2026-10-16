@@ -87,6 +87,16 @@ export default {
         outboundDialFormat: 'kz_trunk',
         connectionUsername: '',
         connectionPassword: '',
+        carrierKind: '',
+        maxChannels: 2,
+        reservedInboundChannels: 0,
+        ringStrategy: 'all',
+        groupExtension: '',
+        trunkUsername: '',
+        trunkPassword: '',
+        trunkPasswordConfigured: false,
+        trunkDomain: '',
+        trunkHost: '',
         routingMode: 'operator',
         operatorDistributionMode: 'broadcast',
         maxCallDurationMinutes: 30,
@@ -389,6 +399,68 @@ export default {
         {
           value: 'wazo',
           label: this.$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_KIND.WAZO'),
+        },
+      ];
+    },
+    virtualPbxCarrierOptions() {
+      return [
+        {
+          value: 'altel',
+          label: this.$t(
+            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.CARRIERS.ALTEL'
+          ),
+        },
+        {
+          value: 'tele2',
+          label: this.$t(
+            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.CARRIERS.TELE2'
+          ),
+        },
+        {
+          value: 'kazakhtelecom',
+          label: this.$t(
+            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.CARRIERS.KAZAKHTELECOM'
+          ),
+        },
+        {
+          value: 'kcell',
+          label: this.$t(
+            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.CARRIERS.KCELL'
+          ),
+        },
+        {
+          value: 'beeline_trunk',
+          label: this.$t(
+            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.CARRIERS.BEELINE_TRUNK'
+          ),
+        },
+        {
+          value: 'custom',
+          label: this.$t(
+            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.CARRIERS.CUSTOM'
+          ),
+        },
+      ];
+    },
+    virtualPbxRingStrategyOptions() {
+      return [
+        {
+          value: 'all',
+          label: this.$t(
+            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.RING_STRATEGIES.ALL'
+          ),
+        },
+        {
+          value: 'least_recent',
+          label: this.$t(
+            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.RING_STRATEGIES.LEAST_RECENT'
+          ),
+        },
+        {
+          value: 'memorized_round_robin',
+          label: this.$t(
+            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.RING_STRATEGIES.MEMORIZED_ROUND_ROBIN'
+          ),
         },
       ];
     },
@@ -900,6 +972,46 @@ export default {
           (providerKind === 'beeline'
             ? BEELINE_OUTBOUND_DIAL_FORMAT
             : 'kz_trunk'),
+        carrierKind:
+          channel.carrier_kind ||
+          providerConnection.carrier_kind ||
+          providerConnectionMetadata.carrier_kind ||
+          '',
+        maxChannels: Number(
+          providerConnection.max_channels ||
+            providerConnectionMetadata.max_channels ||
+            2
+        ),
+        reservedInboundChannels: Number(
+          providerConnection.reserved_inbound_channels ??
+            providerConnectionMetadata.reserved_inbound_channels ??
+            0
+        ),
+        ringStrategy:
+          providerConnection.ring_strategy ||
+          providerConnectionMetadata.ring_strategy ||
+          'all',
+        groupExtension:
+          providerConnection.group_extension ||
+          providerConnectionMetadata.group_extension ||
+          '',
+        trunkUsername:
+          providerConnection.trunk_username ||
+          providerConnectionMetadata.trunk_username ||
+          '',
+        trunkPassword: '',
+        trunkPasswordConfigured: Boolean(
+          providerConnection.trunk_password_configured ||
+            providerConnectionMetadata.trunk_password_configured
+        ),
+        trunkDomain:
+          providerConnection.trunk_domain ||
+          providerConnectionMetadata.trunk_domain ||
+          '',
+        trunkHost:
+          providerConnection.trunk_host ||
+          providerConnectionMetadata.trunk_host ||
+          '',
         connectionUsername: providerConnection.username || '',
         connectionPassword: '',
         routingMode: routing.mode || 'operator',
@@ -1090,8 +1202,68 @@ export default {
         payload.connection.outbound_proxy = form.connectionOutboundProxy.trim();
         payload.connection.codec = 'pcma';
       }
+      if (this.isVirtualPbxWazo) {
+        if (form.carrierKind) {
+          payload.connection.carrier_kind = form.carrierKind;
+          payload.metadata.carrier_kind = form.carrierKind;
+          payload.connection.max_channels = Number(form.maxChannels || 2);
+          payload.connection.reserved_inbound_channels = Number(
+            form.reservedInboundChannels || 0
+          );
+        }
+        if (form.ringStrategy && form.ringStrategy !== 'all') {
+          payload.connection.ring_strategy = form.ringStrategy;
+        } else if (form.carrierKind && form.ringStrategy) {
+          payload.connection.ring_strategy = form.ringStrategy;
+        }
+        if (form.groupExtension && String(form.groupExtension).trim()) {
+          payload.connection.group_extension = String(
+            form.groupExtension
+          ).trim();
+        }
+        if (form.trunkUsername && form.trunkUsername.trim()) {
+          payload.connection.trunk_username = form.trunkUsername.trim();
+        }
+        if (form.trunkPassword && form.trunkPassword.trim()) {
+          payload.connection.trunk_password = form.trunkPassword.trim();
+        }
+        if (form.trunkDomain && form.trunkDomain.trim()) {
+          payload.connection.trunk_domain = form.trunkDomain.trim();
+        }
+        if (form.trunkHost && form.trunkHost.trim()) {
+          payload.connection.trunk_host = form.trunkHost.trim();
+        }
+      }
 
       return payload;
+    },
+    onVirtualPbxCarrierChange() {
+      const presets = {
+        altel: { domain: 'astpbx.tele2.kz', host: '91.185.24.71', max: 2 },
+        tele2: { domain: 'astpbx.tele2.kz', host: '91.185.24.71', max: 2 },
+        kazakhtelecom: {
+          domain: 'sip.telecom.kz',
+          host: 'sip.telecom.kz',
+          max: 5,
+        },
+        kcell: { domain: 'sip.kcell.kz', host: 'sip.kcell.kz', max: 5 },
+        beeline_trunk: {
+          domain: 'cloudpbx.beeline.kz',
+          host: '46.227.186.231',
+          max: 5,
+        },
+      };
+      const preset = presets[this.virtualPbxForm.carrierKind];
+      if (!preset) return;
+      if (!this.virtualPbxForm.trunkDomain) {
+        this.virtualPbxForm.trunkDomain = preset.domain;
+      }
+      if (!this.virtualPbxForm.trunkHost) {
+        this.virtualPbxForm.trunkHost = preset.host;
+      }
+      if (!this.virtualPbxForm.maxChannels) {
+        this.virtualPbxForm.maxChannels = preset.max;
+      }
     },
     async updateVirtualPbxChannel() {
       if (this.isVirtualPbxReadOnly) {
@@ -1781,6 +1953,198 @@ export default {
             >
               {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.BEELINE_CONFIG_HINT') }}
             </p>
+          </div>
+
+          <div
+            v-if="showVirtualPbxTechnicalSettings && isVirtualPbxWazo"
+            data-testid="virtual-pbx-wazo-carrier-settings"
+            class="rounded-xl p-4 outline outline-1 -outline-offset-1 outline-n-weak"
+          >
+            <div class="mb-3 space-y-1">
+              <h3 class="text-sm font-medium text-n-slate-12">
+                {{
+                  $t(
+                    'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TITLE'
+                  )
+                }}
+              </h3>
+              <p class="mb-0 text-sm text-n-slate-11">
+                {{
+                  $t(
+                    'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.SUBTITLE'
+                  )
+                }}
+              </p>
+            </div>
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                {{
+                  $t(
+                    'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.CARRIER_KIND_LABEL'
+                  )
+                }}
+                <select
+                  v-model="virtualPbxForm.carrierKind"
+                  class="rounded-lg border border-n-weak py-2 text-sm"
+                  :disabled="isVirtualPbxReadOnly"
+                  @change="onVirtualPbxCarrierChange"
+                >
+                  <option value="">
+                    {{
+                      $t(
+                        'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.CARRIER_KIND_PLACEHOLDER'
+                      )
+                    }}
+                  </option>
+                  <option
+                    v-for="option in virtualPbxCarrierOptions"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
+                  </option>
+                </select>
+              </label>
+              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                {{
+                  $t(
+                    'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.MAX_CHANNELS_LABEL'
+                  )
+                }}
+                <input
+                  v-model.number="virtualPbxForm.maxChannels"
+                  class="rounded-lg border border-n-weak py-2 text-sm"
+                  :disabled="isVirtualPbxReadOnly"
+                  type="number"
+                  min="1"
+                  max="100"
+                />
+              </label>
+              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                {{
+                  $t(
+                    'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.RESERVED_INBOUND_LABEL'
+                  )
+                }}
+                <input
+                  v-model.number="virtualPbxForm.reservedInboundChannels"
+                  class="rounded-lg border border-n-weak py-2 text-sm"
+                  :disabled="isVirtualPbxReadOnly"
+                  type="number"
+                  min="0"
+                  max="50"
+                />
+              </label>
+              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                {{
+                  $t(
+                    'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.RING_STRATEGY_LABEL'
+                  )
+                }}
+                <select
+                  v-model="virtualPbxForm.ringStrategy"
+                  class="rounded-lg border border-n-weak py-2 text-sm"
+                  :disabled="isVirtualPbxReadOnly"
+                >
+                  <option
+                    v-for="option in virtualPbxRingStrategyOptions"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
+                  </option>
+                </select>
+              </label>
+              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                {{
+                  $t(
+                    'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.GROUP_EXTENSION_LABEL'
+                  )
+                }}
+                <input
+                  v-model="virtualPbxForm.groupExtension"
+                  class="rounded-lg border border-n-weak py-2 text-sm"
+                  :disabled="isVirtualPbxReadOnly"
+                  type="text"
+                  placeholder="2001"
+                />
+              </label>
+              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                {{
+                  $t(
+                    'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_USERNAME_LABEL'
+                  )
+                }}
+                <input
+                  v-model="virtualPbxForm.trunkUsername"
+                  class="rounded-lg border border-n-weak py-2 text-sm"
+                  :disabled="isVirtualPbxReadOnly"
+                  type="text"
+                  :placeholder="
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_USERNAME_PLACEHOLDER'
+                    )
+                  "
+                />
+              </label>
+              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                {{
+                  $t(
+                    'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_PASSWORD_LABEL'
+                  )
+                }}
+                <input
+                  v-model="virtualPbxForm.trunkPassword"
+                  class="rounded-lg border border-n-weak py-2 text-sm"
+                  :disabled="isVirtualPbxReadOnly"
+                  type="password"
+                  autocomplete="new-password"
+                  :placeholder="
+                    virtualPbxForm.trunkPasswordConfigured
+                      ? '********'
+                      : $t(
+                          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_PASSWORD_PLACEHOLDER'
+                        )
+                  "
+                />
+              </label>
+              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                {{
+                  $t(
+                    'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_DOMAIN_LABEL'
+                  )
+                }}
+                <input
+                  v-model="virtualPbxForm.trunkDomain"
+                  class="rounded-lg border border-n-weak py-2 text-sm"
+                  :disabled="isVirtualPbxReadOnly"
+                  type="text"
+                  :placeholder="
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_DOMAIN_PLACEHOLDER'
+                    )
+                  "
+                />
+              </label>
+              <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+                {{
+                  $t(
+                    'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_HOST_LABEL'
+                  )
+                }}
+                <input
+                  v-model="virtualPbxForm.trunkHost"
+                  class="rounded-lg border border-n-weak py-2 text-sm"
+                  :disabled="isVirtualPbxReadOnly"
+                  type="text"
+                  :placeholder="
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CARRIER_SETTINGS.TRUNK_HOST_PLACEHOLDER'
+                    )
+                  "
+                />
+              </label>
+            </div>
           </div>
 
           <div

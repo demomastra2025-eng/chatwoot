@@ -440,7 +440,15 @@
           "BEELINE": "Билайн",
           "BEELINE_DESC": "Подключите облачную АТС Билайн через Janus SIP и браузерный вебфон.",
           "TWILIO": "Twilio",
-          "TWILIO_DESC": "Подключите номера Twilio и браузерные звонки."
+          "TWILIO_DESC": "Подключите номера Twilio и браузерные звонки.",
+          "ALTEL": "Altel Business (АТС OneLink)",
+          "ALTEL_DESC": "Подключите многоканальный SIP-номер Altel через собственную АТС OneLink (Wazo) и вебфон.",
+          "TELE2": "Tele2 Business (АТС OneLink)",
+          "TELE2_DESC": "Подключите SIP-линию Tele2 через собственную АТС OneLink (Wazo) и вебфон.",
+          "KAZAKHTELECOM": "Казахтелеком iD Phone (АТС OneLink)",
+          "KAZAKHTELECOM_DESC": "Подключите многоканальный SIP-транк Казахтелеком (iD Phone) через АТС OneLink.",
+          "KCELL": "Kcell / Activ (АТС OneLink)",
+          "KCELL_DESC": "Подключите корпоративный SIP-номер Kcell / Activ через собственную АТС OneLink."
         },
         "PHONE_NUMBER": {
           "LABEL": "Номер телефона",
@@ -634,6 +642,37 @@
             "NOT_VOICE_CHANNEL": "Этот канал не является каналом звонков.",
             "UNSUPPORTED_PROVIDER": "Этого провайдера звонков нельзя настроить здесь.",
             "FEATURE_DISABLED": "Звонки не включены для этого аккаунта."
+          },
+          "CARRIER_SETTINGS": {
+            "TITLE": "Оператор связи и линии (SIP-транк в АТС OneLink)",
+            "SUBTITLE": "Выберите оператора вашей телефонной линии, количество одновременных каналов и SIP-реквизиты номера для автоматической настройки входящих и исходящих на АТС.",
+            "CARRIER_KIND_LABEL": "Оператор связи (носитель номера)",
+            "CARRIER_KIND_PLACEHOLDER": "Не выбран (только внутренние операторы АТС)",
+            "CARRIERS": {
+              "ALTEL": "Altel Business",
+              "TELE2": "Tele2 Business",
+              "KAZAKHTELECOM": "Казахтелеком (iD Phone)",
+              "KCELL": "Kcell / Activ Business",
+              "BEELINE_TRUNK": "Билайн (SIP-транк в АТС)",
+              "CUSTOM": "Другой SIP-оператор"
+            },
+            "MAX_CHANNELS_LABEL": "Всего линий (каналов) у номера",
+            "RESERVED_INBOUND_LABEL": "Резерв линий только под входящие",
+            "RING_STRATEGY_LABEL": "Распределение входящих в группе (Ring Group)",
+            "RING_STRATEGIES": {
+              "ALL": "Звонить всем свободным одновременно (all)",
+              "LEAST_RECENT": "Сначала тому, кто дольше не отвечал (least_recent)",
+              "MEMORIZED_ROUND_ROBIN": "По очереди по кругу (round_robin)"
+            },
+            "GROUP_EXTENSION_LABEL": "Внутренний номер группы (напр. 2001)",
+            "TRUNK_USERNAME_LABEL": "SIP-логин транка у оператора",
+            "TRUNK_USERNAME_PLACEHOLDER": "Напр. 77085012233",
+            "TRUNK_PASSWORD_LABEL": "SIP-пароль транка у оператора",
+            "TRUNK_PASSWORD_PLACEHOLDER": "Пароль от SIP-линии оператора",
+            "TRUNK_DOMAIN_LABEL": "SIP-домен оператора",
+            "TRUNK_DOMAIN_PLACEHOLDER": "Напр. sip.altel.kz или sip.telecom.kz",
+            "TRUNK_HOST_LABEL": "SIP-сервер (Host / IP) оператора",
+            "TRUNK_HOST_PLACEHOLDER": "Напр. sip.altel.kz"
           }
         },
         "TWILIO": {

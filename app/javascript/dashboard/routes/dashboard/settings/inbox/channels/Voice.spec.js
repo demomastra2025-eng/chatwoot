@@ -625,4 +625,52 @@ describe('Voice channel setup', () => {
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.EMPLOYEE_SIP_PASSWORD.LABEL'
     );
   });
+
+  it('creates an Altel carrier channel backed by Wazo PBX with trunk settings', async () => {
+    routeMock.query = { provider: 'altel' };
+    createVirtualPbxChannelMock.mockResolvedValue({
+      payload: { ui_config: { inbox_id: 8801 }, errors: [] },
+    });
+    const wrapper = buildWrapper();
+
+    expect(wrapper.vm.kazakhstanState.providerKind).toBe('wazo');
+    expect(wrapper.vm.kazakhstanState.carrierKind).toBe('altel');
+    expect(wrapper.vm.kazakhstanState.trunkDomain).toBe('astpbx.tele2.kz');
+
+    Object.assign(wrapper.vm.kazakhstanState, {
+      channelName: 'Altel 77085012233',
+      phoneNumber: '+7 708 501 22 33',
+      connectionHost: '188.241.217.162',
+      maxChannels: 2,
+      trunkUsername: 'f9bOCzgF',
+      trunkPassword: 'secret123',
+      trunkDomain: 'astpbx.tele2.kz',
+      trunkHost: '91.185.24.71',
+    });
+    await wrapper.find('form').trigger('submit');
+    await flushPromises();
+
+    const [payload] = createVirtualPbxChannelMock.mock.calls[0];
+    expect(payload).toMatchObject({
+      provider_kind: 'wazo',
+      channel_name: 'Altel 77085012233',
+      connection: {
+        host: '188.241.217.162',
+        port: '5060',
+        transport: 'udp',
+        carrier_kind: 'altel',
+        max_channels: 2,
+        trunk_username: 'f9bOCzgF',
+        trunk_password: 'secret123',
+        trunk_domain: 'astpbx.tele2.kz',
+        trunk_host: '91.185.24.71',
+      },
+      metadata: {
+        source: 'virtual_pbx_ui',
+        pbx_platform: 'wazo',
+        carrier_kind: 'altel',
+        outbound_dial_format: 'kz_trunk',
+      },
+    });
+  });
 });

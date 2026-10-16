@@ -68,7 +68,8 @@ class Telephony::VirtualPbx::ProvisioningService
       operation: 'templates',
       remote_commit: false,
       mutation_allowed: false,
-      provider_templates: Telephony::VirtualPbx::ConfigBuilder.provider_templates
+      provider_templates: Telephony::VirtualPbx::ConfigBuilder.provider_templates,
+      carrier_templates: Telephony::VirtualPbx::ConfigBuilder.carrier_templates
     }
   end
 
@@ -132,7 +133,9 @@ class Telephony::VirtualPbx::ProvisioningService
     run = build_provisioning_run(config, plan)
     run.mark_running!
     result = wazo_provisioning_service(inbox_id).sync!
-    mark_wazo_synced!(inbox_id)
+    ring_group_result = sync_wazo_ring_group_if_configured!(inbox_id)
+    trunk_result = sync_wazo_carrier_trunk_if_configured!(inbox_id, ring_group_result)
+    mark_wazo_synced!(inbox_id, ring_group_result: ring_group_result, trunk_result: trunk_result)
     run.mark_succeeded!(executed_operations: result[:executed_operations], remote_snapshot: result[:remote_snapshot])
     updated_config = config_builder.for_inbox(inbox_id)
 
@@ -314,13 +317,63 @@ class Telephony::VirtualPbx::ProvisioningService
     ).tap(&:save!)
   end
 
-  def mark_wazo_synced!(inbox_id)
+  def mark_wazo_synced!(inbox_id, ring_group_result: nil, trunk_result: nil)
     inbox = account.inboxes.find(inbox_id)
     connection = inbox.telephony_number_binding&.provider_connection
     now = Time.current
+    extra_meta = { 'wazo_synced_at' => now.iso8601 }
+    if ring_group_result.present?
+      extra_meta['wazo_group_id'] = ring_group_result[:group_id]
+      extra_meta['wazo_group_uuid'] = ring_group_result[:group_uuid]
+      extra_meta['wazo_group_extension_id'] = ring_group_result[:group_extension_id]
+    end
+    if trunk_result.present?
+      extra_meta['wazo_trunk_id'] = trunk_result[:trunk_id]
+      extra_meta['wazo_trunk_endpoint_uuid'] = trunk_result[:trunk_endpoint_uuid]
+      extra_meta['wazo_outcall_id'] = trunk_result[:outcall_id]
+      extra_meta['wazo_incall_id'] = trunk_result[:incall_id]
+    end
     connection&.update!(ownership_status: 'managed', provisioning_status: 'ready', last_synced_at: now,
-                        metadata: connection.metadata.to_h.merge('wazo_synced_at' => now.iso8601))
+                        metadata: connection.metadata.to_h.merge(extra_meta.compact))
     inbox.telephony_number_binding&.update!(ownership_status: 'managed', last_synced_at: now)
+  end
+
+  def sync_wazo_ring_group_if_configured!(inbox_id)
+    inbox = account.inboxes.find(inbox_id)
+    meta = inbox.telephony_number_binding&.provider_connection&.metadata.to_h
+    return if meta['ring_strategy'].blank? && meta['group_extension'].blank?
+
+    strategy = meta['ring_strategy'].presence || 'all'
+    Telephony::Wazo::RingGroupProvisioningService.new(account: account, inbox: inbox).sync!(
+      ring_strategy: strategy,
+      group_extension: meta['group_extension'].presence
+    )
+  end
+
+  def sync_wazo_carrier_trunk_if_configured!(inbox_id, ring_group_result = nil)
+    return if ENV['TELEPHONY_WAZO_INCALL_CONTEXT'].blank? || ENV['TELEPHONY_WAZO_OUTCALL_CONTEXT'].blank?
+
+    inbox = account.inboxes.find(inbox_id)
+    binding = inbox.telephony_number_binding
+    meta = binding&.provider_connection&.metadata.to_h
+    trunk_username = meta['trunk_username'].to_s.strip
+    trunk_password = meta['trunk_password'].to_s
+    return if trunk_username.blank? || trunk_password.blank?
+
+    did = binding.ingress_number.presence || binding.display_phone_number.presence || inbox.channel&.phone_number
+    return if did.blank?
+
+    group_id = ring_group_result&.dig(:group_id) || meta['wazo_group_id']
+    Telephony::Wazo::TrunkProvisioningService.new.provision_trunk!(
+      did: did,
+      carrier_kind: meta['carrier_kind'].presence || 'custom',
+      trunk_username: trunk_username,
+      trunk_password: trunk_password,
+      trunk_domain: meta['trunk_domain'],
+      trunk_host: meta['trunk_host'],
+      trunk_port: meta['trunk_port'],
+      target_wazo_group_id: group_id
+    )
   end
 
   def wazo_not_configured_payload(config, include_diagnostics)
@@ -606,6 +659,18 @@ class Telephony::VirtualPbx::ProvisioningService
         template[:default_outbound_proxy]
       ),
       codec: first_present(source['codec'], fallback[:codec], fallback_metadata[:codec], template[:default_codec])&.downcase,
+      carrier_kind: first_present(source['carrier_kind'], fallback[:carrier_kind], fallback_metadata[:carrier_kind]),
+      trunk_username: first_present(source['trunk_username'], fallback[:trunk_username], fallback_metadata[:trunk_username]),
+      trunk_password: source['trunk_password'].presence,
+      trunk_domain: first_present(source['trunk_domain'], fallback[:trunk_domain], fallback_metadata[:trunk_domain]),
+      trunk_host: first_present(source['trunk_host'], fallback[:trunk_host], fallback_metadata[:trunk_host]),
+      trunk_port: normalize_port(first_present(source['trunk_port'], fallback[:trunk_port], fallback_metadata[:trunk_port])),
+      max_channels: normalize_positive_int(first_present(source['max_channels'], fallback[:max_channels], fallback_metadata[:max_channels])),
+      reserved_inbound_channels: normalize_non_negative_int(
+        first_present(source['reserved_inbound_channels'], fallback[:reserved_inbound_channels], fallback_metadata[:reserved_inbound_channels])
+      ),
+      ring_strategy: first_present(source['ring_strategy'], fallback[:ring_strategy], fallback_metadata[:ring_strategy]),
+      group_extension: first_present(source['group_extension'], fallback[:group_extension], fallback_metadata[:group_extension]),
       username: username,
       password: password,
       send_register: send_register
@@ -625,6 +690,21 @@ class Telephony::VirtualPbx::ProvisioningService
 
     port = normalized.to_i
     port if (1..65_535).cover?(port)
+  end
+
+  def normalize_positive_int(value)
+    normalized = value.to_s.strip
+    return if normalized.blank? || !normalized.match?(/\A\d+\z/)
+
+    num = normalized.to_i
+    num if num.positive?
+  end
+
+  def normalize_non_negative_int(value)
+    normalized = value.to_s.strip
+    return if normalized.blank? || !normalized.match?(/\A\d+\z/)
+
+    normalized.to_i
   end
 
   def normalize_sip_domain(value)
@@ -731,6 +811,8 @@ class Telephony::VirtualPbx::ProvisioningService
     source = source.to_h.deep_stringify_keys
     metadata = source.slice(
       'environment', 'source', 'notes', 'pbx_platform', 'outbound_dial_format',
+      'carrier_kind', 'trunk_username', 'trunk_password', 'trunk_domain', 'trunk_host', 'trunk_port',
+      'max_channels', 'reserved_inbound_channels', 'ring_strategy', 'group_extension',
       'inbound_route_verified', 'outbound_route_verified', 'event_ingress_verified', 'recording_verified',
       'wazo_verified_configuration_fingerprint'
     )
@@ -1111,10 +1193,22 @@ class Telephony::VirtualPbx::ProvisioningService
 
   def provider_connection_metadata(payload, connection)
     existing_metadata = connection.metadata.to_h.with_indifferent_access
-    connection_metadata = payload[:connection].to_h.with_indifferent_access.slice(:sip_domain, :outbound_proxy, :codec)
+    connection_metadata = payload[:connection].to_h.with_indifferent_access.slice(
+      :sip_domain, :outbound_proxy, :codec, :carrier_kind,
+      :trunk_username, :trunk_domain, :trunk_host, :trunk_port,
+      :max_channels, :reserved_inbound_channels, :ring_strategy, :group_extension
+    )
     metadata = existing_metadata
                .merge((payload[:metadata] || {}).to_h.with_indifferent_access)
                .merge(connection_metadata)
+    new_trunk_password = first_present(payload.dig(:connection, :trunk_password), payload.dig(:metadata, 'trunk_password'))
+    if new_trunk_password.present?
+      metadata[:trunk_password] = new_trunk_password
+      metadata[:trunk_password_configured] = true
+    elsif existing_metadata[:trunk_password].present?
+      metadata[:trunk_password] = existing_metadata[:trunk_password]
+      metadata[:trunk_password_configured] = true
+    end
     default_dial_format = default_outbound_dial_format(payload[:provider_kind])
     return metadata if default_dial_format.blank?
 
@@ -1363,6 +1457,7 @@ class Telephony::VirtualPbx::ProvisioningService
       provider_connection_id: provider_connection.id,
       managed_by: MANAGED_BY_ONELINK,
       ownership_status: LOCAL_OWNERSHIP_STATUS,
+      carrier_kind: first_present(payload.dig(:connection, :carrier_kind), payload.dig(:metadata, 'carrier_kind'), provider_connection.metadata.to_h['carrier_kind']),
       source: payload.dig(:metadata, 'source') || payload[:provider_kind]
     )
 

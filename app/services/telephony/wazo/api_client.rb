@@ -57,6 +57,10 @@ class Telephony::Wazo::ApiClient # rubocop:disable Metrics/ClassLength -- explic
             })
   end
 
+  def cdr_recording_media(cdr_id, recording_uuid)
+    request_binary(:get, "#{CDR_PATH}/#{escape(cdr_id)}/recordings/#{escape(recording_uuid)}/media")
+  end
+
   def create_sip_endpoint(payload)
     request(:post, SIP_ENDPOINTS_PATH, body: payload)
   end
@@ -371,6 +375,31 @@ class Telephony::Wazo::ApiClient # rubocop:disable Metrics/ClassLength -- explic
   end
 
   attr_reader :base_url, :username, :password, :tenant_uuid, :ca_file
+
+  def request_binary(method, path, params: nil, auth_retry: true)
+    response = connection.public_send(method, path) do |req|
+      req.params.update(params) if params.present?
+      req.headers['Accept'] = 'audio/wav, audio/*, */*'
+      req.headers['X-Auth-Token'] = auth_token
+      req.headers['Wazo-Tenant'] = tenant_uuid if tenant_uuid.present?
+      req.options.timeout = REQUEST_TIMEOUT
+      req.options.open_timeout = REQUEST_TIMEOUT
+    end
+    return response.body.to_s if response.success?
+
+    if response.status == 401 && auth_retry
+      @auth_token = nil
+      return request_binary(method, path, params: params, auth_retry: false)
+    end
+
+    raise_request_error!(response)
+  rescue Faraday::Error => e
+    raise Telephony::Error.new(
+      code: 'WAZO_API_UNAVAILABLE',
+      message: "Wazo API binary request failed: #{e.class.name}",
+      status: :bad_gateway
+    )
+  end
 
   def request(method, path, body: nil, params: nil, auth_retry: true)
     response = perform_request(method, path, body: body, params: params)
