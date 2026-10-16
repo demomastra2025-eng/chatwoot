@@ -224,6 +224,25 @@
     overflow-wrap: anywhere;
   }
 
+  // A list with long values (an e-mail, an address) in a narrow column: next to its key the value would be squeezed and
+  // broken in the middle of a word, so when the list is narrower than 24rem the key stands over its value. The list is
+  // its own container: in the side column of a card and on a phone it is stacked, in a wide column it stays side by side.
+  .admin-kv--stackable {
+    container-type: inline-size;
+  }
+
+  @container (max-width: 24rem) {
+    .admin-kv--stackable .admin-kv__row {
+      flex-direction: column;
+      align-items: flex-start;
+      row-gap: 0.125rem;
+    }
+
+    .admin-kv--stackable .admin-kv__value {
+      text-align: start;
+    }
+  }
+
   // Two columns of usage meters
   .admin-usage-grid {
     @apply grid grid-cols-1 gap-x-8 gap-y-5 sm:grid-cols-2;

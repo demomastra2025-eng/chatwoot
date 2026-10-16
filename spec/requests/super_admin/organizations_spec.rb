@@ -148,6 +148,56 @@ RSpec.describe 'Super Admin organizations', type: :request do
         expect(page.at_css('th[aria-sort="ascending"]')).to be_present
       end
 
+      describe 'the default order' do
+        def names
+          page.css('[data-testid="organizations-table"] tbody tr td:first-child a').map { |link| text(link) }
+        end
+
+        it 'is the names A to Z, whatever the case and the order of creation' do
+          create(:organization, name: 'bravo')
+          create(:organization, name: 'Charlie')
+          create(:organization, name: 'Alpha')
+
+          get '/super_admin/organizations'
+
+          expect(names).to eq(%w[Alpha bravo Charlie])
+        end
+
+        it 'marks the name column as the sorted one, and its header turns the order around' do
+          create(:organization, name: 'Бета')
+          create(:organization, name: 'Альфа')
+
+          get '/super_admin/organizations'
+
+          expect(names).to eq(%w[Альфа Бета])
+          header = page.at_css('th[aria-sort="ascending"]')
+          expect(text(header)).to eq('Название')
+          query = Rack::Utils.parse_nested_query(URI(header.at_css('a')['href']).query)
+          expect(query['organization']).to eq('order' => 'name', 'direction' => 'desc')
+        end
+
+        it 'is reversed by the header, newest of the alphabet first' do
+          create(:organization, name: 'Бета')
+          create(:organization, name: 'Альфа')
+
+          get '/super_admin/organizations', params: { organization: { order: 'name', direction: 'desc' } }
+
+          expect(names).to eq(%w[Бета Альфа])
+          expect(page.at_css('th[aria-sort="descending"]')).to be_present
+        end
+
+        it 'keeps organizations of the same name in a stable order, so no page repeats or loses one' do
+          created = create_list(:organization, 5, name: 'Одинаковое название')
+
+          seen = (1..3).flat_map do |number|
+            get '/super_admin/organizations', params: { per_page: 2, _page: number }
+            page.css('[data-testid="organizations-table"] tbody tr[data-organization-id]').pluck('data-organization-id')
+          end
+
+          expect(seen).to eq(created.map { |organization| organization.id.to_s })
+        end
+      end
+
       it 'costs the same number of queries for 2 and for 8 organizations' do
         create_list(:organization, 2).each { |organization| account_with(organization, name: "Warm #{organization.id}", operators: 1, channels: 1) }
         get '/super_admin/organizations'
@@ -229,6 +279,17 @@ RSpec.describe 'Super Admin organizations', type: :request do
         contract = text(page.at_css('[data-testid="contract-block"]'))
         expect(contract).to include('Договор', 'Номер', 'ДГ-12', 'Дата', '15.03.2026', 'Заметки', 'Договор на год.')
         expect(text(page.at_css('[data-testid="accounts-block"] h2'))).to eq('Аккаунты')
+      end
+
+      it 'lets the key of a narrow side block stand over a long value (the e-mail is not broken in the middle of a word)' do
+        organization.update!(billing_email: 'accounting.department@a-very-long-company-name.example.test')
+
+        get "/super_admin/organizations/#{organization.id}"
+
+        %w[requisites-block contract-block].each do |block|
+          expect(page.at_css("[data-testid=\"#{block}\"] dl.admin-kv.admin-kv--stackable")).to be_present
+        end
+        expect(text(page.at_css('[data-testid="requisites-block"]'))).to include('accounting.department@a-very-long-company-name.example.test')
       end
 
       it 'shows a dash for requisites that are not filled in' do

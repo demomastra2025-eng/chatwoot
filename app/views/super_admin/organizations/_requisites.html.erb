@@ -2,7 +2,8 @@
 # «Реквизиты» of an organization
 
 A key/value block of the side column: legal name, BIN, address, phone and the e-mail for billing documents. A value
-that is not filled in shows a dash.
+that is not filled in shows a dash. In a narrow column the key stands over its value (`admin-kv--stackable`), so an
+e-mail is not broken in the middle of a word.
 
 ## Local variables:
 
@@ -20,7 +21,7 @@ that is not filled in shows a dash.
 
 <section class="admin-block" aria-labelledby="requisites-title" data-testid="requisites-block">
   <h2 class="admin-block__title" id="requisites-title"><%= t('super_admin.organizations.card.requisites.title') %></h2>
-  <dl class="admin-kv">
+  <dl class="admin-kv admin-kv--stackable">
     <% rows.each do |key, value| %>
       <div class="admin-kv__row">
         <dt class="admin-kv__key"><%= key %></dt>

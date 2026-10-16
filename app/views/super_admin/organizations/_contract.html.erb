@@ -17,7 +17,7 @@ The contract number and date and the notes of the operator. The date is a calend
 
 <section class="admin-block" aria-labelledby="contract-title" data-testid="contract-block">
   <h2 class="admin-block__title" id="contract-title"><%= t('super_admin.organizations.card.contract.title') %></h2>
-  <dl class="admin-kv">
+  <dl class="admin-kv admin-kv--stackable">
     <% rows.each do |key, value| %>
       <div class="admin-kv__row">
         <dt class="admin-kv__key"><%= key %></dt>
