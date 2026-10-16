@@ -258,6 +258,7 @@ RSpec.describe Telephony::Wazo::ProvisioningService do
     )
     allow(client).to receive(:create_sip_endpoint).and_return('uuid' => 'endpoint-uuid')
     allow(client).to receive(:associate_user_line)
+    allow(client).to receive(:associate_line_sip_endpoint)
     allow(client).to receive(:associate_line_extension).and_raise(StandardError, 'association failed')
     allow(client).to receive(:dissociate_line_sip_endpoint).and_raise(StandardError, 'cleanup failed')
     allow(client).to receive(:dissociate_line_extension)

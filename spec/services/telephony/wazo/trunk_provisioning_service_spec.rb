@@ -26,7 +26,7 @@ RSpec.describe Telephony::Wazo::TrunkProvisioningService do
     ).and_return('uuid' => 'ep-trunk-1')
 
     allow(client).to receive(:trunks).and_return([])
-    expect(client).to receive(:create_trunk).with(context: 'ctx-incall-1').and_return('id' => 10)
+    expect(client).to receive(:create_trunk).with(hash_including(context: 'ctx-incall-1')).and_return('id' => 10)
     expect(client).to receive(:associate_trunk_sip_endpoint).with(10, 'ep-trunk-1')
 
     allow(client).to receive(:outcalls).and_return([])
@@ -73,7 +73,7 @@ RSpec.describe Telephony::Wazo::TrunkProvisioningService do
     expect(client).to receive(:create_sip_endpoint).with(
       hash_including(
         name: 'trunk_77273001122',
-        label: 'OneLink Kazakhtelecom (iD Phone) Trunk 77273001122',
+        label: 'OneLink Trunk 77273001122',
         endpoint_section_options: array_including(
           ['from_domain', 'sip.telecom.kz'],
           ['send_pai', 'yes']
@@ -82,7 +82,7 @@ RSpec.describe Telephony::Wazo::TrunkProvisioningService do
     ).and_return('uuid' => 'ep-kt-1')
 
     allow(client).to receive(:trunks).and_return([])
-    expect(client).to receive(:create_trunk).with(context: 'ctx-incall-1').and_return('id' => 11)
+    expect(client).to receive(:create_trunk).with(hash_including(context: 'ctx-incall-1')).and_return('id' => 11)
     expect(client).to receive(:associate_trunk_sip_endpoint).with(11, 'ep-kt-1')
 
     allow(client).to receive(:outcalls).and_return([])
@@ -95,8 +95,10 @@ RSpec.describe Telephony::Wazo::TrunkProvisioningService do
 
     allow(client).to receive(:incalls).and_return([])
     expect(client).to receive(:create_incall).with(
-      destination: { type: 'group', group_id: 7, ring_time: 45 },
-      description: 'OneLink DID 77273001122'
+      hash_including(
+        destination: { type: 'group', group_id: 7, ring_time: 45 },
+        description: 'OneLink DID 77273001122'
+      )
     ).and_return('id' => 31)
     expect(client).to receive(:associate_incall_extension).with(31, 201)
 

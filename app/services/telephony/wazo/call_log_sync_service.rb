@@ -163,7 +163,7 @@ class Telephony::Wazo::CallLogSyncService # rubocop:disable Metrics/ClassLength
       'call_ref' => session.external_call_ref,
       'account_id' => connection.account_id,
       'inbox_id' => session.inbox_id,
-      'number_ref' => session.number_ref,
+      'number_ref' => session.number_binding&.number_ref,
       'provider' => 'wazo',
       'recording_ref' => storage_key,
       'storage_key' => storage_key,

@@ -84,10 +84,10 @@ class Telephony::Wazo::ChannelCapacityService
   end
 
   def bound_dids
-    @bound_dids ||= Telephony::NumberBinding.where(account_id: connection.account_id, provider: 'wazo')
-                                            .select { |b| b.provider_connection_id == connection.id }
-                                            .flat_map { |b| [normalize(b.phone_number), normalize(b.ingress_number)] }
-                                            .compact.uniq
+    @bound_dids ||= Telephony::NumberBinding.includes(:inbox).where(account_id: connection.account_id, provider: 'wazo').select do |b|
+      b.provider_connection_id == connection.id ||
+        b.voice_channel&.provider_config_hash.to_h['provider_connection_id'].to_i == connection.id
+    end.flat_map { |b| [normalize(b.phone_number), normalize(b.ingress_number)] }.compact.uniq
   end
 
   def bound_extensions

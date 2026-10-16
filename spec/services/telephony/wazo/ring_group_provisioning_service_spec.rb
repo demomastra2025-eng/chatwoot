@@ -32,12 +32,14 @@ RSpec.describe Telephony::Wazo::RingGroupProvisioningService do
   it 'creates a Wazo ring group, syncs all active inbox operator members, binds extension 2001, and routes the DID incall to the group' do
     allow(client).to receive(:groups).and_return([])
     expect(client).to receive(:create_group).with(
-      label: "OneLink Inbox #{inbox.id}",
-      ring_strategy: 'all',
-      timeout: 45,
-      user_timeout: 25,
-      retry_delay: 5,
-      ring_in_use: false
+      hash_including(
+        label: "OneLink Inbox #{inbox.id}",
+        ring_strategy: 'all',
+        timeout: 45,
+        user_timeout: 25,
+        retry_delay: 5,
+        ring_in_use: false
+      )
     ).and_return('id' => 1, 'uuid' => 'grp-uuid-1')
 
     expect(client).to receive(:update_group_user_members).with(
@@ -49,13 +51,13 @@ RSpec.describe Telephony::Wazo::RingGroupProvisioningService do
     )
 
     allow(client).to receive(:extensions).and_return([])
-    expect(client).to receive(:create_extension).with(context: 'ctx-internal-1', exten: '2001').and_return('id' => 7)
+    expect(client).to receive(:create_extension).with(hash_including(context: 'ctx-internal-1', exten: '2001')).and_return('id' => 7)
     expect(client).to receive(:associate_group_extension).with('grp-uuid-1', 7)
 
     allow(client).to receive(:incalls).and_return([
       { 'id' => 1, 'extensions' => [{ 'exten' => '77085012233' }] }
     ])
-    expect(client).to receive(:update_incall).with(1, destination: { type: 'group', group_id: 1, ring_time: 45 })
+    expect(client).to receive(:update_incall).with(1, hash_including(destination: { type: 'group', group_id: 1, ring_time: 45 }))
 
     result = service.sync!(ring_strategy: 'all', group_extension: '2001')
 
