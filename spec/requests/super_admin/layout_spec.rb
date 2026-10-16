@@ -124,7 +124,7 @@ RSpec.describe 'Super Admin layout and login page', type: :request do
       expect(block).to include('bg-transparent', 'text-n-slate-11', 'transform: none', '&:hover')
       expect(block).not_to include('brand-solid')
       expect(component).to include('data-test-id="ds-chart-table-toggle"')
-      expect(component[/<button[^>]*ds-chart-table-toggle[^>]*>/m]).not_to include('reset-base')
+      expect(component[/<button[^>]*ds-chart-table-toggle[^>]*>/m]).not_to include('reset-base')
     end
 
     it 'defines the blocks of the clinic card on tokens only' do

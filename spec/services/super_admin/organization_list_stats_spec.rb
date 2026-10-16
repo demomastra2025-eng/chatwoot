@@ -28,10 +28,10 @@ RSpec.describe SuperAdmin::OrganizationListStats do
   end
 
   # Counts the SQL statements a block runs (cached reads and schema lookups do not count) and what kinds of rows they load
-  def queries
+  def queries(&)
     statements = []
     subscriber = ->(*, payload) { statements << payload unless %w[SCHEMA TRANSACTION].include?(payload[:name]) || payload[:cached] }
-    ActiveSupport::Notifications.subscribed(subscriber, 'sql.active_record') { yield }
+    ActiveSupport::Notifications.subscribed(subscriber, 'sql.active_record', &)
     statements
   end
 

@@ -14,10 +14,10 @@ RSpec.describe SuperAdmin::OrganizationAccountsPage do
     Array.new(count) { |index| create(:account, name: format('Филиал %<number>02d', number: index + 1), organization: organization) }
   end
 
-  def queries
+  def queries(&)
     statements = []
     subscriber = ->(*, payload) { statements << payload unless %w[SCHEMA TRANSACTION].include?(payload[:name]) || payload[:cached] }
-    ActiveSupport::Notifications.subscribed(subscriber, 'sql.active_record') { yield }
+    ActiveSupport::Notifications.subscribed(subscriber, 'sql.active_record', &)
     statements
   end
 
@@ -70,8 +70,10 @@ RSpec.describe SuperAdmin::OrganizationAccountsPage do
 
     it 'add up ALL the linked accounts, whatever page is shown' do
       accounts = linked_accounts(30)
-      accounts.each { |account| account.update!(limits: { 'agents' => 2 }) }
-      accounts.each { |account| create(:user, account: account, role: :administrator) }
+      accounts.each do |account|
+        account.update!(limits: { 'agents' => 2 })
+        create(:user, account: account, role: :administrator)
+      end
       accounts.first(10).each { |account| create(:inbox, account: account) }
       create(:account, name: 'Чужой', organization: create(:organization), limits: { 'agents' => 100 })
 

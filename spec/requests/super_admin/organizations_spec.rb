@@ -221,12 +221,15 @@ RSpec.describe 'Super Admin organizations', type: :request do
         subscriber = ->(*, payload) { loads << payload[:sql] if payload[:name] == 'Account Load' }
         few = ActiveSupport::Notifications.subscribed(subscriber, 'sql.active_record') { query_count { get '/super_admin/organizations' } }
 
-        organizations.each { |organization| 12.times { |index| account_with(organization, name: "Ещё #{organization.id}-#{index}", operators: 2, channels: 2) } }
+        organizations.each do |organization|
+          12.times { |index| account_with(organization, name: "Ещё #{organization.id}-#{index}", operators: 2, channels: 2) }
+        end
         many = query_count { get '/super_admin/organizations' }
 
         expect(many).to eq(few)
         expect(loads.grep(/organization_id/)).to be_empty
-        row = page.css('[data-testid="organizations-table"] tbody tr[data-organization-id]').find { |tr| tr['data-organization-id'] == organizations.first.id.to_s }
+        row = page.css('[data-testid="organizations-table"] tbody tr[data-organization-id]')
+                  .find { |tr| tr['data-organization-id'] == organizations.first.id.to_s }
         expect(row.css('td')[3..5].map { |cell| text(cell) }).to eq(%w[13 25 25])
       end
     end
@@ -373,7 +376,9 @@ RSpec.describe 'Super Admin organizations', type: :request do
 
         # «Филиал 01» ... in the order of the names; each has one operator and (the first ten) one channel
         def fill(count)
-          Array.new(count) { |index| account_with(organization, name: format('Филиал %<number>02d', number: index + 1), operators: 1, channels: index < 10 ? 1 : 0) }
+          Array.new(count) do |index|
+            account_with(organization, name: format('Филиал %<number>02d', number: index + 1), operators: 1, channels: index < 10 ? 1 : 0)
+          end
         end
 
         it 'shows 25 accounts to a page with a Russian pager, and the rest on the next page' do
@@ -388,7 +393,8 @@ RSpec.describe 'Super Admin organizations', type: :request do
           expect(pager.at_css('a[rel="next"]')['href']).to include("/super_admin/organizations/#{organization.id}?accounts_page=2")
 
           get "/super_admin/organizations/#{organization.id}", params: { accounts_page: 2 }
-          expect(rows.map { |row| text(row.at_css('td')) }).to eq((26..30).map { |number| "Филиал #{number} ##{Account.find_by(name: "Филиал #{number}").id}" })
+          expected = (26..30).map { |number| "Филиал #{number} ##{Account.find_by(name: "Филиал #{number}").id}" }
+          expect(rows.map { |row| text(row.at_css('td')) }).to eq(expected)
           expect(text(page.at_css('[data-testid="accounts-pager"]'))).to include('Страница 2 из 2')
         end
 
@@ -470,7 +476,8 @@ RSpec.describe 'Super Admin organizations', type: :request do
           expect(options.size).to eq(20)
           expect(text(options.first)).to start_with('Свободный 01')
           expect(text(options.last)).to start_with('Свободный 20')
-          expect(text(page.at_css('[data-testid="more-matches"]'))).to eq('Показаны первые 20 совпадений. Чтобы найти другой аккаунт, уточните запрос.')
+          expect(text(page.at_css('[data-testid="more-matches"]')))
+            .to eq('Показаны первые 20 совпадений. Чтобы найти другой аккаунт, уточните запрос.')
         end
 
         it 'does not say that when everything is shown' do

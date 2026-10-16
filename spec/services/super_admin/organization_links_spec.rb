@@ -172,10 +172,10 @@ RSpec.describe SuperAdmin::OrganizationLinks do
   end
 
   describe 'the lock' do
-    def statements
+    def statements(&)
       sql = []
       subscriber = ->(*, payload) { sql << payload[:sql] }
-      ActiveSupport::Notifications.subscribed(subscriber, 'sql.active_record') { yield }
+      ActiveSupport::Notifications.subscribed(subscriber, 'sql.active_record', &)
       sql
     end
 
