@@ -663,12 +663,12 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       expect(note).to include('Никогда не включаются:', 'Роли доступа', 'Единый вход SAML')
     end
 
-    it 'tells which owner decisions are not offered here, and who switches them' do
+    it 'does not offer the owner decisions here: they have their own block «Служебные»' do
       open_card
 
-      note = text(fine_tuning)
-      expect(note).to include('Решения владельца для отдельной клиники', 'Один чат на пациента', 'их включает разработчик по запросу')
       expect(fine_tuning.at_css('input#feature-communication_threads')).to be_nil
+      expect(text(fine_tuning)).not_to include('Решения владельца для отдельной клиники', 'разработчик')
+      expect(page.at_css('details#service-flags input#service-communication_threads')).to be_present
     end
   end
 
@@ -683,8 +683,8 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       users = block('users-block')
       expect(text(users)).to include('Всего: 2')
       rows = users.css('tbody tr').to_h { |row| [row['data-user-id'].to_i, row.css('td').map { |cell| text(cell) }] }
-      expect(rows[admin.id]).to eq(['Айгерим', admin.email, 'Администратор', '15.10.2026 17:00'])
-      expect(rows[agent.id]).to eq(['Мерей', agent.email, 'Оператор', '—'])
+      expect(rows[admin.id]).to eq(['Айгерим', admin.email, 'Администратор', '15.10.2026 17:00', 'Убрать из клиники'])
+      expect(rows[agent.id]).to eq(['Мерей', agent.email, 'Оператор', '—', 'Убрать из клиники'])
       expect(users.at_css("a[href='/super_admin/users/#{admin.id}']")).to be_present
     end
 

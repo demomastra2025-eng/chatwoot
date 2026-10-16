@@ -4,7 +4,8 @@
 Single functions on top of the plan, in groups (see SuperAdmin::FineTuning).
 Only flags a plan can switch are offered: the always-on operational flags and
 the flags no plan enables are not shown, and neither are the platform's
-internal switches. A switch whose state differs from the plan is marked
+internal switches (the owner-decision ones are in the «Служебные» block of the
+card). A switch whose state differs from the plan is marked
 «вручную».
 
 The switches post `enabled_features[feature_<flag>]` (a hidden «false» before
@@ -51,7 +52,6 @@ form is one.
   <p class="admin-block__note">
     <%= t('super_admin.fine_tuning.always_on', features: Accounts::Plans.locked_on.map { |name| feature_label.call(name) }.join(', ')) %>
     <%= t('super_admin.fine_tuning.never_on', features: tuning.never_enabled_labels.join(', ')) %>
-    <% internal = tuning.internal_labels %>
-    <%= internal.any? ? t('super_admin.fine_tuning.internal_listed', features: internal.join(', ')) : t('super_admin.fine_tuning.internal') %>
+    <%= t('super_admin.fine_tuning.internal') %>
   </p>
 </div>

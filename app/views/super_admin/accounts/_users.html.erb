@@ -2,8 +2,9 @@
 # Users of a clinic
 
 The members with their role (Администратор / Оператор), e-mail and last
-sign-in (Astana time), each linking to the user page; below, a collapsed form
-that adds a member.
+sign-in (Astana time), each linking to the user page, and «Убрать из клиники»
+(asks first, written to the audit log); below, a collapsed form that adds a
+member.
 
 ## Local variables:
 
@@ -31,12 +32,13 @@ that adds a member.
           <th scope="col"><%= t('super_admin.clinic_card.users.columns.email') %></th>
           <th scope="col"><%= t('super_admin.clinic_card.users.columns.role') %></th>
           <th scope="col"><%= t('super_admin.clinic_card.users.columns.last_sign_in') %></th>
+          <th scope="col"><span class="sr-only"><%= t('super_admin.clinic_card.users.columns_actions') %></span></th>
         </tr>
       </thead>
       <tbody>
         <% if shown.empty? %>
           <tr>
-            <td colspan="4" class="py-8 text-center text-n-slate-11"><%= t('super_admin.clinic_card.users.empty') %></td>
+            <td colspan="5" class="py-8 text-center text-n-slate-11"><%= t('super_admin.clinic_card.users.empty') %></td>
           </tr>
         <% end %>
         <% shown.each do |membership| %>
@@ -48,6 +50,12 @@ that adds a member.
               <span class="admin-badge <%= membership.administrator? ? 'admin-badge--iris' : 'admin-badge--quiet' %>"><%= t("super_admin.account_users.roles.#{membership.role}") %></span>
             </td>
             <td class="whitespace-nowrap tabular-nums text-n-slate-11"><%= super_admin_time(user.current_sign_in_at || user.last_sign_in_at) || '—' %></td>
+            <td class="text-end">
+              <%# Only the membership goes: the user and their data stay. %>
+              <%= button_to t('super_admin.clinic_card.users.remove'), super_admin_account_user_path(membership), method: :delete,
+                            class: 'button button--small button--alt', form_class: 'inline-block',
+                            data: { confirm: t('super_admin.clinic_card.users.remove_confirm', user: user.name, clinic: account.name) } %>
+            </td>
           </tr>
         <% end %>
       </tbody>

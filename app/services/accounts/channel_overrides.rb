@@ -10,12 +10,18 @@
 # A state is 'default' (follow the platform: the entry is removed), 'shown' or 'hidden'. Channels that are not named
 # keep their entry. Nothing is written, and nothing audited, when nothing changes. Every change leaves one entry in the
 # audit log (action update_channel_override) with what changed per channel.
+#
+# `expected:` is what the person saw when the page was drawn: only the channels they moved are written, and a channel
+# that somebody else moved meanwhile raises StaleOverrides instead of being overwritten.
 class Accounts::ChannelOverrides
   DEFAULT_STATE = 'default'
   STATES = [DEFAULT_STATE, *Channels::Catalog::STATES].freeze
   AUDIT_ACTION = 'update_channel_override'
 
   class InvalidOverrides < ArgumentError; end
+
+  # A channel that the person is changing was changed by somebody else after the page was drawn
+  class StaleOverrides < StandardError; end
 
   def initialize(account:, actor: nil, request: nil)
     @account = account
@@ -24,12 +30,17 @@ class Accounts::ChannelOverrides
   end
 
   # requested: { 'api' => 'shown' | 'hidden' | 'default' }. Raises InvalidOverrides, before writing anything, for an
-  # unknown channel or state.
-  def apply(requested)
+  # unknown channel or state, and StaleOverrides when a channel the person moved has another state than they saw.
+  def apply(requested, expected: nil)
     desired = validate!(requested)
+    seen = expected.nil? ? nil : validate!(expected)
+    desired = desired.reject { |key, state| seen[key] == state } if seen
     changes = {}
     @account.with_lock do
       current = Accounts::AvailableChannels.overrides(@account)
+      stale = stale_keys(desired, current, seen) if seen
+      raise StaleOverrides, stale.join(', ') if stale.present?
+
       changes = diff(current, desired)
       write(merge(current, desired)) if changes.any?
     end
@@ -38,6 +49,14 @@ class Accounts::ChannelOverrides
   end
 
   private
+
+  # Channels the person moved that somebody else moved too, to another state than the one asked for
+  def stale_keys(desired, current, seen)
+    desired.keys.select do |key|
+      now = current[key] || DEFAULT_STATE
+      seen.key?(key) && now != seen[key] && now != desired[key]
+    end
+  end
 
   def diff(current, desired)
     desired.each_with_object({}) do |(key, state), changes|
@@ -71,7 +90,7 @@ class Accounts::ChannelOverrides
   end
 
   def validate!(requested)
-    raise InvalidOverrides, 'overrides must be a map of channel => default | shown | hidden' unless requested.respond_to?(:to_h)
+    raise InvalidOverrides, 'overrides must be a map of channel => default | shown | hidden' unless requested.is_a?(Hash)
 
     requested.to_h.each_with_object({}) do |(key, state), desired|
       raise InvalidOverrides, "unknown channel: #{key}" unless Channels::Catalog.key?(key)

@@ -58,6 +58,8 @@ are already connected keep working.
               <td class="font-medium text-n-slate-12"><%= entry.name %></td>
               <td><span class="admin-badge <%= status_tone %>"><%= status %></span></td>
               <td>
+                <%# The state the select had when the page was drawn: only moved selects are saved. %>
+                <%= hidden_field_tag "previous[#{entry.key}]", override || Accounts::ChannelOverrides::DEFAULT_STATE, id: nil %>
                 <%= select_tag "overrides[#{entry.key}]",
                                options_for_select(options, override || Accounts::ChannelOverrides::DEFAULT_STATE),
                                id: "override-#{entry.key}",

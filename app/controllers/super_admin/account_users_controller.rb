@@ -17,13 +17,24 @@ class SuperAdmin::AccountUsersController < SuperAdmin::ApplicationController
     redirect_back(fallback_location: [namespace, resource.account], notice: notice)
   end
 
+  # Takes the user out of the clinic (the user and their data stay). Leaves an entry in the audit log of the clinic.
   def destroy
-    if requested_resource.destroy
+    membership = requested_resource
+    removed = { 'user_id' => membership.user_id, 'email' => membership.user&.email, 'role' => membership.role }
+    if membership.destroy
+      SuperAdmin::AccountAudit.record(account: membership.account, actor: current_super_admin, action: 'remove_user', changes: removed, request: request)
       flash[:notice] = translate_with_resource('destroy.success')
     else
-      flash[:error] = requested_resource.errors.full_messages.join(', ')
+      flash[:error] = membership.errors.full_messages.join(', ')
     end
-    redirect_back(fallback_location: [namespace, requested_resource.account])
+    redirect_back(fallback_location: [namespace, membership.account])
+  end
+
+  private
+
+  # The notices are worded for a clinic («Пользователь добавлен в клинику»), not for the generic «Account user»
+  def translate_with_resource(key)
+    I18n.t("super_admin.account_users.controller.#{key}", default: super)
   end
 
   # Override this method to specify custom lookup behavior.

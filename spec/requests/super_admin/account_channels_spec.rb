@@ -95,10 +95,81 @@ RSpec.describe 'Super admin clinic channels', type: :request do
         post "/super_admin/accounts/#{account.id}/channel_overrides", params: { overrides: { 'api' => 'maybe' } }
         expect(flash[:alert]).to eq(flash_text(:channel_overrides_invalid))
 
-        post "/super_admin/accounts/#{account.id}/channel_overrides", params: { overrides: 'api' }
+        post "/super_admin/accounts/#{account.id}/channel_overrides", params: { overrides: { 'api' => %w[shown] } }
         expect(flash[:alert]).to eq(flash_text(:channel_overrides_invalid))
 
         expect(overrides).to be_nil
+      end
+
+      describe 'a malformed form' do
+        let(:malformed) do
+          [
+            { overrides: 'api' },
+            { overrides: %w[api shown] },
+            { overrides: [{ 'api' => 'shown' }] },
+            { overrides: { 'api' => 'shown' }, previous: %w[api] }
+          ]
+        end
+
+        it 'answers 422 with a Russian message, shows the clinic card again and changes nothing' do
+          malformed.each do |params|
+            post "/super_admin/accounts/#{account.id}/channel_overrides", params: params
+
+            expect(response).to have_http_status(:unprocessable_content), params.inspect
+            expect(flash[:alert]).to eq(flash_text(:channel_overrides_malformed))
+            expect(page.at_css('.flash-alert').text.squish).to eq(flash_text(:channel_overrides_malformed))
+            expect(page.at_css('[data-testid="channels-block"]')).to be_present
+          end
+          expect(overrides).to be_nil
+          expect(Audited::Audit.where(action: 'update_channel_override')).to be_empty
+        end
+      end
+
+      describe 'two administrators with the same card open' do
+        let(:as_drawn) { Channels::Catalog.keys.index_with { 'default' } }
+
+        def post_overrides(requested, previous)
+          post "/super_admin/accounts/#{account.id}/channel_overrides", params: { overrides: requested, previous: previous }
+        end
+
+        it 'does not undo the change of the first one: the second saves only the select he moved' do
+          show_channels_for(account, 'api') # the first one opened the API channel after the card was drawn
+
+          post_overrides(as_drawn.merge('sms' => 'shown'), as_drawn)
+
+          expect(flash[:notice]).to eq(flash_text(:channel_overrides_saved))
+          expect(overrides).to eq('api' => 'shown', 'sms' => 'shown')
+          audit = Audited::Audit.where(action: 'update_channel_override').order(:id).last
+          expect(audit.audited_changes['channels']).to eq('sms' => { 'from' => nil, 'to' => 'shown' })
+        end
+
+        it 'says nothing changed when the second only presses «Сохранить»' do
+          show_channels_for(account, 'api')
+
+          post_overrides(as_drawn, as_drawn)
+
+          expect(flash[:notice]).to eq(flash_text(:channel_overrides_unchanged))
+          expect(overrides).to eq('api' => 'shown')
+        end
+
+        it 'stops, with a Russian message and nothing saved, when the second moves a select the first moved to another state' do
+          show_channels_for(account, 'api')
+
+          post_overrides(as_drawn.merge('api' => 'hidden', 'sms' => 'shown'), as_drawn)
+
+          expect(response).to redirect_to("/super_admin/accounts/#{account.id}")
+          expect(flash[:alert]).to eq(flash_text(:channel_overrides_stale))
+          expect(overrides).to eq('api' => 'shown')
+        end
+
+        it 'is not stopped by a select the first moved to the very state the second asks for' do
+          show_channels_for(account, 'api')
+
+          post_overrides(as_drawn.merge('api' => 'shown'), as_drawn)
+
+          expect(flash[:notice]).to eq(flash_text(:channel_overrides_unchanged))
+          expect(overrides).to eq('api' => 'shown')
+        end
       end
     end
   end
@@ -151,6 +222,15 @@ RSpec.describe 'Super admin clinic channels', type: :request do
       names = form.css('select').pluck('name')
       expect(names).to eq(Channels::Catalog.keys.map { |key| "overrides[#{key}]" })
       expect(form.css('input[type="submit"]').size).to eq(1)
+    end
+
+    it 'draws the setting each select had in a hidden field, for the two-administrators check' do
+      show_channels_for(account, 'api')
+
+      get "/super_admin/accounts/#{account.id}"
+
+      expect(row('api').at_css('input[type="hidden"][name="previous[api]"]')['value']).to eq('shown')
+      expect(row('website').at_css('input[type="hidden"][name="previous[website]"]')['value']).to eq('default')
     end
   end
 end

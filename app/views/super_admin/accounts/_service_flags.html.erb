@@ -1,0 +1,74 @@
+<%#
+# «Служебные»
+
+A collapsed block of the clinic card: the decisions of the owner that differ from
+clinic to clinic and are not part of any plan (one chat per patient, the second
+auto-assignment engine, the clinic's own OpenRouter key). Each switch says in one
+line what it does; changing one asks first, and the change is written to the audit
+log of the clinic. Plans never touch these functions.
+
+The switches post `enabled_features[feature_<flag>]` (a hidden «false» before the
+checkbox, so an unchecked switch is sent too) to the normal update of the clinic,
+the same way «Тонкая настройка» does. The question before saving is built in the
+browser from the `data-confirm-on` / `data-confirm-off` text of each switch that
+moved.
+
+## Local variables:
+
+- `account`: the clinic (Account).
+%>
+<% switches = SuperAdmin::FineTuning.new(account).service_switches %>
+
+<% if switches.any? %>
+  <details class="admin-collapse" id="service-flags" data-testid="service-flags-block">
+    <summary>
+      <span class="flex min-w-0 flex-col gap-0.5">
+        <span class="text-heading-2 text-n-slate-12"><%= t('super_admin.service_flags.title') %></span>
+        <span class="text-body-main text-n-slate-11"><%= t('super_admin.service_flags.hint') %></span>
+      </span>
+      <span class="admin-collapse__chevron i-lucide-chevron-down size-4" aria-hidden="true"></span>
+    </summary>
+    <div class="admin-collapse__body">
+      <%= form_with url: super_admin_account_path(account), method: :patch, local: true, class: 'flex flex-col gap-4', data: { service_flags_form: true } do %>
+        <div class="flex flex-col">
+          <% switches.each do |switch| %>
+            <label class="admin-switch-row cursor-pointer font-normal" for="service-<%= switch.name %>" data-flag="<%= switch.name %>">
+              <span class="admin-switch-row__text">
+                <span class="admin-switch-row__title"><%= switch.label %></span>
+                <span class="admin-switch-row__hint"><%= switch.hint %></span>
+              </span>
+              <span class="admin-switch">
+                <%= hidden_field_tag "enabled_features[feature_#{switch.name}]", 'false', id: nil %>
+                <%= check_box_tag "enabled_features[feature_#{switch.name}]", 'true', switch.enabled, id: "service-#{switch.name}", class: 'admin-switch__input',
+                                  data: { confirm_on: switch.confirm_on, confirm_off: switch.confirm_off } %>
+                <span class="admin-switch__track" aria-hidden="true"></span>
+                <span class="admin-switch__thumb" aria-hidden="true"></span>
+              </span>
+            </label>
+          <% end %>
+        </div>
+
+        <p class="admin-block__note"><%= t('super_admin.service_flags.note') %></p>
+        <div class="admin-block__footer">
+          <%= submit_tag t('super_admin.shell.save'), name: nil %>
+        </div>
+      <% end %>
+    </div>
+  </details>
+
+  <script>
+    (function () {
+      var form = document.querySelector('[data-service-flags-form]');
+      if (!form) return;
+      form.addEventListener('submit', function (event) {
+        var questions = [];
+        form.querySelectorAll('input[type="checkbox"]').forEach(function (box) {
+          if (box.checked === box.defaultChecked) return;
+          var text = box.checked ? box.getAttribute('data-confirm-on') : box.getAttribute('data-confirm-off');
+          if (text) questions.push(text);
+        });
+        if (questions.length > 0 && !window.confirm(questions.join('\n\n'))) event.preventDefault();
+      });
+    })();
+  </script>
+<% end %>

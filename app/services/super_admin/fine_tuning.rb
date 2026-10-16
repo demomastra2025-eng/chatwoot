@@ -14,6 +14,9 @@
 # A switch is `manual` when the clinic's flag differs from what its plan says (the flag is in the plan drift).
 class SuperAdmin::FineTuning
   Switch = Struct.new(:name, :label, :enabled, :manual, keyword_init: true)
+  # A switch of the «Служебные» block: an owner decision for one clinic, with what it does and the question asked before
+  # it is changed
+  ServiceSwitch = Struct.new(:name, :label, :hint, :enabled, :confirm_on, :confirm_off, keyword_init: true)
   Group = Struct.new(:key, :title, :switches, keyword_init: true)
 
   # How the flags of the base are grouped on screen. A base flag that is not listed lands in «Прочее», so a flag
@@ -25,7 +28,8 @@ class SuperAdmin::FineTuning
     'crm' => %w[crm companies crm_deals crm_tasks scheduling]
   }.freeze
   OTHER_GROUP = 'other'
-  # Internal flags that differ from clinic to clinic by a decision of the owner (see `internal` in config/account_plans.yml)
+  # Internal flags that differ from clinic to clinic by a decision of the owner (see `internal` in config/account_plans.yml).
+  # They are not part of any plan; the «Служебные» block of the clinic card switches them.
   OWNER_DECISION_FLAGS = %w[communication_threads assignment_v2 captain_openrouter_byok].freeze
 
   def initialize(account)
@@ -48,11 +52,9 @@ class SuperAdmin::FineTuning
     names.map { |name| SuperAdmin::AccountFeaturesHelper.feature_label(name) }
   end
 
-  # Names of the per-clinic switches the panel does not offer because they are the owner's decisions, not plan options.
-  # The note under the switches lists them, so an operator who looks for one knows it is not here on purpose.
-  def internal_labels
-    names = OWNER_DECISION_FLAGS & Accounts::Plans.internal & Featurable::FEATURE_NAMES
-    names.map { |name| SuperAdmin::AccountFeaturesHelper.feature_label(name) }
+  # The switches of the «Служебные» block, for the owner-decision flags the application still has
+  def service_switches
+    (OWNER_DECISION_FLAGS & Featurable::FEATURE_NAMES).map { |name| build_service_switch(name) }
   end
 
   private
@@ -75,6 +77,15 @@ class SuperAdmin::FineTuning
 
   def build_group(key, title, names)
     Group.new(key: key, title: title, switches: names.map { |name| build_switch(name) })
+  end
+
+  def build_service_switch(name)
+    scope = "super_admin.service_flags.#{name}"
+    label = SuperAdmin::AccountFeaturesHelper.feature_label(name)
+    ServiceSwitch.new(
+      name: name, label: label, hint: I18n.t("#{scope}.hint"), enabled: enabled_flags.include?(name),
+      confirm_on: I18n.t("#{scope}.confirm_on", clinic: @account.name), confirm_off: I18n.t("#{scope}.confirm_off", clinic: @account.name)
+    )
   end
 
   def build_switch(name)

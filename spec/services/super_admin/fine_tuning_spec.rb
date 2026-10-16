@@ -75,19 +75,38 @@ RSpec.describe SuperAdmin::FineTuning do
     end
   end
 
-  describe '#internal_labels' do
-    it 'names the owner decisions that have no switch here, and nothing that has one' do
-      labels = tuning.internal_labels
+  describe '#service_switches' do
+    it 'has a switch for every owner decision, none of them in the plan switches' do
+      switches = tuning.service_switches
 
-      expect(labels).to include('Один чат на пациента', 'Автораспределение, версия 2', 'Свой ключ OpenRouter у клиники')
+      expect(switches.map(&:name)).to eq(described_class::OWNER_DECISION_FLAGS)
+      expect(switches.map(&:label)).to eq(['Один чат на пациента', 'Автораспределение, версия 2', 'Свой ключ OpenRouter у клиники'])
       expect(described_class::OWNER_DECISION_FLAGS & names).to be_empty
+    end
+
+    it 'says in a line what each switch does and asks a question for both directions, naming the clinic' do
+      account.update!(name: 'Клиника Алатау')
+
+      tuning.service_switches.each do |switch|
+        expect(switch.hint).to match(/\p{Cyrillic}/)
+        expect(switch.confirm_on).to include('Клиника Алатау').and match(/\p{Cyrillic}/)
+        expect(switch.confirm_off).to include('Клиника Алатау').and match(/\p{Cyrillic}/)
+      end
+    end
+
+    it 'shows the state of the clinic' do
+      account.enable_features!('communication_threads')
+
+      states = tuning.service_switches.to_h { |switch| [switch.name, switch.enabled] }
+
+      expect(states).to eq('communication_threads' => true, 'assignment_v2' => false, 'captain_openrouter_byok' => false)
     end
 
     it 'leaves out a decision flag that the application no longer has' do
       account # created while every flag still exists
       stub_const('Featurable::FEATURE_NAMES', Featurable::FEATURE_NAMES - ['communication_threads'])
 
-      expect(tuning.internal_labels).not_to include('Один чат на пациента')
+      expect(tuning.service_switches.map(&:name)).not_to include('communication_threads')
     end
   end
 end

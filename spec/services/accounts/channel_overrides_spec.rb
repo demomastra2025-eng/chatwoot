@@ -91,4 +91,51 @@ RSpec.describe Accounts::ChannelOverrides do
 
     expect(overrides).to eq('api' => 'shown')
   end
+
+  describe 'a map that is not a map' do
+    it 'raises InvalidOverrides, whatever it is' do
+      [nil, 'api', %w[api shown], [{ 'api' => 'shown' }]].each do |requested|
+        expect { service.apply(requested) }.to raise_error(described_class::InvalidOverrides), requested.inspect
+      end
+      expect { service.apply({ 'api' => 'shown' }, expected: %w[api]) }.to raise_error(described_class::InvalidOverrides)
+      expect(overrides).to be_nil
+    end
+  end
+
+  describe 'with the states the person saw (expected)' do
+    let(:as_drawn) { Channels::Catalog.keys.index_with { 'default' } }
+
+    it 'writes only the channels the person moved' do
+      service.apply('api' => 'shown') # somebody else, after the page was drawn
+
+      changes = service.apply(as_drawn.merge('sms' => 'hidden'), expected: as_drawn)
+
+      expect(changes).to eq('sms' => { 'from' => nil, 'to' => 'hidden' })
+      expect(overrides).to eq('api' => 'shown', 'sms' => 'hidden')
+    end
+
+    it 'raises StaleOverrides, writing nothing, when a channel the person moved was moved by somebody else to a third state' do
+      service.apply('api' => 'shown')
+
+      expect { service.apply({ 'api' => 'hidden', 'sms' => 'shown' }, expected: { 'api' => 'default', 'sms' => 'default' }) }
+        .to raise_error(described_class::StaleOverrides, /api/)
+
+      expect(overrides).to eq('api' => 'shown')
+    end
+
+    it 'is not stale when somebody else moved the channel to the very state the person asks for' do
+      service.apply('api' => 'shown')
+
+      changes = service.apply({ 'api' => 'shown' }, expected: { 'api' => 'default' })
+
+      expect(changes).to eq({})
+      expect(overrides).to eq('api' => 'shown')
+    end
+
+    it 'treats a channel without an entry as «default»' do
+      expect { service.apply({ 'api' => 'hidden' }, expected: { 'api' => 'default' }) }.not_to raise_error
+
+      expect(overrides).to eq('api' => 'hidden')
+    end
+  end
 end

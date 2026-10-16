@@ -1,6 +1,13 @@
 # rubocop:disable Metrics/ClassLength
 class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   STORAGE_GB_IN_BYTES = 1.gigabyte
+  OWNER_DECISION_AUDIT_ACTION = 'update_service_flags'
+  # What a malformed value (an array or a string where the form sends a map) is parsed as
+  MALFORMED = Object.new.freeze
+
+  # A request that switches a function the screens never offer (a function no plan enables, one that must stay on, a
+  # platform-internal one) is refused with nothing saved; see SuperAdmin::FeatureChangeGuard.
+  before_action :reject_forbidden_feature_changes, only: %i[create update]
 
   # Overwrite any of the RESTful controller actions to implement custom behavior
   # For example, you may want to send an email after a foo is updated.
@@ -60,6 +67,14 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
       apply_plan_to_new_account(account, modules)
       start_trial_for_new_account(account) if start_trial_requested?
     end
+  end
+
+  # The owner-decision switches of «Служебные» are saved with this update too; a change of one leaves an entry in the
+  # audit log of the clinic.
+  def update
+    owner_changes = owner_decision_changes
+    super
+    record_owner_decision_audit(owner_changes) if owner_changes.any? && response.redirect?
   end
 
   def seed
@@ -153,13 +168,19 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   # The clinic's own channel switches: `overrides[channel]` is default (follow the platform), shown or hidden.
   # Channels that are not sent keep their switch. Leaves one entry in the audit log with what changed.
   def channel_overrides
+    requested = submitted_map(:overrides)
+    expected = submitted_map(:previous)
+    return render_card_error(I18n.t('super_admin.accounts.flashes.channel_overrides_malformed')) if [requested, expected].include?(MALFORMED)
+
     changes = Accounts::ChannelOverrides.new(
       account: requested_resource, actor: current_super_admin, request: request
-    ).apply(submitted_channel_overrides)
+    ).apply(requested, expected: expected)
     flash_key = changes.any? ? :channel_overrides_saved : :channel_overrides_unchanged
     redirect_to_account(notice: I18n.t("super_admin.accounts.flashes.#{flash_key}"))
   rescue Accounts::ChannelOverrides::InvalidOverrides
     redirect_to_account(alert: I18n.t('super_admin.accounts.flashes.channel_overrides_invalid'))
+  rescue Accounts::ChannelOverrides::StaleOverrides
+    redirect_to_account(alert: I18n.t('super_admin.accounts.flashes.channel_overrides_stale'))
   end
 
   def impersonate
@@ -268,9 +289,50 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     nil
   end
 
-  def submitted_channel_overrides
-    raw = params[:overrides]
-    raw.respond_to?(:to_unsafe_h) ? raw.to_unsafe_h : raw
+  # nil when the param is absent, a Hash, or MALFORMED for anything that is not a map
+  def submitted_map(name)
+    raw = params[name]
+    return if raw.nil?
+
+    raw.respond_to?(:to_unsafe_h) ? raw.to_unsafe_h : MALFORMED
+  end
+
+  # The clinic card again, with the message on top and the status 422 (nothing was saved)
+  def render_card_error(message)
+    flash.now[:alert] = message
+    render :show, locals: { page: Administrate::Page::Show.new(dashboard, requested_resource) }, status: :unprocessable_content
+  end
+
+  # Runs before create and update: refuses a switch the clinic may not have changed (SuperAdmin::FeatureChangeGuard).
+  # What the request changes is kept for the audit entry.
+  def reject_forbidden_feature_changes
+    guard = SuperAdmin::FeatureChangeGuard.new(action_name == 'create' ? Account.new : requested_resource)
+    states = submitted_feature_states
+    @feature_changes = guard.changes(states)
+    message = guard.message(states)
+    render_feature_rejection(message) if message
+  end
+
+  def render_feature_rejection(message)
+    return render_card_error(message) if fine_tuning_only_request?
+
+    flash.now[:alert] = message
+    if action_name == 'create'
+      render :new, locals: { page: Administrate::Page::Form.new(dashboard, new_resource) }, status: :unprocessable_content
+    else
+      render :edit, locals: { page: Administrate::Page::Form.new(dashboard, requested_resource) }, status: :unprocessable_content
+    end
+  end
+
+  # { 'communication_threads' => { 'from' => false, 'to' => true } } for the owner-decision switches this request moves
+  def owner_decision_changes
+    @feature_changes.to_h.slice(*SuperAdmin::FineTuning::OWNER_DECISION_FLAGS).transform_values do |wanted|
+      { 'from' => !wanted, 'to' => wanted }
+    end
+  end
+
+  def record_owner_decision_audit(changes)
+    record_super_admin_audit(OWNER_DECISION_AUDIT_ACTION, 'features' => changes)
   end
 
   # An account that cannot take the plan stays created; the operator is told and can apply it from the card.
