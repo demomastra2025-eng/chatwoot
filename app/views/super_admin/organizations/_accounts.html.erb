@@ -1,35 +1,27 @@
 <%#
 # «Аккаунты» of an organization
 
-The accounts that belong to the organization: name (a link to the account), plan chips, operators used / limit,
-channels and status, with «Отвязать» per row (asks first; the account itself stays as it is) and a totals row. Below the
-table, «Привязать аккаунт»: a select of the accounts that have no organization yet. The numbers of all rows are read at
-once (`SuperAdmin::AccountListStats`).
+The accounts that belong to the organization, 25 to a page (`accounts_page`): name (a link to the account), plan chips,
+operators used / limit, channels and status, with «Отвязать» per row (asks first; the account itself stays as it is) and a
+totals row that adds up ALL the accounts of the organization, not only the ones on the page (grouped SQL, see
+`SuperAdmin::OrganizationAccountsPage`). Below the table, «Привязать аккаунт»: a search field (a part of the name, or
+#number) and a select with at most 20 of the accounts that have no organization yet. The search is a GET on the card.
 
 ## Local variables:
 
 - `organization`: the Organization.
 %>
 <%
-  accounts = organization.accounts.order(:name, :id).to_a
-  stats = SuperAdmin::AccountListStats.new(accounts)
-  rows = accounts.map { |account| [account, stats.for(account)] }
+  block = SuperAdmin::OrganizationAccountsPage.new(organization, page: params[:accounts_page], search: params[:account_search])
+  rows = block.rows
+  totals = block.totals
   status_tones = { active: 'teal', suspended: 'amber', deleting: 'ruby' }
-
-  operators_used_total = rows.sum { |_account, row| row.operators_used }
-  limited = rows.reject { |_account, row| row.operators_unlimited? }
-  # A limit can only be added up when every account has one
-  operators_limit_total = limited.sum { |_account, row| row.operators_limit } if rows.any? && limited.size == rows.size
-  channels_total = rows.sum { |_account, row| row.channels }
-
-  candidates = Account.where(organization_id: nil).order(:name, :id).pluck(:name, :id)
-  options = candidates.map { |name, id| ["#{name} · ##{id}", id] }
 %>
 
 <section class="admin-card" aria-labelledby="organization-accounts-title" data-testid="accounts-block">
   <div class="flex flex-wrap items-baseline justify-between gap-2 border-b border-n-weak px-5 py-4">
     <h2 class="m-0 text-heading-2 text-n-slate-12" id="organization-accounts-title"><%= t('super_admin.organizations.card.accounts.title') %></h2>
-    <span class="text-xs tabular-nums text-n-slate-11"><%= t('super_admin.organizations.card.accounts.total', count: rows.size) %></span>
+    <span class="text-xs tabular-nums text-n-slate-11"><%= t('super_admin.organizations.card.accounts.total', count: totals.accounts) %></span>
   </div>
 
   <div class="admin-card--table">
@@ -96,18 +88,18 @@ once (`SuperAdmin::AccountListStats`).
         <% end %>
       </tbody>
 
-      <% if rows.any? %>
+      <% if totals.accounts.positive? %>
         <tfoot>
           <tr data-testid="accounts-totals">
-            <th scope="row" class="font-medium"><%= t('super_admin.organizations.card.accounts.totals') %></th>
+            <th scope="row" class="font-medium"><%= t(block.paginated? ? 'super_admin.organizations.card.accounts.totals_all' : 'super_admin.organizations.card.accounts.totals') %></th>
             <td></td>
             <td class="cell-data--number whitespace-nowrap font-medium">
-              <span class="tabular-nums"><%= super_admin_number(operators_used_total) %></span>
-              <% if operators_limit_total %>
-                <span class="font-normal text-n-slate-10">/ <%= super_admin_number(operators_limit_total) %></span>
+              <span class="tabular-nums"><%= super_admin_number(totals.operators_used) %></span>
+              <% if totals.operators_limit %>
+                <span class="font-normal text-n-slate-10">/ <%= super_admin_number(totals.operators_limit) %></span>
               <% end %>
             </td>
-            <td class="cell-data--number font-medium tabular-nums"><%= super_admin_number(channels_total) %></td>
+            <td class="cell-data--number font-medium tabular-nums"><%= super_admin_number(totals.channels) %></td>
             <td></td>
             <td></td>
           </tr>
@@ -116,17 +108,41 @@ once (`SuperAdmin::AccountListStats`).
     </table>
   </div>
 
-  <div class="border-t border-n-weak px-5 py-4" data-testid="link-account">
-    <% if options.empty? %>
-      <p class="admin-block__note"><%= t('super_admin.organizations.card.accounts.none_to_link') %></p>
-    <% else %>
-      <%= form_with url: link_account_super_admin_organization_path(organization), method: :post, local: true, class: 'flex flex-wrap items-end gap-3' do %>
+  <% if block.paginated? %>
+    <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-n-weak px-5 pb-4 pt-3 text-xs text-n-slate-11 [&_.pagination]:mt-0" data-testid="accounts-pager">
+      <span class="tabular-nums"><%= t('super_admin.organizations.card.accounts.page', current: block.accounts.current_page, total: block.accounts.total_pages) %></span>
+      <%= paginate block.accounts, param_name: :accounts_page %>
+    </div>
+  <% end %>
+
+  <div class="flex flex-col gap-3 border-t border-n-weak px-5 py-4" data-testid="link-account">
+    <% if block.free_accounts? %>
+      <%# The search is a GET on the card: the picker below shows the 20 matches at most, however many accounts are free. %>
+      <%= form_with url: super_admin_organization_path(organization), method: :get, local: true, class: 'flex flex-wrap items-end gap-3', data: { testid: 'link-account-search' } do %>
         <div class="flex min-w-0 flex-1 basis-64 flex-col gap-1.5">
-          <%= label_tag :account_id, t('super_admin.organizations.card.accounts.link_label'), class: 'text-xs text-n-slate-11' %>
-          <%= select_tag :account_id, options_for_select(options), prompt: t('super_admin.organizations.card.accounts.link_prompt'), required: true %>
+          <%= label_tag :account_search, t('super_admin.organizations.card.accounts.search_label'), class: 'text-xs text-n-slate-11' %>
+          <%= search_field_tag :account_search, block.search, placeholder: t('super_admin.organizations.card.accounts.search_placeholder'),
+                               maxlength: SuperAdmin::OrganizationAccountsPage::SEARCH_LENGTH, autocomplete: 'off' %>
         </div>
-        <%= submit_tag t('super_admin.organizations.card.accounts.link'), name: nil %>
+        <%= submit_tag t('super_admin.organizations.card.accounts.search'), name: nil, class: 'button button--secondary' %>
       <% end %>
+
+      <% if block.candidates.empty? %>
+        <p class="admin-block__note" data-testid="no-matches"><%= t('super_admin.organizations.card.accounts.no_matches') %></p>
+      <% else %>
+        <%= form_with url: link_account_super_admin_organization_path(organization), method: :post, local: true, class: 'flex flex-wrap items-end gap-3' do %>
+          <div class="flex min-w-0 flex-1 basis-64 flex-col gap-1.5">
+            <%= label_tag :account_id, t('super_admin.organizations.card.accounts.link_label'), class: 'text-xs text-n-slate-11' %>
+            <%= select_tag :account_id, options_for_select(block.candidates), prompt: t('super_admin.organizations.card.accounts.link_prompt'), required: true %>
+          </div>
+          <%= submit_tag t('super_admin.organizations.card.accounts.link'), name: nil %>
+        <% end %>
+        <% if block.more_candidates? %>
+          <p class="admin-block__note" data-testid="more-matches"><%= t('super_admin.organizations.card.accounts.more_matches', count: SuperAdmin::OrganizationAccountsPage::CANDIDATES) %></p>
+        <% end %>
+      <% end %>
+    <% else %>
+      <p class="admin-block__note"><%= t('super_admin.organizations.card.accounts.none_to_link') %></p>
     <% end %>
   </div>
 </section>

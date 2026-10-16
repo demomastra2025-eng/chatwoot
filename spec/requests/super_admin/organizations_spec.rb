@@ -212,6 +212,25 @@ RSpec.describe 'Super Admin organizations', type: :request do
       end
     end
 
+    describe 'the numbers of the list' do
+      it 'are grouped SQL: no account of the page is loaded, and the cost does not depend on the accounts either' do
+        organizations = create_list(:organization, 3)
+        organizations.each { |organization| account_with(organization, name: "Филиал #{organization.id}", operators: 1, channels: 1) }
+        get '/super_admin/organizations'
+        loads = []
+        subscriber = ->(*, payload) { loads << payload[:sql] if payload[:name] == 'Account Load' }
+        few = ActiveSupport::Notifications.subscribed(subscriber, 'sql.active_record') { query_count { get '/super_admin/organizations' } }
+
+        organizations.each { |organization| 12.times { |index| account_with(organization, name: "Ещё #{organization.id}-#{index}", operators: 2, channels: 2) } }
+        many = query_count { get '/super_admin/organizations' }
+
+        expect(many).to eq(few)
+        expect(loads.grep(/organization_id/)).to be_empty
+        row = page.css('[data-testid="organizations-table"] tbody tr[data-organization-id]').find { |tr| tr['data-organization-id'] == organizations.first.id.to_s }
+        expect(row.css('td')[3..5].map { |cell| text(cell) }).to eq(%w[13 25 25])
+      end
+    end
+
     describe 'search' do
       let!(:alatau) { create(:organization, name: 'Alatau Group', bin: '980140000124') }
       let!(:nur) { create(:organization, name: 'Nur Clinic', legal_name: 'LLP Nur', bin: '010203040500') }
@@ -347,6 +366,196 @@ RSpec.describe 'Super Admin organizations', type: :request do
         get "/super_admin/organizations/#{organization.id}"
 
         expect(text(page.at_css('[data-testid="accounts-totals"]'))).to eq('Итого 3 4')
+      end
+
+      describe 'the accounts block with many accounts' do
+        def rows = page.css('[data-testid="accounts-block"] tbody tr[data-account-id]')
+
+        # «Филиал 01» ... in the order of the names; each has one operator and (the first ten) one channel
+        def fill(count)
+          Array.new(count) { |index| account_with(organization, name: format('Филиал %<number>02d', number: index + 1), operators: 1, channels: index < 10 ? 1 : 0) }
+        end
+
+        it 'shows 25 accounts to a page with a Russian pager, and the rest on the next page' do
+          fill(30)
+
+          get "/super_admin/organizations/#{organization.id}"
+          expect(rows.size).to eq(25)
+          expect(text(rows.first)).to include('Филиал 01')
+          expect(text(rows.last)).to include('Филиал 25')
+          pager = page.at_css('[data-testid="accounts-pager"]')
+          expect(text(pager)).to include('Страница 1 из 2', 'Следующая')
+          expect(pager.at_css('a[rel="next"]')['href']).to include("/super_admin/organizations/#{organization.id}?accounts_page=2")
+
+          get "/super_admin/organizations/#{organization.id}", params: { accounts_page: 2 }
+          expect(rows.map { |row| text(row.at_css('td')) }).to eq((26..30).map { |number| "Филиал #{number} ##{Account.find_by(name: "Филиал #{number}").id}" })
+          expect(text(page.at_css('[data-testid="accounts-pager"]'))).to include('Страница 2 из 2')
+        end
+
+        it 'has no pager for 25 accounts and keeps the plain «Итого»' do
+          fill(25)
+
+          get "/super_admin/organizations/#{organization.id}"
+
+          expect(rows.size).to eq(25)
+          expect(page.at_css('[data-testid="accounts-pager"]')).to be_nil
+          expect(text(page.at_css('[data-testid="accounts-totals"] th'))).to eq('Итого')
+        end
+
+        it 'adds up all the accounts in the totals row on every page, and says so' do
+          fill(30)
+          GlobalConfig.clear_cache
+
+          [{}, { accounts_page: 2 }].each do |params|
+            get "/super_admin/organizations/#{organization.id}", params: params
+            totals = page.at_css('[data-testid="accounts-totals"]')
+            expect(text(totals.at_css('th'))).to eq('Итого по всем аккаунтам')
+            expect(text(totals)).to end_with('30 10')
+            expect(text(page.at_css('[data-testid="accounts-block"] h2 + span'))).to eq('30 аккаунтов')
+          end
+        end
+
+        it 'shows the last page for a page past the end and the first for a page that is not a number' do
+          fill(30)
+
+          get "/super_admin/organizations/#{organization.id}", params: { accounts_page: 99 }
+          expect(rows.size).to eq(5)
+          expect(text(page.at_css('[data-testid="accounts-pager"]'))).to include('Страница 2 из 2')
+
+          get "/super_admin/organizations/#{organization.id}", params: { accounts_page: 'abc' }
+          expect(rows.size).to eq(25)
+
+          get "/super_admin/organizations/#{organization.id}", params: { accounts_page: ['1'] }
+          expect(response).to have_http_status(:ok)
+          expect(rows.size).to eq(25)
+        end
+
+        it 'costs the same number of queries for 30 and for 70 accounts' do
+          fill(30)
+          get "/super_admin/organizations/#{organization.id}"
+          few = query_count { get "/super_admin/organizations/#{organization.id}" }
+
+          40.times { |index| create(:account, name: "Ещё #{index}", organization: organization) }
+          many = query_count { get "/super_admin/organizations/#{organization.id}" }
+
+          expect(response).to have_http_status(:ok)
+          expect(many).to eq(few)
+        end
+      end
+
+      describe 'the picker of the account to link' do
+        def form = page.at_css("[data-testid='link-account'] form[action='/super_admin/organizations/#{organization.id}/link_account']")
+
+        def search = page.at_css("[data-testid='link-account-search']")
+
+        def options = page.css("[data-testid='link-account'] select[name='account_id'] option").reject { |option| option['value'].blank? }
+
+        it 'is a search field on the card, sent as a GET' do
+          create(:account, name: 'Свободный')
+
+          get "/super_admin/organizations/#{organization.id}"
+
+          expect(search['method']).to eq('get')
+          expect(search['action']).to eq("/super_admin/organizations/#{organization.id}")
+          expect(text(search.at_css('label'))).to eq('Найти аккаунт без организации')
+          expect(search.at_css('input[name="account_search"]')['maxlength']).to eq('100')
+          expect(search.at_css('input[type="submit"]')['value']).to eq('Найти')
+        end
+
+        it 'shows at most 20 of the free accounts, however many there are, and says the search has to be narrower' do
+          Array.new(45) { |index| create(:account, name: format('Свободный %<number>02d', number: index + 1)) }
+
+          get "/super_admin/organizations/#{organization.id}"
+
+          expect(options.size).to eq(20)
+          expect(text(options.first)).to start_with('Свободный 01')
+          expect(text(options.last)).to start_with('Свободный 20')
+          expect(text(page.at_css('[data-testid="more-matches"]'))).to eq('Показаны первые 20 совпадений. Чтобы найти другой аккаунт, уточните запрос.')
+        end
+
+        it 'does not say that when everything is shown' do
+          Array.new(3) { |index| create(:account, name: "Свободный #{index}") }
+
+          get "/super_admin/organizations/#{organization.id}"
+
+          expect(options.size).to eq(3)
+          expect(page.at_css('[data-testid="more-matches"]')).to be_nil
+        end
+
+        it 'finds an account by a part of its name and keeps the term in the field' do
+          wanted = create(:account, name: 'Clinic Alatau')
+          create(:account, name: 'Clinic Nur')
+
+          get "/super_admin/organizations/#{organization.id}", params: { account_search: 'alatau' }
+
+          expect(options.pluck('value')).to eq([wanted.id.to_s])
+          expect(search.at_css('input[name="account_search"]')['value']).to eq('alatau')
+        end
+
+        it 'finds an account by its number' do
+          wanted = create(:account, name: 'Номер')
+          create(:account, name: 'Другой')
+
+          get "/super_admin/organizations/#{organization.id}", params: { account_search: "##{wanted.id}" }
+
+          expect(options.pluck('value')).to eq([wanted.id.to_s])
+        end
+
+        it 'never offers an account of an organization, found or not' do
+          taken = account_with(create(:organization), name: 'Чужой аккаунт')
+          mine = account_with(organization, name: 'Мой аккаунт')
+          create(:account, name: 'Свободный')
+
+          get "/super_admin/organizations/#{organization.id}", params: { account_search: 'аккаунт' }
+
+          expect(options).to be_empty
+          expect(text(page.at_css('[data-testid="no-matches"]'))).to include('ничего не найдено')
+
+          get "/super_admin/organizations/#{organization.id}", params: { account_search: "##{taken.id}" }
+          expect(options).to be_empty
+          get "/super_admin/organizations/#{organization.id}", params: { account_search: "##{mine.id}" }
+          expect(options).to be_empty
+        end
+
+        it 'keeps the search form when nothing matches, so that it can be changed' do
+          create(:account, name: 'Свободный')
+
+          get "/super_admin/organizations/#{organization.id}", params: { account_search: 'нет такого' }
+
+          expect(form).to be_nil
+          expect(search).to be_present
+          expect(search.at_css('input[name="account_search"]')['value']).to eq('нет такого')
+        end
+
+        it 'takes a search that is not text for no search' do
+          create(:account, name: 'Свободный')
+
+          get "/super_admin/organizations/#{organization.id}", params: { account_search: ['а'] }
+
+          expect(response).to have_http_status(:ok)
+          expect(options.size).to eq(1)
+        end
+
+        it 'does not read every free account: the cost is the same for 30 and for 90 free accounts' do
+          Array.new(30) { |index| create(:account, name: "Свободный #{index}") }
+          get "/super_admin/organizations/#{organization.id}"
+          few = query_count { get "/super_admin/organizations/#{organization.id}" }
+
+          Array.new(60) { |index| create(:account, name: "Ещё свободный #{index}") }
+          many = query_count { get "/super_admin/organizations/#{organization.id}" }
+
+          expect(options.size).to eq(20)
+          expect(many).to eq(few)
+        end
+
+        it 'posts the chosen account to link_account' do
+          chosen = create(:account, name: 'Выбранный')
+
+          get "/super_admin/organizations/#{organization.id}", params: { account_search: 'Выбран' }
+          post form['action'], params: { account_id: options.first['value'] }
+
+          expect(chosen.reload.organization).to eq(organization)
+        end
       end
 
       it 'says so when there are no accounts and has no totals row' do
