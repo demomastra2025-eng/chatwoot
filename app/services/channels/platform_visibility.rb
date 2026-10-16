@@ -7,6 +7,10 @@
 #   Channels::PlatformVisibility.settings                  # => { "api" => "shown" }   (only what differs from the default)
 #   Channels::PlatformVisibility.state('api')               # => "shown"
 #   Channels::PlatformVisibility.update!({ 'api' => 'shown' }, actor: super_admin, request: request)
+#   Channels::PlatformVisibility.update!({ 'api' => 'shown', 'sms' => 'hidden' }, expected: { 'api' => 'hidden', 'sms' => 'hidden' })
+#
+# `expected` is what the person saw when the page was drawn: only the channels whose switch differs from it are written, so
+# a form that was drawn before somebody else moved a switch does not move it back.
 #
 # Only the deviations from the catalog default are stored, so a channel that goes back to its default leaves no trace
 # in the row. Every change leaves one entry in the audit log (action update_channel_visibility).
@@ -39,8 +43,11 @@ class Channels::PlatformVisibility
     # Saves the requested states ({ 'api' => 'shown' }, channels that are not named stay as they are) and audits what
     # changed. Returns { 'api' => { 'from' => 'hidden', 'to' => 'shown' } }; nothing is written when nothing changes.
     # Raises InvalidSettings, before writing anything, for an unknown channel or a state other than shown / hidden.
-    def update!(requested, actor: nil, request: nil)
+    # With `expected` (the states the person saw) only the channels they moved are written.
+    def update!(requested, expected: nil, actor: nil, request: nil)
       desired = validate!(requested)
+      seen = expected.nil? ? nil : validate!(expected)
+      desired = changed_since(desired, seen) if seen
       config = InstallationConfig.find_or_initialize_by(name: CONFIG_NAME)
       changes = {}
       InstallationConfig.transaction do
@@ -53,6 +60,12 @@ class Channels::PlatformVisibility
     end
 
     private
+
+    # The channels whose switch the person moved: a channel they were not shown counts as moved. A switch has two
+    # states, so a switch that somebody else moved meanwhile and that the person moves too ends in the same state.
+    def changed_since(desired, seen)
+      desired.reject { |key, state| seen[key] == state }
+    end
 
     def write(config, before, desired)
       after = before.merge(desired).reject { |key, state| state == Channels::Catalog.default_state(key) }
@@ -74,7 +87,7 @@ class Channels::PlatformVisibility
     end
 
     def validate!(requested)
-      raise InvalidSettings, 'channel settings must be a map of channel => shown | hidden' unless requested.respond_to?(:to_h)
+      raise InvalidSettings, 'channel settings must be a map of channel => shown | hidden' unless requested.is_a?(Hash)
 
       requested.to_h.each_with_object({}) do |(key, state), desired|
         raise InvalidSettings, "unknown channel: #{key}" unless Channels::Catalog.key?(key)

@@ -157,10 +157,74 @@ RSpec.describe 'Super admin channels page', type: :request do
         patch '/super_admin/channels', params: { channels: { 'api' => 'maybe' } }
         expect(flash[:alert]).to eq(flash_text(:invalid))
 
-        patch '/super_admin/channels', params: { channels: 'api' }
+        patch '/super_admin/channels', params: { channels: { 'api' => %w[shown] } }
         expect(flash[:alert]).to eq(flash_text(:invalid))
 
         expect(stored_settings).to be_nil
+      end
+
+      describe 'a malformed form' do
+        let(:malformed) do
+          [
+            { channels: 'api' },
+            { channels: %w[api shown] },
+            { channels: [{ 'api' => 'shown' }] },
+            { channels: { 'api' => 'shown' }, previous: %w[api] }
+          ]
+        end
+
+        it 'answers 422 with a Russian message, shows the page again and saves nothing (a string or an array instead of a map)' do
+          malformed.each do |params|
+            patch '/super_admin/channels', params: params
+
+            expect(response).to have_http_status(:unprocessable_content), params.inspect
+            expect(flash[:alert]).to eq(flash_text(:malformed))
+            expect(page.at_css('.flash-alert').text.squish).to eq(flash_text(:malformed))
+            expect(page.css('tr[data-channel]').size).to eq(Channels::Catalog.keys.size)
+          end
+          expect(stored_settings).to be_nil
+        end
+      end
+
+      describe 'two administrators with the same page open' do
+        let(:as_drawn) { Channels::Catalog.entries.to_h { |entry| [entry.key, entry.default] } }
+
+        it 'draws the state each switch had in a hidden field' do
+          change_platform_channel_visibility('api' => 'shown')
+
+          get '/super_admin/channels'
+
+          expect(row('api').at_css('input[type="hidden"][name="previous[api]"]')['value']).to eq('shown')
+          expect(row('sms').at_css('input[type="hidden"][name="previous[sms]"]')['value']).to eq('hidden')
+          expect(row('website').at_css('input[type="hidden"][name="previous[website]"]')['value']).to eq('shown')
+        end
+
+        it 'does not undo the change of the first one: the second saves only the switch he moved' do
+          change_platform_channel_visibility('api' => 'shown') # the first one opened the API channel after the page was drawn
+
+          patch '/super_admin/channels', params: { channels: as_drawn.merge('sms' => 'shown'), previous: as_drawn }
+
+          expect(response).to redirect_to('/super_admin/channels')
+          expect(flash[:notice]).to eq(flash_text(:saved))
+          expect(stored_settings).to eq('api' => 'shown', 'sms' => 'shown')
+          audit = Audited::Audit.where(action: 'update_channel_visibility').order(:id).last
+          expect(audit.audited_changes['channels']).to eq('sms' => { 'from' => 'hidden', 'to' => 'shown' })
+        end
+
+        it 'says nothing changed when the second only presses «Сохранить», and leaves the change of the first as it is' do
+          change_platform_channel_visibility('api' => 'shown')
+
+          patch '/super_admin/channels', params: { channels: as_drawn, previous: as_drawn }
+
+          expect(flash[:notice]).to eq(flash_text(:unchanged))
+          expect(stored_settings).to eq('api' => 'shown')
+        end
+
+        it 'still takes a switch that was not on the page he saw as moved' do
+          patch '/super_admin/channels', params: { channels: { 'api' => 'shown', 'sms' => 'shown' }, previous: { 'api' => 'hidden' } }
+
+          expect(stored_settings).to eq('api' => 'shown', 'sms' => 'shown')
+        end
       end
     end
   end

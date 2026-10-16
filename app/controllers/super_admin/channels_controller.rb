@@ -1,14 +1,24 @@
 # The platform switch of every channel: which channels clinics see in the operator app and can connect.
 # Saved in InstallationConfig CHANNEL_VISIBILITY (Channels::PlatformVisibility); a single clinic can still be given
 # an exception on its own card (Accounts::ChannelOverrides). Channels that are already connected keep working.
+#
+# The form posts the switches (`channels[key]`) and the state each one had when the page was drawn (`previous[key]`).
+# Only the switches that moved are saved, so a page that was drawn before somebody else moved a switch does not move
+# it back: two administrators cannot silently undo each other.
 class SuperAdmin::ChannelsController < SuperAdmin::ApplicationController
+  # What a malformed value (an array or a string where the form sends a map) is parsed as
+  MALFORMED = Object.new.freeze
+
   def show
-    @rows = channel_rows
-    @updated_at = Channels::PlatformVisibility.updated_at
+    load_page
   end
 
   def update
-    changes = Channels::PlatformVisibility.update!(submitted_states, actor: current_super_admin, request: request)
+    requested = submitted_map(:channels)
+    expected = submitted_map(:previous)
+    return render_malformed if [requested, expected].include?(MALFORMED)
+
+    changes = Channels::PlatformVisibility.update!(requested, expected: expected, actor: current_super_admin, request: request)
     notice_key = changes.any? ? :saved : :unchanged
     redirect_to super_admin_channels_path, notice: I18n.t("super_admin.channels.flashes.#{notice_key}")
   rescue Channels::PlatformVisibility::InvalidSettings
@@ -17,9 +27,23 @@ class SuperAdmin::ChannelsController < SuperAdmin::ApplicationController
 
   private
 
-  def submitted_states
-    raw = params[:channels]
-    raw.respond_to?(:to_unsafe_h) ? raw.to_unsafe_h : raw
+  def load_page
+    @rows = channel_rows
+    @updated_at = Channels::PlatformVisibility.updated_at
+  end
+
+  # nil when the param is absent, a Hash, or MALFORMED for anything that is not a map
+  def submitted_map(name)
+    raw = params[name]
+    return if raw.nil?
+
+    raw.respond_to?(:to_unsafe_h) ? raw.to_unsafe_h : MALFORMED
+  end
+
+  def render_malformed
+    load_page
+    flash.now[:alert] = I18n.t('super_admin.channels.flashes.malformed')
+    render :show, status: :unprocessable_content
   end
 
   # One row per catalog channel: the entry, whether the platform shows it, how many inboxes exist, how many clinics have

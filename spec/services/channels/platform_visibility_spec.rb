@@ -102,8 +102,42 @@ RSpec.describe Channels::PlatformVisibility do
       expect { described_class.update!({ 'api' => 'sometimes' }) }
         .to raise_error(described_class::InvalidSettings, /unknown state for api/)
       expect { described_class.update!('api') }.to raise_error(described_class::InvalidSettings)
+      expect { described_class.update!(%w[api shown]) }.to raise_error(described_class::InvalidSettings)
+      expect { described_class.update!([{ 'api' => 'shown' }]) }.to raise_error(described_class::InvalidSettings)
+      expect { described_class.update!({ 'api' => 'shown' }, expected: %w[api]) }.to raise_error(described_class::InvalidSettings)
 
       expect(InstallationConfig.find_by(name: config_name)).to be_nil
+    end
+
+    describe 'with the states the person saw (expected)' do
+      it 'writes only the channels the person moved' do
+        described_class.update!({ 'api' => 'shown' }) # somebody else, after the page was drawn
+
+        changes = described_class.update!(
+          { 'api' => 'hidden', 'sms' => 'shown', 'website' => 'shown' },
+          expected: { 'api' => 'hidden', 'sms' => 'hidden', 'website' => 'shown' }
+        )
+
+        expect(changes).to eq('sms' => { 'from' => 'hidden', 'to' => 'shown' })
+        expect(described_class.settings).to eq('api' => 'shown', 'sms' => 'shown')
+      end
+
+      it 'counts a channel the person was not shown as moved' do
+        changes = described_class.update!({ 'api' => 'shown', 'sms' => 'shown' }, expected: { 'api' => 'hidden' })
+
+        expect(changes.keys).to eq(%w[api sms])
+      end
+
+      it 'writes and audits nothing when the person moved nothing' do
+        described_class.update!({ 'api' => 'shown' })
+        audits_before = audits.count
+
+        changes = described_class.update!({ 'api' => 'hidden' }, expected: { 'api' => 'hidden' })
+
+        expect(changes).to eq({})
+        expect(described_class.settings).to eq('api' => 'shown')
+        expect(audits.count).to eq(audits_before)
+      end
     end
   end
 

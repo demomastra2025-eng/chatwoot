@@ -49,6 +49,8 @@ inboxes that are already connected keep working.
                 <div class="flex items-center gap-3">
                   <%# Hidden field first: an unchecked switch still sends «hidden». %>
                   <%= hidden_field_tag "channels[#{entry.key}]", Channels::Catalog::HIDDEN, id: nil %>
+                  <%# The state the switch had when the page was drawn: only the switches that moved are saved. %>
+                  <%= hidden_field_tag "previous[#{entry.key}]", row[:shown] ? Channels::Catalog::SHOWN : Channels::Catalog::HIDDEN, id: nil %>
                   <label class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center">
                     <%= check_box_tag "channels[#{entry.key}]", Channels::Catalog::SHOWN, row[:shown],
                                       id: "channel-#{entry.key}", class: 'peer sr-only',
