@@ -43,19 +43,27 @@ class SuperAdmin::InstanceStatusesController < SuperAdmin::ApplicationController
     return [row(:connection, status_word(:unavailable), :bad)] unless redis.ping == 'PONG'
 
     info = redis.info
+    [row(:connection, status_word(:available), :good), *redis_server_rows(info), *redis_memory_rows(info)]
+  rescue Redis::CannotConnectError
+    [row(:connection, status_word(:unavailable), :bad)]
+  end
+
+  def redis_server_rows(info)
     [
-      row(:connection, status_word(:available), :good),
       row(:redis_version, info['redis_version']),
       row(:clients, SuperAdmin::DisplayHelper.format_number(info['connected_clients'].to_i)),
-      row(:max_clients, SuperAdmin::DisplayHelper.format_number(info['maxclients'].to_i)),
+      row(:max_clients, SuperAdmin::DisplayHelper.format_number(info['maxclients'].to_i))
+    ]
+  end
+
+  def redis_memory_rows(info)
+    [
       row(:memory_used, memory(info['used_memory'])),
       row(:memory_peak, memory(info['used_memory_peak'])),
       row(:memory_total, memory(info['total_system_memory'])),
       row(:max_memory, info['maxmemory'].to_i.zero? ? I18n.t('super_admin.instance_status.unlimited') : memory(info['maxmemory'])),
       row(:eviction_policy, info['maxmemory_policy'])
     ]
-  rescue Redis::CannotConnectError
-    [row(:connection, status_word(:unavailable), :bad)]
   end
 
   def memory(bytes)
