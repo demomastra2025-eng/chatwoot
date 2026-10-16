@@ -32,6 +32,7 @@ const { t } = useI18n();
 const store = useStore();
 const { currentAccount } = useAccount();
 
+const rawInboxes = useMapGetter('inboxes/getInboxes');
 const allInboxes = useMapGetter('inboxes/getAllInboxes');
 const allAutomations = useMapGetter('automations/getAutomations');
 const automationUIFlags = useMapGetter('automations/getUIFlags');
@@ -64,9 +65,13 @@ const presetStates = reactive(
   )
 );
 
+const effectiveInboxes = computed(() =>
+  rawInboxes.value?.length ? rawInboxes.value : allInboxes.value || []
+);
+
 const whatsAppInboxes = computed(() =>
-  (allInboxes.value || []).filter(
-    inbox => inbox.channel_type === INBOX_TYPES.WHATSAPP
+  effectiveInboxes.value.filter(
+    inbox => (inbox.channel_type || inbox.channelType) === INBOX_TYPES.WHATSAPP
   )
 );
 
@@ -84,11 +89,12 @@ const inboxOptions = computed(() =>
   }))
 );
 
-const rawTemplates = computed(() =>
-  Array.isArray(selectedInbox.value?.message_templates)
-    ? selectedInbox.value.message_templates
-    : []
-);
+const rawTemplates = computed(() => {
+  const templates =
+    selectedInbox.value?.message_templates ||
+    selectedInbox.value?.messageTemplates;
+  return Array.isArray(templates) ? templates : [];
+});
 
 const makeTemplateKey = template =>
   `${String(template?.name || '').trim()}::${String(template?.language || 'ru').trim()}`;
@@ -516,6 +522,9 @@ const handleTogglePreset = async (preset, nextEnabled) => {
 };
 
 onMounted(() => {
+  if (!effectiveInboxes.value.length) {
+    store.dispatch('inboxes/get');
+  }
   store.dispatch('automations/get');
 });
 </script>

@@ -1,5 +1,6 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
+import { getAppleEmojiUrl } from 'shared/helpers/appleEmoji';
 
 const props = defineProps({
   emoji: {
@@ -12,39 +13,38 @@ const props = defineProps({
   },
 });
 
-const normalizedEmoji = computed(() => {
-  const raw = String(props.emoji || '');
-  if (!raw) return '';
-  if (raw.length === 1) {
-    const code = raw.codePointAt(0);
-    if (code >= 0x2600 && code <= 0x27bf) {
-      return `${raw}\uFE0F`;
-    }
-  }
-  return raw;
-});
+const failedUrls = new Set();
 
-const fontSizeClass = computed(() => {
-  if (props.sizeClass.includes('size-7')) return 'text-[1.625rem]';
-  if (props.sizeClass.includes('size-6')) return 'text-[1.375rem]';
-  if (props.sizeClass.includes('size-4')) return 'text-base';
-  return 'text-lg';
-});
+const imageUrl = computed(() => getAppleEmojiUrl(props.emoji));
+const hasError = ref(false);
+
+watch(
+  imageUrl,
+  url => {
+    hasError.value = Boolean(url && failedUrls.has(url));
+  },
+  { immediate: true }
+);
+
+function handleError() {
+  if (imageUrl.value) {
+    failedUrls.add(imageUrl.value);
+  }
+  hasError.value = true;
+}
 </script>
 
 <template>
-  <span
-    :class="[sizeClass, fontSizeClass]"
-    class="emoji-font inline-flex items-center justify-center leading-none select-none pointer-events-none shrink-0"
-  >
-    {{ normalizedEmoji }}
-  </span>
+  <img
+    v-if="imageUrl && !hasError"
+    :src="imageUrl"
+    :alt="emoji"
+    :class="sizeClass"
+    class="apple-emoji inline-block object-contain select-none pointer-events-none shrink-0"
+    draggable="false"
+    loading="lazy"
+    decoding="async"
+    @error="handleError"
+  />
+  <span v-else class="emoji-font leading-none select-none">{{ emoji }}</span>
 </template>
-
-<style scoped>
-.emoji-font {
-  font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji',
-    'Segoe UI Symbol', sans-serif;
-  font-variant-emoji: emoji;
-}
-</style>

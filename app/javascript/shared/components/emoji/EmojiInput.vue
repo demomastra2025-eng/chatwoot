@@ -55,6 +55,9 @@ export default {
     };
   },
   computed: {
+    emojis() {
+      return ENRICHED_EMOJIS;
+    },
     categories() {
       return ENRICHED_EMOJIS;
     },
@@ -164,7 +167,7 @@ export default {
       }
     },
     getFirstEmojiByCategoryName(categoryName) {
-      const categoryItem = this.emojis.find(category =>
+      const categoryItem = ENRICHED_EMOJIS.find(category =>
         category.name === categoryName ? category : null
       );
       return categoryItem ? categoryItem.emojis[0].emoji : '';
@@ -184,7 +187,7 @@ export default {
       if (this.selectedKey === FREQUENT_KEY) {
         return this.$t('EMOJI.FREQUENTLY_USED');
       }
-      const cat = this.emojis.find(c => c.name === this.selectedKey);
+      const cat = ENRICHED_EMOJIS.find(c => c.name === this.selectedKey);
       return this.categoryTitle(cat);
     },
     handleClick(emoji) {

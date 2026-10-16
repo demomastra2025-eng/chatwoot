@@ -119,20 +119,24 @@ const replyToPreview = computed(() => {
       />
     </div>
     <slot />
-    <MessageReactions
-      v-if="shouldShowReactions"
-      :class="variant === MESSAGE_VARIANTS.EMAIL ? 'px-3 pb-1' : ''"
-    />
-    <MessageMeta
-      v-if="shouldShowMeta"
+    <div
+      v-if="shouldShowReactions || shouldShowMeta"
+      class="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 mt-1.5 [&:not(:has(*))]:hidden"
       :class="[
         flexOrientationClass,
         variant === MESSAGE_VARIANTS.EMAIL ? 'px-3 pb-3' : '',
-        variant === MESSAGE_VARIANTS.PRIVATE
-          ? 'text-n-amber-12/50'
-          : 'text-n-slate-11',
       ]"
-      class="mt-2"
-    />
+    >
+      <MessageReactions v-if="shouldShowReactions" />
+      <MessageMeta
+        v-if="shouldShowMeta"
+        :class="[
+          orientation === ORIENTATION.RIGHT ? 'ltr:ml-auto rtl:mr-auto' : '',
+          variant === MESSAGE_VARIANTS.PRIVATE
+            ? 'text-n-amber-12/50'
+            : 'text-n-slate-11',
+        ]"
+      />
+    </div>
   </div>
 </template>

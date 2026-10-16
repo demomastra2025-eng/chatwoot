@@ -26,10 +26,6 @@ body {
     'Helvetica Neue',
     Tahoma,
     Arial,
-    'Apple Color Emoji',
-    'Segoe UI Emoji',
-    'Segoe UI Symbol',
-    'Noto Color Emoji',
     sans-serif !important;
   -moz-osx-font-smoothing: grayscale;
   -webkit-font-smoothing: antialiased;
@@ -268,4 +264,13 @@ body {
     line-height: 18px; /* 150% */
     letter-spacing: -0.24px;
   }
+}
+
+img.apple-emoji--inline {
+  display: inline-block;
+  width: 1.15em;
+  height: 1.15em;
+  margin: 0 0.05em;
+  vertical-align: -0.2em;
+  object-fit: contain;
 }

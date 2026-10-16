@@ -4,6 +4,15 @@ import { useMessageFormatter } from 'shared/composables/useMessageFormatter';
 import { ATTACHMENT_ICONS } from 'shared/constants/messages';
 import { useMapGetter } from 'dashboard/composables/store';
 import { getLocalizedActivityMessage } from 'dashboard/helper/activityMessageHelper';
+import { replaceEmojisWithAppleImages } from 'shared/helpers/appleEmoji';
+
+const escapeHtml = value =>
+  String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 
 export default {
   name: 'MessagePreview',
@@ -57,6 +66,9 @@ export default {
             })
           : content
       );
+    },
+    parsedLastMessageHtml() {
+      return replaceEmojisWithAppleImages(escapeHtml(this.parsedLastMessage));
     },
     isVoiceNote() {
       const { content_attributes: contentAttributes = {} } = this.message;
@@ -124,9 +136,7 @@ export default {
       />
       {{ $t('CHAT_LIST.ATTACHMENTS.image.CONTENT') }}
     </span>
-    <span v-else-if="message.content">
-      {{ parsedLastMessage }}
-    </span>
+    <span v-else-if="message.content" v-html="parsedLastMessageHtml" />
     <span v-else-if="message.attachments">
       <fluent-icon
         v-if="attachmentIcon && showMessageType"

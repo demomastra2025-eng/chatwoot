@@ -16,10 +16,6 @@ const defaultSansFonts = [
   '"Helvetica Neue"',
   'Tahoma',
   'Arial',
-  '"Apple Color Emoji"',
-  '"Segoe UI Emoji"',
-  '"Segoe UI Symbol"',
-  '"Noto Color Emoji"',
   'sans-serif !important',
 ];
 const brandSansFonts = ['Geist', ...defaultSansFonts];
