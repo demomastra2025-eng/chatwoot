@@ -1,4 +1,5 @@
 <script>
+import { defineAsyncComponent } from 'vue';
 import { useAlert } from 'dashboard/composables';
 import { mapGetters } from 'vuex';
 import { useMessageFormatter } from 'shared/composables/useMessageFormatter';
@@ -14,10 +15,20 @@ import {
 import MenuItem from '../../../components/widgets/conversation/contextMenu/menuItem.vue';
 import { useTrack } from 'dashboard/composables';
 import NextButton from 'dashboard/components-next/button/Button.vue';
+import {
+  getQuickReactions,
+  recordReactionUsage,
+} from 'shared/helpers/emojiUsage';
+import { getCurrentUserReactionEmoji } from 'dashboard/components-next/message/helpers/messageReactions';
+
+const EmojiInput = defineAsyncComponent(
+  () => import('shared/components/emoji/EmojiInput.vue')
+);
 
 export default {
   components: {
     AddCannedModal,
+    EmojiInput,
     MenuItem,
     ContextMenu,
     NextButton,
@@ -56,6 +67,8 @@ export default {
     return {
       isCannedResponseModalOpen: false,
       showDeleteModal: false,
+      showReactionPicker: false,
+      isSubmittingReaction: false,
     };
   },
   computed: {
@@ -63,6 +76,7 @@ export default {
       getAccount: 'accounts/getAccount',
       currentAccountId: 'getCurrentAccountId',
       getUISettings: 'getUISettings',
+      storeCurrentUserId: 'getCurrentUserID',
     }),
     plainTextContent() {
       return this.getPlainText(this.messageContent);
@@ -80,6 +94,34 @@ export default {
       return useSnakeCase(
         this.message.content_attributes ?? this.message.contentAttributes
       );
+    },
+    currentUserId() {
+      return (
+        this.message.currentUserId ??
+        this.message.current_user_id ??
+        this.storeCurrentUserId
+      );
+    },
+    currentUserReactionEmoji() {
+      return getCurrentUserReactionEmoji(
+        this.message.content_attributes ?? this.message.contentAttributes,
+        this.currentUserId
+      );
+    },
+    quickReactions() {
+      const base = getQuickReactions(6);
+      const active = this.currentUserReactionEmoji;
+      if (active && !base.includes(active)) {
+        return [active, ...base.slice(0, 5)];
+      }
+      return base;
+    },
+  },
+  watch: {
+    isOpen(newVal) {
+      if (!newVal) {
+        this.showReactionPicker = false;
+      }
     },
   },
   methods: {
@@ -116,7 +158,33 @@ export default {
       this.$emit('open', e);
     },
     handleClose(e) {
+      this.showReactionPicker = false;
       this.$emit('close', e);
+    },
+    toggleReactionPicker() {
+      this.showReactionPicker = !this.showReactionPicker;
+    },
+    async handleQuickReaction(emoji) {
+      if (!emoji || this.isSubmittingReaction) return;
+
+      this.isSubmittingReaction = true;
+      const isRemoving = this.currentUserReactionEmoji === emoji;
+      if (!isRemoving) {
+        recordReactionUsage(emoji);
+      }
+
+      try {
+        await this.$store.dispatch('toggleMessageReaction', {
+          conversationId: this.conversationId,
+          messageId: this.messageId,
+          emoji,
+        });
+        this.handleClose();
+      } catch (error) {
+        useAlert(this.$t('CONVERSATION.REACTIONS.ERROR'));
+      } finally {
+        this.isSubmittingReaction = false;
+      }
     },
     handleTranslate() {
       const { locale: accountLocale } = this.getAccount(this.currentAccountId);
@@ -202,6 +270,46 @@ export default {
       @close="handleClose"
     >
       <div class="menu-container">
+        <div
+          v-if="enabledOptions['react']"
+          class="flex items-center gap-0.5 px-1 py-0.5 select-none"
+          data-testid="quick-reaction-bar"
+        >
+          <button
+            v-for="emoji in quickReactions"
+            :key="emoji"
+            type="button"
+            class="emoji-font inline-flex items-center justify-center w-7 h-7 rounded-full text-base leading-none transition-transform duration-150 hover:scale-125 hover:bg-n-alpha-2 cursor-pointer"
+            :class="{
+              'bg-n-brand/15 ring-1 ring-n-brand/50':
+                currentUserReactionEmoji === emoji,
+            }"
+            :disabled="isSubmittingReaction"
+            @click.stop="handleQuickReaction(emoji)"
+          >
+            {{ emoji }}
+          </button>
+          <button
+            type="button"
+            :title="$t('CONVERSATION.REACTIONS.MORE')"
+            data-testid="open-reaction-picker"
+            class="inline-flex items-center justify-center w-7 h-7 rounded-full text-n-slate-11 hover:text-n-slate-12 hover:bg-n-alpha-2 transition-colors cursor-pointer"
+            :class="{
+              'bg-n-alpha-2 text-n-slate-12': showReactionPicker,
+            }"
+            @click.stop="toggleReactionPicker"
+          >
+            <span class="i-lucide-plus size-4" />
+          </button>
+        </div>
+        <div
+          v-if="enabledOptions['react'] && showReactionPicker"
+          class="px-1 py-1 w-[19.5rem]"
+          @click.stop
+        >
+          <EmojiInput :on-click="handleQuickReaction" inline />
+        </div>
+        <hr v-if="enabledOptions['react']" />
         <MenuItem
           v-if="enabledOptions['replyTo']"
           :option="{

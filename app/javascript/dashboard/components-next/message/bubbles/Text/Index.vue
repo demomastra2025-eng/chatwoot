@@ -74,36 +74,6 @@ const telegramForwardedSource = computed(() => {
   return t('CONVERSATION.TELEGRAM.UNKNOWN_SOURCE');
 });
 
-const telegramReactionSummary = computed(() => {
-  const results = contentAttributes.value?.telegramReactions?.results || [];
-
-  return results.map(item => {
-    const reaction = item?.reaction || {};
-
-    if (reaction.emoji) {
-      return `${reaction.emoji} ${item.count}`;
-    }
-
-    if (reaction.type === 'custom_emoji') {
-      return `${t('CONVERSATION.TELEGRAM.CUSTOM_EMOJI')} ${item.count}`;
-    }
-
-    if (reaction.type === 'paid') {
-      return `${t('CONVERSATION.TELEGRAM.PAID_REACTION')} ${item.count}`;
-    }
-
-    return `${t('CONVERSATION.TELEGRAM.REACTION')} ${item.count}`;
-  });
-});
-
-const whatsappReactionSummary = computed(() => {
-  const reactions = contentAttributes.value?.whatsappReactions || {};
-
-  return Object.values(reactions)
-    .map(reaction => reaction?.emoji)
-    .filter(Boolean);
-});
-
 const handleSeeOriginal = () => {
   renderOriginal.value = !renderOriginal.value;
 };
@@ -141,21 +111,6 @@ const handleSeeOriginal = () => {
           {{ contentAttributes.submittedEmail }}
         </div>
       </template>
-      <div
-        v-if="telegramReactionSummary.length"
-        class="text-xs text-n-slate-11 flex flex-wrap items-center gap-1"
-      >
-        <span class="font-medium">
-          {{ $t('CONVERSATION.TELEGRAM.REACTIONS') }}
-        </span>
-        <span>{{ telegramReactionSummary.join(' · ') }}</span>
-      </div>
-      <div
-        v-if="whatsappReactionSummary.length"
-        class="text-sm text-n-slate-11 flex flex-wrap items-center gap-1"
-      >
-        <span>{{ whatsappReactionSummary.join(' ') }}</span>
-      </div>
       <CaptainToolExecutionGroup
         :additional-attributes="additionalAttributes"
       />

@@ -132,6 +132,8 @@ class WhatsappWeb::IncomingMessageService < Whatsapp::IncomingMessageBaseService
       {
         location: location_payload
       }
+    when 'reaction'
+      reaction_payload
     else
       {
         text: {
@@ -216,8 +218,23 @@ class WhatsappWeb::IncomingMessageService < Whatsapp::IncomingMessageBaseService
                          message.dig(:documentWithCaptionMessage, :message, :documentMessage).present?
     return 'sticker' if message[:stickerMessage].present?
     return 'location' if message[:locationMessage].present?
+    return 'reaction' if message[:reactionMessage].present?
 
     'unsupported'
+
+  end
+
+  def reaction_payload
+    payload = params.dig(:message, :reactionMessage).to_h.deep_symbolize_keys
+    raw_timestamp = payload[:senderTimestampMs] || params[:messageTimestamp]
+
+    {
+      timestamp: raw_timestamp&.to_s,
+      reaction: {
+        message_id: payload.dig(:key, :id).to_s,
+        emoji: payload[:text].to_s
+      }
+    }.compact
   end
 
   def extracted_text_body

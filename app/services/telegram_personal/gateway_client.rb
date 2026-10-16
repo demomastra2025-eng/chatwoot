@@ -109,6 +109,20 @@ class TelegramPersonal::GatewayClient
     )
   end
 
+  def react_message!(message:, emoji:)
+    recipient_id, chat_id = outbound_target!(message)
+
+    post_with_runtime_retry(
+      "/internal/channels/#{channel.id}/messages/react",
+      body: {
+        recipient_id: recipient_id,
+        chat_id: chat_id,
+        message_id: message.source_id,
+        emoji: emoji.to_s
+      }
+    )
+  end
+
   def mark_read!(recipient_id:, chat_id:, max_id:)
     post_with_runtime_retry(
       "/internal/channels/#{channel.id}/mark-read",

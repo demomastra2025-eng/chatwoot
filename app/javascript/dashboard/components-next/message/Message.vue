@@ -483,6 +483,7 @@ const payloadForContextMenu = computed(() => {
     content_attributes: props.contentAttributes,
     content: props.content,
     conversation_id: props.conversationId,
+    currentUserId: props.currentUserId,
   };
 });
 
@@ -539,6 +540,10 @@ const contextMenuEnabledOptions = computed(() => {
       !props.private &&
       props.inboxSupportsReplyTo.outgoing &&
       !isFailedOrProcessing,
+    react:
+      !isFailedOrProcessing &&
+      !isMessageDeleted.value &&
+      isBubble.value,
   };
 });
 
@@ -577,6 +582,16 @@ function openContextMenu(e) {
   contextMenuPosition.value = {
     x: e.pageX || e.clientX,
     y: e.pageY || e.clientY,
+  };
+  showContextMenu.value = true;
+}
+
+function openContextMenuFromButton(e) {
+  e.preventDefault();
+  const rect = e.currentTarget?.getBoundingClientRect?.();
+  contextMenuPosition.value = {
+    x: rect ? rect.left : e.pageX || e.clientX,
+    y: rect ? rect.bottom + 4 : e.pageY || e.clientY,
   };
   showContextMenu.value = true;
 }
@@ -761,7 +776,7 @@ provideMessageContext({
         <Avatar v-else v-bind="avatarInfo" :size="24" />
       </div>
       <div
-        class="[grid-area:bubble] flex max-w-full min-w-0"
+        class="[grid-area:bubble] flex items-center gap-1 max-w-full min-w-0 group/message-bubble"
         :class="{
           'ltr:ml-8 rtl:mr-8 justify-end': orientation === ORIENTATION.RIGHT,
           'ltr:mr-8 rtl:ml-8': orientation === ORIENTATION.LEFT,
@@ -769,7 +784,35 @@ provideMessageContext({
         }"
         @contextmenu="openContextMenu($event)"
       >
+        <button
+          v-if="
+            contextMenuEnabledOptions.react &&
+            orientation === ORIENTATION.RIGHT &&
+            variant !== MESSAGE_VARIANTS.EMAIL
+          "
+          type="button"
+          :title="$t('CONVERSATION.REACTIONS.ADD')"
+          data-testid="message-quick-react-trigger"
+          class="opacity-0 group-hover/message-bubble:opacity-100 focus:opacity-100 transition-opacity duration-150 inline-flex items-center justify-center w-6 h-6 rounded-full text-n-slate-10 hover:text-n-slate-12 hover:bg-n-alpha-2 shrink-0 skip-context-menu cursor-pointer"
+          @click.stop="openContextMenuFromButton($event)"
+        >
+          <span class="i-lucide-smile-plus size-3.5 skip-context-menu" />
+        </button>
         <Component :is="componentToRender" />
+        <button
+          v-if="
+            contextMenuEnabledOptions.react &&
+            orientation === ORIENTATION.LEFT &&
+            variant !== MESSAGE_VARIANTS.EMAIL
+          "
+          type="button"
+          :title="$t('CONVERSATION.REACTIONS.ADD')"
+          data-testid="message-quick-react-trigger"
+          class="opacity-0 group-hover/message-bubble:opacity-100 focus:opacity-100 transition-opacity duration-150 inline-flex items-center justify-center w-6 h-6 rounded-full text-n-slate-10 hover:text-n-slate-12 hover:bg-n-alpha-2 shrink-0 skip-context-menu cursor-pointer"
+          @click.stop="openContextMenuFromButton($event)"
+        >
+          <span class="i-lucide-smile-plus size-3.5 skip-context-menu" />
+        </button>
       </div>
       <MessageError
         v-if="contentAttributes.externalError"

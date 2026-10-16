@@ -1,7 +1,20 @@
 {
   "EMOJI": {
-    "PLACEHOLDER": "Поиск эмодзи",
+    "PLACEHOLDER": "Поиск эмодзи...",
     "NOT_FOUND": "Эмодзи не соответствуют вашему запросу",
-    "REMOVE": "Удалить"
+    "REMOVE": "Удалить",
+    "FREQUENTLY_USED": "Часто используемые",
+    "CATEGORIES": {
+      "FREQUENTLY_USED": "Часто используемые",
+      "SMILEYS_AND_EMOTION": "Смайлы и эмоции",
+      "PEOPLE_AND_BODY": "Люди и жесты",
+      "ANIMALS_AND_NATURE": "Животные и природа",
+      "FOOD_AND_DRINK": "Еда и напитки",
+      "TRAVEL_AND_PLACES": "Путешествия и места",
+      "ACTIVITIES": "Активности",
+      "OBJECTS": "Предметы и медицина",
+      "SYMBOLS": "Символы",
+      "FLAGS": "Флаги"
+    }
   }
 }

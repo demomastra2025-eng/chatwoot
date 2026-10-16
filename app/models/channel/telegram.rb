@@ -131,6 +131,24 @@ class Channel::Telegram < ApplicationRecord
     true
   end
 
+  def send_reaction(message:, emoji:)
+    reaction_payload = emoji.present? ? [{ type: 'emoji', emoji: emoji.to_s }] : []
+    body = {
+      chat_id: chat_id(message),
+      message_id: message.source_id.to_i,
+      reaction: reaction_payload.to_json
+    }.merge(business_body(message))
+
+    response = HTTParty.post(
+      "#{telegram_api_url}/setMessageReaction",
+      body: body
+    )
+
+    raise response.parsed_response['description'] unless response.success?
+
+    response.parsed_response
+  end
+
   def reply_to_message_id(message)
     message.content_attributes['in_reply_to_external_id']
   end

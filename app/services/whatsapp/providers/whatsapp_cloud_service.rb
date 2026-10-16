@@ -205,6 +205,34 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
     response.success?
   end
 
+  def send_reaction(phone_number, target_message_id, emoji, conversation: nil)
+    built_payload = Whatsapp::OutboundRichMessageBuilder.new(
+      payload: {
+        type: 'reaction',
+        reaction: {
+          message_id: target_message_id.to_s,
+          emoji: emoji.to_s
+        }
+      },
+      conversation: conversation
+    ).build
+    body = outbound_message_body(phone_number, built_payload[:type], built_payload[:content])
+    response = HTTParty.post(
+      "#{phone_id_path}/messages",
+      headers: api_headers,
+      query: graph_api_query,
+      body: body.to_json,
+      timeout: request_timeout
+    )
+    parsed = response.parsed_response.to_h
+    if response.success? && parsed['error'].blank?
+      return Array(parsed['messages']).first.to_h['id'].presence
+    end
+
+    record_provider_authorization_error(response)
+    raise StandardError, error_message(response).presence || 'WhatsApp reaction request failed'
+  end
+
   private
 
   def request_timeout = ENV.fetch('WHATSAPP_CLOUD_API_TIMEOUT', 20).to_i

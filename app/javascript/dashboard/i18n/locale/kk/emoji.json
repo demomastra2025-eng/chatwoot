@@ -1,7 +1,20 @@
 {
   "EMOJI": {
-    "PLACEHOLDER": "Search emojis",
-    "NOT_FOUND": "No emoji match your search",
-    "REMOVE": "Remove"
+    "PLACEHOLDER": "Эмодзи іздеу...",
+    "NOT_FOUND": "Сұранысыңызға сәйкес эмодзи табылмады",
+    "REMOVE": "Жою",
+    "FREQUENTLY_USED": "Жиі қолданылатындар",
+    "CATEGORIES": {
+      "FREQUENTLY_USED": "Жиі қолданылатындар",
+      "SMILEYS_AND_EMOTION": "Смайлдар мен эмоциялар",
+      "PEOPLE_AND_BODY": "Адамдар мен ишаралар",
+      "ANIMALS_AND_NATURE": "Жануарлар мен табиғат",
+      "FOOD_AND_DRINK": "Тағам мен сусындар",
+      "TRAVEL_AND_PLACES": "Саяхат және орындар",
+      "ACTIVITIES": "Белсенділік",
+      "OBJECTS": "Заттар мен медицина",
+      "SYMBOLS": "Таңбалар",
+      "FLAGS": "Тулар"
+    }
   }
 }

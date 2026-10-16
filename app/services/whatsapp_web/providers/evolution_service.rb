@@ -311,6 +311,22 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
             })
   end
 
+  def send_reaction(message:, emoji:)
+    source_id = message.source_id.to_s.presence
+    remote_jid = normalized_remote_jid(message_remote_jid(message))
+    raise ArgumentError, 'Message source_id is required for WhatsApp Web reactions' if source_id.blank?
+    raise ArgumentError, 'Conversation remote JID is required for WhatsApp Web reactions' if remote_jid.blank?
+
+    request(:post, "/message/sendReaction/#{channel.instance_name}", body: {
+              key: {
+                remoteJid: remote_jid,
+                fromMe: message.outgoing?,
+                id: source_id
+              },
+              reaction: emoji.to_s
+            })
+  end
+
   def mark_messages_read(messages:)
     read_messages = Array.wrap(messages).filter_map do |message|
       payload = message.respond_to?(:to_h) ? message.to_h.with_indifferent_access : {}

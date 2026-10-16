@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 
 import MessageMeta from '../MessageMeta.vue';
+import MessageReactions from '../MessageReactions.vue';
 
 import { emitter } from 'shared/helpers/mitt';
 import { useMessageContext } from '../provider.js';
@@ -76,6 +77,10 @@ const shouldShowMeta = computed(
     variant.value !== MESSAGE_VARIANTS.ACTIVITY
 );
 
+const shouldShowReactions = computed(
+  () => variant.value !== MESSAGE_VARIANTS.ACTIVITY
+);
+
 const replyToPreview = computed(() => {
   if (!inReplyTo) return '';
 
@@ -114,6 +119,10 @@ const replyToPreview = computed(() => {
       />
     </div>
     <slot />
+    <MessageReactions
+      v-if="shouldShowReactions"
+      :class="variant === MESSAGE_VARIANTS.EMAIL ? 'px-3 pb-1' : ''"
+    />
     <MessageMeta
       v-if="shouldShowMeta"
       :class="[

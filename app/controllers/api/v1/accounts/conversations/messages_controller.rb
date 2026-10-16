@@ -68,6 +68,16 @@ class Api::V1::Accounts::Conversations::MessagesController < Api::V1::Accounts::
     render json: { content: translated_content }
   end
 
+  def react
+    @message = Messages::ReactionService.new(
+      message: message,
+      user: Current.user || @resource,
+      emoji: permitted_params[:emoji]
+    ).perform
+  rescue Messages::ReactionService::Error => e
+    render_could_not_create_error(e.message)
+  end
+
   private
 
   def message
@@ -92,7 +102,7 @@ class Api::V1::Accounts::Conversations::MessagesController < Api::V1::Accounts::
   end
 
   def permitted_params
-    params.permit(:id, :target_language, :status, :external_error, :content)
+    params.permit(:id, :target_language, :status, :external_error, :content, :emoji)
   end
 
   def already_translated_content_available?

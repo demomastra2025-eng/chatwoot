@@ -1453,6 +1453,20 @@ const actions = {
     return data;
   },
 
+  toggleMessageReaction: async (
+    { commit, state },
+    { conversationId, messageId, emoji }
+  ) => {
+    const { data } = await MessageApi.reactToMessage(
+      conversationId,
+      messageId,
+      emoji
+    );
+    commit(types.ADD_MESSAGE, data);
+    addMessageToCommunicationThreads(commit, state, data);
+    return data;
+  },
+
   deleteMessage: async function deleteLabels(
     { commit },
     { conversationId, messageId }
