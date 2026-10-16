@@ -140,7 +140,7 @@ class SuperAdmin::HealthMatrixService
   end
 
   def evaluate_telephony_diagnostics(sip_profiles, bindings, connections, phone_inboxes)
-    if connections.any? { |c| c.remote_janus_url.blank? }
+    if connections.any? { |c| c.respond_to?(:remote_janus_url) && c.remote_janus_url.blank? }
       { state: 'error', label: 'Janus URL не задан', profiles_count: sip_profiles.size }
     elsif phone_inboxes.any? && bindings.empty?
       { state: 'warning', label: 'Линии не привязаны', profiles_count: sip_profiles.size }
