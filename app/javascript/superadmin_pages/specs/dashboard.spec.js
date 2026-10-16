@@ -67,9 +67,12 @@ describe('the «Сводка» body', () => {
       ru.DASHBOARD.KPI.WHATSAPP,
       ru.DASHBOARD.KPI.TELEPHONY,
     ]);
-    expect(
-      figures.map(figure => figure.findAll('dd')[0].text())
-    ).toEqual(['3', '1', '0', '1']);
+    expect(figures.map(figure => figure.findAll('dd')[0].text())).toEqual([
+      '3',
+      '1',
+      '0',
+      '1',
+    ]);
   });
 
   it('lists a row per clinic with a link to its card', () => {

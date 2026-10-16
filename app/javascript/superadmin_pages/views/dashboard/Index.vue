@@ -105,9 +105,7 @@ const clinicUrl = account => `/super_admin/accounts/${account.id}`;
       role="status"
       data-testid="health-incomplete-sources"
     >
-      {{
-        t('DASHBOARD.INCOMPLETE', { sources: incompleteSources.join(', ') })
-      }}
+      {{ t('DASHBOARD.INCOMPLETE', { sources: incompleteSources.join(', ') }) }}
     </div>
 
     <DsStatGroup :items="kpiItems" data-testid="health-kpi">
@@ -231,7 +229,9 @@ const clinicUrl = account => `/super_admin/accounts/${account.id}`;
           @click="showChart = !showChart"
         >
           <span class="i-lucide-chart-column size-4" aria-hidden="true" />
-          {{ showChart ? t('DASHBOARD.CHART.HIDE') : t('DASHBOARD.CHART.SHOW') }}
+          {{
+            showChart ? t('DASHBOARD.CHART.HIDE') : t('DASHBOARD.CHART.SHOW')
+          }}
         </button>
       </div>
       <DsChartFrame
