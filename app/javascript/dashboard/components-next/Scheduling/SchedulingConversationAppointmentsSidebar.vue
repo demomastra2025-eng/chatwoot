@@ -1923,6 +1923,7 @@ const manualTimeChanged = (form, field) => {
 const cancelCreateAppointment = () => {
   isCreating.value = false;
   cancelFormWindows(NEW_APPOINTMENT_KEY);
+  resetCreateForm();
   patientContextStore.clearDraft(currentDraftKey.value);
   openAppointmentKeys.value = openAppointmentKeys.value.filter(
     key => key !== NEW_APPOINTMENT_KEY
@@ -2638,38 +2639,40 @@ const isClientFieldsOpen = (form, key) =>
           :key="NEW_APPOINTMENT_KEY"
           class="border-b border-n-weak bg-n-solid-1"
         >
-          <button
-            type="button"
-            class="flex w-full p-0 text-left hover:bg-n-alpha-1 rtl:text-right"
-            @click="openAppointmentKeys = [NEW_APPOINTMENT_KEY]"
+          <div
+            class="flex min-w-0 items-center justify-between gap-2 px-3 py-2.5"
           >
-            <span
-              class="flex min-w-0 flex-1 items-start justify-between gap-3 px-3 py-2.5"
+            <button
+              type="button"
+              class="flex min-w-0 flex-1 items-start gap-2 p-0 text-left hover:opacity-80 rtl:text-right"
+              @click="cancelCreateAppointment"
             >
-              <span class="flex min-w-0 items-start gap-2">
+              <span
+                class="i-lucide-calendar-plus mt-0.5 size-4 shrink-0 text-n-slate-11"
+              />
+              <span class="min-w-0">
                 <span
-                  class="i-lucide-calendar-plus mt-0.5 size-4 shrink-0 text-n-slate-11"
-                />
-                <span class="min-w-0">
-                  <span
-                    class="block truncate text-sm font-medium text-n-slate-12"
-                  >
-                    {{ $t('SCHEDULING.CALENDAR.NEW_APPOINTMENT') }}
-                  </span>
-                  <span
-                    class="block truncate text-xs leading-5 text-n-slate-11"
-                  >
-                    {{
-                      $t('SCHEDULING.APPOINTMENT_FORM.APPOINTMENT_DESCRIPTION')
-                    }}
-                  </span>
+                  class="block truncate text-sm font-medium text-n-slate-12"
+                >
+                  {{ $t('SCHEDULING.CALENDAR.NEW_APPOINTMENT') }}
+                </span>
+                <span class="block truncate text-xs leading-5 text-n-slate-11">
+                  {{
+                    $t('SCHEDULING.APPOINTMENT_FORM.APPOINTMENT_DESCRIPTION')
+                  }}
                 </span>
               </span>
-              <span
-                class="i-lucide-chevron-down mt-0.5 size-4 shrink-0 text-n-slate-10 transition-transform rotate-180"
-              />
-            </span>
-          </button>
+            </button>
+            <Button
+              size="xs"
+              color="slate"
+              variant="faded"
+              icon="i-lucide-x"
+              data-testid="scheduling-header-cancel-create-appointment"
+              :label="$t('SCHEDULING.GENERAL.CANCEL')"
+              @click="cancelCreateAppointment"
+            />
+          </div>
 
           <div class="border-t border-n-weak px-4 py-3">
             <div class="grid gap-3">
@@ -2990,8 +2993,9 @@ const isClientFieldsOpen = (form, key) =>
               <div class="flex items-center justify-end gap-2">
                 <Button
                   size="sm"
-                  slate
-                  faded
+                  color="slate"
+                  variant="faded"
+                  data-testid="scheduling-cancel-create-appointment"
                   :label="$t('SCHEDULING.GENERAL.CANCEL')"
                   @click="cancelCreateAppointment"
                 />

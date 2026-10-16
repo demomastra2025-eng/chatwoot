@@ -70,11 +70,17 @@ module Enterprise::Message::OrphanPendingHandoff
   end
 
   def orphan_pending_handoff_trigger?
-    return false if conversation.inbox.api? || imported_history_message?
+    return false if orphan_pending_api_blocked? || imported_history_message?
     return false if incoming? && runtime_events_suppressed?
     return false unless orphan_pending_handoff_candidate?
 
     orphan_pending_customer_message? || captain_public_human_reply?
+  end
+
+  def orphan_pending_api_blocked?
+    return false unless conversation.inbox.api?
+
+    incoming? || !::CaptainInbox.exists?(inbox_id: conversation.inbox_id)
   end
 
   def orphan_pending_handoff_candidate?

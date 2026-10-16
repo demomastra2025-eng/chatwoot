@@ -403,6 +403,14 @@ function buildAppleEmojiDecorations(doc) {
   if (doc === lastEmojiDoc) {
     return lastEmojiDecorations;
   }
+  if (
+    !doc.textContent ||
+    !/[\u00a9\u00ae\u2000-\u3300\ud83c-\ud83e]/.test(doc.textContent)
+  ) {
+    lastEmojiDoc = doc;
+    lastEmojiDecorations = DecorationSet.empty;
+    return lastEmojiDecorations;
+  }
   const decorations = [];
   doc.descendants((node, pos) => {
     if (!node.isText || !node.text) return;

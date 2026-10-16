@@ -19,9 +19,9 @@ class CommunicationThreads::MessageCreateService
       validate_send_capability!
       annotate_delivery_policy_params!
       @message = Messages::MessageBuilder.new(@current_user, @conversation, @params).perform
-      @communication_thread.reload
     end
 
+    @communication_thread.reload
     @message
   end
 

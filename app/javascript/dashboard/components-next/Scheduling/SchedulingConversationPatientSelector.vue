@@ -393,7 +393,11 @@ const savePatient = async () => {
           size="sm"
           :disabled="isInvalid || entry?.saving"
           :is-loading="entry?.saving"
-          :label="t('SCHEDULING.GENERAL.SAVE')"
+          :label="
+            isCreating
+              ? t('SCHEDULING.GENERAL.CREATE')
+              : t('SCHEDULING.GENERAL.SAVE')
+          "
         />
       </div>
     </form>

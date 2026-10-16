@@ -17,8 +17,17 @@ const SEARCH_KEY = 'Search';
 const FREQUENT_KEY = 'Frequent';
 const INITIAL_EMOJI_BATCH = 72;
 const SCROLL_EMOJI_BATCH = 96;
-const ENRICHED_EMOJIS = enrichEmojiCategories(rawEmojis);
-const FLAT_EMOJI_CATALOG = ENRICHED_EMOJIS.flatMap(c => c.emojis);
+const ENRICHED_EMOJIS = Object.freeze(
+  enrichEmojiCategories(rawEmojis).map(category =>
+    Object.freeze({
+      ...category,
+      emojis: Object.freeze(category.emojis.map(item => Object.freeze(item))),
+    })
+  )
+);
+const FLAT_EMOJI_CATALOG = Object.freeze(
+  ENRICHED_EMOJIS.flatMap(c => c.emojis)
+);
 
 export default {
   components: { FluentIcon, NextButton, AppleEmoji },
@@ -39,7 +48,6 @@ export default {
   data() {
     return {
       selectedKey: SEARCH_KEY,
-      emojis: ENRICHED_EMOJIS,
       search: '',
       usageVersion: 0,
       visibleCategoriesCount: 1,
@@ -48,7 +56,7 @@ export default {
   },
   computed: {
     categories() {
-      return [...this.emojis];
+      return ENRICHED_EMOJIS;
     },
     frequentEmojis() {
       // eslint-disable-next-line no-unused-expressions
@@ -59,7 +67,7 @@ export default {
       if (this.selectedKey === FREQUENT_KEY) {
         return this.frequentEmojis;
       }
-      const selectedCategoryName = this.emojis.find(category =>
+      const selectedCategoryName = ENRICHED_EMOJIS.find(category =>
         category.name === this.selectedKey ? category.name : null
       );
       return selectedCategoryName?.emojis || [];
@@ -69,16 +77,12 @@ export default {
     },
     filterAllEmojisBySearch() {
       const query = this.search.trim();
-      return this.emojis
-        .map(category => {
-          const allEmojis = query
-            ? category.emojis.filter(emoji => matchesEmojiSearch(emoji, query))
-            : category.emojis;
-          return allEmojis.length > 0
-            ? { ...category, emojis: allEmojis }
-            : null;
-        })
-        .filter(Boolean);
+      return ENRICHED_EMOJIS.map(category => {
+        const allEmojis = query
+          ? category.emojis.filter(emoji => matchesEmojiSearch(emoji, query))
+          : category.emojis;
+        return allEmojis.length > 0 ? { ...category, emojis: allEmojis } : null;
+      }).filter(Boolean);
     },
     visibleAllEmojisBySearch() {
       const matchingCategories = this.filterAllEmojisBySearch;

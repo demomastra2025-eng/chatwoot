@@ -1374,6 +1374,12 @@ const actions = {
         !(await admitMessageDeletionAuthority(context, threadMessage))
       )
         return;
+      if (response.data?.communication_thread) {
+        commitCommunicationThreadUpdate(
+          commit,
+          response.data.communication_thread
+        );
+      }
       addMessage({
         ...response.data,
         status: MESSAGE_STATUS.SENT,
