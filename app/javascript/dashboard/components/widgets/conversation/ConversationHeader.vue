@@ -150,27 +150,25 @@ const crmDealStages = computed(() => {
     : [];
 });
 
-const crmDealStageGroups = computed(() => {
-  const groups = [];
-  const groupsByPipeline = new Map();
+const APPOINTMENT_HEADER_PRIORITY = [
+  'confirmed',
+  'scheduled',
+  'completed',
+  'no_show',
+  'cancelled',
+];
 
-  crmDealStages.value.forEach(stage => {
-    const groupKey = `${stage.pipelineId || ''}:${stage.pipelineName}`;
-    if (!groupsByPipeline.has(groupKey)) {
-      const group = {
-        key: groupKey,
-        pipelineName: stage.pipelineName,
-        stages: [],
-      };
-      groupsByPipeline.set(groupKey, group);
-      groups.push(group);
-    }
+const primaryDealStage = computed(() => crmDealStages.value[0] || null);
 
-    groupsByPipeline.get(groupKey).stages.push(stage);
-  });
+const extraDealsCount = computed(() =>
+  Math.max(crmDealStages.value.length - 1, 0)
+);
 
-  return groups;
-});
+const dealsSummaryTooltip = computed(() =>
+  crmDealStages.value
+    .map(stage => `${stage.pipelineName}: ${stage.name}`)
+    .join(' · ')
+);
 
 const schedulingAppointmentStatuses = computed(() => {
   const statuses =
@@ -188,10 +186,31 @@ const schedulingAppointmentStatuses = computed(() => {
     : [];
 });
 
-const hasHeaderContext = computed(
-  () =>
-    crmDealStageGroups.value.length ||
-    schedulingAppointmentStatuses.value.length
+const sortedAppointmentStatuses = computed(() =>
+  [...schedulingAppointmentStatuses.value].sort((left, right) => {
+    const leftIdx = APPOINTMENT_HEADER_PRIORITY.indexOf(left.status);
+    const rightIdx = APPOINTMENT_HEADER_PRIORITY.indexOf(right.status);
+    return (leftIdx === -1 ? 99 : leftIdx) - (rightIdx === -1 ? 99 : rightIdx);
+  })
+);
+
+const primaryAppointmentStatus = computed(
+  () => sortedAppointmentStatuses.value[0] || null
+);
+
+const totalAppointmentsCount = computed(() =>
+  schedulingAppointmentStatuses.value.reduce(
+    (sum, item) => sum + Math.max(Number(item.count || 0), 1),
+    0
+  )
+);
+
+const extraAppointmentsCount = computed(() =>
+  Math.max(totalAppointmentsCount.value - 1, 0)
+);
+
+const hasHeaderContext = computed(() =>
+  Boolean(primaryDealStage.value || primaryAppointmentStatus.value)
 );
 
 const appointmentStatusClass = status =>
@@ -210,6 +229,39 @@ const appointmentStatusLabels = computed(() => ({
 
 const appointmentStatusLabel = status =>
   appointmentStatusLabels.value[status] || status;
+
+const appointmentsSummaryTooltip = computed(() =>
+  sortedAppointmentStatuses.value
+    .map(
+      item =>
+        `${appointmentStatusLabel(item.status)}: ${Math.max(Number(item.count || 0), 1)}`
+    )
+    .join(' · ')
+);
+
+const updateSidebarPanel = panelSettings => {
+  const currentUiSettings = store?.getters?.getUISettings || {};
+  store?.dispatch?.('updateUISettings', {
+    uiSettings: {
+      ...currentUiSettings,
+      ...panelSettings,
+    },
+  });
+};
+
+const openDealsSidebar = () =>
+  updateSidebarPanel({
+    is_contact_sidebar_open: false,
+    is_crm_deal_panel_open: true,
+    is_scheduling_appointments_panel_open: false,
+  });
+
+const openAppointmentsSidebar = () =>
+  updateSidebarPanel({
+    is_contact_sidebar_open: false,
+    is_crm_deal_panel_open: false,
+    is_scheduling_appointments_panel_open: true,
+  });
 
 const communicationContactIdentityLabels = computed(() => {
   const contact = currentContact.value || props.chat.meta?.sender || {};
@@ -365,63 +417,68 @@ const statusMeta = computed(() => {
         <div
           v-if="hasHeaderContext"
           data-test-id="conversation-header-context-row"
-          class="flex max-w-full items-center gap-6 overflow-hidden text-xs leading-5 conversation--header--actions text-ellipsis whitespace-nowrap"
+          class="flex max-w-full items-center gap-2 overflow-hidden text-xs leading-5 conversation--header--actions text-ellipsis whitespace-nowrap"
         >
-          <span
-            v-if="crmDealStageGroups.length"
+          <button
+            v-if="primaryDealStage"
+            type="button"
             data-test-id="conversation-header-crm-stages"
-            class="inline-flex min-w-0 items-center gap-3 text-n-slate-11"
+            :title="dealsSummaryTooltip"
+            class="inline-flex min-w-0 items-center gap-1.5 rounded-full bg-n-alpha-1 px-2.5 py-0.5 text-n-slate-11 transition-colors hover:bg-n-alpha-2 whitespace-nowrap"
+            @click="openDealsSidebar"
           >
             <span
-              v-for="group in crmDealStageGroups"
-              :key="group.key"
-              class="inline-flex min-w-0 items-center gap-1.5 whitespace-nowrap"
-            >
-              <span class="shrink-0 text-n-slate-11">
-                {{ labelWithColon(group.pipelineName) }}
-              </span>
-              <span
-                v-for="stage in group.stages"
-                :key="stage.id"
-                class="inline-flex min-w-0 items-center gap-1.5"
-              >
-                <span
-                  class="h-4 w-0.5 shrink-0 rounded-full"
-                  :style="{ backgroundColor: stage.color }"
-                />
-                <span class="truncate text-n-slate-11">{{ stage.name }}</span>
-              </span>
+              class="i-lucide-briefcase-business size-3.5 shrink-0 text-n-slate-10"
+            />
+            <span class="shrink-0 text-n-slate-11">
+              {{ labelWithColon($t('CONVERSATION.HEADER.DEAL')) }}
             </span>
-          </span>
-          <span
-            v-if="schedulingAppointmentStatuses.length"
+            <span
+              class="h-3.5 w-0.5 shrink-0 rounded-full"
+              :style="{ backgroundColor: primaryDealStage.color }"
+            />
+            <span class="truncate text-n-slate-12">
+              {{ primaryDealStage.name }}
+            </span>
+            <span
+              v-if="extraDealsCount > 0"
+              data-test-id="conversation-header-crm-stages-more"
+              class="shrink-0 rounded-full bg-n-alpha-2 px-1.5 text-[11px] font-medium text-n-slate-11 tabular-nums"
+            >
+              {{ `+${extraDealsCount}` }}
+            </span>
+          </button>
+          <button
+            v-if="primaryAppointmentStatus"
+            type="button"
             data-test-id="conversation-header-appointment-statuses"
-            class="inline-flex min-w-0 items-center gap-1.5 text-n-slate-11 whitespace-nowrap"
+            :title="appointmentsSummaryTooltip"
+            class="inline-flex min-w-0 items-center gap-1.5 rounded-full bg-n-alpha-1 px-2.5 py-0.5 text-n-slate-11 transition-colors hover:bg-n-alpha-2 whitespace-nowrap"
+            @click="openAppointmentsSidebar"
           >
             <span class="shrink-0 text-n-slate-11">
               {{ labelWithColon($t('CONVERSATION.HEADER.APPOINTMENT')) }}
             </span>
             <span
-              v-for="statusContext in schedulingAppointmentStatuses"
-              :key="statusContext.status"
               class="inline-flex min-w-0 items-center gap-1"
-              :class="appointmentStatusClass(statusContext.status)"
+              :class="appointmentStatusClass(primaryAppointmentStatus.status)"
             >
               <span
                 class="mt-px size-3.5 shrink-0"
-                :class="appointmentStatusIcon(statusContext.status)"
+                :class="appointmentStatusIcon(primaryAppointmentStatus.status)"
               />
               <span class="truncate">
-                {{ appointmentStatusLabel(statusContext.status) }}
-              </span>
-              <span
-                v-if="statusContext.count > 1"
-                class="shrink-0 tabular-nums"
-              >
-                {{ statusContext.count }}
+                {{ appointmentStatusLabel(primaryAppointmentStatus.status) }}
               </span>
             </span>
-          </span>
+            <span
+              v-if="extraAppointmentsCount > 0"
+              data-test-id="conversation-header-appointment-statuses-more"
+              class="shrink-0 rounded-full bg-n-alpha-2 px-1.5 text-[11px] font-medium text-n-slate-11 tabular-nums"
+            >
+              {{ `+${extraAppointmentsCount}` }}
+            </span>
+          </button>
         </div>
 
         <div

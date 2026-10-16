@@ -136,7 +136,8 @@
         "RT": "RT {status}",
         "MISSED": "пропущенный",
         "DUE": "до"
-      }
+      },
+      "DEAL": "Сделка"
     },
     "RESOLVE_DROPDOWN": {
       "MARK_PENDING": "Передать AI-агенту",
@@ -269,7 +270,6 @@
       "START_AUDIO_RECORDING": "Начать запись аудио",
       "STOP_AUDIO_RECORDING": "Остановить запись аудио",
       "": "",
-
       "EMAIL_HEAD": {
         "TO": "ДО",
         "ADD_BCC": "Добавить bcc",

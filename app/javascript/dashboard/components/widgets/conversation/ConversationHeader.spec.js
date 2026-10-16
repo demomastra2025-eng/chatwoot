@@ -218,7 +218,7 @@ describe('ConversationHeader', () => {
     expect(identityRow.text()).not.toContain('Открыт');
   });
 
-  it('renders pipeline stages and appointment statuses on one line with sidebar styling', () => {
+  it('renders compact deal and appointment chips with +N counters when multiple items exist', () => {
     const wrapper = mountComponent({
       chat: {
         id: 7,
@@ -229,12 +229,22 @@ describe('ConversationHeader', () => {
           {
             id: 10,
             pipeline_id: 5,
-            pipeline_name: 'Основная',
-            name: 'New',
+            pipeline_name: 'Запись',
+            name: 'Консультация',
             color: '#22C55E',
           },
+          {
+            id: 11,
+            pipeline_id: 5,
+            pipeline_name: 'Запись',
+            name: 'Повторный',
+            color: '#3B82F6',
+          },
         ],
-        scheduling_appointment_statuses: [{ status: 'scheduled', count: 1 }],
+        scheduling_appointment_statuses: [
+          { status: 'completed', count: 3 },
+          { status: 'scheduled', count: 1 },
+        ],
       },
     });
 
@@ -249,20 +259,14 @@ describe('ConversationHeader', () => {
     );
 
     expect(contextRow.exists()).toBe(true);
-    expect(contextRow.classes()).toContain('gap-6');
     expect(contextRow.text()).not.toContain('CONVERSATION.HEADER');
-    expect(contextRow.html()).not.toContain('font-medium text-n-slate-10');
-    expect(
-      wrapper.find('[data-test-id="conversation-header-identity-row"]').exists()
-    ).toBe(false);
-    expect(stages.text()).toContain('Основная:');
-    expect(stages.text()).toContain('New');
-    expect(stages.text()).not.toContain('Этапы');
-    expect(stages.html()).toContain('rounded-full');
+    expect(stages.text()).toContain('Сделка:');
+    expect(stages.text()).toContain('Консультация');
+    expect(stages.text()).toContain('+1');
     expect(stages.html()).toContain('background-color: rgb(34, 197, 94)');
     expect(statuses.text()).toContain('Запись:');
     expect(statuses.text()).toContain('Назначен');
-    expect(statuses.text()).not.toContain('Статусы');
+    expect(statuses.text()).toContain('+3');
     expect(statuses.html()).toContain('i-lucide-clock-3');
     expect(statuses.html()).toContain('text-n-amber-11');
   });
