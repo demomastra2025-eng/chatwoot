@@ -161,6 +161,9 @@ ru:
         title: "Проверка уведомлений %{installation_name}"
         body: "Это тестовое сообщение от нашей команды: мы проверяем доставку уведомлений на ваше устройство. Ничего делать не нужно."
 
+    flashes:
+      invalid_action: "Действие не выполнено: такая запись уже существует."
+
     # Names of records in titles, links and tables (the display_resource of the dashboards)
     display:
       agent_bot: "AI-бот №%{id} «%{name}»"

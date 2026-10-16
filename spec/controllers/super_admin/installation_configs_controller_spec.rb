@@ -40,6 +40,18 @@ RSpec.describe 'Super Admin Installation Config API', type: :request do
     end
   end
 
+  describe 'a record that already exists' do
+    before { sign_in(super_admin, scope: :super_admin) }
+
+    it 'is refused with a message in Russian' do
+      allow(InstallationConfig).to receive(:new).and_raise(ActiveRecord::RecordNotUnique)
+
+      post '/super_admin/installation_configs', params: { installation_config: { name: 'SOME_CONFIG', value: 'x' } }
+
+      expect(flash[:error]).to eq('Действие не выполнено: такая запись уже существует.')
+    end
+  end
+
   describe 'the platform switch of the channels' do
     let(:name) { Channels::PlatformVisibility::CONFIG_NAME }
     let!(:visibility) { Channels::PlatformVisibility.update!({ 'api' => 'shown' }) && InstallationConfig.find_by!(name: name) }
