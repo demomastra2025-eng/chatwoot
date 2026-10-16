@@ -269,14 +269,13 @@ ru:
   super_admin:
     audits:
       title: "Журнал аудита"
-      heading: "Журнал системных действий"
       description: "Общий журнал изменений настроек платформы, каналов, прав и конфигурации."
       total: "Всего записей: %{count}"
       entity_type: "Тип объекта"
       all_types: "Все типы"
       action: "Действие"
       all_actions: "Все действия"
-      account_id: "ID аккаунта"
+      account_id: "Номер клиники"
       apply: "Применить"
       reset: "Сбросить"
       columns:

@@ -17,7 +17,7 @@ RSpec.describe 'Super Admin Logs', type: :request do
         get '/super_admin/logs'
 
         expect(response).to have_http_status(:success)
-        expect(response.body).to include('Logs')
+        expect(response.body).to include(I18n.t('super_admin.logs.title'))
         expect(response.body).to include('/monitoring/grafana/d/crafty-production-logs/crafty-production-logs')
       end
     end

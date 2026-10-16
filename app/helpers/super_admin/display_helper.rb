@@ -5,7 +5,7 @@
 # * Times are Astana time (UTC+5, Kazakhstan has had a single zone since 2024-03-01), never UTC. The offset is fixed
 #   instead of a zone name, so the screen does not depend on how fresh the tzdata of the server is.
 # * Sizes use Russian units (Б, КБ, МБ, ГБ, ТБ), 1 КБ = 1024 Б like the quotas.
-# * Numbers have a space between thousands and a comma before decimals.
+# * Numbers have a space between thousands and a comma before decimals; dollar amounts have two decimals.
 module SuperAdmin::DisplayHelper
   DATETIME_FORMAT = '%d.%m.%Y %H:%M'
   DATE_FORMAT = '%d.%m.%Y'
@@ -53,6 +53,13 @@ module SuperAdmin::DisplayHelper
       ActiveSupport::NumberHelper.number_to_delimited(number, **NUMBER_OPTIONS)
     end
 
+    # An amount in US dollars (the AI models are paid in dollars): "$1 234,50"
+    def format_usd(amount)
+      return if amount.nil?
+
+      "$#{ActiveSupport::NumberHelper.number_to_rounded(amount, precision: 2, **NUMBER_OPTIONS)}"
+    end
+
     private
 
     def parse(text)
@@ -85,5 +92,10 @@ module SuperAdmin::DisplayHelper
   # "12 450"
   def super_admin_number(number)
     SuperAdmin::DisplayHelper.format_number(number)
+  end
+
+  # "$1 234,50"
+  def super_admin_usd(amount)
+    SuperAdmin::DisplayHelper.format_usd(amount)
   end
 end

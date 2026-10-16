@@ -31,6 +31,27 @@ RSpec.describe 'Super Admin Push Diagnostics', type: :request do
       expect(response.body).not_to include('push-token-123456')
     end
 
+    it 'speaks Russian: the steps, the type of the device and the default text of the test' do
+      create(:notification_subscription, :fcm, user: user, identifier: 'operator-device')
+      sign_in(super_admin, scope: :super_admin)
+
+      get '/super_admin/push_diagnostics', params: { user_query: user.email }
+
+      expect(response.body).to include('1. Найдите пользователя', '2. Выберите подписки (1)', 'FCM (приложение)')
+      expect(response.body).to include('Отправить тестовое уведомление', 'Удалить выбранные подписки')
+      expect(response.body).to include(Notification::PushTestService.default_title)
+      expect(response.body).not_to match(/Look up|Send Test Push|Delete Selected|Select subscriptions|Push token/)
+      expect(response.body).not_to match(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/)
+    end
+
+    it 'says so when no user is found' do
+      sign_in(super_admin, scope: :super_admin)
+
+      get '/super_admin/push_diagnostics', params: { user_query: 'nobody@example.test' }
+
+      expect(response.body).to include('Пользователь «nobody@example.test» не найден.')
+    end
+
     it 'shows when a subscription was changed in Astana time, with no English «ago» next to it' do
       subscription = create(:notification_subscription, :fcm, user: user, identifier: 'operator-device')
       subscription.update_columns(updated_at: Time.utc(2026, 10, 15, 12, 5, 9)) # rubocop:disable Rails/SkipsModelValidations

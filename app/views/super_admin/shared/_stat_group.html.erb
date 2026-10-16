@@ -1,0 +1,23 @@
+<%#
+# Key figures
+
+One block split by thin vertical dividers (two columns on a phone): a caption, a
+big number and an optional note under it. The server-drawn twin of DsStatGroup
+(app/javascript/dashboard/components-next/ds/DsStatGroup.vue), so a page drawn by
+ERB and a page drawn by Vue show their figures alike.
+
+## Local variables:
+
+- `items`: an array of hashes `{ label:, value:, note: (optional), tone: (optional, :bad) }`.
+%>
+<dl class="m-0 grid grid-cols-2 overflow-hidden rounded-ds-card border border-solid border-n-weak bg-n-solid-2 md:grid-cols-[repeat(var(--stat-columns),minmax(0,1fr))]" style="--stat-columns: <%= items.size %>">
+  <% items.each do |item| %>
+    <div class="min-w-0 border-0 border-solid border-n-weak px-5 py-[18px] md:border-e md:last:border-e-0 max-md:odd:border-e max-md:[&:nth-child(n+3)]:border-t" data-testid="stat">
+      <dt class="text-ds-caption text-n-slate-11"><%= item[:label] %></dt>
+      <dd class="m-0 mt-1.5 truncate text-ds-figure <%= item[:tone] == :bad ? 'text-n-ruby-11' : 'text-n-slate-12' %>"><%= item[:value] %></dd>
+      <% if item[:note].present? %>
+        <dd class="m-0 mt-1 text-ds-caption text-n-slate-11"><%= item[:note] %></dd>
+      <% end %>
+    </div>
+  <% end %>
+</dl>

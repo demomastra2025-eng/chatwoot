@@ -6,10 +6,6 @@ class SuperAdmin::AuditsController < SuperAdmin::ApplicationController
     @audits = filter_audits.page(params[:page]).per(25)
   end
 
-  def show
-    @audit = Audited::Audit.find(params[:id])
-  end
-
   private
 
   def fetch_auditable_types

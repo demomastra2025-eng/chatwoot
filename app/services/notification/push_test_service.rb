@@ -3,15 +3,15 @@ class Notification::PushTestService
 
   DEFAULT_INSTALLATION_NAME = 'OneLink'.freeze
   DEFAULT_FRONTEND_URL = 'https://app.one-link.kz'.freeze
-  DEFAULT_TITLE = '%<installation_name>s notification test'.freeze
-  DEFAULT_BODY = 'This is a test from our team to check notification delivery on your device. No action needed.'.freeze
 
+  # The text of a test push is read by the user on their device, so it is Russian like the rest of the product.
   def self.default_title
-    format(DEFAULT_TITLE, installation_name: GlobalConfigService.load('INSTALLATION_NAME', DEFAULT_INSTALLATION_NAME))
+    I18n.t('super_admin.push_diagnostics.test_push.title',
+           installation_name: GlobalConfigService.load('INSTALLATION_NAME', DEFAULT_INSTALLATION_NAME))
   end
 
   def self.default_body
-    DEFAULT_BODY
+    I18n.t('super_admin.push_diagnostics.test_push.body')
   end
 
   def perform
@@ -19,6 +19,11 @@ class Notification::PushTestService
   end
 
   private
+
+  # The fixed answers of the test (the answers of the push services themselves are passed on as they come)
+  def message_for(key)
+    I18n.t("super_admin.push_diagnostics.messages.#{key}")
+  end
 
   def resolved_title
     title.presence || self.class.default_title
@@ -38,15 +43,15 @@ class Notification::PushTestService
     elsif subscription.fcm?
       test_fcm(subscription)
     else
-      result(subscription, subscription.subscription_type.to_s, :skipped, 'Unknown subscription type')
+      result(subscription, subscription.subscription_type.to_s, :skipped, message_for(:unknown_type))
     end
   end
 
   def test_browser_push(subscription)
-    return result(subscription, 'browser_push', :skipped, 'VAPID keys not configured') unless VapidService.public_key
+    return result(subscription, 'browser_push', :skipped, message_for(:vapid_missing)) unless VapidService.public_key
 
     WebPush.payload_send(**browser_push_payload(subscription))
-    result(subscription, 'browser_push', :success, 'Web push accepted by endpoint')
+    result(subscription, 'browser_push', :success, message_for(:web_push_accepted))
   rescue StandardError => e
     result(subscription, 'browser_push', :failure, "#{e.class.name}: #{e.message}")
   end
@@ -57,7 +62,7 @@ class Notification::PushTestService
     elsif chatwoot_hub_enabled?
       test_fcm_via_hub(subscription)
     else
-      result(subscription, 'fcm', :skipped, 'No Firebase credentials and push relay disabled')
+      result(subscription, 'fcm', :skipped, message_for(:no_firebase))
     end
   end
 

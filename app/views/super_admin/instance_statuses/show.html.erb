@@ -1,23 +1,35 @@
-<% content_for(:title) do %>
-  Статус инстанса
-<% end %>
-<header class="main-content__header" role="banner">
-  <h1 class="main-content__page-title" id="page-title">
-    <%= content_for(:title) %>
-  </h1>
-</header>
-<section class="main-content__body">
-  <table>
-  <tr>
-    <th>Метрика</th>
-    <th>Значение</th>
-  </tr>
-  <% @metrics.each do |key,value| %>
-   <tr>
-   <td> <%= key %> </td>
-   <td> <%= value %></td>
-  </tr>
-  <% end %>
-</table>
+<%#
+# Server status
 
+The build of the platform, PostgreSQL and Redis, one block each: a list of
+label/value rows, with a green or red badge for the rows that are a state.
+
+## Local variables (controller instance variables):
+
+- `@sections`: `[{ key:, rows: [{ label:, value:, tone: }] }]`.
+%>
+<% content_for(:title) do %><%= t('super_admin.instance_status.title') %><% end %>
+
+<%= render layout: 'super_admin/shared/page_header', locals: { title: content_for(:title), description: t('super_admin.instance_status.description') } do %><% end %>
+
+<section class="main-content__body flex flex-col gap-5">
+  <% @sections.each do |section| %>
+    <section class="admin-card" aria-labelledby="status-<%= section[:key] %>" data-testid="status-<%= section[:key] %>">
+      <h2 class="admin-card__title" id="status-<%= section[:key] %>"><%= t("super_admin.instance_status.sections.#{section[:key]}") %></h2>
+      <dl class="attribute-list">
+        <% section[:rows].each do |row| %>
+          <dt class="attribute-label"><%= row[:label] %></dt>
+          <dd class="attribute-data">
+            <% if row[:tone] == :good %>
+              <span class="admin-badge admin-badge--teal"><%= row[:value] %></span>
+            <% elsif row[:tone] == :bad %>
+              <span class="admin-badge admin-badge--ruby"><%= row[:value] %></span>
+            <% else %>
+              <%= row[:value] %>
+            <% end %>
+          </dd>
+        <% end %>
+      </dl>
+    </section>
+  <% end %>
 </section>

@@ -1,0 +1,24 @@
+<%#
+# Grafana page body
+
+The body of the Monitoring and Logs pages: a line of advice and the Grafana
+dashboard embedded in a block (kiosk mode).
+
+## Local variables:
+
+- `hint`: the line of advice above the dashboard.
+- `embed_url`: the address of the dashboard (kiosk mode).
+- `frame_title`: the accessible name of the frame.
+%>
+<section class="main-content__body">
+  <div class="admin-notice mb-4"><%= hint %></div>
+  <div class="admin-card overflow-hidden">
+    <iframe
+      src="<%= embed_url %>"
+      title="<%= frame_title %>"
+      class="min-h-[85vh] w-full bg-n-solid-2"
+      loading="lazy"
+      referrerpolicy="same-origin"
+    ></iframe>
+  </div>
+</section>

@@ -1,59 +1,72 @@
+# The state of the server: the platform build, PostgreSQL and Redis. Every row is
+# `{ label:, value:, tone: }`; the tone (:good, :bad or nil) paints a badge, a row
+# without a tone is a plain value. All texts come from `super_admin.instance_status`.
 class SuperAdmin::InstanceStatusesController < SuperAdmin::ApplicationController
   def show
-    @metrics = {}
-    chatwoot_version
-    sha
-    postgres_status
-    redis_metrics
-    chatwoot_edition
-    instance_meta
+    @sections = [
+      { key: :platform, rows: platform_rows },
+      { key: :postgres, rows: [postgres_row] },
+      { key: :redis, rows: redis_rows }
+    ]
   end
 
-  def chatwoot_edition
-    @metrics['Chatwoot edition'] = if ChatwootApp.enterprise?
-                                     'Enterprise'
-                                   elsif ChatwootApp.custom?
-                                     'Custom'
-                                   else
-                                     'Community'
-                                   end
+  private
+
+  def platform_rows
+    [
+      row(:version, Chatwoot.config[:version]),
+      row(:git_sha, GIT_HASH),
+      row(:edition, edition_name),
+      migrations_row
+    ]
   end
 
-  def instance_meta
-    @metrics['Database Migrations'] = ActiveRecord::Base.connection_pool.migration_context.needs_migration? ? 'pending' : 'completed'
+  def edition_name
+    return I18n.t('super_admin.instance_status.editions.enterprise') if ChatwootApp.enterprise?
+    return I18n.t('super_admin.instance_status.editions.custom') if ChatwootApp.custom?
+
+    I18n.t('super_admin.instance_status.editions.community')
   end
 
-  def chatwoot_version
-    @metrics['Chatwoot version'] = Chatwoot.config[:version]
+  def migrations_row
+    pending = ActiveRecord::Base.connection_pool.migration_context.needs_migration?
+    row(:migrations, status_word(pending ? :pending : :applied), pending ? :bad : :good)
   end
 
-  def sha
-    @metrics['Git SHA'] = GIT_HASH
+  def postgres_row
+    alive = ActiveRecord::Base.connection.active?
+    row(:connection, status_word(alive ? :available : :unavailable), alive ? :good : :bad)
   end
 
-  def postgres_status
-    @metrics['Postgres alive'] = if ActiveRecord::Base.connection.active?
-                                   'true'
-                                 else
-                                   'false'
-                                 end
-  end
+  def redis_rows
+    redis = Redis.new(Redis::Config.app)
+    return [row(:connection, status_word(:unavailable), :bad)] unless redis.ping == 'PONG'
 
-  def redis_metrics
-    r = Redis.new(Redis::Config.app)
-    if r.ping == 'PONG'
-      redis_server = r.info
-      @metrics['Redis alive'] = 'true'
-      @metrics['Redis version'] = redis_server['redis_version']
-      @metrics['Redis number of connected clients'] = redis_server['connected_clients']
-      @metrics["Redis 'maxclients' setting"] = redis_server['maxclients']
-      @metrics['Redis memory used'] = redis_server['used_memory_human']
-      @metrics['Redis memory peak'] = redis_server['used_memory_peak_human']
-      @metrics['Redis total memory available'] = redis_server['total_system_memory_human']
-      @metrics["Redis 'maxmemory' setting"] = redis_server['maxmemory']
-      @metrics["Redis 'maxmemory_policy' setting"] = redis_server['maxmemory_policy']
-    end
+    info = redis.info
+    [
+      row(:connection, status_word(:available), :good),
+      row(:redis_version, info['redis_version']),
+      row(:clients, SuperAdmin::DisplayHelper.format_number(info['connected_clients'].to_i)),
+      row(:max_clients, SuperAdmin::DisplayHelper.format_number(info['maxclients'].to_i)),
+      row(:memory_used, memory(info['used_memory'])),
+      row(:memory_peak, memory(info['used_memory_peak'])),
+      row(:memory_total, memory(info['total_system_memory'])),
+      row(:max_memory, info['maxmemory'].to_i.zero? ? I18n.t('super_admin.instance_status.unlimited') : memory(info['maxmemory'])),
+      row(:eviction_policy, info['maxmemory_policy'])
+    ]
   rescue Redis::CannotConnectError
-    @metrics['Redis alive'] = false
+    [row(:connection, status_word(:unavailable), :bad)]
+  end
+
+  def memory(bytes)
+    SuperAdmin::DisplayHelper.format_bytes(bytes.to_i)
+  end
+
+  def status_word(state)
+    I18n.t("super_admin.instance_status.states.#{state}")
+  end
+
+  def row(key, value, tone = nil)
+    { label: I18n.t("super_admin.instance_status.rows.#{key}"), value: value, tone: tone }
   end
 end

@@ -46,7 +46,7 @@ class Llm::Monitoring::FleetSnapshot
     rows.map do |account_id, total_events, request_count, error_count, estimated_cost, last_event_at|
       {
         account_id: account_id,
-        account_name: accounts[account_id] || 'Unknown account',
+        account_name: accounts[account_id] || I18n.t('super_admin.ai_analytics.top.unknown_clinic'),
         total_events: total_events.to_i,
         request_count: request_count.to_i,
         error_count: error_count.to_i,

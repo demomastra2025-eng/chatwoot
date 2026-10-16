@@ -82,6 +82,13 @@ RSpec.describe SuperAdmin::DisplayHelper do
       expect(described_class.format_number(7)).to eq('7')
       expect(described_class.format_number(nil)).to be_nil
     end
+
+    it 'writes an amount in dollars with two decimals and a comma' do
+      expect(described_class.format_usd(0)).to eq('$0,00')
+      expect(described_class.format_usd(1234.5)).to eq('$1 234,50')
+      expect(described_class.format_usd(BigDecimal('0.015'))).to eq('$0,02')
+      expect(described_class.format_usd(nil)).to be_nil
+    end
   end
 
   describe 'view helpers' do
@@ -93,6 +100,7 @@ RSpec.describe SuperAdmin::DisplayHelper do
       expect(helper.super_admin_input_time(moment)).to eq('2026-10-15T17:05:00')
       expect(helper.super_admin_bytes(36.gigabytes)).to eq('36 ГБ')
       expect(helper.super_admin_number(1000)).to eq('1 000')
+      expect(helper.super_admin_usd(2.5)).to eq('$2,50')
     end
   end
 end

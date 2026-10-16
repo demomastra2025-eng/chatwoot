@@ -1,45 +1,26 @@
-<% content_for(:title) do %>
-  Monitoring
-<% end %>
+<%#
+# Monitoring
+
+The Grafana overview of production health for the last 24 hours, embedded, with
+the ways to the logs, the alerts, the queues and Grafana itself.
+%>
+<% content_for(:title) do %><%= t('super_admin.monitoring.title') %><% end %>
 
 <%
-  grafana_dashboard_url = '/monitoring/grafana/d/crafty-production-overview/crafty-production-overview?orgId=1&from=now-24h&to=now&refresh=30s'
-  grafana_embedded_dashboard_url = "#{grafana_dashboard_url}&kiosk=tv"
+  dashboard_url = '/monitoring/grafana/d/crafty-production-overview/crafty-production-overview?orgId=1&from=now-24h&to=now&refresh=30s'
+  external = { target: '_blank', rel: 'noopener noreferrer' }
 %>
 
-<header class="main-content__header" role="banner">
-  <div class="flex items-start justify-between gap-4">
-    <div>
-      <h1 class="main-content__page-title" id="page-title">
-        <%= content_for(:title) %>
-      </h1>
-      <p class="text-sm text-n-slate-12 mt-2">
-        Last 24 hours of production health, infrastructure signals, and important incidents, with direct paths to detailed logs, alerts, and queue operations.
-      </p>
-    </div>
+<%= render layout: 'super_admin/shared/page_header', locals: { title: content_for(:title), description: t('super_admin.monitoring.description') } do %>
+  <%= link_to t('super_admin.monitoring.logs'), super_admin_logs_path, class: 'button button--secondary' %>
+  <%= link_to t('super_admin.monitoring.explore'), '/monitoring/grafana/explore', class: 'button button--secondary', **external %>
+  <%= link_to t('super_admin.monitoring.alerts'), '/monitoring/grafana/alerting/list', class: 'button button--secondary', **external %>
+  <%= link_to t('super_admin.monitoring.queues'), sidekiq_web_url, class: 'button button--secondary', **external %>
+  <%= link_to t('super_admin.monitoring.grafana'), '/monitoring/grafana/', class: 'button button--secondary', **external %>
+  <%= link_to t('super_admin.monitoring.open_dashboard'), dashboard_url, class: 'button', **external %>
+<% end %>
 
-    <div class="flex items-center gap-3">
-      <%= link_to 'Logs', super_admin_logs_url, class: 'inline-flex items-center rounded-md border border-n-strong bg-n-solid-2 px-4 py-2 text-sm font-medium text-n-slate-12 hover:bg-n-alpha-1' %>
-      <%= link_to 'Grafana Explore', '/monitoring/grafana/explore', target: '_blank', rel: 'noopener noreferrer', class: 'inline-flex items-center rounded-md border border-n-strong bg-n-solid-2 px-4 py-2 text-sm font-medium text-n-slate-12 hover:bg-n-alpha-1' %>
-      <%= link_to 'Alerts', '/monitoring/grafana/alerting/list', target: '_blank', rel: 'noopener noreferrer', class: 'inline-flex items-center rounded-md border border-n-strong bg-n-solid-2 px-4 py-2 text-sm font-medium text-n-slate-12 hover:bg-n-alpha-1' %>
-      <%= link_to 'Sidekiq', sidekiq_web_url, target: '_blank', rel: 'noopener noreferrer', class: 'inline-flex items-center rounded-md border border-n-strong bg-n-solid-2 px-4 py-2 text-sm font-medium text-n-slate-12 hover:bg-n-alpha-1' %>
-      <%= link_to 'Open Dashboard', grafana_dashboard_url, target: '_blank', rel: 'noopener noreferrer', class: 'inline-flex items-center rounded-lg bg-n-brand-solid px-4 py-2 text-sm font-medium text-n-brand-contrast hover:brightness-110' %>
-      <%= link_to 'Open Grafana', '/monitoring/grafana/', target: '_blank', rel: 'noopener noreferrer', class: 'inline-flex items-center rounded-md border border-n-strong bg-n-solid-2 px-4 py-2 text-sm font-medium text-n-slate-12 hover:bg-n-alpha-1' %>
-    </div>
-  </div>
-</header>
-
-<section class="main-content__body">
-  <div class="mb-4 rounded-lg border border-n-weak bg-n-slate-3 px-4 py-3 text-sm text-n-slate-12">
-    Monitoring keeps the broad operational picture in one place. For request-by-request and job-by-job debugging, use the Logs page or Grafana Explore.
-  </div>
-  <div class="rounded-lg border border-n-weak bg-n-solid-2 overflow-hidden">
-    <iframe
-      src="<%= grafana_embedded_dashboard_url %>"
-      title="Grafana Monitoring"
-      class="w-full min-h-[85vh] bg-n-solid-2"
-      loading="lazy"
-      referrerpolicy="same-origin"
-    ></iframe>
-  </div>
-</section>
+<%= render 'super_admin/shared/grafana_embed',
+           hint: t('super_admin.monitoring.hint'),
+           embed_url: "#{dashboard_url}&kiosk=tv",
+           frame_title: t('super_admin.monitoring.frame_title') %>

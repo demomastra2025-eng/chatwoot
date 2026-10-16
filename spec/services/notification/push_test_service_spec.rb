@@ -13,13 +13,13 @@ RSpec.describe Notification::PushTestService do
     it 'uses the configured installation name' do
       allow(GlobalConfigService).to receive(:load).with('INSTALLATION_NAME', 'OneLink').and_return('CustomOneLink')
 
-      expect(described_class.default_title).to eq('CustomOneLink notification test')
+      expect(described_class.default_title).to eq('Проверка уведомлений CustomOneLink')
     end
 
     it 'falls back to OneLink when installation name is not configured' do
       allow(GlobalConfigService).to receive(:load).with('INSTALLATION_NAME', 'OneLink').and_return('OneLink')
 
-      expect(described_class.default_title).to eq('OneLink notification test')
+      expect(described_class.default_title).to eq('Проверка уведомлений OneLink')
     end
   end
 
@@ -67,7 +67,7 @@ RSpec.describe Notification::PushTestService do
         id: browser_subscription.id,
         type: 'browser_push',
         status: :skipped,
-        message: 'VAPID keys not configured'
+        message: 'Ключи VAPID не настроены'
       )
       expect(result[:device]).to eq('push.example.test')
       expect(result[:token_tail]).to eq('…n-tail')
@@ -89,7 +89,7 @@ RSpec.describe Notification::PushTestService do
           vapid: hash_including(public_key: 'public-key', private_key: 'private-key')
         )
       )
-      expect(result).to include(type: 'browser_push', status: :success, message: 'Web push accepted by endpoint')
+      expect(result).to include(type: 'browser_push', status: :success, message: 'Браузерное уведомление принято сервером доставки')
       expect(result[:device]).to eq('push.example.test')
       expect(result[:token_tail]).to eq('…n-tail')
     end
@@ -157,7 +157,7 @@ RSpec.describe Notification::PushTestService do
       with_modified_env ENABLE_PUSH_RELAY_SERVER: 'false' do
         result = perform([fcm_subscription.id]).first
 
-        expect(result).to include(type: 'fcm', status: :skipped, message: 'No Firebase credentials and push relay disabled')
+        expect(result).to include(type: 'fcm', status: :skipped, message: 'Ключи Firebase не заданы, а ретранслятор уведомлений отключён')
       end
     end
   end
