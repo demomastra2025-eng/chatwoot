@@ -185,8 +185,8 @@ RSpec.describe 'Super admin settings pages', type: :request do
     it 'names the statuses in Russian instead of showing their codes' do
       expect(text(block.at_css('[data-testid="diagnostics-key"]'))).to include('Кредиты закончились', 'тип: inference')
       expect(text(block.at_css('[data-testid="diagnostics-credits"]'))).to include('Нужен management-ключ', 'нужен management-ключ')
-      expect(text(block.at_css('[data-testid="diagnostics-catalog"]'))).to include('Обновлён', 'API OpenRouter', 'чат: 1000', 'эмбеддинги: 20')
-      expect(text(block.at_css('[data-testid="diagnostics-providers"]'))).to include('Обновляется', 'azure, openai')
+      expect(text(block.at_css('[data-testid="diagnostics-catalog"]'))).to include('обновлён', 'API OpenRouter', 'чат: 1000', 'эмбеддинги: 20')
+      expect(text(block.at_css('[data-testid="diagnostics-providers"]'))).to include('обновляется', 'azure, openai')
       expect(text(block)).not_to match(/credits_exhausted|management_key_required|openrouter_api/)
     end
 

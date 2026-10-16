@@ -24,7 +24,7 @@ catalog, which models each function can use) are one more level down.
   endpoint_diff = (endpoints[:last_refresh_diff] || {}).to_h
   features = diagnostics[:features].to_h
   key_state = key_health[:status].presence || (key_status[:effective_configured] ? 'not_checked' : 'missing')
-  yes_no = ->(flag) { flag ? t('super_admin.app_config.yes') : t('super_admin.app_config.no') }
+  yes_no = ->(flag) { (flag ? t('super_admin.app_config.yes') : t('super_admin.app_config.no')).downcase }
   none = t("#{scope}.none")
   unknown = t("#{scope}.unknown")
 %>
@@ -76,9 +76,9 @@ catalog, which models each function can use) are one more level down.
 
       <div class="admin-stat" data-testid="diagnostics-catalog">
         <p class="admin-stat__label"><%= t("#{scope}.catalog.title") %></p>
-        <p class="admin-stat__value"><%= diagnostics_time(catalog[:last_refreshed_at]) %></p>
+        <p class="admin-stat__value"><%= diagnostics_time(catalog[:last_refreshed_at]).upcase_first %></p>
         <p class="admin-stat__note">
-          <%= t("#{scope}.catalog.status", status: diagnostics_status(:refresh, catalog[:refresh_status]), source: diagnostics_status(:source, catalog[:source])) %>
+          <%= t("#{scope}.catalog.status", status: diagnostics_status(:refresh, catalog[:refresh_status]).downcase, source: diagnostics_status(:source, catalog[:source])) %>
         </p>
         <p class="admin-stat__note">
           <%= t("#{scope}.catalog.models", number: diagnostics_count(catalog[:total_models])) %>
@@ -95,7 +95,7 @@ catalog, which models each function can use) are one more level down.
         <p class="admin-stat__label"><%= t("#{scope}.providers.title") %></p>
         <p class="admin-stat__value"><%= t("#{scope}.providers.endpoints", number: diagnostics_count(endpoints[:total_endpoints])) %></p>
         <p class="admin-stat__note">
-          <%= t("#{scope}.providers.status", status: diagnostics_status(:refresh, endpoints[:refresh_status]),
+          <%= t("#{scope}.providers.status", status: diagnostics_status(:refresh, endpoints[:refresh_status]).downcase,
                                              providers: Array(endpoints[:providers]).first(5).join(', ').presence || none) %>
         </p>
         <p class="admin-stat__note"><%= t("#{scope}.providers.stale", stale: diagnostics_count(endpoints[:stale_endpoints]), pending: diagnostics_count(endpoints[:pending_model_count])) %></p>
