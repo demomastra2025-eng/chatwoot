@@ -47,10 +47,6 @@ import {
   Selection,
 } from '@chatwoot/prosemirror-schema';
 import { suggestionsPlugin } from '@chatwoot/prosemirror-schema/src/mentions/plugin';
-import {
-  EMOJI_SEQUENCE_REGEX,
-  getAppleEmojiUrl,
-} from 'shared/helpers/appleEmoji';
 
 import {
   appendSignature,
@@ -366,78 +362,6 @@ function createSuggestionPlugin({
       return event.keyCode === 13 && showMenu.value;
     },
   });
-}
-
-const prosemirrorDecorationHelpers = (() => {
-  try {
-    const dummyDoc = messageSchema.node('doc', null, [
-      messageSchema.node('paragraph', null, [messageSchema.text('a')]),
-    ]);
-    const probe = suggestionsPlugin({ suggestionClass: 'probe' });
-    const probeSet = probe.props.decorations.call(probe, {
-      doc: dummyDoc,
-      [probe.key]: { active: true, range: { from: 1, to: 2 } },
-    });
-    return {
-      DecorationSet: probeSet?.constructor || null,
-      Decoration: probeSet?.find?.()?.[0]?.constructor || null,
-    };
-  } catch {
-    return { DecorationSet: null, Decoration: null };
-  }
-})();
-
-let lastEmojiDoc = null;
-let lastEmojiDecorations = null;
-
-function buildAppleEmojiDecorations(doc) {
-  const { DecorationSet, Decoration } = prosemirrorDecorationHelpers;
-  if (
-    !DecorationSet ||
-    !Decoration ||
-    !doc ||
-    typeof doc.descendants !== 'function'
-  ) {
-    return null;
-  }
-  if (doc === lastEmojiDoc) {
-    return lastEmojiDecorations;
-  }
-  if (
-    !doc.textContent ||
-    !/[\u00a9\u00ae\u2000-\u3300\ud83c-\ud83e]/.test(doc.textContent)
-  ) {
-    lastEmojiDoc = doc;
-    lastEmojiDecorations = DecorationSet.empty;
-    return lastEmojiDecorations;
-  }
-  const decorations = [];
-  doc.descendants((node, pos) => {
-    if (!node.isText || !node.text) return;
-    EMOJI_SEQUENCE_REGEX.lastIndex = 0;
-    let match = EMOJI_SEQUENCE_REGEX.exec(node.text);
-    while (match) {
-      const emoji = match[0];
-      const url = getAppleEmojiUrl(emoji);
-      if (url) {
-        const from = pos + match.index;
-        const to = from + emoji.length;
-        decorations.push(
-          Decoration.inline(from, to, {
-            nodeName: 'span',
-            class: 'cw-apple-emoji-editor-char',
-            style: `background-image: url("${url}")`,
-          })
-        );
-      }
-      match = EMOJI_SEQUENCE_REGEX.exec(node.text);
-    }
-  });
-  lastEmojiDoc = doc;
-  lastEmojiDecorations = decorations.length
-    ? DecorationSet.create(doc, decorations)
-    : DecorationSet.empty;
-  return lastEmojiDecorations;
 }
 
 const plugins = computed(() => {
@@ -962,7 +886,6 @@ function createEditorView() {
   editorView = new EditorView(editor.value, {
     state: state,
     editable: () => !props.disabled,
-    decorations: editorState => buildAppleEmojiDecorations(editorState?.doc),
     dispatchTransaction: tx => {
       state = state.apply(tx);
       editorView.updateState(state);
