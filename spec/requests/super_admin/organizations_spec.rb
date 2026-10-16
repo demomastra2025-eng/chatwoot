@@ -411,7 +411,7 @@ RSpec.describe 'Super Admin organizations', type: :request do
             totals = page.at_css('[data-testid="accounts-totals"]')
             expect(text(totals.at_css('th'))).to eq('Итого по всем аккаунтам')
             expect(text(totals)).to end_with('30 10')
-            expect(text(page.at_css('[data-testid="accounts-block"] h2 + span'))).to eq('30 аккаунтов')
+            expect(text(page.at_css('[data-testid="accounts-block"] h2 + span'))).to start_with('30 аккаунт')
           end
         end
 

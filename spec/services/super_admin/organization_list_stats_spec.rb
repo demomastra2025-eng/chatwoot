@@ -17,6 +17,12 @@ RSpec.describe SuperAdmin::OrganizationListStats do
     end
   end
 
+  # Limits as old data may hold them (a text, a blank): the account form would not save them, the column keeps them
+  def raw_limits(account, limits)
+    account.update_columns(limits: limits) # rubocop:disable Rails/SkipsModelValidations
+    account
+  end
+
   def set_custom(account, **values)
     account.update!(custom_attributes: account.custom_attributes.to_h.merge(values.stringify_keys))
   end
@@ -126,9 +132,9 @@ RSpec.describe SuperAdmin::OrganizationListStats do
       GlobalConfig.clear_cache
       accounts = [
         account_of(organization, limits: { 'agents' => 12 }),
-        account_of(organization, limits: { 'agents' => '3' }),
+        raw_limits(account_of(organization), { 'agents' => '3' }),
         account_of(organization, limits: { 'agents' => 0 }),
-        account_of(organization, limits: { 'agents' => ' ' }),
+        raw_limits(account_of(organization), { 'agents' => ' ' }),
         account_of(organization),
         account_of(organization, limits: { 'agents' => 2 }).tap { |account| set_custom(account, subscribed_quantity: 25) },
         account_of(organization, limits: { 'agents' => 2 }).tap { |account| set_custom(account, subscribed_quantity: '4') },
@@ -142,7 +148,7 @@ RSpec.describe SuperAdmin::OrganizationListStats do
     end
 
     it 'treats text that is not a number as 0, like to_i' do
-      accounts = [account_of(organization, limits: { 'agents' => 'many' }), account_of(organization, limits: { 'agents' => '6 seats' })]
+      accounts = [raw_limits(account_of(organization), { 'agents' => 'many' }), raw_limits(account_of(organization), { 'agents' => '6 seats' })]
 
       expect(stats_for(organization).operators_limit(organization)).to eq(6)
       expect(stats_for(organization).operators_limit(organization)).to eq(expected_limit(*accounts))
