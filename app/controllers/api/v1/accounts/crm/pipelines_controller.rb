@@ -107,7 +107,7 @@ class Api::V1::Accounts::Crm::PipelinesController < Api::V1::Accounts::Crm::Base
 
   def render_pipeline_save_payload
     payload = ::Crm::PayloadBuilder.pipeline(@pipeline.reload, include_inactive_stages: true)
-    return render_payload(payload) unless params.key?(:stages)
+    return render_payload(payload) unless params.key?(:stages) || params.key?(:appointment_automation)
 
     pipelines = policy_scope(::Crm::Pipeline).includes(stages: :field_requirements).ordered
     render json: {

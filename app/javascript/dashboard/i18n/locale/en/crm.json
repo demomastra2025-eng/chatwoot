@@ -9,6 +9,7 @@
     },
     "APPOINTMENT_AUTOMATION": {
       "TITLE": "Appointments and deal stages",
+      "PIPELINE_LABEL": "Deal pipeline",
       "AUTO_CREATE_DEALS": "Create deals from new appointments",
       "AUTO_CREATE_DEALS_HELP": "Automatically creates a deal in this pipeline when a new appointment is booked.",
       "CARDINALITY": "When the patient already has an active deal in this pipeline",

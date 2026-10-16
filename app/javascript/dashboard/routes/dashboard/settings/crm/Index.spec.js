@@ -638,7 +638,7 @@ describe('CRM pipeline settings', () => {
     expect(selector.attributes('data-options').split(',')).not.toContain('14');
     expect(selector.attributes('data-options').split(',')).not.toContain('15');
     const sourcesBlock = wrapper.get('[data-testid="crm-channel-entry-block"]');
-    expect(sourcesBlock.classes()).toContain('rounded-xl');
+    expect(wrapper.get('aside').classes()).toContain('rounded-2xl');
     expect(sourcesBlock.element.contains(selector.element)).toBe(true);
     expect(nestedFrames(sourcesBlock)).toEqual([]);
     expect(
@@ -930,9 +930,6 @@ describe('CRM pipeline settings', () => {
       .get('[data-testid="crm-channel-entry-settings"]')
       .findComponent({ name: 'Switch' })
       .vm.$emit('update:modelValue', false);
-    wrapper
-      .findComponent('[data-testid="appointment-auto-create-deals"]')
-      .vm.$emit('update:modelValue', true);
     await nextTick();
     await wrapper
       .findAll('button')
@@ -954,9 +951,6 @@ describe('CRM pipeline settings', () => {
         default: false,
         active: true,
         auto_create_deal_on_channel_contact: false,
-        appointment_automation: expect.objectContaining({
-          auto_create_deals: true,
-        }),
         pipeline_order: [2, 1],
         stages: expect.arrayContaining([
           expect.objectContaining({ id: 13, name: 'Proposal draft' }),
@@ -973,11 +967,6 @@ describe('CRM pipeline settings', () => {
     );
     expect(
       wrapper
-        .findComponent({ name: 'CrmAppointmentAutomationSettings' })
-        .props('modelValue').auto_create_deals
-    ).toBe(true);
-    expect(
-      wrapper
         .get('header')
         .findComponent({ name: 'Switch' })
         .props('modelValue')
@@ -988,20 +977,15 @@ describe('CRM pipeline settings', () => {
     expect(testState.loadPipelines).toHaveBeenCalledTimes(1);
   });
 
-  it('leaves appointment deal creation off when the channel source is enabled and omits unchanged ordering', async () => {
+  it('omits unchanged pipeline ordering and appointment automation from pipeline stage save', async () => {
     const wrapper = mountComponent();
     await flushPromises();
-    expect(
-      wrapper
-        .findComponent('[data-testid="appointment-auto-create-deals"]')
-        .props('modelValue')
-    ).toBe(false);
     await wrapper.get('[data-stage-name-id="13"]').setValue('Proposal draft');
     await wrapper.get('[data-testid="save-settings-button"]').trigger('click');
     await flushPromises();
     const payload = testState.savePipelineSettings.mock.calls[0][1];
     expect(payload.auto_create_deal_on_channel_contact).toBe(true);
-    expect(payload.appointment_automation.auto_create_deals).toBe(false);
+    expect(payload).not.toHaveProperty('appointment_automation');
     expect(payload).not.toHaveProperty('pipeline_order');
     expect(
       payload.stages.every(
@@ -1013,7 +997,7 @@ describe('CRM pipeline settings', () => {
     ).toBe(true);
   });
 
-  it('uses new stage client IDs in both the channel target and appointment rules in the same Save', async () => {
+  it('uses new stage client IDs in the channel target in the same Save', async () => {
     const wrapper = mountComponent();
     await flushPromises();
     await wrapper.get('[data-testid="create-stage-button"]').trigger('click');
@@ -1024,14 +1008,6 @@ describe('CRM pipeline settings', () => {
     await wrapper
       .get('[data-testid="auto-create-stage-select"]')
       .trigger('click');
-    const appointments = wrapper.findComponent({
-      name: 'CrmAppointmentAutomationSettings',
-    });
-    appointments.props('modelValue').enabled = true;
-    await nextTick();
-    appointments
-      .findComponent('[data-testid="appointment-event-stage-scheduled"]')
-      .vm.$emit('update:modelValue', clientId);
     await nextTick();
     await wrapper.get('[data-testid="save-settings-button"]').trigger('click');
     await flushPromises();
@@ -1046,26 +1022,30 @@ describe('CRM pipeline settings', () => {
             name: 'New stage',
           }),
         ]),
-        appointment_automation: expect.objectContaining({
-          rules: [expect.objectContaining({ stage_id: clientId })],
-        }),
       })
     );
   });
 
-  it('places appointment automation after entry rules without ordinary reason controls or stage markers', async () => {
+  it('places channel entry settings and stage entry rules in the left aside next to stage columns', async () => {
     const wrapper = mountComponent();
     await flushPromises();
+    expect(
+      wrapper
+        .findAll('aside section[data-testid]')
+        .map(section => section.attributes('data-testid'))
+    ).toEqual(['crm-channel-entry-settings', 'crm-stage-entry-rules']);
     expect(
       wrapper
         .findAll('section[data-testid]')
         .map(section => section.attributes('data-testid'))
     ).toEqual([
-      'crm-stage-entry-settings',
-      'crm-stage-entry-rules',
       'crm-channel-entry-settings',
-      'crm-appointment-automation-settings',
+      'crm-stage-entry-rules',
+      'crm-stage-entry-settings',
     ]);
+    expect(
+      wrapper.find('[data-testid="crm-appointment-automation-settings"]').exists()
+    ).toBe(false);
     expect(wrapper.find('[icon="i-lucide-star"]').exists()).toBe(false);
     expect(wrapper.find('[icon="i-lucide-star-off"]').exists()).toBe(false);
     await wrapper
@@ -1078,24 +1058,6 @@ describe('CRM pipeline settings', () => {
     expect(
       wrapper.get('[data-testid="scheduling-drawer"]').text()
     ).not.toContain('TRANSITION_REASON');
-    expect(
-      wrapper
-        .findComponent({ name: 'CrmAppointmentAutomationSettings' })
-        .props('medelementInstalled')
-    ).toBe(false);
-  });
-
-  it('exposes the MedElement source only when the integration has an installed hook', async () => {
-    testState.integrations.mockResolvedValueOnce({
-      data: { payload: [{ id: 'medelement', hooks: [{ id: 7 }] }] },
-    });
-    const wrapper = mountComponent();
-    await flushPromises();
-    expect(
-      wrapper
-        .findComponent({ name: 'CrmAppointmentAutomationSettings' })
-        .props('medelementInstalled')
-    ).toBe(true);
   });
 
   it('resets the form on account change and ignores a previous account Save completion', async () => {
@@ -1137,10 +1099,5 @@ describe('CRM pipeline settings', () => {
     expect(
       wrapper.get('[data-testid="save-settings-button"]').attributes()
     ).toHaveProperty('disabled');
-    expect(
-      wrapper
-        .findComponent({ name: 'CrmAppointmentAutomationSettings' })
-        .props('modelValue')
-    ).toMatchObject({ auto_create_deals: false, rules: [] });
   });
 });

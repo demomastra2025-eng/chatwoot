@@ -24,7 +24,6 @@ import SchedulingColorPicker from 'dashboard/components-next/Scheduling/Scheduli
 import SchedulingDrawer from 'dashboard/components-next/Scheduling/SchedulingDrawer.vue';
 import SchedulingErrorState from 'dashboard/components-next/Scheduling/SchedulingErrorState.vue';
 import SchedulingPageHeader from 'dashboard/components-next/Scheduling/SchedulingPageHeader.vue';
-import CrmAppointmentAutomationSettings from 'dashboard/components-next/CRM/CrmAppointmentAutomationSettings.vue';
 import SettingsLayout from '../SettingsLayout.vue';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import { formatCrmErrorMessage } from 'dashboard/stores/crm/shared';
@@ -38,8 +37,6 @@ import {
   sortStages,
 } from './stageOrder';
 import { dealStageDisplayName } from 'dashboard/components-next/CRM/dealStageSelection';
-import { appointmentAutomationDraft } from 'dashboard/components-next/CRM/appointmentAutomation';
-import IntegrationsAPI from 'dashboard/api/integrations';
 
 const referencesStore = useCrmReferencesStore();
 const route = useRoute();
@@ -89,9 +86,6 @@ const pipelineActiveDraft = ref(true);
 const pipelineAutoCreateEnabled = ref(false);
 const selectedAutoCreateStageId = ref('');
 const pipelineOrderDraft = ref([]);
-const appointmentAutomationState = ref(appointmentAutomationDraft());
-const appointmentSettingsRef = ref(null);
-const medelementInstalled = ref(false);
 const isLeaving = ref(false);
 let settingsGeneration = 0;
 let settingsRequest = null;
@@ -225,11 +219,6 @@ const draftStages = computed(() =>
         : [],
   }))
 );
-const appointmentPipeline = computed(() => ({
-  ...selectedPipeline.value,
-  name: pipelineNameDraft.value,
-  stages: draftStages.value,
-}));
 const autoCreateStageOptions = computed(() =>
   autoCreateStagesForPipeline({
     ...selectedPipeline.value,
@@ -268,7 +257,6 @@ const buildStageDraftState = () => ({
   channelAutoCreate: pipelineAutoCreateEnabled.value,
   autoCreateStageId: selectedAutoCreateStageId.value,
   pipelineOrder: [...pipelineOrderDraft.value],
-  appointments: appointmentAutomationState.value,
   allowStageRuleOverride: allowStageRuleOverrideDraft.value,
   closingReasons: lossReasonsEnabled.value
     ? normalizedClosingReasonDraft.value
@@ -335,10 +323,6 @@ const syncSelectedPipelineState = () => {
   pipelineOrderDraft.value = orderedActivePipelines.value.map(
     pipeline => pipeline.id
   );
-  appointmentAutomationState.value = appointmentAutomationDraft(
-    selectedPipeline.value?.appointmentAutomation ||
-      selectedPipeline.value?.appointment_automation
-  );
   selectedStages.value.forEach(stage => {
     stageNameDrafts[stage.id] = stage.name;
     stageFieldRequirementDrafts[stage.id] = (stage.fieldRequirements || [])
@@ -364,27 +348,11 @@ const syncSelectedPipelineState = () => {
   stageDraftBaseline.value = JSON.stringify(buildStageDraftState());
 };
 
-const loadInstalledIntegrations = async () => {
-  const requestAccountId = String(accountId.value);
-  medelementInstalled.value = false;
-  try {
-    const response = await IntegrationsAPI.get();
-    if (String(accountId.value) !== requestAccountId) return;
-    medelementInstalled.value = (response.data.payload || []).some(
-      integration =>
-        integration.id === 'medelement' && integration.hooks?.length
-    );
-  } catch {
-    // Integration-specific settings stay hidden if the catalog cannot be read.
-  }
-};
-
 const loadSettings = async () => {
   const requestAccountId = String(accountId.value);
   await Promise.all([
     referencesStore.loadPipelines({ include_inactive_stages: true }),
     referencesStore.loadFieldDefinitions('deal'),
-    loadInstalledIntegrations(),
   ]);
   if (String(accountId.value) !== requestAccountId) return;
   await syncSelectedPipelineRoute();
@@ -630,7 +598,6 @@ const saveSettings = async () => {
   const hasBlankStageName = [...draftRows, ...terminalStages].some(
     stage => !stageDraftName(stage)
   );
-  const appointmentPayload = appointmentSettingsRef.value?.buildPayload();
   const autoCreateStageId = autoCreateStageOptions.value.some(
     option => option.value === selectedAutoCreateStageId.value
   )
@@ -639,7 +606,6 @@ const saveSettings = async () => {
   if (
     hasBlankStageName ||
     !String(pipelineNameDraft.value).trim() ||
-    !appointmentPayload ||
     (pipelineActiveDraft.value &&
       pipelineAutoCreateEnabled.value &&
       !autoCreateStageId)
@@ -661,7 +627,6 @@ const saveSettings = async () => {
       restrict_stage_skipping: restrictStageSkippingDraft.value,
       restrict_backward_move: restrictBackwardMoveDraft.value,
       allow_stage_rule_override: allowStageRuleOverrideDraft.value,
-      appointment_automation: appointmentPayload,
       deleted_stage_ids: deletedIds,
       stages: draftRows.map(stage => ({
         id: stage.draft ? undefined : stage.id,
@@ -1082,9 +1047,172 @@ onMounted(async () => {
           </SchedulingPageHeader>
 
           <div class="min-h-0 flex-1 overflow-auto">
-            <div class="flex min-w-0 flex-col gap-6 px-6 pb-8">
+            <div
+              class="grid min-h-[34rem] min-w-max grid-cols-[18rem_max-content] gap-5 px-6 pb-8"
+            >
+              <aside
+                class="h-fit overflow-hidden rounded-2xl border border-n-weak bg-n-solid-2"
+              >
+                <div class="border-b border-n-weak px-5 py-4">
+                  <div
+                    class="flex items-center gap-2 text-sm font-semibold text-n-slate-12"
+                  >
+                    <span class="i-lucide-plug-zap size-4 text-n-brand" />
+                    {{ $t('CRM.SETTINGS.PIPELINES.SOURCES_TITLE') }}
+                  </div>
+                </div>
+
+                <div class="grid divide-y divide-n-weak">
+                  <section
+                    class="grid gap-3 px-5 py-4"
+                    data-testid="crm-channel-entry-settings"
+                  >
+                    <div
+                      class="grid gap-3"
+                      data-testid="crm-channel-entry-block"
+                    >
+                      <div class="flex items-center justify-between gap-3">
+                        <div
+                          class="flex items-center gap-2 text-sm font-medium text-n-slate-12"
+                        >
+                          <span class="i-lucide-zap size-4 text-n-brand" />
+                          {{ $t('CRM.SETTINGS.PIPELINES.FORM.AUTO_CREATE') }}
+                        </div>
+                        <Switch
+                          :model-value="pipelineAutoCreateEnabled"
+                          :disabled="
+                            !canManage || pipelineSaving || settingsSaving
+                          "
+                          @update:model-value="togglePipelineAutoCreate"
+                        />
+                      </div>
+                      <p class="mb-0 text-xs leading-5 text-n-slate-10">
+                        {{
+                          $t(
+                            'CRM.SETTINGS.PIPELINES.FORM.AUTO_CREATE_DEAL_ON_CHANNEL_CONTACT_HELP'
+                          )
+                        }}
+                      </p>
+                      <div v-if="pipelineAutoCreateEnabled" class="grid gap-2">
+                        <span class="text-xs font-medium text-n-slate-11">
+                          {{
+                            $t(
+                              'CRM.SETTINGS.PIPELINES.AUTO_CREATE_DIALOG.STAGE_LABEL'
+                            )
+                          }}
+                        </span>
+                        <SelectMenu
+                          v-if="canManage && !pipelineSaving && !settingsSaving"
+                          data-testid="auto-create-stage-select"
+                          :model-value="selectedAutoCreateStageId"
+                          :options="autoCreateStageOptions"
+                          :label="selectedAutoCreateStageLabel"
+                          class="w-full"
+                          sub-menu-align="start"
+                          sub-menu-position="bottom"
+                          @update:model-value="updatePipelineAutoCreateStage"
+                        />
+                        <span
+                          v-else
+                          class="text-sm font-medium text-n-slate-12"
+                        >
+                          {{ selectedAutoCreateStageLabel }}
+                        </span>
+                        <p
+                          v-if="autoCreateStageOptions.length === 0"
+                          class="mb-0 text-xs leading-5 text-n-ruby-10"
+                        >
+                          {{
+                            $t(
+                              'CRM.SETTINGS.PIPELINES.AUTO_CREATE_DIALOG.NO_STAGES'
+                            )
+                          }}
+                        </p>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section
+                    class="grid gap-4 px-5 py-4"
+                    data-testid="crm-stage-entry-rules"
+                  >
+                    <div class="text-sm font-semibold text-n-slate-12">
+                      {{ $t('CRM.SETTINGS.STAGE_RULES.TITLE') }}
+                    </div>
+                    <div
+                      class="grid gap-4"
+                      data-testid="crm-stage-entry-rules-block"
+                    >
+                      <label
+                        class="flex items-center justify-between gap-3 text-sm text-n-slate-11"
+                      >
+                        <span>
+                          {{ $t('CRM.SETTINGS.STAGE_RULES.RESTRICT_SKIPPING') }}
+                        </span>
+                        <Switch
+                          :model-value="restrictStageSkippingDraft"
+                          :disabled="!canManage || settingsSaving"
+                          @update:model-value="
+                            restrictStageSkippingDraft = $event
+                          "
+                        />
+                      </label>
+                      <label
+                        class="flex items-center justify-between gap-3 text-sm text-n-slate-11"
+                      >
+                        <span>
+                          {{ $t('CRM.SETTINGS.STAGE_RULES.RESTRICT_BACKWARD') }}
+                        </span>
+                        <Switch
+                          :model-value="restrictBackwardMoveDraft"
+                          :disabled="!canManage || settingsSaving"
+                          @update:model-value="
+                            restrictBackwardMoveDraft = $event
+                          "
+                        />
+                      </label>
+                      <label
+                        class="flex items-center justify-between gap-3 text-sm text-n-slate-11"
+                      >
+                        <span>
+                          {{ $t('CRM.SETTINGS.STAGE_RULES.ALLOW_OVERRIDE') }}
+                        </span>
+                        <Switch
+                          :model-value="allowStageRuleOverrideDraft"
+                          :disabled="!canManage || settingsSaving"
+                          @update:model-value="
+                            allowStageRuleOverrideDraft = $event
+                          "
+                        />
+                      </label>
+                    </div>
+                  </section>
+
+                  <button
+                    type="button"
+                    class="group grid gap-3 px-5 py-4 text-left transition-colors hover:bg-n-alpha-black2"
+                    @click="openLeadForms"
+                  >
+                    <div class="flex items-center justify-between gap-3">
+                      <div
+                        class="flex items-center gap-2 text-sm font-medium text-n-slate-12"
+                      >
+                        <span class="i-lucide-file-input size-4 text-n-brand" />
+                        {{ $t('CRM.SETTINGS.PIPELINES.LEAD_FORMS_TITLE') }}
+                      </div>
+                      <span
+                        class="i-lucide-arrow-up-right size-4 text-n-slate-9 transition-colors group-hover:text-n-brand"
+                      />
+                    </div>
+                    <p class="mb-0 text-xs leading-5 text-n-slate-10">
+                      {{ $t('CRM.SETTINGS.PIPELINES.LEAD_FORMS_HELP') }}
+                    </p>
+                  </button>
+                </div>
+              </aside>
+
               <section
-                class="min-w-0 overflow-x-auto"
+                class="w-max"
                 data-testid="crm-stage-entry-settings"
               >
                 <div class="py-1">
@@ -1361,163 +1489,6 @@ onMounted(async () => {
                   </div>
                 </div>
               </section>
-              <section
-                class="flex max-w-3xl flex-col gap-4"
-                data-testid="crm-stage-entry-rules"
-              >
-                <h3 class="m-0 text-heading-2 text-n-slate-12">
-                  {{ $t('CRM.SETTINGS.STAGE_RULES.TITLE') }}
-                </h3>
-                <div
-                  class="flex flex-col divide-y divide-n-weak rounded-xl outline outline-1 -outline-offset-1 outline-n-weak"
-                  data-testid="crm-stage-entry-rules-block"
-                >
-                  <label
-                    class="flex items-center justify-between gap-3 px-4 py-3 text-heading-3 text-n-slate-12"
-                  >
-                    <span>
-                      {{ $t('CRM.SETTINGS.STAGE_RULES.RESTRICT_SKIPPING') }}
-                    </span>
-                    <Switch
-                      :model-value="restrictStageSkippingDraft"
-                      :disabled="!canManage || settingsSaving"
-                      @update:model-value="restrictStageSkippingDraft = $event"
-                    />
-                  </label>
-                  <label
-                    class="flex items-center justify-between gap-3 px-4 py-3 text-heading-3 text-n-slate-12"
-                  >
-                    <span>
-                      {{ $t('CRM.SETTINGS.STAGE_RULES.RESTRICT_BACKWARD') }}
-                    </span>
-                    <Switch
-                      :model-value="restrictBackwardMoveDraft"
-                      :disabled="!canManage || settingsSaving"
-                      @update:model-value="restrictBackwardMoveDraft = $event"
-                    />
-                  </label>
-                  <label
-                    class="flex items-center justify-between gap-3 px-4 py-3 text-heading-3 text-n-slate-12"
-                  >
-                    <span>
-                      {{ $t('CRM.SETTINGS.STAGE_RULES.ALLOW_OVERRIDE') }}
-                    </span>
-                    <Switch
-                      :model-value="allowStageRuleOverrideDraft"
-                      :disabled="!canManage || settingsSaving"
-                      @update:model-value="allowStageRuleOverrideDraft = $event"
-                    />
-                  </label>
-                </div>
-              </section>
-              <section
-                class="flex max-w-3xl flex-col gap-4"
-                data-testid="crm-channel-entry-settings"
-              >
-                <h3 class="m-0 text-heading-2 text-n-slate-12">
-                  {{ $t('CRM.SETTINGS.PIPELINES.SOURCES_TITLE') }}
-                </h3>
-                <div
-                  class="flex flex-col divide-y divide-n-weak rounded-xl outline outline-1 -outline-offset-1 outline-n-weak"
-                  data-testid="crm-channel-entry-block"
-                >
-                  <div class="flex flex-col gap-1 px-4 py-3">
-                    <div class="flex items-center justify-between gap-3">
-                      <span
-                        class="flex min-w-0 items-center gap-2 text-heading-3 text-n-slate-12"
-                      >
-                        <span
-                          class="i-lucide-zap size-4 shrink-0 text-n-brand"
-                        />
-                        {{ $t('CRM.SETTINGS.PIPELINES.FORM.AUTO_CREATE') }}
-                      </span>
-                      <Switch
-                        :model-value="pipelineAutoCreateEnabled"
-                        :disabled="
-                          !canManage || pipelineSaving || settingsSaving
-                        "
-                        @update:model-value="togglePipelineAutoCreate"
-                      />
-                    </div>
-                    <p class="mb-0 text-body-main text-n-slate-11">
-                      {{
-                        $t(
-                          'CRM.SETTINGS.PIPELINES.FORM.AUTO_CREATE_DEAL_ON_CHANNEL_CONTACT_HELP'
-                        )
-                      }}
-                    </p>
-                  </div>
-                  <div
-                    v-if="pipelineAutoCreateEnabled"
-                    class="flex flex-col gap-1 px-4 pb-4 pt-3"
-                  >
-                    <span class="text-heading-3 text-n-slate-12">
-                      {{
-                        $t(
-                          'CRM.SETTINGS.PIPELINES.AUTO_CREATE_DIALOG.STAGE_LABEL'
-                        )
-                      }}
-                    </span>
-                    <SelectMenu
-                      v-if="canManage && !pipelineSaving && !settingsSaving"
-                      data-testid="auto-create-stage-select"
-                      :model-value="selectedAutoCreateStageId"
-                      :options="autoCreateStageOptions"
-                      :label="selectedAutoCreateStageLabel"
-                      class="w-full"
-                      sub-menu-align="start"
-                      sub-menu-position="bottom"
-                      @update:model-value="updatePipelineAutoCreateStage"
-                    />
-                    <span v-else class="text-body-main text-n-slate-12">
-                      {{ selectedAutoCreateStageLabel }}
-                    </span>
-                    <p
-                      v-if="autoCreateStageOptions.length === 0"
-                      class="mb-0 text-label-small text-n-ruby-10"
-                    >
-                      {{
-                        $t(
-                          'CRM.SETTINGS.PIPELINES.AUTO_CREATE_DIALOG.NO_STAGES'
-                        )
-                      }}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    class="group flex w-full flex-col gap-1 rounded-b-xl rounded-t-none px-4 py-3 text-left transition-colors hover:bg-n-alpha-black2"
-                    @click="openLeadForms"
-                  >
-                    <span
-                      class="flex w-full items-center justify-between gap-3"
-                    >
-                      <span
-                        class="flex min-w-0 items-center gap-2 text-heading-3 text-n-slate-12"
-                      >
-                        <span
-                          class="i-lucide-file-input size-4 shrink-0 text-n-brand"
-                        />
-                        {{ $t('CRM.SETTINGS.PIPELINES.LEAD_FORMS_TITLE') }}
-                      </span>
-                      <span
-                        class="i-lucide-arrow-up-right size-4 shrink-0 text-n-slate-9 transition-colors group-hover:text-n-brand"
-                      />
-                    </span>
-                    <span class="text-body-main text-n-slate-11">
-                      {{ $t('CRM.SETTINGS.PIPELINES.LEAD_FORMS_HELP') }}
-                    </span>
-                  </button>
-                </div>
-              </section>
-              <CrmAppointmentAutomationSettings
-                ref="appointmentSettingsRef"
-                v-model="appointmentAutomationState"
-                class="max-w-3xl"
-                :pipeline="appointmentPipeline"
-                :can-manage="canManage"
-                :saving="settingsSaving"
-                :medelement-installed="medelementInstalled"
-              />
             </div>
           </div>
         </template>

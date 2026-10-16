@@ -256,4 +256,25 @@ describe('appointment automation settings draft', () => {
     expect(switches.length).toBeGreaterThanOrEqual(3);
     expect(switches.every(control => control.element.disabled)).toBe(true);
   });
+
+  it('renders a pipeline selector when pipelines are provided and emits selection changes', async () => {
+    const wrapper = mountSettings({
+      pipelines: [
+        { id: 10, name: 'Primary funnel' },
+        { id: 20, name: 'Repeat visits' },
+      ],
+      selectedPipelineId: 10,
+    });
+    const selector = wrapper.findComponent(
+      '[data-testid="appointment-automation-pipeline-select"]'
+    );
+    expect(selector.exists()).toBe(true);
+    expect(selector.props('options')).toEqual([
+      { value: '10', label: 'Primary funnel' },
+      { value: '20', label: 'Repeat visits' },
+    ]);
+    selector.vm.$emit('update:modelValue', '20');
+    await nextTick();
+    expect(wrapper.emitted('update:selectedPipelineId')).toEqual([['20']]);
+  });
 });

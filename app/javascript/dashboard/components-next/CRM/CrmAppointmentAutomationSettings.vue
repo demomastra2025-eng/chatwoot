@@ -8,11 +8,21 @@ import { APPOINTMENT_AUTOMATION_EVENTS } from './appointmentAutomation';
 
 const props = defineProps({
   pipeline: { type: Object, required: true },
+  pipelines: { type: Array, default: () => [] },
+  selectedPipelineId: { type: [String, Number], default: '' },
   canManage: { type: Boolean, default: false },
   saving: { type: Boolean, default: false },
   medelementInstalled: { type: Boolean, default: false },
 });
+const emit = defineEmits(['update:selectedPipelineId']);
 const draft = defineModel({ type: Object, required: true });
+
+const pipelineOptions = computed(() =>
+  props.pipelines.map(item => ({
+    value: String(item.id),
+    label: item.name,
+  }))
+);
 const { t } = useI18n();
 const translate = key => {
   // eslint-disable-next-line @intlify/vue-i18n/no-dynamic-keys
@@ -156,6 +166,15 @@ defineExpose({ buildPayload });
     <h3 class="m-0 text-heading-2 text-n-slate-12">
       {{ $t('CRM.APPOINTMENT_AUTOMATION.TITLE') }}
     </h3>
+    <SchedulingSelectField
+      v-if="pipelineOptions.length"
+      :model-value="String(selectedPipelineId || pipeline?.id || '')"
+      :label="$t('CRM.APPOINTMENT_AUTOMATION.PIPELINE_LABEL')"
+      :options="pipelineOptions"
+      :disabled="!canManage || saving"
+      data-testid="appointment-automation-pipeline-select"
+      @update:model-value="emit('update:selectedPipelineId', $event)"
+    />
     <SettingsToggleSection
       v-model="draft.auto_create_deals"
       :header="$t('CRM.APPOINTMENT_AUTOMATION.AUTO_CREATE_DEALS')"
