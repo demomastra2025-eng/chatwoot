@@ -48,7 +48,9 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       expect(main.css('[data-testid]').map { |node| node['data-testid'] }).to include(
         'plan-block', 'usage-block', 'channels-block', 'fine-tuning-block', 'users-block', 'technical-block'
       )
-      expect(side.css('[data-testid]').map { |node| node['data-testid'] }).to eq(%w[trial-block info-block maintenance-block])
+      # `account-organization` is the line inside the block «Организация»
+      expect(side.css('[data-testid]').map { |node| node['data-testid'] })
+        .to eq(%w[trial-block info-block organization-block account-organization maintenance-block])
     end
   end
 
