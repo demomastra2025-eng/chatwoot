@@ -141,9 +141,11 @@ RSpec.describe 'Super Admin times in Astana time', type: :request do
     end
 
     it 'converts the time of an attribute of any dashboard, whatever the controller' do
-      dashboard = instance_double(UserDashboard, attribute_types: { confirmed_at: ConfirmedAtField, created_at: Administrate::Field::DateTime,
-                                                                   name: Administrate::Field::String,
-                                                                   note: Administrate::Field::String.with_options(searchable: true) })
+      types = {
+        confirmed_at: ConfirmedAtField, created_at: Administrate::Field::DateTime, name: Administrate::Field::String,
+        note: Administrate::Field::String.with_options(searchable: true)
+      }
+      dashboard = instance_double(UserDashboard, attribute_types: types)
       controller = SuperAdmin::UsersController.new
       allow(controller).to receive(:dashboard).and_return(dashboard)
 

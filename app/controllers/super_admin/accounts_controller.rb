@@ -1,7 +1,7 @@
 # rubocop:disable Metrics/ClassLength
 class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   STORAGE_GB_IN_BYTES = 1.gigabyte
-  OWNER_DECISION_AUDIT_ACTION = 'update_service_flags'
+  OWNER_DECISION_AUDIT_ACTION = 'update_service_flags'.freeze
   # What a malformed value (an array or a string where the form sends a map) is parsed as
   MALFORMED = Object.new.freeze
 

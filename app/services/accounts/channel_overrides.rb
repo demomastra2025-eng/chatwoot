@@ -35,20 +35,26 @@ class Accounts::ChannelOverrides
     desired = validate!(requested)
     seen = expected.nil? ? nil : validate!(expected)
     desired = desired.reject { |key, state| seen[key] == state } if seen
-    changes = {}
-    @account.with_lock do
-      current = Accounts::AvailableChannels.overrides(@account)
-      stale = stale_keys(desired, current, seen) if seen
-      raise StaleOverrides, stale.join(', ') if stale.present?
-
-      changes = diff(current, desired)
-      write(merge(current, desired)) if changes.any?
-    end
+    changes = write_changes(desired, seen)
     record_audit(changes) if changes.any?
     changes
   end
 
   private
+
+  # Under the lock of the clinic: refuses a stale form, writes what changes, returns it
+  def write_changes(desired, seen)
+    changes = {}
+    @account.with_lock do
+      current = Accounts::AvailableChannels.overrides(@account)
+      stale = seen ? stale_keys(desired, current, seen) : []
+      raise StaleOverrides, stale.join(', ') if stale.any?
+
+      changes = diff(current, desired)
+      write(merge(current, desired)) if changes.any?
+    end
+    changes
+  end
 
   # Channels the person moved that somebody else moved too, to another state than the one asked for
   def stale_keys(desired, current, seen)

@@ -46,7 +46,7 @@ RSpec.describe 'Google::CallbacksController', type: :request do
           .to_return(status: 200, body: response_body_success.to_json, headers: { 'Content-Type' => 'application/json' })
       end
 
-      it 'creates no mailbox, tells the clinic in Russian that the channel is closed, links back and reports no error' do
+      it 'creates no mailbox and reports no error' do
         expect(ChatwootExceptionTracker).not_to receive(:new)
 
         expect do
@@ -54,8 +54,13 @@ RSpec.describe 'Google::CallbacksController', type: :request do
         end.not_to change(account.inboxes, :count)
 
         expect(response).to have_http_status(:forbidden)
-        expect(response.media_type).to eq('text/html')
+      end
+
+      it 'tells the clinic in Russian that the channel is closed and links back to its channels' do
+        get google_callback_url, params: { code: code, state: state }
+
         page = Nokogiri::HTML(response.body)
+        expect(response.media_type).to eq('text/html')
         expect(page.at_css('#channel-not-available-message').text).to eq(Channels::Catalog.unavailable_message('email'))
         expect(page.at_css('#channel-not-available-message').text).to include('Канал «Email» недоступен для вашей клиники')
         expect(page.at_css('a')['href']).to eq("#{base_url}/app/accounts/#{account.id}/settings/inboxes/list")

@@ -4,7 +4,7 @@ class SuperAdmin::InstallationConfigsController < SuperAdmin::ApplicationControl
   RESERVED_CONFIG_NAMES = [Channels::PlatformVisibility::CONFIG_NAME].freeze
 
   rescue_from ActiveRecord::RecordNotUnique, :with => :invalid_action_perfomed
-  before_action :reject_reserved_name, only: %i[create update]
+  before_action :reject_reserved_name
 
   # Overwrite any of the RESTful controller actions to implement custom behavior
   # For example, you may want to send an email after a foo is updated.
@@ -54,7 +54,7 @@ class SuperAdmin::InstallationConfigsController < SuperAdmin::ApplicationControl
   private
 
   # The list and the pages of a row never show a reserved config; this keeps a form from creating one or renaming another
-  # row into one.
+  # row into one (a request without a name in it passes).
   def reject_reserved_name
     name = params.dig(:installation_config, :name)
     return unless name.is_a?(String) && RESERVED_CONFIG_NAMES.include?(name.strip.upcase)

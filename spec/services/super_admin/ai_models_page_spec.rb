@@ -96,14 +96,17 @@ RSpec.describe SuperAdmin::AiModelsPage do
     end
 
     it 'reads a stored short list (JSON text) or a list as models' do
-      values['CAPTAIN_ASSISTANT_MODEL_ALLOWLIST'] = '["openai/gpt-6-luna", "openai/gpt-5.6-luna"]'
-      expect(slot('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST').effective_items).to eq(%w[openai/gpt-6-luna openai/gpt-5.6-luna])
+      {
+        '["openai/gpt-6-luna", "openai/gpt-5.6-luna"]' => %w[openai/gpt-6-luna openai/gpt-5.6-luna],
+        %w[openai/gpt-6-luna] => %w[openai/gpt-6-luna],
+        'not json' => []
+      }.each do |stored, models|
+        page = described_class.new(keys: keys, values: { 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST' => stored }, definitions: definitions,
+                                   masked_keys: masked_keys)
+        card = page.groups.flat_map(&:slots).find { |candidate| candidate.key == 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST' }
 
-      values['CAPTAIN_ASSISTANT_MODEL_ALLOWLIST'] = %w[openai/gpt-6-luna]
-      expect(slot('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST').effective_items).to eq(%w[openai/gpt-6-luna])
-
-      values['CAPTAIN_ASSISTANT_MODEL_ALLOWLIST'] = 'not json'
-      expect(slot('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST').effective_items).to eq([])
+        expect(card.effective_items).to eq(models), stored.inspect
+      end
     end
 
     it 'has no value to show for a blank setting without a built-in one' do
@@ -132,10 +135,11 @@ RSpec.describe SuperAdmin::AiModelsPage do
     end
 
     it 'covers every masked key of the captain page' do
-      (masked_keys & keys).each do |key|
-        values[key] = "value-of-#{key}"
+      masked = masked_keys & keys
+      masked.each { |key| values[key] = "value-of-#{key}" }
 
-        expect(slot(key).value).to be_nil, key
+      masked.each do |key|
+        expect(slot(key)).to have_attributes(value: nil, configured: true), key
       end
     end
 
@@ -157,7 +161,9 @@ RSpec.describe SuperAdmin::AiModelsPage do
     it 'gives the wide cards to the text areas, the short list and the prompts' do
       wide = page.groups.flat_map(&:slots).select(&:wide?).map(&:key)
 
-      expect(wide).to match_array(%w[CAPTAIN_ASSISTANT_MODEL_ALLOWLIST CAPTAIN_SYSTEM_PROMPTS CAPTAIN_AI_AGENT_SYSTEM_PROMPT CAPTAIN_AI_ASSISTANT_SYSTEM_PROMPT])
+      expect(wide).to match_array(
+        %w[CAPTAIN_ASSISTANT_MODEL_ALLOWLIST CAPTAIN_SYSTEM_PROMPTS CAPTAIN_AI_AGENT_SYSTEM_PROMPT CAPTAIN_AI_ASSISTANT_SYSTEM_PROMPT]
+      )
     end
   end
 end

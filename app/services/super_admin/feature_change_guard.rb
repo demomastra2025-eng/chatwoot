@@ -51,10 +51,15 @@ class SuperAdmin::FeatureChangeGuard
 
   def reason_for(flag, wanted)
     return if SuperAdmin::FineTuning::OWNER_DECISION_FLAGS.include?(flag)
+    return :internal if internal?(flag)
     return :never_enabled if wanted && Accounts::Plans.never_enabled.include?(flag)
     return :locked_on if !wanted && Accounts::Plans.locked_on.include?(flag)
-    return :internal if Accounts::Plans.internal.include?(flag) || !Accounts::Plans.classified_features.include?(flag)
 
     nil
+  end
+
+  # A platform-internal function, or one that no place of the plans names
+  def internal?(flag)
+    Accounts::Plans.internal.include?(flag) || Accounts::Plans.classified_features.exclude?(flag)
   end
 end

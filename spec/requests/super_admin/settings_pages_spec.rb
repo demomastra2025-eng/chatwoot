@@ -95,7 +95,8 @@ RSpec.describe 'Super admin settings pages', type: :request do
 
       expect(card['data-source']).to eq('set')
       expect(text(card.at_css('[data-testid="slot-source"]'))).to eq('Задано')
-      expect(text(card.at_css('[data-testid="slot-facts"]'))).to include('Действует', 'openai/gpt-5.6-luna', 'По умолчанию', Llm::Config::DEFAULT_MODEL)
+      facts = text(card.at_css('[data-testid="slot-facts"]'))
+      expect(facts).to include('Действует', 'openai/gpt-5.6-luna', 'По умолчанию', Llm::Config::DEFAULT_MODEL)
       expect(card.at_css('input[name="app_config[CAPTAIN_DEFAULT_MODEL]"]')['value']).to eq('openai/gpt-5.6-luna')
     end
 
@@ -235,7 +236,7 @@ RSpec.describe 'Super admin settings pages', type: :request do
       select = field('ENABLE_ACCOUNT_SIGNUP').at_css('select')
       expect(select.css('option').map { |option| text(option) }).to eq(%w[Да Нет])
       expect(select.at_css('option[selected]')['value']).to eq('false')
-      expect(response.body).not_to match(%r{>True<|>False<})
+      expect(response.body).not_to match(/>True<|>False</)
     end
 
     it 'shows a secret in a password field with a reveal button' do
@@ -362,7 +363,7 @@ RSpec.describe 'Super admin settings pages', type: :request do
 
     it 'has no upgrade offer and no mention of editions to buy' do
       expect(response.body).not_to match(/тариф выше|Enterprise|sales@|Перейти на|upgrade/i)
-      expect(page.css('a').map { |link| link['href'].to_s }).not_to include(a_string_matching(%r{chatwoot\.com}))
+      expect(page.css('a').map { |link| link['href'].to_s }).not_to include(a_string_matching(/chatwoot\.com/))
     end
 
     it 'links the functions that have a config page to it' do

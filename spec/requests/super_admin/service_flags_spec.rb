@@ -250,7 +250,10 @@ RSpec.describe 'Super admin service flags and feature changes', type: :request d
     it 'keeps the edit form working: it sends only the switches it shows' do
       get "#{card_path}/edit"
       names = Nokogiri::HTML(response.body).css('input[type="checkbox"][name^="enabled_features"]').pluck('name')
-      params = names.to_h { |name| [name.delete_prefix('enabled_features[').delete_suffix(']'), account.feature_enabled?(name[/feature_(.*)\]/, 1]).to_s] }
+      params = names.to_h do |name|
+        key = name.delete_prefix('enabled_features[').delete_suffix(']')
+        [key, account.feature_enabled?(key.delete_prefix('feature_')).to_s]
+      end
 
       patch card_path, params: { account: { name: account.name, locale: account.locale, status: account.status }, enabled_features: params }
 

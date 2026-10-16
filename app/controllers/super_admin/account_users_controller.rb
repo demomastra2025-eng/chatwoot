@@ -22,7 +22,9 @@ class SuperAdmin::AccountUsersController < SuperAdmin::ApplicationController
     membership = requested_resource
     removed = { 'user_id' => membership.user_id, 'email' => membership.user&.email, 'role' => membership.role }
     if membership.destroy
-      SuperAdmin::AccountAudit.record(account: membership.account, actor: current_super_admin, action: 'remove_user', changes: removed, request: request)
+      SuperAdmin::AccountAudit.record(
+        account: membership.account, actor: current_super_admin, action: 'remove_user', changes: removed, request: request
+      )
       flash[:notice] = translate_with_resource('destroy.success')
     else
       flash[:error] = membership.errors.full_messages.join(', ')
